@@ -4,9 +4,11 @@
 
 - 默认 Windows Release 包不再附带 .NET 运行时，并排除调试符号文件（PDB），减小下载与解压体积。
 - 启动需要兼容的 .NET 10 Windows Desktop Runtime x64。缺少时显示 .NET 安装提示，用户可前往微软下载并安装，完成后再次启动浮绘。
+- 发布时仅保留简体中文和英文的依赖语言资源。
 
 - The default Windows Release package no longer bundles the .NET runtime and excludes debug symbols (PDB files), reducing download and extracted size.
 - A compatible .NET 10 Windows Desktop Runtime x64 is required. If it is missing, a .NET installation prompt links to Microsoft's download page; install the runtime, then start FloatCanvas again.
+- Dependency language resources are limited to Simplified Chinese and English when publishing.
 
 ## 0.1.1-preview.8 — 2026-10-16
 
