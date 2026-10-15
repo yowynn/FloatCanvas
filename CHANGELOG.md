@@ -1,5 +1,15 @@
 # 更新日志 / Changelog
 
+## 0.1.1-preview.5 — 2026-10-15
+
+- 新增临时“拖入图片…”窗口，可在操作桌面时向原画布或截图草稿导入图片。
+- 图层列表可单独收起，保留属性面板中的输入。
+- 改善自动发布失败后的任务重试，保持构建产物与发布内容一致。
+
+- Added a temporary **Drag in images…** window for importing into the original canvas or capture draft while using the desktop.
+- The layer list can be collapsed independently while retaining property input.
+- Improved workflow retries after a release failure while keeping publication tied to its verified build artifact.
+
 ## 0.1.1-preview.4 — 2026-10-15
 
 - 裁剪及图片效果要求单选一张未锁定图片，避免误改截图背景。

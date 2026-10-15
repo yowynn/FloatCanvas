@@ -4,7 +4,7 @@
 
 Windows 屏幕标注工具。直接在桌面上绘画、贴图和调整对象，再切回下层应用操作，标注持续可见。
 
-当前版本：**0.1.1-preview.4（预览）**。[使用指南](Docs/User-Guide.md) · [更新日志](CHANGELOG.md)
+当前版本：**0.1.1-preview.5（预览）**。[使用指南](Docs/User-Guide.md) · [更新日志](CHANGELOG.md)
 
 ## 功能
 

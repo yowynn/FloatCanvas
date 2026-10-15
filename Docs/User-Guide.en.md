@@ -2,7 +2,7 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers **0.1.1-preview.4** for Windows x64. Features and stability are still being refined; save important work as a project file.
+This guide covers **0.1.1-preview.5** for Windows x64. Features and stability are still being refined; save important work as a project file.
 
 The interface supports automatic Windows language selection, Simplified Chinese and English. Choose a language in Settings, save and restart to apply it.
 
@@ -77,13 +77,15 @@ Choose **Properties and layers** to open the panel. With one element selected, e
 
 Colors accept `#AARRGGBB`, such as `#FF2383E2`; `#00000000` is a fully transparent fill. X/Y refer to the top-left of the element's screen-aligned bounding box. Width and height are measured along the element's own axes, including existing scale but excluding the stroke. Resizing through these fields preserves rotation; with proportional resizing, you can change only width or height. If the geometry has zero size along an axis, adjust its endpoints before changing that dimension. Arrowheads can be filled triangles, open arrows or diamonds; a head size of 0 scales automatically with stroke width.
 
-Elements higher in the layer list appear in front. Hidden or locked layers can still be selected in that list to change their visibility/lock state or stacking order. Hiding the properties panel retains unapplied input. After selecting another element, return to the original element to apply its draft, or choose **Reload selection** to load the newly selected element.
+Elements higher in the layer list appear in front. Click **Layers** to collapse or expand the list while retaining your property input. Hidden or locked layers can still be selected in that list to change their visibility/lock state or stacking order. Hiding the properties panel retains unapplied input. After selecting another element, return to the original element to apply its draft, or choose **Reload selection** to load the newly selected element.
 
 The toolbar's overall opacity affects annotations and images, while the screenshot background keeps normal brightness. If a display change leaves annotations outside the visible screen, use **More → Move annotations into view**. This moves visible, unlocked objects while preserving their spacing and the screenshot crop.
 
 ## Place, replace and crop images
 
-Press `Ctrl+V` to paste a clipboard image, choose **Image** to select one or more files, or drag image files onto the toolbar. PNG, JPEG, BMP and WebP are supported; transparent images retain their transparent areas.
+Press `Ctrl+V` to paste a clipboard image, choose **Image** to select one or more files, or use **More → Drag in images…**. PNG, JPEG, BMP and WebP are supported; transparent images retain their transparent areas.
+
+**Drag in images…** opens a temporary window and switches to the live canvas in pass-through mode so you can drag files from File Explorer. Images still go into the canvas or capture draft you were editing before opening the window; the destination is shown in the window. After importing, choose **Continue editing** to return to that canvas, or close the window to keep using your desktop. Closing does not automatically restore a frozen screenshot, and closing during import cancels any uncommitted import. Each window accepts one import, which can include multiple images and can be undone in one step.
 
 An imported image is a separate object and does not automatically replace the background. Select it to move, rotate, resize or change opacity.
 
