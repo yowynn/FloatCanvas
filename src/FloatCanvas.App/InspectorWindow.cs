@@ -104,11 +104,20 @@ internal sealed class InspectorWindow : Wpf.Window
         status.Margin = new(0, 4, 0, 10);
         body.Children.Add(status);
         body.Children.Add(new Controls.Separator { Margin = new(0, 4, 0, 10) });
-        body.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.Layers"), FontWeight = Wpf.FontWeights.SemiBold, Margin = new(0, 0, 0, 6) });
-        body.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.LayersHint"), FontSize = 12, Opacity = .65,
+        var layerPanel = new Controls.StackPanel();
+        var layerExpander = new Controls.Expander
+        {
+            Header = new Controls.TextBlock { Text = L.Get("Inspector.Layers"), FontWeight = Wpf.FontWeights.SemiBold, MinHeight = 30,
+                VerticalAlignment = Wpf.VerticalAlignment.Center },
+            Content = layerPanel, IsExpanded = true, HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch
+        };
+        layerExpander.SetResourceReference(ForegroundProperty, Wpf.SystemColors.WindowTextBrushKey);
+        Automation.AutomationProperties.SetName(layerExpander, L.Get("Inspector.Layers"));
+        body.Children.Add(layerExpander);
+        layerPanel.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.LayersHint"), FontSize = 12, Opacity = .65,
             TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(0, 0, 0, 6) });
         Automation.AutomationProperties.SetName(layers, L.Get("Inspector.LayerList"));
-        body.Children.Add(layers);
+        layerPanel.Children.Add(layers);
         var layerActions = new Controls.WrapPanel { Margin = new(0, 8, 0, 0) };
         layerActions.Children.Add(Button(L.Get("Inspector.BringForward"), () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Forward))));
         layerActions.Children.Add(Button(L.Get("Inspector.SendBackward"), () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Backward))));
@@ -116,7 +125,7 @@ internal sealed class InspectorWindow : Wpf.Window
         layerActions.Children.Add(Button(L.Get("Inspector.SendToBack"), () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Back))));
         layerActions.Children.Add(Button(L.Get("Inspector.Duplicate"), () => RunLayerCommand(s => s.DuplicateSelection())));
         layerActions.Children.Add(Button(L.Get("Inspector.Delete"), () => RunLayerCommand(s => s.DeleteSelection())));
-        body.Children.Add(layerActions);
+        layerPanel.Children.Add(layerActions);
         layers.SelectionChanged += (_, _) =>
         {
             if (refreshing) return;

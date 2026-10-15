@@ -64,6 +64,7 @@ internal static class InspectorTests
         LocalSizeEditing(assert);
         CommandRouting(assert);
         ArrowProperties(assert);
+        InspectorLayerPanelTests.Run(assert);
     }
 
     private static void LocalSizeEditing(Action<string, bool> assert)
