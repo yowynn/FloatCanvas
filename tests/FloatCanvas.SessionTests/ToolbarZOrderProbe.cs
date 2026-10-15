@@ -19,9 +19,11 @@ internal static partial class Program
 {
     private static bool ToolbarZOrderProbe;
     private static bool ToolbarZCaptureRestoreExtension;
+    private static bool ToolbarZCanvasActivationExtension;
     private static string ToolbarZOrderReportPath => Path.Combine(Root, "artifacts", "e2e", "session-toolbar-z-order.json");
     private static readonly List<object> ToolbarZOrderStages = [];
     private static readonly List<CheckResult> ToolbarZRestoreChecks = [];
+    private static readonly List<CheckResult> ToolbarZActivationChecks = [];
 
     private static async Task RunToolbarZOrderProbe(Wpf.Application application)
     {
@@ -96,6 +98,21 @@ internal static partial class Program
             Check(before.Editing && before.Isolation && before.ToolbarVisible && before.ToolbarEnabled && before.CenterHitToolbar && before.BluePixels >= 3 && before.ToolbarAboveCoveringOverlays,
                 "Live baseline toolbar is enabled, physically hittable, above covering overlays and visibly contains its blue glyph");
 
+            if (ToolbarZCanvasActivationExtension)
+            {
+                nint input = host.Diagnostics.Single(window => window.Bounds.Contains(new(before.CenterX, before.CenterY))).InputHandle;
+                // Reproduce the native activation transition caused by clicking the canvas,
+                // without synthesizing pointer messages or activating any foreign window.
+                if (!Native.SetForegroundWindow(input)) throw new InvalidOperationException("Exact own production input HWND could not be activated.");
+                await SettleOwnToolbarScene(application);
+                var activated = ObserveToolbarZOrder("AfterCanvasActivation", session, host, toolbar, blue);
+                ToolbarZOrderStages.Add(activated);
+                ToolbarZActivationChecks.Add(new("Canvas activation retains editing, isolation, foreground and keyboard focus with no outstanding mouse capture",
+                    activated.Editing && activated.Isolation && host.CaptureHandle == 0 && Native.GetForegroundWindow() == input && GetFocus() == input));
+                ToolbarZActivationChecks.Add(new("After canvas activation, toolbar button center still hits its toolbar HWND", activated.CenterHitToolbar));
+                ToolbarZActivationChecks.Add(new("After canvas activation, toolbar remains above every covering input/display HWND", activated.ToolbarAboveCoveringOverlays));
+            }
+
             // Original production method seam: no tool-window Show/Activate/SetWindowPos,
             // input injection, or focus assignment is added before or after this call.
             Call(session, "ResumeCapture");
@@ -161,7 +178,7 @@ internal static partial class Program
         }
         Check(isolation is not null && !isolation.IsThreadAlive && !isolation.IsLeaseActive && isolation.Failure is null,
             "Production keyboard lease and worker stop after the independent display probe");
-        if (Results.Concat(ToolbarZRestoreChecks).Any(result => !result.Passed)) throw new InvalidOperationException("Recovered screenshot covers or intercepts the already visible toolbar; see z-order and pixel evidence.");
+        if (Results.Concat(ToolbarZRestoreChecks).Concat(ToolbarZActivationChecks).Any(result => !result.Passed)) throw new InvalidOperationException("An overlay intercepts the already visible toolbar; see z-order and pixel evidence.");
     }
 
     private static int CurrentToolbarZRank(nint target)
@@ -271,6 +288,8 @@ internal static partial class Program
             OriginalRegression = new { ExpectedCount = 11, Passed = Results.Count == 11 && Results.All(result => result.Passed) },
             CaptureRestoreExtension = new { Requested = ToolbarZCaptureRestoreExtension, ExpectedCount = 4,
                 Checks = ToolbarZRestoreChecks.ToArray(), Passed = ToolbarZCaptureRestoreExtension && ToolbarZRestoreChecks.Count == 4 && ToolbarZRestoreChecks.All(result => result.Passed) },
+            CanvasActivationExtension = new { Requested = ToolbarZCanvasActivationExtension, ExpectedCount = 3,
+                Checks = ToolbarZActivationChecks.ToArray(), Passed = ToolbarZCanvasActivationExtension && ToolbarZActivationChecks.Count == 3 && ToolbarZActivationChecks.All(result => result.Passed) },
             PhysicalInputInjection = false, DesktopCapture = false, OwnToolbarRoiReadback = true, CaptureAffinityScopeCreated = ToolbarZCaptureRestoreExtension,
             Method = "Fresh recovery contains own synthetic white background and vector marker; a single real production editing entry establishes a blue-glyph toolbar pixel/hit/z-rank baseline. Production ResumeCapture is then called while the toolbar is already visible, followed only by readback. No corrective activation, re-show, raise or focus assignment is performed.",
             Scope = "Independent opt-in toolbar display/hit/z-order regression using production methods; does not prove actual screenshot acquisition, mouse invocation, other tool windows, games or full v1 completion. Pixel samples are only within the own blue-button rectangle; full desktop pixels are neither captured nor retained."

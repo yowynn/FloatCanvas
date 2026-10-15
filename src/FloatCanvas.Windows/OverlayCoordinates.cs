@@ -3,6 +3,13 @@ namespace FloatCanvas.Windows;
 /// <summary>Converts monitor-local WPF DIPs to global desktop physical pixels without scaling the desktop origin.</summary>
 public static class OverlayCoordinates
 {
+    /// <summary>Raises an application-owned tool window without moving, resizing or activating it.</summary>
+    public static void RaiseToolWindow(nint window)
+    {
+        if (!NativeMethods.SetWindowPos(window, NativeMethods.HwndTopmost, 0, 0, 0, 0, 0x13))
+            throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+    }
+
     /// <summary>Places an application-owned tool window using physical coordinates, preserving its size.</summary>
     public static void PositionToolWindow(nint window, OverlayPoint position)
     {

@@ -41,6 +41,8 @@ public sealed partial class OverlayHost : IDisposable
     public event Action? ToggleRequested;
     public event Action? HideRequested;
     public event Action? MonitorsChanged;
+    /// <summary>An input window became active. Raise visible tool windows without changing keyboard focus.</summary>
+    public event Action? InputActivated;
     /// <summary>Editing was released after focus or input isolation was lost. No foreground is restored.</summary>
     public event Action? EditingFocusLost;
     public event Action<Exception>? Error;
@@ -542,6 +544,15 @@ public sealed partial class OverlayHost : IDisposable
             return 0;
         }
         if (state.Kind != WindowKind.Input) return DefWindowProcW(state.Handle, message, wParam, lParam);
+        if (message == WmActivate && (wParam & 0xFFFF) != 0)
+        {
+            // Windows raises the activated full-screen input HWND, even when its pixels
+            // are almost transparent. Keep app tool windows physically above it after
+            // normal activation has assigned focus, without stealing that focus back.
+            var result = DefWindowProcW(state.Handle, message, wParam, lParam);
+            if (IsEditing) InputActivated?.Invoke();
+            return result;
+        }
         if (message is WmCancelMode or WmKillFocus || (message == WmCaptureChanged && !_releasingCapture))
         {
             CancelPointer();

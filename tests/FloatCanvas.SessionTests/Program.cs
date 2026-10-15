@@ -41,6 +41,7 @@ internal static partial class Program
         ExternalClipboardProbe = args.Contains("--external-clipboard-probe");
         ToolbarZOrderProbe = args.Contains("--toolbar-z-order-probe");
         ToolbarZCaptureRestoreExtension = args.Contains("--capture-restore-extension");
+        ToolbarZCanvasActivationExtension = args.Contains("--canvas-activation-extension");
         if (args.Contains("--pointer-surface")) return ShowPointerSurface();
         if (args.Contains("--manual-surface")) return ShowManualSurface();
         if (args.Contains("--prepare"))

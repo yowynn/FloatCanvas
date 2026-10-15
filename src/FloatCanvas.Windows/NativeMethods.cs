@@ -8,7 +8,7 @@ internal static class NativeMethods
     internal const uint WsPopup = 0x80000000, ExTopmost = 8, ExTransparent = 0x20, ExToolWindow = 0x80,
         ExLayered = 0x80000, ExNoActivate = 0x8000000;
     internal const uint WmNcCreate = 0x81, WmNcDestroy = 0x82, WmPaint = 0xF, WmEraseBackground = 0x14,
-        WmClose = 0x10, WmDisplayChange = 0x7E, WmDpiChanged = 0x2E0, WmHotkey = 0x312,
+        WmClose = 0x10, WmActivate = 6, WmDisplayChange = 0x7E, WmDpiChanged = 0x2E0, WmHotkey = 0x312,
         WmMouseMove = 0x200, WmLeftDown = 0x201, WmLeftUp = 0x202, WmLeftDouble = 0x203,
         WmRightDown = 0x204, WmRightUp = 0x205, WmRightDouble = 0x206, WmMiddleDown = 0x207,
         WmMiddleUp = 0x208, WmMiddleDouble = 0x209, WmMouseWheel = 0x20A,

@@ -84,6 +84,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.MonitorsChanged += OnMonitorsChanged;
         _host.Error += ex => _app.Dispatcher.BeginInvoke(() => ShowError(ex.Message));
         _toolbar = CreateToolbar();
+        _host.InputActivated += RaiseVisibleToolWindows;
         _host.EditingFocusLost += () =>
         {
             // Do not gate focus release on an asynchronous document operation.
@@ -318,6 +319,12 @@ internal sealed partial class DesktopSession : IDisposable
         else { _toolbar.Hide(); _inspector?.Hide(); }
         RequestRender();
         return true;
+    }
+    private void RaiseVisibleToolWindows()
+    {
+        foreach (var window in new[] { _toolbar, _inspector, _textEditor })
+            if (window is { IsVisible: true } && new WindowInteropHelper(window).Handle is var handle && handle != 0)
+                OverlayCoordinates.RaiseToolWindow(handle);
     }
     private void RequestRender()
     {
