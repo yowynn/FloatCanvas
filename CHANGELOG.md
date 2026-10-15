@@ -1,5 +1,13 @@
 # 更新日志 / Changelog
 
+## 0.1.1-preview.8 — 2026-10-16
+
+- 直接向画布拖入图片，取代临时“拖入图片…”窗口。拖住图片时按切换快捷键展开画布，松手后图片中心对准落点；多图略微错开，可整体撤销。
+- 文件选择和剪贴板粘贴继续在可见画布中央插入图片。网页链接不作为图像导入，浏览器拖入取决于来源提供的图像内容。
+
+- Drag images directly onto the canvas instead of using the temporary **Drag in images…** window. Hold the image, use the toggle shortcut to open the canvas, and release to center it on the drop point. Multiple images are offset slightly and can be undone together.
+- File-picker and clipboard imports remain centered in the visible canvas. Web links are not imported as images; browser dragging depends on the image content provided by the source.
+
 ## 0.1.1-preview.7 — 2026-10-15
 
 - 修复操作画布后工具条无法点击的问题。

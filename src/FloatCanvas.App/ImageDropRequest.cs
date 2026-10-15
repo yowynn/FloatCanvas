@@ -3,7 +3,7 @@ using FloatCanvas.Rendering;
 
 namespace FloatCanvas.App;
 
-/// <summary>A single temporary import, bound to the original document and placement before leaving edit.</summary>
+/// <summary>A single drop, bound to its original document, viewport and physical-to-document mapping.</summary>
 internal sealed class ImageDropRequest : IDisposable
 {
     private readonly SceneDocument document;
@@ -11,6 +11,7 @@ internal sealed class ImageDropRequest : IDisposable
     private bool disposed;
     internal EditorSession Target { get; }
     internal RectD Placement { get; }
+    internal PointD? DropCenter { get; private set; }
     internal CancellationToken Token { get; }
     internal bool Completed { get; private set; }
     internal bool IsImporting { get; set; }
@@ -25,10 +26,19 @@ internal sealed class ImageDropRequest : IDisposable
         !Token.IsCancellationRequested && ReferenceEquals(this, current) && ReferenceEquals(Target.Document, document) &&
         (ReferenceEquals(Target, live) || ReferenceEquals(Target, capture));
 
+    internal bool TrySetDropPoint(PointD screenPoint, PointD screenOrigin)
+    {
+        if (Completed || IsImporting || Token.IsCancellationRequested || DropCenter is not null ||
+            !double.IsFinite(screenPoint.X) || !double.IsFinite(screenPoint.Y) ||
+            !double.IsFinite(screenOrigin.X) || !double.IsFinite(screenOrigin.Y)) return false;
+        DropCenter = screenPoint - screenOrigin;
+        return true;
+    }
+
     internal bool TryCommit(ImageDropRequest? current, EditorSession live, EditorSession? capture, IReadOnlyList<NormalizedImage> images)
     {
         if (Completed || images.Count == 0 || !IsCurrent(current, live, capture)) return false;
-        ImageImportCommand.Insert(Target, images, Placement);
+        ImageImportCommand.Insert(Target, images, Placement, dropCenter: DropCenter);
         Completed = true;
         return true;
     }

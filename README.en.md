@@ -4,12 +4,12 @@
 
 A Windows screen annotation tool. Draw over your desktop, place images and edit objects, then return to the application underneath while your annotations stay visible.
 
-Current version: **0.1.1-preview.7**. [User guide](Docs/User-Guide.en.md) · [Changelog](CHANGELOG.md)
+Current version: **0.1.1-preview.8**. [User guide](Docs/User-Guide.en.md) · [Changelog](CHANGELOG.md)
 
 ## Features
 
 - Freehand pen, highlighter, lines, arrows, shapes, text and numbered markers.
-- Image files and clipboard import; select objects again to move, rotate, resize or edit their properties.
+- Import image files or clipboard images, or drag images directly onto the canvas; select objects again to move, rotate, resize or edit their properties.
 - Edit/pass-through shortcuts, canvas visibility, undo/redo and layers.
 - Region capture, cropping, blur, pixelation and solid redaction; export PNG/JPEG or transparent annotations.
 - Self-contained, editable `.floatcanvas` projects and automatic recovery.

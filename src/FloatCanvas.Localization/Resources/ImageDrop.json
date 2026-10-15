@@ -1,18 +1,8 @@
 {
-  "Menu.ImageDrop": { "zh": "拖入图片…", "en": "Drag in images…" },
-  "ImageDrop.Title": { "zh": "浮绘 · 拖入图片", "en": "FloatCanvas · Drag in images" },
-  "ImageDrop.Destination": { "zh": "导入到：{0}", "en": "Import into: {0}" },
-  "ImageDrop.Live": { "zh": "实时画布", "en": "Live canvas" },
-  "ImageDrop.Capture": { "zh": "原截图草稿", "en": "Original capture draft" },
-  "ImageDrop.Hint": { "zh": "切到资源管理器，将图片文件拖到这里。\n支持 PNG、JPEG、BMP、WebP。", "en": "Switch to File Explorer and drag image files here.\nPNG, JPEG, BMP and WebP are supported." },
-  "ImageDrop.Waiting": { "zh": "关闭后保持穿透；点击“返回原画布编辑”可继续编辑原画布。", "en": "Closing keeps pass-through active. Choose Return to original editor to resume your canvas." },
-  "ImageDrop.Busy": { "zh": "正在导入…关闭此窗口可取消。", "en": "Importing… Close this window to cancel." },
-  "ImageDrop.Imported": { "zh": "已导入 {0} 张图片。关闭后可继续操作电脑。", "en": "Imported {0} image(s). Close this window to keep using your desktop." },
-  "ImageDrop.Unsupported": { "zh": "请拖入 PNG、JPEG、BMP 或 WebP 图片文件。", "en": "Drag PNG, JPEG, BMP or WebP image files here." },
+  "ImageDrop.Hint": { "zh": "在目标位置松手插入图片，Esc 或 {0} 取消。", "en": "Release at the desired position to insert the image. Esc or {0} cancels." },
+  "ImageDrop.Importing": { "zh": "正在导入图片…", "en": "Importing images…" },
+  "ImageDrop.Imported": { "zh": "已导入 {0} 张图片。", "en": "Imported {0} image(s)." },
+  "ImageDrop.Unsupported": { "zh": "只支持图像数据或 PNG、JPEG、BMP、WebP 图像文件，不支持网址或网页链接。", "en": "Only image data or PNG, JPEG, BMP and WebP image files are supported, not URLs or web links." },
   "ImageDrop.Failed": { "zh": "导入失败：{0}\n可以重新拖入图片。", "en": "Import failed: {0}\nYou can drag the images in again." },
-  "ImageDrop.TargetChanged": { "zh": "原画布已关闭或更换，请关闭此窗口后重新开始拖入。", "en": "The original canvas was closed or replaced. Close this window and start a new import." },
-  "ImageDrop.Return": { "zh": "返回原画布编辑", "en": "Return to original editor" },
-  "ImageDrop.Continue": { "zh": "继续编辑", "en": "Continue editing" },
-  "ImageDrop.Cancel": { "zh": "取消", "en": "Cancel" },
-  "ImageDrop.Close": { "zh": "关闭", "en": "Close" }
+  "ImageDrop.TargetChanged": { "zh": "目标画布已关闭或更换，请重新拖入图片。", "en": "The target canvas was closed or replaced. Drag the images in again." }
 }

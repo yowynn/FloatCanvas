@@ -79,8 +79,9 @@ internal sealed partial class DesktopSession : IDisposable
         _host.Draw += Draw;
         _host.Pointer += e => { if (!DocumentOperationBusy) _editor.Pointer(e); };
         _host.KeyPressed += OnKey;
-        _host.ToggleRequested += () => { if (_host.IsEditing || !DocumentOperationBusy) SetEditing(!_host.IsEditing); };
-        _host.HideRequested += () => { if (_host.IsEditing || !DocumentOperationBusy) { SetEditing(false); _host.SetVisible(!_host.IsVisible); } };
+        _host.ToggleRequested += ToggleEditing;
+        _host.HideRequested += () => { if (_host.IsEditing || _host.IsReceivingDrop || !DocumentOperationBusy) { SetEditing(false); _host.SetVisible(!_host.IsVisible); } };
+        _host.EnableImageDrops(SupportsCanvasImageDrop, ReceiveCanvasImageDrop);
         _host.MonitorsChanged += OnMonitorsChanged;
         _host.Error += ex => _app.Dispatcher.BeginInvoke(() => ShowError(ex.Message));
         _toolbar = CreateToolbar();
@@ -88,6 +89,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.EditingFocusLost += () =>
         {
             // Do not gate focus release on an asynchronous document operation.
+            CloseImageDrop();
             _editor.Cancel(); _textEditor?.Hide();
             if (Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
             _toolbar.Hide(); _inspector?.Hide(); RequestRender();
@@ -215,7 +217,6 @@ internal sealed partial class DesktopSession : IDisposable
         Item(L.Get("Menu.ExportTransparent"), () => _ = RunCommand(() => ExportAsync(true)));
         Item(L.Get("Menu.Copy"), () => CopySelection());
         Item(L.Get("Menu.Paste"), () => _ = RunCommand(PasteAsync));
-        Item(L.Get("Menu.ImageDrop"), () => RunUiAction(BeginImageDrop));
         Item(L.Get("Menu.ReplaceImage"), () => _ = RunCommand(() => ImportImagesAsync(null, true)));
         Item(_host.Scope == OverlayMonitorScope.PrimaryScreen ? L.Get("Menu.CapturePrimary") : L.Get("Menu.CaptureAll"), () => _ = RunCommand(() => StartCaptureAsync(false)));
         Item(L.Get("Menu.ReturnLive"), ReturnToLive); Item(L.Get("Menu.ResumeCapture"), ResumeCapture);
@@ -287,9 +288,9 @@ internal sealed partial class DesktopSession : IDisposable
         button.Content = icon; button.Width = 34; button.Padding = new Thickness(9);
         return button;
     }
-    private bool SetEditing(bool editing)
+    private bool SetEditing(bool editing, bool preserveImageDrop = false)
     {
-        CloseImageDrop();
+        if (!preserveImageDrop) CloseImageDrop();
         bool wasEditing = _host.IsEditing;
         _editor.Cancel();
         if (!editing) _textEditor?.Close();
@@ -432,6 +433,7 @@ internal sealed partial class DesktopSession : IDisposable
             else if(_editor.Marquee is {} r) canvas.DrawRect((float)r.X,(float)r.Y,(float)r.Width,(float)r.Height,paint);
         }
         canvas.Restore();
+        if (_host.IsReceivingDrop) DrawImageDropHint(canvas);
     }
     private void ToggleInspector()
     {

@@ -1,7 +1,7 @@
 using FloatCanvas.Windows;
 using FloatCanvas.WindowsTests;
 
-// These tests exercise only pure keyboard state and monitor selection. They install no hooks, create no HWNDs,
+// These tests exercise pure keyboard state, monitor selection and OLE negotiation/ownership. They install no hooks, create no HWNDs,
 // call no keyboard APIs and generate no desktop input.
 int checks = 0;
 void Check(bool condition, string description)
@@ -195,7 +195,9 @@ try
     Check(rejectedUpdate && Drain(state).Count(p => p.Kind == KeyboardInputPacketKind.Toggle) == 1,
         "Rejected bindings leave the previous active command configuration intact");
     Check(!Key(state, 0) && !Key(state, 255), "Invalid keyboard VKs are never captured");
-    Console.WriteLine($"Windows keyboard state and monitor selection checks: {checks}; passed=true; native hooks/UI/input never run.");
+    int legacyChecks = checks;
+    ImageDropProtocolTests.Run(Check);
+    Console.WriteLine($"Windows keyboard state and monitor selection checks: {checks}; passed=true; legacy={legacyChecks}; imageDropProtocol={checks - legacyChecks}; native hooks/UI/input never run.");
     return 0;
 }
 catch (Exception error)

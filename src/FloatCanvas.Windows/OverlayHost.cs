@@ -171,6 +171,7 @@ public sealed partial class OverlayHost : IDisposable
     public bool TryEnterEditing(out string? failure)
     {
         CheckThread();
+        EndDropReceptionCore();
         using var dpi = new PhysicalDpiScope();
         failure = null;
         if (IsEditing && IsForegroundFromThisProcess() &&
@@ -212,6 +213,7 @@ public sealed partial class OverlayHost : IDisposable
     public void ExitEditing(bool restorePreviousForeground = true)
     {
         CheckThread();
+        EndDropReceptionCore();
         if (!IsEditing) return;
         EndKeyboardIsolation();
         CancelPointer();
@@ -245,6 +247,7 @@ public sealed partial class OverlayHost : IDisposable
     public CaptureVisibilityScope HideForCapture(IEnumerable<nint>? additionalWindows = null)
     {
         CheckThread();
+        EndDropReceptionCore();
         if (_captureActive) throw new InvalidOperationException(L.Get("Capture.AlreadyInProgress"));
         var editing = IsEditing;
         var visible = IsVisible;
@@ -333,6 +336,7 @@ public sealed partial class OverlayHost : IDisposable
     {
         if (_disposed) return;
         CheckThread();
+        EndDropReceptionCore();
         DisposeKeyboardIsolation();
         if (_foregroundHook != 0) { UnhookWinEvent(_foregroundHook); _foregroundHook = 0; }
         CancelPointer();
@@ -344,6 +348,7 @@ public sealed partial class OverlayHost : IDisposable
             UnregisterHotKey(_control.Handle, HideHotkeyId);
         }
         DestroyPairs();
+        DisposeImageDrops();
         if (_control.Handle != 0) DestroyWindow(_control.Handle);
         _disposed = true;
     }
@@ -379,6 +384,7 @@ public sealed partial class OverlayHost : IDisposable
     private void RebuildMonitors()
     {
         using var dpi = new PhysicalDpiScope();
+        EndDropReceptionCore();
         CancelPointer();
         var monitors = OverlayMonitorSelection.Select(_monitorProvider(), Scope);
         DestroyPairs();
@@ -408,6 +414,7 @@ public sealed partial class OverlayHost : IDisposable
                     throw;
                 }
             }
+            RegisterImageDropTargets();
             Render();
             if (IsEditing && !ActivateInputAtCursor()) EndEditingAfterFocusLoss();
         }
@@ -418,6 +425,7 @@ public sealed partial class OverlayHost : IDisposable
     {
         foreach (var pair in _windows)
         {
+            RevokeImageDropTarget(pair.Input.Handle);
             DestroyWindow(pair.Input.Handle);
             DestroyWindow(pair.Display.Handle);
             pair.Buffer.Dispose();
@@ -544,6 +552,9 @@ public sealed partial class OverlayHost : IDisposable
             return 0;
         }
         if (state.Kind != WindowKind.Input) return DefWindowProcW(state.Handle, message, wParam, lParam);
+        // Temporary OLE reception belongs to the external source's current mouse gesture.
+        // A late physical click must not activate this surface before the owner ends it.
+        if (IsReceivingDrop && message == 0x21) return 3; // WM_MOUSEACTIVATE / MA_NOACTIVATE
         if (message == WmActivate && (wParam & 0xFFFF) != 0)
         {
             // Windows raises the activated full-screen input HWND, even when its pixels

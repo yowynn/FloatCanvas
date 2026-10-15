@@ -1,0 +1,30 @@
+{
+  "ImageDropHost.InitializeFailed": {
+    "zh": "无法初始化图片拖入接收（{0}）。",
+    "en": "Could not initialize image drop reception ({0})."
+  },
+  "ImageDropHost.InvalidRegistration": {
+    "zh": "拖入目标窗口无效，或已被注册。",
+    "en": "The drop target window is invalid or already registered."
+  },
+  "ImageDropHost.RegisterFailed": {
+    "zh": "无法注册图片拖入目标（{0}）。",
+    "en": "Could not register the image drop target ({0})."
+  },
+  "ImageDropHost.RevokeFailed": {
+    "zh": "无法解除图片拖入目标注册（{0}）。",
+    "en": "Could not revoke the image drop target ({0})."
+  },
+  "ImageDropHost.RequiresSta": {
+    "zh": "图片拖入需要在浮绘的 STA 界面线程中启用。",
+    "en": "Image drops must be enabled on FloatCanvas's STA interface thread."
+  },
+  "ImageDropHost.Unavailable": {
+    "zh": "当前状态下无法接收图片拖入。",
+    "en": "Image drop reception is unavailable in the current state."
+  },
+  "ImageDropHost.ShowFailed": {
+    "zh": "无法显示图片拖入接收层。",
+    "en": "Could not show the image drop reception surface."
+  }
+}

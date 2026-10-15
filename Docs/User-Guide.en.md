@@ -2,7 +2,7 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers **0.1.1-preview.7** for Windows x64. Features and stability are still being refined; save important work as a project file.
+This guide covers **0.1.1-preview.8** for Windows x64. Features and stability are still being refined; save important work as a project file.
 
 A drag that starts on the canvas stays with the canvas, even when it crosses the toolbar or ends on a button. Buttons are not triggered on release. A gesture that starts on the toolbar stays with the toolbar and does not draw on the canvas.
 
@@ -85,9 +85,11 @@ The toolbar's overall opacity affects annotations and images, while the screensh
 
 ## Place, replace and crop images
 
-Press `Ctrl+V` to paste a clipboard image, choose **Image** to select one or more files, or use **More → Drag in images…**. PNG, JPEG, BMP and WebP are supported; transparent images retain their transparent areas.
+Press `Ctrl+V` to paste a clipboard image, or choose **Image** to select one or more files. New images are placed at the center of the currently visible canvas area. PNG, JPEG, BMP and WebP are supported; transparent images retain their transparent areas.
 
-**Drag in images…** opens a temporary window and switches to the live canvas in pass-through mode so you can drag files from File Explorer. Images still go into the canvas or capture draft you were editing before opening the window; the destination is shown in the window. After importing, choose **Continue editing** to return to that canvas, or close the window to keep using your desktop. Closing does not automatically restore a frozen screenshot, and closing during import cancels any uncommitted import. Each window accepts one import, which can include multiple images and can be undone in one step.
+You can also start dragging an image from a file manager or browser, keep holding it, and press the edit/pass-through shortcut (`Ctrl+Alt+F` by default) to open the canvas. Release the mouse at the desired position. The image is centered on the drop point; when dropping several images, subsequent images are offset slightly. The entire import can be undone in one step.
+
+The source must provide actual image data or supported image files. A URL or web link alone cannot be imported as an image. Websites and browsers may provide different drag content, so direct dragging is not guaranteed for every website. If dragging is unavailable, use **Copy image** and paste, or save the image and import the file.
 
 An imported image is a separate object and does not automatically replace the background. Select it to move, rotate, resize or change opacity.
 

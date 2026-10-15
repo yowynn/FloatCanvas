@@ -10,7 +10,7 @@
     <AssemblyName>FloatCanvas</AssemblyName>
     <Product>浮绘 FloatCanvas</Product>
     <Description>可编辑的 Windows 屏幕标注画布</Description>
-    <Version>0.1.1-preview.7</Version>
+    <Version>0.1.1-preview.8</Version>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets\FloatCanvas.ico" />

@@ -4,8 +4,6 @@ using FloatCanvas.App;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
 using SkiaSharp;
-using L = FloatCanvas.Localization.AppText;
-using Wpf = System.Windows;
 
 internal static class ImageDropTests
 {
@@ -18,12 +16,12 @@ internal static class ImageDropTests
         using var request = new ImageDropRequest(capture, new(400, 300, 600, 400), CancellationToken.None);
         check("drop commits to the original inactive capture", request.TryCommit(request, live, capture, [new([1, 2, 3], 120, 80)]) &&
             capture.Document.Elements.Count == 1 && liveBefore == JsonSerializer.Serialize(live.Document));
-        check("drop uses its original explicit placement and one undo", capture.Document.Elements.Single().Transform == Affine2D.Translation(640, 460) &&
+        check("picker placement remains centered and one undo", capture.Document.Elements.Single().Transform == Affine2D.Translation(640, 460) &&
             capture.UndoCount == 1 && capture.Undo() && before == JsonSerializer.Serialize(capture.Document));
         GuardedCompletion(check);
         PreserveExistingCapture(check);
         FileDecodingAndRetry(check);
-        DropView(check);
+        DropPosition(check);
     }
 
     private static void GuardedCompletion(Action<string, bool> check)
@@ -118,36 +116,30 @@ internal static class ImageDropTests
         finally { Directory.Delete(directory, true); }
     }
 
-    private static void DropView(Action<string, bool> check)
+    private static void DropPosition(Action<string, bool> check)
     {
-        string preference = L.Preference;
-        try
+        foreach (var (label, viewport, origin, screenPoint) in new[]
         {
-            foreach (string language in new[] { "zh-CN", "en" })
-            {
-                L.Initialize(language); var window = new DropImportWindow(L.Get("ImageDrop.Capture"));
-                int drops = 0; string[]? accepted = null;
-                window.FilesDropped += paths => { drops++; accepted = paths; window.SetBusy(); };
-                Wpf.DragDropEffects Handle(string[] paths, Wpf.DragDropEffects allowed, bool drop = false)
-                {
-                    var data = new Wpf.DataObject(Wpf.DataFormats.FileDrop, paths);
-                    return window.HandleDrag(data, allowed, drop);
-                }
-                check(language + " drop pad is topmost, modeless and not owned by the hidden toolbar", window.Topmost && window.Owner is null && !window.ShowActivated && !window.ShowInTaskbar && window.Title == L.Get("ImageDrop.Title"));
-                check(language + " production drag handler admits supported multi-file Copy", Handle(["one.PNG", "two.webp"], Wpf.DragDropEffects.Copy) == Wpf.DragDropEffects.Copy);
-                check(language + " production drag handler rejects a source that disallows Copy", Handle(["one.png"], Wpf.DragDropEffects.Move) == Wpf.DragDropEffects.None);
-                check(language + " production drop rejects mixed unsupported files without a callback", Handle(["one.png", "notes.txt"], Wpf.DragDropEffects.Copy, true) == Wpf.DragDropEffects.None && drops == 0);
-                check(language + " production drop forwards accepted paths once", Handle(["one.png"], Wpf.DragDropEffects.Copy, true) == Wpf.DragDropEffects.Copy && drops == 1 && accepted!.SequenceEqual(["one.png"]));
-                check(language + " busy pad rejects further drops", Handle(["two.png"], Wpf.DragDropEffects.Copy, true) == Wpf.DragDropEffects.None && drops == 1 && !window.AllowDrop);
-                window.ShowFailure(L.Format("ImageDrop.Failed", "fixture decode error"));
-                check(language + " decoding failure reopens drop for retry", window.AllowDrop && Handle(["retry.bmp"], Wpf.DragDropEffects.Copy, true) == Wpf.DragDropEffects.Copy && drops == 2);
-                window.Complete(1);
-                check(language + " completed pad rejects a second import", !window.AllowDrop && Handle(["late.jpg"], Wpf.DragDropEffects.Copy, true) == Wpf.DragDropEffects.None && drops == 2);
-                check(language + " detached drop test never creates a native window", new System.Windows.Interop.WindowInteropHelper(window).Handle == 0 && !window.IsVisible);
-                window.Close();
-            }
-            check("file feedback rejects empty and blank path lists", !DropImportWindow.SupportsFiles([]) && !DropImportWindow.SupportsFiles([""]));
+            ("negative monitor", new RectD(-3840, -1080, 3840, 2160), new PointD(0, 0), new PointD(-2700, -520)),
+            ("frozen crop with screen origin", new RectD(300, 200, 800, 600), new PointD(1200, 500), new PointD(1750, 900))
+        })
+        {
+            var session = new EditorSession(new() { Viewport = viewport });
+            using var request = new ImageDropRequest(session, viewport, CancellationToken.None);
+            check(label + " stores the release point with the original mapping", request.TrySetDropPoint(screenPoint, origin) && request.DropCenter == screenPoint - origin);
+            check(label + " does not recalculate placement at completion", !request.TrySetDropPoint(new(1, 2), new(3, 4)) &&
+                request.TryCommit(request, session, null, [new([1], 1200, 800), new([2], 60, 40)]));
+            var elements = session.Document.Elements;
+            check(label + " first image center matches the actual release point", ElementGeometry.Bounds(elements[0]).Center.DistanceTo(screenPoint - origin) < 1e-8);
+            check(label + " additional images offset from the same release point", ElementGeometry.Bounds(elements[1]).Center == screenPoint - origin + new PointD(20, 20));
+            check(label + " imported images fit the original viewport", elements[0].Width <= viewport.Width * .8 && elements[0].Height <= viewport.Height * .8);
+            check(label + " multiple images share one undo", session.UndoCount == 1 && session.Undo() && session.Document.Elements.Count == 0 && session.Redo() && session.Document.Elements.Count == 2);
         }
-        finally { L.Initialize(preference); }
+        var invalid = new EditorSession();
+        using var bad = new ImageDropRequest(invalid, new(0, 0, 100, 100), CancellationToken.None);
+        check("invalid drop coordinates are rejected before asset publication", !bad.TrySetDropPoint(new(double.NaN, 0), new()) &&
+            !bad.TrySetDropPoint(new(), new(0, double.PositiveInfinity)) && bad.DropCenter is null && invalid.Assets.Count == 0);
+        bad.Cancel();
+        check("cancelled request cannot accept a later release point", !bad.TrySetDropPoint(new(10, 10), new()));
     }
 }
