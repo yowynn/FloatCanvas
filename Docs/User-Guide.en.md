@@ -2,7 +2,9 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers **0.1.1-preview.6** for Windows x64. Features and stability are still being refined; save important work as a project file.
+This guide covers **0.1.1-preview.7** for Windows x64. Features and stability are still being refined; save important work as a project file.
+
+A drag that starts on the canvas stays with the canvas, even when it crosses the toolbar or ends on a button. Buttons are not triggered on release. A gesture that starts on the toolbar stays with the toolbar and does not draw on the canvas.
 
 The interface supports automatic Windows language selection, Simplified Chinese and English. Choose a language in Settings, save and restart to apply it.
 
