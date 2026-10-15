@@ -1,0 +1,116 @@
+{
+  "CollectedAt": "2026-10-15",
+  "Packages": [
+    {
+      "Package": "SkiaSharp",
+      "Version": "4.153.1",
+      "Source": "Installed NuGet package",
+      "Directory": "SkiaSharp-4.153.1",
+      "Files": [
+        "LICENSE.txt",
+        "skiasharp.nuspec"
+      ]
+    },
+    {
+      "Package": "SkiaSharp.HarfBuzz",
+      "Version": "4.153.1",
+      "Source": "Installed NuGet package",
+      "Directory": "SkiaSharp.HarfBuzz-4.153.1",
+      "Files": [
+        "LICENSE.txt",
+        "skiasharp.harfbuzz.nuspec"
+      ]
+    },
+    {
+      "Package": "SkiaSharp.NativeAssets.Win32",
+      "Version": "4.153.1",
+      "Source": "Installed NuGet package",
+      "Directory": "SkiaSharp.NativeAssets.Win32-4.153.1",
+      "Files": [
+        "LICENSE.txt",
+        "skiasharp.nativeassets.win32.nuspec",
+        "THIRD-PARTY-NOTICES.txt"
+      ]
+    },
+    {
+      "Package": "HarfBuzzSharp",
+      "Version": "14.2.1.301",
+      "Source": "Installed NuGet package",
+      "Directory": "HarfBuzzSharp-14.2.1.301",
+      "Files": [
+        "harfbuzzsharp.nuspec",
+        "LICENSE.txt"
+      ]
+    },
+    {
+      "Package": "HarfBuzzSharp.NativeAssets.Win32",
+      "Version": "14.2.1.301",
+      "Source": "Installed NuGet package",
+      "Directory": "HarfBuzzSharp.NativeAssets.Win32-14.2.1.301",
+      "Files": [
+        "harfbuzzsharp.nativeassets.win32.nuspec",
+        "LICENSE.txt",
+        "THIRD-PARTY-NOTICES.txt"
+      ]
+    },
+    {
+      "Package": "Vortice.DXGI",
+      "Version": "3.8.3",
+      "Source": "Installed NuGet package",
+      "Directory": "Vortice.DXGI-3.8.3",
+      "Files": [
+        "vortice.dxgi.nuspec"
+      ]
+    },
+    {
+      "Package": "Vortice.Direct3D11",
+      "Version": "3.8.3",
+      "Source": "Installed NuGet package",
+      "Directory": "Vortice.Direct3D11-3.8.3",
+      "Files": [
+        "vortice.direct3d11.nuspec"
+      ]
+    },
+    {
+      "Package": "Vortice.DirectX",
+      "Version": "3.8.3",
+      "Source": "Installed NuGet package",
+      "Directory": "Vortice.DirectX-3.8.3",
+      "Files": [
+        "vortice.directx.nuspec"
+      ]
+    },
+    {
+      "Package": "Vortice.Mathematics",
+      "Version": "2.1.0",
+      "Source": "Installed NuGet package",
+      "Directory": "Vortice.Mathematics-2.1.0",
+      "Files": [
+        "vortice.mathematics.nuspec"
+      ]
+    },
+    {
+      "Package": "SharpGen.Runtime",
+      "Version": "2.4.2-beta",
+      "Source": "Installed NuGet package",
+      "Directory": "SharpGen.Runtime-2.4.2-beta",
+      "Files": [
+        "sharpgen.runtime.nuspec"
+      ]
+    },
+    {
+      "Package": "SharpGen.Runtime.COM",
+      "Version": "2.4.2-beta",
+      "Source": "Installed NuGet package",
+      "Directory": "SharpGen.Runtime.COM-2.4.2-beta",
+      "Files": [
+        "sharpgen.runtime.com.nuspec"
+      ]
+    }
+  ],
+  "UpstreamLicenseSources": [
+    "https://raw.githubusercontent.com/amerkoleci/Vortice.Windows/9e609cb9439c9872aa1b339f177e40ec96f77239/LICENSE",
+    "https://raw.githubusercontent.com/amerkoleci/Vortice.Mathematics/fa05ec6dcba48f3f7331791da6dc7f3d866b2ad6/LICENSE",
+    "https://raw.githubusercontent.com/SharpGenTools/SharpGenTools/6990bcafe124a4c22515ad19cee5a081da8db67b/LICENSE.txt"
+  ]
+}

@@ -1,0 +1,139 @@
+name: Windows release
+
+# Changing Version alone runs CI. Publication requires pushing an existing v* tag,
+# or manually choosing an existing tag through workflow_dispatch.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing vMAJOR.MINOR.PATCH[-PRERELEASE] tag matching the application Version'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - name: Check out the existing release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify tag, project version and checked-out commit
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $release = ./scripts/Resolve-ReleaseVersion.ps1 -Tag $env:RELEASE_TAG
+          "tag=$($release.Tag)" >> $env:GITHUB_OUTPUT
+          "version=$($release.Version)" >> $env:GITHUB_OUTPUT
+          "commit=$($release.Commit)" >> $env:GITHUB_OUTPUT
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Restore locked dependencies
+        run: dotnet restore FloatCanvas.slnx --locked-mode
+      - name: Build Release
+        run: dotnet build FloatCanvas.slnx --configuration Release --no-restore --nologo
+      - name: Run default checks without UI or injected input
+        run: ./scripts/Test.ps1 -Configuration Release
+      - name: Publish self-contained Windows package
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: ./scripts/Publish.ps1 -Configuration Release -Version $env:PACKAGE_VERSION
+      - name: Smoke-test the extracted package
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $zip = Join-Path 'dist' "FloatCanvas-$env:PACKAGE_VERSION-win-x64.zip"
+          ./scripts/Smoke-Package.ps1 -ZipPath $zip
+      - name: Preserve verified ZIP and SHA256 as workflow artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: FloatCanvas-${{ steps.version.outputs.version }}-win-x64
+          path: |
+            dist/FloatCanvas-${{ steps.version.outputs.version }}-win-x64.zip
+            dist/FloatCanvas-${{ steps.version.outputs.version }}-win-x64.zip.sha256
+          if-no-files-found: error
+          overwrite: false
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 10
+    # Build/test/package steps never receive a token with repository write access.
+    permissions:
+      contents: write
+    steps:
+      - name: Download this run's verified package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: FloatCanvas-${{ needs.build.outputs.version }}-win-x64
+          path: dist
+      - name: Publish a new Release without replacing existing releases or assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          PACKAGE_VERSION: ${{ needs.build.outputs.version }}
+          EXPECTED_COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $zip = Join-Path 'dist' "FloatCanvas-$env:PACKAGE_VERSION-win-x64.zip"
+          $sha = "$zip.sha256"
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedLine = "$hash  $([IO.Path]::GetFileName($zip))"
+          if ((Get-Content -LiteralPath $sha -Raw).Trim() -cne $expectedLine) {
+              throw 'Downloaded ZIP does not match its SHA256 file.'
+          }
+
+          # Recheck the remote tag after the build; annotated and lightweight tags
+          # must still resolve to the exact commit whose package passed validation.
+          $referenceJson = & gh api "repos/$env:GH_REPO/git/ref/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'The existing remote release tag could not be verified.' }
+          $target = ($referenceJson | ConvertFrom-Json).object
+          $depth = 0
+          while ($target.type -eq 'tag' -and $depth -lt 10) {
+              $tagJson = & gh api "repos/$env:GH_REPO/git/tags/$($target.sha)"
+              if ($LASTEXITCODE -ne 0) { throw 'The annotated release tag could not be resolved.' }
+              $target = ($tagJson | ConvertFrom-Json).object
+              $depth++
+          }
+          if ($target.type -ne 'commit' -or $target.sha -cne $env:EXPECTED_COMMIT) {
+              throw 'The remote release tag no longer matches the validated package commit.'
+          }
+
+          # create refuses an existing Release. Do not delete releases, upload with
+          # --clobber, or let gh automatically create an unverified tag.
+          $arguments = @('release', 'create', $env:RELEASE_TAG, $zip, $sha,
+              '--verify-tag', '--title', "FloatCanvas $env:PACKAGE_VERSION", '--generate-notes')
+          if ($env:PACKAGE_VERSION.Contains('-')) { $arguments += @('--prerelease', '--latest=false') }
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Existing releases and assets were not overwritten.' }

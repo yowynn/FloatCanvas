@@ -1,0 +1,714 @@
+{
+  "App.Name": {
+    "zh": "浮绘",
+    "en": "FloatCanvas"
+  },
+  "App.NamePrefix": {
+    "zh": "浮绘 · ",
+    "en": "FloatCanvas · "
+  },
+  "App.OperationFailed": {
+    "zh": "浮绘 · 操作失败",
+    "en": "FloatCanvas · Operation failed"
+  },
+  "App.StartupFailed": {
+    "zh": "浮绘 · 启动失败",
+    "en": "FloatCanvas · Startup failed"
+  },
+  "App.SettingsEmpty": {
+    "zh": "浮绘设置文件为空，请检查 ",
+    "en": "FloatCanvas settings are empty. Check "
+  },
+  "App.ReadKeyboardStateFailed": {
+    "zh": "无法读取浮绘的本地输入状态。",
+    "en": "Could not read the application's input state."
+  },
+  "App.UpdateKeyboardStateFailed": {
+    "zh": "无法更新浮绘的本地键盘状态。",
+    "en": "Could not update the application's keyboard state."
+  },
+  "App.ConflictingScopes": {
+    "zh": "--primary-screen 与 --all-screens 不能同时使用。",
+    "en": "--primary-screen and --all-screens cannot be used together."
+  },
+  "App.ProfileRequired": {
+    "zh": "--profile 需要指定目录。",
+    "en": "--profile requires a directory."
+  },
+  "Desktop.FocusLost": {
+    "zh": "已切换到其他应用，画布进入穿透模式。",
+    "en": "Switched to another application. The canvas is now in pass-through mode."
+  },
+  "Desktop.InputReleased": {
+    "zh": "已释放输入，画布进入穿透模式。",
+    "en": "Input released. The canvas is now in pass-through mode."
+  },
+  "Desktop.InputInterrupted": {
+    "zh": "输入接管已中断，画布进入穿透模式。请重新进入编辑。",
+    "en": "Input capture was interrupted. Re-enter edit mode to continue."
+  },
+  "Desktop.InputReleasedTitle": {
+    "zh": "浮绘 · 已释放输入",
+    "en": "FloatCanvas · Input released"
+  },
+  "Desktop.ToggleEditing": {
+    "zh": "编辑 / 穿透",
+    "en": "Edit / Pass through"
+  },
+  "Desktop.ToggleVisibility": {
+    "zh": "显示 / 隐藏画布",
+    "en": "Show / Hide canvas"
+  },
+  "Desktop.OpenProject": {
+    "zh": "打开工程",
+    "en": "Open project"
+  },
+  "Desktop.HotkeySettings": {
+    "zh": "快捷键设置",
+    "en": "Settings"
+  },
+  "Desktop.Exit": {
+    "zh": "退出浮绘",
+    "en": "Exit FloatCanvas"
+  },
+  "Desktop.ChooseOtherHotkey": {
+    "zh": "\n请在设置中选择其他快捷键。",
+    "en": "\nChoose a different shortcut in Settings."
+  },
+  "Welcome.Tagline": {
+    "zh": "在屏幕上画，也能随时回到手边的事。",
+    "en": "Draw on your screen and return to what you were doing."
+  },
+  "Welcome.Description": {
+    "zh": "穿透时标注仍然可见。你的画布会自动保留，也可以另存为可编辑工程。",
+    "en": "Annotations stay visible in pass-through mode. Your canvas is recovered automatically and can also be saved as an editable project."
+  },
+  "Welcome.Title": {
+    "zh": "浮绘 · 欢迎",
+    "en": "FloatCanvas · Welcome"
+  },
+  "Welcome.Start": {
+    "zh": "开始绘制",
+    "en": "Start drawing"
+  },
+  "Desktop.CaptureFirst": {
+    "zh": "请先点击截图，再选择截图范围。",
+    "en": "Choose Capture first, then select a region."
+  },
+  "Color.Blue": {
+    "zh": "蓝",
+    "en": "Blue"
+  },
+  "Color.Red": {
+    "zh": "红",
+    "en": "Red"
+  },
+  "Color.Yellow": {
+    "zh": "黄",
+    "en": "Yellow"
+  },
+  "Color.White": {
+    "zh": "白",
+    "en": "White"
+  },
+  "Color.Black": {
+    "zh": "黑",
+    "en": "Black"
+  },
+  "Toolbar.StrokeWidth": {
+    "zh": "画笔宽度",
+    "en": "Stroke width"
+  },
+  "Toolbar.Undo": {
+    "zh": "撤销 · Ctrl+Z",
+    "en": "Undo · Ctrl+Z"
+  },
+  "Toolbar.Redo": {
+    "zh": "重做 · Ctrl+Y",
+    "en": "Redo · Ctrl+Y"
+  },
+  "Toolbar.Image": {
+    "zh": "贴图",
+    "en": "Image"
+  },
+  "Toolbar.Capture": {
+    "zh": "截图",
+    "en": "Capture"
+  },
+  "Toolbar.SaveProject": {
+    "zh": "保存工程 · Ctrl+S",
+    "en": "Save project · Ctrl+S"
+  },
+  "Toolbar.Inspector": {
+    "zh": "属性与图层",
+    "en": "Properties and layers"
+  },
+  "Toolbar.PassThrough": {
+    "zh": "穿透 · Ctrl+Alt+F",
+    "en": "Pass through · Ctrl+Alt+F"
+  },
+  "Toolbar.More": {
+    "zh": "更多",
+    "en": "More"
+  },
+  "Menu.OpenProject": {
+    "zh": "打开工程…  Ctrl+O",
+    "en": "Open project…  Ctrl+O"
+  },
+  "Menu.SaveAs": {
+    "zh": "另存工程…  Ctrl+Shift+S",
+    "en": "Save project as…  Ctrl+Shift+S"
+  },
+  "Menu.ExportImage": {
+    "zh": "导出合成图片…",
+    "en": "Export composite image…"
+  },
+  "Menu.ExportTransparent": {
+    "zh": "导出透明标注…",
+    "en": "Export transparent annotations…"
+  },
+  "Menu.Copy": {
+    "zh": "复制  Ctrl+C",
+    "en": "Copy  Ctrl+C"
+  },
+  "Menu.Paste": {
+    "zh": "粘贴  Ctrl+V",
+    "en": "Paste  Ctrl+V"
+  },
+  "Menu.ReplaceImage": {
+    "zh": "替换选中图片…",
+    "en": "Replace selected image…"
+  },
+  "Menu.CapturePrimary": {
+    "zh": "截取主屏",
+    "en": "Capture primary screen"
+  },
+  "Menu.CaptureAll": {
+    "zh": "截取全部屏幕",
+    "en": "Capture all screens"
+  },
+  "Menu.ReturnLive": {
+    "zh": "返回实时画布",
+    "en": "Return to live canvas"
+  },
+  "Menu.ResumeCapture": {
+    "zh": "继续上一张截图",
+    "en": "Resume capture draft"
+  },
+  "Menu.MoveIntoView": {
+    "zh": "将标注移回可见屏幕",
+    "en": "Move annotations into view"
+  },
+  "Menu.Clear": {
+    "zh": "清空标注（可撤销）",
+    "en": "Clear annotations (undoable)"
+  },
+  "History.Clear": {
+    "zh": "清空画布",
+    "en": "Clear canvas"
+  },
+  "Menu.Settings": {
+    "zh": "快捷键与主题…",
+    "en": "Settings…"
+  },
+  "Toolbar.Opacity": {
+    "zh": "标注与贴图的整体透明度",
+    "en": "Overall annotation and image opacity"
+  },
+  "History.LayerOpacity": {
+    "zh": "调整图层透明度",
+    "en": "Change layer opacity"
+  },
+  "Toolbar.Freehand": {
+    "zh": "自由画笔",
+    "en": "Freehand"
+  },
+  "Toolbar.Title": {
+    "zh": "浮绘 · 工具条",
+    "en": "FloatCanvas · Toolbar"
+  },
+  "Tool.Select": {
+    "zh": "选择  V",
+    "en": "Select  V"
+  },
+  "Tool.Freehand": {
+    "zh": "自由画笔  B",
+    "en": "Freehand  B"
+  },
+  "Tool.Highlighter": {
+    "zh": "荧光笔",
+    "en": "Highlighter"
+  },
+  "Tool.Line": {
+    "zh": "直线  L",
+    "en": "Line  L"
+  },
+  "Tool.Arrow": {
+    "zh": "箭头  A",
+    "en": "Arrow  A"
+  },
+  "Tool.DoubleArrow": {
+    "zh": "双向箭头",
+    "en": "Double arrow"
+  },
+  "Tool.Rectangle": {
+    "zh": "矩形  R",
+    "en": "Rectangle  R"
+  },
+  "Tool.RoundedRectangle": {
+    "zh": "圆角矩形",
+    "en": "Rounded rectangle"
+  },
+  "Tool.Ellipse": {
+    "zh": "椭圆  O",
+    "en": "Ellipse  O"
+  },
+  "Tool.Triangle": {
+    "zh": "三角形",
+    "en": "Triangle"
+  },
+  "Tool.Text": {
+    "zh": "文字  T",
+    "en": "Text  T"
+  },
+  "Tool.Number": {
+    "zh": "序号  N",
+    "en": "Number  N"
+  },
+  "Tool.Eraser": {
+    "zh": "橡皮  E",
+    "en": "Object eraser  E"
+  },
+  "Tool.Crop": {
+    "zh": "裁剪",
+    "en": "Crop"
+  },
+  "Tool.Blur": {
+    "zh": "模糊",
+    "en": "Blur"
+  },
+  "Tool.Pixelate": {
+    "zh": "马赛克",
+    "en": "Pixelate"
+  },
+  "Tool.Redact": {
+    "zh": "实色遮盖",
+    "en": "Redact"
+  },
+  "Tool.CaptureRegion": {
+    "zh": "截图选区",
+    "en": "Capture region"
+  },
+  "Desktop.EnterEditFailed": {
+    "zh": "浮绘 · 未进入编辑",
+    "en": "FloatCanvas · Could not enter edit mode"
+  },
+  "Desktop.EditModePrefix": {
+    "zh": "编辑模式 · ",
+    "en": "Edit mode · "
+  },
+  "Desktop.SelectTool": {
+    "zh": "选择工具",
+    "en": "Select"
+  },
+  "Text.NumberTitle": {
+    "zh": "浮绘 · 编辑序号",
+    "en": "FloatCanvas · Edit number"
+  },
+  "Text.TextTitle": {
+    "zh": "浮绘 · 编辑文字",
+    "en": "FloatCanvas · Edit text"
+  },
+  "Text.Done": {
+    "zh": "完成  Ctrl+Enter",
+    "en": "Done  Ctrl+Enter"
+  },
+  "Text.InvalidNumber": {
+    "zh": "请输入 1 到 1000000 之间的整数序号。",
+    "en": "Enter a whole number from 1 to 1000000."
+  },
+  "Text.TargetMissing": {
+    "zh": "该元素已被删除。输入已保留；可撤销删除后重试，或取消本次编辑。",
+    "en": "This element was deleted. Your input has been kept. Undo the deletion and retry, or cancel this edit."
+  },
+  "Text.TargetTypeChanged": {
+    "zh": "元素类型已改变，无法提交此次编辑。输入已保留，请重新打开相应的编辑窗口。",
+    "en": "The element type has changed, so this edit cannot be applied. Your input has been kept. Reopen the appropriate editor."
+  },
+  "Text.TargetLocked": {
+    "zh": "该元素已被锁定。输入已保留，解锁后可以重试。",
+    "en": "This element is locked. Your input has been kept. Unlock the element and retry."
+  },
+  "Text.ActionInProgress": {
+    "zh": "请先结束画布上的操作。输入已保留。",
+    "en": "Finish the current canvas action first. Your input has been kept."
+  },
+  "Text.Busy": {
+    "zh": "文档正在处理，输入已保留。请稍后重试。",
+    "en": "The document is busy. Your input has been kept. Please retry when it is ready."
+  },
+  "Text.SessionChanged": {
+    "zh": "当前画布已切换。输入已保留；返回原画布后重试。",
+    "en": "The active canvas has changed. Your input has been kept. Return to the original canvas and retry."
+  },
+  "History.EditNumber": {
+    "zh": "编辑序号",
+    "en": "Edit number"
+  },
+  "History.EditText": {
+    "zh": "编辑文字",
+    "en": "Edit text"
+  },
+  "Desktop.ToolbarSaveFailed": {
+    "zh": "工具条位置未保存：",
+    "en": "Toolbar position was not saved: "
+  },
+  "History.MoveIntoView": {
+    "zh": "移回可见屏幕",
+    "en": "Move into view"
+  },
+  "Desktop.Busy": {
+    "zh": "正在处理图片或文件，请稍候。",
+    "en": "Processing an image or file. Please wait."
+  },
+  "Desktop.Cancelled": {
+    "zh": "操作已取消",
+    "en": "Operation cancelled"
+  },
+  "Settings.Hotkeys": {
+    "zh": "快捷键",
+    "en": "Keyboard shortcuts"
+  },
+  "Settings.ModifiersRequired": {
+    "zh": "请使用 Ctrl、Alt 或 Shift 组合键。",
+    "en": "Use a shortcut with Ctrl, Alt, or Shift."
+  },
+  "Settings.ToggleHotkey": {
+    "zh": "编辑 / 穿透：点击后按下组合键",
+    "en": "Edit / Pass through: click, then press a shortcut"
+  },
+  "Settings.HideHotkey": {
+    "zh": "隐藏 / 恢复：点击后按下组合键",
+    "en": "Hide / Restore: click, then press a shortcut"
+  },
+  "Settings.Theme": {
+    "zh": "主题",
+    "en": "Theme"
+  },
+  "Settings.SystemTheme": {
+    "zh": "跟随系统",
+    "en": "Use system theme"
+  },
+  "Settings.LightTheme": {
+    "zh": "浅色",
+    "en": "Light"
+  },
+  "Settings.DarkTheme": {
+    "zh": "深色",
+    "en": "Dark"
+  },
+  "Settings.Scope": {
+    "zh": "绘图范围",
+    "en": "Drawing scope"
+  },
+  "Settings.PrimaryOnly": {
+    "zh": "仅主屏",
+    "en": "Primary screen only"
+  },
+  "Settings.AllScreens": {
+    "zh": "全部屏幕",
+    "en": "All screens"
+  },
+  "Settings.ScopeOverrideHint": {
+    "zh": "启动参数优先；保存的范围在不带屏幕参数启动时生效。",
+    "en": "The startup flag takes priority. Launch without a screen flag to use the saved scope."
+  },
+  "Settings.ScopeRestartHint": {
+    "zh": "范围修改在下次启动生效。",
+    "en": "Scope changes take effect after restarting FloatCanvas."
+  },
+  "Settings.Title": {
+    "zh": "浮绘 · 设置",
+    "en": "FloatCanvas · Settings"
+  },
+  "Settings.Save": {
+    "zh": "保存设置",
+    "en": "Save settings"
+  },
+  "Desktop.TrayModeSuffix": {
+    "zh": " 编辑 / 穿透",
+    "en": " Edit / Pass through"
+  },
+  "Settings.Saved": {
+    "zh": "设置已保存。",
+    "en": "Settings saved."
+  },
+  "Settings.SavedScopeOverride": {
+    "zh": "设置已保存 · 不带屏幕参数启动时应用所选范围。",
+    "en": "Settings saved. Launch without a screen flag to apply the selected scope."
+  },
+  "Settings.SavedScopeRestart": {
+    "zh": "设置已保存 · 绘图范围下次启动生效。",
+    "en": "Settings saved. The drawing scope will change after restarting FloatCanvas."
+  },
+  "Recovery.LoadFailedArchived": {
+    "zh": "恢复画布失败，原恢复世代已隔离保存在：\n",
+    "en": "Could not recover the canvas. Original recovery files were preserved in:\n"
+  },
+  "Recovery.LoadFailedPreserved": {
+    "zh": "恢复画布失败，且无法安全隔离原恢复文件。自动恢复写入已暂停；原文件尚未被覆盖。\n",
+    "en": "Could not recover or safely archive the original recovery files. Automatic recovery writes are paused; the originals have been preserved.\n"
+  },
+  "Recovery.PreviousLoaded": {
+    "zh": "已从前代恢复画布；原恢复世代隔离于 ",
+    "en": "Recovered the previous canvas. Original recovery files were preserved in "
+  },
+  "Recovery.PreviousArchiveFailed": {
+    "zh": "已从前代恢复画布，但无法隔离原恢复世代。自动恢复写入已暂停，原文件不会被覆盖。\n",
+    "en": "Recovered the previous canvas, but could not archive the original files. Automatic recovery writes are paused; the originals will not be overwritten.\n"
+  },
+  "Recovery.SaveFailed": {
+    "zh": "自动恢复保存失败：",
+    "en": "Automatic recovery save failed: "
+  },
+  "Recovery.ExitSaveFailed": {
+    "zh": "退出前保存恢复数据失败。画布仍在，修复写入问题后可重试退出。\n",
+    "en": "Could not save recovery data before exiting. The canvas is still available; resolve the write error and try exiting again.\n"
+  },
+  "Project.OpenTitle": {
+    "zh": "打开浮绘工程",
+    "en": "Open FloatCanvas project"
+  },
+  "Project.Filter": {
+    "zh": "浮绘工程 (*.floatcanvas)|*.floatcanvas",
+    "en": "FloatCanvas project (*.floatcanvas)|*.floatcanvas"
+  },
+  "Project.ReplaceCurrent": {
+    "zh": "打开工程将替换当前画布",
+    "en": "Opening a project will replace the current canvas"
+  },
+  "Project.OpenChanged": {
+    "zh": "画布已变化，本次打开已取消。再次打开即可。 ",
+    "en": "The canvas changed, so opening was cancelled. Try opening the project again."
+  },
+  "Project.ReplaceCapture": {
+    "zh": "打开工程将替换现有截图草稿",
+    "en": "Opening a project will replace the current capture draft"
+  },
+  "Project.ReplaceLive": {
+    "zh": "打开工程将替换现有实时画布",
+    "en": "Opening a project will replace the live canvas"
+  },
+  "Project.OpenedPassThrough": {
+    "zh": "工程已打开；已切换到其他应用，保持穿透模式。",
+    "en": "Project opened. Another application is active; the canvas remains in pass-through mode."
+  },
+  "Project.OpenedPrefix": {
+    "zh": "已打开 ",
+    "en": "Opened "
+  },
+  "Project.OpenFailed": {
+    "zh": "打开工程失败，当前画布已保留。\n",
+    "en": "Could not open the project. The current canvas has been preserved.\n"
+  },
+  "Project.SaveFailed": {
+    "zh": "保存工程失败，画布仍可继续编辑。\n",
+    "en": "Could not save the project. You can continue editing the canvas.\n"
+  },
+  "Project.SaveTitle": {
+    "zh": "保存可编辑的浮绘工程",
+    "en": "Save editable FloatCanvas project"
+  },
+  "Project.FilePrefix": {
+    "zh": "浮绘-",
+    "en": "FloatCanvas-"
+  },
+  "Project.SavedPrefix": {
+    "zh": "工程已保存 · ",
+    "en": "Project saved · "
+  },
+  "Project.ReplaceQuestion": {
+    "zh": "。\n是否先另存当前内容？\n是：另存；否：放弃；取消：保留当前画布。",
+    "en": ".\nSave the current canvas as a separate project first?\nYes: Save as; No: Discard; Cancel: Keep the current canvas."
+  },
+  "Export.TransparentTitle": {
+    "zh": "导出透明标注 PNG",
+    "en": "Export transparent annotations as PNG"
+  },
+  "Export.CompositeTitle": {
+    "zh": "导出合成图片",
+    "en": "Export composite image"
+  },
+  "Export.PngFilter": {
+    "zh": "PNG 图片 (*.png)|*.png",
+    "en": "PNG image (*.png)|*.png"
+  },
+  "Export.ImageFilter": {
+    "zh": "PNG 图片 (*.png)|*.png|JPEG 图片 (*.jpg)|*.jpg",
+    "en": "PNG image (*.png)|*.png|JPEG image (*.jpg)|*.jpg"
+  },
+  "Export.SavedPrefix": {
+    "zh": "图片已导出 · ",
+    "en": "Image exported · "
+  },
+  "Export.Failed": {
+    "zh": "导出失败，画布仍可继续编辑。\n",
+    "en": "Export failed. You can continue editing the canvas.\n"
+  },
+  "Clipboard.CopiedObjects": {
+    "zh": "已复制可编辑对象及透明图片。",
+    "en": "Copied editable objects and a transparent image."
+  },
+  "Clipboard.CopiedImage": {
+    "zh": "已复制合成图片。",
+    "en": "Copied composite image."
+  },
+  "Clipboard.CopyFailed": {
+    "zh": "复制失败。\n",
+    "en": "Copy failed.\n"
+  },
+  "Clipboard.Empty": {
+    "zh": "剪贴板没有图片或浮绘对象。",
+    "en": "The clipboard contains no image or FloatCanvas objects."
+  },
+  "Clipboard.InvalidObjects": {
+    "zh": "剪贴板对象内容无效或过大。",
+    "en": "Clipboard object data is invalid or too large."
+  },
+  "Clipboard.NullObjects": {
+    "zh": "剪贴板对象为空。",
+    "en": "Clipboard object data is empty."
+  },
+  "Clipboard.InvalidVersion": {
+    "zh": "剪贴板对象版本无效。",
+    "en": "The clipboard object version is not supported."
+  },
+  "Clipboard.InvalidAsset": {
+    "zh": "剪贴板资源校验失败。",
+    "en": "Clipboard asset validation failed."
+  },
+  "History.Paste": {
+    "zh": "粘贴对象",
+    "en": "Paste objects"
+  },
+  "Clipboard.PasteFailed": {
+    "zh": "粘贴失败，原画布已保留。\n",
+    "en": "Paste failed. The original canvas has been preserved.\n"
+  },
+  "Image.ReplaceTitle": {
+    "zh": "替换选中的图片",
+    "en": "Replace selected image"
+  },
+  "Image.ImportTitle": {
+    "zh": "导入图片",
+    "en": "Import images"
+  },
+  "Image.Filter": {
+    "zh": "图片 (*.png;*.jpg;*.jpeg;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.webp",
+    "en": "Images (*.png;*.jpg;*.jpeg;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.webp"
+  },
+  "Image.SelectFirst": {
+    "zh": "请先选中一张可编辑图片。",
+    "en": "Select one editable image first."
+  },
+  "Image.ImportChanged": {
+    "zh": "画布或选择已变化，本次导入已取消。",
+    "en": "The canvas or selection changed, so importing was cancelled."
+  },
+  "Image.ImportFailed": {
+    "zh": "导入图片失败，原画布已保留。\n",
+    "en": "Could not import the image. The original canvas has been preserved.\n"
+  },
+  "History.ReplaceImage": {
+    "zh": "替换图片",
+    "en": "Replace image"
+  },
+  "Image.Replaced": {
+    "zh": "图片已替换，位置与效果已保留。",
+    "en": "Image replaced. Its position and effects were preserved."
+  },
+  "Capture.ReplaceDraft": {
+    "zh": "开始新截图将替换现有截图草稿",
+    "en": "A new capture will replace the current capture draft"
+  },
+  "Capture.FocusLost": {
+    "zh": "已切换到其他应用，截图草稿已保留，可从更多菜单继续编辑。",
+    "en": "Switched to another application. The capture draft is preserved; resume it from More."
+  },
+  "Capture.SelectRegion": {
+    "zh": "拖动选择截图范围；Esc 返回实时画布并保留草稿。",
+    "en": "Drag to select a capture region. Esc returns to the live canvas and preserves the draft."
+  },
+  "Capture.PrimaryFrozen": {
+    "zh": "主屏已冻结，可继续编辑。",
+    "en": "Primary screen frozen. You can continue editing."
+  },
+  "Capture.AllFrozen": {
+    "zh": "全部屏幕已冻结，可继续编辑。",
+    "en": "All screens frozen. You can continue editing."
+  },
+  "Capture.Failed": {
+    "zh": "截图失败，实时画布和原截图草稿已保留。\n",
+    "en": "Capture failed. The live canvas and original capture draft have been preserved.\n"
+  },
+  "History.CaptureRegion": {
+    "zh": "设置截图范围",
+    "en": "Set capture region"
+  },
+  "Capture.RegionSelected": {
+    "zh": "截图范围已确定，可继续编辑或导出。",
+    "en": "Capture region selected. Continue editing or export the image."
+  },
+  "Capture.ReturnedLive": {
+    "zh": "实时画布 · 截图草稿已保留。",
+    "en": "Live canvas · Capture draft preserved."
+  },
+  "Capture.NoDraft": {
+    "zh": "暂无截图草稿。",
+    "en": "No capture draft is available."
+  },
+  "Capture.Resumed": {
+    "zh": "已恢复截图草稿。",
+    "en": "Capture draft resumed."
+  },
+  "Capture.ProtectedRegions": {
+    "zh": "部分系统保护区域已遮盖，其余截图可正常编辑。",
+    "en": "Some protected areas were masked. The rest of the capture can be edited normally."
+  },
+  "Welcome.Shortcuts": {
+    "zh": "{0}  编辑 / 穿透\n{1}  隐藏 / 恢复\nEsc  取消操作或返回穿透",
+    "en": "{0}  Edit / Pass through\n{1}  Hide / Restore\nEsc  Cancel or return to pass-through mode"
+  },
+  "Settings.CurrentScope": {
+    "zh": "当前：{0}。",
+    "en": "Current: {0}. "
+  },
+  "Image.Imported": {
+    "zh": "已导入 {0} 张图片。",
+    "en": "Imported {0} image(s)."
+  },
+  "Settings.Language": {
+    "zh": "界面语言 / Language",
+    "en": "Language / 界面语言"
+  },
+  "Settings.AutomaticLanguage": {
+    "zh": "自动（跟随 Windows）",
+    "en": "Automatic (Windows)"
+  },
+  "Settings.ChineseLanguage": {
+    "zh": "简体中文",
+    "en": "简体中文"
+  },
+  "Settings.EnglishLanguage": {
+    "zh": "English",
+    "en": "English"
+  },
+  "Settings.LanguageRestartHint": {
+    "zh": "语言修改在下次启动生效，不会改变输入法或画布内容。",
+    "en": "Language changes take effect after restarting FloatCanvas. Your input method and canvas content are unaffected."
+  },
+  "Settings.LanguageSaved": {
+    "zh": "设置已保存 · 语言修改在下次启动生效。",
+    "en": "Settings saved. The language will change after restarting FloatCanvas."
+  }
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>浮绘 FloatCanvas</title>
+  <metadata>Original FloatCanvas artwork. License: MIT.</metadata>
+  <rect x="40" y="66" width="176" height="164" rx="36" fill="#B9DDFF" transform="rotate(-8 128 148)"/>
+  <rect x="40" y="28" width="176" height="176" rx="36" fill="#2383E2"/>
+  <path d="M78 139 C91 100 101 156 121 118 C138 87 151 88 174 103" fill="none" stroke="#FFFFFF" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

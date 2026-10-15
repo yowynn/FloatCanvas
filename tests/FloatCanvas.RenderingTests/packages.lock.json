@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "HarfBuzzSharp": {
+        "type": "Transitive",
+        "resolved": "14.2.1.301",
+        "contentHash": "FNlv2OCprGHp3EcaZ9Fc2O3ojl7sGHg418Ey+8g/UwKkPGgBUfdWuhdVOH8pB0wkVkMsFOZH7dr4iOFtVrB88Q==",
+        "dependencies": {
+          "HarfBuzzSharp.NativeAssets.Win32": "14.2.1.301",
+          "HarfBuzzSharp.NativeAssets.macOS": "14.2.1.301"
+        }
+      },
+      "HarfBuzzSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "14.2.1.301",
+        "contentHash": "NHHoxkjGkU6BnWyksKjM7TrIReXzpgXuss+ahhUgby0oJuYR9/HaxkfezYe3abpmWDN1PYWM5SBZWob3TzpkKA=="
+      },
+      "HarfBuzzSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "14.2.1.301",
+        "contentHash": "mL1atDEKtJSqutOFjLP/hiA8rTGqOQCHBpfkG3rXnTFJCqN94oAKhR8a7+bhxxxvSgj4soJXUBICSYGte5odNA=="
+      },
+      "SkiaSharp": {
+        "type": "Transitive",
+        "resolved": "4.153.1",
+        "contentHash": "TghYLOUaP3q6rTjQw7U9uQaaXh8lEs9rfA1U7/VtmyAptVDtj/SmjtcWzFWmcC/VMWxe3QgbV9uyvqDL7ySFtQ==",
+        "dependencies": {
+          "SkiaSharp.NativeAssets.Win32": "4.153.1",
+          "SkiaSharp.NativeAssets.macOS": "4.153.1"
+        }
+      },
+      "SkiaSharp.HarfBuzz": {
+        "type": "Transitive",
+        "resolved": "4.153.1",
+        "contentHash": "57/8+VBQPSltb5MKYIlm0mn7BSoCci7Yq2ffIJSr5nK1fM0NAIIpO6SQVmUXTP9BpZBxa/oaje5odQHyjAJBlQ==",
+        "dependencies": {
+          "HarfBuzzSharp": "14.2.1.301",
+          "SkiaSharp": "4.153.1"
+        }
+      },
+      "SkiaSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "4.153.1",
+        "contentHash": "YTojWeWIhnpF7uC8vpMxB5wRONKkDB2t3r/nNPA3DL2pgj9fqMXRevA/rIanYazWnco4jo1ufgp3HkXuh1Tz8A=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "4.153.1",
+        "contentHash": "Yqg6rChTVh0BUE8QQxtOA3uUBnihfgID4yex/AvDa0+os2bVcBjmI3Qj9tnOB+R1hd/Jry1Gwl8qw5JI9HZG8Q=="
+      },
+      "floatcanvas.core": {
+        "type": "Project",
+        "dependencies": {
+          "FloatCanvas.Localization": "[1.0.0, )"
+        }
+      },
+      "floatcanvas.localization": {
+        "type": "Project"
+      },
+      "floatcanvas.rendering": {
+        "type": "Project",
+        "dependencies": {
+          "FloatCanvas.Core": "[1.0.0, )",
+          "FloatCanvas.Localization": "[1.0.0, )",
+          "SkiaSharp": "[4.153.1, )",
+          "SkiaSharp.HarfBuzz": "[4.153.1, )"
+        }
+      }
+    }
+  }
+}

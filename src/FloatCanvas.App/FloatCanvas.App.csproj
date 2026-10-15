@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\FloatCanvas.ico</ApplicationIcon>
+    <AssemblyName>FloatCanvas</AssemblyName>
+    <Product>浮绘 FloatCanvas</Product>
+    <Description>可编辑的 Windows 屏幕标注画布</Description>
+    <Version>0.1.1-preview.4</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\FloatCanvas.ico" />
+    <ProjectReference Include="../FloatCanvas.Localization/FloatCanvas.Localization.csproj" />
+    <ProjectReference Include="../FloatCanvas.Core/FloatCanvas.Core.csproj" />
+    <ProjectReference Include="../FloatCanvas.Rendering/FloatCanvas.Rendering.csproj" />
+    <ProjectReference Include="../FloatCanvas.Storage/FloatCanvas.Storage.csproj" />
+    <ProjectReference Include="../FloatCanvas.Windows/FloatCanvas.Windows.csproj" />
+  </ItemGroup>
+</Project>

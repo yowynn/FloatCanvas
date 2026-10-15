@@ -1,0 +1,442 @@
+{
+  "Inspector.Title": {
+    "zh": "浮绘 · 属性与图层",
+    "en": "FloatCanvas · Properties and layers"
+  },
+  "Inspector.Heading": {
+    "zh": "属性与图层",
+    "en": "Properties and layers"
+  },
+  "Inspector.KeepAspect": {
+    "zh": "等比缩放",
+    "en": "Keep aspect ratio"
+  },
+  "Inspector.GeometryHint": {
+    "zh": "X/Y 为屏幕外接框左上角；宽高沿元素自身方向且不含描边；角度为元素旋转。",
+    "en": "X/Y mark the top-left of the screen bounding box. Width and height follow the element's own axes and exclude its stroke. Angle controls rotation."
+  },
+  "Inspector.WidthShort": {
+    "zh": "宽",
+    "en": "Width"
+  },
+  "Inspector.HeightShort": {
+    "zh": "高",
+    "en": "Height"
+  },
+  "Inspector.AngleDegrees": {
+    "zh": "角度 °",
+    "en": "Angle °"
+  },
+  "Inspector.StrokeWidth": {
+    "zh": "线宽",
+    "en": "Line width"
+  },
+  "Inspector.ArrowFilledTriangle": {
+    "zh": "实心三角",
+    "en": "Filled triangle"
+  },
+  "Inspector.ArrowOpen": {
+    "zh": "开放箭头",
+    "en": "Open arrowhead"
+  },
+  "Inspector.ArrowDiamond": {
+    "zh": "菱形",
+    "en": "Diamond"
+  },
+  "Inspector.ArrowStyle": {
+    "zh": "箭头样式",
+    "en": "Arrowhead style"
+  },
+  "Inspector.DraftRetained": {
+    "zh": "有未应用输入，隐藏面板后仍会保留。",
+    "en": "Unapplied changes are kept when this panel is hidden."
+  },
+  "Inspector.ArrowHeadSize": {
+    "zh": "头部尺寸",
+    "en": "Head size"
+  },
+  "Inspector.ArrowHeadSizeHint": {
+    "zh": "头部尺寸 0 表示随线宽自动调整。",
+    "en": "Use 0 to size arrowheads automatically from the stroke width."
+  },
+  "Inspector.Stroke": {
+    "zh": "描边",
+    "en": "Stroke"
+  },
+  "Inspector.Fill": {
+    "zh": "填充",
+    "en": "Fill"
+  },
+  "Inspector.ColorHint": {
+    "zh": "颜色：#AARRGGBB；透明填充：#00000000",
+    "en": "Colors: #AARRGGBB; transparent fill: #00000000"
+  },
+  "Inspector.OpacityPercent": {
+    "zh": "透明度 %",
+    "en": "Opacity %"
+  },
+  "Inspector.FontSize": {
+    "zh": "字号",
+    "en": "Font size"
+  },
+  "Inspector.FontFamily": {
+    "zh": "字体",
+    "en": "Font"
+  },
+  "Inspector.AlignLeft": {
+    "zh": "左对齐",
+    "en": "Align left"
+  },
+  "Inspector.AlignCenter": {
+    "zh": "居中对齐",
+    "en": "Align center"
+  },
+  "Inspector.AlignRight": {
+    "zh": "右对齐",
+    "en": "Align right"
+  },
+  "Inspector.TextAlignment": {
+    "zh": "文字对齐",
+    "en": "Text alignment"
+  },
+  "Inspector.TextContent": {
+    "zh": "文字内容",
+    "en": "Text"
+  },
+  "Inspector.Apply": {
+    "zh": "应用属性",
+    "en": "Apply properties"
+  },
+  "Inspector.ReloadSelection": {
+    "zh": "重载当前选择",
+    "en": "Reload selection"
+  },
+  "Inspector.BusyDraftRetained": {
+    "zh": "文档正在处理，未应用输入已保留。",
+    "en": "The document is busy. Your unapplied changes have been kept."
+  },
+  "Inspector.Layers": {
+    "zh": "图层",
+    "en": "Layers"
+  },
+  "Inspector.LayersHint": {
+    "zh": "上方在前。可在此选中隐藏或锁定的元素。",
+    "en": "Top rows appear in front. Hidden and locked elements can be selected here."
+  },
+  "Inspector.LayerList": {
+    "zh": "图层列表",
+    "en": "Layer list"
+  },
+  "Inspector.BringForward": {
+    "zh": "前移",
+    "en": "Bring forward"
+  },
+  "Inspector.SendBackward": {
+    "zh": "后移",
+    "en": "Send backward"
+  },
+  "Inspector.BringToFront": {
+    "zh": "置顶",
+    "en": "Bring to front"
+  },
+  "Inspector.SendToBack": {
+    "zh": "置底",
+    "en": "Send to back"
+  },
+  "Inspector.Duplicate": {
+    "zh": "复制",
+    "en": "Duplicate"
+  },
+  "Inspector.Delete": {
+    "zh": "删除",
+    "en": "Delete"
+  },
+  "Inspector.BusySelectionRetained": {
+    "zh": "文档正在处理，当前选择与未应用输入已保留。",
+    "en": "The document is busy. Your selection and unapplied changes have been kept."
+  },
+  "Inspector.FinishBeforeLayerSelection": {
+    "zh": "请先结束画布上的操作，再选择图层。",
+    "en": "Finish the current canvas action before selecting a layer."
+  },
+  "Inspector.SelectionChangedDraftRetained": {
+    "zh": "已保留未应用输入；当前选择已改变。",
+    "en": "Your selection has changed. Unapplied changes have been kept."
+  },
+  "Inspector.ReturnOrReload": {
+    "zh": "返回原元素后应用，或点击“重载当前选择”载入新元素。",
+    "en": "Return to the original element to apply your changes, or choose Reload selection to load the new element."
+  },
+  "Inspector.SelectElement": {
+    "zh": "选择一个元素以编辑属性。",
+    "en": "Select an element to edit its properties."
+  },
+  "Inspector.LockedSuffix": {
+    "zh": " · 已锁定",
+    "en": " · Locked"
+  },
+  "Inspector.HiddenSuffix": {
+    "zh": " · 已隐藏",
+    "en": " · Hidden"
+  },
+  "Inspector.SelectHiddenOrLocked": {
+    "zh": "可使用图层列表选择隐藏或锁定的元素。",
+    "en": "Use the layer list to select hidden or locked elements."
+  },
+  "Inspector.UnlockToEdit": {
+    "zh": "在图层列表解锁后可修改属性。",
+    "en": "Unlock this element in the layer list to edit its properties."
+  },
+  "Inspector.ApplyHint": {
+    "zh": "修改后点击“应用属性”；一次应用可以整体撤销。",
+    "en": "Choose Apply properties when ready. All changes in one application can be undone together."
+  },
+  "Inspector.SelectionChanged": {
+    "zh": "当前选择已改变。返回原元素后应用，或重载当前选择。",
+    "en": "Your selection has changed. Return to the original element to apply your changes, or reload the selection."
+  },
+  "Inspector.ElementLocked": {
+    "zh": "元素已锁定，请先在图层列表解锁。",
+    "en": "This element is locked. Unlock it in the layer list first."
+  },
+  "Inspector.FinishDrawing": {
+    "zh": "请先结束画布上的绘制或拖动。",
+    "en": "Finish drawing or dragging on the canvas first."
+  },
+  "Inspector.NoChanges": {
+    "zh": "没有未应用的属性。",
+    "en": "There are no unapplied changes."
+  },
+  "Inspector.ElementChanged": {
+    "zh": "元素在输入期间已改变。输入已保留，请重载当前选择后重新应用。",
+    "en": "The element changed while you were editing. Your input has been kept. Reload the selection before applying again."
+  },
+  "Inspector.InvalidArrowStyle": {
+    "zh": "请选择有效的箭头样式。",
+    "en": "Choose a valid arrowhead style."
+  },
+  "Inspector.ArrowSize": {
+    "zh": "箭头尺寸",
+    "en": "Arrowhead size"
+  },
+  "Inspector.Opacity": {
+    "zh": "透明度",
+    "en": "Opacity"
+  },
+  "Inspector.InvalidFontFamily": {
+    "zh": "字体名称需要为 1 到 200 个字符。",
+    "en": "The font name must contain 1 to 200 characters."
+  },
+  "Inspector.InvalidNumber": {
+    "zh": "序号需要是 1 到 1000000 的整数。",
+    "en": "The number must be an integer from 1 to 1000000."
+  },
+  "Inspector.Angle": {
+    "zh": "角度",
+    "en": "Angle"
+  },
+  "Inspector.ZeroSize": {
+    "zh": "零几何尺寸方向无法缩放。请先调整路径或线条端点。",
+    "en": "An axis with zero geometric size cannot be scaled. Adjust the path or line endpoints first."
+  },
+  "Inspector.Width": {
+    "zh": "宽度",
+    "en": "Width"
+  },
+  "Inspector.Height": {
+    "zh": "高度",
+    "en": "Height"
+  },
+  "Inspector.AspectMismatch": {
+    "zh": "等比缩放时宽高比例不一致。只修改宽或高，或关闭等比缩放。",
+    "en": "The width and height ratios do not match. Change only one dimension, or turn off Keep aspect ratio."
+  },
+  "Inspector.History.EditProperties": {
+    "zh": "修改元素属性",
+    "en": "Edit element properties"
+  },
+  "Inspector.PropertiesApplied": {
+    "zh": "属性已应用，可使用撤销恢复。",
+    "en": "Properties applied. You can undo this change."
+  },
+  "Inspector.ShowLayer": {
+    "zh": "显示图层",
+    "en": "Show layer"
+  },
+  "Inspector.HideLayer": {
+    "zh": "隐藏图层",
+    "en": "Hide layer"
+  },
+  "Inspector.LockLayer": {
+    "zh": "锁定图层",
+    "en": "Lock layer"
+  },
+  "Inspector.UnlockLayer": {
+    "zh": "解锁图层",
+    "en": "Unlock layer"
+  },
+  "Inspector.BusyLayersRetained": {
+    "zh": "文档正在处理，图层状态与未应用输入已保留。",
+    "en": "The document is busy. Layer states and unapplied changes have been kept."
+  },
+  "Inspector.DocumentChanged": {
+    "zh": "文档已切换，请刷新图层列表。",
+    "en": "The document has changed. Refresh the layer list."
+  },
+  "Inspector.FinishCanvasAction": {
+    "zh": "请先结束画布上的操作。",
+    "en": "Finish the current canvas action first."
+  },
+  "Inspector.LayerMissing": {
+    "zh": "图层已不存在。",
+    "en": "This layer no longer exists."
+  },
+  "Inspector.SelectUnlockedLayer": {
+    "zh": "请先选择未锁定的图层。",
+    "en": "Select an unlocked layer first."
+  },
+  "Inspector.FontFamilyName": {
+    "zh": "字体名称",
+    "en": "Font name"
+  },
+  "Inspector.TextColorHint": {
+    "zh": "颜色：#AARRGGBB 或 #RRGGBB",
+    "en": "Colors: #AARRGGBB or #RRGGBB"
+  },
+  "Editor.ElementKind.Freehand": {
+    "zh": "自由曲线",
+    "en": "Freehand"
+  },
+  "Editor.ElementKind.Highlighter": {
+    "zh": "荧光笔",
+    "en": "Highlighter"
+  },
+  "Editor.ElementKind.Line": {
+    "zh": "直线",
+    "en": "Line"
+  },
+  "Editor.ElementKind.Arrow": {
+    "zh": "箭头",
+    "en": "Arrow"
+  },
+  "Editor.ElementKind.DoubleArrow": {
+    "zh": "双向箭头",
+    "en": "Double-headed arrow"
+  },
+  "Editor.ElementKind.Rectangle": {
+    "zh": "矩形",
+    "en": "Rectangle"
+  },
+  "Editor.ElementKind.RoundedRectangle": {
+    "zh": "圆角矩形",
+    "en": "Rounded rectangle"
+  },
+  "Editor.ElementKind.Ellipse": {
+    "zh": "椭圆",
+    "en": "Ellipse"
+  },
+  "Editor.ElementKind.Triangle": {
+    "zh": "三角形",
+    "en": "Triangle"
+  },
+  "Editor.ElementKind.Text": {
+    "zh": "文字",
+    "en": "Text"
+  },
+  "Editor.ElementKind.Number": {
+    "zh": "序号",
+    "en": "Number"
+  },
+  "Editor.ElementKind.Image": {
+    "zh": "图片",
+    "en": "Image"
+  },
+  "Editor.ElementKind.Unknown": {
+    "zh": "元素",
+    "en": "Element"
+  },
+  "Editor.ImportImageHint": {
+    "zh": "使用粘贴、拖入或导入图片。",
+    "en": "Paste, drop, or import an image."
+  },
+  "Editor.CropImageHint": {
+    "zh": "请先选中图片，或进入冻结截图后再裁剪。",
+    "en": "Select an image or freeze a screenshot before cropping."
+  },
+  "Editor.ImageEffectHint": {
+    "zh": "请先选中图片，或进入冻结截图后再使用此工具。",
+    "en": "Select an image or freeze a screenshot before using this tool."
+  },
+  "Editor.History.Erase": {
+    "zh": "擦除元素",
+    "en": "Erase elements"
+  },
+  "Editor.History.CropCanvas": {
+    "zh": "裁剪画布",
+    "en": "Crop canvas"
+  },
+  "Editor.History.AdjustEndpoint": {
+    "zh": "调整端点",
+    "en": "Adjust endpoint"
+  },
+  "Editor.History.Transform": {
+    "zh": "变换元素",
+    "en": "Transform elements"
+  },
+  "Editor.History.AddImageEffect": {
+    "zh": "添加图片效果",
+    "en": "Add image effect"
+  },
+  "Editor.InvalidImage": {
+    "zh": "图片尺寸或变换无效，无法编辑此图片。",
+    "en": "This image cannot be edited because its size or transform is invalid."
+  },
+  "Editor.History.CropImage": {
+    "zh": "裁剪图片",
+    "en": "Crop image"
+  },
+  "Inspector.MultipleSelection": {
+    "zh": "已选择 {0} 个元素；属性面板编辑单个元素。",
+    "en": "{0} elements selected. Select one element to edit its properties."
+  },
+  "Inspector.ElementSelection": {
+    "zh": "{0}{1}{2}",
+    "en": "{0}{1}{2}"
+  },
+  "Inspector.ShowElement": {
+    "zh": "显示 {0}",
+    "en": "Show {0}"
+  },
+  "Inspector.LockElement": {
+    "zh": "锁定 {0}",
+    "en": "Lock {0}"
+  },
+  "Inspector.NumberRange": {
+    "zh": "{0}需要是 {1} 到 {2} 的有效数字。",
+    "en": "{0} must be a valid number from {1} to {2}."
+  },
+  "Inspector.ColorFormat": {
+    "zh": "{0}颜色需要为 #AARRGGBB 或 #RRGGBB。",
+    "en": "{0} color must use #AARRGGBB or #RRGGBB."
+  },
+  "Inspector.NumberName": {
+    "zh": "{0} {1}",
+    "en": "{0} {1}"
+  },
+  "Inspector.TextName": {
+    "zh": "{0} · {1}",
+    "en": "{0} · {1}"
+  },
+  "Editor.ImageTargetLocked": {
+    "zh": "选中的图片已锁定，请先解锁后再裁剪或添加效果。",
+    "en": "The selected image is locked. Unlock it before cropping or applying image effects."
+  },
+  "Editor.SelectSingleImage": {
+    "zh": "请只选中一张图片后再裁剪或添加效果。",
+    "en": "Select a single image before cropping or applying image effects."
+  },
+  "Editor.History.Draw": {
+    "zh": "绘制{0}",
+    "en": "Draw {0}"
+  }
+}

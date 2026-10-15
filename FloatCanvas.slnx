@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FloatCanvas.App/FloatCanvas.App.csproj" />
+    <Project Path="src/FloatCanvas.Core/FloatCanvas.Core.csproj" />
+    <Project Path="src/FloatCanvas.Localization/FloatCanvas.Localization.csproj" />
+    <Project Path="src/FloatCanvas.Rendering/FloatCanvas.Rendering.csproj" />
+    <Project Path="src/FloatCanvas.Storage/FloatCanvas.Storage.csproj" />
+    <Project Path="src/FloatCanvas.Windows/FloatCanvas.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FloatCanvas.PlatformTests/FloatCanvas.PlatformTests.csproj" />
+    <Project Path="tests/FloatCanvas.CoreTests/FloatCanvas.CoreTests.csproj" />
+    <Project Path="tests/FloatCanvas.RenderingTests/FloatCanvas.RenderingTests.csproj" />
+    <Project Path="tests/FloatCanvas.StorageTests/FloatCanvas.StorageTests.csproj" />
+    <Project Path="tests/FloatCanvas.AppTests/FloatCanvas.AppTests.csproj" />
+    <Project Path="tests/FloatCanvas.WindowsTests/FloatCanvas.WindowsTests.csproj" />
+    <Project Path="tests/FloatCanvas.SessionTests/FloatCanvas.SessionTests.csproj" />
+    <Project Path="tests/FloatCanvas.InputTests/FloatCanvas.InputTests.csproj" />
+    <Project Path="tests/FloatCanvas.RecoveryProbe/FloatCanvas.RecoveryProbe.csproj" />
+    <Project Path="tests/FloatCanvas.RenderingBenchmarks/FloatCanvas.RenderingBenchmarks.csproj" />
+  </Folder>
+</Solution>

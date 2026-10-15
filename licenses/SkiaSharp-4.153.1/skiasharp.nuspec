@@ -1,0 +1,99 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>SkiaSharp</id>
+    <version>4.153.1</version>
+    <authors>Microsoft</authors>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <icon>icon.png</icon>
+    <readme>README.md</readme>
+    <projectUrl>https://go.microsoft.com/fwlink/?linkid=868515</projectUrl>
+    <description>SkiaSharp is a cross-platform 2D graphics API for .NET platforms based on Google's Skia Graphics Library.
+It provides a comprehensive 2D API that can be used across mobile, server and desktop models to render images.</description>
+    <releaseNotes>Please visit https://go.microsoft.com/fwlink/?linkid=868517 to view the release notes.</releaseNotes>
+    <copyright>© Microsoft Corporation. All rights reserved.</copyright>
+    <tags>graphics cross-platform skiasharp skia ios android linux windows tvos macos tizen</tags>
+    <repository type="git" url="https://go.microsoft.com/fwlink/?linkid=868515" branch="release/4.153.1" commit="4783f51448f9b070dda4f87b83e941c9599e466e" />
+    <dependencies>
+      <group targetFramework="net10.0">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net10.0-android36.0">
+        <dependency id="SkiaSharp.NativeAssets.Android" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net10.0-ios26.0">
+        <dependency id="SkiaSharp.NativeAssets.iOS" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net10.0-maccatalyst26.0">
+        <dependency id="SkiaSharp.NativeAssets.MacCatalyst" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net10.0-macos26.0">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net10.0-tizen10.0">
+        <dependency id="SkiaSharp.NativeAssets.Tizen" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net10.0-tvos26.0">
+        <dependency id="SkiaSharp.NativeAssets.tvOS" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net10.0-windows10.0.19041">
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework=".NETFramework4.6.2">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="System.Memory" version="4.6.3" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework=".NETFramework4.8">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="System.Memory" version="4.6.3" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net6.0">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net6.0-tizen8.0">
+        <dependency id="SkiaSharp.NativeAssets.Tizen" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0-android35.0">
+        <dependency id="SkiaSharp.NativeAssets.Android" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0-ios18.0">
+        <dependency id="SkiaSharp.NativeAssets.iOS" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0-maccatalyst18.0">
+        <dependency id="SkiaSharp.NativeAssets.MacCatalyst" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0-macos15.0">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0-tizen8.0">
+        <dependency id="SkiaSharp.NativeAssets.Tizen" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0-tvos18.0">
+        <dependency id="SkiaSharp.NativeAssets.tvOS" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0-windows10.0.19041">
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework=".NETStandard2.0">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="System.Memory" version="4.6.3" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework=".NETStandard2.1">
+        <dependency id="SkiaSharp.NativeAssets.macOS" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="SkiaSharp.NativeAssets.Win32" version="4.153.1" exclude="Build,Analyzers" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="6.1.2" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+</package>

@@ -1,0 +1,13 @@
+* text=auto
+*.cs text eol=lf
+*.csproj text eol=lf
+*.slnx text eol=lf
+*.props text eol=lf
+*.md text eol=lf
+*.ps1 text eol=lf
+*.json text eol=lf
+*.svg text eol=lf
+*.ico binary
+
+# Preserve upstream legal documents and their recorded byte hashes exactly.
+licenses/** -text -whitespace

@@ -1,0 +1,538 @@
+{
+  "Scene.UnsupportedVersion": {
+    "zh": "不支持场景版本 {0}。",
+    "en": "Scene version {0} is not supported."
+  },
+  "Scene.InvalidDocumentKind": {
+    "zh": "文档类型无效。",
+    "en": "The document type is invalid."
+  },
+  "Scene.MissingCollections": {
+    "zh": "文档集合缺失。",
+    "en": "Document collections are missing."
+  },
+  "Scene.ElementCountExceeded": {
+    "zh": "元素数量超出限制。",
+    "en": "The number of elements exceeds the limit."
+  },
+  "Scene.InvalidLayerOpacity": {
+    "zh": "图层透明度无效。",
+    "en": "The layer opacity is invalid."
+  },
+  "Scene.InvalidNumberCounter": {
+    "zh": "序号计数无效。",
+    "en": "The number counter is invalid."
+  },
+  "Scene.InvalidViewport": {
+    "zh": "画布范围无效。",
+    "en": "The canvas bounds are invalid."
+  },
+  "Scene.BackgroundMustBeImage": {
+    "zh": "背景必须是图片。",
+    "en": "The background must be an image."
+  },
+  "Scene.InvalidDisplayLayout": {
+    "zh": "屏幕布局无效。",
+    "en": "The display layout is invalid."
+  },
+  "Recovery.MissingLiveCanvas": {
+    "zh": "恢复状态缺少实时画布。",
+    "en": "The recovery state is missing the live canvas."
+  },
+  "Recovery.InvalidLiveDocumentKind": {
+    "zh": "实时画布类型无效。",
+    "en": "The live canvas type is invalid."
+  },
+  "Recovery.InvalidCaptureDocumentKind": {
+    "zh": "截图草稿类型无效。",
+    "en": "The screenshot draft type is invalid."
+  },
+  "Recovery.InvalidCaptureOrigin": {
+    "zh": "截图原点无效。",
+    "en": "The screenshot origin is invalid."
+  },
+  "Scene.NullElement": {
+    "zh": "空元素无效。",
+    "en": "An element is null."
+  },
+  "Scene.InvalidElementId": {
+    "zh": "元素标识无效或重复。",
+    "en": "An element ID is invalid or duplicated."
+  },
+  "Scene.InvalidElementKind": {
+    "zh": "元素类型无效。",
+    "en": "The element type is invalid."
+  },
+  "Scene.InvalidElementSize": {
+    "zh": "元素尺寸无效。",
+    "en": "The element size is invalid."
+  },
+  "Scene.InvalidElementTransform": {
+    "zh": "元素变换无效。",
+    "en": "The element transform is invalid."
+  },
+  "Scene.InvalidElementPath": {
+    "zh": "元素路径无效。",
+    "en": "The element path is invalid."
+  },
+  "Scene.InvalidElementContent": {
+    "zh": "元素内容无效。",
+    "en": "The element content is invalid."
+  },
+  "Scene.InvalidElementStyle": {
+    "zh": "元素样式无效。",
+    "en": "The element style is invalid."
+  },
+  "Scene.InvalidArrowHead": {
+    "zh": "箭头头部样式或尺寸无效。",
+    "en": "The arrowhead style or size is invalid."
+  },
+  "Scene.InvalidElementNumber": {
+    "zh": "元素序号无效。",
+    "en": "The element number is invalid."
+  },
+  "Scene.InvalidImageReference": {
+    "zh": "图片引用无效。",
+    "en": "The image reference is invalid."
+  },
+  "Scene.InvalidAssetReference": {
+    "zh": "资源引用无效。",
+    "en": "The asset reference is invalid."
+  },
+  "Scene.InvalidImageCrop": {
+    "zh": "图片裁剪范围无效。",
+    "en": "The image crop bounds are invalid."
+  },
+  "Scene.InvalidEffects": {
+    "zh": "效果集合无效。",
+    "en": "The effects collection is invalid."
+  },
+  "Scene.EffectsRequireImage": {
+    "zh": "只有图片可以使用局部效果。",
+    "en": "Only images can have local effects."
+  },
+  "Scene.InvalidImageEffect": {
+    "zh": "图片效果无效。",
+    "en": "The image effect is invalid."
+  },
+  "Scene.InvalidRenderedBounds": {
+    "zh": "元素呈现范围无效。",
+    "en": "The rendered element bounds are invalid."
+  },
+  "Export.EmptyRegion": {
+    "zh": "导出区域不能为空。",
+    "en": "The export area cannot be empty."
+  },
+  "Export.BufferTooLarge": {
+    "zh": "导出尺寸过大，无法建立图像缓冲。",
+    "en": "The export dimensions are too large to create an image buffer."
+  },
+  "Images.EncodingFailed": {
+    "zh": "图片编码失败。",
+    "en": "Image encoding failed."
+  },
+  "Images.EffectBufferFailed": {
+    "zh": "无法建立图片效果缓冲。",
+    "en": "The image effect buffer could not be created."
+  },
+  "Recovery.BothFilesUnreadable": {
+    "zh": "当前恢复文件和前代恢复文件都无法读取。原文件已保留。",
+    "en": "Neither the current nor the previous recovery file could be read. The original files have been preserved."
+  },
+  "Recovery.NoValidPreviousFile": {
+    "zh": "恢复文件无法读取，且没有有效前代。原文件已保留。",
+    "en": "The recovery file could not be read and no valid previous file is available. The original file has been preserved."
+  },
+  "Capture.EmptyRegion": {
+    "zh": "截图区域不能为空。",
+    "en": "The screenshot area cannot be empty."
+  },
+  "Overlay.RasterTargetUnreadable": {
+    "zh": "浮层光栅目标不可读。",
+    "en": "The overlay raster target is not readable."
+  },
+  "Overlay.CacheAllocationFailed": {
+    "zh": "无法分配浮层场景缓存。",
+    "en": "The overlay scene cache could not be allocated."
+  },
+  "Assets.MissingResource": {
+    "zh": "缺少图片资源：{0}",
+    "en": "Image asset not found: {0}"
+  },
+  "Project.IncompleteAssets": {
+    "zh": "工程引用的图片资源不完整。",
+    "en": "The image assets referenced by the project are incomplete."
+  },
+  "Project.AssetCapacityExceeded": {
+    "zh": "工程图片资源超出文件格式容量限制。",
+    "en": "The project image assets exceed the file format capacity limits."
+  },
+  "Project.InvalidAssetMediaType": {
+    "zh": "图片资源类型无效。",
+    "en": "The image asset media type is invalid."
+  },
+  "Project.PackageTooLarge": {
+    "zh": "工程文件过大。",
+    "en": "The project file is too large."
+  },
+  "Project.InvalidArchiveEntries": {
+    "zh": "压缩包包含重复或过多条目。",
+    "en": "The archive contains duplicate entries or too many entries."
+  },
+  "Project.ExpandedCapacityExceeded": {
+    "zh": "工程解压后超过容量限制。",
+    "en": "The expanded project exceeds the capacity limit."
+  },
+  "Project.UnexpectedFormat": {
+    "zh": "文件不是预期的浮绘工程类型。",
+    "en": "The file is not the expected FloatCanvas project type."
+  },
+  "Project.UnsupportedVersion": {
+    "zh": "不支持文件版本 {0}。",
+    "en": "File version {0} is not supported."
+  },
+  "Project.InvalidManifest": {
+    "zh": "工程清单无效。",
+    "en": "The project manifest is invalid."
+  },
+  "Project.InvalidAssetManifest": {
+    "zh": "工程资源清单无效。",
+    "en": "The project asset manifest is invalid."
+  },
+  "Project.UnexpectedArchiveContents": {
+    "zh": "工程包含未声明或缺失的条目。",
+    "en": "The project contains undeclared entries or is missing declared entries."
+  },
+  "Project.AssetReferencesMismatch": {
+    "zh": "工程的图片引用与清单不一致。",
+    "en": "The project image references do not match the manifest."
+  },
+  "Project.AssetLengthMismatch": {
+    "zh": "图片资源长度不符。",
+    "en": "The image asset length does not match."
+  },
+  "Project.AssetHashMismatch": {
+    "zh": "图片资源 SHA256 校验失败。",
+    "en": "The image asset SHA256 check failed."
+  },
+  "Project.InvalidJson": {
+    "zh": "工程 JSON 格式无效。",
+    "en": "The project JSON is invalid."
+  },
+  "Project.DataOutOfRange": {
+    "zh": "工程数据超出支持范围。",
+    "en": "The project data is outside the supported range."
+  },
+  "Project.MissingEntry": {
+    "zh": "工程缺少 {0}。",
+    "en": "The project is missing {0}."
+  },
+  "Project.InvalidContentType": {
+    "zh": "工程内容类型无效。",
+    "en": "The project content type is invalid."
+  },
+  "Project.JsonTooLarge": {
+    "zh": "工程 JSON 超过大小限制。",
+    "en": "The project JSON exceeds the size limit."
+  },
+  "Recovery.MissingRequiredFields": {
+    "zh": "恢复状态缺少必要字段。",
+    "en": "The recovery state is missing required fields."
+  },
+  "Project.EmptyContent": {
+    "zh": "工程内容为空。",
+    "en": "The project content is empty."
+  },
+  "Scene.MissingRequiredFields": {
+    "zh": "场景缺少必要字段。",
+    "en": "The scene is missing required fields."
+  },
+  "Project.DuplicateJsonFields": {
+    "zh": "工程 JSON 包含重复字段。",
+    "en": "The project JSON contains duplicate fields."
+  },
+  "Project.EntryTooLarge": {
+    "zh": "{0} 超过大小限制。",
+    "en": "{0} exceeds the size limit."
+  },
+  "Project.InvalidEntryLength": {
+    "zh": "压缩条目长度异常。",
+    "en": "The archive entry length is invalid."
+  },
+  "Geometry.NonInvertibleTransform": {
+    "zh": "变换矩阵不可逆。",
+    "en": "The transform matrix is not invertible."
+  },
+  "Images.ImportEncodingFailed": {
+    "zh": "无法编码导入图片。",
+    "en": "The imported image could not be encoded."
+  },
+  "Images.UnsupportedOrCorrupt": {
+    "zh": "图片格式不受支持或文件已损坏。",
+    "en": "The image format is unsupported or the file is corrupted."
+  },
+  "Images.DecodeFailed": {
+    "zh": "图片解码失败：{0}。",
+    "en": "Image decoding failed: {0}."
+  },
+  "Images.BufferTooLarge": {
+    "zh": "图片尺寸过大，无法分配缓冲。",
+    "en": "The image dimensions are too large to allocate a buffer."
+  },
+  "Assets.EmptyResource": {
+    "zh": "图片资源为空。",
+    "en": "The image asset is empty."
+  },
+  "History.TransactionAlreadyActive": {
+    "zh": "已有未完成的编辑操作。",
+    "en": "An editing operation is already in progress."
+  },
+  "History.NoActiveTransaction": {
+    "zh": "没有进行中的编辑操作。",
+    "en": "No editing operation is in progress."
+  },
+  "History.AddElement": {
+    "zh": "添加元素",
+    "en": "Add element"
+  },
+  "History.DuplicateElementId": {
+    "zh": "元素标识已存在。",
+    "en": "The element ID already exists."
+  },
+  "History.DeleteElements": {
+    "zh": "删除元素",
+    "en": "Delete elements"
+  },
+  "History.TransformElements": {
+    "zh": "变换元素",
+    "en": "Transform elements"
+  },
+  "History.UpdateProperties": {
+    "zh": "修改属性",
+    "en": "Change properties"
+  },
+  "History.LockElements": {
+    "zh": "锁定元素",
+    "en": "Lock elements"
+  },
+  "History.UnlockElements": {
+    "zh": "解锁元素",
+    "en": "Unlock elements"
+  },
+  "History.ShowElements": {
+    "zh": "显示元素",
+    "en": "Show elements"
+  },
+  "History.HideElements": {
+    "zh": "隐藏元素",
+    "en": "Hide elements"
+  },
+  "History.DuplicateElements": {
+    "zh": "复制元素",
+    "en": "Duplicate elements"
+  },
+  "History.ReorderElements": {
+    "zh": "调整层级",
+    "en": "Change stacking order"
+  },
+  "Overlay.NoAvailableMonitor": {
+    "zh": "没有可用的显示器。",
+    "en": "No usable display is available."
+  },
+  "Keyboard.ExitEditingBeforeConfigure": {
+    "zh": "请先退出编辑，再设置键盘接管。",
+    "en": "Exit editing before configuring keyboard input ownership."
+  },
+  "Keyboard.IsolationAlreadyEnabled": {
+    "zh": "键盘接管已经启用。",
+    "en": "Keyboard input ownership is already enabled."
+  },
+  "Keyboard.MonitorStartFailed": {
+    "zh": "无法启动输入状态监测。",
+    "en": "Input state monitoring could not be started."
+  },
+  "Keyboard.LocalStateInitializationFailed": {
+    "zh": "无法初始化浮绘的本地键盘状态。",
+    "en": "FloatCanvas could not initialize its local keyboard state."
+  },
+  "Hotkeys.DuplicateBindings": {
+    "zh": "切换与隐藏快捷键不能相同。",
+    "en": "The toggle and hide shortcuts must be different."
+  },
+  "Hotkeys.WindowsKeyReserved": {
+    "zh": "Win 键保留给系统，请使用 Ctrl、Alt 或 Shift 组合。",
+    "en": "The Windows key is reserved for the system. Use Ctrl, Alt or Shift combinations instead."
+  },
+  "Hotkeys.EmergencyReleaseReserved": {
+    "zh": "Ctrl+Alt+Esc 是紧急释放组合，不能设为切换或隐藏快捷键。",
+    "en": "Ctrl+Alt+Esc is the emergency release shortcut and cannot be assigned to toggle or hide."
+  },
+  "Hotkeys.SystemExitReserved": {
+    "zh": "该组合保留给系统离开编辑模式。",
+    "en": "This combination is reserved for leaving editing through the system."
+  },
+  "Overlay.RenderBufferFailed": {
+    "zh": "无法建立浮绘渲染缓冲。",
+    "en": "The FloatCanvas rendering buffer could not be created."
+  },
+  "Overlay.DisplayUpdateFailed": {
+    "zh": "浮绘显示更新失败。",
+    "en": "The FloatCanvas display could not be updated."
+  },
+  "Capture.ExclusionStateReadFailed": {
+    "zh": "无法读取窗口的截图排除状态。",
+    "en": "The window capture exclusion state could not be read."
+  },
+  "Capture.ExclusionFailed": {
+    "zh": "无法临时排除浮绘窗口，截图已取消。",
+    "en": "FloatCanvas windows could not be temporarily excluded. The screenshot was cancelled."
+  },
+  "Capture.RestoreRequiresUiThread": {
+    "zh": "截图窗口状态必须在原 UI 线程恢复。",
+    "en": "Capture window state must be restored on the original UI thread."
+  },
+  "Capture.ExclusionStateRestoreFailed": {
+    "zh": "无法恢复窗口截图状态。",
+    "en": "The window capture state could not be restored."
+  },
+  "Capture.WindowOrderRestoreFailed": {
+    "zh": "无法恢复截图前的浮绘窗口顺序。",
+    "en": "The FloatCanvas window order from before the screenshot could not be restored."
+  },
+  "Capture.WindowRestoreErrors": {
+    "zh": "截图后恢复浮绘窗口时发生错误。",
+    "en": "Errors occurred while restoring FloatCanvas windows after the screenshot."
+  },
+  "Overlay.PlatformUnsupported": {
+    "zh": "浮绘需要 Windows 10 22H2 或更新版本。",
+    "en": "FloatCanvas requires Windows 10 22H2 or later."
+  },
+  "Overlay.FocusMonitorFailed": {
+    "zh": "无法监测编辑输入焦点，浮绘未接管输入。",
+    "en": "Editing input focus could not be monitored. FloatCanvas has not taken ownership of input."
+  },
+  "Hotkeys.BindingsMustDiffer": {
+    "zh": "切换和隐藏快捷键必须不同。",
+    "en": "The toggle and hide shortcuts must be different."
+  },
+  "Hotkeys.ConflictAndRestoreFailed": {
+    "zh": "快捷键冲突，且原快捷键被其他程序占用；请通过托盘重新设置快捷键。",
+    "en": "The new shortcuts conflict and the previous shortcuts have been claimed by another application. Set the shortcuts again through the tray icon."
+  },
+  "Hotkeys.ConflictPreviousPreserved": {
+    "zh": "快捷键已被占用；原快捷键保持有效。",
+    "en": "The shortcut is already in use. The previous shortcuts remain active."
+  },
+  "Overlay.FocusAcquisitionFailed": {
+    "zh": "无法取得键盘焦点，仍处于穿透模式。请点击浮绘托盘图标后重试。",
+    "en": "Keyboard focus could not be acquired. FloatCanvas remains in pass-through mode. Click its tray icon and try again."
+  },
+  "Overlay.InputAcquisitionFailed": {
+    "zh": "输入接管未能启动，仍处于穿透模式。{0}",
+    "en": "Input ownership could not be started. FloatCanvas remains in pass-through mode. {0}"
+  },
+  "Capture.AlreadyInProgress": {
+    "zh": "已有截图操作正在进行。",
+    "en": "A screenshot operation is already in progress."
+  },
+  "Overlay.RequiresCreatorUiThread": {
+    "zh": "OverlayHost 必须在创建它的 UI 线程上使用。",
+    "en": "OverlayHost must be used on the UI thread that created it."
+  },
+  "Hotkeys.InvalidBinding": {
+    "zh": "快捷键需要有效按键及 Alt、Ctrl、Shift 或 Win 修饰键。",
+    "en": "A shortcut requires a valid key and an Alt, Ctrl, Shift or Windows modifier."
+  },
+  "Overlay.DisplayLayoutReadFailed": {
+    "zh": "无法读取显示器布局。",
+    "en": "The display layout could not be read."
+  },
+  "Overlay.WindowCreationFailed": {
+    "zh": "无法创建浮绘窗口。",
+    "en": "A FloatCanvas window could not be created."
+  },
+  "Capture.AtLeastOneMonitorRequired": {
+    "zh": "至少需要一台显示器。",
+    "en": "At least one display is required."
+  },
+  "Capture.InvalidDisplayLayout": {
+    "zh": "显示器布局无效或存在重复屏幕。",
+    "en": "The display layout is invalid or contains duplicate displays."
+  },
+  "Capture.DesktopCaptureAlreadyActive": {
+    "zh": "已有桌面捕获正在进行。",
+    "en": "A desktop capture is already in progress."
+  },
+  "Capture.DesktopTooLarge": {
+    "zh": "桌面区域过大，无法创建截图。",
+    "en": "The desktop area is too large to create a screenshot."
+  },
+  "Capture.BufferCreationFailed": {
+    "zh": "无法创建截图缓冲。",
+    "en": "The screenshot buffer could not be created."
+  },
+  "Capture.DisplayLayoutChanged": {
+    "zh": "捕获时显示器布局发生变化，请重试截图。",
+    "en": "The display layout changed during capture. Try taking the screenshot again."
+  },
+  "Capture.UnmatchedDxgiOutputs": {
+    "zh": "无法匹配显示器的 DXGI 输出：{0}。请检查显示连接后重试。",
+    "en": "The DXGI outputs for these displays could not be matched: {0}. Check the display connections and try again."
+  },
+  "Capture.EncodingFailed": {
+    "zh": "无法编码截图。",
+    "en": "The screenshot could not be encoded."
+  },
+  "Capture.ConnectionReset": {
+    "zh": "桌面捕获连接已重置，可能发生了锁屏或显示模式变化，请重试。",
+    "en": "The desktop capture connection was reset, possibly because the screen was locked or the display mode changed. Try again."
+  },
+  "Capture.UnsupportedPixelFormat": {
+    "zh": "首版截图支持 SDR BGRA 输出，当前像素格式为 {0}。",
+    "en": "This version supports SDR BGRA capture output. The current pixel format is {0}."
+  },
+  "Capture.FreshFrameTimedOut": {
+    "zh": "{0} 未在 3 秒内提供截图操作之后的新桌面帧，请重试。",
+    "en": "{0} did not provide a new desktop frame within 3 seconds after the capture request. Try again."
+  },
+  "Capture.RotationOrResolutionChanged": {
+    "zh": "屏幕旋转或分辨率在截图期间发生变化，请重试。",
+    "en": "The display rotation or resolution changed during capture. Try again."
+  },
+  "Keyboard.PrivateMessageRequired": {
+    "zh": "请使用私有 WM_APP 消息。",
+    "en": "Use a private WM_APP message."
+  },
+  "Keyboard.IsolationUnavailable": {
+    "zh": "键盘输入接管不可用。",
+    "en": "Keyboard isolation is unavailable."
+  },
+  "Keyboard.ForegroundRequired": {
+    "zh": "接管键盘输入前，编辑窗口必须拥有前台焦点。",
+    "en": "Editing must own foreground before acquiring keyboard input."
+  },
+  "Keyboard.IsolationStopped": {
+    "zh": "键盘输入接管已停止。",
+    "en": "Keyboard isolation stopped."
+  },
+  "Keyboard.UiNotificationFailed": {
+    "zh": "键盘输入接管无法通知界面。",
+    "en": "Keyboard input ownership could not notify its UI."
+  },
+  "Keyboard.HookInstallationFailed": {
+    "zh": "无法安装私有键盘钩子。",
+    "en": "The private keyboard hook could not be installed."
+  },
+  "Keyboard.WatchdogStartFailed": {
+    "zh": "无法启动键盘状态监测。",
+    "en": "The keyboard watchdog could not start."
+  },
+  "Keyboard.OwnNotificationWindowRequired": {
+    "zh": "通知窗口必须属于当前进程。",
+    "en": "The notification HWND must belong to this process."
+  },
+  "Keyboard.InvalidStateLength": {
+    "zh": "需要 256 字节的键盘状态。",
+    "en": "A 256-byte key state is required."
+  }
+}

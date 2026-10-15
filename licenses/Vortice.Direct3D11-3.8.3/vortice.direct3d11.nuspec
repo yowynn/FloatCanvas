@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>Vortice.Direct3D11</id>
+    <version>3.8.3</version>
+    <authors>Amer Koleci</authors>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <readme>README.md</readme>
+    <description>Direct3D11 bindings</description>
+    <copyright>Copyright (c) Amer Koleci and Contributors</copyright>
+    <tags>Vortice.Windows Vortice Graphics gamedev Direct3D DirectX Core Standard Game Direct3D11 Direct3D12 XAudio2 XInput Dxc DirectML</tags>
+    <repository type="git" url="https://github.com/amerkoleci/Vortice.Windows" commit="9e609cb9439c9872aa1b339f177e40ec96f77239" />
+    <dependencies>
+      <group targetFramework="net8.0">
+        <dependency id="Vortice.DXGI" version="3.8.3" exclude="Build,Analyzers" />
+        <dependency id="SharpGen.Runtime" version="2.4.2-beta" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net9.0">
+        <dependency id="Vortice.DXGI" version="3.8.3" exclude="Build,Analyzers" />
+        <dependency id="SharpGen.Runtime" version="2.4.2-beta" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework="net10.0">
+        <dependency id="Vortice.DXGI" version="3.8.3" exclude="Build,Analyzers" />
+        <dependency id="SharpGen.Runtime" version="2.4.2-beta" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+</package>
