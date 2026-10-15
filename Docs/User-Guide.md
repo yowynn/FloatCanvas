@@ -2,7 +2,7 @@
 
 简体中文 | [English](User-Guide.en.md)
 
-本指南适用于 Windows x64 的 **0.1.1-preview.8**。预览版仍在完善功能与稳定性，建议将重要工作另存为工程文件。
+本指南适用于 Windows x64 的 **0.1.1-preview.9**。预览版仍在完善功能与稳定性，建议将重要工作另存为工程文件。
 
 在画布上按下鼠标开始绘制或移动后，整次拖动由画布处理；即使经过工具条或在按钮上松开，也不会触发按钮。从工具条上按下鼠标，则由工具条处理，不会在画布上留下笔迹。
 
@@ -12,7 +12,9 @@
 
 ## 启动与切换
 
-使用发行包时，解压对应版本的 Windows x64 ZIP，保留全部文件，运行其中的 `FloatCanvas.exe`。自包含发行包带有所需的 .NET，无需另装开发工具。
+使用发行包时，解压对应版本的 Windows x64 ZIP，保留全部文件，运行其中的 `FloatCanvas.exe`。默认发行包不附带 .NET 运行时或调试符号文件（PDB）。电脑已有兼容的 **.NET 10 Windows Desktop Runtime x64** 时可直接启动。
+
+若缺少兼容运行时，启动程序会显示 .NET 安装提示。点击 **Download** 打开微软官方下载页面，下载并运行 **Windows Desktop Runtime x64** 安装程序，安装后再次运行 `FloatCanvas.exe`。也可从 [.NET 10 官方下载页](https://dotnet.microsoft.com/download/dotnet/10.0)手动选择该运行时。无需 SDK；普通 .NET Runtime、ASP.NET Core Runtime 和 .NET Framework 不能替代所需的桌面运行时。
 
 1. 在欢迎界面选择“开始绘制”，或按 `Ctrl+Alt+F` 进入编辑。
 2. 再按 `Ctrl+Alt+F` 返回穿透。工具条消失，标注仍显示，下层应用恢复操作。

@@ -4,7 +4,7 @@
 
 Windows 屏幕标注工具。直接在桌面上绘画、贴图和调整对象，再切回下层应用操作，标注持续可见。
 
-当前版本：**0.1.1-preview.8（预览）**。[使用指南](Docs/User-Guide.md) · [更新日志](CHANGELOG.md)
+当前版本：**0.1.1-preview.9（预览）**。[使用指南](Docs/User-Guide.md) · [更新日志](CHANGELOG.md)
 
 ## 功能
 
@@ -20,7 +20,9 @@ Windows 屏幕标注工具。直接在桌面上绘画、贴图和调整对象，
 
 发布的 Windows x64 二进制包由仓库的 **Releases** 提供，附带 ZIP 和 SHA-256 校验文件。如果 Releases 尚无可用发行包，请按下文从源码构建。源代码检出不包含本地打包产物。
 
-解压预览包，保留全部文件，运行 `FloatCanvas.exe`。自包含包带有所需的 .NET 运行时，无需安装开发工具。
+解压预览包，保留全部文件，运行 `FloatCanvas.exe`。默认发行包不附带 .NET 运行时或调试符号文件（PDB）。电脑已有兼容的 **.NET 10 Windows Desktop Runtime x64** 时可直接启动。
+
+若缺少兼容运行时，启动程序会显示 .NET 安装提示。点击 **Download** 前往微软官方下载页面，下载并运行 **Windows Desktop Runtime x64** 安装程序，完成后重新启动浮绘。也可从 [.NET 10 官方下载页](https://dotnet.microsoft.com/download/dotnet/10.0)选择该运行时；运行浮绘无需安装 SDK。
 
 | 快捷键 | 操作 |
 | --- | --- |
@@ -50,7 +52,7 @@ Windows 屏幕标注工具。直接在桌面上绘画、贴图和调整对象，
 dotnet run --project src/FloatCanvas.App -c Release
 ```
 
-生成自包含 Windows 包并检查解压启动；版本自动读取应用工程：
+生成不附带 .NET 运行时和 PDB 的 Windows Release 包，并检查解压启动；版本自动读取应用工程，运行检查需要已安装兼容的桌面运行时：
 
 ```powershell
 ./scripts/Publish.ps1

@@ -62,7 +62,7 @@ jobs:
         run: dotnet build FloatCanvas.slnx --configuration Release --no-restore --nologo
       - name: Run default checks without UI or injected input
         run: ./scripts/Test.ps1 -Configuration Release
-      - name: Publish self-contained Windows package
+      - name: Publish framework-dependent Windows Release package without debug symbols
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: ./scripts/Publish.ps1 -Configuration Release -Version $env:PACKAGE_VERSION

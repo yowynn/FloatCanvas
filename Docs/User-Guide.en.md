@@ -2,7 +2,7 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers **0.1.1-preview.8** for Windows x64. Features and stability are still being refined; save important work as a project file.
+This guide covers **0.1.1-preview.9** for Windows x64. Features and stability are still being refined; save important work as a project file.
 
 A drag that starts on the canvas stays with the canvas, even when it crosses the toolbar or ends on a button. Buttons are not triggered on release. A gesture that starts on the toolbar stays with the toolbar and does not draw on the canvas.
 
@@ -12,7 +12,9 @@ FloatCanvas keeps annotations and images visible over the screen. Enter edit mod
 
 ## Start and switch modes
 
-For the packaged app, extract the Windows x64 ZIP for your version, keep all files together, and run `FloatCanvas.exe`. The self-contained package includes the required .NET runtime; no development tools are needed to run it.
+For the packaged app, extract the Windows x64 ZIP for your version, keep all files together, and run `FloatCanvas.exe`. The default package excludes the .NET runtime and debug symbols (PDB files). It starts directly when a compatible **.NET 10 Windows Desktop Runtime x64** is installed.
+
+If a compatible runtime is missing, the launcher displays a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then run `FloatCanvas.exe` again. You can also select it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). The SDK is not required; the plain .NET Runtime, ASP.NET Core Runtime and .NET Framework do not replace the required desktop runtime.
 
 1. Choose **Start drawing** on the welcome screen, or press `Ctrl+Alt+F` to enter edit mode.
 2. Press `Ctrl+Alt+F` again for pass-through. The toolbar disappears, annotations stay visible, and the application underneath receives input again.

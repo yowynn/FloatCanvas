@@ -44,11 +44,35 @@ $replacementCommitted = $false
 Push-Location $projectRoot
 try {
     # Isolate RID-specific lock files in ignored obj folders, preserving committed dependency locks.
-    & dotnet publish 'src/FloatCanvas.App/FloatCanvas.App.csproj' -c $Configuration -r win-x64 --self-contained true -o $stagingPackage `
-        "-p:Version=$Version" '-p:PublishTrimmed=false' '-p:PublishSingleFile=false' '-p:NuGetLockFilePath=obj/packages.publish.win-x64.lock.json'
+    & dotnet publish 'src/FloatCanvas.App/FloatCanvas.App.csproj' -c $Configuration -r win-x64 --self-contained false -o $stagingPackage `
+        "-p:Version=$Version" '-p:UseAppHost=true' '-p:DebugSymbols=false' '-p:DebugType=None' `
+        '-p:PublishTrimmed=false' '-p:PublishSingleFile=false' '-p:NuGetLockFilePath=obj/packages.publish.win-x64.lock.json'
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
-    foreach ($required in @('FloatCanvas.exe', 'hostfxr.dll', 'coreclr.dll', 'PresentationFramework.dll', 'libSkiaSharp.dll', 'libHarfBuzzSharp.dll')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $stagingPackage $required))) { throw "Self-contained package is missing $required" }
+    foreach ($required in @('FloatCanvas.exe', 'FloatCanvas.dll', 'FloatCanvas.Core.dll', 'FloatCanvas.Localization.dll',
+        'FloatCanvas.Rendering.dll', 'FloatCanvas.Storage.dll', 'FloatCanvas.Windows.dll', 'SkiaSharp.dll',
+        'SkiaSharp.HarfBuzz.dll', 'HarfBuzzSharp.dll', 'libSkiaSharp.dll', 'libHarfBuzzSharp.dll',
+        'FloatCanvas.deps.json', 'FloatCanvas.runtimeconfig.json')) {
+        $requiredPath = Join-Path $stagingPackage $required
+        if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf) -or (Get-Item -LiteralPath $requiredPath).Length -eq 0) {
+            throw "Framework-dependent package is missing $required"
+        }
+    }
+    $runtimeConfig = Get-Content -LiteralPath (Join-Path $stagingPackage 'FloatCanvas.runtimeconfig.json') -Raw | ConvertFrom-Json
+    if ($null -ne $runtimeConfig.runtimeOptions.PSObject.Properties['includedFrameworks']) {
+        throw 'Framework-dependent publish must not declare included runtime frameworks.'
+    }
+    $frameworkProperty = $runtimeConfig.runtimeOptions.PSObject.Properties['frameworks']
+    if ($null -eq $frameworkProperty) { throw 'Framework-dependent publish must declare its required runtime frameworks.' }
+    $requiredFrameworks = @($frameworkProperty.Value)
+    if ($requiredFrameworks.Count -ne 2 -or @($requiredFrameworks.name | Sort-Object -Unique).Count -ne 2 -or
+        'Microsoft.NETCore.App' -notin $requiredFrameworks.name -or 'Microsoft.WindowsDesktop.App' -notin $requiredFrameworks.name) {
+        throw 'The package must require both .NET and Windows Desktop runtime frameworks.'
+    }
+    foreach ($framework in $requiredFrameworks) {
+        $frameworkVersion = $null
+        if (-not [Version]::TryParse([string]$framework.version, [ref]$frameworkVersion)) {
+            throw "Required runtime framework has an invalid version: $($framework.name)"
+        }
     }
     Copy-Item -LiteralPath (Join-Path $projectRoot 'Docs/User-Guide.md') -Destination (Join-Path $stagingPackage 'User-Guide.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'Docs/User-Guide.en.md') -Destination (Join-Path $stagingPackage 'User-Guide.en.md')
@@ -62,9 +86,11 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md') -Destination $stagingPackage
     Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses') -Destination (Join-Path $stagingPackage 'licenses') -Recurse
+    if (-not (Test-Path -LiteralPath (Join-Path $stagingPackage 'licenses/Microsoft.NET.AppHost/LICENSE.TXT') -PathType Leaf)) {
+        throw 'The native .NET apphost launcher license is missing.'
+    }
 
-    # Match runtime legal notices to the exact versions actually included by this publish.
-    $runtimeConfig = Get-Content -LiteralPath (Join-Path $stagingPackage 'FloatCanvas.runtimeconfig.json') -Raw | ConvertFrom-Json
+    # Keep the reviewed licenses for the actual NuGet dependencies; the system supplies .NET.
     $assets = Get-Content -LiteralPath 'src/FloatCanvas.App/obj/project.assets.json' -Raw | ConvertFrom-Json
     foreach ($library in $assets.libraries.PSObject.Properties) {
         if ($library.Value.type -ne 'package' -or $library.Name -match '(?i)NativeAssets\.macOS/') { continue }
@@ -73,29 +99,38 @@ try {
             throw "No reviewed license directory exists for dependency $($library.Name). Collect it before publishing."
         }
     }
-    $packageFolders = @($assets.packageFolders.PSObject.Properties.Name)
-    $runtimeNotices = @()
-    foreach ($framework in $runtimeConfig.runtimeOptions.includedFrameworks) {
-        $id = $framework.name.ToLowerInvariant() + '.runtime.win-x64'
-        $source = $null
-        foreach ($folder in $packageFolders) {
-            $candidate = Join-Path $folder (Join-Path $id $framework.version)
-            if (Test-Path -LiteralPath $candidate) { $source = $candidate; break }
-        }
-        if ($null -eq $source) { throw "Could not locate legal notices for included runtime $id/$($framework.version)" }
-        $destination = Join-Path (Join-Path $stagingPackage 'licenses') ($id + '-' + $framework.version)
-        New-Item -ItemType Directory -Path $destination -Force | Out-Null
-        $files = @(Get-ChildItem -LiteralPath $source -File | Where-Object { $_.Name -match '(?i)^(license(\..*)?|third[-_]?party[-_]?notices(\..*)?)$' -or $_.Extension -eq '.nuspec' })
-        if (@($files | Where-Object Name -Match '(?i)^license').Count -eq 0) { throw "Runtime license file missing: $source" }
-        foreach ($file in $files) { Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $destination $file.Name) }
-        $runtimeNotices += [pscustomobject]@{ Package = $id; Version = $framework.version; Files = @($files.Name) }
-    }
     $manifest = [pscustomobject]@{
-        Product = '浮绘 FloatCanvas'; Version = $Version; RuntimeIdentifier = 'win-x64'; SelfContained = $true
-        Configuration = $Configuration; PublishedAt = [DateTimeOffset]::Now.ToString('o'); RuntimeLegalNotices = $runtimeNotices
+        Product = '浮绘 FloatCanvas'; Version = $Version; RuntimeIdentifier = 'win-x64'; SelfContained = $false
+        Configuration = $Configuration; PublishedAt = [DateTimeOffset]::Now.ToString('o'); RequiredFrameworks = $requiredFrameworks
         Validation = 'Preview build. See User-Guide.md for platform support and feature limitations.'
     }
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $stagingPackage 'PACKAGE-INFO.json') -Encoding UTF8
+
+    # NativeAssets packages ship PDBs as native runtime assets, independently of DebugSymbols.
+    # Filter only this invocation's verified staging tree, never source/cache/previous packages.
+    $stagingRoot = Assert-DistPath $stagingRoot
+    $stagingPackage = Assert-DistPath $stagingPackage
+    $stagedEntries = @(Get-ChildItem -LiteralPath $stagingPackage -Recurse -Force)
+    if (@($stagedEntries | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count -ne 0) {
+        throw 'Publish staging must not contain symbolic links or junctions.'
+    }
+    $stagingPrefix = $stagingPackage.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    foreach ($symbol in @($stagedEntries | Where-Object { -not $_.PSIsContainer -and $_.Extension -ieq '.pdb' })) {
+        $symbolPath = Assert-DistPath $symbol.FullName
+        if (-not $symbolPath.StartsWith($stagingPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove a symbol outside this publish staging directory: $symbolPath"
+        }
+        Remove-Item -LiteralPath $symbolPath -Force
+    }
+    $packageFiles = @(Get-ChildItem -LiteralPath $stagingPackage -Recurse -File -Force)
+    if (@($packageFiles | Where-Object { $_.Extension -ieq '.pdb' }).Count -ne 0) { throw 'The distribution must not contain debug symbols.' }
+    $appLocalRuntimeFiles = @('coreclr.dll', 'hostfxr.dll', 'hostpolicy.dll', 'clrjit.dll', 'System.Private.CoreLib.dll',
+        'PresentationFramework.dll', 'PresentationCore.dll', 'WindowsBase.dll', 'System.Windows.Forms.dll',
+        'System.Windows.Forms.Primitives.dll', 'wpfgfx_cor3.dll', 'PenImc_cor3.dll', 'DirectWriteForwarder.dll')
+    $unexpectedRuntimeFiles = @($packageFiles | Where-Object { $_.Name -iin $appLocalRuntimeFiles })
+    if ($unexpectedRuntimeFiles.Count -ne 0) {
+        throw "Framework-dependent package contains app-local .NET runtime files: $($unexpectedRuntimeFiles.Name -join ', ')"
+    }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::CreateFromDirectory($stagingRoot, $stagingZip, [IO.Compression.CompressionLevel]::Optimal, $false)
 

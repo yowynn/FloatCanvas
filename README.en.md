@@ -4,7 +4,7 @@
 
 A Windows screen annotation tool. Draw over your desktop, place images and edit objects, then return to the application underneath while your annotations stay visible.
 
-Current version: **0.1.1-preview.8**. [User guide](Docs/User-Guide.en.md) · [Changelog](CHANGELOG.md)
+Current version: **0.1.1-preview.9**. [User guide](Docs/User-Guide.en.md) · [Changelog](CHANGELOG.md)
 
 ## Features
 
@@ -20,7 +20,9 @@ Current version: **0.1.1-preview.8**. [User guide](Docs/User-Guide.en.md) · [Ch
 
 Published Windows x64 binaries are provided through the repository's **Releases**, as a ZIP with a SHA-256 file. If no release package is available yet, build from source using the instructions below. A source checkout does not include local build artifacts.
 
-Extract the package, keep all files together, and run `FloatCanvas.exe`. The self-contained package includes its required .NET runtime; no development tools are needed to run it.
+Extract the package, keep all files together, and run `FloatCanvas.exe`. The default package excludes the .NET runtime and debug symbols (PDB files). It starts directly when a compatible **.NET 10 Windows Desktop Runtime x64** is installed.
+
+If a compatible runtime is missing, the launcher displays a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then start FloatCanvas again. You can also find it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). Running FloatCanvas does not require the SDK.
 
 | Shortcut | Action |
 | --- | --- |
@@ -50,7 +52,7 @@ Requires Windows x64 and .NET SDK 10.0.402, resolved according to `global.json`.
 dotnet run --project src/FloatCanvas.App -c Release
 ```
 
-Build a self-contained Windows package and check its extracted startup. The version is read automatically from the application project:
+Build a Windows Release package without the .NET runtime or PDB files, and check its extracted startup. The version is read automatically from the application project. The startup check requires a compatible desktop runtime:
 
 ```powershell
 ./scripts/Publish.ps1

@@ -14,8 +14,9 @@ The Windows distribution includes the components below. Full original license te
 | Vortice.DXGI, Vortice.Direct3D11, Vortice.DirectX | 3.8.3 | MIT; license obtained from the exact repository commit identified in each package's `.nuspec` |
 | Vortice.Mathematics | 2.1.0 | MIT; license obtained from the exact repository commit identified in the package's `.nuspec` |
 | SharpGen.Runtime, SharpGen.Runtime.COM | 2.4.2-beta | MIT; license obtained from the exact repository commit identified in each package's `.nuspec` |
-| Microsoft.NETCore.App.Runtime.win-x64 | Actual included version is recorded in `PACKAGE-INFO.json` | Runtime package's full LICENSE and THIRD-PARTY-NOTICES copied during publishing |
-| Microsoft.WindowsDesktop.App.Runtime.win-x64 | Actual included version is recorded in `PACKAGE-INFO.json` | Runtime package's full LICENSE copied during publishing |
+| .NET apphost native executable launcher | Supplied by the .NET SDK | MIT, `licenses/Microsoft.NET.AppHost/LICENSE.TXT` |
+
+The default Windows package does not bundle the .NET Windows Desktop Runtime. Install the required runtime separately from Microsoft when it is not already available on the computer.
 
 Native Skia and HarfBuzz notices contain additional licenses for their bundled components. Their complete notice files are preserved verbatim rather than replaced by the wrapper's MIT license. Bundled fonts or user-imported images are not supplied by FloatCanvas; system fonts remain provided by the operating system.
 
