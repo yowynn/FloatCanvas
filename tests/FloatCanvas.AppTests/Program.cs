@@ -20,6 +20,7 @@ internal static class Program
             MoveIntoViewTests.Run((name, condition) => Assert(name, condition));
             ImageToolTargetTests.Run((name, condition) => Assert(name, condition));
             ImageDropTests.Run((name, condition) => Assert(name, condition));
+            EncodedPngImportTests.Run((name, condition) => Assert(name, condition));
             CreationTools(); SelectionAndTransforms(); CancellationAndReplacement(); EraserTransactions();
             ImageEffectsAndCrop(); DocumentRegions(); TextDoubleClick(); RasterPreviewRanges();
             PointerNoOpTests.Run((name, condition) => Assert(name, condition));

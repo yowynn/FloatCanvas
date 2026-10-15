@@ -11,16 +11,22 @@ public static class AssetImport
     public static NormalizedImage Normalize(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
-        using var image = Decode(bytes);
+        using var image = Decode(bytes, out bool preserveEncodedPng);
+        // Full decoding above validates the payload before retaining it. An upright PNG
+        // needs no re-encoding: a premultiplied round trip can change straight-alpha RGB.
+        if (preserveEncodedPng) return new((byte[])bytes.Clone(), image.Width, image.Height);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100)
             ?? throw new InvalidDataException(L.Get("Images.ImportEncodingFailed"));
         return new(data.ToArray(), image.Width, image.Height);
     }
 
-    internal static SKImage Decode(ReadOnlySpan<byte> bytes)
+    internal static SKImage Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, out _);
+
+    private static SKImage Decode(ReadOnlySpan<byte> bytes, out bool preserveEncodedPng)
     {
         using var data = SKData.CreateCopy(bytes);
         using var codec = SKCodec.Create(data) ?? throw new InvalidDataException(L.Get("Images.UnsupportedOrCorrupt"));
+        preserveEncodedPng = codec.EncodedFormat == SKEncodedImageFormat.Png && codec.EncodedOrigin == SKEncodedOrigin.TopLeft;
         var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
         using var bitmap = new SKBitmap(info);
         var result = codec.GetPixels(info, bitmap.GetPixels());

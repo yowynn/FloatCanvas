@@ -15,6 +15,7 @@ internal static class Program
             ImagesAndEffects();
             TextAndNumbers();
             OrientationAndFormats();
+            AssetImportLosslessTests.Run(Assert);
             CacheAndCanvasState();
             ArrowHeadRenderingTests.Run(Assert);
             OverlaySceneCacheTests.Run(Assert);
