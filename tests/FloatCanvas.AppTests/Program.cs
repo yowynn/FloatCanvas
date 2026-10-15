@@ -18,6 +18,7 @@ internal static class Program
             CaptureViewportPlacementTests.Run((name, condition) => Assert(name, condition));
             MoveIntoViewTests.Run((name, condition) => Assert(name, condition));
             ImageToolTargetTests.Run((name, condition) => Assert(name, condition));
+            ImageDropTests.Run((name, condition) => Assert(name, condition));
             CreationTools(); SelectionAndTransforms(); CancellationAndReplacement(); EraserTransactions();
             ImageEffectsAndCrop(); DocumentRegions(); TextDoubleClick(); RasterPreviewRanges();
             PointerNoOpTests.Run((name, condition) => Assert(name, condition));

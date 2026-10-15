@@ -207,6 +207,7 @@ internal sealed partial class DesktopSession : IDisposable
         Item(L.Get("Menu.ExportTransparent"), () => _ = RunCommand(() => ExportAsync(true)));
         Item(L.Get("Menu.Copy"), () => CopySelection());
         Item(L.Get("Menu.Paste"), () => _ = RunCommand(PasteAsync));
+        Item(L.Get("Menu.ImageDrop"), () => RunUiAction(BeginImageDrop));
         Item(L.Get("Menu.ReplaceImage"), () => _ = RunCommand(() => ImportImagesAsync(null, true)));
         Item(_host.Scope == OverlayMonitorScope.PrimaryScreen ? L.Get("Menu.CapturePrimary") : L.Get("Menu.CaptureAll"), () => _ = RunCommand(() => StartCaptureAsync(false)));
         Item(L.Get("Menu.ReturnLive"), ReturnToLive); Item(L.Get("Menu.ResumeCapture"), ResumeCapture);
@@ -235,7 +236,7 @@ internal sealed partial class DesktopSession : IDisposable
         border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         var window = new Window { Title = L.Get("Toolbar.Title"), WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent,
             Topmost = true, ShowInTaskbar = true, ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight, Content = border, FontSize = 14,
-            FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI"), AllowDrop = true };
+            FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI") };
         title.MouseLeftButtonDown += (_, _) => { window.DragMove(); SaveToolbarPosition(); };
         window.PreviewKeyDown += (_, e) =>
         {
@@ -249,8 +250,6 @@ internal sealed partial class DesktopSession : IDisposable
             if (key is 0x1B or 0x2E or 0x56 or 0x42 or 0x4C or 0x41 or 0x52 or 0x4F or 0x54 or 0x4E or 0x45 ||
                 (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0) { OnKey(key); e.Handled = true; }
         };
-        window.DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop) ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None; e.Handled = true; };
-        window.Drop += (_, e) => { if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] files) _ = RunCommand(() => ImportImagesAsync(files)); };
         window.Closing += (_, e) => { if (!_disposed) { e.Cancel = true; RunUiAction(() => SetEditing(false)); } };
         return window;
     }
@@ -282,6 +281,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private bool SetEditing(bool editing)
     {
+        CloseImageDrop();
         bool wasEditing = _host.IsEditing;
         _editor.Cancel();
         if (!editing) _textEditor?.Close();
@@ -470,6 +470,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnMonitorsChanged()
     {
+        CloseImageDrop();
         _editor.Cancel();
         var bounds = _host.Monitors.Select(m=>new RectD(m.Bounds.Left,m.Bounds.Top,m.Bounds.Width,m.Bounds.Height)).Aggregate(RectD.Union);
         _live.Document.Viewport=bounds;
@@ -656,6 +657,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        CloseImageDrop();
         System.Windows.Input.InputManager.Current.PreProcessInput -= OnWpfInputProgress;
         Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemThemeChanged;
         StopDocumentTimers(); _renderOperation?.Abort(); _renderOperation = null; _renderAgain = false;

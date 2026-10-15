@@ -148,6 +148,7 @@ internal sealed partial class DesktopSession
     private async Task RequestExitAsync()
     {
         if (_documentExitRequested || _documentBusy) return;
+        CloseImageDrop();
         _documentExitRequested = true; _editor.Cancel();
         try { await FlushRecoveryAsync(); _app.Shutdown(); }
         catch (Exception ex)
@@ -198,6 +199,7 @@ internal sealed partial class DesktopSession
     private async Task OpenProjectAsync()
     {
         if (DocumentOperationBusy) return;
+        CloseImageDrop();
         _documentBusy = true;
         try
         {
@@ -442,12 +444,7 @@ internal sealed partial class DesktopSession
         if (replaceSelected && target.SelectedElements().Count(e => e.Kind == ElementKind.Image && !e.Locked) != 1)
         { UpdateStatus(L.Get("Image.SelectFirst")); return; }
         var selectedIds = target.Selection.ToHashSet();
-            var normalized = await Task.Run(async () =>
-            {
-                var images = new List<NormalizedImage>();
-                foreach (string path in paths) images.Add(AssetImport.Normalize(await File.ReadAllBytesAsync(path, _documentLifetime.Token)));
-                return images;
-            }, _documentLifetime.Token);
+            var normalized = await ImageImportCommand.NormalizeFilesAsync(paths, _documentLifetime.Token);
             if (!ReferenceEquals(Active, target) || replaceSelected && !target.Selection.SetEquals(selectedIds))
             { UpdateStatus(L.Get("Image.ImportChanged")); return; }
             InsertImages(target, normalized, replaceSelected); _editor.Tool = EditorTool.Select;
@@ -457,32 +454,14 @@ internal sealed partial class DesktopSession
     }
     private void InsertImages(EditorSession target, IReadOnlyList<NormalizedImage> images, bool replace)
     {
-        var resources = images.Select(image => (Image: image, Id: _assets.Add(image.PngBytes))).ToArray();
-        var visible = VisibleDocumentArea();
-        target.Execute(replace ? L.Get("History.ReplaceImage") : L.Get("Image.ImportTitle"), d =>
-        {
-            if (replace)
-            {
-                var image = target.SelectedElements().Single(e => e.Kind == ElementKind.Image && !e.Locked);
-                image.AssetId = resources[0].Id; // Preserve object frame, crop and normalized effects.
-                return;
-            }
-            target.Selection.Clear(); int index = 0;
-            foreach (var resource in resources)
-            {
-                double scale = Math.Min(1, Math.Min(visible.Width * .8 / resource.Image.Width, visible.Height * .8 / resource.Image.Height));
-                double width = resource.Image.Width * scale, height = resource.Image.Height * scale;
-                var element = new CanvasElement { Kind = ElementKind.Image, AssetId = resource.Id, Width = width, Height = height,
-                    Transform = Affine2D.Translation(visible.Center.X - width / 2 + index * 20, visible.Center.Y - height / 2 + index * 20) };
-                d.Elements.Add(element); target.Selection.Add(element.Id); index++;
-            }
-        });
+        ImageImportCommand.Insert(target, images, VisibleDocumentArea(), replace);
         UpdateStatus(replace ? L.Get("Image.Replaced") : L.Format("Image.Imported", images.Count));
     }
 
     private async Task StartCaptureAsync(bool region)
     {
         if (DocumentOperationBusy) return;
+        CloseImageDrop();
         _documentBusy = true;
         try
         {
