@@ -35,6 +35,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
       commit: ${{ steps.version.outputs.commit }}
+      artifact-id: ${{ steps.package.outputs.artifact-id }}
     steps:
       - name: Check out the existing release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,9 +73,10 @@ jobs:
           $zip = Join-Path 'dist' "FloatCanvas-$env:PACKAGE_VERSION-win-x64.zip"
           ./scripts/Smoke-Package.ps1 -ZipPath $zip
       - name: Preserve verified ZIP and SHA256 as workflow artifacts
+        id: package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: FloatCanvas-${{ steps.version.outputs.version }}-win-x64
+          name: FloatCanvas-${{ steps.version.outputs.version }}-win-x64-attempt-${{ github.run_attempt }}
           path: |
             dist/FloatCanvas-${{ steps.version.outputs.version }}-win-x64.zip
             dist/FloatCanvas-${{ steps.version.outputs.version }}-win-x64.zip.sha256
@@ -94,7 +96,7 @@ jobs:
       - name: Download this run's verified package
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: FloatCanvas-${{ needs.build.outputs.version }}-win-x64
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
           path: dist
       - name: Publish a new Release without replacing existing releases or assets
         env:
