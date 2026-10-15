@@ -1,5 +1,13 @@
 # 更新日志 / Changelog
 
+## 0.1.1-preview.7 — 2026-10-15
+
+- 修复操作画布后工具条无法点击的问题。
+- 透明 PNG 图片导入时保留原始图片精度。
+
+- Fixed the toolbar becoming unclickable after interacting with the canvas.
+- Preserve original image precision when importing transparent PNG images.
+
 ## 0.1.1-preview.6 — 2026-10-15
 
 - 自定义快捷键后，工具提示、辅助访问名称和已打开的欢迎说明同步显示当前组合。

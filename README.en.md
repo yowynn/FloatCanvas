@@ -4,7 +4,7 @@
 
 A Windows screen annotation tool. Draw over your desktop, place images and edit objects, then return to the application underneath while your annotations stay visible.
 
-Current version: **0.1.1-preview.6**. [User guide](Docs/User-Guide.en.md) · [Changelog](CHANGELOG.md)
+Current version: **0.1.1-preview.7**. [User guide](Docs/User-Guide.en.md) · [Changelog](CHANGELOG.md)
 
 ## Features
 
