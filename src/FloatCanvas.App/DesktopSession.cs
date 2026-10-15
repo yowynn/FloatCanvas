@@ -39,6 +39,8 @@ internal sealed partial class DesktopSession : IDisposable
     private EditorSession? _textEditorSession;
     private ComboBox _toolPicker = null!;
     private Slider _opacitySlider = null!;
+    private System.Windows.Controls.Button _passThroughButton = null!;
+    private TextBlock? _welcomeShortcuts;
     private bool _syncingControls;
     private bool _disposed;
     private bool _toolbarPlaced;
@@ -155,11 +157,14 @@ internal sealed partial class DesktopSession : IDisposable
         var panel = new StackPanel { Margin = new Thickness(24) };
         panel.Children.Add(new TextBlock { Text = L.Get("App.Name"), FontSize = 26, FontWeight = FontWeights.SemiBold });
         panel.Children.Add(new TextBlock { Text = L.Get("Welcome.Tagline"), Foreground = Brushes.Gray, Margin = new Thickness(0, 6, 0, 20) });
-        panel.Children.Add(new TextBlock { Text = L.Format("Welcome.Shortcuts", FormatHotkey(_settings.Toggle), FormatHotkey(_settings.Hide)), LineHeight = 26 });
+        var shortcuts = new TextBlock { Text = L.Format("Welcome.Shortcuts", FormatHotkey(_settings.Toggle), FormatHotkey(_settings.Hide)), LineHeight = 26 };
+        _welcomeShortcuts = shortcuts;
+        panel.Children.Add(shortcuts);
         panel.Children.Add(new TextBlock { Text = L.Get("Welcome.Description"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 18, 0, 18) });
         var welcome = new Window { Title = L.Get("Welcome.Title"), Content = panel, Width = 430, SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterScreen, ResizeMode = ResizeMode.NoResize, FontSize = 14 };
         panel.Children.Add(Button(L.Get("Welcome.Start"), () => { welcome.Close(); SetEditing(true); }));
+        welcome.Closed += (_, _) => { if (ReferenceEquals(_welcomeShortcuts, shortcuts)) _welcomeShortcuts = null; };
         welcome.Show();
     }
 
@@ -197,7 +202,9 @@ internal sealed partial class DesktopSession : IDisposable
         row.Children.Add(ToolButton(L.Get("Toolbar.Capture"), "M1,6 L1,2 L5,2 M11,2 L15,2 L15,6 M15,10 L15,14 L11,14 M5,14 L1,14 L1,10 M4,5 L12,5 L12,11 L4,11 Z", () => _ = RunCommand(() => StartCaptureAsync(true))));
         row.Children.Add(ToolButton(L.Get("Toolbar.SaveProject"), "M2,1 L11,1 L14,4 L14,15 L2,15 Z M5,1 L5,6 L10,6 L10,1 M5,15 L5,10 L11,10 L11,15", () => _ = RunCommand(() => SaveProjectAsync())));
         row.Children.Add(ToolButton(L.Get("Toolbar.Inspector"), "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15", ToggleInspector));
-        row.Children.Add(ToolButton(L.Get("Toolbar.PassThrough"), "M4,1 L4,13 L7,10 L10,15 L12,14 L9,9 L14,9 Z", () => SetEditing(false)));
+        _passThroughButton = ToolButton("", "M4,1 L4,13 L7,10 L10,15 L12,14 L9,9 L14,9 Z", () => SetEditing(false));
+        RefreshHotkeyHints(_passThroughButton, null, _settings.Toggle, _settings.Hide);
+        row.Children.Add(_passThroughButton);
         var more = ToolButton(L.Get("Toolbar.More"), "M3,7 L3,9 M8,7 L8,9 M13,7 L13,9", () => { });
         var menu = new ContextMenu();
         void Item(string name, Action action) { var item = new MenuItem { Header = name }; item.Click += (_, _) => RunUiAction(action); menu.Items.Add(item); }
@@ -560,6 +567,17 @@ internal sealed partial class DesktopSession : IDisposable
         return string.Join("+", parts);
     }
 
+    internal static void RefreshHotkeyHints(System.Windows.Controls.Button passThrough, TextBlock? welcomeShortcuts,
+        HotkeyBinding toggle, HotkeyBinding hide)
+    {
+        string toggleText = FormatHotkey(toggle);
+        string label = L.Format("Toolbar.PassThrough", toggleText);
+        passThrough.ToolTip = label;
+        System.Windows.Automation.AutomationProperties.SetName(passThrough, label);
+        if (welcomeShortcuts is not null)
+            welcomeShortcuts.Text = L.Format("Welcome.Shortcuts", toggleText, FormatHotkey(hide));
+    }
+
     private void ShowHotkeySettings()
     {
         SetEditing(false);
@@ -641,6 +659,7 @@ internal sealed partial class DesktopSession : IDisposable
                     _host.RegisterHotkeys(oldToggle, oldHide);
                     throw;
                 }
+                RefreshHotkeyHints(_passThroughButton, _welcomeShortcuts, _settings.Toggle, _settings.Hide);
                 _tray.Text = L.Get("App.NamePrefix") + FormatHotkey(toggle) + L.Get("Desktop.TrayModeSuffix");
                 AppTheme.Apply(_settings.Theme);
                 window.Close();

@@ -1,5 +1,13 @@
 # 更新日志 / Changelog
 
+## 0.1.1-preview.6 — 2026-10-15
+
+- 自定义快捷键后，工具提示、辅助访问名称和已打开的欢迎说明同步显示当前组合。
+- 使用指南补充被系统或其他应用截获的快捷键如何处理。
+
+- Tooltips, accessibility names and an open welcome screen now show the current custom shortcuts.
+- The user guides explain combinations intercepted by Windows or another application.
+
 ## 0.1.1-preview.5 — 2026-10-15
 
 - 新增临时“拖入图片…”窗口，可在操作桌面时向原画布或截图草稿导入图片。

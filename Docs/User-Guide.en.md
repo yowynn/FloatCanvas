@@ -2,7 +2,7 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers **0.1.1-preview.5** for Windows x64. Features and stability are still being refined; save important work as a project file.
+This guide covers **0.1.1-preview.6** for Windows x64. Features and stability are still being refined; save important work as a project file.
 
 The interface supports automatic Windows language selection, Simplified Chinese and English. Choose a language in Settings, save and restart to apply it.
 
@@ -39,7 +39,7 @@ Uncommitted text is retained when focus moves away and is restored when you resu
 | `Ctrl+S` / `Ctrl+Shift+S` | Save/save the current project as another file |
 | `Ctrl+O` | Open a project |
 
-Open **More → Settings…** to change shortcuts or the light/dark theme. A conflict displays a reason and preserves the previous working shortcut. Drag the toolbar to reposition it. The system tray also offers editing, visibility, settings and exit commands.
+Open **More → Settings…** to change shortcuts or the light/dark theme. A registration conflict detected when saving displays a reason and preserves the previous working shortcut. Windows or another application may intercept a combination before the recorder receives it; choose another combination if the field does not change. Drag the toolbar to reposition it. The system tray also offers editing, visibility, settings and exit commands.
 
 Toggle shortcuts use Ctrl/Alt/Shift combinations. Win and system navigation combinations remain available to Windows; `Ctrl+Alt+Esc` is reserved for emergency input release. An unresponsive editing UI or interrupted input ownership returns to pass-through; earlier drawing keys are not replayed into the application underneath.
 

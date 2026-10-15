@@ -14,6 +14,7 @@ internal static class Program
         {
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            HotkeyHintTests.Run((name, condition) => Assert(name, condition));
             TextEditCommandTests.Run((name, condition) => Assert(name, condition));
             CaptureViewportPlacementTests.Run((name, condition) => Assert(name, condition));
             MoveIntoViewTests.Run((name, condition) => Assert(name, condition));

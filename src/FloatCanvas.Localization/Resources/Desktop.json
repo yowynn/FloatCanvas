@@ -144,8 +144,8 @@
     "en": "Properties and layers"
   },
   "Toolbar.PassThrough": {
-    "zh": "穿透 · Ctrl+Alt+F",
-    "en": "Pass through · Ctrl+Alt+F"
+    "zh": "穿透 · {0}",
+    "en": "Pass through · {0}"
   },
   "Toolbar.More": {
     "zh": "更多",
