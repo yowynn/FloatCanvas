@@ -29,12 +29,19 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if (args.Contains("--compatibility-only"))
+    {
+        WindowsCompatibilityTests.Run(Check);
+        Console.WriteLine($"Windows compatibility policy checks: {checks}; passed=true; native hooks/UI/input never run.");
+        return 0;
+    }
     if(args.Contains("--hide-command-only"))
     {
         HideCommandTests.Run(Check);
         Console.WriteLine($"Hide command lease checks: {checks}; passed=true; native hooks/UI/input never run.");
         return 0;
     }
+    WindowsCompatibilityTests.Run(Check);
     MonitorSelectionTests.Run(Check);
     LiveCapturePureTests.Run(Check);
     var state = New();

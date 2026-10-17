@@ -130,7 +130,7 @@ internal static class NativeMethods
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool EnumDisplayMonitors(nint dc, nint clip, MonitorEnumProcedure callback, nint data);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetMonitorInfoW(nint monitor, ref MonitorInformation info);
     [DllImport("shcore.dll")] internal static extern int GetDpiForMonitor(nint monitor, int type, out uint x, out uint y);
-    [DllImport("user32.dll")] internal static extern nint SetThreadDpiAwarenessContext(nint context);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern nint SetThreadDpiAwarenessContext(nint context);
     [DllImport("user32.dll")] internal static extern nint GetThreadDpiAwarenessContext();
     [DllImport("user32.dll")] internal static extern int GetAwarenessFromDpiAwarenessContext(nint context);
     [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(nint hwnd);

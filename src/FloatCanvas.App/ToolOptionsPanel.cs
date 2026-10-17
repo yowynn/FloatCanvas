@@ -36,7 +36,7 @@ internal sealed class ToolOptionsPanel : UserControl
     public event Action? ParametersChanged;
     public event Action<ColorField>? EyedropperRequested;
 
-    public ToolOptionsPanel(EditorController controller, ToolPresetLibrary library, ColorLibrary colors)
+    public ToolOptionsPanel(EditorController controller, ToolPresetLibrary library, ColorLibrary colors, ToolStateStore? stateStore = null)
     {
         this.controller = controller;
         Width = PreferredWidth; MinWidth = 480; MaxWidth = PreferredWidth; MaxHeight = 620;
@@ -52,7 +52,7 @@ internal sealed class ToolOptionsPanel : UserControl
         var recipeBorder = new Border { BorderThickness = new(1, 0, 0, 0), Margin = new(12, 0, 0, 0), Child = recipes };
         recipeBorder.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         Grid.SetColumn(recipeBorder, 1); columns.Children.Add(recipeBorder); body.Children.Add(columns);
-        presets = new ToolPresetGallery(controller, library);
+        presets = new ToolPresetGallery(controller, library, stateStore);
         presets.Applied += () => { Refresh(); ParametersChanged?.Invoke(); };
         presets.Failed += Error; recipes.Children.Add(presets);
         foreground = new(ColorRole.Foreground, colors); background = new(ColorRole.Background, colors);

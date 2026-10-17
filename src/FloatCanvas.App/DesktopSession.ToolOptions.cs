@@ -18,7 +18,7 @@ internal sealed partial class DesktopSession
 
     private void CreateToolOptionsPopup(Window toolbar)
     {
-        _toolOptionsPanel = new(_editor, _toolPresets, _colorLibrary);
+        _toolOptionsPanel = new(_editor, _toolPresets, _colorLibrary, _toolStateStore);
         _toolOptionsFrame = new Border { Child = _toolOptionsPanel };
         _toolOptionsWindow = new Window { Content = _toolOptionsFrame, Width = ToolOptionsPanel.PreferredWidth + 2,
             SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize,

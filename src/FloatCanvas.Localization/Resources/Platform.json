@@ -404,8 +404,20 @@
     "en": "Errors occurred while restoring FloatCanvas windows after the screenshot."
   },
   "Overlay.PlatformUnsupported": {
-    "zh": "浮绘需要 Windows 10 22H2 或更新版本。",
-    "en": "FloatCanvas requires Windows 10 22H2 or later."
+    "zh": "浮绘需要 Windows 10 1607（内部版本 14393）或更新版本。",
+    "en": "FloatCanvas requires Windows 10 version 1607 (build 14393) or later."
+  },
+  "Overlay.DpiContextFailed": {
+    "zh": "无法启用屏幕物理像素坐标，浮绘已取消当前窗口操作。",
+    "en": "Physical screen pixel coordinates could not be enabled. The window operation was cancelled."
+  },
+  "Overlay.DpiContextRestoreFailed": {
+    "zh": "无法恢复窗口的 DPI 坐标上下文。",
+    "en": "The window DPI awareness context could not be restored."
+  },
+  "Capture.LiveExclusionUnsupported": {
+    "zh": "实时桌面马赛克需要 Windows 10 2004 或更新版本；当前系统可使用静态截图效果。",
+    "en": "Live desktop pixelation requires Windows 10 version 2004 or later. Static screenshot effects are available on this system."
   },
   "Overlay.FocusMonitorFailed": {
     "zh": "无法监测编辑输入焦点，浮绘未接管输入。",

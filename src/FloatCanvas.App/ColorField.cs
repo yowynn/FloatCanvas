@@ -12,7 +12,7 @@ namespace FloatCanvas.App;
 internal sealed class ColorField : UserControl
 {
     public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(nameof(Value), typeof(uint), typeof(ColorField),
-        new FrameworkPropertyMetadata(0xFF2383E2u, (sender, _) => ((ColorField)sender).RefreshValue()));
+        new FrameworkPropertyMetadata(ColorLibrary.ForegroundRed, (sender, _) => ((ColorField)sender).RefreshValue()));
     private readonly ColorLibrary library;
     private readonly System.Windows.Controls.Button button = new() { MinHeight = 34, Padding = new Thickness(6, 4, 6, 4) };
     private readonly Grid swatch = new() { IsHitTestVisible = false };

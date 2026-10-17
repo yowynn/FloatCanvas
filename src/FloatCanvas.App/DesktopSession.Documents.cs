@@ -204,7 +204,7 @@ internal sealed partial class DesktopSession
             _captureOrigin = restored.State.CaptureOrigin;
             _documentFrozenCaptureWarning = null;
             _editor.ReplaceSession(_live, new(0, 0));
-            _editor.Tool = _documentLiveTool;
+            SwitchToolState(_documentLiveTool);
             RecoveryHistory.WorkspaceRestored();
             _documentRecoveryFingerprint = null;
             OnMonitorsChanged();
@@ -243,7 +243,7 @@ internal sealed partial class DesktopSession
         if (_documentExitRequested || _documentBusy) return;
         CloseImageDrop();
         _documentExitRequested = true; _editor.Cancel();
-        try { await FlushRecoveryAsync(); _app.Shutdown(); }
+        try { FlushToolState(commitDraft: true); await FlushRecoveryAsync(); _app.Shutdown(); }
         catch (Exception ex)
         {
             _documentExitRequested = false;
@@ -320,7 +320,7 @@ internal sealed partial class DesktopSession
             {
                 if (!ReferenceEquals(previous, _live) && !await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return;
                 _documentFiles.Remove(_live);
-                _live = session; _editor.ReplaceSession(session, new(0, 0)); _editor.Tool = _documentLiveTool;
+                _live = session; _editor.ReplaceSession(session, new(0, 0)); SwitchToolState(_documentLiveTool);
                 OnMonitorsChanged();
             }
             _documentFiles[session] = new() { Path = dialog.FileName, SavedFingerprint = Fingerprint(session.Document) };
@@ -486,13 +486,13 @@ internal sealed partial class DesktopSession
                 }, _documentLifetime.Token);
                 if (!ReferenceEquals(Active, target) || !CanAddCanvasContent()) return;
                 ObjectClipboardCommand.Insert(target, payload.Document, payload.assets, VisibleDocumentArea());
-                _editor.Tool = EditorTool.Select; return;
+                SwitchToolState(EditorTool.Select); return;
             }
             byte[]? bytes = ReadClipboardPng(data);
             if (bytes is not null)
             {
                 var normalized = await Task.Run(() => AssetImport.Normalize(bytes), _documentLifetime.Token);
-                if (ReferenceEquals(Active, target) && CanAddCanvasContent()) { InsertImages(target, [normalized], false); _editor.Tool = EditorTool.Select; }
+                if (ReferenceEquals(Active, target) && CanAddCanvasContent()) { InsertImages(target, [normalized], false); SwitchToolState(EditorTool.Select); }
             }
             else if (data.GetDataPresent(Wpf.DataFormats.FileDrop) && data.GetData(Wpf.DataFormats.FileDrop) is string[] paths)
             {
@@ -539,7 +539,7 @@ internal sealed partial class DesktopSession
             if (!CanAddCanvasContent()) return;
             if (!ReferenceEquals(Active, target) || replaceSelected && !target.Selection.SetEquals(selectedIds))
             { UpdateStatus(L.Get("Image.ImportChanged")); return; }
-            InsertImages(target, normalized, replaceSelected); _editor.Tool = EditorTool.Select;
+            InsertImages(target, normalized, replaceSelected); SwitchToolState(EditorTool.Select);
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Image.ImportFailed") + ex.Message); }
         finally { _documentBusy = false; PruneDocumentResources(); }
@@ -570,7 +570,7 @@ internal sealed partial class DesktopSession
             if (_capture is not null) _documentFiles.Remove(_capture);
             _capture = new(snapshot, _assets); _captureOrigin = new(b.Left, b.Top);
             _documentFrozenCaptureWarning = CaptureWarning(captured);
-            _editor.ReplaceSession(_capture, _captureOrigin); _editor.Tool = region ? EditorTool.CaptureRegion : EditorTool.Select;
+            _editor.ReplaceSession(_capture, _captureOrigin); SwitchToolState(region ? EditorTool.CaptureRegion : EditorTool.Select);
             bool editing;
             if (focusVersion != _host.ForegroundLossVersion)
             {
@@ -595,12 +595,12 @@ internal sealed partial class DesktopSession
             d.Viewport = bounds;
             d.Elements.RemoveAll(element => !ElementGeometry.Bounds(element).Intersects(bounds));
         });
-        _editor.Tool = EditorTool.Select; RequestRender(); UpdateStatus(WithCaptureWarning(L.Get("Capture.RegionSelected"), _documentFrozenCaptureWarning));
+        SwitchToolState(EditorTool.Select); RequestRender(); UpdateStatus(WithCaptureWarning(L.Get("Capture.RegionSelected"), _documentFrozenCaptureWarning));
     }
     private void ReturnToLive()
     {
         if (ReferenceEquals(Active, _live)) return;
-        _editor.Cancel(); _editor.ReplaceSession(_live, new(0, 0)); _editor.Tool = _documentLiveTool;
+        _editor.Cancel(); _editor.ReplaceSession(_live, new(0, 0)); SwitchToolState(_documentLiveTool);
         ScheduleRecovery(); RequestRender(); UpdateStatus(L.Get("Capture.ReturnedLive"));
     }
     private void ResumeCapture()
@@ -609,7 +609,7 @@ internal sealed partial class DesktopSession
         if (ReferenceEquals(Active, _live)) _documentLiveTool = _editor.Tool;
         _editor.Cancel();
         if (EnsureCaptureVisible()) ScheduleRecovery();
-        _editor.ReplaceSession(_capture, _captureOrigin); _editor.Tool = EditorTool.Select;
+        _editor.ReplaceSession(_capture, _captureOrigin); SwitchToolState(EditorTool.Select);
         bool editing = SetEditing(true); RequestRender();
         if (editing) UpdateStatus(WithCaptureWarning(L.Get("Capture.Resumed"), _documentFrozenCaptureWarning));
     }

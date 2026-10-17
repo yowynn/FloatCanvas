@@ -201,7 +201,7 @@ internal sealed class InspectorWindow : Wpf.Window
             selectionLabel.Visibility = element is null ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
             AppWindowChrome.SetHeaderDetail(this, element is null ? "" : selectionLabel.Text);
             foreach (var box in fields.Values) box.Text = "";
-            colorFields["Stroke"].Value = element?.Style.Stroke ?? 0xFF2383E2;
+            colorFields["Stroke"].Value = element?.Style.Stroke ?? ColorLibrary.ForegroundRed;
             colorFields["Fill"].Value = element?.Style.Fill ?? 0;
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = ElementGeometry.Bounds(element);

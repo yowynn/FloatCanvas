@@ -12,6 +12,8 @@ internal static class ToolPresetAndColorTests
 {
     public static void Run(Action<string, bool> check)
     {
+        _ = Wpf.Application.Current ?? new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
+        AppTheme.Apply("light");
         check("tool parameters reject multiple emoji graphemes before preview or insertion", !new ToolParameters { Emoji = "😀😀" }.IsValid());
         check("tool parameters retain whole joined emoji sequences", new ToolParameters { Emoji = "👩‍🎨" }.IsValid());
         check("tool parameters reject blank emoji glyphs", !new ToolParameters { Emoji = " " }.IsValid());
@@ -24,6 +26,11 @@ internal static class ToolPresetAndColorTests
     {
         string path = Path.Combine(root, "presets.json");
         var library = new ToolPresetLibrary(path);
+        var initial = new ToolParameters();
+        var controller = new EditorController(new EditorSession());
+        check("new tool parameters start with palette red and transparent fill", initial.Style.Stroke == 0xFFE03E3E && initial.Style.Fill == 0);
+        check("new editor controllers start with palette red and transparent fill", controller.Style.Stroke == 0xFFE03E3E && controller.Style.Fill == 0);
+        check("all official recipes default to palette red without introducing colored fill", library.Official.Count > 0 && library.Official.All(p => p.Parameters.Style.Stroke == 0xFFE03E3E && p.Parameters.Style.Fill == 0));
         var current = new ToolParameters
         {
             Tool = EditorTool.Rectangle, CornerRadius = 27, Symbol = SymbolKind.Heart, ConstrainAspect = true, EffectStrength = 42,
@@ -77,6 +84,8 @@ internal static class ToolPresetAndColorTests
         string path = Path.Combine(root, "colors.json"); var library = new ColorLibrary(path);
         var foreground = ColorLibrary.Palette(ColorRole.Foreground); var background = ColorLibrary.Palette(ColorRole.Background);
         check("both role palettes have ten ordered named colors", foreground.Count == 10 && background.Count == 10 && foreground.Select(c => c.Key).SequenceEqual(new[] { "Black", "White", "Red", "Brown", "Orange", "Yellow", "Blue", "Green", "Purple", "Pink" }));
+        check("foreground red retains its exact opaque palette value", ColorLibrary.ForegroundRed == 0xFFE03E3E && foreground.Single(c => c.Key == "Red").Value == 0xFFE03E3E);
+        check("background red retains its exact light palette value", ColorLibrary.BackgroundRed == 0xFFFFDCDC && background.Single(c => c.Key == "Red").Value == 0xFFFFDCDC);
         check("role palettes supply different matching semantic values", foreground.Single(c => c.Key == "Blue").Value == 0xFF2383E2 && background.Single(c => c.Key == "Blue").Value == 0xFFDCEEFF);
         check("HTML color parser supports three six and eight digit exact ARGB", ColorLibrary.TryParseHtml("#F08", out uint shortHex) && shortHex == 0xFFFF0088 && ColorLibrary.TryParseHtml("336699", out uint rgb) && rgb == 0xFF336699 && ColorLibrary.TryParseHtml("#7F112233", out uint argb) && argb == 0x7F112233);
         check("HTML color parser rejects malformed values", !ColorLibrary.TryParseHtml("#12345", out _) && !ColorLibrary.TryParseHtml("#GG2233", out _) && !ColorLibrary.TryParseHtml("red", out _));

@@ -26,12 +26,17 @@ internal sealed partial class DesktopSession
         }
         finally {_documentBusy=false;RequestRender();}
     }
-    private async Task AddDesktopEffectAsync(RectD region, ImageEffectKind kind, double amount, uint color)
+    private Task AddDesktopEffectAsync(RectD region, ImageEffectKind kind, double amount, uint color) =>
+        AddDesktopEffectCoreAsync(region, kind, amount, color, CaptureCleanDesktopAsync);
+
+    private async Task AddDesktopEffectCoreAsync(RectD region, ImageEffectKind kind, double amount, uint color,
+        Func<Task<CapturedDesktop>> captureDesktop)
     {
         var target = Active;
         region = region.Intersect(target.Document.Viewport);
         if (region.IsEmpty) return;
-        if (kind == ImageEffectKind.Pixelate && target.Document.Kind == DocumentKind.LiveOverlay)
+        bool desktopPixelate = kind == ImageEffectKind.Pixelate && target.Document.Kind == DocumentKind.LiveOverlay;
+        if (desktopPixelate && _host.Capabilities.SupportsCaptureExclusion)
         {
             target.Add(new CanvasElement { Kind = ElementKind.LivePixelate, Width = region.Width, Height = region.Height,
                 Transform = Affine2D.Translation(region.X, region.Y), Style = new() { StrokeWidth = 0 },
@@ -49,7 +54,7 @@ internal sealed partial class DesktopSession
         {
             var snapshot = target.CreateCommittedSnapshot(); snapshot.Viewport = region; snapshot.LayerOpacity = 1;
             var resources = ResourceSnapshot(snapshot).ToList();
-            var capture = await CaptureCleanDesktopAsync();
+            var capture = await captureDesktop();
             var backgroundAssets = new AssetLibrary(); string backgroundId = backgroundAssets.Add(capture.PngBytes);
             resources.Add(backgroundAssets.Get(backgroundId)); snapshot.Background = Background(capture, backgroundId);
             byte[] pixels = await Task.Run(() =>
@@ -63,7 +68,7 @@ internal sealed partial class DesktopSession
                 Transform = Affine2D.Translation(region.X, region.Y),
                 Effects = [new ImageEffect { Kind = kind, Amount = amount, Color = color, Bounds = new(0, 0, 1, 1) }],
                 Style = new() { StrokeWidth = 0 } });
-            UpdateStatus(L.Get("Effect.RegionFrozen"));
+            UpdateStatus(L.Get(desktopPixelate ? "Effect.LegacyPixelateFrozen" : "Effect.RegionFrozen"));
         }
         finally { _documentBusy = false; }
     }

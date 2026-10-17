@@ -11,11 +11,13 @@ internal static class Program
         try
         {
             if (args.Contains("--arrows-only")) { ArrowHeadRenderingTests.Run(Assert); return 0; }
+            if (args.Contains("--numbers-only")) { NumberFitRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--live-effects-only")) { LivePixelateRenderingTests.Run(Assert); return 0; }
             ShapesAndCoordinates();
             AlphaAndBackground();
             ImagesAndEffects();
             TextAndNumbers();
+            NumberFitRenderingTests.Run(Assert);
             OrientationAndFormats();
             AssetImportLosslessTests.Run(Assert);
             CacheAndCanvasState();

@@ -1,0 +1,6 @@
+{
+  "ToolState.InvalidCache": {
+    "zh": "工具状态缓存无效；原文件已保留。",
+    "en": "The tool state cache is invalid. The original file has been preserved."
+  }
+}

@@ -28,7 +28,7 @@ public sealed partial class OverlayHost
         bool sourceAvailable = GetCurrentInputMessageSource(out var source);
         int sourceError = sourceAvailable ? 0 : Marshal.GetLastWin32Error();
         var position = MessagePosition(state, message, lParam);
-        using var dpi = new PhysicalDpiScope();
+        using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         GetCursorPos(out var cursor);
         observer(new(timestamp, (long)state.Handle, message, unchecked((long)wParam), (long)lParam,
             messageTime, extra, position, new(cursor.X, cursor.Y), (long)GetForegroundWindow(), (long)GetCapture(),

@@ -110,7 +110,7 @@ internal static class Feedback4OptionsTests
     internal static void Colors(string folder, string locale, Action<string, bool> check)
     {
         string path = Path.Combine(folder, locale + "-colors.json"); var library = new ColorLibrary(path);
-        var field = new ColorField(ColorRole.Foreground, library); int changed = 0; field.ValueChanged += _ => changed++;
+        var field = new ColorField(ColorRole.Foreground, library) { Value = 0xFF2383E2 }; int changed = 0; field.ValueChanged += _ => changed++;
         field.Measure(new Size(300, 100)); field.Arrange(new Rect(field.DesiredSize)); field.UpdateLayout();
         var row = (Grid)field.Content; var palette = row.Children.OfType<Panel>().Single();
         check(locale + " primary color field exposes ten swatches in two rows", palette.Children.Count == 10 &&

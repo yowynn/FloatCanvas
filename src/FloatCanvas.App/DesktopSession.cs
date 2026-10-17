@@ -69,6 +69,10 @@ internal sealed partial class DesktopSession : IDisposable
         _settings = UserSettings.Load();
         L.Initialize(_settings.Language);
         _toolPresets = new();
+        _toolStateStore = new();
+        _toolbarToolMemory = _toolStateStore.Tools;
+        _toolbarButtonMemory = _toolStateStore.Buttons;
+        _toolStateStore.Changed += ScheduleToolStateSave;
         _colorLibrary = ColorLibrary.Shared;
         _stampLibrary = new(ApplicationPaths.ProfileDirectory);
         _overlayCache = new(_renderer);
@@ -92,8 +96,11 @@ internal sealed partial class DesktopSession : IDisposable
         { DeviceName = m.DeviceName, Bounds = new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height), DpiX = m.DpiX, DpiY = m.DpiY }).ToList() };
         _live = new(document, _assets);
         _editor = new(_live);
-        _editor.NumberStart = Math.Clamp(_settings.NumberStart,1,999999);
-        _editor.NumberStep = Math.Clamp(_settings.NumberStep,1,999999);
+        if (_toolbarToolMemory.TryGetValue(EditorTool.Freehand, out var savedPen)) _editor.ApplyParameters(savedPen);
+        _toolbarToolMemory.TryGetValue(EditorTool.Number, out var savedNumber);
+        _editor.NumberStart = Math.Clamp(savedNumber?.NumberStart ?? _settings.NumberStart,1,999999);
+        _editor.NumberStep = Math.Clamp(savedNumber?.NumberStep ?? _settings.NumberStep,1,999999);
+        _settings.NumberStart = _editor.NumberStart; _settings.NumberStep = _editor.NumberStep;
         document.NextNumber = _editor.NumberStart;
         _editor.Changed += () => { RequestRender(); ScheduleRecovery(); };
         _editor.Message += UpdateStatus;
@@ -177,7 +184,8 @@ internal sealed partial class DesktopSession : IDisposable
                     CapturedInput = _host.IsEditing, Timestamp = DateTimeOffset.Now, _live.Document.Viewport,
                     LiveElements = _live.Document.Elements.Select(e => new { e.Id, e.Kind, e.Transform, e.Text, e.Number, e.AssetId }).ToArray(),
                     CaptureElementCount = _capture?.Document.Elements.Count, AssetCount = _assets.Count,
-                    ResourcesComplete = _live.Document.ReferencedAssets.Concat(_capture?.Document.ReferencedAssets ?? []).All(id => _assets.TryGet(id, out _))
+                    ResourcesComplete = _live.Document.ReferencedAssets.Concat(_capture?.Document.ReferencedAssets ?? []).All(id => _assets.TryGet(id, out _)),
+                    ToolParameters = _editor.Parameters, ToolWorkingStates = _toolbarToolMemory, ToolPresetSelections = _toolStateStore?.Selections
                 }, new JsonSerializerOptions { WriteIndented = true }));
                 _app.Shutdown();
             };
@@ -232,6 +240,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private bool SetEditing(bool editing, bool preserveImageDrop = false)
     {
+        _clearCanvasButton?.CancelConfirmation();
         // Close the startup window before acquiring the input lease so native close
         // focus restoration cannot interrupt a newly acquired editing session.
         if (editing) _welcomeWindow?.Close();
@@ -322,6 +331,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (_disposed || !_host.IsEditing || e.StagingItem.Input is not System.Windows.Input.MouseButtonEventArgs
             { ButtonState: System.Windows.Input.MouseButtonState.Pressed, OriginalSource: DependencyObject source }) return;
+        if (_clearCanvasButton is { IsConfirming: true } clear && !Ancestors(source).Contains(clear)) clear.CancelConfirmation();
         // WPF menus own their focus/capture lifetime until the mouse release invokes
         // the item. Moving native focus into that Popup can cancel the pending click.
         if (!ShouldSynchronizePointerFocus(source)) return;
@@ -338,6 +348,11 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnKey(int key)
     {
+        if (_clearCanvasButton is { IsConfirming: true } clear)
+        {
+            clear.CancelConfirmation();
+            if (key == 0x1B) return;
+        }
         if (DocumentOperationBusy || _layers?.IsRenaming == true) return;
         var ctrl = (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0;
         var shift = (OverlayHost.CurrentModifiers & OverlayModifiers.Shift) != 0;
@@ -686,7 +701,10 @@ internal sealed partial class DesktopSession : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        try { FlushToolState(commitDraft: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { UpdateStatus(ex.Message); }
         _disposed = true;
+        _toolStateSaveTimer?.Stop();
         StopLiveEffectsCapture();
         CloseImageDrop();
         System.Windows.Input.InputManager.Current.PreProcessInput -= OnWpfInputProgress;

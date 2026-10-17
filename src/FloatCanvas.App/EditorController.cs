@@ -28,7 +28,7 @@ internal sealed class EditorController
             if (tool != value) { Cancel(); tool = value; Changed?.Invoke(); }
         }
     }
-    public ElementStyle Style { get; private set; } = new() { Stroke = 0xFF2383E2 };
+    public ElementStyle Style { get; private set; } = new() { Stroke = ColorLibrary.ForegroundRed };
     public double? CornerRadius { get; set; }
     public SymbolKind Symbol { get; set; }
     public bool ConstrainAspect { get; set; }

@@ -15,6 +15,11 @@ public sealed partial class OverlayHost
     public void SetLiveCaptureExclusion(bool exclude)
     {
         CheckThread();
+        if (!Capabilities.SupportsCaptureExclusion)
+        {
+            if (exclude) throw new PlatformNotSupportedException(L.Get("Capture.LiveExclusionUnsupported"));
+            return;
+        }
         var handles = _windows.SelectMany(pair => new[] { pair.Display.Handle, pair.Input.Handle }).Where(handle => handle != 0).Distinct().ToArray();
         var previous = new List<(nint Handle, uint Affinity)>();
         try

@@ -1,0 +1,10 @@
+{
+  "Effect.LegacyPixelateFrozen": {
+    "zh": "当前系统使用静态马赛克；下层画面变化时不会自动更新。",
+    "en": "This system uses a frozen pixelated region; changes underneath are not updated automatically."
+  },
+  "Effect.LegacyLiveRegion": {
+    "zh": "实时桌面马赛克需要 Windows 10 2004 或更新版本；当前区域显示占位遮盖，可重新绘制为静态马赛克。",
+    "en": "Live desktop pixelation requires Windows 10 2004 or later. Existing regions show a placeholder cover; redraw them to create frozen pixelated regions."
+  }
+}

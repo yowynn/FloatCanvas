@@ -91,7 +91,7 @@ internal sealed class ColorPickerPanel : UserControl
         hue.ValueChanged += (_, _) => { if (!syncing) spectrum.ChangeHue(hue.Value); };
         spectrum.ColorChanged += color => { if (!syncing) hex.Text = ColorLibrary.ToHtml(color, false); };
         preview.MouseLeftButtonDown += (_, e) => { spectrum.Focus(); e.Handled = true; };
-        Value = role == ColorRole.Background ? 0u : 0xFF2383E2;
+        Value = role == ColorRole.Background ? 0u : ColorLibrary.ForegroundRed;
         RefreshCollections();
     }
 

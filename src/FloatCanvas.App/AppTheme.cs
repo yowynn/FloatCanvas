@@ -37,6 +37,9 @@ internal static class AppTheme
         SetBrush(resources, "CanvasPrimary", "#2376CC");
         SetBrush(resources, "CanvasPrimaryHover", "#1E66B3");
         SetBrush(resources, "CanvasPrimaryPressed", "#185394");
+        SetBrush(resources, "CanvasDanger", "#C9343D");
+        SetBrush(resources, "CanvasDangerHover", "#B92B35");
+        SetBrush(resources, "CanvasDangerPressed", "#A4242E");
         SetBrush(resources, "CanvasCodeText", dark ? "#FFADB4" : "#B62335");
         SetBrush(resources, "CanvasCodeSurface", dark ? "#3B2E35" : "#F9E9EC");
         SetBrush(resources, "CanvasCloseHover", dark ? "#422E35" : "#FBECEE");
@@ -138,6 +141,22 @@ internal static class AppTheme
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPrimaryHover}"/></Trigger>
                   <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPrimaryPressed}"/></Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasDangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{DynamicResource CanvasDanger}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Button">
+                <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                  <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasDangerHover}"/></Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasDangerPressed}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>

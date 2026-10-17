@@ -32,6 +32,7 @@ internal sealed partial class DesktopSession
 
     private void HandleCanvasPointer(OverlayPointerEvent e)
     {
+        if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _clearCanvasButton?.CancelConfirmation();
         if (DocumentOperationBusy || !_host.IsVisible) return;
         ValidateSelectedStamp();
         bool press = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left;
@@ -57,6 +58,7 @@ internal sealed partial class DesktopSession
             StampLibrary.Place(_selectedStamp, Active, _editor.ToDocument(e.Position));
             return;
         }
+        if (e.Kind == OverlayPointerKind.Down && e.Button == OverlayMouseButton.Right) SwitchToolState(EditorTool.Select);
         _editor.Pointer(e);
     }
 
@@ -80,7 +82,7 @@ internal sealed partial class DesktopSession
         CloseToolOptions();
         var expected = _stampLibrary.Items.FirstOrDefault(item => item.Id == id);
         if (expected is null) { UpdateStatus(L.Get("Stamp.Missing")); return; }
-        _editor.Tool = EditorTool.Stamp;
+        SwitchToolState(EditorTool.Stamp);
         _selectedStamp = null; _selectedStampId = id;
         _selectedStampFromSlot = fromSlot; _selectedStampUsesSource = useSource;
         var request = StampRequestGuard.Capture(++_stampSelectionRequest, id, expected.Revision, useSource, default);
@@ -93,7 +95,7 @@ internal sealed partial class DesktopSession
         _selectedStamp = loaded; _selectedStampId = id; _selectedStampRevision = entry.Revision;
         _selectedStampUsesSource = useSource;
         _selectedStampFromSlot = fromSlot;
-        _editor.Tool = EditorTool.Stamp;
+        SwitchToolState(EditorTool.Stamp);
         _stampWindow?.Hide();
         if (!_host.IsEditing) SetEditing(true);
         UpdateStatus(useSource ? L.Get("Stamp.SourceSelected") + entry.Name : entry.Name);
@@ -131,7 +133,7 @@ internal sealed partial class DesktopSession
         if (_editor.Tool != EditorTool.Stamp || _selectedStampId is not { } id) return;
         if (_stampLibrary.Items.Any(item => item.Id == id) && (!_selectedStampFromSlot || _stampLibrary.Pins.Contains(id))) return;
         _selectedStamp = null; _selectedStampId = null; _stampSelectionRequest++;
-        _editor.Tool = EditorTool.Select;
+        SwitchToolState(EditorTool.Select);
     }
 
     private void ToggleLayers()

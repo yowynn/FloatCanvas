@@ -1,5 +1,24 @@
 # 更新日志 / Changelog
 
+## 未发布 / Unreleased
+
+## 0.2.0-preview.2 — 2026-10-17
+
+- Windows x64 最低启动基线降至 Windows 10 1607（内部版本 14393），包含 LTSB 2016、LTSC 2019 和 LTSC 2021，移除原先 22H2 的过高门槛。较早系统采用兼容的 DPI 与截图路径；动态桌面马赛克仍需 Windows 10 2004，新建区域在旧系统使用静态截图效果，已有动态区域以实色覆盖并提示。冻结截图和图片效果继续可用；较早 Windows 10 实机验证仍待补充。
+- Lowered the Windows x64 startup baseline to Windows 10 1607 (build 14393), including LTSB 2016, LTSC 2019 and LTSC 2021, removing the overly restrictive 22H2 requirement. Earlier systems use compatible DPI and capture paths. Live desktop pixelation still requires Windows 10 2004; newly created regions use static snapshots on earlier systems, and existing live regions use solid coverage with a warning. Frozen-screenshot and image effects remain available. Testing on earlier Windows 10 systems is still pending.
+
+- 各工具的基础预设与完整当前参数自动保存，切换工具、关闭参数窗口、切换模式及退出重启不再还原；从工具条重新进入箭头或圆角矩形时也保留修改。官方基线与预览同样持久保留，显式重选预设才恢复基线。临时调整不覆盖用户预设或已有对象，窗口布局仍每次启动重置。
+- Each tool now saves its base preset and complete current parameters across tool switches, options-window closure, mode changes and app restarts, including when returning to arrows or rounded rectangles through the toolbar. Official baselines and previews persist too; explicitly reselect a preset to restore its baseline. Temporary changes leave personal preset definitions and existing objects intact, while window layouts still reset on startup.
+
+- 修复三位及更长序号换行、超出标记的问题；数字按单行自动缩小适配，保留标记大小与设置字号，画布和导出一致。
+- Fixed three-digit and longer numbered labels wrapping or overflowing their badges. Labels shrink to fit on one line, keeping the marker size and configured font size, consistently on the canvas and in exports.
+
+- 官方工具默认前景色改为色板红（`#E03E3E`），填充保持透明；已有对象、用户预设和已保存的工具参数不变，界面选中强调色仍为蓝色。
+- Official tool defaults now use the palette's red (`#E03E3E`) foreground with transparent fill. Existing objects, personal presets and saved tool parameters are retained; the interface selection accent stays blue.
+
+- 工具条“新建画布”改为红底删除图标的“清空画布”：首次点击显示确认对号和红底白字的“确定清除吗？”气泡，再次点击执行，也可快速双击。点击其他位置、按 Esc 或退出编辑取消确认；保留清空前归档和历史恢复。
+- Replaced the toolbar's New canvas action with a red **Clear canvas** delete button. Click once for a confirmation checkmark and a red **Clear canvas?** bubble with white text, then again to clear; a quick double-click also works. Click elsewhere, press Esc or leave edit mode to cancel. Archiving before clearing and workspace-history restoration are retained.
+
 ## 0.2.0-preview.1 — 2026-10-17
 
 本版本更新：

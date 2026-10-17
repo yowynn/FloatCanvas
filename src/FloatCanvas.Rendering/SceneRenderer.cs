@@ -227,21 +227,21 @@ public sealed partial class SceneRenderer : IDisposable
     private void DrawNumber(SKCanvas canvas, CanvasElement element)
     {
         float width = (float)element.Width, height = (float)element.Height;
+        if (width <= 0 || height <= 0) return;
         SetPaint((element.Style.Fill >> 24) == 0 ? element.Style.Stroke : element.Style.Fill, SKPaintStyle.Fill);
         canvas.DrawOval(new SKRect(0, 0, width, height), _paint);
         string label = element.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var style = element.Style.Clone();
-        style.FontSize = Math.Min(style.FontSize, Math.Min(width, height) * .58);
-        style.TextAlignment = TextAlignment.Center;
-        var metrics = _text.Measure(label, style, width);
-        while (metrics.Width > width * .8 && style.FontSize > 4)
-        {
-            style.FontSize *= .85;
-            metrics = _text.Measure(label, style, width);
-        }
-        canvas.Translate(0, (height - (float)metrics.Height) / 2);
+        style.FontSize = Math.Clamp(Math.Min(style.FontSize, Math.Min(width, height) * .58), 1, 2048);
+        style.TextAlignment = TextAlignment.Left;
+        // Measure the entire label without wrapping before fitting it. Canvas scaling
+        // also keeps very small badges within bounds below the font engine's minimum size.
+        var metrics = _text.Measure(label, style, 0);
+        float scale = (float)Math.Min(1, Math.Min(width * .8 / metrics.Width, height * .8 / metrics.Height));
+        canvas.Translate((width - (float)metrics.Width * scale) / 2, (height - (float)metrics.Height * scale) / 2);
+        canvas.Scale(scale, scale);
         SetPaint(0xFFFFFFFF, SKPaintStyle.Fill);
-        _text.Draw(canvas, label, style, width, _paint);
+        _text.Draw(canvas, label, style, 0, _paint);
     }
 
     private void DrawImage(SKCanvas canvas, CanvasElement element, AssetLibrary assets)

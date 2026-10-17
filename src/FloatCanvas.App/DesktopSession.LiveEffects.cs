@@ -23,6 +23,16 @@ internal sealed partial class DesktopSession
         bool needed = !_disposed && _cleanCaptureDepth == 0 && _host.IsVisible && Active.Document.Kind == DocumentKind.LiveOverlay &&
             SceneRenderer.HasLiveEffects(Active.Document);
         if (!needed) { StopLiveEffectsCapture(); return; }
+        if (!_host.Capabilities.SupportsCaptureExclusion)
+        {
+            // Older Windows accepts 0x11 as WDA_MONITOR, which masks the whole
+            // overlay in capture. Never sample that result as a live desktop.
+            if (_liveDesktopCapture is not null || _liveCaptureExcluded || _desktopBackdrop is not null)
+                StopLiveEffectsCapture();
+            string message = L.Get("Effect.LegacyLiveRegion");
+            if (_liveCaptureError != message) { _liveCaptureError = message; UpdateStatus(message); }
+            return;
+        }
         if (_liveDesktopCapture?.Completion.IsCompleted==true)StopLiveEffectsCapture();
         if (_liveDesktopCapture is null)
         {

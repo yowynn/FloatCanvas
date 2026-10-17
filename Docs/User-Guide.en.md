@@ -2,7 +2,7 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers the Windows x64 preview **0.2.0-preview.1**. Earlier versions may have different interfaces and features; check the [changelog](../CHANGELOG.md). Save important work as a project file.
+This guide covers the Windows x64 preview **0.2.0-preview.2**. Earlier versions may have different interfaces and features; check the [changelog](../CHANGELOG.md). Save important work as a project file.
 
 A drag that starts on the canvas stays with the canvas, even when it crosses the toolbar or ends on a button. Buttons are not triggered on release. A gesture that starts on the toolbar stays with the toolbar and does not draw on the canvas.
 
@@ -87,7 +87,7 @@ The app icon is on the left, followed by two rows aligned in columns:
 - **Upper row:** Select and Eraser, then ten entries: Freehand, Highlighter, Line, Rectangle, Ellipse, Text, Number, Symbol, Emoji and More. More provides pixelation and other tools; Text and Number have separate entries.
 - **Lower row:** Stamp library and New stamp, then square stamp slots `1`–`0` beneath the ten drawing entries, with a status readout on the right. Empty slots have faint outlines, assigned slots have slightly stronger muted outlines, and the active shortcut stamp uses a blue outline.
 
-The upper-right controls provide undo/redo, import, capture, properties, layers, New canvas, canvas opacity, visibility and Done. Open pixelation and other effects through More. The opacity slider occupies two button widths. The status readout follows the light/dark theme, truncates long messages and scrolls on hover. The toolbar starts centered on the primary screen with the crown at the screen's top edge. Window positions, sizes and toolbar expansion are remembered for the current session and reset on restart; custom shortcuts and other preferences remain saved.
+The upper-right controls provide undo/redo, import, capture, properties, layers, Clear canvas, canvas opacity, visibility and Done. Open pixelation and other effects through More. The opacity slider occupies two button widths. The status readout follows the light/dark theme, truncates long messages and scrolls on hover. The toolbar starts centered on the primary screen with the crown at the screen's top edge. Window positions, sizes and toolbar expansion are remembered for the current session and reset on restart; custom shortcuts and other preferences remain saved.
 
 - **Click the app icon:** open the main menu. A single click waits for the system double-click interval to avoid conflicting actions; right-click opens the menu immediately.
 - **Double-click the app icon:** expand/collapse the toolbar. The collapsed toolbar keeps only the icon.
@@ -109,7 +109,11 @@ Draw lines and arrows by dragging; they have no single-click default length or a
 
 Official and personal presets use matching rounded square preview tiles, five per row, with names in hover hints. Every tool has at least one official preset. All official presets are shown. My presets shows only the current tool, with room for at least four rows and a viewport that expands alongside taller tool options. Additional presets scroll inside this area without making the window taller.
 
-A tool starts with its own default parameters on first use and restores its previous parameters when revisited. Click a tile to apply and select it immediately. A tool always has one selected recipe. Editing parameters keeps that selection and the official previews; click the same recipe again to restore its values. An official recipe initially keeps the current tool's colors when explicitly applied and can subsequently restore the parameters from that selection in this session. Personal recipes store the complete configuration. Use the plus button to save a new preset, or right-click a personal tile to overwrite, rename or delete it. Saving and renaming use the shared name dialog. Drag with the left mouse button to reorder; dragging and right-clicking do not apply a recipe. Deleting the selected personal preset applies the first official preset.
+A tool starts with its own default parameters on first use: official defaults use the palette's red (`#E03E3E`) foreground with transparent fill. Each tool remembers its base preset and complete current parameters independently, retaining changes when you switch tools, close options, switch edit/pass-through mode or restart the app. State is saved locally, combining frequent edits over about 500 milliseconds; normal exit and update restarts wait for pending writes. Window positions still reset on startup, and the next number remains part of the canvas document.
+
+Click a tile to apply and select it immediately. A tool always has one selected recipe. Editing parameters keeps that selection and the official previews; only explicitly clicking the same recipe again restores its baseline. An official recipe initially keeps the current tool's colors and stroke width when applied; later clicks restore that selection's baseline. Official baselines and previews also persist across restarts, unaffected by subsequent temporary color changes. Personal recipes store the complete configuration, and temporary parameter changes do not overwrite their definitions. Tool parameter changes do not alter existing objects or saved projects.
+
+Use the plus button to save a new preset, or right-click a personal tile to overwrite, rename or delete it. Saving and renaming use the shared name dialog. Drag with the left mouse button to reorder; dragging and right-clicking do not apply a recipe. Deleting the selected personal preset applies the first official preset.
 
 Choose colors in tool options or Properties. Foreground controls strokes or text; background controls fill for applicable shapes. The primary row has a rounded color-value button and ten quick colors in two rows. Clicking a quick color applies it directly. Small swatches have square corners and subtle outlines; recent and saved colors fit ten per row, with pixel-aligned spacing at the current display scale.
 
@@ -126,7 +130,7 @@ Tool options affect newly created elements. Use Properties to change existing el
 - **Rotate:** drag the rotation handle above the selection box. Hold `Shift` to snap in 15° steps.
 - **Line endpoints:** select one line or arrow, then drag an endpoint.
 - **Text:** choose the text tool and click the canvas. Enter multiple lines and choose **Done** or press `Ctrl+Enter`. Double-click text in selection mode to edit it again.
-- **Numbered markers:** click to add and select the next number; hold `Ctrl` to insert from inside an existing selection. Deleting a marker does not renumber the others.
+- **Numbered markers:** click to add and select the next number; hold `Ctrl` to insert from inside an existing selection. The number label stays on one line and shrinks to fit the badge without changing its size or the configured font size. Deleting a marker does not renumber the others.
 - **Erase:** the eraser removes whole elements. One erase gesture can be undone as one operation.
 
 Shapes, text, numbers and emoji select the newly inserted object so you can move, scale or rotate it without switching tools; clicking empty space creates and selects the next object. Freehand, Highlighter and stamps remain unselected for continuous use. Lines and arrows require a drag to create. Hold `Ctrl` to temporarily hide selection handles and create at an overlapping position.
@@ -147,7 +151,7 @@ Elements higher in the layer list appear in front. Click an already selected lay
 
 Hiding Properties retains unapplied input. After selecting another element, return to the original element to apply its draft, or choose **Reload selection** to load the newly selected element.
 
-The canvas opacity slider at the upper right affects annotations and images, while the screenshot background keeps normal brightness. New canvas and visibility controls are beside it. New canvas archives the current workspace before starting blank; use Restore workspace history to retrieve it. Hiding keeps your content and the current edit/pass-through mode. New elements cannot be added while hidden. If a display change leaves annotations outside the visible screen, use **Main menu → Canvas → Move annotations into view**. This moves visible, unlocked objects while preserving their spacing and the screenshot crop.
+The canvas opacity slider at the upper right affects annotations and images, while the screenshot background keeps normal brightness. Clear canvas and visibility controls are beside it. **Clear canvas** has a red background and a delete icon. The first click changes it to a confirmation checkmark and shows a red confirmation bubble with white **Clear canvas?** text; click again to clear the canvas and restore the original button. A quick double-click also confirms. Clicking elsewhere, pressing `Esc` or leaving edit mode cancels confirmation without clearing content. Clearing archives the current workspace first; use **Restore workspace history** to retrieve it. Hiding keeps your content and the current edit/pass-through mode. New elements cannot be added while hidden. If a display change leaves annotations outside the visible screen, use **Main menu → Canvas → Move annotations into view**. This moves visible, unlocked objects while preserving their spacing and the screenshot crop.
 
 ## Stamp library and shelf
 
@@ -181,7 +185,9 @@ An imported image is a separate object and does not automatically replace the ba
 
 Image cropping works on exactly one unlocked image in the selection. If several images are selected, reduce the selected images to one; unlock it before cropping if necessary.
 
-Live pixelation updates while its regions are visible. If desktop capture becomes unavailable, the region is covered by a solid color. Export, image copying and merged stamps use a snapshot taken for that operation; the project retains an editable live region. Static image effects move and transform with their target image. Effects and cropping can be undone.
+Live desktop pixelation requires Windows 10 2004 (build 19041) or later to reliably exclude FloatCanvas's own windows. Earlier systems can still draw, import images and capture the screen. New desktop pixelation uses a static snapshot with a notice and does not continuously follow the desktop. Pixelation, blur and solid redaction on frozen screenshots or images are unaffected by this version requirement. Existing live regions loaded from projects use solid coverage with a warning on earlier systems; the original live objects remain unchanged instead of silently converting project content.
+
+On systems that support live pixelation, visible regions update continuously. If desktop capture becomes unavailable, the region is covered by a solid color. Export, image copying and merged stamps use a snapshot taken for that operation; the project retains an editable live region. Static image effects move and transform with their target image. Effects and cropping can be undone.
 
 **External capture limitation:** while live pixelation is visible, FloatCanvas excludes its display and input surfaces from system capture to avoid sampling its own output. External screenshots may omit other annotations. Use the in-app export for a complete composite; removing or hiding all live regions restores normal capture behavior. This does not resolve the known Windows Snipping Tool window-detection limitation.
 
@@ -221,6 +227,7 @@ Default data paths:
 - Previous recovery: `%LOCALAPPDATA%\FloatCanvas\recovery\workspace.previous.floatcanvas`
 - Workspace history: `%LOCALAPPDATA%\FloatCanvas\recovery\history`
 - Tool presets: `%LOCALAPPDATA%\FloatCanvas\tool-presets.json`
+- Per-tool current state and official baselines: `%LOCALAPPDATA%\FloatCanvas\tool-state.json`
 - Recent colors and My swatches: `%LOCALAPPDATA%\FloatCanvas\colors.json`
 - Stamp library: `%LOCALAPPDATA%\FloatCanvas\stamps`
 
@@ -230,12 +237,14 @@ Closing the toolbar or entering pass-through does not exit the App. To quit, use
 
 ## Support and limitations
 
-The current preview is primarily intended for Windows 11 x64. Windows 10 22H2 is a compatibility target; complete compatibility has not yet been confirmed.
+The minimum system baseline is **Windows 10 1607 (build 14393) x64**, including LTSB 2016, LTSC 2019 and LTSC 2021; Windows 11 x64 is also targeted. Windows 10 22H2 is no longer required to start the app. Features that need newer Windows versions use a fallback or show a notice without blocking basic drawing.
+
+Install a compatible **.NET 10 Windows Desktop Runtime x64** available for your system, and keep Windows and the runtime updated. The app's minimum baseline is separate from Microsoft's support commitments, which also depend on the Windows version, edition and lifecycle; see [.NET 10 supported operating systems](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md). Testing has still mainly used Windows 11. Earlier Windows 10/LTSB/LTSC versions need testing on real systems; source inspection and compatibility-branch tests cannot replace that acceptance work.
 
 Primary-screen scope is the default. Complete cross-screen, mixed-DPI, portrait-display, hot-plug, lock-screen recovery and dual-4K behavior are still being refined. Behavior may vary across devices and applications.
 
 FloatCanvas is intended for ordinary desktop and fullscreen applications without requiring windowed or borderless mode in every case. Fullscreen compatibility depends on the application and display mode; not every exclusive-fullscreen scenario is guaranteed.
 
-When using window snapping in Windows Snipping Tool or another screenshot app, the drawing layer may become the capture target. To keep annotations in the result, use FloatCanvas's own capture or export commands. To capture only the application underneath, use the Hide canvas / Show canvas shortcut (default `` Ctrl+Shift+` ``) to hide the canvas, take the screenshot, then show it again. Pass-through keeps annotations visible. Canvas visibility keeps the current edit/pass-through mode; use the separate mode shortcut to change input behavior.
+When using window detection in Windows Snipping Tool or another screenshot app, the drawing layer may become the capture target. To keep annotations in the result, use FloatCanvas's own capture or export commands. To capture only the application underneath, use the Hide canvas / Show canvas shortcut (default `` Ctrl+Shift+` ``) to hide the canvas, take the screenshot, then show it again. Pass-through keeps annotations visible. Canvas visibility keeps the current edit/pass-through mode; use the separate mode shortcut to change input behavior.
 
 HDR color accuracy, pressure-sensitive pens, touch, OCR, recording, scrolling capture, cloud synchronization and uploads are outside v1.

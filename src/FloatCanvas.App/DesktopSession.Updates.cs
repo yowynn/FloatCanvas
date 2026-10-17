@@ -34,7 +34,7 @@ internal sealed partial class DesktopSession
         CloseImageDrop(); _editor.Cancel(); _documentExitRequested = true;
         try
         {
-            try { await FlushRecoveryForUpdateAsync(); }
+            try { FlushToolState(commitDraft: true); await FlushRecoveryForUpdateAsync(); }
             catch (Exception ex) { throw new IOException(L.Get("Updates.ExitSaveFailed"), ex); }
             var arguments = new List<string> { "--profile", ApplicationPaths.ProfileDirectory, "--recover" };
             if (ApplicationPaths.RequestedMonitorScope is { } scope)

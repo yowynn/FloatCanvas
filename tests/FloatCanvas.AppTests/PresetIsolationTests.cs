@@ -17,7 +17,7 @@ using L = FloatCanvas.Localization.AppText;
 internal static class PresetIsolationTests
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-    private const uint EditedPen = 0xFFFF00AA, EditedTarget = 0xFF00CC66, DefaultStroke = 0xFF2383E2;
+    private const uint EditedPen = 0xFFFF00AA, EditedTarget = 0xFF00CC66, DefaultStroke = 0xFFE03E3E;
 
     internal static void Run(Action<string, bool> check)
     {

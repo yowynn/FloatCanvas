@@ -6,7 +6,7 @@ namespace FloatCanvas.App;
 internal sealed class ToolParameters
 {
     public EditorTool Tool { get; set; } = EditorTool.Freehand;
-    public ElementStyle Style { get; set; } = new() { Stroke = 0xFF2383E2 };
+    public ElementStyle Style { get; set; } = new() { Stroke = ColorLibrary.ForegroundRed };
     public double? CornerRadius { get; set; }
     public SymbolKind Symbol { get; set; }
     public bool ConstrainAspect { get; set; }

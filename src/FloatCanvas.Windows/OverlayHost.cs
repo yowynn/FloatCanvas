@@ -24,6 +24,7 @@ public sealed partial class OverlayHost : IDisposable
     private readonly WindowState _control;
     private readonly WinEventProcedure _foregroundProcedure;
     private readonly Func<IReadOnlyList<MonitorInfo>> _monitorProvider;
+    private readonly WindowsCapabilities? _capabilities;
     private nint _foregroundHook;
     private IReadOnlyList<MonitorInfo> _monitors = [];
     private HotkeyBinding? _toggleHotkey, _hideHotkey;
@@ -51,6 +52,7 @@ public sealed partial class OverlayHost : IDisposable
     public bool IsEditing { get; private set; }
     public bool IsVisible { get; private set; } = true;
     public OverlayMonitorScope Scope { get; }
+    public WindowsCapabilities Capabilities => _capabilities ?? WindowsCapabilities.Current;
     /// <summary>The active screen used for primary-screen placement, including the first-screen fallback.</summary>
     public MonitorInfo PrimaryMonitor => _monitors[0];
     /// <summary>Only the screens with overlay windows, and therefore the appropriate capture targets.</summary>
@@ -69,7 +71,7 @@ public sealed partial class OverlayHost : IDisposable
         get
         {
             CheckThread();
-            using var dpi = new PhysicalDpiScope();
+            using var dpi = new ThreadDpiAwarenessScope(Capabilities);
             return _windows.Select(pair => new OverlayWindowDiagnostic(pair.Display.Handle, pair.Input.Handle,
                 ReadBounds(pair.Display.Handle), (long)GetWindowLongPtr(pair.Display.Handle, GwlExStyle),
                 (long)GetWindowLongPtr(pair.Input.Handle, GwlExStyle), IsWindowVisible(pair.Display.Handle),
@@ -99,16 +101,22 @@ public sealed partial class OverlayHost : IDisposable
 
     // Test seam for synthetic enumeration; public construction always enumerates real Windows screens.
     internal OverlayHost(OverlayMonitorScope scope, Func<IReadOnlyList<MonitorInfo>> monitorProvider, bool initiallyVisible = true)
+        : this(scope, monitorProvider, initiallyVisible, WindowsCapabilities.Current) { }
+
+    internal OverlayHost(OverlayMonitorScope scope, Func<IReadOnlyList<MonitorInfo>> monitorProvider,
+        bool initiallyVisible, WindowsCapabilities capabilities)
     {
         ArgumentNullException.ThrowIfNull(monitorProvider);
+        ArgumentNullException.ThrowIfNull(capabilities);
         if (!Enum.IsDefined(scope)) throw new ArgumentOutOfRangeException(nameof(scope));
         Scope = scope;
         IsVisible = initiallyVisible;
         _monitorProvider = monitorProvider;
-        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19045))
+        _capabilities = capabilities;
+        if (!capabilities.IsSupported)
             throw new PlatformNotSupportedException(L.Get("Overlay.PlatformUnsupported"));
         RegisterWindowClass();
-        using var dpi = new PhysicalDpiScope();
+        using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         _control = CreateNativeWindow(WindowKind.Control, null, new(0, 0, 1, 1), ExToolWindow | ExNoActivate);
         _foregroundProcedure = OnForegroundChanged;
         try
@@ -177,7 +185,7 @@ public sealed partial class OverlayHost : IDisposable
     {
         CheckThread();
         EndDropReceptionCore();
-        using var dpi = new PhysicalDpiScope();
+        using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         failure = null;
         if (IsEditing && IsForegroundFromThisProcess() &&
             (_keyboardIsolation is null || _keyboardIsolation.IsLeaseActive)) return true;
@@ -283,7 +291,7 @@ public sealed partial class OverlayHost : IDisposable
             {
                 SetEditing(false); SetVisible(false);
                 _captureForeground = GetForegroundWindow();
-            });
+            }, Capabilities);
         }
         catch { _captureActive = false; throw; }
     }
@@ -300,7 +308,7 @@ public sealed partial class OverlayHost : IDisposable
         bool succeeded = false;
         try
         {
-            using var dpi = new PhysicalDpiScope();
+            using var dpi = new ThreadDpiAwarenessScope(Capabilities);
             foreach (var pair in _windows)
             {
                 long outputStarted = observer is null ? 0 : Stopwatch.GetTimestamp();
@@ -386,7 +394,7 @@ public sealed partial class OverlayHost : IDisposable
 
     private void RebuildMonitors()
     {
-        using var dpi = new PhysicalDpiScope();
+        using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         EndDropReceptionCore();
         CancelPointer();
         var monitors = OverlayMonitorSelection.Select(_monitorProvider(), Scope);
@@ -490,14 +498,14 @@ public sealed partial class OverlayHost : IDisposable
 
     private void RaisePointer(OverlayPointerKind kind, OverlayMouseButton button, int wheel = 0, OverlayPoint? position = null)
     {
-        using var dpi = new PhysicalDpiScope();
+        using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         GetCursorPos(out var point);
         Pointer?.Invoke(new(kind, position ?? new(point.X, point.Y), button, CurrentModifiers, wheel));
     }
 
     private static OverlayPoint MessagePosition(WindowState state, uint message, nint lParam)
     {
-        using var dpi = new PhysicalDpiScope();
+        using var dpi = new ThreadDpiAwarenessScope(state.Owner.Capabilities);
         var point = new Point((short)((long)lParam & 0xFFFF), (short)(((long)lParam >> 16) & 0xFFFF));
         if (message != WmMouseWheel) ClientToScreen(state.Handle, ref point);
         return new(point.X, point.Y);
@@ -687,10 +695,4 @@ public sealed partial class OverlayHost : IDisposable
     }
     private sealed record MonitorPair(MonitorInfo Monitor, WindowState Display, WindowState Input, DibBuffer Buffer);
 
-    private readonly struct PhysicalDpiScope : IDisposable
-    {
-        private readonly nint _previous;
-        public PhysicalDpiScope() => _previous = SetThreadDpiAwarenessContext(DpiPerMonitorV2);
-        public void Dispose() { if (_previous != 0) SetThreadDpiAwarenessContext(_previous); }
-    }
 }

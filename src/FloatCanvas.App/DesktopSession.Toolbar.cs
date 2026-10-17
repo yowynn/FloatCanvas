@@ -33,6 +33,7 @@ internal sealed partial class DesktopSession
     private readonly List<Controls.TextBlock> _toolbarShortcutHintLabels=[];
     private readonly Dictionary<EditorTool,Controls.ContentPresenter> _toolbarGlyphHosts=[];
     private Controls.MenuItem? _toolbarShortcutHintsMenu;
+    private ClearCanvasButton? _clearCanvasButton;
 
     private Window CreateToolbarV2()
     {
@@ -50,7 +51,9 @@ internal sealed partial class DesktopSession
         void Tool(EditorTool tool, string label, string geometry)
         {
             string shortcut=ToolShortcutCatalog.Hint(tool);
-            var button = ToolbarIcon(label, geometry, () => ActivateTool(ButtonFamily(_editor.Tool) == tool ? _editor.Tool : _toolbarButtonMemory.GetValueOrDefault(tool, tool)), shortcut);
+            // A toolbar revisit restores its family's working state. Remembered
+            // legacy aliases must not act like an explicit recipe selection.
+            var button = ToolbarIcon(label, geometry, () => ActivateTool(ToolFamily(ButtonFamily(_editor.Tool) == tool ? _editor.Tool : _toolbarButtonMemory.GetValueOrDefault(tool, tool))), shortcut);
             if(shortcut.Length>0)AddShortcutHint(button,shortcut,tool);
             button.Padding=new Thickness(0);
             button.Tag = "tool:" + tool; _toolbarToolButtons[tool] = button; Cell(button, toolColumn++);
@@ -87,7 +90,8 @@ internal sealed partial class DesktopSession
         captureButton.ToolTip = L.Get("Acceptance2.Toolbar.Capture") + "\n" + L.Get("Acceptance2.Toolbar.CaptureHint");
         Action("properties", L.Get("ToolbarV2.Properties"), "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15", ToggleInspector);
         Action("layers", L.Get("ToolbarV2.Layers"), "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13", ToggleLayers);
-        Action("clear",L.Get("Feedback4.Toolbar.NewCanvas"),"M2,2 L11,2 L14,5 L14,15 L2,15 Z M11,2 L11,5 L14,5 M8,7 L8,13 M5,10 L11,10",ClearCanvas);
+        _clearCanvasButton = new ClearCanvasButton(() => !DocumentOperationBusy, () => RunCommand(StartNewCanvasAsync));
+        Cell(_clearCanvasButton, toolColumn++);
         _opacitySlider=CreateToolbarOpacitySlider();Cell(_opacitySlider,toolColumn,0,2);toolColumn+=2;
         Action("visibility",L.Get("Desktop.ToggleVisibility"),"M1,8 Q8,-1 15,8 Q8,17 1,8 Z M8,5 A3,3 0 1 1 7.99,5",ToggleCanvasVisibility);
         _passThroughButton = ToolbarIcon(L.Get("Acceptance2.Toolbar.Done"), "M2,8 L6,12 L14,3", () => SetEditing(false), FormatHotkey(_settings.Toggle));
@@ -135,8 +139,8 @@ internal sealed partial class DesktopSession
         window.Closed += (_, _) => _stampLibrary.Changed -= libraryChanged;
         window.LocationChanged += (_, _) => RepositionToolOptions();
         window.SizeChanged += (_, _) => RepositionToolOptions();
-        window.Deactivated += (_, _) => window.Dispatcher.BeginInvoke(DispatcherPriority.Input, CheckToolOptionsFocus);
-        window.IsVisibleChanged += (_, _) => { if (!window.IsVisible) { CloseToolOptions(); _toolbarMenu.IsOpen = false; _moreToolsMenu.IsOpen=false; _toolbarLauncher.CancelPendingGestures(); } };
+        window.Deactivated += (_, _) => { _clearCanvasButton.CancelConfirmation(); window.Dispatcher.BeginInvoke(DispatcherPriority.Input, CheckToolOptionsFocus); };
+        window.IsVisibleChanged += (_, _) => { if (!window.IsVisible) { _clearCanvasButton.CancelConfirmation(); CloseToolOptions(); _toolbarMenu.IsOpen = false; _moreToolsMenu.IsOpen=false; _toolbarLauncher.CancelPendingGestures(); } };
         window.PreviewKeyDown += (_, e) =>
         {
             if(IsOptionsInput(e.OriginalSource as DependencyObject))return;
@@ -199,7 +203,7 @@ internal sealed partial class DesktopSession
         Item(canvas, L.Get(_host.Scope == OverlayMonitorScope.PrimaryScreen ? "Menu.CapturePrimary" : "Menu.CaptureAll"), () => _ = RunCommand(() => StartCaptureAsync(false)));
         Item(canvas, L.Get("Menu.ReturnLive"), ReturnToLive); Item(canvas, L.Get("Menu.ResumeCapture"), ResumeCapture);
         Item(canvas, L.Get("Menu.MoveIntoView"), MoveIntoView);
-        Item(canvas, L.Get("Feedback4.Toolbar.NewCanvas"), ClearCanvas);
+        Item(canvas, L.Get("Feedback4.Toolbar.ClearCanvas"), ClearCanvas);
         var windows = Group("ToolbarV2.Windows", "M2,1 L14,1 L14,15 L2,15 Z M2,5 L14,5");
         Item(windows, L.Get("ToolbarV2.Properties"), ToggleInspector); Item(windows, L.Get("ToolbarV2.Layers"), ToggleLayers);
         Item(windows, L.Get("Stamp.LibraryTitle"), ShowStampLibrary);
@@ -232,21 +236,7 @@ internal sealed partial class DesktopSession
         bool wasOpen = IsToolOptionsOpen;
         if (!same)
         {
-            _toolbarToolMemory[currentFamily] = _editor.Parameters;
-            var next = _toolbarToolMemory.TryGetValue(family, out var saved) ? saved.Clone() :
-                _toolPresets.Apply(_toolPresets.OfficialFor(family).First().Id, new ToolParameters { Tool = family });
-            next.Tool = family;
-            next.NumberStart = Math.Clamp(_settings.NumberStart,1,999999);
-            next.NumberStep = Math.Clamp(_settings.NumberStep,1,999999);
-            if (!_toolbarToolMemory.ContainsKey(family))
-            {
-                if (family == EditorTool.Highlighter) next.Style.StrokeWidth = Math.Max(24, next.Style.StrokeWidth);
-                if (family == EditorTool.Emoji) next.Style.FontSize = 48;
-            }
-            if (tool is EditorTool.Arrow or EditorTool.DoubleArrow)
-                next = _toolPresets.Apply(tool == EditorTool.Arrow ? "official.arrow" : "official.double-arrow", next);
-            if (tool == EditorTool.RoundedRectangle) next = _toolPresets.Apply("official.rounded-rectangle", next);
-            _editor.ApplyParameters(next);
+            SwitchToolState(tool, applyAlias: true);
         }
         UpdateStatus(ToolName(_editor.Tool)); RefreshToolbarState();
         if (!_host.IsEditing) { CloseToolOptions(); return; }
@@ -293,6 +283,7 @@ internal sealed partial class DesktopSession
                 var own=_toolbarToolMemory.TryGetValue(ToolFamily(tool),out var saved)?saved:new ToolParameters {Tool=tool};
                 presenter.Content=ToolParameterIcon.Create(own);
             }
+            _toolStateStore?.MarkChanged();
         }
         if (IsToolOptionsOpen && _toolbarObservedTool != _editor.Tool) AnchorToolOptions();
         _toolbarObservedTool = _editor.Tool;
@@ -301,8 +292,7 @@ internal sealed partial class DesktopSession
         if (!_host.IsEditing || !_toolbar.IsVisible) CloseToolOptions();
     }
 
-    private static EditorTool ToolFamily(EditorTool tool) => tool switch { EditorTool.Arrow or EditorTool.DoubleArrow => EditorTool.Line,
-        EditorTool.RoundedRectangle => EditorTool.Rectangle, _ => tool };
+    private static EditorTool ToolFamily(EditorTool tool) => ToolPresetLibrary.Family(tool);
     private static EditorTool ButtonFamily(EditorTool tool) => ToolFamily(tool) switch { EditorTool.Crop or EditorTool.Pixelate or EditorTool.Redact => EditorTool.Blur,
         EditorTool.Triangle => EditorTool.Symbol, var family => family };
     private static string ToolName(EditorTool tool) => L.Get(tool switch { EditorTool.Select => "ToolbarV2.Select", EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow => "ToolbarV2.Lines",
@@ -353,7 +343,7 @@ internal sealed partial class DesktopSession
     private static Controls.Border Separator()
     {var separator=new Controls.Border {Width=1,Margin=new Thickness(4,4,4,4)};separator.SetResourceReference(Controls.Border.BackgroundProperty,"CanvasBorder");return separator;}
     private void ClearCanvas()
-    {_ = RunCommand(StartNewCanvasAsync);}
+    {if (_clearCanvasButton is not null) _ = _clearCanvasButton.ActivateAsync();}
     private Controls.Slider CreateToolbarOpacitySlider()
     {
         var opacity=new Controls.Slider {Minimum=0,Maximum=1,Value=1,Width=56,Height=26,Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=L.Get("Feedback3.Toolbar.Opacity")};

@@ -111,7 +111,7 @@ internal sealed partial class DesktopSession
             UpdateStatus(L.Get("ImageDrop.Importing"));
             var images = await NormalizeCanvasDropAsync(payload, request.Token);
             if (_disposed || _documentStopped || !_host.IsVisible || !request.TryCommit(_imageDropRequest, _live, _capture, images)) return;
-            if (ReferenceEquals(Active, request.Target)) _editor.Tool = EditorTool.Select;
+            if (ReferenceEquals(Active, request.Target)) SwitchToolState(EditorTool.Select);
             ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("ImageDrop.Imported", images.Count));
         }
         catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }

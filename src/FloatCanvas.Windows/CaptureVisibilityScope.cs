@@ -12,12 +12,17 @@ public sealed class CaptureVisibilityScope : IDisposable
     private readonly uint _threadId = GetCurrentThreadId();
     private readonly List<(nint Handle, uint Affinity, bool Visible, bool Topmost, int ZRank)> _original = [];
     private readonly Action _restoreHost;
+    private readonly bool _excludeCapture;
     private bool _disposed;
     public long NotBeforeTimestamp { get; }
 
     internal CaptureVisibilityScope(IEnumerable<nint> handles, Action restoreHost, Action hideHost)
+        : this(handles, restoreHost, hideHost, WindowsCapabilities.Current) { }
+
+    internal CaptureVisibilityScope(IEnumerable<nint> handles, Action restoreHost, Action hideHost, WindowsCapabilities capabilities)
     {
         _restoreHost = restoreHost;
+        _excludeCapture = capabilities.SupportsCaptureExclusion;
         try
         {
             var windows = handles.Where(handle => handle != 0).Distinct().ToArray();
@@ -29,7 +34,7 @@ public sealed class CaptureVisibilityScope : IDisposable
                 _original.Add((handle, affinity, IsWindowVisible(handle),
                     ((long)GetWindowLongPtr(handle, GwlExStyle) & ExTopmost) != 0,
                     zRanks.GetValueOrDefault(handle, int.MaxValue)));
-                if (!SetWindowDisplayAffinity(handle, 0x11))
+                if (_excludeCapture && !SetWindowDisplayAffinity(handle, 0x11))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("Capture.ExclusionFailed"));
                 ShowWindow(handle, 0);
             }
@@ -51,7 +56,7 @@ public sealed class CaptureVisibilityScope : IDisposable
         {
             // Monitor changes or application shutdown may have destroyed a captured window already.
             if (!IsWindow(item.Handle)) continue;
-            if (!SetWindowDisplayAffinity(item.Handle, item.Affinity))
+            if (_excludeCapture && !SetWindowDisplayAffinity(item.Handle, item.Affinity))
                 (errors ??= []).Add(new Win32Exception(Marshal.GetLastWin32Error(), L.Get("Capture.ExclusionStateRestoreFailed")));
             ShowWindow(item.Handle, item.Visible ? 8 : 0);
         }

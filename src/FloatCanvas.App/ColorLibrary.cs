@@ -16,6 +16,8 @@ internal sealed record SavedColor(string Id, string Name, uint Value);
 /// <summary>Role-specific built-in colors and exact ARGB history/pins shared by every color field.</summary>
 internal sealed class ColorLibrary
 {
+    internal const uint ForegroundRed = 0xFFE03E3E;
+    internal const uint BackgroundRed = 0xFFFFDCDC;
     private sealed class State
     {
         public int Version { get; set; } = 1;
@@ -25,8 +27,8 @@ internal sealed class ColorLibrary
     }
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     private static readonly string[] Names = ["Black", "White", "Red", "Brown", "Orange", "Yellow", "Blue", "Green", "Purple", "Pink"];
-    private static readonly uint[] Foreground = [0xFF252525, 0xFFFFFFFF, 0xFFE03E3E, 0xFF9F6B53, 0xFFD9730D, 0xFFCB912F, 0xFF2383E2, 0xFF448361, 0xFF9065B0, 0xFFC14C8A];
-    private static readonly uint[] Background = [0xFFE4E4E4, 0xFFFFFFFF, 0xFFFFDCDC, 0xFFEADDD4, 0xFFFFE5CC, 0xFFFFF2BB, 0xFFDCEEFF, 0xFFDCEFE5, 0xFFEBDFF5, 0xFFF6DDEB];
+    private static readonly uint[] Foreground = [0xFF252525, 0xFFFFFFFF, ForegroundRed, 0xFF9F6B53, 0xFFD9730D, 0xFFCB912F, 0xFF2383E2, 0xFF448361, 0xFF9065B0, 0xFFC14C8A];
+    private static readonly uint[] Background = [0xFFE4E4E4, 0xFFFFFFFF, BackgroundRed, 0xFFEADDD4, 0xFFFFE5CC, 0xFFFFF2BB, 0xFFDCEEFF, 0xFFDCEFE5, 0xFFEBDFF5, 0xFFF6DDEB];
     private readonly string path;
     private static ColorLibrary? shared;
     public static ColorLibrary Shared

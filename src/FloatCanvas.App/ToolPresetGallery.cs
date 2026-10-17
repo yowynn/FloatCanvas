@@ -15,6 +15,7 @@ internal sealed class ToolPresetGallery : UserControl
     private readonly Dictionary<EditorTool, string> selections = [];
     private readonly Dictionary<string, ToolParameters> officialBaselines = [];
     private readonly Dictionary<EditorTool, ToolParameters> previewSources = [];
+    private readonly ToolStateStore? stateStore;
     internal readonly PixelTilePanel OfficialTiles = new(5, 36, 4), UserTiles = new(5, 36, 4);
     private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
     private readonly ScrollViewer userScroll;
@@ -25,9 +26,16 @@ internal sealed class ToolPresetGallery : UserControl
     internal event Action? Applied;
     internal event Action<string>? Failed;
 
-    internal ToolPresetGallery(EditorController controller, ToolPresetLibrary library)
+    internal ToolPresetGallery(EditorController controller, ToolPresetLibrary library, ToolStateStore? stateStore = null)
     {
         this.controller = controller; this.library = library;
+        this.stateStore = stateStore;
+        if (stateStore is not null)
+        {
+            selections = stateStore.Selections;
+            officialBaselines = stateStore.OfficialBaselines;
+            previewSources = stateStore.PreviewSources;
+        }
         var body = new DockPanel { MinWidth = 196 + SystemParameters.VerticalScrollBarWidth, LastChildFill = true };
         headings = new StackPanel();
         var officialHeader = new DockPanel { Height = 34, Margin = new(0, 0, 0, 4) };
@@ -57,12 +65,13 @@ internal sealed class ToolPresetGallery : UserControl
     internal void Refresh(bool revealSelection = false)
     {
         var tool = ToolPresetLibrary.Family(controller.Tool); var official = library.OfficialFor(tool); var users = library.UserFor(tool);
-        if (!previewSources.ContainsKey(tool)) previewSources[tool] = controller.Parameters;
+        bool changed = false;
+        if (!previewSources.ContainsKey(tool)) { previewSources[tool] = controller.Parameters; changed = true; }
         var focus = TileCollection.Capture(this, Tiles());
         bool toolChanged = observedTool != tool; observedTool = tool;
-        if (!official.Concat(users).Any(p => p.Id == SelectedId)) selections[tool] = official.First().Id;
+        if (!official.Concat(users).Any(p => p.Id == SelectedId)) { selections[tool] = official.First().Id; changed = true; }
         if (SelectedId.StartsWith("official.", StringComparison.Ordinal) && !officialBaselines.ContainsKey(SelectedId))
-            officialBaselines[SelectedId] = library.Apply(SelectedId, controller.Parameters);
+        { officialBaselines[SelectedId] = library.Apply(SelectedId, controller.Parameters); changed = true; }
         TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)), (button, id) => UpdateTile(button, official.Single(p => p.Id == id)));
         TileCollection.Synchronize(UserTiles, users.Select(p => p.Id), id =>
         {
@@ -79,6 +88,7 @@ internal sealed class ToolPresetGallery : UserControl
         empty.Visibility = users.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         userScroll.Visibility = users.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         TileCollection.Restore(Tiles(), focus, SelectedId);
+        if (changed) stateStore?.MarkChanged();
         if (revealSelection || toolChanged) RevealSelection();
     }
 
@@ -89,11 +99,11 @@ internal sealed class ToolPresetGallery : UserControl
         selections[tool] = id;
         if (id.StartsWith("official.", StringComparison.Ordinal) && !officialBaselines.ContainsKey(id)) officialBaselines[id] = library.Apply(id, controller.Parameters);
         controller.ApplyParameters(officialBaselines.TryGetValue(id, out var baseline) ? baseline.Clone() : library.Apply(id, controller.Parameters));
-        Refresh(revealSelection: true); Applied?.Invoke();
+        Refresh(revealSelection: true); stateStore?.MarkChanged(); Applied?.Invoke();
     });
     internal void SaveNamed(string name)
     {
-        var saved = library.Save(name, controller.Parameters); selections[ToolPresetLibrary.Family(controller.Tool)] = saved.Id; Refresh(revealSelection: true);
+        var saved = library.Save(name, controller.Parameters); selections[ToolPresetLibrary.Family(controller.Tool)] = saved.Id; Refresh(revealSelection: true); stateStore?.MarkChanged();
     }
     private void Save()
     {

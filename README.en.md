@@ -4,15 +4,15 @@
 
 A Windows screen annotation tool. Draw over your desktop, place images and edit objects, then return to the application underneath while your annotations stay visible.
 
-Current preview version: **0.2.0-preview.1**. Features and stability are still being refined. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions.
+Current preview version: **0.2.0-preview.2**. Features and stability are still being refined. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions.
 
 ## Features
 
-- Freehand pen, highlighter, lines and arrows, shapes, text, separate numbered markers, symbols and emoji; graphical official/custom presets and single-click shape creation at a default size.
+- Freehand pen, highlighter, lines and arrows, shapes, text, separate numbered markers, symbols and emoji; graphical official/custom presets, per-tool preset selections and edited parameters retained across restarts, and single-click shape creation at a default size.
 - Import image files or clipboard images, or drag images directly onto the canvas; select objects again to move, rotate, resize, group or edit their properties.
 - Two aligned toolbar rows with a shared visibility switch for tool and stamp shortcut hints; movable Tool options, Properties and Layers windows, with independent editing and canvas visibility.
 - A stamp library with editable and flattened stamps, a ten-slot shelf, and `1`–`0` shortcuts.
-- Region capture, cropping, blur, live pixelation and solid redaction; export PNG/JPEG or transparent annotations, and archive current work before starting a new canvas.
+- Region capture, cropping, blur, live pixelation and solid redaction; export PNG/JPEG or transparent annotations. The red **Clear canvas** button requires a second click to confirm and archives current work before clearing.
 - Self-contained, editable `.floatcanvas` projects; automatic recovery saves, a blank canvas at startup, and manual workspace-history restoration.
 - Light/dark themes and primary-screen scope by default, with an all-screens option.
 - Simplified Chinese and English interfaces, with automatic Windows display-language selection.
@@ -44,7 +44,9 @@ Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` 
 
 Under **Main menu → Settings… → Language / 界面语言**, choose Automatic (`auto`), 简体中文 (`zh-CN`) or English (`en`). Save and restart to apply the change. Automatic follows the Windows display language: Chinese display languages use Simplified Chinese; other languages use English. Interface language is independent of annotation content, keyboard layout and input methods. [English](Docs/User-Guide.en.md) and [Chinese](Docs/User-Guide.md) guides are available.
 
-The target is Windows 10 22H2/Windows 11 x64. The current preview has mainly been used on Windows 11; Windows 10 compatibility is not yet confirmed. Primary-screen scope is the default. Complete cross-screen, mixed-DPI and dual-4K behavior remain under development. Fullscreen compatibility depends on the application and display mode; not every exclusive-fullscreen scenario is guaranteed.
+The minimum system baseline is **Windows 10 1607 (build 14393) x64**, including LTSB 2016, LTSC 2019 and LTSC 2021; Windows 11 x64 is also targeted. Install a compatible .NET 10 Windows Desktop Runtime and keep Windows and the runtime updated. Microsoft's official support also depends on the Windows version, edition and lifecycle. Testing has mainly used Windows 11; earlier Windows 10/LTSB/LTSC versions still need testing on real systems. Primary-screen scope is the default. Complete cross-screen, mixed-DPI and dual-4K behavior remain under development. Fullscreen compatibility depends on the application and display mode; not every exclusive-fullscreen scenario is guaranteed.
+
+**Live desktop pixelation requires Windows 10 2004 (build 19041) or later.** Earlier systems use a static snapshot for newly created desktop pixelation; frozen-screenshot and image effects remain available. Existing live regions loaded from projects use solid coverage with a warning on earlier systems, retaining the original objects for editing on a supported system.
 
 While live pixelation is visible, FloatCanvas excludes its canvas surfaces from system capture to prevent feedback. External screenshots may omit other annotations; use the in-app export for a complete composite. Removing or hiding the live regions restores normal capture behavior. Window detection in Windows Snipping Tool still has a known limitation.
 

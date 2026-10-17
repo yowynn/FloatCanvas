@@ -28,6 +28,7 @@ internal static class Program
                 args.Contains("--window-policy-only") ? "window-policy-tests.json" :
                 _primaryScreenProbe ? captureOnly ? "capture-primary-screen-probe.json" : "platform-primary-screen-probe.json" :
                 captureOnly ? "capture-tests.json" : "platform-tests.json");
+        if (args.Contains("--compatibility-only")) return WindowsCompatibilityTests.Run(evidencePath);
         if (args.Contains("--window-policy-only")) return WindowPolicyFixture.Run(evidencePath);
         var dispatcher = Dispatcher.CurrentDispatcher;
         dispatcher.BeginInvoke(async () =>

@@ -13,14 +13,10 @@ public static class OverlayCoordinates
     /// <summary>Places an application-owned tool window using physical coordinates, preserving its size.</summary>
     public static void PositionToolWindow(nint window, OverlayPoint position)
     {
-        var previous = NativeMethods.SetThreadDpiAwarenessContext(NativeMethods.DpiPerMonitorV2);
-        try
-        {
-            if (!NativeMethods.SetWindowPos(window, NativeMethods.HwndTopmost, checked((int)Math.Round(position.X)),
-                    checked((int)Math.Round(position.Y)), 0, 0, 0x11))
-                throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
-        }
-        finally { if (previous != 0) NativeMethods.SetThreadDpiAwarenessContext(previous); }
+        using var dpi = new ThreadDpiAwarenessScope(WindowsCapabilities.Current);
+        if (!NativeMethods.SetWindowPos(window, NativeMethods.HwndTopmost, checked((int)Math.Round(position.X)),
+                checked((int)Math.Round(position.Y)), 0, 0, 0x11))
+            throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
     }
 
     public static OverlayPoint DipToPixel(OverlayPoint dip, MonitorInfo monitor) =>

@@ -13,6 +13,10 @@ internal static class Program
         try
         {
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--windows-compatibility-only")) { LegacyWindowsEffectsTests.Run(Assert); return 0; }
+            if (args.Contains("--tool-state-store-only")) { ToolStateStoreTests.Run(Assert); return 0; }
+            if (args.Contains("--tool-state-only")) { ToolStateStoreTests.Run(Assert); ToolWorkingStateTests.Run(Assert); return 0; }
+            if (args.Contains("--clear-canvas-only")) { ClearCanvasButtonTests.Run(Assert); return 0; }
             if (args.Contains("--updates-client-only")) { GitHubUpdateClientTests.Run(Assert); return 0; }
             if (args.Contains("--updates-recovery-only")) { UpdateRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--update-installer-only")) { UpdateInstallerTests.Run(Assert); return 0; }
@@ -61,6 +65,7 @@ internal static class Program
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            ClearCanvasButtonTests.Run(Assert);
             WelcomeSessionTests.Run(Assert);
             GitHubUpdateClientTests.Run(Assert);
             UpdateInstallerTests.Run(Assert);
@@ -84,6 +89,7 @@ internal static class Program
             LauncherGestureStateTests.Run(Assert);
             ToolbarInteractionTests.Run(Assert);
             ToolPresetAndColorTests.Run(Assert);
+            ToolStateStoreTests.Run(Assert);
             PresetIsolationTests.Run(Assert);
             ToolOptionsPanelTests.Run(Assert);
             Feedback4OptionsTests.Run(Assert);
