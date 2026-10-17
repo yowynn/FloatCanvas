@@ -26,6 +26,9 @@ internal sealed partial class DesktopSession : IDisposable
     private readonly Forms.NotifyIcon _tray;
     private readonly TextBlock _status = new();
     private readonly UserSettings _settings;
+    private readonly ToolPresetLibrary _toolPresets;
+    private readonly ColorLibrary _colorLibrary;
+    private readonly StampLibrary _stampLibrary;
     private readonly AssetLibrary _assets = new();
     private readonly SceneRenderer _renderer = new();
     private readonly OverlaySceneCache _overlayCache;
@@ -35,12 +38,18 @@ internal sealed partial class DesktopSession : IDisposable
     private EditorSession? _capture;
     private PointD _captureOrigin;
     private InspectorWindow? _inspector;
+    private LayersWindow? _layers;
+    private bool _layersWanted;
     private Window? _textEditor;
     private EditorSession? _textEditorSession;
-    private ComboBox _toolPicker = null!;
     private Slider _opacitySlider = null!;
     private System.Windows.Controls.Button _passThroughButton = null!;
     private TextBlock? _welcomeShortcuts;
+    private TextBlock? _welcomeHideShortcut;
+    private Window? _welcomeWindow;
+    private WelcomeView? _welcomeView;
+    private bool _welcomeShown;
+    private readonly SessionWindowLayout _windowLayout = new();
     private bool _syncingControls;
     private bool _disposed;
     private bool _toolbarPlaced;
@@ -59,57 +68,73 @@ internal sealed partial class DesktopSession : IDisposable
         _app = app;
         _settings = UserSettings.Load();
         L.Initialize(_settings.Language);
+        _toolPresets = new();
+        _colorLibrary = ColorLibrary.Shared;
+        _stampLibrary = new(ApplicationPaths.ProfileDirectory);
         _overlayCache = new(_renderer);
         AppTheme.Apply(_settings.Theme);
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
         _host = testHost ?? new OverlayHost(ApplicationPaths.RequestedMonitorScope ??
             (_settings.PrimaryScreenOnly ? OverlayMonitorScope.PrimaryScreen : OverlayMonitorScope.AllScreens));
+        _host.CanBeginCanvasGesture = () => !_disposed && _host.IsVisible && !DocumentOperationBusy && !ComponentDispatcher.IsThreadModal;
         var keyboardBridge = new PrivateKeyboardBridge();
-        _host.EnableKeyboardIsolation((packet, complete) => keyboardBridge.Process(packet, complete));
+        _host.EnableKeyboardIsolation((packet, complete) =>
+        {
+            keyboardBridge.Process(packet, complete);
+            // Native canvas HWNDs bypass WPF input staging, including Ctrl key-up.
+            // Repaint after the bridge updates this thread's local modifier state.
+            if (packet.VirtualKey is 0x11 or 0xA2 or 0xA3) RequestRender();
+        });
         System.Windows.Input.InputManager.Current.PreProcessInput += OnWpfInputProgress;
+        System.Windows.Input.InputManager.Current.PostProcessInput += OnWpfPointerFocus;
         var bounds = _host.Monitors.Select(m => new RectD(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height)).Aggregate(RectD.Union);
         var document = new SceneDocument { Viewport = bounds, DisplayLayout = _host.Monitors.Select(m => new DisplayLayoutHint
         { DeviceName = m.DeviceName, Bounds = new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height), DpiX = m.DpiX, DpiY = m.DpiY }).ToList() };
         _live = new(document, _assets);
         _editor = new(_live);
+        _editor.NumberStart = Math.Clamp(_settings.NumberStart,1,999999);
+        _editor.NumberStep = Math.Clamp(_settings.NumberStep,1,999999);
+        document.NextNumber = _editor.NumberStart;
         _editor.Changed += () => { RequestRender(); ScheduleRecovery(); };
         _editor.Message += UpdateStatus;
         _editor.EditText += ShowTextEditor;
         _editor.CaptureRegionSelected += FinishCaptureRegion;
         _host.Draw += Draw;
-        _host.Pointer += e => { if (!DocumentOperationBusy) _editor.Pointer(e); };
+        _host.Pointer += HandleCanvasPointer;
+        _editor.DesktopEffectRequested += (region, kind, amount, color) => _ = RunCommand(() => AddDesktopEffectAsync(region, kind, amount, color));
         _host.KeyPressed += OnKey;
         _host.ToggleRequested += ToggleEditing;
-        _host.HideRequested += () => { if (_host.IsEditing || _host.IsReceivingDrop || !DocumentOperationBusy) { SetEditing(false); _host.SetVisible(!_host.IsVisible); } };
+        _host.HideRequested += ToggleCanvasVisibility;
         _host.EnableImageDrops(SupportsCanvasImageDrop, ReceiveCanvasImageDrop);
         _host.MonitorsChanged += OnMonitorsChanged;
         _host.Error += ex => _app.Dispatcher.BeginInvoke(() => ShowError(ex.Message));
-        _toolbar = CreateToolbar();
+        _toolbar = CreateToolbarV2();
+        _windowLayout.BindRoot(_toolbar);
+        RefreshHotkeyHints(_passThroughButton, null, _settings.Toggle, _settings.Hide);
         _host.InputActivated += RaiseVisibleToolWindows;
         _host.EditingFocusLost += () =>
         {
             // Do not gate focus release on an asynchronous document operation.
             CloseImageDrop();
-            _editor.Cancel(); _textEditor?.Hide();
+            _editor.Cancel(); _textEditor?.Hide(); _stampWindow?.Hide(); _eyedropper = null;
             if (Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
-            _toolbar.Hide(); _inspector?.Hide(); RequestRender();
+            _toolbar.Hide(); _inspector?.Hide(); _layers?.Hide(); CloseToolOptions(); RequestRender();
             UpdateStatus(L.Get("Desktop.FocusLost"));
         };
-        _tray = new Forms.NotifyIcon { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? System.Drawing.SystemIcons.Application,
+        _tray = new Forms.NotifyIcon { Icon = AppIcon.CreateTrayIcon(),
             Text = L.Get("App.NamePrefix") + FormatHotkey(_settings.Toggle), Visible = true };
         _host.KeyboardIsolationReleased += reason =>
         {
-            if (reason == KeyboardLeaseEndReason.ForegroundLost) return;
-            var message = reason is KeyboardLeaseEndReason.SystemEscape or KeyboardLeaseEndReason.EmergencyEscape
-                ? L.Get("Desktop.InputReleased")
-                : L.Get("Desktop.InputInterrupted");
+            if (!ShouldNotifyKeyboardRelease(reason)) return;
+            var message = L.Get("Desktop.InputInterrupted");
             UpdateStatus(message);
             _tray.ShowBalloonTip(4000, L.Get("Desktop.InputReleasedTitle"), message, Forms.ToolTipIcon.Info);
         };
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add(L.Get("Desktop.ToggleEditing"), null, (_, _) => RunUiAction(() => SetEditing(!_host.IsEditing)));
-        menu.Items.Add(L.Get("Desktop.ToggleVisibility"), null, (_, _) => RunUiAction(() => { SetEditing(false); _host.SetVisible(!_host.IsVisible); }));
+        menu.Items.Add(L.Get("Desktop.ToggleVisibility"), null, (_, _) => RunUiAction(ToggleCanvasVisibility));
         menu.Items.Add(L.Get("Desktop.OpenProject"), null, async (_, _) => await RunCommand(OpenProjectAsync));
+        menu.Items.Add(L.Get("Desktop.RecoveryHistory"), null, async (_, _) => await RunCommand(RestoreWorkspaceHistoryAsync));
         menu.Items.Add(L.Get("Desktop.HotkeySettings"), null, (_, _) => RunUiAction(ShowHotkeySettings));
         menu.Items.Add(L.Get("Desktop.Exit"), null, async (_, _) => await RunCommand(RequestExitAsync));
         _tray.ContextMenuStrip = menu;
@@ -120,7 +145,13 @@ internal sealed partial class DesktopSession : IDisposable
     {
         try
         {
-            await InitializeDocumentsAsync(!args.Contains("--smoke") || args.Contains("--recover"));
+            await InitializeDocumentsAsync(args.Contains("--recover"));
+            try { await _stampLibrary.LoadAsync(_documentLifetime.Token); }
+            catch (Exception ex) when (ex is System.IO.IOException or System.IO.InvalidDataException)
+            {
+                UpdateStatus(ex.Message);
+                _tray.ShowBalloonTip(5000, L.Get("Stamp.LibraryTitle"), ex.Message, Forms.ToolTipIcon.Warning);
+            }
             OnMonitorsChanged();
             _host.RegisterHotkeys(_settings.Toggle, _settings.Hide);
         }
@@ -153,114 +184,24 @@ internal sealed partial class DesktopSession : IDisposable
             _host.Render(); timer.Start(); return;
         }
         ShowWelcome();
+        AppUpdateInstaller.AcknowledgeStartup();
+        NotifyUpdateResult();
     }
 
     private void ShowWelcome()
     {
-        var panel = new StackPanel { Margin = new Thickness(24) };
-        panel.Children.Add(new TextBlock { Text = L.Get("App.Name"), FontSize = 26, FontWeight = FontWeights.SemiBold });
-        panel.Children.Add(new TextBlock { Text = L.Get("Welcome.Tagline"), Foreground = Brushes.Gray, Margin = new Thickness(0, 6, 0, 20) });
-        var shortcuts = new TextBlock { Text = L.Format("Welcome.Shortcuts", FormatHotkey(_settings.Toggle), FormatHotkey(_settings.Hide)), LineHeight = 26 };
-        _welcomeShortcuts = shortcuts;
-        panel.Children.Add(shortcuts);
-        panel.Children.Add(new TextBlock { Text = L.Get("Welcome.Description"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 18, 0, 18) });
-        var welcome = new Window { Title = L.Get("Welcome.Title"), Content = panel, Width = 430, SizeToContent = SizeToContent.Height,
+        if (_welcomeShown || _host.IsEditing) return;
+        _welcomeShown = true;
+        var view = new WelcomeView(_settings.Toggle, _settings.Hide, () => RunUiAction(() => SetEditing(true)), ShowUpdates);
+        _welcomeView = view; _welcomeShortcuts = view.ToggleShortcut; _welcomeHideShortcut = view.HideShortcut;
+        var welcome = new Window { Title = L.Get("Welcome.Title"), Content = view, Width = 430, SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterScreen, ResizeMode = ResizeMode.NoResize, FontSize = 14 };
-        panel.Children.Add(Button(L.Get("Welcome.Start"), () => { welcome.Close(); SetEditing(true); }));
-        welcome.Closed += (_, _) => { if (ReferenceEquals(_welcomeShortcuts, shortcuts)) _welcomeShortcuts = null; };
+        _welcomeWindow = welcome;
+        welcome.Closed += (_, _) => { _welcomeWindow = null; _welcomeView = null; _welcomeShortcuts = null; _welcomeHideShortcut = null; };
+        ConfigureAppWindow(welcome, true);
+        // The first-run surface is a normal discoverable entry while the toolbar is hidden.
+        welcome.ShowInTaskbar = true;
         welcome.Show();
-    }
-
-    private Window CreateToolbar()
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        var title = new TextBlock { Text = L.Get("App.Name"), FontSize = 16, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 12, 0) };
-        row.Children.Add(title);
-        _toolPicker = new ComboBox { Width = 130, MinHeight = 34, Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center };
-        foreach (var option in ToolOptions) _toolPicker.Items.Add(option);
-        _toolPicker.DisplayMemberPath = nameof(ToolOption.Label);
-        _toolPicker.SelectedIndex = 1;
-        _toolPicker.SelectionChanged += (_, _) =>
-        {
-            if (_syncingControls || DocumentOperationBusy) return;
-            if (_toolPicker.SelectedItem is ToolOption { Tool: EditorTool.CaptureRegion } && Active.Document.Kind != DocumentKind.FrozenCapture)
-            { UpdateStatus(L.Get("Desktop.CaptureFirst")); RequestRender(); return; }
-            if (_toolPicker.SelectedItem is ToolOption option) { _editor.Tool = option.Tool; UpdateStatus(option.Label); }
-        };
-        row.Children.Add(_toolPicker);
-        foreach (var (label, color) in new[] { (L.Get("Color.Blue"), 0xFF2383E2u), (L.Get("Color.Red"), 0xFFEF4444u), (L.Get("Color.Yellow"), 0xFFFFC53Du), (L.Get("Color.White"), 0xFFFFFFFFu), (L.Get("Color.Black"), 0xFF222222u) })
-        {
-            var b = Button(label, () => _editor.Style.Stroke = color);
-            b.MinWidth = 30; b.Padding = new Thickness(4); b.Foreground = new SolidColorBrush(Color.FromArgb((byte)(color >> 24), (byte)(color >> 16), (byte)(color >> 8), (byte)color));
-            if (label == L.Get("Color.White")) b.Background = Brushes.DimGray;
-            if (color == 0xFF222222u) b.Background = Brushes.Gainsboro;
-            row.Children.Add(b);
-        }
-        var width = new Slider { Minimum = 1, Maximum = 40, Value = 4, Width = 75, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0), ToolTip = L.Get("Toolbar.StrokeWidth") };
-        width.ValueChanged += (_, _) => _editor.Style.StrokeWidth = width.Value;
-        row.Children.Add(width);
-        row.Children.Add(ToolButton(L.Get("Toolbar.Undo"), "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,12", Undo));
-        row.Children.Add(ToolButton(L.Get("Toolbar.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,12", Redo));
-        row.Children.Add(ToolButton(L.Get("Toolbar.Image"), "M2,2 L14,2 L14,14 L2,14 Z M2,12 L6,8 L9,11 L11,9 L14,12 M10,5 L10.1,5", () => _ = RunCommand(() => ImportImagesAsync())));
-        row.Children.Add(ToolButton(L.Get("Toolbar.Capture"), "M1,6 L1,2 L5,2 M11,2 L15,2 L15,6 M15,10 L15,14 L11,14 M5,14 L1,14 L1,10 M4,5 L12,5 L12,11 L4,11 Z", () => _ = RunCommand(() => StartCaptureAsync(true))));
-        row.Children.Add(ToolButton(L.Get("Toolbar.SaveProject"), "M2,1 L11,1 L14,4 L14,15 L2,15 Z M5,1 L5,6 L10,6 L10,1 M5,15 L5,10 L11,10 L11,15", () => _ = RunCommand(() => SaveProjectAsync())));
-        row.Children.Add(ToolButton(L.Get("Toolbar.Inspector"), "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15", ToggleInspector));
-        _passThroughButton = ToolButton("", "M4,1 L4,13 L7,10 L10,15 L12,14 L9,9 L14,9 Z", () => SetEditing(false));
-        RefreshHotkeyHints(_passThroughButton, null, _settings.Toggle, _settings.Hide);
-        row.Children.Add(_passThroughButton);
-        var more = ToolButton(L.Get("Toolbar.More"), "M3,7 L3,9 M8,7 L8,9 M13,7 L13,9", () => { });
-        var menu = new ContextMenu();
-        void Item(string name, Action action) { var item = new MenuItem { Header = name }; item.Click += (_, _) => RunUiAction(action); menu.Items.Add(item); }
-        Item(L.Get("Menu.OpenProject"), () => _ = RunCommand(OpenProjectAsync));
-        Item(L.Get("Menu.SaveAs"), () => _ = RunCommand(() => SaveProjectAsync(true)));
-        Item(L.Get("Menu.ExportImage"), () => _ = RunCommand(() => ExportAsync()));
-        Item(L.Get("Menu.ExportTransparent"), () => _ = RunCommand(() => ExportAsync(true)));
-        Item(L.Get("Menu.Copy"), () => CopySelection());
-        Item(L.Get("Menu.Paste"), () => _ = RunCommand(PasteAsync));
-        Item(L.Get("Menu.ReplaceImage"), () => _ = RunCommand(() => ImportImagesAsync(null, true)));
-        Item(_host.Scope == OverlayMonitorScope.PrimaryScreen ? L.Get("Menu.CapturePrimary") : L.Get("Menu.CaptureAll"), () => _ = RunCommand(() => StartCaptureAsync(false)));
-        Item(L.Get("Menu.ReturnLive"), ReturnToLive); Item(L.Get("Menu.ResumeCapture"), ResumeCapture);
-        Item(L.Get("Menu.MoveIntoView"), MoveIntoView);
-        Item(L.Get("Menu.Clear"), () => { _editor.Cancel(); Active.Execute(L.Get("History.Clear"), d => d.Elements.Clear()); });
-        Item(L.Get("Menu.Settings"), ShowHotkeySettings);
-        Item(L.Get("Desktop.Exit"), () => _ = RunCommand(RequestExitAsync));
-        more.ContextMenu = menu; more.Click += (_, _) => { menu.PlacementTarget = more; menu.IsOpen = true; };
-        row.Children.Add(more);
-        var opacity = _opacitySlider = new Slider { Minimum = 0, Maximum = 1, Value = 1, Width = 80, VerticalAlignment = VerticalAlignment.Center, ToolTip = L.Get("Toolbar.Opacity"), Margin = new Thickness(8, 0, 6, 0) };
-        opacity.PreviewMouseLeftButtonDown += (_, _) => { _editor.Cancel(); Active.BeginTransaction(L.Get("History.LayerOpacity")); };
-        opacity.ValueChanged += (_, _) =>
-        {
-            if (_syncingControls || DocumentOperationBusy) return;
-            if (Active.IsTransactionActive) { Active.Document.LayerOpacity = opacity.Value; Active.NotifyChanged(); }
-            else Active.Execute(L.Get("History.LayerOpacity"), d => d.LayerOpacity = opacity.Value);
-        };
-        opacity.PreviewMouseLeftButtonUp += (_, _) => { if (Active.IsTransactionActive) Active.Commit(); };
-        opacity.LostMouseCapture += (_, _) => { if (Active.IsTransactionActive) Active.Commit(); };
-        row.Children.Add(opacity);
-        _status.Text = L.Get("Toolbar.Freehand"); _status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); _status.VerticalAlignment = VerticalAlignment.Center; _status.MaxWidth = 160;
-        _status.TextTrimming = TextTrimming.CharacterEllipsis;
-        row.Children.Add(_status);
-        var border = new Border { Background = new SolidColorBrush(Color.FromRgb(247, 247, 245)), BorderBrush = new SolidColorBrush(Color.FromRgb(215, 215, 212)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(8), Child = row };
-        border.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
-        border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
-        var window = new Window { Title = L.Get("Toolbar.Title"), WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent,
-            Topmost = true, ShowInTaskbar = true, ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight, Content = border, FontSize = 14,
-            FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI") };
-        title.MouseLeftButtonDown += (_, _) => { window.DragMove(); SaveToolbarPosition(); };
-        window.PreviewKeyDown += (_, e) =>
-        {
-            if (e.OriginalSource is System.Windows.Controls.TextBox) return;
-            var key = System.Windows.Input.KeyInterop.VirtualKeyFromKey(e.Key);
-            if (_toolPicker.IsDropDownOpen)
-            {
-                if (key == 0x1B) { _toolPicker.IsDropDownOpen = false; e.Handled = true; }
-                return;
-            }
-            if (key is 0x1B or 0x2E or 0x56 or 0x42 or 0x4C or 0x41 or 0x52 or 0x4F or 0x54 or 0x4E or 0x45 ||
-                (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0) { OnKey(key); e.Handled = true; }
-        };
-        window.Closing += (_, e) => { if (!_disposed) { e.Cancel = true; RunUiAction(() => SetEditing(false)); } };
-        return window;
     }
 
     private sealed record ToolOption(EditorTool Tool, string Key)
@@ -269,12 +210,13 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private static readonly ToolOption[] ToolOptions = [new(EditorTool.Select,"Tool.Select"),new(EditorTool.Freehand,"Tool.Freehand"),new(EditorTool.Highlighter,"Tool.Highlighter"),
         new(EditorTool.Line,"Tool.Line"),new(EditorTool.Arrow,"Tool.Arrow"),new(EditorTool.DoubleArrow,"Tool.DoubleArrow"),new(EditorTool.Rectangle,"Tool.Rectangle"),new(EditorTool.RoundedRectangle,"Tool.RoundedRectangle"),
-        new(EditorTool.Ellipse,"Tool.Ellipse"),new(EditorTool.Triangle,"Tool.Triangle"),new(EditorTool.Text,"Tool.Text"),new(EditorTool.Number,"Tool.Number"),new(EditorTool.Eraser,"Tool.Eraser"),
+        new(EditorTool.Ellipse,"Tool.Ellipse"),new(EditorTool.Symbol,"Tool.Symbol"),new(EditorTool.Emoji,"Tool.Emoji"),new(EditorTool.Text,"Tool.Text"),new(EditorTool.Number,"Tool.Number"),new(EditorTool.Eraser,"Tool.Eraser"),
         new(EditorTool.Crop,"Tool.Crop"),new(EditorTool.Blur,"Tool.Blur"),new(EditorTool.Pixelate,"Tool.Pixelate"),new(EditorTool.Redact,"Tool.Redact"),new(EditorTool.CaptureRegion,"Tool.CaptureRegion")];
     private System.Windows.Controls.Button Button(string label, Action action)
     {
         var button = new System.Windows.Controls.Button { Content = label, MinHeight = 34, Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(2, 0, 2, 0),
-            Background = Brushes.Transparent, BorderThickness = new Thickness(0), ToolTip = label };
+            BorderThickness = new Thickness(0), ToolTip = label };
+        button.SetResourceReference(Control.BackgroundProperty, "CanvasButton");
         button.Click += (_, _) => RunUiAction(action); return button;
     }
     private System.Windows.Controls.Button ToolButton(string label, string geometry, Action action)
@@ -290,18 +232,20 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private bool SetEditing(bool editing, bool preserveImageDrop = false)
     {
+        // Close the startup window before acquiring the input lease so native close
+        // focus restoration cannot interrupt a newly acquired editing session.
+        if (editing) _welcomeWindow?.Close();
         if (!preserveImageDrop) CloseImageDrop();
         bool wasEditing = _host.IsEditing;
         _editor.Cancel();
         if (!editing) _textEditor?.Close();
         else if (_textEditor is not null && !ReferenceEquals(_textEditorSession, Active)) _textEditor.Hide();
         if (!editing && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
-        if (editing) _host.SetVisible(true);
         if (editing && !_host.TryEnterEditing(out var failure))
         {
             // Never leave an opaque frozen screenshot over a desktop that is receiving input.
             ReturnToLive();
-            _toolbar.Hide(); _inspector?.Hide(); _textEditor?.Hide();
+            _toolbar.Hide(); _inspector?.Hide(); _layers?.Hide(); _textEditor?.Hide(); CloseToolOptions();
             UpdateStatus(failure!);
             _tray.ShowBalloonTip(4000, L.Get("Desktop.EnterEditFailed"), failure!, Forms.ToolTipIcon.Info);
             RequestRender();
@@ -312,20 +256,22 @@ internal sealed partial class DesktopSession : IDisposable
         {
             _toolbar.Show();
             if (!_toolbarPlaced) PlaceToolbar();
-            if (_inspectorWanted) { _inspector?.Show(); _inspector?.Refresh(); }
+            if (_inspectorWanted && _inspector is not null) { ShowAppWindow(_inspector); _inspector.Refresh(); }
+            if (_layersWanted && _layers is not null) { ShowAppWindow(_layers); _layers.Refresh(); }
             if (_textEditor is not null && ReferenceEquals(_textEditorSession, Active))
             { _textEditor.Show(); _textEditor.Activate(); }
             if (!wasEditing) UpdateStatus(L.Get("Desktop.EditModePrefix") + (ToolOptions.FirstOrDefault(x => x.Tool == _editor.Tool)?.Label ?? L.Get("Desktop.SelectTool")));
         }
-        else { _toolbar.Hide(); _inspector?.Hide(); }
+        else { _toolbar.Hide(); _inspector?.Hide(); _layers?.Hide(); _stampWindow?.Hide(); CloseToolOptions(); _eyedropper = null; }
         RequestRender();
         return true;
     }
     private void RaiseVisibleToolWindows()
     {
-        foreach (var window in new[] { _toolbar, _inspector, _textEditor })
+        foreach (var window in _app.Windows.Cast<Window>().OrderBy(w => ReferenceEquals(w, _toolbar) ? 0 : 1))
             if (window is { IsVisible: true } && new WindowInteropHelper(window).Handle is var handle && handle != 0)
                 OverlayCoordinates.RaiseToolWindow(handle);
+        RaiseToolOptionsPopup();
     }
     private void RequestRender()
     {
@@ -343,16 +289,20 @@ internal sealed partial class DesktopSession : IDisposable
         _renderingFrame = true;
         try
         {
+            SyncLiveEffectsCapture();
             _host.Render();
             _syncingControls = true;
             try
             {
-                if (ToolOptions.FirstOrDefault(x => x.Tool == _editor.Tool) is { } selectedTool && !ReferenceEquals(_toolPicker.SelectedItem, selectedTool))
-                    _toolPicker.SelectedItem = selectedTool;
+                RefreshToolbarState();
                 if (!Active.IsTransactionActive) _opacitySlider.Value = Active.Document.LayerOpacity;
             }
             finally { _syncingControls = false; }
-            if (!Active.IsTransactionActive) _inspector?.Refresh();
+            if (!Active.IsTransactionActive)
+            {
+                _inspector?.Refresh(); _layers?.Refresh();
+                if (IsToolOptionsOpen) _toolOptionsPanel.RefreshDocumentState();
+            }
         }
         finally
         {
@@ -360,25 +310,51 @@ internal sealed partial class DesktopSession : IDisposable
             if (_renderAgain) { _renderAgain = false; RequestRender(); }
         }
     }
-    private void UpdateStatus(string message) { _status.Text = message; _status.ToolTip = message; }
+    private void UpdateStatus(string message) { _status.Text = message; _toolbarStatusDisplay?.Refresh(); }
     private void OnWpfInputProgress(object sender, System.Windows.Input.PreProcessInputEventArgs e)
     {
-        if (!_disposed) _host.NotifyInputProgress();
+        if (_disposed) return;
+        _host.NotifyInputProgress();
+        if (e.StagingItem.Input is System.Windows.Input.KeyEventArgs { Key: System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl })
+            RequestRender();
     }
+    private void OnWpfPointerFocus(object sender, System.Windows.Input.ProcessInputEventArgs e)
+    {
+        if (_disposed || !_host.IsEditing || e.StagingItem.Input is not System.Windows.Input.MouseButtonEventArgs
+            { ButtonState: System.Windows.Input.MouseButtonState.Pressed, OriginalSource: DependencyObject source }) return;
+        // WPF menus own their focus/capture lifetime until the mouse release invokes
+        // the item. Moving native focus into that Popup can cancel the pending click.
+        if (!ShouldSynchronizePointerFocus(source)) return;
+        // A native canvas drag owns its whole gesture, even when it crosses a panel.
+        nint capture = _host.CaptureHandle;
+        if (capture != 0 && _host.Diagnostics.Any(pair => pair.InputHandle == capture)) return;
+        PrivateKeyboardBridge.SynchronizePointerFocus(source);
+    }
+    internal static bool ShouldSynchronizePointerFocus(DependencyObject source) =>
+        !Ancestors(source).Any(value => value is MenuItem or System.Windows.Controls.Primitives.MenuBase);
     private void SelectTool(EditorTool tool)
     {
-        _editor.Tool = tool;
-        _toolPicker.SelectedItem = ToolOptions.FirstOrDefault(x => x.Tool == tool);
-        UpdateStatus(ToolOptions.FirstOrDefault(x => x.Tool == tool)?.Label ?? tool.ToString());
+        ActivateTool(tool);
     }
     private void OnKey(int key)
     {
-        if (DocumentOperationBusy) return;
+        if (DocumentOperationBusy || _layers?.IsRenaming == true) return;
         var ctrl = (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0;
         var shift = (OverlayHost.CurrentModifiers & OverlayModifiers.Shift) != 0;
-        if (key == 0x1B) { if (Active.IsTransactionActive || _editor.Marquee != null) _editor.Cancel(); else SetEditing(false); return; }
+        if (key == 0x1B)
+        {
+            if (_eyedropper is not null) { _eyedropper = null; UpdateStatus(L.Get("Color.SampleCancelled")); }
+            else if (_toolOptionsPanel.CloseColorPicker()) { }
+            else if (IsToolOptionsOpen && !_toolOptionsPinned) CloseToolOptions();
+            else if (Active.IsTransactionActive || _editor.Marquee != null) _editor.Cancel();
+            else SetEditing(false);
+            return;
+        }
         if (ctrl)
         {
+            // Modifiers (including a repeated or delayed Ctrl packet) are not editor
+            // commands. They must not roll back a pointer transaction in progress.
+            if (key is not (0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F)) return;
             _editor.Cancel();
             switch (key)
             {
@@ -387,10 +363,20 @@ internal sealed partial class DesktopSession : IDisposable
                 case 0x41: Active.SelectAll(); SelectTool(EditorTool.Select); break;
                 case 0x43: CopySelection(); break;
                 case 0x56: _ = RunCommand(PasteAsync); break;
-                case 0x44: Active.DuplicateSelection(); break;
+                case 0x44: if (CanAddCanvasContent()) Active.DuplicateSelection(); break;
+                case 0x47: if (shift) Active.UngroupSelection(); else Active.GroupSelection(); break;
                 case 0x53: _ = RunCommand(() => SaveProjectAsync(shift)); break;
                 case 0x4F: _ = RunCommand(OpenProjectAsync); break;
             }
+            return;
+        }
+        if (key == ToolShortcutCatalog.MoreKey) { OpenMoreTools(); return; }
+        if (key == ToolShortcutCatalog.StampLibraryKey) { ShowStampLibrary(); return; }
+        if (key == ToolShortcutCatalog.NewStampKey) { SaveStampSelection(); return; }
+        if (key is >= 0x30 and <= 0x39)
+        {
+            var slot = key == 0x30 ? 9 : key - 0x31;
+            if (_stampLibrary.Pins[slot] is { } stamp) SelectStampSlot(stamp);
             return;
         }
         if (key == 0x2E) { _editor.Cancel(); Active.DeleteSelection(); return; }
@@ -399,9 +385,8 @@ internal sealed partial class DesktopSession : IDisposable
             _editor.Cancel(); var amount = shift ? 10 : 1;
             Active.TransformSelection(Affine2D.Translation(key == 0x25 ? -amount : key == 0x27 ? amount : 0, key == 0x26 ? -amount : key == 0x28 ? amount : 0)); return;
         }
-        var tool = key switch { 0x56 => EditorTool.Select,0x42 => EditorTool.Freehand,0x4C => EditorTool.Line,0x41 => EditorTool.Arrow,0x52 => EditorTool.Rectangle,
-            0x4F => EditorTool.Ellipse,0x54 => EditorTool.Text,0x4E => EditorTool.Number,0x45 => EditorTool.Eraser,_ => (EditorTool?)null };
-        if (tool != null) SelectTool(tool.Value);
+        if (ToolShortcutCatalog.IsReserved(key)) return;
+        if (ToolShortcutCatalog.TryGetTool(key, out var tool)) SelectTool(tool);
     }
     private void Undo() { _editor.Cancel(); Active.Undo(); }
     private void Redo() { _editor.Cancel(); Active.Redo(); }
@@ -415,7 +400,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (_host.IsEditing)
         {
             using var paint = new SKPaint { Color = new SKColor(35,131,226), Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, IsAntialias = true };
-            if (_editor.Tool == EditorTool.Select && Active.SelectionBounds() is { } b)
+            if (_editor.ShouldShowSelection(OverlayHost.CurrentModifiers) && Active.SelectionBounds() is { } b)
             {
                 canvas.DrawRect((float)b.X,(float)b.Y,(float)b.Width,(float)b.Height,paint);
                 foreach(var p in EditorController.Corners(b)) canvas.DrawRect((float)p.X-5,(float)p.Y-5,10,10,paint);
@@ -441,14 +426,17 @@ internal sealed partial class DesktopSession : IDisposable
         if (_inspector == null)
         {
             _inspector = new InspectorWindow(() => Active, () => !DocumentOperationBusy) { Owner = _toolbar };
+            ConfigureAppWindow(_inspector);
             _inspector.CommandKey += OnKey;
+            _inspector.EyedropperRequested += BeginEyedropper;
             _inspector.Dismissed += () => { _inspectorWanted = false; if (_host.IsEditing) _toolbar.Activate(); };
         }
         if (_inspectorWanted)
         {
             var monitor = _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(new(_toolbar.PointToScreen(new(0, 0)).X, _toolbar.PointToScreen(new(0, 0)).Y))) ?? _host.PrimaryMonitor;
-            _inspector.MaxHeight = Math.Max(_inspector.MinHeight, monitor.WorkArea.Height * 96 / monitor.DpiY - 24);
-            _inspector.Refresh(); _inspector.Show();
+            if (_inspector.WindowState == WindowState.Normal)
+                _inspector.Height = Math.Min(_inspector.Height, Math.Max(_inspector.MinHeight, monitor.WorkArea.Height * 96 / monitor.DpiY - 24));
+            _inspector.Refresh(); ShowAppWindow(_inspector, true);
         }
         else _inspector.Hide();
     }
@@ -472,6 +460,7 @@ internal sealed partial class DesktopSession : IDisposable
         {
             if (DocumentOperationBusy) { error.Text = L.Get("Text.Busy"); return; }
             if (!ReferenceEquals(session, Active)) { error.Text = L.Get("Text.SessionChanged"); return; }
+            if (!CanAddCanvasContent()) { error.Text = L.Get("Feedback4.Canvas.Hidden"); return; }
             if (!TextEditCommand.TryCommit(session, elementId, elementKind, input.Text, _editor.Style, point, _renderer, out var failure))
             { error.Text = failure; input.Focus(); return; }
             dialog.Close();
@@ -482,10 +471,12 @@ internal sealed partial class DesktopSession : IDisposable
             if(e.Key==System.Windows.Input.Key.Enter && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control)!=0) { Commit(); e.Handled=true; }
         };
         dialog.Closed += (_,_)=> { _textEditor=null; _textEditorSession=null; if(!_disposed && _host.IsEditing) _toolbar.Activate(); };
+        ConfigureAppWindow(dialog, true);
         _textEditor=dialog; _textEditorSession=session; dialog.Show(); input.Focus(); input.SelectAll();
     }
     private void OnMonitorsChanged()
     {
+        StopLiveEffectsCapture();
         CloseImageDrop();
         _editor.Cancel();
         var bounds = _host.Monitors.Select(m=>new RectD(m.Bounds.Left,m.Bounds.Top,m.Bounds.Width,m.Bounds.Height)).Aggregate(RectD.Union);
@@ -502,18 +493,17 @@ internal sealed partial class DesktopSession : IDisposable
     private void PlaceToolbar()
     {
         var m=_host.PrimaryMonitor;
-        var x=_settings.ToolbarX ?? m.WorkArea.Left + Math.Max(8,(m.WorkArea.Width-_toolbar.ActualWidth*m.DpiX/96)/2);
-        var y=_settings.ToolbarY ?? m.WorkArea.Top+12;
-        var target = _host.Monitors.FirstOrDefault(a=>a.WorkArea.Contains(new OverlayPoint(x,y))) ?? m;
-        x = Math.Clamp(x, target.WorkArea.Left, Math.Max(target.WorkArea.Left, target.WorkArea.Right - _toolbar.ActualWidth * target.DpiX / 96));
-        y = Math.Clamp(y, target.WorkArea.Top, Math.Max(target.WorkArea.Top, target.WorkArea.Bottom - _toolbar.ActualHeight * target.DpiY / 96));
-        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(_toolbar).Handle,new(x,y)); _toolbarPlaced=true;
+        var target = _settings.ToolbarX is { } x && _settings.ToolbarY is { } y
+            ? _host.Monitors.FirstOrDefault(a=>a.WorkArea.Contains(new OverlayPoint(x,y))) ?? m : m;
+        // The whole transparent surface is centered, including the 100-DIP mascot. Its
+        // crown touches the physical screen top, preserving screen-centered placement.
+        var origin = SessionWindowLayout.ToolbarOrigin(target, _toolbar.ActualWidth, _toolbar.ActualHeight, _settings.ToolbarX, _settings.ToolbarY);
+        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(_toolbar).Handle,origin); _toolbarPlaced=true;
     }
     private void SaveToolbarPosition()
     {
         var p=_toolbar.PointToScreen(new System.Windows.Point(0,0));
         _settings.ToolbarX=p.X; _settings.ToolbarY=p.Y;
-        try { _settings.Save(); } catch(Exception ex) { UpdateStatus(L.Get("Desktop.ToolbarSaveFailed")+ex.Message); }
     }
     private void MoveIntoView()
     {
@@ -538,6 +528,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (_toolbar is not null) _toolbar.IsEnabled = enabled;
         if (_inspector is not null) _inspector.IsEnabled = enabled;
         if (_textEditor is not null) _textEditor.IsEnabled = enabled;
+        if (_layers is not null) _layers.IsEnabled = enabled;
         if (enabled) RestoreToolbarKeyboardFocus();
     }
     private void RestoreToolbarKeyboardFocus()
@@ -552,12 +543,12 @@ internal sealed partial class DesktopSession : IDisposable
         if (handle == 0 || GetToolbarForegroundWindow() != handle) return;
         var previous = System.Windows.Input.FocusManager.GetFocusedElement(_toolbar) as UIElement;
         var target = previous is { Focusable: true, IsVisible: true, IsEnabled: true } && ReferenceEquals(Window.GetWindow(previous), _toolbar)
-            ? previous : _toolPicker;
+            ? previous : _toolbarLauncher;
         System.Windows.Input.Keyboard.Focus(target);
     }
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
     private static extern nint GetToolbarForegroundWindow();
-    private void ShowError(string error) => System.Windows.MessageBox.Show(_toolbar,error,L.Get("App.Name"),MessageBoxButton.OK,MessageBoxImage.Warning);
+    private void ShowError(string error) => AppDialog.Show(_toolbar,error,L.Get("App.Name"),MessageBoxButton.OK,MessageBoxImage.Warning);
 
     private void OnSystemThemeChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
     {
@@ -565,31 +556,27 @@ internal sealed partial class DesktopSession : IDisposable
             _app.Dispatcher.BeginInvoke(() => { if (!_disposed) AppTheme.Apply("system"); });
     }
 
-    private static string FormatHotkey(HotkeyBinding binding)
-    {
-        var parts = new List<string>();
-        if ((binding.Modifiers & 2) != 0) parts.Add("Ctrl");
-        if ((binding.Modifiers & 1) != 0) parts.Add("Alt");
-        if ((binding.Modifiers & 4) != 0) parts.Add("Shift");
-        if ((binding.Modifiers & 8) != 0) parts.Add("Win");
-        parts.Add(System.Windows.Input.KeyInterop.KeyFromVirtualKey((int)binding.VirtualKey).ToString());
-        return string.Join("+", parts);
-    }
+    private static string FormatHotkey(HotkeyBinding binding) => HotkeyDisplay.Format(binding);
+
+    internal static bool ShouldNotifyKeyboardRelease(KeyboardLeaseEndReason reason) => reason is
+        KeyboardLeaseEndReason.HeartbeatExpired or KeyboardLeaseEndReason.QueueOverflow or
+        KeyboardLeaseEndReason.NotificationFailed or KeyboardLeaseEndReason.HookFailure;
 
     internal static void RefreshHotkeyHints(System.Windows.Controls.Button passThrough, TextBlock? welcomeShortcuts,
-        HotkeyBinding toggle, HotkeyBinding hide)
+        HotkeyBinding toggle, HotkeyBinding hide, TextBlock? hideShortcut = null)
     {
         string toggleText = FormatHotkey(toggle);
         string label = L.Format("Toolbar.PassThrough", toggleText);
         passThrough.ToolTip = label;
         System.Windows.Automation.AutomationProperties.SetName(passThrough, label);
         if (welcomeShortcuts is not null)
-            welcomeShortcuts.Text = L.Format("Welcome.Shortcuts", toggleText, FormatHotkey(hide));
+            welcomeShortcuts.Text = hideShortcut is null ? L.Format("Welcome.Shortcuts", toggleText, FormatHotkey(hide)) : toggleText;
+        if (hideShortcut is not null) hideShortcut.Text = FormatHotkey(hide);
     }
 
     private void ShowHotkeySettings()
     {
-        SetEditing(false);
+        _editor.Cancel();
         var toggle = _settings.Toggle;
         var hide = _settings.Hide;
         var panel = new StackPanel { Margin = new Thickness(24) };
@@ -624,6 +611,10 @@ internal sealed partial class DesktopSession : IDisposable
         var theme = new ComboBox { ItemsSource = new[] { L.Get("Settings.SystemTheme"), L.Get("Settings.LightTheme"), L.Get("Settings.DarkTheme") }, MinHeight = 34,
             SelectedIndex = _settings.Theme == "light" ? 1 : _settings.Theme == "dark" ? 2 : 0 };
         panel.Children.Add(theme);
+        var shortcutHints = new CheckBox { Content = L.Get("Feedback3.Toolbar.ShowShortcutHints"),
+            IsChecked = _settings.ShowToolShortcutHints, MinHeight = 28, Margin = new Thickness(0, 14, 0, 0) };
+        System.Windows.Automation.AutomationProperties.SetName(shortcutHints, L.Get("Feedback3.Toolbar.ShowShortcutHints"));
+        panel.Children.Add(shortcutHints);
         panel.Children.Add(new TextBlock { Text = L.Get("Settings.Language"), Margin = new Thickness(0, 18, 0, 6) });
         var language = new ComboBox { ItemsSource = new[] { L.Get("Settings.AutomaticLanguage"), L.Get("Settings.ChineseLanguage"), L.Get("Settings.EnglishLanguage") },
             MinHeight = 34, SelectedIndex = L.NormalizePreference(_settings.Language) == "zh-CN" ? 1 : L.NormalizePreference(_settings.Language) == "en" ? 2 : 0 };
@@ -649,6 +640,7 @@ internal sealed partial class DesktopSession : IDisposable
             var oldTheme = _settings.Theme;
             var oldPrimaryScreenOnly = _settings.PrimaryScreenOnly;
             var oldLanguage = _settings.Language;
+            var oldShortcutHints = _settings.ShowToolShortcutHints;
             try
             {
                 _host.RegisterHotkeys(toggle, hide);
@@ -657,6 +649,7 @@ internal sealed partial class DesktopSession : IDisposable
                 _settings.Theme = theme.SelectedIndex == 1 ? "light" : theme.SelectedIndex == 2 ? "dark" : "system";
                 _settings.PrimaryScreenOnly = screenScope.SelectedIndex == 0;
                 _settings.Language = language.SelectedIndex == 1 ? "zh-CN" : language.SelectedIndex == 2 ? "en" : "auto";
+                _settings.ShowToolShortcutHints = shortcutHints.IsChecked == true;
                 try { _settings.Save(); }
                 catch
                 {
@@ -665,19 +658,28 @@ internal sealed partial class DesktopSession : IDisposable
                     _settings.Theme = oldTheme;
                     _settings.PrimaryScreenOnly = oldPrimaryScreenOnly;
                     _settings.Language = oldLanguage;
+                    _settings.ShowToolShortcutHints = oldShortcutHints;
                     _host.RegisterHotkeys(oldToggle, oldHide);
                     throw;
                 }
-                RefreshHotkeyHints(_passThroughButton, _welcomeShortcuts, _settings.Toggle, _settings.Hide);
+                RefreshHotkeyHints(_passThroughButton, _welcomeShortcuts, _settings.Toggle, _settings.Hide, _welcomeHideShortcut);
+                _welcomeView?.Refresh(_settings.Toggle, _settings.Hide);
+                RefreshToolShortcutHints();
                 _tray.Text = L.Get("App.NamePrefix") + FormatHotkey(toggle) + L.Get("Desktop.TrayModeSuffix");
                 AppTheme.Apply(_settings.Theme);
+                // Keep a live owned foreground target while WPF replaces themed control
+                // templates and closes the settings HWND. A transient desktop activation
+                // must not look like the user chose to leave editing.
+                if (_host.IsEditing) { _toolbar.Show(); _toolbar.Activate(); }
                 window.Close();
+                if (_host.IsEditing) RaiseVisibleToolWindows();
                 UpdateStatus(oldLanguage != _settings.Language ? L.Get("Settings.LanguageSaved") :
                     oldPrimaryScreenOnly == _settings.PrimaryScreenOnly ? L.Get("Settings.Saved") :
                     ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.SavedScopeOverride") : L.Get("Settings.SavedScopeRestart"));
             }
             catch (Exception ex) { error.Text = ex.Message; }
         }));
+        ConfigureAppWindow(window, true);
         window.Show();
     }
 
@@ -685,13 +687,17 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        StopLiveEffectsCapture();
         CloseImageDrop();
         System.Windows.Input.InputManager.Current.PreProcessInput -= OnWpfInputProgress;
+        System.Windows.Input.InputManager.Current.PostProcessInput -= OnWpfPointerFocus;
         Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemThemeChanged;
         StopDocumentTimers(); _renderOperation?.Abort(); _renderOperation = null; _renderAgain = false;
         _tray.Visible = false; var trayIcon = _tray.Icon; _tray.Dispose(); trayIcon?.Dispose();
+        _welcomeWindow?.Close();
+        _updatesWindow?.Close();
         _textEditor?.Close();
         _host.Dispose(); _overlayCache.Dispose(); _renderer.Dispose();
-        _inspector?.Close(); _toolbar.Close();
+        _inspector?.Close(); _layers?.Close(); _stampWindow?.Close(); _toolbar.Close();
     }
 }

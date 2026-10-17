@@ -8,24 +8,98 @@ internal static class Program
 {
     private static int checks;
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         try
         {
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--updates-client-only")) { GitHubUpdateClientTests.Run(Assert); return 0; }
+            if (args.Contains("--updates-recovery-only")) { UpdateRecoveryTests.Run(Assert); return 0; }
+            if (args.Contains("--update-installer-only")) { UpdateInstallerTests.Run(Assert); return 0; }
+            if (args.Contains("--update-window-only")) { AppUpdateWindowTests.Run(Assert); return 0; }
+            if (args.Contains("--preset-isolation-only")) { PresetIsolationTests.Run(Assert); return 0; }
+            if (args.Contains("--palette-layout-only")) { PaletteLayoutTests.Run(Assert); return 0; }
+            if (args.Contains("--feedback4-geometry-only")) { Feedback4GeometryTests.Run(Assert); return 0; }
+            if (args.Contains("--feedback4-panels-only")) { NativeInputRoutingFixture.Run(Assert, "feedback4-panels"); return 0; }
+            if (args.Contains("--feedback4-workspace-only")) { NativeInputRoutingFixture.Run(Assert, "feedback4-workspace"); return 0; }
+            if (args.Contains("--live-effect-stamp-only")) { Task.Run(() => LiveEffectStampTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--tool-options-keyboard-only")) { ToolOptionsKeyboardRouteTests.Run(Assert); return 0; }
+            if (args.Contains("--tile-interaction-only")) { TileInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--feedback4-options-only")) { Feedback4OptionsTests.Run(Assert); return 0; }
+            if (args.Contains("--settings-window-only")) { SettingsWindowFixture.Run(Assert); return 0; }
+            if (args.Contains("--corner-client-only")) { CornerClientTests.Run(Assert); return 0; }
+            if (args.Contains("--lcd-only")) { LcdPaletteTests.Run(Assert); return 0; }
+            if (args.Contains("--stamp-library-ui-only")) { StampLibraryUiTests.Run(Assert); return 0; }
+            if (args.Contains("--inspector-only")) { InspectorTests.Run(Assert); return 0; }
+            if (args.Contains("--inspector3-only")) { InspectorFeedbackTests.Run(Assert); return 0; }
+            if (args.Contains("--tool-icons-only")) { ToolParameterIconTests.Run(Assert); return 0; }
+            if (args.Contains("--feedback-options-only")) { OptionsFeedbackTests.Run(Assert); return 0; }
+            if (args.Contains("--colors3-only")) { Feedback3ColorTests.Run(Assert); return 0; }
+            if (args.Contains("--number-bounds-only")) { NumberBoundsTests.Run(Assert); return 0; }
+            if (args.Contains("--native-input-routing-only")) { NativeInputRoutingFixture.Run(Assert); return 0; }
+            if (args.Contains("--stamp-selection-only")) { StampSelectionIntegrationTests.Run(Assert); return 0; }
+            if (args.Contains("--toolbar2-only")) { ToolbarAcceptanceTests.Run(Assert); return 0; }
+            if (args.Contains("--creation-selection-only")) { CreationSelectionTests.Run(Assert); return 0; }
+            if (args.Contains("--stamp-preview-only")) { StampPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--emoji-only")) { EmojiTests.Run(Assert); return 0; }
+            if (args.Contains("--layer-names-only")) { LayerRenameTests.Run(Assert); return 0; }
+            if (args.Contains("--welcome-only")) { WelcomeSessionTests.Run(Assert); HotkeyHintTests.Run(Assert); return 0; }
+            if (args.Contains("--session-lifecycle-only")) { SessionLifecycleFixture.Run(Assert); return 0; }
+            if (args.Contains("--window-layout-only")) { WindowLayoutFixture.Run(Assert); return 0; }
+            if (args.Contains("--icons-only")) { AppIconTests.Run(Assert); return 0; }
+            if (args.Contains("--toolbar-only")) { LauncherGestureStateTests.Run(Assert); ToolbarInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--window-chrome-only")) { WindowChromeTests.Run(Assert); return 0; }
+            if (args.Contains("--panel-ui-only"))
+            {
+                WindowChromeTests.Run(Assert); InspectorTests.Run(Assert); ThemeTests.Run(Assert); return 0;
+            }
+            if (args.Contains("--recovery-only")) { WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--clipboard-only")) { ObjectClipboardTests.Run(Assert); return 0; }
+            if (args.Contains("--tool-options-input-only")) { ToolOptionsInputFixture.Run(Assert); return 0; }
+            if (args.Contains("--tool-options-only")) { ToolOptionsPanelTests.Run(Assert); return 0; }
+            if (args.Contains("--tool-compatibility-only")) { ToolCompatibilityTests.Run(Assert); return 0; }
+            if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
+            if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            WelcomeSessionTests.Run(Assert);
+            GitHubUpdateClientTests.Run(Assert);
+            UpdateInstallerTests.Run(Assert);
+            UpdateRecoveryTests.Run(Assert);
+            AppUpdateWindowTests.Run(Assert);
+            LayerRenameTests.Run(Assert);
+            EmojiTests.Run(Assert);
+            CreationSelectionTests.Run(Assert);
+            Feedback4GeometryTests.Run(Assert);
+            StampPreviewTests.Run(Assert);
             HotkeyHintTests.Run((name, condition) => Assert(name, condition));
             TextEditCommandTests.Run((name, condition) => Assert(name, condition));
             CaptureViewportPlacementTests.Run((name, condition) => Assert(name, condition));
             MoveIntoViewTests.Run((name, condition) => Assert(name, condition));
             ImageToolTargetTests.Run((name, condition) => Assert(name, condition));
+            WorkspaceToolControllerTests.Run(Assert);
+            ToolCompatibilityTests.Run(Assert);
             ImageDropTests.Run((name, condition) => Assert(name, condition));
             ImageDropDataReaderTests.Run((name, condition) => Assert(name, condition));
+            ObjectClipboardTests.Run(Assert);
+            LauncherGestureStateTests.Run(Assert);
+            ToolbarInteractionTests.Run(Assert);
+            ToolPresetAndColorTests.Run(Assert);
+            PresetIsolationTests.Run(Assert);
+            ToolOptionsPanelTests.Run(Assert);
+            Feedback4OptionsTests.Run(Assert);
+            PaletteLayoutTests.Run(Assert);
+            ToolOptionsKeyboardRouteTests.Run(Assert);
+            Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult();
+            Task.Run(() => LiveEffectStampTests.RunAsync(Assert)).GetAwaiter().GetResult();
+            Task.Run(() => StampPlacementRequestTests.RunAsync(Assert)).GetAwaiter().GetResult();
             EncodedPngImportTests.Run((name, condition) => Assert(name, condition));
             CreationTools(); SelectionAndTransforms(); CancellationAndReplacement(); EraserTransactions();
             ImageEffectsAndCrop(); DocumentRegions(); TextDoubleClick(); RasterPreviewRanges();
             PointerNoOpTests.Run((name, condition) => Assert(name, condition));
             InspectorTests.Run((name, condition) => Assert(name, condition));
+            AppIconTests.Run(Assert);
+            WindowChromeTests.Run(Assert);
+            WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult();
             ThemeTests.Run((name, condition) => Assert(name, condition));
             MonitorScopeSettingsTests.Run((name, condition) => Assert(name, condition));
             Console.WriteLine($"PASS {checks} controller/session/render/inspector checks. No native windows shown or input injected."); return 0;
@@ -41,8 +115,10 @@ internal static class Program
             var session = Session(); var controller = new EditorController(session) { Tool = tool };
             Gesture(controller, new(20, 25), new(120, 85));
             var created = session.Document.Elements.Single();
-            Assert(tool + " creates correct element", created.Kind.ToString() == tool.ToString());
-            Assert(tool + " commits one undo step", session.UndoCount == 1 && !session.IsTransactionActive && session.Selection.Contains(created.Id));
+            Assert(tool + " creates correct element", tool == EditorTool.Triangle
+                ? created.Kind == ElementKind.Symbol && created.Symbol == SymbolKind.Triangle : created.Kind.ToString() == tool.ToString());
+            Assert(tool + " commits one undo step with the tool-specific selection policy", session.UndoCount == 1 && !session.IsTransactionActive &&
+                (tool is EditorTool.Freehand or EditorTool.Highlighter ? session.Selection.Count == 0 : session.Selection.Contains(created.Id)));
             using var renderer = new SceneRenderer(); using var bitmap = Decode(renderer.ExportPng(session.Document, session.Assets, true));
             Assert(tool + " produces actual PNG pixels", CountPixels(bitmap) > 40);
             Assert(tool + " undo/redo preserves editable object", session.Undo() && session.Document.Elements.Count == 0 && session.Redo() && session.Document.Elements.Single().Kind == created.Kind);
@@ -82,7 +158,7 @@ internal static class Program
         session.Undo(); var beforeResize = session.Document.Elements.Single().Transform; bounds = session.SelectionBounds()!.Value; center = bounds.Center;
         Gesture(controller, new(bounds.Right, bounds.Bottom), center + (new PointD(bounds.Right, bounds.Bottom) - center) * 2);
         var resized = session.Document.Elements.Single();
-        Assert("shape resize scales local axes", Math.Abs(resized.Transform.M11 - 2) < 1e-8 && Math.Abs(resized.Transform.M22 - 2) < 1e-8);
+        Assert("shape resize changes vector dimensions without scaling its stroke matrix", Math.Abs(resized.Transform.M11 - 1) < 1e-8 && Math.Abs(resized.Transform.M22 - 1) < 1e-8 && resized.Width == 160 && resized.Height == 120);
         Assert("resize remains undoable as one operation", session.Undo() && session.Document.Elements.Single().Transform == beforeResize);
 
         // Nonuniform resize after rotation must preserve perpendicular axes instead of introducing a shear.
@@ -163,12 +239,16 @@ internal static class Program
 
     private static void ImageEffectsAndCrop()
     {
-        var session = Session(); using var source = new SKBitmap(100, 80);
+        // Frozen screenshot/image effects remain bound to their image. Live canvas
+        // Pixelate has a separate desktop-region contract exercised below elsewhere.
+        var session = Session(); session.Document.Kind = DocumentKind.FrozenCapture;
+        using var source = new SKBitmap(100, 80);
         for (int y = 0; y < 80; y++) for (int x = 0; x < 100; x++) source.SetPixel(x, y, new((byte)(80 + x), (byte)(80 + y), 230));
         using var originalImage = SKImage.FromBitmap(source); using var data = originalImage.Encode(SKEncodedImageFormat.Png, 100);
         var image = new CanvasElement { Kind = ElementKind.Image, Width = 100, Height = 80, AssetId = session.Assets.Add(data.ToArray()),
             Transform = Affine2D.Translation(180, 40).Compose(Affine2D.Rotation(30)), ImageCrop = new(.25, .2, .5, .6) };
         session.Add(image); var controller = new EditorController(session) { Tool = EditorTool.Redact };
+        controller.Style.Stroke = 0xFF112233;
         PointD a = image.Transform.TransformPoint(new(20, 10)), b = image.Transform.TransformPoint(new(70, 50));
         Down(controller, a); Move(controller, b);
         var preview = controller.EffectPreviewPolygon!;
@@ -181,7 +261,7 @@ internal static class Program
         using (var png = Decode(renderer.ExportPng(session.Document, session.Assets, true)))
         {
             var pixel = png.GetPixel((int)center.X, (int)center.Y);
-            Assert("controller effect rasterizes on transformed target", pixel.Red == 17 && pixel.Green == 17 && pixel.Blue == 17);
+            Assert("controller effect rasterizes the selected color on transformed target", pixel.Red == 17 && pixel.Green == 34 && pixel.Blue == 51);
         }
         controller.Tool = EditorTool.Crop; int undo = session.UndoCount;
         Gesture(controller, a, b);

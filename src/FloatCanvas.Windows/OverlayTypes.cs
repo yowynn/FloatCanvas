@@ -22,8 +22,8 @@ public sealed record OverlayPointerEvent(OverlayPointerKind Kind, OverlayPoint P
 /// <summary>Modifiers use the Win32 MOD_ALT/CONTROL/SHIFT/WIN bit values. MOD_NOREPEAT is applied automatically.</summary>
 public readonly record struct HotkeyBinding(uint Modifiers, uint VirtualKey)
 {
-    public static HotkeyBinding DefaultToggle => new(3, 0x46);
-    public static HotkeyBinding DefaultHide => new(7, 0x46);
+    public static HotkeyBinding DefaultToggle => new(2, 0xC0);
+    public static HotkeyBinding DefaultHide => new(6, 0xC0);
 }
 
 public sealed record OverlayWindowDiagnostic(nint DisplayHandle, nint InputHandle, PixelBounds Bounds,

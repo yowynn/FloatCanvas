@@ -1,0 +1,7 @@
+{
+  "Layers.Rename": { "zh": "重命名图层", "en": "Rename layer" },
+  "Layers.NameTooLong": { "zh": "图层名称不能超过 1024 个字符。", "en": "Layer names cannot exceed 1024 characters." },
+  "Layers.RenameHint": { "zh": "再次点击已选中的名称进行重命名", "en": "Click the selected name again to rename" },
+  "Layers.RenameInput": { "zh": "图层名称；Enter 保存，Esc 取消", "en": "Layer name; Enter to save, Esc to cancel" },
+  "Layers.HelpWithRename": { "zh": "拖动左侧手柄调整层级；眼睛切换显示，锁切换锁定。再次点击已选中的图层名称，或按 F2 重命名；Enter 保存，Esc 取消，名称留空恢复默认。右键可复制、删除、置顶、置底和编组。\n\nCtrl+D　复制所选图层\nDelete　删除未锁定的所选图层\nCtrl+G　编组\nCtrl+Shift+G　解组\nEsc　取消重命名或拖动；否则关闭图层面板", "en": "Drag the left handle to reorder; use the eye and lock to change visibility and locking. Click a selected layer name again, or press F2 to rename. Enter saves, Esc cancels, and an empty name restores its default. Right-click for duplicate, delete, ordering and grouping.\n\nCtrl+D  Duplicate selected layers\nDelete  Delete selected unlocked layers\nCtrl+G  Group\nCtrl+Shift+G  Ungroup\nEsc  Cancel renaming or dragging; otherwise close the Layers panel" }
+}

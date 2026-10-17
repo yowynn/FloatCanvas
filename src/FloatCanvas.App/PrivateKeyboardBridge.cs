@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Interop;
+using System.Windows;
+using System.Windows.Input;
 using System.Windows.Threading;
 using FloatCanvas.Windows;
 
@@ -18,6 +20,37 @@ namespace FloatCanvas.App;
 internal sealed class PrivateKeyboardBridge
 {
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+
+    /// <summary>
+    /// A non-activating WPF Popup can assign logical keyboard focus while Win32 still
+    /// points at the canvas HWND. Synchronize only in response to its actual pointer
+    /// press, never by pulling a remembered TextBox back into focus on every key.
+    /// </summary>
+    internal static bool SynchronizePointerFocus(DependencyObject source)
+    {
+        if (PresentationSource.FromDependencyObject(source) is not HwndSource target || target.IsDisposed || target.Handle == 0) return false;
+        if (GetWindowThreadProcessId(target.Handle, out uint process) != GetCurrentThreadId() || process != Environment.ProcessId ||
+            !IsOurWindow(GetForegroundWindow())) return false;
+        if (GetFocus() == target.Handle) return true;
+        // Routed MouseDown may already have focused an editor in this Popup. WM_SETFOCUS
+        // can restore the PopupRoot instead; preserve only this press's connected target,
+        // never a remembered editor from another surface or a later keyboard packet.
+        var routedFocus = Keyboard.FocusedElement as DependencyObject;
+        bool preserveRoutedFocus = CanFocus(routedFocus) && ReferenceEquals(PresentationSource.FromDependencyObject(routedFocus!), target);
+        SetFocus(target.Handle);
+        if (GetFocus() == target.Handle && IsOurWindow(GetForegroundWindow()) && preserveRoutedFocus &&
+            !ReferenceEquals(Keyboard.FocusedElement, routedFocus) && CanFocus(routedFocus) &&
+            ReferenceEquals(PresentationSource.FromDependencyObject(routedFocus!), target))
+            Keyboard.Focus((IInputElement)routedFocus!);
+        return GetFocus() == target.Handle;
+    }
+
+    private static bool CanFocus(DependencyObject? element) => element switch
+    {
+        UIElement control => control.Focusable && control.IsEnabled && control.IsVisible,
+        ContentElement content => content.Focusable && content.IsEnabled,
+        _ => false
+    };
 
     public bool Process(KeyboardInputPacket packet)
         => ProcessCore(packet);
@@ -127,6 +160,7 @@ internal sealed class PrivateKeyboardBridge
     private static extern bool GetKeyboardState([Out] byte[] state);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern nint GetFocus();
+    [DllImport("user32.dll")] private static extern nint SetFocus(nint window);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint window, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode)]

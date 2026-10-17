@@ -1,0 +1,5 @@
+{
+  "Color.Spectrum": { "zh": "自定义颜色", "en": "Custom color" },
+  "Color.SpectrumHint": { "zh": "在色面中选取颜色；方向键微调，Shift 加速", "en": "Choose saturation and brightness; arrow keys adjust, Shift accelerates" },
+  "Color.Hue": { "zh": "色相", "en": "Hue" }
+}

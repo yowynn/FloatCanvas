@@ -133,7 +133,9 @@ internal static partial class Program
             await Task.Delay(55);
             Check(editor.Document.Elements.Count == 1, tool + ": real WM pointer input created exactly one object");
             var element = editor.Document.Elements.Single(); Guid id = element.Id;
-            Check(element.Kind.ToString() == tool, tool + ": actual controller tool determines retained element kind");
+            Check(MatchesTool(element, tool), tool + ": actual controller tool retains the requested geometry and endpoint styles");
+            Check(tool is "Freehand" or "Highlighter" ? editor.Selection.Count == 0 : editor.Selection.SetEquals([id]),
+                tool + ": real creation preserves its tool-specific selection policy");
             var bounds = ElementGeometry.Bounds(element, includeStroke: false);
             if (tool != "Number" && !(Math.Abs(bounds.Left - first.X) <= 2 && Math.Abs(bounds.Right - last.X) <= 2 && bounds.Height >= 40))
                 ToolEvidence.Add(new { Tool = tool, Round = toolRound, Phase = "DrawingGeometryFailure", Bounds = bounds,
@@ -181,12 +183,13 @@ internal static partial class Program
                     PlannedPath = rotationPath.Select(p => new { p.X, p.Y }).ToArray(), Events = rotationEvents });
             Check(Math.Abs(degrees - 90) < 3, tool + ": actual rotation-handle drag rotates approximately 90 degrees");
             await Undo(); Check(Near(editor.Document.Elements.Single().Transform, baseline), tool + ": actual Ctrl+Z undoes rotation");
+            string beforeResize = JsonSerializer.Serialize(editor.Document.Elements.Single());
             bounds = ElementGeometry.Bounds(editor.Document.Elements.Single());
             var resize = new PointD(bounds.Right, bounds.Bottom); var resized = bounds.Center + (resize - bounds.Center) * 1.35;
             await Drag(Line(ToNative(resize), ToNative(resized), 15));
             var scaled = editor.Document.Elements.Single(); var scaledBounds = ElementGeometry.Bounds(scaled);
             Check(scaledBounds.Width > bounds.Width * 1.15 && scaledBounds.Height > bounds.Height * 1.15, tool + ": actual selection-handle drag scales the whole object");
-            await Undo(); Check(Near(editor.Document.Elements.Single().Transform, baseline), tool + ": actual Ctrl+Z undoes scale");
+            await Undo(); Check(JsonSerializer.Serialize(editor.Document.Elements.Single()) == beforeResize, tool + ": actual Ctrl+Z restores complete geometry and transform after scale");
             ToolEvidence.Add(new { Tool = tool, Round = toolRound, RealDragOrClick = true, ToolSelectedProgrammatically = true, VisibleBlueSamples = visiblePixels, PointCount = element.Points.Count, ElementId = id });
             Console.WriteLine($"Verified native tool: {tool}");
         }
@@ -201,8 +204,8 @@ internal static partial class Program
             if (Host.IsEditing) await ActivateInput(); else Lower.Activate();
             CheckHotkeyForeground();
             var stopwatch = Stopwatch.StartNew();
-            SendKey(0x11, false, true); SendKey(0x12, false, true); SendKey(0x46, false, true);
-            SendKey(0x46, true, true); SendKey(0x12, true, true); SendKey(0x11, true, true);
+            SendKey(0x11, false, true); SendKey(0xC0, false, true);
+            SendKey(0xC0, true, true); SendKey(0x11, true, true);
             await WaitUntil(() => Host.IsEditing == expected, "Real default shortcut did not toggle the production application");
             ToggleMilliseconds.Add(stopwatch.Elapsed.TotalMilliseconds);
             Check(JsonSerializer.Serialize(editor.Document) == content, $"Default shortcut toggle {i + 1}: object content remains identical");
@@ -285,6 +288,15 @@ internal static partial class Program
         if (Lower is null || Host is null || !Lower.OwnsPoint(point) || !Host.Diagnostics.Any(w => w.InputHandle == Native.WindowFromPoint(point)))
             throw new InvalidOperationException($"Pointer injection aborted: destination ({point.X},{point.Y}) must hit production InputHandle inside our own native client. hit={Native.WindowFromPoint(point)}, foreground={Native.GetForegroundWindow()}, lower={Lower?.Handle}, lowerOwns={Lower?.OwnsPoint(point)}, editing={Host?.IsEditing}, diagnostics={JsonSerializer.Serialize(Host?.Diagnostics.Select(w => new { DisplayHandle = w.DisplayHandle.ToInt64(), InputHandle = w.InputHandle.ToInt64(), w.Bounds, w.InputVisible, w.DisplayVisible }))}");
     }
+    private static bool MatchesTool(CanvasElement element, string tool) => tool switch
+    {
+        "Line" => element.Kind == ElementKind.Line && ElementGeometry.ArrowStyle(element, true) == ArrowHeadStyle.None && ElementGeometry.ArrowStyle(element) == ArrowHeadStyle.None,
+        "Arrow" => ElementGeometry.IsLine(element.Kind) && ElementGeometry.ArrowStyle(element, true) == ArrowHeadStyle.None && ElementGeometry.ArrowStyle(element) == ArrowHeadStyle.FilledTriangle,
+        "DoubleArrow" => ElementGeometry.IsLine(element.Kind) && ElementGeometry.ArrowStyle(element, true) == ArrowHeadStyle.FilledTriangle && ElementGeometry.ArrowStyle(element) == ArrowHeadStyle.FilledTriangle,
+        "RoundedRectangle" => element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle && ElementGeometry.CornerRadius(element) > 0,
+        "Triangle" => element.Kind == ElementKind.Symbol && element.Symbol == SymbolKind.Triangle,
+        _ => element.Kind.ToString() == tool
+    };
     private static async Task ActivateInput()
     {
         nint hwnd = Host!.Diagnostics.Single(w => w.Bounds.Contains(new(Anchor.X, Anchor.Y))).InputHandle;
@@ -371,7 +383,16 @@ internal static partial class Program
     private static T Field<T>(string name) => (T)DesktopType.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Session)!;
     private static object? Call(string name, params object?[] args)
     {
-        try { return DesktopType.GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Session, args); }
+        var method = DesktopType.GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var parameters = method.GetParameters();
+        if (args.Length < parameters.Length && parameters.Skip(args.Length).All(parameter => parameter.IsOptional))
+        {
+            var supplied = args.Length;
+            Array.Resize(ref args, parameters.Length);
+            for (int index = supplied; index < parameters.Length; index++)
+                args[index] = parameters[index].HasDefaultValue ? parameters[index].DefaultValue : Type.Missing;
+        }
+        try { return method.Invoke(Session, args); }
         catch (TargetInvocationException ex) when (ex.InnerException is not null) { ExceptionDispatchInfo.Capture(ex.InnerException).Throw(); throw; }
     }
     private static async Task CallAsync(string name, params object?[] args) => await (Task)Call(name, args)!;

@@ -11,53 +11,73 @@ using Automation = System.Windows.Automation;
 
 namespace FloatCanvas.App;
 
-/// <summary>Explicit, atomic property edits and accessible layer controls for the current session.</summary>
+/// <summary>Atomic property edits for the current selection; layers live in their own window.</summary>
 internal sealed class InspectorWindow : Wpf.Window
 {
     private readonly Func<EditorSession> getSession;
     private readonly Func<bool> canMutate;
     private readonly Dictionary<string, Controls.TextBox> fields = [];
+    private readonly Dictionary<string, NumericValueField> numericFields = [];
+    private readonly Dictionary<string, ColorField> colorFields = [];
     private readonly Dictionary<string, Wpf.FrameworkElement> fieldContainers = [];
     private readonly HashSet<string> dirtyFields = [];
-    private readonly Dictionary<Guid, LayerRow> layerRows = [];
     private readonly Controls.StackPanel propertyPanel = new();
-    private readonly Controls.TextBlock selectionLabel = new() { TextWrapping = Wpf.TextWrapping.Wrap };
-    private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, MinHeight = 36 };
-    private readonly Controls.ListBox layers = new() { MinHeight = 100, MaxHeight = 260, SelectionMode = Controls.SelectionMode.Extended };
+    private readonly Controls.TextBlock selectionLabel = new() { TextWrapping = Wpf.TextWrapping.Wrap, FontWeight = Wpf.FontWeights.SemiBold };
+    private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, MinHeight = 28, FontSize = 11 };
+    private readonly Controls.Border textSection;
     private readonly Controls.CheckBox keepAspect = new() { Content = L.Get("Inspector.KeepAspect"), MinHeight = 30 };
+    private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
     private readonly Controls.ComboBox alignment = new() { MinHeight = 34, Margin = new(0, 4, 5, 4) };
     private readonly Controls.ComboBox arrowStyle = new() { MinHeight = 34, Margin = new(0, 4, 5, 4) };
+    private readonly Controls.ComboBox startArrow = new() { MinHeight = 34 };
+    private readonly Controls.ComboBox endArrow = new() { MinHeight = 34 };
+    private readonly Controls.ComboBox strokePattern = new() { MinHeight = 34 };
+    private readonly List<NumericScrubber> scrubbers = [];
     private EditorSession? formSession;
-    private EditorSession? layerSession;
     private Guid? formElementId;
     private string? formFingerprint;
-    private bool refreshing;
+    private bool refreshing = true;
+    private EditorSession? scrubSession;
+    private CanvasElement? scrubSource;
+    private double scrubStartValue;
+    private long scrubTransaction;
 
     public event Action? Dismissed;
     public event Action<int>? CommandKey;
+    public event Action<ColorField>? EyedropperRequested;
 
-    public InspectorWindow(Func<EditorSession> getSession, Func<bool>? canMutate = null)
+    public InspectorWindow(Func<EditorSession> getSession, Func<bool>? canMutate = null, ColorLibrary? colorLibrary = null)
     {
         this.getSession = getSession;
         this.canMutate = canMutate ?? (() => true);
-        Title = L.Get("Inspector.Title");
-        Width = 320; Height = 760; MinWidth = 300; MinHeight = 420;
+        Title = L.Get("Inspector.Heading");
+        Width = 340; Height = 700; MinWidth = 300; MinHeight = 420;
         FontSize = 14; FontFamily = new Media.FontFamily("Microsoft YaHei UI");
         Topmost = true; ShowInTaskbar = true;
         SetResourceReference(BackgroundProperty, Wpf.SystemColors.WindowBrushKey);
         SetResourceReference(ForegroundProperty, Wpf.SystemColors.WindowTextBrushKey);
 
-        var body = new Controls.StackPanel { Margin = new Wpf.Thickness(14) };
-        Content = new Controls.ScrollViewer { Content = body, VerticalScrollBarVisibility = Controls.ScrollBarVisibility.Auto };
-        body.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.Heading"), FontSize = 18, FontWeight = Wpf.FontWeights.SemiBold, Margin = new(0, 0, 0, 10) });
+        var layout = new Controls.Grid();
+        layout.RowDefinitions.Add(new() { Height = new Wpf.GridLength(1, Wpf.GridUnitType.Star) });
+        layout.RowDefinitions.Add(new() { Height = Wpf.GridLength.Auto });
+        Content = layout;
+        var body = new Controls.StackPanel { Margin = new Wpf.Thickness(12, 4, 12, 8) };
+        var scroll = new Controls.ScrollViewer { Content = body, VerticalScrollBarVisibility = Controls.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Controls.ScrollBarVisibility.Disabled };
+        layout.Children.Add(scroll);
+        selectionLabel.FontSize = 12;
+        selectionLabel.Margin = new(0, 2, 0, 8);
         body.Children.Add(selectionLabel);
-        body.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.GeometryHint"), TextWrapping = Wpf.TextWrapping.Wrap,
-            Opacity = .65, FontSize = 12, Margin = new(0, 6, 0, 8) });
         body.Children.Add(propertyPanel);
+        propertyPanel.Children.Add(SectionHeading("Inspector.GeometrySection", L.Get("Inspector.GeometryHint"), true));
         propertyPanel.Children.Add(FieldPair("X", "X", "Y", "Y"));
         propertyPanel.Children.Add(FieldPair("W", L.Get("Inspector.WidthShort"), "H", L.Get("Inspector.HeightShort")));
-        propertyPanel.Children.Add(FieldPair("Angle", L.Get("Inspector.AngleDegrees"), "StrokeWidth", L.Get("Inspector.StrokeWidth")));
-        foreach (var label in new[] { L.Get("Inspector.ArrowFilledTriangle"), L.Get("Inspector.ArrowOpen"), L.Get("Inspector.ArrowDiamond") }) arrowStyle.Items.Add(label);
+        propertyPanel.Children.Add(FieldPair("Angle", L.Get("Inspector.AngleDegrees"), null, null));
+        propertyPanel.Children.Add(keepAspect);
+        propertyPanel.Children.Add(SectionHeading("Inspector.AppearanceSection"));
+        propertyPanel.Children.Add(FieldPair("StrokeWidth", L.Get("Inspector.StrokeWidth"), "CornerRadius", L.Get("Inspector.CornerRadius")));
+        foreach (var (label, value) in new[] { (L.Get("Inspector.ArrowFilledTriangle"), ArrowHeadStyle.FilledTriangle), (L.Get("Inspector.ArrowOpen"), ArrowHeadStyle.Open), (L.Get("Inspector.ArrowDiamond"), ArrowHeadStyle.Diamond), (L.Get("Inspector.ArrowNone"), ArrowHeadStyle.None) })
+            arrowStyle.Items.Add(new Controls.ComboBoxItem { Content = ToolOptionPreviews.Choice(label, value) });
         Automation.AutomationProperties.SetName(arrowStyle, L.Get("Inspector.ArrowStyle"));
         arrowStyle.SelectionChanged += (_, _) =>
         {
@@ -67,16 +87,35 @@ internal sealed class InspectorWindow : Wpf.Window
         var arrowRow = new Controls.StackPanel();
         arrowRow.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.ArrowStyle"), FontSize = 12, Margin = new(0, 4, 0, 2) }); arrowRow.Children.Add(arrowStyle);
         fieldContainers.Add("ArrowHeadStyle", arrowRow); propertyPanel.Children.Add(arrowRow);
+        AddPicker("StartArrowHead", L.Get("Inspector.StartArrow"), startArrow,
+            [L.Get("Inspector.ArrowFilledTriangle"), L.Get("Inspector.ArrowOpen"), L.Get("Inspector.ArrowDiamond"), L.Get("Inspector.ArrowNone")]);
+        AddPicker("EndArrowHead", L.Get("Inspector.EndArrow"), endArrow,
+            [L.Get("Inspector.ArrowFilledTriangle"), L.Get("Inspector.ArrowOpen"), L.Get("Inspector.ArrowDiamond"), L.Get("Inspector.ArrowNone")]);
+        AddPicker("StrokePattern", L.Get("Inspector.StrokePattern"), strokePattern,
+            [L.Get("Inspector.PatternSolid"), L.Get("Inspector.PatternDashed"), L.Get("Inspector.PatternDotted")]);
         propertyPanel.Children.Add(FieldPair("ArrowHeadSize", L.Get("Inspector.ArrowHeadSize"), null, null));
         var arrowHint = new Controls.TextBlock { Text = L.Get("Inspector.ArrowHeadSizeHint"), FontSize = 11, Opacity = .65 };
         fieldContainers.Add("ArrowHint", arrowHint); propertyPanel.Children.Add(arrowHint);
-        propertyPanel.Children.Add(keepAspect);
-        propertyPanel.Children.Add(FieldPair("Stroke", L.Get("Inspector.Stroke"), null, null));
-        propertyPanel.Children.Add(FieldPair("Fill", L.Get("Inspector.Fill"), null, null));
+        var colors = new Controls.StackPanel();
+        var strokeColor = CreateColorField("Stroke", L.Get("Inspector.Stroke"), ColorRole.Foreground, colorLibrary);
+        strokeColor.Margin = new(0, 4, 0, 4);
+        colors.Children.Add(strokeColor);
+        var fillColor = CreateColorField("Fill", L.Get("Inspector.Fill"), ColorRole.Background, colorLibrary);
+        colors.Children.Add(fillColor);
+        propertyPanel.Children.Add(colors);
         var colorHint = new Controls.TextBlock { Text = L.Get("Inspector.ColorHint"), FontSize = 11, Opacity = .65, Margin = new(0, 2, 0, 6) };
         fieldContainers.Add("ColorHint", colorHint); propertyPanel.Children.Add(colorHint);
-        propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.OpacityPercent"), "FontSize", L.Get("Inspector.FontSize")));
-        propertyPanel.Children.Add(LabeledField("FontFamily", L.Get("Inspector.FontFamily")));
+        propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.OpacityPercent"), null, null));
+        textSection = SectionHeading("Inspector.TextSection");
+        propertyPanel.Children.Add(textSection);
+        propertyPanel.Children.Add(FieldPair("FontSize", L.Get("Inspector.FontSize"), "Number", L.Get("Editor.ElementKind.Number")));
+        var fontRow = new Controls.StackPanel { Margin = new(0, 4, 0, 4) };
+        fontRow.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.FontFamily"), FontSize = 12, Margin = new(0, 0, 0, 3) });
+        var fontValue = Field("FontFamily", L.Get("Inspector.FontFamilyName"));
+        fontPicker.SelectionChanged += (_, _) => { if (!refreshing && fontPicker.SelectedItem is Controls.ComboBoxItem item && item.Tag is string name) fontValue.Text = name; };
+        fontValue.TextChanged += (_, _) => { if (!string.IsNullOrWhiteSpace(fontValue.Text)) ToolOptionPreviews.SelectFont(fontPicker, fontValue.Text); };
+        Automation.AutomationProperties.SetName(fontPicker, L.Get("Inspector.FontFamily"));
+        fontRow.Children.Add(fontPicker); fieldContainers.Add("FontFamily", fontRow); propertyPanel.Children.Add(fontRow);
         foreach (var label in new[] { L.Get("Inspector.AlignLeft"), L.Get("Inspector.AlignCenter"), L.Get("Inspector.AlignRight") }) alignment.Items.Add(label);
         Automation.AutomationProperties.SetName(alignment, L.Get("Inspector.TextAlignment"));
         alignment.SelectionChanged += (_, _) =>
@@ -90,68 +129,35 @@ internal sealed class InspectorWindow : Wpf.Window
         var text = fields["Text"];
         text.AcceptsReturn = true; text.TextWrapping = Wpf.TextWrapping.Wrap;
         text.Height = 76; text.VerticalScrollBarVisibility = Controls.ScrollBarVisibility.Auto;
-        propertyPanel.Children.Add(FieldPair("Number", L.Get("Editor.ElementKind.Number"), null, null));
-        var applyRow = new Controls.WrapPanel { Margin = new(0, 10, 0, 4) };
-        var apply = Button(L.Get("Inspector.Apply"), Apply);
-        apply.MinWidth = 110;
+        var footer = new Controls.StackPanel();
+        var footerBorder = new Controls.Border { Child = footer, BorderThickness = new(0, 1, 0, 0), Padding = new(12, 8, 26, 8) };
+        footerBorder.SetResourceReference(Controls.Border.BorderBrushProperty, "CanvasBorder");
+        Controls.Grid.SetRow(footerBorder, 1);
+        layout.Children.Add(footerBorder);
+        var applyRow = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = Wpf.HorizontalAlignment.Right };
+        var apply = ActionIconButton.Create(PanelActionIcon.Apply, L.Get("Inspector.Apply"), Apply, "Ctrl+Enter");
         applyRow.Children.Add(apply);
-        applyRow.Children.Add(Button(L.Get("Inspector.ReloadSelection"), () =>
+        var reload = ActionIconButton.Create(PanelActionIcon.Refresh, L.Get("Inspector.ReloadSelection"), () =>
         {
             if (!this.canMutate()) { SetStatus(L.Get("Inspector.BusyDraftRetained"), true); return; }
             LoadSelection(true);
-        }));
-        body.Children.Add(applyRow);
-        status.Margin = new(0, 4, 0, 10);
-        body.Children.Add(status);
-        body.Children.Add(new Controls.Separator { Margin = new(0, 4, 0, 10) });
-        var layerPanel = new Controls.StackPanel();
-        var layerExpander = new Controls.Expander
-        {
-            Header = new Controls.TextBlock { Text = L.Get("Inspector.Layers"), FontWeight = Wpf.FontWeights.SemiBold, MinHeight = 30,
-                VerticalAlignment = Wpf.VerticalAlignment.Center },
-            Content = layerPanel, IsExpanded = true, HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch
-        };
-        layerExpander.SetResourceReference(ForegroundProperty, Wpf.SystemColors.WindowTextBrushKey);
-        Automation.AutomationProperties.SetName(layerExpander, L.Get("Inspector.Layers"));
-        body.Children.Add(layerExpander);
-        layerPanel.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.LayersHint"), FontSize = 12, Opacity = .65,
-            TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(0, 0, 0, 6) });
-        Automation.AutomationProperties.SetName(layers, L.Get("Inspector.LayerList"));
-        layerPanel.Children.Add(layers);
-        var layerActions = new Controls.WrapPanel { Margin = new(0, 8, 0, 0) };
-        layerActions.Children.Add(Button(L.Get("Inspector.BringForward"), () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Forward))));
-        layerActions.Children.Add(Button(L.Get("Inspector.SendBackward"), () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Backward))));
-        layerActions.Children.Add(Button(L.Get("Inspector.BringToFront"), () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Front))));
-        layerActions.Children.Add(Button(L.Get("Inspector.SendToBack"), () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Back))));
-        layerActions.Children.Add(Button(L.Get("Inspector.Duplicate"), () => RunLayerCommand(s => s.DuplicateSelection())));
-        layerActions.Children.Add(Button(L.Get("Inspector.Delete"), () => RunLayerCommand(s => s.DeleteSelection())));
-        layerPanel.Children.Add(layerActions);
-        layers.SelectionChanged += (_, _) =>
-        {
-            if (refreshing) return;
-            try
-            {
-                if (!this.canMutate())
-                {
-                    SetStatus(L.Get("Inspector.BusySelectionRetained"), true);
-                    RefreshLayers(this.getSession());
-                    return;
-                }
-                var session = this.getSession();
-                if (session.IsTransactionActive) { SetStatus(L.Get("Inspector.FinishBeforeLayerSelection"), true); Refresh(); return; }
-                session.SetSelection(layers.SelectedItems.Cast<Controls.ListBoxItem>().Select(item => (Guid)item.Tag));
-                Refresh();
-            }
-            catch (Exception ex) { SetStatus(ex.Message, true); }
-        };
-        Closing += (_, e) => { e.Cancel = true; Hide(); Dismissed?.Invoke(); };
+        });
+        applyRow.Children.Add(reload);
+        footer.Children.Add(applyRow);
+        status.Margin = new(0, 6, 0, 0);
+        footer.Children.Add(status);
+        Closing += (_, e) => { e.Cancel = true; CancelScrub(); CloseColorPickers(); Hide(); Dismissed?.Invoke(); };
+        IsVisibleChanged += (_, _) => { if (!IsVisible) CloseColorPickers(); };
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
             if (key == Input.Key.Escape) { HandleEscape(); e.Handled = true; return; }
+            if (key == Input.Key.Enter && (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0) { Apply(); e.Handled = true; return; }
             bool textInput = Input.Keyboard.FocusedElement is Controls.TextBox || IsTextInput(e.OriginalSource as Wpf.DependencyObject);
             if (RouteCommandKey(Input.KeyInterop.VirtualKeyFromKey(key), (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0, textInput)) e.Handled = true;
         };
+        AppWindowChrome.Apply(this); Icon = AppIcon.WindowImage;
+        refreshing = false;
         Refresh();
     }
 
@@ -161,7 +167,6 @@ internal sealed class InspectorWindow : Wpf.Window
         if (!canMutate()) return;
         var session = getSession();
         if (session.IsTransactionActive) return;
-        RefreshLayers(session);
         LoadSelection(false);
     }
 
@@ -171,11 +176,13 @@ internal sealed class InspectorWindow : Wpf.Window
         var selected = session.SelectedElements().ToArray();
         var element = selected.Length == 1 ? selected[0] : null;
         var sameElement = ReferenceEquals(formSession, session) && formElementId == element?.Id;
-        if (!discardDraft && (dirtyFields.Count > 0 || propertyPanel.IsKeyboardFocusWithin))
+        if (!discardDraft && (dirtyFields.Count > 0 ||
+            propertyPanel.IsKeyboardFocusWithin && IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject)))
         {
             if (!sameElement)
             {
                 selectionLabel.Text = L.Get("Inspector.SelectionChangedDraftRetained");
+                selectionLabel.Visibility = Wpf.Visibility.Visible;
                 SetStatus(L.Get("Inspector.ReturnOrReload"), false);
             }
             return;
@@ -191,15 +198,21 @@ internal sealed class InspectorWindow : Wpf.Window
             SetPropertyVisibility(element);
             selectionLabel.Text = element is null ? selected.Length > 1 ? L.Format("Inspector.MultipleSelection", selected.Length) : L.Get("Inspector.SelectElement")
                 : L.Format("Inspector.ElementSelection", ElementName(element), element.Locked ? L.Get("Inspector.LockedSuffix") : "", !element.Visible ? L.Get("Inspector.HiddenSuffix") : "");
+            selectionLabel.Visibility = element is null ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+            AppWindowChrome.SetHeaderDetail(this, element is null ? "" : selectionLabel.Text);
             foreach (var box in fields.Values) box.Text = "";
+            colorFields["Stroke"].Value = element?.Style.Stroke ?? 0xFF2383E2;
+            colorFields["Fill"].Value = element?.Style.Fill ?? 0;
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = ElementGeometry.Bounds(element);
             var size = GeometricSize(element);
             SetField("X", bounds.Left); SetField("Y", bounds.Top); SetField("W", size.X); SetField("H", size.Y);
             SetField("Angle", Angle(element.Transform)); SetField("StrokeWidth", element.Style.StrokeWidth);
             arrowStyle.SelectedIndex = (int)element.Style.ArrowHeadStyle; SetField("ArrowHeadSize", element.Style.ArrowHeadSize);
-            fields["Stroke"].Text = $"#{element.Style.Stroke:X8}";
-            fields["Fill"].Text = $"#{element.Style.Fill:X8}";
+            startArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element, reverse: true);
+            endArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element);
+            strokePattern.SelectedIndex = (int)element.Style.StrokePattern;
+            SetField("CornerRadius", ElementGeometry.CornerRadius(element));
             SetField("Opacity", element.Style.Opacity * 100); SetField("FontSize", element.Style.FontSize);
             fields["Text"].Text = element.Text;
             fields["Text"].IsEnabled = element.Kind == ElementKind.Text;
@@ -207,7 +220,7 @@ internal sealed class InspectorWindow : Wpf.Window
             fields["Number"].IsEnabled = element.Kind == ElementKind.Number;
             fields["FontSize"].IsEnabled = element.Kind is ElementKind.Text or ElementKind.Number;
             fields["FontFamily"].Text = element.Style.FontFamily;
-            fields["FontFamily"].IsEnabled = element.Kind is ElementKind.Text or ElementKind.Number;
+            fields["FontFamily"].IsEnabled = fontPicker.IsEnabled = element.Kind is ElementKind.Text or ElementKind.Number;
             alignment.IsEnabled = element.Kind == ElementKind.Text;
             alignment.SelectedIndex = (int)element.Style.TextAlignment;
             keepAspect.IsChecked = element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Number;
@@ -232,18 +245,25 @@ internal sealed class InspectorWindow : Wpf.Window
             if (JsonSerializer.Serialize(source) != formFingerprint)
                 throw new InvalidOperationException(L.Get("Inspector.ElementChanged"));
             var edited = source.Clone();
-            if (dirtyFields.Contains("Stroke")) edited.Style.Stroke = Color("Stroke", L.Get("Inspector.Stroke"));
-            if (dirtyFields.Contains("Fill")) edited.Style.Fill = Color("Fill", L.Get("Inspector.Fill"));
+            if (dirtyFields.Contains("Stroke")) edited.Style.Stroke = colorFields["Stroke"].Value;
+            if (dirtyFields.Contains("Fill")) edited.Style.Fill = colorFields["Fill"].Value;
             if (dirtyFields.Contains("StrokeWidth")) edited.Style.StrokeWidth = Number("StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, 512);
             if (source.Kind is ElementKind.Arrow or ElementKind.DoubleArrow)
             {
                 if (dirtyFields.Contains("ArrowHeadStyle"))
                 {
-                    if (arrowStyle.SelectedIndex is < 0 or > 2) throw new InvalidOperationException(L.Get("Inspector.InvalidArrowStyle"));
+                    if (arrowStyle.SelectedIndex is < 0 or > 3) throw new InvalidOperationException(L.Get("Inspector.InvalidArrowStyle"));
                     edited.Style.ArrowHeadStyle = (ArrowHeadStyle)arrowStyle.SelectedIndex;
                 }
+            }
+            if (source.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
+            {
+                if (dirtyFields.Contains("StartArrowHead")) edited.Style.StartArrowHead = (ArrowHeadStyle)startArrow.SelectedIndex;
+                if (dirtyFields.Contains("EndArrowHead")) edited.Style.EndArrowHead = (ArrowHeadStyle)endArrow.SelectedIndex;
                 if (dirtyFields.Contains("ArrowHeadSize")) edited.Style.ArrowHeadSize = Number("ArrowHeadSize", L.Get("Inspector.ArrowSize"), 0, 512);
             }
+            if (dirtyFields.Contains("StrokePattern")) edited.Style.StrokePattern = (StrokePattern)strokePattern.SelectedIndex;
+            if (dirtyFields.Contains("CornerRadius")) edited.CornerRadius = Number("CornerRadius", L.Get("Inspector.CornerRadius"), 0, 10000000);
             if (dirtyFields.Contains("Opacity")) edited.Style.Opacity = Number("Opacity", L.Get("Inspector.Opacity"), 0, 100) / 100;
             if (dirtyFields.Contains("FontSize") && source.Kind is ElementKind.Text or ElementKind.Number)
                 edited.Style.FontSize = Number("FontSize", L.Get("Inspector.FontSize"), 1, 1024);
@@ -259,7 +279,15 @@ internal sealed class InspectorWindow : Wpf.Window
             if (source.Kind == ElementKind.Text && dirtyFields.Overlaps(["Text", "FontFamily", "FontSize"]))
             {
                 using var renderer = new SceneRenderer();
-                edited.Height = Math.Max(1, renderer.MeasureText(edited.Text, edited.Style, edited.Width).Height);
+                var metrics = renderer.MeasureText(edited.Text, edited.Style, edited.Width);
+                edited.Height = Math.Max(1, metrics.Height);
+                if (EmojiGlyphs.IsEmoji(edited.Text, edited.Style)) edited.Width = metrics.Width;
+            }
+            if (source.Kind == ElementKind.Number && dirtyFields.Contains("FontSize"))
+            {
+                double diameter = Math.Max(12, edited.Style.FontSize / .58);
+                edited.Transform = edited.Transform.Compose(Affine2D.Translation((edited.Width - diameter) / 2, (edited.Height - diameter) / 2));
+                edited.Width = edited.Height = diameter;
             }
             if (dirtyFields.Contains("Number") && source.Kind == ElementKind.Number)
             {
@@ -287,7 +315,8 @@ internal sealed class InspectorWindow : Wpf.Window
                         throw new InvalidOperationException(L.Get("Inspector.AspectMismatch"));
                     sx = sy = resizeX ? sx : sy;
                 }
-                edited.Transform = edited.Transform.Compose(Affine2D.Around(ElementGeometry.LocalBounds(edited).Center, Affine2D.Scale(sx, sy)));
+                if (ElementGeometry.IsBoxShape(edited.Kind)) ElementGeometry.ResizeShapeGeometry(edited, sx, sy);
+                else edited.Transform = edited.Transform.Compose(Affine2D.Around(ElementGeometry.LocalBounds(edited).Center, Affine2D.Scale(sx, sy)));
             }
             var bounds = ElementGeometry.Bounds(edited);
             double dx = dirtyFields.Contains("X") ? Number("X", "X", -10000000, 10000000) - bounds.Left : 0;
@@ -298,7 +327,8 @@ internal sealed class InspectorWindow : Wpf.Window
                 element.Transform = edited.Transform;
                 element.Style = edited.Style.Clone();
                 element.Text = edited.Text; element.Number = edited.Number;
-                element.Height = edited.Height;
+                element.Width = edited.Width; element.Height = edited.Height;
+                element.CornerRadius = edited.CornerRadius;
             }, L.Get("Inspector.History.EditProperties"));
             dirtyFields.Clear();
             LoadSelection(true);
@@ -307,84 +337,20 @@ internal sealed class InspectorWindow : Wpf.Window
         catch (Exception ex) { SetStatus(ex.Message, true); }
     }
 
-    private void RefreshLayers(EditorSession session)
-    {
-        refreshing = true;
-        try
-        {
-            var ordered = session.Document.Elements.AsEnumerable().Reverse().ToArray();
-            var ids = ordered.Select(e => e.Id).ToArray();
-            var displayed = layers.Items.Cast<Controls.ListBoxItem>().Select(item => (Guid)item.Tag).ToArray();
-            if (!ReferenceEquals(layerSession, session) || !ids.SequenceEqual(displayed))
-            {
-                layerSession = session; layerRows.Clear(); layers.Items.Clear();
-                foreach (var element in ordered)
-                {
-                    var id = element.Id;
-                    var row = new Controls.Grid { MinHeight = 34, Margin = new(2, 0, 2, 0) };
-                    row.ColumnDefinitions.Add(new() { Width = new Wpf.GridLength(1, Wpf.GridUnitType.Star) });
-                    row.ColumnDefinitions.Add(new() { Width = new Wpf.GridLength(30) });
-                    row.ColumnDefinitions.Add(new() { Width = new Wpf.GridLength(30) });
-                    var label = new Controls.TextBlock { VerticalAlignment = Wpf.VerticalAlignment.Center,
-                        TextTrimming = Wpf.TextTrimming.CharacterEllipsis, MinWidth = 80, MaxWidth = 174 };
-                    var visible = new Controls.CheckBox { VerticalAlignment = Wpf.VerticalAlignment.Center, ToolTip = L.Get("Inspector.ShowLayer") };
-                    var locked = new Controls.CheckBox { VerticalAlignment = Wpf.VerticalAlignment.Center, ToolTip = L.Get("Inspector.LockLayer") };
-                    Controls.Grid.SetColumn(visible, 1); Controls.Grid.SetColumn(locked, 2);
-                    row.Children.Add(label); row.Children.Add(visible); row.Children.Add(locked);
-                    var item = new Controls.ListBoxItem { Content = row, Tag = id, HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch,
-                        Padding = new Wpf.Thickness(2) };
-                    layerRows.Add(id, new(item, label, visible, locked)); layers.Items.Add(item);
-                    visible.Checked += (_, _) => SetLayerFlag(id, true, true);
-                    visible.Unchecked += (_, _) => SetLayerFlag(id, true, false);
-                    locked.Checked += (_, _) => SetLayerFlag(id, false, true);
-                    locked.Unchecked += (_, _) => SetLayerFlag(id, false, false);
-                }
-            }
-            foreach (var element in ordered)
-            {
-                var row = layerRows[element.Id];
-                row.Label.Text = ElementName(element);
-                row.Visible.IsChecked = element.Visible; row.Locked.IsChecked = element.Locked;
-                row.Item.IsSelected = session.Selection.Contains(element.Id);
-                Automation.AutomationProperties.SetName(row.Item, ElementName(element));
-                Automation.AutomationProperties.SetName(row.Visible, L.Format("Inspector.ShowElement", ElementName(element)));
-                Automation.AutomationProperties.SetName(row.Locked, L.Format("Inspector.LockElement", ElementName(element)));
-            }
-        }
-        finally { refreshing = false; }
-    }
 
-    private void SetLayerFlag(Guid id, bool visibility, bool value)
+    private static Controls.Border SectionHeading(string key, string? hint = null, bool first = false)
     {
-        if (refreshing) return;
-        try
+        var label = new Controls.TextBlock { Text = L.Get(key), FontSize = 11, FontWeight = Wpf.FontWeights.SemiBold };
+        label.SetResourceReference(Controls.TextBlock.ForegroundProperty, "CanvasMuted");
+        var section = new Controls.Border { Child = label, Margin = new(0, first ? 0 : 10, 0, 5),
+            Padding = new(0, first ? 2 : 9, 0, 0), BorderThickness = new(0, first ? 0 : 1, 0, 0) };
+        section.SetResourceReference(Controls.Border.BorderBrushProperty, "CanvasBorder");
+        if (hint is not null)
         {
-            if (!canMutate()) throw new InvalidOperationException(L.Get("Inspector.BusyLayersRetained"));
-            var session = getSession();
-            if (!ReferenceEquals(session, layerSession)) throw new InvalidOperationException(L.Get("Inspector.DocumentChanged"));
-            if (session.IsTransactionActive) throw new InvalidOperationException(L.Get("Inspector.FinishCanvasAction"));
-            session.Execute(visibility ? value ? L.Get("Inspector.ShowLayer") : L.Get("Inspector.HideLayer") : value ? L.Get("Inspector.LockLayer") : L.Get("Inspector.UnlockLayer"), document =>
-            {
-                var element = document.Elements.FirstOrDefault(e => e.Id == id) ?? throw new InvalidOperationException(L.Get("Inspector.LayerMissing"));
-                if (visibility) element.Visible = value; else element.Locked = value;
-            });
-            Refresh();
+            section.ToolTip = hint;
+            Automation.AutomationProperties.SetHelpText(section, hint);
         }
-        catch (Exception ex) { SetStatus(ex.Message, true); RefreshLayers(getSession()); }
-    }
-
-    private void RunLayerCommand(Action<EditorSession> operation)
-    {
-        try
-        {
-            if (!canMutate()) throw new InvalidOperationException(L.Get("Inspector.BusyLayersRetained"));
-            var session = getSession();
-            if (session.IsTransactionActive) throw new InvalidOperationException(L.Get("Inspector.FinishCanvasAction"));
-            if (!session.SelectedElements().Any(e => !e.Locked)) throw new InvalidOperationException(L.Get("Inspector.SelectUnlockedLayer"));
-            operation(session);
-            Refresh();
-        }
-        catch (Exception ex) { SetStatus(ex.Message, true); }
+        return section;
     }
 
     private Controls.Grid FieldPair(string first, string firstLabel, string? second, string? secondLabel)
@@ -405,9 +371,154 @@ internal sealed class InspectorWindow : Wpf.Window
             grid.Children.Add(cell); fieldContainers.Add(key, cell);
             var caption = new Controls.TextBlock { Text = label, FontSize = 12, VerticalAlignment = Wpf.VerticalAlignment.Center };
             cell.Children.Add(caption);
+            if (key is "X" or "Y" or "W" or "H" or "Angle" or "StrokeWidth" or "CornerRadius")
+            {
+                caption.ToolTip = L.Get("Inspector.DragNumeric");
+                Automation.AutomationProperties.SetName(caption, label);
+                Automation.AutomationProperties.SetHelpText(caption, L.Get("Inspector.DragNumeric"));
+                scrubbers.Add(new NumericScrubber(caption, () => BeginScrub(key), delta => UpdateScrub(key, delta), FinishScrub));
+            }
             var field = Field(key, label);
-            Controls.Grid.SetColumn(field, 1); cell.Children.Add(field);
+            var limits = key switch
+            {
+                "X" or "Y" => (-10000000d, 10000000d, -8192d, 8192d, 1d),
+                "W" or "H" => (0d, 10000000d, 0d, 1000d, 1d),
+                "Angle" => (-360000d, 360000d, -180d, 180d, 1d),
+                "StrokeWidth" => (0d, 512d, 0d, 50d, .1d),
+                "CornerRadius" => (0d, 10000000d, 0d, 256d, 1d),
+                "ArrowHeadSize" => (0d, 512d, 0d, 128d, 1d),
+                "Opacity" => (0d, 100d, 0d, 100d, 1d),
+                "FontSize" => (1d, 4096d, 8d, 144d, 1d),
+                _ => (1d, 1000000d, 1d, 100d, 1d)
+            };
+            var numeric = new NumericValueField(field, limits.Item1, limits.Item2, limits.Item3, limits.Item4, limits.Item5);
+            if (key == "Number") numeric.Slider.IsSnapToTickEnabled = true;
+            Automation.AutomationProperties.SetName(numeric.Slider, label);
+            numericFields.Add(key, numeric);
+            if (key == "StrokeWidth")
+            {
+                var previewColumn = new Controls.StackPanel(); previewColumn.Children.Add(numeric); previewColumn.Children.Add(ToolOptionPreviews.StrokeWidth(numeric));
+                Controls.Grid.SetColumn(previewColumn, 1); cell.Children.Add(previewColumn);
+            }
+            else { Controls.Grid.SetColumn(numeric, 1); cell.Children.Add(numeric); }
         }
+    }
+
+    private void AddPicker(string key, string label, Controls.ComboBox picker, string[] options)
+    {
+        for (int index = 0; index < options.Length; index++)
+        {
+            object value = key == "StrokePattern" ? (StrokePattern)index : (ArrowHeadStyle)index;
+            picker.Items.Add(new Controls.ComboBoxItem { Content = ToolOptionPreviews.Choice(options[index], value) });
+        }
+        Automation.AutomationProperties.SetName(picker, label);
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (refreshing) return;
+            dirtyFields.Add(key); SetStatus(L.Get("Inspector.DraftRetained"), false);
+        };
+        var row = new Controls.StackPanel { Margin = new(0, 4, 0, 4) };
+        row.Children.Add(new Controls.TextBlock { Text = label, FontSize = 12, Margin = new(0, 0, 0, 3) });
+        row.Children.Add(picker); fieldContainers.Add(key, row); propertyPanel.Children.Add(row);
+    }
+
+    private Controls.StackPanel CreateColorField(string key, string label, ColorRole role, ColorLibrary? library)
+    {
+        var row = new Controls.StackPanel { Margin = new(0, 4, 0, 4) };
+        var caption = new Controls.TextBlock { Text = label, FontSize = 12, Margin = new(0, 0, 0, 3) };
+        var field = new ColorField(role, library);
+        Automation.AutomationProperties.SetLabeledBy(field, caption);
+        field.ValueChanged += _ =>
+        {
+            if (refreshing) return;
+            dirtyFields.Add(key); SetStatus(L.Get("Inspector.DraftRetained"), false);
+        };
+        field.EyedropperRequested += () => EyedropperRequested?.Invoke(field);
+        row.Children.Add(caption); row.Children.Add(field);
+        colorFields.Add(key, field); fieldContainers.Add(key, row);
+        return row;
+    }
+
+    private void CloseColorPickers()
+    {
+        foreach (var field in colorFields.Values) field.ClosePicker();
+    }
+
+    private bool BeginScrub(string key)
+    {
+        if (!canMutate() || dirtyFields.Count > 0) return false;
+        var session = getSession();
+        var selected = session.SelectedElements().ToArray();
+        if (session.IsTransactionActive || !ReferenceEquals(session, formSession) || selected.Length != 1 ||
+            selected[0].Id != formElementId || selected[0].Locked || JsonSerializer.Serialize(selected[0]) != formFingerprint) return false;
+        var source = selected[0];
+        var size = GeometricSize(source); var bounds = ElementGeometry.Bounds(source);
+        if (key == "W" && size.X < 1e-9 || key == "H" && size.Y < 1e-9) return false;
+        scrubStartValue = key switch
+        {
+            "X" => bounds.Left, "Y" => bounds.Top, "W" => size.X, "H" => size.Y,
+            "Angle" => Angle(source.Transform), "StrokeWidth" => source.Style.StrokeWidth,
+            "CornerRadius" => ElementGeometry.CornerRadius(source), _ => 0
+        };
+        scrubSource = source.Clone(); scrubSession = session;
+        session.BeginTransaction(L.Get("Inspector.History.EditProperties")); scrubTransaction = session.TransactionId;
+        return true;
+    }
+
+    private void UpdateScrub(string key, double delta)
+    {
+        var session = scrubSession; var source = scrubSource;
+        if (session is null || source is null) return;
+        if (!canMutate() || !ReferenceEquals(session, getSession()) || !session.IsTransactionActive || session.TransactionId != scrubTransaction)
+        { CancelScrub(); return; }
+        var target = session.Document.Elements.FirstOrDefault(e => e.Id == source.Id);
+        if (target is null) { CancelScrub(); return; }
+        double value = scrubStartValue + delta * (key == "StrokeWidth" ? .1 : 1);
+        value = key switch
+        {
+            "W" or "H" => Math.Clamp(value, .01, 10000000), "StrokeWidth" => Math.Clamp(value, 0, 512),
+            "CornerRadius" => Math.Clamp(value, 0, 10000000), "Angle" => Math.Clamp(value, -360000, 360000),
+            _ => Math.Clamp(value, -10000000, 10000000)
+        };
+        var edited = source.Clone();
+        switch (key)
+        {
+            case "X": edited.Transform = Affine2D.Translation(value - ElementGeometry.Bounds(source).Left, 0).Compose(source.Transform); break;
+            case "Y": edited.Transform = Affine2D.Translation(0, value - ElementGeometry.Bounds(source).Top).Compose(source.Transform); break;
+            case "Angle": edited.Transform = Affine2D.Around(ElementGeometry.Bounds(source).Center, Affine2D.Rotation(value - Angle(source.Transform))).Compose(source.Transform); break;
+            case "W": case "H":
+                var size = GeometricSize(source); double factor = value / (key == "W" ? size.X : size.Y);
+                double sx = key == "W" || keepAspect.IsChecked == true ? factor : 1;
+                double sy = key == "H" || keepAspect.IsChecked == true ? factor : 1;
+                if (ElementGeometry.IsBoxShape(edited.Kind)) ElementGeometry.ResizeShapeGeometry(edited, sx, sy);
+                else edited.Transform = source.Transform.Compose(Affine2D.Around(ElementGeometry.LocalBounds(source).Center, Affine2D.Scale(sx, sy))); break;
+            case "StrokeWidth": edited.Style.StrokeWidth = value; break;
+            case "CornerRadius": edited.CornerRadius = value; break;
+        }
+        target.Transform = edited.Transform; target.Style = edited.Style; target.CornerRadius = edited.CornerRadius;
+        target.Width = edited.Width; target.Height = edited.Height;
+        session.NotifyChanged();
+        refreshing = true;
+        try { SetField(key, value); }
+        finally { refreshing = false; }
+    }
+
+    private void FinishScrub(bool commit)
+    {
+        var session = scrubSession;
+        scrubSession = null; scrubSource = null;
+        if (session is null) return;
+        if (session.IsTransactionActive && session.TransactionId == scrubTransaction)
+        {
+            if (commit && canMutate() && ReferenceEquals(session, getSession())) session.Commit(); else session.Cancel();
+        }
+        LoadSelection(true);
+    }
+
+    private void CancelScrub()
+    {
+        foreach (var scrubber in scrubbers) scrubber.End(false);
+        FinishScrub(false);
     }
 
     private Controls.StackPanel LabeledField(string key, string label)
@@ -420,7 +531,8 @@ internal sealed class InspectorWindow : Wpf.Window
     private void SetPropertyVisibility(CanvasElement? element)
     {
         propertyPanel.Visibility = element is null ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
-        bool image = element?.Kind == ElementKind.Image, text = element?.Kind == ElementKind.Text, number = element?.Kind == ElementKind.Number;
+        bool image = element?.Kind is ElementKind.Image or ElementKind.LivePixelate, text = element?.Kind == ElementKind.Text, number = element?.Kind == ElementKind.Number;
+        textSection.Visibility = text || number ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
         {
             bool visible = key switch
@@ -428,10 +540,14 @@ internal sealed class InspectorWindow : Wpf.Window
                 "Stroke" or "ColorHint" => !image,
                 "Fill" => !image && !text,
                 "StrokeWidth" => !image && !text && !number,
+                "StrokePattern" => !image && !text && !number,
+                "CornerRadius" => element?.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle,
                 "FontFamily" or "FontSize" => text || number,
                 "Text" or "TextAlignment" => text,
                 "Number" => number,
-                "ArrowHeadStyle" or "ArrowHeadSize" or "ArrowHint" => element?.Kind is ElementKind.Arrow or ElementKind.DoubleArrow,
+                "ArrowHeadStyle" => element?.Kind is ElementKind.Arrow or ElementKind.DoubleArrow,
+                "ArrowHeadSize" or "ArrowHint" => element?.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow,
+                "StartArrowHead" or "EndArrowHead" => element?.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow,
                 _ => true
             };
             container.Visibility = visible ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
@@ -456,13 +572,6 @@ internal sealed class InspectorWindow : Wpf.Window
         return box;
     }
 
-    private static Controls.Button Button(string label, Action action)
-    {
-        var button = new Controls.Button { Content = label, MinHeight = 34, Padding = new Wpf.Thickness(10, 3, 10, 3), Margin = new Wpf.Thickness(0, 0, 6, 0) };
-        button.Click += (_, _) => action();
-        return button;
-    }
-
     private void SetField(string key, double value) => fields[key].Text = value.ToString("0.###", CultureInfo.CurrentCulture);
     private double Number(string key, string label, double min, double max)
     {
@@ -471,15 +580,6 @@ internal sealed class InspectorWindow : Wpf.Window
             !double.IsFinite(value) || value < min || value > max)
             throw new InvalidOperationException(L.Format("Inspector.NumberRange", label, min, max));
         return value;
-    }
-
-    private uint Color(string key, string label)
-    {
-        var text = fields[key].Text.Trim().TrimStart('#');
-        if (text.Length == 6) text = "FF" + text;
-        if (text.Length != 8 || !uint.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var color))
-            throw new InvalidOperationException(L.Format("Inspector.ColorFormat", label));
-        return color;
     }
 
     private void SetStatus(string text, bool error)
@@ -491,8 +591,12 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private void HandleEscape()
     {
+        if (scrubSession is not null) { CancelScrub(); return; }
+        foreach (var field in colorFields.Values) if (field.TryClosePicker()) return;
         if (alignment.IsDropDownOpen) { alignment.IsDropDownOpen = false; return; }
         if (arrowStyle.IsDropDownOpen) { arrowStyle.IsDropDownOpen = false; return; }
+        foreach (var picker in new[] { startArrow, endArrow, strokePattern })
+            if (picker.IsDropDownOpen) { picker.IsDropDownOpen = false; return; }
         Hide(); Dismissed?.Invoke();
     }
     private bool RouteCommandKey(int key, bool control, bool textInput)
@@ -519,13 +623,14 @@ internal sealed class InspectorWindow : Wpf.Window
     }
 
     private static double Angle(Affine2D transform) => Math.Atan2(transform.M21, transform.M11) * 180 / Math.PI;
-    private static string ElementName(CanvasElement element)
+    internal static string ElementName(CanvasElement element)
     {
+        if (!string.IsNullOrWhiteSpace(element.Name)) return element.Name;
         var name = element.Kind switch
         {
             ElementKind.Freehand => L.Get("Editor.ElementKind.Freehand"), ElementKind.Highlighter => L.Get("Editor.ElementKind.Highlighter"), ElementKind.Line => L.Get("Editor.ElementKind.Line"), ElementKind.Arrow => L.Get("Editor.ElementKind.Arrow"),
             ElementKind.DoubleArrow => L.Get("Editor.ElementKind.DoubleArrow"), ElementKind.Rectangle => L.Get("Editor.ElementKind.Rectangle"), ElementKind.RoundedRectangle => L.Get("Editor.ElementKind.RoundedRectangle"),
-            ElementKind.Ellipse => L.Get("Editor.ElementKind.Ellipse"), ElementKind.Triangle => L.Get("Editor.ElementKind.Triangle"), ElementKind.Text => L.Get("Editor.ElementKind.Text"), ElementKind.Number => L.Get("Editor.ElementKind.Number"), ElementKind.Image => L.Get("Editor.ElementKind.Image"), _ => L.Get("Editor.ElementKind.Unknown")
+            ElementKind.Ellipse => L.Get("Editor.ElementKind.Ellipse"), ElementKind.Triangle => L.Get("Editor.ElementKind.Triangle"), ElementKind.Symbol => L.Get("Editor.ElementKind.Symbol"), ElementKind.Text => L.Get("Editor.ElementKind.Text"), ElementKind.Number => L.Get("Editor.ElementKind.Number"), ElementKind.Image => L.Get("Editor.ElementKind.Image"), ElementKind.LivePixelate => L.Get("Feedback4.Effect.LivePixelate"), _ => L.Get("Editor.ElementKind.Unknown")
         };
         if (element.Kind == ElementKind.Number) return L.Format("Inspector.NumberName", name, element.Number);
         if (element.Kind != ElementKind.Text) return name;
@@ -533,5 +638,4 @@ internal sealed class InspectorWindow : Wpf.Window
         return L.Format("Inspector.TextName", name, text.Length > 18 ? text[..18] + "…" : text);
     }
 
-    private sealed record LayerRow(Controls.ListBoxItem Item, Controls.TextBlock Label, Controls.CheckBox Visible, Controls.CheckBox Locked);
 }

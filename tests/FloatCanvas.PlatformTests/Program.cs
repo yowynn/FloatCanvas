@@ -25,8 +25,10 @@ internal static class Program
         var evidenceIndex = Array.IndexOf(args, "--evidence");
         var evidencePath = evidenceIndex >= 0 && args.Length > evidenceIndex + 1
             ? Path.GetFullPath(args[evidenceIndex + 1]) : Path.Combine(FindRepository(), "artifacts", "m1",
+                args.Contains("--window-policy-only") ? "window-policy-tests.json" :
                 _primaryScreenProbe ? captureOnly ? "capture-primary-screen-probe.json" : "platform-primary-screen-probe.json" :
                 captureOnly ? "capture-tests.json" : "platform-tests.json");
+        if (args.Contains("--window-policy-only")) return WindowPolicyFixture.Run(evidencePath);
         var dispatcher = Dispatcher.CurrentDispatcher;
         dispatcher.BeginInvoke(async () =>
         {
@@ -289,7 +291,7 @@ internal static class Program
             if (cleanupTarget?.Handle == foreground || cleanupHost?.Diagnostics.Any(d => d.InputHandle == foreground) == true)
             {
                 Native.Mouse(4); Native.Mouse(16);
-                Native.Key(0x46, true); Native.Key(0x10, true); Native.Key(0x12, true); Native.Key(0x11, true);
+                Native.Key((ushort)HotkeyBinding.DefaultToggle.VirtualKey, true); Native.Key(0x10, true); Native.Key(0x12, true); Native.Key(0x11, true);
                 Native.ReleaseCapture();
             }
             cleanupHost?.Dispose();
@@ -373,16 +375,25 @@ internal static class Program
 
     private static async Task ToggleWithHotkey(Func<int> count, int expected)
     {
-        Native.Key(0x11); Native.Key(0x12); Native.Key(0x46); Native.Key(0x46, true);
-        Native.Key(0x12, true); Native.Key(0x11, true);
+        PressBinding(HotkeyBinding.DefaultToggle);
         await WaitUntil(() => count() >= expected, "Global toggle hotkey did not arrive.");
     }
 
     private static async Task HideWithHotkey()
     {
-        Native.Key(0x11); Native.Key(0x12); Native.Key(0x10); Native.Key(0x46); Native.Key(0x46, true);
-        Native.Key(0x10, true); Native.Key(0x12, true); Native.Key(0x11, true);
+        PressBinding(HotkeyBinding.DefaultHide);
         await Task.Delay(25);
+    }
+
+    private static void PressBinding(HotkeyBinding binding)
+    {
+        var modifiers = new List<ushort>();
+        if ((binding.Modifiers & 2) != 0) modifiers.Add(0x11);
+        if ((binding.Modifiers & 1) != 0) modifiers.Add(0x12);
+        if ((binding.Modifiers & 4) != 0) modifiers.Add(0x10);
+        foreach (var modifier in modifiers) Native.Key(modifier);
+        Native.Key((ushort)binding.VirtualKey); Native.Key((ushort)binding.VirtualKey, true);
+        foreach (var modifier in modifiers.AsEnumerable().Reverse()) Native.Key(modifier, true);
     }
 
     private static async Task WaitUntil(Func<bool> condition, string error)

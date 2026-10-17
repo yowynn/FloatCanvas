@@ -1,90 +1,133 @@
-# Original FloatCanvas brand artwork and generator, licensed under MIT.
-# Recreates the editable SVG and a seven-size PNG-compressed Windows ICO without UI or external tools.
+# Normalizes the adopted transparent PNG and builds the Windows ICO without redrawing it.
+# Uses only Windows/.NET System.Drawing; no additional packages are required.
 [CmdletBinding()]
-param([string]$OutputDirectory = (Join-Path $PSScriptRoot '..\src\FloatCanvas.App\Assets'))
+param(
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\src\FloatCanvas.App\Assets'),
+    [string]$SourcePath = (Join-Path $PSScriptRoot '..\src\FloatCanvas.App\Assets\FloatCanvas.png')
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing.Common
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+$SourcePath = [IO.Path]::GetFullPath($SourcePath)
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 
-$taskSvg = @'
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <title>浮绘 FloatCanvas</title>
-  <metadata>Original FloatCanvas artwork. License: MIT.</metadata>
-  <rect x="40" y="66" width="176" height="164" rx="36" fill="#B9DDFF" transform="rotate(-8 128 148)"/>
-  <rect x="40" y="28" width="176" height="176" rx="36" fill="#2383E2"/>
-  <path d="M78 139 C91 100 101 156 121 118 C138 87 151 88 174 103" fill="none" stroke="#FFFFFF" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-'@
-[IO.File]::WriteAllText((Join-Path $OutputDirectory 'FloatCanvas.svg'), $taskSvg + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
-
-function New-RoundedPath([single]$X, [single]$Y, [single]$Width, [single]$Height, [single]$Radius) {
-    $taskPath = [Drawing.Drawing2D.GraphicsPath]::new()
-    [single]$taskDiameter = $Radius * 2
-    $taskPath.AddArc($X, $Y, $taskDiameter, $taskDiameter, 180, 90)
-    $taskPath.AddArc($X + $Width - $taskDiameter, $Y, $taskDiameter, $taskDiameter, 270, 90)
-    $taskPath.AddArc($X + $Width - $taskDiameter, $Y + $Height - $taskDiameter, $taskDiameter, $taskDiameter, 0, 90)
-    $taskPath.AddArc($X, $Y + $Height - $taskDiameter, $taskDiameter, $taskDiameter, 90, 90)
-    $taskPath.CloseFigure()
-    return $taskPath
+function Get-AlphaBounds([Drawing.Bitmap]$Bitmap) {
+    $taskBits = $Bitmap.LockBits([Drawing.Rectangle]::new(0, 0, $Bitmap.Width, $Bitmap.Height),
+        [Drawing.Imaging.ImageLockMode]::ReadOnly, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+        $taskStride = [Math]::Abs($taskBits.Stride)
+        $taskPixels = [byte[]]::new($taskStride * $Bitmap.Height)
+        [Runtime.InteropServices.Marshal]::Copy($taskBits.Scan0, $taskPixels, 0, $taskPixels.Length)
+        $taskLeft = $Bitmap.Width; $taskTop = $Bitmap.Height
+        $taskRight = -1; $taskBottom = -1
+        for ($taskY = 0; $taskY -lt $Bitmap.Height; $taskY++) {
+            $taskRow = if ($taskBits.Stride -ge 0) { $taskY * $taskStride } else { ($Bitmap.Height - 1 - $taskY) * $taskStride }
+            for ($taskX = 0; $taskX -lt $Bitmap.Width; $taskX++) {
+                if ($taskPixels[$taskRow + $taskX * 4 + 3] -eq 0) { continue }
+                if ($taskX -lt $taskLeft) { $taskLeft = $taskX }
+                if ($taskX -gt $taskRight) { $taskRight = $taskX }
+                if ($taskY -lt $taskTop) { $taskTop = $taskY }
+                if ($taskY -gt $taskBottom) { $taskBottom = $taskY }
+            }
+        }
+        if ($taskRight -lt 0) { throw 'The artwork contains no non-transparent pixels.' }
+        return [Drawing.Rectangle]::FromLTRB($taskLeft, $taskTop, $taskRight + 1, $taskBottom + 1)
+    }
+    finally { $Bitmap.UnlockBits($taskBits) }
 }
 
-$taskFrames = [Collections.Generic.List[byte[]]]::new()
-$taskSizes = @(16, 24, 32, 48, 64, 128, 256)
-foreach ($taskSize in $taskSizes) {
-    # Render each frame with 4x supersampling; this also makes the 16px tray image readable.
-    $taskBitmap = [Drawing.Bitmap]::new($taskSize * 4, $taskSize * 4, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $taskGraphics = [Drawing.Graphics]::FromImage($taskBitmap)
-    $taskBackPath = New-RoundedPath 40 66 176 164 36
-    $taskFrontPath = New-RoundedPath 40 28 176 176 36
-    $taskWavePath = [Drawing.Drawing2D.GraphicsPath]::new()
-    $taskRotation = [Drawing.Drawing2D.Matrix]::new()
-    $taskBackBrush = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml('#B9DDFF'))
-    $taskFrontBrush = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml('#2383E2'))
-    $taskPen = [Drawing.Pen]::new([Drawing.Color]::White, 15)
-    $taskScaled = $null
-    $taskScaledGraphics = $null
-    $taskPng = [IO.MemoryStream]::new()
+function New-FittedBitmap([Drawing.Bitmap]$Bitmap, [Drawing.Rectangle]$Bounds, [int]$Size) {
+    $taskResult = [Drawing.Bitmap]::new($Size, $Size, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $taskGraphics = [Drawing.Graphics]::FromImage($taskResult)
+    $taskAttributes = [Drawing.Imaging.ImageAttributes]::new()
     try {
         $taskGraphics.Clear([Drawing.Color]::Transparent)
-        $taskGraphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $taskGraphics.CompositingMode = [Drawing.Drawing2D.CompositingMode]::SourceCopy
+        $taskGraphics.CompositingQuality = [Drawing.Drawing2D.CompositingQuality]::HighQuality
+        $taskGraphics.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
         $taskGraphics.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-        $taskGraphics.ScaleTransform([single]($taskSize * 4 / 256), [single]($taskSize * 4 / 256))
-        $taskRotation.RotateAt(-8, [Drawing.PointF]::new(128, 148))
-        $taskBackPath.Transform($taskRotation)
-        $taskGraphics.FillPath($taskBackBrush, $taskBackPath)
-        $taskGraphics.FillPath($taskFrontBrush, $taskFrontPath)
-        $taskPen.StartCap = [Drawing.Drawing2D.LineCap]::Round
-        $taskPen.EndCap = [Drawing.Drawing2D.LineCap]::Round
-        $taskPen.LineJoin = [Drawing.Drawing2D.LineJoin]::Round
-        $taskWavePath.AddBezier(78, 139, 91, 100, 101, 156, 121, 118)
-        $taskWavePath.AddBezier(121, 118, 138, 87, 151, 88, 174, 103)
-        $taskGraphics.DrawPath($taskPen, $taskWavePath)
-        $taskScaled = [Drawing.Bitmap]::new($taskSize, $taskSize, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
-        $taskScaledGraphics = [Drawing.Graphics]::FromImage($taskScaled)
-        $taskScaledGraphics.Clear([Drawing.Color]::Transparent)
-        $taskScaledGraphics.CompositingMode = [Drawing.Drawing2D.CompositingMode]::SourceCopy
-        $taskScaledGraphics.CompositingQuality = [Drawing.Drawing2D.CompositingQuality]::HighQuality
-        $taskScaledGraphics.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-        $taskScaledGraphics.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-        $taskScaledGraphics.DrawImage($taskBitmap, [Drawing.Rectangle]::new(0, 0, $taskSize, $taskSize))
-        $taskScaled.Save($taskPng, [Drawing.Imaging.ImageFormat]::Png)
-        $taskFrames.Add($taskPng.ToArray())
+        $taskAttributes.SetWrapMode([Drawing.Drawing2D.WrapMode]::TileFlipXY)
+        $taskScale = $Size / [double][Math]::Max($Bounds.Width, $Bounds.Height)
+        $taskWidth = [single]($Bounds.Width * $taskScale)
+        $taskHeight = [single]($Bounds.Height * $taskScale)
+        $taskDestination = [Drawing.RectangleF]::new(($Size - $taskWidth) / 2, ($Size - $taskHeight) / 2, $taskWidth, $taskHeight)
+        $taskPoints = [Drawing.PointF[]]@(
+            [Drawing.PointF]::new($taskDestination.Left, $taskDestination.Top),
+            [Drawing.PointF]::new($taskDestination.Right, $taskDestination.Top),
+            [Drawing.PointF]::new($taskDestination.Left, $taskDestination.Bottom))
+        $taskGraphics.DrawImage($Bitmap, $taskPoints, [Drawing.RectangleF]$Bounds,
+            [Drawing.GraphicsUnit]::Pixel, $taskAttributes)
+        return $taskResult
     }
-    finally {
-        $taskPng.Dispose()
-        if ($null -ne $taskScaledGraphics) { $taskScaledGraphics.Dispose() }
-        if ($null -ne $taskScaled) { $taskScaled.Dispose() }
-        $taskPen.Dispose(); $taskFrontBrush.Dispose(); $taskBackBrush.Dispose(); $taskRotation.Dispose()
-        $taskWavePath.Dispose(); $taskFrontPath.Dispose(); $taskBackPath.Dispose(); $taskGraphics.Dispose(); $taskBitmap.Dispose()
+    catch { $taskResult.Dispose(); throw }
+    finally { $taskAttributes.Dispose(); $taskGraphics.Dispose() }
+}
+
+# Decode from memory so no GDI+ image can retain a lock on the output PNG path.
+$taskSourceStream = [IO.MemoryStream]::new([IO.File]::ReadAllBytes($SourcePath))
+$taskSource = [Drawing.Bitmap]::FromStream($taskSourceStream)
+$taskFrames = [Collections.Generic.List[byte[]]]::new()
+$taskSizes = @(16, 24, 32, 48, 64, 128, 256)
+$taskArtwork = $null
+try {
+    $taskSourceBounds = Get-AlphaBounds $taskSource
+    $taskMasterSize = [Math]::Max($taskSourceBounds.Width, $taskSourceBounds.Height)
+    $taskMaster = [Drawing.Bitmap]::new($taskMasterSize, $taskMasterSize, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $taskArtwork = $taskSource.Clone($taskSourceBounds, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $taskMasterBounds = [Drawing.Rectangle]::new(
+        [int][Math]::Floor(($taskMasterSize - $taskArtwork.Width) / 2),
+        [int][Math]::Floor(($taskMasterSize - $taskArtwork.Height) / 2), $taskArtwork.Width, $taskArtwork.Height)
+    $taskReadBits = $taskArtwork.LockBits([Drawing.Rectangle]::new(0, 0, $taskArtwork.Width, $taskArtwork.Height),
+        [Drawing.Imaging.ImageLockMode]::ReadOnly, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $taskWriteBits = $taskMaster.LockBits($taskMasterBounds,
+        [Drawing.Imaging.ImageLockMode]::WriteOnly, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+        # Copy BGRA bytes directly: DrawImageUnscaled still rounds translucent colors.
+        $taskRowPixels = [byte[]]::new($taskArtwork.Width * 4)
+        for ($taskY = 0; $taskY -lt $taskArtwork.Height; $taskY++) {
+            [Runtime.InteropServices.Marshal]::Copy([IntPtr]::Add($taskReadBits.Scan0, $taskY * $taskReadBits.Stride), $taskRowPixels, 0, $taskRowPixels.Length)
+            [Runtime.InteropServices.Marshal]::Copy($taskRowPixels, 0, [IntPtr]::Add($taskWriteBits.Scan0, $taskY * $taskWriteBits.Stride), $taskRowPixels.Length)
+        }
     }
+    finally { $taskArtwork.UnlockBits($taskReadBits); $taskMaster.UnlockBits($taskWriteBits) }
+    try { $taskMaster.Save((Join-Path $OutputDirectory 'FloatCanvas.png'), [Drawing.Imaging.ImageFormat]::Png) }
+    finally { $taskMaster.Dispose() }
+
+    foreach ($taskSize in $taskSizes) {
+        $taskFrame = New-FittedBitmap $taskArtwork ([Drawing.Rectangle]::new(0, 0, $taskArtwork.Width, $taskArtwork.Height)) $taskSize
+        $taskPng = [IO.MemoryStream]::new()
+        try {
+            # Tiny alpha extremities can disappear on reduction. Fit the pixels that survive
+            # in this frame once more rather than retaining an unintended transparent rim.
+            $taskFrameBounds = Get-AlphaBounds $taskFrame
+            if ([Math]::Max($taskFrameBounds.Width, $taskFrameBounds.Height) -lt $taskSize) {
+                $taskFitted = New-FittedBitmap $taskFrame $taskFrameBounds $taskSize
+                $taskFrame.Dispose()
+                $taskFrame = $taskFitted
+            }
+            $taskFrameBounds = Get-AlphaBounds $taskFrame
+            if ([Math]::Max($taskFrameBounds.Width, $taskFrameBounds.Height) -ne $taskSize) {
+                throw "The $taskSize-pixel ICO frame did not fill either canvas axis."
+            }
+            $taskFrame.Save($taskPng, [Drawing.Imaging.ImageFormat]::Png)
+            $taskFrames.Add($taskPng.ToArray())
+        }
+        finally {
+            $taskPng.Dispose()
+            $taskFrame.Dispose()
+        }
+    }
+}
+finally {
+    if ($null -ne $taskArtwork) { $taskArtwork.Dispose() }
+    $taskSource.Dispose()
+    $taskSourceStream.Dispose()
 }
 
 $taskIconPath = Join-Path $OutputDirectory 'FloatCanvas.ico'
-$taskFile = [IO.File]::Create($taskIconPath)
-$taskWriter = [IO.BinaryWriter]::new($taskFile)
+$taskWriter = [IO.BinaryWriter]::new([IO.File]::Create($taskIconPath))
 try {
     $taskWriter.Write([uint16]0); $taskWriter.Write([uint16]1); $taskWriter.Write([uint16]$taskSizes.Count)
     [uint32]$taskOffset = 6 + 16 * $taskSizes.Count
@@ -98,5 +141,5 @@ try {
     }
     foreach ($taskFrame in $taskFrames) { $taskWriter.Write($taskFrame) }
 }
-finally { $taskWriter.Dispose(); $taskFile.Dispose() }
-Write-Output "Generated FloatCanvas SVG and ICO (16/24/32/48/64/128/256) in $OutputDirectory"
+finally { $taskWriter.Dispose() }
+Write-Output "Generated tightly fitted FloatCanvas PNG ($taskMasterSize x $taskMasterSize) and ICO (16/24/32/48/64/128/256) from $SourcePath"

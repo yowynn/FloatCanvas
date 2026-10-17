@@ -19,13 +19,28 @@ internal static class AppTheme
         app.Dispatcher.VerifyAccess();
         bool dark = mode?.ToLowerInvariant() switch { "dark" => true, "light" => false, _ => SystemUsesDarkTheme() };
         var resources = app.Resources;
-        SetBrush(resources, "CanvasSurface", dark ? "#202322" : "#F7F7F5");
-        SetBrush(resources, "CanvasText", dark ? "#E9ECE9" : "#202320");
-        SetBrush(resources, "CanvasBorder", dark ? "#414641" : "#DADCD7");
-        SetBrush(resources, "CanvasHover", dark ? "#303630" : "#EAEDE7");
+        SetBrush(resources, "CanvasSurface", dark ? "#24272C" : "#F8F9FB");
+        SetBrush(resources, "CanvasText", dark ? "#E9ECF1" : "#252B36");
+        SetBrush(resources, "CanvasBorder", dark ? "#3A3F48" : "#DDE2EA");
+        SetBrush(resources, "CanvasSwatchBorder", dark ? "#40FFFFFF" : "#380F172A");
+        SetBrush(resources, "CanvasHover", dark ? "#343A44" : "#E9EDF4");
         SetBrush(resources, "CanvasAccent", dark ? "#66AEF5" : "#2383E2");
-        SetBrush(resources, "CanvasMuted", dark ? "#A6AEA5" : "#6F786E");
-        SetBrush(resources, "CanvasInput", dark ? "#272C27" : "#FFFFFF");
+        SetBrush(resources, "CanvasMuted", dark ? "#A3ADBA" : "#697586");
+        SetBrush(resources, "CanvasInput", dark ? "#2D323B" : "#FFFFFF");
+        SetBrush(resources, "CanvasLcdSurface", dark ? "#332E24" : "#C4CCAE");
+        SetBrush(resources, "CanvasLcdText", dark ? "#E4DDC0" : "#30382B");
+        var lcdEdge = new LinearGradientBrush(dark ? Color.FromRgb(0x19, 0x17, 0x0F) : Color.FromRgb(0x7D, 0x87, 0x6E),
+            dark ? Color.FromRgb(0x6B, 0x5F, 0x43) : Color.FromRgb(0xDF, 0xE5, 0xCE), new Point(0, 0), new Point(0, 1));
+        lcdEdge.Freeze(); resources["CanvasLcdBorder"] = lcdEdge;
+        SetBrush(resources, "CanvasButton", dark ? "#303640" : "#E6EAF1");
+        SetBrush(resources, "CanvasPressed", dark ? "#414B59" : "#D4DEEB");
+        SetBrush(resources, "CanvasPrimary", "#2376CC");
+        SetBrush(resources, "CanvasPrimaryHover", "#1E66B3");
+        SetBrush(resources, "CanvasPrimaryPressed", "#185394");
+        SetBrush(resources, "CanvasCodeText", dark ? "#FFADB4" : "#B62335");
+        SetBrush(resources, "CanvasCodeSurface", dark ? "#3B2E35" : "#F9E9EC");
+        SetBrush(resources, "CanvasCloseHover", dark ? "#422E35" : "#FBECEE");
+        SetBrush(resources, "CanvasCloseForeground", dark ? "#FFADB4" : "#B62335");
 
         // Standard WPF popups, lists and checkboxes also use the same palette.
         resources[SystemColors.WindowBrushKey] = resources["CanvasInput"];
@@ -59,6 +74,7 @@ internal static class AppTheme
     private const string StyleMarkup = """
         <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+          <CornerRadius x:Key="CanvasButtonCornerRadius">6</CornerRadius>
           <Style x:Key="CanvasControlBase" TargetType="Control">
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/>
@@ -88,24 +104,173 @@ internal static class AppTheme
             <Setter Property="MinHeight" Value="34"/>
             <Setter Property="MinWidth" Value="34"/>
             <Setter Property="Padding" Value="10,5"/>
-            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Background" Value="{DynamicResource CanvasButton}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="FocusVisualStyle" Value="{StaticResource CanvasKeyboardFocus}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
-                <Border x:Name="Chrome" CornerRadius="6" Background="{TemplateBinding Background}"
+                <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
                         BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                   <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                     RecognizesAccessKey="True" ContentSource="Content"/>
                 </Border>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
-                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasBorder}"/></Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
                   <Trigger Property="IsDefaulted" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasPrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{DynamicResource CanvasPrimary}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Button">
+                <Border x:Name="Chrome" CornerRadius="6" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                  <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPrimaryHover}"/></Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPrimaryPressed}"/></Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasCaptionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Button">
+                <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="7"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasBorder}"/></Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasCloseCaptionButton" TargetType="Button" BasedOn="{StaticResource CanvasCaptionButton}">
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Button">
+                <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="7"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasCloseHover}"/><Setter Property="Foreground" Value="{DynamicResource CanvasCloseForeground}"/></Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasCloseHover}"/><Setter Property="Foreground" Value="{DynamicResource CanvasCloseForeground}"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style TargetType="CheckBox" BasedOn="{StaticResource CanvasControlBase}">
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Padding" Value="8,3,0,3"/>
+            <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CanvasBorder}"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource CanvasKeyboardFocus}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="CheckBox">
+                <Grid Background="Transparent">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <Border x:Name="CheckBorder" Width="18" Height="18" VerticalAlignment="Center" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4">
+                    <Grid><Path x:Name="Check" Visibility="Collapsed" Data="M 2,7 L 6,11 L 13,3" Stroke="{DynamicResource CanvasAccent}" StrokeThickness="1.8"/>
+                      <Border x:Name="Mixed" Visibility="Collapsed" Margin="3,7" Background="{DynamicResource CanvasAccent}" CornerRadius="1"/>
+                    </Grid>
+                  </Border>
+                  <ContentPresenter Grid.Column="1" Margin="{TemplateBinding Padding}" RecognizesAccessKey="True" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                </Grid>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/></Trigger>
+                  <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Mixed" Property="Visibility" Value="Visible"/></Trigger>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+                  <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasScrollPageButton" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False"/><Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasScrollThumb" TargetType="Thumb">
+            <Setter Property="MinHeight" Value="20"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Thumb">
+                <Border x:Name="Thumb" Background="{DynamicResource CanvasMuted}" Opacity="0.6" CornerRadius="4" Margin="3"/>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Thumb" Property="Opacity" Value="0.85"/></Trigger>
+                  <Trigger Property="IsDragging" Value="True"><Setter TargetName="Thumb" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Thumb" Property="Opacity" Value="1"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="12"/><Setter Property="MinWidth" Value="12"/>
+            <Setter Property="Background" Value="Transparent"/><Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="ScrollBar">
+                <Grid Background="{TemplateBinding Background}">
+                  <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" IsDirectionReversed="True"
+                         Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" ViewportSize="{TemplateBinding ViewportSize}"
+                         Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                    <Track.DecreaseRepeatButton><RepeatButton x:Name="Decrease" Style="{StaticResource CanvasScrollPageButton}" Command="{x:Static ScrollBar.PageUpCommand}"/></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb x:Name="ScrollThumb" Style="{StaticResource CanvasScrollThumb}"/></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton x:Name="Increase" Style="{StaticResource CanvasScrollPageButton}" Command="{x:Static ScrollBar.PageDownCommand}"/></Track.IncreaseRepeatButton>
+                  </Track>
+                </Grid>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
+                    <Setter TargetName="ScrollThumb" Property="MinWidth" Value="20"/><Setter TargetName="ScrollThumb" Property="MinHeight" Value="0"/>
+                    <Setter TargetName="Decrease" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}"/><Setter TargetName="Increase" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}"/>
+                  </Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+            <Style.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="12"/><Setter Property="MinHeight" Value="12"/><Setter Property="MinWidth" Value="0"/></Trigger></Style.Triggers>
+          </Style>
+          <Style TargetType="ScrollViewer">
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="ScrollViewer">
+                <Grid Background="{TemplateBinding Background}">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                  <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Margin="{TemplateBinding Padding}" Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}" CanContentScroll="{TemplateBinding CanContentScroll}"/>
+                  <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1" Orientation="Vertical" Maximum="{TemplateBinding ScrollableHeight}"
+                             ViewportSize="{TemplateBinding ViewportHeight}" Value="{TemplateBinding VerticalOffset}" Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                  <ScrollBar x:Name="PART_HorizontalScrollBar" Grid.Row="1" Orientation="Horizontal" Maximum="{TemplateBinding ScrollableWidth}"
+                             ViewportSize="{TemplateBinding ViewportWidth}" Value="{TemplateBinding HorizontalOffset}" Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
+                </Grid>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasSliderPageButton" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False"/><Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Height="4" Background="Transparent"/></ControlTemplate></Setter.Value></Setter>
+          </Style>
+          <Style TargetType="Slider" BasedOn="{StaticResource CanvasControlBase}">
+            <Setter Property="MinHeight" Value="24"/><Setter Property="FocusVisualStyle" Value="{StaticResource CanvasKeyboardFocus}"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Slider">
+                <Grid x:Name="SliderRoot" Background="Transparent">
+                  <Border x:Name="Rail" Height="4" Background="{DynamicResource CanvasBorder}" CornerRadius="2" VerticalAlignment="Center"/>
+                  <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+                    <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}" Command="{x:Static Slider.DecreaseLarge}"/></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb Width="14" Height="14"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="Handle" CornerRadius="7" Background="{DynamicResource CanvasAccent}" BorderBrush="{DynamicResource CanvasInput}" BorderThickness="2"/><ControlTemplate.Triggers><Trigger Property="IsDragging" Value="True"><Setter TargetName="Handle" Property="BorderBrush" Value="{DynamicResource CanvasText}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}" Command="{x:Static Slider.IncreaseLarge}"/></Track.IncreaseRepeatButton>
+                  </Track>
+                </Grid>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="Orientation" Value="Vertical"><Setter TargetName="Rail" Property="Width" Value="4"/><Setter TargetName="Rail" Property="Height" Value="Auto"/><Setter TargetName="Rail" Property="VerticalAlignment" Value="Stretch"/></Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
             </Setter.Value></Setter>
@@ -179,7 +344,7 @@ internal static class AppTheme
             <Setter Property="MinWidth" Value="180"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="ContextMenu">
-                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="8">
+                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="8" Grid.IsSharedSizeScope="True">
                   <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
                 </Border>
               </ControlTemplate>
@@ -193,19 +358,29 @@ internal static class AppTheme
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="MenuItem">
+                <Grid>
                 <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="4">
                   <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto" SharedSizeGroup="Gesture"/><ColumnDefinition Width="12"/></Grid.ColumnDefinitions>
                     <ContentPresenter x:Name="Icon" Content="{TemplateBinding Icon}" VerticalAlignment="Center"/>
                     <Path x:Name="Check" Visibility="Collapsed" Data="M 2 7 L 6 11 L 13 3" Stroke="{DynamicResource CanvasAccent}" StrokeThickness="1.8" VerticalAlignment="Center"/>
                     <ContentPresenter Grid.Column="1" Margin="6,0,12,0" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
                     <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource CanvasMuted}" FontSize="12" VerticalAlignment="Center"/>
+                    <Path x:Name="SubmenuArrow" Grid.Column="3" Data="M 0,0 L 4,4 L 0,8" Stroke="{DynamicResource CanvasMuted}" StrokeThickness="1.3" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"/>
                   </Grid>
                 </Border>
+                <Popup x:Name="PART_Popup" Placement="Right" PlacementTarget="{Binding ElementName=Chrome}" HorizontalOffset="-2" VerticalOffset="-4"
+                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" AllowsTransparency="True" Focusable="False" PopupAnimation="None">
+                  <Border Background="{DynamicResource CanvasInput}" BorderBrush="{DynamicResource CanvasBorder}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="180" Grid.IsSharedSizeScope="True">
+                    <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/></ScrollViewer>
+                  </Border>
+                </Popup>
+                </Grid>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
                   <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/><Setter TargetName="Icon" Property="Visibility" Value="Collapsed"/></Trigger>
+                  <Trigger Property="HasItems" Value="True"><Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>

@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ZipPath, [string]$ExtractionRoot)
+param([string]$ZipPath, [string]$ExtractionRoot, [switch]$StaticOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($ZipPath)) {
@@ -22,6 +22,46 @@ foreach ($required in @('LICENSE', 'CHANGELOG.md', 'README.md', 'README.en.md', 
     if (-not (Test-Path -LiteralPath (Join-Path $packageDirectory $required) -PathType Leaf)) { throw "Package is missing $required" }
 }
 $manifest = Get-Content -LiteralPath (Join-Path $packageDirectory 'PACKAGE-INFO.json') -Raw | ConvertFrom-Json
+if ($manifest.Product -cne '浮绘 FloatCanvas' -or $manifest.RuntimeIdentifier -cne 'win-x64' -or $manifest.Configuration -cne 'Release') {
+    throw 'The update manifest must identify the FloatCanvas Windows x64 Release package.'
+}
+$numeric = '(?:0|[1-9][0-9]*)'
+$identifier = '(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+if (-not [regex]::IsMatch([string]$manifest.Version, "\A$numeric\.$numeric\.$numeric(?:-$identifier(?:\.$identifier)*)?\z")) {
+    throw 'The package version must follow the release tag contract.'
+}
+$packageName = "FloatCanvas-$($manifest.Version)-win-x64"
+if ([IO.Path]::GetFileName($ZipPath) -cne "$packageName.zip" -or
+    [IO.Path]::GetFullPath($packageDirectory) -cne [IO.Path]::GetFullPath((Join-Path $runDirectory $packageName))) {
+    throw 'The ZIP filename and its single root directory must match the manifest version.'
+}
+$packagePrefix = $packageDirectory.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+$allEntries = @(Get-ChildItem -LiteralPath $runDirectory -Recurse -Force)
+if (@($allEntries | Where-Object {
+    ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+    ($_.FullName -ine $packageDirectory -and -not $_.FullName.StartsWith($packagePrefix, [StringComparison]::OrdinalIgnoreCase))
+}).Count -ne 0) {
+    throw 'The distribution must contain only one real package directory, without links or unrelated entries.'
+}
+$ownedFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$declaredFiles = @($manifest.Files)
+if ($declaredFiles.Count -eq 0 -or $declaredFiles.Count -gt 4096) { throw 'The update manifest must declare its owned files.' }
+foreach ($file in $declaredFiles) {
+    if ($file -isnot [string] -or [string]::IsNullOrWhiteSpace($file) -or $file.Contains('\') -or
+        [IO.Path]::IsPathRooted($file) -or -not $ownedFiles.Add($file)) {
+        throw 'The update manifest contains an invalid or duplicate relative filename.'
+    }
+}
+$actualFiles = @($allEntries | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
+    [IO.Path]::GetRelativePath($packageDirectory, $_.FullName).Replace('\', '/')
+})
+if (-not $ownedFiles.Contains('PACKAGE-INFO.json') -or -not $ownedFiles.SetEquals([string[]]$actualFiles)) {
+    throw 'The update manifest must list every package file exactly once, including PACKAGE-INFO.json.'
+}
+$binaryVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $packageDirectory 'FloatCanvas.dll')).ProductVersion
+if ([string]::IsNullOrWhiteSpace($binaryVersion) -or $binaryVersion.Split('+')[0] -cne $manifest.Version) {
+    throw 'The application binary version does not match the package manifest.'
+}
 if ($manifest.SelfContained -isnot [bool] -or $manifest.SelfContained) { throw 'The release manifest must declare SelfContained as false.' }
 $runtime = Get-Content -LiteralPath (Join-Path $packageDirectory 'FloatCanvas.runtimeconfig.json') -Raw | ConvertFrom-Json
 $requiredFrameworks = @($runtime.runtimeOptions.frameworks | Where-Object { $null -ne $_ })
@@ -40,6 +80,10 @@ $runtimeFiles = @(Get-ChildItem -LiteralPath $runDirectory -Recurse -File | Wher
     $_.Name -in @('coreclr.dll', 'hostfxr.dll', 'PresentationFramework.dll') -or $_.Extension -ieq '.pdb'
 })
 if ($runtimeFiles.Count -gt 0) { throw ('The distribution must not include runtime binaries or PDB files: ' + ($runtimeFiles.Name -join ', ')) }
+if ($StaticOnly) {
+    Write-Host "PASS static package contract: $ZipPath ($($ownedFiles.Count) owned files). No application was started."
+    return
+}
 $profileDirectory = Join-Path $runDirectory 'profile'
 if (Test-Path -LiteralPath $profileDirectory) { throw 'The package smoke profile must be fresh.' }
 $start = [Diagnostics.ProcessStartInfo]::new()
@@ -72,6 +116,7 @@ try {
         Zip = $ZipPath; Sha256 = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
         ExtractedExecutable = $executablePath; ExitCode = $process.ExitCode
         RequiredFrameworks = $requiredFrameworks; FrameworkDependent = $true; ManifestSelfContained = $manifest.SelfContained
+        OwnedFileCount = $ownedFiles.Count; ManifestFilesComplete = $true; BinaryVersion = $binaryVersion
         Mode = $appReport.Mode; CapturedInput = $appReport.CapturedInput
         MonitorScope = $appReport.MonitorScope; ActiveMonitorCount = @($appReport.Monitors).Count
         LanguagePreference = $appReport.LanguagePreference; InterfaceLanguage = $appReport.InterfaceLanguage

@@ -18,19 +18,20 @@ internal static class InspectorTests
         session.Add(text);
         var inspector = new InspectorWindow(() => session, () => allowed);
         var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
-        var layers = (Controls.ListBox)Field(inspector, "layers");
+        var layerWindow = new LayersWindow(() => session, () => allowed);
+        var layers = (Controls.ListBox)Field(layerWindow, "layers");
         const string draft = "浮绘\n编辑\n多行\n修改";
         fields["Text"].Text = draft;
         int undoBefore = session.UndoCount;
         allowed = false;
         Invoke(inspector, "Apply");
         assert("busy inspector refuses property mutation and retains draft", session.Document.Elements[0].Text == "浮绘" && fields["Text"].Text == draft && session.UndoCount == undoBefore);
-        Invoke(inspector, "SetLayerFlag", text.Id, true, false);
-        Invoke(inspector, "SetLayerFlag", text.Id, false, true);
+        Invoke(layerWindow, "SetLayerFlag", text.Id, true, false);
+        Invoke(layerWindow, "SetLayerFlag", text.Id, false, true);
         assert("busy inspector refuses visibility and lock mutation", session.Document.Elements[0].Visible && !session.Document.Elements[0].Locked && session.UndoCount == undoBefore);
         layers.SelectedItems.Clear();
         assert("busy inspector rejects and restores layer selection", session.Selection.SetEquals([text.Id]) && layers.SelectedItems.Count == 1 && fields["Text"].Text == draft);
-        var reload = LogicalDescendants(inspector).OfType<Controls.Button>().Single(b => Equals(b.Content, "重载当前选择"));
+        var reload = LogicalDescendants(inspector).OfType<Controls.Button>().Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "重载当前选择");
         reload.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
         inspector.Refresh();
         assert("busy reload and refresh preserve unsaved input", fields["Text"].Text == draft);
@@ -59,12 +60,16 @@ internal static class InspectorTests
         Invoke(inspector, "Apply"); applied = session.Document.Elements[0];
         assert("font family edit remeasures fallback glyph layout", applied.Style.FontFamily == "Arial" && applied.Height == renderer.MeasureText(applied.Text, applied.Style, applied.Width).Height);
         assert("detached inspector tests create no native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 && !inspector.IsVisible);
-        LayerCommands(assert);
+        LayersWindowTests.Run(assert);
         ContextualFields(assert);
         LocalSizeEditing(assert);
         CommandRouting(assert);
         ArrowProperties(assert);
         InspectorLayerPanelTests.Run(assert);
+        InspectorScrubTests.Run(assert);
+        InspectorColorTests.Run(assert);
+        SymbolNames(assert);
+        ContinuousPanelLayout(assert);
     }
 
     private static void LocalSizeEditing(Action<string, bool> assert)
@@ -80,7 +85,8 @@ internal static class InspectorTests
             fields["W"].Text = "200"; Invoke(inspector, "Apply");
             var t = session.Document.Elements[0].Transform;
             assert($"{angle} degree width-only property edit retains orthogonal rotation", Math.Abs(t.M11 * t.M12 + t.M21 * t.M22) < 1e-8 && Math.Abs(Math.Atan2(t.M21, t.M11) * 180 / Math.PI - angle) < 1e-8);
-            assert($"{angle} degree width-only property edit preserves center and untouched axis", Math.Abs(Math.Sqrt(t.M11 * t.M11 + t.M21 * t.M21) - 2) < 1e-8 && Math.Abs(Math.Sqrt(t.M12 * t.M12 + t.M22 * t.M22) - 1) < 1e-8 && t.TransformPoint(new(50, 30)).DistanceTo(center) < 1e-8);
+            var resized = session.Document.Elements[0];
+            assert($"{angle} degree width-only property edit preserves center and untouched axis", resized.Width == 200 && resized.Height == 60 && Math.Abs(Math.Sqrt(t.M11 * t.M11 + t.M21 * t.M21) - 1) < 1e-8 && Math.Abs(Math.Sqrt(t.M12 * t.M12 + t.M22 * t.M22) - 1) < 1e-8 && t.TransformPoint(new(100, 30)).DistanceTo(center) < 1e-8);
             assert($"{angle} degree local resize uses one undo step", session.UndoCount == before + 1 && session.Undo() && session.Document.Elements[0].Transform == original.Transform);
         }
         var pathSession = new EditorSession();
@@ -132,8 +138,24 @@ internal static class InspectorTests
         {
             var session = new EditorSession(); session.Add(new() { Kind = kind, Width = 100, Height = 60 }); var inspector = new InspectorWindow(() => session);
             var containers = (Dictionary<string, Wpf.FrameworkElement>)Field(inspector, "fieldContainers");
-            assert(kind + " hides arrow-only controls", containers["ArrowHeadStyle"].Visibility == Wpf.Visibility.Collapsed && containers["ArrowHeadSize"].Visibility == Wpf.Visibility.Collapsed);
+            assert(kind + " hides legacy arrow-style control", containers["ArrowHeadStyle"].Visibility == Wpf.Visibility.Collapsed);
+            assert(kind + " shows arrow size only for line families", containers["ArrowHeadSize"].Visibility == (kind == ElementKind.Line ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed));
         }
+    }
+
+    private static void SymbolNames(Action<string, bool> assert)
+    {
+        string preference = FloatCanvas.Localization.AppText.Preference;
+        try
+        {
+            foreach (string language in new[] { "zh-CN", "en" })
+            {
+                FloatCanvas.Localization.AppText.Initialize(language);
+                assert(language + " symbol layers and properties have a recognized name", Enum.GetValues<SymbolKind>().All(symbol =>
+                    InspectorWindow.ElementName(new() { Kind = ElementKind.Symbol, Symbol = symbol }) == FloatCanvas.Localization.AppText.Get("Editor.ElementKind.Symbol")));
+            }
+        }
+        finally { FloatCanvas.Localization.AppText.Initialize(preference); }
     }
 
     private static void ContextualFields(Action<string, bool> assert)
@@ -158,33 +180,37 @@ internal static class InspectorTests
         assert("contextual property layout remains detached", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);
     }
 
-    private static void LayerCommands(Action<string, bool> assert)
+    private static void ContinuousPanelLayout(Action<string, bool> assert)
     {
-        bool allowed = true;
         var session = new EditorSession();
-        CanvasElement a = new() { Kind = ElementKind.Rectangle, Width = 40, Height = 40 },
-            b = new() { Kind = ElementKind.Ellipse, Width = 40, Height = 40 },
-            c = new() { Kind = ElementKind.Triangle, Width = 40, Height = 40 };
-        session.Add(a); session.Add(b); session.Add(c); session.SetSelection([a.Id]);
-        var inspector = new InspectorWindow(() => session, () => allowed);
-        var buttons = LogicalDescendants(inspector).OfType<Controls.Button>().ToDictionary(button => button.Content!.ToString()!, StringComparer.Ordinal);
-        void Click(string label) => buttons[label].RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
-        int before = session.UndoCount;
-        allowed = false;
-        foreach (var label in new[] { "前移", "后移", "置顶", "置底", "复制", "删除" }) Click(label);
-        assert("busy guard covers every layer action button", session.UndoCount == before && session.Document.Elements.Select(e => e.Id).SequenceEqual([a.Id, b.Id, c.Id]) && session.Selection.SetEquals([a.Id]));
-        allowed = true;
-        Click("前移"); assert("layer forward button records one atomic step", session.Document.Elements[1].Id == a.Id && session.UndoCount == ++before);
-        Click("后移"); assert("layer backward button records one atomic step", session.Document.Elements[0].Id == a.Id && session.UndoCount == ++before);
-        Click("置顶"); assert("layer front button records one atomic step", session.Document.Elements[^1].Id == a.Id && session.UndoCount == ++before);
-        Click("置底"); assert("layer back button records one atomic step", session.Document.Elements[0].Id == a.Id && session.UndoCount == ++before);
-        Click("复制");
-        var clone = session.SelectedElements().Single();
-        assert("duplicate layer button creates editable independent selection in one step", clone.Id != a.Id && clone.Kind == a.Kind && clone.Transform.OffsetX == 16 && session.Document.Elements.Count == 4 && session.UndoCount == ++before);
-        Click("删除"); assert("delete layer button removes selection in one step", session.Document.Elements.Count == 3 && session.Selection.Count == 0 && session.UndoCount == ++before);
-        session.Undo(); assert("delete layer command undo restores duplicated element and selection", session.Document.Elements.Count == 4 && session.Selection.Contains(clone.Id));
-        assert("layer action validation never creates a native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 && !inspector.IsVisible);
+        session.Add(new() { Kind = ElementKind.Arrow, Points = [new(0, 0), new(120, 40)] });
+        var inspector = new InspectorWindow(() => session);
+        var layout = (Controls.Grid)inspector.Content;
+        var scroll = LogicalDescendants(layout).OfType<Controls.ScrollViewer>().Single();
+        var apply = LogicalDescendants(layout).OfType<Controls.Button>().Single(button => System.Windows.Automation.AutomationProperties.GetName(button) == FloatCanvas.Localization.AppText.Get("Inspector.Apply"));
+        var reload = LogicalDescendants(layout).OfType<Controls.Button>().Single(button => System.Windows.Automation.AutomationProperties.GetName(button) == FloatCanvas.Localization.AppText.Get("Inspector.ReloadSelection"));
+        var status = (Controls.TextBlock)Field(inspector, "status");
+        assert("property sections are directly available without category tabs or expanders", !LogicalDescendants(layout).Any(control => control is Controls.Expander or Controls.TabControl));
+        var scrollingControls = LogicalDescendants(scroll).ToHashSet();
+        assert("property apply reload and status are outside the scrolling content", !scrollingControls.Contains(apply) && !scrollingControls.Contains(reload) && !scrollingControls.Contains(status));
+
+        var size = new Wpf.Size(inspector.MinWidth, inspector.MinHeight - System.Windows.Shell.WindowChrome.GetWindowChrome(inspector).CaptionHeight);
+        layout.Measure(size); layout.Arrange(new Wpf.Rect(new Wpf.Point(), size)); layout.UpdateLayout();
+        var before = apply.TranslatePoint(new Wpf.Point(), layout);
+        assert("small property panel keeps footer actions and status inside its bounds", new Wpf.FrameworkElement[] { apply, reload, status }.All(InBounds));
+        assert("small property panel scrolls long applicable fields", scroll.ScrollableHeight > 0 && scroll.ViewportHeight > 0);
+        scroll.ScrollToEnd(); layout.UpdateLayout();
+        assert("scrolling long properties leaves the apply button stationary", apply.TranslatePoint(new Wpf.Point(), layout) == before && scroll.VerticalOffset > 0);
+        assert("property layout checks create no native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);
+
+        bool InBounds(Wpf.FrameworkElement control)
+        {
+            var origin = control.TranslatePoint(new Wpf.Point(), layout);
+            return control.ActualWidth > 0 && control.ActualHeight > 0 && origin.X >= 0 && origin.Y >= 0 &&
+                origin.X + control.ActualWidth <= size.Width + .5 && origin.Y + control.ActualHeight <= size.Height + .5;
+        }
     }
+
 
     private static object Field(object instance, string name) => instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
     private static void Invoke(object instance, string method, params object[] arguments) => instance.GetType().GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(instance, arguments);

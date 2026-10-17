@@ -1,11 +1,23 @@
 {
   "Inspector.Title": {
-    "zh": "浮绘 · 属性与图层",
-    "en": "FloatCanvas · Properties and layers"
+    "zh": "浮绘 · 属性",
+    "en": "FloatCanvas · Properties"
   },
   "Inspector.Heading": {
-    "zh": "属性与图层",
-    "en": "Properties and layers"
+    "zh": "属性",
+    "en": "Properties"
+  },
+  "Inspector.GeometrySection": {
+    "zh": "位置与尺寸",
+    "en": "Position and size"
+  },
+  "Inspector.AppearanceSection": {
+    "zh": "外观",
+    "en": "Appearance"
+  },
+  "Inspector.TextSection": {
+    "zh": "文字与编号",
+    "en": "Text and numbering"
   },
   "Inspector.KeepAspect": {
     "zh": "等比缩放",

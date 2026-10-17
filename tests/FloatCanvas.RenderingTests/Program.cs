@@ -6,10 +6,12 @@ using SkiaSharp;
 internal static class Program
 {
     private static int _checks;
-    private static int Main()
+    private static int Main(string[] args)
     {
         try
         {
+            if (args.Contains("--arrows-only")) { ArrowHeadRenderingTests.Run(Assert); return 0; }
+            if (args.Contains("--live-effects-only")) { LivePixelateRenderingTests.Run(Assert); return 0; }
             ShapesAndCoordinates();
             AlphaAndBackground();
             ImagesAndEffects();
@@ -18,6 +20,8 @@ internal static class Program
             AssetImportLosslessTests.Run(Assert);
             CacheAndCanvasState();
             ArrowHeadRenderingTests.Run(Assert);
+            LivePixelateRenderingTests.Run(Assert);
+            EditablePresetRenderingTests.Run(Assert);
             OverlaySceneCacheTests.Run(Assert);
             ClearedLiveOpacityTests.Run(Assert);
             Console.WriteLine($"PASS {_checks} real render/import/export checks.");

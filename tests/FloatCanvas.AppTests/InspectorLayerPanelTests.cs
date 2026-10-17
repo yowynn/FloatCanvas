@@ -5,10 +5,10 @@ using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 using Wpf = System.Windows;
 using Controls = System.Windows.Controls;
+using Primitives = System.Windows.Controls.Primitives;
 using Peers = System.Windows.Automation.Peers;
-using Providers = System.Windows.Automation.Provider;
 
-/// <summary>Detached WPF layout and standard automation behavior; no Show, HWND or injected input.</summary>
+/// <summary>The property draft survives work in the independent layer window.</summary>
 internal static class InspectorLayerPanelTests
 {
     internal static void Run(Action<string, bool> check)
@@ -16,99 +16,49 @@ internal static class InspectorLayerPanelTests
         string preference = L.Preference;
         try
         {
-            foreach (string language in new[] { "zh-CN", "en" }) Verify(language, check);
+            foreach (string language in new[] { "zh-CN", "en" })
+            {
+                L.Initialize(language);
+                var session = new EditorSession();
+                session.Add(new() { Kind = ElementKind.Text, Text = "Original", Width = 120, Height = 40 });
+                Guid selected = session.Document.Elements.Single().Id;
+                var inspector = new InspectorWindow(() => session);
+                var layerWindow = new LayersWindow(() => session);
+                var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
+                var layers = (Controls.ListBox)Field(layerWindow, "layers");
+                fields["Text"].Text = "Unsubmitted\n保留草稿";
+                string before = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
+                check(language + " properties and layers are independent custom-chrome windows", !Descendants(inspector).OfType<Controls.ListBox>().Any() &&
+                    Descendants(layerWindow).Contains(layers) && inspector.WindowStyle == Wpf.WindowStyle.None && layerWindow.WindowStyle == Wpf.WindowStyle.None);
+                var row = (Controls.ListBoxItem)layers.Items[0];
+                var toggles = Descendants(row).OfType<Primitives.ToggleButton>().ToArray();
+                check(language + " layer row uses two accessible icon toggles and a drag handle", toggles.Length == 2 &&
+                    toggles.All(toggle => Peers.FrameworkElementAutomationPeer.CreatePeerForElement(toggle).GetPattern(Peers.PatternInterface.Toggle) is not null) &&
+                    Descendants(row).OfType<Primitives.Thumb>().Count() == 1 && !Descendants(row).OfType<Controls.CheckBox>().Any());
+                check(language + " layer commands live in the row context menu with shortcuts", row.ContextMenu.Items.OfType<Controls.MenuItem>().Count() == 7 &&
+                    row.ContextMenu.Items.OfType<Controls.MenuItem>().All(item => item.Icon is not null) &&
+                    row.ContextMenu.Items.OfType<Controls.MenuItem>().Any(item => item.InputGestureText == "Ctrl+G"));
+                layerWindow.ApplyTemplate();
+                var help = (Controls.Button)layerWindow.Template.FindName("Help", layerWindow);
+                check(language + " layer help belongs to the shared header without an embedded body button", help.Visibility == Wpf.Visibility.Visible &&
+                    Wpf.Automation.AutomationProperties.GetName(help) == L.Get("Layers.Help") &&
+                    layerWindow.Resources["CanvasWindowHelpText"] is string text && text == L.Get("Layers.HelpWithRename") &&
+                    !Descendants((Wpf.DependencyObject)layerWindow.Content).OfType<Controls.Button>().Any() && layerWindow.Icon is not null);
+                layers.SelectedItems.Clear(); inspector.Refresh();
+                check(language + " independent layer selection retains the pending property draft", fields["Text"].Text == "Unsubmitted\n保留草稿" && session.Selection.Count == 0);
+                session.SetSelection([selected]); inspector.Refresh(); layerWindow.Refresh();
+                check(language + " layer refresh changes no document content or history", JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo &&
+                    fields["Text"].Text == "Unsubmitted\n保留草稿");
+                check(language + " split panel tests create no native windows", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 &&
+                    new System.Windows.Interop.WindowInteropHelper(layerWindow).Handle == 0 && !inspector.IsVisible && !layerWindow.IsVisible);
+            }
         }
         finally { L.Initialize(preference); }
     }
-
-    private static void Verify(string language, Action<string, bool> check)
-    {
-        L.Initialize(language);
-        var session = new EditorSession();
-        session.Add(new() { Kind = ElementKind.Text, Text = "Original", Width = 120, Height = 40 });
-        Guid selected = session.Document.Elements.Single().Id;
-        var inspector = new InspectorWindow(() => session);
-        var expander = Descendants(inspector).OfType<Controls.Expander>().Single();
-        var panel = (Controls.StackPanel)expander.Content;
-        var layers = (Controls.ListBox)Field(inspector, "layers");
-        var properties = (Controls.StackPanel)Field(inspector, "propertyPanel");
-        var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
-        var actions = Descendants(panel).OfType<Controls.Button>().ToArray();
-        const string draft = "Unsubmitted\n保留草稿";
-        fields["Text"].Text = draft;
-        string documentBefore = JsonSerializer.Serialize(session.Document);
-        int undoBefore = session.UndoCount, redoBefore = session.RedoCount;
-        var peer = new Peers.ExpanderAutomationPeer(expander);
-        var pattern = (Providers.IExpandCollapseProvider)peer.GetPattern(Peers.PatternInterface.ExpandCollapse);
-        void Check(string name, bool condition) => check(language + " layer panel " + name, condition);
-        Check("starts expanded with a localized accessible header", expander.IsExpanded && peer.GetName() == L.Get("Inspector.Layers") &&
-            expander.Header is Controls.TextBlock header && header.Text == L.Get("Inspector.Layers"));
-        Check("contains the list, hint and all six existing layer actions", Descendants(panel).Contains(layers) && actions.Length == 6 &&
-            Descendants(panel).OfType<Controls.TextBlock>().Any(text => text.Text == L.Get("Inspector.LayersHint")));
-        // A never-shown Window can suspend layout for its subtree. Measure this same actual
-        // Expander under a detached layout root, then return it to its unchanged inspector slot.
-        var body = (Controls.Panel)Wpf.LogicalTreeHelper.GetParent(expander);
-        int index = body.Children.IndexOf(expander);
-        body.Children.Remove(expander);
-        var layoutRoot = new Controls.Border { Child = expander };
-        try
-        {
-            bool templateApplied = expander.ApplyTemplate();
-            layoutRoot.Measure(new Wpf.Size(280, double.PositiveInfinity));
-            double expandedHeight = layoutRoot.DesiredSize.Height;
-            var expandSite = expander.Template?.FindName("ExpandSite", expander) as Wpf.FrameworkElement;
-            Console.WriteLine($"LAYER_EXPANDER_LAYOUT {language}: applied={templateApplied}, templatePresent={expander.Template is not null}, expandedHeight={expandedHeight}, site={expandSite?.Visibility}, visibility={expander.Visibility}, measureValid={expander.IsMeasureValid}");
-            Check("has a nonzero expanded layout baseline with its real default template", expander.Template is not null && expandedHeight > 0);
-            pattern.Collapse();
-            inspector.Refresh();
-            Console.WriteLine($"LAYER_EXPANDER_LAYOUT {language}: beforeIdle state={pattern.ExpandCollapseState}, site={expandSite?.Visibility}");
-            bool reachedIdle = ProcessPendingLayout();
-            layoutRoot.UpdateLayout();
-            expander.InvalidateMeasure(); layoutRoot.InvalidateMeasure(); layoutRoot.Measure(new Wpf.Size(280, double.PositiveInfinity));
-            Console.WriteLine($"LAYER_EXPANDER_LAYOUT {language}: afterIdle={reachedIdle}, collapsedHeight={layoutRoot.DesiredSize.Height}, state={pattern.ExpandCollapseState}, site={expandSite?.Visibility}");
-            Check("finishes pending template updates within the bounded dispatcher turn", reachedIdle);
-            Check("supports the standard accessible collapse pattern", !expander.IsExpanded && pattern.ExpandCollapseState == System.Windows.Automation.ExpandCollapseState.Collapsed);
-            Check("collapses the actual default template content site", expandSite?.Visibility == Wpf.Visibility.Collapsed);
-            Check("releases layout space when collapsed", layoutRoot.DesiredSize.Height < expandedHeight);
-        }
-        finally
-        {
-            layoutRoot.Child = null;
-            body.Children.Insert(index, expander);
-        }
-        Check("keeps properties and their unsubmitted draft available", properties.Visibility == Wpf.Visibility.Visible && fields["Text"].Text == draft);
-        Check("leaves document selection and history unchanged", JsonSerializer.Serialize(session.Document) == documentBefore &&
-            session.Selection.SetEquals([selected]) && session.UndoCount == undoBefore && session.RedoCount == redoBefore);
-        pattern.Expand(); inspector.Refresh();
-        Check("reopens the same controls and draft", expander.IsExpanded && ReferenceEquals(panel, expander.Content) &&
-            ReferenceEquals(layers, Descendants(panel).OfType<Controls.ListBox>().Single()) &&
-            actions.SequenceEqual(Descendants(panel).OfType<Controls.Button>()) && fields["Text"].Text == draft);
-        Check("reopening does not add a history step or change selection", session.UndoCount == undoBefore && session.RedoCount == redoBefore && session.Selection.SetEquals([selected]));
-        Check("never creates a native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 && !inspector.IsVisible);
-    }
-
-    private static object Field(object instance, string name) => instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
-    private static bool ProcessPendingLayout()
-    {
-        var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
-        var frame = new System.Windows.Threading.DispatcherFrame();
-        bool reachedIdle = false;
-        var timeout = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Send)
-            { Interval = TimeSpan.FromSeconds(1) };
-        timeout.Tick += (_, _) => frame.Continue = false;
-        var idle = dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
-            new Action(() => { reachedIdle = true; frame.Continue = false; }));
-        timeout.Start();
-        try { System.Windows.Threading.Dispatcher.PushFrame(frame); }
-        finally { timeout.Stop(); idle.Abort(); }
-        return reachedIdle;
-    }
+    private static object Field(object target, string name) => target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
     private static IEnumerable<Wpf.DependencyObject> Descendants(Wpf.DependencyObject parent)
     {
         foreach (var child in Wpf.LogicalTreeHelper.GetChildren(parent).OfType<Wpf.DependencyObject>())
-        {
-            yield return child;
-            foreach (var nested in Descendants(child)) yield return nested;
-        }
+        { yield return child; foreach (var nested in Descendants(child)) yield return nested; }
     }
 }

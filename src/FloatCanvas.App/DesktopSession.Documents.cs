@@ -11,6 +11,7 @@ using FloatCanvas.Rendering;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using Wpf = System.Windows;
+using Controls = System.Windows.Controls;
 
 namespace FloatCanvas.App;
 
@@ -19,6 +20,8 @@ internal sealed partial class DesktopSession
     private const string ObjectClipboardFormat = "FloatCanvas.Objects.v1";
     private readonly ProjectStore _projectStore = new();
     private readonly RecoveryStore _recoveryStore = new(Path.Combine(ApplicationPaths.ProfileDirectory, "recovery"));
+    private WorkspaceRecoveryHistory? _workspaceRecoveryHistory;
+    private WorkspaceRecoveryHistory RecoveryHistory => _workspaceRecoveryHistory ??= new(_recoveryStore);
     private readonly CaptureService _documentCaptureService = new();
     private readonly CancellationTokenSource _documentLifetime = new();
     private readonly Dictionary<EditorSession, DocumentFileState> _documentFiles = [];
@@ -53,7 +56,7 @@ internal sealed partial class DesktopSession
         public byte[] Bytes { get; set; } = [];
     }
 
-    private async Task InitializeDocumentsAsync(bool recover = true)
+    private async Task InitializeDocumentsAsync(bool recover = false)
     {
         _documentBusy = true;
         try
@@ -97,7 +100,14 @@ internal sealed partial class DesktopSession
             }
             _editor.ReplaceSession(_live, new(0, 0));
             if (EnsureCaptureVisible()) ScheduleRecovery();
-            if (!restoredWorkspace) FileState(_live).SavedFingerprint = Fingerprint(_live.Document);
+            if (!restoredWorkspace)
+            {
+                FileState(_live).SavedFingerprint = Fingerprint(_live.Document);
+                var baseline = SnapshotWorkspace();
+                RecoveryHistory.BeginFreshWorkspace(baseline);
+                _documentRecoveryFingerprint = WorkspaceFingerprint(baseline);
+            }
+            else RecoveryHistory.WorkspaceRestored();
             _host.SetEditing(false);
             _toolbar.Hide(); _inspector?.Hide(); RequestRender();
         }
@@ -126,10 +136,17 @@ internal sealed partial class DesktopSession
         timer.Tick += async (_, _) =>
         {
             timer.Stop();
-            try { await FlushRecoveryAsync(); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { UpdateStatus(L.Get("Recovery.SaveFailed") + ex.Message); }
+            await FlushRecoveryFromTimerAsync();
         };
         return timer;
+    }
+    private async Task FlushRecoveryFromTimerAsync()
+    {
+        try { await FlushRecoveryAsync(); }
+        // Disposing a session intentionally cancels in-flight recovery writes. The
+        // async timer callback must observe that cancellation before returning to WPF.
+        catch (OperationCanceledException) when (_documentLifetime.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is not OperationCanceledException) { UpdateStatus(L.Get("Recovery.SaveFailed") + ex.Message); }
     }
     private async Task FlushRecoveryAsync()
     {
@@ -140,10 +157,86 @@ internal sealed partial class DesktopSession
         PruneDocumentResources();
         var snapshot = SnapshotWorkspace();
         string fingerprint = WorkspaceFingerprint(snapshot);
-        if (fingerprint == _documentRecoveryFingerprint) return;
-        _documentRecoveryTask = _recoveryStore.SaveAsync(snapshot, _assets, _documentLifetime.Token);
-        try { await _documentRecoveryTask; _documentRecoveryFingerprint = fingerprint; }
+        if (fingerprint == _documentRecoveryFingerprint || !RecoveryHistory.ShouldWrite(snapshot)) return;
+        _documentRecoveryTask = WriteRecoveryAsync();
+        try { await _documentRecoveryTask; }
         finally { if (_documentRecoveryTask.IsCompleted) _documentRecoveryTask = Task.CompletedTask; }
+    }
+    private async Task WriteRecoveryAsync()
+    {
+        await RecoveryHistory.PreserveBeforeFirstWriteAsync(_documentLifetime.Token);
+        // The archive can take time. Capture current committed content and resources after it completes.
+        var snapshot = SnapshotWorkspace();
+        if (!RecoveryHistory.ShouldWrite(snapshot)) return;
+        string fingerprint = WorkspaceFingerprint(snapshot);
+        await _recoveryStore.SaveAsync(snapshot, _assets, _documentLifetime.Token);
+        _documentRecoveryFingerprint = fingerprint;
+        RecoveryHistory.WorkspaceSaved();
+    }
+
+    private async Task RestoreWorkspaceHistoryAsync()
+    {
+        if (DocumentOperationBusy) return;
+        CloseImageDrop();
+        _documentBusy = true;
+        _documentRecoveryTimer?.Stop();
+        try
+        {
+            _editor.Cancel();
+            _documentRecoveryTimer?.Stop();
+            await _documentRecoveryTask;
+            var entries = RecoveryHistory.GetEntries();
+            if (entries.Count == 0) { UpdateStatus(L.Get("Recovery.NoHistory")); return; }
+            var selected = ChooseRecoveryWorkspace(entries);
+            if (selected is null) return;
+            // Read fully before replacing or writing either workspace.
+            var restored = await RecoveryHistory.LoadAsync(selected, _documentLifetime.Token);
+            if (restored is null) { UpdateStatus(L.Get("Recovery.NoHistory")); return; }
+            if (!await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return;
+            if (_capture is not null && !await ConfirmReplaceAsync(_capture, L.Get("Project.ReplaceCapture"))) return;
+            await FlushRecoveryAsync();
+            await RecoveryHistory.PreserveCurrentAsync(_documentLifetime.Token);
+            SetEditing(false);
+            MergeAssets(restored.Assets);
+            _documentFiles.Clear();
+            _live = new(restored.State.LiveDocument, _assets);
+            _capture = restored.State.CaptureDocument is { } capture ? new(capture, _assets) : null;
+            _captureOrigin = restored.State.CaptureOrigin;
+            _documentFrozenCaptureWarning = null;
+            _editor.ReplaceSession(_live, new(0, 0));
+            _editor.Tool = _documentLiveTool;
+            RecoveryHistory.WorkspaceRestored();
+            _documentRecoveryFingerprint = null;
+            OnMonitorsChanged();
+            await FlushRecoveryAsync();
+            _toolbar.Hide(); _inspector?.Hide(); RequestRender();
+            UpdateStatus(L.Get("Recovery.RestoredPassThrough"));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Recovery.RestoreFailed") + ex.Message); }
+        finally { _documentBusy = false; PruneDocumentResources(); }
+    }
+
+    private WorkspaceRecoveryEntry? ChooseRecoveryWorkspace(IReadOnlyList<WorkspaceRecoveryEntry> entries)
+    {
+        var panel = new Controls.StackPanel { Margin = new Thickness(18) };
+        panel.Children.Add(new Controls.TextBlock { Text = L.Get("Recovery.HistoryHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        var list = new Controls.ListBox { MaxHeight = 300, MinHeight = 100, Margin = new Thickness(0, 0, 0, 14) };
+        foreach (var entry in entries)
+            list.Items.Add(new Controls.ListBoxItem { Tag = entry, Content = entry.SavedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + "  ·  " +
+                L.Get(entry.IsCurrent ? "Recovery.LatestWorkspace" : "Recovery.HistoryWorkspace"), Padding = new Thickness(8) });
+        list.SelectedIndex = 0;
+        panel.Children.Add(list);
+        var buttons = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var restore = new Controls.Button { Content = L.Get("Recovery.Restore"), IsDefault = true, MinWidth = 90, Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 8, 0) };
+        buttons.Children.Add(restore);
+        buttons.Children.Add(new Controls.Button { Content = L.Get("Recovery.Cancel"), IsCancel = true, MinWidth = 90, Padding = new Thickness(12, 6, 12, 6) });
+        panel.Children.Add(buttons);
+        var dialog = new Window { Title = L.Get("Recovery.HistoryTitle"), Content = panel, Width = 540, SizeToContent = SizeToContent.Height,
+            Owner = _toolbar, ShowInTaskbar = false, Topmost = true, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            Icon = AppIcon.WindowImage };
+        AppWindowChrome.ApplyDialog(dialog);
+        restore.Click += (_, _) => dialog.DialogResult = list.SelectedItem is not null;
+        return dialog.ShowDialog() == true ? (WorkspaceRecoveryEntry?)((Controls.ListBoxItem)list.SelectedItem).Tag : null;
     }
     private async Task RequestExitAsync()
     {
@@ -271,7 +364,7 @@ internal sealed partial class DesktopSession
     private async Task<bool> ConfirmReplaceAsync(EditorSession session, string description)
     {
         if (!IsDirty(session)) return true;
-        var result = Wpf.MessageBox.Show(_toolbar, description + L.Get("Project.ReplaceQuestion"), L.Get("App.Name"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        var result = AppDialog.Show(_toolbar, description + L.Get("Project.ReplaceQuestion"), L.Get("App.Name"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         return result == MessageBoxResult.No || result == MessageBoxResult.Yes && await SaveSessionAsync(session, true);
     }
 
@@ -291,7 +384,7 @@ internal sealed partial class DesktopSession
         if (dialog.ShowDialog(_toolbar) != true) return;
         var snapshot = session.Document.Clone(); var resources = ResourceSnapshot(snapshot).ToList();
             string? captureWarning = snapshot.Kind == DocumentKind.FrozenCapture ? _documentFrozenCaptureWarning : null;
-            if (!transparent && snapshot.Kind == DocumentKind.LiveOverlay)
+            if ((!transparent || SceneRenderer.HasLiveEffects(snapshot)) && snapshot.Kind == DocumentKind.LiveOverlay)
             {
                 var capture = await CaptureCleanDesktopAsync();
                 captureWarning = CaptureWarning(capture);
@@ -323,25 +416,28 @@ internal sealed partial class DesktopSession
     {
         if (DocumentOperationBusy) return;
         _editor.Cancel(); var session = Active;
-        var selected = session.SelectedElements().Where(e => e.Visible).Select(e => e.Clone()).ToList();
-        bool objects = selected.Count > 0;
-        var snapshot = objects ? new SceneDocument { Elements = selected, Viewport = selected.Select(e => ElementGeometry.Bounds(e)).Aggregate(RectD.Union), LayerOpacity = session.Document.LayerOpacity } : session.Document.Clone();
-        // Dots and horizontal lines still need a nonzero raster clipboard size.
-        if (objects) snapshot.Viewport = snapshot.Viewport.Inflate(1);
+        var selected = ObjectClipboardCommand.CreateSnapshot(session);
+        bool objects = selected.Elements.Count > 0;
+        var snapshot = objects ? selected : session.Document.Clone();
         var resources = ResourceSnapshot(snapshot).ToList();
+        var effectContext = objects && SceneRenderer.HasLiveEffects(snapshot) ? session.Document.Clone() : null;
+        var rasterResources = effectContext is null ? resources.ToList() : ResourceSnapshot(effectContext).ToList();
         _documentBusy = true;
         try
         {
             string? captureWarning = !objects && snapshot.Kind == DocumentKind.FrozenCapture ? _documentFrozenCaptureWarning : null;
-            if (!objects && snapshot.Kind == DocumentKind.LiveOverlay)
+            if ((!objects || SceneRenderer.HasLiveEffects(snapshot)) &&
+                (effectContext?.Kind ?? snapshot.Kind) == DocumentKind.LiveOverlay)
             {
                 var capture = await CaptureCleanDesktopAsync(); var assets = new AssetLibrary(); string id = assets.Add(capture.PngBytes);
                 captureWarning = CaptureWarning(capture);
-                resources.Add(assets.Get(id)); snapshot.Background = Background(capture, id);
+                rasterResources.Add(assets.Get(id));
+                if (effectContext is not null) effectContext.Background = Background(capture,id);
+                else snapshot.Background = Background(capture, id);
             }
             var encoded = await Task.Run(() =>
             {
-                var assets = ResourceLibrary(resources); using var renderer = new SceneRenderer();
+                var assets = ResourceLibrary(rasterResources); using var renderer = new SceneRenderer { LiveEffectContext = effectContext };
                 byte[] png = renderer.ExportPng(snapshot, assets, objects);
                 string? internalObjects = objects ? JsonSerializer.Serialize(new ClipboardObjects
                 {
@@ -365,6 +461,7 @@ internal sealed partial class DesktopSession
 
     private async Task PasteAsync()
     {
+        if (!CanAddCanvasContent()) return;
         if (DocumentOperationBusy) return;
         _editor.Cancel(); var target = Active;
         _documentBusy = true;
@@ -387,22 +484,15 @@ internal sealed partial class DesktopSession
                     foreach (string id in objects.Document.ReferencedAssets) _ = assets.Get(id);
                     return (objects.Document, assets);
                 }, _documentLifetime.Token);
-                if (!ReferenceEquals(Active, target)) return;
-                MergeAssets(payload.assets);
-                var clones = payload.Document.Elements.Select(e => e.Clone(true)).ToArray();
-                target.Execute(L.Get("History.Paste"), d =>
-                {
-                    target.Selection.Clear();
-                    foreach (var clone in clones) { clone.Locked = false; clone.Transform = Affine2D.Translation(16, 16).Compose(clone.Transform); d.Elements.Add(clone); target.Selection.Add(clone.Id); if (clone.Kind == ElementKind.Number) d.NextNumber = Math.Max(d.NextNumber, clone.Number + 1); }
-                    BringSelectionIntoView(target);
-                });
+                if (!ReferenceEquals(Active, target) || !CanAddCanvasContent()) return;
+                ObjectClipboardCommand.Insert(target, payload.Document, payload.assets, VisibleDocumentArea());
                 _editor.Tool = EditorTool.Select; return;
             }
             byte[]? bytes = ReadClipboardPng(data);
             if (bytes is not null)
             {
                 var normalized = await Task.Run(() => AssetImport.Normalize(bytes), _documentLifetime.Token);
-                if (ReferenceEquals(Active, target)) { InsertImages(target, [normalized], false); _editor.Tool = EditorTool.Select; }
+                if (ReferenceEquals(Active, target) && CanAddCanvasContent()) { InsertImages(target, [normalized], false); _editor.Tool = EditorTool.Select; }
             }
             else if (data.GetDataPresent(Wpf.DataFormats.FileDrop) && data.GetData(Wpf.DataFormats.FileDrop) is string[] paths)
             {
@@ -430,6 +520,7 @@ internal sealed partial class DesktopSession
 
     private async Task ImportImagesAsync(string[]? paths = null, bool replaceSelected = false)
     {
+        if (!CanAddCanvasContent()) return;
         if (DocumentOperationBusy) return;
         _editor.Cancel(); var target = Active;
         _documentBusy = true;
@@ -445,6 +536,7 @@ internal sealed partial class DesktopSession
         { UpdateStatus(L.Get("Image.SelectFirst")); return; }
         var selectedIds = target.Selection.ToHashSet();
             var normalized = await ImageImportCommand.NormalizeFilesAsync(paths, _documentLifetime.Token);
+            if (!CanAddCanvasContent()) return;
             if (!ReferenceEquals(Active, target) || replaceSelected && !target.Selection.SetEquals(selectedIds))
             { UpdateStatus(L.Get("Image.ImportChanged")); return; }
             InsertImages(target, normalized, replaceSelected); _editor.Tool = EditorTool.Select;
@@ -523,16 +615,22 @@ internal sealed partial class DesktopSession
     }
     private async Task<CapturedDesktop> CaptureCleanDesktopAsync()
     {
-        // WPF Popup/ContextMenu/ToolTip HWNDs are not members of Application.Windows.
-        // Include their presentation sources so transient editor chrome cannot enter a capture.
-        var ownWindows = PresentationSource.CurrentSources.OfType<HwndSource>()
-            .Where(source => source.RootVisual is UIElement { IsVisible: true }).Select(source => source.Handle)
-            .Concat(_app.Windows.Cast<Window>().Where(w => w.IsVisible).Select(w => new WindowInteropHelper(w).Handle))
-            .Where(h => h != 0).Distinct().ToArray();
-        using var scope = _host.HideForCapture(ownWindows);
-        var captured = await _documentCaptureService.CaptureAsync(_host.Monitors, scope.NotBeforeTimestamp, _documentLifetime.Token);
-        if (CaptureWarning(captured) is { } warning) UpdateStatus(warning);
-        return captured;
+        _cleanCaptureDepth++;
+        StopLiveEffectsCapture();
+        try
+        {
+            // WPF Popup/ContextMenu/ToolTip HWNDs are not members of Application.Windows.
+            // Include their presentation sources so transient editor chrome cannot enter a capture.
+            var ownWindows = PresentationSource.CurrentSources.OfType<HwndSource>()
+                .Where(source => source.RootVisual is UIElement { IsVisible: true }).Select(source => source.Handle)
+                .Concat(_app.Windows.Cast<Window>().Where(w => w.IsVisible).Select(w => new WindowInteropHelper(w).Handle))
+                .Where(h => h != 0).Distinct().ToArray();
+            using var scope = _host.HideForCapture(ownWindows);
+            var captured = await _documentCaptureService.CaptureAsync(_host.Monitors, scope.NotBeforeTimestamp, _documentLifetime.Token);
+            if (CaptureWarning(captured) is { } warning) UpdateStatus(warning);
+            return captured;
+        }
+        finally { _cleanCaptureDepth--; RequestRender(); }
     }
     private static string? CaptureWarning(CapturedDesktop capture) => capture.Outputs.Any(output => output.ProtectedContentMaskedOut)
         ? L.Get("Capture.ProtectedRegions") : null;
@@ -565,13 +663,5 @@ internal sealed partial class DesktopSession
         _captureOrigin = origin;
         if (ReferenceEquals(Active, _capture)) _editor.ScreenOrigin = origin;
         return true;
-    }
-    private void BringSelectionIntoView(EditorSession session)
-    {
-        if (session.SelectionBounds() is not { } bounds) return;
-        var visible = VisibleDocumentArea();
-        if (bounds.Intersects(visible)) return;
-        var delta = Affine2D.Translation(visible.Center.X - bounds.Center.X, visible.Center.Y - bounds.Center.Y);
-        foreach (var element in session.SelectedElements()) element.Transform = delta.Compose(element.Transform);
     }
 }

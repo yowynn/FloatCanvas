@@ -9,10 +9,24 @@ internal static class ArrowHeadRenderingTests
     {
         using var renderer = new SceneRenderer();
         var assets = new AssetLibrary();
+        foreach (double degrees in new[] { 0d, 35d, 135d, 225d, 315d })
+        {
+            var thick = new CanvasElement { Kind = ElementKind.Arrow, Points = [new(-100, 0), new(0, 0)],
+                Transform = Affine2D.Translation(150, 150).Compose(Affine2D.Rotation(degrees)),
+                Style = new() { Stroke = 0xFFFF0000, StrokeWidth = 20, ArrowHeadSize = 80 } };
+            var viewport = new SceneDocument { Viewport = new(0, 0, 300, 300), Elements = [thick] };
+            using var result = SKBitmap.Decode(renderer.ExportPng(viewport, assets, true));
+            var beyondTip = thick.Transform.TransformPoint(new(5, 0));
+            check(degrees + " degree filled arrow has no shaft cap protruding beyond its pointed tip", !InkNear(result, beyondTip) && !ElementGeometry.HitTest(thick, beyondTip, 0));
+            var joint = thick.Transform.TransformPoint(new(-70, 0));
+            check(degrees + " degree thick arrow connects shaft and filled head", InkNear(result, joint) && ElementGeometry.HitTest(thick, joint, 0));
+        }
+        var shortArrow = new CanvasElement { Kind = ElementKind.DoubleArrow, Points = [new(80, 80), new(85, 80)], Style = new() { StrokeWidth = 20, ArrowHeadSize = 30 } };
+        check("overlapping arrow heads do not create a reversed shaft outside their endpoints", ElementGeometry.LineShaftPoints(shortArrow).Count == 0);
         var arrow = new CanvasElement { Kind = ElementKind.Arrow, Points = [new(20, 70), new(140, 70)],
             Style = new() { Stroke = 0xFFFF0000, StrokeWidth = 2, ArrowHeadSize = 40 } };
         var scene = new SceneDocument { Viewport = new(0, 0, 180, 140), Elements = [arrow] };
-        foreach (var style in Enum.GetValues<ArrowHeadStyle>())
+        foreach (var style in Enum.GetValues<ArrowHeadStyle>().Where(s => s != ArrowHeadStyle.None))
         {
             arrow.Style.ArrowHeadStyle = style;
             using var bitmap = SKBitmap.Decode(renderer.ExportPng(scene, assets, true));

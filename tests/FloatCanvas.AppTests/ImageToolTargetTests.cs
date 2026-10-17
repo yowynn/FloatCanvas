@@ -49,9 +49,18 @@ internal static class ImageToolTargetTests
                 before = JsonSerializer.Serialize(multi.Session.Document);
                 messages = []; multi.Controller.Message += messages.Add;
                 Gesture(multi.Controller);
-                assert($"{tool} rejects two selected images with locks {locks} without silently choosing another target",
-                    JsonSerializer.Serialize(multi.Session.Document) == before && multi.Session.UndoCount == 0 && multi.Session.Selection.Count == 2);
-                assert($"{tool} asks for a single image with locks {locks}", messages.SequenceEqual([L.Get("Editor.SelectSingleImage")]));
+                if (tool == EditorTool.Crop)
+                {
+                    assert($"{tool} rejects two selected images with locks {locks} without silently choosing another target",
+                        JsonSerializer.Serialize(multi.Session.Document) == before && multi.Session.UndoCount == 0 && multi.Session.Selection.Count == 2);
+                    assert($"{tool} asks for a single image with locks {locks}", messages.SequenceEqual([L.Get("Editor.SelectSingleImage")]));
+                }
+                else
+                {
+                    assert($"{tool} processes the frozen canvas when multiple images are selected with locks {locks}",
+                        multi.Session.Document.Background!.Effects.Count == 1 && multi.Session.Document.Elements.All(e => e.Effects.Count == 0) && multi.Session.UndoCount == 1);
+                    assert($"{tool} does not require a single image for a general canvas effect", messages.Count == 0);
+                }
             }
 
             var mixed = Create(tool, false);

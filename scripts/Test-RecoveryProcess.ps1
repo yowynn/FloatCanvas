@@ -58,7 +58,9 @@ try {
     if (-not (Test-Path -LiteralPath $ApplicationPath)) { throw "Application executable is missing: $ApplicationPath" }
     Write-Host 'Recovery process acceptance starts: only two owned app processes use this isolated profile. Welcome windows may be visible; no input will be injected.'
     $firstStarted = [DateTimeOffset]::Now
-    $first = Start-OwnedApp (Join-Path $profile 'first-process') @('--profile', $profile)
+    # Normal startup intentionally opens a fresh canvas. This fixture explicitly
+    # resumes its seeded workspace before testing crash persistence and restart.
+    $first = Start-OwnedApp (Join-Path $profile 'first-process') @('--recover', '--profile', $profile)
     $firstId = $first.Id
     if (-not $first.WaitForInputIdle(10000)) { throw 'First owned process did not initialize its input message pump.' }
     $current = Join-Path $profile 'recovery/workspace.floatcanvas'

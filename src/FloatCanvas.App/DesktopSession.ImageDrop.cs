@@ -29,11 +29,11 @@ internal sealed partial class DesktopSession
 
     private void BeginCanvasDropReception()
     {
+        if (!CanAddCanvasContent()) return;
         CloseImageDrop(); _editor.Cancel();
         _imageDropOrigin = _editor.ScreenOrigin;
         _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token);
         _toolbar.Hide(); _inspector?.Hide(); _textEditor?.Hide();
-        _host.SetVisible(true);
         // The source owns the mouse and its OLE loop until Drop returns. Showing a
         // target must not activate a window or acquire the ordinary keyboard lease.
         if (!_host.TryStartDropReception(out var failure))
@@ -62,12 +62,12 @@ internal sealed partial class DesktopSession
         CloseImageDrop(); RequestRender();
     }
 
-    private bool SupportsCanvasImageDrop(OleDataObject data) => !_disposed && !DocumentOperationBusy &&
+    private bool SupportsCanvasImageDrop(OleDataObject data) => !_disposed && _host.IsVisible && !DocumentOperationBusy &&
         (_host.IsEditing || _host.IsReceivingDrop) && ImageDropDataReader.Supports(data);
 
     private bool ReceiveCanvasImageDrop(OleDataObject data, OverlayPoint point)
     {
-        if (_disposed || DocumentOperationBusy || (!_host.IsEditing && !_host.IsReceivingDrop)) return false;
+        if (_disposed || !_host.IsVisible || DocumentOperationBusy || (!_host.IsEditing && !_host.IsReceivingDrop)) return false;
         _editor.Cancel();
         var request = _imageDropRequest;
         if (request is null)
@@ -103,14 +103,14 @@ internal sealed partial class DesktopSession
     {
         try
         {
-            if (_disposed || !request.IsCurrent(_imageDropRequest, _live, _capture) ||
+            if (_disposed || !_host.IsVisible || !request.IsCurrent(_imageDropRequest, _live, _capture) ||
                 GetToolbarForegroundWindow() != sourceForeground) return;
             _host.EndDropReception();
             // This runs only after the native Drop callback has returned to OLE.
             if (!SetEditing(true, preserveImageDrop: true)) { request.Cancel(); return; }
             UpdateStatus(L.Get("ImageDrop.Importing"));
             var images = await NormalizeCanvasDropAsync(payload, request.Token);
-            if (_disposed || _documentStopped || !request.TryCommit(_imageDropRequest, _live, _capture, images)) return;
+            if (_disposed || _documentStopped || !_host.IsVisible || !request.TryCommit(_imageDropRequest, _live, _capture, images)) return;
             if (ReferenceEquals(Active, request.Target)) _editor.Tool = EditorTool.Select;
             ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("ImageDrop.Imported", images.Count));
         }

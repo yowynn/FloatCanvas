@@ -15,7 +15,7 @@ internal static class ArrowHeadTests
         check(ElementGeometry.ArrowHead(arrow)[1].X == 76, "automatic arrow head follows stroke width times four");
         arrow.Style.StrokeWidth = 2; arrow.Style.ArrowHeadSize = 40;
         var transform = Affine2D.Translation(200, -50).Compose(Affine2D.Rotation(33)).Compose(Affine2D.Scale(2, .5));
-        foreach (var style in Enum.GetValues<ArrowHeadStyle>())
+        foreach (var style in Enum.GetValues<ArrowHeadStyle>().Where(s => s != ArrowHeadStyle.None))
         {
             arrow.Style.ArrowHeadStyle = style;
             var copy = arrow.Clone();
@@ -52,7 +52,7 @@ internal static class ArrowHeadTests
         arrow.Style.ArrowHeadSize = 512;
         check(ElementGeometry.Bounds(arrow).Left < -400, "large explicit heads remain part of object bounds");
         arrow.Points = [new(0, 0), new(0, 0)];
-        foreach (var style in Enum.GetValues<ArrowHeadStyle>())
+        foreach (var style in Enum.GetValues<ArrowHeadStyle>().Where(s => s != ArrowHeadStyle.None))
         {
             arrow.Style.ArrowHeadStyle = style;
             check(ElementGeometry.ArrowHead(arrow).All(p => double.IsFinite(p.X) && double.IsFinite(p.Y)), $"{style}: zero-length segment has finite head geometry");

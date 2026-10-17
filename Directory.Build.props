@@ -5,5 +5,7 @@
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <Authors>Heptayo</Authors>
+    <Company>Heptayo</Company>
   </PropertyGroup>
 </Project>

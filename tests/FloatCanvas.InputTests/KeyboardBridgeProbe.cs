@@ -179,17 +179,17 @@ internal static partial class Program
                 "An actual isolated Escape closes the real modal dialog and returns to the native key handler");
             BridgePhases.Add(new { Phase = "ActualShowDialog", Snapshot = modalX, Text = KeyboardBridgeFixture.ReportText(modal.Input.Text), modal.ClosedByEscape, modal.Returned });
 
-            // Leave through a swallowed Ctrl+Alt+F command packet, then enter through the real
+            // Leave through a swallowed Ctrl+backtick command packet, then enter through the real
             // registered hotkey while pass-through is active. Only owned release targets are allowed.
             Native.SetForegroundWindow(nativeInput); Native.SetFocus(nativeInput); await Task.Delay(30);
             int toggleBefore = BridgeTogglePackets;
-            BridgeChord(observer, nativeInput, [0x11, 0x12, 0x46]);
-            await BridgeWait(() => !host.IsEditing && !isolation.IsLeaseActive, "The isolated default F chord did not exit the lease.");
-            BridgeRequire(BridgeTogglePackets > toggleBefore, "Ctrl+Alt+F exits editing through the private Toggle command rather than global reinjection");
+            BridgeChord(observer, nativeInput, [0x11, 0xC0]);
+            await BridgeWait(() => !host.IsEditing && !isolation.IsLeaseActive, "The isolated default backtick chord did not exit the lease.");
+            BridgeRequire(BridgeTogglePackets > toggleBefore, "Ctrl+backtick exits editing through the private Toggle command rather than global reinjection");
             await ActivateKeyboardFixture(observer); int globalBefore = BridgeGlobalToggleEvents;
-            BridgeChord(observer, observer.Handle, [0x11, 0x12, 0x46]);
-            await BridgeWait(() => host.IsEditing && isolation.IsLeaseActive, "The real registered default F chord did not re-enter the private lease.");
-            BridgeRequire(BridgeGlobalToggleEvents > globalBefore, "Pass-through Ctrl+Alt+F enters through real RegisterHotKey and opens a new private lease");
+            BridgeChord(observer, observer.Handle, [0x11, 0xC0]);
+            await BridgeWait(() => host.IsEditing && isolation.IsLeaseActive, "The real registered default backtick chord did not re-enter the private lease.");
+            BridgeRequire(BridgeGlobalToggleEvents > globalBefore, "Pass-through Ctrl+backtick enters through real RegisterHotKey and opens a new private lease");
 
             Native.SetForegroundWindow(nativeInput); Native.SetFocus(nativeInput); await Task.Delay(30);
             await observer.ResetAsync(); int balancedBefore = BridgePackets.Count(p => p.LocalBalance && p.VirtualKey == 0x58);

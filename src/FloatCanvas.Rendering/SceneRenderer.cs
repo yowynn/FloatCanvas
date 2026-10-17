@@ -5,7 +5,7 @@ using SkiaSharp;
 namespace FloatCanvas.Rendering;
 
 /// <summary>Single-threaded renderer shared by the desktop overlay and offscreen exports.</summary>
-public sealed class SceneRenderer : IDisposable
+public sealed partial class SceneRenderer : IDisposable
 {
     private readonly Dictionary<Guid, PathEntry> _paths = [];
     private readonly Dictionary<string, ImageEntry> _images = new(StringComparer.Ordinal);
@@ -29,6 +29,8 @@ public sealed class SceneRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(assets);
         int saved = canvas.Save();
+        var previousDocument = _drawingDocument;
+        _drawingDocument = document;
         try
         {
             canvas.ClipRect(ToRect(document.Viewport));
@@ -46,11 +48,11 @@ public sealed class SceneRenderer : IDisposable
                 if (opacity < 1) canvas.Restore();
             }
         }
-        finally { canvas.RestoreToCount(saved); EndFrame(); }
+        finally { _drawingDocument = previousDocument; canvas.RestoreToCount(saved); EndFrame(); }
     }
 
-    internal void BeginFrame() { ObjectDisposedException.ThrowIf(_disposed, this); _clock++; }
-    internal void EndFrame() => TrimCaches();
+    internal void BeginFrame() { ObjectDisposedException.ThrowIf(_disposed, this); ClearLiveEffectImages(); _clock++; }
+    internal void EndFrame() { TrimCaches(); ClearLiveEffectImages(); }
     internal void DrawBackground(SKCanvas canvas, SceneDocument document, AssetLibrary assets)
     {
         if (document.Background is { Visible: true } background) DrawElement(canvas, background, assets);
@@ -58,7 +60,12 @@ public sealed class SceneRenderer : IDisposable
     /// <summary>Draws raw annotation alpha in original z order; the caller owns viewport and global opacity.</summary>
     internal void DrawElements(SKCanvas canvas, IReadOnlyList<CanvasElement> elements, AssetLibrary assets, int first, int endExclusive)
     {
-        for (int i = first; i < endExclusive; i++) if (elements[i].Visible) DrawElement(canvas, elements[i], assets);
+        for (int i = first; i < endExclusive; i++)
+            if (elements[i].Visible)
+            {
+                if (elements[i].Kind == ElementKind.LivePixelate) DrawLivePixelate(canvas, elements, i, assets);
+                else DrawElement(canvas, elements[i], assets);
+            }
     }
 
     public byte[] ExportPng(SceneDocument document, AssetLibrary assets, bool transparent = false) =>
@@ -70,6 +77,7 @@ public sealed class SceneRenderer : IDisposable
     public TextMetrics MeasureText(string text, ElementStyle style, double maxWidth = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (EmojiGlyphs.IsEmoji(text, style)) return EmojiGlyphs.Measure(text, style.FontSize);
         return _text.Measure(text, style, maxWidth);
     }
 
@@ -107,13 +115,14 @@ public sealed class SceneRenderer : IDisposable
             else if (element.Kind == ElementKind.Text)
             {
                 SetPaint(element.Style.Stroke, SKPaintStyle.Fill);
-                _text.Draw(canvas, element.Text, element.Style, element.Width, _paint);
+                if (EmojiGlyphs.IsEmoji(element.Text, element.Style)) EmojiGlyphs.Draw(canvas, element.Text, element.Style.FontSize, _paint);
+                else _text.Draw(canvas, element.Text, element.Style, element.Width, _paint);
             }
             else if (element.Kind == ElementKind.Number) DrawNumber(canvas, element);
             else
             {
                 var geometry = GetPath(element);
-                bool shape = element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle;
+                bool shape = element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
                 if (shape && (element.Style.Fill >> 24) != 0)
                 {
                     SetPaint(element.Style.Fill, SKPaintStyle.Fill);
@@ -122,14 +131,19 @@ public sealed class SceneRenderer : IDisposable
                 if (element.Style.StrokeWidth > 0)
                 {
                     SetPaint(element.Style.Stroke, SKPaintStyle.Stroke, element.Style.StrokeWidth);
+                    using var dash = CreateDash(element.Style);
+                    _paint.PathEffect = dash;
                     if (element.Kind == ElementKind.Highlighter) _paint.Color = _paint.Color.WithAlpha((byte)Math.Round(_paint.Color.Alpha * .35));
                     if (element.Points.Count == 1 && element.Kind is ElementKind.Freehand or ElementKind.Highlighter)
                         canvas.DrawPoint((float)element.Points[0].X, (float)element.Points[0].Y, _paint);
-                    else canvas.DrawPath(geometry.Path, _paint);
-                    if (element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow)
+                    else canvas.DrawPath(geometry.StrokePath, _paint);
+                    _paint.PathEffect = null;
+                    if (ElementGeometry.IsLine(element.Kind))
                     {
-                        _paint.Style = element.Style.ArrowHeadStyle == ArrowHeadStyle.Open ? SKPaintStyle.Stroke : SKPaintStyle.Fill;
-                        canvas.DrawPath(geometry.Heads, _paint);
+                        _paint.Style = SKPaintStyle.Fill;
+                        canvas.DrawPath(geometry.FilledHeads, _paint);
+                        _paint.Style = SKPaintStyle.Stroke;
+                        canvas.DrawPath(geometry.OpenHeads, _paint);
                     }
                 }
             }
@@ -142,6 +156,18 @@ public sealed class SceneRenderer : IDisposable
         _paint.Color = new SKColor(color);
         _paint.Style = style;
         _paint.StrokeWidth = (float)width;
+        _paint.PathEffect = null;
+    }
+
+    private static SKPathEffect? CreateDash(ElementStyle style)
+    {
+        float width = (float)Math.Max(.1, style.StrokeWidth);
+        return style.StrokePattern switch
+        {
+            StrokePattern.Dashed => SKPathEffect.CreateDash([width * 4, width * 3], 0),
+            StrokePattern.Dotted => SKPathEffect.CreateDash([width * .001f, width * 2.5f], 0),
+            _ => null
+        };
     }
 
     private PathEntry GetPath(CanvasElement element)
@@ -149,31 +175,42 @@ public sealed class SceneRenderer : IDisposable
         if (_paths.TryGetValue(element.Id, out var old) && old.Matches(element)) { old.Used = _clock; return old; }
         if (old is not null) { _paths.Remove(element.Id); old.Dispose(); }
         using var builder = new SKPathBuilder();
-        using var heads = new SKPathBuilder();
+        using var filledHeads = new SKPathBuilder();
+        using var openHeads = new SKPathBuilder();
         float width = (float)element.Width, height = (float)element.Height;
         switch (element.Kind)
         {
-            case ElementKind.Rectangle: builder.AddRect(new(0, 0, width, height)); break;
+            case ElementKind.Rectangle:
             case ElementKind.RoundedRectangle:
-                float radius = Math.Min(width, height) * .2f;
+                float radius = (float)ElementGeometry.CornerRadius(element);
                 builder.AddRoundRect(new(0, 0, width, height), radius, radius); break;
             case ElementKind.Ellipse: builder.AddOval(new(0, 0, width, height)); break;
             case ElementKind.Triangle:
                 builder.MoveTo(width / 2, 0); builder.LineTo(width, height); builder.LineTo(0, height); builder.Close(); break;
+            case ElementKind.Symbol:
+                AddHead(builder, ElementGeometry.Outline(element), true); break;
             default:
-                if (element.Points.Count > 0)
+                var points = ElementGeometry.IsLine(element.Kind) ? ElementGeometry.LineShaftPoints(element) : element.Points;
+                if (points.Count > 0)
                 {
-                    builder.MoveTo(ToPoint(element.Points[0]));
-                    foreach (var point in element.Points.Skip(1)) builder.LineTo(ToPoint(point));
-                    if (element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow && element.Points.Count >= 2)
-                    {
-                        foreach (var head in ElementGeometry.GetArrowHeads(element))
-                            AddHead(heads, head, element.Style.ArrowHeadStyle != ArrowHeadStyle.Open);
-                    }
+                    builder.MoveTo(ToPoint(points[0]));
+                    foreach (var point in points.Skip(1)) builder.LineTo(ToPoint(point));
                 }
+                if (ElementGeometry.IsLine(element.Kind) && element.Points.Count >= 2)
+                    foreach (var head in ElementGeometry.GetStyledArrowHeads(element))
+                        AddHead(head.Style == ArrowHeadStyle.Open ? openHeads : filledHeads, head.Points, head.Style != ArrowHeadStyle.Open);
                 break;
         }
-        var entry = new PathEntry(element, builder.Detach(), heads.Detach(), _clock);
+        SKPath? patternedStroke = null;
+        if (element.Style.StrokePattern != StrokePattern.Solid && element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse)
+        {
+            // Native curved paths have different contour origins and curve lengths.
+            // Patterned strokes share hit geometry; fills retain the exact native curve.
+            using var strokeBuilder = new SKPathBuilder();
+            AddHead(strokeBuilder, ElementGeometry.Outline(element), true);
+            patternedStroke = strokeBuilder.Detach();
+        }
+        var entry = new PathEntry(element, builder.Detach(), patternedStroke, filledHeads.Detach(), openHeads.Detach(), _clock);
         _paths[element.Id] = entry;
         PathBuildCount++;
         return entry;
@@ -302,6 +339,7 @@ public sealed class SceneRenderer : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        ClearLiveEffectImages();
         foreach (var entry in _paths.Values) entry.Dispose();
         foreach (var entry in _images.Values) entry.Dispose();
         foreach (var entry in _effects.Values) entry.Dispose();
@@ -315,20 +353,28 @@ public sealed class SceneRenderer : IDisposable
     private static SKRect ToRect(RectD r) => new((float)r.Left, (float)r.Top, (float)r.Right, (float)r.Bottom);
     private static SKMatrix ToMatrix(Affine2D t) => new((float)t.M11, (float)t.M12, (float)t.OffsetX, (float)t.M21, (float)t.M22, (float)t.OffsetY, 0, 0, 1);
 
-    private sealed class PathEntry(CanvasElement element, SKPath path, SKPath heads, long used) : IDisposable
+    private sealed class PathEntry(CanvasElement element, SKPath path, SKPath? patternedStroke, SKPath filledHeads, SKPath openHeads, long used) : IDisposable
     {
         private readonly ElementKind _kind = element.Kind;
         private readonly double _width = element.Width, _height = element.Height, _strokeWidth = element.Style.StrokeWidth;
         private readonly ArrowHeadStyle _arrowHeadStyle = element.Style.ArrowHeadStyle;
+        private readonly ArrowHeadStyle? _startArrowHead = element.Style.StartArrowHead, _endArrowHead = element.Style.EndArrowHead;
+        private readonly double? _cornerRadius = element.CornerRadius;
+        private readonly SymbolKind _symbol = element.Symbol;
         private readonly double _arrowHeadSize = element.Style.ArrowHeadSize;
+        private readonly bool _patterned = element.Style.StrokePattern != StrokePattern.Solid;
         private readonly PointD[] _points = element.Points.ToArray();
         public SKPath Path { get; } = path;
-        public SKPath Heads { get; } = heads;
+        public SKPath StrokePath => patternedStroke ?? Path;
+        public SKPath FilledHeads { get; } = filledHeads;
+        public SKPath OpenHeads { get; } = openHeads;
         public long Used { get; set; } = used;
         public bool Matches(CanvasElement e) => _kind == e.Kind && _width == e.Width && _height == e.Height && _strokeWidth == e.Style.StrokeWidth &&
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
+            _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
+            _patterned == (e.Style.StrokePattern != StrokePattern.Solid) &&
             _points.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(e.Points));
-        public void Dispose() { Path.Dispose(); Heads.Dispose(); }
+        public void Dispose() { Path.Dispose(); patternedStroke?.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
     }
     private class ImageEntry(SKImage image, long used) : IDisposable
     {

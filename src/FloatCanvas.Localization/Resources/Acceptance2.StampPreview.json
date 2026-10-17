@@ -1,0 +1,5 @@
+{
+  "Acceptance2.StampPreview.Shortcut": {"zh":"快捷键 {0}","en":"Shortcut {0}"},
+  "Acceptance2.StampPreview.Scale": {"zh":"预览比例 {0:0.#}%","en":"Preview scale {0:0.#}%"},
+  "Acceptance2.StampPreview.ScaleAxes": {"zh":"横向 {0:0.#}% · 纵向 {1:0.#}%","en":"X {0:0.#}% · Y {1:0.#}%"}
+}

@@ -1,0 +1,5 @@
+{
+  "Acceptance2.Toolbar.Done": { "zh": "完成编辑，返回穿透模式", "en": "Finish editing and pass through" },
+  "Acceptance2.Toolbar.Capture": { "zh": "截取屏幕并编辑…", "en": "Capture and edit screen…" },
+  "Acceptance2.Toolbar.CaptureHint": { "zh": "冻结当前屏幕，框选截图区域，再用同一套工具标注和导出；实时画布会保留。", "en": "Freeze the screen, select a region, then annotate and export it with the same tools. Your live canvas is preserved." }
+}

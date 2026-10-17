@@ -13,6 +13,7 @@ internal sealed class KeyboardSuppressionState
     private readonly long tailLifetime;
     private readonly byte[] local = new byte[256];
     private readonly bool[] physical = new bool[256], inherited = new bool[256], suppressed = new bool[256];
+    private readonly bool[] visibilityCommand = new bool[256];
     private readonly bool[] globalKnown = new bool[256], globalDown = new bool[256];
     private readonly bool[] claimedDown = new bool[256];
     private readonly long[] tails = new long[256];
@@ -54,7 +55,7 @@ internal sealed class KeyboardSuppressionState
         // Keep queued balancing/end packets from the old lease, but never stale input keydowns.
         var controls = queue.Where(p => p.IsLocalBalance || p.Kind == KeyboardInputPacketKind.LeaseEnded).ToArray();
         queue.Clear(); foreach (var packet in controls) queue.Enqueue(packet);
-        Array.Copy(initialState, local, 256); Array.Clear(physical); Array.Clear(inherited); Array.Clear(suppressed);
+        Array.Copy(initialState, local, 256); Array.Clear(physical); Array.Clear(inherited); Array.Clear(suppressed); Array.Clear(visibilityCommand);
         ExpireTails(now);
         for (int i = 1; i < 255; i++)
         {
@@ -105,6 +106,9 @@ internal sealed class KeyboardSuppressionState
             return false; // No global reconstruction of an already-suppressed Alt/Ctrl modifier.
         }
         if (up && !suppressed[key]) { UpdateLocal(key, true, false); TrackPassed(key, true); return false; }
+        // Visibility is independent of editing. A consumed visibility key keeps its
+        // stream until physical release even if its modifiers have already been lifted.
+        if (visibilityCommand[key] && !up) { SuppressedCount++; return true; }
         if (queue.Count >= capacity)
         {
             End(KeyboardLeaseEndReason.QueueOverflow, now);
@@ -116,11 +120,22 @@ internal sealed class KeyboardSuppressionState
         UpdateLocal(key, up, !repeat && !up);
         suppressed[key] = !up; scans[key] = scan; flags[key] = eventFlags; targets[key] = foreground;
         SuppressedCount++;
-        if (!up && !repeat && (Matches(toggle, vk) || Matches(hide, vk)))
+        if (visibilityCommand[key])
         {
-            bool isHide = Matches(hide, vk);
-            End(isHide ? KeyboardLeaseEndReason.Hide : KeyboardLeaseEndReason.Toggle, now,
-                isHide ? KeyboardInputPacketKind.Hide : KeyboardInputPacketKind.Toggle);
+            visibilityCommand[key] = false;
+            queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, true, false, foreground,
+                balance:true, message:message));
+            return true;
+        }
+        if (!up && !repeat && Matches(hide, vk))
+        {
+            visibilityCommand[key] = true;
+            queue.Enqueue(Packet(KeyboardInputPacketKind.Hide, 0, 0, 0, 0, false, false, 0));
+            return true;
+        }
+        if (!up && !repeat && Matches(toggle, vk))
+        {
+            End(KeyboardLeaseEndReason.Toggle, now, KeyboardInputPacketKind.Toggle);
             return true;
         }
         queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, up, repeat, foreground, message: message));
@@ -187,6 +202,7 @@ internal sealed class KeyboardSuppressionState
     {
         if (!IsActive) return;
         IsActive = false; LastEndReason = reason;
+        Array.Clear(visibilityCommand);
         // Merge pending old-lease releases with new ones: quick Begin/End cannot lose balance
         // or grow an unbounded backlog of control packets while a UI packet is in flight.
         var balanceKeys = new HashSet<int>(queue.Where(p => p.IsLocalBalance).Select(p => (int)p.VirtualKey));

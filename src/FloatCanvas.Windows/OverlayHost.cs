@@ -14,6 +14,7 @@ namespace FloatCanvas.Windows;
 public sealed partial class OverlayHost : IDisposable
 {
     private const string ClassName = "FloatCanvas.Overlay.v1";
+    private const string NonRudePropertyName = "NonRudeHWND";
     private const int ToggleHotkeyId = 0x4641, HideHotkeyId = 0x4642;
     private static readonly WindowProcedure Procedure = Dispatch;
     private static readonly object ClassGate = new();
@@ -93,12 +94,16 @@ public sealed partial class OverlayHost : IDisposable
 
     public OverlayHost(OverlayMonitorScope scope) : this(scope, EnumerateMonitors) { }
 
+    // Hidden native-contract fixture: real monitor HWNDs without showing or activating a desktop surface.
+    internal OverlayHost(OverlayMonitorScope scope, bool initiallyVisible) : this(scope, EnumerateMonitors, initiallyVisible) { }
+
     // Test seam for synthetic enumeration; public construction always enumerates real Windows screens.
-    internal OverlayHost(OverlayMonitorScope scope, Func<IReadOnlyList<MonitorInfo>> monitorProvider)
+    internal OverlayHost(OverlayMonitorScope scope, Func<IReadOnlyList<MonitorInfo>> monitorProvider, bool initiallyVisible = true)
     {
         ArgumentNullException.ThrowIfNull(monitorProvider);
         if (!Enum.IsDefined(scope)) throw new ArgumentOutOfRangeException(nameof(scope));
         Scope = scope;
+        IsVisible = initiallyVisible;
         _monitorProvider = monitorProvider;
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19045))
             throw new PlatformNotSupportedException(L.Get("Overlay.PlatformUnsupported"));
@@ -179,10 +184,9 @@ public sealed partial class OverlayHost : IDisposable
         if (IsEditing) ExitEditing(restorePreviousForeground: false);
         CancelPointer();
         _previousForeground = GetForegroundWindow();
-        IsVisible = true;
         foreach (var pair in _windows)
         {
-            ShowWindow(pair.Display.Handle, 8); // SW_SHOWNA
+            ShowWindow(pair.Display.Handle, IsVisible ? 8 : 0); // SW_SHOWNA
             ShowWindow(pair.Input.Handle, 8);
             SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, 0x13); // no move/size/activate
         }
@@ -228,7 +232,6 @@ public sealed partial class OverlayHost : IDisposable
     public void SetVisible(bool visible)
     {
         CheckThread();
-        if (!visible) SetEditing(false);
         IsVisible = visible;
         // SW_SHOWNA also changes z order. A scene switch may call this while the
         // toolbar is already visible; re-showing an opaque display would cover it.
@@ -399,7 +402,7 @@ public sealed partial class OverlayHost : IDisposable
                 {
                     display = CreateNativeWindow(WindowKind.Display, monitor, monitor.Bounds,
                         ExTopmost | ExToolWindow | ExLayered | ExTransparent | ExNoActivate);
-                    input = CreateNativeWindow(WindowKind.Input, monitor, monitor.Bounds, ExTopmost | ExToolWindow | ExLayered);
+                    input = CreateNativeWindow(WindowKind.Input, monitor, monitor.Bounds, ExTopmost | ExToolWindow | ExLayered | ExNoActivate);
                     if (!SetLayeredWindowAttributes(input.Handle, 0, 1, 2)) throw new Win32Exception(Marshal.GetLastWin32Error());
                     buffer = new(monitor.Bounds.Width, monitor.Bounds.Height);
                     _windows.Add(new(monitor, display, input, buffer));
@@ -552,9 +555,9 @@ public sealed partial class OverlayHost : IDisposable
             return 0;
         }
         if (state.Kind != WindowKind.Input) return DefWindowProcW(state.Handle, message, wParam, lParam);
-        // Temporary OLE reception belongs to the external source's current mouse gesture.
-        // A late physical click must not activate this surface before the owner ends it.
-        if (IsReceivingDrop && message == 0x21) return 3; // WM_MOUSEACTIVATE / MA_NOACTIVATE
+        // Keep the original mouse message, but activate only after a new canvas press
+        // passes the editing, modal, focus and capture checks below. OLE never activates.
+        if (message == 0x21) return 3; // WM_MOUSEACTIVATE / MA_NOACTIVATE
         if (message == WmActivate && (wParam & 0xFFFF) != 0)
         {
             // Windows raises the activated full-screen input HWND, even when its pixels
@@ -595,9 +598,8 @@ public sealed partial class OverlayHost : IDisposable
             }
             else
             {
-                if (_pressedButton != OverlayMouseButton.None) return 0;
+                if (!TryBeginCanvasPointer(state)) return 0;
                 _pressedButton = button;
-                SetCapture(state.Handle);
                 RaisePointer(message is WmLeftDouble or WmRightDouble or WmMiddleDouble ? OverlayPointerKind.DoubleClick : OverlayPointerKind.Down, button,
                     position: MessagePosition(state, message, lParam));
             }
@@ -616,6 +618,15 @@ public sealed partial class OverlayHost : IDisposable
         {
             var error = Marshal.GetLastWin32Error();
             if (!state.Freed) reference.Free();
+            throw new Win32Exception(error, L.Get("Overlay.WindowCreationFailed"));
+        }
+        // The full monitor client area is an effect/input surface, not a fullscreen application.
+        // Set the Shell's documented opt-out before any ShowWindow, including layout rebuilds.
+        // https://learn.microsoft.com/windows/win32/api/shobjidl_core/nf-shobjidl_core-itaskbarlist2-markfullscreenwindow
+        if (!SetPropW(hwnd, NonRudePropertyName, 1))
+        {
+            var error = Marshal.GetLastPInvokeError();
+            DestroyWindow(hwnd);
             throw new Win32Exception(error, L.Get("Overlay.WindowCreationFailed"));
         }
         return state;
@@ -648,6 +659,8 @@ public sealed partial class OverlayHost : IDisposable
         if (pointer != 0) { state = (WindowState)GCHandle.FromIntPtr(pointer).Target!; state.Handle = hwnd; }
         if (message == WmNcDestroy)
         {
+            // SetProp's contract requires our property entries to be removed before WM_NCDESTROY returns.
+            RemovePropW(hwnd, NonRudePropertyName);
             SetWindowLongPtr(hwnd, GwlpUserData, 0);
             if (state is not null) { state.Freed = true; state.Handle = 0; GCHandle.FromIntPtr(pointer).Free(); }
             return DefWindowProcW(hwnd, message, wParam, lParam);

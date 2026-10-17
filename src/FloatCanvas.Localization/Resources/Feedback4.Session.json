@@ -1,0 +1,8 @@
+{
+  "Editor.ElementKind.LivePixelate": {"zh":"动态马赛克","en":"Live pixelation"},
+  "Feedback4.Effect.LivePixelate": {"zh":"动态马赛克","en":"Live pixelation"},
+  "Feedback4.Effect.CaptureUnavailable": {"zh":"动态马赛克采集暂不可用，区域以实色覆盖：","en":"Live capture unavailable; the region is covered: "},
+  "Feedback4.Canvas.Hidden": {"zh":"画布已隐藏；显示画布后可继续添加标注","en":"Canvas hidden. Show the canvas to add annotations."},
+  "Feedback4.Canvas.Visible": {"zh":"画布已显示","en":"Canvas shown"},
+  "Feedback4.Canvas.NewStarted": {"zh":"已开始新画布；上一个画布已保存到恢复历史","en":"New canvas started. The previous workspace is in recovery history."}
+}

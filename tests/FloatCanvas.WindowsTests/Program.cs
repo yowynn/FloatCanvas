@@ -29,7 +29,14 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if(args.Contains("--hide-command-only"))
+    {
+        HideCommandTests.Run(Check);
+        Console.WriteLine($"Hide command lease checks: {checks}; passed=true; native hooks/UI/input never run.");
+        return 0;
+    }
     MonitorSelectionTests.Run(Check);
+    LiveCapturePureTests.Run(Check);
     var state = New();
     Check(Key(state, 0x58, scan: 45, flags: 0x10), "Fresh X is suppressed");
     Check(state.NeedsNotification, "First queued packet needs one UI wake");
@@ -71,31 +78,28 @@ try
     Key(state, 0x14, true); Drain(state); Key(state, 0x14); var capsAgain = Take(state); state.Complete(capsAgain.Sequence);
     Check(capsAgain.KeyboardState[0x14] == 0x80, "A fresh Caps Lock press toggles the local bit back");
 
-    var initial = new byte[256]; initial[0xA2] = initial[0x11] = initial[0xA4] = initial[0x12] = initial[0x46] = 0x80;
+    var initial = new byte[256]; initial[0xA2] = initial[0x11] = initial[0xC0] = 0x80;
     state = New(initial);
-    Check(!Key(state, 0x46) && !Key(state, 0x46, true) && !Key(state, 0xA2, true) && !Key(state, 0xA4, true),
-        "Entering through a globally held Ctrl+Alt+F preserves each repeat and physical up");
+    Check(!Key(state, 0xC0) && !Key(state, 0xC0, true) && !Key(state, 0xA2, true),
+        "Entering through a globally held Ctrl+backtick preserves each repeat and physical up");
     Check(state.QueuedCount == 0 && state.IsActive, "Inherited releases do not create fake relays or toggle commands");
-    Check(Key(state, 0x46), "A released inherited key becomes isolated on its next fresh down");
+    Check(Key(state, 0xC0), "A released inherited key becomes isolated on its next fresh down");
 
     state = new(256, 2000);
     Check(!Key(state, 0xA2, own: false), "Inactive physical down passes before lease acquisition");
     state.Begin(new byte[256], HotkeyBinding.DefaultToggle, HotkeyBinding.DefaultHide, 120);
     Check(!Key(state, 0xA2, true, now: 130), "A just-passed down remains inherited even before its native async state is visible");
 
-    foreach (bool hide in new[] { false, true })
-    {
-        state = New(); Key(state, 0xA2); Key(state, 0xA4);
-        if (hide) Key(state, 0xA0);
-        Check(Key(state, 0x46), "Configured command trigger is swallowed");
-        var packets = Drain(state);
-        Check(!state.IsActive && packets.Count(p => p.Kind == (hide ? KeyboardInputPacketKind.Hide : KeyboardInputPacketKind.Toggle)) == 1,
-            "Configured chord emits exactly one private command and ends the lease");
-        Check(packets.Last().Kind == KeyboardInputPacketKind.LeaseEnded && packets.Where(p => p.Kind == KeyboardInputPacketKind.Key).All(p => p.IsLocalBalance && p.IsKeyUp),
-            "Commands discard pending keydowns and precede their end marker with local balancing ups");
-        Check(Key(state, 0x46, now: 140) && Key(state, 0x46, true, now: 150), "Consumed command repeat and physical tail up cannot leak");
-        Check(!Key(state, 0x46, now: 160), "A new inactive press after the tail release passes normally");
-    }
+    state = New(); Key(state, 0xA2);
+    Check(Key(state, 0xC0), "Configured OEM backtick mode toggle is swallowed");
+    var commandPackets = Drain(state);
+    Check(!state.IsActive && commandPackets.Count(p => p.Kind == KeyboardInputPacketKind.Toggle) == 1,
+        "The mode toggle emits one command and ends its editing lease");
+    Check(commandPackets.Last().Kind == KeyboardInputPacketKind.LeaseEnded && commandPackets.Where(p => p.Kind == KeyboardInputPacketKind.Key).All(p => p.IsLocalBalance && p.IsKeyUp),
+        "Mode exit discards pending keydowns and balances keys before the end marker");
+    Check(Key(state, 0xC0, now: 140) && Key(state, 0xC0, true, now: 150), "Consumed mode-toggle repeat and physical tail up cannot leak");
+    Check(!Key(state, 0xC0, now: 160), "A new inactive press after the mode-toggle tail passes normally");
+    HideCommandTests.Run(Check);
 
     state = New(); Key(state, 0x58, scan: 45); state.End(KeyboardLeaseEndReason.Explicit, 200);
     var ended = Drain(state);
@@ -182,16 +186,16 @@ try
     }
     state = New();
     state.UpdateHotkeys(new(6, 0x47), new(7, 0x48));
-    Key(state, 0xA2); Key(state, 0xA4); Key(state, 0x46);
+    Key(state, 0xA2); Key(state, 0xC0);
     Check(state.IsActive && Drain(state).All(p => p.Kind == KeyboardInputPacketKind.Key),
         "An atomic binding update stops recognizing the old chord without ending the lease");
-    Key(state, 0x46, true); Key(state, 0xA4, true); Key(state, 0xA0); Key(state, 0x47);
+    Key(state, 0xC0, true); Key(state, 0xA0); Key(state, 0x47);
     Check(!state.IsActive && Drain(state).Count(p => p.Kind == KeyboardInputPacketKind.Toggle) == 1,
         "The updated toggle binding works inside the same lease");
     state = New(); bool rejectedUpdate = false;
     try { state.UpdateHotkeys(new(8, 0x47), HotkeyBinding.DefaultHide); }
     catch (ArgumentException) { rejectedUpdate = true; }
-    Key(state, 0xA2); Key(state, 0xA4); Key(state, 0x46);
+    Key(state, 0xA2); Key(state, 0xC0);
     Check(rejectedUpdate && Drain(state).Count(p => p.Kind == KeyboardInputPacketKind.Toggle) == 1,
         "Rejected bindings leave the previous active command configuration intact");
     Check(!Key(state, 0) && !Key(state, 255), "Invalid keyboard VKs are never captured");

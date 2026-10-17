@@ -1,0 +1,7 @@
+{
+  "ToolOptions.DefaultWidth": { "zh": "默认宽度", "en": "Default width" },
+  "ToolOptions.DefaultHeight": { "zh": "默认高度", "en": "Default height" },
+  "ToolOptions.DefaultLength": { "zh": "默认长度", "en": "Default length" },
+  "ToolOptions.NewPresetHint": { "zh": "保存当前参数为新预设", "en": "Save current parameters as a new preset" },
+  "ToolOptions.RenameHint": { "zh": "重命名所选预设；修改名称后按 Enter", "en": "Rename the selected preset; edit its name and press Enter" }
+}

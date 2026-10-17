@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace FloatCanvas.Core;
 
 /// <summary>One editable document and atomic user operations. Assets are never copied into history.</summary>
-public sealed class EditorSession
+public sealed partial class EditorSession
 {
     private sealed record HistoryEntry(string Label, SceneDocument Before, SceneDocument After, HashSet<Guid> SelectionBefore, HashSet<Guid> SelectionAfter, long Bytes, long Sequence, string[] AssetIds);
     private readonly List<HistoryEntry> undo = [], redo = [];
@@ -49,6 +49,7 @@ public sealed class EditorSession
     {
         if (transactionBefore is null) throw new InvalidOperationException(L.Get("History.NoActiveTransaction"));
         var before = transactionBefore; var selectedBefore = transactionSelection!;
+        Document.PruneGroups();
         PruneSelection();
         if (JsonSerializer.SerializeToUtf8Bytes(before).AsSpan().SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(Document)))
         {
@@ -99,17 +100,22 @@ public sealed class EditorSession
     public void SetSelection(IEnumerable<Guid> ids) { SetSelectionCore(ids); PruneSelection(); OnChanged(); }
     public void SelectAll() => SetSelection(Document.Elements.Where(e => e.Visible && !e.Locked).Select(e => e.Id));
     public CanvasElement? HitTest(PointD point, double tolerance = 4) => Document.Elements.LastOrDefault(e => !e.Locked && ElementGeometry.HitTest(e, point, tolerance));
-    public void SelectAt(PointD point, bool additive = false, double tolerance = 4)
+    public void SelectAt(PointD point, bool additive = false, double tolerance = 4, bool individual = false)
     {
         var element = HitTest(point, tolerance);
         if (!additive) Selection.Clear();
-        if (element is not null && !Selection.Add(element.Id) && additive) Selection.Remove(element.Id);
+        if (element is not null)
+        {
+            var unit = SelectionUnitIds(element.Id, individual).ToArray();
+            if (additive && unit.All(Selection.Contains)) Selection.ExceptWith(unit); else Selection.UnionWith(unit);
+        }
         OnChanged();
     }
     public void SelectRectangle(RectD bounds, bool additive = false)
     {
         if (!additive) Selection.Clear();
-        foreach (var element in Document.Elements.Where(e => e.Visible && !e.Locked && ElementGeometry.Bounds(e).Intersects(bounds))) Selection.Add(element.Id);
+        foreach (var element in Document.Elements.Where(e => e.Visible && !e.Locked && ElementGeometry.Bounds(e).Intersects(bounds)))
+            Selection.UnionWith(SelectionUnitIds(element.Id));
         OnChanged();
     }
     public RectD? SelectionBounds()
@@ -118,13 +124,14 @@ public sealed class EditorSession
         return selected.Length == 0 ? null : selected.Select(e => ElementGeometry.Bounds(e)).Aggregate(RectD.Union);
     }
     public IEnumerable<CanvasElement> SelectedElements() => Document.Elements.Where(e => Selection.Contains(e.Id));
-    public void Add(CanvasElement element, string? label = null)
+    public void Add(CanvasElement element, string? label = null, int numberStep = 1)
     {
+        if (numberStep < 1) throw new ArgumentOutOfRangeException(nameof(numberStep));
         Execute(label ?? L.Get("History.AddElement"), d =>
         {
             if (d.Elements.Any(e => e.Id == element.Id)) throw new ArgumentException(L.Get("History.DuplicateElementId"), nameof(element));
             d.Elements.Add(element.Clone()); Selection.Clear(); Selection.Add(element.Id);
-            if (element.Kind == ElementKind.Number) d.NextNumber = Math.Max(d.NextNumber, element.Number + 1);
+            if (element.Kind == ElementKind.Number) d.NextNumber = Math.Max(d.NextNumber, (int)Math.Min(int.MaxValue, (long)element.Number + numberStep));
         });
     }
     public void DeleteSelection() => Execute(L.Get("History.DeleteElements"), d => { d.Elements.RemoveAll(e => Selection.Contains(e.Id) && !e.Locked); Selection.Clear(); });
@@ -142,7 +149,9 @@ public sealed class EditorSession
     {
         Execute(L.Get("History.DuplicateElements"), d =>
         {
-            var clones = SelectedElements().Where(e => !e.Locked).Select(e => e.Clone(true)).ToArray();
+            var snapshot = d.CloneElements(SelectedElements().Where(e => !e.Locked).Select(e => e.Id), true);
+            var clones = snapshot.Elements;
+            d.Groups.AddRange(snapshot.Groups);
             Selection.Clear();
             foreach (var clone in clones) { clone.Transform = Affine2D.Translation(offsetX, offsetY).Compose(clone.Transform); d.Elements.Add(clone); Selection.Add(clone.Id); }
         });
@@ -178,9 +187,9 @@ public sealed class EditorSession
     }
     public static long EstimateBytes(SceneDocument document)
     {
-        long size = 256 + document.DisplayLayout.Count * 128;
+        long size = 256 + document.DisplayLayout.Count * 128 + document.Groups.Sum(g => 64L + g.Name.Length * 2L);
         foreach (var e in document.Elements.Append(document.Background).Where(e => e is not null))
-            size += 512 + e!.Points.Count * 16L + e.Text.Length * 2L + e.Style.FontFamily.Length * 2L + (e.AssetId?.Length ?? 0) * 2L + e.Effects.Count * 96L;
+            size += 512 + e!.Points.Count * 16L + e.Text.Length * 2L + (e.Name?.Length ?? 0) * 2L + e.Style.FontFamily.Length * 2L + (e.AssetId?.Length ?? 0) * 2L + e.Effects.Count * 96L;
         return size;
     }
     private void OnChanged(bool contentChanged = false)

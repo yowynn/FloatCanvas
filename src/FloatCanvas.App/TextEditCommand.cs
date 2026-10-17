@@ -33,7 +33,11 @@ internal static class TextEditCommand
             var style = existing?.Style.Clone() ?? newStyle.Clone();
             var metrics = renderer.MeasureText(text, style, existing?.Width ?? 360);
             if (existing is not null)
-                session.Execute(L.Get("History.EditText"), _ => { existing.Text = text; existing.Height = Math.Max(1, metrics.Height); });
+                session.Execute(L.Get("History.EditText"), _ =>
+                {
+                    existing.Text = text; existing.Height = Math.Max(1, metrics.Height);
+                    if (EmojiGlyphs.IsEmoji(text, style)) existing.Width = metrics.Width;
+                });
             else session.Add(new CanvasElement { Kind = ElementKind.Text, Text = text, Style = style,
                 Width = Math.Max(40, Math.Min(360, metrics.Width + 4)), Height = Math.Max(style.FontSize, metrics.Height),
                 Transform = Affine2D.Translation(point.X, point.Y) });

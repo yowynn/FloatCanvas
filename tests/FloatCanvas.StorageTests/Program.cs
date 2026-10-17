@@ -7,6 +7,11 @@ using System.Text.Json.Nodes;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+if (args.Contains("--live-effects-only"))
+{
+    await LivePixelateStorageTests.RunAsync(Check);
+    Console.WriteLine($"PASS {checks} live-effect storage checks"); return;
+}
 async Task Reject(Func<Task> action, string message)
 {
     bool rejected = false;
@@ -77,7 +82,7 @@ string hash = await Mutated("bad-hash", e => e["assets/" + assetId][^1] ^= 0xFF)
 await Reject(() => store.LoadAsync(hash), "asset hash mismatch rejected");
 string version = await Mutated("new-version", e => EditJson(e, "manifest.json", n => n["Version"] = 99));
 await Reject(() => store.LoadAsync(version), "future format version rejected");
-string sceneVersion = await Mutated("new-scene-version", e => EditJson(e, "scene.json", n => n["Version"] = 2));
+string sceneVersion = await Mutated("new-scene-version", e => EditJson(e, "scene.json", n => n["Version"] = 99));
 await Reject(() => store.LoadAsync(sceneVersion), "future scene version rejected");
 string missingVersion = await Mutated("missing-version", e => EditJson(e, "scene.json", n => n.AsObject().Remove("Version")));
 await Reject(() => store.LoadAsync(missingVersion), "scene version cannot be inferred from default");
@@ -95,7 +100,7 @@ string badLength = await Mutated("bad-length", e => EditJson(e, "manifest.json",
 await Reject(() => store.LoadAsync(badLength), "declared asset length mismatch rejected");
 string traversal = await Mutated("unsafe-entry", e => e.Add("../../outside.txt", [1, 2, 3]));
 await Reject(() => store.LoadAsync(traversal), "undeclared traversal entry rejected; nothing extracted");
-string duplicateJson = await Mutated("duplicate-property", e => e["scene.json"] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(e["scene.json"]).Replace("\"Version\":1", "\"Version\":1,\"Version\":1", StringComparison.Ordinal)));
+string duplicateJson = await Mutated("duplicate-property", e => e["scene.json"] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(e["scene.json"]).Replace($"\"Version\":{SceneDocument.CurrentVersion}", $"\"Version\":{SceneDocument.CurrentVersion},\"Version\":{SceneDocument.CurrentVersion}", StringComparison.Ordinal)));
 await Reject(() => store.LoadAsync(duplicateJson), "ambiguous duplicate JSON properties rejected");
 string truncated = Path.Combine(root, "truncated.floatcanvas");
 byte[] originalPackage = await File.ReadAllBytesAsync(project); await File.WriteAllBytesAsync(truncated, originalPackage[..(originalPackage.Length / 2)]);
@@ -165,5 +170,8 @@ await Task.WhenAll(saveCalls);
 Check((await orderedRecovery.LoadAsync())!.State.LiveDocument.NextNumber == 6, "concurrent recovery snapshots preserve invocation order");
 
 await ArrowHeadStorageTests.RunAsync(store, root, Check);
+await EditablePresetStorageTests.RunAsync(store, root, Check);
+await FormatVersionTests.RunAsync(store, root, Check);
+await LivePixelateStorageTests.RunAsync(Check);
 Console.WriteLine($"PASS {checks} storage checks");
 Console.WriteLine($"Artifacts: {root}");

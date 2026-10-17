@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
-    [string]$Version
+    [string]$Version,
+    [string]$OutputDirectory,
+    [string]$ArtifactsPath
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -11,12 +13,23 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = [string]$project.Project.PropertyGroup.Version
 }
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw 'A valid release version is required.' }
-$distRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
+$distRoot = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    [IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
+} else {
+    [IO.Path]::GetFullPath($OutputDirectory)
+}
+$artifactsRoot = if ([string]::IsNullOrWhiteSpace($ArtifactsPath)) { $null } else { [IO.Path]::GetFullPath($ArtifactsPath) }
+$assetsPath = if ($null -eq $artifactsRoot) {
+    Join-Path $projectRoot 'src/FloatCanvas.App/obj/project.assets.json'
+} else {
+    Join-Path $artifactsRoot 'obj/FloatCanvas.App/project.assets.json'
+}
 $packageName = "FloatCanvas-$Version-win-x64"
 New-Item -ItemType Directory -Path $distRoot -Force | Out-Null
 if (((Get-Item -LiteralPath $distRoot).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-    throw 'The dist directory must be a real workspace directory, not a symbolic link or junction.'
+    throw 'The output directory must be a real directory, not a symbolic link or junction.'
 }
+$distRoot = (Resolve-Path -LiteralPath $distRoot).Path
 
 function Assert-DistPath([string]$Path) {
     $absolute = [IO.Path]::GetFullPath($Path)
@@ -43,10 +56,14 @@ $newZipInstalled = $false
 $replacementCommitted = $false
 Push-Location $projectRoot
 try {
-    # Isolate RID-specific lock files in ignored obj folders, preserving committed dependency locks.
-    & dotnet publish 'src/FloatCanvas.App/FloatCanvas.App.csproj' -c $Configuration -r win-x64 --self-contained false -o $stagingPackage `
-        "-p:Version=$Version" '-p:UseAppHost=true' '-p:DebugSymbols=false' '-p:DebugType=None' `
-        '-p:PublishTrimmed=false' '-p:PublishSingleFile=false' '-p:NuGetLockFilePath=obj/packages.publish.win-x64.lock.json'
+    # Keep small RID-specific lock files in source obj folders, preserving committed dependency locks.
+    # Optional artifacts redirection moves build intermediates and project.assets.json, not these lock files.
+    $publishArguments = @('publish', 'src/FloatCanvas.App/FloatCanvas.App.csproj', '-c', $Configuration,
+        '-r', 'win-x64', '--self-contained', 'false', '-o', $stagingPackage,
+        "-p:Version=$Version", '-p:UseAppHost=true', '-p:DebugSymbols=false', '-p:DebugType=None',
+        '-p:PublishTrimmed=false', '-p:PublishSingleFile=false', '-p:NuGetLockFilePath=obj/packages.publish.win-x64.lock.json')
+    if ($null -ne $artifactsRoot) { $publishArguments += @('--artifacts-path', $artifactsRoot) }
+    & dotnet @publishArguments
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
     foreach ($required in @('FloatCanvas.exe', 'FloatCanvas.dll', 'FloatCanvas.Core.dll', 'FloatCanvas.Localization.dll',
         'FloatCanvas.Rendering.dll', 'FloatCanvas.Storage.dll', 'FloatCanvas.Windows.dll', 'SkiaSharp.dll',
@@ -91,7 +108,7 @@ try {
     }
 
     # Keep the reviewed licenses for the actual NuGet dependencies; the system supplies .NET.
-    $assets = Get-Content -LiteralPath 'src/FloatCanvas.App/obj/project.assets.json' -Raw | ConvertFrom-Json
+    $assets = Get-Content -LiteralPath $assetsPath -Raw | ConvertFrom-Json
     foreach ($library in $assets.libraries.PSObject.Properties) {
         if ($library.Value.type -ne 'package' -or $library.Name -match '(?i)NativeAssets\.macOS/') { continue }
         $licenseFolder = $library.Name.Replace('/', '-')
@@ -104,8 +121,6 @@ try {
         Configuration = $Configuration; PublishedAt = [DateTimeOffset]::Now.ToString('o'); RequiredFrameworks = $requiredFrameworks
         Validation = 'Preview build. See User-Guide.md for platform support and feature limitations.'
     }
-    $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $stagingPackage 'PACKAGE-INFO.json') -Encoding UTF8
-
     # NativeAssets packages ship PDBs as native runtime assets, independently of DebugSymbols.
     # Filter only this invocation's verified staging tree, never source/cache/previous packages.
     $stagingRoot = Assert-DistPath $stagingRoot
@@ -131,6 +146,12 @@ try {
     if ($unexpectedRuntimeFiles.Count -ne 0) {
         throw "Framework-dependent package contains app-local .NET runtime files: $($unexpectedRuntimeFiles.Name -join ', ')"
     }
+    # The updater owns only these files; unrelated files beside the application are preserved.
+    # Write the manifest after filtering symbols, and include the manifest itself in its file list.
+    $manifest | Add-Member -NotePropertyName Files -NotePropertyValue @(
+        @($packageFiles | ForEach-Object { [IO.Path]::GetRelativePath($stagingPackage, $_.FullName).Replace('\', '/') }) + 'PACKAGE-INFO.json' | Sort-Object
+    )
+    $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $stagingPackage 'PACKAGE-INFO.json') -Encoding UTF8
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::CreateFromDirectory($stagingRoot, $stagingZip, [IO.Compression.CompressionLevel]::Optimal, $false)
 

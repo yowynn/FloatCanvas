@@ -39,11 +39,11 @@ internal static class HotkeyHintTests
         // Refresh the same real controls after a successful settings change, rather than
         // recreate them and accidentally hide a stale tooltip/automation-name defect.
         DesktopSession.RefreshHotkeyHints(button, welcome, HotkeyBinding.DefaultToggle, HotkeyBinding.DefaultHide);
-        string defaultLabel = language == "zh-CN" ? "穿透 · Ctrl+Alt+F" : "Pass through · Ctrl+Alt+F";
+        string defaultLabel = language == "zh-CN" ? "穿透 · Ctrl+`" : "Pass through · Ctrl+`";
         Check("replace the existing tooltip after bindings change", Equals(button.ToolTip, defaultLabel));
         Check("replace the existing automation name after bindings change", peer.GetName() == defaultLabel);
-        Check("replace both welcome bindings without stale custom text", welcome.Text.Contains("Ctrl+Alt+F") &&
-            welcome.Text.Contains("Ctrl+Alt+Shift+F") && !welcome.Text.Contains("Ctrl+Shift+G") && !welcome.Text.Contains("Ctrl+Shift+H"));
+        Check("replace both welcome bindings without stale custom text", welcome.Text.Contains("Ctrl+`") &&
+            welcome.Text.Contains("Ctrl+Shift+`") && !welcome.Text.Contains("Ctrl+Shift+G") && !welcome.Text.Contains("Ctrl+Shift+H"));
 
         DesktopSession.RefreshHotkeyHints(button, null, toggle, hide);
         Check("refresh after the welcome is closed", Equals(button.ToolTip, label) && peer.GetName() == label);

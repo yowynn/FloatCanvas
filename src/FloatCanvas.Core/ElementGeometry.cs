@@ -14,8 +14,8 @@ public static class ElementGeometry
     public static RectD Bounds(CanvasElement element, bool includeStroke = true)
     {
         var bounds = LocalBounds(element);
-        double stroke = includeStroke && element.Kind is not (ElementKind.Image or ElementKind.Text) ? element.Style.StrokeWidth / 2 : 0;
-        if (element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow)
+        double stroke = includeStroke && element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number or ElementKind.LivePixelate) ? element.Style.StrokeWidth / 2 : 0;
+        if (IsLine(element.Kind))
         {
             foreach (var point in GetArrowHeads(element).SelectMany(head => head))
                 bounds = RectD.Union(bounds, new(point.X, point.Y, 0, 0));
@@ -23,6 +23,26 @@ public static class ElementGeometry
         return element.Transform.TransformBounds(bounds.Inflate(stroke));
     }
     public static bool UsesPoints(ElementKind kind) => kind is ElementKind.Freehand or ElementKind.Highlighter or ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow;
+    public static bool IsLine(ElementKind kind) => kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow;
+    public static bool IsBoxShape(ElementKind kind) => kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
+
+    /// <summary>Resize vector dimensions around their center, retaining circular corners and uniform strokes.</summary>
+    public static void ResizeShapeGeometry(CanvasElement element, double scaleX, double scaleY)
+    {
+        if (!IsBoxShape(element.Kind)) throw new ArgumentException(nameof(element));
+        if (!double.IsFinite(scaleX) || !double.IsFinite(scaleY) || scaleX <= 0 || scaleY <= 0) throw new ArgumentOutOfRangeException(nameof(scaleX));
+        var transform = element.Transform;
+        double basisX = Math.Sqrt(transform.M11 * transform.M11 + transform.M21 * transform.M21);
+        double basisY = Math.Sqrt(transform.M12 * transform.M12 + transform.M22 * transform.M22);
+        var center = transform.TransformPoint(new(element.Width / 2, element.Height / 2));
+        element.Width *= scaleX * basisX; element.Height *= scaleY * basisY;
+        if (element.CornerRadius is { } radius) element.CornerRadius = radius * Math.Min(basisX, basisY);
+        var unit = new Affine2D(transform.M11 / basisX, transform.M12 / basisY, transform.M21 / basisX, transform.M22 / basisY, 0, 0);
+        var half = unit.TransformPoint(new(element.Width / 2, element.Height / 2));
+        element.Transform = unit with { OffsetX = center.X - half.X, OffsetY = center.Y - half.Y };
+    }
+    public static double CornerRadius(CanvasElement element) => Math.Clamp(element.CornerRadius ??
+        (element.Kind == ElementKind.RoundedRectangle ? Math.Min(element.Width, element.Height) * .2 : 0), 0, Math.Min(element.Width, element.Height) / 2);
     public static bool HitTest(CanvasElement element, PointD worldPoint, double tolerance = 4)
     {
         if (!element.Visible || !element.Transform.TryInverse(out var inverse)) return false;
@@ -33,50 +53,66 @@ public static class ElementGeometry
         {
             if (element.Style.StrokeWidth <= 0) return false;
             if (element.Points.Count == 1) return StrokeSegmentHit(element.Transform, worldPoint, local, element.Points[0], element.Points[0], strokeRadius, tolerance);
-            for (int i = 1; i < element.Points.Count; i++)
-                if (StrokeSegmentHit(element.Transform, worldPoint, local, element.Points[i - 1], element.Points[i], strokeRadius, tolerance)) return true;
-            if (element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow && element.Points.Count >= 2)
+            var shaft = IsLine(element.Kind) ? LineShaftPoints(element) : element.Points;
+            if (StrokePathHit(element, shaft, false, worldPoint, local, strokeRadius, tolerance)) return true;
+            if (IsLine(element.Kind) && element.Points.Count >= 2)
             {
-                foreach (var head in GetArrowHeads(element))
-                    if (HitArrowHead(element, head, worldPoint, local, strokeRadius, Math.Max(0, tolerance))) return true;
+                foreach (var head in GetStyledArrowHeads(element))
+                    if (HitArrowHead(element, head.Points, head.Style, worldPoint, local, strokeRadius, Math.Max(0, tolerance))) return true;
             }
             return false;
         }
         var bounds = LocalBounds(element);
-        if (element.Kind is ElementKind.Image or ElementKind.Text)
+        if (element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.LivePixelate)
         {
             if (bounds.Contains(local)) return true;
             var corners = new PointD[] { new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom) }.Select(element.Transform.TransformPoint).ToArray();
             return Enumerable.Range(0, 4).Any(i => DistanceToSegment(worldPoint, corners[i], corners[(i + 1) % 4]) <= tolerance);
         }
         var outline = Outline(element);
+        if (element.Kind == ElementKind.Number)
+        {
+            if (PointInPolygon(local, outline)) return true;
+            var worldOutline = outline.Select(element.Transform.TransformPoint).ToArray();
+            return tolerance > 0 && Enumerable.Range(0, worldOutline.Length).Any(i =>
+                DistanceToSegment(worldPoint, worldOutline[i], worldOutline[(i + 1) % worldOutline.Length]) <= tolerance);
+        }
         if ((element.Kind == ElementKind.Number || (element.Style.Fill >> 24) != 0) && PointInPolygon(local, outline)) return true;
-        for (int i = 0; i < outline.Count; i++)
-            if (StrokeSegmentHit(element.Transform, worldPoint, local, outline[i], outline[(i + 1) % outline.Count], strokeRadius, tolerance)) return true;
-        return false;
+        return element.Style.StrokeWidth > 0 && StrokePathHit(element, outline, true, worldPoint, local, strokeRadius, tolerance);
     }
     public static IReadOnlyList<PointD> Outline(CanvasElement element)
     {
         double w = element.Width, h = element.Height;
+        if (element.Kind == ElementKind.Symbol) return SymbolGeometry.Outline(element.Symbol, w, h);
         if (element.Kind == ElementKind.Triangle) return [new(w / 2, 0), new(w, h), new(0, h)];
         if (element.Kind is ElementKind.Ellipse or ElementKind.Number)
-            return Enumerable.Range(0, 64).Select(i => new PointD(w / 2 + Math.Cos(i * Math.PI / 32) * w / 2, h / 2 + Math.Sin(i * Math.PI / 32) * h / 2)).ToArray();
-        if (element.Kind == ElementKind.RoundedRectangle)
         {
-            double radius = Math.Min(w, h) * .2;
+            int steps = CurveQuarterSteps(Math.Max(w, h) / 2) * 4;
+            return Enumerable.Range(0, steps).Select(i => new PointD(w / 2 + Math.Cos(i * Math.Tau / steps) * w / 2,
+                h / 2 + Math.Sin(i * Math.Tau / steps) * h / 2)).ToArray();
+        }
+        if (element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle && CornerRadius(element) > 0)
+        {
+            double radius = CornerRadius(element);
+            int steps = CurveQuarterSteps(radius);
             PointD[] centers = [new(w - radius, radius), new(w - radius, h - radius), new(radius, h - radius), new(radius, radius)];
-            return Enumerable.Range(0, 4).SelectMany(corner => Enumerable.Range(0, 9).Select(step =>
+            return Enumerable.Range(0, 4).SelectMany(corner => Enumerable.Range(0, steps + 1).Select(step =>
             {
-                double angle = (-90 + corner * 90 + step * 90.0 / 8) * Math.PI / 180;
+                double angle = (-90 + corner * 90 + step * 90.0 / steps) * Math.PI / 180;
                 return new PointD(centers[corner].X + Math.Cos(angle) * radius, centers[corner].Y + Math.Sin(angle) * radius);
             })).ToArray();
         }
         return [new(0, 0), new(w, 0), new(w, h), new(0, h)];
     }
-    private static bool HitArrowHead(CanvasElement element, IReadOnlyList<PointD> localPoints, PointD worldPoint,
+    // The renderer uses this same ordered contour for patterned strokes. Keeping its
+    // starting point and segment lengths identical also keeps every dash and dot hittable.
+    // Limit curve-to-chord deviation to .05 local pixels without unbounded point counts.
+    private static int CurveQuarterSteps(double radius) => Math.Clamp((int)Math.Ceiling(Math.PI / 2 /
+        (2 * Math.Acos(1 - Math.Min(1, .05 / Math.Max(.05, radius))))), 8, 1024);
+    private static bool HitArrowHead(CanvasElement element, IReadOnlyList<PointD> localPoints, ArrowHeadStyle style, PointD worldPoint,
         PointD localPoint, double strokeRadius, double tolerance)
     {
-        if (element.Style.ArrowHeadStyle == ArrowHeadStyle.Open)
+        if (style == ArrowHeadStyle.Open)
         {
             for (var i = 1; i < localPoints.Count; i++)
                 if (StrokeSegmentHit(element.Transform, worldPoint, localPoint, localPoints[i - 1], localPoints[i], strokeRadius, tolerance)) return true;
@@ -85,6 +121,42 @@ public static class ElementGeometry
         var points = localPoints.Select(element.Transform.TransformPoint).ToArray();
         return PointInPolygon(worldPoint, points) || Enumerable.Range(0, points.Length)
             .Any(i => DistanceToSegment(worldPoint, points[i], points[(i + 1) % points.Length]) <= tolerance);
+    }
+    private static bool StrokePathHit(CanvasElement element, IReadOnlyList<PointD> points, bool closed,
+        PointD worldPoint, PointD localPoint, double radius, double tolerance)
+    {
+        double offset = 0, width = Math.Max(.1, element.Style.StrokeWidth);
+        double ink = element.Style.StrokePattern == StrokePattern.Dotted ? width * .001 : width * 4;
+        double gap = element.Style.StrokePattern == StrokePattern.Dotted ? width * 2.5 : width * 3;
+        int segments = closed ? points.Count : points.Count - 1;
+        for (int i = 0; i < segments; i++)
+        {
+            var a = points[i]; var b = points[(i + 1) % points.Count]; double length = a.DistanceTo(b);
+            if (length < 1e-12)
+            {
+                // Adjacent arcs can share a tangent point when a straight side collapses.
+                // A zero-length segment must not turn a patterned gap into a solid dot.
+                if ((element.Style.StrokePattern == StrokePattern.Solid || offset % (ink + gap) <= ink) &&
+                    StrokeSegmentHit(element.Transform, worldPoint, localPoint, a, b, radius, tolerance)) return true;
+            }
+            else if (element.Style.StrokePattern == StrokePattern.Solid)
+            {
+                if (StrokeSegmentHit(element.Transform, worldPoint, localPoint, a, b, radius, tolerance)) return true;
+            }
+            else
+            {
+                double cycle = ink + gap;
+                for (double start = -offset % cycle; start < length; start += cycle)
+                {
+                    double first = Math.Max(0, start), last = Math.Min(length, start + ink);
+                    if (last < first) continue;
+                    var direction = (b - a) * (1 / length);
+                    if (StrokeSegmentHit(element.Transform, worldPoint, localPoint, a + direction * first, a + direction * last, radius, tolerance)) return true;
+                }
+            }
+            offset += length;
+        }
+        return false;
     }
     // Test the actual transformed stroke, rather than inflating by maximum matrix scale.
     // Maximum-scale inflation would select far outside a thin stroke after nonuniform scaling.
@@ -113,25 +185,61 @@ public static class ElementGeometry
     public static IReadOnlyList<PointD> ArrowHead(CanvasElement element, bool reverse = false)
     {
         if (element.Points.Count < 2) return [];
+        var style = ArrowStyle(element, reverse);
+        if (style == ArrowHeadStyle.None) return [];
         PointD tip = reverse ? element.Points[0] : element.Points[^1], previous = reverse ? element.Points[1] : element.Points[^2];
         double length = tip.DistanceTo(previous);
-        if (length < .001) return element.Style.ArrowHeadStyle == ArrowHeadStyle.Diamond ? [tip, tip, tip, tip] : [tip, tip, tip];
+        if (length < .001) return style == ArrowHeadStyle.Diamond ? [tip, tip, tip, tip] : [tip, tip, tip];
         var direction = (tip - previous) * (1 / length);
-        double size = element.Style.ArrowHeadSize > 0 ? element.Style.ArrowHeadSize : Math.Max(10, element.Style.StrokeWidth * 4);
+        double size = ArrowHeadLength(element);
         var basePoint = tip - direction * size;
         var normal = new PointD(-direction.Y, direction.X) * (size * .45);
-        return element.Style.ArrowHeadStyle switch
+        return style switch
         {
             ArrowHeadStyle.Open => [basePoint + normal, tip, basePoint - normal],
             ArrowHeadStyle.Diamond => [tip, tip - direction * (size / 2) + normal, basePoint, tip - direction * (size / 2) - normal],
             _ => [tip, basePoint + normal, basePoint - normal]
         };
     }
+    private static double ArrowHeadLength(CanvasElement element) => element.Style.ArrowHeadSize > 0 ? element.Style.ArrowHeadSize : Math.Max(10, element.Style.StrokeWidth * 4);
+
+    /// <summary>Filled heads replace the end of the shaft, rather than allowing its round cap to poke through the tip.</summary>
+    public static IReadOnlyList<PointD> LineShaftPoints(CanvasElement element)
+    {
+        if (!IsLine(element.Kind) || element.Points.Count < 2) return element.Points;
+        var points = element.Points.ToList();
+        foreach (bool reverse in new[] { true, false })
+        {
+            if (ArrowStyle(element, reverse) is not (ArrowHeadStyle.FilledTriangle or ArrowHeadStyle.Diamond)) continue;
+            double remaining = Math.Max(ArrowHeadLength(element), element.Style.StrokeWidth / 2);
+            if (!reverse) points.Reverse();
+            while (remaining > 0 && points.Count >= 2)
+            {
+                var first = points[0]; var next = points[1]; double length = first.DistanceTo(next);
+                if (length <= remaining) { remaining -= length; points.RemoveAt(0); }
+                else { points[0] = first + (next - first) * (remaining / length); remaining = 0; }
+            }
+            if (!reverse) points.Reverse();
+            if (points.Count < 2) return [];
+        }
+        return points;
+    }
     /// <summary>Ordered local head vertices. Open heads contain two V edges; other heads are closed filled polygons.</summary>
     public static IReadOnlyList<IReadOnlyList<PointD>> GetArrowHeads(CanvasElement element)
     {
-        if (element.Kind is not (ElementKind.Arrow or ElementKind.DoubleArrow) || element.Points.Count < 2) return [];
-        return element.Kind == ElementKind.DoubleArrow ? [ArrowHead(element), ArrowHead(element, true)] : [ArrowHead(element)];
+        return GetStyledArrowHeads(element).Select(h => h.Points).ToArray();
+    }
+    public static ArrowHeadStyle ArrowStyle(CanvasElement element, bool reverse = false) => reverse
+        ? element.Style.StartArrowHead ?? (element.Kind == ElementKind.DoubleArrow ? element.Style.ArrowHeadStyle : ArrowHeadStyle.None)
+        : element.Style.EndArrowHead ?? (element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow ? element.Style.ArrowHeadStyle : ArrowHeadStyle.None);
+    public static IReadOnlyList<ArrowHeadGeometry> GetStyledArrowHeads(CanvasElement element)
+    {
+        if (!IsLine(element.Kind) || element.Points.Count < 2) return [];
+        var result = new List<ArrowHeadGeometry>();
+        foreach (bool reverse in new[] { false, true })
+            if (ArrowStyle(element, reverse) is var style && style != ArrowHeadStyle.None)
+                result.Add(new(style, ArrowHead(element, reverse)));
+        return result;
     }
     public static double DistanceToSegment(PointD p, PointD a, PointD b)
     {
@@ -151,3 +259,5 @@ public static class ElementGeometry
         return inside;
     }
 }
+
+public sealed record ArrowHeadGeometry(ArrowHeadStyle Style, IReadOnlyList<PointD> Points);

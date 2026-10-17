@@ -571,13 +571,13 @@ internal static partial class Program
             Failure = failure; WriteReport(false); Environment.Exit(1);
         });
         Check(ErrorModal.DialogHandle != 0 && ErrorModal.Visible && ErrorModal.Enabled && ErrorModal.OwnerDisabled,
-            "Production error dialog is a visible enabled native modal owned by the disabled toolbar");
+            "Production custom error dialog is a visible enabled self-owned modal with its toolbar disabled");
         // Foreground activation can be denied by Windows when this executable was launched by a
         // background shell. Record the actual HWND, without forcing foreground or claiming keyboard proof.
         Check(ErrorModal.Topmost && !ErrorModal.VisibleOverlayAboveDialog && ErrorModal.OkRootAtPhysicalCenter,
             "Owned error dialog and its OK button are physically above every visible production overlay window");
-        Check(ErrorModal.OkIsOwnedEnabledVisible && ErrorModal.CloseCommandPosted && ErrorModal.Returned && ErrorModal.DialogClosed && ErrorModal.OwnerEnabledAfter,
-            "Confirmed self-owned error dialog button command closes the modal and restores its owner");
+        Check(ErrorModal.OkIsOwnedEnabledVisible && ErrorModal.CloseCommandInvoked && ErrorModal.Returned && ErrorModal.DialogClosed && ErrorModal.OwnerEnabledAfter,
+            "The actual self-owned confirmation button closes the modal and restores its owner");
         Check(Hash(live.Document) == before && live.Selection.Order().SequenceEqual(selection) && live.UndoCount == undo,
             "Showing and dismissing a production error preserves exact document, selection and history");
         Check(host.IsEditing && toolbar.IsVisible && toolbar.IsEnabled, "Editor remains active after the error modal returns");
@@ -624,7 +624,16 @@ internal static partial class Program
     private static void SetProperty(object instance, string name, object value) => DesktopType.GetProperty(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(instance, value);
     private static object? Call(object instance, string name, params object?[] args)
     {
-        try { return DesktopType.GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(instance, args); }
+        var method = DesktopType.GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var parameters = method.GetParameters();
+        if (args.Length < parameters.Length && parameters.Skip(args.Length).All(parameter => parameter.IsOptional))
+        {
+            var supplied = args.Length;
+            Array.Resize(ref args, parameters.Length);
+            for (int index = supplied; index < parameters.Length; index++)
+                args[index] = parameters[index].HasDefaultValue ? parameters[index].DefaultValue : Type.Missing;
+        }
+        try { return method.Invoke(instance, args); }
         catch (TargetInvocationException ex) when (ex.InnerException is not null) { ExceptionDispatchInfo.Capture(ex.InnerException).Throw(); throw; }
     }
     private static async Task CallAsync(object instance, string name, params object?[] args) => await ((Task)Call(instance, name, args)!);
@@ -649,7 +658,7 @@ internal static partial class Program
             PhysicalInputInjection = false, SeededObjectsAreCoreFixtures = true, IdlePresentedFrames = IdleFrames,
             ScreenshotRetention = "Only a crop inside our own native test-window client; full desktop captures remain in memory and are removed before any project/recovery write.",
             RetainedScreenshotBounds, Runtime = Environment.Version.ToString(), Os = Environment.OSVersion.ToString(), ErrorModal,
-            ErrorModalForegroundScope = "Actual foreground HWND is observed without forcing activation; IsForeground=false limits this run to visibility, unobstructed native button targeting and owned-command dismissal, not keyboard foreground proof."
+            ErrorModalForegroundScope = "Actual foreground HWND is observed without forcing activation; IsForeground=false limits this run to visibility, unobstructed physical confirmation-button targeting and self-owned dismissal, not keyboard foreground proof."
         }, new JsonSerializerOptions { WriteIndented = true }));
     }
     private sealed record CheckResult(string Description, bool Passed);

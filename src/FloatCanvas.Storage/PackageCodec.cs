@@ -1,6 +1,7 @@
 using L = FloatCanvas.Localization.AppText;
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FloatCanvas.Core;
 
 namespace FloatCanvas.Storage;
@@ -20,7 +21,7 @@ internal static class PackageCodec
         public required string MediaType { get; set; }
         public required long Length { get; set; }
     }
-    private static readonly JsonSerializerOptions JsonOptions = new() { MaxDepth = 128 };
+    private static readonly JsonSerializerOptions JsonOptions = new() { MaxDepth = 128, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     private const long MaxPackageBytes = 2L * 1024 * 1024 * 1024;
     private const long MaxExpandedBytes = 1024L * 1024 * 1024;
     private const long MaxAssetBytes = 512L * 1024 * 1024;
@@ -31,6 +32,10 @@ internal static class PackageCodec
     public static async Task SaveAsync<T>(string path, string kind, T value, AssetResource[] resources, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested(); Validate(value);
+        // Never emit a v1 envelope for the richer editable model: published v1 readers
+        // ignore fields they do not know and would silently discard groups and styles.
+        // Clone instead of upgrading the caller's live document as a side effect of save.
+        value = CurrentVersionCopy(value);
         var references = References(value).ToHashSet(StringComparer.Ordinal);
         if (!references.SetEquals(resources.Select(r => r.Id))) throw new InvalidDataException(L.Get("Project.IncompleteAssets"));
         if (resources.Length > 4096 || resources.Any(r => r.Data.Length > MaxAssetBytes) || resources.Sum(r => (long)r.Data.Length) > MaxExpandedBytes) throw new InvalidDataException(L.Get("Project.AssetCapacityExceeded"));
@@ -38,7 +43,7 @@ internal static class PackageCodec
         string payload = kind == "project" ? "scene.json" : "workspace.json";
         var manifest = new Manifest
         {
-            Format = "FloatCanvas." + kind, Version = 1, Payload = payload,
+            Format = "FloatCanvas." + kind, Version = SceneDocument.CurrentVersion, Payload = payload,
             Assets = resources.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => new ManifestAsset { Id = r.Id, MediaType = r.MediaType, Length = r.Data.Length }).ToList()
         };
         path = Path.GetFullPath(path);
@@ -83,7 +88,7 @@ internal static class PackageCodec
             }
             var manifest = await ReadJsonAsync<Manifest>(RequiredEntry(archive, "manifest.json"), 4 * 1024 * 1024, ct).ConfigureAwait(false);
             if (manifest.Format != "FloatCanvas." + kind) throw new InvalidDataException(L.Get("Project.UnexpectedFormat"));
-            if (manifest.Version != 1) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
+            if (manifest.Version is not (1 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
             string payload = kind == "project" ? "scene.json" : "workspace.json";
             if (manifest.Payload != payload || manifest.Assets is null || manifest.Assets.Count > 4096) throw new InvalidDataException(L.Get("Project.InvalidManifest"));
             if (manifest.Assets.Any(a => a is null || !IsAssetId(a.Id) || string.IsNullOrWhiteSpace(a.MediaType) || a.MediaType.Length > 128 || a.Length <= 0 || a.Length > MaxAssetBytes) || manifest.Assets.Select(a => a.Id).Distinct(StringComparer.Ordinal).Count() != manifest.Assets.Count)
@@ -92,6 +97,7 @@ internal static class PackageCodec
             if (!knownEntries.SetEquals(archive.Entries.Select(e => e.FullName))) throw new InvalidDataException(L.Get("Project.UnexpectedArchiveContents"));
             T value = await ReadJsonAsync<T>(RequiredEntry(archive, payload), 128 * 1024 * 1024, ct).ConfigureAwait(false);
             Validate(value);
+            RequirePayloadVersion(value, manifest.Version);
             if (!References(value).ToHashSet(StringComparer.Ordinal).SetEquals(manifest.Assets.Select(a => a.Id))) throw new InvalidDataException(L.Get("Project.AssetReferencesMismatch"));
             var assets = new AssetLibrary();
             foreach (var asset in manifest.Assets)
@@ -103,12 +109,41 @@ internal static class PackageCodec
                 string actualId = assets.Add(bytes, asset.MediaType);
                 if (!StringComparer.Ordinal.Equals(actualId, asset.Id)) throw new InvalidDataException(L.Get("Project.AssetHashMismatch"));
             }
+            // Legacy scenes gain only the format marker; defaults retain their original
+            // arrow, radius, alpha and resource semantics. The deserialized graph is ours.
+            UpgradeVersion(value);
             return (value, assets);
         }
         catch (JsonException ex) { throw new InvalidDataException(L.Get("Project.InvalidJson"), ex); }
         catch (OverflowException ex) { throw new InvalidDataException(L.Get("Project.DataOutOfRange"), ex); }
     }
     private static ZipArchiveEntry RequiredEntry(ZipArchive archive, string name) => archive.GetEntry(name) ?? throw new InvalidDataException(L.Format("Project.MissingEntry", name));
+    private static T CurrentVersionCopy<T>(T value)
+    {
+        T copy = value switch
+        {
+            SceneDocument document => (T)(object)document.Clone(),
+            WorkspaceState workspace => (T)(object)workspace.Clone(),
+            _ => throw new InvalidDataException(L.Get("Project.InvalidContentType"))
+        };
+        UpgradeVersion(copy);
+        return copy;
+    }
+    private static IEnumerable<SceneDocument> Documents<T>(T value) => value switch
+    {
+        SceneDocument document => [document],
+        WorkspaceState workspace => workspace.CaptureDocument is { } capture ? [workspace.LiveDocument, capture] : [workspace.LiveDocument],
+        _ => throw new InvalidDataException(L.Get("Project.InvalidContentType"))
+    };
+    private static void RequirePayloadVersion<T>(T value, int packageVersion)
+    {
+        foreach (var document in Documents(value))
+            if (document.Version != packageVersion) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+    }
+    private static void UpgradeVersion<T>(T value)
+    {
+        foreach (var document in Documents(value)) document.Version = SceneDocument.CurrentVersion;
+    }
     private static void Validate<T>(T value)
     {
         switch (value)

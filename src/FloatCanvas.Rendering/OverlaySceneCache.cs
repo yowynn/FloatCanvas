@@ -89,7 +89,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         ArgumentNullException.ThrowIfNull(canvas); ArgumentNullException.ThrowIfNull(document); ArgumentNullException.ThrowIfNull(assets);
         bool dynamic = dynamicFirst >= 0 && dynamicLast >= dynamicFirst && dynamicLast < document.Elements.Count;
         bool invalidRange = !dynamic && (dynamicFirst != -1 || dynamicLast != -1);
-        if (bypassCache || invalidRange || !TryTile(canvas, out var tile) || byteLimit == 0)
+        if (bypassCache || invalidRange || SceneRenderer.HasLiveEffects(document) || !TryTile(canvas, out var tile) || byteLimit == 0)
         {
             Invalidate(); renderer.Draw(canvas, document, assets); return false;
         }

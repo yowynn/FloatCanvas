@@ -1,0 +1,106 @@
+using System.IO;
+using System.Reflection;
+using System.Text.Json;
+using FloatCanvas.App;
+using FloatCanvas.Core;
+using Wpf = System.Windows;
+using Controls = System.Windows.Controls;
+using Automation = System.Windows.Automation;
+using Input = System.Windows.Input;
+using Primitives = System.Windows.Controls.Primitives;
+using L = FloatCanvas.Localization.AppText;
+
+/// <summary>Color choices remain property drafts until the existing atomic Apply command.</summary>
+internal static class InspectorColorTests
+{
+    internal static void Run(Action<string, bool> check)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "FloatCanvas-InspectorColors-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string preference = L.Preference;
+        try
+        {
+            foreach (string language in new[] { "zh-CN", "en" })
+            {
+                L.Initialize(language);
+                bool allowed = true;
+                var library = new ColorLibrary(Path.Combine(directory, language + ".json"));
+                var session = new EditorSession();
+                session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60,
+                    Style = new() { Stroke = 0xFF123456, Fill = 0x408090A0 } });
+                Guid originalId = session.Document.Elements.Single().Id;
+                var inspector = new InspectorWindow(() => session, () => allowed, library);
+                var colors = Field<Dictionary<string, ColorField>>(inspector, "colorFields");
+                var fields = Field<Dictionary<string, Controls.TextBox>>(inspector, "fields");
+                check(language + " properties use two shared color fields without raw paint inputs", colors.Count == 2 &&
+                    colors["Stroke"].Role == ColorRole.Foreground && colors["Fill"].Role == ColorRole.Background &&
+                    !fields.ContainsKey("Stroke") && !fields.ContainsKey("Fill") &&
+                    colors["Stroke"].Value == 0xFF123456 && colors["Fill"].Value == 0x408090A0);
+                check(language + " color fields keep paint labels and exact accessible ARGB", colors.All(pair =>
+                    Automation.AutomationProperties.GetLabeledBy(pair.Value) is Controls.TextBlock caption && !string.IsNullOrWhiteSpace(caption.Text) &&
+                    Automation.AutomationProperties.GetName(pair.Value).Contains(ColorLibrary.ToHtml(pair.Value.Value))));
+                int undo = session.UndoCount; string before = JsonSerializer.Serialize(session.Document);
+                colors["Stroke"].SetUserValue(0x80112233); colors["Fill"].SetUserValue(0x20445566);
+                fields["X"].Text = "35";
+                inspector.Refresh();
+                check(language + " color choices retain drafts across refresh and do not mutate scene", JsonSerializer.Serialize(session.Document) == before &&
+                    session.UndoCount == undo && colors["Stroke"].Value == 0x80112233 && colors["Fill"].Value == 0x20445566 && fields["X"].Text == "35");
+                allowed = false; Invoke(inspector, "Apply"); inspector.Refresh();
+                check(language + " busy color Apply retains pending values and scene", session.UndoCount == undo &&
+                    JsonSerializer.Serialize(session.Document) == before && colors["Stroke"].Value == 0x80112233);
+                allowed = true;
+                session.SetSelection([]); inspector.Refresh(); Invoke(inspector, "Apply");
+                check(language + " changed selection cannot apply another object's pending colors", session.UndoCount == undo &&
+                    JsonSerializer.Serialize(session.Document) == before && colors["Fill"].Value == 0x20445566);
+                session.SetSelection([originalId]); inspector.Refresh(); Invoke(inspector, "Apply");
+                var applied = session.Document.Elements.Single();
+                check(language + " both exact ARGB colors and position apply as one undo step", applied.Style.Stroke == 0x80112233 &&
+                    applied.Style.Fill == 0x20445566 && Math.Abs(ElementGeometry.Bounds(applied).Left - 35) < 1e-8 && session.UndoCount == undo + 1);
+                check(language + " undo restores previous paint and geometry together", session.Undo() && JsonSerializer.Serialize(session.Document) == before);
+                inspector.Refresh();
+                check(language + " successful apply clears draft so undo refresh synchronizes swatches", colors["Stroke"].Value == 0xFF123456 && colors["Fill"].Value == 0x408090A0);
+                colors["Stroke"].SetUserValue(0xFFABCDEF); int beforeReload = session.UndoCount;
+                Invoke(inspector, "LoadSelection", true);
+                check(language + " explicit reload cancels color draft without document history", colors["Stroke"].Value == 0xFF123456 &&
+                    session.UndoCount == beforeReload && JsonSerializer.Serialize(session.Document) == before);
+                ColorField? requested = null; inspector.EyedropperRequested += field => requested = field;
+                var picker = Field<ColorPickerPanel>(colors["Fill"], "picker");
+                var eyedropper = Descendants(picker).OfType<Controls.Button>().Single(button => Automation.AutomationProperties.GetName(button) == L.Get("Color.Eyedropper"));
+                eyedropper.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
+                check(language + " eyedropper request forwards the exact target field without mutation", ReferenceEquals(requested, colors["Fill"]) &&
+                    JsonSerializer.Serialize(session.Document) == before && session.UndoCount == beforeReload);
+                requested!.SetUserValue(0x7F102030); inspector.Refresh();
+                check(language + " sampled colors remain cancellable drafts until Apply", colors["Fill"].Value == 0x7F102030 &&
+                    JsonSerializer.Serialize(session.Document) == before && library.History.Contains(0x7F102030u));
+                var popup = Field<Primitives.Popup>(colors["Fill"], "popup");
+                var escape = new Input.KeyEventArgs(Input.Keyboard.PrimaryDevice, new DetachedPresentationSource(), 0, Input.Key.Escape)
+                    { RoutedEvent = Input.Keyboard.PreviewKeyDownEvent };
+                ((Wpf.UIElement)popup.Child).RaiseEvent(escape);
+                check(language + " popup Escape is consumed without losing the pending paint draft", escape.Handled &&
+                    colors["Fill"].Value == 0x7F102030 && JsonSerializer.Serialize(session.Document) == before);
+                check(language + " closed picker does not consume a parent's next Escape", !colors["Fill"].TryClosePicker());
+                check(language + " inspector color checks show no native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 && !inspector.IsVisible);
+            }
+        }
+        finally
+        {
+            L.Initialize(preference);
+            Directory.Delete(directory, true);
+        }
+    }
+
+    private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
+    private static void Invoke(object target, string method, params object[] arguments) => target.GetType().GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(target, arguments);
+    private static IEnumerable<Wpf.DependencyObject> Descendants(Wpf.DependencyObject parent)
+    {
+        foreach (var child in Wpf.LogicalTreeHelper.GetChildren(parent).OfType<Wpf.DependencyObject>())
+        { yield return child; foreach (var nested in Descendants(child)) yield return nested; }
+    }
+
+    private sealed class DetachedPresentationSource : Wpf.PresentationSource
+    {
+        public override System.Windows.Media.Visual? RootVisual { get; set; }
+        public override bool IsDisposed => false;
+        protected override System.Windows.Media.CompositionTarget? GetCompositionTargetCore() => null;
+    }
+}

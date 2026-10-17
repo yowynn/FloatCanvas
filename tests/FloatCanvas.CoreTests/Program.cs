@@ -137,5 +137,6 @@ Check(serialized == JsonSerializer.Serialize(roundTrip), "scene exact JSON round
 Check(!serialized.Contains("ReferencedAssets") && !serialized.Contains("MaximumScale"), "computed model properties excluded from format");
 ArrowHeadTests.Run(Check);
 ArrowHeadTests.CommittedSnapshots(Check);
+EditablePresetTests.Run(Check);
 SceneRevisionTests.Run(Check);
 Console.WriteLine($"PASS {checks} core checks");

@@ -1,0 +1,8 @@
+{
+  "Acceptance2.Welcome.ToggleMode": {"zh":"绘制模式 / 穿透模式","en":"Drawing mode / pass-through mode"},
+  "Acceptance2.Welcome.ToggleModeDescription": {"zh":"绘制时接管输入，穿透时操作桌面。","en":"Draw to edit; pass through to use your desktop."},
+  "Acceptance2.Welcome.ToggleVisibility": {"zh":"隐藏画布 / 显示画布","en":"Hide canvas / Show canvas"},
+  "Acceptance2.Welcome.ToggleVisibilityDescription": {"zh":"显隐不清空内容，也不改变当前模式。","en":"Keep your content and current mode when hiding or showing."},
+  "Acceptance2.Welcome.Description": {"zh":"启动时是一张空白画布。需要继续上次的内容时，可从菜单打开历史画布或工程。","en":"Each launch starts with a blank canvas. Open canvas history or a saved project from the menu to continue earlier work."},
+  "Acceptance2.Welcome.Start": {"zh":"开始绘制  ·  {0}","en":"Start drawing  ·  {0}"}
+}
