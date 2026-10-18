@@ -10,7 +10,7 @@ using Input = System.Windows.Input;
 using Primitives = System.Windows.Controls.Primitives;
 using L = FloatCanvas.Localization.AppText;
 
-/// <summary>Color choices remain property drafts until the existing atomic Apply command.</summary>
+/// <summary>Color choices update the scene immediately and participate in coherent history.</summary>
 internal static class InspectorColorTests
 {
     internal static void Run(Action<string, bool> check)
@@ -43,26 +43,20 @@ internal static class InspectorColorTests
                 colors["Stroke"].SetUserValue(0x80112233); colors["Fill"].SetUserValue(0x20445566);
                 fields["X"].Text = "35";
                 inspector.Refresh();
-                check(language + " color choices retain drafts across refresh and do not mutate scene", JsonSerializer.Serialize(session.Document) == before &&
-                    session.UndoCount == undo && colors["Stroke"].Value == 0x80112233 && colors["Fill"].Value == 0x20445566 && fields["X"].Text == "35");
-                allowed = false; Invoke(inspector, "Apply"); inspector.Refresh();
-                check(language + " busy color Apply retains pending values and scene", session.UndoCount == undo &&
-                    JsonSerializer.Serialize(session.Document) == before && colors["Stroke"].Value == 0x80112233);
-                allowed = true;
-                session.SetSelection([]); inspector.Refresh(); Invoke(inspector, "Apply");
-                check(language + " changed selection cannot apply another object's pending colors", session.UndoCount == undo &&
-                    JsonSerializer.Serialize(session.Document) == before && colors["Fill"].Value == 0x20445566);
-                session.SetSelection([originalId]); inspector.Refresh(); Invoke(inspector, "Apply");
+                check(language + " color choices immediately preview exact ARGB and position", session.Document.Elements.Single().Style.Stroke == 0x80112233 &&
+                    session.Document.Elements.Single().Style.Fill == 0x20445566 && session.UndoCount == undo && fields["X"].Text == "35");
+                Invoke(inspector, "Apply");
                 var applied = session.Document.Elements.Single();
-                check(language + " both exact ARGB colors and position apply as one undo step", applied.Style.Stroke == 0x80112233 &&
+                check(language + " paint and position burst commits one undo step", applied.Style.Stroke == 0x80112233 &&
                     applied.Style.Fill == 0x20445566 && Math.Abs(ElementGeometry.Bounds(applied).Left - 35) < 1e-8 && session.UndoCount == undo + 1);
                 check(language + " undo restores previous paint and geometry together", session.Undo() && JsonSerializer.Serialize(session.Document) == before);
-                inspector.Refresh();
-                check(language + " successful apply clears draft so undo refresh synchronizes swatches", colors["Stroke"].Value == 0xFF123456 && colors["Fill"].Value == 0x408090A0);
-                colors["Stroke"].SetUserValue(0xFFABCDEF); int beforeReload = session.UndoCount;
-                Invoke(inspector, "LoadSelection", true);
-                check(language + " explicit reload cancels color draft without document history", colors["Stroke"].Value == 0xFF123456 &&
-                    session.UndoCount == beforeReload && JsonSerializer.Serialize(session.Document) == before);
+                check(language + " undo notification synchronizes swatches without manual refresh", colors["Stroke"].Value == 0xFF123456 && colors["Fill"].Value == 0x408090A0);
+                allowed = false; colors["Stroke"].SetUserValue(0xFFABCDEF);
+                check(language + " busy color choice cannot mutate the document", JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo);
+                allowed = true; session.SetSelection([]);
+                check(language + " changing selection clears unavailable property inputs", fields["X"].Text == "" && session.Selection.Count == 0);
+                session.SetSelection([originalId]);
+                int beforeReload = session.UndoCount;
                 ColorField? requested = null; inspector.EyedropperRequested += field => requested = field;
                 var picker = Field<ColorPickerPanel>(colors["Fill"], "picker");
                 var eyedropper = Descendants(picker).OfType<Controls.Button>().Single(button => Automation.AutomationProperties.GetName(button) == L.Get("Color.Eyedropper"));
@@ -70,15 +64,16 @@ internal static class InspectorColorTests
                 check(language + " eyedropper request forwards the exact target field without mutation", ReferenceEquals(requested, colors["Fill"]) &&
                     JsonSerializer.Serialize(session.Document) == before && session.UndoCount == beforeReload);
                 requested!.SetUserValue(0x7F102030); inspector.Refresh();
-                check(language + " sampled colors remain cancellable drafts until Apply", colors["Fill"].Value == 0x7F102030 &&
-                    JsonSerializer.Serialize(session.Document) == before && library.History.Contains(0x7F102030u));
+                check(language + " sampled colors apply immediately", colors["Fill"].Value == 0x7F102030 &&
+                    session.Document.Elements.Single().Style.Fill == 0x7F102030 && library.History.Contains(0x7F102030u));
                 var popup = Field<Primitives.Popup>(colors["Fill"], "popup");
                 var escape = new Input.KeyEventArgs(Input.Keyboard.PrimaryDevice, new DetachedPresentationSource(), 0, Input.Key.Escape)
                     { RoutedEvent = Input.Keyboard.PreviewKeyDownEvent };
                 ((Wpf.UIElement)popup.Child).RaiseEvent(escape);
                 check(language + " popup Escape is consumed without losing the pending paint draft", escape.Handled &&
-                    colors["Fill"].Value == 0x7F102030 && JsonSerializer.Serialize(session.Document) == before);
+                    colors["Fill"].Value == 0x7F102030 && session.Document.Elements.Single().Style.Fill == 0x7F102030);
                 check(language + " closed picker does not consume a parent's next Escape", !colors["Fill"].TryClosePicker());
+                Invoke(inspector, "Apply");
                 check(language + " inspector color checks show no native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 && !inspector.IsVisible);
             }
         }

@@ -29,12 +29,10 @@ internal static class InspectorFeedbackTests
             numeric["Opacity"].Slider.Value = 42;
             numeric["StrokeWidth"].Slider.Value = 8;
             numeric["X"].Input.Text = "32";
-            check(language + " sliders and text share drafts without changing the document", numeric["Opacity"].Input.Text == "42" && numeric["X"].Slider.Value == 32 &&
-                element.Style.Opacity == 1 && element.Style.StrokeWidth == 4 && session.UndoCount == history);
-            var apply = Descendants(inspector).OfType<Controls.Button>().Single(b => Automation.GetName(b) == L.Get("Inspector.Apply"));
-            check(language + " property actions use named icon buttons with hover hints", apply.Content is Wpf.FrameworkElement && apply.ToolTip!.ToString()!.Contains("Ctrl+Enter") &&
-                Controls.ToolTipService.GetInitialShowDelay(apply) >= 600 && Descendants(inspector).OfType<Controls.Button>().Any(b => Automation.GetName(b) == L.Get("Inspector.ReloadSelection")));
-            apply.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
+            check(language + " sliders and text immediately preview valid changes", numeric["Opacity"].Input.Text == "42" && numeric["X"].Slider.Value == 32 &&
+                session.Document.Elements.Single().Style.Opacity == .42 && session.Document.Elements.Single().Style.StrokeWidth == 8 && session.UndoCount == history);
+            check(language + " live property panel removes confirmation and refresh buttons", !Descendants(inspector).OfType<Controls.Button>().Any(b => Automation.GetName(b) == L.Get("Inspector.Apply") || Automation.GetName(b) == L.Get("Inspector.ReloadSelection")));
+            inspector.GetType().GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(inspector, []);
             var edited = session.Document.Elements.Single();
             Console.WriteLine($"Inspector applied: stroke={edited.Style.StrokeWidth}, opacity={edited.Style.Opacity}, x={ElementGeometry.Bounds(edited).Left}, undo={session.UndoCount}/{history}; status={Field<Controls.TextBlock>(inspector, "status").Text}");
             check(language + " one apply commits slider and typed values together", edited.Style.StrokeWidth == 8 && Math.Abs(edited.Style.Opacity - .42) < 1e-9 &&

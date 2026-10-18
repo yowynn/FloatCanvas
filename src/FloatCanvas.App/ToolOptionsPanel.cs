@@ -131,7 +131,7 @@ internal sealed class ToolOptionsPanel : UserControl
             bool shape = tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol;
             bool stroke = line || shape || tool is EditorTool.Freehand or EditorTool.Highlighter;
             bool text = tool is EditorTool.Text or EditorTool.Number or EditorTool.Emoji;
-            bool paint = stroke || tool is EditorTool.Text or EditorTool.Number or EditorTool.Redact;
+            bool paint = stroke || tool is EditorTool.Text or EditorTool.Number;
             bool capture = tool == EditorTool.CaptureRegion;
             paint |= capture;
             Show("Foreground", paint); Show("Background", shape || tool == EditorTool.Number);

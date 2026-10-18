@@ -78,14 +78,15 @@ internal static class ToolbarAcceptanceTests
 
             CheckEqualRowInsets(check,body,grid,display,"production toolbar",1);
             check("production toolbar preserves two 26 DIP rows separated by two DIP",grid.RowDefinitions.Select(row=>row.Height.Value).SequenceEqual(new[]{26d,2d,26d}));
-            check("production toolbar shares 30 DIP columns around its two logical separators",grid.ColumnDefinitions.Count==26 && grid.ColumnDefinitions.Select((column,index)=>(column,index)).All(pair=>pair.column.Width.IsAbsolute && pair.column.Width.Value==(pair.index is 2 or 13?10:30)));
-            check("production upper row adds one dedicated image processing action",buttons.Length==22 && buttons.Select(Controls.Grid.GetColumn).Order().SequenceEqual(Enumerable.Range(0,26).Where(column=>column is not (2 or 13 or 22 or 23))) && !buttons.Any(button=>Equals(button.Tag,"tool:Blur")));
+            check("production toolbar shares 30 DIP columns around tool and action separators",grid.ColumnDefinitions.Count==30 && grid.ColumnDefinitions.Select((column,index)=>(column,index)).All(pair=>pair.column.Width.IsAbsolute && pair.column.Width.Value==(pair.index is 2 or 13 or 15 or 19 or 22?10:30)));
+            check("production upper row retains every action around its dedicated separators",buttons.Length==23 && buttons.Select(Controls.Grid.GetColumn).Order().SequenceEqual(Enumerable.Range(0,30).Where(column=>column is not (2 or 13 or 15 or 19 or 22 or 26 or 27))) && !buttons.Any(button=>Equals(button.Tag,"tool:Blur")));
             check("compact 60 DIP tool body keeps its upper edge and the 100 DIP mascot anchor",Near(body.ActualHeight,60) && Near(body.TranslatePoint(new Wpf.Point(),shell).Y,39) && ToolbarLauncher.ArtworkSize==100 && Near(Field<ToolbarLauncher>(session,"_toolbarLauncher").TranslatePoint(new Wpf.Point(100,100),shell).Y,100));
             check("production lower row puts stamp actions under Select and Eraser",allButtons.Any(button=>Equals(button.Tag,"manage-stamps")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==0) && allButtons.Any(button=>Equals(button.Tag,"save-stamp")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==1));
-            check("production lower row binds ten slots under ten drawing tools and LCD under actions",Controls.Grid.GetRow(shelf)==2 && Controls.Grid.GetColumn(shelf)==3 && Controls.Grid.GetColumnSpan(shelf)==10 && Controls.Grid.GetRow(display)==2 && Controls.Grid.GetColumn(display)==14 && Controls.Grid.GetColumnSpan(display)==12);
+            check("production lower row binds ten slots under ten drawing tools and LCD under actions",Controls.Grid.GetRow(shelf)==2 && Controls.Grid.GetColumn(shelf)==3 && Controls.Grid.GetColumnSpan(shelf)==10 && Controls.Grid.GetRow(display)==2 && Controls.Grid.GetColumn(display)==14 && Controls.Grid.GetColumnSpan(display)==16);
             check("upper twelve tool order matches the requested Select Eraser then ten drawing entries",buttons.Where(button=>Controls.Grid.GetColumn(button)<13).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"tool:Select","tool:Eraser","tool:Freehand","tool:Highlighter","tool:Line","tool:Rectangle","tool:Ellipse","tool:Text","tool:Number","tool:Symbol","tool:Emoji","more"}));
             var opacity=Field<Controls.Slider>(session,"_opacitySlider");
-            check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==22&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
+            check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==26&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
+            check("trailing actions follow canvas, images, inspector/layers, then history and canvas controls",buttons.Where(button=>Controls.Grid.GetColumn(button)>=14).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"canvas","import","capture","crop","properties","layers","undo","redo","clear","visibility","done"}));
             var more=buttons.Single(button=>Equals(button.Tag,"more"));
             check("More is enabled and owns its reserved single-letter command",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M");
             check("main keyboard minus and plus are independent stamp commands",ToolShortcutCatalog.StampLibraryKey==0xBD&&ToolShortcutCatalog.NewStampKey==0xBB&&ToolShortcutCatalog.IsReserved(0xBD)&&ToolShortcutCatalog.IsReserved(0xBB)&&!ToolShortcutCatalog.IsReserved(0x6B)&&!ToolShortcutCatalog.IsReserved(0x6D));
@@ -117,6 +118,7 @@ internal static class ToolbarAcceptanceTests
             var imageMenu=more.ContextMenu;
             check("More owns only general canvas blur and mosaic",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is not null && imageMenu.Items.OfType<Controls.MenuItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{L.Get("Tool.Blur"),L.Get("Tool.Pixelate")}));
             var cropButton=buttons.Single(button=>Equals(button.Tag,"crop"));
+            check("disabled crop retains a hover tooltip",Controls.ToolTipService.GetShowOnDisabled(cropButton) && cropButton.ToolTip?.ToString()==L.Get("Tool.Crop"));
             var cropMenus=Field<List<Controls.MenuItem>>(session,"_cropMenuItems");
             check("image crop follows import and capture and is disabled consistently without a target",Controls.Grid.GetColumn(cropButton)==18 &&
                 ReferenceEquals(tools[EditorTool.Crop],cropButton) && !cropButton.IsEnabled && cropMenus.Count>0 && cropMenus.All(item=>!item.IsEnabled));
@@ -131,8 +133,9 @@ internal static class ToolbarAcceptanceTests
             check("an inactive crop menu or keyboard activation cannot bypass eligibility",editor.Tool==EditorTool.Select);
             editor.Session.ReplaceDocument(new SceneDocument());editor.Tool=EditorTool.Freehand;Invoke(session,"RefreshToolbarState");
             var manage=allButtons.Single(button=>Equals(button.Tag,"manage-stamps"));var saveStamp=allButtons.Single(button=>Equals(button.Tag,"save-stamp"));
+            check("idle stamp-library launcher shares New Stamp's normal gray button background",((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)saveStamp.Background).Color && ((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)app.Resources["CanvasButton"]).Color);
             var newStampVertices=Vertices(Descendants(saveStamp).OfType<Shapes.Path>().Single().Data);
-            check("stamp buttons explain minus and plus while New Stamp presents an explicit plus",manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · -"&&saveStamp.ToolTip?.ToString()==L.Get("Feedback3.Toolbar.NewStamp")+" · +"&&newStampVertices.Contains(new Wpf.Point(13,2))&&newStampVertices.Contains(new Wpf.Point(13,8))&&newStampVertices.Contains(new Wpf.Point(10,5))&&newStampVertices.Contains(new Wpf.Point(16,5)));
+            check("stamp buttons explain minus and plus while New Stamp presents an explicit plus",manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · -"&&saveStamp.ToolTip?.ToString()==L.Get("Feedback3.Toolbar.NewStamp")+" · +"&&newStampVertices.Contains(new Wpf.Point(12.5,2.5))&&newStampVertices.Contains(new Wpf.Point(12.5,7.5))&&newStampVertices.Contains(new Wpf.Point(10,5))&&newStampVertices.Contains(new Wpf.Point(15,5)));
 
             var parameters=editor.Parameters; parameters.Tool=EditorTool.Symbol; parameters.Symbol=SymbolKind.Heart;parameters.Style.Stroke=0xFFDC4F78;
             editor.ApplyParameters(parameters);Invoke(session,"RefreshToolbarState");Measure(shell);
@@ -178,7 +181,7 @@ internal static class ToolbarAcceptanceTests
 
             string longStatus=string.Concat(Enumerable.Repeat("这是用于验收省略与悬停滚动的长状态 · long toolbar status / ",8));
             Invoke(session,"UpdateStatus",longStatus);display.Refresh();Measure(shell);
-            check("LCD keeps long content while trimming its fixed layout",status.Text==longStatus && status.TextTrimming==Wpf.TextTrimming.CharacterEllipsis && double.IsNaN(status.Width) && Near(display.ActualWidth,356) && display.ClipToBounds);
+            check("LCD keeps long content while trimming its fixed layout",status.Text==longStatus && status.TextTrimming==Wpf.TextTrimming.CharacterEllipsis && double.IsNaN(status.Width) && Near(display.ActualWidth,416) && display.ClipToBounds);
             display.RaiseEvent(new Input.MouseEventArgs(Input.Mouse.PrimaryDevice,Environment.TickCount) {RoutedEvent=Input.Mouse.MouseEnterEvent});
             var scroll=(Media.TranslateTransform)status.RenderTransform;
             check("LCD's actual hover handler begins a clipped scrolling animation",scroll.HasAnimatedProperties && status.TextTrimming==Wpf.TextTrimming.None && double.IsFinite(status.Width) && status.Width>display.ActualWidth);
@@ -188,6 +191,19 @@ internal static class ToolbarAcceptanceTests
             Set(session,"_selectedStampId",(Guid?)saved.second.Id);Set(session,"_selectedStampFromSlot",true);Set(session,"_selectedStampRevision",saved.second.Revision);Set(session,"_selectedStamp",saved.loaded);
             editor.Tool=EditorTool.Stamp;Invoke(session,"RefreshToolbarState");
             check("a bound selected stamp retains stamp mode",editor.Tool==EditorTool.Stamp);
+            check("slot selection highlights its slot and leaves the library launcher unselected",Field<Guid?>(session,"_toolbarActiveStamp")==saved.second.Id && Wpf.Automation.AutomationProperties.GetItemStatus(manage)=="");
+            Set(session,"_selectedStampFromSlot",false);Invoke(session,"RefreshToolbarState");PumpToIdle(app.Dispatcher);
+            check("library selection highlights its launcher and clears every slot highlight",Field<Guid?>(session,"_toolbarActiveStamp") is null && Wpf.Automation.AutomationProperties.GetItemStatus(manage)==L.Get("ToolbarV2.Selected") && manage.ToolTip is StampPreviewTooltip);
+            check("selected library launcher replaces its glyph with a static image",Glyph(manage) is Controls.Image {Source:Imaging.BitmapSource {IsFrozen:true}});
+            foreach(string theme in new[]{"light","dark"})
+            {
+                toolbar.Content=shell;AppTheme.Apply(theme);PumpToIdle(app.Dispatcher);toolbar.Content=null;Measure(shell);
+                check(theme+" active library launcher uses the same transparent preview and blue frame as a stamp slot",((Media.SolidColorBrush)manage.Background).Color.A==0 && ((Media.SolidColorBrush)manage.BorderBrush).Color==((Media.SolidColorBrush)app.Resources["CanvasAccent"]).Color && Glyph(manage) is Controls.Image {Width:20,Height:20});
+                check(theme+" active library launcher retains the common action-button hover and press template",ReferenceEquals(manage.Template,saveStamp.Template));
+                Save(shell,Path.Combine(output,"stamp-library-active-"+theme+".png"),1.5);
+            }
+            Set(session,"_selectedStampFromSlot",true);Invoke(session,"RefreshToolbarState");
+            check("leaving the library stamp restores its normal trigger glyph and gray background",ReferenceEquals(Glyph(manage),Field<object>(session,"_stampLibraryDefaultGlyph")) && ((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)saveStamp.Background).Color && ((Media.SolidColorBrush)manage.BorderBrush).Color.A==0 && manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · -");
             Task.Run(()=>library.PinAsync(1,null)).GetAwaiter().GetResult();PumpToIdle(app.Dispatcher);
             check("unbinding the active last slot restores Select through the library notification",editor.Tool==EditorTool.Select && Field<Guid?>(session,"_selectedStampId") is null);
 
@@ -203,6 +219,7 @@ internal static class ToolbarAcceptanceTests
                 AppTheme.Apply(theme);PumpToIdle(app.Dispatcher);
                 toolbar.Content=null;Measure(shell);
                 var expected=((Media.SolidColorBrush)app.Resources["CanvasSurface"]).Color;
+                check(theme+" idle library launcher follows the normal button background after theme changes",((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)saveStamp.Background).Color && ((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)app.Resources["CanvasButton"]).Color);
                 check(theme+" production body resolves the actual current theme surface",((Media.SolidColorBrush)body.Background).Color==expected);
                 check(theme+" LCD follows its dedicated surface and readable text theme",((Media.SolidColorBrush)display.Background).Color==((Media.SolidColorBrush)app.Resources["CanvasLcdSurface"]).Color&&((Media.SolidColorBrush)status.Foreground).Color==((Media.SolidColorBrush)app.Resources["CanvasLcdText"]).Color);
                 RenderVisibilityStates(session,host,shell,theme,output);

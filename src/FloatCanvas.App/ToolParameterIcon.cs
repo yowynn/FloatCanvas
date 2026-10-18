@@ -27,7 +27,6 @@ internal static class ToolParameterIcon
             EditorTool.Eraser=>"M1,10 L8,2 L15,9 L8,16 L6,16 Z M5,6 L12,13 M8,16 L16,16",
             EditorTool.Blur=>"M1,1 L15,1 L15,15 L1,15 Z M5,5 L5.1,5 M11,5 L11.1,5 M8,8 L8.1,8 M5,11 L5.1,11 M11,11 L11.1,11",
             EditorTool.Pixelate=>"M1,1 L15,1 L15,15 L1,15 Z M1,6 L15,6 M1,11 L15,11 M6,1 L6,15 M11,1 L11,15",
-            EditorTool.Redact=>"M2,4 L14,4 L14,12 L2,12 Z",
             EditorTool.Image=>"M1,1 L15,1 L15,15 L1,15 Z M1,12 L6,7 L10,11 L13,8 L15,10 M11,4 L11.1,4",
             EditorTool.Crop or EditorTool.CaptureRegion=>"M1,5 L1,1 L5,1 M11,1 L15,1 L15,5 M15,11 L15,15 L11,15 M5,15 L1,15 L1,11",
             EditorTool.Stamp=>"M2,7 L14,7 L14,15 L2,15 Z M5,7 L5,1 L11,1 L11,7",
@@ -53,7 +52,6 @@ internal static class ToolParameterIcon
         var stroke=new SolidColorBrush(Color.FromArgb(255,(byte)(color>>16),(byte)(color>>8),(byte)color));stroke.Freeze();
         uint fill=parameters.Style.Fill;
         Brush? fillBrush=fill==0?null:new SolidColorBrush(Color.FromArgb(255,(byte)(fill>>16),(byte)(fill>>8),(byte)fill));
-        if(parameters.Tool==EditorTool.Redact)fillBrush??=stroke;
         var drawing=new DrawingGroup();drawing.Children.Add(new GeometryDrawing(Brushes.Transparent,null,new RectangleGeometry(new Rect(0,0,18,18))));
         var pen=new Pen(stroke,1.5) {StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round,LineJoin=PenLineJoin.Round};
         var geometry=Geometry.Parse(path).Clone();geometry.Transform=new TranslateTransform(1,1);

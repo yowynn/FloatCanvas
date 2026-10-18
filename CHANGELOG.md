@@ -2,14 +2,43 @@
 
 ## 未发布 / Unreleased
 
-- 新增画布背景与透视校准面板：背景颜色和透明度独立于标注透明度；网格支持列行、显隐、颜色透明度、线宽和线型设置。拖动角点、边缘或内部校准平面，网格密集时自动减少可见线条；校准适用于形状、文字、图片和动图，截图按屏幕位置逆变换放置。新工程保存画布设置，旧 v1／v2 工程使用默认值。
-- Added a canvas background and perspective calibration panel. Background color and opacity are independent of annotation opacity; configure grid rows and columns, visibility, color and opacity, line width and pattern. Drag corners, edges or the interior to calibrate the plane; dense grids thin automatically. Projection applies to shapes, text, images and animations, and screenshots are inverse-projected into their screen position. New projects save canvas settings; older v1/v2 projects use defaults.
+## [0.2.0-preview.4] - 2026-10-18
 
-- 校准参考网格使用全屏单像素黑白交替细线，预览自定义网格时进一步减淡，退出校准后隐藏参考线。画布面板复用前景色预设、图示线型及输入＋滑块控件；列行滑块按整数跳转。
-- Calibration guides use single-pixel alternating black and white segments across the screen and dim beneath the configured grid preview, and guides disappear when calibration ends. The canvas panel reuses foreground presets, illustrated line patterns and input-plus-slider controls, with integer steps for rows and columns.
+- 恢复画布显示时保留窗口层级，避免绘画内容短暂盖住工具条或面板；截图临时隐藏后的界面恢复使用同一保序方式。
+- Restoring canvas visibility preserves window stacking so artwork does not briefly cover the toolbar or panels. Visuals temporarily hidden for capture use the same stacking-preserving restore.
 
-- 修复特定透视下列数或行数从 7 增至 8 时网格突然隔线消失的问题；远处压缩不再触发全屏抽稀，只跳过整个可见跨度均挤在一起的线条。
-- Fixed grid lines suddenly disappearing when a row or column count increased from 7 to 8 under certain projections. Compression at a distant corner no longer thins the entire grid; only lines crowded along their whole visible span are skipped.
+- 新增画布背景与透视校准面板：背景颜色和透明度独立于标注透明度；可设置网格列行、显隐、颜色、透明度、线宽和线型。拖动四角、边缘或内部校准平面，形状、文字、图片与动图随之变换，截图按选定屏幕位置逆变换放置。新保存的 v3 工程保留画布设置，旧 v1／v2 工程仍可读取，缺少的设置使用默认值。
+- Added canvas background and perspective settings. Background color and opacity are independent of annotation opacity; configure grid rows, columns, visibility, color, opacity, width and pattern. Calibrate by dragging corners, edges or the interior; shapes, text, images and animations follow the plane, and snapshots are inverse-projected into their selected screen position. New v3 projects retain canvas settings; v1/v2 projects remain readable and use defaults for missing settings.
+
+- 画布面板左侧显示属性，右侧提供官方与个人预设；预设可保存背景、网格及透视开关，保留当前校准角点和原点，按新行列数重新定标，一次应用可一次撤销。个人预设支持覆盖、重命名、删除与排序。
+- The canvas panel shows properties on the left and official/personal presets on the right. Presets save background, grid and projection preferences while preserving the current calibrated corners and origin, recalibrating for new row/column counts in one undo step. Personal presets support overwrite, rename, deletion and reordering.
+
+- 校准时显示全屏单像素黑白交替参考线，预览自定义网格时减淡，退出校准后隐藏；列行滑块按整数跳转，线型选项带有图示。密集网格自动减少可见线条，修复某些透视下行列数从 7 增至 8 时整片网格突然抽稀的问题。
+- Calibration displays single-pixel alternating black/white guides across the screen, dims them beneath the configured grid and hides them when calibration ends. Row/column sliders use integer steps, and line patterns have illustrated choices. Dense grids reduce visible lines automatically, fixing abrupt grid-wide thinning when a count increased from 7 to 8 under certain projections.
+
+- 印章库新增按 1–9、0 排列的紧凑十格快捷栏，支持拖放或选槽后点击固定、清空与按槽位顺序逐个取消固定。搜索与操作同排，说明收进问号帮助，印章按完整列宽连续滚动，移除分页；列表顺序会保存，并显示首个固定槽序号和组合／图片标识。
+- Added a compact stamp shelf ordered 1–9, then 0, supporting drag-and-drop or click-to-assign pinning, clearing and one-binding-at-a-time unpinning in shelf order. Search shares the action row and instructions are in Help. Stamps scroll continuously in complete columns without pagination; entries retain their order and show the first assigned slot and group/image type.
+
+- 印章库按钮空闲时与“新建印章”一样使用灰底，从库中选用印章时显示缩略图和蓝色选框，切换工具或快捷槽后恢复。动图小缩略图静止，悬停大预览播放；含实时桌面效果的组合保留静态预览回退。
+- The idle stamp-library button uses the same gray surface as New stamp, shows a thumbnail with a blue outline for a stamp chosen from the library, and resets when switching tools or shortcut slots. Small animated-stamp thumbnails remain still while hover previews animate; groups containing live desktop effects retain a static preview fallback.
+
+- 个人预设、色板和印章拖动排序时显示本地半透明跟随图和目标插入线，拖放到印章快捷槽时高亮目标槽；取消拖动不触发点击应用。
+- Reordering personal presets, saved colors and stamps shows a local translucent preview and destination insertion line; dropping onto a stamp shelf highlights the target slot. Cancelling a drag does not apply the item.
+
+- 属性面板随选择自动刷新，有效数值与颜色实时生效并支持撤销；多选仅显示共同适用的属性，移除手动确认和刷新按钮。
+- Properties follows selection automatically, applies valid values and colors immediately with undo support, and shows common applicable fields for multiple objects, without Apply or Refresh buttons.
+
+- 主菜单与当前工具条同步，快捷键右对齐，调整工具条分组顺序，禁用裁剪仍有提示。移除实色工具的创建入口和旧截图草稿操作入口；旧工程中的实色效果和冻结截图保留读取兼容。设置入口统一命名为“设置”，快捷键角标开关只保留在设置中。
+- Synchronized the main menu with current tools, right-aligned shortcut labels, reordered toolbar action groups and retained disabled-crop tooltips. Removed solid-redaction authoring and obsolete capture-draft actions while retaining older solid effects and frozen projects. The settings entry is now named Settings, with shortcut-badge preferences available there.
+
+- 工具条清空按钮改为红色软毛扫把，底色尺寸与同排按钮一致，二次确认保持不变；印章图标强化握柄和压印底座。增强工具条和面板共用按钮的悬停反馈，明暗主题同步。
+- The toolbar clear action now uses a red broom button with the same surface size as its neighbors and retains second-click confirmation. Stamp icons have a clearer grip and stamping base. Shared toolbar and panel buttons have stronger hover feedback in both themes.
+
+- 隐藏画布时应用角色图标同步闭眼；睁闭切换仅改变眼部，其他像素与透明度保持一致。工具条、托盘和任务栏使用对齐的原图和一致的缩放方式，避免切换抖动。
+- The mascot closes its eyes while the canvas is hidden. Only the eye areas change; the remaining artwork and transparency stay identical. Toolbar, tray and taskbar states use aligned originals and matching scaling to avoid jitter.
+
+- 新增默认关闭的当前用户登录启动设置，以及 `.floatcanvas` 工程打开方式注册、命令行打开和运行中实例的文件转交。注册结果显示在设置按钮下方，已有 Windows 默认应用选择保持不变。
+- Added optional per-user sign-in startup, off by default, plus `.floatcanvas` registration, command-line opening and project handoff to the running instance. Registration results appear beneath the settings button, and existing Windows default-app choices are preserved.
 
 ## [0.2.0-preview.3] - 2026-10-18
 

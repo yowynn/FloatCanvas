@@ -40,6 +40,11 @@ internal static partial class Program
         RasterOpacityProbe = args.Contains("--raster-opacity-probe");
         ExternalClipboardProbe = args.Contains("--external-clipboard-probe");
         ToolbarZOrderProbe = args.Contains("--toolbar-z-order-probe");
+        VisibilityRestoreProbe = args.Contains("--visibility-restore-probe");
+        ToolbarZOrderProbe |= VisibilityRestoreProbe;
+        int artifactsIndex = Array.IndexOf(args, "--visibility-artifacts");
+        if (artifactsIndex >= 0 && artifactsIndex + 1 < args.Length)
+            VisibilityArtifacts = Path.GetFullPath(args[artifactsIndex + 1]);
         ToolbarZCaptureRestoreExtension = args.Contains("--capture-restore-extension");
         ToolbarZCanvasActivationExtension = args.Contains("--canvas-activation-extension");
         if (args.Contains("--pointer-surface")) return ShowPointerSurface();
@@ -49,7 +54,8 @@ internal static partial class Program
             PrepareFixture().GetAwaiter().GetResult();
             return 0;
         }
-        Profile = Path.Combine(Root, "artifacts", "e2e", "session-profiles", Guid.NewGuid().ToString("N"));
+        Profile = VisibilityRestoreProbe ? Path.Combine(VisibilityArtifacts, "profile-" + Guid.NewGuid().ToString("N")) :
+            Path.Combine(Root, "artifacts", "e2e", "session-profiles", Guid.NewGuid().ToString("N"));
         ConfigureProfile(Profile);
         Directory.CreateDirectory(Path.GetDirectoryName(ReportPath)!);
         using var watchdog = new System.Threading.Timer(_ =>
@@ -64,7 +70,7 @@ internal static partial class Program
         int exitCode = 1;
         application.Startup += async (_, _) =>
         {
-            try { if (ToolbarZOrderProbe) await RunToolbarZOrderProbe(application); else await Run(application); exitCode = 0; }
+            try { if (VisibilityRestoreProbe) await RunVisibilityRestoreProbe(application); else if (ToolbarZOrderProbe) await RunToolbarZOrderProbe(application); else await Run(application); exitCode = 0; }
             catch (Exception ex) { Failure = ex.ToString(); Console.Error.WriteLine(ex); }
             finally
             {
@@ -333,38 +339,30 @@ internal static partial class Program
             live.Add(outside); live.Add(partial);
             string liveContent = JsonSerializer.Serialize(live.Document);
             var oldCounts = lower.Counts.Snapshot();
-            await CallAsync(session, "StartCaptureAsync", false);
+            // Compatibility fixture: current screenshots insert images into the live canvas.
+            // Only old project files use FrozenCapture; build one from owned synthetic pixels.
+            using var ownedSurface = SKSurface.Create(new SKImageInfo((int)safe.Width, (int)safe.Height));
+            ownedSurface.Canvas.Clear(SKColors.White);
+            using var ownedImage = ownedSurface.Snapshot();
+            using var ownedPng = ownedImage.Encode(SKEncodedImageFormat.Png, 100);
+            string ownedId = assets.Add(ownedPng.ToArray());
+            var legacyDocument = live.Document.CreateCapture(safe, ownedId);
+            var capture = await OpenLegacyCaptureFixtureAsync(session, legacyDocument, assets);
             PauseAutomaticRecovery(session);
-            var capture = Field<EditorSession>(session, "_capture");
             var captureOrigin = Field<PointD>(session, "_captureOrigin");
-            double virtualWidth = host.Monitors.Max(m => m.Bounds.Right) - host.Monitors.Min(m => m.Bounds.Left);
-            double virtualHeight = host.Monitors.Max(m => m.Bounds.Bottom) - host.Monitors.Min(m => m.Bounds.Top);
-            Check(capture.Document.Viewport.Width == virtualWidth && capture.Document.Viewport.Height == virtualHeight, "Production full-screen command captures the entire virtual desktop");
-            Check(capture.Document.Kind == DocumentKind.FrozenCapture && capture.Document.Background?.Kind == ElementKind.Image, "Production capture creates an independent frozen document and background");
-            Check(capture.Document.Elements.Count == live.Document.Elements.Count && capture.Document.Elements.All(e => live.Document.Elements.All(original => original.Id != e.Id)), "Frozen capture contains independent clones of all visible annotations");
-            Check(lower.Counts.SameAs(oldCounts), "Session acceptance used no injected mouse or keyboard events");
-            var localSafe = new RectD(safe.X - captureOrigin.X, safe.Y - captureOrigin.Y, safe.Width, safe.Height);
-            Call(session, "FinishCaptureRegion", localSafe);
-            Check(capture.Document.Viewport == localSafe, "Production region completion sets crop without cutting object geometry");
-            Check(capture.Document.Elements.Count == 9 && capture.Document.Elements.All(e => e.Transform.OffsetX != outside.Transform.OffsetX - captureOrigin.X),
-                "Region capture removes annotations wholly outside the selected region");
-            Check(capture.Document.Elements.Any(e => e.Width == partial.Width && e.Height == partial.Height &&
-                e.Transform.OffsetX == partial.Transform.OffsetX - captureOrigin.X), "Partly intersecting annotations retain their complete geometry");
-            Check(capture.Undo() && capture.Document.Elements.Count == 10 && capture.Redo() && capture.Document.Elements.Count == 9,
-                "Region filtering and viewport cropping undo and redo atomically");
+            var localSafe = new RectD(0, 0, safe.Width, safe.Height);
+            Check(capture.Document.Kind == DocumentKind.FrozenCapture && capture.Document.Background?.Kind == ElementKind.Image,
+                "Current project-open path reads a legacy frozen capture document");
+            Check(capture.Document.Viewport == localSafe && capture.Document.Elements.Count == 9,
+                "Legacy project retains the cropped viewport and independent visible annotation clones");
+            Check(lower.Counts.SameAs(oldCounts), "Legacy project acceptance used no injected mouse or keyboard events");
             capture.SetSelection([capture.Document.Elements[0].Id]);
             capture.TransformSelection(Affine2D.Translation(3, 2));
             Check(JsonSerializer.Serialize(live.Document) == liveContent, "Editing screenshot clones never changes live document");
 
-            // Privacy boundary: full desktop capture exists only in memory. Replace its image with a
-            // crop of our own client rectangle before any project/recovery file can be written.
-            RetainOwnedCrop(capture, assets, localSafe);
             RetainedScreenshotBounds = safe;
-            Check(capture.Document.Background!.Width == safe.Width && capture.Document.Background.Height == safe.Height, "Only self-owned screenshot pixels survive into persisted fixtures");
-            Call(session, "ReturnToLive");
-            Check(ReferenceEquals(Active(session), live) && Field<EditorSession>(session, "_capture") == capture, "Return-to-live preserves screenshot draft without merging changes");
-            Call(session, "ResumeCapture");
-            Check(ReferenceEquals(Active(session), capture), "Production resume restores screenshot draft");
+            Check(capture.Document.Background!.Width == safe.Width && capture.Document.Background.Height == safe.Height,
+                "Only owned synthetic pixels enter persisted legacy fixtures");
             Call(session, "SetEditing", false);
             Check(!host.IsEditing && ReferenceEquals(Active(session), live) && !toolbar.IsVisible && !inspector.IsVisible, "Pass-through from screenshot returns to live and hides every editor surface");
             await Task.Delay(130); long frames = host.PresentedFrameCount;
@@ -481,17 +479,22 @@ internal static partial class Program
     [DllImport("user32.dll")] private static extern nint GetFocus();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
 
-    private static void RetainOwnedCrop(EditorSession capture, AssetLibrary assets, RectD rectangle)
+    private static async Task<EditorSession> OpenLegacyCaptureFixtureAsync(object session, SceneDocument document, AssetLibrary assets)
     {
-        var background = capture.Document.Background!;
-        using var full = SKImage.FromEncodedData(assets.Get(background.AssetId!).Data.Span);
-        using var surface = SKSurface.Create(new SKImageInfo((int)rectangle.Width, (int)rectangle.Height, SKColorType.Bgra8888, SKAlphaType.Premul));
-        surface.Canvas.Clear(SKColors.Transparent);
-        surface.Canvas.DrawImage(full, -(float)rectangle.X, -(float)rectangle.Y, new SKSamplingOptions(SKFilterMode.Nearest));
-        using var owned = surface.Snapshot(); using var encoded = owned.Encode(SKEncodedImageFormat.Png, 100);
-        string id = assets.Add(encoded.ToArray());
-        capture.Document.Background = new() { Kind = ElementKind.Image, AssetId = id, Width = rectangle.Width, Height = rectangle.Height, Transform = Affine2D.Translation(rectangle.X, rectangle.Y), Locked = true };
-        capture.ReplaceDocument(capture.Document.Clone()); // Drop test capture history that could restore the unpersisted full desktop bitmap.
+        // Save existing fixture documents through the current production save path so
+        // project opening does not require an interactive dirty-document confirmation.
+        var currentDocuments = new[] { Active(session), Field<EditorSession?>(session, "_capture") }
+            .OfType<EditorSession>().Distinct().ToArray();
+        foreach (var current in currentDocuments)
+        {
+            object state = Call(session, "FileState", current)!;
+            state.GetType().GetField("Path")!.SetValue(state, Path.Combine(Profile!, "fixture-" + Guid.NewGuid().ToString("N") + ".floatcanvas"));
+            await CallAsync(session, "SaveSessionAsync", current, false);
+        }
+        string projectPath = Path.Combine(Profile!, "legacy-fixture-" + Guid.NewGuid().ToString("N") + ".floatcanvas");
+        await Field<ProjectStore>(session, "_projectStore").SaveAsync(projectPath, document, assets);
+        await CallAsync(session, "OpenProjectPathAsync", projectPath);
+        return Field<EditorSession>(session, "_capture");
     }
     private static void CheckPersistedAssetsAreOwned(AssetLibrary assets, RectD safe)
     {

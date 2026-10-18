@@ -24,6 +24,7 @@ internal static class AppTheme
         SetBrush(resources, "CanvasBorder", dark ? "#3A3F48" : "#DDE2EA");
         SetBrush(resources, "CanvasSwatchBorder", dark ? "#40FFFFFF" : "#380F172A");
         SetBrush(resources, "CanvasHover", dark ? "#343A44" : "#E9EDF4");
+        SetBrush(resources, "CanvasButtonHover", dark ? "#46515F" : "#D7E2F2");
         SetBrush(resources, "CanvasAccent", dark ? "#66AEF5" : "#2383E2");
         SetBrush(resources, "CanvasMuted", dark ? "#A3ADBA" : "#697586");
         SetBrush(resources, "CanvasInput", dark ? "#2D323B" : "#FFFFFF");
@@ -33,7 +34,7 @@ internal static class AppTheme
             dark ? Color.FromRgb(0x6B, 0x5F, 0x43) : Color.FromRgb(0xDF, 0xE5, 0xCE), new Point(0, 0), new Point(0, 1));
         lcdEdge.Freeze(); resources["CanvasLcdBorder"] = lcdEdge;
         SetBrush(resources, "CanvasButton", dark ? "#303640" : "#E6EAF1");
-        SetBrush(resources, "CanvasPressed", dark ? "#414B59" : "#D4DEEB");
+        SetBrush(resources, "CanvasPressed", dark ? "#3B4655" : "#C5D3E7");
         SetBrush(resources, "CanvasHiddenSurface", dark ? "#4B3B20" : "#FFF0CC");
         SetBrush(resources, "CanvasHiddenText", dark ? "#FFD077" : "#9A5800");
         SetBrush(resources, "CanvasHiddenBorder", dark ? "#9A7735" : "#D6A343");
@@ -45,7 +46,7 @@ internal static class AppTheme
         SetBrush(resources, "CanvasDangerPressed", "#A4242E");
         SetBrush(resources, "CanvasCodeText", dark ? "#FFADB4" : "#B62335");
         SetBrush(resources, "CanvasCodeSurface", dark ? "#3B2E35" : "#F9E9EC");
-        SetBrush(resources, "CanvasCloseHover", dark ? "#422E35" : "#FBECEE");
+        SetBrush(resources, "CanvasCloseHover", dark ? "#6A3B45" : "#F7D2D7");
         SetBrush(resources, "CanvasCloseForeground", dark ? "#FFADB4" : "#B62335");
 
         // Standard WPF popups, lists and checkboxes also use the same palette.
@@ -124,7 +125,7 @@ internal static class AppTheme
                                     RecognizesAccessKey="True" ContentSource="Content"/>
                 </Border>
                 <ControlTemplate.Triggers>
-                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
                   <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
                   <Trigger Property="IsDefaulted" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
@@ -154,7 +155,8 @@ internal static class AppTheme
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
-                <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                   <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <ControlTemplate.Triggers>
@@ -170,8 +172,8 @@ internal static class AppTheme
               <ControlTemplate TargetType="Button">
                 <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="7"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
                 <ControlTemplate.Triggers>
-                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
-                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasBorder}"/></Trigger>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
@@ -387,7 +389,7 @@ internal static class AppTheme
                     <ContentPresenter x:Name="Icon" Content="{TemplateBinding Icon}" VerticalAlignment="Center"/>
                     <Path x:Name="Check" Visibility="Collapsed" Data="M 2 7 L 6 11 L 13 3" Stroke="{DynamicResource CanvasAccent}" StrokeThickness="1.8" VerticalAlignment="Center"/>
                     <ContentPresenter Grid.Column="1" Margin="6,0,12,0" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource CanvasMuted}" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource CanvasMuted}" FontSize="12" VerticalAlignment="Center"/>
                     <Path x:Name="SubmenuArrow" Grid.Column="3" Data="M 0,0 L 4,4 L 0,8" Stroke="{DynamicResource CanvasMuted}" StrokeThickness="1.3" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"/>
                   </Grid>
                 </Border>

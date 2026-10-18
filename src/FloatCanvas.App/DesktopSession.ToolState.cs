@@ -46,6 +46,7 @@ internal sealed partial class DesktopSession
     // or treating a return to a tool as an explicit preset selection.
     private void SwitchToolState(EditorTool tool, bool applyAlias = false)
     {
+        _inspector?.CompletePendingEdit();
         var family = ToolFamily(tool);
         if (ToolFamily(_editor.Tool) == family && !applyAlias) return;
         _toolbarToolMemory[ToolFamily(_editor.Tool)] = _editor.Parameters;

@@ -91,15 +91,24 @@ try {
             throw "Required runtime framework has an invalid version: $($framework.name)"
         }
     }
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'Docs/User-Guide.md') -Destination (Join-Path $stagingPackage 'User-Guide.md')
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'Docs/User-Guide.en.md') -Destination (Join-Path $stagingPackage 'User-Guide.en.md')
     $publicDocs = Join-Path $stagingPackage 'Docs'
     New-Item -ItemType Directory -Path $publicDocs -Force | Out-Null
     foreach ($guide in @('User-Guide.md', 'User-Guide.en.md')) {
-        Copy-Item -LiteralPath (Join-Path (Join-Path $projectRoot 'Docs') $guide) -Destination $publicDocs
+        $guidePath = Join-Path (Join-Path $projectRoot 'Docs') $guide
+        Copy-Item -LiteralPath $guidePath -Destination $publicDocs
+        # The root copies have no parent Docs directory for repository-relative links.
+        $rootGuide = [IO.File]::ReadAllText($guidePath).Replace('(../CHANGELOG.md)', '(CHANGELOG.md)')
+        [IO.File]::WriteAllText((Join-Path $stagingPackage $guide), $rootGuide, [Text.UTF8Encoding]::new($false))
     }
     foreach ($publicFile in @('README.md', 'README.en.md', 'LICENSE', 'CHANGELOG.md')) {
-        Copy-Item -LiteralPath (Join-Path $projectRoot $publicFile) -Destination $stagingPackage
+        $sourceFile = Join-Path $projectRoot $publicFile
+        if ($publicFile -in @('README.md', 'README.en.md')) {
+            # The promotional image belongs to the source repository, not the runtime ZIP.
+            $packageReadme = [IO.File]::ReadAllText($sourceFile) -replace '(?m)^!\[[^\r\n]*\]\(Docs/Images/floatcanvas-preview\.png\)\r?\n', ''
+            [IO.File]::WriteAllText((Join-Path $stagingPackage $publicFile), $packageReadme, [Text.UTF8Encoding]::new($false))
+        } else {
+            Copy-Item -LiteralPath $sourceFile -Destination $stagingPackage
+        }
     }
     Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md') -Destination $stagingPackage
     Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses') -Destination (Join-Path $stagingPackage 'licenses') -Recurse

@@ -11,11 +11,13 @@
     <Product>浮绘 FloatCanvas</Product>
     <Description>可编辑的 Windows 屏幕标注画布</Description>
     <SatelliteResourceLanguages>zh-Hans;zh-CN;en</SatelliteResourceLanguages>
-    <Version>0.2.0-preview.3</Version>
+    <Version>0.2.0-preview.4</Version>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets\FloatCanvas.ico" />
     <Resource Include="Assets\FloatCanvas.png" />
+    <Resource Include="Assets\FloatCanvas.Hidden.png" />
+    <Resource Include="Assets\FloatCanvas.Hidden.ico" />
     <ProjectReference Include="../FloatCanvas.Localization/FloatCanvas.Localization.csproj" />
     <ProjectReference Include="../FloatCanvas.Core/FloatCanvas.Core.csproj" />
     <ProjectReference Include="../FloatCanvas.Rendering/FloatCanvas.Rendering.csproj" />

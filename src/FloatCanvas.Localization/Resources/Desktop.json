@@ -66,7 +66,7 @@
     "en": "Open project"
   },
   "Desktop.HotkeySettings": {
-    "zh": "快捷键设置",
+    "zh": "设置",
     "en": "Settings"
   },
   "Desktop.Exit": {
@@ -153,14 +153,6 @@
     "zh": "更多",
     "en": "More"
   },
-  "Menu.OpenProject": {
-    "zh": "打开工程…  Ctrl+O",
-    "en": "Open project…  Ctrl+O"
-  },
-  "Menu.SaveAs": {
-    "zh": "另存工程…  Ctrl+Shift+S",
-    "en": "Save project as…  Ctrl+Shift+S"
-  },
   "Menu.ExportImage": {
     "zh": "导出合成图片…",
     "en": "Export composite image…"
@@ -169,49 +161,21 @@
     "zh": "导出透明标注…",
     "en": "Export transparent annotations…"
   },
-  "Menu.Copy": {
-    "zh": "复制  Ctrl+C",
-    "en": "Copy  Ctrl+C"
-  },
-  "Menu.Paste": {
-    "zh": "粘贴  Ctrl+V",
-    "en": "Paste  Ctrl+V"
-  },
   "Menu.ReplaceImage": {
     "zh": "替换选中图片…",
     "en": "Replace selected image…"
   },
-  "Menu.CapturePrimary": {
-    "zh": "截取主屏",
-    "en": "Capture primary screen"
-  },
-  "Menu.CaptureAll": {
-    "zh": "截取全部屏幕",
-    "en": "Capture all screens"
-  },
-  "Menu.ReturnLive": {
-    "zh": "返回实时画布",
-    "en": "Return to live canvas"
-  },
-  "Menu.ResumeCapture": {
-    "zh": "继续上一张截图",
-    "en": "Resume capture draft"
-  },
   "Menu.MoveIntoView": {
     "zh": "将标注移回可见屏幕",
     "en": "Move annotations into view"
-  },
-  "Menu.Clear": {
-    "zh": "清空标注（可撤销）",
-    "en": "Clear annotations (undoable)"
   },
   "History.Clear": {
     "zh": "清空画布",
     "en": "Clear canvas"
   },
   "Menu.Settings": {
-    "zh": "快捷键与主题…",
-    "en": "Settings…"
+    "zh": "设置",
+    "en": "Settings"
   },
   "Toolbar.Opacity": {
     "zh": "标注与贴图的整体透明度",
@@ -292,10 +256,6 @@
   "Tool.Pixelate": {
     "zh": "马赛克",
     "en": "Pixelate"
-  },
-  "Tool.Redact": {
-    "zh": "实色遮盖",
-    "en": "Redact"
   },
   "Tool.CaptureRegion": {
     "zh": "截图",
@@ -629,49 +589,9 @@
     "zh": "图片已替换，位置与效果已保留。",
     "en": "Image replaced. Its position and effects were preserved."
   },
-  "Capture.ReplaceDraft": {
-    "zh": "开始新截图将替换现有截图草稿",
-    "en": "A new capture will replace the current capture draft"
-  },
-  "Capture.FocusLost": {
-    "zh": "已切换到其他应用，截图草稿已保留，可从更多菜单继续编辑。",
-    "en": "Switched to another application. The capture draft is preserved; resume it from More."
-  },
-  "Capture.SelectRegion": {
-    "zh": "拖动选择截图范围；Esc 返回实时画布并保留草稿。",
-    "en": "Drag to select a capture region. Esc returns to the live canvas and preserves the draft."
-  },
-  "Capture.PrimaryFrozen": {
-    "zh": "主屏已冻结，可继续编辑。",
-    "en": "Primary screen frozen. You can continue editing."
-  },
-  "Capture.AllFrozen": {
-    "zh": "全部屏幕已冻结，可继续编辑。",
-    "en": "All screens frozen. You can continue editing."
-  },
-  "Capture.Failed": {
-    "zh": "截图失败，实时画布和原截图草稿已保留。\n",
-    "en": "Capture failed. The live canvas and original capture draft have been preserved.\n"
-  },
-  "History.CaptureRegion": {
-    "zh": "设置截图范围",
-    "en": "Set capture region"
-  },
-  "Capture.RegionSelected": {
-    "zh": "截图范围已确定，可继续编辑或导出。",
-    "en": "Capture region selected. Continue editing or export the image."
-  },
   "Capture.ReturnedLive": {
     "zh": "实时画布 · 截图草稿已保留。",
     "en": "Live canvas · Capture draft preserved."
-  },
-  "Capture.NoDraft": {
-    "zh": "暂无截图草稿。",
-    "en": "No capture draft is available."
-  },
-  "Capture.Resumed": {
-    "zh": "已恢复截图草稿。",
-    "en": "Capture draft resumed."
   },
   "Capture.ProtectedRegions": {
     "zh": "部分系统保护区域已遮盖，其余截图可正常编辑。",

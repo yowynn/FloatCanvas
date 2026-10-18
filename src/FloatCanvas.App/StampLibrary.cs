@@ -23,7 +23,8 @@ internal sealed class StampLibrary(string profileDirectory)
         public int Version { get; set; } = 1;
         public List<StampEntry> Items { get; set; } = [];
         public Guid?[] Pins { get; set; } = new Guid?[10];
-        public Catalog Clone() => new() { Version = Version, Items = [.. Items], Pins = (Guid?[])Pins.Clone() };
+        public List<Guid>? Order { get; set; }
+        public Catalog Clone() => new() { Version = Version, Items = [.. Items], Pins = (Guid?[])Pins.Clone(), Order = Items.Select(item => item.Id).ToList() };
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
@@ -54,7 +55,13 @@ internal sealed class StampLibrary(string profileDirectory)
                             string.IsNullOrWhiteSpace(item.Name) || item.Name.Length > 120 || !Enum.IsDefined(item.Mode) ||
                             !double.IsFinite(item.Width) || !double.IsFinite(item.Height) || item.Width <= 0 || item.Height <= 0) ||
                         content.Items.Select(item => item.Id).Distinct().Count() != content.Items.Count ||
-                        content.Pins.Any(id => id.HasValue && content.Items.All(item => item.Id != id.Value))) throw new InvalidDataException();
+                        content.Pins.Any(id => id.HasValue && content.Items.All(item => item.Id != id.Value)) ||
+                        content.Order is { } order && (order.Count != content.Items.Count || order.Distinct().Count() != order.Count || order.Any(id => content.Items.All(item => item.Id != id)))) throw new InvalidDataException();
+                    // Older catalogs displayed newest first. Preserve that initial presentation,
+                    // then persist the user's explicit order independently of edits and renames.
+                    content.Items = content.Order is { } savedOrder
+                        ? savedOrder.Select(id => content.Items.Single(item => item.Id == id)).ToList()
+                        : content.Items.OrderByDescending(item => item.UpdatedAtUtc).ToList();
                     catalog = content;
                 }
                 catch (Exception ex) when (ex is JsonException or InvalidDataException or NotSupportedException)
@@ -161,7 +168,7 @@ internal sealed class StampLibrary(string profileDirectory)
             var next = catalog.Clone();
             if (previous is null)
             {
-                next.Items.Add(entry);
+                next.Items.Insert(0, entry);
                 int emptySlot = Array.FindIndex(next.Pins, id => id is null);
                 if (emptySlot >= 0) next.Pins[emptySlot] = entry.Id;
             }
@@ -238,6 +245,15 @@ internal sealed class StampLibrary(string profileDirectory)
         return MutateAsync(next => { if (id is { } value && next.Items.All(item => item.Id != value)) throw new KeyNotFoundException(L.Get("Stamp.Missing")); next.Pins[slot] = id; }, ct);
     }
 
+    public Task MoveAsync(Guid id, Guid targetId, bool after = false, CancellationToken ct = default) => MutateAsync(next =>
+    {
+        var moving = next.Items.FirstOrDefault(item => item.Id == id) ?? throw new KeyNotFoundException(L.Get("Stamp.Missing"));
+        var target = next.Items.FirstOrDefault(item => item.Id == targetId) ?? throw new KeyNotFoundException(L.Get("Stamp.Missing"));
+        if (id == targetId) return;
+        next.Items.Remove(moving);
+        next.Items.Insert(next.Items.IndexOf(target) + (after ? 1 : 0), moving);
+    }, ct);
+
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         StampEntry? removed = null;
@@ -260,6 +276,7 @@ internal sealed class StampLibrary(string profileDirectory)
 
     private async Task PublishAsync(Catalog next, CancellationToken ct)
     {
+        next.Order = next.Items.Select(item => item.Id).ToList();
         await WriteAtomicallyAsync(CatalogPath, JsonSerializer.SerializeToUtf8Bytes(next, JsonOptions), ct);
         catalog = next;
     }

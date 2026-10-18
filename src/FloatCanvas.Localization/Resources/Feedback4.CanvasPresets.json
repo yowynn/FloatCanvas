@@ -1,0 +1,14 @@
+{
+  "CanvasPreset.Description": { "zh": "调整当前画布，或保存可重复使用的画布预设。", "en": "Adjust this canvas or save reusable canvas presets." },
+  "CanvasPreset.Scope": { "zh": "预设保存背景、网格样式、透视开关和行列数。校准四角保留在当前画布中。", "en": "Presets save the background, grid style, perspective switch and grid counts. Calibration corners stay with the current canvas." },
+  "CanvasPreset.New": { "zh": "将当前画布保存为预设", "en": "Save this canvas as a preset" },
+  "CanvasPreset.Name": { "zh": "画布预设名称", "en": "Canvas preset name" },
+  "CanvasPreset.DefaultName": { "zh": "自定义画布", "en": "Custom canvas" },
+  "CanvasPreset.InvalidLibrary": { "zh": "画布预设库无效。", "en": "The canvas preset library is invalid." },
+  "CanvasPreset.ReadOnly": { "zh": "自定义预设暂不可用，现有文件保持不变。", "en": "Custom presets are unavailable. The existing file is preserved." },
+  "CanvasPreset.transparent": { "zh": "透明画布", "en": "Transparent canvas" },
+  "CanvasPreset.whiteboard": { "zh": "白板", "en": "Whiteboard" },
+  "CanvasPreset.blackboard": { "zh": "黑板", "en": "Blackboard" },
+  "CanvasPreset.graph": { "zh": "方格纸", "en": "Graph paper" },
+  "CanvasPreset.dots": { "zh": "透明点线网格", "en": "Transparent dotted grid" }
+}

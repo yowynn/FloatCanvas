@@ -36,6 +36,24 @@ internal static class StampPreviewTests
             byte[] pixels = new byte[320*160*4]; saved.bitmap!.CopyPixels(pixels,320*4,0);
             int center = (80*320+160)*4;
             check("large preview contains actual original artwork pixels", pixels[center+2] > 220 && pixels[center+3] > 250 && pixels[center+1] < 100);
+            var animated=Task.Run(async()=>
+            {
+                var source=new EditorSession();
+                byte[] gif=Convert.FromBase64String("R0lGODlhAwABAPIAAAAAAP8AAAD/AAAA////AP///wD///8A/yH/C05FVFNDQVBFMi4wAwEAAAAh+QQFCgAAACwAAAAAAwABAAADBBgYGAkAIfkEBQoAAAAsAAAAAAMAAQAAAwQ4ODgJADs=");
+                var id=source.Assets.Add(gif,"image/gif");
+                source.Document.Elements.Add(new CanvasElement {Kind=ElementKind.Image,Width=30,Height=10,AssetId=id});source.SelectAll();
+                var entry=await library.SaveSelectionAsync(source,"Animated preview specimen");
+                int slot=library.Pins.ToList().FindIndex(id=>id==entry.Id);if(slot>=0)await library.PinAsync(slot,null);
+                return(entry,stamp:await library.LoadStampAsync(entry.Id));
+            }).GetAwaiter().GetResult();
+            using(var playback=new StampPreviewTooltip.PreviewPlayback(animated.stamp,animated.entry))
+            {
+                var first=playback.Render(TimeSpan.Zero)!;var second=playback.Render(TimeSpan.FromMilliseconds(150))!;
+                byte[] a=new byte[first.PixelWidth*first.PixelHeight*4],b=new byte[a.Length];first.CopyPixels(a,first.PixelWidth*4,0);second.CopyPixels(b,second.PixelWidth*4,0);
+                check("large hover preview selects distinct actual GIF frames using its elapsed clock",!a.SequenceEqual(b)&&playback.NextDelay(TimeSpan.FromMilliseconds(150)) is { } next&&next>TimeSpan.Zero);
+                var thumbnail=Task.Run(()=>StampPreviewTooltip.GetThumbnailAsync(library,animated.entry)).GetAwaiter().GetResult();
+                check("small stamp thumbnail stays a frozen static bitmap",thumbnail is {IsFrozen:true});
+            }
             using var cancelled = new CancellationTokenSource(); cancelled.Cancel(); bool cancelledRead = false;
             try { Task.Run(() => StampPreviewTooltip.GetPreviewAsync(library,saved.entry,cancelled.Token)).GetAwaiter().GetResult(); }
             catch (OperationCanceledException) {cancelledRead=true;}

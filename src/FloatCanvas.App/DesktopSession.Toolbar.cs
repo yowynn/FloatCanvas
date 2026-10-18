@@ -17,13 +17,11 @@ internal sealed partial class DesktopSession
     private ToolbarLauncher _toolbarLauncher = null!;
     private StampShelfControl _stampShelf = null!;
     private Controls.Border _toolbarExpandedContent = null!;
-    private Controls.ContextMenu _toolbarMenu = null!;
     private Controls.ContextMenu _moreToolsMenu = null!;
     private Controls.Button? _canvasVisibilityButton;
     private static readonly Geometry VisibleCanvasEye = Geometry.Parse("M1,8 Q8,-1 15,8 Q8,17 1,8 Z M8,5 A3,3 0 1 1 7.99,5");
     private static readonly Geometry HiddenCanvasEye = Geometry.Parse("M1,5.5 Q8,12.5 15,5.5 M3.5,7.5 L2,10 M8,9 L8,12 M12.5,7.5 L14,10");
     private readonly Dictionary<EditorTool, Controls.Button> _toolbarToolButtons = [];
-    private readonly List<Controls.MenuItem> _cropMenuItems = [];
     private readonly Dictionary<EditorTool, ToolParameters> _toolbarToolMemory = [];
     private readonly Dictionary<EditorTool, EditorTool> _toolbarButtonMemory = [];
     private ToolOptionsPanel _toolOptionsPanel = null!;
@@ -36,8 +34,12 @@ internal sealed partial class DesktopSession
     private ToolbarStatusDisplay _toolbarStatusDisplay = null!;
     private readonly List<Controls.TextBlock> _toolbarShortcutHintLabels=[];
     private readonly Dictionary<EditorTool,Controls.ContentPresenter> _toolbarGlyphHosts=[];
-    private Controls.MenuItem? _toolbarShortcutHintsMenu;
     private ClearCanvasButton? _clearCanvasButton;
+    private Controls.Button? _stampLibraryButton;
+    private Controls.ContentPresenter? _stampLibraryGlyph;
+    private object? _stampLibraryDefaultGlyph;
+    private StampEntry? _toolbarLibraryStamp;
+    private bool? _mascotCanvasVisible;
 
     private Window CreateToolbarV2()
     {
@@ -48,7 +50,7 @@ internal sealed partial class DesktopSession
         // Match the two-DIP inner padding above and below the rows.
         content.RowDefinitions.Add(new Controls.RowDefinition { Height = new GridLength(2) });
         content.RowDefinitions.Add(new Controls.RowDefinition { Height = new GridLength(26) });
-        for (int i = 0; i < 27; i++) content.ColumnDefinitions.Add(new Controls.ColumnDefinition { Width = new GridLength(i is 2 or 13 ? 10 : 30) });
+        for (int i = 0; i < 30; i++) content.ColumnDefinitions.Add(new Controls.ColumnDefinition { Width = new GridLength(i is 2 or 13 or 15 or 19 or 22 ? 10 : 30) });
         int toolColumn = 0;
         void Cell(UIElement element, int column, int row = 0, int span = 1)
         { Controls.Grid.SetColumn(element, column); Controls.Grid.SetRow(element, row==0?0:2); Controls.Grid.SetColumnSpan(element, span); content.Children.Add(element); }
@@ -86,8 +88,8 @@ internal sealed partial class DesktopSession
         toolColumn = 14;
         void Action(string tag, string label, string geometry, Action action, string shortcut = "")
         { var button = ToolbarIcon(label, geometry, action, shortcut); button.Tag = tag; Cell(button, toolColumn++); }
-        Action("undo", L.Get("ToolbarV2.Undo"), "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,13", Undo, "Ctrl+Z");
-        Action("redo", L.Get("ToolbarV2.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13", Redo, "Ctrl+Y");
+        Action("canvas", L.Get("Canvas.Title"), "M2,3 L14,3 L16,14 L0,14 Z M5,3 L4,14 M11,3 L12,14 M1,8 L15,8", ToggleCanvasSettings);
+        Cell(Separator(), toolColumn++);
         Action("import", L.Get("Toolbar.Image"), "M2,2 L14,2 L14,14 L2,14 Z M2,12 L6,8 L9,11 L11,9 L14,12 M10,5 L10.1,5", () => _ = RunCommand(() => ImportImagesAsync()));
         Action("capture", L.Get("Acceptance2.Toolbar.Capture"), "M1,6 L1,2 L5,2 M11,2 L15,2 L15,6 M15,10 L15,14 L11,14 M5,14 L1,14 L1,10 M4,5 L12,5 L12,11 L4,11 Z", () => ActivateTool(EditorTool.CaptureRegion));
         var captureButton = content.Children.OfType<Controls.Button>().Last();
@@ -96,9 +98,13 @@ internal sealed partial class DesktopSession
         Action("crop", L.Get("Tool.Crop"), "M4,1 L4,11 Q4,12 5,12 L15,12 M1,4 L11,4 Q12,4 12,5 L12,15", () => ActivateTool(EditorTool.Crop));
         _toolbarToolButtons[EditorTool.Crop] = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.Crop].IsEnabled = _editor.CanCropSelection;
-        Action("canvas", L.Get("Canvas.Title"), "M2,3 L14,3 L16,14 L0,14 Z M5,3 L4,14 M11,3 L12,14 M1,8 L15,8", ToggleCanvasSettings);
+        Controls.ToolTipService.SetShowOnDisabled(_toolbarToolButtons[EditorTool.Crop], true);
+        Cell(Separator(), toolColumn++);
         Action("properties", L.Get("ToolbarV2.Properties"), "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15", ToggleInspector);
         Action("layers", L.Get("ToolbarV2.Layers"), "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13", ToggleLayers);
+        Cell(Separator(), toolColumn++);
+        Action("undo", L.Get("ToolbarV2.Undo"), "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,13", Undo, "Ctrl+Z");
+        Action("redo", L.Get("ToolbarV2.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13", Redo, "Ctrl+Y");
         _clearCanvasButton = new ClearCanvasButton(() => !DocumentOperationBusy, () => RunCommand(StartNewCanvasAsync));
         Cell(_clearCanvasButton, toolColumn++);
         _opacitySlider=CreateToolbarOpacitySlider();Cell(_opacitySlider,toolColumn,0,2);toolColumn+=2;
@@ -107,12 +113,15 @@ internal sealed partial class DesktopSession
         RefreshCanvasVisibilityButton();
         _passThroughButton = ToolbarIcon(L.Get("Acceptance2.Toolbar.Done"), "M2,8 L6,12 L14,3", () => SetEditing(false), FormatHotkey(_settings.Toggle));
         _passThroughButton.Tag = "done"; Cell(_passThroughButton, toolColumn++);
-        var manage=ToolbarIcon(L.Get("Stamp.LibraryTitle"),"M3,11 L13,11 L14,14 L2,14 Z M5,11 L5,9 Q5,7 7,7 L6,3 Q6,1 8,1 Q10,1 10,3 L9,7 Q11,7 11,9 L11,11 M2,16 L14,16",ShowStampLibrary,"-");
+        var manage=ToolbarIcon(L.Get("Stamp.LibraryTitle"),"M6,8.5 V7 C6,5.5 4.8,4.7 4.8,3.2 C4.8,.6 11.2,.6 11.2,3.2 C11.2,4.7 10,5.5 10,7 V8.5 M6,8.5 H10 Q12,8.5 12,11 M6,8.5 Q4,8.5 4,11 M1.5,11 H14.5 V13.5 H1.5 Z M3,15.5 H13",ShowStampLibrary,"-");
         AddShortcutHint(manage,"-",lowerRow:true);manage.Padding=new Thickness(0);manage.Tag="manage-stamps";Cell(manage,0,1);
-        var save=ToolbarIcon(L.Get("Feedback3.Toolbar.NewStamp"),"M2,12 L12,12 L13,15 L1,15 Z M4,12 L4,10 Q4,8 6,8 L5,4 Q5,2 7,2 Q9,2 9,4 L8,8 Q10,8 10,10 L10,12 M13,2 L13,8 M10,5 L16,5",SaveStampSelection,"+");
+        _stampLibraryButton=manage;
+        _stampLibraryGlyph=((Controls.Grid)manage.Content).Children.OfType<Controls.ContentPresenter>().Single();
+        _stampLibraryDefaultGlyph=_stampLibraryGlyph.Content;
+        var save=ToolbarIcon(L.Get("Feedback3.Toolbar.NewStamp"),"M4.5,8.5 V7 C4.5,5.5 3.5,4.7 3.5,3.2 C3.5,.6 8.5,.6 8.5,3.2 C8.5,4.7 7.5,5.5 7.5,7 V8.5 M4.5,8.5 H7.5 Q9.5,8.5 9.5,11 M4.5,8.5 Q2.5,8.5 2.5,11 M1,11 H11 V13.5 H1 Z M2,15.5 H10 M12.5,2.5 V7.5 M10,5 H15",SaveStampSelection,"+");
         AddShortcutHint(save,"+",lowerRow:true);save.Padding=new Thickness(0);save.Tag="save-stamp";Cell(save,1,1);
         _stampShelf = new(_stampLibrary, SelectStampSlot); Cell(_stampShelf, 3, 1, 10);
-        _status.Text = L.Get("Preset.Freehand"); _toolbarStatusDisplay = new(_status); Cell(_toolbarStatusDisplay, 14, 1, 13);
+        _status.Text = L.Get("Preset.Freehand"); _toolbarStatusDisplay = new(_status); Cell(_toolbarStatusDisplay, 14, 1, 16);
         RefreshToolShortcutHints();
         _toolbarExpandedContent = Surface(content, 10, new Thickness(20, 2, 4, 2));
         _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;
@@ -120,7 +129,7 @@ internal sealed partial class DesktopSession
         var shell = _toolbarLauncher.CreateSurface(_toolbarExpandedContent);
         var window = new Window { Title = L.Get("Toolbar.Title"), Content = shell, WindowStyle = WindowStyle.None, AllowsTransparency = true,
             Background = Brushes.Transparent, ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight,
-            Topmost = true, ShowInTaskbar = true, Icon = AppIcon.WindowImage, FontSize = 14, FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"),
+            Topmost = true, ShowInTaskbar = true, Icon = _host.IsVisible?AppIcon.WindowImage:AppIcon.HiddenWindowImage, FontSize = 14, FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"),
             UseLayoutRounding = true, SnapsToDevicePixels = true };
         _toolbarMenu = CreateLauncherMenu();
         _toolbarMenu.PlacementTarget = _toolbarLauncher;
@@ -170,72 +179,6 @@ internal sealed partial class DesktopSession
         if(!_toolOptionsPinned)CloseToolOptions();
         _moreToolsMenu.PlacementTarget=_settings.ToolbarExpanded?_toolbarToolButtons[EditorTool.Blur]:_toolbarLauncher;
         _moreToolsMenu.IsOpen=!_moreToolsMenu.IsOpen;
-    }
-
-    private Controls.ContextMenu CreateLauncherMenu()
-    {
-        var menu = new Controls.ContextMenu();
-        Controls.MenuItem Group(string key, string geometry)
-        {
-            var group = new Controls.MenuItem { Header = L.Get(key), Icon = MenuGeometry(geometry) }; menu.Items.Add(group); return group;
-        }
-        void Item(Controls.MenuItem group, string label, Action action, string shortcut = "", string geometry = "M2,2 L14,2 L14,14 L2,14 Z")
-        {
-            var item = new Controls.MenuItem { Header = label, InputGestureText = shortcut, Icon = MenuGeometry(geometry) };
-            item.Click += (_, _) => RunUiAction(action); group.Items.Add(item);
-        }
-        var file = Group("ToolbarV2.File", "M1,4 L7,4 L9,6 L15,6 L15,14 L1,14 Z");
-        Item(file, L.Get("Canvas.New"), () => _ = RunCommand(CreateDefaultCanvasAsync));
-        Item(file, L.Get("ToolbarV2.Open"), () => _ = RunCommand(OpenProjectAsync), "Ctrl+O");
-        Item(file, L.Get("ToolbarV2.Save"), () => _ = RunCommand(() => SaveProjectAsync()), "Ctrl+S", "M2,1 L12,1 L15,4 L15,15 L2,15 Z M5,1 L5,6 L10,6 L10,1");
-        Item(file, L.Get("ToolbarV2.SaveAs"), () => _ = RunCommand(() => SaveProjectAsync(true)), "Ctrl+Shift+S");
-        Item(file, L.Get("Menu.ExportImage"), () => _ = RunCommand(() => ExportAsync()));
-        Item(file, L.Get("Menu.ExportTransparent"), () => _ = RunCommand(() => ExportAsync(true)));
-        Item(file, L.Get("Desktop.RecoveryHistory"), () => _ = RunCommand(RestoreWorkspaceHistoryAsync));
-        var edit = Group("ToolbarV2.Edit", "M2,13 L3,9 L11,1 L15,5 L7,13 Z");
-        Item(edit, L.Get("ToolbarV2.Undo"), Undo, "Ctrl+Z", "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,13");
-        Item(edit, L.Get("ToolbarV2.Redo"), Redo, "Ctrl+Y", "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13");
-        edit.Items.Add(new Controls.Separator());
-        Item(edit, L.Get("ToolbarV2.Copy"), CopySelection, "Ctrl+C");
-        Item(edit, L.Get("ToolbarV2.Paste"), () => _ = RunCommand(PasteAsync), "Ctrl+V");
-        Item(edit, L.Get("ToolbarV2.Duplicate"), () => { _editor.Cancel(); Active.DuplicateSelection(); }, "Ctrl+D");
-        Item(edit, L.Get("Layers.Group"), () => { _editor.Cancel(); Active.GroupSelection(); }, "Ctrl+G");
-        Item(edit, L.Get("Layers.Ungroup"), () => { _editor.Cancel(); Active.UngroupSelection(); }, "Ctrl+Shift+G");
-        Item(edit, L.Get("ToolbarV2.Delete"), () => { _editor.Cancel(); Active.DeleteSelection(); }, "Delete");
-        var drawing = Group("ToolbarV2.DrawingTools", "M8,1 L15,15 L1,15 Z");
-        foreach (var tool in new[] { EditorTool.Select, EditorTool.Freehand, EditorTool.Highlighter, EditorTool.Line, EditorTool.Rectangle,
-            EditorTool.Ellipse, EditorTool.Text, EditorTool.Number, EditorTool.Symbol, EditorTool.Emoji, EditorTool.Eraser }) drawing.Items.Add(ToolMenuItem(tool));
-        var images = Group("ToolbarV2.ImageTools", "M2,2 L14,2 L14,14 L2,14 Z M2,12 L6,8 L10,12 L14,9");
-        Item(images, L.Get("Toolbar.Image"), () => _ = RunCommand(() => ImportImagesAsync()));
-        Item(images, L.Get("Menu.ReplaceImage"), () => _ = RunCommand(() => ImportImagesAsync(null, true)));
-        images.Items.Add(new Controls.Separator());
-        foreach (var tool in new[] { EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate, EditorTool.Redact }) images.Items.Add(ToolMenuItem(tool));
-        var canvas = Group("ToolbarV2.Canvas", "M1,3 L15,3 L15,13 L1,13 Z M5,16 L11,16");
-        canvas.Items.Add(ToolMenuItem(EditorTool.CaptureRegion));
-        Item(canvas, L.Get("Menu.ReturnLive"), ReturnToLive); Item(canvas, L.Get("Menu.ResumeCapture"), ResumeCapture);
-        Item(canvas, L.Get("Menu.MoveIntoView"), MoveIntoView);
-        Item(canvas, L.Get("Feedback4.Toolbar.ClearCanvas"), ClearCanvas);
-        var windows = Group("ToolbarV2.Windows", "M2,1 L14,1 L14,15 L2,15 Z M2,5 L14,5");
-        Item(windows, L.Get("ToolbarV2.Properties"), ToggleInspector); Item(windows, L.Get("ToolbarV2.Layers"), ToggleLayers);
-        Item(windows, L.Get("Stamp.LibraryTitle"), ShowStampLibrary);
-        menu.Items.Add(new Controls.Separator());
-        _toolbarShortcutHintsMenu=new Controls.MenuItem {Header=L.Get("Feedback3.Toolbar.ShowShortcutHints"),IsCheckable=true,IsChecked=_settings.ShowToolShortcutHints};
-        _toolbarShortcutHintsMenu.Click+=(_,_)=>
-        {
-            bool previous=_settings.ShowToolShortcutHints;_settings.ShowToolShortcutHints=_toolbarShortcutHintsMenu.IsChecked;
-            try{_settings.Save();}catch(Exception ex){_settings.ShowToolShortcutHints=previous;ShowError(ex.Message);}
-            RefreshToolShortcutHints();
-        };
-        menu.Items.Add(_toolbarShortcutHintsMenu);
-        var settings = new Controls.MenuItem { Header = L.Get("Menu.Settings"), Icon = MenuGeometry("M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15") };
-        settings.Click += (_, _) => RunUiAction(ShowHotkeySettings); menu.Items.Add(settings);
-        var updates = new Controls.MenuItem { Header = L.Get("Updates.Title") };
-        updates.Click += (_, _) => RunUiAction(ShowUpdates); menu.Items.Add(updates);
-        var pass = new Controls.MenuItem { Header = L.Get("ToolbarV2.PassThrough"), InputGestureText = FormatHotkey(_settings.Toggle), Icon = MenuGeometry("M4,1 L4,13 L7,10 L10,15 L12,14 L9,9 L14,9 Z") };
-        pass.Click += (_, _) => RunUiAction(() => SetEditing(false)); menu.Items.Add(pass);
-        var exit = new Controls.MenuItem { Header = L.Get("Desktop.Exit"), Icon = MenuGeometry("M9,2 L2,2 L2,14 L9,14 M7,8 L16,8 M12,4 L16,8 L12,12") };
-        exit.Click += (_, _) => _ = ExitAfterSnapshotAsync(); menu.Items.Add(exit);
-        return menu;
     }
 
     private void ActivateTool(EditorTool tool)
@@ -306,7 +249,9 @@ internal sealed partial class DesktopSession
         if (IsToolOptionsOpen && _toolbarObservedTool != _editor.Tool) AnchorToolOptions();
         _toolbarObservedTool = _editor.Tool;
         Guid? activeStamp = _editor.Tool == EditorTool.Stamp ? _selectedStampId : null;
-        if (_toolbarActiveStamp != activeStamp) { _toolbarActiveStamp = activeStamp; _stampShelf.SetActive(activeStamp); }
+        Guid? slotStamp = _selectedStampFromSlot ? activeStamp : null;
+        if (_toolbarActiveStamp != slotStamp) { _toolbarActiveStamp = slotStamp; _stampShelf.SetActive(slotStamp); }
+        RefreshLibraryStamp(activeStamp is not null && !_selectedStampFromSlot ? _stampLibrary.Items.FirstOrDefault(entry=>entry.Id==activeStamp) : null);
         if (!_host.IsEditing || !_toolbar.IsVisible) CloseToolOptions();
     }
 
@@ -315,6 +260,7 @@ internal sealed partial class DesktopSession
         if (_canvasVisibilityButton is not { Content: Controls.Viewbox { Child: Controls.Canvas icon } } button ||
             icon.Children.OfType<System.Windows.Shapes.Path>().FirstOrDefault() is not { } glyph) return;
         bool visible = _host.IsVisible;
+        RefreshMascotVisibility(visible);
         glyph.Data = visible ? VisibleCanvasEye : HiddenCanvasEye;
         glyph.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, visible ? "CanvasText" : "CanvasHiddenText");
         button.SetResourceReference(Controls.Control.BackgroundProperty, visible ? "CanvasButton" : "CanvasHiddenSurface");
@@ -329,18 +275,11 @@ internal sealed partial class DesktopSession
     }
 
     private static EditorTool ToolFamily(EditorTool tool) => ToolPresetLibrary.Family(tool);
-    private static EditorTool ButtonFamily(EditorTool tool) => ToolFamily(tool) switch { EditorTool.Pixelate or EditorTool.Redact => EditorTool.Blur,
+    private static EditorTool ButtonFamily(EditorTool tool) => ToolFamily(tool) switch { EditorTool.Pixelate => EditorTool.Blur,
         EditorTool.Triangle => EditorTool.Symbol, var family => family };
     private static string ToolName(EditorTool tool) => L.Get(tool switch { EditorTool.Select => "ToolbarV2.Select", EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow => "ToolbarV2.Lines",
         EditorTool.Rectangle or EditorTool.RoundedRectangle => "ToolbarV2.Rectangles", EditorTool.Ellipse => "ToolbarV2.Ellipses", EditorTool.Symbol => "Tool.Symbol",
         EditorTool.Emoji => "Tool.Emoji", EditorTool.Stamp => "Tool.Stamp", EditorTool.Image => "Toolbar.Image", EditorTool.Crop => "Tool.Crop", EditorTool.CaptureRegion => "Tool.CaptureRegion", _ => "Preset." + tool });
-    private Controls.MenuItem ToolMenuItem(EditorTool tool)
-    {
-        string shortcut = ToolShortcutCatalog.Hint(tool);
-        var item = new Controls.MenuItem { Header = ToolName(tool), InputGestureText = shortcut, Icon = MenuGeometry("M2,2 L14,2 L14,14 L2,14 Z") };
-        if (tool == EditorTool.Crop) { item.IsEnabled = _editor.CanCropSelection; _cropMenuItems.Add(item); }
-        item.Click += (_, _) => RunUiAction(() => ActivateTool(tool)); return item;
-    }
     private Controls.Button ToolbarIcon(string label, string geometry, Action action, string shortcut = "")
     {
         var button = ToolButton(label, geometry, action);
@@ -375,7 +314,6 @@ internal sealed partial class DesktopSession
     {
         foreach(var hint in _toolbarShortcutHintLabels)hint.Visibility=_settings.ShowToolShortcutHints?Visibility.Visible:Visibility.Collapsed;
         _stampShelf?.SetShortcutHintsVisible(_settings.ShowToolShortcutHints);
-        if(_toolbarShortcutHintsMenu is not null)_toolbarShortcutHintsMenu.IsChecked=_settings.ShowToolShortcutHints;
     }
     private static Controls.Border Separator()
     {var separator=new Controls.Border {Width=1,Margin=new Thickness(4,4,4,4)};separator.SetResourceReference(Controls.Border.BackgroundProperty,"CanvasBorder");return separator;}
@@ -397,10 +335,5 @@ internal sealed partial class DesktopSession
         var border = new Controls.Border { Child = child, CornerRadius = new CornerRadius(radius), Padding = padding, BorderThickness = new Thickness(1) };
         border.SetResourceReference(Controls.Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Controls.Border.BorderBrushProperty, "CanvasBorder"); return border;
     }
-    private static System.Windows.Shapes.Path MenuGeometry(string geometry)
-    {
-        var path = new System.Windows.Shapes.Path { Data = Geometry.Parse(geometry), Width = 15, Height = 15, Stretch = Stretch.Uniform,
-            StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round };
-        path.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "CanvasText"); return path;
-    }
+
 }

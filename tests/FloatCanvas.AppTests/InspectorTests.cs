@@ -23,6 +23,7 @@ internal static class InspectorTests
         var layerWindow = new LayersWindow(() => session, () => allowed);
         var layers = (Controls.ListBox)Field(layerWindow, "layers");
         const string draft = "浮绘\n编辑\n多行\n修改";
+        allowed = false;
         fields["Text"].Text = draft;
         int undoBefore = session.UndoCount;
         allowed = false;
@@ -33,10 +34,8 @@ internal static class InspectorTests
         assert("busy inspector refuses visibility and lock mutation", session.Document.Elements[0].Visible && !session.Document.Elements[0].Locked && session.UndoCount == undoBefore);
         layers.SelectedItems.Clear();
         assert("busy inspector rejects and restores layer selection", session.Selection.SetEquals([text.Id]) && layers.SelectedItems.Count == 1 && fields["Text"].Text == draft);
-        var reload = LogicalDescendants(inspector).OfType<Controls.Button>().Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "重载当前选择");
-        reload.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
         inspector.Refresh();
-        assert("busy reload and refresh preserve unsaved input", fields["Text"].Text == draft);
+        assert("busy refresh preserves unsaved input", fields["Text"].Text == draft);
         allowed = true;
         Invoke(inspector, "Apply");
         var applied = session.Document.Elements[0];
@@ -69,6 +68,7 @@ internal static class InspectorTests
         ArrowProperties(assert);
         InspectorLayerPanelTests.Run(assert);
         InspectorScrubTests.Run(assert);
+        InspectorLiveTests.Run(assert);
         InspectorColorTests.Run(assert);
         SymbolNames(assert);
         ContinuousPanelLayout(assert);
@@ -189,20 +189,19 @@ internal static class InspectorTests
         var inspector = new InspectorWindow(() => session);
         var layout = (Controls.Grid)inspector.Content;
         var scroll = LogicalDescendants(layout).OfType<Controls.ScrollViewer>().Single();
-        var apply = LogicalDescendants(layout).OfType<Controls.Button>().Single(button => System.Windows.Automation.AutomationProperties.GetName(button) == FloatCanvas.Localization.AppText.Get("Inspector.Apply"));
-        var reload = LogicalDescendants(layout).OfType<Controls.Button>().Single(button => System.Windows.Automation.AutomationProperties.GetName(button) == FloatCanvas.Localization.AppText.Get("Inspector.ReloadSelection"));
+        assert("live inspector has no apply or reload actions", !LogicalDescendants(layout).OfType<Controls.Button>().Any(button => new[] { FloatCanvas.Localization.AppText.Get("Inspector.Apply"), FloatCanvas.Localization.AppText.Get("Inspector.ReloadSelection") }.Contains(System.Windows.Automation.AutomationProperties.GetName(button))));
         var status = (Controls.TextBlock)Field(inspector, "status");
         assert("property sections are directly available without category tabs or expanders", !LogicalDescendants(layout).Any(control => control is Controls.Expander or Controls.TabControl));
         var scrollingControls = LogicalDescendants(scroll).ToHashSet();
-        assert("property apply reload and status are outside the scrolling content", !scrollingControls.Contains(apply) && !scrollingControls.Contains(reload) && !scrollingControls.Contains(status));
+        assert("property status is outside the scrolling content", !scrollingControls.Contains(status));
 
         var size = new Wpf.Size(inspector.MinWidth, inspector.MinHeight - System.Windows.Shell.WindowChrome.GetWindowChrome(inspector).CaptionHeight);
         layout.Measure(size); layout.Arrange(new Wpf.Rect(new Wpf.Point(), size)); layout.UpdateLayout();
-        var before = apply.TranslatePoint(new Wpf.Point(), layout);
-        assert("small property panel keeps footer actions and status inside its bounds", new Wpf.FrameworkElement[] { apply, reload, status }.All(InBounds));
+        var before = status.TranslatePoint(new Wpf.Point(), layout);
+        assert("small property panel keeps its status inside its bounds", new Wpf.FrameworkElement[] { status }.All(InBounds));
         assert("small property panel scrolls long applicable fields", scroll.ScrollableHeight > 0 && scroll.ViewportHeight > 0);
         scroll.ScrollToEnd(); layout.UpdateLayout();
-        assert("scrolling long properties leaves the apply button stationary", apply.TranslatePoint(new Wpf.Point(), layout) == before && scroll.VerticalOffset > 0);
+        assert("scrolling long properties leaves the status stationary", status.TranslatePoint(new Wpf.Point(), layout) == before && scroll.VerticalOffset > 0);
         assert("property layout checks create no native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);
 
         bool InBounds(Wpf.FrameworkElement control)

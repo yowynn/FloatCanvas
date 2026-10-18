@@ -208,7 +208,8 @@ public sealed partial class OverlayHost : IDisposable
 
         foreach (var pair in _windows)
         {
-            ShowWindow(pair.Display.Handle, IsVisible ? 8 : 0); // SW_SHOWNA
+            if (IsVisible) ShowWindowPreservingZOrder(pair.Display.Handle);
+            else ShowWindow(pair.Display.Handle, 0);
             ShowWindow(pair.Input.Handle, 8);
             SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, 0x13); // no move/size/activate
         }
@@ -270,12 +271,15 @@ public sealed partial class OverlayHost : IDisposable
     private void SetVisibleCore(bool visible)
     {
         IsVisible = visible;
-        // SW_SHOWNA also changes z order. A scene switch may call this while the
-        // toolbar is already visible; re-showing an opaque display would cover it.
-        // Reconcile actual HWND visibility (capture scopes can change it directly)
-        // without turning an idempotent visibility request into a raise operation.
+        // Keep both repeated requests and a real hidden-to-visible transition from
+        // raising the canvas above the input carrier, toolbar or owned panels.
+        // Capture scopes can change actual HWND visibility independently.
         foreach (var pair in _windows)
-            if (IsWindowVisible(pair.Display.Handle) != visible) ShowWindow(pair.Display.Handle, visible ? 8 : 0);
+        {
+            if (IsWindowVisible(pair.Display.Handle) == visible) continue;
+            if (visible) ShowWindowPreservingZOrder(pair.Display.Handle);
+            else ShowWindow(pair.Display.Handle, 0);
+        }
         if (visible) Render();
     }
 
@@ -426,7 +430,7 @@ public sealed partial class OverlayHost : IDisposable
                     if (!SetLayeredWindowAttributes(input.Handle, 0, 1, 2)) throw new Win32Exception(Marshal.GetLastWin32Error());
                     buffer = new(monitor.Bounds.Width, monitor.Bounds.Height);
                     _windows.Add(new(monitor, display, input, buffer));
-                    if (IsVisible) ShowWindow(display.Handle, 8);
+                    if (IsVisible) ShowWindowPreservingZOrder(display.Handle);
                     if (IsEditing) ShowWindow(input.Handle, 8);
                 }
                 catch

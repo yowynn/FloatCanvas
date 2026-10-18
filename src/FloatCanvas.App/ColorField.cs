@@ -19,7 +19,13 @@ internal sealed class ColorField : UserControl
     private readonly TextBlock label = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 10, FontWeight = FontWeights.SemiBold };
     private readonly Popup popup;
     private readonly ColorPickerPanel picker;
-    private bool pickerSessionOpen, draftCommitted;
+    private bool pickerSessionOpen, draftCommitted, isMixed;
+
+    internal bool IsMixed
+    {
+        get => isMixed;
+        set { if (isMixed == value) return; isMixed = value; RefreshValue(); }
+    }
 
     internal bool IsPickerOpen => popup.IsOpen;
     internal DependencyObject PickerRoot => popup.Child;
@@ -52,7 +58,7 @@ internal sealed class ColorField : UserControl
         }
         Content = row;
         picker = new ColorPickerPanel(role, this.library) { DialogOwner = () => Window.GetWindow(this) };
-        var border = new Border { Child = picker, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
+        var border = new Border { Child = new System.Windows.Documents.AdornerDecorator { Child = picker }, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
         border.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };
@@ -76,7 +82,12 @@ internal sealed class ColorField : UserControl
             popupSession?.UnregisterPopup(popup); popupSession = null;
         };
         button.Click += (_, _) => { if (popup.IsOpen) ClosePicker(); else popup.IsOpen = true; };
-        picker.ColorChosen += _ => ClosePicker();
+        picker.ColorChosen += color =>
+        {
+            // An explicit choice can intentionally unify a mixed selection even
+            // when it equals the first layer's color. Plain popup closure cannot.
+            draftCommitted = true; SetUserValue(color); ClosePicker();
+        };
         picker.EyedropperRequested += () => { ClosePicker(); EyedropperRequested?.Invoke(); };
         Unloaded += (_, _) => ClosePicker();
         if (role == ColorRole.Background) Value = 0;
@@ -87,7 +98,8 @@ internal sealed class ColorField : UserControl
     {
         if (Value != value) library.Remember(value);
         bool returnToButton = popup.IsOpen && picker.IsKeyboardFocusWithin;
-        bool changed = Value != value;
+        bool changed = IsMixed || Value != value;
+        IsMixed = false;
         Value = value; if (popup.IsOpen) { picker.Value = value; popup.IsOpen = false; }
         // A committed choice completes this picker interaction. Keep keyboard access
         // on its trigger, just as Escape does; closed/background updates stay silent.
@@ -108,7 +120,7 @@ internal sealed class ColorField : UserControl
     {
         if (!pickerSessionOpen || draftCommitted) return;
         draftCommitted = true;
-        picker.CommitDraft(SetUserValue);
+        picker.CommitDraft(color => { if (!IsMixed || color != Value) SetUserValue(color); });
     }
     public void ClosePicker()
     {
@@ -127,8 +139,8 @@ internal sealed class ColorField : UserControl
         double alpha = (Value >> 24) / 255d;
         double luminance = alpha * (.2126 * ((Value >> 16) & 255) + .7152 * ((Value >> 8) & 255) + .0722 * (Value & 255)) + (1 - alpha) * 220;
         label.Foreground = luminance < 140 ? Brushes.White : Brushes.Black;
-        label.Text = (Value >> 24) == 0 ? L.Get("Color.Transparent") : ColorLibrary.ToHtml(Value, (Value >> 24) != 255);
-        string name = L.Get(Role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background") + " " + ColorLibrary.ToHtml(Value);
+        label.Text = IsMixed ? "—" : (Value >> 24) == 0 ? L.Get("Color.Transparent") : ColorLibrary.ToHtml(Value, (Value >> 24) != 255);
+        string name = L.Get(Role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background") + " " + (IsMixed ? L.Get("Feedback4.Inspector.Mixed") : ColorLibrary.ToHtml(Value));
         button.ToolTip = name; AutomationProperties.SetName(button, name); AutomationProperties.SetName(this, name);
     }
 }

@@ -17,6 +17,14 @@ internal static class NativeMethods
     internal static readonly nint HwndTopmost = -1;
     internal static readonly nint DpiPerMonitorV2 = -4;
 
+    // A visual restore must not raise the canvas, its owner, or any tool window.
+    internal static void ShowWindowPreservingZOrder(nint window)
+    {
+        const uint flags = 0x0257; // NOSIZE | NOMOVE | NOZORDER | NOACTIVATE | SHOWWINDOW | NOOWNERZORDER
+        if (!SetWindowPos(window, 0, 0, 0, 0, 0, flags))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    }
+
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     internal delegate nint WindowProcedure(nint hwnd, uint message, nuint wParam, nint lParam);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]

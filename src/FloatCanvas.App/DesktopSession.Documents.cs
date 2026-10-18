@@ -194,6 +194,7 @@ internal sealed partial class DesktopSession
     private async Task RestoreWorkspaceHistoryAsync()
     {
         if (DocumentOperationBusy || _windowCoordinator is not { } coordinator) return;
+        _inspector?.CompletePendingEdit();
         var request = new WindowSessionRequest(_host.EditingSessionVersion, _host.IsEditing, _live.Document);
         CloseImageDrop();
         _documentBusy = true;
@@ -253,6 +254,7 @@ internal sealed partial class DesktopSession
     {
         if (_documentExitRequested || _documentBusy) return;
         CloseImageDrop();
+        _inspector?.CompletePendingEdit();
         _documentExitRequested = true; _editor.Cancel();
         try { FlushToolState(commitDraft: true); await FlushRecoveryAsync(); _app.Shutdown(); }
         catch (Exception ex)
@@ -301,20 +303,28 @@ internal sealed partial class DesktopSession
         return assets;
     }
 
-    private async Task OpenProjectAsync()
+    private Task OpenProjectAsync() => OpenProjectPathAsync(null);
+
+    private async Task OpenProjectPathAsync(string? projectPath)
     {
         if (DocumentOperationBusy) return;
+        _inspector?.CompletePendingEdit();
         CloseImageDrop();
         _documentBusy = true;
         try
         {
-            var dialog = new Microsoft.Win32.OpenFileDialog { Title = L.Get("Project.OpenTitle"), Filter = L.Get("Project.Filter"), CheckFileExists = true };
-            if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return;
+            if (projectPath is null)
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog { Title = L.Get("Project.OpenTitle"), Filter = L.Get("Project.Filter"), CheckFileExists = true };
+                if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return;
+                projectPath = dialog.FileName;
+            }
+            projectPath = ProjectLaunchRequest.NormalizePath(projectPath);
             _editor.Cancel(); var previous = Active;
             if (!await ConfirmReplaceAsync(previous, L.Get("Project.ReplaceCurrent"))) return;
             string previousContent = Fingerprint(previous.Document);
             long focusVersion = _host.ForegroundLossVersion;
-            var loaded = await _projectStore.LoadAsync(dialog.FileName, _documentLifetime.Token);
+            var loaded = await _projectStore.LoadAsync(projectPath, _documentLifetime.Token);
             if (!ReferenceEquals(Active, previous) || Fingerprint(previous.Document) != previousContent)
             { UpdateStatus(L.Get("Project.OpenChanged")); return; }
             MergeAssets(loaded.Assets);
@@ -335,13 +345,13 @@ internal sealed partial class DesktopSession
                 _live = session; _editor.ReplaceSession(session, new(0, 0)); SwitchToolState(_documentLiveTool);
                 OnMonitorsChanged();
             }
-            _documentFiles[session] = new() { Path = dialog.FileName, SavedFingerprint = Fingerprint(session.Document) };
+            _documentFiles[session] = new() { Path = projectPath, SavedFingerprint = Fingerprint(session.Document) };
             bool editing;
             if (focusVersion != _host.ForegroundLossVersion)
             { SetEditing(false); editing = false; UpdateStatus(L.Get("Project.OpenedPassThrough")); }
             else editing = SetEditing(true);
             ScheduleRecovery();
-            if (editing) UpdateStatus(L.Get("Project.OpenedPrefix") + Path.GetFileName(dialog.FileName));
+            if (editing) UpdateStatus(L.Get("Project.OpenedPrefix") + Path.GetFileName(projectPath));
             RequestRender();
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Project.OpenFailed") + ex.Message); }
@@ -350,6 +360,7 @@ internal sealed partial class DesktopSession
     private async Task SaveProjectAsync(bool saveAs = false)
     {
         if (DocumentOperationBusy) return;
+        _inspector?.CompletePendingEdit();
         _editor.Cancel(); _documentBusy = true;
         try { await SaveSessionAsync(Active, saveAs); }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Project.SaveFailed") + ex.Message); }
@@ -383,6 +394,7 @@ internal sealed partial class DesktopSession
     private async Task ExportAsync(bool transparent = false)
     {
         if (DocumentOperationBusy) return;
+        _inspector?.CompletePendingEdit();
         _editor.Cancel(); var session = Active;
         _documentBusy = true;
         try
@@ -595,16 +607,6 @@ internal sealed partial class DesktopSession
         _editor.Cancel(); _editor.ReplaceSession(_live, new(0, 0)); SwitchToolState(_documentLiveTool);
         ScheduleRecovery(); RequestRender(); UpdateStatus(L.Get("Capture.ReturnedLive"));
     }
-    private void ResumeCapture()
-    {
-        if (_documentBusy || _capture is null) { UpdateStatus(L.Get("Capture.NoDraft")); return; }
-        if (ReferenceEquals(Active, _live)) _documentLiveTool = _editor.Tool;
-        _editor.Cancel();
-        if (EnsureCaptureVisible()) ScheduleRecovery();
-        _editor.ReplaceSession(_capture, _captureOrigin); SwitchToolState(EditorTool.Select);
-        bool editing = SetEditing(true); RequestRender();
-        if (editing) UpdateStatus(WithCaptureWarning(L.Get("Capture.Resumed"), _documentFrozenCaptureWarning));
-    }
     private async Task<CapturedDesktop> CaptureCleanDesktopAsync()
     {
         var target = Active;
@@ -640,11 +642,6 @@ internal sealed partial class DesktopSession
     private static string? CaptureWarning(CapturedDesktop capture) => capture.Outputs.Any(output => output.ProtectedContentMaskedOut)
         ? L.Get("Capture.ProtectedRegions") : null;
     private static string WithCaptureWarning(string message, string? warning) => warning is null ? message : message + " " + warning;
-    private static CanvasElement Background(CapturedDesktop capture, string assetId) => new()
-    {
-        Kind = ElementKind.Image, AssetId = assetId, Width = capture.Bounds.Width, Height = capture.Bounds.Height,
-        Transform = Affine2D.Translation(capture.Bounds.Left, capture.Bounds.Top), Locked = true
-    };
     private MonitorInfo CurrentMonitor()
     {
         var cursor = System.Windows.Forms.Cursor.Position;

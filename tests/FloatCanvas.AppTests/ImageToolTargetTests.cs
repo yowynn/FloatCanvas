@@ -8,7 +8,7 @@ internal static class ImageToolTargetTests
 {
     internal static void Run(Action<string, bool> assert)
     {
-        foreach (var tool in new[] { EditorTool.Crop, EditorTool.Redact, EditorTool.Blur, EditorTool.Pixelate })
+        foreach (var tool in new[] { EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate })
         {
             var locked = Create(tool, true);
             locked.Session.Execute("Seed redo", d => d.LayerOpacity = .8);

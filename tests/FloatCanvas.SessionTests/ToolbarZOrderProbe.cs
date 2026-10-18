@@ -18,12 +18,213 @@ namespace FloatCanvas.SessionTests;
 internal static partial class Program
 {
     private static bool ToolbarZOrderProbe;
+    private static bool VisibilityRestoreProbe;
+    private static string VisibilityArtifacts = Path.Combine(Path.GetTempPath(), "FloatCanvas-visibility-restore", Guid.NewGuid().ToString("N"));
     private static bool ToolbarZCaptureRestoreExtension;
     private static bool ToolbarZCanvasActivationExtension;
-    private static string ToolbarZOrderReportPath => Path.Combine(Root, "artifacts", "e2e", "session-toolbar-z-order.json");
+    private static string ToolbarZOrderReportPath => VisibilityRestoreProbe ? Path.Combine(VisibilityArtifacts, "visibility-restore.json") :
+        Path.Combine(Root, "artifacts", "e2e", "session-toolbar-z-order.json");
     private static readonly List<object> ToolbarZOrderStages = [];
     private static readonly List<CheckResult> ToolbarZRestoreChecks = [];
     private static readonly List<CheckResult> ToolbarZActivationChecks = [];
+
+    // Current-toolbar regression. The legacy probe below intentionally retains its
+    // historical fixture; this route calls the real current visibility command.
+    private static async Task RunVisibilityRestoreProbe(Wpf.Application application)
+    {
+        var monitor = ((IReadOnlyList<MonitorInfo>)typeof(OverlayHost).GetMethod("EnumerateMonitors",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.Invoke(null, null)!).First(value => value.IsPrimary);
+        var tile = new PixelBounds(monitor.WorkArea.Left + 24, monitor.WorkArea.Top + 24,
+            Math.Min(1900, monitor.WorkArea.Width - 48), Math.Min(1200, monitor.WorkArea.Height - 48));
+        Func<IReadOnlyList<MonitorInfo>> provider = () => [monitor with { Bounds = tile, WorkArea = tile }];
+        var host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost),
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, null,
+            [OverlayMonitorScope.PrimaryScreen, provider, false], null)!;
+        object? session = null;
+        KeyboardInputIsolation? isolation = null;
+        try
+        {
+            session = Activator.CreateInstance(DesktopType,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic,
+                null, [application, host], null)!;
+            Field<System.Windows.Forms.NotifyIcon>(session, "_tray").Visible = false;
+            await CallAsync(session, "InitializeDocumentsAsync", false);
+            PauseAutomaticRecovery(session);
+            var live = Field<EditorSession>(session, "_live");
+            var marker = new CanvasElement { Kind = ElementKind.Rectangle, Width = tile.Width, Height = tile.Height,
+                Transform = Affine2D.Translation(tile.Left, tile.Top),
+                Style = new() { Fill = 0xFFEC00EC, Stroke = 0xFFEC00EC, StrokeWidth = 0 } };
+            live.Add(marker, "Own opaque z-order fixture"); live.SetSelection([]);
+            Directory.CreateDirectory(VisibilityArtifacts);
+            var project = new SceneDocument { Viewport = new(monitor.Bounds.Left, monitor.Bounds.Top, monitor.Bounds.Width, monitor.Bounds.Height),
+                Elements = [new CanvasElement { Kind = ElementKind.Rectangle, Width = monitor.Bounds.Width, Height = monitor.Bounds.Height,
+                    Transform = Affine2D.Translation(monitor.Bounds.Left, monitor.Bounds.Top),
+                    Style = new() { Fill = 0xFFEC00EC, Stroke = 0xFFEC00EC, StrokeWidth = 0 } }] };
+            await new ProjectStore().SaveAsync(Path.Combine(VisibilityArtifacts, "opaque-scene.floatcanvas"), project, Field<AssetLibrary>(session, "_assets"));
+            var toolbar = Field<Wpf.Window>(session, "_toolbar");
+            toolbar.Title = "FloatCanvas visibility restore native check";
+            toolbar.Show();
+            toolbar.Left = (tile.Left + 18) * 96d / monitor.DpiX;
+            toolbar.Top = (tile.Top + 18) * 96d / monitor.DpiY;
+            await SettleOwnToolbarScene(application);
+            nint toolbarHandle = new WindowInteropHelper(toolbar).Handle;
+            Native.SetForegroundWindow(toolbarHandle); Native.SetFocus(toolbarHandle);
+            Console.WriteLine($"WAITING_FOR_VISIBILITY_FOREGROUND pid={Environment.ProcessId} hwnd={toolbarHandle} title={toolbar.Title}");
+            Console.Out.Flush();
+            var activation = Stopwatch.StartNew();
+            while (Native.GetForegroundWindow() != toolbarHandle)
+            {
+                if (activation.Elapsed > TimeSpan.FromSeconds(45)) throw new InvalidOperationException("Own toolbar foreground permission timed out.");
+                await Task.Delay(25);
+            }
+            Check((bool)Call(session, "SetEditing", true)!, "Production editing entry succeeds on the isolated current toolbar");
+            host.SetVisible(true);
+            Call(session, "ToggleInspector");
+            var inspector = Field<Wpf.Window>(session, "_inspector");
+            inspector.Left = (tile.Left + 30) * 96d / monitor.DpiX;
+            inspector.Top = (tile.Top + 180) * 96d / monitor.DpiY;
+            inspector.Height = Math.Max(inspector.MinHeight, Math.Min(500, (tile.Height - 210) * 96d / monitor.DpiY));
+            await SettleOwnToolbarScene(application);
+            var buttons = Field<System.Collections.IDictionary>(session, "_toolbarToolButtons");
+            var button = (Button)buttons[buttons.Keys.Cast<object>().Single(value => value.ToString() == "Freehand")]!;
+            var panelButton = (Button)inspector.Template.FindName("Close", inspector);
+            nint inspectorHandle = new WindowInteropHelper(inspector).Handle;
+            Check(inspector.Owner == toolbar && inspectorHandle != 0, "The exercised panel is the production toolbar-owned Inspector");
+            var pair = host.Diagnostics.Single();
+            nint input = pair.InputHandle;
+            Check(Native.SetForegroundWindow(input), "Fixture can activate only its own production input HWND");
+            Native.SetFocus(input);
+            await SettleOwnToolbarScene(application);
+            isolation = (KeyboardInputIsolation?)typeof(OverlayHost).GetField("_keyboardIsolation",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(host);
+            long lease = isolation!.CurrentLeaseId, epoch = host.EditingSessionVersion;
+            var baseline = Sample("baseline", true);
+            AssertUi(baseline, "Baseline");
+            Check(baseline.ToolbarPixels.OccludingPixels == 0 && baseline.PanelPixels.OccludingPixels == 0,
+                "Own toolbar and panel baseline pixels are clear of the opaque magenta canvas");
+
+            for (int index = 0; index < 6; index++)
+            {
+                Call(session, "ToggleCanvasVisibility");
+                var hidden = Sample($"toggle-{index}-hidden-immediate", false);
+                Check(!host.IsVisible && host.Diagnostics.All(value => !value.DisplayVisible), $"Toggle {index} hides the actual display HWND");
+                AssertLease(hidden, $"Hidden toggle {index}"); AssertUi(hidden, $"Hidden toggle {index}");
+                Call(session, "ToggleCanvasVisibility");
+                var shown = Sample($"toggle-{index}-shown-immediate", true);
+                Check(host.IsVisible && host.Diagnostics.All(value => value.DisplayVisible), $"Toggle {index} shows the actual display HWND");
+                AssertLease(shown, $"Shown toggle {index}"); AssertUi(shown, $"Shown toggle {index}");
+                Check(shown.ToolbarPixels.OccludingPixels == 0 && shown.PanelPixels.OccludingPixels == 0,
+                    $"Shown toggle {index} leaves both UI pixel interiors unobscured before any Dispatcher callback");
+                host.SetVisible(true);
+                AssertUi(Sample($"toggle-{index}-idempotent-immediate", true), $"Repeated show {index}");
+                await application.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+            }
+
+            typeof(OverlayHost).GetProperty("ForceLegacyCleanCapture", System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic)!.SetValue(host, true);
+            using (var scope = host.BeginCleanCapture())
+            {
+                Check(scope.Strategy == CaptureVisibilityStrategy.LegacyInputOffscreen && !Native.IsWindowVisible(pair.DisplayHandle),
+                    "Forced legacy scope really hides the canvas without hiding the two visible tool surfaces");
+                Check(Native.IsWindowVisible(toolbarHandle) && Native.IsWindowVisible(inspectorHandle), "Legacy restore exercises already visible UI, rather than re-showing it as a correction");
+            }
+            var restored = Sample("legacy-display-restore-immediate", true);
+            AssertLease(restored, "Legacy capture restore"); AssertUi(restored, "Legacy capture restore");
+            Check(restored.ToolbarPixels.OccludingPixels == 0 && restored.PanelPixels.OccludingPixels == 0,
+                "Legacy display restore does not paint over either existing UI surface");
+            using (host.BeginCleanCapture([toolbarHandle, inspectorHandle])) { }
+            var ownedRestore = Sample("legacy-owned-visuals-restore-immediate", true);
+            AssertLease(ownedRestore, "Owned visual restore"); AssertUi(ownedRestore, "Owned visual restore");
+
+            Call(session, "SetEditing", false);
+            Check((bool)Call(session, "SetEditing", true)!, "Production mode re-entry succeeds after the visibility cycles");
+            var reentered = Sample("production-mode-reentry-immediate", true);
+            AssertUi(reentered, "Production mode re-entry");
+            Check(host.IsEditing && host.IsKeyboardIsolationActive && host.EditingSessionVersion != epoch,
+                "Mode re-entry owns a new healthy editing session without changing the document");
+            Check(ReferenceEquals(Active(session), live) && live.Document.Elements.Count == 1 && live.Document.Elements[0].Id == marker.Id,
+                "Visibility and capture restores preserve the same document and its opaque fixture object");
+
+            VisibilityRestoreObservation Sample(string phase, bool pixels)
+            {
+                // No await, Dispatcher push, tool re-show, activation or corrective Z-order
+                // mutation occurs between the production operation and these observations.
+                var toolbarState = ObserveSurface(toolbarHandle, button);
+                var panelState = ObserveSurface(inspectorHandle, panelButton);
+                int displayRank = CurrentToolbarZRank(pair.DisplayHandle), inputRank = CurrentToolbarZRank(input);
+                var observation = new VisibilityRestoreObservation(phase, host.IsVisible, host.IsEditing, host.IsKeyboardIsolationActive,
+                    isolation!.CurrentLeaseId, host.EditingSessionVersion, (long)Native.GetForegroundWindow(), (long)GetFocus(),
+                    toolbarState.Rank, panelState.Rank, displayRank, inputRank, toolbarState.Hit, panelState.Hit,
+                    Native.IsWindowVisible(toolbarHandle), Native.IsWindowVisible(inspectorHandle),
+                    pixels ? ReadOwnPixels(toolbarState.Bounds) : new(0,0), pixels ? ReadOwnPixels(panelState.Bounds) : new(0,0));
+                ToolbarZOrderStages.Add(observation);
+                return observation;
+            }
+            void AssertLease(VisibilityRestoreObservation observation, string name) => Check(observation.Editing && observation.Isolation &&
+                observation.Lease == lease && observation.Epoch == epoch && observation.Foreground == (long)input && observation.Focus == (long)input,
+                name + " preserves the exact input foreground, focus, editing epoch and keyboard lease");
+            void AssertUi(VisibilityRestoreObservation observation, string name) => Check(observation.ToolbarVisible && observation.PanelVisible &&
+                observation.ToolbarHit == (long)toolbarHandle && observation.PanelHit == (long)inspectorHandle &&
+                observation.ToolbarRank < observation.InputRank && observation.PanelRank < observation.InputRank &&
+                (!observation.Visible || observation.ToolbarRank < observation.DisplayRank && observation.PanelRank < observation.DisplayRank),
+                name + " immediately keeps the current toolbar and owned panel above covering native HWNDs");
+
+            (int Rank, long Hit, System.Drawing.Rectangle Bounds) ObserveSurface(nint handle, Button target)
+            {
+                var corner = target.PointToScreen(new(3,3));
+                var end = target.PointToScreen(new(target.ActualWidth-3,target.ActualHeight-3));
+                var center = target.PointToScreen(new(target.ActualWidth/2,target.ActualHeight/2));
+                var bounds = System.Drawing.Rectangle.FromLTRB((int)Math.Ceiling(corner.X),(int)Math.Ceiling(corner.Y),(int)Math.Floor(end.X),(int)Math.Floor(end.Y));
+                if (!tile.Contains(new(bounds.Left,bounds.Top)) || !tile.Contains(new(bounds.Right-1,bounds.Bottom-1)))
+                    throw new InvalidOperationException("Own UI sample must fit inside the bounded synthetic canvas.");
+                return (CurrentToolbarZRank(handle), (long)Native.WindowFromPoint(new((int)Math.Round(center.X),(int)Math.Round(center.Y))), bounds);
+            }
+        }
+        finally
+        {
+            if (session is IDisposable disposable) disposable.Dispose(); else host.Dispose();
+            foreach (Wpf.Window window in application.Windows.Cast<Wpf.Window>().ToArray()) window.Close();
+        }
+        Check(isolation is not null && !isolation.IsThreadAlive && !isolation.IsLeaseActive,
+            "The isolated keyboard lease and worker stop when this fixture disposes");
+    }
+
+    private static OwnPixelObservation ReadOwnPixels(System.Drawing.Rectangle bounds)
+    {
+        // Flush only the compositor. Do not pump the WPF Dispatcher: Loaded callbacks
+        // would hide the exact transient this regression must catch.
+        Marshal.ThrowExceptionForHR(ToolbarZNative.DwmFlush());
+        using var bitmap = new System.Drawing.Bitmap(bounds.Width, bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            nint screen = Native.GetDC(0), target = graphics.GetHdc();
+            try
+            {
+                if (!ToolbarZNative.BitBlt(target,0,0,bounds.Width,bounds.Height,screen,bounds.Left,bounds.Top,0x40CC0020))
+                    throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            }
+            finally { graphics.ReleaseHdc(target); Native.ReleaseDC(0,screen); }
+        }
+        int occluded = 0;
+        var data = bitmap.LockBits(new(0,0,bounds.Width,bounds.Height), System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        try
+        {
+            byte[] row = new byte[bounds.Width*4];
+            for (int y=0;y<bounds.Height;y++)
+            {
+                Marshal.Copy(data.Scan0+y*data.Stride,row,0,row.Length);
+                for (int x=0;x<bounds.Width;x++)
+                    if (row[x*4] > 180 && row[x*4+1] < 50 && row[x*4+2] > 180) occluded++;
+            }
+        }
+        finally { bitmap.UnlockBits(data); }
+        return new(bounds.Width*bounds.Height,occluded);
+    }
+
+    private sealed record OwnPixelObservation(int Samples, int OccludingPixels);
+    private sealed record VisibilityRestoreObservation(string Phase, bool Visible, bool Editing, bool Isolation, long Lease, long Epoch,
+        long Foreground, long Focus, int ToolbarRank, int PanelRank, int DisplayRank, int InputRank, long ToolbarHit, long PanelHit,
+        bool ToolbarVisible, bool PanelVisible, OwnPixelObservation ToolbarPixels, OwnPixelObservation PanelPixels);
 
     private static async Task RunToolbarZOrderProbe(Wpf.Application application)
     {
@@ -93,7 +294,7 @@ internal static partial class Program
                 Foreground = Native.GetForegroundWindow().ToInt64(), Toolbar = new WindowInteropHelper(toolbar).Handle.ToInt64() });
             Check(entry && host.IsEditing, "Single actual production SetEditing returns true without a correcting activation");
             await SettleOwnToolbarScene(application);
-            var before = ObserveToolbarZOrder("LiveBeforeResume", session, host, toolbar, blue);
+            var before = ObserveToolbarZOrder("LiveBeforeLegacyProjectOpen", session, host, toolbar, blue);
             ToolbarZOrderStages.Add(before);
             Check(before.Editing && before.Isolation && before.ToolbarVisible && before.ToolbarEnabled && before.CenterHitToolbar && before.BluePixels >= 3 && before.ToolbarAboveCoveringOverlays,
                 "Live baseline toolbar is enabled, physically hittable, above covering overlays and visibly contains its blue glyph");
@@ -115,16 +316,16 @@ internal static partial class Program
 
             // Original production method seam: no tool-window Show/Activate/SetWindowPos,
             // input injection, or focus assignment is added before or after this call.
-            Call(session, "ResumeCapture");
-            ToolbarZOrderStages.Add(ObserveToolbarZOrder("ResumeReturnedImmediately", session, host, toolbar, blue));
+            capture = await OpenLegacyCaptureFixtureAsync(session, capture!.Document.Clone(), Field<AssetLibrary>(session, "_assets"));
+            ToolbarZOrderStages.Add(ObserveToolbarZOrder("LegacyProjectOpenReturnedImmediately", session, host, toolbar, blue));
             await SettleOwnToolbarScene(application);
-            var after = ObserveToolbarZOrder("CaptureAfterResume", session, host, toolbar, blue);
+            var after = ObserveToolbarZOrder("CaptureAfterLegacyProjectOpen", session, host, toolbar, blue);
             ToolbarZOrderStages.Add(after);
-            Results.Add(new("Resume uses the recovered capture while editing and the existing toolbar remain visible and enabled",
+            Results.Add(new("Project opening uses the legacy capture while editing and the existing toolbar remain visible and enabled",
                 ReferenceEquals(Active(session), capture) && after.Editing && after.Isolation && after.ToolbarVisible && after.ToolbarEnabled));
-            Results.Add(new("After ResumeCapture, the real toolbar button center still hits the toolbar HWND", after.CenterHitToolbar));
-            Results.Add(new("After ResumeCapture, the existing toolbar remains above every covering visible display/input HWND", after.ToolbarAboveCoveringOverlays));
-            Results.Add(new("After ResumeCapture, the toolbar's real blue glyph remains visible in screen pixels", after.BluePixels >= 3));
+            Results.Add(new("After legacy project opening, the real toolbar button center still hits the toolbar HWND", after.CenterHitToolbar));
+            Results.Add(new("After legacy project opening, the existing toolbar remains above every covering visible display/input HWND", after.ToolbarAboveCoveringOverlays));
+            Results.Add(new("After legacy project opening, the toolbar's real blue glyph remains visible in screen pixels", after.BluePixels >= 3));
             if (ToolbarZCaptureRestoreExtension)
             {
                 nint toolbarHandle = new WindowInteropHelper(toolbar).Handle;
@@ -281,6 +482,20 @@ internal static partial class Program
     private static void WriteToolbarZOrderReport(bool passed)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(ToolbarZOrderReportPath)!);
+        if (VisibilityRestoreProbe)
+        {
+            File.WriteAllText(ToolbarZOrderReportPath, JsonSerializer.Serialize(new
+            {
+                SchemaVersion = 1, Passed = passed, Failure, Timestamp = DateTimeOffset.Now, Profile,
+                Checks = Results.ToArray(), Stages = ToolbarZOrderStages.ToArray(),
+                WindowsAssembly = typeof(OverlayHost).Assembly.Location,
+                WindowsMvid = typeof(OverlayHost).Assembly.ManifestModule.ModuleVersionId,
+                PhysicalInputInjection = false, DesktopCapture = false, OwnUiRoiReadback = true,
+                Method = "Current production ToggleCanvasVisibility; immediate native Z-rank and physical hit tests, then compositor-only flush and synthetic-scene toolbar/panel ROI readback before any Dispatcher callback. Six hide/show/idempotent cycles, legacy display-only and owned-visual capture restore, and production mode re-entry.",
+                Scope = "One bounded physical monitor tile with synthetic opaque canvas and real current toolbar/Inspector. This is a native production-method fixture, not physical mouse invocation, full-screen UI acceptance, mixed-DPI or legacy-Windows validation. No foreign desktop image is captured or retained."
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            return;
+        }
         File.WriteAllText(ToolbarZOrderReportPath, JsonSerializer.Serialize(new
         {
             SchemaVersion = 1, Passed = passed, Failure, Timestamp = DateTimeOffset.Now, Profile,
@@ -291,7 +506,7 @@ internal static partial class Program
             CanvasActivationExtension = new { Requested = ToolbarZCanvasActivationExtension, ExpectedCount = 3,
                 Checks = ToolbarZActivationChecks.ToArray(), Passed = ToolbarZCanvasActivationExtension && ToolbarZActivationChecks.Count == 3 && ToolbarZActivationChecks.All(result => result.Passed) },
             PhysicalInputInjection = false, DesktopCapture = false, OwnToolbarRoiReadback = true, CaptureAffinityScopeCreated = ToolbarZCaptureRestoreExtension,
-            Method = "Fresh recovery contains own synthetic white background and vector marker; a single real production editing entry establishes a blue-glyph toolbar pixel/hit/z-rank baseline. Production ResumeCapture is then called while the toolbar is already visible, followed only by readback. No corrective activation, re-show, raise or focus assignment is performed.",
+            Method = "Fresh recovery contains own synthetic white background and vector marker; a single real production editing entry establishes a blue-glyph toolbar pixel/hit/z-rank baseline. Production OpenProjectPathAsync is then called with an owned legacy fixture while the toolbar is already visible, followed only by readback. No corrective activation, re-show, raise or focus assignment is performed.",
             Scope = "Independent opt-in toolbar display/hit/z-order regression using production methods; does not prove actual screenshot acquisition, mouse invocation, other tool windows, games or full v1 completion. Pixel samples are only within the own blue-button rectangle; full desktop pixels are neither captured nor retained."
         }, new JsonSerializerOptions { WriteIndented = true }));
     }

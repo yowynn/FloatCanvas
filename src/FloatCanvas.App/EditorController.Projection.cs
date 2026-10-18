@@ -73,12 +73,17 @@ internal sealed partial class EditorController
             // The box is a screen gesture. Test the projected contour, rather than the
             // inverse-mapped AABB, which selects unrelated objects beside a trapezoid.
             var transform = mapping.ElementToScreen(element);
-            var local = ElementGeometry.UsesPoints(element.Kind) ? element.Points : ElementGeometry.Outline(element);
+            var local = ElementGeometry.IsLine(element.Kind) ? ElementGeometry.LineShaftPoints(element) :
+                ElementGeometry.UsesPoints(element.Kind) ? element.Points : ElementGeometry.Outline(element);
             bool closed = !ElementGeometry.UsesPoints(element.Kind);
             bool intersects = ProjectedContourIntersectsRectangle(local, transform, rectangle, closed);
+            bool hasStroke = element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !ElementGeometry.IsLiveEffect(element.Kind);
+            if (!intersects && hasStroke)
+                intersects = ProjectedStrokeIntersectsRectangle(local, transform, rectangle, closed, element.Style.StrokeWidth);
             if (!intersects && ElementGeometry.IsLine(element.Kind))
-                intersects = ElementGeometry.GetArrowHeads(element).Any(head =>
-                    ProjectedContourIntersectsRectangle(head, transform, rectangle, true));
+                intersects = ElementGeometry.GetStyledArrowHeads(element).Any(head =>
+                    ProjectedContourIntersectsRectangle(head.Points, transform, rectangle, true) ||
+                    head.Style == ArrowHeadStyle.Open && ProjectedStrokeIntersectsRectangle(head.Points, transform, rectangle, false, element.Style.StrokeWidth));
             if (intersects) selected.UnionWith(Session.SelectionUnitIds(element.Id));
         }
         Session.SetSelection(selected);
@@ -90,25 +95,16 @@ internal sealed partial class EditorController
         if (points.Count == 0) return false;
         // Clip before homogeneous division. Connecting projected endpoints from opposite
         // sides of the horizon would invent a segment through the visible screen.
-        (double X, double Y, double Offset)[] boundaries =
-        [
-            (transform.M31, transform.M32, transform.M33 - 1e-8),
-            (transform.M11 - rectangle.Left * transform.M31, transform.M12 - rectangle.Left * transform.M32, transform.M13 - rectangle.Left * transform.M33),
-            (rectangle.Right * transform.M31 - transform.M11, rectangle.Right * transform.M32 - transform.M12, rectangle.Right * transform.M33 - transform.M13),
-            (transform.M21 - rectangle.Top * transform.M31, transform.M22 - rectangle.Top * transform.M32, transform.M23 - rectangle.Top * transform.M33),
-            (rectangle.Bottom * transform.M31 - transform.M21, rectangle.Bottom * transform.M32 - transform.M22, rectangle.Bottom * transform.M33 - transform.M23)
-        ];
-        static double Side(PointD p, (double X, double Y, double Offset) boundary) =>
-            p.X * boundary.X + p.Y * boundary.Y + boundary.Offset;
+        var boundaries = ProjectedRectangleBoundaries(transform, rectangle);
         if (!closed)
         {
-            if (points.Count == 1) return boundaries.All(boundary => Side(points[0], boundary) >= 0);
+            if (points.Count == 1) return boundaries.All(boundary => BoundarySide(points[0], boundary) >= 0);
             for (int i = 1; i < points.Count; i++)
             {
                 double first = 0, last = 1;
                 foreach (var boundary in boundaries)
                 {
-                    double a = Side(points[i - 1], boundary), b = Side(points[i], boundary);
+                    double a = BoundarySide(points[i - 1], boundary), b = BoundarySide(points[i], boundary);
                     if (a < 0 && b < 0) { last = -1; break; }
                     if (a < 0) first = Math.Max(first, a / (a - b));
                     else if (b < 0) last = Math.Min(last, a / (a - b));
@@ -117,21 +113,68 @@ internal sealed partial class EditorController
             }
             return false;
         }
+        return ClipProjectedPolygon(points, boundaries).Count > 0;
+    }
+
+    private static bool ProjectedStrokeIntersectsRectangle(IReadOnlyList<PointD> points, Projective2D transform,
+        RectD rectangle, bool closed, double width)
+    {
+        if (points.Count == 0 || width <= 0) return false;
+        double radius = width / 2;
+        var bounds = new RectD(points.Min(p => p.X), points.Min(p => p.Y),
+            points.Max(p => p.X) - points.Min(p => p.X), points.Max(p => p.Y) - points.Min(p => p.Y)).Inflate(radius);
+        // Pull the marquee's positive branch into local space and clip it to bounded
+        // stroke extents. Distances there retain round caps/joins and nonuniform or
+        // projective widths without inflating the screen rectangle by a maximum scale.
+        var polygon = ClipProjectedPolygon(Corners(bounds), ProjectedRectangleBoundaries(transform, rectangle));
+        if (polygon.Count == 0) return false;
+        int segments = closed ? points.Count : Math.Max(1, points.Count - 1);
+        for (int i = 0; i < segments; i++)
+        {
+            var a = points[i]; var b = points[closed ? (i + 1) % points.Count : Math.Min(i + 1, points.Count - 1)];
+            if (ElementGeometry.PointInPolygon(a, polygon) || ElementGeometry.PointInPolygon(b, polygon)) return true;
+            // The centerline intersection has already been tested. The remaining
+            // capsule overlap occurs at a vertex of either segment/polygon boundary.
+            for (int edge = 0; edge < polygon.Count; edge++)
+            {
+                var first = polygon[edge]; var last = polygon[(edge + 1) % polygon.Count];
+                if (ElementGeometry.DistanceToSegment(first, a, b) <= radius ||
+                    ElementGeometry.DistanceToSegment(a, first, last) <= radius ||
+                    ElementGeometry.DistanceToSegment(b, first, last) <= radius) return true;
+            }
+        }
+        return false;
+    }
+
+    private static (double X, double Y, double Offset)[] ProjectedRectangleBoundaries(Projective2D transform, RectD rectangle) =>
+    [
+        (transform.M31, transform.M32, transform.M33 - 1e-8),
+        (transform.M11 - rectangle.Left * transform.M31, transform.M12 - rectangle.Left * transform.M32, transform.M13 - rectangle.Left * transform.M33),
+        (rectangle.Right * transform.M31 - transform.M11, rectangle.Right * transform.M32 - transform.M12, rectangle.Right * transform.M33 - transform.M13),
+        (transform.M21 - rectangle.Top * transform.M31, transform.M22 - rectangle.Top * transform.M32, transform.M23 - rectangle.Top * transform.M33),
+        (rectangle.Bottom * transform.M31 - transform.M21, rectangle.Bottom * transform.M32 - transform.M22, rectangle.Bottom * transform.M33 - transform.M23)
+    ];
+
+    private static double BoundarySide(PointD point, (double X, double Y, double Offset) boundary) =>
+        point.X * boundary.X + point.Y * boundary.Y + boundary.Offset;
+
+    private static List<PointD> ClipProjectedPolygon(IReadOnlyList<PointD> points, (double X, double Y, double Offset)[] boundaries)
+    {
         var polygon = points.ToList();
         foreach (var boundary in boundaries)
         {
-            if (polygon.Count == 0) return false;
+            if (polygon.Count == 0) return polygon;
             var input = polygon; polygon = [];
-            var previous = input[^1]; double before = Side(previous, boundary);
+            var previous = input[^1]; double before = BoundarySide(previous, boundary);
             foreach (var current in input)
             {
-                double after = Side(current, boundary);
+                double after = BoundarySide(current, boundary);
                 if ((before >= 0) != (after >= 0))
                     polygon.Add(previous + (current - previous) * (before / (before - after)));
                 if (after >= 0) polygon.Add(current);
                 previous = current; before = after;
             }
         }
-        return polygon.Count > 0;
+        return polygon;
     }
 }

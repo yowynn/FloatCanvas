@@ -21,6 +21,19 @@ $packageDirectory = $executables[0].DirectoryName
 foreach ($required in @('LICENSE', 'CHANGELOG.md', 'README.md', 'README.en.md', 'User-Guide.md', 'User-Guide.en.md', 'FloatCanvas.Localization.dll', 'FloatCanvas.runtimeconfig.json', 'PACKAGE-INFO.json')) {
     if (-not (Test-Path -LiteralPath (Join-Path $packageDirectory $required) -PathType Leaf)) { throw "Package is missing $required" }
 }
+$documentationPrefix = $packageDirectory.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+foreach ($document in @('README.md', 'README.en.md', 'User-Guide.md', 'User-Guide.en.md', 'Docs/User-Guide.md', 'Docs/User-Guide.en.md')) {
+    $documentPath = Join-Path $packageDirectory $document
+    foreach ($link in [regex]::Matches([IO.File]::ReadAllText($documentPath), '\]\(([^)]+)\)')) {
+        $target = $link.Groups[1].Value
+        if ($target -match '^(?:[a-z][a-z0-9+.-]*:|#)') { continue }
+        $relativePath = [Uri]::UnescapeDataString(($target -split '#', 2)[0])
+        $targetPath = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $documentPath) $relativePath))
+        if (-not $targetPath.StartsWith($documentationPrefix, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $targetPath)) {
+            throw "Packaged documentation link is unavailable: $document -> $target"
+        }
+    }
+}
 $manifest = Get-Content -LiteralPath (Join-Path $packageDirectory 'PACKAGE-INFO.json') -Raw | ConvertFrom-Json
 if ($manifest.Product -cne '浮绘 FloatCanvas' -or $manifest.RuntimeIdentifier -cne 'win-x64' -or $manifest.Configuration -cne 'Release') {
     throw 'The update manifest must identify the FloatCanvas Windows x64 Release package.'

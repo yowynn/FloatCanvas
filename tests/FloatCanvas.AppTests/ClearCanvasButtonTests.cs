@@ -55,7 +55,7 @@ internal static class ClearCanvasButtonTests
         Click(button);
         check("even a third routed click cannot launch a second clear while busy", clears == 1 && !button.IsConfirming && !button.IsEnabled);
         completion.SetResult(); PumpUntil(() => button.IsEnabled);
-        check("completed clear restores the initial trash action", !button.IsConfirming && Glyph(button).Data.ToString() == original && button.ToolTip as string == L.Get("Feedback4.Toolbar.ClearCanvas"));
+        check("completed clear restores the initial broom action", !button.IsConfirming && Glyph(button).Data.ToString() == original && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas"));
         Click(button);
         check("a later first click requires a new confirmation instead of clearing again", button.IsConfirming && clears == 1);
         button.CancelConfirmation();
@@ -109,7 +109,8 @@ internal static class ClearCanvasButtonTests
         Layout(host);
         var chrome = (Border)button.Template.FindName("Chrome", button);
         var normal = ((SolidColorBrush)chrome.Background).Color;
-        check(context + " idle name and tooltip describe clearing the canvas", AutomationProperties.GetName(button) == L.Get("Feedback4.Toolbar.ClearCanvas") && button.ToolTip as string == L.Get("Feedback4.Toolbar.ClearCanvas"));
+        CompareToolbarPaint(check, button, context + " idle");
+        check(context + " idle name and tooltip describe creating a blank canvas", AutomationProperties.GetName(button) == L.Get("Feedback4.Toolbar.NewBlankCanvas") && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas"));
         check(context + " danger action stays a compact 26-DIP target with the toolbar's 3-DIP corners", button.ActualWidth == 26 && button.ActualHeight == 26 && chrome.CornerRadius == new CornerRadius(3));
         check(context + " normal action paints the red danger surface with a white glyph", normal == ((SolidColorBrush)app.Resources["CanvasDanger"]).Color && normal.R > normal.G * 2 && Glyph(button).Stroke == Brushes.White && Glyph(button).StrokeThickness == 1.5);
         var popup = button.ConfirmationPopup;
@@ -122,12 +123,58 @@ internal static class ClearCanvasButtonTests
         Click(button); Layout(host);
         check(context + " armed action has its localized accessible name and no competing tooltip", AutomationProperties.GetName(button) == L.Get("Feedback4.Toolbar.ClearConfirm") && button.ToolTip is null);
         check(context + " armed action preserves the red surface white glyph and hit target geometry", ((SolidColorBrush)chrome.Background).Color == normal && Glyph(button).Stroke == Brushes.White && button.ActualWidth == 26 && button.ActualHeight == 26 && chrome.CornerRadius == new CornerRadius(3));
+        CompareToolbarPaint(check, button, context + " confirm");
         SavePreview(host, "clear-" + language + "-" + theme + "-confirm.png");
         // Render the actual popup child detached, avoiding Popup.IsOpen and its native HWND.
         popup.Child = null;
         Layout(bubble); SavePreview(bubble, "clear-" + language + "-" + theme + "-hint.png");
         popup.Child = bubble;
         button.CancelConfirmation(); host.Child = null;
+    }
+
+    private static void CompareToolbarPaint(Action<string, bool> check, ClearCanvasButton clear, string context)
+    {
+        // Create the peer through the production toolbar factory, not a copied test style.
+        var session = System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
+        var factory = typeof(DesktopSession).GetMethod("ToolbarIcon", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var peer = (Button)factory.Invoke(session, ["peer", "M2,2 L14,2 L14,14 L2,14 Z", (Action)(() => { }), ""])!;
+        var host = new Border { Child = peer };
+        host.Resources["CanvasButtonCornerRadius"] = new CornerRadius(3);
+        Layout(host);
+        var clearChrome = (Border)clear.Template.FindName("Chrome", clear);
+        var peerChrome = (Border)peer.Template.FindName("Chrome", peer);
+        Rect Paint(Button button, Color color)
+        {
+            FrameworkElement root = button;
+            while (VisualTreeHelper.GetParent(root) is FrameworkElement parent) root = parent;
+            var origin = button.TranslatePoint(new Point(), root);
+            int width = (int)Math.Ceiling(root.ActualWidth), height = (int)Math.Ceiling(root.ActualHeight);
+            var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(root);
+            var bytes = new byte[width * height * 4]; bitmap.CopyPixels(bytes, width * 4, 0);
+            int left = width, top = height, right = -1, bottom = -1;
+            for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
+            {
+                int offset = (y * width + x) * 4;
+                if (bytes[offset] != color.B || bytes[offset + 1] != color.G || bytes[offset + 2] != color.R || bytes[offset + 3] != color.A) continue;
+                left = Math.Min(left, x); top = Math.Min(top, y); right = Math.Max(right, x); bottom = Math.Max(bottom, y);
+            }
+            return right < left ? Rect.Empty : new Rect(left - origin.X, top - origin.Y, right - left + 1, bottom - top + 1);
+        }
+        var mouseOverKey = (DependencyPropertyKey)typeof(UIElement).GetField("IsMouseOverPropertyKey", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.GetValue(null)!;
+        foreach (bool hover in new[] { false, true })
+        {
+            // Drive the real production template trigger without native input or HWNDs.
+            clear.SetValue(mouseOverKey, hover); peer.SetValue(mouseOverKey, hover);
+            clear.UpdateLayout(); peer.UpdateLayout();
+            var red = Paint(clear, ((SolidColorBrush)clearChrome.Background).Color);
+            var ordinary = Paint(peer, ((SolidColorBrush)peerChrome.Background).Color);
+            string state = context + (hover ? " hover" : " normal");
+            Console.WriteLine($"TOOLBAR_PAINT {state}: target={clear.ActualWidth}x{clear.ActualHeight}/{peer.ActualWidth}x{peer.ActualHeight}; chrome={clearChrome.ActualWidth}x{clearChrome.ActualHeight}/{peerChrome.ActualWidth}x{peerChrome.ActualHeight}; paint={red}/{ordinary}; border={clearChrome.BorderThickness}/{peerChrome.BorderThickness}");
+            check(state + " red paint occupies the same 24-DIP bounds as ordinary toolbar chrome", red == new Rect(1, 1, 24, 24) && red == ordinary);
+        }
+        clear.SetValue(mouseOverKey, false); peer.SetValue(mouseOverKey, false);
+        host.Child = null;
     }
 
     private static DrawingPath Glyph(ClearCanvasButton button) => (DrawingPath)((Canvas)((Viewbox)button.Content).Child).Children[0];

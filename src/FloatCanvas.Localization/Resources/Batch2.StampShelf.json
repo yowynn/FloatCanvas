@@ -1,0 +1,10 @@
+{
+  "StampShelf.Group":{"zh":"组合","en":"Group"},
+  "StampShelf.Raster":{"zh":"栅格化","en":"Raster"},
+  "StampShelf.Help":{"zh":"印章库帮助","en":"Stamp library help"},
+  "StampShelf.HelpText":{"zh":"拖动印章可调整列表顺序，拖到快捷槽可固定或替换。\n\n也可先选槽，再点击印章固定；再次点槽或按 Esc 取消选择。槽位右上角 × 只清空绑定，印章仍保留。\n\n右键“取消固定”按 1～9、0 的顺序每次清除一个绑定。\n\n选择印章后点“使用”或双击开始盖印。列表连续滚动，搜索按名称筛选。","en":"Drag stamps to reorder the list or drop them onto a shortcut slot to pin or replace.\n\nYou can also select a slot and click a stamp. Click the slot again or press Esc to deselect. The corner × clears only that slot and keeps the stamp.\n\nRight-click Unpin clears one binding at a time in 1–9,0 order.\n\nChoose Use or double-click a stamp to start placing it. Scroll continuously through the list, or search by name."},
+  "StampShelf.Empty":{"zh":"空","en":"Empty"},
+  "StampShelf.Slot":{"zh":"快捷槽 {0}：{1}","en":"Shortcut slot {0}: {1}"},
+  "StampShelf.EmptySlot":{"zh":"快捷槽 {0}：拖入印章，或先点选此槽再点下方印章","en":"Slot {0}: drag in a stamp, or select this slot and click a stamp below"},
+  "StampShelf.ClearSlot":{"zh":"清空快捷槽 {0}","en":"Clear shortcut slot {0}"}
+}

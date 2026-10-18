@@ -23,7 +23,7 @@ internal sealed class ClearCanvasButton : Button
         this.canClear = canClear; this.clear = clear;
         Tag = "clear"; Width = MinWidth = Height = MinHeight = 26;
         Margin = new Thickness(2, 0, 2, 0); Padding = new Thickness(3);
-        BorderThickness = new Thickness(0); FocusVisualStyle = null;
+        BorderThickness = new Thickness(1); BorderBrush = Brushes.Transparent; FocusVisualStyle = null;
         SetResourceReference(StyleProperty, "CanvasDangerButton");
         ToolTipService.SetShowsToolTipOnKeyboardFocus(this, false);
         ToolTipService.SetInitialShowDelay(this, 650);
@@ -70,11 +70,11 @@ internal sealed class ClearCanvasButton : Button
 
     private void Refresh()
     {
-        string label = L.Get(IsConfirming ? "Feedback4.Toolbar.ClearConfirm" : "Feedback4.Toolbar.ClearCanvas");
+        string label = L.Get(IsConfirming ? "Feedback4.Toolbar.ClearConfirm" : "Feedback4.Toolbar.NewBlankCanvas");
         ToolTip = IsConfirming ? null : label;
         AutomationProperties.SetName(this, label);
         var path = new Path { Data = Geometry.Parse(IsConfirming ? "M3 8 L6.5 11.5 L13 4.5" :
-            "M2.5 4.5 H13.5 M6 4.5 V2.5 H10 V4.5 M4 4.5 L4.7 13.5 H11.3 L12 4.5 M6.5 7 V11 M9.5 7 V11"),
+            "M13.5,1.5 L8.8,6.2 M7.2,5.8 Q9,5.3 10.2,7.1 Q11.4,9.6 9.4,13.1 Q5.5,15.7 1.5,10 Q5.4,10 7.2,5.8 Z M4.1,12.7 L6.6,10.6 M6.8,14 L8.2,11.5"),
             Stroke = Brushes.White, StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round, IsHitTestVisible = false };
         var canvas = new Canvas { Width = 16, Height = 16, IsHitTestVisible = false }; canvas.Children.Add(path);

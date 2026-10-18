@@ -52,6 +52,12 @@ internal sealed class ToolStateStore
                     if (!Enum.TryParse<EditorTool>(entry.Name, out var tool) || !Enum.IsDefined(tool) || entry.Name != tool.ToString()) throw Invalid();
             }
             Validate(state);
+            // Retired solid-cover entries are compatibility input only. They must not
+            // restore an executable tool, family selection, preview, or toolbar alias.
+            state.Tools.Remove(EditorTool.Redact); state.PreviewSources.Remove(EditorTool.Redact);
+            state.Selections.Remove(EditorTool.Redact);
+            foreach (var key in state.Buttons.Where(entry => entry.Value == EditorTool.Redact).Select(entry => entry.Key).ToArray()) state.Buttons.Remove(key);
+            foreach (var key in state.OfficialBaselines.Where(entry => entry.Value.Tool == EditorTool.Redact).Select(entry => entry.Key).ToArray()) state.OfficialBaselines.Remove(key);
         }
         Tools = state.Tools; Buttons = state.Buttons; Selections = state.Selections;
         OfficialBaselines = state.OfficialBaselines; PreviewSources = state.PreviewSources;

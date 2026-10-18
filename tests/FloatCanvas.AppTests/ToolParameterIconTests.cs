@@ -52,7 +52,7 @@ internal static class ToolParameterIconTests
         var readableLine=Rasterize(ToolParameterIcon.Create(new ToolParameters {Tool=EditorTool.Line}),16);
         var readableDashed=Rasterize(ToolParameterIcon.Create(new ToolParameters {Tool=EditorTool.Line,Style=new ElementStyle {StrokePattern=StrokePattern.Dashed}}),16);
         check("solid and dashed line samples retain visible ink and distinct pixels at toolbar size",InkCount(readableLine)>=16&&InkCount(readableDashed)>=10&&Hash(readableLine)!=Hash(readableDashed));
-        foreach(var tool in new[]{EditorTool.Eraser,EditorTool.Blur,EditorTool.Pixelate,EditorTool.Redact})
+        foreach(var tool in new[]{EditorTool.Eraser,EditorTool.Blur,EditorTool.Pixelate})
             check(tool+" presets retain a distinct bounded control-tool illustration",ToolParameterIcon.Create(new ToolParameters {Tool=tool},32) is Controls.Image {Width:32,Height:32,Source:Media.DrawingImage});
         var examples=new List<(string Label,ToolParameters Parameters)>();
         foreach(string label in new[]{"Line","Arrow","Double","Dashed","Dotted"})

@@ -1,0 +1,14 @@
+{
+  "Shell.InvalidArguments": { "zh": "启动参数无效。请提供一个 .floatcanvas 工程路径。", "en": "Invalid launch arguments. Provide one .floatcanvas project path." },
+  "Shell.OneProject": { "zh": "每次只能打开一个工程。", "en": "Open one project at a time." },
+  "Shell.InvalidProject": { "zh": "请选择有效的 .floatcanvas 工程文件。", "en": "Choose a valid .floatcanvas project file." },
+  "Shell.NoExecutable": { "zh": "无法确定当前程序路径。", "en": "The current executable path is unavailable." },
+  "Shell.ForwardFailed": { "zh": "未能将工程交给正在运行的浮绘。请稍后重试，或从主菜单打开工程。", "en": "The running FloatCanvas could not receive the project. Try again, or open it from the main menu." },
+  "Shell.ProjectType": { "zh": "浮绘工程", "en": "FloatCanvas project" },
+  "Shell.RegistrationFailed": { "zh": "工程打开方式注册失败：", "en": "Project file registration failed: " },
+  "Shell.StartWithWindows": { "zh": "登录 Windows 时启动浮绘", "en": "Start FloatCanvas when signing in to Windows" },
+  "Shell.StartupHint": { "zh": "默认关闭；开启后登录时在托盘中运行，不自动进入编辑模式。", "en": "Off by default. When enabled, starts in the tray without entering edit mode." },
+  "Shell.RegisterProjectType": { "zh": "注册 .floatcanvas 打开方式", "en": "Register .floatcanvas file type" },
+  "Shell.Registered": { "zh": "已注册工程打开方式。可以在 Windows 的“打开方式”中选择浮绘并设为默认应用。", "en": "Project file type registered. Choose FloatCanvas in Windows Open with to make it the default app." },
+  "Shell.TestProfileHint": { "zh": "独立测试配置不修改系统启动项或文件关联。", "en": "Isolated test profiles do not change Windows startup or file associations." }
+}

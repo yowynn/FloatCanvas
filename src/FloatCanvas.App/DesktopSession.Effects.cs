@@ -47,6 +47,7 @@ internal sealed partial class DesktopSession
     private async Task AddDesktopEffectCoreAsync(RectD region, ImageEffectKind kind, double amount, uint color,
         Func<Task<CapturedDesktop>> captureDesktop)
     {
+        if (kind is not (ImageEffectKind.Blur or ImageEffectKind.Pixelate)) return;
         var target = Active;
         var request = BeginEffectRender(target);
         var animationTime = _renderer.AnimationTime;
@@ -63,12 +64,6 @@ internal sealed partial class DesktopSession
             if (!await PrepareLiveEffectAsync(request, effect) || !CanFinishEffect(request)) return;
             target.Add(effect);
             UpdateStatus(L.Get("Effect.LiveReady"));
-            return;
-        }
-        if (kind == ImageEffectKind.Redact)
-        {
-            target.Add(new CanvasElement { Kind = ElementKind.Rectangle, Width = region.Width, Height = region.Height,
-                Transform = Affine2D.Translation(region.X, region.Y), Style = new() { Fill = color, StrokeWidth = 0 } });
             return;
         }
         _documentBusy = true;

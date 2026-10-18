@@ -1,6 +1,7 @@
 {
   "Feedback4.Toolbar.More":{"zh":"更多工具","en":"More tools"},
   "Feedback4.Toolbar.ClearCanvas":{"zh":"清空画布","en":"Clear canvas"},
+  "Feedback4.Toolbar.NewBlankCanvas":{"zh":"创建一张空白的画布","en":"Create a blank canvas"},
   "Feedback4.Toolbar.ClearConfirm":{"zh":"确认清空画布","en":"Confirm clear canvas"},
   "Feedback4.Toolbar.ClearQuestion":{"zh":"确定清除吗？","en":"Clear canvas?"}
 }

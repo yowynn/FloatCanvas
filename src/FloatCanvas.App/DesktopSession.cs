@@ -147,7 +147,7 @@ internal sealed partial class DesktopSession : IDisposable
             _toolbar.Hide(); _inspector?.Hide(); _layers?.Hide(); CloseToolOptions(); RequestRender();
             UpdateStatus(L.Get("Desktop.FocusLost"));
         };
-        _tray = new Forms.NotifyIcon { Icon = AppIcon.CreateTrayIcon(),
+        _tray = new Forms.NotifyIcon { Icon = AppIcon.CreateTrayIcon(!_host.IsVisible),
             Text = L.Get("App.NamePrefix") + FormatHotkey(_settings.Toggle), Visible = true };
         _host.KeyboardIsolationReleased += reason =>
         {
@@ -169,6 +169,11 @@ internal sealed partial class DesktopSession : IDisposable
 
     public async void Start(string[] args)
     {
+        _shellIntegrationAllowed = ProjectLaunchRequest.AllowsRegistration(args);
+        _startupPending = true;
+        _quietStartup = args.Contains("--startup");
+        string? requestedProject = ProjectLaunchRequest.Parse(args);
+        if (requestedProject is not null) QueueProjectOpen(requestedProject);
         try
         {
             await InitializeDocumentsAsync(args.Contains("--recover"));
@@ -210,9 +215,7 @@ internal sealed partial class DesktopSession : IDisposable
             };
             _host.Render(); timer.Start(); return;
         }
-        ShowWelcome();
-        AppUpdateInstaller.AcknowledgeStartup();
-        NotifyUpdateResult();
+        await CompleteStartupAsync();
     }
 
     private void ShowWelcome()
@@ -238,7 +241,7 @@ internal sealed partial class DesktopSession : IDisposable
     private static readonly ToolOption[] ToolOptions = [new(EditorTool.Select,"Tool.Select"),new(EditorTool.Freehand,"Tool.Freehand"),new(EditorTool.Highlighter,"Tool.Highlighter"),
         new(EditorTool.Line,"Tool.Line"),new(EditorTool.Arrow,"Tool.Arrow"),new(EditorTool.DoubleArrow,"Tool.DoubleArrow"),new(EditorTool.Rectangle,"Tool.Rectangle"),new(EditorTool.RoundedRectangle,"Tool.RoundedRectangle"),
         new(EditorTool.Ellipse,"Tool.Ellipse"),new(EditorTool.Symbol,"Tool.Symbol"),new(EditorTool.Emoji,"Tool.Emoji"),new(EditorTool.Text,"Tool.Text"),new(EditorTool.Number,"Tool.Number"),new(EditorTool.Eraser,"Tool.Eraser"),
-        new(EditorTool.Crop,"Tool.Crop"),new(EditorTool.Blur,"Tool.Blur"),new(EditorTool.Pixelate,"Tool.Pixelate"),new(EditorTool.Redact,"Tool.Redact"),new(EditorTool.CaptureRegion,"Tool.CaptureRegion")];
+        new(EditorTool.Crop,"Tool.Crop"),new(EditorTool.Blur,"Tool.Blur"),new(EditorTool.Pixelate,"Tool.Pixelate"),new(EditorTool.CaptureRegion,"Tool.CaptureRegion")];
     private System.Windows.Controls.Button Button(string label, Action action)
     {
         var button = new System.Windows.Controls.Button { Content = label, MinHeight = 34, Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(2, 0, 2, 0),
@@ -268,6 +271,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (editing) _welcomeWindow?.Close();
         if (!preserveImageDrop) CloseImageDrop();
         bool wasEditing = _host.IsEditing;
+        _inspector?.CompletePendingEdit();
         _editor.Cancel();
         if (!editing) _textEditor?.Close();
         else if (_textEditor is not null && !ReferenceEquals(_textEditorSession, Active)) _textEditor.Hide();
@@ -405,6 +409,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (key == 0x1B) return;
         }
         if (DocumentOperationBusy || _layers?.IsRenaming == true) return;
+        _inspector?.CompletePendingEdit();
         if (_editor.HandleCaptureKey(key)) return;
         var ctrl = (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0;
         var shift = (OverlayHost.CurrentModifiers & OverlayModifiers.Shift) != 0;
@@ -456,8 +461,8 @@ internal sealed partial class DesktopSession : IDisposable
         if (ToolShortcutCatalog.IsReserved(key)) return;
         if (ToolShortcutCatalog.TryGetTool(key, out var tool)) SelectTool(tool);
     }
-    private void Undo() { _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Undo(); }
-    private void Redo() { _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Redo(); }
+    private void Undo() { _inspector?.CompletePendingEdit(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Undo(); }
+    private void Redo() { _inspector?.CompletePendingEdit(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Redo(); }
     private void Draw(SKSurface surface)
     {
         var canvas = surface.Canvas;
@@ -589,6 +594,7 @@ internal sealed partial class DesktopSession : IDisposable
     private async Task RunCommand(Func<Task> action)
     {
         if(DocumentOperationBusy) { UpdateStatus(L.Get("Desktop.Busy")); return; }
+        _inspector?.CompletePendingEdit();
         EndCanvasCalibration();
         _editor.Cancel();
         try { await action(); }
@@ -598,6 +604,7 @@ internal sealed partial class DesktopSession : IDisposable
     private void RunUiAction(Action action)
     {
         if (DocumentOperationBusy) { UpdateStatus(L.Get("Desktop.Busy")); return; }
+        _inspector?.CompletePendingEdit();
         action();
     }
     private void UpdateInteractionAvailability()
@@ -659,6 +666,7 @@ internal sealed partial class DesktopSession : IDisposable
 
     private void ShowHotkeySettings()
     {
+        _inspector?.CompletePendingEdit();
         _editor.Cancel();
         var toggle = _settings.Toggle;
         var hide = _settings.Hide;
@@ -698,6 +706,45 @@ internal sealed partial class DesktopSession : IDisposable
             IsChecked = _settings.ShowToolShortcutHints, MinHeight = 28, Margin = new Thickness(0, 14, 0, 0) };
         System.Windows.Automation.AutomationProperties.SetName(shortcutHints, L.Get("Feedback3.Toolbar.ShowShortcutHints"));
         panel.Children.Add(shortcutHints);
+        WindowsShellIntegration? shell = null;
+        bool oldStartup = false;
+        if (_shellIntegrationAllowed)
+        {
+            try { shell = WindowsShellIntegration.Current(); oldStartup = shell.StartupEnabled; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            { error.Text = ex.Message; }
+        }
+        var startup = new CheckBox { Content = L.Get("Shell.StartWithWindows"), IsChecked = oldStartup,
+            IsEnabled = shell is not null, MinHeight = 28, Margin = new Thickness(0, 14, 0, 0) };
+        System.Windows.Automation.AutomationProperties.SetName(startup, L.Get("Shell.StartWithWindows"));
+        ToolTipService.SetShowOnDisabled(startup, true);
+        startup.ToolTip = L.Get(shell is null ? "Shell.TestProfileHint" : "Shell.StartupHint");
+        panel.Children.Add(startup);
+        panel.Children.Add(new TextBlock { Text = L.Get("Shell.StartupHint"), TextWrapping = TextWrapping.Wrap,
+            Foreground = Brushes.Gray, Margin = new Thickness(0, 4, 0, 6) });
+        var registrationStatus = new TextBlock { TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 6, 0, 0), Visibility = Visibility.Collapsed };
+        System.Windows.Automation.AutomationProperties.SetName(registrationStatus, L.Get("Shell.RegisterProjectType"));
+        var registerFiles = Button(L.Get("Shell.RegisterProjectType"), () =>
+        {
+            try
+            {
+                shell!.RegisterProjectType();
+                registrationStatus.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
+                registrationStatus.Text = L.Get("Shell.Registered");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                registrationStatus.SetResourceReference(TextBlock.ForegroundProperty, "CanvasDanger");
+                registrationStatus.Text = ex.Message;
+            }
+            registrationStatus.Visibility = Visibility.Visible;
+        });
+        registerFiles.IsEnabled = shell is not null;
+        ToolTipService.SetShowOnDisabled(registerFiles, true);
+        if (shell is null) registerFiles.ToolTip = L.Get("Shell.TestProfileHint");
+        panel.Children.Add(registerFiles);
+        panel.Children.Add(registrationStatus);
         var preferGpu = AddRenderSettings(panel);
         panel.Children.Add(new TextBlock { Text = L.Get("Settings.Language"), Margin = new Thickness(0, 18, 0, 6) });
         var language = new ComboBox { ItemsSource = new[] { L.Get("Settings.AutomaticLanguage"), L.Get("Settings.ChineseLanguage"), L.Get("Settings.EnglishLanguage") },
@@ -736,7 +783,16 @@ internal sealed partial class DesktopSession : IDisposable
                 _settings.Language = language.SelectedIndex == 1 ? "zh-CN" : language.SelectedIndex == 2 ? "en" : "auto";
                 _settings.ShowToolShortcutHints = shortcutHints.IsChecked == true;
                 _settings.PreferGpuAcceleration = preferGpu.IsChecked == true;
-                try { _settings.Save(); }
+                bool startupChanged = false;
+                try
+                {
+                    if (shell is not null && (startup.IsChecked == true) != oldStartup)
+                    {
+                        shell.SetStartup(startup.IsChecked == true);
+                        startupChanged = true;
+                    }
+                    _settings.Save();
+                }
                 catch
                 {
                     _settings.Toggle = oldToggle;
@@ -746,7 +802,8 @@ internal sealed partial class DesktopSession : IDisposable
                     _settings.Language = oldLanguage;
                     _settings.ShowToolShortcutHints = oldShortcutHints;
                     _settings.PreferGpuAcceleration = oldPreferGpu;
-                    _host.RegisterHotkeys(oldToggle, oldHide);
+                    try { _host.RegisterHotkeys(oldToggle, oldHide); }
+                    finally { if (startupChanged) shell!.SetStartup(oldStartup); }
                     throw;
                 }
                 RefreshHotkeyHints(_passThroughButton, _welcomeShortcuts, _settings.Toggle, _settings.Hide, _welcomeHideShortcut);
@@ -757,6 +814,7 @@ internal sealed partial class DesktopSession : IDisposable
                 _tray.Text = L.Get("App.NamePrefix") + FormatHotkey(toggle) + L.Get("Desktop.TrayModeSuffix");
                 AppTheme.Apply(_settings.Theme);
                 SessionWindowCoordinator.Close(window);
+                _ = CompleteStartupAsync();
                 if (_host.IsEditing) RaiseVisibleToolWindows();
                 UpdateStatus(oldLanguage != _settings.Language ? L.Get("Settings.LanguageSaved") :
                     oldPrimaryScreenOnly == _settings.PrimaryScreenOnly ? L.Get("Settings.Saved") :

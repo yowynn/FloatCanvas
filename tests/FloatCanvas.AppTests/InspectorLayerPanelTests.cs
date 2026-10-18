@@ -44,10 +44,11 @@ internal static class InspectorLayerPanelTests
                     Wpf.Automation.AutomationProperties.GetName(help) == L.Get("Layers.Help") &&
                     layerWindow.Resources["CanvasWindowHelpText"] is string text && text == L.Get("Layers.HelpWithRename") &&
                     !Descendants((Wpf.DependencyObject)layerWindow.Content).OfType<Controls.Button>().Any() && layerWindow.Icon is not null);
+                inspector.CompletePendingEdit();
                 layers.SelectedItems.Clear(); inspector.Refresh();
-                check(language + " independent layer selection retains the pending property draft", fields["Text"].Text == "Unsubmitted\n保留草稿" && session.Selection.Count == 0);
+                check(language + " independent layer selection reloads the empty property list", fields["Text"].Text == "" && session.Selection.Count == 0 && session.Document.Elements.Single().Text == "Unsubmitted\n保留草稿");
                 session.SetSelection([selected]); inspector.Refresh(); layerWindow.Refresh();
-                check(language + " layer refresh changes no document content or history", JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo &&
+                check(language + " layer refresh changes no document content or history", JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo + 1 &&
                     fields["Text"].Text == "Unsubmitted\n保留草稿");
                 check(language + " split panel tests create no native windows", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 &&
                     new System.Windows.Interop.WindowInteropHelper(layerWindow).Handle == 0 && !inspector.IsVisible && !layerWindow.IsVisible);

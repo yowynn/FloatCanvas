@@ -46,12 +46,14 @@ internal static class InspectorScrubTests
 
         Invoke(window, "BeginScrub", "X"); Invoke(window, "UpdateScrub", "X", 20d); Invoke(window, "FinishScrub", true);
         fields["X"].Text = "123.456";
-        assert("committed scrub has an undoable operation before a separate property draft", guarded.Undo());
+        assert("valid numeric typing previews the document immediately", Math.Abs(ElementGeometry.Bounds(guarded.Document.Elements.Single()).Left - 123.456) < 1e-8);
+        Invoke(window, "Apply");
+        assert("committed numeric typing has its own undo operation", guarded.Undo());
         window.Refresh();
-        assert("undo refresh preserves a genuine unapplied numeric draft", fields["X"].Text == "123.456");
-        assert("committed scrub can redo while the separate property draft remains pending", guarded.Redo());
+        assert("undo automatically refreshes the numeric input", fields["X"].Text != "123.456");
+        assert("committed numeric typing can redo", guarded.Redo());
         window.Refresh();
-        assert("redo refresh preserves a genuine unapplied numeric draft", fields["X"].Text == "123.456");
+        assert("redo automatically refreshes the numeric input", fields["X"].Text == "123.456");
         Invoke(window, "LoadSelection", true);
         fields["X"].Text = "draft";
         assert("numeric drag preserves an existing unapplied draft", !(bool)Invoke(window, "BeginScrub", "X")! && fields["X"].Text == "draft" && !guarded.IsTransactionActive);

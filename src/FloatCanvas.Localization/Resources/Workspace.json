@@ -53,7 +53,6 @@
   "Preset.Eraser": {"zh":"橡皮擦","en":"Eraser"},
   "Preset.Blur": {"zh":"模糊","en":"Blur"},
   "Preset.Pixelate": {"zh":"马赛克","en":"Mosaic"},
-  "Preset.Redact": {"zh":"实色遮盖","en":"Solid cover"},
   "Preset.InvalidLibrary": {"zh":"预设文件无效，原文件已保留。","en":"The preset file is invalid. The original file was kept."},
   "Preset.InvalidName": {"zh":"请输入有效的预设名称。","en":"Enter a valid preset name."},
   "Color.Brown": {"zh":"棕色","en":"Brown"},

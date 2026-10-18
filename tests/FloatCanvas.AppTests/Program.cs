@@ -15,6 +15,12 @@ internal static class Program
         {
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--canvas-presets-only")) { CanvasPresetTests.Run(Assert); CanvasSettingsControlTests.Run(Assert); return 0; }
+            if (args.Contains("--stamp-shelf-only")) { Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult(); StampLibraryUiTests.Run(Assert); return 0; }
+            if (args.Contains("--stamp-shelf-native-geometry-only")) { StampLibraryUiTests.RunNativeGeometry(Assert); return 0; }
+            if (args.Contains("--shell-integration-only")) { ShellIntegrationTests.Run(Assert); return 0; }
+            if (args.Contains("--shell-runtime-only")) { ShellRuntimeFixture.Run(Assert); return 0; }
+            if (args.Contains("--launcher-menu-only")) { LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-projection-preview")) { CanvasProjectionRuntimeFixture.Run(Assert, true); return 0; }
             if (args.Contains("--canvas-projection-runtime-only")) { CanvasProjectionRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--perspective-input-only")) { PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert); return 0; }
@@ -44,7 +50,8 @@ internal static class Program
             if (args.Contains("--feedback4-workspace-only")) { NativeInputRoutingFixture.Run(Assert, "feedback4-workspace"); return 0; }
             if (args.Contains("--live-effect-stamp-only")) { Task.Run(() => LiveEffectStampTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--tool-options-keyboard-only")) { ToolOptionsKeyboardRouteTests.Run(Assert); return 0; }
-            if (args.Contains("--tile-interaction-only")) { TileInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--tile-interaction-only")) { TileInteractionTests.Run(Assert); TileDragReorderTests.Run(Assert); return 0; }
+            if (args.Contains("--tile-drag-only")) { TileDragReorderTests.Run(Assert); return 0; }
             if (args.Contains("--feedback4-options-only")) { Feedback4OptionsTests.Run(Assert); return 0; }
             if (args.Contains("--settings-window-only")) { SettingsWindowFixture.Run(Assert); return 0; }
             if (args.Contains("--corner-client-only")) { CornerClientTests.Run(Assert); return 0; }
@@ -83,6 +90,10 @@ internal static class Program
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            CanvasPresetTests.Run(Assert);
+            Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult();
+            ShellIntegrationTests.Run(Assert);
+            LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert);
             PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert);
             GpuSettingsTests.Run(Assert);
             ApplicationDiagnosticsTests.Run(Assert);
@@ -280,7 +291,7 @@ internal static class Program
         using var originalImage = SKImage.FromBitmap(source); using var data = originalImage.Encode(SKEncodedImageFormat.Png, 100);
         var image = new CanvasElement { Kind = ElementKind.Image, Width = 100, Height = 80, AssetId = session.Assets.Add(data.ToArray()),
             Transform = Affine2D.Translation(180, 40).Compose(Affine2D.Rotation(30)), ImageCrop = new(.25, .2, .5, .6) };
-        session.Add(image); var controller = new EditorController(session) { Tool = EditorTool.Redact };
+        session.Add(image); var controller = new EditorController(session) { Tool = EditorTool.Blur };
         controller.Style.Stroke = 0xFF112233;
         PointD a = image.Transform.TransformPoint(new(20, 10)), b = image.Transform.TransformPoint(new(70, 50));
         Down(controller, a); Move(controller, b);
@@ -289,12 +300,14 @@ internal static class Program
         Up(controller, b);
         var effect = session.Document.Elements.Single().Effects.Single();
         Assert("rotated cropped image effect maps to original normalized coordinates", Near(effect.Bounds.X, .35) && Near(effect.Bounds.Y, .275) && Near(effect.Bounds.Width, .25) && Near(effect.Bounds.Height, .3));
+        // Existing saved solid-cover effects remain readable/renderable; new gestures use blur.
+        effect.Kind = ImageEffectKind.Redact;
         using var renderer = new SceneRenderer();
         PointD center = image.Transform.TransformPoint(new(45, 30));
         using (var png = Decode(renderer.ExportPng(session.Document, session.Assets, true)))
         {
             var pixel = png.GetPixel((int)center.X, (int)center.Y);
-            Assert("controller effect rasterizes the selected color on transformed target", pixel.Red == 17 && pixel.Green == 34 && pixel.Blue == 51);
+            Assert("legacy saved solid effect still rasterizes its stored color on transformed target", pixel.Red == 17 && pixel.Green == 34 && pixel.Blue == 51);
         }
         controller.Tool = EditorTool.Crop; int undo = session.UndoCount;
         Gesture(controller, a, b);
@@ -311,7 +324,7 @@ internal static class Program
             controller.Tool = tool; Gesture(controller, a, b);
             Assert(tool + " binds effect to selected image", session.Document.Elements.Single().Effects.Last().Kind.ToString() == tool.ToString());
         }
-        controller.Tool = EditorTool.Redact; Down(controller, a); Move(controller, b); controller.Cancel();
+        controller.Tool = EditorTool.Blur; Down(controller, a); Move(controller, b); controller.Cancel();
         Assert("cancel effect leaves saved effects unchanged", session.Document.Elements.Single().Effects.Count == 3 && controller.EffectPreviewPolygon is null);
         controller.Tool = EditorTool.Crop; Gesture(controller, a, b);
         var firstCrop = session.Document.Elements.Single();
@@ -320,7 +333,7 @@ internal static class Program
         var secondCrop = session.Document.Elements.Single();
         Assert("repeated crop composes source coordinates without re-encoding original", secondCrop.ImageCrop is { } repeated && Near(repeated.X, .4) && Near(repeated.Y, .35) && Near(repeated.Width, .15) && Near(repeated.Height, .15) && secondCrop.AssetId == image.AssetId && session.Assets.Count == 1);
         Assert("repeated rotated crop still preserves world position", secondCrop.Transform.TransformPoint(new(0, 0)).DistanceTo(nextA) < 1e-7 && Near(secondCrop.Width, 30) && Near(secondCrop.Height, 20));
-        controller.Tool = EditorTool.Redact;
+        controller.Tool = EditorTool.Blur;
         Down(controller, nextA); Move(controller, nextB); controller.Tool = EditorTool.Select; Up(controller, nextB);
         Assert("switching effect tool cancels its pending region", secondCrop.Effects.Count == 3 && controller.EffectPreviewPolygon is null && !session.IsTransactionActive);
         var singular = Session(); singular.Document.Kind = DocumentKind.FrozenCapture; singular.Add(new() { Kind = ElementKind.Image, Width = 100, Height = 80, Transform = Affine2D.Scale(0, 1) });

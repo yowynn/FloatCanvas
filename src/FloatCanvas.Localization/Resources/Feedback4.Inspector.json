@@ -1,0 +1,15 @@
+{
+  "Feedback4.Inspector.MultipleHeader": { "zh": "选中多图层", "en": "Multiple layers" },
+  "Feedback4.Inspector.LiveHint": {
+    "zh": "修改后立即生效；输入或拖动结束后可一次撤销。",
+    "en": "Changes apply immediately; undo restores the completed edit or drag."
+  },
+  "Feedback4.Inspector.MultipleSelection": {
+    "zh": "已选择多个图层（{0} 个）；显示共同可编辑的属性。",
+    "en": "Multiple layers selected ({0}); showing shared editable properties."
+  },
+  "Feedback4.Inspector.Mixed": {
+    "zh": "多个不同值",
+    "en": "Multiple values"
+  }
+}

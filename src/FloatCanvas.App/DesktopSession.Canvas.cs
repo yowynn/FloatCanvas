@@ -35,6 +35,7 @@ internal sealed partial class DesktopSession
             window.GridColorChanged += color => ChangeCanvas(c => c.Grid.Color = color);
             window.GridWidthChanged += width => ChangeCanvas(c => c.Grid.Width = width);
             window.GridPatternChanged += pattern => ChangeCanvas(c => c.Grid.Pattern = pattern);
+            window.PresetApplied += ApplyCanvasPreset;
             window.Dismissed += () => EndCanvasCalibration();
             _canvasCalibration.Changed += () => { RequestRender(); ScheduleRecovery(); };
             _canvasCalibration.Error += key => UpdateStatus(L.Get(key));
@@ -76,6 +77,30 @@ internal sealed partial class DesktopSession
             if (enabled && !CanvasCalibration.IsStableViewport(settings.Projection.Matrix, Active.Document.Viewport))
             { UpdateStatus(L.Get("Canvas.UnstableProjection")); return; }
             settings.Projection.Enabled = enabled;
+        });
+    }
+
+    private void ApplyCanvasPreset(CanvasPresetParameters parameters)
+    {
+        if (DocumentOperationBusy || !_host.IsVisible || !_host.IsEditing) return;
+        CanvasSettings preset;
+        try
+        {
+            preset = CanvasPresetLibrary.Apply(parameters, Active.Document.Canvas,
+                CanvasReferenceViewport(), Active.Document.Viewport);
+        }
+        catch (Exception ex) when (ex is ArgumentException or System.IO.IOException or System.IO.InvalidDataException)
+        {
+            UpdateStatus(ex.Message);
+            _canvasSettingsWindow?.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+            return;
+        }
+        EndCanvasCalibration();
+        ChangeCanvas(settings =>
+        {
+            settings.BackgroundColor = preset.BackgroundColor;
+            settings.Grid = preset.Grid;
+            settings.Projection = preset.Projection;
         });
     }
 

@@ -35,7 +35,7 @@ internal static class CanvasSettingsControlTests
             check("cell slider normalizes to integer and commits once", columns.Value == 12 && columns.Input.Text == "12" && countEdits == 1);
             width.Slider.Value = 3.125;
             check("canvas width keeps fractional precision and original bounds", width.Value == 3.125 && widthEdits == 1 && width.Slider.Minimum == 1 && width.Slider.Maximum == 20 && !width.Slider.IsSnapToTickEnabled);
-            width.Input.Text = "21";
+            width.Input.Text = "65";
             check("canvas width rejects out of range input without slider commit", !width.TryGetValue(out _) && widthEdits == 1);
             var continuous = new NumericValueField(0, 100);
             continuous.Slider.Value = 8.125;

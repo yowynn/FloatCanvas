@@ -67,6 +67,11 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
         if (IsMouseCaptured) ReleaseMouseCapture();
     }
 
+    internal void SetCanvasVisible(bool visible)
+    {
+        if(Content is Image artwork)artwork.Source=visible?AppIcon.ToolbarImage:AppIcon.HiddenToolbarImage;
+    }
+
     protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         if (!gestures.HasPendingClick && !gestures.IsPointerDown) ResetMetrics();

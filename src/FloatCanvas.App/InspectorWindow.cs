@@ -11,7 +11,7 @@ using Automation = System.Windows.Automation;
 
 namespace FloatCanvas.App;
 
-/// <summary>Atomic property edits for the current selection; layers live in their own window.</summary>
+/// <summary>Live property edits for the current selection; layers live in their own window.</summary>
 internal sealed class InspectorWindow : Wpf.Window
 {
     private readonly Func<EditorSession> getSession;
@@ -34,11 +34,15 @@ internal sealed class InspectorWindow : Wpf.Window
     private readonly Controls.ComboBox strokePattern = new() { MinHeight = 34 };
     private readonly List<NumericScrubber> scrubbers = [];
     private EditorSession? formSession;
-    private Guid? formElementId;
+    private Guid[] formSelection = [];
+    private EditorSession? editSession;
+    private long editTransaction;
+    private bool applying;
+    private readonly System.Windows.Threading.DispatcherTimer editTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
     private string? formFingerprint;
     private bool refreshing = true;
     private EditorSession? scrubSession;
-    private CanvasElement? scrubSource;
+    private CanvasElement[] scrubSources = [];
     private double scrubStartValue;
     private long scrubTransaction;
 
@@ -82,7 +86,7 @@ internal sealed class InspectorWindow : Wpf.Window
         arrowStyle.SelectionChanged += (_, _) =>
         {
             if (refreshing) return;
-            dirtyFields.Add("ArrowHeadStyle"); SetStatus(L.Get("Inspector.DraftRetained"), false);
+            ChangeField("ArrowHeadStyle");
         };
         var arrowRow = new Controls.StackPanel();
         arrowRow.Children.Add(new Controls.TextBlock { Text = L.Get("Inspector.ArrowStyle"), FontSize = 12, Margin = new(0, 4, 0, 2) }); arrowRow.Children.Add(arrowStyle);
@@ -121,7 +125,7 @@ internal sealed class InspectorWindow : Wpf.Window
         alignment.SelectionChanged += (_, _) =>
         {
             if (refreshing) return;
-            dirtyFields.Add("TextAlignment"); SetStatus(L.Get("Inspector.DraftRetained"), false);
+            ChangeField("TextAlignment");
         };
         propertyPanel.Children.Add(alignment);
         fieldContainers.Add("TextAlignment", alignment);
@@ -134,20 +138,13 @@ internal sealed class InspectorWindow : Wpf.Window
         footerBorder.SetResourceReference(Controls.Border.BorderBrushProperty, "CanvasBorder");
         Controls.Grid.SetRow(footerBorder, 1);
         layout.Children.Add(footerBorder);
-        var applyRow = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = Wpf.HorizontalAlignment.Right };
-        var apply = ActionIconButton.Create(PanelActionIcon.Apply, L.Get("Inspector.Apply"), Apply, "Ctrl+Enter");
-        applyRow.Children.Add(apply);
-        var reload = ActionIconButton.Create(PanelActionIcon.Refresh, L.Get("Inspector.ReloadSelection"), () =>
-        {
-            if (!this.canMutate()) { SetStatus(L.Get("Inspector.BusyDraftRetained"), true); return; }
-            LoadSelection(true);
-        });
-        applyRow.Children.Add(reload);
-        footer.Children.Add(applyRow);
         status.Margin = new(0, 6, 0, 0);
         footer.Children.Add(status);
-        Closing += (_, e) => { e.Cancel = true; CancelScrub(); CloseColorPickers(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
-        IsVisibleChanged += (_, _) => { if (!IsVisible) CloseColorPickers(); };
+        editTimer.Tick += (_, _) => { if (!numericFields.Values.Any(field => field.Slider.IsMouseCaptureWithin)) CompleteEdit(); };
+        Deactivated += (_, _) => CompleteEdit();
+        propertyPanel.LostKeyboardFocus += (_, _) => { if (!propertyPanel.IsKeyboardFocusWithin) CompleteEdit(); };
+        Closing += (_, e) => { e.Cancel = true; CompleteEdit(); CancelScrub(); CloseColorPickers(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
+        IsVisibleChanged += (_, _) => { if (!IsVisible) { CompleteEdit(); CloseColorPickers(); } };
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
@@ -161,48 +158,52 @@ internal sealed class InspectorWindow : Wpf.Window
         Refresh();
     }
 
-    /// <summary>Safe during high-frequency scene notifications; preserves unsubmitted editor text.</summary>
+    /// <summary>Selection notifications replace the form; in-progress valid edits stay visible.</summary>
     public void Refresh()
     {
-        if (!canMutate()) return;
+        if (applying || scrubSession is not null) return;
         var session = getSession();
+        if (!ReferenceEquals(session, formSession) || !session.Selection.SetEquals(formSelection))
+        {
+            CompleteEdit();
+            LoadSelection(true);
+            return;
+        }
         if (session.IsTransactionActive) return;
+        if (editSession is not null) { editSession = null; editTimer.Stop(); }
         LoadSelection(false);
     }
+
+    private void OnSessionChanged(object? sender, EventArgs e) => Refresh();
 
     private void LoadSelection(bool discardDraft)
     {
         var session = getSession();
         var selected = session.SelectedElements().ToArray();
-        var element = selected.Length == 1 ? selected[0] : null;
-        var sameElement = ReferenceEquals(formSession, session) && formElementId == element?.Id;
-        if (!discardDraft && (dirtyFields.Count > 0 ||
-            propertyPanel.IsKeyboardFocusWithin && IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject)))
-        {
-            if (!sameElement)
-            {
-                selectionLabel.Text = L.Get("Inspector.SelectionChangedDraftRetained");
-                selectionLabel.Visibility = Wpf.Visibility.Visible;
-                SetStatus(L.Get("Inspector.ReturnOrReload"), false);
-            }
-            return;
-        }
-        var fingerprint = element is null ? null : JsonSerializer.Serialize(element);
-        if (!discardDraft && sameElement && fingerprint == formFingerprint) return;
+        var element = selected.FirstOrDefault();
+        var fingerprint = JsonSerializer.Serialize(selected);
+        if (!discardDraft && ReferenceEquals(formSession, session) && fingerprint == formFingerprint) return;
         refreshing = true;
         try
         {
-            formSession = session; formElementId = element?.Id; formFingerprint = fingerprint;
+            if (!ReferenceEquals(formSession, session))
+            {
+                if (formSession is not null) formSession.Changed -= OnSessionChanged;
+                session.Changed += OnSessionChanged;
+            }
+            formSession = session; formSelection = selected.Select(e => e.Id).ToArray();
+            formFingerprint = fingerprint;
             dirtyFields.Clear();
-            propertyPanel.IsEnabled = element is { Locked: false };
-            SetPropertyVisibility(element);
-            selectionLabel.Text = element is null ? selected.Length > 1 ? L.Format("Inspector.MultipleSelection", selected.Length) : L.Get("Inspector.SelectElement")
+            propertyPanel.IsEnabled = selected.Length > 0 && selected.All(e => !e.Locked);
+            SetPropertyVisibility(selected);
+            selectionLabel.Text = selected.Length > 1 ? L.Format("Feedback4.Inspector.MultipleSelection", selected.Length) : element is null ? L.Get("Inspector.SelectElement")
                 : L.Format("Inspector.ElementSelection", ElementName(element), element.Locked ? L.Get("Inspector.LockedSuffix") : "", !element.Visible ? L.Get("Inspector.HiddenSuffix") : "");
-            selectionLabel.Visibility = element is null ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-            AppWindowChrome.SetHeaderDetail(this, element is null ? "" : selectionLabel.Text);
+            selectionLabel.Visibility = selected.Length == 1 ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
+            AppWindowChrome.SetHeaderDetail(this, selected.Length > 1 ? L.Get("Feedback4.Inspector.MultipleHeader") : selected.Length == 1 ? selectionLabel.Text : "");
             foreach (var box in fields.Values) box.Text = "";
             colorFields["Stroke"].Value = element?.Style.Stroke ?? ColorLibrary.ForegroundRed;
             colorFields["Fill"].Value = element?.Style.Fill ?? 0;
+            foreach (var color in colorFields.Values) color.IsMixed = false;
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = ElementGeometry.Bounds(element);
             var size = GeometricSize(element);
@@ -223,117 +224,194 @@ internal sealed class InspectorWindow : Wpf.Window
             fields["FontFamily"].IsEnabled = fontPicker.IsEnabled = element.Kind is ElementKind.Text or ElementKind.Number;
             alignment.IsEnabled = element.Kind == ElementKind.Text;
             alignment.SelectedIndex = (int)element.Style.TextAlignment;
-            keepAspect.IsChecked = element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Number;
-            SetStatus(element.Locked ? L.Get("Inspector.UnlockToEdit") : L.Get("Inspector.ApplyHint"), false);
+            keepAspect.IsChecked = selected.All(e => e.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Number);
+
+            if (selected.Length > 1)
+            {
+                foreach (var key in fields.Keys)
+                    if (selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) fields[key].Text = "";
+                if (selected.Skip(1).Any(other => other.Style.FontFamily != element.Style.FontFamily)) fontPicker.SelectedIndex = -1;
+                foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("TextAlignment", alignment) })
+                    if (selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) picker.SelectedIndex = -1;
+                foreach (var (key, color) in colorFields)
+                    color.IsMixed = selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)));
+            }
+            SetStatus(element.Locked ? L.Get("Inspector.UnlockToEdit") : L.Get("Feedback4.Inspector.LiveHint"), false);
         }
         finally { refreshing = false; }
     }
 
+    private void ChangeField(string key)
+    {
+        if (refreshing || !fieldContainers.TryGetValue(key, out var container) || container.Visibility != Wpf.Visibility.Visible) return;
+        dirtyFields.Clear(); dirtyFields.Add(key);
+        ApplyLive();
+    }
+
+    public void CompletePendingEdit()
+    {
+        CloseColorPickers();
+        CompleteEdit();
+    }
+
+    private void CompleteEdit()
+    {
+        editTimer.Stop();
+        var session = editSession;
+        editSession = null;
+        if (session is null || !session.IsTransactionActive || session.TransactionId != editTransaction) return;
+        applying = true;
+        try { session.Commit(); }
+        finally { applying = false; }
+        // Preserve the caret and intermediate input when completing an idle typing burst.
+        if (!propertyPanel.IsKeyboardFocusWithin) LoadSelection(true);
+    }
+
     private void Apply()
+    {
+        ApplyLive();
+        CompleteEdit();
+    }
+
+    private void ApplyLive()
     {
         try
         {
             if (!canMutate()) throw new InvalidOperationException(L.Get("Inspector.BusyDraftRetained"));
             var session = getSession();
             var selected = session.SelectedElements().ToArray();
-            if (!ReferenceEquals(session, formSession) || selected.Length != 1 || selected[0].Id != formElementId)
+            if (!ReferenceEquals(session, formSession) || !session.Selection.SetEquals(formSelection) || selected.Length == 0)
                 throw new InvalidOperationException(L.Get("Inspector.SelectionChanged"));
-            var source = selected[0];
-            if (source.Locked) throw new InvalidOperationException(L.Get("Inspector.ElementLocked"));
-            if (session.IsTransactionActive) throw new InvalidOperationException(L.Get("Inspector.FinishDrawing"));
-            if (dirtyFields.Count == 0) { SetStatus(L.Get("Inspector.NoChanges"), false); return; }
-            if (JsonSerializer.Serialize(source) != formFingerprint)
-                throw new InvalidOperationException(L.Get("Inspector.ElementChanged"));
-            var edited = source.Clone();
-            if (dirtyFields.Contains("Stroke")) edited.Style.Stroke = colorFields["Stroke"].Value;
-            if (dirtyFields.Contains("Fill")) edited.Style.Fill = colorFields["Fill"].Value;
-            if (dirtyFields.Contains("StrokeWidth")) edited.Style.StrokeWidth = Number("StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, 512);
-            if (source.Kind is ElementKind.Arrow or ElementKind.DoubleArrow)
+            if (selected.Any(e => e.Locked)) throw new InvalidOperationException(L.Get("Inspector.ElementLocked"));
+            bool ownsTransaction = ReferenceEquals(editSession, session) && session.IsTransactionActive && session.TransactionId == editTransaction;
+            if (session.IsTransactionActive && !ownsTransaction) throw new InvalidOperationException(L.Get("Inspector.FinishDrawing"));
+            if (dirtyFields.Count == 0) return;
+            if (JsonSerializer.Serialize(selected) != formFingerprint) throw new InvalidOperationException(L.Get("Inspector.ElementChanged"));
+            var changedKey = dirtyFields.Single();
+            var changes = selected.Select(source => (Source: source, Edited: EditElement(source))).ToArray();
+            if (!ownsTransaction)
             {
-                if (dirtyFields.Contains("ArrowHeadStyle"))
+                session.BeginTransaction(L.Get("Inspector.History.EditProperties"));
+                editSession = session; editTransaction = session.TransactionId;
+            }
+            applying = true;
+            try
+            {
+                foreach (var (source, edited) in changes)
                 {
-                    if (arrowStyle.SelectedIndex is < 0 or > 3) throw new InvalidOperationException(L.Get("Inspector.InvalidArrowStyle"));
-                    edited.Style.ArrowHeadStyle = (ArrowHeadStyle)arrowStyle.SelectedIndex;
+                    source.Transform = edited.Transform; source.Style = edited.Style;
+                    source.Text = edited.Text; source.Number = edited.Number;
+                    source.Width = edited.Width; source.Height = edited.Height; source.CornerRadius = edited.CornerRadius;
                 }
+                formFingerprint = JsonSerializer.Serialize(selected);
+                dirtyFields.Clear();
+                SynchronizeOtherFields(selected, changedKey);
+                session.NotifyChanged();
             }
-            if (source.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
-            {
-                if (dirtyFields.Contains("StartArrowHead")) edited.Style.StartArrowHead = (ArrowHeadStyle)startArrow.SelectedIndex;
-                if (dirtyFields.Contains("EndArrowHead")) edited.Style.EndArrowHead = (ArrowHeadStyle)endArrow.SelectedIndex;
-                if (dirtyFields.Contains("ArrowHeadSize")) edited.Style.ArrowHeadSize = Number("ArrowHeadSize", L.Get("Inspector.ArrowSize"), 0, 512);
-            }
-            if (dirtyFields.Contains("StrokePattern")) edited.Style.StrokePattern = (StrokePattern)strokePattern.SelectedIndex;
-            if (dirtyFields.Contains("CornerRadius")) edited.CornerRadius = Number("CornerRadius", L.Get("Inspector.CornerRadius"), 0, 10000000);
-            if (dirtyFields.Contains("Opacity")) edited.Style.Opacity = Number("Opacity", L.Get("Inspector.Opacity"), 0, 100) / 100;
-            if (dirtyFields.Contains("FontSize") && source.Kind is ElementKind.Text or ElementKind.Number)
-                edited.Style.FontSize = Number("FontSize", L.Get("Inspector.FontSize"), 1, 1024);
-            if (dirtyFields.Contains("FontFamily") && source.Kind is ElementKind.Text or ElementKind.Number)
-            {
-                var family = fields["FontFamily"].Text.Trim();
-                if (family.Length == 0 || family.Length > 200) throw new InvalidOperationException(L.Get("Inspector.InvalidFontFamily"));
-                edited.Style.FontFamily = family;
-            }
-            if (dirtyFields.Contains("TextAlignment") && source.Kind == ElementKind.Text && alignment.SelectedIndex is >= 0 and <= 2)
-                edited.Style.TextAlignment = (FloatCanvas.Core.TextAlignment)alignment.SelectedIndex;
-            if (dirtyFields.Contains("Text") && source.Kind == ElementKind.Text) edited.Text = fields["Text"].Text;
-            if (source.Kind == ElementKind.Text && dirtyFields.Overlaps(["Text", "FontFamily", "FontSize"]))
-            {
-                using var renderer = new SceneRenderer();
-                var metrics = renderer.MeasureText(edited.Text, edited.Style, edited.Width);
-                edited.Height = Math.Max(1, metrics.Height);
-                if (EmojiGlyphs.IsEmoji(edited.Text, edited.Style)) edited.Width = metrics.Width;
-            }
-            if (source.Kind == ElementKind.Number && dirtyFields.Contains("FontSize"))
-            {
-                double diameter = Math.Max(12, edited.Style.FontSize / .58);
-                edited.Transform = edited.Transform.Compose(Affine2D.Translation((edited.Width - diameter) / 2, (edited.Height - diameter) / 2));
-                edited.Width = edited.Height = diameter;
-            }
-            if (dirtyFields.Contains("Number") && source.Kind == ElementKind.Number)
-            {
-                if (!int.TryParse(fields["Number"].Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var value) || value < 1 || value > 1_000_000)
-                    throw new InvalidOperationException(L.Get("Inspector.InvalidNumber"));
-                edited.Number = value;
-            }
-            if (dirtyFields.Contains("Angle"))
-            {
-                var requested = Number("Angle", L.Get("Inspector.Angle"), -360000, 360000);
-                var center = ElementGeometry.Bounds(edited).Center;
-                edited.Transform = Affine2D.Around(center, Affine2D.Rotation(requested - ElementAngle(edited))).Compose(edited.Transform);
-            }
-            var size = GeometricSize(edited);
-            var resizeX = dirtyFields.Contains("W"); var resizeY = dirtyFields.Contains("H");
-            if (resizeX || resizeY)
-            {
-                if ((resizeX && size.X < 1e-9) || (resizeY && size.Y < 1e-9))
-                    throw new InvalidOperationException(L.Get("Inspector.ZeroSize"));
-                double sx = resizeX ? Number("W", L.Get("Inspector.Width"), .01, 10000000) / size.X : 1;
-                double sy = resizeY ? Number("H", L.Get("Inspector.Height"), .01, 10000000) / size.Y : 1;
-                if (keepAspect.IsChecked == true)
-                {
-                    if (resizeX && resizeY && Math.Abs(sx - sy) > Math.Max(sx, sy) * .005)
-                        throw new InvalidOperationException(L.Get("Inspector.AspectMismatch"));
-                    sx = sy = resizeX ? sx : sy;
-                }
-                ResizeElement(edited, sx, sy);
-            }
-            var bounds = ElementGeometry.Bounds(edited);
-            double dx = dirtyFields.Contains("X") ? Number("X", "X", -10000000, 10000000) - bounds.Left : 0;
-            double dy = dirtyFields.Contains("Y") ? Number("Y", "Y", -10000000, 10000000) - bounds.Top : 0;
-            edited.Transform = Affine2D.Translation(dx, dy).Compose(edited.Transform);
-            session.UpdateSelection(element =>
-            {
-                element.Transform = edited.Transform;
-                element.Style = edited.Style.Clone();
-                element.Text = edited.Text; element.Number = edited.Number;
-                element.Width = edited.Width; element.Height = edited.Height;
-                element.CornerRadius = edited.CornerRadius;
-            }, L.Get("Inspector.History.EditProperties"));
-            dirtyFields.Clear();
-            LoadSelection(true);
+            finally { applying = false; }
+            editTimer.Stop(); editTimer.Start();
             SetStatus(L.Get("Inspector.PropertiesApplied"), false);
         }
         catch (Exception ex) { SetStatus(ex.Message, true); }
+    }
+
+    private void SynchronizeOtherFields(CanvasElement[] selected, string changedKey)
+    {
+        refreshing = true;
+        try
+        {
+            foreach (var (key, box) in fields)
+            {
+                if (key == changedKey) continue;
+                var value = PropertyValue(selected[0], key);
+                if (selected.Skip(1).Any(e => !Equals(PropertyValue(e, key), value))) { box.Text = ""; continue; }
+                if (value is double number) box.Text = (key == "Opacity" ? number * 100 : number).ToString("0.###", CultureInfo.CurrentCulture);
+                else box.Text = Convert.ToString(value, CultureInfo.CurrentCulture) ?? "";
+            }
+        }
+        finally { refreshing = false; }
+    }
+
+    private CanvasElement EditElement(CanvasElement source)
+    {
+        var edited = source.Clone();
+        if (dirtyFields.Contains("Stroke")) edited.Style.Stroke = colorFields["Stroke"].Value;
+        if (dirtyFields.Contains("Fill")) edited.Style.Fill = colorFields["Fill"].Value;
+        if (dirtyFields.Contains("StrokeWidth")) edited.Style.StrokeWidth = Number("StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, 512);
+        if (source.Kind is ElementKind.Arrow or ElementKind.DoubleArrow)
+        {
+            if (dirtyFields.Contains("ArrowHeadStyle"))
+            {
+                if (arrowStyle.SelectedIndex is < 0 or > 3) throw new InvalidOperationException(L.Get("Inspector.InvalidArrowStyle"));
+                edited.Style.ArrowHeadStyle = (ArrowHeadStyle)arrowStyle.SelectedIndex;
+            }
+        }
+        if (source.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
+        {
+            if (dirtyFields.Contains("StartArrowHead")) edited.Style.StartArrowHead = (ArrowHeadStyle)startArrow.SelectedIndex;
+            if (dirtyFields.Contains("EndArrowHead")) edited.Style.EndArrowHead = (ArrowHeadStyle)endArrow.SelectedIndex;
+            if (dirtyFields.Contains("ArrowHeadSize")) edited.Style.ArrowHeadSize = Number("ArrowHeadSize", L.Get("Inspector.ArrowSize"), 0, 512);
+        }
+        if (dirtyFields.Contains("StrokePattern")) edited.Style.StrokePattern = (StrokePattern)strokePattern.SelectedIndex;
+        if (dirtyFields.Contains("CornerRadius")) edited.CornerRadius = Number("CornerRadius", L.Get("Inspector.CornerRadius"), 0, 10000000);
+        if (dirtyFields.Contains("Opacity")) edited.Style.Opacity = Number("Opacity", L.Get("Inspector.Opacity"), 0, 100) / 100;
+        if (dirtyFields.Contains("FontSize") && source.Kind is ElementKind.Text or ElementKind.Number)
+            edited.Style.FontSize = Number("FontSize", L.Get("Inspector.FontSize"), 1, 1024);
+        if (dirtyFields.Contains("FontFamily") && source.Kind is ElementKind.Text or ElementKind.Number)
+        {
+            var family = fields["FontFamily"].Text.Trim();
+            if (family.Length == 0 || family.Length > 200) throw new InvalidOperationException(L.Get("Inspector.InvalidFontFamily"));
+            edited.Style.FontFamily = family;
+        }
+        if (dirtyFields.Contains("TextAlignment") && source.Kind == ElementKind.Text && alignment.SelectedIndex is >= 0 and <= 2)
+            edited.Style.TextAlignment = (FloatCanvas.Core.TextAlignment)alignment.SelectedIndex;
+        if (dirtyFields.Contains("Text") && source.Kind == ElementKind.Text) edited.Text = fields["Text"].Text;
+        if (source.Kind == ElementKind.Text && dirtyFields.Overlaps(["Text", "FontFamily", "FontSize"]))
+        {
+            using var renderer = new SceneRenderer();
+            var metrics = renderer.MeasureText(edited.Text, edited.Style, edited.Width);
+            edited.Height = Math.Max(1, metrics.Height);
+            if (EmojiGlyphs.IsEmoji(edited.Text, edited.Style)) edited.Width = metrics.Width;
+        }
+        if (source.Kind == ElementKind.Number && dirtyFields.Contains("FontSize"))
+        {
+            double diameter = Math.Max(12, edited.Style.FontSize / .58);
+            edited.Transform = edited.Transform.Compose(Affine2D.Translation((edited.Width - diameter) / 2, (edited.Height - diameter) / 2));
+            edited.Width = edited.Height = diameter;
+        }
+        if (dirtyFields.Contains("Number") && source.Kind == ElementKind.Number)
+        {
+            if (!int.TryParse(fields["Number"].Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var value) || value < 1 || value > 1_000_000)
+                throw new InvalidOperationException(L.Get("Inspector.InvalidNumber"));
+            edited.Number = value;
+        }
+        if (dirtyFields.Contains("Angle"))
+        {
+            var requested = Number("Angle", L.Get("Inspector.Angle"), -360000, 360000);
+            var center = ElementGeometry.Bounds(edited).Center;
+            edited.Transform = Affine2D.Around(center, Affine2D.Rotation(requested - ElementAngle(edited))).Compose(edited.Transform);
+        }
+        var size = GeometricSize(edited);
+        var resizeX = dirtyFields.Contains("W"); var resizeY = dirtyFields.Contains("H");
+        if (resizeX || resizeY)
+        {
+            if ((resizeX && size.X < 1e-9) || (resizeY && size.Y < 1e-9))
+                throw new InvalidOperationException(L.Get("Inspector.ZeroSize"));
+            double sx = resizeX ? Number("W", L.Get("Inspector.Width"), .01, 10000000) / size.X : 1;
+            double sy = resizeY ? Number("H", L.Get("Inspector.Height"), .01, 10000000) / size.Y : 1;
+            if (keepAspect.IsChecked == true)
+            {
+                if (resizeX && resizeY && Math.Abs(sx - sy) > Math.Max(sx, sy) * .005)
+                    throw new InvalidOperationException(L.Get("Inspector.AspectMismatch"));
+                sx = sy = resizeX ? sx : sy;
+            }
+            ResizeElement(edited, sx, sy);
+        }
+        var bounds = ElementGeometry.Bounds(edited);
+        double dx = dirtyFields.Contains("X") ? Number("X", "X", -10000000, 10000000) - bounds.Left : 0;
+        double dy = dirtyFields.Contains("Y") ? Number("Y", "Y", -10000000, 10000000) - bounds.Top : 0;
+        edited.Transform = Affine2D.Translation(dx, dy).Compose(edited.Transform);
+        return edited;
     }
 
 
@@ -387,12 +465,13 @@ internal sealed class InspectorWindow : Wpf.Window
                 "CornerRadius" => (0d, 10000000d, 0d, 256d, 1d),
                 "ArrowHeadSize" => (0d, 512d, 0d, 128d, 1d),
                 "Opacity" => (0d, 100d, 0d, 100d, 1d),
-                "FontSize" => (1d, 4096d, 8d, 144d, 1d),
+                "FontSize" => (1d, 1024d, 8d, 144d, 1d),
                 _ => (1d, 1000000d, 1d, 100d, 1d)
             };
             var numeric = new NumericValueField(field, limits.Item1, limits.Item2, limits.Item3, limits.Item4, limits.Item5);
             if (key == "Number") numeric.Slider.IsSnapToTickEnabled = true;
             Automation.AutomationProperties.SetName(numeric.Slider, label);
+            numeric.Slider.LostMouseCapture += (_, _) => CompleteEdit();
             numericFields.Add(key, numeric);
             if (key == "StrokeWidth")
             {
@@ -414,7 +493,7 @@ internal sealed class InspectorWindow : Wpf.Window
         picker.SelectionChanged += (_, _) =>
         {
             if (refreshing) return;
-            dirtyFields.Add(key); SetStatus(L.Get("Inspector.DraftRetained"), false);
+            ChangeField(key);
         };
         var row = new Controls.StackPanel { Margin = new(0, 4, 0, 4) };
         row.Children.Add(new Controls.TextBlock { Text = label, FontSize = 12, Margin = new(0, 0, 0, 3) });
@@ -430,7 +509,7 @@ internal sealed class InspectorWindow : Wpf.Window
         field.ValueChanged += _ =>
         {
             if (refreshing) return;
-            dirtyFields.Add(key); SetStatus(L.Get("Inspector.DraftRetained"), false);
+            ChangeField(key);
         };
         field.EyedropperRequested += () => EyedropperRequested?.Invoke(field);
         row.Children.Add(caption); row.Children.Add(field);
@@ -445,66 +524,72 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private bool BeginScrub(string key)
     {
+        CompleteEdit();
         if (!canMutate() || dirtyFields.Count > 0) return false;
         var session = getSession();
         var selected = session.SelectedElements().ToArray();
-        if (session.IsTransactionActive || !ReferenceEquals(session, formSession) || selected.Length != 1 ||
-            selected[0].Id != formElementId || selected[0].Locked || JsonSerializer.Serialize(selected[0]) != formFingerprint) return false;
+        if (session.IsTransactionActive || !ReferenceEquals(session, formSession) || selected.Length == 0 ||
+            !session.Selection.SetEquals(formSelection) || selected.Any(e => e.Locked) || JsonSerializer.Serialize(selected) != formFingerprint) return false;
         var source = selected[0];
         var size = GeometricSize(source); var bounds = ElementGeometry.Bounds(source);
-        if (key == "W" && size.X < 1e-9 || key == "H" && size.Y < 1e-9) return false;
+        if (selected.Any(e => key == "W" && GeometricSize(e).X < 1e-9 || key == "H" && GeometricSize(e).Y < 1e-9)) return false;
         scrubStartValue = key switch
         {
             "X" => bounds.Left, "Y" => bounds.Top, "W" => size.X, "H" => size.Y,
             "Angle" => ElementAngle(source), "StrokeWidth" => source.Style.StrokeWidth,
             "CornerRadius" => ElementGeometry.CornerRadius(source), _ => 0
         };
-        scrubSource = source.Clone(); scrubSession = session;
+        scrubSources = selected.Select(e => e.Clone()).ToArray(); scrubSession = session;
         session.BeginTransaction(L.Get("Inspector.History.EditProperties")); scrubTransaction = session.TransactionId;
         return true;
     }
 
     private void UpdateScrub(string key, double delta)
     {
-        var session = scrubSession; var source = scrubSource;
-        if (session is null || source is null) return;
+        var session = scrubSession;
+        if (session is null || scrubSources.Length == 0) return;
         if (!canMutate() || !ReferenceEquals(session, getSession()) || !session.IsTransactionActive || session.TransactionId != scrubTransaction)
         { CancelScrub(); return; }
-        var target = session.Document.Elements.FirstOrDefault(e => e.Id == source.Id);
-        if (target is null) { CancelScrub(); return; }
-        double value = scrubStartValue + delta * (key == "StrokeWidth" ? .1 : 1);
-        value = key switch
+        double displayValue = scrubStartValue;
+        foreach (var source in scrubSources)
         {
-            "W" or "H" => Math.Clamp(value, .01, 10000000), "StrokeWidth" => Math.Clamp(value, 0, 512),
-            "CornerRadius" => Math.Clamp(value, 0, 10000000), "Angle" => Math.Clamp(value, -360000, 360000),
-            _ => Math.Clamp(value, -10000000, 10000000)
-        };
-        var edited = source.Clone();
-        switch (key)
-        {
-            case "X": edited.Transform = Affine2D.Translation(value - ElementGeometry.Bounds(source).Left, 0).Compose(source.Transform); break;
-            case "Y": edited.Transform = Affine2D.Translation(0, value - ElementGeometry.Bounds(source).Top).Compose(source.Transform); break;
-            case "Angle": edited.Transform = Affine2D.Around(ElementGeometry.Bounds(source).Center, Affine2D.Rotation(value - ElementAngle(source))).Compose(source.Transform); break;
-            case "W": case "H":
-                var size = GeometricSize(source); double factor = value / (key == "W" ? size.X : size.Y);
-                double sx = key == "W" || keepAspect.IsChecked == true ? factor : 1;
-                double sy = key == "H" || keepAspect.IsChecked == true ? factor : 1;
-                ResizeElement(edited, sx, sy); break;
-            case "StrokeWidth": edited.Style.StrokeWidth = value; break;
-            case "CornerRadius": edited.CornerRadius = value; break;
+            var target = session.Document.Elements.FirstOrDefault(e => e.Id == source.Id);
+            if (target is null) { CancelScrub(); return; }
+            double value = Convert.ToDouble(PropertyValue(source, key), CultureInfo.InvariantCulture) + delta * (key == "StrokeWidth" ? .1 : 1);
+            value = key switch
+            {
+                "W" or "H" => Math.Clamp(value, .01, 10000000), "StrokeWidth" => Math.Clamp(value, 0, 512),
+                "CornerRadius" => Math.Clamp(value, 0, 10000000), "Angle" => Math.Clamp(value, -360000, 360000),
+                _ => Math.Clamp(value, -10000000, 10000000)
+            };
+            var edited = source.Clone();
+            switch (key)
+            {
+                case "X": edited.Transform = Affine2D.Translation(value - ElementGeometry.Bounds(source).Left, 0).Compose(source.Transform); break;
+                case "Y": edited.Transform = Affine2D.Translation(0, value - ElementGeometry.Bounds(source).Top).Compose(source.Transform); break;
+                case "Angle": edited.Transform = Affine2D.Around(ElementGeometry.Bounds(source).Center, Affine2D.Rotation(value - ElementAngle(source))).Compose(source.Transform); break;
+                case "W": case "H":
+                    var size = GeometricSize(source); double factor = value / (key == "W" ? size.X : size.Y);
+                    double sx = key == "W" || keepAspect.IsChecked == true ? factor : 1;
+                    double sy = key == "H" || keepAspect.IsChecked == true ? factor : 1;
+                    ResizeElement(edited, sx, sy); break;
+                case "StrokeWidth": edited.Style.StrokeWidth = value; break;
+                case "CornerRadius": edited.CornerRadius = value; break;
+            }
+            target.Transform = edited.Transform; target.Style = edited.Style; target.CornerRadius = edited.CornerRadius;
+            target.Width = edited.Width; target.Height = edited.Height;
+            if (source.Id == scrubSources[0].Id) displayValue = value;
         }
-        target.Transform = edited.Transform; target.Style = edited.Style; target.CornerRadius = edited.CornerRadius;
-        target.Width = edited.Width; target.Height = edited.Height;
         session.NotifyChanged();
         refreshing = true;
-        try { SetField(key, value); }
+        try { SetField(key, displayValue); }
         finally { refreshing = false; }
     }
 
     private void FinishScrub(bool commit)
     {
         var session = scrubSession;
-        scrubSession = null; scrubSource = null;
+        scrubSession = null; scrubSources = [];
         if (session is null) return;
         if (session.IsTransactionActive && session.TransactionId == scrubTransaction)
         {
@@ -526,35 +611,50 @@ internal sealed class InspectorWindow : Wpf.Window
         row.Children.Add(Field(key, key == "FontFamily" ? L.Get("Inspector.FontFamilyName") : label)); fieldContainers.Add(key, row); return row;
     }
 
-    private void SetPropertyVisibility(CanvasElement? element)
+    private static bool Supports(CanvasElement element, string key)
     {
-        foreach (var key in new[] { "W", "H" }) fieldContainers[key].ToolTip = element?.ProjectivePlacement is not null
-            ? L.Get("Perspective.InspectorPlaneBounds") : null;
-        propertyPanel.Visibility = element is null ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
-        bool image = element?.Kind == ElementKind.Image || element is not null && ElementGeometry.IsLiveEffect(element.Kind), text = element?.Kind == ElementKind.Text, number = element?.Kind == ElementKind.Number;
-        textSection.Visibility = text || number ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-        foreach (var (key, container) in fieldContainers)
+        bool image = element.Kind == ElementKind.Image || ElementGeometry.IsLiveEffect(element.Kind), text = element.Kind == ElementKind.Text, number = element.Kind == ElementKind.Number;
+        return key switch
         {
-            bool visible = key switch
-            {
-                "Stroke" or "ColorHint" => !image,
-                "Fill" => !image && !text,
-                "StrokeWidth" => !image && !text && !number,
-                "StrokePattern" => !image && !text && !number,
-                "CornerRadius" => element?.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle,
-                "FontFamily" or "FontSize" => text || number,
-                "Text" or "TextAlignment" => text,
-                "Number" => number,
-                "ArrowHeadStyle" => element?.Kind is ElementKind.Arrow or ElementKind.DoubleArrow,
-                "ArrowHeadSize" or "ArrowHint" => element?.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow,
-                "StartArrowHead" or "EndArrowHead" => element?.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow,
-                _ => true
-            };
-            container.Visibility = visible ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-        }
+            "Stroke" or "ColorHint" => !image,
+            "Fill" => !image && !text,
+            "StrokeWidth" or "StrokePattern" => !image && !text && !number,
+            "CornerRadius" => element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle,
+            "FontFamily" or "FontSize" => text || number,
+            "Text" or "TextAlignment" => text,
+            "Number" => number,
+            "ArrowHeadStyle" => element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow,
+            "ArrowHeadSize" or "ArrowHint" or "StartArrowHead" or "EndArrowHead" => element.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow,
+            _ => true
+        };
+    }
+
+    private static object? PropertyValue(CanvasElement e, string key) => key switch
+    {
+        "X" => ElementGeometry.Bounds(e).Left, "Y" => ElementGeometry.Bounds(e).Top,
+        "W" => GeometricSize(e).X, "H" => GeometricSize(e).Y, "Angle" => ElementAngle(e),
+        "Stroke" => e.Style.Stroke, "Fill" => e.Style.Fill, "StrokeWidth" => e.Style.StrokeWidth,
+        "CornerRadius" => ElementGeometry.CornerRadius(e), "Opacity" => e.Style.Opacity,
+        "ArrowHeadStyle" => e.Style.ArrowHeadStyle, "ArrowHeadSize" => e.Style.ArrowHeadSize,
+        "StartArrowHead" => ElementGeometry.ArrowStyle(e, reverse: true), "EndArrowHead" => ElementGeometry.ArrowStyle(e),
+        "StrokePattern" => e.Style.StrokePattern, "FontFamily" => e.Style.FontFamily,
+        "FontSize" => e.Style.FontSize, "Number" => e.Number, "Text" => e.Text, "TextAlignment" => e.Style.TextAlignment,
+        _ => null
+    };
+
+    private void SetPropertyVisibility(CanvasElement[] selected)
+    {
+        var element = selected.FirstOrDefault();
+        bool editable = selected.Length > 0 && selected.All(e => !e.Locked);
+        foreach (var key in new[] { "W", "H" }) fieldContainers[key].ToolTip = selected.Any(e => e.ProjectivePlacement is not null)
+            ? L.Get("Perspective.InspectorPlaneBounds") : null;
+        propertyPanel.Visibility = editable ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        textSection.Visibility = editable && selected.All(e => Supports(e, "FontSize")) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        foreach (var (key, container) in fieldContainers)
+            container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var row in propertyPanel.Children.OfType<Controls.Grid>())
             row.Visibility = row.Children.OfType<Wpf.FrameworkElement>().Any(child => child.Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-        ((Controls.TextBlock)fieldContainers["ColorHint"]).Text = text ? L.Get("Inspector.TextColorHint") : L.Get("Inspector.ColorHint");
+        ((Controls.TextBlock)fieldContainers["ColorHint"]).Text = element?.Kind == ElementKind.Text ? L.Get("Inspector.TextColorHint") : L.Get("Inspector.ColorHint");
     }
 
     private Controls.TextBox Field(string key, string label)
@@ -565,8 +665,7 @@ internal sealed class InspectorWindow : Wpf.Window
         box.TextChanged += (_, _) =>
         {
             if (refreshing) return;
-            dirtyFields.Add(key);
-            SetStatus(L.Get("Inspector.DraftRetained"), false);
+            ChangeField(key);
         };
         fields.Add(key, box);
         return box;
@@ -592,6 +691,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private void HandleEscape()
     {
         if (scrubSession is not null) { CancelScrub(); return; }
+        CompleteEdit();
         foreach (var field in colorFields.Values) if (field.TryClosePicker()) return;
         if (alignment.IsDropDownOpen) { alignment.IsDropDownOpen = false; return; }
         if (arrowStyle.IsDropDownOpen) { arrowStyle.IsDropDownOpen = false; return; }
@@ -605,6 +705,7 @@ internal sealed class InspectorWindow : Wpf.Window
         bool objectCommand = !textInput && (control && key is 0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 || !control && key == 0x2E);
         if (!projectCommand && !objectCommand) return false;
         if (!canMutate()) { SetStatus(L.Get("Inspector.BusyDraftRetained"), true); return true; }
+        CompletePendingEdit();
         CommandKey?.Invoke(key); return true;
     }
     private static bool IsTextInput(Wpf.DependencyObject? source)

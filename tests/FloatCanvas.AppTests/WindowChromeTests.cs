@@ -15,6 +15,7 @@ internal static class WindowChromeTests
         foreach (string mode in new[] { "light", "dark" })
         {
             AppTheme.Apply(mode);
+            CheckButtonFeedback(assert, app, mode);
             var body = new Controls.TextBox { Text = "Editable content" };
             var window = new Wpf.Window { Title = "FloatCanvas test", Content = body, Width = 360, Height = 240 };
             AppWindowChrome.Apply(window);
@@ -108,6 +109,32 @@ internal static class WindowChromeTests
         themeWindow.Close();
         assert("shared chrome checks leave no native or visible windows", app.Windows.Cast<Wpf.Window>().All(window =>
             !window.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle == 0));
+    }
+
+    private static void CheckButtonFeedback(Action<string, bool> assert, Wpf.Application app, string mode)
+    {
+        var hoverKey = (Wpf.DependencyPropertyKey)typeof(Wpf.UIElement).GetField("IsMouseOverPropertyKey", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.GetValue(null)!;
+        var pressedKey = (Wpf.DependencyPropertyKey)typeof(Primitives.ButtonBase).GetField("IsPressedPropertyKey", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.GetValue(null)!;
+        Media.Color Resource(string key) => ((Media.SolidColorBrush)app.Resources[key]).Color;
+        foreach (string? style in new string?[] { null, "CanvasCaptionButton", "CanvasCloseCaptionButton" })
+        {
+            var button = new Controls.Button { Width = 28, Height = 28, MinWidth = 0, MinHeight = 0, Content = "+" };
+            if (style is not null) button.SetResourceReference(Wpf.FrameworkElement.StyleProperty, style);
+            Layout(button);
+            var chrome = (Controls.Border)button.Template.FindName("Chrome", button);
+            var size = chrome.RenderSize;
+            button.SetValue(hoverKey, true); Layout(button);
+            var hover = ((Media.SolidColorBrush)chrome.Background).Color;
+            assert(mode + " " + (style ?? "Button") + " uses a distinct shared hover surface without resizing", hover == Resource(style == "CanvasCloseCaptionButton" ? "CanvasCloseHover" : "CanvasButtonHover") && chrome.RenderSize == size);
+            button.SetValue(pressedKey, true); Layout(button);
+            assert(mode + " " + (style ?? "Button") + " retains a deliberate pressed surface", ((Media.SolidColorBrush)chrome.Background).Color == Resource(style == "CanvasCloseCaptionButton" ? "CanvasCloseHover" : "CanvasPressed"));
+            button.SetValue(pressedKey, false); button.SetValue(hoverKey, false);
+        }
+        var layerToggle = (Primitives.ToggleButton)typeof(LayersWindow).GetMethod("StateButton", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.Invoke(null, null)!;
+        Layout(layerToggle); var toggleChrome = (Controls.Border)layerToggle.Template.FindName("Chrome", layerToggle);
+        var toggleSize = toggleChrome.RenderSize; layerToggle.SetValue(hoverKey, true); Layout(layerToggle);
+        assert(mode + " layer state toggles share the ordinary hover without geometry changes", ((Media.SolidColorBrush)toggleChrome.Background).Color == Resource("CanvasButtonHover") && toggleChrome.RenderSize == toggleSize);
+        assert(mode + " button hover stays separate from selected tool and layer color", Resource("CanvasButtonHover") != Resource("CanvasHover"));
     }
 
     private static void Layout(Wpf.FrameworkElement element)

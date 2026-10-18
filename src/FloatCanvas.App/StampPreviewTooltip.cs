@@ -1,6 +1,9 @@
 using System.IO;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
+using FloatCanvas.Storage;
+using System.Diagnostics;
+using System.Windows.Threading;
 using Wpf = System.Windows;
 using Controls = System.Windows.Controls;
 using Media = System.Windows.Media;
@@ -20,7 +23,9 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
     private readonly Controls.TextBlock scale = new() { FontSize = 11, Margin = new Wpf.Thickness(0, 7, 0, 0), HorizontalAlignment = Wpf.HorizontalAlignment.Center };
     private CancellationTokenSource? loading;
     private long request;
-    private bool loaded;
+    private PreviewPlayback? playback;
+    private readonly Stopwatch clock = new();
+    private readonly DispatcherTimer animation = new(DispatcherPriority.Background);
 
     internal static StampPreviewTooltip Create(StampLibrary library, StampEntry entry, string shortcut) => new(library, entry, shortcut);
 
@@ -45,6 +50,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
         Content = body;
         Opened += OnOpened;
         Closed += (_, _) => CancelLoading();
+        animation.Tick += (_, _) => AdvanceAnimation();
         UpdateScale(new Wpf.DpiScale(1, 1));
     }
 
@@ -53,17 +59,20 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
         CancelLoading();
         UpdateScale(Media.VisualTreeHelper.GetDpi(this));
         if (!IsCurrent(library, entry)) { IsOpen = false; return; }
-        if (loaded) return;
         long version = ++request;
         loading = new CancellationTokenSource(); var token = loading.Token;
         message.Text = L.Get("Stamp.Loading"); message.Visibility = Wpf.Visibility.Visible;
         try
         {
-            var bitmap = await GetPreviewAsync(library, entry, token);
+            var prepared = await LoadPlaybackAsync(library, entry, token);
+            if (token.IsCancellationRequested || version != request || !IsOpen) { prepared?.Dispose(); return; }
+            playback=prepared;
+            var bitmap=playback?.Render(TimeSpan.Zero);
             if (token.IsCancellationRequested || version != request || !IsOpen) return;
             if (bitmap is null) { IsOpen = false; return; }
-            preview.Source = bitmap; loaded = true; message.Visibility = Wpf.Visibility.Collapsed;
+            preview.Source = bitmap; message.Visibility = Wpf.Visibility.Collapsed;
             UpdateScale(Media.VisualTreeHelper.GetDpi(this));
+            clock.Restart(); ScheduleAnimation();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is IOException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
@@ -73,6 +82,26 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
     private void CancelLoading()
     {
         request++; loading?.Cancel(); loading?.Dispose(); loading = null;
+        animation.Stop(); clock.Reset(); playback?.Dispose(); playback=null;
+    }
+
+    private void AdvanceAnimation()
+    {
+        animation.Stop();
+        if(!IsOpen || !IsCurrent(library,entry) || playback is null) {IsOpen=false;CancelLoading();return;}
+        try
+        {
+            preview.Source=playback.Render(clock.Elapsed);
+            ScheduleAnimation();
+        }
+        catch(Exception ex) when(ex is IOException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
+        {CancelLoading();message.Text=ex.Message;message.Visibility=Wpf.Visibility.Visible;}
+    }
+
+    private void ScheduleAnimation()
+    {
+        if(playback?.NextDelay(clock.Elapsed) is not { } delay)return;
+        animation.Interval=TimeSpan.FromMilliseconds(Math.Clamp(delay.TotalMilliseconds,16,1000));animation.Start();
     }
 
     private void UpdateScale(Wpf.DpiScale dpi)
@@ -94,6 +123,19 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
 
     internal static async Task<Imaging.BitmapSource?> GetPreviewAsync(StampLibrary library, StampEntry expected, CancellationToken token = default)
     {
+        using var playback=await LoadPlaybackAsync(library,expected,token).ConfigureAwait(false);
+        return playback?.Render(TimeSpan.Zero);
+    }
+
+    internal static async Task<Imaging.BitmapSource?> GetThumbnailAsync(StampLibrary library, StampEntry expected, CancellationToken token = default)
+    {
+        var bytes=await library.GetThumbnailAsync(expected.Id,token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        return IsCurrent(library,expected)?Decode(bytes):null;
+    }
+
+    private static async Task<PreviewPlayback?> LoadPlaybackAsync(StampLibrary library, StampEntry expected, CancellationToken token)
+    {
         token.ThrowIfCancellationRequested();
         if (!IsCurrent(library, expected)) return null;
         var stamp = await library.LoadStampAsync(expected.Id, token).ConfigureAwait(false);
@@ -101,22 +143,42 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
         if (!IsCurrent(library, expected)) return null;
         // Dynamic regions have no desktop pixels in their editable source. Reuse
         // the preview captured when saving rather than displaying a gray fallback.
-        byte[] bytes = SceneRenderer.HasLiveEffects(stamp.Document)
-            ? await library.GetThumbnailAsync(expected.Id, token).ConfigureAwait(false)
-            : await Task.Run(() =>
+        if(SceneRenderer.HasLiveEffects(stamp.Document))
+            return new(await GetThumbnailAsync(library,expected,token).ConfigureAwait(false));
+        token.ThrowIfCancellationRequested();
+        return new(stamp,expected);
+    }
+
+    internal sealed class PreviewPlayback : IDisposable
+    {
+        private readonly SceneDocument? document;
+        private readonly AssetLibrary? assets;
+        private readonly SceneRenderer? renderer;
+        private readonly Imaging.BitmapSource? still;
+
+        internal PreviewPlayback(Imaging.BitmapSource? still) => this.still=still;
+        internal PreviewPlayback(LoadedProject stamp,StampEntry expected)
         {
-            token.ThrowIfCancellationRequested();
             var document = stamp.Document.Clone();
             double factor = 320 / Math.Max(document.Viewport.Width, document.Viewport.Height);
             var transform = Affine2D.Scale(factor, factor).Compose(Affine2D.Translation(-document.Viewport.X, -document.Viewport.Y));
             foreach (var element in document.Elements) element.Transform = transform.Compose(element.Transform);
             if (document.Background is { } background) background.Transform = transform.Compose(background.Transform);
             document.Viewport = new(0, 0, Math.Max(1, expected.Width * factor), Math.Max(1, expected.Height * factor));
-            using var renderer = new SceneRenderer();
-            return renderer.ExportPng(document, stamp.Assets, transparent: true);
-        }, token).ConfigureAwait(false);
-        token.ThrowIfCancellationRequested();
-        if (!IsCurrent(library, expected)) return null;
+            this.document=document;assets=stamp.Assets;renderer=new SceneRenderer();
+        }
+        internal Imaging.BitmapSource? Render(TimeSpan time)
+        {
+            if(renderer is null)return still;
+            renderer.AnimationTime=time;
+            return Decode(renderer.ExportPng(document!,assets!,transparent:true));
+        }
+        internal TimeSpan? NextDelay(TimeSpan time)=>renderer?.GetNextAnimationDelay(document!,assets!,time);
+        public void Dispose()=>renderer?.Dispose();
+    }
+
+    private static Imaging.BitmapSource Decode(byte[] bytes)
+    {
         using var stream = new MemoryStream(bytes);
         var bitmap = new Imaging.BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = Imaging.BitmapCacheOption.OnLoad; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze();
         return bitmap;

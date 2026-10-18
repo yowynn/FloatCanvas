@@ -68,7 +68,114 @@ internal static class PerspectiveInputTests
         Pointer(select, OverlayPointerKind.Down, new(screen.Left, screen.Top));
         Pointer(select, OverlayPointerKind.Up, new(screen.Right, screen.Bottom));
         check("screen rectangle selection tests projected geometry", target.Selection.SetEquals([selected.Id]));
+        StrokeEdgeSelection(check);
+        FilledArrowSelection(check);
         HorizonSelection(check);
+    }
+
+    private static void FilledArrowSelection(Action<string, bool> check)
+    {
+        foreach (bool projected in new[] { false, true })
+        foreach (var style in new[] { ArrowHeadStyle.FilledTriangle, ArrowHeadStyle.Diamond })
+        foreach (bool reverse in new[] { false, true })
+        {
+            var document = projected ? Document() : new SceneDocument { Viewport = new(0, 0, 800, 600) };
+            var arrow = new CanvasElement { Kind = ElementKind.Arrow, Points = [new(100, 100), new(300, 100)],
+                Style = new() { StrokeWidth = 20, ArrowHeadSize = 60,
+                    StartArrowHead = reverse ? style : ArrowHeadStyle.None,
+                    EndArrowHead = reverse ? ArrowHeadStyle.None : style } };
+            document.Elements.Add(arrow);
+            var session = new EditorSession(document);
+            var controller = new EditorController(session) { Tool = EditorTool.Select };
+            var mapping = CanvasMapping.Create(document);
+            using var bitmap = new SKBitmap(800, 600);
+            using var canvas = new SKCanvas(bitmap);
+            using var renderer = new SceneRenderer();
+            canvas.Clear(SKColors.Transparent);
+            renderer.Draw(canvas, document, session.Assets, includeBackground: false, includeCanvasBackground: false);
+            void Marquee(string name, RectD bounds, bool expected)
+            {
+                string label = $"{name} for {style}, reverse={reverse}, projection={projected}";
+                bool painted = false;
+                for (int y = (int)Math.Ceiling(bounds.Top); y < (int)Math.Floor(bounds.Bottom); y++)
+                    for (int x = (int)Math.Ceiling(bounds.Left); x < (int)Math.Floor(bounds.Right); x++)
+                        painted |= bitmap.GetPixel(x, y).Alpha > 127;
+                check($"{label} render fixture", painted == expected);
+                session.SetSelection([]);
+                Pointer(controller, OverlayPointerKind.Down, new(reverse ? bounds.Left : bounds.Right, bounds.Bottom));
+                check($"{label} starts a marquee", controller.Marquee is not null);
+                Pointer(controller, OverlayPointerKind.Up, new(reverse ? bounds.Right : bounds.Left, bounds.Top));
+                check(label, session.Selection.Contains(arrow.Id) == expected);
+            }
+
+            var tip = mapping.ToScreen(new(reverse ? 100 : 300, 100));
+            Marquee("marquee rejects the transparent space beyond a filled arrow tip",
+                new(tip.X + (reverse ? -15 : 2), tip.Y - 5, 13, 10), false);
+            double wingX = style == ArrowHeadStyle.Diamond ? (reverse ? 120 : 260) : (reverse ? 150 : 230);
+            Marquee("marquee retains the filled arrowhead outside its trimmed shaft",
+                mapping.PlaneToScreen.TransformBounds(new(wingX, 120, 20, 25)), true);
+        }
+    }
+
+    private static void StrokeEdgeSelection(Action<string, bool> check)
+    {
+        foreach (bool projected in new[] { false, true })
+        {
+            var document = projected ? Document() : new SceneDocument { Viewport = new(0, 0, 800, 600) };
+            var line = new CanvasElement { Kind = ElementKind.Line, Points = [new(100, 100), new(300, 100)],
+                Style = new() { StrokeWidth = 100 } };
+            var rectangle = new CanvasElement { Kind = ElementKind.Rectangle, Width = 100, Height = 100,
+                Transform = Affine2D.Translation(400, 300), Style = new() { StrokeWidth = 60 } };
+            var dot = new CanvasElement { Kind = ElementKind.Freehand, Points = [new(500, 100)], Style = new() { StrokeWidth = 100 } };
+            var rotated = new CanvasElement { Kind = ElementKind.Line, Points = [new(0, 0), new(100, 0)],
+                Transform = Affine2D.Translation(100, 400).Compose(Affine2D.Rotation(30)).Compose(Affine2D.Scale(2, .5)),
+                Style = new() { StrokeWidth = 100 } };
+            var normal = new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 40,
+                Transform = Affine2D.Translation(600, 300), Style = new() { StrokeWidth = 2, Fill = 0xFF00FF00 } };
+            var image = new CanvasElement { Kind = ElementKind.Image, Width = 40, Height = 40,
+                Transform = Affine2D.Translation(600, 400), Style = new() { StrokeWidth = 100 } };
+            var arrow = new CanvasElement { Kind = ElementKind.Arrow, Points = [new(600, 100), new(700, 100)],
+                Style = new() { StrokeWidth = 20, ArrowHeadSize = 60, ArrowHeadStyle = ArrowHeadStyle.Open } };
+            document.Elements.AddRange([line, rectangle, dot, rotated, normal, image, arrow]);
+            var session = new EditorSession(document);
+            var controller = new EditorController(session) { Tool = EditorTool.Select };
+            var mapping = CanvasMapping.Create(document);
+            using var bitmap = new SKBitmap(800, 600);
+            using var canvas = new SKCanvas(bitmap);
+            using var renderer = new SceneRenderer();
+            canvas.Clear(SKColors.Transparent);
+            renderer.Draw(canvas, document, session.Assets, includeBackground: false, includeCanvasBackground: false);
+            void Marquee(string name, RectD planeRectangle, params CanvasElement[] expected)
+            {
+                session.SetSelection([]);
+                var bounds = mapping.PlaneToScreen.TransformBounds(planeRectangle);
+                bool painted = false;
+                for (int y = (int)Math.Ceiling(bounds.Top); y < (int)Math.Floor(bounds.Bottom); y++)
+                    for (int x = (int)Math.Ceiling(bounds.Left); x < (int)Math.Floor(bounds.Right); x++)
+                        painted |= bitmap.GetPixel(x, y).Alpha > 127;
+                check($"{name} render fixture with projection={projected}", painted == (expected.Length > 0));
+                var start = expected.Length == 0 ? new PointD(bounds.Left, bounds.Top) : new(bounds.Right, bounds.Bottom);
+                var end = expected.Length == 0 ? new PointD(bounds.Right, bounds.Bottom) : new(bounds.Left, bounds.Top);
+                Pointer(controller, OverlayPointerKind.Down, start);
+                check($"{name} starts a marquee with projection={projected}", controller.Marquee is not null);
+                Pointer(controller, OverlayPointerKind.Up, end);
+                check($"{name} with projection={projected}", session.Selection.SetEquals(expected.Select(e => e.Id)));
+            }
+
+            Marquee("marquee includes only the wide line's painted edge", new(150, 140, 50, 30), line);
+            Marquee("marquee includes the outside of a closed shape stroke", new(515, 330, 40, 20), rectangle);
+            Marquee("marquee includes the painted edge of a single-point stroke", new(510, 140, 20, 30), dot);
+            Marquee("marquee rejects empty corners outside a round stroke cap", new(45, 45, 12, 12));
+            Marquee("marquee rejects space beyond a wide stroke", new(150, 160, 50, 25));
+            Marquee("marquee includes a rotated nonuniform stroke edge", new(150, 455, 15, 35), rotated);
+            Marquee("marquee rejects empty rotated stroke bounds", new(130, 485, 15, 15));
+            Marquee("marquee keeps ordinary filled shape selection", new(610, 330, 20, 30), normal);
+            Marquee("marquee does not invent an image stroke", new(650, 410, 20, 20));
+            Marquee("marquee includes the painted outer edge of an open arrowhead", new(630, 130, 20, 25), arrow);
+
+            document.Canvas.Grid.Visible = true;
+            Marquee("grid visibility preserves stroke selection", new(150, 140, 50, 30), line);
+        }
     }
 
     private static void HorizonSelection(Action<string, bool> check)

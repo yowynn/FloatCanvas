@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -11,9 +12,11 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly ColorField background = new(ColorRole.Background), gridColor = new(ColorRole.Foreground);
     private readonly CheckBox projection = new(), gridVisible = new();
     private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true),
-        rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true), width = new(1, 20, step: .5);
+        rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true), width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5);
     private readonly Button calibrate = new(), reset = new();
     private readonly ComboBox pattern = new();
+    private readonly CanvasPresetGallery presets;
+    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 10, 0, 0) };
     private bool refreshing, disposing;
     private CanvasSettings current = new();
     public event Action<uint>? BackgroundChanged, GridColorChanged;
@@ -22,12 +25,24 @@ internal sealed class CanvasSettingsWindow : Window
     public event Action<double>? GridWidthChanged;
     public event Action<StrokePattern>? GridPatternChanged;
     public event Action? CalibrationToggled, ResetRequested, Dismissed;
+    public event Action<CanvasPresetParameters>? PresetApplied;
 
-    public CanvasSettingsWindow()
+    public CanvasSettingsWindow(CanvasPresetLibrary? library = null)
     {
-        Title = L.Get("Canvas.Title"); Width = 340; Height = 590; MinWidth = 300; MinHeight = 330;
+        Title = L.Get("Canvas.Title"); Width = 600; Height = 590; MinWidth = 570; MinHeight = 380;
         Topmost = true; ShowInTaskbar = true; Icon = AppIcon.WindowImage;
-        var body = new StackPanel { Margin = new Thickness(14, 4, 14, 14) };
+        if (library is null)
+        {
+            try { library = new CanvasPresetLibrary(); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            { library = CanvasPresetLibrary.OfficialOnly(); status.Text = ex.Message + " " + L.Get("CanvasPreset.ReadOnly"); }
+        }
+        var layout = new DockPanel { Margin = new Thickness(14, 4, 14, 14) };
+        var description = new TextBlock { Text = L.Get("CanvasPreset.Description"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 12) };
+        DockPanel.SetDock(description, Dock.Top); layout.Children.Add(description);
+        DockPanel.SetDock(status, Dock.Bottom); layout.Children.Add(status);
+        var content = new Grid(); content.ColumnDefinitions.Add(new()); content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var body = new StackPanel { Margin = new Thickness(0, 0, 4, 0) };
         AddField(body, "Canvas.Background", background);
         projection.Content = L.Get("Canvas.Projection"); projection.Margin = new(0, 14, 0, 8); body.Children.Add(projection);
         AddField(body, "Canvas.Columns", columns); AddField(body, "Canvas.Rows", rows);
@@ -39,8 +54,14 @@ internal sealed class CanvasSettingsWindow : Window
         foreach (var value in new[] { StrokePattern.Solid, StrokePattern.Dashed, StrokePattern.Dotted })
             pattern.Items.Add(new ComboBoxItem { Content = ToolOptionPreviews.Choice(L.Get("Canvas." + value), value), Tag = value });
         AddField(body, "Canvas.GridPattern", pattern);
-        Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        AppWindowChrome.Apply(this); AppWindowChrome.SetHelp(this, L.Get("Canvas.Help"), L.Get("Canvas.HelpText"));
+        content.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        presets = new CanvasPresetGallery(library);
+        presets.Applied += parameters => PresetApplied?.Invoke(parameters);
+        presets.Failed += message => status.Text = message;
+        var presetBorder = new Border { BorderThickness = new(1, 0, 0, 0), Margin = new(12, 0, 0, 0), Padding = new(12, 0, 0, 0), Child = presets };
+        presetBorder.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
+        Grid.SetColumn(presetBorder, 1); content.Children.Add(presetBorder); layout.Children.Add(content); Content = layout;
+        AppWindowChrome.Apply(this); AppWindowChrome.SetHelp(this, L.Get("Canvas.Help"), L.Get("Canvas.HelpText") + "\n\n" + L.Get("CanvasPreset.Scope"));
         background.ValueChanged += value => { if (!refreshing) BackgroundChanged?.Invoke(value); };
         gridColor.ValueChanged += value => { if (!refreshing) GridColorChanged?.Invoke(value); };
         projection.Click += (_, _) => { if (!refreshing) ProjectionChanged?.Invoke(projection.IsChecked == true); };
@@ -55,7 +76,7 @@ internal sealed class CanvasSettingsWindow : Window
             if (refreshing) return;
             if (width.TryGetValue(out double value))
             { if (value != current.Grid.Width) GridWidthChanged?.Invoke(value); }
-            else width.Value = current.Grid.Width;
+            else RefreshWidth(current.Grid.Width);
         }
         CommitOnExit(width.Input, CommitWidth);
         width.SliderValueCommitted += () => { if (!refreshing) CommitWidth(); };
@@ -72,13 +93,19 @@ internal sealed class CanvasSettingsWindow : Window
             projection.IsChecked = settings.Projection.Enabled; gridVisible.IsChecked = settings.Grid.Visible;
             if (!columns.IsKeyboardFocusWithin) columns.Value = settings.Projection.Columns;
             if (!rows.IsKeyboardFocusWithin) rows.Value = settings.Projection.Rows;
-            if (!width.IsKeyboardFocusWithin) width.Value = settings.Grid.Width;
+            if (!width.IsKeyboardFocusWithin) RefreshWidth(settings.Grid.Width);
             calibrate.Content = L.Get(calibrating ? "Canvas.EndCalibration" : "Canvas.Calibrate");
             pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(x => Equals(x.Tag, settings.Grid.Pattern));
+            presets.Refresh(settings);
         }
         finally { refreshing = false; }
     }
     public void CloseForDispose() { disposing = true; Close(); }
+    private void RefreshWidth(double value)
+    {
+        width.Value = value;
+        if (value < .001) width.Input.Text = value.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+    }
     private void CommitCounts()
     {
         if (refreshing) return;

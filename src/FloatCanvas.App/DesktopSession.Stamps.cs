@@ -34,6 +34,7 @@ internal sealed partial class DesktopSession
     {
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _clearCanvasButton?.CancelConfirmation();
         if (DocumentOperationBusy || !_host.IsVisible) return;
+        if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _inspector?.CompletePendingEdit();
         if (HandleCalibrationPointer(e)) return;
         using var destination = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick
             ? _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress) : null;

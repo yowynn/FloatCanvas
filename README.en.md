@@ -1,20 +1,26 @@
 # FloatCanvas 浮绘
 
-[简体中文](README.md) | English
+<div align="center">
+
+[简体中文](README.md) · **English**
+
+</div>
 
 A Windows screen annotation tool. Draw over your desktop, place images and edit objects, then return to the application underneath while your annotations stay visible.
 
-Current preview version: **0.2.0-preview.3**. Features and stability are still being refined. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions.
+![FloatCanvas preview showing a perspective grid, route annotations and the floating toolbar](Docs/Images/floatcanvas-preview.png)
+
+Current preview version: **0.2.0-preview.4**. Features and stability are still being refined. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions.
 
 ## Features
 
 - Freehand pen, highlighter, lines and arrows, shapes, text, separate numbered markers, symbols and emoji; graphical official/custom presets, per-tool preset selections and edited parameters retained across restarts, and single-click shape creation at a default size.
 - Import PNG, JPEG, BMP, GIF and WebP through files, the clipboard or drag and drop. GIF/animated WebP retain their original data and play; move, rotate, resize, group and edit image objects.
 - Two aligned toolbar rows with a shared visibility switch for tool and stamp shortcut hints; movable Tool options, Properties and Layers windows, with independent editing and canvas visibility.
-- Independent canvas background color and opacity, four-corner perspective calibration, and a customizable square-cell grid. Shapes, text, images and animations follow the plane; screenshots start at the selected screen position and follow later plane adjustments. Version 3 projects save canvas settings, with v1/v2 projects still readable.
-- A stamp library with editable and flattened stamps, a ten-slot shelf, and `1`–`0` shortcuts. Editable groups retain animation when the library is reopened and the stamp is placed again.
-- Rectangle, ellipse and lasso captures place a static image at the selected position, using the background, background + canvas, or transparent canvas content. Includes single-image cropping, live blur and pixelation, solid redaction and PNG/JPEG export. The red **Clear canvas** button requires a second click to confirm and archives current work before clearing.
-- Self-contained, editable `.floatcanvas` projects; automatic recovery saves, a blank canvas at startup, and manual workspace-history restoration.
+- Independent canvas background color and opacity, four-corner perspective calibration, a customizable square-cell grid, and official/personal canvas presets. Shapes, text, images and animations follow the plane; screenshots start at the selected screen position and follow later plane adjustments. Version 3 projects save canvas settings, with v1/v2 projects still readable.
+- A stamp library with editable and flattened stamps, search, continuous scrolling, drag reordering and a ten-slot shelf ordered `1`–`9`, then `0`. Pin by dragging onto a slot or selecting a slot and clicking an entry. Editable groups retain animation when the library is reopened and the stamp is placed again.
+- Rectangle, ellipse and lasso captures place a static image at the selected position, using the background, background + canvas, or transparent canvas content. Includes single-image cropping, live blur and pixelation, and PNG/JPEG export. The red **Clear canvas** button requires a second click to confirm and archives current work before clearing.
+- Self-contained, editable `.floatcanvas` projects, Windows file-type registration and handoff to an already running instance; automatic recovery saves, a blank canvas on normal startup, and manual workspace-history restoration. Optional sign-in startup is off by default.
 - Light/dark themes and primary-screen scope by default, with an all-screens option.
 - GPU preference is on by default: filter scenes render the entire canvas on the GPU, while light canvases use CPU caching. Settings shows the last frame's actual backend and selection reason; unavailable or failed GPU rendering falls back to the CPU.
 - Simplified Chinese and English interfaces, with automatic Windows display-language selection.

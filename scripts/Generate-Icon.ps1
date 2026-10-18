@@ -1,9 +1,11 @@
 # Normalizes the adopted transparent PNG and builds the Windows ICO without redrawing it.
 # Uses only Windows/.NET System.Drawing; no additional packages are required.
+# PreserveCanvas keeps intentional source padding and alignment in every ICO frame.
 [CmdletBinding()]
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\src\FloatCanvas.App\Assets'),
-    [string]$SourcePath = (Join-Path $PSScriptRoot '..\src\FloatCanvas.App\Assets\FloatCanvas.png')
+    [string]$SourcePath = (Join-Path $PSScriptRoot '..\src\FloatCanvas.App\Assets\FloatCanvas.png'),
+    [switch]$PreserveCanvas
 )
 
 Set-StrictMode -Version Latest
@@ -72,7 +74,7 @@ $taskFrames = [Collections.Generic.List[byte[]]]::new()
 $taskSizes = @(16, 24, 32, 48, 64, 128, 256)
 $taskArtwork = $null
 try {
-    $taskSourceBounds = Get-AlphaBounds $taskSource
+    $taskSourceBounds = if ($PreserveCanvas) { [Drawing.Rectangle]::new(0, 0, $taskSource.Width, $taskSource.Height) } else { Get-AlphaBounds $taskSource }
     $taskMasterSize = [Math]::Max($taskSourceBounds.Width, $taskSourceBounds.Height)
     $taskMaster = [Drawing.Bitmap]::new($taskMasterSize, $taskMasterSize, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $taskArtwork = $taskSource.Clone($taskSourceBounds, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
@@ -102,13 +104,13 @@ try {
             # Tiny alpha extremities can disappear on reduction. Fit the pixels that survive
             # in this frame once more rather than retaining an unintended transparent rim.
             $taskFrameBounds = Get-AlphaBounds $taskFrame
-            if ([Math]::Max($taskFrameBounds.Width, $taskFrameBounds.Height) -lt $taskSize) {
+            if (!$PreserveCanvas -and [Math]::Max($taskFrameBounds.Width, $taskFrameBounds.Height) -lt $taskSize) {
                 $taskFitted = New-FittedBitmap $taskFrame $taskFrameBounds $taskSize
                 $taskFrame.Dispose()
                 $taskFrame = $taskFitted
             }
             $taskFrameBounds = Get-AlphaBounds $taskFrame
-            if ([Math]::Max($taskFrameBounds.Width, $taskFrameBounds.Height) -ne $taskSize) {
+            if (!$PreserveCanvas -and [Math]::Max($taskFrameBounds.Width, $taskFrameBounds.Height) -ne $taskSize) {
                 throw "The $taskSize-pixel ICO frame did not fill either canvas axis."
             }
             $taskFrame.Save($taskPng, [Drawing.Imaging.ImageFormat]::Png)
@@ -142,4 +144,5 @@ try {
     foreach ($taskFrame in $taskFrames) { $taskWriter.Write($taskFrame) }
 }
 finally { $taskWriter.Dispose() }
-Write-Output "Generated tightly fitted FloatCanvas PNG ($taskMasterSize x $taskMasterSize) and ICO (16/24/32/48/64/128/256) from $SourcePath"
+$taskFraming = if ($PreserveCanvas) { 'full-canvas' } else { 'tightly fitted' }
+Write-Output "Generated $taskFraming FloatCanvas PNG ($taskMasterSize x $taskMasterSize) and ICO (16/24/32/48/64/128/256) from $SourcePath"

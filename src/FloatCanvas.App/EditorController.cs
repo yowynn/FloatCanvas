@@ -8,7 +8,9 @@ namespace FloatCanvas.App;
 internal enum EditorTool
 {
     Select, Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse,
-    Triangle, Text, Number, Image, Eraser, Crop, Blur, Pixelate, Redact, CaptureRegion, Symbol, Emoji, Stamp
+    Triangle, Text, Number, Image, Eraser, Crop, Blur, Pixelate,
+    // Retained numeric value for reading old tool caches and presets only. Never activates.
+    Redact, CaptureRegion, Symbol, Emoji, Stamp
 }
 
 /// <summary>Converts native pointer gestures into atomic document operations.</summary>
@@ -21,6 +23,7 @@ internal sealed partial class EditorController
         get => tool;
         set
         {
+            if (value == EditorTool.Redact) value = EditorTool.Blur;
             if (value == EditorTool.Crop && !CanCropSelection) value = EditorTool.Select;
             if (value == EditorTool.Triangle)
             {
@@ -51,7 +54,8 @@ internal sealed partial class EditorController
     {
         if (!parameters.IsValid()) throw new ArgumentException(nameof(parameters));
         // Old presets retain their serialized enum; only future drawing uses the unified symbol tool.
-        Cancel(); tool = parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol :
+        Cancel(); tool = parameters.Tool == EditorTool.Redact ? EditorTool.Blur :
+            parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol :
             parameters.Tool == EditorTool.Crop && !CanCropSelection ? EditorTool.Select : parameters.Tool;
         Style = parameters.Style.Clone(); CornerRadius = parameters.CornerRadius;
         Symbol = parameters.Tool == EditorTool.Triangle ? SymbolKind.Triangle : parameters.Symbol;
@@ -207,7 +211,7 @@ internal sealed partial class EditorController
                 if (CaptureShape is CaptureShape.FreehandLasso or CaptureShape.PolygonLasso) capturePoints.Add(p);
                 UpdateCapturePreview(p, e.Modifiers, includeHover: false); return;
             }
-            if (Tool is EditorTool.Blur or EditorTool.Pixelate or EditorTool.Redact)
+            if (Tool is EditorTool.Blur or EditorTool.Pixelate)
             {
                 if (Tool is EditorTool.Blur or EditorTool.Pixelate && Session.Document.Kind == DocumentKind.LiveOverlay)
                 { gesture = "desktop-effect"; Marquee = new(p.X,p.Y,0,0); return; }

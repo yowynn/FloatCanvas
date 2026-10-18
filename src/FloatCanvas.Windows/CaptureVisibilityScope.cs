@@ -139,7 +139,7 @@ public sealed class CaptureVisibilityScope : IDisposable
                     }
                     // Restore only a visual actually hidden by this scope. A never-hidden HWND may
                     // have been hidden/closed by a real user action and must never be resurrected.
-                    if (item.Hidden && permit) ShowWindow(item.Handle, 8);
+                    if (item.Hidden && permit) ShowWindowPreservingZOrder(item.Handle);
                 }
                 catch (Exception error) { (errors ??= []).Add(error); }
             }
