@@ -65,6 +65,27 @@ internal static class LiveEffectStampTests
             var gradientSource = await library.LoadSourceAsync(gradientEntry.Id);
             check("scaling a live stamp samples cloned effects and leaves its editable source strength unchanged",
                 JsonSerializer.Serialize(gradientDocument) == gradientBefore && gradientMask.Effects.Single().Amount == 20 && gradientSource.Document.Elements.Single().Effects.Single().Amount == 20);
+
+            mask.Kind = ElementKind.LiveBlur; mask.Effects[0].Kind = ImageEffectKind.Blur; mask.Effects[0].Amount = 6;
+            var blurContext = new StampRenderContext(document.Clone(), assets);
+            var blurEntry = await library.SaveSelectionAsync(session, "Editable blur", renderContext: blurContext);
+            var blurStamp = await library.LoadStampAsync(blurEntry.Id);
+            check("a combination stamp retains editable live blur without screenshot assets", blurStamp.Document.Elements is [{ Kind: ElementKind.LiveBlur }] &&
+                blurStamp.Document.Elements[0].Effects is [{ Kind: ImageEffectKind.Blur, Amount: 6 }] && blurStamp.Assets.Count == 0);
+            var blurTarget = new EditorSession(); StampLibrary.Place(blurStamp, blurTarget, new(200, 150));
+            check("stamping a blur region keeps its dynamic source and one-step undo", blurTarget.Document.Elements.Single().Kind == ElementKind.LiveBlur &&
+                blurTarget.Document.Elements[0].AssetId is null && blurTarget.UndoCount == 1 && blurTarget.Undo());
+            var rasterBlur = await library.SaveSelectionAsync(session, "Merged current blur", StampSaveMode.RasterMerge, renderContext: blurContext);
+            var blurMerged = await library.LoadStampAsync(rasterBlur.Id);
+            using var blurPixels = SKBitmap.Decode(blurMerged.Assets.Get(blurMerged.Document.Elements.Single().AssetId!).Data.ToArray());
+            var transition = blurPixels.GetPixel(blurPixels.Width / 2, blurPixels.Height / 2);
+            check("merged blur stamps filter frozen background and lower objects while excluding upper objects", transition.Green > 30 && transition.Blue > 30 && transition.Red < 10);
+            using var blurPreview = SKBitmap.Decode(await library.GetThumbnailAsync(rasterBlur.Id));
+            var previewTransition = blurPreview.GetPixel(blurPreview.Width / 2, blurPreview.Height / 2);
+            check("blur thumbnails scale the sampling radius with their masks", previewTransition.Green > 30 && previewTransition.Blue > 30 && previewTransition.Red < 10);
+            var blurSource = await library.LoadSourceAsync(rasterBlur.Id);
+            check("a merged blur stamp keeps its editable original strength and kind", blurSource.Document.Elements is [{ Kind: ElementKind.LiveBlur }] &&
+                blurSource.Document.Elements[0].Effects[0].Amount == 6 && mask.Effects[0].Amount == 6);
         }
         finally
         {

@@ -7,6 +7,8 @@ namespace FloatCanvas.Windows;
 /// <summary>
 /// Suppresses keyboard input during an explicitly maintained editing lease. No SendInput,
 /// target-process injection, WPF dispatch or foreground activation is performed here.
+/// A second read-only hook records exact mouse-press modifiers on this same input thread;
+/// it always passes the original mouse event unchanged.
 /// A matching held-key tail remains suppressed until its release or two seconds of stream silence.
 /// Only matching observed hook releases (VK/scan/extended flag) clear a tail early; the zero
 /// global async state of a suppressed key is not evidence that the physical key was released.
@@ -18,16 +20,21 @@ public sealed class KeyboardInputIsolation : IDisposable
 {
     private readonly object gate = new();
     private readonly KeyboardSuppressionState state;
+    private readonly KeyboardModifierHistory modifierHistory;
+    private readonly IsolatedPointerPresses pointerPresses;
+    private readonly CaptureInputObservationBuffer inputObservations = new();
     private readonly nint notificationWindow;
+    private readonly uint notificationThreadId;
     private readonly uint notificationMessage;
     private readonly long heartbeatMilliseconds;
     private readonly Native.HookProcedure callback;
+    private readonly Native.HookProcedure pointerCallback;
     private readonly Thread thread;
     private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private nint hook;
+    private nint hook, pointerHook;
     private uint threadId;
     private int stopped, disposed, lastWin32Error;
-    private long lastHeartbeat;
+    private long lastHeartbeat, externalInputVersion;
     private Exception? failure;
     private bool notificationFailed;
 
@@ -38,8 +45,12 @@ public sealed class KeyboardInputIsolation : IDisposable
         if (timeout < TimeSpan.FromMilliseconds(250) || timeout > TimeSpan.FromSeconds(10))
             throw new ArgumentOutOfRangeException(nameof(timeout));
         notificationWindow = window; notificationMessage = message; heartbeatMilliseconds = (long)timeout.TotalMilliseconds;
+        notificationThreadId = Native.GetWindowThreadProcessId(window, out _);
         state = new(queueCapacity, 2000);
+        modifierHistory = new(queueCapacity + 1);
+        pointerPresses = new(queueCapacity);
         callback = OnKeyboard;
+        pointerCallback = OnPointer;
         thread = new Thread(MessageLoop) { Name = "FloatCanvas private keyboard input", IsBackground = true };
     }
 
@@ -66,6 +77,30 @@ public sealed class KeyboardInputIsolation : IDisposable
     public int LastWin32Error => Volatile.Read(ref lastWin32Error);
     public Exception? Failure => Volatile.Read(ref failure);
     public bool IsThreadAlive => thread.IsAlive;
+    // The hooks remain installed during clean capture, but never suppress external input.
+    internal long ExternalInputVersion => Interlocked.Read(ref externalInputVersion);
+    // The UI takes a bounded immutable copy only when publishing a capture boundary.
+    internal IReadOnlyList<CaptureInputObservation> GetCaptureInputObservationsAfter(long version, uint? startTime = null)
+    { lock (gate) return inputObservations.SnapshotAfter(version, startTime); }
+    internal bool TryGetModifiers(uint? messageTime, out OverlayModifiers modifiers)
+    {
+        lock (gate)
+        {
+            modifiers = messageTime is { } time ? modifierHistory.At(time, Environment.TickCount64) : state.CurrentModifiers;
+            return state.IsActive;
+        }
+    }
+    internal bool TryGetPointerModifiers(uint messageTime, OverlayPoint position, OverlayMouseButton button,
+        bool isPress, out OverlayModifiers modifiers)
+    {
+        lock (gate)
+        {
+            if (!state.IsActive) { modifiers = OverlayModifiers.None; return false; }
+            if (!isPress || !pointerPresses.TryTake(messageTime, position, button, out modifiers))
+                modifiers = modifierHistory.At(messageTime, Environment.TickCount64);
+            return true;
+        }
+    }
     /// <summary>Tail idle timeout. Continuing matching repeats renew it until the observed keyup.</summary>
     public TimeSpan TailQuarantineTimeout => TimeSpan.FromSeconds(2);
 
@@ -84,32 +119,57 @@ public sealed class KeyboardInputIsolation : IDisposable
         lock (gate)
         {
             if (Volatile.Read(ref stopped) != 0) throw new InvalidOperationException(L.Get("Keyboard.IsolationStopped"));
-            var initial = new byte[256];
-            if (!Native.GetKeyboardState(initial)) throw new Win32Exception(Marshal.GetLastWin32Error());
-            // Serialize this brief snapshot with hook-state updates. No UI callback/wait occurs.
-            // Never infer inherited keys from the relay's possibly still-down local state.
-            for (int i = 1; i < 255; i++)
-                if (i is not (1 or 2 or 4 or 5 or 6))
-                    initial[i] = (byte)((initial[i] & 0x7F) | (Native.GetAsyncKeyState(i) < 0 ? 0x80 : 0));
-            long now = Environment.TickCount64;
-            Volatile.Write(ref lastHeartbeat, now);
-            long lease = state.Begin(initial, toggle, hide, now);
-            if (!Native.SetKeyboardState(state.CopyLocalState()))
-            {
-                int error = Marshal.GetLastWin32Error();
-                Volatile.Write(ref lastWin32Error, error);
-                state.End(KeyboardLeaseEndReason.HookFailure, now); NotifyLocked();
-                throw new Win32Exception(error, L.Get("Keyboard.LocalStateInitializationFailed"));
-            }
-            NotifyLocked();
-            if (!state.IsActive || Volatile.Read(ref stopped) != 0)
-                throw new InvalidOperationException(L.Get("Keyboard.UiNotificationFailed"), Failure);
-            return lease;
+            return BeginLeaseCore(toggle, hide);
         }
     }
 
+    /// <summary>
+    /// A caller-owned short internal transition may replace exactly one foreground-ended
+    /// lease. Rechecks reason, identity and real foreground under the hook-state lock;
+    /// no window activation, focus change or global input reconstruction occurs.
+    /// </summary>
+    internal bool TryResumeForegroundLease(long endedLease, HotkeyBinding toggle, HotkeyBinding hide, out long lease)
+    {
+        lease = 0;
+        lock (gate)
+        {
+            if (Volatile.Read(ref disposed) != 0 || Volatile.Read(ref stopped) != 0 || Failure is not null ||
+                state.LeaseId != endedLease || !state.CanResumeForegroundLoss ||
+                !OwnsWindow(Native.GetForegroundWindow()) || !IsInputDesktopAvailable()) return false;
+            lease = BeginLeaseCore(toggle, hide);
+            return true;
+        }
+    }
+
+    private long BeginLeaseCore(HotkeyBinding toggle, HotkeyBinding hide)
+    {
+        var initial = new byte[256];
+        if (!Native.GetKeyboardState(initial)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        // Serialize this brief snapshot with hook-state updates. No UI callback/wait occurs.
+        // Never infer inherited keys from the relay's possibly still-down local state.
+        for (int i = 1; i < 255; i++)
+            if (i is not (1 or 2 or 4 or 5 or 6))
+                initial[i] = (byte)((initial[i] & 0x7F) | (Native.GetAsyncKeyState(i) < 0 ? 0x80 : 0));
+        long now = Environment.TickCount64;
+        Volatile.Write(ref lastHeartbeat, now);
+        long lease = state.Begin(initial, toggle, hide, now);
+        modifierHistory.Reset(now, state.CurrentModifiers);
+        pointerPresses.Clear();
+        if (!Native.SetKeyboardState(state.CopyLocalState()))
+        {
+            int error = Marshal.GetLastWin32Error();
+            Volatile.Write(ref lastWin32Error, error);
+            state.End(KeyboardLeaseEndReason.HookFailure, now); NotifyLocked();
+            throw new Win32Exception(error, L.Get("Keyboard.LocalStateInitializationFailed"));
+        }
+        NotifyLocked();
+        if (!state.IsActive || Volatile.Read(ref stopped) != 0)
+            throw new InvalidOperationException(L.Get("Keyboard.UiNotificationFailed"), Failure);
+        return lease;
+    }
+
     public void EndLease(KeyboardLeaseEndReason reason = KeyboardLeaseEndReason.Explicit)
-    { lock (gate) { state.End(reason, Environment.TickCount64); NotifyLocked(); } }
+    { lock (gate) { state.End(reason, Environment.TickCount64); pointerPresses.Clear(); NotifyLocked(); } }
     /// <summary>Atomically replaces both private command bindings without restarting an active lease.</summary>
     public void UpdateHotkeys(HotkeyBinding toggle, HotkeyBinding hide)
     {
@@ -159,13 +219,25 @@ public sealed class KeyboardInputIsolation : IDisposable
         try
         {
             var key = Marshal.PtrToStructure<Native.KeyboardEvent>(data);
-            nint foreground = Native.GetForegroundWindow();
             long now = Environment.TickCount64;
             bool suppress;
             lock (gate)
             {
+                // Sample the foreground in the same critical section as the lease identity.
+                // An old outside snapshot must not end a lease the UI has just replaced.
+                nint foreground = Native.GetForegroundWindow();
+                bool own = OwnsWindow(foreground);
+                long tailsBefore = state.TailSuppressedCount;
                 suppress = state.Process(key.VirtualKey, key.ScanCode, key.Flags, key.Time, message is 0x101 or 0x105,
-                    (uint)message, foreground, OwnsWindow(foreground), now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds, now);
+                    (uint)message, foreground, own, now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds, now);
+                if (!own && message is 0x100 or 0x104)
+                {
+                    long observedVersion = CaptureInputIntent.CountsKeyboard(own, suppress)
+                        ? Interlocked.Increment(ref externalInputVersion) : ExternalInputVersion;
+                    inputObservations.Record(new(observedVersion, CaptureInputSource.KeyboardDown, key.Time, key.Flags,
+                        foreground, 0, suppress, state.TailSuppressedCount != tailsBefore));
+                }
+                if (state.IsActive) modifierHistory.Record(key.Time, now, state.CurrentModifiers);
                 NotifyLocked();
             }
             return suppress && Volatile.Read(ref stopped) == 0 ? 1 : Native.CallNextHookEx(0, code, message, data);
@@ -177,18 +249,64 @@ public sealed class KeyboardInputIsolation : IDisposable
         }
     }
 
+    private nint OnPointer(int code, nuint message, nint data)
+    {
+        if (code == 0 && Volatile.Read(ref stopped) == 0 && IsCapturePointerInteraction(message))
+        {
+            try
+            {
+                var press = Marshal.PtrToStructure<Native.MouseEvent>(data);
+                nint foreground = Native.GetForegroundWindow();
+                bool own = OwnsWindow(foreground);
+                nint target = Native.WindowFromPoint(new(press.X, press.Y));
+                bool externalTarget = target != 0 && !OwnsWindow(target);
+                // WindowFromPoint is not the recipient while our foreground UI thread
+                // owns mouse capture (including the legacy offscreen input carrier).
+                var info = new Native.GuiThreadInfo { Size = (uint)Marshal.SizeOf<Native.GuiThreadInfo>() };
+                bool ownCapture = externalTarget && own && Native.GetGUIThreadInfo(notificationThreadId, ref info) && OwnsWindow(info.Capture);
+                long now = Environment.TickCount64;
+                lock (gate)
+                {
+                    if (CaptureInputIntent.CountsPointer(externalTarget, own, ownCapture))
+                    {
+                        long observedVersion = Interlocked.Increment(ref externalInputVersion);
+                        inputObservations.Record(new(observedVersion,
+                            message is 0x20A or 0x20E ? CaptureInputSource.PointerWheel : CaptureInputSource.PointerPress,
+                            press.Time, press.Flags, foreground, target, false, false));
+                        state.ObserveExternalPointerPress(now);
+                        pointerPresses.Clear();
+                        NotifyLocked();
+                    }
+                    if (message is 0x201 or 0x204 or 0x207 && own && state.IsActive &&
+                        now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds)
+                        pointerPresses.Record((uint)message, press.Time, new(press.X, press.Y), state.CurrentModifiers);
+                }
+            }
+            catch (Exception error) { Fail(error); }
+        }
+        // Observation only: this hook never blocks, redirects, or reconstructs mouse input.
+        return Native.CallNextHookEx(0, code, message, data);
+    }
+
+    // A wheel/X-button action is explicit input even if it leaves foreground on the
+    // same external HWND. Merely moving the pointer or releasing a button is not.
+    internal static bool IsCapturePointerInteraction(nuint message) => message is
+        0x201 or 0x204 or 0x207 or 0x20A or 0x20B or 0x20D or 0x20E;
+
     private void Watchdog()
     {
         long now = Environment.TickCount64;
+        long observedLease;
         lock (gate)
         {
             if (!state.IsActive) { state.ExpireTails(now); NotifyLocked(); return; }
+            observedLease = state.LeaseId;
         }
         bool own = OwnsWindow(Native.GetForegroundWindow()) && IsInputDesktopAvailable();
         lock (gate)
         {
             state.ExpireTails(now);
-            if (state.IsActive)
+            if (state.IsActive && state.LeaseId == observedLease)
             {
                 if (!own) state.End(KeyboardLeaseEndReason.ForegroundLost, now);
                 else if (now - Volatile.Read(ref lastHeartbeat) > heartbeatMilliseconds) state.End(KeyboardLeaseEndReason.HeartbeatExpired, now);
@@ -208,6 +326,9 @@ public sealed class KeyboardInputIsolation : IDisposable
             nint installed = Native.SetWindowsHookEx(13, callback, Native.GetModuleHandle(null), 0);
             if (installed == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("Keyboard.HookInstallationFailed"));
             Interlocked.Exchange(ref hook, installed);
+            nint installedPointer = Native.SetWindowsHookEx(14, pointerCallback, Native.GetModuleHandle(null), 0);
+            if (installedPointer == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("Keyboard.HookInstallationFailed"));
+            Interlocked.Exchange(ref pointerHook, installedPointer);
             timer = Native.SetTimer(0, 0, 100, 0);
             if (timer == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("Keyboard.WatchdogStartFailed"));
             if (Volatile.Read(ref stopped) != 0) { started.TrySetCanceled(); return; }
@@ -227,7 +348,7 @@ public sealed class KeyboardInputIsolation : IDisposable
             Volatile.Write(ref stopped, 1);
             lock (gate) { state.End(KeyboardLeaseEndReason.HookFailure, Environment.TickCount64); NotifyLocked(); }
             if (timer != 0) Native.KillTimer(0, timer);
-            RemoveHook(); started.TrySetCanceled(); GC.KeepAlive(callback);
+            RemoveHook(); started.TrySetCanceled(); GC.KeepAlive(callback); GC.KeepAlive(pointerCallback);
         }
     }
 
@@ -244,6 +365,8 @@ public sealed class KeyboardInputIsolation : IDisposable
     {
         nint installed = Interlocked.Exchange(ref hook, 0);
         if (installed != 0 && !Native.UnhookWindowsHookEx(installed)) Volatile.Write(ref lastWin32Error, Marshal.GetLastWin32Error());
+        nint installedPointer = Interlocked.Exchange(ref pointerHook, 0);
+        if (installedPointer != 0 && !Native.UnhookWindowsHookEx(installedPointer)) Volatile.Write(ref lastWin32Error, Marshal.GetLastWin32Error());
     }
     public void Dispose()
     {
@@ -253,7 +376,7 @@ public sealed class KeyboardInputIsolation : IDisposable
         uint id = Volatile.Read(ref threadId);
         if (id != 0 && thread.IsAlive) Native.PostThreadMessage(id, 0x12, 0, 0);
         if (Thread.CurrentThread != thread && thread.IsAlive) thread.Join(TimeSpan.FromSeconds(2));
-        GC.KeepAlive(callback);
+        GC.KeepAlive(callback); GC.KeepAlive(pointerCallback);
     }
 
     private static bool OwnsWindow(nint window) => window != 0 && Native.IsWindow(window) &&
@@ -290,8 +413,18 @@ public sealed class KeyboardInputIsolation : IDisposable
     {
         [StructLayout(LayoutKind.Sequential)] internal struct KeyboardEvent
         { public uint VirtualKey, ScanCode, Flags, Time; public nuint ExtraInfo; }
+        [StructLayout(LayoutKind.Sequential)] internal struct MouseEvent
+        { public int X, Y; public uint Data, Flags, Time; public nuint ExtraInfo; }
+        [StructLayout(LayoutKind.Sequential)] internal readonly struct Point(int x, int y)
+        { internal readonly int X = x, Y = y; }
         [StructLayout(LayoutKind.Sequential)] internal struct Message
         { public nint Window; public uint Id; public nuint WParam; public nint LParam; public uint Time; public int X, Y; public uint Private; }
+        [StructLayout(LayoutKind.Sequential)] internal struct GuiThreadInfo
+        {
+            public uint Size, Flags;
+            public nint Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+            public int CaretLeft, CaretTop, CaretRight, CaretBottom;
+        }
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] internal delegate nint HookProcedure(int code, nuint message, nint data);
         [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)] internal static extern nint SetWindowsHookEx(int type, HookProcedure callback, nint instance, uint thread);
         [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool UnhookWindowsHookEx(nint hook);
@@ -303,6 +436,8 @@ public sealed class KeyboardInputIsolation : IDisposable
         [DllImport("user32.dll", EntryPoint = "PostMessageW", SetLastError = true)] internal static extern bool PostMessage(nint window, uint message, nuint wParam, nint lParam);
         [DllImport("user32.dll", EntryPoint = "PostThreadMessageW", SetLastError = true)] internal static extern bool PostThreadMessage(uint thread, uint message, nuint wParam, nint lParam);
         [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
+        [DllImport("user32.dll")] internal static extern nint WindowFromPoint(Point point);
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
         [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint processId);
         [DllImport("user32.dll")] internal static extern bool IsWindow(nint window);
         [DllImport("user32.dll", SetLastError = true)] internal static extern bool GetKeyboardState([Out] byte[] state);

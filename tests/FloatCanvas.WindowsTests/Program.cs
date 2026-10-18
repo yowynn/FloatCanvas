@@ -29,6 +29,76 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if (args.Contains("--wgc-session-state-only"))
+    {
+        WgcSessionStateTests.Run(Check);
+        LiveCapturePureTests.Run(Check);
+        Console.WriteLine($"WGC session/state and live capture checks: {checks}; passed=true; synthetic resources and idle workers only; no screen capture/windows/input/profile.");
+        return 0;
+    }
+    if (args.Contains("--wgc-session-probe-only"))
+    {
+        var first = LiveDesktopCapture.ProbeSessionExclusionAsync();
+        Check(ReferenceEquals(first, LiveDesktopCapture.ProbeSessionExclusionAsync()), "the actual capability probe is a single cached MTA task");
+        bool supported = first.GetAwaiter().GetResult();
+        Console.WriteLine($"WGC display-session probe: supported={supported}; checks={checks}; captureStarted=false; no windows/picker/pixels/affinity/profile.");
+        return 0;
+    }
+    if (args.Contains("--gpu-rendering-only"))
+    {
+        GpuRenderingTests.Run(Check, args.Contains("--gpu-probe-only"));
+        Console.WriteLine($"GPU rendering checks: {checks}; passed=true; hardware offscreen context and synthetic pixels only; no desktop capture/input/profile.");
+        return 0;
+    }
+    if (args.Contains("--capture-frame-boundary-only"))
+    {
+        CaptureFrameBoundaryTests.Run(Check);
+        Console.WriteLine($"Capture frame boundary checks: {checks}; passed=true; synthetic pixel resources only; no native windows/hooks/input/profile.");
+        return 0;
+    }
+    if (args.Contains("--capture-input-diagnostics-only"))
+    {
+        CaptureInputObservationTests.Run(Check);
+        Console.WriteLine($"Capture input observation checks: {checks}; passed=true; no native windows/hooks/input/profile.");
+        return 0;
+    }
+    if (args.Contains("--capture-continuation-only"))
+    {
+        CaptureContinuationTests.Run(Check);
+        Console.WriteLine($"Capture continuation checks: {checks}; passed=true; no native windows/hooks/input.");
+        return 0;
+    }
+    if (args.Contains("--capture-continuation-native"))
+    {
+        NativeCaptureContinuationTests.Run(Check);
+        Console.WriteLine($"Native capture continuation checks: {checks}; passed=true; own transparent bounded HWNDs; no activation/hooks/input/profile.");
+        return 0;
+    }
+    if (args.Contains("--focus-activation-denial"))
+    {
+        FocusActivationDenialTests.Run(Check);
+        Console.WriteLine($"Focus fallback denial checks: {checks}; passed=true; hidden native HWNDs only; no activation/hooks/input.");
+        return 0;
+    }
+    if (args.Contains("--focus-transitions-native"))
+    {
+        NativeFocusTransitionTests.Run(Check, args.Contains("--wait-for-activation"));
+        Console.WriteLine($"Native focus transition checks: {checks}; passed=true; own bounded windows/hooks; no injected input or user profiles.");
+        return 0;
+    }
+    if (args.Contains("--focus-transitions-only"))
+    {
+        FocusTransitionTests.Run(Check);
+        Console.WriteLine($"Focus transition checks: {checks}; passed=true; native hooks/UI/input never run.");
+        return 0;
+    }
+    if (args.Contains("--modifier-history-only"))
+    {
+        KeyboardModifierHistoryTests.Run(Check);
+        IsolatedPointerPressesTests.Run(Check);
+        Console.WriteLine($"Keyboard modifier history checks: {checks}; passed=true; native hooks/UI/input never run.");
+        return 0;
+    }
     if (args.Contains("--compatibility-only"))
     {
         WindowsCompatibilityTests.Run(Check);
@@ -42,8 +112,15 @@ try
         return 0;
     }
     WindowsCompatibilityTests.Run(Check);
+    CaptureFrameBoundaryTests.Run(Check);
+    CaptureContinuationTests.Run(Check);
+    CaptureInputObservationTests.Run(Check);
+    FocusTransitionTests.Run(Check);
+    KeyboardModifierHistoryTests.Run(Check);
+    IsolatedPointerPressesTests.Run(Check);
     MonitorSelectionTests.Run(Check);
     LiveCapturePureTests.Run(Check);
+    WgcSessionStateTests.Run(Check);
     var state = New();
     Check(Key(state, 0x58, scan: 45, flags: 0x10), "Fresh X is suppressed");
     Check(state.NeedsNotification, "First queued packet needs one UI wake");

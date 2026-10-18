@@ -14,7 +14,7 @@ public static class ElementGeometry
     public static RectD Bounds(CanvasElement element, bool includeStroke = true)
     {
         var bounds = LocalBounds(element);
-        double stroke = includeStroke && element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number or ElementKind.LivePixelate) ? element.Style.StrokeWidth / 2 : 0;
+        double stroke = includeStroke && element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !IsLiveEffect(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
         if (IsLine(element.Kind))
         {
             foreach (var point in GetArrowHeads(element).SelectMany(head => head))
@@ -24,6 +24,7 @@ public static class ElementGeometry
     }
     public static bool UsesPoints(ElementKind kind) => kind is ElementKind.Freehand or ElementKind.Highlighter or ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow;
     public static bool IsLine(ElementKind kind) => kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow;
+    public static bool IsLiveEffect(ElementKind kind) => kind is ElementKind.LivePixelate or ElementKind.LiveBlur;
     public static bool IsBoxShape(ElementKind kind) => kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
 
     /// <summary>Resize vector dimensions around their center, retaining circular corners and uniform strokes.</summary>
@@ -63,7 +64,7 @@ public static class ElementGeometry
             return false;
         }
         var bounds = LocalBounds(element);
-        if (element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.LivePixelate)
+        if (element.Kind is ElementKind.Image or ElementKind.Text || IsLiveEffect(element.Kind))
         {
             if (bounds.Contains(local)) return true;
             var corners = new PointD[] { new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom) }.Select(element.Transform.TransformPoint).ToArray();

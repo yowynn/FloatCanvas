@@ -6,11 +6,7 @@ namespace FloatCanvas.App;
 internal sealed partial class DesktopSession
 {
     private static void ShowAppWindow(Window window, bool activate = false)
-    {
-        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
-        window.Show();
-        if (activate) window.Activate();
-    }
+        => SessionWindowCoordinator.Show(window, activate);
 
     private void ConfigureAppWindow(Window window, bool dialog = false)
     {
@@ -26,14 +22,16 @@ internal sealed partial class DesktopSession
         }
         if (ReferenceEquals(window, _welcomeWindow)) _windowLayout.BindRoot(window);
         else _windowLayout.Track(window);
+        _windowCoordinator?.Register(window);
         if (dialog) AppWindowChrome.ApplyDialog(window); else AppWindowChrome.Apply(window);
         void ScheduleRaise()
         {
+            long version = _host.EditingSessionVersion;
             // Re-entering SetWindowPos during the first IsVisibleChanged notification
             // can replace WPF's initial width with its provisional one-pixel HWND size.
             window.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
             {
-                if (window.IsVisible && !_disposed) RaiseVisibleToolWindows();
+                if (window.IsVisible && !_disposed && _host.EditingSessionVersion == version) RaiseVisibleToolWindows();
             });
         }
         window.SourceInitialized += (_, _) => ScheduleRaise();

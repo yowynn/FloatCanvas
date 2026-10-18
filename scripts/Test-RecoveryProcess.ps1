@@ -2,21 +2,24 @@
 param(
     [switch]$PrepareOnly,
     [string]$ApplicationPath,
-    [string]$PreparedProfile
+    [string]$PreparedProfile,
+    [string]$ArtifactsPath
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$profilesRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot 'artifacts/e2e/recovery-process-profiles'))
+$evidenceRoot = if ($ArtifactsPath) { [IO.Path]::GetFullPath($ArtifactsPath) } else { Join-Path $projectRoot 'artifacts/e2e' }
+$profilesRoot = Join-Path $evidenceRoot 'recovery-process-profiles'
 if (-not $ApplicationPath) { $ApplicationPath = Join-Path $projectRoot 'src/FloatCanvas.App/bin/Release/net10.0-windows/FloatCanvas.exe' }
 $ApplicationPath = [IO.Path]::GetFullPath($ApplicationPath)
 $profile = if ($PreparedProfile) { [IO.Path]::GetFullPath($PreparedProfile) } else { Join-Path $profilesRoot ([Guid]::NewGuid().ToString('N')) }
 if (-not $profile.StartsWith($profilesRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Recovery process tests must use a unique profile below artifacts/e2e/recovery-process-profiles; user profiles are not allowed.'
 }
-$evidencePath = Join-Path $projectRoot 'artifacts/e2e/recovery-process.json'
+$evidencePath = Join-Path $evidenceRoot 'recovery-process.json'
 $probeProject = Join-Path $projectRoot 'tests/FloatCanvas.RecoveryProbe/FloatCanvas.RecoveryProbe.csproj'
 $probeDll = Join-Path $projectRoot 'tests/FloatCanvas.RecoveryProbe/bin/Release/net10.0/FloatCanvas.RecoveryProbe.dll'
+if ($ArtifactsPath) { $probeDll = Join-Path $evidenceRoot 'build/bin/FloatCanvas.RecoveryProbe/release/FloatCanvas.RecoveryProbe.dll' }
 $seedReport = Join-Path $profile 'seed-result.json'
 $crashReport = Join-Path $profile 'after-crash-result.json'
 $restartReport = Join-Path $profile 'after-restart-result.json'
@@ -44,7 +47,9 @@ function Start-OwnedApp([string]$WorkDirectory, [string[]]$Arguments) {
 
 Push-Location $projectRoot
 try {
-    & dotnet build $probeProject -c Release --nologo
+    $buildArguments = @('build', $probeProject, '-c', 'Release', '--nologo')
+    if ($ArtifactsPath) { $buildArguments += @('--artifacts-path', (Join-Path $evidenceRoot 'build')) }
+    & dotnet @buildArguments
     if ($LASTEXITCODE -ne 0) { throw "Recovery probe build failed with exit code $LASTEXITCODE" }
     if ($PreparedProfile) {
         if (-not (Test-Path -LiteralPath $seedReport)) { throw 'Prepared profile does not contain a seed report.' }

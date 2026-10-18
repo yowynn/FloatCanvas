@@ -9,7 +9,7 @@ using L = FloatCanvas.Localization.AppText;
 namespace FloatCanvas.App;
 
 internal enum StampSaveMode { EditableGroup, RasterMerge }
-internal sealed record StampRenderContext(SceneDocument Document, AssetLibrary Assets);
+internal sealed record StampRenderContext(SceneDocument Document, AssetLibrary Assets, TimeSpan AnimationTime = default);
 internal sealed record StampEntry(Guid Id, string Name, StampSaveMode Mode, double Width, double Height, DateTime UpdatedAtUtc, Guid Revision);
 
 /// <summary>Immutable, self-contained stamp revisions published by one atomic catalog replacement.</summary>
@@ -97,7 +97,7 @@ internal sealed class StampLibrary(string profileDirectory)
             entry = new(replaceId ?? Guid.NewGuid(), name, mode, source.Viewport.Width, source.Viewport.Height, DateTime.UtcNow, Guid.NewGuid());
             var rendered = await Task.Run(() =>
             {
-                using var renderer = new SceneRenderer();
+                using var renderer = new SceneRenderer { AnimationTime = renderContext?.AnimationTime ?? TimeSpan.Zero };
                 byte[] Render(double scale)
                 {
                     renderer.LiveEffectContext=context is null ? null : Scaled(context,scale);
@@ -250,7 +250,7 @@ internal sealed class StampLibrary(string profileDirectory)
             element.Transform = transform.Compose(element.Transform);
             // Live block sizes are in output document pixels. Scale their cloned
             // sampling grid with the preview/export, as well as their mask bounds.
-            if (element.Kind == ElementKind.LivePixelate)
+            if (ElementGeometry.IsLiveEffect(element.Kind))
                 foreach (var effect in element.Effects) effect.Amount *= scale;
         }
         if(result.Background is { } background)background.Transform=transform.Compose(background.Transform);

@@ -1,0 +1,17 @@
+{
+  "Settings.Rendering": { "zh": "绘制性能", "en": "Rendering" },
+  "Settings.PreferGpuAcceleration": { "zh": "优先使用 GPU 加速", "en": "Prefer GPU acceleration" },
+  "Settings.GpuAccelerationHint": {
+    "zh": "滤镜场景优先让整幅画布在 GPU 上绘制；轻量画布使用 CPU 缓存，减少读回开销。GPU 不可用或失败时回退 CPU。保存后生效。",
+    "en": "Filter scenes prefer GPU rendering for the entire canvas. Light canvases use CPU caching to avoid readback overhead. Unavailable or failed GPU rendering falls back to the CPU. Applies on save."
+  },
+  "Settings.RenderBackend": { "zh": "最近一帧实际后端：{0}", "en": "Last frame rendered with: {0}" },
+  "Settings.RenderBackendPending": { "zh": "尚无已完成的画布帧", "en": "No completed canvas frame yet" },
+  "Settings.RenderReasonPending": { "zh": "等待下一次画布绘制；查看此状态不会触发绘制。", "en": "Waiting for the next canvas draw. Viewing this status does not trigger rendering." },
+  "Settings.RenderReasonGpu": { "zh": "该帧整幅画布由 GPU 绘制，包含滤镜和其他标注。", "en": "The GPU rendered that entire canvas frame, including filters and other annotations." },
+  "Settings.RenderReasonDisabled": { "zh": "GPU 优先已关闭，使用 CPU 绘制。", "en": "GPU preference is off; the CPU renders the canvas." },
+  "Settings.RenderReasonLight": { "zh": "轻量场景使用 CPU 缓存，避免额外的 GPU 读回开销。", "en": "This light scene uses CPU caching to avoid extra GPU readback overhead." },
+  "Settings.RenderReasonFallback": { "zh": "GPU 初始化或绘制失败，已回退 CPU。详情见 diagnostics.log。", "en": "GPU initialization or rendering failed; the CPU fallback is active. See diagnostics.log for details." },
+  "Settings.RenderDevice": { "zh": "GPU 设备：{0}", "en": "GPU device: {0}" },
+  "Settings.RenderTiming": { "zh": "最近绘制 {0:0.0} ms · 本次运行 GPU {1} 帧 / CPU {2} 帧", "en": "Last draw {0:0.0} ms · This run: GPU {1} frames / CPU {2} frames" }
+}

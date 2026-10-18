@@ -18,7 +18,7 @@ internal sealed class ToolPreset
 }
 
 [Flags]
-internal enum ToolPresetFields { None = 0, Tool = 1, Line = 2, Corner = 4, Aspect = 8, Symbol = 16, All = 31 }
+internal enum ToolPresetFields { None = 0, Tool = 1, Line = 2, Corner = 4, Aspect = 8, Symbol = 16, Capture = 32, All = 63 }
 
 /// <summary>Official recipes merge relevant parameters; user presets retain complete independent tool snapshots.</summary>
 internal sealed class ToolPresetLibrary
@@ -116,6 +116,11 @@ internal sealed class ToolPresetLibrary
             if (preset.Fields.HasFlag(ToolPresetFields.Corner)) result.CornerRadius = saved.CornerRadius;
             if (preset.Fields.HasFlag(ToolPresetFields.Aspect)) result.ConstrainAspect = saved.ConstrainAspect;
             if (preset.Fields.HasFlag(ToolPresetFields.Symbol)) result.Symbol = saved.Symbol;
+            if (preset.Fields.HasFlag(ToolPresetFields.Capture))
+            {
+                result.CaptureShape = saved.CaptureShape; result.CaptureSource = saved.CaptureSource;
+                result.CaptureBorderWidth = saved.CaptureBorderWidth; result.CaptureBorderColor = saved.CaptureBorderColor;
+            }
         }
         if (!(includeColors ?? !preset.IsOfficial)) { result.Style.Stroke = current.Style.Stroke; result.Style.Fill = current.Style.Fill; }
         else if (preset.IsOfficial) { result.Style.Stroke = preset.Parameters.Style.Stroke; result.Style.Fill = preset.Parameters.Style.Fill; }
@@ -170,7 +175,7 @@ internal sealed class ToolPresetLibrary
         Add("text", "Text", EditorTool.Text); Add("number", "Number", EditorTool.Number); Add("eraser", "Eraser", EditorTool.Eraser);
         Add("blur", "Blur", EditorTool.Blur); Add("pixelate", "Pixelate", EditorTool.Pixelate); Add("redact", "Redact", EditorTool.Redact);
         Add("select", "Standard", EditorTool.Select); Add("image", "Standard", EditorTool.Image);
-        Add("crop", "Standard", EditorTool.Crop); Add("capture", "Standard", EditorTool.CaptureRegion);
+        Add("crop", "Standard", EditorTool.Crop); Add("capture", "Standard", EditorTool.CaptureRegion, ToolPresetFields.Tool | ToolPresetFields.Capture);
         Add("emoji", "Standard", EditorTool.Emoji); Add("stamp", "Standard", EditorTool.Stamp);
         // Symbols share one tool; the gallery provides its concrete geometry.
         foreach (var symbol in Enum.GetValues<SymbolKind>().Where(value => value != SymbolKind.Triangle))

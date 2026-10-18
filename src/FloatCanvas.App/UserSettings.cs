@@ -19,6 +19,7 @@ internal sealed class UserSettings
     public string Language { get; set; } = "auto";
     public bool PrimaryScreenOnly { get; set; } = true;
     public bool ShowToolShortcutHints { get; set; } = true;
+    public bool PreferGpuAcceleration { get; set; } = true;
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
     private static string FilePath => Path.Combine(ApplicationPaths.ProfileDirectory, "settings.json");

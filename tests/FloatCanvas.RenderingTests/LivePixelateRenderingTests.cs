@@ -35,6 +35,7 @@ internal static class LivePixelateRenderingTests
         FrozenBackground(renderer, check);
         TransformsAndHistory(renderer, assets, check);
         CacheFrames(renderer, assets, check);
+        LiveBlurRenderingTests.Run(check);
         renderer.LiveBackdrop = null;
     }
 

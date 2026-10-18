@@ -12,6 +12,11 @@ if (args.Contains("--live-effects-only"))
     await LivePixelateStorageTests.RunAsync(Check);
     Console.WriteLine($"PASS {checks} live-effect storage checks"); return;
 }
+if (args.Contains("--recovery-preview-only"))
+{
+    await RecoveryPreviewStorageTests.RunAsync(Check);
+    Console.WriteLine($"PASS {checks} recovery preview storage checks"); return;
+}
 async Task Reject(Func<Task> action, string message)
 {
     bool rejected = false;
@@ -173,5 +178,6 @@ await ArrowHeadStorageTests.RunAsync(store, root, Check);
 await EditablePresetStorageTests.RunAsync(store, root, Check);
 await FormatVersionTests.RunAsync(store, root, Check);
 await LivePixelateStorageTests.RunAsync(Check);
+await RecoveryPreviewStorageTests.RunAsync(Check);
 Console.WriteLine($"PASS {checks} storage checks");
 Console.WriteLine($"Artifacts: {root}");

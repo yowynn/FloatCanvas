@@ -23,6 +23,7 @@ internal sealed class KeyboardSuppressionState
     private long sequence, lease, inFlight;
     private KeyboardInputPacket? inFlightPacket;
     private bool notificationPending;
+    private bool foregroundResumeVeto;
 
     public KeyboardSuppressionState(int capacity, long tailLifetime)
     {
@@ -37,7 +38,9 @@ internal sealed class KeyboardSuppressionState
     public long SuppressedCount { get; private set; }
     public long TailSuppressedCount { get; private set; }
     public KeyboardLeaseEndReason? LastEndReason { get; private set; }
+    internal bool CanResumeForegroundLoss => !IsActive && LastEndReason == KeyboardLeaseEndReason.ForegroundLost && !foregroundResumeVeto;
     internal byte[] CopyLocalState() => (byte[])local.Clone();
+    internal OverlayModifiers CurrentModifiers => Modifiers();
 
     public void UpdateHotkeys(HotkeyBinding toggle, HotkeyBinding hide)
     {
@@ -66,7 +69,7 @@ internal sealed class KeyboardSuppressionState
             if (tails[i] != 0) { inherited[i] = false; physical[i] = true; local[i] &= 0x7F; }
         }
         NormalizeModifiers();
-        this.toggle = toggle; this.hide = hide; lease++; IsActive = true; LastEndReason = null;
+        this.toggle = toggle; this.hide = hide; lease++; IsActive = true; LastEndReason = null; foregroundResumeVeto = false;
         return lease;
     }
 
@@ -79,10 +82,16 @@ internal sealed class KeyboardSuppressionState
         ExpireTails(now);
         // A bounded exception after lease end: only the exact previously swallowed key stream.
         if (ConsumeTail(key, scan, eventFlags, up, now)) return true;
-        if (!IsActive) { TrackPassed(key, up); return false; }
+        if (!IsActive)
+        {
+            if (!ownsForeground && !up) foregroundResumeVeto = true;
+            TrackPassed(key, up); return false;
+        }
         if (!ownsForeground || !healthy)
         {
+            bool freshExternalDown = !ownsForeground && !up && !suppressed[key] && !inherited[key];
             End(!ownsForeground ? KeyboardLeaseEndReason.ForegroundLost : KeyboardLeaseEndReason.HeartbeatExpired, now);
+            if (freshExternalDown) foregroundResumeVeto = true;
             if (ConsumeTail(key, scan, eventFlags, up, now)) return true;
             TrackPassed(key, up); return false;
         }
@@ -198,6 +207,13 @@ internal sealed class KeyboardSuppressionState
         local[0x12] = (byte)((local[0x12] & 0x7F) | ((local[0xA4] | local[0xA5]) & 0x80));
     }
     private void TrackPassed(int key, bool up) { globalKnown[key] = true; globalDown[key] = !up; }
+    internal void ObserveExternalPointerPress(long now)
+    {
+        if (IsActive) End(KeyboardLeaseEndReason.ForegroundLost, now);
+        // A physical press explicitly targeted another process. Returning to an own window
+        // before the UI drains its queue must not make this old lease resumable again.
+        foregroundResumeVeto = true;
+    }
     public void End(KeyboardLeaseEndReason reason, long now, KeyboardInputPacketKind? command = null)
     {
         if (!IsActive) return;

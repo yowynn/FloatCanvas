@@ -59,6 +59,8 @@
     "zh": "显示 / 隐藏画布",
     "en": "Show / Hide canvas"
   },
+  "Toolbar.Canvas.Hide": {"zh":"隐藏画布","en":"Hide canvas"},
+  "Toolbar.Canvas.Show": {"zh":"显示画布","en":"Show canvas"},
   "Desktop.OpenProject": {
     "zh": "打开工程",
     "en": "Open project"
@@ -296,8 +298,8 @@
     "en": "Redact"
   },
   "Tool.CaptureRegion": {
-    "zh": "截图选区",
-    "en": "Capture region"
+    "zh": "截图",
+    "en": "Snapshot"
   },
   "Desktop.EnterEditFailed": {
     "zh": "浮绘 · 未进入编辑",
@@ -604,8 +606,8 @@
     "en": "Import images"
   },
   "Image.Filter": {
-    "zh": "图片 (*.png;*.jpg;*.jpeg;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.webp",
-    "en": "Images (*.png;*.jpg;*.jpeg;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.webp"
+    "zh": "图片 (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif)|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif",
+    "en": "Images (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif)|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif"
   },
   "Image.SelectFirst": {
     "zh": "请先选中一张可编辑图片。",

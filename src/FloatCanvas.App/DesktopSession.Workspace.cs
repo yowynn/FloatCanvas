@@ -16,6 +16,10 @@ internal sealed partial class DesktopSession
 
     private void ToggleCanvasVisibility()
     {
+        // Preserve the hide intent even if a second toggle shows the canvas before the
+        // dispatcher next synchronizes capture or resumes an asynchronous preparation.
+        if (_host.IsVisible) CancelLivePreparation();
+        if (_snapshotCaptureRequest is not null) { CancelSnapshotCapture("CanvasHidden"); _host.SetVisible(false); SetEditing(false); return; }
         if (DocumentOperationBusy && !_host.IsEditing) return;
         _editor.Cancel();
         CloseImageDrop();
@@ -34,7 +38,7 @@ internal sealed partial class DesktopSession
             await _documentRecoveryTask;
             // Complete a self-contained archive before replacing any live document.
             await RecoveryHistory.PreserveBeforeFirstWriteAsync(_documentLifetime.Token);
-            await _recoveryStore.SaveAsync(SnapshotWorkspace(), _assets, _documentLifetime.Token);
+            await SaveRecoverySnapshotAsync(SnapshotWorkspace());
             await RecoveryHistory.PreserveCurrentAsync(_documentLifetime.Token);
             _textEditor?.Close();
             var previous = _live.Document;

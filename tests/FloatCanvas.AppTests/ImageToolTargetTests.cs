@@ -16,12 +16,13 @@ internal static class ImageToolTargetTests
             string before = JsonSerializer.Serialize(locked.Session.Document);
             int undo = locked.Session.UndoCount, redo = locked.Session.RedoCount;
             var messages = new List<string>(); locked.Controller.Message += messages.Add;
-            Gesture(locked.Controller);
+            if (tool != EditorTool.Crop) Gesture(locked.Controller);
             assert(tool + " rejects a selected locked image without falling back to capture background or viewport",
                 JsonSerializer.Serialize(locked.Session.Document) == before && locked.Session.UndoCount == undo && locked.Session.RedoCount == redo);
-            assert(tool + " explains that the selected image must be unlocked", messages.SequenceEqual([L.Get("Editor.ImageTargetLocked")]));
+            assert(tool + " rejects locked-image activation consistently", tool == EditorTool.Crop ? locked.Controller.Tool == EditorTool.Select && messages.Count == 0 : messages.SequenceEqual([L.Get("Editor.ImageTargetLocked")]));
 
             locked.Session.SetLocked(false);
+            locked.Controller.Tool = tool;
             before = JsonSerializer.Serialize(locked.Session.Document); undo = locked.Session.UndoCount;
             Gesture(locked.Controller);
             assert(tool + " retries the same selected image after unlocking with one operation", ChangedImageOnly(locked.Session, tool) && locked.Session.UndoCount == undo + 1);
@@ -36,9 +37,14 @@ internal static class ImageToolTargetTests
             unselected.Session.SetSelection([]);
             before = JsonSerializer.Serialize(unselected.Session.Document);
             Gesture(unselected.Controller);
-            assert(tool + " uses frozen background or canvas only when no image is selected", ChangedBackgroundOnly(unselected.Session, tool) && unselected.Session.UndoCount == 1);
-            unselected.Session.Undo();
-            assert(tool + " background or canvas operation undoes atomically", JsonSerializer.Serialize(unselected.Session.Document) == before);
+            if (tool == EditorTool.Crop)
+                assert("crop never falls back to a frozen background", JsonSerializer.Serialize(unselected.Session.Document) == before && unselected.Session.UndoCount == 0 && unselected.Controller.Tool == EditorTool.Select);
+            else
+            {
+                assert(tool + " uses frozen background or canvas only when no image is selected", ChangedBackgroundOnly(unselected.Session, tool) && unselected.Session.UndoCount == 1);
+                unselected.Session.Undo();
+                assert(tool + " background or canvas operation undoes atomically", JsonSerializer.Serialize(unselected.Session.Document) == before);
+            }
 
             foreach (var locks in new[] { (false, false), (true, false), (false, true), (true, true) })
             {
@@ -48,12 +54,12 @@ internal static class ImageToolTargetTests
                 multi.Session.SetSelection(multi.Session.Document.Elements.Select(e => e.Id));
                 before = JsonSerializer.Serialize(multi.Session.Document);
                 messages = []; multi.Controller.Message += messages.Add;
-                Gesture(multi.Controller);
+                if (tool != EditorTool.Crop) Gesture(multi.Controller);
                 if (tool == EditorTool.Crop)
                 {
                     assert($"{tool} rejects two selected images with locks {locks} without silently choosing another target",
                         JsonSerializer.Serialize(multi.Session.Document) == before && multi.Session.UndoCount == 0 && multi.Session.Selection.Count == 2);
-                    assert($"{tool} asks for a single image with locks {locks}", messages.SequenceEqual([L.Get("Editor.SelectSingleImage")]));
+                    assert($"{tool} returns to selection mode for multiple images with locks {locks}", multi.Controller.Tool == EditorTool.Select && !multi.Controller.CanCropSelection);
                 }
                 else
                 {
@@ -67,9 +73,14 @@ internal static class ImageToolTargetTests
             var shape = new CanvasElement { Kind = ElementKind.Rectangle, Width = 30, Height = 30 };
             mixed.Session.Document.Elements.Add(shape);
             mixed.Session.SetSelection(mixed.Session.Document.Elements.Select(e => e.Id));
-            Gesture(mixed.Controller);
-            assert(tool + " keeps the one image target when non-image objects are also selected",
-                ChangedImageOnly(mixed.Session, tool) && mixed.Session.Document.Elements.Single(e => e.Id == shape.Id).Width == 30);
+            if (tool == EditorTool.Crop)
+                assert("crop rejects mixed image and shape selection", mixed.Controller.Tool == EditorTool.Select && !mixed.Controller.CanCropSelection && mixed.Session.UndoCount == 0);
+            else
+            {
+                Gesture(mixed.Controller);
+                assert(tool + " keeps the one image target when non-image objects are also selected",
+                    ChangedImageOnly(mixed.Session, tool) && mixed.Session.Document.Elements.Single(e => e.Id == shape.Id).Width == 30);
+            }
         }
         foreach (string language in new[] { "en", "zh-CN" })
         {

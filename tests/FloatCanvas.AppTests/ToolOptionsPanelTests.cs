@@ -27,6 +27,7 @@ internal static class ToolOptionsPanelTests
                 Presets(folder, (name, passed) => check(language + " " + name, passed));
                 ColorsAndTools(folder, (name, passed) => check(language + " " + name, passed));
                 Layout(folder, (name, passed) => check(language + " " + name, passed));
+                CaptureOptions(folder, (name, passed) => check(language + " " + name, passed));
             }
             check("tool option checks create no native or visible windows", app.Windows.Cast<Wpf.Window>().SequenceEqual(windows) &&
                 app.Windows.Cast<Wpf.Window>().All(window => !window.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle == 0));
@@ -155,6 +156,35 @@ internal static class ToolOptionsPanelTests
             emoji.All(button => button.Tag is string text && !string.IsNullOrWhiteSpace(text)) && emoji.Select(button => button.Tag).Distinct().Count() == emoji.Length);
         var choice = emoji.First(button => !Equals(button.Tag, controller.Emoji)); before = changes; Click(choice);
         check("emoji choice changes the active glyph once", controller.Emoji == (string)choice.Tag && changes == before + 1);
+    }
+
+    private static void CaptureOptions(string root, Action<string, bool> check)
+    {
+        var controller = new EditorController(new EditorSession()) { Tool = EditorTool.CaptureRegion };
+        var panel = Panel(controller, root, "snapshot");
+        var rows = Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows");
+        var pickers = Field<Dictionary<string, Controls.ComboBox>>(panel, "pickers");
+        var numbers = Field<Dictionary<string, Controls.TextBox>>(panel, "numbers");
+        var foreground = Field<ColorField>(panel, "foreground");
+        check("snapshot exposes source shape and optional border together", Shown(rows, "CaptureShape", "CaptureSource", "CaptureBorderWidth", "Foreground") &&
+            !Shown(rows, "Background") && !Shown(rows, "StrokeWidth") && !Shown(rows, "Opacity"));
+        check("snapshot choices contain all four shapes and all three sources", pickers["CaptureShape"].Items.Count == 4 && pickers["CaptureSource"].Items.Count == 3);
+        pickers["CaptureShape"].SelectedItem = pickers["CaptureShape"].Items.OfType<Controls.ComboBoxItem>().Single(item => Equals(item.Tag, CaptureShape.PolygonLasso));
+        pickers["CaptureSource"].SelectedItem = pickers["CaptureSource"].Items.OfType<Controls.ComboBoxItem>().Single(item => Equals(item.Tag, CaptureSource.CanvasOnly));
+        numbers["CaptureBorderWidth"].Text = "6";
+        foreground.SetUserValue(0xFFBB2233);
+        check("snapshot controls update only capture parameters without editing drawing style", controller.CaptureShape == CaptureShape.PolygonLasso &&
+            controller.CaptureSource == CaptureSource.CanvasOnly && controller.CaptureBorderWidth == 6 && controller.CaptureBorderColor == 0xFFBB2233 && controller.Style.Stroke == ColorLibrary.ForegroundRed);
+        var gallery = Field<ToolPresetGallery>(panel, "presets");
+        gallery.SaveNamed("Snapshot test");
+        var parameters = controller.Parameters;
+        numbers["CaptureBorderWidth"].Text = "0";
+        check("zero snapshot border width switches off without changing the retained border color", controller.CaptureBorderWidth == 0 && controller.CaptureBorderColor == 0xFFBB2233);
+        gallery.Apply(gallery.SelectedId);
+        check("snapshot user preset restores shape source and border", JsonSerializer.Serialize(controller.Parameters) == JsonSerializer.Serialize(parameters));
+        panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
+        check("snapshot parameters fit the normal bounded panel without folding", panel.ActualHeight <= 620 && rows.Values.Where(row => row.Visibility == Wpf.Visibility.Visible).All(row => row.ActualWidth > 0));
+        check("changing snapshot controls creates no document edits or undo entries", controller.Session.Document.Elements.Count == 0 && controller.Session.UndoCount == 0);
     }
 
     private static void Layout(string root, Action<string, bool> check)

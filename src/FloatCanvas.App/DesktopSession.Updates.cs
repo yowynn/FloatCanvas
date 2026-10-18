@@ -25,7 +25,7 @@ internal sealed partial class DesktopSession
         window.Owner = _welcomeWindow ?? _toolbar;
         window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
         window.Closed += (_, _) => { client.Dispose(); if (ReferenceEquals(_updatesWindow, window)) _updatesWindow = null; };
-        window.ShowDialog();
+        SessionWindowCoordinator.ShowModal(window);
     }
 
     private async Task ApplyUpdateAsync(PreparedUpdate update)
@@ -65,7 +65,7 @@ internal sealed partial class DesktopSession
     {
         await RecoveryHistory.PreserveBeforeFirstWriteAsync(_documentLifetime.Token);
         var snapshot = SnapshotWorkspace();
-        await _recoveryStore.SaveAsync(snapshot, _assets, _documentLifetime.Token);
+        await SaveRecoverySnapshotAsync(snapshot);
         _documentRecoveryFingerprint = WorkspaceFingerprint(snapshot);
         RecoveryHistory.WorkspaceSaved();
     }

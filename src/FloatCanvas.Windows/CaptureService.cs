@@ -12,7 +12,15 @@ using static Vortice.DXGI.DXGI;
 namespace FloatCanvas.Windows;
 
 public sealed record CapturedOutputInfo(string DeviceName, PixelBounds Bounds, long LastPresentTimestamp, int RotationDegrees,
-    bool ProtectedContentMaskedOut = false);
+    bool ProtectedContentMaskedOut = false)
+{
+    public CaptureFrameRequirement FrameRequirement { get; init; }
+    public long FrameBoundaryTimestamp { get; init; }
+    public long DuplicationStartedTimestamp { get; init; }
+    public long AcquiredTimestamp { get; init; }
+    public bool AcceptedUnchangedDesktop => FrameRequirement == CaptureFrameRequirement.CurrentDesktopFromNewDuplication &&
+        LastPresentTimestamp > 0 && LastPresentTimestamp < FrameBoundaryTimestamp;
+}
 
 public sealed record CapturedDesktop(PixelBounds Bounds, byte[] PngBytes)
 {
@@ -22,7 +30,7 @@ public sealed record CapturedDesktop(PixelBounds Bounds, byte[] PngBytes)
 
 /// <summary>
 /// Captures SDR desktop pixels using a new DXGI duplication session for each request. The caller
-/// temporarily hides its UI on the UI thread; all GPU acquisition and PNG encoding run off-thread.
+/// establishes its capture window policy on the UI thread; all GPU acquisition and PNG encoding run off-thread.
 /// No old screenshot cache is used. Output timestamps are retained because monitors are not synchronized.
 /// </summary>
 public sealed class CaptureService : IDisposable
@@ -38,14 +46,27 @@ public sealed class CaptureService : IDisposable
     /// <param name="notBeforeTimestamp">QPC/Stopwatch timestamp after all application windows have been hidden. Older desktop presents are rejected.</param>
     public Task<CapturedDesktop> CaptureAsync(IReadOnlyList<MonitorInfo> monitors, long notBeforeTimestamp, CancellationToken cancellationToken = default)
     {
+        if (notBeforeTimestamp < 0 || notBeforeTimestamp > Stopwatch.GetTimestamp())
+            throw new ArgumentOutOfRangeException(nameof(notBeforeTimestamp));
+        return CaptureAsync(monitors, new CaptureFrameBoundary(notBeforeTimestamp,
+            CaptureFrameRequirement.RequirePresentAfterBoundary), cancellationToken);
+    }
+
+    /// <summary>
+    /// Acquires from a newly created per-output duplication after the caller's window policy boundary.
+    /// CurrentDesktopFromNewDuplication permits an unchanged desktop, not frames from a previous request.
+    /// A boundary does not itself prove exclusion pixels: the caller must establish the window policy.
+    /// </summary>
+    public Task<CapturedDesktop> CaptureAsync(IReadOnlyList<MonitorInfo> monitors, CaptureFrameBoundary boundary,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(monitors);
         var snapshot = monitors.ToArray();
         if (snapshot.Length == 0) throw new ArgumentException(L.Get("Capture.AtLeastOneMonitorRequired"), nameof(monitors));
         if (snapshot.Any(m => m.Bounds.Width <= 0 || m.Bounds.Height <= 0) ||
             snapshot.Select(m => m.DeviceName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != snapshot.Length)
             throw new ArgumentException(L.Get("Capture.InvalidDisplayLayout"), nameof(monitors));
-        if (notBeforeTimestamp < 0 || notBeforeTimestamp > Stopwatch.GetTimestamp())
-            throw new ArgumentOutOfRangeException(nameof(notBeforeTimestamp));
+        boundary.Validate(Stopwatch.GetTimestamp());
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -53,7 +74,7 @@ public sealed class CaptureService : IDisposable
             var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
             _active = Task.Run(() =>
             {
-                using (linked) return Capture(snapshot, notBeforeTimestamp, linked.Token);
+                using (linked) return Capture(snapshot, boundary, linked.Token);
             });
             return _active;
         }
@@ -73,7 +94,7 @@ public sealed class CaptureService : IDisposable
         }
     }
 
-    private static CapturedDesktop Capture(MonitorInfo[] monitors, long notBeforeTimestamp, CancellationToken cancellationToken)
+    private static CapturedDesktop Capture(MonitorInfo[] monitors, CaptureFrameBoundary boundary, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var left = monitors.Min(m => m.Bounds.Left);
@@ -122,12 +143,21 @@ public sealed class CaptureService : IDisposable
                                 context = createdContext;
                             }
                             using var output1 = output.QueryInterface<IDXGIOutput1>();
+                            // DuplicateOutput/AcquireNextFrame provide the current desktop image.
+                            // LastPresentTime describes its last content update, not session creation:
+                            // https://learn.microsoft.com/windows/win32/api/dxgi1_2/ns-dxgi1_2-dxgi_outdupl_frame_info
+                            long duplicationStarted = Stopwatch.GetTimestamp();
                             using var duplication = output1.DuplicateOutput(device);
-                            var frame = CaptureOutput(duplication, device, context!, monitor, description.Rotation, notBeforeTimestamp, cancellationToken);
+                            var frame = CaptureOutput(duplication, device, context!, monitor, description.Rotation, boundary,
+                                duplicationStarted, cancellationToken);
                             using (frame.Bitmap)
                             using (var image = SKImage.FromBitmap(frame.Bitmap))
                                 result.Canvas.DrawImage(image, monitor.Bounds.Left - left, monitor.Bounds.Top - top, new SKSamplingOptions(SKFilterMode.Nearest));
-                            captured.Add(new(monitor.DeviceName, monitor.Bounds, frame.Timestamp, RotationDegrees(description.Rotation), frame.ProtectedContentMaskedOut));
+                            captured.Add(new(monitor.DeviceName, monitor.Bounds, frame.Timestamp, RotationDegrees(description.Rotation), frame.ProtectedContentMaskedOut)
+                            {
+                                FrameRequirement = boundary.Requirement, FrameBoundaryTimestamp = boundary.Timestamp,
+                                DuplicationStartedTimestamp = duplicationStarted, AcquiredTimestamp = frame.AcquiredTimestamp
+                            });
                             pending.Remove(monitor.DeviceName);
                         }
                     }
@@ -143,14 +173,16 @@ public sealed class CaptureService : IDisposable
         return new(bounds, encoded.ToArray()) { Outputs = captured.AsReadOnly(), CapturedAtUtc = DateTimeOffset.UtcNow };
     }
 
-    private static (SKBitmap Bitmap, long Timestamp, bool ProtectedContentMaskedOut) CaptureOutput(IDXGIOutputDuplication duplication, ID3D11Device device,
-        ID3D11DeviceContext context, MonitorInfo monitor, ModeRotation rotation, long notBeforeTimestamp, CancellationToken cancellationToken)
+    private static (SKBitmap Bitmap, long Timestamp, bool ProtectedContentMaskedOut, long AcquiredTimestamp) CaptureOutput(
+        IDXGIOutputDuplication duplication, ID3D11Device device, ID3D11DeviceContext context, MonitorInfo monitor,
+        ModeRotation rotation, CaptureFrameBoundary boundary, long duplicationStarted, CancellationToken cancellationToken)
     {
         var timeout = Stopwatch.StartNew();
         while (timeout.Elapsed < TimeSpan.FromSeconds(3))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var acquired = duplication.AcquireNextFrame(100, out var info, out var resource);
+            long acquiredTimestamp = Stopwatch.GetTimestamp();
             if (acquired == ResultCode.WaitTimeout) continue;
             if (acquired == ResultCode.AccessLost)
                 throw new InvalidOperationException(L.Get("Capture.ConnectionReset"));
@@ -159,8 +191,9 @@ public sealed class CaptureService : IDisposable
             {
                 using (resource)
                 {
-                    // Mouse-only changes have LastPresentTime=0 and cannot establish a clean desktop frame.
-                    if (info.LastPresentTime == 0 || info.LastPresentTime < notBeforeTimestamp) continue;
+                    // Visual changes retain the old strict present gate. An unchanged, already-excluded
+                    // desktop is eligible only through the explicit fresh-session policy.
+                    if (!boundary.Accepts(info.LastPresentTime, duplicationStarted, acquiredTimestamp)) continue;
                     // This flag describes already-masked regions, not capture failure. Preserve the
                     // actual pixels and report metadata so callers can explain partial masking.
                     using var texture = resource.QueryInterface<ID3D11Texture2D>();
@@ -178,7 +211,8 @@ public sealed class CaptureService : IDisposable
                     try
                     {
                         return (CopyRotated(mapped.DataPointer, checked((int)mapped.RowPitch), checked((int)description.Width),
-                            checked((int)description.Height), monitor.Bounds, rotation, cancellationToken), info.LastPresentTime, info.ProtectedContentMaskedOut);
+                            checked((int)description.Height), monitor.Bounds, rotation, cancellationToken), info.LastPresentTime,
+                            info.ProtectedContentMaskedOut, acquiredTimestamp);
                     }
                     finally { context.Unmap(staging, 0); }
                 }
@@ -188,7 +222,7 @@ public sealed class CaptureService : IDisposable
         throw new TimeoutException(L.Format("Capture.FreshFrameTimedOut", monitor.DeviceName));
     }
 
-    private static unsafe SKBitmap CopyRotated(nint source, int rowPitch, int sourceWidth, int sourceHeight,
+    internal static unsafe SKBitmap CopyRotated(nint source, int rowPitch, int sourceWidth, int sourceHeight,
         PixelBounds destination, ModeRotation rotation, CancellationToken cancellationToken)
     {
         var angle = RotationDegrees(rotation);

@@ -1,0 +1,6 @@
+{
+  "Effect.GlobalCaptureExclusion": {
+    "zh": "此系统的实时滤镜使用兼容采集，画布可能不会出现在第三方截图中。",
+    "en": "Live filters use compatibility capture on this system; the canvas may be omitted from third-party screenshots."
+  }
+}

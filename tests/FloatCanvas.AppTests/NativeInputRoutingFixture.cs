@@ -17,7 +17,8 @@ using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 
 /// <summary>Own bounded native input and real WPF editors, through the production private keyboard bridge.
-/// No SendInput/desktop cursor changes, no default hotkeys and no changes to the running user app.</summary>
+/// Default scenarios use no SendInput/desktop cursor changes. The explicit ctrl-native-selection
+/// scenarios additionally exercise guarded physical input. No default hotkeys or user-profile writes.</summary>
 internal static class NativeInputRoutingFixture
 {
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -33,6 +34,7 @@ internal static class NativeInputRoutingFixture
         nint originalForeground = GetForegroundWindow(); DesktopSession? session = null; OverlayHost? host = null; Window? permissionGate = null; nint[] handles = [];
         var originalKeys = new byte[256]; GetKeyboardState(originalKeys);
         TextBox? observedHex = null;
+        KeyboardInputIsolation? observedIsolation = null;
         ProcessInputEventHandler beforePointerFocus = (_, e) => ObserveHexPress("registered-before-session", e);
         ProcessInputEventHandler afterPointerFocus = (_, e) => ObserveHexPress("registered-after-session", e);
         InputManager.Current.PostProcessInput += beforePointerFocus;
@@ -48,7 +50,9 @@ internal static class NativeInputRoutingFixture
             InputManager.Current.PostProcessInput += afterPointerFocus;
             Field<System.Windows.Forms.NotifyIcon>(session, "_tray").Visible = false;
             var isolation = typeof(OverlayHost).GetField("_keyboardIsolation", PrivateInstance)!;
-            (isolation.GetValue(host) as IDisposable)?.Dispose(); isolation.SetValue(host, null);
+            bool realCtrlInput = Environment.GetEnvironmentVariable("FLOATCANVAS_INPUT_CASE")?.StartsWith("ctrl-native-selection", StringComparison.Ordinal) == true;
+            if (realCtrlInput) observedIsolation = (KeyboardInputIsolation)isolation.GetValue(host)!;
+            if (!realCtrlInput) { (isolation.GetValue(host) as IDisposable)?.Dispose(); isolation.SetValue(host, null); }
             var editor = Field<EditorController>(session, "_editor");
             var dispatch = Field<Action<KeyboardInputPacket, Action>>(host, "_dispatchPrivateKey");
             var library = Field<StampLibrary>(session, "_stampLibrary");
@@ -109,6 +113,91 @@ internal static class NativeInputRoutingFixture
                 SendMessage(input, 0x202, 0x0008, Pack(180, 140)); Key(0x11, true);
                 check("Ctrl-drag completes one editable rectangle", editor.Session.Document.Elements.Count == 1 && editor.Session.UndoCount == 1);
                 editor.Session.Execute("fixture clear", doc => doc.Elements.Clear()); editor.Session.SetSelection([]);
+            }
+            if (realCtrlInput)
+            {
+                toolbar.Left = (host.Diagnostics.Single().Bounds.Right + 40) * 96d / host.PrimaryMonitor.DpiX;
+                Field<Dictionary<EditorTool, Button>>(session, "_toolbarToolButtons")[EditorTool.Rectangle].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Pump();
+                if (Environment.GetEnvironmentVariable("FLOATCANVAS_INPUT_DISABLE_PRESS_SNAPSHOTS") == "1")
+                {
+                    var actualIsolation = Field<KeyboardInputIsolation>(host, "_keyboardIsolation");
+                    var pointerHook = typeof(KeyboardInputIsolation).GetField("pointerHook", PrivateInstance)!;
+                    nint installed = (nint)pointerHook.GetValue(actualIsolation)!;
+                    if (installed == 0 || !UnhookWindowsHookEx(installed)) throw new InvalidOperationException("Could not disable the fixture's own observation hook for its history-only negative control.");
+                    pointerHook.SetValue(actualIsolation, (nint)0);
+                }
+                Action? nestedInput = null;
+                bool delayOnePacket = scenario.Contains("-pending", StringComparison.Ordinal);
+                if (delayOnePacket)
+                    typeof(OverlayHost).GetField("_dispatchPrivateKey", PrivateInstance)!.SetValue(host,
+                        (Action<KeyboardInputPacket, Action>)((packet, complete) =>
+                        {
+                            if (packet.VirtualKey == 0x78 && !packet.IsKeyUp)
+                            {
+                                dispatch(packet, () => { });
+                                var frame = new DispatcherFrame(); Exception? failure = null;
+                                app.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+                                { try { nestedInput!(); } catch (Exception error) { failure = error; } finally { frame.Continue = false; } });
+                                Dispatcher.PushFrame(frame);
+                                if (failure is not null) throw failure;
+                            }
+                            else dispatch(packet, complete);
+                        }));
+                void DuringPendingPacket(Action input, Action trigger) { nestedInput = input; trigger(); }
+                try { CtrlCreationRoutingFixture.Run(check, host, editor, scenario.EndsWith("-toolbar", StringComparison.Ordinal) ? toolbar : null,
+                    delayOnePacket ? DuringPendingPacket : null, scenario.Contains("-buffered", StringComparison.Ordinal)); }
+                finally
+                {
+                    typeof(OverlayHost).GetField("_dispatchPrivateKey", PrivateInstance)!.SetValue(host, dispatch);
+                }
+            }
+            if (scenario == "stamp-shortcut")
+            {
+                editor.Session.Add(new CanvasElement { Kind = ElementKind.Rectangle, Width = 60, Height = 35 });
+                editor.Session.SelectAll();
+                nint layout = GetKeyboardLayout(0), english = LoadKeyboardLayout("00000409", 0);
+                try
+                {
+                    check("shortcut fixture selects English only for its own UI thread", english != 0 && ActivateKeyboardLayout(english, 0) != 0);
+                    foreach (string origin in new[] { "toolbar", "canvas", "options" })
+                    foreach (bool shift in new[] { false, true })
+                    {
+                        bool initial = false, repeat = false, fresh = false;
+                        Window source = toolbar;
+                        if (origin == "options")
+                        {
+                            Invoke("OpenToolOptions"); source = Field<Window>(session, "_toolOptionsWindow");
+                        }
+                        source.Activate(); source.Focus(); Pump();
+                        nint sourceHandle = origin == "canvas" ? host.Diagnostics.Single().InputHandle : new WindowInteropHelper(source).Handle;
+                        SetForegroundWindow(sourceHandle); SetFocus(sourceHandle); ActivateKeyboardLayout(english, 0); Pump();
+                        using var observer = ObservePrompt(dialog =>
+                        {
+                            var name = ((StackPanel)dialog.Content).Children.OfType<TextBox>().Single();
+                            initial = name.Text == FloatCanvas.Localization.AppText.Get("Stamp.DefaultName") && name.SelectionLength == name.Text.Length;
+                            Key(0xBB, false, repeat: true, shift: shift);
+                            repeat = name.Text == FloatCanvas.Localization.AppText.Get("Stamp.DefaultName") && name.SelectionLength == name.Text.Length;
+                            Key(0xBB, true); Key(0xBB, false, shift: shift); Key(0xBB, true);
+                            fresh = name.Text == (shift ? "+" : "=");
+                            Console.WriteLine($"STAMP_SHORTCUT origin={origin} shift={shift} initial={initial} heldRepeat={repeat} freshText={name.Text}");
+                        });
+                        Key(0xBB, false, shift: shift); observer.Wait(); Key(0xBB, true);
+                        check($"{origin} {(shift ? "+" : "=")} shortcut preserves the selected default name", initial);
+                        check($"{origin} held shortcut repeats do not replace the default name", repeat);
+                        check($"{origin} release followed by a new press remains editable text", fresh);
+                        if (origin == "options") Invoke("CloseToolOptions");
+                    }
+                    bool ordinaryText = false;
+                    toolbar.Activate(); toolbar.Focus(); Pump(); ActivateKeyboardLayout(english, 0);
+                    using (var observer = ObservePrompt(dialog =>
+                    {
+                        var name = ((StackPanel)dialog.Content).Children.OfType<TextBox>().Single();
+                        Key(0xBB, false); Key(0xBB, true); ordinaryText = name.Text == "=";
+                    })) { Invoke("SaveStampSelection"); observer.Wait(); }
+                    check("mouse-command stamp creation keeps ordinary equals text input", ordinaryText);
+                }
+                finally { ActivateKeyboardLayout(layout, 0); }
             }
             if (scenario == "feedback4-panels") Feedback4Panels(check, app, session, host, toolbar, editor);
             if (scenario == "feedback4-workspace") Feedback4Workspace(check, session, host, toolbar, editor);
@@ -288,9 +377,10 @@ internal static class NativeInputRoutingFixture
                     Console.WriteLine($"{label} text={(target as TextBox)?.Text} native={GetFocus():X} foreground={GetForegroundWindow():X} targetSource={((HwndSource?)PresentationSource.FromVisual(target))?.Handle:X} logical={logical?.GetType().Name} logicalSource={(logical is null ? 0 : ((HwndSource?)PresentationSource.FromDependencyObject(logical))?.Handle ?? 0):X} targetFocused={target.IsKeyboardFocusWithin} editing={host.IsEditing} parent={popup.IsVisible} color={colorPopup.IsOpen} tool={editor.Tool} captured={Mouse.Captured?.GetType().Name} directlyOver={Mouse.DirectlyOver?.GetType().Name} nativeCapture={GetCapture():X}");
                 }
             }
-            void Key(uint key, bool up, bool control = false, bool repeat = false)
+            void Key(uint key, bool up, bool control = false, bool repeat = false, bool shift = false)
             {
                 var state = new byte[256]; if (control) { state[0x11] = 128; state[0xA2] = 128; }
+                if (shift) { state[0x10] = 128; state[0xA0] = 128; }
                 if (!up) state[key] = 128;
                 var packet = (KeyboardInputPacket)Activator.CreateInstance(typeof(KeyboardInputPacket), PrivateInstance, null,
                     [1L, 1L, KeyboardInputPacketKind.Key, key, MapVirtualKey(key, 0), 0u, (uint)Environment.TickCount,
@@ -317,6 +407,9 @@ internal static class NativeInputRoutingFixture
             Directory.Delete(cleanupTarget, recursive: true);
         }
         check("native input fixture destroys its own host windows", handles.All(handle => !IsWindow(handle)));
+        if (observedIsolation is not null)
+            check("the real Ctrl fixture uninstalls both own hooks and terminates its isolation thread", !observedIsolation.IsThreadAlive && observedIsolation.LastWin32Error == 0 &&
+                Field<nint>(observedIsolation, "hook") == 0 && Field<nint>(observedIsolation, "pointerHook") == 0);
         object? Invoke(string name, params object[] values) => typeof(DesktopSession).GetMethod(name, PrivateInstance)!.Invoke(session, values);
         void ObserveHexPress(string phase, ProcessInputEventArgs e)
         {
@@ -326,6 +419,26 @@ internal static class NativeInputRoutingFixture
             var logical = Keyboard.FocusedElement as DependencyObject;
             Console.WriteLine($"HEX_POINTER {phase} routed={mouse.RoutedEvent.Name} handled={mouse.Handled} device={mouse.MouseDevice.GetType().Name} native={GetFocus():X} foreground={GetForegroundWindow():X} source={((HwndSource?)PresentationSource.FromVisual(observedHex))?.Handle:X} logical={logical?.GetType().Name} logicalSource={(logical is null ? 0 : ((HwndSource?)PresentationSource.FromDependencyObject(logical))?.Handle ?? 0):X} focused={observedHex.IsKeyboardFocusWithin}");
         }
+    }
+    private static PromptObserver ObservePrompt(Action<Window> observe) => new(observe);
+    private sealed class PromptObserver : IDisposable
+    {
+        private readonly DispatcherTimer timer = new(DispatcherPriority.ApplicationIdle) { Interval = TimeSpan.FromMilliseconds(20) };
+        private readonly long started = Environment.TickCount64;
+        public PromptObserver(Action<Window> observe)
+        {
+            timer.Tick += (_, _) =>
+            {
+                var dialog = Application.Current.Windows.Cast<Window>().FirstOrDefault(window => window.IsVisible && window.Title == FloatCanvas.Localization.AppText.Get("Stamp.SaveSelection"));
+                if (dialog is null) { if (Environment.TickCount64 - started > 3000) timer.Stop(); return; }
+                timer.Stop();
+                try { observe(dialog); }
+                finally { dialog.Close(); }
+            };
+            timer.Start();
+        }
+        public void Wait() { while (timer.IsEnabled) Pump(); }
+        public void Dispose() => timer.Stop();
     }
     private static void Feedback4Panels(Action<string, bool> check, Application app, DesktopSession session, OverlayHost host, Window toolbar, EditorController editor)
     {
@@ -622,9 +735,13 @@ internal static class NativeInputRoutingFixture
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint handle, out uint process);
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern nint SendMessage(nint handle, uint message, nint wparam, nint lparam);
+    [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(nint hook);
     [DllImport("user32.dll")] private static extern bool GetKeyboardState(byte[] state);
     [DllImport("user32.dll")] private static extern bool SetKeyboardState(byte[] state);
     [DllImport("user32.dll")] private static extern uint MapVirtualKey(uint code, uint type);
+    [DllImport("user32.dll")] private static extern nint GetKeyboardLayout(uint thread);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint LoadKeyboardLayout(string id, uint flags);
+    [DllImport("user32.dll")] private static extern nint ActivateKeyboardLayout(nint layout, uint flags);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern nint SetFocus(nint handle);
     [DllImport("user32.dll")] private static extern nint GetFocus();

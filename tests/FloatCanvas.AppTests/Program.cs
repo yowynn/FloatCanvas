@@ -3,6 +3,7 @@ using FloatCanvas.Core;
 using FloatCanvas.Rendering;
 using FloatCanvas.Windows;
 using SkiaSharp;
+using System.IO;
 
 internal static class Program
 {
@@ -12,7 +13,19 @@ internal static class Program
     {
         try
         {
+            ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--session-capture-background-helper")) { SessionCaptureRoutingFixture.RunBackgroundHelper(args); return 0; }
+            if (args.Contains("--focus-external-helper")) { FocusSessionRoutingFixture.RunExternalHelper(args); return 0; }
+            if (args.Contains("--focus-session-only")) { FocusSessionRoutingFixture.Run(Assert); return 0; }
+            if (args.Contains("--capture-selection-only")) { CaptureSelectionTests.Run(Assert); return 0; }
+            if (args.Contains("--image-tools-only")) { ImageToolEligibilityTests.Run(Assert); ImageToolTargetTests.Run(Assert); WorkspaceToolControllerTests.Run(Assert); ImageEffectsAndCrop(); DocumentRegions(); return 0; }
+            if (args.Contains("--image-drop-reader-only")) { ImageDropDataReaderTests.Run(Assert); return 0; }
+            if (args.Contains("--gpu-settings-only")) { GpuSettingsTests.Run(Assert); LocalizationTests.Run(Assert); return 0; }
+            if (args.Contains("--animation-integration-only")) { AnimatedImageIntegrationTests.Run(Assert); return 0; }
+            if (args.Contains("--snapshot-image-only")) { SnapshotImageTests.Run(Assert); return 0; }
+            if (args.Contains("--snapshot-coordinates-only")) { SnapshotCoordinateTests.Run(Assert); return 0; }
+            if (args.Contains("--diagnostics-only")) { ApplicationDiagnosticsTests.Run(Assert); return 0; }
             if (args.Contains("--windows-compatibility-only")) { LegacyWindowsEffectsTests.Run(Assert); return 0; }
             if (args.Contains("--tool-state-store-only")) { ToolStateStoreTests.Run(Assert); return 0; }
             if (args.Contains("--tool-state-only")) { ToolStateStoreTests.Run(Assert); ToolWorkingStateTests.Run(Assert); return 0; }
@@ -44,6 +57,7 @@ internal static class Program
             if (args.Contains("--stamp-selection-only")) { StampSelectionIntegrationTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar2-only")) { ToolbarAcceptanceTests.Run(Assert); return 0; }
             if (args.Contains("--creation-selection-only")) { CreationSelectionTests.Run(Assert); return 0; }
+            if (args.Contains("--drag-sized-objects-only")) { DragSizedObjectsTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-preview-only")) { StampPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--emoji-only")) { EmojiTests.Run(Assert); return 0; }
             if (args.Contains("--layer-names-only")) { LayerRenameTests.Run(Assert); return 0; }
@@ -58,6 +72,7 @@ internal static class Program
                 WindowChromeTests.Run(Assert); InspectorTests.Run(Assert); ThemeTests.Run(Assert); return 0;
             }
             if (args.Contains("--recovery-only")) { WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--workspace-preview-only")) { WorkspacePreviewTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--clipboard-only")) { ObjectClipboardTests.Run(Assert); return 0; }
             if (args.Contains("--tool-options-input-only")) { ToolOptionsInputFixture.Run(Assert); return 0; }
             if (args.Contains("--tool-options-only")) { ToolOptionsPanelTests.Run(Assert); return 0; }
@@ -65,6 +80,8 @@ internal static class Program
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            GpuSettingsTests.Run(Assert);
+            ApplicationDiagnosticsTests.Run(Assert);
             ClearCanvasButtonTests.Run(Assert);
             WelcomeSessionTests.Run(Assert);
             GitHubUpdateClientTests.Run(Assert);
@@ -74,6 +91,10 @@ internal static class Program
             LayerRenameTests.Run(Assert);
             EmojiTests.Run(Assert);
             CreationSelectionTests.Run(Assert);
+            DragSizedObjectsTests.Run(Assert);
+            CaptureSelectionTests.Run(Assert);
+            SnapshotImageTests.Run(Assert);
+            SnapshotCoordinateTests.Run(Assert);
             Feedback4GeometryTests.Run(Assert);
             StampPreviewTests.Run(Assert);
             HotkeyHintTests.Run((name, condition) => Assert(name, condition));
@@ -85,6 +106,7 @@ internal static class Program
             ToolCompatibilityTests.Run(Assert);
             ImageDropTests.Run((name, condition) => Assert(name, condition));
             ImageDropDataReaderTests.Run((name, condition) => Assert(name, condition));
+            AnimatedImageIntegrationTests.Run(Assert);
             ObjectClipboardTests.Run(Assert);
             LauncherGestureStateTests.Run(Assert);
             ToolbarInteractionTests.Run(Assert);
@@ -100,12 +122,13 @@ internal static class Program
             Task.Run(() => StampPlacementRequestTests.RunAsync(Assert)).GetAwaiter().GetResult();
             EncodedPngImportTests.Run((name, condition) => Assert(name, condition));
             CreationTools(); SelectionAndTransforms(); CancellationAndReplacement(); EraserTransactions();
-            ImageEffectsAndCrop(); DocumentRegions(); TextDoubleClick(); RasterPreviewRanges();
+            ImageToolEligibilityTests.Run(Assert); ImageEffectsAndCrop(); DocumentRegions(); TextDoubleClick(); RasterPreviewRanges();
             PointerNoOpTests.Run((name, condition) => Assert(name, condition));
             InspectorTests.Run((name, condition) => Assert(name, condition));
             AppIconTests.Run(Assert);
             WindowChromeTests.Run(Assert);
             WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult();
+            WorkspacePreviewTests.RunAsync(Assert).GetAwaiter().GetResult();
             ThemeTests.Run((name, condition) => Assert(name, condition));
             MonitorScopeSettingsTests.Run((name, condition) => Assert(name, condition));
             Console.WriteLine($"PASS {checks} controller/session/render/inspector checks. No native windows shown or input injected."); return 0;
@@ -296,7 +319,7 @@ internal static class Program
         controller.Tool = EditorTool.Redact;
         Down(controller, nextA); Move(controller, nextB); controller.Tool = EditorTool.Select; Up(controller, nextB);
         Assert("switching effect tool cancels its pending region", secondCrop.Effects.Count == 3 && controller.EffectPreviewPolygon is null && !session.IsTransactionActive);
-        var singular = Session(); singular.Add(new() { Kind = ElementKind.Image, Width = 100, Height = 80, Transform = Affine2D.Scale(0, 1) });
+        var singular = Session(); singular.Document.Kind = DocumentKind.FrozenCapture; singular.Add(new() { Kind = ElementKind.Image, Width = 100, Height = 80, Transform = Affine2D.Scale(0, 1) });
         var invalidController = new EditorController(singular) { Tool = EditorTool.Blur }; int errors = 0; invalidController.Message += _ => errors++;
         Gesture(invalidController, new(0, 0), new(50, 50));
         Assert("singular image transforms rejected before effect gesture", errors == 1 && singular.Document.Elements[0].Effects.Count == 0 && invalidController.Marquee is null);
@@ -305,17 +328,17 @@ internal static class Program
     private static void DocumentRegions()
     {
         var session = Session(); var controller = new EditorController(session) { Tool = EditorTool.CaptureRegion, ScreenOrigin = new(1000, 500) };
-        RectD? requested = null; controller.CaptureRegionSelected += region => requested = region;
+        RectD? requested = null; controller.CaptureSelectionCompleted += selection => requested = selection.Bounds;
         Gesture(controller, new(1020, 530), new(1100, 600));
         Assert("capture region emits document coordinates without editing source", requested == new RectD(20, 30, 80, 70) && session.UndoCount == 0 && controller.Marquee is null);
         controller.ScreenOrigin = new(0, 0); controller.Tool = EditorTool.Crop; int messages = 0; controller.Message += _ => messages++;
         var original = session.Document.Viewport; Gesture(controller, new(20, 20), new(100, 100));
-        Assert("live canvas crop without image gives guidance instead of shrinking desktop", messages == 1 && session.Document.Viewport == original && session.UndoCount == 0);
+        Assert("live canvas crop without image returns to selection instead of shrinking desktop", controller.Tool == EditorTool.Select && session.Document.Viewport == original && session.UndoCount == 0);
         session.Document.Kind = DocumentKind.FrozenCapture;
         Gesture(controller, new(20, 30), new(120, 110));
-        Assert("frozen screenshot crop updates document viewport", session.Document.Viewport == new RectD(20, 30, 100, 80) && session.UndoCount == 1);
+        Assert("frozen screenshot background alone does not enable crop", controller.Tool == EditorTool.Select && session.Document.Viewport == original && session.UndoCount == 0);
         Gesture(controller, new(900, 900), new(950, 950));
-        Assert("crop outside screenshot cannot create empty viewport", session.Document.Viewport == new RectD(20, 30, 100, 80) && session.UndoCount == 1);
+        Assert("selection outside a frozen screenshot cannot crop its background", session.Document.Viewport == original && session.UndoCount == 0);
         controller.Tool = EditorTool.CaptureRegion; Down(controller, new(40, 40)); Move(controller, new(90, 90)); controller.Cancel(); requested = null; Up(controller, new(100, 100));
         Assert("cancelled region cannot trigger later capture", requested is null && controller.Marquee is null);
     }

@@ -30,10 +30,9 @@ public sealed partial class OverlayHost : IDisposable
     private HotkeyBinding? _toggleHotkey, _hideHotkey;
     private nint _previousForeground;
     private OverlayMouseButton _pressedButton;
-    private bool _releasingCapture, _refreshPosted, _focusCheckPosted, _disposed, _rendering;
+    private bool _releasingCapture, _refreshPosted, _disposed, _rendering;
+    private long _focusCheckSession;
     private bool _captureActive;
-    private nint _captureForeground;
-    private bool _captureFocusMoved;
 
     /// <summary>Own BGRA premultiplied raster target, fully cleared before each synchronous callback.
     /// Its canvas maps desktop physical pixels. Do not retain or dispose the surface.</summary>
@@ -92,6 +91,11 @@ public sealed partial class OverlayHost : IDisposable
         }
     }
 
+    /// <summary>Current physical modifiers inside this host's private editing lease.
+    /// Keyboard commands keep their packet-local CurrentModifiers for text/IME ordering.</summary>
+    public OverlayModifiers InteractionModifiers => _keyboardIsolation is { } isolation && isolation.TryGetModifiers(null, out var modifiers)
+        ? modifiers : CurrentModifiers;
+
     public OverlayHost() : this(OverlayMonitorScope.AllScreens) { }
 
     public OverlayHost(OverlayMonitorScope scope) : this(scope, EnumerateMonitors) { }
@@ -119,6 +123,7 @@ public sealed partial class OverlayHost : IDisposable
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         _control = CreateNativeWindow(WindowKind.Control, null, new(0, 0, 1, 1), ExToolWindow | ExNoActivate);
         _foregroundProcedure = OnForegroundChanged;
+
         try
         {
             // Out-of-context delivery runs on our message-pump thread; no injection or polling.
@@ -184,14 +189,23 @@ public sealed partial class OverlayHost : IDisposable
     public bool TryEnterEditing(out string? failure)
     {
         CheckThread();
+        CancelPendingCapture();
+        if (_captureActive) { failure = L.Get("Capture.AlreadyInProgress"); return false; }
+        return TryEnterEditingCore(out failure);
+    }
+
+    private bool TryEnterEditingCore(out string? failure)
+    {
         EndDropReceptionCore();
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         failure = null;
         if (IsEditing && IsForegroundFromThisProcess() &&
             (_keyboardIsolation is null || _keyboardIsolation.IsLeaseActive)) return true;
-        if (IsEditing) ExitEditing(restorePreviousForeground: false);
+        if (IsEditing) ExitEditingCore(restorePreviousForeground: false);
         CancelPointer();
         _previousForeground = GetForegroundWindow();
+
+
         foreach (var pair in _windows)
         {
             ShowWindow(pair.Display.Handle, IsVisible ? 8 : 0); // SW_SHOWNA
@@ -217,6 +231,7 @@ public sealed partial class OverlayHost : IDisposable
             return false;
         }
         IsEditing = true;
+        _focusTransitions.BeginSession();
         Render();
         return true;
     }
@@ -225,8 +240,15 @@ public sealed partial class OverlayHost : IDisposable
     public void ExitEditing(bool restorePreviousForeground = true)
     {
         CheckThread();
+        CancelPendingCapture();
+        ExitEditingCore(restorePreviousForeground);
+    }
+
+    private void ExitEditingCore(bool restorePreviousForeground = true)
+    {
         EndDropReceptionCore();
         if (!IsEditing) return;
+        _focusTransitions.EndSession();
         EndKeyboardIsolation();
         CancelPointer();
         var wasForeground = IsForegroundFromThisProcess();
@@ -240,6 +262,13 @@ public sealed partial class OverlayHost : IDisposable
     public void SetVisible(bool visible)
     {
         CheckThread();
+        if (_captureOperation is { } capture) capture.RestoreVisible = visible;
+        CancelPendingCapture();
+        SetVisibleCore(visible);
+    }
+
+    private void SetVisibleCore(bool visible)
+    {
         IsVisible = visible;
         // SW_SHOWNA also changes z order. A scene switch may call this while the
         // toolbar is already visible; re-showing an opaque display would cover it.
@@ -248,52 +277,6 @@ public sealed partial class OverlayHost : IDisposable
         foreach (var pair in _windows)
             if (IsWindowVisible(pair.Display.Handle) != visible) ShowWindow(pair.Display.Handle, visible ? 8 : 0);
         if (visible) Render();
-    }
-
-    /// <summary>
-    /// Temporarily excludes and hides this host's windows and optional application tool windows.
-    /// Dispose on the creating UI thread after capture, including failure/cancellation paths.
-    /// The timestamp can be passed to CaptureService to reject frames presented before hiding completed.
-    /// </summary>
-    public CaptureVisibilityScope HideForCapture(IEnumerable<nint>? additionalWindows = null)
-    {
-        CheckThread();
-        EndDropReceptionCore();
-        if (_captureActive) throw new InvalidOperationException(L.Get("Capture.AlreadyInProgress"));
-        var editing = IsEditing;
-        var visible = IsVisible;
-        var handles = _windows.SelectMany(pair => new[] { pair.Display.Handle, pair.Input.Handle })
-            .Concat(additionalWindows ?? []).Where(handle => handle != 0).Distinct().ToArray();
-        _captureActive = true;
-        _captureForeground = 0;
-        _captureFocusMoved = false;
-        try
-        {
-            return new CaptureVisibilityScope(handles, () =>
-            {
-                if (_disposed) return;
-                CheckThread();
-                // The capture continuation may run before a queued foreground WinEvent.
-                // Unknown or changed external foreground means there is no safe restore lease.
-                var foreground = GetForegroundWindow();
-                if (_captureForeground == 0 || (foreground != _captureForeground && !IsForegroundFromThisProcess()))
-                    _captureFocusMoved = true;
-                _captureActive = false;
-                SetVisible(visible);
-                if (_captureFocusMoved)
-                {
-                    // The scope has restored its original visibility, including input HWNDs.
-                    foreach (var pair in _windows) ShowWindow(pair.Input.Handle, 0);
-                    EndEditingAfterFocusLoss();
-                }
-                else if (editing && !TryEnterEditing(out _)) EndEditingAfterFocusLoss();
-            }, () =>
-            {
-                SetEditing(false); SetVisible(false);
-                _captureForeground = GetForegroundWindow();
-            }, Capabilities);
-        }
-        catch { _captureActive = false; throw; }
     }
 
     /// <summary>Renders only when requested. Canvas coordinates are global desktop physical pixels.</summary>
@@ -306,21 +289,54 @@ public sealed partial class OverlayHost : IDisposable
         var observer = FrameSubmitted;
         List<OverlayOutputTiming>? outputs = observer is null ? null : new(_windows.Count);
         bool succeeded = false;
+        var completedBackend = OverlayRenderBackend.Cpu;
         try
         {
             using var dpi = new ThreadDpiAwarenessScope(Capabilities);
+            var gpu = PrepareGpuRenderer();
+            if (gpu is not null)
+            {
+                try
+                {
+                    using (gpu.MakeCurrent()) RenderOutputs(gpu);
+                    completedBackend = OverlayRenderBackend.Gpu;
+                    SetRenderBackend(OverlayRenderBackend.Gpu); GpuFrameCount++;
+                }
+                catch (Exception ex)
+                {
+                    FailGpu(ex); outputs?.Clear();
+                    RenderOutputs(null); CpuFrameCount++;
+                    completedBackend = OverlayRenderBackend.Cpu;
+                }
+            }
+            else { RenderOutputs(null); SetRenderBackend(OverlayRenderBackend.Cpu); CpuFrameCount++; }
+            LastCompletedRenderBackend = completedBackend;
+            succeeded = true;
+        }
+        finally
+        {
+            long completed = Stopwatch.GetTimestamp();
+            LastRenderMilliseconds = Stopwatch.GetElapsedTime(started, completed).TotalMilliseconds;
+            _rendering = false;
+            if (observer is not null) observer(new(started, completed, succeeded, outputs!.AsReadOnly()));
+        }
+
+        void RenderOutputs(GpuRenderContext? gpu)
+        {
             foreach (var pair in _windows)
             {
                 long outputStarted = observer is null ? 0 : Stopwatch.GetTimestamp();
-                var canvas = pair.Buffer.Surface.Canvas;
+                var surface = gpu?.SurfaceFor(pair.Buffer) ?? pair.Buffer.Surface;
+                var canvas = surface.Canvas;
                 canvas.RestoreToCount(1);
                 canvas.ResetMatrix();
                 canvas.Clear(SKColors.Transparent);
                 canvas.Save();
                 canvas.Translate(-pair.Monitor.Bounds.Left, -pair.Monitor.Bounds.Top);
-                Draw?.Invoke(pair.Buffer.Surface);
+                Draw?.Invoke(surface);
                 canvas.RestoreToCount(1);
                 canvas.Flush();
+                if (gpu is not null) gpu.ReadPixels(surface, pair.Buffer);
                 long presentStarted = observer is null ? 0 : Stopwatch.GetTimestamp();
                 pair.Buffer.Present(pair.Display.Handle, pair.Monitor.Bounds);
                 PresentedFrameCount++;
@@ -332,14 +348,6 @@ public sealed partial class OverlayHost : IDisposable
                         Stopwatch.GetElapsedTime(presentStarted, completed).TotalMilliseconds));
                 }
             }
-            succeeded = true;
-        }
-        finally
-        {
-            long completed = Stopwatch.GetTimestamp();
-            LastRenderMilliseconds = Stopwatch.GetElapsedTime(started, completed).TotalMilliseconds;
-            _rendering = false;
-            if (observer is not null) observer(new(started, completed, succeeded, outputs!.AsReadOnly()));
         }
     }
 
@@ -347,7 +355,9 @@ public sealed partial class OverlayHost : IDisposable
     {
         if (_disposed) return;
         CheckThread();
+        CancelPendingCapture();
         EndDropReceptionCore();
+        _focusTransitions.EndSession();
         DisposeKeyboardIsolation();
         if (_foregroundHook != 0) { UnhookWinEvent(_foregroundHook); _foregroundHook = 0; }
         CancelPointer();
@@ -360,6 +370,7 @@ public sealed partial class OverlayHost : IDisposable
         }
         DestroyPairs();
         DisposeImageDrops();
+        ReleaseGpuRenderer();
         if (_control.Handle != 0) DestroyWindow(_control.Handle);
         _disposed = true;
     }
@@ -394,6 +405,7 @@ public sealed partial class OverlayHost : IDisposable
 
     private void RebuildMonitors()
     {
+        if (_captureActive) CancelPendingCapture();
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         EndDropReceptionCore();
         CancelPointer();
@@ -434,6 +446,11 @@ public sealed partial class OverlayHost : IDisposable
 
     private void DestroyPairs()
     {
+        if (_gpuRenderer is { } gpu)
+        {
+            try { using (gpu.MakeCurrent()) gpu.ReleaseSurfaces(); }
+            catch (Exception ex) { FailGpu(ex); }
+        }
         foreach (var pair in _windows)
         {
             RevokeImageDropTarget(pair.Input.Handle);
@@ -469,13 +486,19 @@ public sealed partial class OverlayHost : IDisposable
         if (_disposed) return;
         if (_captureActive)
         {
-            var foreground = GetForegroundWindow();
-            if (_captureForeground != 0 && foreground != 0 && foreground != _captureForeground && !IsForegroundFromThisProcess())
-                _captureFocusMoved = true;
+            // Use the event's own target: reading only the latest foreground would miss
+            // an external switch followed by a return before this callback is delivered.
+            if (_captureOperation is { } capture)
+            {
+                bool ownProcessWindow = GetWindowThreadProcessId(hwnd, out var process) != 0 && process == Environment.ProcessId;
+                capture.ObserveForeground(hwnd, eventTime, ownProcessWindow);
+                ReportCapture(capture, "ForegroundEvent", capture.Reason, eventForeground: hwnd, eventTime: eventTime);
+            }
+            if (IsEditing && !IsForegroundFromThisProcess()) EndEditingAfterFocusLoss();
             return;
         }
-        if (!IsEditing || _focusCheckPosted) return;
-        _focusCheckPosted = PostMessageW(ControlHandle, WmValidateEditingFocus, 0, 0);
+
+        PostEditingFocusValidation();
     }
 
     private void EndEditingAfterFocusLoss()
@@ -496,11 +519,20 @@ public sealed partial class OverlayHost : IDisposable
         if (hadCapture || hadButton) RaisePointer(OverlayPointerKind.Cancel, OverlayMouseButton.None);
     }
 
-    private void RaisePointer(OverlayPointerKind kind, OverlayMouseButton button, int wheel = 0, OverlayPoint? position = null)
+    private void RaisePointer(OverlayPointerKind kind, OverlayMouseButton button, int wheel = 0, OverlayPoint? position = null,
+        uint? messageTime = null)
     {
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         GetCursorPos(out var point);
-        Pointer?.Invoke(new(kind, position ?? new(point.X, point.Y), button, CurrentModifiers, wheel));
+        var pointerPosition = position ?? new(point.X, point.Y);
+        // Suppressed keys do not share the native mouse queue. Reading GetKeyState here
+        // can see an older private packet, while the latest hook snapshot can include a
+        // newer release. A button press uses its exact hook snapshot (including same-ms
+        // ordering); continuous movement resolves its native event-time history.
+        var modifiers = _keyboardIsolation is { } isolation && isolation.TryGetPointerModifiers(messageTime ?? unchecked((uint)GetMessageTime()), pointerPosition, button,
+            kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick, out var isolated)
+            ? isolated : CurrentModifiers;
+        Pointer?.Invoke(new(kind, pointerPosition, button, modifiers, wheel));
     }
 
     private static OverlayPoint MessagePosition(WindowState state, uint message, nint lParam)
@@ -534,13 +566,24 @@ public sealed partial class OverlayHost : IDisposable
             if (HandleKeyboardControlMessage(message, wParam)) return 0;
             if (message == WmValidateEditingFocus)
             {
-                _focusCheckPosted = false;
-                if (IsEditing && !IsForegroundFromThisProcess()) EndEditingAfterFocusLoss();
+                long session = unchecked((long)wParam);
+                if (_focusCheckSession == session) _focusCheckSession = 0;
+                ValidateEditingFocus(session);
+                return 0;
+            }
+            if (message == CompleteFocusTransitionMessage)
+            {
+                CompleteFocusTransition(new(unchecked((long)wParam), unchecked((long)lParam)));
                 return 0;
             }
             if (message == WmHotkey)
             {
-                if (_captureActive) return 0;
+                if (_captureActive)
+                {
+                    if ((int)wParam == ToggleHotkeyId) CancelPendingCapture();
+                    else if ((int)wParam == HideHotkeyId) SetVisible(false);
+                    return 0;
+                }
                 if ((int)wParam == ToggleHotkeyId) ToggleRequested?.Invoke();
                 else if ((int)wParam == HideHotkeyId) HideRequested?.Invoke();
                 return 0;
@@ -553,6 +596,7 @@ public sealed partial class OverlayHost : IDisposable
                 return 0;
             }
         }
+        if (message == WmDpiChanged && state.Handle == _captureGeometryWindow) return 0;
         if (message == WmDisplayChange || message == WmDpiChanged)
         {
             if (!_refreshPosted && !_disposed)
@@ -577,9 +621,10 @@ public sealed partial class OverlayHost : IDisposable
         }
         if (message is WmCancelMode or WmKillFocus || (message == WmCaptureChanged && !_releasingCapture))
         {
+            if (_captureActive && message == WmCaptureChanged && !_releasingCapture)
+                _captureOperation?.Cancel(CaptureRestoreStatus.Cancelled, "PointerCaptureLost");
             CancelPointer();
-            if (message == WmKillFocus && IsEditing && !_focusCheckPosted)
-                _focusCheckPosted = PostMessageW(ControlHandle, WmValidateEditingFocus, 0, 0);
+            if (message == WmKillFocus) PostEditingFocusValidation();
             return 0;
         }
         if (!IsEditing) return DefWindowProcW(state.Handle, message, wParam, lParam);

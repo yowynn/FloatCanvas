@@ -40,11 +40,16 @@ public sealed class RecoveryStore
         return archived;
     }, ct);
     public Task SaveAsync(WorkspaceState state, AssetLibrary assets, CancellationToken ct = default)
+        => SaveWithPreviewAsync(state, assets, null, ct);
+
+    /// <summary>Saves a workspace and its optional transparent overlay thumbnail in one atomic package. Invalid previews are omitted.</summary>
+    public Task SaveWithPreviewAsync(WorkspaceState state, AssetLibrary assets, byte[]? previewPng, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(state); ArgumentNullException.ThrowIfNull(assets);
         ct.ThrowIfCancellationRequested();
         var references = state.LiveDocument.ReferencedAssets.Concat(state.CaptureDocument?.ReferencedAssets ?? []);
         var resources = PackageCodec.ResolveResources(references, assets);
+        byte[]? preview = RecoveryPreview.Snapshot(previewPng);
         return InOrderAsync(async () =>
         {
             Directory.CreateDirectory(DirectoryPath);
@@ -58,10 +63,13 @@ public sealed class RecoveryStore
                 }
                 catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or System.Text.Json.JsonException or NotSupportedException) { }
             }
-            await PackageCodec.SaveAsync(CurrentPath, "recovery", state, resources, ct).ConfigureAwait(false);
+            await PackageCodec.SaveAsync(CurrentPath, "recovery", state, resources, ct, preview).ConfigureAwait(false);
             return true;
         }, ct);
     }
+    /// <summary>Reads a bounded thumbnail only when the requested generation is recoverable; it never substitutes a different generation's preview.</summary>
+    public Task<byte[]?> LoadPreviewAsync(bool fromBackup = false, CancellationToken ct = default) =>
+        InOrderAsync(() => PackageCodec.LoadRecoveryPreviewAsync(fromBackup ? BackupPath : CurrentPath, ct), ct);
     public Task<RecoveredWorkspace?> LoadAsync(CancellationToken ct = default) => InOrderAsync<RecoveredWorkspace?>(async () =>
     {
             if (!File.Exists(CurrentPath) && !File.Exists(BackupPath)) return null;

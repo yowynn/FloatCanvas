@@ -146,7 +146,7 @@ internal sealed class InspectorWindow : Wpf.Window
         footer.Children.Add(applyRow);
         status.Margin = new(0, 6, 0, 0);
         footer.Children.Add(status);
-        Closing += (_, e) => { e.Cancel = true; CancelScrub(); CloseColorPickers(); Hide(); Dismissed?.Invoke(); };
+        Closing += (_, e) => { e.Cancel = true; CancelScrub(); CloseColorPickers(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         IsVisibleChanged += (_, _) => { if (!IsVisible) CloseColorPickers(); };
         PreviewKeyDown += (_, e) =>
         {
@@ -531,7 +531,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private void SetPropertyVisibility(CanvasElement? element)
     {
         propertyPanel.Visibility = element is null ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
-        bool image = element?.Kind is ElementKind.Image or ElementKind.LivePixelate, text = element?.Kind == ElementKind.Text, number = element?.Kind == ElementKind.Number;
+        bool image = element?.Kind == ElementKind.Image || element is not null && ElementGeometry.IsLiveEffect(element.Kind), text = element?.Kind == ElementKind.Text, number = element?.Kind == ElementKind.Number;
         textSection.Visibility = text || number ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
         {
@@ -597,7 +597,7 @@ internal sealed class InspectorWindow : Wpf.Window
         if (arrowStyle.IsDropDownOpen) { arrowStyle.IsDropDownOpen = false; return; }
         foreach (var picker in new[] { startArrow, endArrow, strokePattern })
             if (picker.IsDropDownOpen) { picker.IsDropDownOpen = false; return; }
-        Hide(); Dismissed?.Invoke();
+        SessionWindowCoordinator.Hide(this); Dismissed?.Invoke();
     }
     private bool RouteCommandKey(int key, bool control, bool textInput)
     {
@@ -630,7 +630,7 @@ internal sealed class InspectorWindow : Wpf.Window
         {
             ElementKind.Freehand => L.Get("Editor.ElementKind.Freehand"), ElementKind.Highlighter => L.Get("Editor.ElementKind.Highlighter"), ElementKind.Line => L.Get("Editor.ElementKind.Line"), ElementKind.Arrow => L.Get("Editor.ElementKind.Arrow"),
             ElementKind.DoubleArrow => L.Get("Editor.ElementKind.DoubleArrow"), ElementKind.Rectangle => L.Get("Editor.ElementKind.Rectangle"), ElementKind.RoundedRectangle => L.Get("Editor.ElementKind.RoundedRectangle"),
-            ElementKind.Ellipse => L.Get("Editor.ElementKind.Ellipse"), ElementKind.Triangle => L.Get("Editor.ElementKind.Triangle"), ElementKind.Symbol => L.Get("Editor.ElementKind.Symbol"), ElementKind.Text => L.Get("Editor.ElementKind.Text"), ElementKind.Number => L.Get("Editor.ElementKind.Number"), ElementKind.Image => L.Get("Editor.ElementKind.Image"), ElementKind.LivePixelate => L.Get("Feedback4.Effect.LivePixelate"), _ => L.Get("Editor.ElementKind.Unknown")
+            ElementKind.Ellipse => L.Get("Editor.ElementKind.Ellipse"), ElementKind.Triangle => L.Get("Editor.ElementKind.Triangle"), ElementKind.Symbol => L.Get("Editor.ElementKind.Symbol"), ElementKind.Text => L.Get("Editor.ElementKind.Text"), ElementKind.Number => L.Get("Editor.ElementKind.Number"), ElementKind.Image => L.Get("Editor.ElementKind.Image"), ElementKind.LivePixelate => L.Get("Feedback4.Effect.LivePixelate"), ElementKind.LiveBlur => L.Get("Editor.ElementKind.LiveBlur"), _ => L.Get("Editor.ElementKind.Unknown")
         };
         if (element.Kind == ElementKind.Number) return L.Format("Inspector.NumberName", name, element.Number);
         if (element.Kind != ElementKind.Text) return name;

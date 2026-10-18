@@ -51,7 +51,7 @@ internal sealed class LayersWindow : Wpf.Window
         AppWindowChrome.Apply(this);
         AppWindowChrome.SetHelp(this, L.Get("Layers.Help"), L.Get("Layers.HelpWithRename"));
         layers.SelectionChanged += (_, _) => SelectRows();
-        Closing += (_, e) => { e.Cancel = true; CommitRename(); CancelDrag(); Hide(); Dismissed?.Invoke(); };
+        Closing += (_, e) => { e.Cancel = true; CommitRename(); CancelDrag(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         Deactivated += (_, _) => { CommitRename(); CancelDrag(); };
         PreviewKeyDown += (_, e) =>
         {
@@ -62,7 +62,7 @@ internal sealed class LayersWindow : Wpf.Window
             { BeginRename((Guid)((Controls.ListBoxItem)layers.SelectedItem).Tag); e.Handled = true; return; }
             if (key == Input.Key.Escape)
             {
-                if (dragIds is not null) CancelDrag(); else { Hide(); Dismissed?.Invoke(); }
+                if (dragIds is not null) CancelDrag(); else { SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); }
                 e.Handled = true; return;
             }
             bool ctrl = (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0;

@@ -40,8 +40,8 @@ internal static class AppDialog
                 Add("Dialog.OK", MessageBoxResult.OK, true); Add("Dialog.Cancel", MessageBoxResult.Cancel, cancel: true); break;
             default: Add("Dialog.OK", MessageBoxResult.OK, true); break;
         }
-        window.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { window.Close(); e.Handled = true; } };
-        window.ShowDialog();
+        window.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { SessionWindowCoordinator.Close(window); e.Handled = true; } };
+        SessionWindowCoordinator.ShowModal(window);
         return result;
     }
 }

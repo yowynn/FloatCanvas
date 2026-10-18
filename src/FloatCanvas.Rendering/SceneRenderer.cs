@@ -18,8 +18,12 @@ public sealed partial class SceneRenderer : IDisposable
     private static readonly SKSamplingOptions Nearest = new(SKFilterMode.Nearest);
     public long CacheByteLimit { get; set; } = 256L * 1024 * 1024;
     public long ImageDecodeCount { get; private set; }
+    public long AnimationFrameDecodeCount { get; private set; }
+    /// <summary>Caller-owned visible playback time. A fixed value freezes all images for an export.</summary>
+    public TimeSpan AnimationTime { get; set; }
+    public TimeSpan? NextAnimationDelay { get; private set; }
     public long PathBuildCount { get; private set; }
-    public long CachedImageBytes => _images.Values.Sum(e => Bytes(e.Image)) + _effects.Values.Sum(e => Bytes(e.Image));
+    public long CachedImageBytes => _images.Values.Sum(e => e.CachedBytes) + _effects.Values.Sum(e => e.CachedBytes);
 
     /// <summary>Preserves the caller's matrix and clip. Viewport is in document coordinates.</summary>
     public void Draw(SKCanvas canvas, SceneDocument document, AssetLibrary assets, bool includeBackground = true)
@@ -51,8 +55,8 @@ public sealed partial class SceneRenderer : IDisposable
         finally { _drawingDocument = previousDocument; canvas.RestoreToCount(saved); EndFrame(); }
     }
 
-    internal void BeginFrame() { ObjectDisposedException.ThrowIf(_disposed, this); ClearLiveEffectImages(); _clock++; }
-    internal void EndFrame() { TrimCaches(); ClearLiveEffectImages(); }
+    internal void BeginFrame() { ObjectDisposedException.ThrowIf(_disposed, this); ClearLiveEffectImages(); NextAnimationDelay = null; _clock++; }
+    internal void EndFrame() { ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); }
     internal void DrawBackground(SKCanvas canvas, SceneDocument document, AssetLibrary assets)
     {
         if (document.Background is { Visible: true } background) DrawElement(canvas, background, assets);
@@ -63,7 +67,7 @@ public sealed partial class SceneRenderer : IDisposable
         for (int i = first; i < endExclusive; i++)
             if (elements[i].Visible)
             {
-                if (elements[i].Kind == ElementKind.LivePixelate) DrawLivePixelate(canvas, elements, i, assets);
+                if (ElementGeometry.IsLiveEffect(elements[i].Kind)) DrawLivePixelate(canvas, elements, i, assets);
                 else DrawElement(canvas, elements[i], assets);
             }
     }
@@ -248,7 +252,7 @@ public sealed partial class SceneRenderer : IDisposable
     {
         if (element.AssetId is null || element.Width <= 0 || element.Height <= 0) return;
         var original = GetImage(element.AssetId, assets);
-        var image = element.Effects.Count == 0 ? original : GetEffectImage(element, original);
+        var image = element.Effects.Count == 0 ? original : GetEffectImage(canvas, element, original, _images[element.AssetId].FrameIndex);
         RectD crop = (element.ImageCrop ?? new RectD(0, 0, 1, 1)).Normalize().Intersect(new(0, 0, 1, 1));
         if (crop.IsEmpty) return;
         var source = new SKRect((float)(crop.Left * image.Width), (float)(crop.Top * image.Height), (float)(crop.Right * image.Width), (float)(crop.Bottom * image.Height));
@@ -258,21 +262,74 @@ public sealed partial class SceneRenderer : IDisposable
 
     private SKImage GetImage(string assetId, AssetLibrary assets)
     {
-        if (_images.TryGetValue(assetId, out var cached)) { cached.Used = _clock; return cached.Image; }
-        var decoded = AssetImport.Decode(assets.Get(assetId).Data.Span);
-        _images.Add(assetId, new(decoded, _clock));
-        ImageDecodeCount++;
-        return decoded;
+        var entry = GetImageEntry(assetId, assets); entry.Used = _clock;
+        if (entry.Playback is { } playback)
+        {
+            if (playback.Select(AnimationTime)) AnimationFrameDecodeCount++;
+            if (playback.NextDelay is { } delay && (NextAnimationDelay is null || delay < NextAnimationDelay)) NextAnimationDelay = delay;
+        }
+        return entry.Image;
     }
 
-    private SKImage GetEffectImage(CanvasElement element, SKImage original)
+    private ImageEntry GetImageEntry(string id, AssetLibrary assets)
     {
+        if (_images.TryGetValue(id, out var entry)) return entry;
+        var bytes = assets.Get(id).Data.Span;
+        var playback = AnimatedImage.TryCreate(bytes);
+        entry = playback is null ? new(AssetImport.Decode(bytes), _clock) : new(playback, _clock);
+        _images.Add(id, entry); ImageDecodeCount++; return entry;
+    }
+
+    /// <summary>Examines animation metadata, without decoding every frame or changing document state.</summary>
+    public bool HasAnimatedImages(SceneDocument document, AssetLibrary assets)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return VisibleAnimations(document, assets).Any();
+    }
+
+    /// <summary>Whole-scene metadata scheduling, independent of monitor draw order and without decoding pixels.</summary>
+    public TimeSpan? GetNextAnimationDelay(SceneDocument document, AssetLibrary assets, TimeSpan time)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TimeSpan? next = null;
+        foreach (var playback in VisibleAnimations(document, assets))
+            if (playback.NextDelayAt(time) is { } delay && (next is null || delay < next)) next = delay;
+        return next;
+    }
+
+    private IEnumerable<AnimatedImage> VisibleAnimations(SceneDocument document, AssetLibrary assets)
+    {
+        IEnumerable<CanvasElement> images = document.LayerOpacity > 0 ? document.Elements : [];
+        if (document.Background is { } background) images = images.Prepend(background);
+        foreach (var element in images)
+            if (VisibleAnimation(element, document.Viewport, assets) is { } playback)
+                yield return playback;
+    }
+
+    internal (int First, int Last) AnimatedElementRange(SceneDocument document, AssetLibrary assets)
+    {
+        int first = -1, last = -1;
+        if (document.LayerOpacity > 0)
+            for (int i = 0; i < document.Elements.Count; i++)
+                if (VisibleAnimation(document.Elements[i], document.Viewport, assets) is not null)
+                { if (first < 0) first = i; last = i; }
+        return (first, last);
+    }
+
+    private AnimatedImage? VisibleAnimation(CanvasElement element, RectD viewport, AssetLibrary assets) =>
+        element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
+        ElementGeometry.Bounds(element, includeStroke: false).Intersects(viewport) && element.AssetId is { } id &&
+        AnimatedImage.MayAnimate(assets.Get(id).Data.Span) ? GetImageEntry(id, assets).Playback : null;
+
+    private SKImage GetEffectImage(SKCanvas destination, CanvasElement element, SKImage original, int sourceFrame)
+    {
+        bool gpu = destination.Context is not null;
         var snapshots = element.Effects.Select(EffectSnapshot.From).ToArray();
-        if (_effects.TryGetValue(element.Id, out var cached) && cached.AssetId == element.AssetId && cached.Effects.SequenceEqual(snapshots))
+        if (_effects.TryGetValue(element.Id, out var cached) && cached.IsGpu == gpu && cached.AssetId == element.AssetId && cached.SourceFrame == sourceFrame && cached.Effects.SequenceEqual(snapshots))
         { cached.Used = _clock; return cached.Image; }
         if (cached is not null) { _effects.Remove(element.Id); cached.Dispose(); }
-        using var surface = SKSurface.Create(new SKImageInfo(original.Width, original.Height, SKColorType.Bgra8888, SKAlphaType.Premul))
-            ?? throw new InvalidOperationException(L.Get("Images.EffectBufferFailed"));
+        using var surface = CreateIntermediateSurface(destination,
+            new SKImageInfo(original.Width, original.Height, SKColorType.Bgra8888, SKAlphaType.Premul), L.Get("Images.EffectBufferFailed"));
         var canvas = surface.Canvas;
         canvas.Clear(SKColors.Transparent);
         canvas.DrawImage(original, 0, 0, Nearest);
@@ -305,7 +362,8 @@ public sealed partial class SceneRenderer : IDisposable
                     double amount = Math.Clamp(effect.Amount, 1, 1024);
                     int width = Math.Max(1, (int)Math.Ceiling(region.Width / amount));
                     int height = Math.Max(1, (int)Math.Ceiling(region.Height / amount));
-                    using var small = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul))!;
+                    using var small = CreateIntermediateSurface(canvas,
+                        new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul), L.Get("Images.EffectBufferFailed"));
                     small.Canvas.Clear(SKColors.Transparent);
                     small.Canvas.DrawImage(before, region, new SKRect(0, 0, width, height), Linear);
                     using var pixels = small.Snapshot();
@@ -314,7 +372,7 @@ public sealed partial class SceneRenderer : IDisposable
             }
             finally { canvas.RestoreToCount(saved); }
         }
-        var entry = new EffectEntry(element.AssetId!, snapshots, surface.Snapshot(), _clock);
+        var entry = new EffectEntry(element.AssetId!, sourceFrame, snapshots, surface.Snapshot(), _clock, gpu);
         _effects[element.Id] = entry;
         return entry.Image;
     }
@@ -376,15 +434,23 @@ public sealed partial class SceneRenderer : IDisposable
             _points.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(e.Points));
         public void Dispose() { Path.Dispose(); patternedStroke?.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
     }
-    private class ImageEntry(SKImage image, long used) : IDisposable
+    private class ImageEntry : IDisposable
     {
-        public SKImage Image { get; } = image;
-        public long Used { get; set; } = used;
-        public void Dispose() => Image.Dispose();
+        private readonly SKImage? image;
+        public AnimatedImage? Playback { get; }
+        public SKImage Image => Playback?.Image ?? image!;
+        public int FrameIndex => Playback?.FrameIndex ?? -1;
+        public long CachedBytes => Playback?.CachedBytes ?? Bytes(image!);
+        public long Used { get; set; }
+        public ImageEntry(SKImage image, long used) { this.image = image; Used = used; }
+        public ImageEntry(AnimatedImage playback, long used) { Playback = playback; Used = used; }
+        public void Dispose() { image?.Dispose(); Playback?.Dispose(); }
     }
-    private sealed class EffectEntry(string assetId, EffectSnapshot[] effects, SKImage image, long used) : ImageEntry(image, used)
+    private sealed class EffectEntry(string assetId, int sourceFrame, EffectSnapshot[] effects, SKImage image, long used, bool isGpu) : ImageEntry(image, used)
     {
+        public bool IsGpu { get; } = isGpu;
         public string AssetId { get; } = assetId;
+        public int SourceFrame { get; } = sourceFrame;
         public EffectSnapshot[] Effects { get; } = effects;
     }
     private readonly record struct EffectSnapshot(ImageEffectKind Kind, RectD Bounds, double Amount, uint Color)

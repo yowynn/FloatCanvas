@@ -2,7 +2,7 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers the Windows x64 preview **0.2.0-preview.2**. Earlier versions may have different interfaces and features; check the [changelog](../CHANGELOG.md). Save important work as a project file.
+This guide covers the Windows x64 preview **0.2.0-preview.3**. Earlier versions may have different interfaces and features; check the [changelog](../CHANGELOG.md). Save important work as a project file.
 
 A drag that starts on the canvas stays with the canvas, even when it crosses the toolbar or ends on a button. Buttons are not triggered on release. A gesture that starts on the toolbar stays with the toolbar and does not draw on the canvas.
 
@@ -19,7 +19,7 @@ If a compatible runtime is missing, the launcher displays a .NET installation pr
 1. Choose **Start drawing** on the welcome screen, or press `` Ctrl+` `` to enter edit mode.
 2. Press `` Ctrl+` `` again for pass-through. The toolbar disappears, annotations stay visible, and the application underneath receives input again.
 
-Each startup shows the welcome screen in the middle of the screen and opens a blank canvas without automatically showing earlier annotations or captures. Closing it, choosing Start drawing or entering edit mode with the toggle shortcut dismisses it for this session. To continue earlier work, click the app icon on the left of the toolbar and choose **File → Restore workspace history…**, or use the same command in the system tray. Restoration stays in pass-through; use the toggle shortcut to resume editing.
+Each startup shows the welcome screen in the middle of the screen and opens a blank canvas without automatically showing earlier annotations or captures. Closing it, choosing Start drawing or entering edit mode with the toggle shortcut dismisses it for this session. To continue earlier work, click the app icon on the left of the toolbar and choose **File → Restore workspace history…**, or use the same command in the system tray. Restoration keeps the mode you started in: continue editing immediately when restoring from edit mode, or remain in pass-through when restoring from pass-through.
 
 The welcome screen labels the shortcuts **Drawing mode / pass-through mode** and **Hide canvas / Show canvas**, with the version and an author credit containing a red heart below. Hiding keeps your content. Canvas visibility is independent of edit/pass-through mode: entering edit mode does not reveal a hidden canvas, and showing the canvas keeps the current mode. Tool windows remain usable while the canvas is hidden, but new content cannot be added.
 
@@ -30,6 +30,8 @@ The default drawing scope is **Primary screen only**, limiting annotations and c
 Open **Main menu → Settings…** and change **Drawing scope** to **All screens** for the next launch. The startup options `--primary-screen` or `--all-screens` override the scope for that run without changing the saved preference; do not use both together. Complete cross-screen and mixed-DPI behavior is still being refined. Objects outside the active screen keep their coordinates; use **Main menu → Canvas → Move annotations into view** to bring them back.
 
 In edit mode, FloatCanvas receives normal window keyboard and mouse input. An unmapped letter should not be sent to the application underneath. Switching to another application hides editing tools and enters pass-through without removing annotations. If FloatCanvas cannot acquire the required input focus, it stays in pass-through and explains why.
+
+Switching between FloatCanvas windows, completing a rename or closing a panel keeps edit mode and the toolbar. Closing a child panel on its own returns to an available parent window. Clicking the canvas closes related temporary child panels and unpinned panels together, then handles that canvas action normally. Pinned panels stay open. Modal dialogs, such as Rename or Delete confirmation, require confirmation or cancellation before drawing can continue.
 
 Uncommitted text is retained when focus moves away and is restored when you resume editing the same canvas. Explicit cancellation or switching to pass-through closes the text editor.
 
@@ -51,6 +53,12 @@ Uncommitted text is retained when focus moves away and is restored when you resu
 | `Ctrl+O` | Open a project |
 
 Open **Main menu → Settings…** to change shortcuts or the light/dark theme. A registration conflict detected when saving displays a reason and preserves the previous working shortcut. Windows or another application may intercept a combination before the recorder receives it; choose another combination if the field does not change. The system tray also offers editing, visibility, settings and exit commands.
+
+**Prefer GPU acceleration** is enabled by default, including for existing settings. Live blur, pixelation and image blur/pixelation filters trigger the GPU path. When selected, the GPU renders that frame's entire canvas—shapes, text, images and filters—not just one filter. Light canvases, such as ordinary annotations and small animations, use CPU caching to avoid extra readback overhead. Turn the option off to use the CPU for all rendering. Save to apply it without restarting; unavailable or failed GPU rendering falls back to the CPU. Switching leaves canvas content intact.
+
+Settings shows the last frame's actual backend, its selection reason, the available GPU, the last draw time and GPU/CPU frame counts for this run. Idle canvases do not need continuous frames, and viewing the status does not trigger rendering. Detailed failure reasons are available in `diagnostics.log`.
+
+GPU drawing does not mean the entire application runs only on the GPU. Image and animation decoding, desktop-capture readback and final window submission still involve CPU work; the GPU canvas also reads back into a window pixel buffer. Forcing light scenes onto this path may be slower. Performance gains depend on the device and canvas content.
 
 Toggle shortcuts use Ctrl/Alt/Shift combinations. Win and system navigation combinations remain available to Windows; `Ctrl+Alt+Esc` is reserved for emergency input release. An unresponsive editing UI or interrupted input ownership returns to pass-through; earlier drawing keys are not replayed into the application underneath.
 
@@ -84,10 +92,10 @@ The App's language selection applies to its own toolbar, menus, settings, messag
 
 The app icon is on the left, followed by two rows aligned in columns:
 
-- **Upper row:** Select and Eraser, then ten entries: Freehand, Highlighter, Line, Rectangle, Ellipse, Text, Number, Symbol, Emoji and More. More provides pixelation and other tools; Text and Number have separate entries.
+- **Upper row:** Select and Eraser, then ten entries: Freehand, Highlighter, Line, Rectangle, Ellipse, Text, Number, Symbol, Emoji and More. More contains only Blur and Pixelate; Text and Number have separate entries.
 - **Lower row:** Stamp library and New stamp, then square stamp slots `1`–`0` beneath the ten drawing entries, with a status readout on the right. Empty slots have faint outlines, assigned slots have slightly stronger muted outlines, and the active shortcut stamp uses a blue outline.
 
-The upper-right controls provide undo/redo, import, capture, properties, layers, Clear canvas, canvas opacity, visibility and Done. Open pixelation and other effects through More. The opacity slider occupies two button widths. The status readout follows the light/dark theme, truncates long messages and scrolls on hover. The toolbar starts centered on the primary screen with the crown at the screen's top edge. Window positions, sizes and toolbar expansion are remembered for the current session and reset on restart; custom shortcuts and other preferences remain saved.
+The upper-right controls provide undo/redo, import, capture, crop, properties, layers, Clear canvas, canvas opacity, visibility and Done. Crop follows import and capture and is enabled only for one selected editable image. An open eye means the canvas is visible; a closed eye with an amber accent means it is hidden, and the hover tooltip describes the next action. Open Blur and Pixelate through More. The opacity slider occupies two button widths. The status readout follows the light/dark theme, truncates long messages and scrolls on hover. The toolbar starts centered on the primary screen with the crown at the screen's top edge. Window positions, sizes and toolbar expansion are remembered for the current session and reset on restart; custom shortcuts and other preferences remain saved.
 
 - **Click the app icon:** open the main menu. A single click waits for the system double-click interval to avoid conflicting actions; right-click opens the menu immediately.
 - **Double-click the app icon:** expand/collapse the toolbar. The collapsed toolbar keeps only the icon.
@@ -97,13 +105,15 @@ The upper-right controls provide undo/redo, import, capture, properties, layers,
 
 The options window uses the current tool name as its title, with a short description and parameters alongside presets. With the toolbar expanded, it initially opens above or below the bar. Drag it elsewhere afterwards; moving or collapsing the toolbar does not move or close it. When the toolbar is collapsed, press the current tool key again to open options near the pointer, within the screen bounds. An unpinned window closes when you click the canvas or another interface; pin it to keep drawing with options visible. Escape closes the color child panel first, then an unpinned tool window. Entering pass-through hides editing panels.
 
-Lines share independent start/end arrowheads for plain, single-arrow and double-arrow combinations, with solid, dashed or dotted strokes. Set a rectangle's corner radius for rounded corners; enable proportional drawing for squares or circles. Symbols include triangles, stars, hearts, checks and crosses with editable colors. The emoji tool provides a gallery and inserts at its configured Size, with precise numeric entry and a larger slider range. Line-pattern and arrowhead choices include diagrams, and stroke width has a thickness preview.
+Lines share independent start/end arrowheads for plain, single-arrow and double-arrow combinations, with solid, dashed or dotted strokes. Set a rectangle's corner radius for rounded corners; enable proportional drawing for squares or circles. Symbols include triangles, stars, hearts, checks and crosses with editable colors. The emoji tool provides a gallery: click to insert at its configured Size, or drag to choose the size for that insertion. Size supports precise numeric entry and a larger slider range. Line-pattern and arrowhead choices include diagrams, and stroke width has a thickness preview.
 
 Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` rectangle, `O` ellipse, `T` text, `N` numbered marker, `S` symbol and `J` emoji. `A` remains an arrow compatibility shortcut; `M` opens More, main-keyboard `-` opens the stamp library, and `+` (the `=/+` key) saves the selection as a stamp. While editing text, these letters are treated as text input.
 
 Shortcut hints appear at the upper right of upper-row buttons and lower left of lower-row buttons. Turn off **Show tool shortcut hints** in the main menu or Settings to hide letters, stamp-slot numbers and the `-`/`+` hints together. Shortcuts still work, and the preference is saved across restarts.
 
 Draw lines and arrows by dragging; they have no single-click default length or angle. Rectangles, ellipses and symbols have default width and height: click empty space to create one at that size, centered on the click, or drag to choose its size. Proportional mode or `Shift` creates squares and circles. Enter numeric options directly or drag the corresponding slider. Keys used inside text fields, dropdowns, the color spectrum and sliders operate those controls without switching tools or selecting stamps.
+
+For numbered markers and emoji, a click or slight pointer movement still inserts at the configured size, centered on the click. Drag to preview the size and release to create the object. The starting point forms one corner of the box, and you can drag in any of four directions. The whole object scales proportionally, keeping numbered markers circular and emoji at their original artwork ratio. Dragging changes only the new object, leaves the tool's configured size intact and commits one undo step.
 
 ### Tool presets and colors
 
@@ -130,14 +140,14 @@ Tool options affect newly created elements. Use Properties to change existing el
 - **Rotate:** drag the rotation handle above the selection box. Hold `Shift` to snap in 15° steps.
 - **Line endpoints:** select one line or arrow, then drag an endpoint.
 - **Text:** choose the text tool and click the canvas. Enter multiple lines and choose **Done** or press `Ctrl+Enter`. Double-click text in selection mode to edit it again.
-- **Numbered markers:** click to add and select the next number; hold `Ctrl` to insert from inside an existing selection. The number label stays on one line and shrinks to fit the badge without changing its size or the configured font size. Deleting a marker does not renumber the others.
+- **Numbered markers:** click to add and select the next number at its configured size, or drag to choose its size. The number advances only when placement completes; `Esc` or cancelling a drag does not skip a number. Hold `Ctrl` to create from inside an existing selection. The number label stays on one line and shrinks to fit the badge without changing its size or the configured font size. Deleting a marker does not renumber the others.
 - **Erase:** the eraser removes whole elements. One erase gesture can be undone as one operation.
 
-Shapes, text, numbers and emoji select the newly inserted object so you can move, scale or rotate it without switching tools; clicking empty space creates and selects the next object. Freehand, Highlighter and stamps remain unselected for continuous use. Lines and arrows require a drag to create. Hold `Ctrl` to temporarily hide selection handles and create at an overlapping position.
+Shapes, text, numbers and emoji select the newly inserted object so you can move, scale or rotate it without switching tools; clicking empty space creates and selects the next object. Freehand, Highlighter and stamps remain unselected for continuous use. Lines and arrows require a drag to create. Hold `Ctrl` to temporarily hide selection handles and create at an overlapping position. Mouse-down determines whether the drag creates or adjusts an object; pressing or releasing `Ctrl` during the drag does not switch that action.
 
 Without proportional constraints, rectangles, ellipses and symbols support independent width and height changes. Secondary edits change their actual geometry while retaining stroke width and corner radii, rather than stretching a raster image. Text and numbered markers offer a system-font dropdown with previews.
 
-The Number tool has a starting number and a positive increment. New canvases start at that number. Next number on this canvas is saved independently in the document, can be edited and undone, and is not stored as a global counter in presets or application settings. Font size changes the actual size of new numbered markers.
+The Number tool has a starting number and a positive increment. New canvases start at that number. Next number on this canvas is saved independently in the document, can be edited and undone, and is not stored as a global counter in presets or application settings. Font size changes the size of markers inserted with a click; a dragged marker takes its size from that gesture.
 
 Every basic element remains a selectable object, including freehand lines, text, numbered markers and images.
 
@@ -159,8 +169,10 @@ Stamps reuse artwork you create. Select one or more elements and choose **New st
 
 | Save mode | Placed content |
 | --- | --- |
-| Editable group | Preserve shapes, text, cropped images, styles and transforms; adjust the group together or `Alt`-click a member to edit it |
-| Merge as image | Place one image while retaining editable source objects in the library; choose **Use editable source** to place those original elements again |
+| Editable group | Preserve shapes, text, cropped images, animation, styles and transforms; adjust the group together or `Alt`-click a member to edit it |
+| Merge as image | Merge the current frame into one static image while retaining editable source objects in the library; choose **Use editable source** to place those original elements again |
+
+Editable groups retain the original GIF/animated WebP data. Animation still plays when the library is reopened and the stamp is placed again. Stamp thumbnails and hover previews are static.
 
 Search or page through the library, choose **Use** or double-click a thumbnail, then click the canvas to place it. Each click keeps the saved visual size and relative rotations, centered on the clicked position. No size-drawing gesture is needed, and repeated clicks place further copies. Each placement can be undone separately and leaves the copy unselected. Hover a slot or library entry to see its name, shortcut, larger preview and the preview-to-actual-size ratio. New stamps fill the first empty shortcut slot automatically.
 
@@ -170,40 +182,62 @@ Pin a stamp to a slot labeled `1`–`9` or `0` to select it from the second tool
 
 ## Place, replace and crop images
 
-Press `Ctrl+V` to paste a clipboard image, or choose **Image** to select one or more files. New images are placed at the center of the currently visible canvas area. PNG, JPEG, BMP and WebP are supported; transparent images retain their transparent areas.
+Press `Ctrl+V` to paste a clipboard image, or choose **Image** to select one or more files. New images are placed at the center of the currently visible canvas area. PNG, JPEG, BMP, GIF and WebP are supported. Transparency is retained; GIF and animated WebP retain their original data and play on the canvas.
 
 You can also start dragging an image from a file manager or browser, keep holding it, and press the edit/pass-through shortcut (`` Ctrl+` `` by default) to open the canvas. Release the mouse at the desired position. The image is centered on the drop point; when dropping several images, subsequent images are offset slightly. The entire import can be undone in one step.
 
-The source must provide actual image data or supported image files. A URL or web link alone cannot be imported as an image. Websites and browsers may provide different drag content, so direct dragging is not guaranteed for every website. If dragging is unavailable, use **Copy image** and paste, or save the image and import the file.
+Dragging or pasting requires actual image data or supported image files. File import, copied/pasted or dropped files, and clipboard sources supplying original GIF/WebP data can retain animation. If the source supplies only PNG or Bitmap data, the result is static and the original animation cannot be recovered. A URL or web link alone is not an image import, and FloatCanvas does not fetch the original image online. If a browser does not provide the original animation, save the file and import it.
+
+Hiding the canvas stops animation refresh; showing it continues playback. Pass-through keeps playback running. Playback does not edit the canvas, add undo steps or trigger recovery saves. Projects, recovery files and internal object copying retain animation data. Snapshots, PNG/JPEG exports and **Merge as image** stamps take one static frame at the time of the operation. Playback controls, playback-position persistence across restarts and animated export are not currently available.
 
 An imported image is a separate object and does not automatically replace the background. Select it to move, rotate, resize or change opacity.
 
 - **Replace source image:** select one image and use **Main menu → Images and effects → Replace selected image…**. Its position, size, crop and effect regions are retained.
-- **Crop image:** select the image, choose **Crop**, and drag the area to keep. The original asset is retained, and cropping can be undone.
-- **Blur / solid redaction:** choose a tool from More or Main menu → Images and effects. When the selection contains exactly one image, effects target that image even if text or shapes are also selected. Drag inside the image and unlock it first if needed. With no images or multiple images selected, a frozen screenshot uses its background; on the live canvas, blur retains an image of that moment and redaction creates a covering shape.
-- **Pixelation:** on the live canvas, choose Pixelate from More and drag a continuously updating screen region. It includes the desktop and FloatCanvas objects below it, even when an image is selected. Move, resize or rotate the region and save it in a project. In frozen screenshots, pixelation remains a static effect on an image or the background.
+- **Crop image:** select only one editable, unlocked image, choose **Crop** after import and capture on the main toolbar, then drag the area to keep. Crop is disabled for no selection, multiple or mixed selections, and locked images; an empty selection does not crop the screenshot background. The original image asset is retained, and cropping can be undone.
+- **Blur / Pixelate:** choose a tool from More and drag a region. On the live canvas it continuously processes the desktop and lower FloatCanvas objects, even when an image is selected. Move, resize or rotate the region, and save it in a project. Moving the region processes content at its new position. The corresponding effects on frozen screenshots and images remain static.
+- **Solid redaction:** open it through **Main menu → Images and effects**; existing shortcuts remain available. It is not listed in More. Image effects transform with their target image; redaction on the live canvas creates a covering shape.
 
-Image cropping works on exactly one unlocked image in the selection. If several images are selected, reduce the selected images to one; unlock it before cropping if necessary.
+Live blur and pixelation require Windows 10 2004 (build 19041) or later to reliably exclude FloatCanvas's own windows. The application's minimum remains Windows 10 1607. Earlier systems create static snapshot effects for new desktop regions and show a notice. Existing live regions use a solid placeholder with a warning, retaining their original editable objects. Frozen-screenshot and image effects are unaffected by this requirement.
 
-Live desktop pixelation requires Windows 10 2004 (build 19041) or later to reliably exclude FloatCanvas's own windows. Earlier systems can still draw, import images and capture the screen. New desktop pixelation uses a static snapshot with a notice and does not continuously follow the desktop. Pixelation, blur and solid redaction on frozen screenshots or images are unaffected by this version requirement. Existing live regions loaded from projects use solid coverage with a warning on earlier systems; the original live objects remain unchanged instead of silently converting project content.
+New live filters prepare a valid screen image before adding an object. Hiding the canvas, switching tools, leaving FloatCanvas or changing the document during preparation cancels insertion. Hiding stops capture; showing resumes from the same canvas's last valid image until a new frame arrives. A different document or display layout does not reuse that cache. Capture failures show a notice and retain a compatible last image when available, otherwise using solid coverage.
 
-On systems that support live pixelation, visible regions update continuously. If desktop capture becomes unavailable, the region is covered by a solid color. Export, image copying and merged stamps use a snapshot taken for that operation; the project retains an editable live region. Static image effects move and transform with their target image. Effects and cropping can be undone.
+Live regions follow new desktop frames, targeting the display refresh rate up to 60 FPS. Actual speed depends on region size, hardware and system scheduling; frame-for-frame synchronization with the underlying application is not guaranteed. Export, image copying and merged stamps take a snapshot for that operation, while the project retains editable live regions. Effects and region transforms can be undone.
 
-**External capture limitation:** while live pixelation is visible, FloatCanvas excludes its display and input surfaces from system capture to avoid sampling its own output. External screenshots may omit other annotations. Use the in-app export for a complete composite; removing or hiding all live regions restores normal capture behavior. This does not resolve the known Windows Snipping Tool window-detection limitation.
+**External capture compatibility:** when the system supports session-local window exclusion, live filters exclude FloatCanvas only from its own capture, leaving visible annotations available to other capture tools. The application checks actual interface availability. Unsupported systems use compatibility capture, with a status message that third-party screenshots may omit the canvas. In that mode, use the in-app export for a complete composite, or remove or hide all live regions before capturing. This does not resolve the known Windows Snipping Tool window-detection limitation.
 
-## Capture and return to the live canvas
+## Capture and place a static snapshot
 
-1. Choose **Capture and edit screen…**. This freezes the desktop into a separate screenshot draft for cropping, redaction and export, while retaining your live annotations. After the desktop freezes, drag to select a capture region. You can also capture the current drawing scope directly from **Main menu → Canvas**.
-2. Continue using the same tools for drawing, images, text and effects. Existing annotations are copied into a separate screenshot draft.
-3. Use **Crop** to change the screenshot region. If an image is selected, cropping applies to that image instead; clear the image selection before cropping the screenshot canvas.
-4. Use **Main menu → File → Export composite image…** for PNG/JPEG, or press `Ctrl+C` with no elements selected to copy the composite result.
-5. Use **Main menu → Canvas → Return to live canvas** to restore the original canvas. **Resume capture draft** reopens the draft.
+Choose the toolbar's **Snapshot** tool or **Main menu → Canvas → Snapshot**. Select a region while the desktop is live. Once you finish, FloatCanvas captures that moment and inserts one static image at its original position and size on the current canvas. It stays on the same canvas, and the desktop outside the region remains live.
 
-Editing a screenshot does not change the original live canvas. Pressing `` Ctrl+` `` during screenshot editing retains the draft, returns to the live canvas and enters pass-through so you do not operate the desktop through a frozen picture.
+Select **Snapshot** again to open its options: selection shape, content source and an optional border. The defaults are a rectangle, background only and no border. These options and the current preset are retained with the tool state.
 
-When restoring a screenshot draft or after a display-layout change, FloatCanvas moves the screenshot view onto the primary screen only if its crop lies completely outside every active drawing screen. If any part remains visible, its position is kept. The original image, crop and committed annotations are unchanged.
+| Selection shape | Operation |
+| --- | --- |
+| Rectangle / ellipse | Drag and release to finish; hold `Shift` to constrain to a square / circle |
+| Freehand lasso | Hold the mouse button and trace an outline; release to close it |
+| Polygon lasso | Click to add vertices and move to preview the next edge; click the first vertex, double-click or press `Enter` to finish, and `Backspace` to remove the last vertex |
 
-If the previous screenshot has unsaved changes, starting another capture offers save as, discard or cancel. A failed capture preserves existing content. System-protected areas may be masked; the App reports this and lets you keep editing the rest of the screenshot.
+Clicking does not create a default-sized snapshot, and selections with no area insert nothing. Self-intersecting lassos use the even-odd fill rule: areas reached by crossing an even number of outline edges remain transparent.
+
+| Content source | Included in the image |
+| --- | --- |
+| Background only | The underlying desktop and applications, without FloatCanvas annotations or tool windows |
+| Background + canvas | The underlying screen composited with currently visible FloatCanvas content |
+| Canvas only (transparent) | FloatCanvas content alone, retaining transparency |
+
+All three sources exclude the toolbar, panels, selection handles and selection outline. Pixels outside a non-rectangular selection remain transparent. In canvas-only mode, live filters use their current image while other empty areas stay transparent. A fully transparent result shows a notice instead of inserting an invisible image.
+
+A black-and-white outline previews the selection without freezing the whole desktop. Pressing `Esc` during selection cancels only that selection and leaves editing active. With no operation in progress, `Esc` still dismisses panels or enters pass-through according to the usual rules. Cancellation, empty selections and capture failures leave existing content intact. System-protected areas may be unavailable; the app reports this.
+
+The new image is selected automatically, while the capture tool stays active for further captures. Move, rotate, resize, crop or delete the image, or undo its insertion in one step. Hold `Ctrl` to start a new selection inside the currently selected object instead of adjusting that object. Optional borders become part of the image and transform with it.
+
+When capturing the background, FloatCanvas retains the current editing and input state while excluding its interface from the result. Some interface surfaces may briefly disappear when necessary and return afterwards; capture does not exit and re-enter drawing. Each request captures the current desktop without reusing the previous snapshot. Static content does not require moving the mouse or changing the screen first.
+
+Capture failures leave existing content intact and retain edit mode while FloatCanvas's input session remains healthy. Switching applications, explicitly leaving edit mode, hiding the canvas or switching/changing the current canvas cancels an in-progress capture without inserting a late image or reclaiming focus. Unexpected failures show the diagnostic log location to help investigate the cause.
+
+Original annotations are always retained. **Background + canvas** and **Canvas only** create static copies; transparent copies placed over the originals may appear darker. Captured images do not follow later changes in the underlying app. Saving the project retains the editable image. Copy the selected image to obtain the snapshot, or export the canvas composite through the File menu.
+
+Older projects and history containing a separate frozen capture draft remain readable, editable and exportable. **Canvas → Return to live canvas** and **Resume capture draft** apply to those older drafts; new captures stay on the live canvas and need no return step. Entering pass-through from an older draft retains it and returns to the live canvas.
 
 ## Save, export and recover
 
@@ -214,11 +248,13 @@ If the previous screenshot has unsaved changes, starting another capture offers 
 | Export transparent annotations | A transparent PNG containing only annotations and images | The export is an image; the current project remains editable |
 | Copy selected objects | Editable FloatCanvas objects plus an interoperable image | Paste in FloatCanvas to keep editing; other apps usually receive an image |
 
-The live canvas and screenshot draft are saved separately. Export does not clear content. Projects retain original images for later editing; use a composite image export when sharing a redacted result.
+New captures are saved as images on the current canvas; older separate capture drafts remain supported. Export does not clear content. Projects retain original images for later editing; use a composite image export when sharing a redacted result.
 
 The current project format is **v2**. The app can still open **v1** projects, while newly saved projects use v2. Older FloatCanvas versions using the v1 format explicitly reject v2 projects, preventing a save that silently loses new information such as groups or stroke patterns. Keep the original v1 file if you need to exchange projects with an older version.
 
-Committed edits trigger a recovery save after about one second. The App waits for pending recovery writes before exiting. Normal startup still uses a blank canvas. Choose **Main menu → File → Restore workspace history…** to select the latest or an earlier workspace and restore its live canvas and capture draft together, in pass-through. Undo history is not retained across restarts.
+Committed edits trigger a recovery save after about one second. The App waits for pending recovery writes before exiting. Normal startup still uses a blank canvas. Choose **Main menu → File → Restore workspace history…** to select the latest or an earlier workspace and restore its live canvas and capture draft together. Restoring, cancelling or a failed restore keeps the edit/pass-through mode you started in. If you switch to another application or explicitly leave edit mode during restoration, FloatCanvas does not reclaim focus. Undo history is not retained across restarts.
+
+The history list shows the save time and a canvas thumbnail to distinguish records with the same name. Thumbnails retain FloatCanvas's transparent annotation layer without capturing the desktop, toolbar or selection handles. Previews are generated on demand for older history without one. If a preview cannot be generated, **No preview** is shown and restoration remains available.
 
 Default data paths:
 
@@ -230,6 +266,10 @@ Default data paths:
 - Per-tool current state and official baselines: `%LOCALAPPDATA%\FloatCanvas\tool-state.json`
 - Recent colors and My swatches: `%LOCALAPPDATA%\FloatCanvas\colors.json`
 - Stamp library: `%LOCALAPPDATA%\FloatCanvas\stamps`
+- Runtime diagnostics: `%LOCALAPPDATA%\FloatCanvas\diagnostics.log`
+- Unhandled exceptions: `%LOCALAPPDATA%\FloatCanvas\errors.log`
+
+If something appears to fail, note the time and steps, and keep `diagnostics.log`; also keep `errors.log` if an unhandled exception occurred. Enter `%LOCALAPPDATA%\FloatCanvas` in File Explorer's address bar to find them. Logs record capture strategy, readiness and frame acquisition, selection bounds, display information, cancellation/failure reasons, versions and exception stacks. Relevant input includes its category, time and whether this app suppressed it, distinguishing trailing key events from actual external actions. Logs do not save keystroke content, continuous pointer trails, canvas images or annotation text; exception details may contain file paths. Each log keeps the current file and two older files, `.1` and `.2`, each limited to 1 MiB. Custom profiles keep logs in their own directory.
 
 When manually restoring a workspace whose latest recovery is damaged, the App tries that workspace's previous version. A read failure is reported without replacing the original file. Exiting a blank startup canvas without editing does not overwrite the earlier recovery. Recovery helps retrieve recent work; save important work as your own project file as well.
 

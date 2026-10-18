@@ -34,6 +34,7 @@ internal static class AppWindowChrome
     private static void ApplyCore(Window window)
     {
         SessionWindowLayout.TrackOwned(window);
+        SessionWindowCoordinator.TrackOwned(window);
         window.Dispatcher.VerifyAccess();
         window.WindowStyle = WindowStyle.None;
         window.UseLayoutRounding = true;
@@ -56,7 +57,7 @@ internal static class AppWindowChrome
         window.Template = template ??= CreateTemplate();
         if ((bool)window.GetValue(AppliedProperty)) return;
         window.SetValue(AppliedProperty, true);
-        window.CommandBindings.Add(new CommandBinding(SystemCommands.CloseWindowCommand, (_, _) => window.Close()));
+        window.CommandBindings.Add(new CommandBinding(SystemCommands.CloseWindowCommand, (_, _) => SessionWindowCoordinator.Close(window)));
         window.CommandBindings.Add(new CommandBinding(SystemCommands.MinimizeWindowCommand, BlockCommand, DisableCommand));
         window.CommandBindings.Add(new CommandBinding(SystemCommands.MaximizeWindowCommand, BlockCommand, DisableCommand));
         window.AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, e) =>

@@ -24,7 +24,9 @@ internal static class ToolOptionsKeyboardRoute
             if (colorPickerOpen()) return;
             int virtualKey = KeyInterop.VirtualKeyFromKey(key);
             if (!ShouldRoute(virtualKey, Keyboard.Modifiers, source)) return;
-            command(virtualKey); e.Handled = true;
+            // Commands may enter a nested modal loop before returning. Consume the
+            // originating key before the dialog receives keyboard focus.
+            e.Handled = true; command(virtualKey);
         };
     }
     internal static bool ShouldRoute(int key, ModifierKeys modifiers, DependencyObject? source)

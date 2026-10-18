@@ -78,6 +78,17 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
 
     public Task<RecoveredWorkspace?> LoadAsync(WorkspaceRecoveryEntry entry, CancellationToken ct = default) => new RecoveryStore(entry.DirectoryPath).LoadAsync(ct);
 
+    public async Task<byte[]?> LoadPreviewAsync(WorkspaceRecoveryEntry entry, CancellationToken ct = default)
+    {
+        var entryStore = new RecoveryStore(entry.DirectoryPath);
+        var bytes = await entryStore.LoadPreviewAsync(ct: ct).ConfigureAwait(false);
+        if (bytes is not null) return bytes;
+        // Older history has no embedded preview. Render its own saved annotations on demand;
+        // do not alter the archive or capture whatever happens to be on the desktop now.
+        var restored = await entryStore.LoadAsync(ct).ConfigureAwait(false);
+        return restored is null ? null : WorkspacePreview.Render(restored.State.LiveDocument, restored.Assets);
+    }
+
     private static string ContentFingerprint(WorkspaceState workspace)
     {
         var content = workspace.Clone();

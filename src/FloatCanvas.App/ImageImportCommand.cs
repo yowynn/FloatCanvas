@@ -21,7 +21,7 @@ internal static class ImageImportCommand
 
     internal static void Insert(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD placement, bool replace = false, PointD? dropCenter = null)
     {
-        var resources = images.Select(image => (Image: image, Id: target.Assets.Add(image.PngBytes))).ToArray();
+        var resources = images.Select(image => (Image: image, Id: target.Assets.Add(image.PngBytes, image.MediaType))).ToArray();
         target.Execute(replace ? L.Get("History.ReplaceImage") : L.Get("Image.ImportTitle"), document =>
         {
             if (replace)

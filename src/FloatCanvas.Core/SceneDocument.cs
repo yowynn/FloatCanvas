@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace FloatCanvas.Core;
 
-public enum ElementKind { Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse, Triangle, Text, Number, Image, Symbol, LivePixelate }
+public enum ElementKind { Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse, Triangle, Text, Number, Image, Symbol, LivePixelate, LiveBlur }
 public enum DocumentKind { LiveOverlay, FrozenCapture }
 public enum TextAlignment { Left, Center, Right }
 public enum ImageEffectKind { Blur, Pixelate, Redact }

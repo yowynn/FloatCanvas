@@ -78,14 +78,14 @@ internal static class ToolbarAcceptanceTests
 
             CheckEqualRowInsets(check,body,grid,display,"production toolbar",1);
             check("production toolbar preserves two 26 DIP rows separated by two DIP",grid.RowDefinitions.Select(row=>row.Height.Value).SequenceEqual(new[]{26d,2d,26d}));
-            check("production toolbar shares 30 DIP columns around its two logical separators",grid.ColumnDefinitions.Count==25 && grid.ColumnDefinitions.Select((column,index)=>(column,index)).All(pair=>pair.column.Width.IsAbsolute && pair.column.Width.Value==(pair.index is 2 or 13?10:30)));
-            check("production upper row preserves twelve tools without a thirteenth image-effect button",buttons.Length==21 && buttons.Select(Controls.Grid.GetColumn).Order().SequenceEqual(Enumerable.Range(0,25).Where(column=>column is not (2 or 13 or 21 or 22))) && !buttons.Any(button=>Equals(button.Tag,"tool:Blur")));
+            check("production toolbar shares 30 DIP columns around its two logical separators",grid.ColumnDefinitions.Count==26 && grid.ColumnDefinitions.Select((column,index)=>(column,index)).All(pair=>pair.column.Width.IsAbsolute && pair.column.Width.Value==(pair.index is 2 or 13?10:30)));
+            check("production upper row adds one dedicated image processing action",buttons.Length==22 && buttons.Select(Controls.Grid.GetColumn).Order().SequenceEqual(Enumerable.Range(0,26).Where(column=>column is not (2 or 13 or 22 or 23))) && !buttons.Any(button=>Equals(button.Tag,"tool:Blur")));
             check("compact 60 DIP tool body keeps its upper edge and the 100 DIP mascot anchor",Near(body.ActualHeight,60) && Near(body.TranslatePoint(new Wpf.Point(),shell).Y,39) && ToolbarLauncher.ArtworkSize==100 && Near(Field<ToolbarLauncher>(session,"_toolbarLauncher").TranslatePoint(new Wpf.Point(100,100),shell).Y,100));
             check("production lower row puts stamp actions under Select and Eraser",allButtons.Any(button=>Equals(button.Tag,"manage-stamps")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==0) && allButtons.Any(button=>Equals(button.Tag,"save-stamp")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==1));
-            check("production lower row binds ten slots under ten drawing tools and LCD under actions",Controls.Grid.GetRow(shelf)==2 && Controls.Grid.GetColumn(shelf)==3 && Controls.Grid.GetColumnSpan(shelf)==10 && Controls.Grid.GetRow(display)==2 && Controls.Grid.GetColumn(display)==14 && Controls.Grid.GetColumnSpan(display)==11);
+            check("production lower row binds ten slots under ten drawing tools and LCD under actions",Controls.Grid.GetRow(shelf)==2 && Controls.Grid.GetColumn(shelf)==3 && Controls.Grid.GetColumnSpan(shelf)==10 && Controls.Grid.GetRow(display)==2 && Controls.Grid.GetColumn(display)==14 && Controls.Grid.GetColumnSpan(display)==12);
             check("upper twelve tool order matches the requested Select Eraser then ten drawing entries",buttons.Where(button=>Controls.Grid.GetColumn(button)<13).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"tool:Select","tool:Eraser","tool:Freehand","tool:Highlighter","tool:Line","tool:Rectangle","tool:Ellipse","tool:Text","tool:Number","tool:Symbol","tool:Emoji","more"}));
             var opacity=Field<Controls.Slider>(session,"_opacitySlider");
-            check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==21&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
+            check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==22&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
             var more=buttons.Single(button=>Equals(button.Tag,"more"));
             check("More is enabled and owns its reserved single-letter command",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M");
             check("main keyboard minus and plus are independent stamp commands",ToolShortcutCatalog.StampLibraryKey==0xBD&&ToolShortcutCatalog.NewStampKey==0xBB&&ToolShortcutCatalog.IsReserved(0xBD)&&ToolShortcutCatalog.IsReserved(0xBB)&&!ToolShortcutCatalog.IsReserved(0x6B)&&!ToolShortcutCatalog.IsReserved(0x6D));
@@ -115,7 +115,21 @@ internal static class ToolbarAcceptanceTests
             check("done entry is a check mark rather than the pass-through cursor",mark.SequenceEqual(new[]{new Wpf.Point(2,8),new Wpf.Point(6,12),new Wpf.Point(14,3)}));
             check("save-stamp and stamp-management are independent lower-row entries",allButtons.Any(button=>Equals(button.Tag,"save-stamp")) && allButtons.Any(button=>Equals(button.Tag,"manage-stamps")));
             var imageMenu=more.ContextMenu;
-            check("More owns crop blur mosaic and redact and anchors their parameter family",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is not null && imageMenu.Items.OfType<Controls.MenuItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{L.Get("Tool.Crop"),L.Get("Tool.Blur"),L.Get("Tool.Pixelate"),L.Get("Tool.Redact")}));
+            check("More owns only general canvas blur and mosaic",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is not null && imageMenu.Items.OfType<Controls.MenuItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{L.Get("Tool.Blur"),L.Get("Tool.Pixelate")}));
+            var cropButton=buttons.Single(button=>Equals(button.Tag,"crop"));
+            var cropMenus=Field<List<Controls.MenuItem>>(session,"_cropMenuItems");
+            check("image crop follows import and capture and is disabled consistently without a target",Controls.Grid.GetColumn(cropButton)==18 &&
+                ReferenceEquals(tools[EditorTool.Crop],cropButton) && !cropButton.IsEnabled && cropMenus.Count>0 && cropMenus.All(item=>!item.IsEnabled));
+            var cropTarget=new CanvasElement {Kind=ElementKind.Image,Width=100,Height=80,AssetId=new string('a',64)};
+            editor.Session.Document.Elements.Add(cropTarget);editor.Session.SetSelection([cropTarget.Id]);Invoke(session,"RefreshToolbarState");
+            check("selecting one editable image enables the crop button and all menu entries",cropButton.IsEnabled && cropMenus.All(item=>item.IsEnabled));
+            Invoke(session,"ActivateTool",EditorTool.Crop);
+            check("the dedicated crop action activates its own tool family",editor.Tool==EditorTool.Crop);
+            cropTarget.Locked=true;editor.Session.NotifyChanged();Invoke(session,"RefreshToolbarState");
+            check("locking the selected image disables all crop entries and exits the crop tool",!cropButton.IsEnabled && cropMenus.All(item=>!item.IsEnabled) && editor.Tool==EditorTool.Select);
+            Invoke(session,"ActivateTool",EditorTool.Crop);
+            check("an inactive crop menu or keyboard activation cannot bypass eligibility",editor.Tool==EditorTool.Select);
+            editor.Session.ReplaceDocument(new SceneDocument());editor.Tool=EditorTool.Freehand;Invoke(session,"RefreshToolbarState");
             var manage=allButtons.Single(button=>Equals(button.Tag,"manage-stamps"));var saveStamp=allButtons.Single(button=>Equals(button.Tag,"save-stamp"));
             var newStampVertices=Vertices(Descendants(saveStamp).OfType<Shapes.Path>().Single().Data);
             check("stamp buttons explain minus and plus while New Stamp presents an explicit plus",manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · -"&&saveStamp.ToolTip?.ToString()==L.Get("Feedback3.Toolbar.NewStamp")+" · +"&&newStampVertices.Contains(new Wpf.Point(13,2))&&newStampVertices.Contains(new Wpf.Point(13,8))&&newStampVertices.Contains(new Wpf.Point(10,5))&&newStampVertices.Contains(new Wpf.Point(16,5)));
@@ -164,7 +178,7 @@ internal static class ToolbarAcceptanceTests
 
             string longStatus=string.Concat(Enumerable.Repeat("这是用于验收省略与悬停滚动的长状态 · long toolbar status / ",8));
             Invoke(session,"UpdateStatus",longStatus);display.Refresh();Measure(shell);
-            check("LCD keeps long content while trimming its fixed layout",status.Text==longStatus && status.TextTrimming==Wpf.TextTrimming.CharacterEllipsis && double.IsNaN(status.Width) && Near(display.ActualWidth,326) && display.ClipToBounds);
+            check("LCD keeps long content while trimming its fixed layout",status.Text==longStatus && status.TextTrimming==Wpf.TextTrimming.CharacterEllipsis && double.IsNaN(status.Width) && Near(display.ActualWidth,356) && display.ClipToBounds);
             display.RaiseEvent(new Input.MouseEventArgs(Input.Mouse.PrimaryDevice,Environment.TickCount) {RoutedEvent=Input.Mouse.MouseEnterEvent});
             var scroll=(Media.TranslateTransform)status.RenderTransform;
             check("LCD's actual hover handler begins a clipped scrolling animation",scroll.HasAnimatedProperties && status.TextTrimming==Wpf.TextTrimming.None && double.IsFinite(status.Width) && status.Width>display.ActualWidth);
@@ -191,6 +205,7 @@ internal static class ToolbarAcceptanceTests
                 var expected=((Media.SolidColorBrush)app.Resources["CanvasSurface"]).Color;
                 check(theme+" production body resolves the actual current theme surface",((Media.SolidColorBrush)body.Background).Color==expected);
                 check(theme+" LCD follows its dedicated surface and readable text theme",((Media.SolidColorBrush)display.Background).Color==((Media.SolidColorBrush)app.Resources["CanvasLcdSurface"]).Color&&((Media.SolidColorBrush)status.Foreground).Color==((Media.SolidColorBrush)app.Resources["CanvasLcdText"]).Color);
+                RenderVisibilityStates(session,host,shell,theme,output);
                 var bitmap=Save(shell,Path.Combine(output,"production-toolbar-"+theme+".png"),1.5);
                 var legend=hints.Single(value=>value.Text=="R");
                 check(theme+" small shortcut lettering has strong contrast against its masking surface",Contrast(((Media.SolidColorBrush)legend.Foreground).Color,expected)>=7);
@@ -226,6 +241,24 @@ internal static class ToolbarAcceptanceTests
     }
 
     private static bool Near(double a,double b)=>Math.Abs(a-b)<.05;
+    private static void RenderVisibilityStates(DesktopSession session,OverlayHost host,
+        Wpf.FrameworkElement shell,string theme,string output)
+    {
+        var visibleProperty=typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!;
+        var original=host.IsVisible;
+        try
+        {
+            foreach(bool visible in new[]{true,false})
+            {
+                // Project each host state through production refresh without showing
+                // a native canvas or pretending to test the actual visibility command.
+                visibleProperty.SetValue(host,visible);Invoke(session,"RefreshToolbarState");Measure(shell);
+                string state=visible?"visible":"hidden";
+                Save(shell,Path.Combine(output,"production-toolbar-"+theme+"-canvas-"+state+".png"),1.5);
+            }
+        }
+        finally {visibleProperty.SetValue(host,original);Invoke(session,"RefreshToolbarState");Measure(shell);}
+    }
     private static void CheckEqualRowInsets(Action<string,bool> check,Controls.Border body,Controls.Grid grid,
         ToolbarStatusDisplay display,string name,double scale)
     {

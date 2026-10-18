@@ -136,8 +136,12 @@ internal static class CreationSelectionTests
         var nonCreationSession = new EditorSession();
         nonCreationSession.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60 });
         var plain = new EditorController(nonCreationSession);
-        foreach (var tool in new[] { EditorTool.Stamp, EditorTool.Eraser, EditorTool.Crop, EditorTool.Pixelate, EditorTool.CaptureRegion })
+        foreach (var tool in new[] { EditorTool.Stamp, EditorTool.Eraser, EditorTool.Pixelate })
         { plain.Tool = tool; check(tool + " is not accidentally promoted to a creation selection mode", !plain.ShouldShowSelection(OverlayModifiers.None)); }
+        plain.Tool = EditorTool.CaptureRegion;
+        check("capture retains the current image and object adjustment contract", plain.ShouldShowSelection(OverlayModifiers.None));
+        plain.Tool = EditorTool.Crop;
+        check("crop without an editable image remains in ordinary selection mode", plain.Tool == EditorTool.Select && plain.ShouldShowSelection(OverlayModifiers.None));
     }
 
     private static void CtrlGestureOwnership(Action<string, bool> check)

@@ -19,6 +19,7 @@ internal sealed class ColorField : UserControl
     private readonly TextBlock label = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 10, FontWeight = FontWeights.SemiBold };
     private readonly Popup popup;
     private readonly ColorPickerPanel picker;
+    private bool pickerSessionOpen, draftCommitted;
 
     internal bool IsPickerOpen => popup.IsOpen;
     internal DependencyObject PickerRoot => popup.Child;
@@ -61,12 +62,23 @@ internal sealed class ColorField : UserControl
             if (e.Key != Key.Escape) return;
             ClosePicker(); button.Focus(); e.Handled = true;
         };
-        popup.Opened += (_, _) => { picker.Value = Value; picker.RefreshCollections(); };
-        popup.Closed += (_, _) => picker.CommitDraft(SetUserValue);
-        button.Click += (_, _) => popup.IsOpen = !popup.IsOpen;
+        SessionWindowCoordinator? popupSession = null;
+        popup.Opened += (_, _) =>
+        {
+            pickerSessionOpen = true; draftCommitted = false;
+            picker.Value = Value; picker.RefreshCollections();
+            popupSession = SessionWindowCoordinator.Find(Window.GetWindow(this));
+            popupSession?.RegisterPopup(popup, ClosePicker);
+        };
+        popup.Closed += (_, _) =>
+        {
+            CommitPickerDraft(); pickerSessionOpen = false;
+            popupSession?.UnregisterPopup(popup); popupSession = null;
+        };
+        button.Click += (_, _) => { if (popup.IsOpen) ClosePicker(); else popup.IsOpen = true; };
         picker.ColorChosen += _ => ClosePicker();
-        picker.EyedropperRequested += () => { popup.IsOpen = false; EyedropperRequested?.Invoke(); };
-        Unloaded += (_, _) => popup.IsOpen = false;
+        picker.EyedropperRequested += () => { ClosePicker(); EyedropperRequested?.Invoke(); };
+        Unloaded += (_, _) => ClosePicker();
         if (role == ColorRole.Background) Value = 0;
         RefreshValue();
     }
@@ -79,7 +91,7 @@ internal sealed class ColorField : UserControl
         Value = value; if (popup.IsOpen) { picker.Value = value; popup.IsOpen = false; }
         // A committed choice completes this picker interaction. Keep keyboard access
         // on its trigger, just as Escape does; closed/background updates stay silent.
-        if (returnToButton && button.IsVisible && button.IsEnabled) button.Focus();
+        if (returnToButton && MayReturnFocus && button.IsVisible && button.IsEnabled) button.Focus();
         if (changed) ValueChanged?.Invoke(value);
     }
     internal bool OwnsPickerInput(DependencyObject? source)
@@ -92,12 +104,23 @@ internal sealed class ColorField : UserControl
         }
         return false;
     }
-    public void ClosePicker() => popup.IsOpen = false;
+    private void CommitPickerDraft()
+    {
+        if (!pickerSessionOpen || draftCommitted) return;
+        draftCommitted = true;
+        picker.CommitDraft(SetUserValue);
+    }
+    public void ClosePicker()
+    {
+        CommitPickerDraft();
+        popup.IsOpen = false;
+    }
     public bool TryClosePicker()
     {
-        if (!popup.IsOpen) return false;
-        ClosePicker(); button.Focus(); return true;
+        if (!popup.IsOpen && !pickerSessionOpen) return false;
+        ClosePicker(); if (MayReturnFocus) button.Focus(); return true;
     }
+    private bool MayReturnFocus => SessionWindowCoordinator.Find(Window.GetWindow(this))?.IsDirectTransfer != true;
     private void RefreshValue()
     {
         swatch.Children.Clear(); swatch.Children.Add(ColorPickerPanel.CreateSwatch(Value));

@@ -21,6 +21,7 @@ internal sealed class EditorController
         get => tool;
         set
         {
+            if (value == EditorTool.Crop && !CanCropSelection) value = EditorTool.Select;
             if (value == EditorTool.Triangle)
             {
                 var parameters = Parameters; parameters.Tool = value; ApplyParameters(parameters); return;
@@ -38,32 +39,43 @@ internal sealed class EditorController
     public double DefaultHeight { get; set; } = 100;
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
+    public CaptureShape CaptureShape { get; set; } = CaptureShape.Rectangle;
+    public CaptureSource CaptureSource { get; set; } = CaptureSource.Background;
+    public double CaptureBorderWidth { get; set; }
+    public uint CaptureBorderColor { get; set; } = ColorLibrary.ForegroundRed;
     public ToolParameters Parameters => new() { Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius,
         Symbol = Symbol, ConstrainAspect = ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
-        NumberStart = NumberStart, NumberStep = NumberStep };
+        NumberStart = NumberStart, NumberStep = NumberStep, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
+        CaptureBorderWidth = CaptureBorderWidth, CaptureBorderColor = CaptureBorderColor };
     public void ApplyParameters(ToolParameters parameters)
     {
         if (!parameters.IsValid()) throw new ArgumentException(nameof(parameters));
         // Old presets retain their serialized enum; only future drawing uses the unified symbol tool.
-        Cancel(); tool = parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol : parameters.Tool;
+        Cancel(); tool = parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol :
+            parameters.Tool == EditorTool.Crop && !CanCropSelection ? EditorTool.Select : parameters.Tool;
         Style = parameters.Style.Clone(); CornerRadius = parameters.CornerRadius;
         Symbol = parameters.Tool == EditorTool.Triangle ? SymbolKind.Triangle : parameters.Symbol;
         ConstrainAspect = parameters.ConstrainAspect; EffectStrength = parameters.EffectStrength;
         Emoji = parameters.Emoji; DefaultWidth = parameters.DefaultWidth; DefaultHeight = parameters.DefaultHeight;
+        CaptureShape = parameters.CaptureShape; CaptureSource = parameters.CaptureSource;
+        CaptureBorderWidth = parameters.CaptureBorderWidth; CaptureBorderColor = parameters.CaptureBorderColor;
         if (parameters.Tool == EditorTool.Number) { NumberStart = parameters.NumberStart; NumberStep = parameters.NumberStep; }
         Changed?.Invoke();
     }
     public PointD ScreenOrigin { get; set; }
     public RectD? Marquee { get; private set; }
     public IReadOnlyList<PointD>? EffectPreviewPolygon { get; private set; }
+    public CaptureSelection? CapturePreview { get; private set; }
+    public bool HasCaptureGesture => gesture is "capture" or "capture-polygon";
     public event Action? Changed;
     public event Action<string>? Message;
     public event Action<CanvasElement?, PointD>? EditText;
-    public event Action<RectD>? CaptureRegionSelected;
+    public event Action<CaptureSelection>? CaptureSelectionCompleted;
     public event Action<RectD, ImageEffectKind, double, uint>? DesktopEffectRequested;
     private PointD start;
     private CanvasElement? drawing;
     private CanvasElement? effectTarget;
+    private long cropRevision;
     private string? gesture;
     private RectD selectionBounds;
     private Dictionary<Guid, Affine2D> transforms = [];
@@ -72,10 +84,12 @@ internal sealed class EditorController
     private RectD? imageRegion;
     private (PointD Position, OverlayModifiers Modifiers, OverlayMouseButton Button)? lastGestureMove;
     private bool deselectOnClick, gestureMoved;
+    private readonly List<PointD> capturePoints = [];
+    private const int MaximumCapturePoints = 65536;
 
     internal static bool IsCreationTool(EditorTool value) => value is EditorTool.Freehand or EditorTool.Highlighter or EditorTool.Line or
         EditorTool.Arrow or EditorTool.DoubleArrow or EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or
-        EditorTool.Triangle or EditorTool.Symbol or EditorTool.Text or EditorTool.Number or EditorTool.Emoji or EditorTool.Image;
+        EditorTool.Triangle or EditorTool.Symbol or EditorTool.Text or EditorTool.Number or EditorTool.Emoji or EditorTool.Image or EditorTool.CaptureRegion;
     internal static bool UsesDefaultSize(EditorTool value) => value is
         EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol;
     internal bool ShouldShowSelection(OverlayModifiers modifiers) =>
@@ -102,7 +116,13 @@ internal sealed class EditorController
     }
 
     public EditorController(EditorSession session) { Session = session; session.Changed += OnChanged; }
-    private void OnChanged(object? sender, EventArgs e) => Changed?.Invoke();
+    public bool CanCropSelection => ImageToolEligibility.TryGetCropTarget(Session, out _);
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        if (gesture == "image-crop" && !IsCurrentCropTarget()) Cancel();
+        if (tool == EditorTool.Crop && !CanCropSelection) tool = EditorTool.Select;
+        Changed?.Invoke();
+    }
     public void ReplaceSession(EditorSession session, PointD origin)
     {
         Cancel();
@@ -110,6 +130,7 @@ internal sealed class EditorController
         Session = session;
         session.Changed += OnChanged;
         ScreenOrigin = origin;
+        if (tool == EditorTool.Crop && !CanCropSelection) tool = EditorTool.Select;
         Changed?.Invoke();
     }
     public PointD ToDocument(OverlayPoint p) => new(p.X - ScreenOrigin.X, p.Y - ScreenOrigin.Y);
@@ -117,6 +138,7 @@ internal sealed class EditorController
     {
         gesture = null; drawing = effectTarget = resizeSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
         lastGestureMove = null;
+        CapturePreview = null; capturePoints.Clear();
         deselectOnClick = gestureMoved = false;
         Session.Cancel(); Changed?.Invoke();
     }
@@ -124,7 +146,20 @@ internal sealed class EditorController
     {
         var p = ToDocument(e.Position);
         if (e.Kind == OverlayPointerKind.Cancel) { Cancel(); return; }
+        if (gesture == "image-crop" && !IsCurrentCropTarget()) { Cancel(); return; }
         if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); Tool = EditorTool.Select; return; }
+        if (gesture == "capture-polygon" && e.Button == OverlayMouseButton.Left &&
+            e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
+        {
+            if (e.Kind == OverlayPointerKind.DoubleClick ||
+                capturePoints.Count >= 3 && p.DistanceTo(capturePoints[0]) <= 8) CompleteCaptureSelection();
+            else
+            {
+                AddCapturePoint(p);
+                UpdateCapturePreview(p, e.Modifiers, includeHover: false);
+            }
+            return;
+        }
         if (e.Kind == OverlayPointerKind.DoubleClick && Tool == EditorTool.Select)
         {
             Cancel();
@@ -142,39 +177,25 @@ internal sealed class EditorController
             if (deselectOnClick && Tool == EditorTool.Image)
             { Session.SetSelection([]); return; }
             if (Tool == EditorTool.Text) { EditText?.Invoke(null, p); return; }
-            if (Tool == EditorTool.Number)
-            {
-                double diameter = Math.Max(12, Style.FontSize / .58);
-                Session.Add(new CanvasElement { Kind = ElementKind.Number, Width = diameter, Height = diameter,
-                    Transform = Affine2D.Translation(p.X - diameter / 2, p.Y - diameter / 2), Style = Style.Clone(), Number = Session.Document.NextNumber },
-                    numberStep: NumberStep);
-                return;
-            }
+            if (Tool is EditorTool.Number or EditorTool.Emoji) { BeginSizedPlacement(p); return; }
             if (Tool == EditorTool.Image) { Message?.Invoke(L.Get("Editor.ImportImageHint")); return; }
             if (Tool == EditorTool.Stamp) return;
-            if (Tool == EditorTool.Emoji)
-            {
-                var style = Style.Clone(); style.FontFamily = "Segoe UI Emoji";
-                var size = EmojiGlyphs.Measure(Emoji, style.FontSize);
-                Session.Add(new CanvasElement { Kind = ElementKind.Text, Text = Emoji, Width = size.Width,
-                    Height = size.Height, Style = style, Transform = Affine2D.Translation(p.X - size.Width / 2, p.Y - size.Height / 2) });
-                return;
-            }
             if (Tool == EditorTool.Crop)
             {
-                if (!TryGetSelectedImageTarget(out effectTarget)) return;
-                if (effectTarget is not null)
-                {
-                    if (!CanEditImage(effectTarget)) return;
-                    gesture = "image-crop"; UpdateImageRegion(p); return;
-                }
-                if (Session.Document.Kind != DocumentKind.FrozenCapture) { Message?.Invoke(L.Get("Editor.CropImageHint")); return; }
-                gesture = "region"; Marquee = new(p.X, p.Y, 0, 0); return;
+                if (!ImageToolEligibility.TryGetCropTarget(Session, out effectTarget))
+                { Message?.Invoke(L.Get("Editor.CropImageHint")); return; }
+                cropRevision = Session.SceneRevision;
+                gesture = "image-crop"; UpdateImageRegion(p); return;
             }
-            if (Tool == EditorTool.CaptureRegion) { gesture = "region"; Marquee = new(p.X, p.Y, 0, 0); return; }
+            if (Tool == EditorTool.CaptureRegion)
+            {
+                gesture = CaptureShape == CaptureShape.PolygonLasso ? "capture-polygon" : "capture";
+                if (CaptureShape is CaptureShape.FreehandLasso or CaptureShape.PolygonLasso) capturePoints.Add(p);
+                UpdateCapturePreview(p, e.Modifiers, includeHover: false); return;
+            }
             if (Tool is EditorTool.Blur or EditorTool.Pixelate or EditorTool.Redact)
             {
-                if (Tool == EditorTool.Pixelate && Session.Document.Kind == DocumentKind.LiveOverlay)
+                if (Tool is EditorTool.Blur or EditorTool.Pixelate && Session.Document.Kind == DocumentKind.LiveOverlay)
                 { gesture = "desktop-effect"; Marquee = new(p.X,p.Y,0,0); return; }
                 if (!TryGetSelectedImageTarget(out effectTarget, canvasFallback: true)) return;
                 effectTarget ??= Session.Document.Background;
@@ -207,30 +228,31 @@ internal sealed class EditorController
         }
         else if (e.Kind == OverlayPointerKind.Up && gesture != null && e.Button == OverlayMouseButton.Left)
         {
+            if (gesture == "capture-polygon") return;
+            if (gesture == "capture")
+            {
+                UpdateCapturePreview(p, e.Modifiers, includeHover: false);
+                CompleteCaptureSelection(); return;
+            }
             gestureMoved |= p.DistanceTo(start) >= 2;
             Move(p, e.Modifiers);
             var completed = gesture;
             gesture = null;
             if (completed == "marquee") Session.SelectRectangle(Marquee!.Value, (e.Modifiers & OverlayModifiers.Shift) != 0);
-            else if (completed == "region")
-            {
-                if (Marquee is { Width: >= 2, Height: >= 2 } region)
-                {
-                    if (Tool == EditorTool.CaptureRegion) CaptureRegionSelected?.Invoke(region);
-                    else
-                    {
-                        var cropped = Session.Document.Viewport.Intersect(region);
-                        if (!cropped.IsEmpty) Session.Execute(L.Get("Editor.History.CropCanvas"), d => d.Viewport = cropped);
-                    }
-                }
-            }
             else if (completed == "effect") CommitEffect();
             else if (completed == "desktop-effect" && Marquee is { Width: >= 2, Height: >= 2 } region)
                 DesktopEffectRequested?.Invoke(region, Enum.Parse<ImageEffectKind>(Tool.ToString()), EffectStrength, Style.Stroke);
             else if (completed == "image-crop") CommitImageCrop();
             else if (Session.IsTransactionActive)
             {
-                if (completed == "draw" && !gestureMoved && drawing is not null && ElementGeometry.IsLine(drawing.Kind))
+                if (completed == "draw" && Tool is EditorTool.Number or EditorTool.Emoji)
+                {
+                    if (drawing?.Kind == ElementKind.Number)
+                        Session.Document.NextNumber = Math.Max(Session.Document.NextNumber,
+                            (int)Math.Min(int.MaxValue, (long)drawing.Number + NumberStep));
+                    Session.Commit();
+                }
+                else if (completed == "draw" && !gestureMoved && drawing is not null && ElementGeometry.IsLine(drawing.Kind))
                 { Session.Cancel(); if (deselectOnClick) Session.SetSelection([]); }
                 else if (completed == "draw" && !gestureMoved && drawing is not null && UsesDefaultSize(Tool))
                 { ApplyDefaultSize(drawing, start, e.Modifiers); Session.Commit(); }
@@ -255,6 +277,117 @@ internal sealed class EditorController
         if (ConstrainAspect || (modifiers & OverlayModifiers.Shift) != 0) height = width;
         element.Width = width; element.Height = height; element.Points.Clear();
         element.Transform = Affine2D.Translation(center.X - width / 2, center.Y - height / 2);
+    }
+
+    private void BeginSizedPlacement(PointD center)
+    {
+        var style = Style.Clone();
+        if (Tool == EditorTool.Number)
+        {
+            if (NumberStep < 1) throw new ArgumentOutOfRangeException(nameof(NumberStep));
+            double diameter = Math.Max(12, style.FontSize / .58);
+            drawing = new() { Kind = ElementKind.Number, Width = diameter, Height = diameter,
+                Style = style, Number = Session.Document.NextNumber };
+        }
+        else
+        {
+            style.FontFamily = EmojiGlyphs.FontFamily;
+            var size = EmojiGlyphs.Measure(Emoji, style.FontSize);
+            drawing = new() { Kind = ElementKind.Text, Text = Emoji, Width = size.Width, Height = size.Height, Style = style };
+        }
+        drawing.Transform = Affine2D.Translation(center.X - drawing.Width / 2, center.Y - drawing.Height / 2);
+        Session.BeginTransaction(L.Get("History.AddElement"));
+        gesture = "draw";
+        // These tools keep their continuous click-to-insert behavior even when another object is selected.
+        deselectOnClick = false;
+        Session.Document.Elements.Add(drawing);
+        Session.Selection.Clear(); Session.Selection.Add(drawing.Id);
+        Session.NotifyChanged();
+    }
+
+    private void ResizePlacement(PointD point)
+    {
+        if (drawing is null || !gestureMoved) return;
+        var delta = point - start;
+        double scale = Math.Max(1 / Math.Min(drawing.Width, drawing.Height),
+            Math.Max(Math.Abs(delta.X) / drawing.Width, Math.Abs(delta.Y) / drawing.Height));
+        double x = delta.X < 0 ? start.X - drawing.Width * scale : start.X;
+        double y = delta.Y < 0 ? start.Y - drawing.Height * scale : start.Y;
+        // Scale the complete instance so the glyph and badge grow together; tool defaults stay unchanged.
+        drawing.Transform = Affine2D.Translation(x, y).Compose(Affine2D.Scale(scale, scale));
+    }
+
+    /// <summary>Handles keys belonging to an unfinished capture before ordinary editor commands.</summary>
+    public bool HandleCaptureKey(int virtualKey)
+    {
+        if (!HasCaptureGesture) return false;
+        if (virtualKey == 0x1B) { Cancel(); return true; }
+        if (gesture != "capture-polygon") return false;
+        if (virtualKey == 0x0D) { CompleteCaptureSelection(); return true; }
+        if (virtualKey != 0x08) return false;
+        if (capturePoints.Count > 0) capturePoints.RemoveAt(capturePoints.Count - 1);
+        if (capturePoints.Count == 0) Cancel();
+        else UpdateCapturePreview(capturePoints[^1], OverlayModifiers.None, includeHover: false);
+        return true;
+    }
+
+    private void AddCapturePoint(PointD point)
+    {
+        if (capturePoints.Count < MaximumCapturePoints &&
+            (capturePoints.Count == 0 || capturePoints[^1].DistanceTo(point) >= .75)) capturePoints.Add(point);
+    }
+
+    private void UpdateCapturePreview(PointD point, OverlayModifiers modifiers, bool includeHover = true)
+    {
+        IReadOnlyList<PointD> contour = Array.Empty<PointD>();
+        RectD bounds;
+        if (CaptureShape is CaptureShape.Rectangle or CaptureShape.Ellipse)
+        {
+            if ((modifiers & OverlayModifiers.Shift) != 0)
+            {
+                var delta = point - start; double side = Math.Max(Math.Abs(delta.X), Math.Abs(delta.Y));
+                point = start + new PointD(Math.CopySign(side, delta.X), Math.CopySign(side, delta.Y));
+            }
+            bounds = RectD.FromPoints(start, point);
+        }
+        else
+        {
+            if (CaptureShape == CaptureShape.FreehandLasso) AddCapturePoint(point);
+            var points = capturePoints.ToList();
+            if (CaptureShape == CaptureShape.PolygonLasso && includeHover &&
+                (points.Count == 0 || points[^1] != point)) points.Add(point);
+            contour = Array.AsReadOnly(points.ToArray());
+            bounds = CaptureBounds(points);
+        }
+        CapturePreview = new(CaptureShape, CaptureSource, bounds, contour, CaptureBorderWidth, CaptureBorderColor);
+        Changed?.Invoke();
+    }
+
+    private void CompleteCaptureSelection()
+    {
+        if (gesture == "capture-polygon")
+            UpdateCapturePreview(capturePoints.LastOrDefault(), OverlayModifiers.None, includeHover: false);
+        var selection = CapturePreview;
+        bool valid = selection is { Bounds.Width: >= 2, Bounds.Height: >= 2 } &&
+            (selection.Shape is CaptureShape.Rectangle or CaptureShape.Ellipse || HasCaptureArea(selection.Points));
+        // Finishing and cancellation both discard only transient geometry, without a document transaction.
+        gesture = null; CapturePreview = null; capturePoints.Clear(); lastGestureMove = null;
+        deselectOnClick = gestureMoved = false;
+        Changed?.Invoke();
+        if (valid) CaptureSelectionCompleted?.Invoke(selection!);
+    }
+
+    private static RectD CaptureBounds(IReadOnlyList<PointD> points) => points.Count == 0 ? default :
+        new(points.Min(p => p.X), points.Min(p => p.Y), points.Max(p => p.X) - points.Min(p => p.X), points.Max(p => p.Y) - points.Min(p => p.Y));
+
+    private static bool HasCaptureArea(IReadOnlyList<PointD> points)
+    {
+        if (points.Count < 3) return false;
+        var first = points[0];
+        var edge = points.Skip(1).FirstOrDefault(point => point.DistanceTo(first) >= .75) - first;
+        // Signed polygon area would reject valid self-intersecting contours. Any non-collinear
+        // vertex is enough here; the renderer applies the even-odd mask and checks visible pixels.
+        return points.Any(point => Math.Abs(edge.X * (point.Y - first.Y) - edge.Y * (point.X - first.X)) >= 1);
     }
 
     private void StartSelect(PointD p, OverlayModifiers modifiers, bool selectedOnly = false)
@@ -294,8 +427,9 @@ internal sealed class EditorController
 
     private void Move(PointD p, OverlayModifiers modifiers)
     {
+        if (HasCaptureGesture) { UpdateCapturePreview(p, modifiers); return; }
         if (gesture is "effect" or "image-crop") { UpdateImageRegion(p); Changed?.Invoke(); return; }
-        if (gesture is "marquee" or "region" or "desktop-effect") { Marquee = RectD.FromPoints(start, p); Changed?.Invoke(); return; }
+        if (gesture is "marquee" or "desktop-effect") { Marquee = RectD.FromPoints(start, p); Changed?.Invoke(); return; }
         if (gesture == "erase") { Erase(p); return; }
         if (gesture == "endpoint" && drawing != null)
         {
@@ -303,6 +437,10 @@ internal sealed class EditorController
         }
         if (gesture == "draw" && drawing != null)
         {
+            if (Tool is EditorTool.Number or EditorTool.Emoji)
+            {
+                ResizePlacement(p); Session.NotifyChanged(); return;
+            }
             var local = p - start;
             if (drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter)
             {
@@ -402,10 +540,10 @@ internal sealed class EditorController
     }
     private void CommitImageCrop()
     {
-        if (effectTarget == null || imageRegion is not { Width: >= 1, Height: >= 1 } local) return;
-        var normalized = SourceRegion(effectTarget, local);
+        if (!IsCurrentCropTarget() || effectTarget is not { } target || imageRegion is not { Width: >= 1, Height: >= 1 } local) return;
+        var normalized = SourceRegion(target, local);
         if (normalized.IsEmpty) return;
-        var id = effectTarget.Id;
+        var id = target.Id;
         Session.Execute(L.Get("Editor.History.CropImage"), d =>
         {
             var image = d.Elements.First(e => e.Id == id);
@@ -414,6 +552,8 @@ internal sealed class EditorController
             image.Transform = image.Transform.Compose(Affine2D.Translation(local.X, local.Y));
         });
     }
+    private bool IsCurrentCropTarget() => Session.SceneRevision == cropRevision &&
+        ImageToolEligibility.TryGetCropTarget(Session, out var selected) && ReferenceEquals(selected, effectTarget);
     private static double UniformScale(PointD from, PointD to) => Math.Max(.02,
         (to.X * from.X + to.Y * from.Y) / Math.Max(1e-12, from.X * from.X + from.Y * from.Y));
     public static PointD[] Corners(RectD b) => [new(b.Left, b.Top), new(b.Right, b.Top), new(b.Right, b.Bottom), new(b.Left, b.Bottom)];

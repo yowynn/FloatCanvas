@@ -17,12 +17,30 @@ internal sealed partial class DesktopSession
     private bool _liveCaptureExcluded;
     private string? _liveCaptureError;
     private int _cleanCaptureDepth;
+    private Task<bool>? _sessionCaptureProbe;
+
+    private async Task ObserveSessionCaptureProbeAsync(Task<bool> probe)
+    {
+        try { await probe; }
+        catch (Exception exception) { _diagnostics.Write("LiveCapture.CapabilityFailed", exception: exception); }
+        // Re-evaluate the current canvas; this cannot reopen a hidden toolbar or restore editing.
+        if (!_disposed) RequestRender();
+    }
 
     private void SyncLiveEffectsCapture()
     {
+        if (_liveEffectPreparation is { } pending && !IsLivePreparationCurrent(pending)) CancelLivePreparation();
+        if (_desktopBackdrop is not null && !IsLiveBackdropCompatible()) ClearLiveBackdrop();
+        bool hasEffects = SceneRenderer.HasLiveEffects(Active.Document);
         bool needed = !_disposed && _cleanCaptureDepth == 0 && _host.IsVisible && Active.Document.Kind == DocumentKind.LiveOverlay &&
-            SceneRenderer.HasLiveEffects(Active.Document);
-        if (!needed) { StopLiveEffectsCapture(); return; }
+            (hasEffects || _liveEffectPreparation is not null);
+        if (!needed)
+        {
+            if (!_disposed && !_host.IsVisible && _cleanCaptureDepth == 0 && hasEffects && IsLiveBackdropCompatible())
+                ReleaseLiveEffectsCapture(keepBackdrop: true);
+            else StopLiveEffectsCapture();
+            return;
+        }
         if (!_host.Capabilities.SupportsCaptureExclusion)
         {
             // Older Windows accepts 0x11 as WDA_MONITOR, which masks the whole
@@ -36,18 +54,38 @@ internal sealed partial class DesktopSession
         if (_liveDesktopCapture?.Completion.IsCompleted==true)StopLiveEffectsCapture();
         if (_liveDesktopCapture is null)
         {
+            if (_sessionCaptureProbe is null)
+            {
+                _sessionCaptureProbe = LiveDesktopCapture.ProbeSessionExclusionAsync();
+                _ = ObserveSessionCaptureProbeAsync(_sessionCaptureProbe);
+            }
+            if (!_sessionCaptureProbe.IsCompleted) return;
+            if (!_sessionCaptureProbe.IsCompletedSuccessfully)
+            {
+                CancelLivePreparation();
+                string failure = _sessionCaptureProbe.Exception?.GetBaseException().Message ?? "Capture capability probe failed.";
+                if (_liveCaptureError != failure) { _liveCaptureError = failure; UpdateStatus(L.Get("Feedback4.Effect.CaptureUnavailable") + failure); }
+                return;
+            }
             try
             {
-                _host.SetLiveCaptureExclusion(true);
-                _liveCaptureExcluded=true;
+                bool sessionExclusion = _sessionCaptureProbe.Result;
+                // A session-local list leaves the visible canvas available to other capture
+                // applications. Global affinity is needed only on the older fallback path.
+                if (!sessionExclusion) { _host.SetLiveCaptureExclusion(true); _liveCaptureExcluded = true; }
                 _liveCleanBoundary=Stopwatch.GetTimestamp();
-                var source=new LiveDesktopCapture(); _liveDesktopCapture=source;
+                var source=new LiveDesktopCapture(useSessionWindowExclusion: sessionExclusion); _liveDesktopCapture=source;
+                _diagnostics.Write("LiveCapture.Started", new { source.UsesSessionWindowExclusion,
+                    GlobalExclusion = _liveCaptureExcluded, Boundary = _liveCleanBoundary });
+                if (!sessionExclusion) UpdateStatus(L.Get("Effect.GlobalCaptureExclusion"));
                 var gate=new CaptureDispatchGate();
                 source.FrameReady += () => QueueLiveDesktopFrame(source,gate);
                 source.Failed += error => _app.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
                 {
                     if (_disposed || !ReferenceEquals(source,_liveDesktopCapture) || !ReferenceEquals(source.LastError,error)) return;
-                    _renderer.LiveBackdrop=null; _desktopBackdrop?.Dispose(); _desktopBackdrop=null;
+                    _diagnostics.Write("LiveCapture.Failed", new { source.UsesSessionWindowExclusion }, error);
+                    CancelLivePreparation();
+                    if (!IsLiveBackdropCompatible()) ClearLiveBackdrop();
                     if (_liveCaptureError!=error.Message)
                     { _liveCaptureError=error.Message; UpdateStatus(L.Get("Feedback4.Effect.CaptureUnavailable")+error.Message); }
                     RequestRender();
@@ -60,16 +98,17 @@ internal sealed partial class DesktopSession
                 return;
             }
         }
-        var regions=Active.Document.Elements.Where(e=>e.Visible && e.Style.Opacity>0 && e.Kind==ElementKind.LivePixelate)
-            .Select(e=>ElementGeometry.Bounds(e,false).Intersect(Active.Document.Viewport))
-            .Where(b=>!b.IsEmpty).Select(b=>new PixelBounds((int)Math.Floor(b.Left),(int)Math.Floor(b.Top),
+        var samplingRegions=Active.Document.Elements.Where(e=>e.Visible && e.Style.Opacity>0 && ElementGeometry.IsLiveEffect(e.Kind))
+            .Select(e=>SceneRenderer.LiveEffectSamplingBounds(e).Intersect(Active.Document.Viewport))
+            .Concat(_liveEffectPreparation is { } preparation ? [preparation.Bounds] : []);
+        var regions=samplingRegions.Where(b=>!b.IsEmpty).Select(b=>new PixelBounds((int)Math.Floor(b.Left),(int)Math.Floor(b.Top),
                 checked((int)Math.Ceiling(b.Right)-(int)Math.Floor(b.Left)),
                 checked((int)Math.Ceiling(b.Bottom)-(int)Math.Floor(b.Top)))).ToArray();
         long version=_liveDesktopCapture.UpdateTargets(_host.Monitors,regions,_liveCleanBoundary);
         if(version!=_liveTargetVersion)
         {
             _liveTargetVersion=version;
-            _renderer.LiveBackdrop=null; _desktopBackdrop?.Dispose(); _desktopBackdrop=null;
+            if (!IsLiveBackdropCompatible()) ClearLiveBackdrop();
         }
     }
 
@@ -95,8 +134,10 @@ internal sealed partial class DesktopSession
                     }
                     var next=new DesktopBackdrop(tiles);
                     _renderer.LiveBackdrop=next; _desktopBackdrop?.Dispose(); _desktopBackdrop=next;
+                    RememberLiveBackdrop(source, frame.TargetVersion);
                     _liveCaptureError=null;
-                    RequestRender();
+                    if (_liveEffectPreparation is { } pending && IsLivePreparationCurrent(pending)) pending.Ready.TrySetResult(true);
+                    RequestPixelRender();
                 }
                 catch { foreach(var tile in tiles)tile.Image.Dispose(); throw; }
             }
@@ -105,6 +146,12 @@ internal sealed partial class DesktopSession
 
     private void StopLiveEffectsCapture()
     {
+        CancelLivePreparation();
+        ReleaseLiveEffectsCapture(keepBackdrop: false);
+    }
+
+    private void ReleaseLiveEffectsCapture(bool keepBackdrop)
+    {
         var capture=_liveDesktopCapture; _liveDesktopCapture=null;
         capture?.Dispose();
         if(_liveCaptureExcluded)
@@ -112,7 +159,7 @@ internal sealed partial class DesktopSession
             try { _host.SetLiveCaptureExclusion(false); _liveCaptureExcluded=false; }
             catch(Exception ex) { if(!_disposed)UpdateStatus(ex.Message); }
         }
-        _renderer.LiveBackdrop=null; _desktopBackdrop?.Dispose(); _desktopBackdrop=null;
+        if (!keepBackdrop) ClearLiveBackdrop();
         _liveTargetVersion=0; _liveCaptureError=null;
     }
 }

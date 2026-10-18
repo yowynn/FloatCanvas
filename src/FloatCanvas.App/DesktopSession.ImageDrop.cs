@@ -20,6 +20,7 @@ internal sealed partial class DesktopSession
 
     private void ToggleEditing()
     {
+        if (_snapshotCaptureRequest is not null) { CancelSnapshotCapture("ToggleEditing"); SetEditing(false); return; }
         if (_host.IsReceivingDrop) { CloseImageDrop(); RequestRender(); return; }
         if (_host.IsEditing) { SetEditing(false); return; }
         if (DocumentOperationBusy) return;

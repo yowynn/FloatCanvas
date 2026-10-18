@@ -43,12 +43,12 @@ internal sealed partial class DesktopSession
         };
         ToolOptionsKeyboardRoute.Attach(_toolOptionsWindow, () =>
         {
-            if (_toolOptionsPanel.CloseColorPicker()) { _toolOptionsWindow.Activate(); return true; }
+            if (_toolOptionsPanel.CloseColorPicker()) return true;
             if (!_toolOptionsPinned) { CloseToolOptions(); return true; }
             return false;
         }, () => _toolOptionsPanel.IsColorPickerOpen, OnKey);
         _toolOptionsWindow.Deactivated += (_, _) =>
-            toolbar.Dispatcher.BeginInvoke(DispatcherPriority.Input, CheckToolOptionsFocus);
+            QueueToolOptionsFocusCheck();
         _toolOptionsPanel.ParametersChanged += () =>
         {
             if (_settings.NumberStart != _editor.NumberStart || _settings.NumberStep != _editor.NumberStep)
@@ -60,10 +60,15 @@ internal sealed partial class DesktopSession
         };
         _toolOptionsPanel.EyedropperRequested += field => { CloseToolOptions(); BeginEyedropper(field); };
         var pointerRoute = new ToolOptionsPointerRoute(() => IsToolOptionsOpen && !_toolOptionsPinned,
-            source => IsOptionsInput(source) || IsToolbarInput(source), CloseToolOptions, _toolOptionsWindow, toolbar);
+            source => IsOptionsInput(source) || IsToolbarInput(source), () => DismissToolOptions(WindowDismissReason.ToolbarPress), _toolOptionsWindow, toolbar);
         Action<OverlayPointerEvent> canvasPointer = e =>
         {
-            if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && !_toolOptionsPinned) CloseToolOptions();
+            if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
+            {
+                using var intent = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
+                _toolOptionsPanel.CloseColorPicker();
+                if (!_toolOptionsPinned) DismissToolOptions(WindowDismissReason.CanvasPress);
+            }
         };
         _host.Pointer += canvasPointer;
         toolbar.Closed += (_, _) =>
@@ -95,19 +100,19 @@ internal sealed partial class DesktopSession
         new WindowInteropHelper(_toolbar).EnsureHandle();
         _toolOptionsWindow.Owner ??= _toolbar;
         ConstrainToolOptions();
-        _toolOptionsWindow.Show();
+        ShowAppWindow(_toolOptionsWindow, true);
         _toolOptionsWindow.UpdateLayout();
         if (!alreadyOpen) PositionToolOptions();
-        _toolOptionsWindow.Activate();
     }
 
-    private void CloseToolOptions()
+    private void CloseToolOptions() => DismissToolOptions(WindowDismissReason.Close);
+
+    private void DismissToolOptions(WindowDismissReason reason)
     {
         if (!IsToolOptionsOpen) return;
+        using var intent = reason == WindowDismissReason.Close ? null : _windowCoordinator?.DirectTransfer(reason);
         _toolOptionsPanel.CloseColorPicker();
-        bool active = _toolOptionsWindow.IsActive;
-        if (active && _host.IsEditing && _toolbar.IsVisible) _toolbar.Activate();
-        _toolOptionsWindow.Hide();
+        SessionWindowCoordinator.Hide(_toolOptionsWindow, reason);
     }
 
     private void AnchorToolOptions()
@@ -181,6 +186,15 @@ internal sealed partial class DesktopSession
         if (IsToolOptionsOpen && !_toolOptionsPinned && !_toolOptionsWindow.IsActive && !HasActiveOptionsDialog() &&
             !_toolOptionsPanel.IsColorPickerOpen && !IsOptionsInput(Keyboard.FocusedElement as DependencyObject) &&
             !IsOptionsInput(Mouse.DirectlyOver as DependencyObject) && !_toolbar.IsActive) CloseToolOptions();
+    }
+    private void QueueToolOptionsFocusCheck()
+    {
+        if (_disposed || !_host.IsEditing) return;
+        long version = _host.EditingSessionVersion;
+        _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (!_disposed && _host.EditingSessionVersion == version) CheckToolOptionsFocus();
+        });
     }
     private bool HasActiveOptionsDialog() => _app.Windows.Cast<Window>().Any(window =>
     {

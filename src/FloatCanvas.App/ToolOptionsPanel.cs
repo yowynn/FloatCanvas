@@ -57,7 +57,7 @@ internal sealed class ToolOptionsPanel : UserControl
         presets.Failed += Error; recipes.Children.Add(presets);
         foreground = new(ColorRole.Foreground, colors); background = new(ColorRole.Background, colors);
         AddRow(parameterGrid, "Foreground", L.Get("Color.Foreground"), foreground); AddRow(parameterGrid, "Background", L.Get("Color.Background"), background);
-        foreground.ValueChanged += value => Change(p => p.Style.Stroke = value);
+        foreground.ValueChanged += value => Change(p => { if (p.Tool == EditorTool.CaptureRegion) p.CaptureBorderColor = value; else p.Style.Stroke = value; });
         background.ValueChanged += value => Change(p => p.Style.Fill = value);
         foreground.EyedropperRequested += () => EyedropperRequested?.Invoke(foreground);
         background.EyedropperRequested += () => EyedropperRequested?.Invoke(background);
@@ -86,6 +86,13 @@ internal sealed class ToolOptionsPanel : UserControl
         Number(parameterGrid, "ArrowHeadSize", L.Get("Inspector.ArrowHeadSize"), 0, 512, (p, v) => p.Style.ArrowHeadSize = v);
         Number(parameterGrid, "CornerRadius", L.Get("Inspector.CornerRadius"), 0, 10000000, (p, v) => p.CornerRadius = v);
         Number(parameterGrid, "EffectStrength", L.Get("ToolOptions.EffectStrength"), .01, 1024, (p, v) => p.EffectStrength = v);
+        Picker(parameterGrid, "CaptureShape", L.Get("Snapshot.Shape"),
+            Enum.GetValues<CaptureShape>().Select(value => (L.Get("Snapshot.Shape." + value), (object)value)).ToArray(),
+            (p, value) => p.CaptureShape = (CaptureShape)value);
+        Picker(parameterGrid, "CaptureSource", L.Get("Snapshot.Source"),
+            Enum.GetValues<CaptureSource>().Select(value => (L.Get("Snapshot.Source." + value), (object)value)).ToArray(),
+            (p, value) => p.CaptureSource = (CaptureSource)value);
+        Number(parameterGrid, "CaptureBorderWidth", L.Get("Snapshot.BorderWidth"), 0, 1024, (p, value) => p.CaptureBorderWidth = value);
         rows.Add("Aspect", aspect); parameterGrid.Children.Add(aspect);
         aspect.Click += (_, _) => Change(p => p.ConstrainAspect = aspect.IsChecked == true);
         foreach (var symbol in Enum.GetValues<SymbolKind>())
@@ -125,6 +132,8 @@ internal sealed class ToolOptionsPanel : UserControl
             bool stroke = line || shape || tool is EditorTool.Freehand or EditorTool.Highlighter;
             bool text = tool is EditorTool.Text or EditorTool.Number or EditorTool.Emoji;
             bool paint = stroke || tool is EditorTool.Text or EditorTool.Number or EditorTool.Redact;
+            bool capture = tool == EditorTool.CaptureRegion;
+            paint |= capture;
             Show("Foreground", paint); Show("Background", shape || tool == EditorTool.Number);
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
             background.Visibility = shape || tool == EditorTool.Number ? Visibility.Visible : Visibility.Collapsed;
@@ -137,8 +146,11 @@ internal sealed class ToolOptionsPanel : UserControl
             Show("EffectStrength", tool is EditorTool.Blur or EditorTool.Pixelate);
             Show("TextAlignment", tool == EditorTool.Text);
             Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji);
+            Show("CaptureShape", capture); Show("CaptureSource", capture); Show("CaptureBorderWidth", capture);
             noParameters.Visibility = paint || text || tool is EditorTool.Blur or EditorTool.Pixelate or EditorTool.Image ? Visibility.Collapsed : Visibility.Visible;
-            foreground.Value = p.Style.Stroke; background.Value = p.Style.Fill; aspect.IsChecked = p.ConstrainAspect; ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
+            foreground.Value = capture ? p.CaptureBorderColor : p.Style.Stroke; background.Value = p.Style.Fill; aspect.IsChecked = p.ConstrainAspect; ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
+            ((TextBlock)((StackPanel)rows["Foreground"]).Children[0]).Text = L.Get(capture ? "Snapshot.BorderColor" : "Color.Foreground");
+            SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);
             SetNumber("StrokeWidth", tool == EditorTool.Highlighter ? Math.Max(16, p.Style.StrokeWidth) : p.Style.StrokeWidth); SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
             SetNumber("EffectStrength", p.EffectStrength); SetNumber("CornerRadius", p.CornerRadius ?? 0); SetNumber("ArrowHeadSize", p.Style.ArrowHeadSize);
             SetNumber("DefaultWidth", p.DefaultWidth); SetNumber("DefaultHeight", p.DefaultHeight);
@@ -160,7 +172,7 @@ internal sealed class ToolOptionsPanel : UserControl
     private void LayoutParameters()
     {
         parameterGrid.RowDefinitions.Clear();
-        string[][] groups = [ ["Foreground"], ["Background"], ["StrokeWidth", "Opacity"],
+        string[][] groups = [ ["CaptureShape"], ["CaptureSource"], ["Foreground"], ["CaptureBorderWidth"], ["Background"], ["StrokeWidth", "Opacity"],
             ["DefaultWidth", "DefaultHeight"], ["FontSize", "TextAlignment"], ["FontFamily"], ["NumberStart", "NumberStep"], ["NextNumber"], ["StartArrowHead", "EndArrowHead"],
             ["StrokePattern", "ArrowHeadSize"], ["CornerRadius", "Aspect"], ["EffectStrength"], ["Symbols"], ["Emoji"] ];
         foreach (var group in groups)

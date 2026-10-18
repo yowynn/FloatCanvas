@@ -50,6 +50,7 @@ internal sealed partial class DesktopSession : IDisposable
     private WelcomeView? _welcomeView;
     private bool _welcomeShown;
     private readonly SessionWindowLayout _windowLayout = new();
+    private readonly SessionWindowCoordinator? _windowCoordinator;
     private bool _syncingControls;
     private bool _disposed;
     private bool _toolbarPlaced;
@@ -80,8 +81,11 @@ internal sealed partial class DesktopSession : IDisposable
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
         _host = testHost ?? new OverlayHost(ApplicationPaths.RequestedMonitorScope ??
             (_settings.PrimaryScreenOnly ? OverlayMonitorScope.PrimaryScreen : OverlayMonitorScope.AllScreens));
+        _host.ApplyRenderPreference(_settings.PreferGpuAcceleration);
+        _host.RenderBackendChanged += () => _diagnostics.Write("Rendering.Backend", new
+            { Backend = _host.RenderBackend.ToString(), _host.GpuDetails, _host.LastGpuFailure });
         _host.CanBeginCanvasGesture = () => !_disposed && _host.IsVisible && !DocumentOperationBusy && !ComponentDispatcher.IsThreadModal;
-        var keyboardBridge = new PrivateKeyboardBridge();
+        var keyboardBridge = new PrivateKeyboardBridge(handle => _host.Diagnostics.Any(pair => pair.InputHandle == handle));
         _host.EnableKeyboardIsolation((packet, complete) =>
         {
             keyboardBridge.Process(packet, complete);
@@ -102,10 +106,15 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.NumberStep = Math.Clamp(savedNumber?.NumberStep ?? _settings.NumberStep,1,999999);
         _settings.NumberStart = _editor.NumberStart; _settings.NumberStep = _editor.NumberStep;
         document.NextNumber = _editor.NumberStart;
-        _editor.Changed += () => { RequestRender(); ScheduleRecovery(); };
+        _editor.Changed += () =>
+        {
+            if (_liveEffectPreparation is { } pending && pending.Tool != _editor.Tool) CancelLivePreparation();
+            RequestRender(); ScheduleRecovery();
+        };
         _editor.Message += UpdateStatus;
         _editor.EditText += ShowTextEditor;
-        _editor.CaptureRegionSelected += FinishCaptureRegion;
+        _editor.CaptureSelectionCompleted += BeginSnapshotCapture;
+        _host.CaptureDiagnostic += OnCaptureDiagnostic;
         _host.Draw += Draw;
         _host.Pointer += HandleCanvasPointer;
         _editor.DesktopEffectRequested += (region, kind, amount, color) => _ = RunCommand(() => AddDesktopEffectAsync(region, kind, amount, color));
@@ -114,13 +123,21 @@ internal sealed partial class DesktopSession : IDisposable
         _host.HideRequested += ToggleCanvasVisibility;
         _host.EnableImageDrops(SupportsCanvasImageDrop, ReceiveCanvasImageDrop);
         _host.MonitorsChanged += OnMonitorsChanged;
-        _host.Error += ex => _app.Dispatcher.BeginInvoke(() => ShowError(ex.Message));
+        _host.Error += ex =>
+        {
+            _diagnostics.Write("Overlay.Error", exception: ex);
+            _app.Dispatcher.BeginInvoke(() => ShowError(ex.Message));
+        };
         _toolbar = CreateToolbarV2();
+        _windowCoordinator = new(_host, _toolbar);
+        _windowCoordinator.Register(_toolOptionsWindow, () => _toolOptionsPinned, DismissToolOptions);
         _windowLayout.BindRoot(_toolbar);
         RefreshHotkeyHints(_passThroughButton, null, _settings.Toggle, _settings.Hide);
         _host.InputActivated += RaiseVisibleToolWindows;
         _host.EditingFocusLost += () =>
         {
+            CancelSnapshotCapture("ExternalFocus", userInitiated: false);
+            using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.ExternalFocus);
             // Do not gate focus release on an asynchronous document operation.
             CloseImageDrop();
             _editor.Cancel(); _textEditor?.Hide(); _stampWindow?.Hide(); _eyedropper = null;
@@ -138,14 +155,14 @@ internal sealed partial class DesktopSession : IDisposable
             _tray.ShowBalloonTip(4000, L.Get("Desktop.InputReleasedTitle"), message, Forms.ToolTipIcon.Info);
         };
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add(L.Get("Desktop.ToggleEditing"), null, (_, _) => RunUiAction(() => SetEditing(!_host.IsEditing)));
-        menu.Items.Add(L.Get("Desktop.ToggleVisibility"), null, (_, _) => RunUiAction(ToggleCanvasVisibility));
+        menu.Items.Add(L.Get("Desktop.ToggleEditing"), null, (_, _) => ToggleEditing());
+        menu.Items.Add(L.Get("Desktop.ToggleVisibility"), null, (_, _) => ToggleCanvasVisibility());
         menu.Items.Add(L.Get("Desktop.OpenProject"), null, async (_, _) => await RunCommand(OpenProjectAsync));
         menu.Items.Add(L.Get("Desktop.RecoveryHistory"), null, async (_, _) => await RunCommand(RestoreWorkspaceHistoryAsync));
         menu.Items.Add(L.Get("Desktop.HotkeySettings"), null, (_, _) => RunUiAction(ShowHotkeySettings));
-        menu.Items.Add(L.Get("Desktop.Exit"), null, async (_, _) => await RunCommand(RequestExitAsync));
+        menu.Items.Add(L.Get("Desktop.Exit"), null, async (_, _) => await ExitAfterSnapshotAsync());
         _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => RunUiAction(() => SetEditing(!_host.IsEditing));
+        _tray.DoubleClick += (_, _) => ToggleEditing();
     }
 
     public async void Start(string[] args)
@@ -240,6 +257,8 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private bool SetEditing(bool editing, bool preserveImageDrop = false)
     {
+        CancelSnapshotCapture(editing ? "ExplicitEntry" : "ModeExit");
+        using var destination = editing ? null : _windowCoordinator?.DirectTransfer(WindowDismissReason.ModeExit);
         _clearCanvasButton?.CancelConfirmation();
         // Close the startup window before acquiring the input lease so native close
         // focus restoration cannot interrupt a newly acquired editing session.
@@ -284,11 +303,20 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void RequestRender()
     {
+        _pixelsOnlyRender = false;
         if (_disposed) return;
         if (_renderingFrame) { _renderAgain = true; return; }
         if (IsRenderPending) return;
         // Coalesce a batch of changes without adding a fixed timer delay to every pointer update.
         // BeginInvoke also preserves the application's DispatcherUnhandledException reporting path.
+        _renderOperation = _app.Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(RenderFrame));
+    }
+    private void RequestPixelRender()
+    {
+        // Animation and live background frames change pixels, not controls or document
+        // state. A queued full edit render always takes precedence over this shortcut.
+        if (_disposed || IsRenderPending) return;
+        _pixelsOnlyRender = true;
         _renderOperation = _app.Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(RenderFrame));
     }
     private void RenderFrame()
@@ -298,8 +326,22 @@ internal sealed partial class DesktopSession : IDisposable
         _renderingFrame = true;
         try
         {
-            SyncLiveEffectsCapture();
+            bool pixelsOnly = _pixelsOnlyRender;
+            _pixelsOnlyRender = false;
+            PrepareAnimationFrame();
+            if (!pixelsOnly) SyncLiveEffectsCapture();
+            // GPU readback is worthwhile for filter computation, while the raster cache
+            // is faster for ordinary shapes and small animated images on the current host.
+            var document = Active.Document;
+            bool ImageFilter(CanvasElement element) => element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
+                ElementGeometry.Bounds(element, includeStroke: false).Intersects(document.Viewport) &&
+                element.Effects.Any(effect => effect.Kind is ImageEffectKind.Blur or ImageEffectKind.Pixelate);
+            _host.SetGpuWorkload(SceneRenderer.HasLiveEffects(document) ||
+                document.Background is { } background && ImageFilter(background) ||
+                document.LayerOpacity > 0 && document.Elements.Any(ImageFilter));
             _host.Render();
+            ScheduleAnimationFrame();
+            if (pixelsOnly) return;
             _syncingControls = true;
             try
             {
@@ -324,6 +366,8 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (_disposed) return;
         _host.NotifyInputProgress();
+        if (e.StagingItem.Input is System.Windows.Input.MouseButtonEventArgs { ButtonState: System.Windows.Input.MouseButtonState.Pressed } mouse)
+            _windowCoordinator?.ObservePointerPress(mouse);
         if (e.StagingItem.Input is System.Windows.Input.KeyEventArgs { Key: System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl })
             RequestRender();
     }
@@ -348,12 +392,14 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnKey(int key)
     {
+        if (key == 0x1B && _snapshotCaptureRequest is not null) { CancelSnapshotCapture("Escape"); return; }
         if (_clearCanvasButton is { IsConfirming: true } clear)
         {
             clear.CancelConfirmation();
             if (key == 0x1B) return;
         }
         if (DocumentOperationBusy || _layers?.IsRenaming == true) return;
+        if (_editor.HandleCaptureKey(key)) return;
         var ctrl = (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0;
         var shift = (OverlayHost.CurrentModifiers & OverlayModifiers.Shift) != 0;
         if (key == 0x1B)
@@ -415,7 +461,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (_host.IsEditing)
         {
             using var paint = new SKPaint { Color = new SKColor(35,131,226), Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, IsAntialias = true };
-            if (_editor.ShouldShowSelection(OverlayHost.CurrentModifiers) && Active.SelectionBounds() is { } b)
+            if (_editor.ShouldShowSelection(_host.InteractionModifiers) && Active.SelectionBounds() is { } b)
             {
                 canvas.DrawRect((float)b.X,(float)b.Y,(float)b.Width,(float)b.Height,paint);
                 foreach(var p in EditorController.Corners(b)) canvas.DrawRect((float)p.X-5,(float)p.Y-5,10,10,paint);
@@ -424,7 +470,8 @@ internal sealed partial class DesktopSession : IDisposable
                 if(Active.SelectedElements().ToArray() is [var line] && line.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
                     foreach(var p in line.Points.Select(line.Transform.TransformPoint)) canvas.DrawCircle((float)p.X,(float)p.Y,6,paint);
             }
-            if (_editor.EffectPreviewPolygon is { Count: > 0 } polygon)
+            if (_editor.CapturePreview is { } capturePreview) DrawCapturePreview(canvas, capturePreview);
+            else if (_editor.EffectPreviewPolygon is { Count: > 0 } polygon)
             {
                 using var path = new SKPathBuilder(); path.MoveTo((float)polygon[0].X,(float)polygon[0].Y);
                 foreach(var p in polygon.Skip(1)) path.LineTo((float)p.X,(float)p.Y);
@@ -444,7 +491,7 @@ internal sealed partial class DesktopSession : IDisposable
             ConfigureAppWindow(_inspector);
             _inspector.CommandKey += OnKey;
             _inspector.EyedropperRequested += BeginEyedropper;
-            _inspector.Dismissed += () => { _inspectorWanted = false; if (_host.IsEditing) _toolbar.Activate(); };
+            _inspector.Dismissed += () => _inspectorWanted = false;
         }
         if (_inspectorWanted)
         {
@@ -453,7 +500,7 @@ internal sealed partial class DesktopSession : IDisposable
                 _inspector.Height = Math.Min(_inspector.Height, Math.Max(_inspector.MinHeight, monitor.WorkArea.Height * 96 / monitor.DpiY - 24));
             _inspector.Refresh(); ShowAppWindow(_inspector, true);
         }
-        else _inspector.Hide();
+        else SessionWindowCoordinator.Hide(_inspector);
     }
     private void ShowTextEditor(CanvasElement? existing, PointD point)
     {
@@ -478,16 +525,16 @@ internal sealed partial class DesktopSession : IDisposable
             if (!CanAddCanvasContent()) { error.Text = L.Get("Feedback4.Canvas.Hidden"); return; }
             if (!TextEditCommand.TryCommit(session, elementId, elementKind, input.Text, _editor.Style, point, _renderer, out var failure))
             { error.Text = failure; input.Focus(); return; }
-            dialog.Close();
+            SessionWindowCoordinator.Close(dialog);
         }
         dialog.PreviewKeyDown += (_,e)=>
         {
-            if(e.Key==System.Windows.Input.Key.Escape) { dialog.Close(); e.Handled=true; }
+            if(e.Key==System.Windows.Input.Key.Escape) { SessionWindowCoordinator.Close(dialog); e.Handled=true; }
             if(e.Key==System.Windows.Input.Key.Enter && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control)!=0) { Commit(); e.Handled=true; }
         };
-        dialog.Closed += (_,_)=> { _textEditor=null; _textEditorSession=null; if(!_disposed && _host.IsEditing) _toolbar.Activate(); };
+        dialog.Closed += (_,_)=> { _textEditor=null; _textEditorSession=null; };
         ConfigureAppWindow(dialog, true);
-        _textEditor=dialog; _textEditorSession=session; dialog.Show(); input.Focus(); input.SelectAll();
+        _textEditor=dialog; _textEditorSession=session; ShowAppWindow(dialog, true); input.Focus(); input.SelectAll();
     }
     private void OnMonitorsChanged()
     {
@@ -530,7 +577,9 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if(DocumentOperationBusy) { UpdateStatus(L.Get("Desktop.Busy")); return; }
         _editor.Cancel();
-        try { await action(); } catch(OperationCanceledException) { UpdateStatus(L.Get("Desktop.Cancelled")); } catch(Exception ex) { ShowError(ex.Message); }
+        try { await action(); }
+        catch(OperationCanceledException) { UpdateStatus(L.Get("Desktop.Cancelled")); }
+        catch(Exception ex) { _diagnostics.Write("Command.Error", exception: ex); ShowError(ex.Message); }
     }
     private void RunUiAction(Action action)
     {
@@ -563,7 +612,11 @@ internal sealed partial class DesktopSession : IDisposable
     }
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
     private static extern nint GetToolbarForegroundWindow();
-    private void ShowError(string error) => AppDialog.Show(_toolbar,error,L.Get("App.Name"),MessageBoxButton.OK,MessageBoxImage.Warning);
+    private void ShowError(string error)
+    {
+        _diagnostics.Write("App.ErrorShown", new { Message = error });
+        AppDialog.Show(_toolbar,error,L.Get("App.Name"),MessageBoxButton.OK,MessageBoxImage.Warning);
+    }
 
     private void OnSystemThemeChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
     {
@@ -630,6 +683,7 @@ internal sealed partial class DesktopSession : IDisposable
             IsChecked = _settings.ShowToolShortcutHints, MinHeight = 28, Margin = new Thickness(0, 14, 0, 0) };
         System.Windows.Automation.AutomationProperties.SetName(shortcutHints, L.Get("Feedback3.Toolbar.ShowShortcutHints"));
         panel.Children.Add(shortcutHints);
+        var preferGpu = AddRenderSettings(panel);
         panel.Children.Add(new TextBlock { Text = L.Get("Settings.Language"), Margin = new Thickness(0, 18, 0, 6) });
         var language = new ComboBox { ItemsSource = new[] { L.Get("Settings.AutomaticLanguage"), L.Get("Settings.ChineseLanguage"), L.Get("Settings.EnglishLanguage") },
             MinHeight = 34, SelectedIndex = L.NormalizePreference(_settings.Language) == "zh-CN" ? 1 : L.NormalizePreference(_settings.Language) == "en" ? 2 : 0 };
@@ -656,6 +710,7 @@ internal sealed partial class DesktopSession : IDisposable
             var oldPrimaryScreenOnly = _settings.PrimaryScreenOnly;
             var oldLanguage = _settings.Language;
             var oldShortcutHints = _settings.ShowToolShortcutHints;
+            var oldPreferGpu = _settings.PreferGpuAcceleration;
             try
             {
                 _host.RegisterHotkeys(toggle, hide);
@@ -665,6 +720,7 @@ internal sealed partial class DesktopSession : IDisposable
                 _settings.PrimaryScreenOnly = screenScope.SelectedIndex == 0;
                 _settings.Language = language.SelectedIndex == 1 ? "zh-CN" : language.SelectedIndex == 2 ? "en" : "auto";
                 _settings.ShowToolShortcutHints = shortcutHints.IsChecked == true;
+                _settings.PreferGpuAcceleration = preferGpu.IsChecked == true;
                 try { _settings.Save(); }
                 catch
                 {
@@ -674,19 +730,18 @@ internal sealed partial class DesktopSession : IDisposable
                     _settings.PrimaryScreenOnly = oldPrimaryScreenOnly;
                     _settings.Language = oldLanguage;
                     _settings.ShowToolShortcutHints = oldShortcutHints;
+                    _settings.PreferGpuAcceleration = oldPreferGpu;
                     _host.RegisterHotkeys(oldToggle, oldHide);
                     throw;
                 }
                 RefreshHotkeyHints(_passThroughButton, _welcomeShortcuts, _settings.Toggle, _settings.Hide, _welcomeHideShortcut);
                 _welcomeView?.Refresh(_settings.Toggle, _settings.Hide);
                 RefreshToolShortcutHints();
+                _host.ApplyRenderPreference(_settings.PreferGpuAcceleration);
+                RequestRender();
                 _tray.Text = L.Get("App.NamePrefix") + FormatHotkey(toggle) + L.Get("Desktop.TrayModeSuffix");
                 AppTheme.Apply(_settings.Theme);
-                // Keep a live owned foreground target while WPF replaces themed control
-                // templates and closes the settings HWND. A transient desktop activation
-                // must not look like the user chose to leave editing.
-                if (_host.IsEditing) { _toolbar.Show(); _toolbar.Activate(); }
-                window.Close();
+                SessionWindowCoordinator.Close(window);
                 if (_host.IsEditing) RaiseVisibleToolWindows();
                 UpdateStatus(oldLanguage != _settings.Language ? L.Get("Settings.LanguageSaved") :
                     oldPrimaryScreenOnly == _settings.PrimaryScreenOnly ? L.Get("Settings.Saved") :
@@ -695,7 +750,7 @@ internal sealed partial class DesktopSession : IDisposable
             catch (Exception ex) { error.Text = ex.Message; }
         }));
         ConfigureAppWindow(window, true);
-        window.Show();
+        ShowAppWindow(window, true);
     }
 
     public void Dispose()
@@ -704,7 +759,10 @@ internal sealed partial class DesktopSession : IDisposable
         try { FlushToolState(commitDraft: true); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { UpdateStatus(ex.Message); }
         _disposed = true;
+        _windowCoordinator?.Dispose();
         _toolStateSaveTimer?.Stop();
+        _animationTimer?.Stop();
+        _animationClock.Stop();
         StopLiveEffectsCapture();
         CloseImageDrop();
         System.Windows.Input.InputManager.Current.PreProcessInput -= OnWpfInputProgress;

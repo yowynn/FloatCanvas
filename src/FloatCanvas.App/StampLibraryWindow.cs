@@ -140,12 +140,12 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private void UseSelected()
     {
         if (closed || busy || selected is not { } id || !canMutate() || library.Items.All(entry => entry.Id != id)) return;
-        selectStamp(id); Hide();
+        selectStamp(id); SessionWindowCoordinator.Hide(this);
     }
     private void UseSelectedSource()
     {
         if (closed || busy || selected is not { } id || !canMutate() || useSource is null || library.Items.All(item => item.Id != id || item.Mode != StampSaveMode.RasterMerge)) return;
-        useSource(id); Hide();
+        useSource(id); SessionWindowCoordinator.Hide(this);
     }
     private void RefreshActions()
     {
@@ -311,7 +311,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var dialog = Dialog(panel, L.Get(showMode ? "Stamp.SaveSelection" : "Stamp.Rename"));
         save.Click += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) dialog.DialogResult = true; };
         dialog.Loaded += (_, _) => { name.Focus(); name.SelectAll(); };
-        return dialog.ShowDialog() == true ? (name.Text.Trim(), raster.IsChecked == true ? StampSaveMode.RasterMerge : StampSaveMode.EditableGroup) : null;
+        return SessionWindowCoordinator.ShowModal(dialog) == true ? (name.Text.Trim(), raster.IsChecked == true ? StampSaveMode.RasterMerge : StampSaveMode.EditableGroup) : null;
     }
     private bool Confirm(string message)
     {
@@ -322,7 +322,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var cancel = Button("Stamp.Cancel", () => { }); cancel.IsCancel = true; buttons.Children.Add(cancel); panel.Children.Add(buttons);
         var dialog = Dialog(panel, L.Get("Stamp.LibraryTitle"));
         apply.Click += (_, _) => dialog.DialogResult = true;
-        return dialog.ShowDialog() == true;
+        return SessionWindowCoordinator.ShowModal(dialog) == true;
     }
     private Wpf.Window Dialog(object content, string title)
     {

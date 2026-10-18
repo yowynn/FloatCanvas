@@ -120,7 +120,7 @@ internal static class WorkspaceToolControllerTests
     {
         foreach (var tool in new[] { EditorTool.Blur, EditorTool.Pixelate })
         {
-            foreach (int imageCount in tool == EditorTool.Pixelate ? new[] { 0, 1, 2 } : new[] { 0, 2 })
+            foreach (int imageCount in new[] { 0, 1, 2 })
             {
                 var images = Enumerable.Range(0, imageCount).Select(index => new CanvasElement { Kind = ElementKind.Image, Width = 120, Height = 100,
                     AssetId = new string((char)('a' + index), 64), Transform = Affine2D.Translation(index * 160, 10) }).ToList();
@@ -154,10 +154,8 @@ internal static class WorkspaceToolControllerTests
             lockedController.Message += messages.Add;
             string lockedBefore = JsonSerializer.Serialize(lockedSession.Document);
             Gesture(lockedController, new(20, 20), new(80, 70));
-            check(tool == EditorTool.Pixelate
-                    ? "live Pixelate targets the desktop region independently of a selected locked image"
-                    : "Blur rejects a single explicitly selected locked image instead of falling back to the desktop",
-                (tool == EditorTool.Pixelate ? emitted == 1 && messages.Count == 0 : emitted == 0 && messages.SequenceEqual([L.Get("Editor.ImageTargetLocked")])) &&
+            check(tool + " targets the live desktop region independently of a selected locked image",
+                emitted == 1 && messages.Count == 0 &&
                 JsonSerializer.Serialize(lockedSession.Document) == lockedBefore && lockedSession.UndoCount == 0 && !lockedSession.IsTransactionActive);
         }
     }

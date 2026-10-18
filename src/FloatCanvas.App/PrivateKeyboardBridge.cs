@@ -20,6 +20,12 @@ namespace FloatCanvas.App;
 internal sealed class PrivateKeyboardBridge
 {
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+    private readonly Func<nint, bool> _isCommandTarget;
+    private readonly HashSet<uint> _modalCommandKeys = [];
+    private long _keyLease;
+
+    internal PrivateKeyboardBridge(Func<nint, bool>? isCommandTarget = null)
+        => _isCommandTarget = isCommandTarget ?? (_ => false);
 
     /// <summary>
     /// A non-activating WPF Popup can assign logical keyboard focus while Win32 still
@@ -53,7 +59,7 @@ internal sealed class PrivateKeyboardBridge
     };
 
     public bool Process(KeyboardInputPacket packet)
-        => ProcessCore(packet);
+        => Process(packet, () => { });
 
     /// <summary>
     /// A command can enter a native or WPF modal loop before key dispatch returns. The
@@ -71,11 +77,21 @@ internal sealed class PrivateKeyboardBridge
             completed = true;
             completePacket();
         }
-        EventHandler enteringModal = (_, _) => CompleteOnce();
+        void EnterModal()
+        {
+            // The press that opened a dialog belongs to its original command. Its
+            // auto-repeat tail must not become text in the newly focused editor.
+            if (!packet.IsKeyUp) _modalCommandKeys.Add(packet.VirtualKey);
+            CompleteOnce();
+        }
+        EventHandler enteringModal = (_, _) => EnterModal();
         ComponentDispatcher.EnterThreadModal += enteringModal;
         // MessageBox.Show does not PushModal, and EnterThreadModal is raised only at the
         // outermost WPF modal boundary. A real reentrant UI pump executes this queued turn.
-        var modalCompletion = _dispatcher.InvokeAsync(CompleteOnce, DispatcherPriority.Send);
+        var modalCompletion = _dispatcher.InvokeAsync(() =>
+        {
+            if (ComponentDispatcher.IsThreadModal) EnterModal(); else CompleteOnce();
+        }, DispatcherPriority.Send);
         try { return ProcessCore(packet); }
         finally
         {
@@ -89,6 +105,7 @@ internal sealed class PrivateKeyboardBridge
     {
         _dispatcher.VerifyAccess();
         if (packet.Kind != KeyboardInputPacketKind.Key) return false;
+        if (_keyLease != packet.LeaseId) { _modalCommandKeys.Clear(); _keyLease = packet.LeaseId; }
         // Updating this thread's key-state table does not update system asynchronous state.
         // Apply balancing releases even if the user has already chosen another foreground.
         var state = packet.CopyKeyboardState();
@@ -99,6 +116,12 @@ internal sealed class PrivateKeyboardBridge
         foreach (int button in new[] { 1, 2, 4, 5, 6 }) state[button] = current[button];
         if (!SetKeyboardState(state))
             throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("App.UpdateKeyboardStateFailed"));
+
+        // Always apply the release snapshot above, including modifier balancing.
+        // A genuinely new press after release remains ordinary editable text.
+        if (packet.IsKeyUp) _modalCommandKeys.Remove(packet.VirtualKey);
+        else if (packet.IsRepeat && _modalCommandKeys.Contains(packet.VirtualKey)) return true;
+        else if (!packet.IsRepeat) _modalCommandKeys.Remove(packet.VirtualKey);
 
         var foreground = GetForegroundWindow();
         var focus = GetFocus();
@@ -130,7 +153,10 @@ internal sealed class PrivateKeyboardBridge
         // In particular, do not bypass TSF with synthesized TextInput/WM_CHAR events.
         if (!ComponentDispatcher.RaiseThreadMessage(ref message))
         {
-            TranslateMessage(ref message);
+            // The native canvas accepts commands, never text. Translating its key
+            // before dispatch would queue a character that a newly opened WPF
+            // modal editor could consume after the command changes focus.
+            if (!_isCommandTarget(focus)) TranslateMessage(ref message);
             DispatchMessage(ref message);
         }
         return true;

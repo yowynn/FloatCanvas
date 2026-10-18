@@ -65,9 +65,10 @@ public static class SceneValidation
         Require(element.AssetId is null || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidAssetReference"));
         Require(element.ImageCrop is null || NormalizedRect(element.ImageCrop.Value, positive: true), L.Get("Scene.InvalidImageCrop"));
         Require(element.Effects is not null && element.Effects.Count <= 10_000, L.Get("Scene.InvalidEffects"));
-        Require(element.Effects!.Count == 0 || element.Kind is ElementKind.Image or ElementKind.LivePixelate, L.Get("Scene.EffectsRequireImage"));
-        Require(element.Kind != ElementKind.LivePixelate || element.Effects!.Count == 1 &&
-            element.Effects[0] is { Kind: ImageEffectKind.Pixelate } && element.Width > 0 && element.Height > 0,
+        Require(element.Effects!.Count == 0 || element.Kind == ElementKind.Image || ElementGeometry.IsLiveEffect(element.Kind), L.Get("Scene.EffectsRequireImage"));
+        Require(!ElementGeometry.IsLiveEffect(element.Kind) || element.Effects!.Count == 1 &&
+            element.Effects[0] is { } liveEffect && liveEffect.Kind == (element.Kind == ElementKind.LiveBlur ? ImageEffectKind.Blur : ImageEffectKind.Pixelate) &&
+            element.Width > 0 && element.Height > 0,
             L.Get("Scene.InvalidImageEffect"));
         var effectIds = new HashSet<Guid>();
         foreach (var effect in element.Effects)

@@ -34,6 +34,9 @@ internal static class AppTheme
         lcdEdge.Freeze(); resources["CanvasLcdBorder"] = lcdEdge;
         SetBrush(resources, "CanvasButton", dark ? "#303640" : "#E6EAF1");
         SetBrush(resources, "CanvasPressed", dark ? "#414B59" : "#D4DEEB");
+        SetBrush(resources, "CanvasHiddenSurface", dark ? "#4B3B20" : "#FFF0CC");
+        SetBrush(resources, "CanvasHiddenText", dark ? "#FFD077" : "#9A5800");
+        SetBrush(resources, "CanvasHiddenBorder", dark ? "#9A7735" : "#D6A343");
         SetBrush(resources, "CanvasPrimary", "#2376CC");
         SetBrush(resources, "CanvasPrimaryHover", "#1E66B3");
         SetBrush(resources, "CanvasPrimaryPressed", "#185394");

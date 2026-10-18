@@ -13,9 +13,18 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.Windows;
 
-/// <summary>A single output's ROI in desktop physical pixels. Bitmap is owned by its enclosing frame.</summary>
+/// <summary>A single output's ROI in desktop physical pixels. Bitmap is owned by its enclosing frame.
+/// LastPresentTimestamp retains its compatibility name: QPC desktop-present time for DXGI,
+/// or the captured frame's SystemRelativeTime converted to QPC for WGC.</summary>
 public sealed record LiveDesktopOutputFrame(string DeviceName, PixelBounds Bounds, SKBitmap Bitmap,
-    long LastPresentTimestamp, int RotationDegrees, bool ProtectedContentMaskedOut);
+    long LastPresentTimestamp, int RotationDegrees, bool ProtectedContentMaskedOut)
+{
+    public LiveDesktopFrameTiming? Timing { get; init; }
+}
+
+/// <summary>QPC acquisition/readback milestones; contains no captured content.</summary>
+public sealed record LiveDesktopFrameTiming(long AcquiredTimestamp, long ReadbackCompletedTimestamp,
+    ulong ConfigurationIteration, int FramesDrained, int FramesRejected);
 
 /// <summary>Caller-owned, immutable desktop pixels. Dispose the frame, not its individual bitmaps.</summary>
 public sealed class LiveDesktopFrame : IDisposable
@@ -24,7 +33,7 @@ public sealed class LiveDesktopFrame : IDisposable
     internal LiveDesktopFrame(long targetVersion, LiveDesktopOutputFrame[] outputs)
     { TargetVersion = targetVersion; GeneratedAtTimestamp=Stopwatch.GetTimestamp(); Outputs = Array.AsReadOnly(outputs); }
     public long TargetVersion { get; }
-    /// <summary>QPC when this ROI set was assembled; desktop freshness is each output's LastPresentTimestamp.</summary>
+    /// <summary>QPC when this ROI set was assembled; each output retains its own source pixel timestamp.</summary>
     public long GeneratedAtTimestamp { get; }
     /// <summary>Outputs retain independent QPC timestamps; this is not a synchronized multi-screen snapshot.</summary>
     public IReadOnlyList<LiveDesktopOutputFrame> Outputs { get; }
@@ -36,12 +45,13 @@ public sealed class LiveDesktopFrame : IDisposable
 }
 
 /// <summary>
-/// Persistent, at most 15-FPS desktop duplication on one background thread. No window hiding or
-/// image codecs are used. Only each output's requested ROI union is transferred to CPU memory.
-/// Callers must exclude their own overlay windows before supplying a clean-frame QPC boundary.
+/// Persistent screen sampling on one background thread, capped at the display rate and 60 FPS. WGC can exclude this
+/// process's windows in its own session; the compatibility DXGI mode requires caller-owned
+/// global exclusion. No window hiding or image codecs are used; only requested ROIs reach CPU memory.
 /// </summary>
 public sealed class LiveDesktopCapture : IDisposable
 {
+    private static readonly Lazy<Task<bool>> SessionExclusionProbe = new(() => Task.Run(WgcDesktopSession.ProbeSessionExclusion));
     private readonly object _gate = new();
     private readonly AutoResetEvent _wake = new(false);
     private readonly CancellationTokenSource _stop = new();
@@ -52,7 +62,8 @@ public sealed class LiveDesktopCapture : IDisposable
     private LiveDesktopFrame? _latest;
     private Exception? _lastError;
     private bool _disposed, _workerExited;
-    private static readonly long FrameInterval = (Stopwatch.Frequency + 14) / 15;
+    private int _framePending, _samplingFramesPerSecond = LiveCaptureCadence.MaximumFramesPerSecond;
+    private long _frameArrivalCount, _samplingPassCount;
 
     /// <summary>Background notification only. Marshal to the UI, then claim a frame with TryGetLatest.</summary>
     public event Action? FrameReady;
@@ -61,10 +72,21 @@ public sealed class LiveDesktopCapture : IDisposable
     public Task Completion => _completion.Task;
     public Exception? LastError { get { lock (_gate) return _lastError; } }
     public long TargetVersion { get { lock (_gate) return _targetVersion; } }
+    /// <summary>True only when this source uses per-session WGC window exclusion, without global display affinity.</summary>
+    public bool UsesSessionWindowExclusion { get; }
+    public int SamplingFramesPerSecond => Volatile.Read(ref _samplingFramesPerSecond);
+    public long FrameArrivalCount => Interlocked.Read(ref _frameArrivalCount);
+    public long SamplingPassCount => Interlocked.Read(ref _samplingPassCount);
 
-    public LiveDesktopCapture()
+    /// <summary>Queries the actual display-session interface on an MTA thread without starting capture or showing a picker.
+    /// Only known absent APIs return false; device, policy and unexpected failures fault the cached task.</summary>
+    public static Task<bool> ProbeSessionExclusionAsync() => SessionExclusionProbe.Value;
+
+    public LiveDesktopCapture(bool useSessionWindowExclusion = false)
     {
+        UsesSessionWindowExclusion = useSessionWindowExclusion;
         _worker = new Thread(Run) { IsBackground = true, Name = "FloatCanvas desktop effects" };
+        _worker.SetApartmentState(ApartmentState.MTA);
         _worker.Start();
     }
 
@@ -115,22 +137,39 @@ public sealed class LiveDesktopCapture : IDisposable
 
     private void Run()
     {
-        var outputs = new Dictionary<string, OutputSession>(StringComparer.OrdinalIgnoreCase);
-        long nextFrame = 0, publishedVersion=-1;
+        var outputs = new Dictionary<string, ILiveDesktopOutputSession>(StringComparer.OrdinalIgnoreCase);
+        long nextFrame = 0, nextWatchdog = 0, publishedVersion=-1, sampledVersion=-1, rateVersion=-1;
+        long frameInterval = LiveCaptureCadence.Interval(LiveCaptureCadence.MaximumFramesPerSecond);
+        bool winrtInitialized = false;
         try
         {
+            if (UsesSessionWindowExclusion) { WgcDesktopSession.InitializeRuntime(); winrtInitialized = true; }
+            using var dpi = new ThreadDpiAwarenessScope(WindowsCapabilities.Current);
             while (!_stop.IsCancellationRequested)
             {
                 CaptureTarget[] targets; long version, boundary;
                 lock (_gate) { targets = _targets; version = _targetVersion; boundary = _notBeforeTimestamp; }
                 if (targets.Length == 0)
                 {
-                    ClearOutputs(outputs); nextFrame = 0; _wake.WaitOne(); continue;
+                    ClearOutputs(outputs); nextFrame = 0; nextWatchdog=0; _wake.WaitOne(); continue;
                 }
                 long now = Stopwatch.GetTimestamp();
+                if (rateVersion != version)
+                {
+                    int rate = LiveCaptureCadence.QueryRate(targets.Select(target=>target.Monitor));
+                    Volatile.Write(ref _samplingFramesPerSecond,rate);
+                    frameInterval=LiveCaptureCadence.Interval(rate); rateVersion=version;
+                }
+                if (UsesSessionWindowExclusion && sampledVersion==version && Volatile.Read(ref _framePending)==0 && now<nextWatchdog)
+                {
+                    // Static desktops need no tight polling. A low-rate watchdog still checks
+                    // exclusion identities and first-frame timeout if no notification arrives.
+                    _wake.WaitOne((int)Math.Clamp(Math.Ceiling((nextWatchdog-now)*1000d/Stopwatch.Frequency),1,250)); continue;
+                }
                 if (now < nextFrame)
-                { _wake.WaitOne((int)Math.Clamp(Math.Ceiling((nextFrame - now) * 1000d / Stopwatch.Frequency), 1, 67)); continue; }
-                nextFrame = now + FrameInterval;
+                { _wake.WaitOne((int)Math.Clamp(Math.Ceiling((nextFrame - now) * 1000d / Stopwatch.Frequency), 1, 1000)); continue; }
+                nextFrame = now + frameInterval; nextWatchdog=now+Stopwatch.Frequency/4;
+                sampledVersion=version; Interlocked.Exchange(ref _framePending,0); Interlocked.Increment(ref _samplingPassCount);
                 try
                 {
                     foreach (var name in outputs.Keys.Where(name => !targets.Any(target =>
@@ -138,12 +177,22 @@ public sealed class LiveDesktopCapture : IDisposable
                         target.Monitor.Bounds == outputs[name].Monitor.Bounds)).ToArray())
                     { outputs[name].Dispose(); outputs.Remove(name); }
                     bool changed = version!=publishedVersion;
+                    var ownWindows = UsesSessionWindowExclusion ? WgcDesktopSession.EnumerateOwnWindows() : [];
                     foreach (var target in targets)
                     {
                         _stop.Token.ThrowIfCancellationRequested();
                         if (!outputs.TryGetValue(target.Monitor.DeviceName, out var output))
-                            outputs.Add(target.Monitor.DeviceName, output = OutputSession.Create(target.Monitor));
-                        changed |= output.Update(target.Region, boundary, _stop.Token);
+                            outputs.Add(target.Monitor.DeviceName, output = UsesSessionWindowExclusion
+                                ? new WgcDesktopSession(target.Monitor, frameAvailable:SignalFrameAvailable) : OutputSession.Create(target.Monitor));
+                        changed |= output.Update(target.Region, boundary, _stop.Token, ownWindows);
+                    }
+                    if (UsesSessionWindowExclusion && !ownWindows.SequenceEqual(WgcDesktopSession.EnumerateOwnWindows()))
+                    {
+                        // A new own HWND may have appeared while frames were acquired/read back.
+                        // Do not publish those pixels; even a subsequent return to the previous
+                        // list must establish a new exclusion generation before publication.
+                        foreach (var output in outputs.Values.OfType<WgcDesktopSession>()) output.InvalidateOwnWindows();
+                        Interlocked.Exchange(ref _framePending,1); continue;
                     }
                     if (changed && outputs.Values.All(output => output.Bitmap is not null))
                     { Publish(version, targets.Select(target => outputs[target.Monitor.DeviceName]).ToArray()); publishedVersion=version; }
@@ -153,27 +202,44 @@ public sealed class LiveDesktopCapture : IDisposable
                 {
                     // AccessLost, device removal/reset and mode changes all recreate owned devices,
                     // duplication and staging state. No old output is offered under the new session.
-                    ClearOutputs(outputs); publishedVersion=-1; ReportFailure(ex, version); _wake.WaitOne(500);
+                    try { ClearOutputs(outputs); }
+                    catch (Exception cleanup) { ex = new AggregateException(ex, cleanup); }
+                    publishedVersion=-1; sampledVersion=-1; ReportFailure(ex, version); _wake.WaitOne(500);
                 }
             }
         }
         catch(Exception ex) { ReportFailure(ex,TargetVersion); }
         finally
         {
-            ClearOutputs(outputs);
-            lock (_gate) { _workerExited=true; _wake.Dispose(); _stop.Dispose(); }
-            _completion.TrySetResult();
+            try { ClearOutputs(outputs); }
+            catch (Exception cleanup) { ReportFailure(cleanup, TargetVersion); }
+            finally
+            {
+                if (winrtInitialized) WgcDesktopSession.UninitializeRuntime();
+                lock (_gate) { _workerExited=true; _wake.Dispose(); _stop.Dispose(); }
+                _completion.TrySetResult();
+            }
         }
     }
 
-    private void Publish(long version, OutputSession[] outputs)
+    private void SignalFrameAvailable()
+    {
+        lock (_gate)
+        {
+            if (_disposed || _workerExited) return;
+            Interlocked.Increment(ref _frameArrivalCount);
+            Interlocked.Exchange(ref _framePending,1); _wake.Set();
+        }
+    }
+
+    private void Publish(long version, ILiveDesktopOutputSession[] outputs)
     {
         var frames = new List<LiveDesktopOutputFrame>(outputs.Length);
         try
         {
             foreach (var output in outputs)
                 frames.Add(new(output.Monitor.DeviceName, output.Region, SharePixels(output.Bitmap!), output.Timestamp,
-                    output.Rotation, output.ProtectedContentMaskedOut));
+                    output.Rotation, output.ProtectedContentMaskedOut) { Timing=output.Timing });
             var frame = new LiveDesktopFrame(version, frames.ToArray());
             lock (_gate)
             {
@@ -195,8 +261,13 @@ public sealed class LiveDesktopCapture : IDisposable
         }
         try { Failed?.Invoke(error); } catch { /* A UI error handler cannot terminate GPU cleanup. */ }
     }
-    private static void ClearOutputs(Dictionary<string, OutputSession> outputs)
-    { foreach (var output in outputs.Values) output.Dispose(); outputs.Clear(); }
+    private static void ClearOutputs(Dictionary<string, ILiveDesktopOutputSession> outputs)
+    {
+        var owned = outputs.Values.ToArray(); outputs.Clear(); List<Exception>? failures = null;
+        foreach (var output in owned)
+            try { output.Dispose(); } catch (Exception error) { (failures ??= []).Add(error); }
+        if (failures is not null) throw new AggregateException("Live capture output cleanup failed.", failures);
+    }
 
     // SkBitmap.extractSubset retains SkPixelRef. Each thread gets a distinct bitmap
     // wrapper, sharing only immutable pixels; static outputs need no repeated CPU copy.
@@ -295,7 +366,7 @@ public sealed class LiveDesktopCapture : IDisposable
         catch { bitmap.Dispose(); throw; }
     }
 
-    private sealed class OutputSession : IDisposable
+    private sealed class OutputSession : ILiveDesktopOutputSession
     {
         private readonly ID3D11Device _device;
         private readonly ID3D11DeviceContext _context;
@@ -309,6 +380,7 @@ public sealed class LiveDesktopCapture : IDisposable
         public SKBitmap? Bitmap { get; private set; }
         public long Timestamp { get; private set; }
         public bool ProtectedContentMaskedOut { get; private set; }
+        public LiveDesktopFrameTiming? Timing { get; private set; }
         private OutputSession(MonitorInfo monitor, int rotation, ID3D11Device device, ID3D11DeviceContext context, IDXGIOutputDuplication duplication)
         { Monitor = monitor; Rotation = rotation; _device = device; _context = context; _duplication = duplication; }
 
@@ -349,7 +421,7 @@ public sealed class LiveDesktopCapture : IDisposable
             throw new InvalidOperationException(L.Format("Capture.UnmatchedDxgiOutputs",monitor.DeviceName));
         }
 
-        public bool Update(PixelBounds region, long boundary, CancellationToken cancellationToken)
+        public bool Update(PixelBounds region, long boundary, CancellationToken cancellationToken, nint[] ownWindows)
         {
             bool changed = Region != region || _boundary != boundary;
             if (_boundary != boundary && Timestamp < boundary)
@@ -357,6 +429,7 @@ public sealed class LiveDesktopCapture : IDisposable
             if (changed)
             { Bitmap?.Dispose(); Bitmap = null; Region = region; _boundary = boundary; _waitingSince = Stopwatch.GetTimestamp(); }
             cancellationToken.ThrowIfCancellationRequested();
+            long acquiredAt=Stopwatch.GetTimestamp();
             var acquired = _duplication.AcquireNextFrame(0, out var info, out var resource);
             if (acquired != ResultCode.WaitTimeout)
             {
@@ -410,7 +483,8 @@ public sealed class LiveDesktopCapture : IDisposable
             try
             {
                 var bitmap = CopyRotatedRoi(mapped.DataPointer, checked((int)mapped.RowPitch), crop.Width, crop.Height, region, Rotation, cancellationToken);
-                Bitmap?.Dispose(); Bitmap = bitmap; return true;
+                Bitmap?.Dispose(); Bitmap = bitmap;
+                Timing=new(acquiredAt,Stopwatch.GetTimestamp(),0,acquired==ResultCode.WaitTimeout?0:1,0); return true;
             }
             finally { _context.Unmap(_staging, 0); }
         }

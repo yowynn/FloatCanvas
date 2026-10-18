@@ -94,7 +94,11 @@ internal static class WindowsCompatibilityTests
                 bool affinityRead = NativeMethods.GetWindowDisplayAffinity(window, out uint affinityBefore);
                 Console.WriteLine($"Offscreen affinity before hiding: read={affinityRead}, value={affinityBefore}.");
                 int restored = 0, hidden = 0;
-                using (var scope = new CaptureVisibilityScope([window], () => restored++, () => hidden++, legacy))
+                CaptureVisibilityScope BeginLegacyCapture(Action ready) => new([window], [],
+                    _ => { restored++; return new(CaptureRestoreStatus.Restored); }, (_, _) => ready(),
+                    legacy, () => true, true, (_, _) => throw new InvalidOperationException("No input window in this fixture"),
+                    _ => { }, _ => { });
+                using (var scope = BeginLegacyCapture(() => hidden++))
                 {
                     Check("1607 one-shot capture hides its own window", !NativeMethods.IsWindowVisible(window) && hidden == 1 && scope.NotBeforeTimestamp > 0);
                     bool duringRead = NativeMethods.GetWindowDisplayAffinity(window, out uint affinity);
@@ -107,7 +111,7 @@ internal static class WindowsCompatibilityTests
                 Check("hide-only capture preserves prior affinity after restoration", afterRead && original == affinityBefore);
                 NativeMethods.ShowWindow(window, 0);
                 bool hideFailed = false;
-                try { using var scope = new CaptureVisibilityScope([window], () => restored++, () => throw new InvalidOperationException("fixture"), legacy); }
+                try { using var scope = BeginLegacyCapture(() => throw new InvalidOperationException("fixture")); }
                 catch (InvalidOperationException) { hideFailed = true; }
                 Check("hide-only capture failures still restore the original hidden state", hideFailed && restored == 2 && !NativeMethods.IsWindowVisible(window));
             }

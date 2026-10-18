@@ -104,8 +104,16 @@ public sealed partial class OverlayHost
                 case KeyboardInputPacketKind.LeaseEnded:
                     if (IsEditing)
                     {
+                        var reason = packet.EndReason ?? KeyboardLeaseEndReason.HookFailure;
+                        if (reason == KeyboardLeaseEndReason.ForegroundLost && _focusTransitions.HasPending)
+                        {
+                            if (IsForegroundFromThisProcess() && EnsureEditingKeyboardIsolation()) break;
+                            if (!IsForegroundFromThisProcess()) break; // the bounded completion rechecks once
+                        }
+                        _focusTransitions.Cancel();
+                        if (!IsEditing) break; // a failed recovery has already released this session
                         EndEditingAfterFocusLoss();
-                        KeyboardIsolationReleased?.Invoke(packet.EndReason ?? KeyboardLeaseEndReason.HookFailure);
+                        KeyboardIsolationReleased?.Invoke(reason);
                     }
                     break;
             }

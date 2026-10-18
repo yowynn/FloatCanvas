@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ZipPath, [string]$ExtractionRoot, [switch]$StaticOnly)
+param([string]$ZipPath, [string]$ExtractionRoot, [string]$ReportPath, [switch]$StaticOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($ZipPath)) {
@@ -125,10 +125,11 @@ try {
         RuntimeSource = 'Existing system .NET runtime, resolved by the apphost using inherited runtime search configuration.'
         Limitation = 'Fresh ZIP extraction on this Windows 11 machine using an existing installed .NET Desktop Runtime, with no dotnet on child PATH. This does not prove missing-runtime dialog behavior, Windows 10, or a clean OS.'
     }
-    $reportPath = Join-Path $projectRoot 'artifacts\e2e\package-smoke.json'
-    New-Item -ItemType Directory -Path (Split-Path -Parent $reportPath) -Force | Out-Null
-    $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
-    Write-Host "PASS package smoke: $reportPath"
+    if ([string]::IsNullOrWhiteSpace($ReportPath)) { $ReportPath = Join-Path $projectRoot 'artifacts\e2e\package-smoke.json' }
+    $ReportPath = [IO.Path]::GetFullPath($ReportPath)
+    New-Item -ItemType Directory -Path (Split-Path -Parent $ReportPath) -Force | Out-Null
+    $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
+    Write-Host "PASS package smoke: $ReportPath"
 }
 finally {
     try {

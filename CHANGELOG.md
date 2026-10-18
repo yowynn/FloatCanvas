@@ -2,6 +2,53 @@
 
 ## 未发布 / Unreleased
 
+## [0.2.0-preview.3] - 2026-10-18
+
+- 实时滤镜创建先等待有效画面，显隐保留同一画布的最后有效缓存，消除等待新帧时的灰色闪框；准备中取消不新增对象或撤销记录。实时采集改为新帧通知唤醒并只处理最新合格帧，目标跟随显示刷新率、最高 60 FPS，不承诺与下层应用同帧。
+- Live filters wait for valid pixels before insertion and retain the same canvas's last valid cache across visibility changes, avoiding gray flashes while awaiting a new frame. Cancelling preparation adds no object or undo entry. Capture wakes on new-frame notifications and processes only the newest valid frame, targeting the display refresh rate up to 60 FPS without promising synchronization with the underlying application's frames.
+
+- 实时滤镜优先使用会话级窗口排除，避免将画布从其他截图软件中一并排除；按实际接口能力检测，旧系统保留兼容路径与说明。动图复用两侧静态标注缓存，动图及桌面滤镜的逐帧更新不再重复刷新面板。
+- Live filters prefer session-local window exclusion so the canvas remains available to other capture tools. Actual interface availability is checked; older systems retain the compatibility path and a notice. Animated images reuse cached static annotations on either side, and animation/live-desktop frames no longer repeatedly refresh panels.
+
+- 新增默认开启的“优先使用 GPU 加速”设置：滤镜场景在 GPU 上绘制整幅画布，轻量场景保留 CPU 缓存以减少读回开销。保存后无需重启即可生效，GPU 不可用或失败时回退 CPU；设置显示最近一帧实际后端、选择原因、设备、绘制耗时及帧数，不因查看状态而触发绘制。解码、采集读回和窗口提交仍包含 CPU 工作，已有配置保留兼容。
+- Added **Prefer GPU acceleration**, enabled by default. Filter scenes render the entire canvas on the GPU, while light scenes retain CPU caching to avoid readback overhead. Changes apply on save without restarting, and unavailable or failed GPU rendering falls back to the CPU. Settings shows the last frame's actual backend, selection reason, device, draw time and frame counts without triggering rendering. Decoding, capture readback and window submission still involve CPU work; existing settings remain compatible.
+
+- 工具条显隐按钮以睁眼表示可见、琥珀色强调的闭眼表示隐藏，悬停提示显示下一步操作。
+- The toolbar visibility button shows an open eye when visible and a closed eye with an amber accent when hidden; its hover tooltip describes the next action.
+
+- 实时画布新增动态模糊，与动态马赛克一样持续处理桌面及更低图层对象，移动区域会重新采样；模糊边缘使用额外采样范围。工程、恢复与可编辑印章保留动态区域，导出和合并图片使用当时的静态结果。实时滤镜需要 Windows 10 2004；较早系统继续静态降级，应用最低基线仍为 Windows 10 1607。
+- Added live blur alongside live pixelation on the live canvas. Both process the desktop and lower objects and resample when moved; blur samples beyond its visible edge. Projects, recovery and editable stamps retain live regions; exports and merged images use a static result. Live filters require Windows 10 2004, with static fallbacks on earlier systems and the application minimum unchanged at Windows 10 1607.
+
+- GIF 与动态 WebP 可从原始文件、编码剪贴板数据、文件复制粘贴或拖放导入并播放；工程、恢复、内部对象复制及可编辑组合印章保留原始动图，重开印章库后盖出仍播放。PNG／Bitmap 来源只能得到静态图，不按网址联网追原图。隐藏画布停止刷新，穿透仍播放；播放不产生撤销或自动保存，按需解码使用有界缓存。截图、PNG／JPEG 导出和合并图片取操作时一帧，缩略图静态，暂无播放控制、播放进度持久化或动画导出。
+- GIF and animated WebP play when imported from original files, encoded clipboard data, copied/pasted files or drag and drop. Projects, recovery, internal object copying and editable group stamps retain the original animation, including stamps placed after reopening the library. PNG/Bitmap sources remain static; URLs are not fetched for originals. Hiding stops refresh while pass-through continues playback. Playback adds no undo or recovery writes and uses bounded on-demand decoding. Snapshots, PNG/JPEG exports and merged images take one current frame; thumbnails remain static. Playback controls, position persistence and animated export are not available.
+
+- “更多”收拢为模糊和马赛克；实色遮盖保留主菜单与原快捷键入口。裁剪移至主工具条导入、截图之后，仅单选一张可编辑且未锁定图片时启用；无选、多选、图文混选和锁定状态禁用，不在空选时裁剪背景。
+- More now contains Blur and Pixelate. Solid redaction retains its main-menu and existing shortcut entries. Crop is on the main toolbar after import and capture, enabled only for one selected editable, unlocked image. It is disabled for empty, multiple, mixed or locked selections and does not crop the background on an empty selection.
+
+- 背景截图保留当前编辑和输入会话，不再先退出绘制再恢复，也不依赖外部窗口名单决定返焦。优先从采集中排除浮绘界面；必要时仅短暂隐藏视觉界面，旧系统保留兼容路径。每次重新采集当前桌面，静止画面无需人为触发更新。采集失败时，健康的编辑会话继续保留；真正外切、退出、隐藏或画布变化会取消插入，不抢回前台。
+- Background snapshots retain the current editing and input session instead of exiting and re-entering drawing, without external-window allowlists for focus restoration. FloatCanvas first excludes its interface from capture, briefly hiding visual surfaces when necessary and retaining a compatibility path for older systems. Each request captures the current desktop, including static content without requiring an artificial update. Capture failures retain a healthy editing session; actual application switches, exit, hiding or canvas changes cancel insertion without reclaiming focus.
+
+- 新增有大小上限的本地运行诊断与异常日志，记录采集方式、准备和取帧阶段、取消／失败原因及异常堆栈，并区分被抑制的按键尾流与真正外部输入。意外失败提示日志位置，主动取消仍保持安静。
+- Added bounded local diagnostic and exception logs for capture strategy, readiness and frame acquisition, cancellation/failure reasons and exception stacks, distinguishing suppressed trailing key events from actual external input. Unexpected failures show the log location; intentional cancellation remains quiet.
+
+- 截图改为实时画布上的原位静像：先选矩形、椭圆、自由套索或多边形套索，完成后才采集并作为普通图片插入，不再新建独立冻结草稿。可选仅背景、背景＋画布、保留透明度的仅画布及图片边框；保持截图工具便于连续操作。原有对象、旧冻结工程和历史草稿保留。
+- Capture now places a static snapshot on the live canvas: select a rectangle, ellipse, freehand lasso or polygon lasso before capture, then insert an ordinary image without creating a separate frozen draft. Choose background only, background + canvas, or canvas only with transparency, plus an optional image border. The capture tool stays active for consecutive captures. Original objects, older frozen projects and history drafts are retained.
+
+- 序号与 Emoji 新增拖动确定插入尺寸，实时预览并整体等比缩放；单击仍按配置尺寸居中插入，拖动不改写工具配置。松开后一次提交，取消不跳序号；保留选中后调整及 Ctrl 重叠创建。
+- Numbered markers and emoji can now be sized by dragging, with a live preview and proportional scaling of the whole object. Clicking still inserts at the configured size, centered on the click, and dragging leaves tool settings intact. Release commits one operation; cancellation does not skip a number. Selection editing and Ctrl-based overlapping creation remain available.
+
+- 修复恢复历史画布并在保存确认中选择“不保存”后意外退出绘制的问题。恢复、取消或失败保留原编辑／穿透模式；中途切到其他应用或主动退出时不抢回前台。历史列表新增保存时间和透明画布缩略图，仅保留浮绘自身标注；旧历史按需生成预览，预览不可用不影响恢复。损坏图片导致可选缩略图生成失败时，也不会阻止有效恢复存档的保存。
+- Fixed restoring workspace history unexpectedly leaving edit mode after choosing **Don't save**. Restoration, cancellation and failures retain the original edit/pass-through mode without reclaiming focus after you switch applications or explicitly leave editing. History now shows save times and transparent canvas thumbnails containing only FloatCanvas annotations. Older history gets previews on demand, and unavailable previews do not prevent restoration. A failed optional thumbnail, including corrupt image data, no longer blocks saving otherwise valid recovery data.
+
+- 统一内部窗口与弹层的焦点交接，修复印章重命名后关闭印章库可能使工具条消失、意外退出绘制的问题。点击画布会同时收起相关临时子层和未固定面板，并保留原始画布操作；固定面板保留，模态对话框仍需确认或取消。切换到其他应用仍释放输入，迟到的异步回调不抢回前台。
+- Unified focus handoffs between app windows and popups, fixing the toolbar disappearing and editing ending unexpectedly after renaming a stamp and closing the library. Clicking the canvas dismisses related temporary child panels and unpinned panels together while retaining the original canvas action. Pinned panels remain open, and modal dialogs still require confirmation or cancellation. Switching to another application releases input; late asynchronous callbacks do not reclaim focus.
+
+- 修复按住 Ctrl 从已有选框内连续绘制时，新图形未创建、原对象反而被移动的问题。拖动从按下鼠标时确定为创建或调整，中途松开 Ctrl 不改变本次操作。
+- Fixed Ctrl-drawing from inside an existing selection moving the selected object instead of creating a new one. Each drag keeps the create-or-adjust action chosen at mouse-down, even when Ctrl is released before the mouse button.
+
+- 修复通过 `=`／`+` 快捷键新建印章时，触发按键或长按重复字符覆盖默认名称的问题。工具条、画布和工具参数窗口入口均保留默认名称；松开快捷键后可正常输入。
+- Fixed `=` / `+` stamp-creation shortcuts replacing the default name with the triggering character or its held-key repeats. Toolbar, canvas and tool-options entry points retain the default name; normal typing works after releasing the shortcut.
+
 ## 0.2.0-preview.2 — 2026-10-17
 
 - Windows x64 最低启动基线降至 Windows 10 1607（内部版本 14393），包含 LTSB 2016、LTSC 2019 和 LTSC 2021，移除原先 22H2 的过高门槛。较早系统采用兼容的 DPI 与截图路径；动态桌面马赛克仍需 Windows 10 2004，新建区域在旧系统使用静态截图效果，已有动态区域以实色覆盖并提示。冻结截图和图片效果继续可用；较早 Windows 10 实机验证仍待补充。

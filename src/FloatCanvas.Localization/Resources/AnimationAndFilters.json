@@ -1,0 +1,7 @@
+{
+  "Editor.ElementKind.LiveBlur": { "zh": "动态模糊", "en": "Live blur" },
+  "Effect.LegacyBlurFrozen": {
+    "zh": "当前系统不支持实时模糊，已创建静态模糊区域。",
+    "en": "Live blur is unavailable on this Windows version; a static blurred region was created."
+  }
+}

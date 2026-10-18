@@ -25,6 +25,11 @@ internal static class ImageDropDataReader
     private const short FileDropFormat = 15;
     private const uint FileSizeFlag = 0x40, DirectoryAttribute = 0x10;
     private static readonly short PngFormat = Format("PNG"), DescriptorFormat = Format("FileGroupDescriptorW"), ContentsFormat = Format("FileContents");
+    private static readonly (short Format, string Extension)[] OriginalFormats =
+    [
+        (Format("GIF"), ".gif"), (Format("image/gif"), ".gif"),
+        (Format("WebP"), ".webp"), (Format("WEBP"), ".webp"), (Format("image/webp"), ".webp")
+    ];
     private static readonly Encoding Unicode = new UnicodeEncoding(false, false, true);
 
     internal static bool Supports(ComDataObject data)
@@ -33,6 +38,7 @@ internal static class ImageDropDataReader
         try
         {
             if (Has(data, FileDropFormat, TYMED.TYMED_HGLOBAL)) { _ = ReadPaths(data); return true; }
+            if (OriginalFormats.Any(format => Has(data, format.Format, TYMED.TYMED_HGLOBAL | TYMED.TYMED_ISTREAM))) return true;
             if (Has(data, PngFormat, TYMED.TYMED_HGLOBAL | TYMED.TYMED_ISTREAM)) return true;
             if (!Has(data, DescriptorFormat, TYMED.TYMED_HGLOBAL)) return false;
             var descriptors = ReadDescriptors(data);
@@ -46,14 +52,37 @@ internal static class ImageDropDataReader
     {
         ArgumentNullException.ThrowIfNull(data);
         if (Has(data, FileDropFormat, TYMED.TYMED_HGLOBAL)) return new(ReadPaths(data), []);
-        if (Has(data, PngFormat, TYMED.TYMED_HGLOBAL | TYMED.TYMED_ISTREAM))
+        foreach (var format in OriginalFormats)
+            if (Has(data, format.Format, TYMED.TYMED_HGLOBAL | TYMED.TYMED_ISTREAM))
+            {
+                byte[] original = ReadMedium(data, format.Format, TYMED.TYMED_HGLOBAL | TYMED.TYMED_ISTREAM, -1, MaxImageBytes);
+                RequireImage(original, format.Extension);
+                return new([], [original]);
+            }
+        bool hasPng = Has(data, PngFormat, TYMED.TYMED_HGLOBAL | TYMED.TYMED_ISTREAM);
+        Descriptor[]? descriptors = null;
+        if (Has(data, DescriptorFormat, TYMED.TYMED_HGLOBAL))
+        {
+            // A bounded descriptor identifies an original animated representation.
+            // Invalid unrelated virtual metadata must not poison an otherwise valid PNG.
+            try { descriptors = ReadDescriptors(data); }
+            catch (Exception ex) when (hasPng && (ex is InvalidDataException or COMException or IOException or ArgumentException or OverflowException or Win32Exception)) { }
+        }
+        if (descriptors is not null && descriptors.Any(item => Path.GetExtension(item.Name).ToLowerInvariant() is ".gif" or ".webp") &&
+            descriptors.Select((_, index) => Has(data, ContentsFormat, TYMED.TYMED_HGLOBAL | TYMED.TYMED_ISTREAM, index)).All(available => available))
+            return ReadVirtualImages(data, descriptors);
+        if (hasPng)
         {
             byte[] png = ReadMedium(data, PngFormat, TYMED.TYMED_HGLOBAL | TYMED.TYMED_ISTREAM, -1, MaxImageBytes);
             RequireImage(png, ".png");
             return new([], [png]);
         }
-        if (!Has(data, DescriptorFormat, TYMED.TYMED_HGLOBAL)) throw Invalid("The drop contains no supported image representation.");
-        var descriptors = ReadDescriptors(data);
+        if (descriptors is null) throw Invalid("The drop contains no supported image representation.");
+        return ReadVirtualImages(data, descriptors);
+    }
+
+    private static ImageDropPayload ReadVirtualImages(ComDataObject data, Descriptor[] descriptors)
+    {
         var images = new List<byte[]>(descriptors.Length);
         int total = 0;
         for (int i = 0; i < descriptors.Length; i++)
@@ -186,7 +215,7 @@ internal static class ImageDropDataReader
     }
     private static FORMATETC Request(short format, TYMED medium, int index) => new()
     { cfFormat = format, dwAspect = DVASPECT.DVASPECT_CONTENT, lindex = index, tymed = medium };
-    private static bool SupportedExtension(string extension) => extension.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp";
+    private static bool SupportedExtension(string extension) => extension.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp" or ".gif";
     private static void RequireImage(byte[] bytes, string extension)
     {
         bool matches = extension.ToLowerInvariant() switch
@@ -195,6 +224,7 @@ internal static class ImageDropDataReader
             ".jpg" or ".jpeg" => bytes.Length >= 3 && bytes[0] == 255 && bytes[1] == 216 && bytes[2] == 255,
             ".bmp" => bytes.Length >= 14 && bytes[0] == 'B' && bytes[1] == 'M',
             ".webp" => bytes.Length >= 12 && bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) && bytes.AsSpan(8, 4).SequenceEqual("WEBP"u8),
+            ".gif" => bytes.Length >= 6 && (bytes.AsSpan(0, 6).SequenceEqual("GIF87a"u8) || bytes.AsSpan(0, 6).SequenceEqual("GIF89a"u8)),
             _ => false
         };
         if (!matches) throw Invalid("The encoded image signature does not match its advertised format.");

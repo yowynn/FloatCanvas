@@ -1,0 +1,21 @@
+{
+  "Snapshot.Shape": { "zh": "圈选方式", "en": "Selection shape" },
+  "Snapshot.Shape.Rectangle": { "zh": "矩形", "en": "Rectangle" },
+  "Snapshot.Shape.Ellipse": { "zh": "椭圆", "en": "Ellipse" },
+  "Snapshot.Shape.FreehandLasso": { "zh": "自由套索", "en": "Freehand lasso" },
+  "Snapshot.Shape.PolygonLasso": { "zh": "多边形套索", "en": "Polygon lasso" },
+  "Snapshot.Source": { "zh": "截取内容", "en": "Capture content" },
+  "Snapshot.Source.Background": { "zh": "仅背景", "en": "Background only" },
+  "Snapshot.Source.BackgroundAndCanvas": { "zh": "背景＋画布", "en": "Background + canvas" },
+  "Snapshot.Source.CanvasOnly": { "zh": "仅画布（透明）", "en": "Canvas only (transparent)" },
+  "Snapshot.BorderColor": { "zh": "描边颜色", "en": "Border color" },
+  "Snapshot.BorderWidth": { "zh": "描边宽度（0 为关闭）", "en": "Border width (0 = off)" },
+  "Snapshot.Empty": { "zh": "选区内没有可截取内容", "en": "There is no content to capture in the selection." },
+  "Snapshot.Inserted": { "zh": "静像已原位插入，可继续圈选或调整图片。", "en": "Snapshot inserted in place. Select another region or adjust the image." },
+  "Snapshot.Failed": { "zh": "截图失败，原有画布内容已保留：", "en": "Snapshot failed. Existing canvas content is preserved: " },
+  "Snapshot.FailureTitle": { "zh": "截图未完成", "en": "Snapshot was not completed" },
+  "Snapshot.FailureLog": { "zh": "截图未完成，原有内容已保留。诊断日志：{0}", "en": "Snapshot was not completed. Existing content is preserved. Diagnostic log: {0}" },
+  "Snapshot.FailureLogUnavailable": { "zh": "截图未完成，原有内容已保留。无法写入诊断日志，请检查目录：{0}", "en": "Snapshot was not completed. Existing content is preserved. The diagnostic log could not be written. Check: {0}" },
+  "History.Snapshot": { "zh": "插入截图", "en": "Insert snapshot" },
+  "Preset.Capture": { "zh": "截图", "en": "Snapshot" }
+}

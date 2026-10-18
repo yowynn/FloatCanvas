@@ -169,14 +169,32 @@ internal sealed partial class DesktopSession
         var snapshot = SnapshotWorkspace();
         if (!RecoveryHistory.ShouldWrite(snapshot)) return;
         string fingerprint = WorkspaceFingerprint(snapshot);
-        await _recoveryStore.SaveAsync(snapshot, _assets, _documentLifetime.Token);
+        await SaveRecoverySnapshotAsync(snapshot);
         _documentRecoveryFingerprint = fingerprint;
         RecoveryHistory.WorkspaceSaved();
     }
 
+    private Task SaveRecoverySnapshotAsync(WorkspaceState snapshot)
+    {
+        var animationTime = _renderer.AnimationTime;
+        var resources = snapshot.LiveDocument.ReferencedAssets.Concat(snapshot.CaptureDocument?.ReferencedAssets ?? [])
+            .Distinct().Select(_assets.Get).ToArray();
+        var token = _documentLifetime.Token;
+        return Task.Run(async () =>
+        {
+            var assets = ResourceLibrary(resources);
+            byte[]? preview;
+            try { preview = WorkspacePreview.Render(snapshot.LiveDocument, assets, animationTime); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or NotSupportedException or IOException or InvalidDataException or OverflowException)
+            { preview = null; }
+            await _recoveryStore.SaveWithPreviewAsync(snapshot, assets, preview, token).ConfigureAwait(false);
+        }, token);
+    }
+
     private async Task RestoreWorkspaceHistoryAsync()
     {
-        if (DocumentOperationBusy) return;
+        if (DocumentOperationBusy || _windowCoordinator is not { } coordinator) return;
+        var request = new WindowSessionRequest(_host.EditingSessionVersion, _host.IsEditing, _live.Document);
         CloseImageDrop();
         _documentBusy = true;
         _documentRecoveryTimer?.Stop();
@@ -185,18 +203,23 @@ internal sealed partial class DesktopSession
             _editor.Cancel();
             _documentRecoveryTimer?.Stop();
             await _documentRecoveryTask;
+            if (!coordinator.CanContinue(request, _live.Document)) return;
             var entries = RecoveryHistory.GetEntries();
             if (entries.Count == 0) { UpdateStatus(L.Get("Recovery.NoHistory")); return; }
             var selected = ChooseRecoveryWorkspace(entries);
             if (selected is null) return;
             // Read fully before replacing or writing either workspace.
             var restored = await RecoveryHistory.LoadAsync(selected, _documentLifetime.Token);
+            if (!coordinator.CanContinue(request, _live.Document)) return;
             if (restored is null) { UpdateStatus(L.Get("Recovery.NoHistory")); return; }
             if (!await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return;
+            if (!coordinator.CanContinue(request, _live.Document)) return;
             if (_capture is not null && !await ConfirmReplaceAsync(_capture, L.Get("Project.ReplaceCapture"))) return;
+            if (!coordinator.CanContinue(request, _live.Document)) return;
             await FlushRecoveryAsync();
             await RecoveryHistory.PreserveCurrentAsync(_documentLifetime.Token);
-            SetEditing(false);
+            if (!coordinator.CanContinue(request, _live.Document)) return;
+            _textEditor?.Close();
             MergeAssets(restored.Assets);
             _documentFiles.Clear();
             _live = new(restored.State.LiveDocument, _assets);
@@ -209,34 +232,22 @@ internal sealed partial class DesktopSession
             _documentRecoveryFingerprint = null;
             OnMonitorsChanged();
             await FlushRecoveryAsync();
-            _toolbar.Hide(); _inspector?.Hide(); RequestRender();
-            UpdateStatus(L.Get("Recovery.RestoredPassThrough"));
+            RequestRender();
+            UpdateStatus(L.Get(_host.IsEditing ? "Recovery.RestoredEditing" : "Recovery.RestoredPassThrough"));
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Recovery.RestoreFailed") + ex.Message); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            string message = L.Get("Recovery.RestoreFailed") + ex.Message;
+            if (coordinator.CanContinue(request, _live.Document)) ShowError(message);
+            else UpdateStatus(message);
+        }
         finally { _documentBusy = false; PruneDocumentResources(); }
     }
 
     private WorkspaceRecoveryEntry? ChooseRecoveryWorkspace(IReadOnlyList<WorkspaceRecoveryEntry> entries)
     {
-        var panel = new Controls.StackPanel { Margin = new Thickness(18) };
-        panel.Children.Add(new Controls.TextBlock { Text = L.Get("Recovery.HistoryHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
-        var list = new Controls.ListBox { MaxHeight = 300, MinHeight = 100, Margin = new Thickness(0, 0, 0, 14) };
-        foreach (var entry in entries)
-            list.Items.Add(new Controls.ListBoxItem { Tag = entry, Content = entry.SavedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + "  ·  " +
-                L.Get(entry.IsCurrent ? "Recovery.LatestWorkspace" : "Recovery.HistoryWorkspace"), Padding = new Thickness(8) });
-        list.SelectedIndex = 0;
-        panel.Children.Add(list);
-        var buttons = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        var restore = new Controls.Button { Content = L.Get("Recovery.Restore"), IsDefault = true, MinWidth = 90, Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 8, 0) };
-        buttons.Children.Add(restore);
-        buttons.Children.Add(new Controls.Button { Content = L.Get("Recovery.Cancel"), IsCancel = true, MinWidth = 90, Padding = new Thickness(12, 6, 12, 6) });
-        panel.Children.Add(buttons);
-        var dialog = new Window { Title = L.Get("Recovery.HistoryTitle"), Content = panel, Width = 540, SizeToContent = SizeToContent.Height,
-            Owner = _toolbar, ShowInTaskbar = false, Topmost = true, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterScreen,
-            Icon = AppIcon.WindowImage };
-        AppWindowChrome.ApplyDialog(dialog);
-        restore.Click += (_, _) => dialog.DialogResult = list.SelectedItem is not null;
-        return dialog.ShowDialog() == true ? (WorkspaceRecoveryEntry?)((Controls.ListBoxItem)list.SelectedItem).Tag : null;
+        var dialog = new WorkspaceHistoryWindow(RecoveryHistory, entries) { Owner = _toolbar };
+        return SessionWindowCoordinator.ShowModal(dialog) == true ? dialog.SelectedEntry : null;
     }
     private async Task RequestExitAsync()
     {
@@ -252,6 +263,7 @@ internal sealed partial class DesktopSession
     }
     private void StopDocumentTimers()
     {
+        CancelSnapshotCapture("Shutdown");
         _documentStopped = true; _documentRecoveryTimer?.Stop();
         _documentLifetime.Cancel(); _documentCaptureService.Dispose();
     }
@@ -297,7 +309,7 @@ internal sealed partial class DesktopSession
         try
         {
             var dialog = new Microsoft.Win32.OpenFileDialog { Title = L.Get("Project.OpenTitle"), Filter = L.Get("Project.Filter"), CheckFileExists = true };
-            if (dialog.ShowDialog(_toolbar) != true) return;
+            if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return;
             _editor.Cancel(); var previous = Active;
             if (!await ConfirmReplaceAsync(previous, L.Get("Project.ReplaceCurrent"))) return;
             string previousContent = Fingerprint(previous.Document);
@@ -353,7 +365,7 @@ internal sealed partial class DesktopSession
                 Title = L.Get("Project.SaveTitle"), Filter = L.Get("Project.Filter"), DefaultExt = ".floatcanvas", AddExtension = true,
                 FileName = path is null ? L.Get("Project.FilePrefix") + DateTime.Now.ToString("yyyyMMdd-HHmmss") : Path.GetFileName(path)
             };
-            if (dialog.ShowDialog(_toolbar) != true) return false;
+            if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return false;
             path = dialog.FileName;
         }
         var snapshot = session.Document.Clone(); string fingerprint = Fingerprint(snapshot);
@@ -381,8 +393,9 @@ internal sealed partial class DesktopSession
             Filter = transparent ? L.Get("Export.PngFilter") : L.Get("Export.ImageFilter"),
             DefaultExt = ".png", AddExtension = true, FileName = L.Get("Project.FilePrefix") + DateTime.Now.ToString("yyyyMMdd-HHmmss")
         };
-        if (dialog.ShowDialog(_toolbar) != true) return;
+        if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return;
         var snapshot = session.Document.Clone(); var resources = ResourceSnapshot(snapshot).ToList();
+        var animationTime = _renderer.AnimationTime;
             string? captureWarning = snapshot.Kind == DocumentKind.FrozenCapture ? _documentFrozenCaptureWarning : null;
             if ((!transparent || SceneRenderer.HasLiveEffects(snapshot)) && snapshot.Kind == DocumentKind.LiveOverlay)
             {
@@ -395,7 +408,7 @@ internal sealed partial class DesktopSession
             bool jpeg = !transparent && Path.GetExtension(dialog.FileName).ToLowerInvariant() is ".jpg" or ".jpeg";
             byte[] result = await Task.Run(() =>
             {
-                var assets = ResourceLibrary(resources); using var renderer = new SceneRenderer();
+                var assets = ResourceLibrary(resources); using var renderer = new SceneRenderer { AnimationTime = animationTime };
                 return jpeg ? renderer.ExportJpeg(snapshot, assets) : renderer.ExportPng(snapshot, assets, transparent);
             }, _documentLifetime.Token);
             await WriteExportAsync(dialog.FileName, result, _documentLifetime.Token);
@@ -422,6 +435,7 @@ internal sealed partial class DesktopSession
         var resources = ResourceSnapshot(snapshot).ToList();
         var effectContext = objects && SceneRenderer.HasLiveEffects(snapshot) ? session.Document.Clone() : null;
         var rasterResources = effectContext is null ? resources.ToList() : ResourceSnapshot(effectContext).ToList();
+        var animationTime = _renderer.AnimationTime;
         _documentBusy = true;
         try
         {
@@ -437,7 +451,7 @@ internal sealed partial class DesktopSession
             }
             var encoded = await Task.Run(() =>
             {
-                var assets = ResourceLibrary(rasterResources); using var renderer = new SceneRenderer { LiveEffectContext = effectContext };
+                var assets = ResourceLibrary(rasterResources); using var renderer = new SceneRenderer { LiveEffectContext = effectContext, AnimationTime = animationTime };
                 byte[] png = renderer.ExportPng(snapshot, assets, objects);
                 string? internalObjects = objects ? JsonSerializer.Serialize(new ClipboardObjects
                 {
@@ -488,20 +502,43 @@ internal sealed partial class DesktopSession
                 ObjectClipboardCommand.Insert(target, payload.Document, payload.assets, VisibleDocumentArea());
                 SwitchToolState(EditorTool.Select); return;
             }
-            byte[]? bytes = ReadClipboardPng(data);
+            // Prefer original copied files over a static bitmap preview when both exist.
+            if (data.GetDataPresent(Wpf.DataFormats.FileDrop) && data.GetData(Wpf.DataFormats.FileDrop) is string[] paths)
+            {
+                _documentBusy = false; await ImportImagesAsync(paths); return;
+            }
+            byte[]? bytes = ReadClipboardImage(data);
             if (bytes is not null)
             {
                 var normalized = await Task.Run(() => AssetImport.Normalize(bytes), _documentLifetime.Token);
                 if (ReferenceEquals(Active, target) && CanAddCanvasContent()) { InsertImages(target, [normalized], false); SwitchToolState(EditorTool.Select); }
             }
-            else if (data.GetDataPresent(Wpf.DataFormats.FileDrop) && data.GetData(Wpf.DataFormats.FileDrop) is string[] paths)
-            {
-                _documentBusy = false; await ImportImagesAsync(paths);
-            }
             else UpdateStatus(L.Get("Clipboard.Empty"));
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Clipboard.PasteFailed") + ex.Message); }
         finally { _documentBusy = false; PruneDocumentResources(); }
+    }
+    internal static byte[]? ReadClipboardImage(Wpf.IDataObject data)
+    {
+        foreach (string format in new[] { "GIF", "image/gif", "WebP", "WEBP", "image/webp" })
+        {
+            if (!data.GetDataPresent(format, autoConvert: false)) continue;
+            object? value = data.GetData(format, autoConvert: false);
+            byte[]? encoded = value as byte[];
+            if (value is Stream stream)
+            {
+                using var copy = new MemoryStream();
+                if (stream.CanSeek) stream.Position = 0;
+                stream.CopyTo(copy); encoded = copy.ToArray();
+            }
+            if (encoded is null) continue;
+            bool gif = format is "GIF" or "image/gif";
+            bool valid = gif ? encoded.AsSpan().StartsWith("GIF87a"u8) || encoded.AsSpan().StartsWith("GIF89a"u8) :
+                encoded.Length >= 12 && encoded.AsSpan(0, 4).SequenceEqual("RIFF"u8) && encoded.AsSpan(8, 4).SequenceEqual("WEBP"u8);
+            if (!valid) throw new InvalidDataException(L.Get("Images.UnsupportedOrCorrupt"));
+            return encoded;
+        }
+        return ReadClipboardPng(data);
     }
     private static byte[]? ReadClipboardPng(Wpf.IDataObject data)
     {
@@ -529,7 +566,7 @@ internal sealed partial class DesktopSession
         if (paths is null)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog { Title = replaceSelected ? L.Get("Image.ReplaceTitle") : L.Get("Image.ImportTitle"), Filter = L.Get("Image.Filter"), Multiselect = !replaceSelected };
-            if (dialog.ShowDialog(_toolbar) != true) return; paths = dialog.FileNames;
+            if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return; paths = dialog.FileNames;
         }
         if (paths.Length == 0) return;
         if (replaceSelected && target.SelectedElements().Count(e => e.Kind == ElementKind.Image && !e.Locked) != 1)
@@ -550,53 +587,6 @@ internal sealed partial class DesktopSession
         UpdateStatus(replace ? L.Get("Image.Replaced") : L.Format("Image.Imported", images.Count));
     }
 
-    private async Task StartCaptureAsync(bool region)
-    {
-        if (DocumentOperationBusy) return;
-        CloseImageDrop();
-        _documentBusy = true;
-        try
-        {
-            _editor.Cancel();
-            if (_capture is not null && !await ConfirmReplaceAsync(_capture, L.Get("Capture.ReplaceDraft"))) return;
-            ReturnToLive();
-            _documentLiveTool = _editor.Tool;
-            var source = _live.Document.Clone();
-            long focusVersion = _host.ForegroundLossVersion;
-            var captured = await CaptureCleanDesktopAsync();
-            string assetId = _assets.Add(captured.PngBytes);
-            var b = captured.Bounds; var bounds = new RectD(b.Left, b.Top, b.Width, b.Height);
-            var snapshot = source.CreateCapture(bounds, assetId);
-            if (_capture is not null) _documentFiles.Remove(_capture);
-            _capture = new(snapshot, _assets); _captureOrigin = new(b.Left, b.Top);
-            _documentFrozenCaptureWarning = CaptureWarning(captured);
-            _editor.ReplaceSession(_capture, _captureOrigin); SwitchToolState(region ? EditorTool.CaptureRegion : EditorTool.Select);
-            bool editing;
-            if (focusVersion != _host.ForegroundLossVersion)
-            {
-                SetEditing(false); editing = false;
-                UpdateStatus(L.Get("Capture.FocusLost"));
-            }
-            else editing = SetEditing(true);
-            ScheduleRecovery(); RequestRender();
-            if (editing) UpdateStatus(WithCaptureWarning(region ? L.Get("Capture.SelectRegion") :
-                _host.Scope == OverlayMonitorScope.PrimaryScreen ? L.Get("Capture.PrimaryFrozen") : L.Get("Capture.AllFrozen"), _documentFrozenCaptureWarning));
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Capture.Failed") + ex.Message); }
-        finally { _documentBusy = false; PruneDocumentResources(); }
-    }
-    private void FinishCaptureRegion(RectD region)
-    {
-        if (_capture is null || !ReferenceEquals(Active, _capture)) return;
-        var bounds = _capture.Document.Viewport.Intersect(region.Normalize());
-        if (bounds.Width < 1 || bounds.Height < 1) return;
-        _capture.Execute(L.Get("History.CaptureRegion"), d =>
-        {
-            d.Viewport = bounds;
-            d.Elements.RemoveAll(element => !ElementGeometry.Bounds(element).Intersects(bounds));
-        });
-        SwitchToolState(EditorTool.Select); RequestRender(); UpdateStatus(WithCaptureWarning(L.Get("Capture.RegionSelected"), _documentFrozenCaptureWarning));
-    }
     private void ReturnToLive()
     {
         if (ReferenceEquals(Active, _live)) return;
@@ -615,6 +605,11 @@ internal sealed partial class DesktopSession
     }
     private async Task<CapturedDesktop> CaptureCleanDesktopAsync()
     {
+        var target = Active;
+        var document = target.Document;
+        long revision = target.SceneRevision, editingVersion = _host.EditingSessionVersion;
+        bool ContentCurrent() => !_disposed && !_documentStopped && !_documentExitRequested &&
+            ReferenceEquals(target, Active) && ReferenceEquals(document, target.Document) && target.SceneRevision == revision;
         _cleanCaptureDepth++;
         StopLiveEffectsCapture();
         try
@@ -625,8 +620,16 @@ internal sealed partial class DesktopSession
                 .Where(source => source.RootVisual is UIElement { IsVisible: true }).Select(source => source.Handle)
                 .Concat(_app.Windows.Cast<Window>().Where(w => w.IsVisible).Select(w => new WindowInteropHelper(w).Handle))
                 .Where(h => h != 0).Distinct().ToArray();
-            using var scope = _host.HideForCapture(ownWindows);
-            var captured = await _documentCaptureService.CaptureAsync(_host.Monitors, scope.NotBeforeTimestamp, _documentLifetime.Token);
+            var scope = _host.BeginCleanCapture(ownWindows, ContentCurrent);
+            CapturedDesktop captured;
+            try { captured = await _documentCaptureService.CaptureAsync(_host.Monitors, scope.FrameBoundary, _documentLifetime.Token); }
+            finally { scope.Dispose(); }
+            if (!ContentCurrent() || scope.Continuation is not { } receipt ||
+                !_host.TryConsumeCaptureContinuation(receipt, editingVersion, out _))
+            {
+                _diagnostics.Write("Capture.ResultRejected", new { scope.Status, scope.Strategy, ContentCurrent = ContentCurrent() });
+                throw new OperationCanceledException(L.Get("Desktop.Cancelled"));
+            }
             if (CaptureWarning(captured) is { } warning) UpdateStatus(warning);
             return captured;
         }

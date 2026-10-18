@@ -33,6 +33,7 @@ internal static class LegacyWindowsEffectsTests
         OverlayHost? host = null;
         try
         {
+            foreach (var filterKind in new[] { ImageEffectKind.Pixelate, ImageEffectKind.Blur })
             foreach (int build in new[] { 14393, 17763, 19041, 19044 })
             {
                 NewSession(build);
@@ -44,61 +45,77 @@ internal static class LegacyWindowsEffectsTests
                 Func<Task<CapturedDesktop>> capture = () =>
                 {
                     captures++;
-                    if (build >= 19041) throw new InvalidOperationException("Live pixelation must not freeze the desktop.");
+                    if (build >= 19041) throw new InvalidOperationException("Live filters must not freeze the desktop.");
                     return Task.FromResult(SyntheticDesktop(host!.PrimaryMonitor.Bounds));
                 };
-                Task pending = (Task)Invoke("AddDesktopEffectCoreAsync", requested, ImageEffectKind.Pixelate, 7d, 0xFF112233u, capture)!;
+                Task pending = (Task)Invoke("AddDesktopEffectCoreAsync", requested, filterKind, 7d, 0xFF112233u, capture)!;
                 if (build < 19041) AwaitOnDispatcher(pending); else pending.GetAwaiter().GetResult();
                 var element = editor.Session.Document.Elements.Single();
-                check($"Windows {build} routes pixelation using its capture capability", element.Kind ==
-                    (build < 19041 ? ElementKind.Image : ElementKind.LivePixelate));
-                check($"Windows {build} performs exactly the required synthetic capture count", captures == (build < 19041 ? 1 : 0));
-                check($"Windows {build} preserves region position and dimensions", element.Width == 40 && element.Height == 28 &&
+                check($"{filterKind} Windows {build} routes pixelation using its capture capability", element.Kind ==
+                    (build < 19041 ? ElementKind.Image : filterKind == ImageEffectKind.Blur ? ElementKind.LiveBlur : ElementKind.LivePixelate));
+                check($"{filterKind} Windows {build} performs exactly the required synthetic capture count", captures == (build < 19041 ? 1 : 0));
+                check($"{filterKind} Windows {build} preserves region position and dimensions", element.Width == 40 && element.Height == 28 &&
                     element.Transform == Affine2D.Translation(requested.X, requested.Y));
-                check($"Windows {build} retains an editable full-region pixelation effect", element.Effects is [{ Kind: ImageEffectKind.Pixelate, Amount: 7 }] &&
+                check($"{filterKind} Windows {build} retains an editable full-region pixelation effect", element.Effects is [{ Amount: 7 }] && element.Effects[0].Kind == filterKind &&
                     element.Effects[0].Bounds == new RectD(0, 0, 1, 1));
-                check($"Windows {build} commits pixelation as one undo operation", editor.Session.UndoCount == 1 && !editor.Session.IsTransactionActive);
-                check($"Windows {build} releases the document busy guard", !Field<bool>(session!, "_documentBusyValue"));
+                check($"{filterKind} Windows {build} commits pixelation as one undo operation", editor.Session.UndoCount == 1 && !editor.Session.IsTransactionActive);
+                check($"{filterKind} Windows {build} releases the document busy guard", !Field<bool>(session!, "_documentBusyValue"));
                 if (build < 19041)
                 {
-                    check($"Windows {build} stores its frozen pixels as a self-contained image resource", element.AssetId is not null &&
+                    check($"{filterKind} Windows {build} stores its frozen pixels as a self-contained image resource", element.AssetId is not null &&
                         editor.Session.Assets.TryGet(element.AssetId, out _) && editor.Session.Document.ReferencedAssets.All(id => editor.Session.Assets.TryGet(id, out _)));
                     using var source = SKBitmap.Decode(editor.Session.Assets.Get(element.AssetId!).Data.ToArray());
-                    check($"Windows {build} freezes only the selected region at native dimensions", source.Width == 40 && source.Height == 28 &&
+                    check($"{filterKind} Windows {build} freezes only the selected region at native dimensions", source.Width == 40 && source.Height == 28 &&
                         source.GetPixel(0, 0).Alpha == 255 && source.GetPixel(0, 0) != source.GetPixel(2, 0));
-                    check($"Windows {build} reports the static fallback instead of claiming live capture", Field<TextBlock>(session!, "_status").Text == L.Get("Effect.LegacyPixelateFrozen"));
-                    check($"Windows {build} starts no live worker or capture exclusion", Field<object?>(session!, "_liveDesktopCapture") is null &&
+                    check($"{filterKind} Windows {build} reports the static fallback instead of claiming live capture", Field<TextBlock>(session!, "_status").Text == L.Get(filterKind == ImageEffectKind.Blur ? "Effect.LegacyBlurFrozen" : "Effect.LegacyPixelateFrozen"));
+                    check($"{filterKind} Windows {build} starts no live worker or capture exclusion", Field<object?>(session!, "_liveDesktopCapture") is null &&
                         !Field<bool>(session!, "_liveCaptureExcluded") && Field<SceneRenderer>(session!, "_renderer").LiveBackdrop is null);
                 }
                 else
-                    check($"Windows {build} live regions require no frozen image resource", element.AssetId is null && editor.Session.Assets.Count == 0);
-                check($"Windows {build} undo removes the newly created region", editor.Session.Undo() && editor.Session.Document.Elements.Count == 0);
-                check($"Windows {build} redo restores the same editable region", editor.Session.Redo() &&
+                    check($"{filterKind} Windows {build} live regions require no frozen image resource", element.AssetId is null && editor.Session.Assets.Count == 0);
+                check($"{filterKind} Windows {build} undo removes the newly created region", editor.Session.Undo() && editor.Session.Document.Elements.Count == 0);
+                check($"{filterKind} Windows {build} redo restores the same editable region", editor.Session.Redo() &&
                     editor.Session.Document.Elements.Single().Id == element.Id && editor.Session.Document.Elements.Single().Kind == element.Kind);
-                check($"Windows {build} fixture never shows an overlay or captures user input", !host!.IsEditing &&
+                check($"{filterKind} Windows {build} fixture never shows an overlay or captures user input", !host!.IsEditing &&
                     host.Diagnostics.All(pair => !pair.DisplayVisible && !pair.InputVisible) && app.Windows.Cast<Window>().Except(originalWindows).All(window => !window.IsVisible));
                 CloseSession();
             }
 
+            NewSession(14393);
+            var cancelledEditor = Field<EditorController>(session!, "_editor");
+            var cancelledView = cancelledEditor.Session.Document.Viewport;
+            Func<Task<CapturedDesktop>> changedCapture = () =>
+            {
+                cancelledEditor.Session.Add(new() { Kind = ElementKind.Rectangle, Width = 8, Height = 8 });
+                return Task.FromResult(SyntheticDesktop(host!.PrimaryMonitor.Bounds));
+            };
+            AwaitOnDispatcher((Task)Invoke("AddDesktopEffectCoreAsync", new RectD(cancelledView.X + 8, cancelledView.Y + 8, 30, 20),
+                ImageEffectKind.Blur, 7d, 0xFF112233u, changedCapture)!);
+            check("a static filter cannot insert a late image after its original content revision changes",
+                cancelledEditor.Session.Document.Elements is [{ Kind: ElementKind.Rectangle }] && cancelledEditor.Session.UndoCount == 1 && cancelledEditor.Session.Assets.Count == 0);
+            check("a rejected late filter always releases its document busy guard", !Field<bool>(session!, "_documentBusyValue"));
+            CloseSession();
+
+            foreach (var filterKind in new[] { ImageEffectKind.Pixelate, ImageEffectKind.Blur })
             foreach (int build in new[] { 14393, 17763 })
             {
                 NewSession(build);
                 var editor = Field<EditorController>(session!, "_editor");
                 var viewport = editor.Session.Document.Viewport;
-                editor.Session.Document.Elements.Add(new CanvasElement { Kind = ElementKind.LivePixelate, Width = 40, Height = 28,
+                editor.Session.Document.Elements.Add(new CanvasElement { Kind = filterKind == ImageEffectKind.Blur ? ElementKind.LiveBlur : ElementKind.LivePixelate, Width = 40, Height = 28,
                     Transform = Affine2D.Translation(viewport.X + 12, viewport.Y + 8), Style = new() { StrokeWidth = 0 },
-                    Effects = [new() { Kind = ImageEffectKind.Pixelate, Amount = 7, Bounds = new(0, 0, 1, 1) }] });
+                    Effects = [new() { Kind = filterKind, Amount = 7, Bounds = new(0, 0, 1, 1) }] });
                 string before = JsonSerializer.Serialize(editor.Session.Document);
                 var status = Field<TextBlock>(session!, "_status");
                 status.Text = "Fixture unchanged status";
                 editor.Session.Document.LayerOpacity = 0;
                 Invoke("SyncLiveEffectsCapture");
-                check($"Windows {build} zero-opacity live regions need neither capture nor a compatibility hint", status.Text == "Fixture unchanged status" &&
+                check($"{filterKind} Windows {build} zero-opacity live regions need neither capture nor a compatibility hint", status.Text == "Fixture unchanged status" &&
                     Field<object?>(session!, "_liveDesktopCapture") is null && !Field<bool>(session!, "_liveCaptureExcluded"));
                 editor.Session.Document.LayerOpacity = 1;
                 typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!.SetValue(host, false);
                 Invoke("SyncLiveEffectsCapture");
-                check($"Windows {build} logically hidden regions do not replace the current status", status.Text == "Fixture unchanged status" &&
+                check($"{filterKind} Windows {build} logically hidden regions do not replace the current status", status.Text == "Fixture unchanged status" &&
                     Field<object?>(session!, "_liveDesktopCapture") is null && !Field<bool>(session!, "_liveCaptureExcluded"));
                 typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!.SetValue(host, true);
                 foreach (string language in new[] { "zh-CN", "en" })
@@ -106,19 +123,19 @@ internal static class LegacyWindowsEffectsTests
                     L.Initialize(language);
                     Invoke("SyncLiveEffectsCapture");
                     string hint = Field<TextBlock>(session!, "_status").Text;
-                    check($"Windows {build} loaded live region has a localized {language} compatibility hint", hint == L.Get("Effect.LegacyLiveRegion") &&
+                    check($"{filterKind} Windows {build} loaded live region has a localized {language} compatibility hint", hint == L.Get("Effect.LegacyLiveRegion") &&
                         hint != "Effect.LegacyLiveRegion" && hint.Contains("2004", StringComparison.Ordinal) &&
                         (language == "en" ? hint.Contains("placeholder", StringComparison.Ordinal) : hint.Contains("占位", StringComparison.Ordinal)));
-                    check($"Windows {build} loaded live region never starts a worker or requests exclusion ({language})",
+                    check($"{filterKind} Windows {build} loaded live region never starts a worker or requests exclusion ({language})",
                         Field<object?>(session!, "_liveDesktopCapture") is null && !Field<bool>(session!, "_liveCaptureExcluded") &&
                         Field<SceneRenderer>(session!, "_renderer").LiveBackdrop is null && Field<object?>(session!, "_desktopBackdrop") is null);
                 }
-                check($"Windows {build} compatibility handling leaves the loaded document and history intact", JsonSerializer.Serialize(editor.Session.Document) == before &&
+                check($"{filterKind} Windows {build} compatibility handling leaves the loaded document and history intact", JsonSerializer.Serialize(editor.Session.Document) == before &&
                     editor.Session.UndoCount == 0 && editor.Session.Assets.Count == 0);
                 using var rendered = SKBitmap.Decode(Field<SceneRenderer>(session!, "_renderer").ExportPng(editor.Session.Document, editor.Session.Assets, true));
-                check($"Windows {build} missing live capture renders an opaque placeholder cover", rendered.GetPixel(30, 20) == new SKColor(0xFF50545B) &&
+                check($"{filterKind} Windows {build} missing live capture renders an opaque placeholder cover", rendered.GetPixel(30, 20) == new SKColor(0xFF50545B) &&
                     rendered.GetPixel(0, 0).Alpha == 0);
-                check($"Windows {build} loaded-region checks keep all fixture HWNDs hidden", host!.Diagnostics.All(pair => !pair.DisplayVisible && !pair.InputVisible) && !host.IsEditing);
+                check($"{filterKind} Windows {build} loaded-region checks keep all fixture HWNDs hidden", host!.Diagnostics.All(pair => !pair.DisplayVisible && !pair.InputVisible) && !host.IsEditing);
                 CloseSession();
             }
 

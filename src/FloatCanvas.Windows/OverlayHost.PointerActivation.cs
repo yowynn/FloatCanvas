@@ -1,4 +1,5 @@
 using static FloatCanvas.Windows.NativeMethods;
+using System.Runtime.InteropServices;
 
 namespace FloatCanvas.Windows;
 
@@ -13,6 +14,41 @@ public sealed partial class OverlayHost
     public Func<bool>? CanBeginCanvasGesture { get; set; }
 
     private bool _startingCanvasPointer;
+
+    /// <summary>
+    /// Transfers the same physical press previously captured by an application Popup. The
+    /// caller must release that Popup's capture first and mark the WPF press handled on success.
+    /// No global input is generated: one private Down acquires the exact canvas HWND's
+    /// capture, and the original physical Move/Up continue through its normal native route.
+    /// Point and messageTime must describe the original press, never a later cursor sample.
+    /// </summary>
+    public bool TryForwardCapturedCanvasPress(OverlayPoint point, OverlayMouseButton button, uint messageTime, int clickCount = 1)
+    {
+        CheckThread();
+        if (button is not (OverlayMouseButton.Left or OverlayMouseButton.Right or OverlayMouseButton.Middle) ||
+            clickCount < 1 || !double.IsFinite(point.X) || !double.IsFinite(point.Y) ||
+            point.X < int.MinValue || point.X > int.MaxValue || point.Y < int.MinValue || point.Y > int.MaxValue ||
+            !IsEditing || !IsVisible || !IsForegroundFromThisProcess() ||
+            (_keyboardIsolation is not null && !_keyboardIsolation.IsLeaseActive) ||
+            _startingCanvasPointer || _pressedButton != OverlayMouseButton.None || GetCapture() != 0 ||
+            HasDisabledOwnOwner(GetForegroundWindow())) return false;
+        var state = _windows.FirstOrDefault(pair => pair.Monitor.Bounds.Contains(point))?.Input;
+        if (state is null || WindowFromPhysicalPoint(new((int)Math.Round(point.X), (int)Math.Round(point.Y))) != state.Handle ||
+            !TryBeginCanvasPointer(state)) return false;
+        _pressedButton = button;
+        try
+        {
+            RaisePointer((clickCount & 1) == 0 ? OverlayPointerKind.DoubleClick : OverlayPointerKind.Down, button,
+                position: point, messageTime: messageTime);
+            return true;
+        }
+        catch (Exception error)
+        {
+            CancelPointer();
+            Error?.Invoke(error);
+            return false;
+        }
+    }
 
     private bool TryBeginCanvasPointer(WindowState state)
     {
@@ -66,7 +102,7 @@ public sealed partial class OverlayHost
         bool applicationAllows = CanBeginCanvasGesture?.Invoke() != false;
         bool modalBlocked = HasDisabledOwnOwner(GetForegroundWindow());
         // A denial must not conceal a real external foreground change during the gate.
-        if (!IsForegroundFromThisProcess() || (_keyboardIsolation is not null && !_keyboardIsolation.IsLeaseActive))
+        if (!IsForegroundFromThisProcess() || !EnsureEditingKeyboardIsolation())
             return FailCanvasPointerStart();
         return applicationAllows && !modalBlocked && IsCanvasPointerAvailable(state);
     }
@@ -96,4 +132,6 @@ public sealed partial class OverlayHost
         else CancelPointer();
         return false;
     }
+
+    [DllImport("user32.dll")] private static extern nint WindowFromPhysicalPoint(Point point);
 }

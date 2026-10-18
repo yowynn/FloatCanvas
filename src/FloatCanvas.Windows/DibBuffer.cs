@@ -11,9 +11,12 @@ internal sealed class DibBuffer : IDisposable
 {
     private nint _dc, _bitmap, _previousBitmap;
     internal SKSurface Surface { get; }
+    internal nint Pixels { get; private set; }
+    internal SKImageInfo ImageInfo { get; }
 
     internal DibBuffer(int width, int height)
     {
+        ImageInfo = new(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
         var screenDc = GetDC(0);
         try
         {
@@ -25,6 +28,7 @@ internal sealed class DibBuffer : IDisposable
                 Planes = 1, BitCount = 32
             }};
             _bitmap = CreateDIBSection(screenDc, ref info, 0, out var pixels, 0, 0);
+            Pixels = pixels;
             if (_bitmap == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
             _previousBitmap = SelectObject(_dc, _bitmap);
             Surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul), pixels, checked(width * 4))
@@ -54,5 +58,6 @@ internal sealed class DibBuffer : IDisposable
         if (_dc != 0 && _previousBitmap != 0) SelectObject(_dc, _previousBitmap);
         if (_bitmap != 0) { DeleteObject(_bitmap); _bitmap = 0; }
         if (_dc != 0) { DeleteDC(_dc); _dc = 0; }
+        Pixels = 0;
     }
 }

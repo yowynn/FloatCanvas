@@ -59,6 +59,7 @@ internal static class ImageDropDataReaderTests
         check("OLE copied PNG survives source-owned storage release", retainedPayload.EncodedImages.Single().SequenceEqual(png));
 
         byte[] jpeg = Encoded(SKEncodedImageFormat.Jpeg), webp = Encoded(SKEncodedImageFormat.Webp);
+        OriginalRepresentations(png, check);
         var virtualFiles = Virtual([("alpha.png", png), ("photo.jpeg", jpeg), ("other.webp", webp)]);
         check("OLE virtual-file capability reads only bounded descriptors, never file contents", ImageDropDataReader.Supports(virtualFiles) && virtualFiles.Gets.All(x => x.Format == DescriptorFormat));
         var virtualPayload = ImageDropDataReader.Read(virtualFiles);
@@ -89,7 +90,7 @@ internal static class ImageDropDataReaderTests
         var mismatch = Virtual([("spoof.png", jpeg)]);
         check("OLE virtual extension cannot disguise another image signature", Rejects(() => ImageDropDataReader.Read(mismatch)));
         var precedence = Virtual([("spoof.png", jpeg)]).Global(PngFormat, -1, png);
-        check("OLE actual PNG representation takes precedence over virtual file names", ImageDropDataReader.Read(precedence).EncodedImages.Single().SequenceEqual(png) && precedence.Gets.All(x => x.Format == PngFormat));
+        check("OLE actual PNG representation keeps precedence over static virtual file names", ImageDropDataReader.Read(precedence).EncodedImages.Single().SequenceEqual(png) && precedence.Gets.All(x => x.Format != ContentsFormat));
 
         var tooLarge = new BytesStream(png) { DeclaredSize = 64L * 1024 * 1024 + 1 };
         check("OLE stream Stat rejects an oversized payload before allocating or reading it", Rejects(() => ImageDropDataReader.Read(new Source().Stream(PngFormat, -1, tooLarge))) && tooLarge.ReadCalls == 0);
@@ -123,6 +124,70 @@ internal static class ImageDropDataReaderTests
         check("OLE owned payload normalization honors cancellation before commit", cancelledRead);
     }
 
+    private static void OriginalRepresentations(byte[] png, Action<string, bool> check)
+    {
+        byte[] gif89 = Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==");
+        byte[] gif87 = gif89.ToArray(); "GIF87a"u8.CopyTo(gif87);
+        using var red = new SKBitmap(2, 1); red.Erase(SKColors.Red);
+        using var blue = new SKBitmap(2, 1); blue.Erase(SKColors.Blue);
+        using var encoded = SKWebpEncoder.EncodeAnimated(
+            [new(red, TimeSpan.FromMilliseconds(70)), new(blue, TimeSpan.FromMilliseconds(130))],
+            new(SKWebpEncoderCompression.Lossless, 100)) ?? throw new InvalidOperationException("Cannot encode WebP fixture.");
+        byte[] webp = encoded.ToArray();
+        foreach (var (name, bytes, type) in new[]
+        {
+            ("GIF", gif87, "image/gif"), ("image/gif", gif89, "image/gif"),
+            ("WebP", webp, "image/webp"), ("WEBP", webp, "image/webp"), ("image/webp", webp, "image/webp")
+        })
+        foreach (bool stream in new[] { false, true })
+        {
+            short format = Format(name);
+            var source = new Source().Global(PngFormat, -1, png);
+            if (stream) source.Stream(format, -1, new(bytes) { Position = bytes.Length }); else source.Global(format, -1, bytes);
+            check($"OLE {name} capability reads no encoded content ({stream})", ImageDropDataReader.Supports(source) && source.Gets.Count == 0);
+            var payload = ImageDropDataReader.Read(source);
+            check($"OLE {name} original precedes PNG thumbnail ({stream})", payload.EncodedImages.Single().SequenceEqual(bytes) && source.Gets.Count == 1 && source.Gets[0].Format == format);
+            var normalized = DesktopSession.NormalizeCanvasDropAsync(payload, CancellationToken.None).GetAwaiter().GetResult().Single();
+            check($"OLE {name} retains its encoded animation format through normalization ({stream})", normalized.MediaType == type && normalized.PngBytes.SequenceEqual(bytes));
+            check($"OLE {name} copied native storage is released ({stream})", source.Handles.All(Freed));
+        }
+        foreach (var (name, bytes) in new[] { ("first.gif", gif87), ("second.gif", gif89), ("third.webp", webp) })
+        {
+            var source = Virtual([(name, bytes)]).Global(PngFormat, -1, png);
+            check("OLE virtual original capability never reads FileContents " + name, ImageDropDataReader.Supports(source) && source.Gets.All(get => get.Format != ContentsFormat));
+            var payload = ImageDropDataReader.Read(source);
+            check("OLE virtual original precedes a PNG thumbnail " + name, payload.EncodedImages.Single().SequenceEqual(bytes) &&
+                source.Gets.Any(get => get.Format == ContentsFormat) && source.Gets.All(get => get.Format != PngFormat));
+            check("OLE virtual original metadata and storage are released " + name, source.Handles.All(Freed));
+            var normalized = DesktopSession.NormalizeCanvasDropAsync(payload, CancellationToken.None).GetAwaiter().GetResult().Single();
+            check("OLE virtual original survives complete production normalization " + name, normalized.PngBytes.SequenceEqual(bytes));
+        }
+        foreach (string extension in new[] { "gif", "webp" })
+        {
+            short format = Format("image/" + extension);
+            var bad = new Source().Global(format, -1, png).Global(PngFormat, -1, png);
+            check("OLE bad registered original is rejected instead of silently using PNG " + extension,
+                Rejects(() => ImageDropDataReader.Read(bad)) && bad.Gets.All(get => get.Format != PngFormat) && bad.Handles.All(Freed));
+            var virtualBad = Virtual([("wrong." + extension, png)]).Global(PngFormat, -1, png);
+            check("OLE bad virtual original is rejected and releases metadata " + extension,
+                Rejects(() => ImageDropDataReader.Read(virtualBad)) && virtualBad.Gets.All(get => get.Format != PngFormat) && virtualBad.Handles.All(Freed));
+        }
+        var missingOriginal = new Source().Global(DescriptorFormat, -1, Descriptors([("unavailable.gif", (long?)gif89.Length)])).Global(PngFormat, -1, png);
+        check("OLE absent virtual original retains the actual static PNG fallback", ImageDropDataReader.Read(missingOriginal).EncodedImages.Single().SequenceEqual(png));
+        var badDescriptor = new Source().Global(DescriptorFormat, -1, [0, 0, 0, 0]).Global(PngFormat, -1, png);
+        check("OLE malformed unrelated virtual metadata does not poison valid PNG fallback", ImageDropDataReader.Read(badDescriptor).EncodedImages.Single().SequenceEqual(png) && badDescriptor.Handles.All(Freed));
+        var pathSource = new Source().Global(15, -1, Paths([@"C:\fixture\source.gif"], true));
+        check("OLE GIF file path metadata is accepted without reading the file", ImageDropDataReader.Supports(pathSource) && ImageDropDataReader.Read(pathSource).FilePaths.Single().EndsWith("source.gif"));
+        var borrowed = new Source().Global(Format("GIF"), -1, gif89, sourceOwned: true);
+        var owned = ImageDropDataReader.Read(borrowed);
+        check("OLE GIF source-owned HGLOBAL remains owned by the source", borrowed.Handles.Count == 1 && !Freed(borrowed.Handles[0]));
+        borrowed.FreeSourceStorage();
+        check("OLE original GIF remains intact after borrowed storage is released", owned.EncodedImages.Single().SequenceEqual(gif89));
+        NativeStreamOwnership(gif89, check, Format("GIF"));
+        var truncated = ImageDropDataReader.Read(new Source().Global(Format("GIF"), -1, "GIF89a"u8.ToArray()));
+        check("OLE valid GIF signature alone cannot bypass full image decoding", Rejects(() => DesktopSession.NormalizeCanvasDropAsync(truncated, CancellationToken.None).GetAwaiter().GetResult()));
+    }
+
     private static void Integration(string label, ImageDropPayload payload, byte[] png, Action<string, bool> check)
     {
         var images = DesktopSession.NormalizeCanvasDropAsync(payload, CancellationToken.None).GetAwaiter().GetResult();
@@ -136,7 +201,7 @@ internal static class ImageDropDataReaderTests
         check(label + " one undo removes the complete import and redo restores IDs and resources", target.Undo() && target.Document.Elements.Count == 0 && target.Redo() && target.Document.Elements.Select(e => e.Id).SequenceEqual(ids) && target.Assets.Get(id).Data.Span.SequenceEqual(png));
     }
 
-    private static void NativeStreamOwnership(byte[] png, Action<string, bool> check)
+    private static void NativeStreamOwnership(byte[] png, Action<string, bool> check, short? format = null)
     {
         nint native = Native.SHCreateMemStream(png, (uint)png.Length);
         if (native == 0) throw new OutOfMemoryException();
@@ -148,7 +213,7 @@ internal static class ImageDropDataReaderTests
             // source's ordinary cached RCW alive while Read uses its unique RCW.
             shared = Marshal.GetObjectForIUnknown(native);
             check("OLE native IStream fixture retains an actual shared RCW", Marshal.IsComObject(shared));
-            payload = ImageDropDataReader.Read(new Source().RawStream(PngFormat, -1, native));
+            payload = ImageDropDataReader.Read(new Source().RawStream(format ?? PngFormat, -1, native));
             check("OLE native IStream read snapshots exact bytes through its owned wrapper", payload.EncodedImages.Single().SequenceEqual(png));
             var source = (IStream)shared;
             source.Stat(out var stat, 1); source.Seek(0, 0, 0);

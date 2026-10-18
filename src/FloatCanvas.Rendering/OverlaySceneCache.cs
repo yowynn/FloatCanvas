@@ -89,9 +89,19 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         ArgumentNullException.ThrowIfNull(canvas); ArgumentNullException.ThrowIfNull(document); ArgumentNullException.ThrowIfNull(assets);
         bool dynamic = dynamicFirst >= 0 && dynamicLast >= dynamicFirst && dynamicLast < document.Elements.Count;
         bool invalidRange = !dynamic && (dynamicFirst != -1 || dynamicLast != -1);
-        if (bypassCache || invalidRange || SceneRenderer.HasLiveEffects(document) || !TryTile(canvas, out var tile) || byteLimit == 0)
+        if (canvas.Context is not null || bypassCache || invalidRange || SceneRenderer.HasLiveEffects(document) ||
+            !TryTile(canvas, out var tile) || byteLimit == 0)
         {
             Invalidate(); renderer.Draw(canvas, document, assets); return false;
+        }
+        // Animation time changes pixels only in this span, not the document revision. Preserve
+        // static layers on either side and merge gesture ownership without changing z order.
+        var animated = renderer.AnimatedElementRange(document, assets);
+        if (animated.First >= 0)
+        {
+            dynamicFirst = dynamic ? Math.Min(dynamicFirst, animated.First) : animated.First;
+            dynamicLast = dynamic ? Math.Max(dynamicLast, animated.Last) : animated.Last;
+            dynamic = true;
         }
         var key = new ContentKey(document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, document.Elements.Count, document.Viewport);
         if (content != key) { Invalidate(); content = key; }

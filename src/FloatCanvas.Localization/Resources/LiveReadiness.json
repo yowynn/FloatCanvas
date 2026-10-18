@@ -1,0 +1,5 @@
+{
+  "Effect.PreparingLive": { "zh": "正在准备实时滤镜…", "en": "Preparing live filter…" },
+  "Effect.LiveNotReady": { "zh": "暂时无法取得画面，未添加滤镜。请重试。", "en": "The screen is not ready. No filter was added; please try again." },
+  "Effect.LiveReady": { "zh": "已添加实时滤镜", "en": "Live filter added" }
+}

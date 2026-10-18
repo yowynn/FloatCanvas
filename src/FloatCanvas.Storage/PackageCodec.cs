@@ -29,7 +29,7 @@ internal static class PackageCodec
     public static AssetResource[] ResolveResources(IEnumerable<string> ids, AssetLibrary assets) => ids.Distinct(StringComparer.Ordinal).Select(id =>
         assets.TryGet(id, out var resource) ? resource : throw new InvalidDataException(L.Format("Assets.MissingResource", id))).ToArray();
 
-    public static async Task SaveAsync<T>(string path, string kind, T value, AssetResource[] resources, CancellationToken ct)
+    public static async Task SaveAsync<T>(string path, string kind, T value, AssetResource[] resources, CancellationToken ct, byte[]? previewPng = null)
     {
         ct.ThrowIfCancellationRequested(); Validate(value);
         // Never emit a v1 envelope for the richer editable model: published v1 readers
@@ -64,6 +64,12 @@ internal static class PackageCodec
                         await using var stream = entry.Open();
                         await stream.WriteAsync(resource.Data, ct).ConfigureAwait(false);
                     }
+                    if (kind == "recovery" && previewPng is not null)
+                    {
+                        var entry = archive.CreateEntry(RecoveryPreview.EntryName, CompressionLevel.NoCompression);
+                        await using var stream = entry.Open();
+                        await stream.WriteAsync(previewPng, ct).ConfigureAwait(false);
+                    }
                 }
                 await output.FlushAsync(ct).ConfigureAwait(false); output.Flush(flushToDisk: true);
             }
@@ -79,10 +85,14 @@ internal static class PackageCodec
             await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
             if (file.Length > MaxPackageBytes) throw new InvalidDataException(L.Get("Project.PackageTooLarge"));
             using var archive = new ZipArchive(file, ZipArchiveMode.Read);
-            if (archive.Entries.Count > 4098 || archive.Entries.Select(e => e.FullName).Distinct(StringComparer.Ordinal).Count() != archive.Entries.Count) throw new InvalidDataException(L.Get("Project.InvalidArchiveEntries"));
+            bool hasPreview = kind == "recovery" && archive.GetEntry(RecoveryPreview.EntryName) is not null;
+            if (archive.Entries.Count > (hasPreview ? 4099 : 4098) || archive.Entries.Select(e => e.FullName).Distinct(StringComparer.Ordinal).Count() != archive.Entries.Count) throw new InvalidDataException(L.Get("Project.InvalidArchiveEntries"));
             long expanded = 0;
             foreach (var entry in archive.Entries)
             {
+                // The optional preview is never decompressed during recovery and cannot
+                // invalidate otherwise complete scene/assets, even if its metadata is bad.
+                if (hasPreview && entry.FullName == RecoveryPreview.EntryName) continue;
                 if (entry.Length < 0 || entry.Length > MaxAssetBytes || expanded > MaxExpandedBytes - entry.Length) throw new InvalidDataException(L.Get("Project.ExpandedCapacityExceeded"));
                 expanded += entry.Length;
             }
@@ -94,6 +104,7 @@ internal static class PackageCodec
             if (manifest.Assets.Any(a => a is null || !IsAssetId(a.Id) || string.IsNullOrWhiteSpace(a.MediaType) || a.MediaType.Length > 128 || a.Length <= 0 || a.Length > MaxAssetBytes) || manifest.Assets.Select(a => a.Id).Distinct(StringComparer.Ordinal).Count() != manifest.Assets.Count)
                 throw new InvalidDataException(L.Get("Project.InvalidAssetManifest"));
             var knownEntries = manifest.Assets.Select(a => "assets/" + a.Id).Append("manifest.json").Append(payload).ToHashSet(StringComparer.Ordinal);
+            if (hasPreview) knownEntries.Add(RecoveryPreview.EntryName);
             if (!knownEntries.SetEquals(archive.Entries.Select(e => e.FullName))) throw new InvalidDataException(L.Get("Project.UnexpectedArchiveContents"));
             T value = await ReadJsonAsync<T>(RequiredEntry(archive, payload), 128 * 1024 * 1024, ct).ConfigureAwait(false);
             Validate(value);
@@ -116,6 +127,24 @@ internal static class PackageCodec
         }
         catch (JsonException ex) { throw new InvalidDataException(L.Get("Project.InvalidJson"), ex); }
         catch (OverflowException ex) { throw new InvalidDataException(L.Get("Project.DataOutOfRange"), ex); }
+    }
+    internal static async Task<byte[]?> LoadRecoveryPreviewAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            if (file.Length > MaxPackageBytes) return null;
+            using var archive = new ZipArchive(file, ZipArchiveMode.Read);
+            var entry = archive.GetEntry(RecoveryPreview.EntryName);
+            if (entry is null || entry.Length > RecoveryPreview.MaximumBytes) return null;
+            byte[] bytes = await ReadBytesAsync(entry, RecoveryPreview.MaximumBytes, ct).ConfigureAwait(false);
+            if (!RecoveryPreview.IsValid(bytes)) return null;
+            // Do not show a plausible thumbnail for a generation whose scene/assets
+            // would actually be rejected and replaced by the previous generation.
+            await LoadAsync<WorkspaceState>(path, "recovery", ct).ConfigureAwait(false);
+            return bytes;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or OverflowException) { return null; }
     }
     private static ZipArchiveEntry RequiredEntry(ZipArchive archive, string name) => archive.GetEntry(name) ?? throw new InvalidDataException(L.Format("Project.MissingEntry", name));
     private static T CurrentVersionCopy<T>(T value)

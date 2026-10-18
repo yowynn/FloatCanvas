@@ -109,7 +109,12 @@ internal sealed class ToolStateStore
         resolver.Modifiers.Add(type =>
         {
             if (type.Type != typeof(ToolParameters) && type.Type != typeof(ElementStyle)) return;
-            foreach (var property in type.Properties) property.IsRequired = true;
+            foreach (var property in type.Properties)
+                // Version-one caches predate capture options. Missing new fields inherit their
+                // explicit defaults; all original fields remain required and unknown fields rejected.
+                property.IsRequired = type.Type != typeof(ToolParameters) || property.Name is not
+                    (nameof(ToolParameters.CaptureShape) or nameof(ToolParameters.CaptureSource) or
+                     nameof(ToolParameters.CaptureBorderWidth) or nameof(ToolParameters.CaptureBorderColor));
         });
         return new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, TypeInfoResolver = resolver };
     }

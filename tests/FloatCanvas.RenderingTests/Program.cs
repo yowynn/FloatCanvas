@@ -10,9 +10,13 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--animated-overlay-cache-only")) { AnimatedOverlayCacheTests.Run(Assert); OverlaySceneCacheTests.Run(Assert); ClearedLiveOpacityTests.Run(Assert); Console.WriteLine($"PASS {_checks} animated overlay cache checks."); return 0; }
+            if (args.Contains("--gpu-surface-only")) { IntermediateSurfaceRenderingTests.Run(Assert); LivePixelateRenderingTests.Run(Assert); AnimatedImageRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} intermediate surface rendering checks (raster target)."); return 0; }
+            if (args.Contains("--animation-only")) { AnimatedImageRenderingTests.Run(Assert); AssetImportLosslessTests.Run(Assert); Console.WriteLine($"PASS {_checks} animation rendering checks."); return 0; }
             if (args.Contains("--arrows-only")) { ArrowHeadRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--numbers-only")) { NumberFitRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--live-effects-only")) { LivePixelateRenderingTests.Run(Assert); return 0; }
+            if (args.Contains("--capture-selection-only")) { CaptureSelectionRenderingTests.Run(Assert); return 0; }
             ShapesAndCoordinates();
             AlphaAndBackground();
             ImagesAndEffects();
@@ -20,12 +24,16 @@ internal static class Program
             NumberFitRenderingTests.Run(Assert);
             OrientationAndFormats();
             AssetImportLosslessTests.Run(Assert);
+            AnimatedImageRenderingTests.Run(Assert);
+            AnimatedOverlayCacheTests.Run(Assert);
+            IntermediateSurfaceRenderingTests.Run(Assert);
             CacheAndCanvasState();
             ArrowHeadRenderingTests.Run(Assert);
             LivePixelateRenderingTests.Run(Assert);
             EditablePresetRenderingTests.Run(Assert);
             OverlaySceneCacheTests.Run(Assert);
             ClearedLiveOpacityTests.Run(Assert);
+            CaptureSelectionRenderingTests.Run(Assert);
             Console.WriteLine($"PASS {_checks} real render/import/export checks.");
             return 0;
         }

@@ -18,12 +18,19 @@ internal static class Program
         var profileId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ApplicationPaths.ProfileDirectory.ToUpperInvariant())))[..16];
         using var instance = new Mutex(true, "Local\\FloatCanvas.App." + profileId, out var created);
         if (!created) return;
+        var diagnostics = new ApplicationDiagnostics(ApplicationPaths.ProfileDirectory);
+        diagnostics.Write("App.Startup", new { Executable = Environment.ProcessPath,
+            AssemblyId = typeof(Program).Assembly.ManifestModule.ModuleVersionId,
+            WindowsAssemblyId = typeof(FloatCanvas.Windows.OverlayHost).Assembly.ManifestModule.ModuleVersionId,
+            RenderingAssemblyId = typeof(FloatCanvas.Rendering.SceneRenderer).Assembly.ManifestModule.ModuleVersionId,
+            Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription });
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        { if (e.ExceptionObject is Exception exception) diagnostics.WriteUnhandled(exception); };
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.DispatcherUnhandledException += (_, e) =>
         {
-            var directory = ApplicationPaths.ProfileDirectory;
-            Directory.CreateDirectory(directory);
-            File.AppendAllText(Path.Combine(directory, "errors.log"), $"{DateTimeOffset.Now:O} {e.Exception}\n");
+            diagnostics.WriteUnhandled(e.Exception);
             if (args.Contains("--smoke")) app.Shutdown(1);
             else AppDialog.Show(null, e.Exception.Message, L.Get("App.OperationFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
             e.Handled = true;
@@ -38,6 +45,7 @@ internal static class Program
             }
             catch (Exception ex)
             {
+                diagnostics.Write("App.StartupFailed", exception: ex);
                 if (!args.Contains("--smoke"))
                     AppDialog.Show(null, ex.ToString(), L.Get("App.StartupFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
                 else Console.Error.WriteLine(ex);

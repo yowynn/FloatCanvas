@@ -34,6 +34,17 @@ internal sealed partial class DesktopSession
     {
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _clearCanvasButton?.CancelConfirmation();
         if (DocumentOperationBusy || !_host.IsVisible) return;
+        using var destination = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick
+            ? _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress) : null;
+        if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
+        {
+            // Commit a color draft before this very gesture reads the tool parameters.
+            // The clicked canvas remains the destination throughout the whole dismissal.
+            _toolOptionsPanel?.CloseColorPicker();
+            _windowCoordinator?.DismissTransient(WindowDismissReason.CanvasPress);
+            if (_toolbarMenu is not null) _toolbarMenu.IsOpen = false;
+            if (_moreToolsMenu is not null) _moreToolsMenu.IsOpen = false;
+        }
         ValidateSelectedStamp();
         bool press = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left;
         if (_eyedropper is { } color && press)
@@ -96,7 +107,7 @@ internal sealed partial class DesktopSession
         _selectedStampUsesSource = useSource;
         _selectedStampFromSlot = fromSlot;
         SwitchToolState(EditorTool.Stamp);
-        _stampWindow?.Hide();
+        if (_stampWindow is not null) SessionWindowCoordinator.Hide(_stampWindow);
         if (!_host.IsEditing) SetEditing(true);
         UpdateStatus(useSource ? L.Get("Stamp.SourceSelected") + entry.Name : entry.Name);
         RequestRender();
@@ -104,7 +115,9 @@ internal sealed partial class DesktopSession
 
     private void ShowStampLibrary() => _ = RunCommand(async () =>
     {
+        var request = new WindowSessionRequest(_host.EditingSessionVersion, _host.IsEditing, Active);
         await _stampLibrary.LoadAsync(_documentLifetime.Token);
+        if (_disposed || _windowCoordinator?.CanContinue(request, Active) == false) return;
         EnsureStampWindow();
         ShowAppWindow(_stampWindow!, true);
     });
@@ -112,7 +125,10 @@ internal sealed partial class DesktopSession
     private void SaveStampSelection() => _ = RunCommand(async () =>
     {
         if (Active.Selection.Count == 0) { UpdateStatus(L.Get("Stamp.NoSelection")); return; }
+        var request = new WindowSessionRequest(_host.EditingSessionVersion, _host.IsEditing, Active);
+        var selection = Active.Selection.ToHashSet();
         await _stampLibrary.LoadAsync(_documentLifetime.Token);
+        if (_disposed || _windowCoordinator?.CanContinue(request, Active) == false || !selection.SetEquals(Active.Selection)) return;
         EnsureStampWindow();
         await _stampWindow!.SaveSelectionFromToolbarAsync(_toolbar);
     });
@@ -147,6 +163,6 @@ internal sealed partial class DesktopSession
             _layers.Dismissed += () => _layersWanted = false;
         }
         if (_layersWanted) { _layers.Refresh(); ShowAppWindow(_layers, true); }
-        else _layers.Hide();
+        else SessionWindowCoordinator.Hide(_layers);
     }
 }

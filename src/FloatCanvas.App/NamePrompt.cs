@@ -24,6 +24,6 @@ internal static class NamePrompt
         input.TextChanged += (_, _) => save.IsEnabled = !string.IsNullOrWhiteSpace(input.Text);
         save.Click += (_, _) => window.DialogResult = true;
         window.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
-        return window.ShowDialog() == true ? input.Text.Trim() : null;
+        return SessionWindowCoordinator.ShowModal(window) == true ? input.Text.Trim() : null;
     }
 }

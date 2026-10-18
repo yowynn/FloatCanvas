@@ -22,6 +22,7 @@ internal static class NativeMethods
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     internal delegate void WinEventProcedure(nint hook, uint eventId, nint hwnd, int objectId, int childId, uint threadId, uint eventTime);
     internal delegate bool MonitorEnumProcedure(nint monitor, nint dc, ref Rect rect, nint data);
+    internal delegate bool WindowEnumProcedure(nint hwnd, nint data);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     internal struct WindowClass
@@ -103,11 +104,17 @@ internal static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern nint RemovePropW(nint hwnd, string name);
     [DllImport("user32.dll")] internal static extern nint GetTopWindow(nint parent);
     [DllImport("user32.dll")] internal static extern nint GetWindow(nint hwnd, uint command);
+    [DllImport("user32.dll")] internal static extern nint GetShellWindow();
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool EnumThreadWindows(uint thread, WindowEnumProcedure callback, nint data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetClassNameW(nint hwnd, System.Text.StringBuilder name, int capacity);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern nint FindWindowExW(nint parent, nint after, string? className, string? title);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetClientRect(nint hwnd, out Rect rect);
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetLayeredWindowAttributes(nint hwnd, uint colorKey, byte alpha, uint flags);
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern unsafe bool UpdateLayeredWindowIndirect(nint hwnd, ref LayeredInformation value);
     [DllImport("user32.dll")] internal static extern nint GetDC(nint hwnd);
     [DllImport("user32.dll")] internal static extern int ReleaseDC(nint hwnd, nint dc);
+    [DllImport("user32.dll")] internal static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetForegroundWindow(nint hwnd);
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint hwnd, out uint processId);
@@ -123,6 +130,7 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetWindowDisplayAffinity(nint hwnd, uint affinity);
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetWindowDisplayAffinity(nint hwnd, out uint affinity);
     [DllImport("user32.dll")] internal static extern short GetKeyState(int key);
+    [DllImport("user32.dll")] internal static extern int GetMessageTime();
     [DllImport("user32.dll")] internal static extern nint LoadCursorW(nint instance, nint name);
     [DllImport("user32.dll")] internal static extern nint SetCursor(nint cursor);
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool RegisterHotKey(nint hwnd, int id, uint modifiers, uint key);

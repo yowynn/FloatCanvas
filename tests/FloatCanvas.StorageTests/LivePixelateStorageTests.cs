@@ -8,6 +8,7 @@ internal static class LivePixelateStorageTests
 {
     public static async Task RunAsync(Action<bool, string> check)
     {
+        await LiveBlurStorageTests.RunAsync(check);
         string root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "FloatCanvas-live-effect-storage-" + Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(root);
         try

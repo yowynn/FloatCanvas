@@ -31,6 +31,12 @@ internal static class ToolOptionsKeyboardRouteTests
                 check(source.GetType().Name + " preserves project save and open shortcuts", ToolOptionsKeyboardRoute.ShouldRoute(0x53, ModifierKeys.Control, source) && ToolOptionsKeyboardRoute.ShouldRoute(0x4F, ModifierKeys.Control, source));
             check("textbox undo and clipboard keys remain local", !ToolOptionsKeyboardRoute.ShouldRoute(0x5A, ModifierKeys.Control, text) && !ToolOptionsKeyboardRoute.ShouldRoute(0x56, ModifierKeys.Control, text));
             check("menus and system modifier keys are not repurposed as tools", !ToolOptionsKeyboardRoute.ShouldRoute(0x42, ModifierKeys.None, new MenuItem()) && !ToolOptionsKeyboardRoute.ShouldRoute(0x42, ModifierKeys.Alt, button));
+            var modalSource = new Button(); var modalWindow = new Window { Content = modalSource };
+            var modalKey = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.OemPlus) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+            bool consumedBeforeCommand = false;
+            ToolOptionsKeyboardRoute.Attach(modalWindow, () => false, () => false, _ => consumedBeforeCommand = modalKey.Handled);
+            try { modalSource.RaiseEvent(modalKey); check("a modal-capable command consumes its source key before invoking the command", consumedBeforeCommand); }
+            finally { modalWindow.Close(); }
             colorOpen = true; Send(button, Key.L); check("a nested color editor prevents tool switching", commands.Count == before);
             Send(button, Key.Escape); check("first Escape dismisses only the color level", !colorOpen && dismissals == 1 && commands.Count == before);
             Send(button, Key.Escape); check("next Escape dismisses an unpinned tool window", dismissals == 2 && commands.Count == before);

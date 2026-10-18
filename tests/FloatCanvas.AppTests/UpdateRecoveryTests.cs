@@ -4,7 +4,9 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using FloatCanvas.Storage;
+using SkiaSharp;
 
 /// <summary>Real recovery packages, without starting windows, update workers or application shutdown.</summary>
 internal static class UpdateRecoveryTests
@@ -32,7 +34,10 @@ internal static class UpdateRecoveryTests
         }
         using (var f = new Fixture())
         {
-            string image = f.Assets.Add(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jJ1kAAAAASUVORK5CYII="));
+            using var pixel = new SKBitmap(new SKImageInfo(1, 1));
+            pixel.Erase(SKColors.Red);
+            using var encoded = pixel.Encode(SKEncodedImageFormat.Png, 100);
+            string image = f.Assets.Add(encoded.ToArray());
             f.Live.Document.Elements.Add(new() { Kind = ElementKind.Image, AssetId = image, Width = 30, Height = 40 });
             var capture = f.Live.Document.CreateCapture(new(-200, 50, 600, 400), image);
             capture.Elements.Add(new() { Kind = ElementKind.Text, Text = "screenshot draft" });
@@ -50,6 +55,18 @@ internal static class UpdateRecoveryTests
             check("update waits for the preceding recovery write", !save.IsCompleted && !File.Exists(f.Store.CurrentPath));
             pending.SetResult(); await save;
             check("update saves its own snapshot after the preceding recovery write", (await f.Store.LoadAsync()) is not null);
+        }
+        using (var f = new Fixture())
+        {
+            // Recovery storage preserves original resources even when an optional thumbnail cannot decode one.
+            byte[] damagedImage = [137, 80, 78, 71, 13, 10, 26, 10];
+            string image = f.Assets.Add(damagedImage);
+            f.Live.Document.Elements.Add(new() { Kind = ElementKind.Image, AssetId = image, Width = 30, Height = 40 });
+            await f.Flush();
+            var recovered = (await f.Store.LoadAsync())!;
+            check("optional update preview decode failure does not block recovery persistence", recovered.State.LiveDocument.Elements.Single().AssetId == image &&
+                recovered.Assets.Get(image).Data.Span.SequenceEqual(damagedImage));
+            check("failed update preview is omitted rather than saving an invalid thumbnail", await f.Store.LoadPreviewAsync() is null);
         }
         using (var f = new Fixture())
         {
@@ -89,18 +106,20 @@ internal static class UpdateRecoveryTests
         internal EditorSession Live { get; }
         internal WorkspaceRecoveryHistory History { get; }
         internal CancellationTokenSource Lifetime { get; } = new();
+        private SceneRenderer Renderer { get; } = new();
         internal DesktopSession Session { get; } = (DesktopSession)RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
         internal Fixture()
         {
             Store = new(Path.Combine(Root, "recovery")); Live = new(new SceneDocument(), Assets); History = new(Store);
             Set(Session, "_recoveryStore", Store); Set(Session, "_workspaceRecoveryHistory", History);
             Set(Session, "_assets", Assets); Set(Session, "_live", Live); Set(Session, "_documentLifetime", Lifetime);
+            Set(Session, "_renderer", Renderer);
             Set(Session, "_documentRecoveryTask", Task.CompletedTask);
             var files = typeof(DesktopSession).GetField("_documentFiles", Private)!; files.SetValue(Session, Activator.CreateInstance(files.FieldType));
         }
         internal WorkspaceState Snapshot() => (WorkspaceState)typeof(DesktopSession).GetMethod("SnapshotWorkspace", Private)!.Invoke(Session, null)!;
         internal void BeginFresh() { var snapshot = Snapshot(); History.BeginFreshWorkspace(snapshot); Set(Session, "_documentRecoveryFingerprint", Fingerprint(snapshot)); }
         internal Task Flush() => (Task)typeof(DesktopSession).GetMethod("FlushRecoveryForUpdateAsync", Private)!.Invoke(Session, null)!;
-        public void Dispose() { Lifetime.Dispose(); if (Directory.Exists(Root)) Directory.Delete(Root, true); }
+        public void Dispose() { Renderer.Dispose(); Lifetime.Dispose(); if (Directory.Exists(Root)) Directory.Delete(Root, true); }
     }
 }
