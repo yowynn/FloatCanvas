@@ -34,6 +34,7 @@ internal sealed partial class DesktopSession
     {
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _clearCanvasButton?.CancelConfirmation();
         if (DocumentOperationBusy || !_host.IsVisible) return;
+        if (HandleCalibrationPointer(e)) return;
         using var destination = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick
             ? _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress) : null;
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
@@ -55,6 +56,7 @@ internal sealed partial class DesktopSession
         }
         if (_editor.Tool == EditorTool.Stamp && press)
         {
+            if (!_editor.TryToDocument(e.Position, out var stampPoint)) return;
             if (_stampSelectionPending) { UpdateStatus(L.Get("Stamp.Loading")); return; }
             if (_selectedStamp is null || _stampLibrary.Items.All(item => item.Id != _selectedStampId))
             { UpdateStatus(L.Get("Stamp.Missing")); return; }
@@ -62,11 +64,11 @@ internal sealed partial class DesktopSession
             if (current.Revision != _selectedStampRevision)
             {
                 _editor.Cancel();
-                var request = StampRequestGuard.Capture(++_stampSelectionRequest, current.Id, current.Revision, _selectedStampUsesSource, _editor.ToDocument(e.Position));
+                var request = StampRequestGuard.Capture(++_stampSelectionRequest, current.Id, current.Revision, _selectedStampUsesSource, stampPoint);
                 _ = RunCommand(() => ReloadStampAndPlaceAsync(request));
                 return;
             }
-            StampLibrary.Place(_selectedStamp, Active, _editor.ToDocument(e.Position));
+            StampLibrary.Place(_selectedStamp, Active, stampPoint);
             return;
         }
         if (e.Kind == OverlayPointerKind.Down && e.Button == OverlayMouseButton.Right) SwitchToolState(EditorTool.Select);

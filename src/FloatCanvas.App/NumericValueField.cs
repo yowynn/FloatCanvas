@@ -10,23 +10,25 @@ namespace FloatCanvas.App;
 internal sealed class NumericValueField : UserControl
 {
     private readonly double minimum, maximum;
+    private readonly bool integerOnly;
     private bool synchronizing;
     private double value;
     internal TextBox Input { get; }
     internal Slider Slider { get; }
     internal event Action<double>? ValueChanged;
     internal event Action? InvalidInput;
+    internal event Action? SliderValueCommitted;
 
-    internal NumericValueField(double minimum, double maximum, double? sliderMinimum = null, double? sliderMaximum = null, double step = 1)
-        : this(new TextBox { MinHeight = 30 }, minimum, maximum, sliderMinimum, sliderMaximum, step) { }
+    internal NumericValueField(double minimum, double maximum, double? sliderMinimum = null, double? sliderMaximum = null, double step = 1, bool integerOnly = false)
+        : this(new TextBox { MinHeight = 30 }, minimum, maximum, sliderMinimum, sliderMaximum, step, integerOnly) { }
 
-    internal NumericValueField(TextBox input, double minimum, double maximum, double? sliderMinimum = null, double? sliderMaximum = null, double step = 1)
+    internal NumericValueField(TextBox input, double minimum, double maximum, double? sliderMinimum = null, double? sliderMaximum = null, double step = 1, bool integerOnly = false)
     {
         if (!double.IsFinite(minimum) || !double.IsFinite(maximum) || maximum < minimum || step <= 0 || !double.IsFinite(step)) throw new ArgumentOutOfRangeException(nameof(minimum));
-        this.minimum = minimum; this.maximum = maximum; Input = input;
+        this.minimum = minimum; this.maximum = maximum; this.integerOnly = integerOnly; Input = input;
         Slider = new Slider { Minimum = Math.Clamp(sliderMinimum ?? minimum, minimum, maximum),
             Maximum = Math.Clamp(sliderMaximum ?? maximum, minimum, maximum), SmallChange = step, LargeChange = step * 10,
-            TickFrequency = step, IsSnapToTickEnabled = false, IsMoveToPointEnabled = true, MinHeight = 20, Margin = new(1, 1, 1, 0) };
+            TickFrequency = step, IsSnapToTickEnabled = integerOnly, IsMoveToPointEnabled = true, MinHeight = 20, Margin = new(1, 1, 1, 0) };
         if (Slider.Maximum < Slider.Minimum) throw new ArgumentOutOfRangeException(nameof(sliderMaximum));
         string label = AutomationProperties.GetName(Input);
         if (!string.IsNullOrWhiteSpace(label)) AutomationProperties.SetName(Slider, label);
@@ -44,11 +46,12 @@ internal sealed class NumericValueField : UserControl
         Slider.ValueChanged += (_, _) =>
         {
             if (synchronizing) return;
-            double next = Math.Round(Math.Clamp(Slider.Value, minimum, maximum), 3);
+            double next = Math.Round(Math.Clamp(Slider.Value, minimum, maximum), integerOnly ? 0 : 3);
             synchronizing = true;
             try { Slider.Value = next; Input.Text = next.ToString("0.###", CultureInfo.CurrentCulture); }
             finally { synchronizing = false; }
             if (value == next) return; value = next; ValueChanged?.Invoke(next);
+            SliderValueCommitted?.Invoke();
         };
         value = minimum;
         if (TryGetValue(out double initial)) value = initial;
@@ -60,7 +63,7 @@ internal sealed class NumericValueField : UserControl
         get => value;
         set
         {
-            if (!double.IsFinite(value) || value < minimum || value > maximum) throw new ArgumentOutOfRangeException(nameof(value));
+            if (!double.IsFinite(value) || value < minimum || value > maximum || (integerOnly && value != Math.Truncate(value))) throw new ArgumentOutOfRangeException(nameof(value));
             synchronizing = true;
             try { this.value = value; Input.Text = value.ToString("0.###", CultureInfo.CurrentCulture); Slider.Value = Math.Clamp(value, Slider.Minimum, Slider.Maximum); }
             finally { synchronizing = false; }
@@ -69,5 +72,5 @@ internal sealed class NumericValueField : UserControl
 
     internal bool TryGetValue(out double result) =>
         (double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out result) || double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out result)) &&
-        double.IsFinite(result) && result >= minimum && result <= maximum;
+        double.IsFinite(result) && result >= minimum && result <= maximum && (!integerOnly || result == Math.Truncate(result));
 }

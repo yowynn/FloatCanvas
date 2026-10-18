@@ -69,7 +69,7 @@ internal sealed partial class DesktopSession
     {
         CancelLivePreparation();
         var pending = new LiveEffectPreparation(request, _editor.Tool,
-            SceneRenderer.LiveEffectSamplingBounds(effect).Intersect(request.Document.Viewport));
+            SceneRenderer.LiveEffectSamplingBounds(request.Document,effect).Intersect(request.Document.Viewport));
         // An unchanged ROI on a static desktop may produce no new notification. Its
         // already displayed, current-source pixels are sufficient for another filter.
         if (CurrentLiveBackdropCovers(pending.Bounds) && IsLivePreparationCurrent(pending)) return true;

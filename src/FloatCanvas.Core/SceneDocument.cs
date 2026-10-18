@@ -56,6 +56,9 @@ public sealed class CanvasElement
     public SymbolKind Symbol { get; set; }
     public Guid? GroupId { get; set; }
     public Affine2D Transform { get; set; } = Affine2D.Identity;
+    /// <summary>Optional local placement applied before the ordinary editable affine transform.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Projective2D? ProjectivePlacement { get; set; }
     public ElementStyle Style { get; set; } = new();
     public string Text { get; set; } = "";
     public int Number { get; set; } = 1;
@@ -68,7 +71,7 @@ public sealed class CanvasElement
     {
         Id = newId ? Guid.NewGuid() : Id, Name = Name, Kind = Kind, Points = [.. Points], Width = Width, Height = Height,
         CornerRadius = CornerRadius, Symbol = Symbol, GroupId = GroupId,
-        Transform = Transform, Style = Style.Clone(), Text = Text, Number = Number, AssetId = AssetId,
+        Transform = Transform, ProjectivePlacement = ProjectivePlacement, Style = Style.Clone(), Text = Text, Number = Number, AssetId = AssetId,
         ImageCrop = ImageCrop, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked
     };
 }
@@ -84,12 +87,13 @@ public sealed class DisplayLayoutHint
 
 public sealed partial class SceneDocument
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public int Version { get; set; } = CurrentVersion;
     public DocumentKind Kind { get; set; }
     public List<CanvasElement> Elements { get; set; } = [];
     public List<CanvasGroup> Groups { get; set; } = [];
     public CanvasElement? Background { get; set; }
+    public CanvasSettings Canvas { get; set; } = new();
     public RectD Viewport { get; set; } = new(0, 0, 1920, 1080);
     public double LayerOpacity { get; set; } = 1;
     public int NextNumber { get; set; } = 1;
@@ -107,7 +111,7 @@ public sealed partial class SceneDocument
         }
         return new()
         {
-            Version = Version, Kind = Kind, Elements = Elements.Select(Copy).ToList(), Background = Background is null ? null : Copy(Background),
+            Version = Version, Kind = Kind, Elements = Elements.Select(Copy).ToList(), Background = Background is null ? null : Copy(Background), Canvas = Canvas.Clone(),
             Groups = Groups.Select(g => new CanvasGroup { Id = groupIds[g.Id], ParentId = g.ParentId is { } parent ? groupIds[parent] : null, Name = g.Name }).ToList(),
             Viewport = Viewport, LayerOpacity = LayerOpacity, NextNumber = NextNumber, DisplayLayout = DisplayLayout.Select(d => d.Clone()).ToList()
         };

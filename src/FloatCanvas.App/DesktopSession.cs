@@ -108,6 +108,7 @@ internal sealed partial class DesktopSession : IDisposable
         document.NextNumber = _editor.NumberStart;
         _editor.Changed += () =>
         {
+            ValidateCanvasCalibrationSession();
             if (_liveEffectPreparation is { } pending && pending.Tool != _editor.Tool) CancelLivePreparation();
             RequestRender(); ScheduleRecovery();
         };
@@ -136,6 +137,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.InputActivated += RaiseVisibleToolWindows;
         _host.EditingFocusLost += () =>
         {
+            EndCanvasCalibration(hidePanel: true);
             CancelSnapshotCapture("ExternalFocus", userInitiated: false);
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.ExternalFocus);
             // Do not gate focus release on an asynchronous document operation.
@@ -257,6 +259,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private bool SetEditing(bool editing, bool preserveImageDrop = false)
     {
+        if (!editing) EndCanvasCalibration(hidePanel: true);
         CancelSnapshotCapture(editing ? "ExplicitEntry" : "ModeExit");
         using var destination = editing ? null : _windowCoordinator?.DirectTransfer(WindowDismissReason.ModeExit);
         _clearCanvasButton?.CancelConfirmation();
@@ -334,7 +337,7 @@ internal sealed partial class DesktopSession : IDisposable
             // is faster for ordinary shapes and small animated images on the current host.
             var document = Active.Document;
             bool ImageFilter(CanvasElement element) => element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
-                ElementGeometry.Bounds(element, includeStroke: false).Intersects(document.Viewport) &&
+                SceneRenderer.ProjectedBounds(document, element).Intersects(document.Viewport) &&
                 element.Effects.Any(effect => effect.Kind is ImageEffectKind.Blur or ImageEffectKind.Pixelate);
             _host.SetGpuWorkload(SceneRenderer.HasLiveEffects(document) ||
                 document.Background is { } background && ImageFilter(background) ||
@@ -352,6 +355,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (!Active.IsTransactionActive)
             {
                 _inspector?.Refresh(); _layers?.Refresh();
+                _canvasSettingsWindow?.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
                 if (IsToolOptionsOpen) _toolOptionsPanel.RefreshDocumentState();
             }
         }
@@ -392,6 +396,8 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnKey(int key)
     {
+        if (key == 0x1B && _canvasCalibration.IsActive)
+        { _canvasCalibration.Escape(); RequestRender(); return; }
         if (key == 0x1B && _snapshotCaptureRequest is not null) { CancelSnapshotCapture("Escape"); return; }
         if (_clearCanvasButton is { IsConfirming: true } clear)
         {
@@ -416,6 +422,7 @@ internal sealed partial class DesktopSession : IDisposable
             // Modifiers (including a repeated or delayed Ctrl packet) are not editor
             // commands. They must not roll back a pointer transaction in progress.
             if (key is not (0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F)) return;
+            EndCanvasCalibration();
             _editor.Cancel();
             switch (key)
             {
@@ -449,35 +456,35 @@ internal sealed partial class DesktopSession : IDisposable
         if (ToolShortcutCatalog.IsReserved(key)) return;
         if (ToolShortcutCatalog.TryGetTool(key, out var tool)) SelectTool(tool);
     }
-    private void Undo() { _editor.Cancel(); Active.Undo(); }
-    private void Redo() { _editor.Cancel(); Active.Redo(); }
+    private void Undo() { _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Undo(); }
+    private void Redo() { _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Redo(); }
     private void Draw(SKSurface surface)
     {
         var canvas = surface.Canvas;
         canvas.Save(); canvas.Translate((float)_editor.ScreenOrigin.X,(float)_editor.ScreenOrigin.Y);
         var preview = _editor.RasterPreview;
-        _overlayCache.DrawOnClearedRasterTarget(surface,Active.Document,_assets,Active.SceneRevision,Active.TransactionId,
-            preview.First,preview.Last,preview.BypassCache);
+        if (_host.IsEditing && _canvasCalibration.IsActive)
+            _renderer.Draw(canvas, Active.Document, _assets, calibrationReference: true);
+        else _overlayCache.DrawOnClearedRasterTarget(surface,Active.Document,_assets,Active.SceneRevision,Active.TransactionId,
+            preview.First,preview.Last,preview.BypassCache || _canvasCalibration.IsDragging);
         if (_host.IsEditing)
         {
             using var paint = new SKPaint { Color = new SKColor(35,131,226), Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, IsAntialias = true };
-            if (_editor.ShouldShowSelection(_host.InteractionModifiers) && Active.SelectionBounds() is { } b)
+            if (!_canvasCalibration.IsActive && _editor.ShouldShowSelection(_host.InteractionModifiers) && _editor.SelectionScreenCorners is { Count: 4 } corners)
             {
-                canvas.DrawRect((float)b.X,(float)b.Y,(float)b.Width,(float)b.Height,paint);
-                foreach(var p in EditorController.Corners(b)) canvas.DrawRect((float)p.X-5,(float)p.Y-5,10,10,paint);
-                canvas.DrawLine((float)b.Center.X,(float)b.Top,(float)b.Center.X,(float)b.Top-28,paint);
-                canvas.DrawCircle((float)b.Center.X,(float)b.Top-28,6,paint);
-                if(Active.SelectedElements().ToArray() is [var line] && line.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
-                    foreach(var p in line.Points.Select(line.Transform.TransformPoint)) canvas.DrawCircle((float)p.X,(float)p.Y,6,paint);
+                DrawScreenPolygon(canvas, corners, paint);
+                foreach(var p in corners) canvas.DrawRect((float)p.X-5,(float)p.Y-5,10,10,paint);
+                if (_editor.SelectionScreenRotationAnchor is { } anchor && _editor.SelectionScreenRotationHandle is { } handle)
+                {
+                    canvas.DrawLine((float)anchor.X,(float)anchor.Y,(float)handle.X,(float)handle.Y,paint);
+                    canvas.DrawCircle((float)handle.X,(float)handle.Y,6,paint);
+                }
+                foreach(var p in _editor.SelectionScreenEndpoints) canvas.DrawCircle((float)p.X,(float)p.Y,6,paint);
             }
             if (_editor.CapturePreview is { } capturePreview) DrawCapturePreview(canvas, capturePreview);
-            else if (_editor.EffectPreviewPolygon is { Count: > 0 } polygon)
-            {
-                using var path = new SKPathBuilder(); path.MoveTo((float)polygon[0].X,(float)polygon[0].Y);
-                foreach(var p in polygon.Skip(1)) path.LineTo((float)p.X,(float)p.Y);
-                path.Close(); using var shape = path.Detach(); canvas.DrawPath(shape,paint);
-            }
-            else if(_editor.Marquee is {} r) canvas.DrawRect((float)r.X,(float)r.Y,(float)r.Width,(float)r.Height,paint);
+            else if (_editor.EffectScreenPreview is { Count: > 0 } polygon) DrawScreenPolygon(canvas, polygon, paint);
+            else if (_editor.MarqueeScreenPolygon is { Count: > 0 } marquee) DrawScreenPolygon(canvas, marquee, paint);
+            DrawCanvasCalibration(canvas);
         }
         canvas.Restore();
         if (_host.IsReceivingDrop) DrawImageDropHint(canvas);
@@ -538,11 +545,17 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnMonitorsChanged()
     {
+        EndCanvasCalibration(hidePanel: true);
         StopLiveEffectsCapture();
         CloseImageDrop();
         _editor.Cancel();
         var bounds = _host.Monitors.Select(m=>new RectD(m.Bounds.Left,m.Bounds.Top,m.Bounds.Width,m.Bounds.Height)).Aggregate(RectD.Union);
         _live.Document.Viewport=bounds;
+        if (_live.Document.Canvas.Projection.Enabled && !CanvasCalibration.IsStableViewport(_live.Document.Canvas.Projection.Matrix, bounds))
+        {
+            _live.Document.Canvas.Projection.Enabled = false;
+            UpdateStatus(L.Get("Canvas.UnstableProjection"));
+        }
         _live.Document.DisplayLayout = _host.Monitors.Select(m => new DisplayLayoutHint { DeviceName = m.DeviceName,
             Bounds = new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height), DpiX = m.DpiX, DpiY = m.DpiY }).ToList();
         EnsureCaptureVisible();
@@ -576,6 +589,7 @@ internal sealed partial class DesktopSession : IDisposable
     private async Task RunCommand(Func<Task> action)
     {
         if(DocumentOperationBusy) { UpdateStatus(L.Get("Desktop.Busy")); return; }
+        EndCanvasCalibration();
         _editor.Cancel();
         try { await action(); }
         catch(OperationCanceledException) { UpdateStatus(L.Get("Desktop.Cancelled")); }
@@ -593,6 +607,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (_inspector is not null) _inspector.IsEnabled = enabled;
         if (_textEditor is not null) _textEditor.IsEnabled = enabled;
         if (_layers is not null) _layers.IsEnabled = enabled;
+        if (_canvasSettingsWindow is not null) _canvasSettingsWindow.IsEnabled = enabled;
         if (enabled) RestoreToolbarKeyboardFocus();
     }
     private void RestoreToolbarKeyboardFocus()
@@ -759,6 +774,8 @@ internal sealed partial class DesktopSession : IDisposable
         try { FlushToolState(commitDraft: true); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { UpdateStatus(ex.Message); }
         _disposed = true;
+        EndCanvasCalibration(hidePanel: true);
+        _canvasSettingsWindow?.CloseForDispose();
         _windowCoordinator?.Dispose();
         _toolStateSaveTimer?.Stop();
         _animationTimer?.Stop();

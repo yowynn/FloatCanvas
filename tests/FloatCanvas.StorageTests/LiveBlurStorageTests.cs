@@ -14,7 +14,7 @@ internal static class LiveBlurStorageTests
         var pixelate = blur.Clone(true); pixelate.Kind = ElementKind.LivePixelate; pixelate.Effects[0].Kind = ImageEffectKind.Pixelate;
         var scene = new SceneDocument { Viewport = new(-500, -300, 1000, 600), Elements = [pixelate, blur] };
         var assets = new AssetLibrary(); var store = new ProjectStore();
-        check((int)ElementKind.LivePixelate == 13 && (int)ElementKind.LiveBlur == 14 && SceneDocument.CurrentVersion == 2,
+        check((int)ElementKind.LivePixelate == 13 && (int)ElementKind.LiveBlur == 14 && SceneDocument.CurrentVersion == 3,
             "LiveBlur is appended without changing legacy enum values or the existing scene version");
         await store.SaveAsync(Path.Combine(root, "mixed.floatcanvas"), scene, assets);
         var loaded = await store.LoadAsync(Path.Combine(root, "mixed.floatcanvas"));

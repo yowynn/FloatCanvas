@@ -15,6 +15,9 @@ internal static class Program
         {
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--canvas-projection-preview")) { CanvasProjectionRuntimeFixture.Run(Assert, true); return 0; }
+            if (args.Contains("--canvas-projection-runtime-only")) { CanvasProjectionRuntimeFixture.Run(Assert); return 0; }
+            if (args.Contains("--perspective-input-only")) { PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert); return 0; }
             if (args.Contains("--session-capture-background-helper")) { SessionCaptureRoutingFixture.RunBackgroundHelper(args); return 0; }
             if (args.Contains("--focus-external-helper")) { FocusSessionRoutingFixture.RunExternalHelper(args); return 0; }
             if (args.Contains("--focus-session-only")) { FocusSessionRoutingFixture.Run(Assert); return 0; }
@@ -80,6 +83,7 @@ internal static class Program
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert);
             GpuSettingsTests.Run(Assert);
             ApplicationDiagnosticsTests.Run(Assert);
             ClearCanvasButtonTests.Run(Assert);

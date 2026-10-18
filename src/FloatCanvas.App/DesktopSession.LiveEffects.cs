@@ -99,7 +99,7 @@ internal sealed partial class DesktopSession
             }
         }
         var samplingRegions=Active.Document.Elements.Where(e=>e.Visible && e.Style.Opacity>0 && ElementGeometry.IsLiveEffect(e.Kind))
-            .Select(e=>SceneRenderer.LiveEffectSamplingBounds(e).Intersect(Active.Document.Viewport))
+            .Select(e=>SceneRenderer.LiveEffectSamplingBounds(Active.Document,e).Intersect(Active.Document.Viewport))
             .Concat(_liveEffectPreparation is { } preparation ? [preparation.Bounds] : []);
         var regions=samplingRegions.Where(b=>!b.IsEmpty).Select(b=>new PixelBounds((int)Math.Floor(b.Left),(int)Math.Floor(b.Top),
                 checked((int)Math.Ceiling(b.Right)-(int)Math.Floor(b.Left)),

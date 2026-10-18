@@ -30,14 +30,14 @@ internal sealed partial class DesktopSession
         {
             var snapshot=session.Document.Clone();
             var resources=ResourceSnapshot(snapshot).ToList();
+            CapturedDesktop? screenCapture = null;
             if(hasLiveEffects && snapshot.Kind==DocumentKind.LiveOverlay)
             {
                 var captured=await CaptureCleanDesktopAsync();
                 if (!CanFinishEffect(request)) throw new OperationCanceledException("Stamp render context is no longer current.");
-                var assets=new AssetLibrary();string id=assets.Add(captured.PngBytes);
-                resources.Add(assets.Get(id));snapshot.Background=Background(captured,id);
+                screenCapture = captured;
             }
-            return new(snapshot,ResourceLibrary(resources), animationTime);
+            return new(snapshot,ResourceLibrary(resources), animationTime, screenCapture);
         }
         finally {_documentBusy=false;RequestRender();}
     }
@@ -50,8 +50,10 @@ internal sealed partial class DesktopSession
         var target = Active;
         var request = BeginEffectRender(target);
         var animationTime = _renderer.AnimationTime;
-        region = region.Intersect(target.Document.Viewport);
         if (region.IsEmpty) return;
+        var mapping = CanvasMapping.Create(target.Document);
+        if (!mapping.PlaneToScreen.TryTransformBounds(region, out var projectedRegion) ||
+            projectedRegion.Intersect(target.Document.Viewport).IsEmpty) return;
         bool desktopFilter = kind is ImageEffectKind.Pixelate or ImageEffectKind.Blur && target.Document.Kind == DocumentKind.LiveOverlay;
         if (desktopFilter && _host.Capabilities.SupportsCaptureExclusion)
         {
@@ -72,23 +74,22 @@ internal sealed partial class DesktopSession
         _documentBusy = true;
         try
         {
-            var snapshot = target.CreateCommittedSnapshot(); snapshot.Viewport = region; snapshot.LayerOpacity = 1;
+            var snapshot = target.CreateCommittedSnapshot(); snapshot.LayerOpacity = 1;
             var resources = ResourceSnapshot(snapshot).ToList();
             var capture = await captureDesktop();
             if (!CanFinishEffect(request)) return;
-            var backgroundAssets = new AssetLibrary(); string backgroundId = backgroundAssets.Add(capture.PngBytes);
-            resources.Add(backgroundAssets.Get(backgroundId)); snapshot.Background = Background(capture, backgroundId);
-            byte[] pixels = await Task.Run(() =>
+            var selection = new CaptureSelection(CaptureShape.PolygonLasso, CaptureSource.BackgroundAndCanvas,
+                projectedRegion, EditorController.Corners(region).Select(mapping.ToScreen).ToArray(), 0, 0);
+            var raster = await Task.Run(() =>
             {
-                using var renderer = new SceneRenderer { AnimationTime = animationTime };
-                return renderer.ExportPng(snapshot, ResourceLibrary(resources));
+                using var backdrop = CreateScreenBackdrop(capture);
+                using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
+                return renderer.ExportSelectionPng(snapshot, ResourceLibrary(resources), selection, includeBackground: true);
             }, _documentLifetime.Token);
             if (!CanFinishEffect(request) || !CanAddCanvasContent()) return;
-            string id = _assets.Add(pixels);
-            target.Add(new CanvasElement { Kind = ElementKind.Image, AssetId = id, Width = region.Width, Height = region.Height,
-                Transform = Affine2D.Translation(region.X, region.Y),
-                Effects = [new ImageEffect { Kind = kind, Amount = amount, Color = color, Bounds = new(0, 0, 1, 1) }],
-                Style = new() { StrokeWidth = 0 } });
+            var image = SnapshotImageCommand.CreateElement(_assets, raster, mapping.PlaneToScreen);
+            image.Effects = [new ImageEffect { Kind = kind, Amount = amount, Color = color, Bounds = new(0, 0, 1, 1) }];
+            target.Add(image);
             UpdateStatus(L.Get(desktopFilter ? kind == ImageEffectKind.Blur ? "Effect.LegacyBlurFrozen" : "Effect.LegacyPixelateFrozen" : "Effect.RegionFrozen"));
         }
         finally { _documentBusy = false; }
@@ -109,17 +110,20 @@ internal sealed partial class DesktopSession
         try
         {
             var snapshot = request.Target.CreateCommittedSnapshot();
-            var point = _editor.ToDocument(position); snapshot.Viewport = new(point.X, point.Y, 1, 1);
+            var point = new PointD(position.X - _editor.ScreenOrigin.X, position.Y - _editor.ScreenOrigin.Y);
+            snapshot.Viewport = new(point.X, point.Y, 1, 1);
             var resources = ResourceSnapshot(snapshot).ToList();
+            CapturedDesktop? screenCapture = null;
             if (snapshot.Background is null)
             {
-                var capture = await CaptureCleanDesktopAsync(); var assets = new AssetLibrary(); string id = assets.Add(capture.PngBytes);
+                var capture = await CaptureCleanDesktopAsync();
                 if (!CanFinishEffect(request)) return;
-                resources.Add(assets.Get(id)); snapshot.Background = Background(capture, id);
+                screenCapture = capture;
             }
             uint color = await Task.Run(() =>
             {
-                using var renderer = new SceneRenderer { AnimationTime = animationTime }; using var image = SKBitmap.Decode(renderer.ExportPng(snapshot, ResourceLibrary(resources)));
+                using var backdrop = CreateScreenBackdrop(screenCapture);
+                using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop }; using var image = SKBitmap.Decode(renderer.ExportPng(snapshot, ResourceLibrary(resources)));
                 var pixel = image.GetPixel(0, 0);
                 return (uint)(pixel.Alpha << 24 | pixel.Red << 16 | pixel.Green << 8 | pixel.Blue);
             }, _documentLifetime.Token);

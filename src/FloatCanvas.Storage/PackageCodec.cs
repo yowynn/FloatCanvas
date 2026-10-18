@@ -98,7 +98,7 @@ internal static class PackageCodec
             }
             var manifest = await ReadJsonAsync<Manifest>(RequiredEntry(archive, "manifest.json"), 4 * 1024 * 1024, ct).ConfigureAwait(false);
             if (manifest.Format != "FloatCanvas." + kind) throw new InvalidDataException(L.Get("Project.UnexpectedFormat"));
-            if (manifest.Version is not (1 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
+            if (manifest.Version is not (1 or 2 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
             string payload = kind == "project" ? "scene.json" : "workspace.json";
             if (manifest.Payload != payload || manifest.Assets is null || manifest.Assets.Count > 4096) throw new InvalidDataException(L.Get("Project.InvalidManifest"));
             if (manifest.Assets.Any(a => a is null || !IsAssetId(a.Id) || string.IsNullOrWhiteSpace(a.MediaType) || a.MediaType.Length > 128 || a.Length <= 0 || a.Length > MaxAssetBytes) || manifest.Assets.Select(a => a.Id).Distinct(StringComparer.Ordinal).Count() != manifest.Assets.Count)
@@ -214,6 +214,31 @@ internal static class PackageCodec
     private static void RequireSceneProperties(JsonElement json)
     {
         if (json.ValueKind != JsonValueKind.Object || new[] { "Version", "Kind", "Elements", "Viewport", "LayerOpacity", "NextNumber" }.Any(p => !json.TryGetProperty(p, out _))) throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
+        if (json.GetProperty("Version").TryGetInt32(out int version) && version >= 3)
+        {
+            RequireProperties(json, "Canvas");
+            var canvas = json.GetProperty("Canvas");
+            RequireProperties(canvas, "BackgroundColor", "Projection", "Grid");
+            var projection = canvas.GetProperty("Projection");
+            RequireProperties(projection, "Enabled", "Columns", "Rows", "Origin", "CellSize", "Quad", "Matrix", "AlgorithmVersion");
+            RequireMatrixProperties(projection.GetProperty("Matrix"));
+            RequireProperties(projection.GetProperty("Origin"), "X", "Y");
+            RequireProperties(canvas.GetProperty("Grid"), "Visible", "Color", "Width", "Pattern");
+        }
+        if (json.GetProperty("Elements").ValueKind == JsonValueKind.Array)
+            foreach (var element in json.GetProperty("Elements").EnumerateArray()) RequirePlacementProperties(element);
+        if (json.TryGetProperty("Background", out var background) && background.ValueKind != JsonValueKind.Null) RequirePlacementProperties(background);
+    }
+    private static void RequirePlacementProperties(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("ProjectivePlacement", out var placement) && placement.ValueKind != JsonValueKind.Null)
+            RequireMatrixProperties(placement);
+    }
+    private static void RequireMatrixProperties(JsonElement matrix) => RequireProperties(matrix, "M11", "M12", "M13", "M21", "M22", "M23", "M31", "M32", "M33");
+    private static void RequireProperties(JsonElement value, params string[] properties)
+    {
+        if (value.ValueKind != JsonValueKind.Object || properties.Any(p => !value.TryGetProperty(p, out _)))
+            throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
     }
     private static void RejectDuplicateProperties(JsonElement json)
     {

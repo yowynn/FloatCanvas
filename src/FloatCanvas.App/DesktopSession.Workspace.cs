@@ -16,6 +16,7 @@ internal sealed partial class DesktopSession
 
     private void ToggleCanvasVisibility()
     {
+        EndCanvasCalibration(hidePanel: true);
         // Preserve the hide intent even if a second toggle shows the canvas before the
         // dispatcher next synchronizes capture or resumes an asynchronous preparation.
         if (_host.IsVisible) CancelLivePreparation();
@@ -29,7 +30,14 @@ internal sealed partial class DesktopSession
     }
 
     private async Task StartNewCanvasAsync()
+        => await ReplaceCanvasAsync(preserveCanvasSettings: true);
+
+    private async Task CreateDefaultCanvasAsync()
+        => await ReplaceCanvasAsync(preserveCanvasSettings: false);
+
+    private async Task ReplaceCanvasAsync(bool preserveCanvasSettings)
     {
+        EndCanvasCalibration(hidePanel: true);
         _documentBusy = true;
         _documentRecoveryTimer?.Stop();
         try
@@ -45,6 +53,7 @@ internal sealed partial class DesktopSession
             var tool = _editor.Tool;
             int first = Math.Clamp(_settings.NumberStart,1,999999);
             _live = new(new SceneDocument { Viewport = previous.Viewport, LayerOpacity = previous.LayerOpacity,
+                Canvas = preserveCanvasSettings ? previous.Canvas.Clone() : new(),
                 DisplayLayout = previous.DisplayLayout.Select(m => m.Clone()).ToList(), NextNumber = first }, _assets);
             _capture = null; _captureOrigin = default; _documentFrozenCaptureWarning = null;
             _documentFiles.Clear();

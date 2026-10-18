@@ -2,6 +2,8 @@ namespace FloatCanvas.Core;
 
 public static class ElementGeometry
 {
+    public static Projective2D LocalToPlane(CanvasElement element) => Projective2D.FromAffine(element.Transform)
+        .Compose(element.ProjectivePlacement ?? Projective2D.Identity);
     public static RectD LocalBounds(CanvasElement element)
     {
         if (UsesPoints(element.Kind) && element.Points.Count > 0)
@@ -12,6 +14,8 @@ public static class ElementGeometry
         return new(0, 0, Math.Max(0, element.Width), Math.Max(0, element.Height));
     }
     public static RectD Bounds(CanvasElement element, bool includeStroke = true)
+        => LocalToPlane(element).TryTransformBounds(StrokedLocalBounds(element, includeStroke), out var bounds) ? bounds : default;
+    public static RectD StrokedLocalBounds(CanvasElement element, bool includeStroke = true)
     {
         var bounds = LocalBounds(element);
         double stroke = includeStroke && element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !IsLiveEffect(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
@@ -20,7 +24,7 @@ public static class ElementGeometry
             foreach (var point in GetArrowHeads(element).SelectMany(head => head))
                 bounds = RectD.Union(bounds, new(point.X, point.Y, 0, 0));
         }
-        return element.Transform.TransformBounds(bounds.Inflate(stroke));
+        return bounds.Inflate(stroke);
     }
     public static bool UsesPoints(ElementKind kind) => kind is ElementKind.Freehand or ElementKind.Highlighter or ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow;
     public static bool IsLine(ElementKind kind) => kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow;
@@ -32,6 +36,11 @@ public static class ElementGeometry
     {
         if (!IsBoxShape(element.Kind)) throw new ArgumentException(nameof(element));
         if (!double.IsFinite(scaleX) || !double.IsFinite(scaleY) || scaleX <= 0 || scaleY <= 0) throw new ArgumentOutOfRangeException(nameof(scaleX));
+        if (element.ProjectivePlacement is not null)
+        {
+            element.Transform = Affine2D.Around(Bounds(element, false).Center, Affine2D.Scale(scaleX, scaleY)).Compose(element.Transform);
+            return;
+        }
         var transform = element.Transform;
         double basisX = Math.Sqrt(transform.M11 * transform.M11 + transform.M21 * transform.M21);
         double basisY = Math.Sqrt(transform.M12 * transform.M12 + transform.M22 * transform.M22);
@@ -45,21 +54,25 @@ public static class ElementGeometry
     public static double CornerRadius(CanvasElement element) => Math.Clamp(element.CornerRadius ??
         (element.Kind == ElementKind.RoundedRectangle ? Math.Min(element.Width, element.Height) * .2 : 0), 0, Math.Min(element.Width, element.Height) / 2);
     public static bool HitTest(CanvasElement element, PointD worldPoint, double tolerance = 4)
+        => HitTestProjected(element, worldPoint, Projective2D.Identity, tolerance);
+    /// <summary>Tests fill, stroke and tolerance in the target coordinate space, preserving local stroke widths under perspective.</summary>
+    public static bool HitTestProjected(CanvasElement element, PointD worldPoint, Projective2D planeToTarget, double tolerance = 4)
     {
-        if (!element.Visible || !element.Transform.TryInverse(out var inverse)) return false;
-        if (!Bounds(element).Inflate(tolerance).Contains(worldPoint)) return false;
-        PointD local = inverse.TransformPoint(worldPoint);
+        var transform = planeToTarget.Compose(LocalToPlane(element));
+        if (!element.Visible || !transform.TryInverse(out var inverse) || !inverse.TryTransformPoint(worldPoint, out var local)) return false;
+        if (transform.Denominator(local) <= 0) return false;
+        if (transform.TryTransformBounds(StrokedLocalBounds(element), out var projectedBounds) && !projectedBounds.Inflate(tolerance).Contains(worldPoint)) return false;
         double strokeRadius = Math.Max(0, element.Style.StrokeWidth / 2);
         if (UsesPoints(element.Kind))
         {
             if (element.Style.StrokeWidth <= 0) return false;
-            if (element.Points.Count == 1) return StrokeSegmentHit(element.Transform, worldPoint, local, element.Points[0], element.Points[0], strokeRadius, tolerance);
+            if (element.Points.Count == 1) return StrokeSegmentHit(transform, worldPoint, local, element.Points[0], element.Points[0], strokeRadius, tolerance);
             var shaft = IsLine(element.Kind) ? LineShaftPoints(element) : element.Points;
-            if (StrokePathHit(element, shaft, false, worldPoint, local, strokeRadius, tolerance)) return true;
+            if (StrokePathHit(element, transform, shaft, false, worldPoint, local, strokeRadius, tolerance)) return true;
             if (IsLine(element.Kind) && element.Points.Count >= 2)
             {
                 foreach (var head in GetStyledArrowHeads(element))
-                    if (HitArrowHead(element, head.Points, head.Style, worldPoint, local, strokeRadius, Math.Max(0, tolerance))) return true;
+                    if (HitArrowHead(transform, head.Points, head.Style, worldPoint, local, strokeRadius, Math.Max(0, tolerance))) return true;
             }
             return false;
         }
@@ -67,19 +80,17 @@ public static class ElementGeometry
         if (element.Kind is ElementKind.Image or ElementKind.Text || IsLiveEffect(element.Kind))
         {
             if (bounds.Contains(local)) return true;
-            var corners = new PointD[] { new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom) }.Select(element.Transform.TransformPoint).ToArray();
-            return Enumerable.Range(0, 4).Any(i => DistanceToSegment(worldPoint, corners[i], corners[(i + 1) % 4]) <= tolerance);
+            PointD[] corners = [new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)];
+            return ProjectedContourHit(transform, corners, worldPoint, tolerance);
         }
         var outline = Outline(element);
         if (element.Kind == ElementKind.Number)
         {
             if (PointInPolygon(local, outline)) return true;
-            var worldOutline = outline.Select(element.Transform.TransformPoint).ToArray();
-            return tolerance > 0 && Enumerable.Range(0, worldOutline.Length).Any(i =>
-                DistanceToSegment(worldPoint, worldOutline[i], worldOutline[(i + 1) % worldOutline.Length]) <= tolerance);
+            return ProjectedContourHit(transform, outline, worldPoint, tolerance);
         }
-        if ((element.Kind == ElementKind.Number || (element.Style.Fill >> 24) != 0) && PointInPolygon(local, outline)) return true;
-        return element.Style.StrokeWidth > 0 && StrokePathHit(element, outline, true, worldPoint, local, strokeRadius, tolerance);
+        if ((element.Style.Fill >> 24) != 0 && (PointInPolygon(local, outline) || ProjectedContourHit(transform, outline, worldPoint, tolerance))) return true;
+        return element.Style.StrokeWidth > 0 && StrokePathHit(element, transform, outline, true, worldPoint, local, strokeRadius, tolerance);
     }
     public static IReadOnlyList<PointD> Outline(CanvasElement element)
     {
@@ -110,20 +121,30 @@ public static class ElementGeometry
     // Limit curve-to-chord deviation to .05 local pixels without unbounded point counts.
     private static int CurveQuarterSteps(double radius) => Math.Clamp((int)Math.Ceiling(Math.PI / 2 /
         (2 * Math.Acos(1 - Math.Min(1, .05 / Math.Max(.05, radius))))), 8, 1024);
-    private static bool HitArrowHead(CanvasElement element, IReadOnlyList<PointD> localPoints, ArrowHeadStyle style, PointD worldPoint,
+    private static bool HitArrowHead(Projective2D transform, IReadOnlyList<PointD> localPoints, ArrowHeadStyle style, PointD worldPoint,
         PointD localPoint, double strokeRadius, double tolerance)
     {
         if (style == ArrowHeadStyle.Open)
         {
             for (var i = 1; i < localPoints.Count; i++)
-                if (StrokeSegmentHit(element.Transform, worldPoint, localPoint, localPoints[i - 1], localPoints[i], strokeRadius, tolerance)) return true;
+                if (StrokeSegmentHit(transform, worldPoint, localPoint, localPoints[i - 1], localPoints[i], strokeRadius, tolerance)) return true;
             return false;
         }
-        var points = localPoints.Select(element.Transform.TransformPoint).ToArray();
-        return PointInPolygon(worldPoint, points) || Enumerable.Range(0, points.Length)
-            .Any(i => DistanceToSegment(worldPoint, points[i], points[(i + 1) % points.Length]) <= tolerance);
+        return PointInPolygon(localPoint, localPoints) || ProjectedContourHit(transform, localPoints, worldPoint, tolerance);
     }
-    private static bool StrokePathHit(CanvasElement element, IReadOnlyList<PointD> points, bool closed,
+    private static bool ProjectedContourHit(Projective2D transform, IReadOnlyList<PointD> points, PointD target, double tolerance)
+    {
+        if (tolerance <= 0) return false;
+        for (int i = 0; i < points.Count; i++)
+        {
+            var first = points[i]; var last = points[(i + 1) % points.Count];
+            if (transform.Denominator(first) > 0 && transform.Denominator(last) > 0 &&
+                transform.TryTransformPoint(first, out var a) && transform.TryTransformPoint(last, out var b) &&
+                DistanceToSegment(target, a, b) <= tolerance) return true;
+        }
+        return false;
+    }
+    private static bool StrokePathHit(CanvasElement element, Projective2D transform, IReadOnlyList<PointD> points, bool closed,
         PointD worldPoint, PointD localPoint, double radius, double tolerance)
     {
         double offset = 0, width = Math.Max(.1, element.Style.StrokeWidth);
@@ -138,11 +159,11 @@ public static class ElementGeometry
                 // Adjacent arcs can share a tangent point when a straight side collapses.
                 // A zero-length segment must not turn a patterned gap into a solid dot.
                 if ((element.Style.StrokePattern == StrokePattern.Solid || offset % (ink + gap) <= ink) &&
-                    StrokeSegmentHit(element.Transform, worldPoint, localPoint, a, b, radius, tolerance)) return true;
+                    StrokeSegmentHit(transform, worldPoint, localPoint, a, b, radius, tolerance)) return true;
             }
             else if (element.Style.StrokePattern == StrokePattern.Solid)
             {
-                if (StrokeSegmentHit(element.Transform, worldPoint, localPoint, a, b, radius, tolerance)) return true;
+                if (StrokeSegmentHit(transform, worldPoint, localPoint, a, b, radius, tolerance)) return true;
             }
             else
             {
@@ -152,7 +173,7 @@ public static class ElementGeometry
                     double first = Math.Max(0, start), last = Math.Min(length, start + ink);
                     if (last < first) continue;
                     var direction = (b - a) * (1 / length);
-                    if (StrokeSegmentHit(element.Transform, worldPoint, localPoint, a + direction * first, a + direction * last, radius, tolerance)) return true;
+                    if (StrokeSegmentHit(transform, worldPoint, localPoint, a + direction * first, a + direction * last, radius, tolerance)) return true;
                 }
             }
             offset += length;
@@ -161,11 +182,12 @@ public static class ElementGeometry
     }
     // Test the actual transformed stroke, rather than inflating by maximum matrix scale.
     // Maximum-scale inflation would select far outside a thin stroke after nonuniform scaling.
-    private static bool StrokeSegmentHit(Affine2D transform, PointD worldPoint, PointD localPoint, PointD a, PointD b, double radius, double tolerance)
+    private static bool StrokeSegmentHit(Projective2D transform, PointD worldPoint, PointD localPoint, PointD a, PointD b, double radius, double tolerance)
     {
         if (DistanceToSegment(localPoint, a, b) <= radius) return true;
         if (tolerance <= 0) return false;
-        if (radius <= 0) return DistanceToSegment(worldPoint, transform.TransformPoint(a), transform.TransformPoint(b)) <= tolerance;
+        if (radius <= 0) return transform.Denominator(a) > 0 && transform.Denominator(b) > 0 && transform.TryTransformPoint(a, out var startPoint) &&
+            transform.TryTransformPoint(b, out var endPoint) && DistanceToSegment(worldPoint, startPoint, endPoint) <= tolerance;
         double direction = Math.Atan2(b.Y - a.Y, b.X - a.X);
         // A capsule in local space becomes a segment with elliptical caps under an affine matrix.
         PointD? previous = null, first = null;
@@ -175,7 +197,8 @@ public static class ElementGeometry
             for (int step = 0; step <= 16; step++)
             {
                 double angle = direction - Math.PI / 2 + cap * Math.PI + step * Math.PI / 16;
-                var point = transform.TransformPoint(center + new PointD(Math.Cos(angle), Math.Sin(angle)) * radius);
+                var localCap = center + new PointD(Math.Cos(angle), Math.Sin(angle)) * radius;
+                if (transform.Denominator(localCap) <= 0 || !transform.TryTransformPoint(localCap, out var point)) { previous = null; continue; }
                 first ??= point;
                 if (previous is { } p && DistanceToSegment(worldPoint, p, point) <= tolerance) return true;
                 previous = point;

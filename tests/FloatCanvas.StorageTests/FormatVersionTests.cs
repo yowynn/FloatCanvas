@@ -31,14 +31,14 @@ internal static class FormatVersionTests
         check(!LegacyV1ReaderAccepts(path), "new save envelope is rejected by the published v1 reader version gate");
         using (var zip = ZipFile.OpenRead(path))
         {
-            check(await VersionAsync(zip, "manifest.json") == 2 && await VersionAsync(zip, "scene.json") == 2,
-                "every new project save explicitly writes v2 envelope and v2 scene");
+            check(await VersionAsync(zip, "manifest.json") == SceneDocument.CurrentVersion && await VersionAsync(zip, "scene.json") == SceneDocument.CurrentVersion,
+                "every new project save explicitly writes v3 envelope and v3 scene");
         }
         await ConvertToV1Async(path, "scene.json", n => RemoveNewFields(n));
         check(LegacyV1ReaderAccepts(path), "legacy fixture satisfies the real v1 manifest and scene version gates");
         var loaded = await store.LoadAsync(path);
-        var expected = legacy.Clone(); expected.Version = 2;
-        check(loaded.Document.Version == 2 && JsonSerializer.Serialize(loaded.Document) == JsonSerializer.Serialize(expected),
+        var expected = legacy.Clone(); expected.Version = SceneDocument.CurrentVersion;
+        check(loaded.Document.Version == SceneDocument.CurrentVersion && JsonSerializer.Serialize(loaded.Document) == JsonSerializer.Serialize(expected),
             "v1 scene migrates in memory preserving IDs, transforms, alpha, arrow styles, text, crops and effects");
         check(loaded.Assets.Get(assetId).Data.Span.SequenceEqual(assets.Get(assetId).Data.Span) &&
             ElementGeometry.ArrowStyle(loaded.Document.Elements[0]) == ArrowHeadStyle.Open &&
@@ -52,7 +52,7 @@ internal static class FormatVersionTests
         await store.SaveAsync(path, session.Document, session.Assets);
         var reloaded = await store.LoadAsync(path);
         check(!LegacyV1ReaderAccepts(path) && JsonSerializer.Serialize(reloaded.Document) == JsonSerializer.Serialize(session.Document),
-            "v1-open-edit-save writes v2 and roundtrips new groups, dashes, independent heads and radius without loss");
+            "v1-open-edit-save writes v3 and roundtrips new groups, dashes, independent heads and radius without loss");
 
         byte[] complete = await File.ReadAllBytesAsync(path);
         var future = session.Document.Clone(); future.Version = 99;
@@ -72,15 +72,15 @@ internal static class FormatVersionTests
             RemoveNewFields(n["CaptureDocument"]!.AsObject());
         });
         var restored = (await recovery.LoadAsync())!;
-        check(restored.State.LiveDocument.Version == 2 && restored.State.CaptureDocument!.Version == 2 &&
+        check(restored.State.LiveDocument.Version == SceneDocument.CurrentVersion && restored.State.CaptureDocument!.Version == SceneDocument.CurrentVersion &&
             restored.State.CaptureOrigin == state.CaptureOrigin && restored.Assets.Get(assetId).Data.Span.SequenceEqual(assets.Get(assetId).Data.Span),
             "legacy workspace upgrades both documents in memory and retains capture origin and shared assets");
         await recovery.SaveAsync(restored.State, restored.Assets);
         using var savedRecovery = ZipFile.OpenRead(recovery.CurrentPath);
         var workspace = await JsonAsync(savedRecovery, "workspace.json");
-        check(await VersionAsync(savedRecovery, "manifest.json") == 2 && workspace["LiveDocument"]!["Version"]!.GetValue<int>() == 2 &&
-            workspace["CaptureDocument"]!["Version"]!.GetValue<int>() == 2,
-            "saving migrated recovery writes v2 for the envelope and both documents");
+        check(await VersionAsync(savedRecovery, "manifest.json") == SceneDocument.CurrentVersion && workspace["LiveDocument"]!["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion &&
+            workspace["CaptureDocument"]!["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion,
+            "saving migrated recovery writes v3 for the envelope and both documents");
     }
 
     // These are the exact two version gates in the published v1 PackageCodec/SceneValidation.
@@ -103,7 +103,7 @@ internal static class FormatVersionTests
     }
     private static void RemoveNewFields(JsonObject scene)
     {
-        scene["Version"] = 1; scene.Remove("Groups");
+        scene["Version"] = 1; scene.Remove("Groups"); scene.Remove("Canvas");
         foreach (var element in scene["Elements"]!.AsArray().Append(scene["Background"]).Where(e => e is not null))
         {
             var item = element!.AsObject(); item.Remove("GroupId"); item.Remove("CornerRadius"); item.Remove("Symbol");

@@ -8,6 +8,12 @@ public sealed class DesktopBackdrop(IEnumerable<DesktopBackdrop.Tile> tiles) : I
 {
     public sealed record Tile(RectD Bounds, SKImage Image);
     public IReadOnlyList<Tile> Tiles { get; } = tiles.ToArray();
+    /// <summary>Decodes one screen-aligned capture. The caller owns and must dispose the returned backdrop.</summary>
+    public static DesktopBackdrop FromEncoded(RectD bounds, ReadOnlySpan<byte> encoded)
+    {
+        var image = AssetImport.Decode(encoded);
+        return new([new(bounds, image)]);
+    }
     public void Dispose() { foreach (var tile in Tiles) tile.Image.Dispose(); }
     internal void Draw(SKCanvas canvas)
     {

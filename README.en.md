@@ -11,6 +11,7 @@ Current preview version: **0.2.0-preview.3**. Features and stability are still b
 - Freehand pen, highlighter, lines and arrows, shapes, text, separate numbered markers, symbols and emoji; graphical official/custom presets, per-tool preset selections and edited parameters retained across restarts, and single-click shape creation at a default size.
 - Import PNG, JPEG, BMP, GIF and WebP through files, the clipboard or drag and drop. GIF/animated WebP retain their original data and play; move, rotate, resize, group and edit image objects.
 - Two aligned toolbar rows with a shared visibility switch for tool and stamp shortcut hints; movable Tool options, Properties and Layers windows, with independent editing and canvas visibility.
+- Independent canvas background color and opacity, four-corner perspective calibration, and a customizable square-cell grid. Shapes, text, images and animations follow the plane; screenshots start at the selected screen position and follow later plane adjustments. Version 3 projects save canvas settings, with v1/v2 projects still readable.
 - A stamp library with editable and flattened stamps, a ten-slot shelf, and `1`–`0` shortcuts. Editable groups retain animation when the library is reopened and the stamp is placed again.
 - Rectangle, ellipse and lasso captures place a static image at the selected position, using the background, background + canvas, or transparent canvas content. Includes single-image cropping, live blur and pixelation, solid redaction and PNG/JPEG export. The red **Clear canvas** button requires a second click to confirm and archives current work before clearing.
 - Self-contained, editable `.floatcanvas` projects; automatic recovery saves, a blank canvas at startup, and manual workspace-history restoration.
@@ -54,6 +55,8 @@ The minimum system baseline is **Windows 10 1607 (build 14393) x64**, including 
 When the system supports session-local window exclusion, live filters exclude FloatCanvas only from its own capture, leaving the visible canvas available to other capture tools. Older systems use a compatibility path: external screenshots may omit the canvas while live blur or pixelation is visible. Use the in-app export for a complete composite, or remove or hide the live regions before capturing. Window detection in Windows Snipping Tool still has a known limitation.
 
 Annotations stay at screen coordinates; they do not follow web scrolling, game cameras or objects. HDR color accuracy, pressure-sensitive pens, touch, OCR, recording, scrolling capture, cloud synchronization and uploads are outside the current scope. Features and stability are still being refined in this preview.
+
+Perspective calibration needs readjustment when the camera moves. Dense grids at high resolutions can noticeably slow CPU rendering; reduce the row or column count, or hide the grid.
 
 ## Build from source
 

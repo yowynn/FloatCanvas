@@ -1,4 +1,5 @@
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
@@ -6,6 +7,16 @@ namespace FloatCanvas.App;
 /// <summary>Editable clipboard snapshots and one-step insertion without OS clipboard access.</summary>
 internal static class ObjectClipboardCommand
 {
+    internal static SceneDocument CreateRasterSnapshot(EditorSession session, SceneDocument objects)
+    {
+        var snapshot = objects.Clone();
+        snapshot.Canvas = session.Document.Canvas.Clone();
+        if (snapshot.Elements.Count > 0)
+            snapshot.Viewport = snapshot.Elements.Select(element => SceneRenderer.ProjectedBounds(session.Document, element, true))
+                .Aggregate(RectD.Union).Inflate(1).Intersect(session.Document.Viewport);
+        return snapshot;
+    }
+
     internal static SceneDocument CreateSnapshot(EditorSession session)
     {
         var snapshot = session.CreateSelectionSnapshot(normalizeOrigin: false);

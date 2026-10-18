@@ -48,7 +48,7 @@ internal sealed partial class DesktopSession
         // Match the two-DIP inner padding above and below the rows.
         content.RowDefinitions.Add(new Controls.RowDefinition { Height = new GridLength(2) });
         content.RowDefinitions.Add(new Controls.RowDefinition { Height = new GridLength(26) });
-        for (int i = 0; i < 26; i++) content.ColumnDefinitions.Add(new Controls.ColumnDefinition { Width = new GridLength(i is 2 or 13 ? 10 : 30) });
+        for (int i = 0; i < 27; i++) content.ColumnDefinitions.Add(new Controls.ColumnDefinition { Width = new GridLength(i is 2 or 13 ? 10 : 30) });
         int toolColumn = 0;
         void Cell(UIElement element, int column, int row = 0, int span = 1)
         { Controls.Grid.SetColumn(element, column); Controls.Grid.SetRow(element, row==0?0:2); Controls.Grid.SetColumnSpan(element, span); content.Children.Add(element); }
@@ -96,6 +96,7 @@ internal sealed partial class DesktopSession
         Action("crop", L.Get("Tool.Crop"), "M4,1 L4,11 Q4,12 5,12 L15,12 M1,4 L11,4 Q12,4 12,5 L12,15", () => ActivateTool(EditorTool.Crop));
         _toolbarToolButtons[EditorTool.Crop] = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.Crop].IsEnabled = _editor.CanCropSelection;
+        Action("canvas", L.Get("Canvas.Title"), "M2,3 L14,3 L16,14 L0,14 Z M5,3 L4,14 M11,3 L12,14 M1,8 L15,8", ToggleCanvasSettings);
         Action("properties", L.Get("ToolbarV2.Properties"), "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15", ToggleInspector);
         Action("layers", L.Get("ToolbarV2.Layers"), "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13", ToggleLayers);
         _clearCanvasButton = new ClearCanvasButton(() => !DocumentOperationBusy, () => RunCommand(StartNewCanvasAsync));
@@ -111,7 +112,7 @@ internal sealed partial class DesktopSession
         var save=ToolbarIcon(L.Get("Feedback3.Toolbar.NewStamp"),"M2,12 L12,12 L13,15 L1,15 Z M4,12 L4,10 Q4,8 6,8 L5,4 Q5,2 7,2 Q9,2 9,4 L8,8 Q10,8 10,10 L10,12 M13,2 L13,8 M10,5 L16,5",SaveStampSelection,"+");
         AddShortcutHint(save,"+",lowerRow:true);save.Padding=new Thickness(0);save.Tag="save-stamp";Cell(save,1,1);
         _stampShelf = new(_stampLibrary, SelectStampSlot); Cell(_stampShelf, 3, 1, 10);
-        _status.Text = L.Get("Preset.Freehand"); _toolbarStatusDisplay = new(_status); Cell(_toolbarStatusDisplay, 14, 1, 12);
+        _status.Text = L.Get("Preset.Freehand"); _toolbarStatusDisplay = new(_status); Cell(_toolbarStatusDisplay, 14, 1, 13);
         RefreshToolShortcutHints();
         _toolbarExpandedContent = Surface(content, 10, new Thickness(20, 2, 4, 2));
         _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;
@@ -184,6 +185,7 @@ internal sealed partial class DesktopSession
             item.Click += (_, _) => RunUiAction(action); group.Items.Add(item);
         }
         var file = Group("ToolbarV2.File", "M1,4 L7,4 L9,6 L15,6 L15,14 L1,14 Z");
+        Item(file, L.Get("Canvas.New"), () => _ = RunCommand(CreateDefaultCanvasAsync));
         Item(file, L.Get("ToolbarV2.Open"), () => _ = RunCommand(OpenProjectAsync), "Ctrl+O");
         Item(file, L.Get("ToolbarV2.Save"), () => _ = RunCommand(() => SaveProjectAsync()), "Ctrl+S", "M2,1 L12,1 L15,4 L15,15 L2,15 Z M5,1 L5,6 L10,6 L10,1");
         Item(file, L.Get("ToolbarV2.SaveAs"), () => _ = RunCommand(() => SaveProjectAsync(true)), "Ctrl+Shift+S");
@@ -239,6 +241,7 @@ internal sealed partial class DesktopSession
     private void ActivateTool(EditorTool tool)
     {
         if (DocumentOperationBusy) return;
+        EndCanvasCalibration();
         if (tool == EditorTool.Crop && !_editor.CanCropSelection) return;
         if (tool == EditorTool.CaptureRegion && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
         var family = ToolFamily(tool); var currentFamily = ToolFamily(_editor.Tool);

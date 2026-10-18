@@ -17,28 +17,50 @@ internal static class SnapshotImageCommand
         foreach (var resource in resources) assets.Add(resource.Data.ToArray(), resource.MediaType);
         bool background = selection.Source != CaptureSource.CanvasOnly;
         if (background && desktop is null) throw new InvalidOperationException("Desktop pixels are required for this capture source.");
-        if (desktop is not null)
+        using var backdrop = desktop is null ? null : DesktopBackdrop.FromEncoded(
+            new(desktop.Bounds.Left, desktop.Bounds.Top, desktop.Bounds.Width, desktop.Bounds.Height), desktop.PngBytes);
+        // A snapshot samples the fresh desktop, never the previously frozen capture.
+        scene.Background = null;
+        if (selection.Source == CaptureSource.Background)
         {
-            string id = assets.Add(desktop.PngBytes);
-            scene.Background = new CanvasElement { Kind = ElementKind.Image, AssetId = id,
-                Width = desktop.Bounds.Width, Height = desktop.Bounds.Height,
-                Transform = Affine2D.Translation(desktop.Bounds.Left, desktop.Bounds.Top), Locked = true };
+            scene.Elements.Clear(); scene.Groups.Clear(); scene.Background = null;
+            scene.Canvas.BackgroundColor = 0; scene.Canvas.Grid.Visible = false;
         }
-        if (selection.Source == CaptureSource.Background) { scene.Elements.Clear(); scene.Groups.Clear(); }
-        using var renderer = new SceneRenderer { AnimationTime = animationTime };
+        using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
         // DrawBackground is disabled for CanvasOnly, but this complete backdrop remains
         // available to the dynamic mosaic's own sampling pass.
         return renderer.ExportSelectionPng(scene, assets, selection, background, displays);
     }
 
-    internal static CanvasElement Insert(EditorSession session, CaptureRasterResult raster)
+    internal static CanvasElement Insert(EditorSession session, CaptureRasterResult raster, Projective2D? capturedPlaneToScreen = null)
+    {
+        var image = CreateElement(session.Assets, raster, capturedPlaneToScreen ?? CanvasMapping.Create(session.Document).PlaneToScreen);
+        session.Add(image, L.Get("History.Snapshot"));
+        return image;
+    }
+
+    internal static CanvasElement CreateElement(AssetLibrary assets, CaptureRasterResult raster, Projective2D planeToScreen)
     {
         if (!raster.HasVisiblePixels) throw new InvalidOperationException(L.Get("Snapshot.Empty"));
-        string id = session.Assets.Add(raster.PngBytes);
+        var screenPlacement = Affine2D.Translation(raster.Bounds.Left, raster.Bounds.Top);
+        Projective2D? placement = null;
+        if (planeToScreen != Projective2D.Identity)
+        {
+            if (!planeToScreen.TryInverse(out var inverse)) throw new InvalidOperationException(L.Get("Perspective.SnapshotOutsidePlane"));
+            var candidate = inverse.Compose(Projective2D.FromAffine(screenPlacement));
+            var corners = EditorController.Corners(new(0, 0, raster.Bounds.Width, raster.Bounds.Height));
+            var denominators = corners.Select(candidate.Denominator).ToArray();
+            if (denominators.Any(d => !double.IsFinite(d) || Math.Abs(d) < 1e-9) ||
+                denominators.Any(d => Math.Sign(d) != Math.Sign(denominators[0])) ||
+                corners.Any(p => !candidate.TryTransformPoint(p, out _)))
+                throw new InvalidOperationException(L.Get("Perspective.SnapshotOutsidePlane"));
+            placement = candidate;
+        }
+        string id = assets.Add(raster.PngBytes);
         var image = new CanvasElement { Kind = ElementKind.Image, AssetId = id,
             Width = raster.Bounds.Width, Height = raster.Bounds.Height,
-            Transform = Affine2D.Translation(raster.Bounds.Left, raster.Bounds.Top), Style = new() { StrokeWidth = 0 } };
-        session.Add(image, L.Get("History.Snapshot"));
+            Transform = placement is null ? screenPlacement : Affine2D.Identity,
+            ProjectivePlacement = placement, Style = new() { StrokeWidth = 0 } };
         return image;
     }
 }

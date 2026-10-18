@@ -52,6 +52,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(document); ArgumentNullException.ThrowIfNull(assets);
         bool eligible = document.Kind == DocumentKind.LiveOverlay && document.Background is null &&
+            (document.Canvas.BackgroundColor >> 24) == 0 && renderer.ScreenBackdrop is null &&
             document.LayerOpacity > 0 && document.LayerOpacity < 1;
         if (eligible)
         {
@@ -103,23 +104,27 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
             dynamicLast = dynamic ? Math.Max(dynamicLast, animated.Last) : animated.Last;
             dynamic = true;
         }
-        var key = new ContentKey(document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, document.Elements.Count, document.Viewport);
+        var mapping = CanvasMapping.Create(document);
+        var grid = document.Canvas.Grid;
+        var appearance = new CanvasKey(mapping.PlaneToScreen, mapping.GridOrigin, mapping.GridCellSize,
+            document.Canvas.BackgroundColor, grid.Visible, grid.Color, grid.Width, grid.Pattern);
+        var key = new ContentKey(document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, document.Elements.Count, document.Viewport, appearance);
         if (content != key) { Invalidate(); content = key; }
         clock++;
         if (!tiles.TryGetValue(tile, out var entry))
         {
-            bool prefix = HasVisible(document.Elements, 0, dynamic ? dynamicFirst : document.Elements.Count);
+            bool prefix = grid.Visible || HasVisible(document.Elements, 0, dynamic ? dynamicFirst : document.Elements.Count);
             bool suffix = dynamic && HasVisible(document.Elements, dynamicLast + 1, document.Elements.Count);
             long required = checked((long)tile.Bounds.Width * tile.Bounds.Height * 4 * ((prefix ? 1 : 0) + (suffix ? 1 : 0)));
             if (required > byteLimit) { Invalidate(); renderer.Draw(canvas, document, assets); return false; }
             EvictUntilFits(required);
-            renderer.BeginFrame();
+            renderer.BeginFrame(document);
             try
             {
                 SKImage? before = null, after = null;
                 try
                 {
-                    if (prefix) before = BuildSegment(tile, document, assets, 0, dynamic ? dynamicFirst : document.Elements.Count);
+                    if (prefix) before = BuildSegment(tile, document, assets, 0, dynamic ? dynamicFirst : document.Elements.Count, includeGrid: true);
                     if (suffix) after = BuildSegment(tile, document, assets, dynamicLast + 1, document.Elements.Count);
                     entry = new(before, after, required, clock); tiles.Add(tile, entry); CachedRasterBytes += required;
                 }
@@ -133,7 +138,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         }
         else { entry.Used = clock; HitCount++; }
 
-        renderer.BeginFrame();
+        renderer.BeginFrame(document);
         int saved = canvas.Save();
         try
         {
@@ -156,7 +161,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         finally { canvas.RestoreToCount(saved); renderer.EndFrame(); }
     }
 
-    private SKImage BuildSegment(TileKey tile, SceneDocument document, AssetLibrary assets, int first, int end)
+    private SKImage BuildSegment(TileKey tile, SceneDocument document, AssetLibrary assets, int first, int end, bool includeGrid = false)
     {
         using var surface = SKSurface.Create(new SKImageInfo(tile.Bounds.Width, tile.Bounds.Height, SKColorType.Bgra8888, SKAlphaType.Premul))
             ?? throw new OutOfMemoryException(L.Get("Overlay.CacheAllocationFailed"));
@@ -166,6 +171,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         // resolves fractional geometry against this clip differently from clipping a flattened image.
         var viewport = document.Viewport;
         surface.Canvas.ClipRect(new((float)viewport.Left, (float)viewport.Top, (float)viewport.Right, (float)viewport.Bottom));
+        if (includeGrid) renderer.DrawGrid(surface.Canvas, document);
         renderer.DrawElements(surface.Canvas, document.Elements, assets, first, end);
         BuildCount++; return surface.Snapshot();
     }
@@ -210,7 +216,9 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         if (disposed) return;
         Invalidate(); disposed = true;
     }
-    private readonly record struct ContentKey(SceneDocument Document, AssetLibrary Assets, long Revision, long Transaction, int First, int Last, int Count, RectD Viewport);
+    private readonly record struct ContentKey(SceneDocument Document, AssetLibrary Assets, long Revision, long Transaction, int First, int Last, int Count, RectD Viewport, CanvasKey Canvas);
+    private readonly record struct CanvasKey(Projective2D Projection, PointD Origin, double CellSize, uint Background,
+        bool GridVisible, uint GridColor, double GridWidth, StrokePattern Pattern);
     private readonly record struct TileKey(SKRectI Bounds, float TranslateX, float TranslateY);
     private sealed class TileEntry(SKImage? prefix, SKImage? suffix, long bytes, long used) : IDisposable
     {

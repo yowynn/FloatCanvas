@@ -19,7 +19,16 @@ public sealed partial class SceneRenderer
     public SceneDocument? LiveEffectContext { get; set; }
     public static bool HasLiveEffects(SceneDocument document) =>
         document.LayerOpacity > 0 && document.Elements.Any(e => e.Visible && e.Style.Opacity > 0 &&
-            ElementGeometry.IsLiveEffect(e.Kind) && ElementGeometry.Bounds(e, includeStroke: false).Intersects(document.Viewport));
+            ElementGeometry.IsLiveEffect(e.Kind) && !LiveEffectSamplingBounds(document, e).IsEmpty);
+
+    /// <summary>Bounded screen-pixel capture ROI. Geometry follows the canvas; blur and pixelation sizes remain screen pixels.</summary>
+    public static RectD LiveEffectSamplingBounds(SceneDocument document, CanvasElement effect)
+    {
+        var outline = LiveMask(document, effect, SceneRenderSpace.ScreenComposite);
+        if (outline.Count < 3) return default;
+        var bounds = PointBounds(outline);
+        return (effect.Kind == ElementKind.LiveBlur ? bounds.Inflate(Math.Ceiling(3 * BlurAmount(effect))) : bounds).Intersect(document.Viewport);
+    }
 
     /// <summary>Desktop ROI needed by a filter, including the Gaussian support outside its visible mask.</summary>
     public static RectD LiveEffectSamplingBounds(CanvasElement effect)
@@ -40,13 +49,15 @@ public sealed partial class SceneRenderer
             if (original >= 0) { elements = context.Elements; index = original; }
         }
         if (effect.Style.Opacity <= 0) return;
-        var visibleBounds = ElementGeometry.Bounds(effect, includeStroke: false);
-        if (sourceDocument is { } doc) visibleBounds = visibleBounds.Intersect(doc.Viewport);
+        var corners = sourceDocument is null ? ElementGeometry.Outline(effect).Select(ElementGeometry.LocalToPlane(effect).TransformPoint).ToArray() :
+            LiveMask(sourceDocument, effect, _renderSpace);
+        if (corners.Count < 3) return;
+        var visibleBounds = PointBounds(corners);
         if (visibleBounds.IsEmpty || !canvas.LocalClipBounds.IntersectsWith(ToRect(visibleBounds))) return;
         if (!_liveEffectImages.TryGetValue(effect.Id, out var sampled))
         {
             bool blur = effect.Kind == ElementKind.LiveBlur;
-            var sampleBounds = blur ? LiveEffectSamplingBounds(effect) : visibleBounds;
+            var sampleBounds = blur ? visibleBounds.Inflate(Math.Ceiling(3 * BlurAmount(effect))) : visibleBounds;
             if (sourceDocument is { } source) sampleBounds = sampleBounds.Intersect(source.Viewport);
             if (sampleBounds.IsEmpty) return;
             double block = Math.Clamp(effect.Effects.FirstOrDefault()?.Amount ?? 12, 1, 1024);
@@ -59,11 +70,15 @@ public sealed partial class SceneRenderer
             sampling.Canvas.Clear(new SKColor(0xFF50545B));
             sampling.Canvas.Scale((float)(width / sampleBounds.Width), (float)(height / sampleBounds.Height));
             sampling.Canvas.Translate(-(float)sampleBounds.X, -(float)sampleBounds.Y);
-            if (sourceDocument?.Background is not null) DrawBackground(sampling.Canvas, sourceDocument, assets);
-            else LiveBackdrop?.Draw(sampling.Canvas);
+            if (sourceDocument is not null)
+            {
+                DrawBackground(sampling.Canvas, sourceDocument, assets, sampling: true);
+                DrawGrid(sampling.Canvas, sourceDocument);
+            }
+            else (ScreenBackdrop ?? LiveBackdrop)?.Draw(sampling.Canvas);
             // A filter samples only its lower scene, including earlier live filters. It never
             // samples the final display or its own output. Prefix images are cached per frame.
-            DrawElements(sampling.Canvas, elements, assets, 0, index);
+            DrawElements(sampling.Canvas, elements, assets, 0, index, sourceDocument);
             if (blur)
             {
                 using var raw = sampling.Snapshot();
@@ -80,8 +95,6 @@ public sealed partial class SceneRenderer
             _liveEffectImages.Add(effect.Id, sampled); LiveEffectBuildCount++;
         }
         using var maskBuilder = new SKPathBuilder();
-        var corners = ElementGeometry.Outline(effect).Select(effect.Transform.TransformPoint).ToArray();
-        if (corners.Length < 3) return;
         maskBuilder.MoveTo(ToPoint(corners[0]));
         foreach (var point in corners.Skip(1)) maskBuilder.LineTo(ToPoint(point));
         maskBuilder.Close();
@@ -95,4 +108,51 @@ public sealed partial class SceneRenderer
         }
         finally { canvas.RestoreToCount(saved); }
     }
+
+    private static IReadOnlyList<PointD> LiveMask(SceneDocument document, CanvasElement effect, SceneRenderSpace space)
+    {
+        var local = ElementGeometry.LocalToPlane(effect);
+        IReadOnlyList<PointD> polygon = ElementGeometry.Outline(effect).Select(local.TransformPoint).ToArray();
+        var mapping = CanvasMapping.Create(document);
+        if (space == SceneRenderSpace.PlaneContent) return polygon;
+        // Clip in the plane before division. The inverse viewport polygon selects the visible
+        // branch and keeps near-horizon values out of integer capture dimensions.
+        polygon = ClipPolygon(polygon, mapping.VisiblePlanePolygon);
+        var output = new List<PointD>(polygon.Count);
+        foreach (var point in polygon)
+            if (mapping.PlaneToScreen.TryTransformPoint(point, out var screen)) output.Add(screen);
+        return output;
+    }
+
+    private static RectD PointBounds(IReadOnlyList<PointD> points)
+    {
+        double left = points.Min(p => p.X), top = points.Min(p => p.Y);
+        return new(left, top, points.Max(p => p.X) - left, points.Max(p => p.Y) - top);
+    }
+
+    private static IReadOnlyList<PointD> ClipPolygon(IReadOnlyList<PointD> subject, IReadOnlyList<PointD> clip)
+    {
+        if (clip.Count < 3) return [];
+        double area = 0;
+        for (int i = 0; i < clip.Count; i++) area += Cross(clip[i], clip[(i + 1) % clip.Count]);
+        double sign = area >= 0 ? 1 : -1;
+        var result = subject.ToList();
+        for (int i = 0; i < clip.Count && result.Count > 0; i++)
+        {
+            var a = clip[i]; var edge = clip[(i + 1) % clip.Count] - a;
+            var input = result; result = [];
+            var previous = input[^1]; double before = sign * Cross(edge, previous - a);
+            foreach (var current in input)
+            {
+                double after = sign * Cross(edge, current - a);
+                if ((before >= 0) != (after >= 0))
+                    result.Add(previous + (current - previous) * (before / (before - after)));
+                if (after >= 0) result.Add(current);
+                previous = current; before = after;
+            }
+        }
+        return result;
+    }
+
+    private static double Cross(PointD a, PointD b) => a.X * b.Y - a.Y * b.X;
 }

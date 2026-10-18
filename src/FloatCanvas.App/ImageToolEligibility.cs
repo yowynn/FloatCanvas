@@ -11,7 +11,7 @@ internal static class ImageToolEligibility
         if (session.Selection.Count != 1) return false;
         var selected = session.SelectedElements().SingleOrDefault();
         if (selected is not { Kind: ElementKind.Image, Visible: true, Locked: false, Width: > 0, Height: > 0 } ||
-            !selected.Transform.TryInverse(out _)) return false;
+            !ElementGeometry.LocalToPlane(selected).TryInverse(out _)) return false;
         image = selected;
         return true;
     }

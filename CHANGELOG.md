@@ -2,6 +2,15 @@
 
 ## 未发布 / Unreleased
 
+- 新增画布背景与透视校准面板：背景颜色和透明度独立于标注透明度；网格支持列行、显隐、颜色透明度、线宽和线型设置。拖动角点、边缘或内部校准平面，网格密集时自动减少可见线条；校准适用于形状、文字、图片和动图，截图按屏幕位置逆变换放置。新工程保存画布设置，旧 v1／v2 工程使用默认值。
+- Added a canvas background and perspective calibration panel. Background color and opacity are independent of annotation opacity; configure grid rows and columns, visibility, color and opacity, line width and pattern. Drag corners, edges or the interior to calibrate the plane; dense grids thin automatically. Projection applies to shapes, text, images and animations, and screenshots are inverse-projected into their screen position. New projects save canvas settings; older v1/v2 projects use defaults.
+
+- 校准参考网格使用全屏单像素黑白交替细线，预览自定义网格时进一步减淡，退出校准后隐藏参考线。画布面板复用前景色预设、图示线型及输入＋滑块控件；列行滑块按整数跳转。
+- Calibration guides use single-pixel alternating black and white segments across the screen and dim beneath the configured grid preview, and guides disappear when calibration ends. The canvas panel reuses foreground presets, illustrated line patterns and input-plus-slider controls, with integer steps for rows and columns.
+
+- 修复特定透视下列数或行数从 7 增至 8 时网格突然隔线消失的问题；远处压缩不再触发全屏抽稀，只跳过整个可见跨度均挤在一起的线条。
+- Fixed grid lines suddenly disappearing when a row or column count increased from 7 to 8 under certain projections. Compression at a distant corner no longer thins the entire grid; only lines crowded along their whole visible span are skipped.
+
 ## [0.2.0-preview.3] - 2026-10-18
 
 - 实时滤镜创建先等待有效画面，显隐保留同一画布的最后有效缓存，消除等待新帧时的灰色闪框；准备中取消不新增对象或撤销记录。实时采集改为新帧通知唤醒并只处理最新合格帧，目标跟随显示刷新率、最高 60 FPS，不承诺与下层应用同帧。

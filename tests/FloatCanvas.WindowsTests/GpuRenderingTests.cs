@@ -75,6 +75,18 @@ internal static class GpuRenderingTests
         check(hardware[(260 * 440 + 420) * 4 + 3] == 0 && hardware[(30 * 440 + 30) * 4 + 3] is >= 110 and <= 114,
             "GPU viewport clipping leaves outside pixels clear and applies layer opacity once");
 
+        var projectionReference = CanvasCalibration.CreateInitial(scene.Viewport, 8, 6);
+        check(CanvasCalibration.TryCalibrate(projectionReference,
+            [new(0, 0), new(290, 8), new(320, 190), new(12, 205)], scene.Viewport, out var projection, out _),
+            "GPU projection fixture obtains a valid calibration");
+        projection.Enabled = true; scene.Canvas.Projection = projection;
+        scene.Canvas.Grid.Visible = true;
+        cpu = RenderPixels(null, scene, assets, 440, 280, null, TimeSpan.Zero, out _);
+        hardware = RenderPixels(gpu, scene, assets, 440, 280, null, TimeSpan.Zero, out _);
+        var projected = Compare("projected geometry and grid", cpu, hardware); report.Pixels.Add(projected);
+        check(projected.MeanChannelDifference < 2 && projected.FractionPixelsOver32 < .025,
+            "Real GPU projected geometry and grid agree with CPU within edge tolerance");
+
         using var backdrop = Backdrop(440, 280);
         scene = new() { Viewport = new(0, 0, 440, 280), LayerOpacity = .7,
             Elements = [Box(35, 35, 100, 100, 0xAAE83030), Mask(ElementKind.LivePixelate, 20, 20, 180, 180, 13),

@@ -7,6 +7,11 @@ using System.Text.Json.Nodes;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+if (args.Contains("--canvas-only"))
+{
+    await CanvasProjectionStorageTests.RunAsync(Check);
+    Console.WriteLine($"PASS {checks} canvas storage checks"); return;
+}
 if (args.Contains("--live-effects-only"))
 {
     await LivePixelateStorageTests.RunAsync(Check);
@@ -23,7 +28,7 @@ async Task Reject(Func<Task> action, string message)
     try { await action(); } catch (Exception ex) when (ex is InvalidDataException or IOException) { rejected = true; }
     Check(rejected, message);
 }
-string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../artifacts/storage-tests/" + Guid.NewGuid().ToString("N")));
+string root = Path.Combine(AppContext.BaseDirectory, "storage-tests", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var store = new ProjectStore();
 byte[] transparentPng = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=");
@@ -179,5 +184,6 @@ await EditablePresetStorageTests.RunAsync(store, root, Check);
 await FormatVersionTests.RunAsync(store, root, Check);
 await LivePixelateStorageTests.RunAsync(Check);
 await RecoveryPreviewStorageTests.RunAsync(Check);
+await CanvasProjectionStorageTests.RunAsync(Check);
 Console.WriteLine($"PASS {checks} storage checks");
 Console.WriteLine($"Artifacts: {root}");

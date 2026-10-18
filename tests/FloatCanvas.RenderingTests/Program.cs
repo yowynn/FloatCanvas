@@ -10,6 +10,8 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--canvas-projection-performance-only")) { CanvasProjectionPerformanceTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-projection-only")) { CanvasProjectionRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} canvas projection rendering checks."); return 0; }
             if (args.Contains("--animated-overlay-cache-only")) { AnimatedOverlayCacheTests.Run(Assert); OverlaySceneCacheTests.Run(Assert); ClearedLiveOpacityTests.Run(Assert); Console.WriteLine($"PASS {_checks} animated overlay cache checks."); return 0; }
             if (args.Contains("--gpu-surface-only")) { IntermediateSurfaceRenderingTests.Run(Assert); LivePixelateRenderingTests.Run(Assert); AnimatedImageRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} intermediate surface rendering checks (raster target)."); return 0; }
             if (args.Contains("--animation-only")) { AnimatedImageRenderingTests.Run(Assert); AssetImportLosslessTests.Run(Assert); Console.WriteLine($"PASS {_checks} animation rendering checks."); return 0; }
@@ -34,6 +36,7 @@ internal static class Program
             OverlaySceneCacheTests.Run(Assert);
             ClearedLiveOpacityTests.Run(Assert);
             CaptureSelectionRenderingTests.Run(Assert);
+            CanvasProjectionRenderingTests.Run(Assert);
             Console.WriteLine($"PASS {_checks} real render/import/export checks.");
             return 0;
         }

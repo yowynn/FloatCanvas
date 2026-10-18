@@ -11,6 +11,8 @@ internal static class InspectorTests
 {
     public static void Run(Action<string, bool> assert)
     {
+        _ = Wpf.Application.Current ?? new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
+        AppTheme.Apply("light");
         bool allowed = true;
         var session = new EditorSession(new() { Viewport = new(0, 0, 300, 400) });
         var text = new CanvasElement { Kind = ElementKind.Text, Text = "浮绘", Width = 100, Height = 27,

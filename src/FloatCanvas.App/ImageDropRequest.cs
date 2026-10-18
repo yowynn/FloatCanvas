@@ -8,6 +8,7 @@ internal sealed class ImageDropRequest : IDisposable
 {
     private readonly SceneDocument document;
     private readonly CancellationTokenSource cancellation;
+    private readonly Projective2D planeToScreen;
     private bool disposed;
     internal EditorSession Target { get; }
     internal RectD Placement { get; }
@@ -19,11 +20,13 @@ internal sealed class ImageDropRequest : IDisposable
     internal ImageDropRequest(EditorSession target, RectD placement, CancellationToken lifetime)
     {
         Target = target; document = target.Document; Placement = placement;
+        planeToScreen = CanvasMapping.Create(document).PlaneToScreen;
         cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); Token = cancellation.Token;
     }
 
     internal bool IsCurrent(ImageDropRequest? current, EditorSession live, EditorSession? capture) =>
         !Token.IsCancellationRequested && ReferenceEquals(this, current) && ReferenceEquals(Target.Document, document) &&
+        CanvasMapping.Create(Target.Document).PlaneToScreen == planeToScreen &&
         (ReferenceEquals(Target, live) || ReferenceEquals(Target, capture));
 
     internal bool TrySetDropPoint(PointD screenPoint, PointD screenOrigin)
@@ -31,7 +34,8 @@ internal sealed class ImageDropRequest : IDisposable
         if (Completed || IsImporting || Token.IsCancellationRequested || DropCenter is not null ||
             !double.IsFinite(screenPoint.X) || !double.IsFinite(screenPoint.Y) ||
             !double.IsFinite(screenOrigin.X) || !double.IsFinite(screenOrigin.Y)) return false;
-        DropCenter = screenPoint - screenOrigin;
+        if (!planeToScreen.TryInverse(out var inverse) || !inverse.TryTransformPoint(screenPoint - screenOrigin, out var point)) return false;
+        DropCenter = point;
         return true;
     }
 

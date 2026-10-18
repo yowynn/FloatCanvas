@@ -207,7 +207,7 @@ internal sealed class InspectorWindow : Wpf.Window
             var bounds = ElementGeometry.Bounds(element);
             var size = GeometricSize(element);
             SetField("X", bounds.Left); SetField("Y", bounds.Top); SetField("W", size.X); SetField("H", size.Y);
-            SetField("Angle", Angle(element.Transform)); SetField("StrokeWidth", element.Style.StrokeWidth);
+            SetField("Angle", ElementAngle(element)); SetField("StrokeWidth", element.Style.StrokeWidth);
             arrowStyle.SelectedIndex = (int)element.Style.ArrowHeadStyle; SetField("ArrowHeadSize", element.Style.ArrowHeadSize);
             startArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element, reverse: true);
             endArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element);
@@ -299,7 +299,7 @@ internal sealed class InspectorWindow : Wpf.Window
             {
                 var requested = Number("Angle", L.Get("Inspector.Angle"), -360000, 360000);
                 var center = ElementGeometry.Bounds(edited).Center;
-                edited.Transform = Affine2D.Around(center, Affine2D.Rotation(requested - Angle(edited.Transform))).Compose(edited.Transform);
+                edited.Transform = Affine2D.Around(center, Affine2D.Rotation(requested - ElementAngle(edited))).Compose(edited.Transform);
             }
             var size = GeometricSize(edited);
             var resizeX = dirtyFields.Contains("W"); var resizeY = dirtyFields.Contains("H");
@@ -315,8 +315,7 @@ internal sealed class InspectorWindow : Wpf.Window
                         throw new InvalidOperationException(L.Get("Inspector.AspectMismatch"));
                     sx = sy = resizeX ? sx : sy;
                 }
-                if (ElementGeometry.IsBoxShape(edited.Kind)) ElementGeometry.ResizeShapeGeometry(edited, sx, sy);
-                else edited.Transform = edited.Transform.Compose(Affine2D.Around(ElementGeometry.LocalBounds(edited).Center, Affine2D.Scale(sx, sy)));
+                ResizeElement(edited, sx, sy);
             }
             var bounds = ElementGeometry.Bounds(edited);
             double dx = dirtyFields.Contains("X") ? Number("X", "X", -10000000, 10000000) - bounds.Left : 0;
@@ -457,7 +456,7 @@ internal sealed class InspectorWindow : Wpf.Window
         scrubStartValue = key switch
         {
             "X" => bounds.Left, "Y" => bounds.Top, "W" => size.X, "H" => size.Y,
-            "Angle" => Angle(source.Transform), "StrokeWidth" => source.Style.StrokeWidth,
+            "Angle" => ElementAngle(source), "StrokeWidth" => source.Style.StrokeWidth,
             "CornerRadius" => ElementGeometry.CornerRadius(source), _ => 0
         };
         scrubSource = source.Clone(); scrubSession = session;
@@ -485,13 +484,12 @@ internal sealed class InspectorWindow : Wpf.Window
         {
             case "X": edited.Transform = Affine2D.Translation(value - ElementGeometry.Bounds(source).Left, 0).Compose(source.Transform); break;
             case "Y": edited.Transform = Affine2D.Translation(0, value - ElementGeometry.Bounds(source).Top).Compose(source.Transform); break;
-            case "Angle": edited.Transform = Affine2D.Around(ElementGeometry.Bounds(source).Center, Affine2D.Rotation(value - Angle(source.Transform))).Compose(source.Transform); break;
+            case "Angle": edited.Transform = Affine2D.Around(ElementGeometry.Bounds(source).Center, Affine2D.Rotation(value - ElementAngle(source))).Compose(source.Transform); break;
             case "W": case "H":
                 var size = GeometricSize(source); double factor = value / (key == "W" ? size.X : size.Y);
                 double sx = key == "W" || keepAspect.IsChecked == true ? factor : 1;
                 double sy = key == "H" || keepAspect.IsChecked == true ? factor : 1;
-                if (ElementGeometry.IsBoxShape(edited.Kind)) ElementGeometry.ResizeShapeGeometry(edited, sx, sy);
-                else edited.Transform = source.Transform.Compose(Affine2D.Around(ElementGeometry.LocalBounds(source).Center, Affine2D.Scale(sx, sy))); break;
+                ResizeElement(edited, sx, sy); break;
             case "StrokeWidth": edited.Style.StrokeWidth = value; break;
             case "CornerRadius": edited.CornerRadius = value; break;
         }
@@ -530,6 +528,8 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private void SetPropertyVisibility(CanvasElement? element)
     {
+        foreach (var key in new[] { "W", "H" }) fieldContainers[key].ToolTip = element?.ProjectivePlacement is not null
+            ? L.Get("Perspective.InspectorPlaneBounds") : null;
         propertyPanel.Visibility = element is null ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
         bool image = element?.Kind == ElementKind.Image || element is not null && ElementGeometry.IsLiveEffect(element.Kind), text = element?.Kind == ElementKind.Text, number = element?.Kind == ElementKind.Number;
         textSection.Visibility = text || number ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
@@ -618,8 +618,30 @@ internal sealed class InspectorWindow : Wpf.Window
     }
     private static PointD GeometricSize(CanvasElement element)
     {
+        if (element.ProjectivePlacement is not null)
+        {
+            var bounds = ElementGeometry.Bounds(element, includeStroke: false);
+            return new(bounds.Width, bounds.Height);
+        }
         var local = ElementGeometry.LocalBounds(element); var t = element.Transform;
         return new(local.Width * Math.Sqrt(t.M11 * t.M11 + t.M21 * t.M21), local.Height * Math.Sqrt(t.M12 * t.M12 + t.M22 * t.M22));
+    }
+
+    private static void ResizeElement(CanvasElement element, double x, double y)
+    {
+        if (element.ProjectivePlacement is not null)
+            element.Transform = Affine2D.Around(ElementGeometry.Bounds(element, includeStroke: false).Center,
+                Affine2D.Scale(x, y)).Compose(element.Transform);
+        else if (ElementGeometry.IsBoxShape(element.Kind)) ElementGeometry.ResizeShapeGeometry(element, x, y);
+        else element.Transform = element.Transform.Compose(Affine2D.Around(ElementGeometry.LocalBounds(element).Center, Affine2D.Scale(x, y)));
+    }
+
+    private static double ElementAngle(CanvasElement element)
+    {
+        if (element.ProjectivePlacement is null) return Angle(element.Transform);
+        var mapping = ElementGeometry.LocalToPlane(element);
+        var edge = mapping.TransformPoint(new(element.Width, 0)) - mapping.TransformPoint(new(0, 0));
+        return Math.Atan2(edge.Y, edge.X) * 180 / Math.PI;
     }
 
     private static double Angle(Affine2D transform) => Math.Atan2(transform.M21, transform.M11) * 180 / Math.PI;

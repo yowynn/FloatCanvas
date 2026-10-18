@@ -4,12 +4,15 @@ using System.Text.Json.Serialization;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
 using FloatCanvas.Storage;
+using FloatCanvas.Windows;
+using SkiaSharp;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
 internal enum StampSaveMode { EditableGroup, RasterMerge }
-internal sealed record StampRenderContext(SceneDocument Document, AssetLibrary Assets, TimeSpan AnimationTime = default);
+internal sealed record StampRenderContext(SceneDocument Document, AssetLibrary Assets, TimeSpan AnimationTime = default,
+    CapturedDesktop? ScreenCapture = null);
 internal sealed record StampEntry(Guid Id, string Name, StampSaveMode Mode, double Width, double Height, DateTime UpdatedAtUtc, Guid Revision);
 
 /// <summary>Immutable, self-contained stamp revisions published by one atomic catalog replacement.</summary>
@@ -70,15 +73,32 @@ internal sealed class StampLibrary(string profileDirectory)
         if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
         var source = session.CreateSelectionSnapshot(normalizeOrigin: true);
         if (source.Elements.Count == 0) throw new InvalidOperationException(L.Get("Stamp.NoSelection"));
+        var original = session.CreateSelectionSnapshot(normalizeOrigin: false);
+        var originalBounds = original.Viewport;
+        var mapping = CanvasMapping.Create(session.Document);
+        bool live = source.Elements.Any(e => ElementGeometry.IsLiveEffect(e.Kind));
+        bool projectedLive = live && mapping.PlaneToScreen != Projective2D.Identity;
+        SceneDocument? screenSource = null;
+        if (projectedLive)
+        {
+            screenSource = original.Clone(); screenSource.Canvas = session.Document.Canvas.Clone();
+            screenSource.Canvas.Grid.Visible = false; screenSource.Canvas.BackgroundColor = 0;
+            var bounds = screenSource.Elements.Select(e => SceneRenderer.ProjectedBounds(session.Document, e, true))
+                .Aggregate(RectD.Union).Intersect(session.Document.Viewport);
+            screenSource.Viewport = new(Math.Floor(bounds.Left), Math.Floor(bounds.Top),
+                Math.Ceiling(bounds.Right) - Math.Floor(bounds.Left), Math.Ceiling(bounds.Bottom) - Math.Floor(bounds.Top));
+        }
         SceneDocument? context=null;
         if(renderContext is not null)
         {
             context=renderContext.Document.Clone();
-            var original=session.CreateSelectionSnapshot(normalizeOrigin:false).Viewport;
-            var shift=Affine2D.Translation(-original.X,-original.Y);
-            foreach(var item in context.Elements)item.Transform=shift.Compose(item.Transform);
-            if(context.Background is { } background)background.Transform=shift.Compose(background.Transform);
-            context.Viewport=source.Viewport;
+            if (!projectedLive)
+            {
+                var shift=Affine2D.Translation(-originalBounds.X,-originalBounds.Y);
+                foreach(var item in context.Elements)item.Transform=shift.Compose(item.Transform);
+                if(context.Background is { } background)background.Transform=shift.Compose(background.Transform);
+                context.Viewport=source.Viewport;
+            }
         }
         // Capture original encoded bytes before yielding; UI pruning cannot invalidate this save.
         var sourceAssets = new AssetLibrary();
@@ -98,24 +118,41 @@ internal sealed class StampLibrary(string profileDirectory)
             var rendered = await Task.Run(() =>
             {
                 using var renderer = new SceneRenderer { AnimationTime = renderContext?.AnimationTime ?? TimeSpan.Zero };
+                if (screenSource is not null)
+                {
+                    using var screenBackdrop = StampBackdrop(renderContext?.ScreenCapture, default, 1);
+                    renderer.ScreenBackdrop = screenBackdrop; renderer.LiveEffectContext = context;
+                    byte[] screenPixels = renderer.ExportPng(screenSource, renderContext?.Assets ?? sourceAssets, transparent: true);
+                    return (preview: Thumbnail(screenPixels), merged: mode == StampSaveMode.RasterMerge ? screenPixels : null,
+                        screenBounds: (RectD?)screenSource.Viewport);
+                }
                 byte[] Render(double scale)
                 {
                     renderer.LiveEffectContext=context is null ? null : Scaled(context,scale);
-                    return renderer.ExportPng(Scaled(source,scale),renderContext?.Assets ?? sourceAssets,transparent:true);
+                    using var backdrop = StampBackdrop(renderContext?.ScreenCapture, new(originalBounds.X, originalBounds.Y), scale);
+                    renderer.ScreenBackdrop = backdrop;
+                    return renderer.ExportPng(Scaled(source,scale),renderContext?.Assets ?? sourceAssets,transparent:true,
+                        live ? SceneRenderSpace.ScreenComposite : SceneRenderSpace.PlaneContent);
                 }
                 byte[] preview = Render(160 / Math.Max(source.Viewport.Width, source.Viewport.Height));
                 byte[]? merged = mode == StampSaveMode.RasterMerge
                     ? Render(Math.Min(2, 4096 / Math.Max(source.Viewport.Width, source.Viewport.Height)))
                     : null;
-                return (preview, merged);
+                return (preview, merged, screenBounds: (RectD?)null);
             }, ct);
             SceneDocument document = source;
             AssetLibrary assets = sourceAssets;
             if (rendered.merged is { } png)
             {
                 assets = new();
-                string id = assets.Add(png);
-                document = new() { Viewport = source.Viewport, Elements = [new() { Kind = ElementKind.Image, AssetId = id, Width = source.Viewport.Width, Height = source.Viewport.Height }] };
+                CanvasElement image;
+                if (rendered.screenBounds is { } screenBounds)
+                {
+                    image = SnapshotImageCommand.CreateElement(assets, new(png, screenBounds, true), mapping.PlaneToScreen);
+                    image.Transform = Affine2D.Translation(-originalBounds.X, -originalBounds.Y).Compose(image.Transform);
+                }
+                else image = new() { Kind = ElementKind.Image, AssetId = assets.Add(png), Width = source.Viewport.Width, Height = source.Viewport.Height };
+                document = new() { Viewport = source.Viewport, Elements = [image] };
                 // A raster stamp still retains the original editable project and encoded image bytes.
                 await projects.SaveAsync(SourcePath(entry), source, sourceAssets, ct);
             }
@@ -256,6 +293,23 @@ internal sealed class StampLibrary(string profileDirectory)
         if(result.Background is { } background)background.Transform=transform.Compose(background.Transform);
         result.Viewport = new(0, 0, Math.Clamp(document.Viewport.Width * scale, 1, 4096), Math.Clamp(document.Viewport.Height * scale, 1, 4096));
         return result;
+    }
+
+    private static DesktopBackdrop? StampBackdrop(CapturedDesktop? capture, PointD origin, double scale) => capture is null ? null :
+        DesktopBackdrop.FromEncoded(new((capture.Bounds.Left - origin.X) * scale, (capture.Bounds.Top - origin.Y) * scale,
+            capture.Bounds.Width * scale, capture.Bounds.Height * scale), capture.PngBytes);
+
+    private static byte[] Thumbnail(byte[] png)
+    {
+        using var image = SKImage.FromEncodedData(png) ?? throw new InvalidDataException(L.Get("Images.UnsupportedOrCorrupt"));
+        double scale = 160d / Math.Max(image.Width, image.Height);
+        using var surface = SKSurface.Create(new SKImageInfo(Math.Max(1, (int)Math.Ceiling(image.Width * scale)),
+            Math.Max(1, (int)Math.Ceiling(image.Height * scale)), SKColorType.Bgra8888, SKAlphaType.Premul));
+        surface.Canvas.Clear(SKColors.Transparent);
+        surface.Canvas.DrawImage(image, new SKRect(0, 0, surface.Canvas.DeviceClipBounds.Width, surface.Canvas.DeviceClipBounds.Height),
+            new SKSamplingOptions(SKFilterMode.Linear));
+        using var result = surface.Snapshot(); using var encoded = result.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded.ToArray();
     }
 
     private static string ValidateName(string name)

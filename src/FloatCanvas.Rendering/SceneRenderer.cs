@@ -4,6 +4,8 @@ using SkiaSharp;
 
 namespace FloatCanvas.Rendering;
 
+public enum SceneRenderSpace { ScreenComposite, PlaneContent }
+
 /// <summary>Single-threaded renderer shared by the desktop overlay and offscreen exports.</summary>
 public sealed partial class SceneRenderer : IDisposable
 {
@@ -26,19 +28,18 @@ public sealed partial class SceneRenderer : IDisposable
     public long CachedImageBytes => _images.Values.Sum(e => e.CachedBytes) + _effects.Values.Sum(e => e.CachedBytes);
 
     /// <summary>Preserves the caller's matrix and clip. Viewport is in document coordinates.</summary>
-    public void Draw(SKCanvas canvas, SceneDocument document, AssetLibrary assets, bool includeBackground = true)
+    public void Draw(SKCanvas canvas, SceneDocument document, AssetLibrary assets, bool includeBackground = true,
+        SceneRenderSpace space = SceneRenderSpace.ScreenComposite, bool includeCanvasBackground = true, bool calibrationReference = false)
     {
-        BeginFrame();
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(assets);
+        BeginFrame(document, space);
         int saved = canvas.Save();
-        var previousDocument = _drawingDocument;
-        _drawingDocument = document;
         try
         {
             canvas.ClipRect(ToRect(document.Viewport));
-            if (includeBackground) DrawBackground(canvas, document, assets);
+            DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground);
             double opacity = Math.Clamp(document.LayerOpacity, 0, 1);
             if (opacity > 0)
             {
@@ -48,35 +49,76 @@ public sealed partial class SceneRenderer : IDisposable
                     using var opacityPaint = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)) };
                     canvas.SaveLayer(ToRect(document.Viewport), opacityPaint);
                 }
+                if (!calibrationReference) DrawGrid(canvas, document);
                 DrawElements(canvas, document.Elements, assets, 0, document.Elements.Count);
                 if (opacity < 1) canvas.Restore();
             }
+            if (calibrationReference && space == SceneRenderSpace.ScreenComposite)
+            {
+                // Editing guides stay visible over photographs and independent of annotation opacity.
+                DrawGridCore(canvas, document, true);
+                if (opacity > 0)
+                {
+                    if (opacity < 1)
+                    {
+                        using var gridOpacity = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)) };
+                        canvas.SaveLayer(ToRect(document.Viewport), gridOpacity);
+                    }
+                    DrawGrid(canvas, document);
+                    if (opacity < 1) canvas.Restore();
+                }
+            }
         }
-        finally { _drawingDocument = previousDocument; canvas.RestoreToCount(saved); EndFrame(); }
+        finally { canvas.RestoreToCount(saved); EndFrame(); }
     }
 
-    internal void BeginFrame() { ObjectDisposedException.ThrowIf(_disposed, this); ClearLiveEffectImages(); NextAnimationDelay = null; _clock++; }
-    internal void EndFrame() { ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); }
-    internal void DrawBackground(SKCanvas canvas, SceneDocument document, AssetLibrary assets)
+    internal void BeginFrame(SceneDocument document, SceneRenderSpace space = SceneRenderSpace.ScreenComposite)
     {
-        if (document.Background is { Visible: true } background) DrawElement(canvas, background, assets);
+        ObjectDisposedException.ThrowIf(_disposed, this); ClearLiveEffectImages(); NextAnimationDelay = null; _clock++;
+        if (space == SceneRenderSpace.PlaneContent && document.Elements.Any(e => e.Visible && ElementGeometry.IsLiveEffect(e.Kind)))
+            throw new InvalidOperationException("Live desktop filters require screen composition before being placed back on the plane.");
+        _drawingDocument = document; _renderSpace = space; _mapping = CanvasMapping.Create(document);
+    }
+    internal void EndFrame()
+    {
+        ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); _drawingDocument = null; _mapping = null;
+    }
+    internal void DrawBackground(SKCanvas canvas, SceneDocument document, AssetLibrary assets,
+        bool includeBackground = true, bool includeCanvasBackground = true, bool sampling = false)
+    {
+        if (_renderSpace == SceneRenderSpace.ScreenComposite)
+        {
+            if (includeBackground) (ScreenBackdrop ?? (sampling && document.Background is null ? LiveBackdrop : null))?.Draw(canvas);
+            if (includeCanvasBackground && (document.Canvas.BackgroundColor >> 24) != 0)
+            {
+                using var color = new SKPaint { Color = new SKColor(document.Canvas.BackgroundColor) };
+                canvas.DrawRect(ToRect(document.Viewport), color);
+            }
+        }
+        if (includeBackground && document.Background is { Visible: true } background)
+            DrawElement(canvas, background, assets, TransformFor(document), document);
     }
     /// <summary>Draws raw annotation alpha in original z order; the caller owns viewport and global opacity.</summary>
-    internal void DrawElements(SKCanvas canvas, IReadOnlyList<CanvasElement> elements, AssetLibrary assets, int first, int endExclusive)
+    internal void DrawElements(SKCanvas canvas, IReadOnlyList<CanvasElement> elements, AssetLibrary assets, int first, int endExclusive,
+        SceneDocument? sourceDocument = null)
     {
+        var document = sourceDocument ?? _drawingDocument;
+        var transform = TransformFor(document);
         for (int i = first; i < endExclusive; i++)
             if (elements[i].Visible)
             {
                 if (ElementGeometry.IsLiveEffect(elements[i].Kind)) DrawLivePixelate(canvas, elements, i, assets);
-                else DrawElement(canvas, elements[i], assets);
+                else DrawElement(canvas, elements[i], assets, transform, document);
             }
     }
 
-    public byte[] ExportPng(SceneDocument document, AssetLibrary assets, bool transparent = false) =>
-        Export(document, assets, SKEncodedImageFormat.Png, 100, !transparent);
+    public byte[] ExportPng(SceneDocument document, AssetLibrary assets, bool transparent = false,
+        SceneRenderSpace space = SceneRenderSpace.ScreenComposite) =>
+        Export(document, assets, SKEncodedImageFormat.Png, 100, !transparent, space);
 
-    public byte[] ExportJpeg(SceneDocument document, AssetLibrary assets, int quality = 92) =>
-        Export(document, assets, SKEncodedImageFormat.Jpeg, Math.Clamp(quality, 1, 100), true);
+    public byte[] ExportJpeg(SceneDocument document, AssetLibrary assets, int quality = 92,
+        SceneRenderSpace space = SceneRenderSpace.ScreenComposite) =>
+        Export(document, assets, SKEncodedImageFormat.Jpeg, Math.Clamp(quality, 1, 100), true, space);
 
     public TextMetrics MeasureText(string text, ElementStyle style, double maxWidth = 0)
     {
@@ -85,7 +127,7 @@ public sealed partial class SceneRenderer : IDisposable
         return _text.Measure(text, style, maxWidth);
     }
 
-    private byte[] Export(SceneDocument document, AssetLibrary assets, SKEncodedImageFormat format, int quality, bool background)
+    private byte[] Export(SceneDocument document, AssetLibrary assets, SKEncodedImageFormat format, int quality, bool background, SceneRenderSpace space)
     {
         var viewport = document.Viewport.Normalize();
         int width = checked((int)Math.Ceiling(viewport.Width)), height = checked((int)Math.Ceiling(viewport.Height));
@@ -94,19 +136,19 @@ public sealed partial class SceneRenderer : IDisposable
             ?? throw new InvalidOperationException(L.Get("Export.BufferTooLarge"));
         surface.Canvas.Clear(format == SKEncodedImageFormat.Jpeg ? SKColors.White : SKColors.Transparent);
         surface.Canvas.Translate(-(float)viewport.X, -(float)viewport.Y);
-        Draw(surface.Canvas, document, assets, background);
+        Draw(surface.Canvas, document, assets, background, space, includeCanvasBackground: background);
         using var image = surface.Snapshot();
         using var data = image.Encode(format, quality) ?? throw new InvalidOperationException(L.Get("Images.EncodingFailed"));
         return data.ToArray();
     }
 
-    private void DrawElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets)
+    private void DrawElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets, Projective2D planeToTarget, SceneDocument? document)
     {
         if (element.Style.Opacity <= 0) return;
         int saved = canvas.Save();
         try
         {
-            var matrix = ToMatrix(element.Transform);
+            var matrix = ToMatrix(planeToTarget.Compose(ElementGeometry.LocalToPlane(element)));
             canvas.Concat(in matrix);
             double opacity = Math.Clamp(element.Style.Opacity, 0, 1);
             // One element is a compositing unit, including arrow heads, fill+outline and number labels.
@@ -302,7 +344,7 @@ public sealed partial class SceneRenderer : IDisposable
         IEnumerable<CanvasElement> images = document.LayerOpacity > 0 ? document.Elements : [];
         if (document.Background is { } background) images = images.Prepend(background);
         foreach (var element in images)
-            if (VisibleAnimation(element, document.Viewport, assets) is { } playback)
+            if (VisibleAnimation(element, document, assets) is { } playback)
                 yield return playback;
     }
 
@@ -311,14 +353,14 @@ public sealed partial class SceneRenderer : IDisposable
         int first = -1, last = -1;
         if (document.LayerOpacity > 0)
             for (int i = 0; i < document.Elements.Count; i++)
-                if (VisibleAnimation(document.Elements[i], document.Viewport, assets) is not null)
+                if (VisibleAnimation(document.Elements[i], document, assets) is not null)
                 { if (first < 0) first = i; last = i; }
         return (first, last);
     }
 
-    private AnimatedImage? VisibleAnimation(CanvasElement element, RectD viewport, AssetLibrary assets) =>
+    private AnimatedImage? VisibleAnimation(CanvasElement element, SceneDocument document, AssetLibrary assets) =>
         element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
-        ElementGeometry.Bounds(element, includeStroke: false).Intersects(viewport) && element.AssetId is { } id &&
+        ProjectedBounds(document, element).Intersects(document.Viewport) && element.AssetId is { } id &&
         AnimatedImage.MayAnimate(assets.Get(id).Data.Span) ? GetImageEntry(id, assets).Playback : null;
 
     private SKImage GetEffectImage(SKCanvas destination, CanvasElement element, SKImage original, int sourceFrame)
@@ -409,7 +451,8 @@ public sealed partial class SceneRenderer : IDisposable
     private static byte Alpha(double opacity) => (byte)Math.Round(Math.Clamp(opacity, 0, 1) * 255);
     private static SKPoint ToPoint(PointD p) => new((float)p.X, (float)p.Y);
     private static SKRect ToRect(RectD r) => new((float)r.Left, (float)r.Top, (float)r.Right, (float)r.Bottom);
-    private static SKMatrix ToMatrix(Affine2D t) => new((float)t.M11, (float)t.M12, (float)t.OffsetX, (float)t.M21, (float)t.M22, (float)t.OffsetY, 0, 0, 1);
+    private static SKMatrix ToMatrix(Projective2D t) => new((float)t.M11, (float)t.M12, (float)t.M13,
+        (float)t.M21, (float)t.M22, (float)t.M23, (float)t.M31, (float)t.M32, (float)t.M33);
 
     private sealed class PathEntry(CanvasElement element, SKPath path, SKPath? patternedStroke, SKPath filledHeads, SKPath openHeads, long used) : IDisposable
     {

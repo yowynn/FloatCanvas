@@ -9,7 +9,7 @@ public static class SceneValidation
     public static void Validate(SceneDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (document.Version is not (1 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+        if (document.Version is not (1 or 2 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
         Require(Enum.IsDefined(document.Kind), L.Get("Scene.InvalidDocumentKind"));
         Require(document.Elements is not null && document.DisplayLayout is not null && document.Groups is not null, L.Get("Scene.MissingCollections"));
         Require(document.Elements!.Count <= 100_000, L.Get("Scene.ElementCountExceeded"));
@@ -17,6 +17,7 @@ public static class SceneValidation
         Require(Unit(document.LayerOpacity), L.Get("Scene.InvalidLayerOpacity"));
         Require(document.NextNumber >= 1, L.Get("Scene.InvalidNumberCounter"));
         Require(Rect(document.Viewport) && document.Viewport.Width > 0 && document.Viewport.Height > 0, L.Get("Scene.InvalidViewport"));
+        ValidateCanvas(document);
         var ids = new HashSet<Guid>();
         foreach (var element in document.Elements) ValidateElement(element, ids);
         ValidateGroups(document, ids);
@@ -73,7 +74,40 @@ public static class SceneValidation
         var effectIds = new HashSet<Guid>();
         foreach (var effect in element.Effects)
             Require(effect is not null && effect.Id != Guid.Empty && effectIds.Add(effect.Id) && Enum.IsDefined(effect.Kind) && NormalizedRect(effect.Bounds, positive: false) && Positive(effect.Amount), L.Get("Scene.InvalidImageEffect"));
-        Require(Rect(ElementGeometry.Bounds(element)), L.Get("Scene.InvalidRenderedBounds"));
+        if (element.ProjectivePlacement is { } placement)
+        {
+            var local = ElementGeometry.StrokedLocalBounds(element);
+            Require(placement.IsFinite && placement.TryInverse(out _) && placement.Denominator(local.Center) > 0 &&
+                placement.TryTransformBounds(local, out _), L.Get("Scene.InvalidElementTransform"));
+        }
+        Require(ElementGeometry.LocalToPlane(element).TryTransformBounds(ElementGeometry.StrokedLocalBounds(element), out var rendered) && Rect(rendered), L.Get("Scene.InvalidRenderedBounds"));
+    }
+    private static void ValidateCanvas(SceneDocument document)
+    {
+        var canvas = document.Canvas;
+        Require(canvas is not null && canvas.Projection is not null && canvas.Grid is not null, L.Get("Scene.InvalidCanvas"));
+        var projection = canvas.Projection;
+        Require(projection.Columns is >= 1 and <= CanvasCalibration.MaximumGridCount && projection.Rows is >= 1 and <= CanvasCalibration.MaximumGridCount,
+            L.Get("Scene.InvalidCanvas"));
+        Require(Point(projection.Origin) && projection.CellSize is >= .01 and <= 1_000_000 && double.IsFinite(projection.CellSize) &&
+            projection.AlgorithmVersion == CanvasCalibration.AlgorithmVersion && projection.Matrix.IsFinite && projection.Matrix.TryInverse(out _), L.Get("Scene.InvalidCanvas"));
+        Require(projection.Quad is not null && projection.Quad.Count is 0 or 4 && projection.Quad.All(Point), L.Get("Scene.InvalidCanvas"));
+        Require(canvas.Grid.Width is > 0 and <= 64 && double.IsFinite(canvas.Grid.Width) && Enum.IsDefined(canvas.Grid.Pattern), L.Get("Scene.InvalidCanvas"));
+        if (projection.Quad.Count == 0)
+        {
+            Require(!projection.Enabled && projection.Matrix == Projective2D.Identity, L.Get("Scene.InvalidCanvas"));
+            return;
+        }
+        Require(CanvasCalibration.TryGridToScreen(projection.Columns, projection.Rows, projection.Quad, out _), L.Get("Scene.InvalidCanvas"));
+        PointD[] corners = [projection.Origin, projection.Origin + new PointD(projection.Columns * projection.CellSize, 0),
+            projection.Origin + new PointD(projection.Columns * projection.CellSize, projection.Rows * projection.CellSize),
+            projection.Origin + new PointD(0, projection.Rows * projection.CellSize)];
+        for (int i = 0; i < corners.Length; i++)
+            Require(projection.Matrix.Denominator(corners[i]) > 0 && projection.Matrix.TryTransformPoint(corners[i], out var actual) &&
+                actual.DistanceTo(projection.Quad[i]) <= 1e-5, L.Get("Scene.InvalidCanvas"));
+        // A disabled calibration remains restorable even after the display layout changes.
+        // Enabling it must pass the current viewport guard again.
+        Require(!projection.Enabled || CanvasCalibration.IsStableViewport(projection.Matrix, document.Viewport), L.Get("Scene.InvalidCanvas"));
     }
     private static void ValidateGroups(SceneDocument document, HashSet<Guid> ids)
     {

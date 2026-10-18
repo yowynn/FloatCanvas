@@ -397,18 +397,18 @@ internal sealed partial class DesktopSession
         var snapshot = session.Document.Clone(); var resources = ResourceSnapshot(snapshot).ToList();
         var animationTime = _renderer.AnimationTime;
             string? captureWarning = snapshot.Kind == DocumentKind.FrozenCapture ? _documentFrozenCaptureWarning : null;
+            CapturedDesktop? screenCapture = null;
             if ((!transparent || SceneRenderer.HasLiveEffects(snapshot)) && snapshot.Kind == DocumentKind.LiveOverlay)
             {
                 var capture = await CaptureCleanDesktopAsync();
                 captureWarning = CaptureWarning(capture);
-                var temporaryAssets = new AssetLibrary(); string id = temporaryAssets.Add(capture.PngBytes);
-                resources.Add(temporaryAssets.Get(id));
-                snapshot.Background = Background(capture, id);
+                screenCapture = capture;
             }
             bool jpeg = !transparent && Path.GetExtension(dialog.FileName).ToLowerInvariant() is ".jpg" or ".jpeg";
             byte[] result = await Task.Run(() =>
             {
-                var assets = ResourceLibrary(resources); using var renderer = new SceneRenderer { AnimationTime = animationTime };
+                using var backdrop = CreateScreenBackdrop(screenCapture);
+                var assets = ResourceLibrary(resources); using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
                 return jpeg ? renderer.ExportJpeg(snapshot, assets) : renderer.ExportPng(snapshot, assets, transparent);
             }, _documentLifetime.Token);
             await WriteExportAsync(dialog.FileName, result, _documentLifetime.Token);
@@ -431,7 +431,7 @@ internal sealed partial class DesktopSession
         _editor.Cancel(); var session = Active;
         var selected = ObjectClipboardCommand.CreateSnapshot(session);
         bool objects = selected.Elements.Count > 0;
-        var snapshot = objects ? selected : session.Document.Clone();
+        var snapshot = objects ? ObjectClipboardCommand.CreateRasterSnapshot(session, selected) : session.Document.Clone();
         var resources = ResourceSnapshot(snapshot).ToList();
         var effectContext = objects && SceneRenderer.HasLiveEffects(snapshot) ? session.Document.Clone() : null;
         var rasterResources = effectContext is null ? resources.ToList() : ResourceSnapshot(effectContext).ToList();
@@ -440,22 +440,22 @@ internal sealed partial class DesktopSession
         try
         {
             string? captureWarning = !objects && snapshot.Kind == DocumentKind.FrozenCapture ? _documentFrozenCaptureWarning : null;
+            CapturedDesktop? screenCapture = null;
             if ((!objects || SceneRenderer.HasLiveEffects(snapshot)) &&
                 (effectContext?.Kind ?? snapshot.Kind) == DocumentKind.LiveOverlay)
             {
-                var capture = await CaptureCleanDesktopAsync(); var assets = new AssetLibrary(); string id = assets.Add(capture.PngBytes);
+                var capture = await CaptureCleanDesktopAsync();
                 captureWarning = CaptureWarning(capture);
-                rasterResources.Add(assets.Get(id));
-                if (effectContext is not null) effectContext.Background = Background(capture,id);
-                else snapshot.Background = Background(capture, id);
+                screenCapture = capture;
             }
             var encoded = await Task.Run(() =>
             {
-                var assets = ResourceLibrary(rasterResources); using var renderer = new SceneRenderer { LiveEffectContext = effectContext, AnimationTime = animationTime };
+                using var backdrop = CreateScreenBackdrop(screenCapture);
+                var assets = ResourceLibrary(rasterResources); using var renderer = new SceneRenderer { LiveEffectContext = effectContext, AnimationTime = animationTime, ScreenBackdrop = backdrop };
                 byte[] png = renderer.ExportPng(snapshot, assets, objects);
                 string? internalObjects = objects ? JsonSerializer.Serialize(new ClipboardObjects
                 {
-                    Document = snapshot, Assets = resources.Select(r => new ClipboardAsset { Id = r.Id, MediaType = r.MediaType, Bytes = r.Data.ToArray() }).ToList()
+                    Document = selected, Assets = resources.Select(r => new ClipboardAsset { Id = r.Id, MediaType = r.MediaType, Bytes = r.Data.ToArray() }).ToList()
                 }) : null;
                 return (png, internalObjects);
             }, _documentLifetime.Token);
@@ -478,6 +478,7 @@ internal sealed partial class DesktopSession
         if (!CanAddCanvasContent()) return;
         if (DocumentOperationBusy) return;
         _editor.Cancel(); var target = Active;
+        var projection = CanvasMapping.Create(target.Document).PlaneToScreen;
         _documentBusy = true;
         try
         {
@@ -498,7 +499,7 @@ internal sealed partial class DesktopSession
                     foreach (string id in objects.Document.ReferencedAssets) _ = assets.Get(id);
                     return (objects.Document, assets);
                 }, _documentLifetime.Token);
-                if (!ReferenceEquals(Active, target) || !CanAddCanvasContent()) return;
+                if (!ReferenceEquals(Active, target) || CanvasMapping.Create(target.Document).PlaneToScreen != projection || !CanAddCanvasContent()) return;
                 ObjectClipboardCommand.Insert(target, payload.Document, payload.assets, VisibleDocumentArea());
                 SwitchToolState(EditorTool.Select); return;
             }
@@ -511,7 +512,7 @@ internal sealed partial class DesktopSession
             if (bytes is not null)
             {
                 var normalized = await Task.Run(() => AssetImport.Normalize(bytes), _documentLifetime.Token);
-                if (ReferenceEquals(Active, target) && CanAddCanvasContent()) { InsertImages(target, [normalized], false); SwitchToolState(EditorTool.Select); }
+                if (ReferenceEquals(Active, target) && CanvasMapping.Create(target.Document).PlaneToScreen == projection && CanAddCanvasContent()) { InsertImages(target, [normalized], false); SwitchToolState(EditorTool.Select); }
             }
             else UpdateStatus(L.Get("Clipboard.Empty"));
         }
@@ -560,6 +561,7 @@ internal sealed partial class DesktopSession
         if (!CanAddCanvasContent()) return;
         if (DocumentOperationBusy) return;
         _editor.Cancel(); var target = Active;
+        var projection = CanvasMapping.Create(target.Document).PlaneToScreen;
         _documentBusy = true;
         try
         {
@@ -574,7 +576,7 @@ internal sealed partial class DesktopSession
         var selectedIds = target.Selection.ToHashSet();
             var normalized = await ImageImportCommand.NormalizeFilesAsync(paths, _documentLifetime.Token);
             if (!CanAddCanvasContent()) return;
-            if (!ReferenceEquals(Active, target) || replaceSelected && !target.Selection.SetEquals(selectedIds))
+            if (!ReferenceEquals(Active, target) || CanvasMapping.Create(target.Document).PlaneToScreen != projection || replaceSelected && !target.Selection.SetEquals(selectedIds))
             { UpdateStatus(L.Get("Image.ImportChanged")); return; }
             InsertImages(target, normalized, replaceSelected); SwitchToolState(EditorTool.Select);
         }
@@ -652,8 +654,14 @@ internal sealed partial class DesktopSession
     {
         var b = CurrentMonitor().WorkArea;
         var visible = new RectD(b.Left - _editor.ScreenOrigin.X, b.Top - _editor.ScreenOrigin.Y, b.Width, b.Height).Intersect(Active.Document.Viewport);
-        return visible.IsEmpty ? Active.Document.Viewport : visible;
+        if (visible.IsEmpty) visible = Active.Document.Viewport;
+        var mapping = CanvasMapping.Create(Active.Document);
+        if (mapping.ScreenToPlane.TryTransformBounds(visible, out var plane)) return plane;
+        return mapping.TryToPlane(visible.Center, out var center)
+            ? new(center.X - 320, center.Y - 240, 640, 480) : Active.Document.Viewport;
     }
+    private static DesktopBackdrop? CreateScreenBackdrop(CapturedDesktop? capture) => capture is null ? null :
+        DesktopBackdrop.FromEncoded(new(capture.Bounds.Left, capture.Bounds.Top, capture.Bounds.Width, capture.Bounds.Height), capture.PngBytes);
     private PointD CenteredOrigin(RectD viewport)
     {
         return CaptureViewportPlacement.CenterOrigin(viewport, CurrentMonitor().Bounds);
