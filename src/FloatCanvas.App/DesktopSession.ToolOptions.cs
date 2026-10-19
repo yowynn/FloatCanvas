@@ -58,7 +58,7 @@ internal sealed partial class DesktopSession
             }
             RefreshToolbarState(); RequestRender();
         };
-        _toolOptionsPanel.EyedropperRequested += field => { CloseToolOptions(); BeginEyedropper(field); };
+        _toolOptionsPanel.EyedropperRequested += BeginEyedropper;
         var pointerRoute = new ToolOptionsPointerRoute(() => IsToolOptionsOpen && !_toolOptionsPinned,
             source => IsOptionsInput(source) || IsToolbarInput(source), () => DismissToolOptions(WindowDismissReason.ToolbarPress), _toolOptionsWindow, toolbar);
         Action<OverlayPointerEvent> canvasPointer = e =>
@@ -80,16 +80,7 @@ internal sealed partial class DesktopSession
 
     private void UpdateToolOptionsPin()
     {
-        _toolOptionsPin.SetResourceReference(Control.BackgroundProperty, "CanvasButton");
-        _toolOptionsPin.SetResourceReference(Control.ForegroundProperty, _toolOptionsPinned ? "CanvasAccent" : "CanvasText");
-        if (_toolOptionsPin.Content is FrameworkElement glyph)
-        {
-            glyph.RenderTransformOrigin = new Point(.5, .5);
-            glyph.RenderTransform = new RotateTransform(_toolOptionsPinned ? -35 : 0);
-        }
-        string label = L.Get(_toolOptionsPinned ? "ToolbarV2.UnpinOptions" : "ToolbarV2.PinOptions");
-        _toolOptionsPin.ToolTip = label;
-        System.Windows.Automation.AutomationProperties.SetName(_toolOptionsPin, label);
+        ActionIconButton.UpdatePin(_toolOptionsPin,_toolOptionsPinned);
     }
 
     private void OpenToolOptions()

@@ -24,6 +24,7 @@ internal sealed partial class DesktopSession
         if (_host.IsVisible && _renderer.HasAnimatedImages(Active.Document, Active.Assets)) _animationClock.Start();
         else _animationClock.Stop();
         _renderer.AnimationTime = _animationClock.Elapsed;
+        _editor.AnimationTime = _renderer.AnimationTime;
     }
 
     private void ScheduleAnimationFrame()

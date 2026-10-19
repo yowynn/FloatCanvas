@@ -84,7 +84,8 @@ internal sealed class StampLibrary(string profileDirectory)
         var originalBounds = original.Viewport;
         var mapping = CanvasMapping.Create(session.Document);
         bool live = source.Elements.Any(e => ElementGeometry.IsLiveEffect(e.Kind));
-        bool projectedLive = live && mapping.PlaneToScreen != Projective2D.Identity;
+        bool hasBillboards = original.Elements.Any(element => element.IsBillboard);
+        bool projectedLive = hasBillboards || live && mapping.PlaneToScreen != Projective2D.Identity;
         SceneDocument? screenSource = null;
         if (projectedLive)
         {
@@ -102,7 +103,7 @@ internal sealed class StampLibrary(string profileDirectory)
             if (!projectedLive)
             {
                 var shift=Affine2D.Translation(-originalBounds.X,-originalBounds.Y);
-                foreach(var item in context.Elements)item.Transform=shift.Compose(item.Transform);
+                foreach(var item in context.Elements)BillboardGeometry.ApplyPlaneTransform(item, shift);
                 if(context.Background is { } background)background.Transform=shift.Compose(background.Transform);
                 context.Viewport=source.Viewport;
             }
@@ -155,11 +156,23 @@ internal sealed class StampLibrary(string profileDirectory)
                 CanvasElement image;
                 if (rendered.screenBounds is { } screenBounds)
                 {
-                    image = SnapshotImageCommand.CreateElement(assets, new(png, screenBounds, true), mapping.PlaneToScreen);
-                    image.Transform = Affine2D.Translation(-originalBounds.X, -originalBounds.Y).Compose(image.Transform);
+                    if (hasBillboards)
+                    {
+                        // Flatten the current screen composition once. A raster stamp is
+                        // subsequently inserted as a fresh image, without hidden child depths.
+                        image = new() { Kind = ElementKind.Image, AssetId = assets.Add(png),
+                            Width = screenBounds.Width, Height = screenBounds.Height, Style = new() { StrokeWidth = 0 } };
+                    }
+                    else
+                    {
+                        image = SnapshotImageCommand.CreateElement(assets, new(png, screenBounds, true), mapping.PlaneToScreen);
+                        image.Transform = Affine2D.Translation(-originalBounds.X, -originalBounds.Y).Compose(image.Transform);
+                    }
                 }
                 else image = new() { Kind = ElementKind.Image, AssetId = assets.Add(png), Width = source.Viewport.Width, Height = source.Viewport.Height };
-                document = new() { Viewport = source.Viewport, Elements = [image] };
+                document = new() { Viewport = hasBillboards && rendered.screenBounds is { } screen
+                    ? new(0, 0, screen.Width, screen.Height) : source.Viewport, Elements = [image] };
+                if (hasBillboards) entry = entry with { Width = document.Viewport.Width, Height = document.Viewport.Height };
                 // A raster stamp still retains the original editable project and encoded image bytes.
                 await projects.SaveAsync(SourcePath(entry), source, sourceAssets, ct);
             }
@@ -222,6 +235,18 @@ internal sealed class StampLibrary(string profileDirectory)
         if (!double.IsFinite(center.X) || !double.IsFinite(center.Y)) throw new ArgumentOutOfRangeException(nameof(center));
         var origin = stamp.Document.Viewport.Center;
         target.InsertDocument(stamp.Document, stamp.Assets, Affine2D.Translation(center.X - origin.X, center.Y - origin.Y), group: true);
+        target.SetSelection([]);
+    }
+
+    public static void PlaceBillboardRaster(LoadedProject stamp, EditorSession target, BillboardDepthLine depth, PointD screenCenter)
+    {
+        if (stamp.Document.Elements is not [ { Kind: ElementKind.Image, AssetId: { } assetId } source ])
+            throw new InvalidDataException(L.Get("Stamp.InvalidLibrary"));
+        var bounds = new RectD(screenCenter.X - source.Width / 2, screenCenter.Y - source.Height / 2,
+            source.Width, source.Height);
+        var element = SnapshotImageCommand.CreateBillboardElement(target.Assets,
+            new(stamp.Assets.Get(assetId).Data.ToArray(), bounds, true), CanvasMapping.Create(target.Document), depth);
+        target.Add(element, L.Get("History.InsertPreset"));
         target.SetSelection([]);
     }
 
@@ -301,7 +326,8 @@ internal sealed class StampLibrary(string profileDirectory)
         var transform = Affine2D.Scale(scale, scale);
         foreach (var element in result.Elements)
         {
-            element.Transform = transform.Compose(element.Transform);
+            BillboardGeometry.ApplyPlaneTransform(element, transform);
+            if (element.IsBillboard) element.BillboardHeight *= scale;
             // Live block sizes are in output document pixels. Scale their cloned
             // sampling grid with the preview/export, as well as their mask bounds.
             if (ElementGeometry.IsLiveEffect(element.Kind))

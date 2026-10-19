@@ -145,7 +145,8 @@ internal sealed partial class DesktopSession
             var result = await Task.Run(() => SnapshotImageCommand.Render(snapshot, resources, selection, desktop, displays, animationTime), _documentLifetime.Token);
             if (!CanInsert()) return;
             if (!result.HasVisiblePixels) { LogSnapshot(request, "Empty"); UpdateStatus(L.Get("Snapshot.Empty")); return; }
-            SnapshotImageCommand.Insert(request.Target, result, CanvasMapping.Create(snapshot).PlaneToScreen);
+            SnapshotImageCommand.Insert(request.Target, result, CanvasMapping.Create(snapshot).PlaneToScreen,
+                selection.BillboardDepthLine);
             LogSnapshot(request, "Inserted");
             UpdateStatus(WithCaptureWarning(L.Get("Snapshot.Inserted"), desktop is null ? null : CaptureWarning(desktop)));
             ScheduleRecovery();
@@ -166,8 +167,8 @@ internal sealed partial class DesktopSession
         using var builder = new SKPathBuilder { FillType = SKPathFillType.EvenOdd };
         var b = selection.Bounds;
         var bounds = new SKRect((float)b.Left, (float)b.Top, (float)b.Right, (float)b.Bottom);
-        if (selection.Shape == CaptureShape.Ellipse) builder.AddOval(bounds);
-        else if (selection.Shape == CaptureShape.Rectangle) builder.AddRect(bounds);
+        if (selection.Shape == CaptureShape.Ellipse && selection.Points.Count == 0) builder.AddOval(bounds);
+        else if (selection.Shape == CaptureShape.Rectangle && selection.Points.Count == 0) builder.AddRect(bounds);
         else if (selection.Points.Count > 0)
         {
             builder.MoveTo((float)selection.Points[0].X, (float)selection.Points[0].Y);

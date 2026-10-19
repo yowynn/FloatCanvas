@@ -23,12 +23,12 @@ internal static class CanvasProjectionStorageTests
         var store = new ProjectStore(); string path = Path.Combine(root, "canvas.floatcanvas");
         await store.SaveAsync(path, document, assets);
         var loaded = await store.LoadAsync(path);
-        check(JsonSerializer.Serialize(document) == JsonSerializer.Serialize(loaded.Document), "v3 roundtrip preserves canvas, matrix, chosen scale, image placement and persistent background exactly");
-        check(loaded.Document.Version == 3 && loaded.Document.Canvas.Projection.CellSize == projection.CellSize, "load preserves saved normalization without recalibration");
+        check(JsonSerializer.Serialize(document) == JsonSerializer.Serialize(loaded.Document), "current format roundtrip preserves canvas, matrix, chosen scale, image placement and persistent background exactly");
+        check(loaded.Document.Version == SceneDocument.CurrentVersion && loaded.Document.Canvas.Projection.CellSize == projection.CellSize, "load preserves saved normalization without recalibration");
         using (var archive = ZipFile.OpenRead(path))
         {
             using var reader = new StreamReader(archive.GetEntry("manifest.json")!.Open());
-            check(JsonNode.Parse(await reader.ReadToEndAsync())!["Version"]!.GetValue<int>() == 3, "v3 manifest protects older readers");
+            check(JsonNode.Parse(await reader.ReadToEndAsync())!["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion, "current manifest protects older readers");
         }
         async Task Mutate(string name, Action<JsonObject> edit, bool accept = false)
         {
@@ -68,8 +68,8 @@ internal static class CanvasProjectionStorageTests
                     archive.GetEntry(name)!.Delete(); using var writer = new StreamWriter(archive.CreateEntry(name).Open()); await writer.WriteAsync(json.ToJsonString());
                 }
             var migrated = await store.LoadAsync(legacy);
-            check(migrated.Document.Version == 3 && migrated.Document.Canvas.BackgroundColor == 0 && !migrated.Document.Canvas.Projection.Enabled &&
-                !migrated.Document.Canvas.Grid.Visible && migrated.Document.Elements[0].ProjectivePlacement is null, $"v{version} transparently migrates to flat v3 defaults");
+            check(migrated.Document.Version == SceneDocument.CurrentVersion && migrated.Document.Canvas.BackgroundColor == 0 && !migrated.Document.Canvas.Projection.Enabled &&
+                !migrated.Document.Canvas.Grid.Visible && migrated.Document.Elements[0].ProjectivePlacement is null, $"v{version} transparently migrates to flat current-format defaults");
         }
         var recovery = new RecoveryStore(Path.Combine(root, "recovery"));
         await recovery.SaveAsync(new() { LiveDocument = document }, assets);
@@ -87,5 +87,6 @@ internal static class CanvasProjectionStorageTests
         bool unsafeEnabled = false;
         try { SceneValidation.Validate(retainedScene); } catch (InvalidDataException) { unsafeEnabled = true; }
         check(unsafeEnabled, "same calibration cannot be enabled across the new viewport horizon");
+        await CanvasGridLockStorageTests.RunAsync(check);
     }
 }

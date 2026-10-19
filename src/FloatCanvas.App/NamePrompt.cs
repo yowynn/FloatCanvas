@@ -9,6 +9,7 @@ internal static class NamePrompt
 {
     internal static string? Show(DependencyObject source, string title, string initial, int maximum = 80, Window? owner = null)
     {
+        using var popup = PopupChildDialog.RetainFor(source);
         owner ??= Window.GetWindow(source);
         var input = new TextBox { Text = initial, MaxLength = maximum, MinHeight = 32, Margin = new(0, 10, 0, 14) };
         var body = new StackPanel { Margin = new(18) };

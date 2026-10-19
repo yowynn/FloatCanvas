@@ -7,6 +7,7 @@ public sealed partial class SceneRenderer
 {
     private SceneDocument? _drawingDocument;
     private readonly Dictionary<Guid, (SKImage Image, RectD Bounds)> _liveEffectImages = [];
+    private Action<SKCanvas>? _depthSamplePainter;
     public long LiveEffectBuildCount { get; private set; }
     private void ClearLiveEffectImages()
     {
@@ -70,7 +71,8 @@ public sealed partial class SceneRenderer
             sampling.Canvas.Clear(new SKColor(0xFF50545B));
             sampling.Canvas.Scale((float)(width / sampleBounds.Width), (float)(height / sampleBounds.Height));
             sampling.Canvas.Translate(-(float)sampleBounds.X, -(float)sampleBounds.Y);
-            if (sourceDocument is not null)
+            if (_depthSamplePainter is not null) _depthSamplePainter(sampling.Canvas);
+            else if (sourceDocument is not null)
             {
                 DrawBackground(sampling.Canvas, sourceDocument, assets, sampling: true);
                 DrawGrid(sampling.Canvas, sourceDocument);
@@ -78,7 +80,7 @@ public sealed partial class SceneRenderer
             else (ScreenBackdrop ?? LiveBackdrop)?.Draw(sampling.Canvas);
             // A filter samples only its lower scene, including earlier live filters. It never
             // samples the final display or its own output. Prefix images are cached per frame.
-            DrawElements(sampling.Canvas, elements, assets, 0, index, sourceDocument);
+            if (_depthSamplePainter is null) DrawElements(sampling.Canvas, elements, assets, 0, index, sourceDocument);
             if (blur)
             {
                 using var raw = sampling.Snapshot();
@@ -111,6 +113,15 @@ public sealed partial class SceneRenderer
 
     private static IReadOnlyList<PointD> LiveMask(SceneDocument document, CanvasElement effect, SceneRenderSpace space)
     {
+        if (effect.IsBillboard && space == SceneRenderSpace.ScreenComposite)
+        {
+            var billboardMapping = CanvasMapping.Create(document);
+            if (!billboardMapping.TryGetDepthScale(effect.BillboardAnchor, out _)) return [];
+            var billboardTransform = billboardMapping.ElementToScreen(effect);
+            return ClipPolygon(ElementGeometry.Outline(effect).Select(billboardTransform.TransformPoint).ToArray(),
+                [new(document.Viewport.Left, document.Viewport.Top), new(document.Viewport.Right, document.Viewport.Top),
+                 new(document.Viewport.Right, document.Viewport.Bottom), new(document.Viewport.Left, document.Viewport.Bottom)]);
+        }
         var local = ElementGeometry.LocalToPlane(effect);
         IReadOnlyList<PointD> polygon = ElementGeometry.Outline(effect).Select(local.TransformPoint).ToArray();
         var mapping = CanvasMapping.Create(document);

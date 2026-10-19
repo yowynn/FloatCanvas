@@ -5,8 +5,8 @@ internal static class EditablePresetTests
 {
     public static void Run(Action<bool, string> check)
     {
-        check(new SceneDocument().Version == 3 && new SceneDocument().Clone().Version == 3,
-            "new editable documents explicitly require the v3 reader contract");
+        check(new SceneDocument().Version == SceneDocument.CurrentVersion && new SceneDocument().Clone().Version == SceneDocument.CurrentVersion,
+            "new editable documents explicitly require the current reader contract");
         var line = new CanvasElement { Kind = ElementKind.Line, Points = [new(0, 0), new(100, 0)],
             Style = new() { StrokeWidth = 2, ArrowHeadSize = 30, StartArrowHead = ArrowHeadStyle.Open, EndArrowHead = ArrowHeadStyle.Diamond } };
         var heads = ElementGeometry.GetStyledArrowHeads(line);

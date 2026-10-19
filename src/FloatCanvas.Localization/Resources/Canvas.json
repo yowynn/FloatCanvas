@@ -1,25 +1,106 @@
 {
-  "Canvas.New": {"zh":"新建默认画布","en":"New canvas"},
-  "Canvas.Title": {"zh":"画布","en":"Canvas"},
-  "Canvas.Background": {"zh":"背景颜色","en":"Background color"},
-  "Canvas.Projection": {"zh":"启用透视校准","en":"Enable perspective calibration"},
-  "Canvas.Columns": {"zh":"列数","en":"Columns"},
-  "Canvas.Rows": {"zh":"行数","en":"Rows"},
-  "Canvas.Calibrate": {"zh":"开始校准","en":"Start calibration"},
-  "Canvas.EndCalibration": {"zh":"结束校准","en":"End calibration"},
-  "Canvas.Reset": {"zh":"重置校准","en":"Reset calibration"},
-  "Canvas.GridVisible": {"zh":"显示网格","en":"Show grid"},
-  "Canvas.GridColor": {"zh":"网格颜色","en":"Grid color"},
-  "Canvas.GridWidth": {"zh":"网格线宽","en":"Grid line width"},
-  "Canvas.GridPattern": {"zh":"网格线型","en":"Grid line pattern"},
-  "Canvas.Solid": {"zh":"实线","en":"Solid"},
-  "Canvas.Dashed": {"zh":"虚线","en":"Dashed"},
-  "Canvas.Dotted": {"zh":"点线","en":"Dotted"},
-  "Canvas.CalibrationHistory": {"zh":"校准画布","en":"Calibrate canvas"},
-  "Canvas.Help": {"zh":"画布设置","en":"Canvas settings"},
-  "Canvas.HelpText": {"zh":"校准时拖动四个角、边缘或内部。Esc 取消当前拖动，再次按下结束校准。列数和行数决定网格密度；参考线铺满屏幕，开启显示网格可在其上预览自定义样式。","en":"During calibration, drag corners, edges or the interior. Esc cancels the current drag; press again to end calibration. Columns and rows control grid density. Guides cover the screen; enable Show grid to preview your style above them."},
-  "Canvas.InvalidGrid": {"zh":"列数和行数须为 1 至 256 的整数。","en":"Columns and rows must be integers from 1 to 256."},
-  "Canvas.InvalidQuad": {"zh":"校准四边形无效，请保持四个角顺序且不要交叉。","en":"Invalid calibration quadrilateral. Keep corners in order without crossing."},
-  "Canvas.UnstableProjection": {"zh":"透视变换过于极端，请调整四个角。","en":"The perspective is too extreme. Adjust the four corners."},
-  "Scene.InvalidCanvas": {"zh":"画布设置无效。","en":"Invalid canvas settings."}
+  "Canvas.Title": {
+    "zh": "画布",
+    "en": "Canvas"
+  },
+  "Canvas.Background": {
+    "zh": "背景颜色",
+    "en": "Background color"
+  },
+  "Canvas.Projection": {
+    "zh": "启用透视画布",
+    "en": "Enable perspective canvas"
+  },
+  "Canvas.Columns": {
+    "zh": "列数",
+    "en": "Columns"
+  },
+  "Canvas.Rows": {
+    "zh": "行数",
+    "en": "Rows"
+  },
+  "Canvas.GridSizeLock": {
+    "zh": "调整时锁定网格大小",
+    "en": "Lock grid size while adjusting"
+  },
+  "Canvas.OriginMarker": {
+    "zh": "原点",
+    "en": "Origin"
+  },
+  "Canvas.GridSizeLockCountsHint": {
+    "zh": "格数自动显示四点框内覆盖的范围，包含不完整的格子。",
+    "en": "Counts show the coverage inside the four-point frame, including partial cells."
+  },
+  "Canvas.GridSizeLockHelp": {
+    "zh": "锁定后，调整四点保留每格代表的画布长度和原点，行列数自动变化，可含小数。勾选时画面保持原样；取消后恢复原网格规则，图层和锚点不因切换而移动。关闭透视保留锁定选择；重置或应用画布预设会解除锁定。",
+    "en": "When locked, adjusting the four points preserves each cell's canvas length and the grid origin. Counts update automatically and may include fractions. Enabling the lock keeps the view unchanged; disabling it restores the original grid rules without moving layers or anchors. Turning perspective off retains the lock. Resetting or applying a canvas preset clears it."
+  },
+  "Canvas.Calibrate": {
+    "zh": "调整透视画布",
+    "en": "Adjust perspective canvas"
+  },
+  "Canvas.EndCalibration": {
+    "zh": "完成画布调整",
+    "en": "Finish adjustment"
+  },
+  "Canvas.Reset": {
+    "zh": "重置校准",
+    "en": "Reset calibration"
+  },
+  "Canvas.GridVisible": {
+    "zh": "显示网格",
+    "en": "Show grid"
+  },
+  "Canvas.GridColor": {
+    "zh": "网格颜色",
+    "en": "Grid color"
+  },
+  "Canvas.GridWidth": {
+    "zh": "网格线宽",
+    "en": "Grid line width"
+  },
+  "Canvas.GridPattern": {
+    "zh": "网格线型",
+    "en": "Grid line pattern"
+  },
+  "Canvas.Solid": {
+    "zh": "实线",
+    "en": "Solid"
+  },
+  "Canvas.Dashed": {
+    "zh": "虚线",
+    "en": "Dashed"
+  },
+  "Canvas.Dotted": {
+    "zh": "点线",
+    "en": "Dotted"
+  },
+  "Canvas.CalibrationHistory": {
+    "zh": "校准画布",
+    "en": "Calibrate canvas"
+  },
+  "Canvas.Help": {
+    "zh": "画布设置",
+    "en": "Canvas settings"
+  },
+  "Canvas.HelpText": {
+    "zh": "拖动角点或边缘调整透视，也可用四点定位。Ctrl 暂停吸附，Shift 约束横向或竖向移动。Esc 取消，再按一次结束调整。",
+    "en": "Drag corners or edges, or place four corners in any order. Hold Ctrl to bypass snapping or Shift to constrain movement. Esc cancels; press again to finish."
+  },
+  "Canvas.InvalidGrid": {
+    "zh": "列数和行数须为 1 至 256 的整数。",
+    "en": "Columns and rows must be integers from 1 to 256."
+  },
+  "Canvas.InvalidQuad": {
+    "zh": "四个角点须构成不交叉的凸四边形。",
+    "en": "The four corners must form a convex quadrilateral."
+  },
+  "Canvas.UnstableProjection": {
+    "zh": "透视变换过于极端，请调整四个角。",
+    "en": "The perspective is too extreme. Adjust the four corners."
+  },
+  "Scene.InvalidCanvas": {
+    "zh": "画布设置无效。",
+    "en": "Invalid canvas settings."
+  }
 }

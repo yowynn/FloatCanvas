@@ -7,6 +7,11 @@ using System.Text.Json.Nodes;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+if (args.Contains("--billboard-only"))
+{
+    await BillboardStorageTests.RunAsync(Check);
+    Console.WriteLine($"PASS {checks} billboard storage checks"); return;
+}
 if (args.Contains("--canvas-only"))
 {
     await CanvasProjectionStorageTests.RunAsync(Check);
@@ -185,5 +190,7 @@ await FormatVersionTests.RunAsync(store, root, Check);
 await LivePixelateStorageTests.RunAsync(Check);
 await RecoveryPreviewStorageTests.RunAsync(Check);
 await CanvasProjectionStorageTests.RunAsync(Check);
+await BillboardStorageTests.RunAsync(Check);
+await DepthOcclusionStorageTests.RunAsync(Check);
 Console.WriteLine($"PASS {checks} storage checks");
 Console.WriteLine($"Artifacts: {root}");

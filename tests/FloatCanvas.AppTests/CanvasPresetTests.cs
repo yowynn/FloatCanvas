@@ -1,10 +1,13 @@
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
+using SkiaSharp;
 
 internal static class CanvasPresetTests
 {
@@ -14,7 +17,7 @@ internal static class CanvasPresetTests
         Directory.CreateDirectory(folder);
         try
         {
-            Persistence(folder, check); Calibration(folder, check); Controls(folder, check);
+            Persistence(folder, check); Calibration(folder, check); CalibrationSnapshots(folder, check); Controls(folder, check);
         }
         finally { Directory.Delete(folder, true); }
     }
@@ -25,8 +28,8 @@ internal static class CanvasPresetTests
         var settings = new CanvasSettings { BackgroundColor = 0x80456789, Grid = new() { Visible = true, Color = 0xFFAABBCC, Width = 64, Pattern = StrokePattern.Dashed } };
         settings.Projection = CanvasCalibration.CreateInitial(new(80, 100, 1920, 1080), 12, 9); settings.Projection.Enabled = true;
         var preset = library.Save("  Perspective grid  ", settings); string json = File.ReadAllText(path);
-        check("canvas presets persist portable values without screen geometry", !json.Contains("Quad") && !json.Contains("Matrix") && !json.Contains("Origin") && !json.Contains("CellSize") &&
-            json.Contains("ProjectionEnabled") && json.Contains("BackgroundColor"));
+        check("personal canvas presets persist complete calibration and canvas fields in version two", json.Contains("\"Version\": 2") && json.Contains("Calibration") && json.Contains("Quad") && json.Contains("Matrix") && json.Contains("Origin") && json.Contains("CellSize") &&
+            json.Contains("ProjectionEnabled") && json.Contains("BackgroundColor") && !json.Contains("Monitor") && !json.Contains("Display"));
         check("canvas preset save trims names and preserves legal wide grid lines", preset.Name == "Perspective grid" && preset.Parameters.GridWidth == 64);
         settings.BackgroundColor = 0; settings.Grid.Width = 2;
         check("saved canvas recipes are independent snapshots", library.User.Single().Parameters.BackgroundColor == 0x80456789 && library.User.Single().Parameters.GridWidth == 64);
@@ -73,7 +76,7 @@ internal static class CanvasPresetTests
         check("applying a canvas preset leaves its source document untouched", JsonSerializer.Serialize(current) == before);
         check("changing preset counts preserves current screen corners and plane origin", applied.Projection.Quad.SequenceEqual(originalQuad) && applied.Projection.Origin == originalOrigin);
         check("preset counts recalculate a valid transform with all portable fields", applied.Projection.Columns == 13 && applied.Projection.Rows == 7 && applied.Projection.Enabled &&
-            CanvasCalibration.IsStableViewport(applied.Projection.Matrix, viewport) && CanvasPresetParameters.From(applied).Matches(parameters));
+            CanvasCalibration.IsStableViewport(applied.Projection.Matrix, viewport) && parameters.Matches(CanvasPresetParameters.From(applied)));
         var sameCounts = CanvasPresetParameters.From(applied); sameCounts.BackgroundColor = 0;
         var recolored = CanvasPresetLibrary.Apply(sameCounts, applied, reference, viewport);
         check("style-only presets preserve the existing calibration exactly", JsonSerializer.Serialize(recolored.Projection) == JsonSerializer.Serialize(applied.Projection));
@@ -89,7 +92,82 @@ internal static class CanvasPresetTests
         string id = library.Save("Portable", applied).Id;
         var secondScreen = new RectD(2400, 0, 2560, 1440);
         var onSecondScreen = library.Apply(id, new(), secondScreen, secondScreen);
-        check("reusing a canvas recipe on another monitor does not restore saved screen positions", onSecondScreen.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(secondScreen, 13, 7).Quad));
+        check("personal canvas recipes restore saved screen positions rather than the selected reference screen", onSecondScreen.Projection.Quad.SequenceEqual(applied.Projection.Quad));
+    }
+
+    private static void CalibrationSnapshots(string folder, Action<string, bool> check)
+    {
+        var viewport = new RectD(-250, -180, 500, 500);
+        var reference = CanvasCalibration.CreateInitial(viewport, 4, 5);
+        PointD[] quad = [new(-100, -100), new(100, -100), new(200, 200), new(-200, 200)];
+        check("snapshot fixture uses a stable nonaffine calibration", CanvasCalibration.TryCalibrate(reference, quad, viewport, out var projection, out _));
+        var source = new CanvasSettings { BackgroundColor = 0xFFF1F4FA, Projection = projection, Grid = new() { Visible = true, Width = .75, Color = 0x80557799 } };
+        string path = Path.Combine(folder, "snapshots.json"); var library = new CanvasPresetLibrary(path);
+        var saved = library.Save("Perspective", source); var reloaded = new CanvasPresetLibrary(path);
+        var fresh = new CanvasSettings(); string freshBefore = JsonSerializer.Serialize(fresh);
+        var applied = reloaded.Apply(saved.Id, fresh, new(1000, 1000, 800, 600), viewport);
+        check("save reload and apply restores every calibrated projection field exactly", JsonSerializer.Serialize(applied.Projection) == JsonSerializer.Serialize(source.Projection) && JsonSerializer.Serialize(fresh) == freshBefore);
+        var plane = projection.Origin + new PointD(150, 250);
+        check("save reload and apply preserves the actual projective point mapping", projection.Matrix.TransformPoint(plane).DistanceTo(applied.Projection.Matrix.TransformPoint(plane)) < 1e-10);
+        var originalDocument = new SceneDocument { Viewport = viewport, Canvas = source.Clone() };
+        originalDocument.Elements.Add(new() { Kind = ElementKind.Rectangle, Width = 180, Height = 220, Transform = Affine2D.Translation(projection.Origin.X + 80, projection.Origin.Y + 100), Style = new() { Fill = 0xFFFF0000, Stroke = 0xFF223344, StrokeWidth = 3 } });
+        var restoredDocument = originalDocument.Clone(); restoredDocument.Canvas = applied;
+        using (var renderer = new SceneRenderer())
+        using (var expected = SKBitmap.Decode(renderer.ExportPng(originalDocument, new())))
+        using (var actual = SKBitmap.Decode(renderer.ExportPng(restoredDocument, new())))
+            check("saved perspective reproduces identical real exported PNG pixels for the same scene", expected.Width == actual.Width && expected.Height == actual.Height && expected.Pixels.Any(p => p == SKColors.Red) && expected.Pixels.SequenceEqual(actual.Pixels));
+        source.Projection.Quad[0] = new(999, 999);
+        saved.Parameters.Calibration!.Quad[1] = new(888, 888); applied.Projection.Quad[2] = new(777, 777);
+        var exposed = reloaded.User.Single(); exposed.Parameters.Calibration!.Quad[3] = new(666, 666);
+        check("source returned preset loaded preset and applied canvas each own their calibration lists", library.User.Single().Parameters.Calibration!.Quad.SequenceEqual(quad) && reloaded.User.Single().Parameters.Calibration!.Quad.SequenceEqual(quad));
+        var current = reloaded.Apply(saved.Id, fresh, viewport, viewport); var parameters = reloaded.User.Single().Parameters;
+        var clone = parameters.Clone(); clone.Calibration!.Quad[0] = new(555, 555);
+        check("cloning canvas preset parameters deep copies calibration", parameters.Calibration!.Quad.SequenceEqual(quad));
+        var modified = CanvasPresetParameters.From(current); modified.Calibration!.Origin += new PointD(1, 0);
+        check("personal preset matching detects changed geometry while portable recipes ignore geometry", !parameters.Matches(modified) && new CanvasPresetParameters { BackgroundColor = parameters.BackgroundColor, ProjectionEnabled = parameters.ProjectionEnabled, Columns = 4, Rows = 5, GridVisible = true, GridColor = parameters.GridColor, GridWidth = .75 }.Matches(modified));
+        var disabled = current.Clone(); disabled.Projection.Enabled = false;
+        var disabledSaved = reloaded.Save("Disabled perspective", disabled);
+        var extendedViewport = new RectD(-250, -500, 500, 900);
+        check("enabled snapshot refuses a current viewport crossing its horizon without changing the target", Reject(() => reloaded.Apply(saved.Id, fresh, viewport, extendedViewport)) && JsonSerializer.Serialize(fresh) == freshBefore);
+        var disabledApplied = new CanvasPresetLibrary(path).Apply(disabledSaved.Id, fresh, viewport, extendedViewport);
+        check("disabled calibration survives restart and a viewport change without being forced enabled", !disabledApplied.Projection.Enabled && disabledApplied.Projection.Quad.SequenceEqual(quad) && disabledApplied.Projection.Matrix == current.Projection.Matrix);
+        string beforeInvalid = File.ReadAllText(path);
+        foreach (var corrupt in new Action<CanvasProjectionSettings>[] {
+            p => p.Quad[2] = p.Quad[0], p => p.Matrix = Projective2D.Identity, p => p.Matrix = p.Matrix with { M11 = double.NaN },
+            p => p.CellSize = 0, p => p.Origin = new(double.PositiveInfinity, 0), p => p.AlgorithmVersion = 999, p => p.Rows++ })
+        {
+            var invalid = current.Clone(); corrupt(invalid.Projection);
+            check("invalid snapshot save refuses inconsistent or nonfinite calibration atomically", Reject(() => reloaded.Update(saved.Id, invalid)) && File.ReadAllText(path) == beforeInvalid);
+        }
+        var session = new EditorSession(new() { Viewport = viewport });
+        var restored = reloaded.Apply(saved.Id, session.Document.Canvas, viewport, viewport);
+        session.Execute("Canvas preset", document => document.Canvas = restored);
+        check("applying a calibrated preset is one undoable canvas transaction", session.UndoCount == 1 && session.Document.Canvas.Projection.Quad.SequenceEqual(quad) && session.Undo() && session.Document.Canvas.Projection.Quad.Count == 0 && session.Redo() && session.Document.Canvas.Projection.Quad.SequenceEqual(quad));
+        var updated = current.Clone(); updated.Projection.Enabled = false;
+        reloaded.Update(saved.Id, updated);
+        check("overwriting replaces the full deep calibration snapshot after reload", !new CanvasPresetLibrary(path).User.Single(p => p.Id == saved.Id).Parameters.Calibration!.Enabled && new CanvasPresetLibrary(path).User.Single(p => p.Id == saved.Id).Parameters.Calibration!.Quad.SequenceEqual(quad));
+        string valid = File.ReadAllText(path);
+        foreach (var corrupt in new Action<JsonNode>[] {
+            n => n["Version"] = 1, n => n["Version"] = 99,
+            n => n["Presets"]![0]!["Parameters"]!["TargetDisplay"] = "DISPLAY6",
+            n => n["Presets"]![0]!["Parameters"]!["Calibration"]!["TargetDisplay"] = "DISPLAY6",
+            n => n["Presets"]![0]!["Parameters"]!["Calibration"]!.AsObject().Remove("Matrix"),
+            n => n["Presets"]![0]!["Parameters"]!["Calibration"]!["Matrix"]!.AsObject().Remove("M11") })
+        {
+            var node = JsonNode.Parse(valid)!; corrupt(node); string brokenPath = Path.Combine(folder, "snapshot-broken-" + Guid.NewGuid().ToString("N") + ".json");
+            string bytes = node.ToJsonString(); File.WriteAllText(brokenPath, bytes);
+            check("invalid versions incomplete snapshots and display-bound fields leave the library untouched", Reject(() => _ = new CanvasPresetLibrary(brokenPath)) && File.ReadAllText(brokenPath) == bytes);
+        }
+        var legacyNode = JsonNode.Parse(valid)!; legacyNode["Version"] = 1;
+        foreach (var item in legacyNode["Presets"]!.AsArray()) item!["Parameters"]!.AsObject().Remove("Calibration");
+        string legacyPath = Path.Combine(folder, "legacy.json"), legacyBytes = legacyNode.ToJsonString(); File.WriteAllText(legacyPath, legacyBytes);
+        var legacy = new CanvasPresetLibrary(legacyPath);
+        check("reading a version-one canvas library performs no migration write", File.ReadAllText(legacyPath) == legacyBytes && legacy.User.All(p => p.Parameters.Calibration is null));
+        var legacyApplied = legacy.Apply(saved.Id, current, viewport, viewport);
+        check("legacy recipes preserve the current canvas geometry", legacyApplied.Projection.Quad.SequenceEqual(quad) && legacyApplied.Projection.Matrix == current.Projection.Matrix);
+        legacy.Save("New perspective", current);
+        var migrated = new CanvasPresetLibrary(legacyPath);
+        check("an explicit edit writes version two while retaining all legacy recipes and their portable semantics", File.ReadAllText(legacyPath).Contains("\"Version\": 2") && migrated.User.Count == legacy.User.Count && migrated.User.Single(p => p.Id == saved.Id).Parameters.Calibration is null && migrated.User.Last().Parameters.Calibration is not null);
     }
 
     private static void Controls(string folder, Action<string, bool> check)
@@ -129,6 +207,22 @@ internal static class CanvasPresetTests
             }
             var content = (FrameworkElement)window.Content; content.Measure(new(600, 540)); content.Arrange(new Rect(0, 0, 600, 540)); content.UpdateLayout();
             check("canvas panel content lays out both property and preset columns", Field<ColorField>(window, "background").ActualWidth > 100 && gallery.ActualWidth >= 196);
+            var projection = CanvasCalibration.CreateInitial(session.Document.Viewport); var quad = projection.Quad.ToArray(); quad[0] += new PointD(10, 10);
+            CanvasCalibration.TryCalibrate(projection, quad, session.Document.Viewport, out projection, out _);
+            session.Document.Canvas.Projection = projection; window.Refresh(session.Document.Canvas, false);
+            gallery.SaveNamed("Perspective selection"); string perspectiveId = gallery.SelectedId;
+            var changedQuad = quad.ToArray(); changedQuad[1] += new PointD(-5, 5);
+            CanvasCalibration.TryCalibrate(projection, changedQuad, session.Document.Viewport, out var changedProjection, out _);
+            session.Document.Canvas.Projection = changedProjection; window.Refresh(session.Document.Canvas, false);
+            check("changing only four-corner geometry clears a saved personal preset highlight", gallery.SelectedId == "");
+            gallery.Apply("official.canvas-graph");
+            check("official canvas recipes stay selected after resetting the plane", gallery.SelectedId == "official.canvas-graph" && session.Document.Canvas.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(session.Document.Viewport).Quad));
+            gallery.Apply(perspectiveId);
+            check("reapplying a personal canvas recipe restores its calibration and highlight", gallery.SelectedId == perspectiveId && session.Document.Canvas.Projection.Quad.SequenceEqual(quad));
+            session.Document.Canvas.Projection = changedProjection.Clone(); window.Refresh(session.Document.Canvas, false);
+            var savedTile = gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, perspectiveId));
+            savedTile.ContextMenu!.Items.OfType<MenuItem>().First().RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            check("overwriting a changed personal calibration selects the new matching snapshot", gallery.SelectedId == perspectiveId && new CanvasPresetLibrary(Path.Combine(folder, "controls.json")).User.Single(p => p.Id == perspectiveId).Parameters.Calibration!.Quad.SequenceEqual(changedQuad));
         }
         finally { window.CloseForDispose(); }
         string previousProfile = ApplicationPaths.ProfileDirectory; string corruptProfile = Path.Combine(folder, "broken-profile");

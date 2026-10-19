@@ -17,12 +17,21 @@ internal sealed class LayersWindow : Wpf.Window
     private readonly Controls.ListBox layers = new() { SelectionMode = Controls.SelectionMode.Extended, BorderThickness = new(0) };
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, FontSize = 12 };
     private readonly Controls.TextBlock empty = new() { Text = L.Get("Layers.Empty"), TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(12) };
+    private readonly Controls.CheckBox depthPriorityOcclusion = new()
+    {
+        Content = L.Get("Layers.DepthPriorityOcclusion"), ToolTip = L.Get("Layers.DepthPriorityOcclusionHint"),
+        Margin = new(2, 4, 0, 10), Visibility = Wpf.Visibility.Collapsed
+    };
     private readonly Dictionary<Guid, LayerRow> rows = [];
     private EditorSession? displayedSession, dragSession;
     private Guid[]? dragIds;
     private Guid? dropTarget;
     private bool dropBefore, refreshing;
     private long dragRevision;
+    private Guid? dragSource;
+    private Wpf.Point dragStart;
+    private HashSet<Wpf.FrameworkElement>? dragRows;
+    private TileDragFeedback? dragFeedback;
     private EditorSession? renameSession;
     private Guid? renameId;
     private string? renameOriginal;
@@ -39,18 +48,23 @@ internal sealed class LayersWindow : Wpf.Window
         Title = L.Get("Layers.Title"); Width = 320; Height = 520; MinWidth = 260; MinHeight = 260;
         Topmost = true; ShowInTaskbar = true; Icon = AppIcon.WindowImage;
         var body = new Controls.Grid { Margin = new(12, 4, 12, 12) };
+        body.RowDefinitions.Add(new() { Height = Wpf.GridLength.Auto });
         body.RowDefinitions.Add(new() { Height = new(1, Wpf.GridUnitType.Star) });
         body.RowDefinitions.Add(new() { Height = Wpf.GridLength.Auto });
         var footer = new Controls.DockPanel { Margin = new(0, 6, 0, 0) };
         var listSite = new Controls.Grid(); listSite.Children.Add(layers); listSite.Children.Add(empty);
+        Automation.AutomationProperties.SetName(depthPriorityOcclusion, L.Get("Layers.DepthPriorityOcclusion"));
+        body.Children.Add(depthPriorityOcclusion);
+        Controls.Grid.SetRow(listSite, 1);
         body.Children.Add(listSite);
         Automation.AutomationProperties.SetName(layers, L.Get("Inspector.LayerList"));
         status.Margin = new(0, 3, 20, 0); status.SetResourceReference(Controls.TextBlock.ForegroundProperty, "CanvasMuted");
         footer.Children.Add(status);
-        Controls.Grid.SetRow(footer, 1); body.Children.Add(footer); Content = body;
+        Controls.Grid.SetRow(footer, 2); body.Children.Add(footer); Content = body;
         AppWindowChrome.Apply(this);
         AppWindowChrome.SetHelp(this, L.Get("Layers.Help"), L.Get("Layers.HelpWithRename"));
         layers.SelectionChanged += (_, _) => SelectRows();
+        depthPriorityOcclusion.Click += (_, _) => SetDepthPriorityOcclusion(depthPriorityOcclusion.IsChecked == true);
         Closing += (_, e) => { e.Cancel = true; CommitRename(); CancelDrag(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         Deactivated += (_, _) => { CommitRename(); CancelDrag(); };
         PreviewKeyDown += (_, e) =>
@@ -88,6 +102,8 @@ internal sealed class LayersWindow : Wpf.Window
         refreshing = true;
         try
         {
+            depthPriorityOcclusion.Visibility = session.Document.Canvas.Projection.Enabled ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+            depthPriorityOcclusion.IsChecked = session.Document.Canvas.DepthPriorityOcclusion;
             var ordered = session.Document.Elements.AsEnumerable().Reverse().ToArray();
             if (renameId is { } editing && (!ReferenceEquals(renameSession, session) || !ordered.Any(e => e.Id == editing))) CancelRename();
             if (!ReferenceEquals(displayedSession, session) || !ordered.Select(e => e.Id).SequenceEqual(layers.Items.Cast<Controls.ListBoxItem>().Select(i => (Guid)i.Tag)))
@@ -144,9 +160,17 @@ internal sealed class LayersWindow : Wpf.Window
         item.PreviewMouseRightButtonDown += (_, _) => { if (!item.IsSelected && canMutate() && !getSession().IsTransactionActive) getSession().SetSelection([id]); Refresh(); };
         visible.Click += (_, _) => SetLayerFlag(id, true, visible.IsChecked == true);
         locked.Click += (_, _) => SetLayerFlag(id, false, locked.IsChecked == true);
-        handle.DragStarted += (_, _) => { if (!BeginDrag(id)) handle.CancelDrag(); };
+        handle.DragStarted += (_, e) =>
+        {
+            if (!BeginDrag(id)) handle.CancelDrag();
+            else dragStart=handle.TranslatePoint(new Wpf.Point(e.HorizontalOffset,e.VerticalOffset),layers);
+        };
         handle.DragDelta += (_, _) => UpdateDropTarget(Input.Mouse.GetPosition(layers));
-        handle.DragCompleted += (_, e) => FinishDrag(!e.Canceled);
+        handle.DragCompleted += (_, e) =>
+        {
+            if(!e.Canceled)UpdateDropTarget(dragStart+new Wpf.Vector(e.HorizontalChange,e.VerticalChange));
+            FinishDrag(!e.Canceled);
+        };
         rows.Add(id, new(item, label, editor, visible, locked, handle)); layers.Items.Add(item);
     }
 
@@ -206,6 +230,21 @@ internal sealed class LayersWindow : Wpf.Window
         RefreshRows(getSession());
     }
 
+    private void SetDepthPriorityOcclusion(bool value)
+    {
+        if (refreshing) return;
+        try
+        {
+            var session = getSession();
+            if (!canMutate() || !ReferenceEquals(session, displayedSession) || session.IsTransactionActive)
+                throw new InvalidOperationException(L.Get("Inspector.BusyLayersRetained"));
+            if (session.Document.Canvas.Projection.Enabled && session.Document.Canvas.DepthPriorityOcclusion != value)
+                session.Execute(L.Get("Layers.DepthPriorityOcclusion"), document => document.Canvas.DepthPriorityOcclusion = value);
+        }
+        catch (Exception ex) { status.Text = ex.Message; }
+        RefreshRows(getSession());
+    }
+
     private void RunLayerCommand(Action<EditorSession> operation)
     {
         try
@@ -227,20 +266,34 @@ internal sealed class LayersWindow : Wpf.Window
         if (source is null || source.Locked) return false;
         if (!session.Selection.Contains(id)) session.SetSelection(session.SelectionUnitIds(id));
         dragSession = session; dragIds = session.SelectedElements().Where(e => !e.Locked).Select(e => e.Id).ToArray(); dragRevision = session.SceneRevision;
+        dragSource=id;
+        dragRows=dragIds.Select(value=>(Wpf.FrameworkElement)rows[value].Item).ToHashSet();
         return dragIds.Length > 0;
     }
 
     private void UpdateDropTarget(Wpf.Point point)
     {
         if (dragIds is null) return;
-        var hit = layers.InputHitTest(point) as Wpf.DependencyObject;
-        while (hit is not null && hit is not Controls.ListBoxItem) hit = Media.VisualTreeHelper.GetParent(hit);
+        if(!canMutate()||!ReferenceEquals(dragSession,getSession())||dragSession.IsTransactionActive||dragSession.SceneRevision!=dragRevision)
+        {CancelDrag();Refresh();return;}
         ClearDropIndicator();
-        if (hit is not Controls.ListBoxItem item || dragIds.Contains((Guid)item.Tag)) return;
-        dropTarget = (Guid)item.Tag;
-        dropBefore = point.Y < item.TranslatePoint(new Wpf.Point(0, item.ActualHeight / 2), layers).Y;
-        item.SetResourceReference(Controls.ListBoxItem.BorderBrushProperty, "CanvasAccent");
-        item.BorderThickness = dropBefore ? new(0, 2, 0, 0) : new(0, 0, 0, 2);
+        if(dragFeedback is null&&Math.Abs(point.X-dragStart.X)<=Wpf.SystemParameters.MinimumHorizontalDragDistance&&
+            Math.Abs(point.Y-dragStart.Y)<=Wpf.SystemParameters.MinimumVerticalDragDistance)return;
+        try
+        {
+            if(dragFeedback is null&&dragSource is { } source)
+            {
+                var created=TileDragFeedback.Create(rows[source].Item,layers,dragStart,dragRows);
+                if(dragIds is null||dragSource!=source||!rows[source].Item.IsVisible){created?.Dispose();return;}
+                dragFeedback=created;
+            }
+            dragFeedback?.Move(point);
+            var drop=TileDragReorder.ResolveDropCore(layers,layers.Items.Cast<Wpf.FrameworkElement>(),point,vertical:true,moving:dragRows);
+            if(drop is null)return;
+            dropTarget=(Guid)drop.Value.Tile.Tag;dropBefore=!drop.Value.After;
+            dragFeedback?.ShowInsertion(drop.Value.Marker);
+        }
+        catch{CancelDrag();throw;}
     }
 
     private void FinishDrag(bool commit)
@@ -248,7 +301,7 @@ internal sealed class LayersWindow : Wpf.Window
         var session = dragSession; var ids = dragIds; var target = dropTarget; bool before = dropBefore;
         CancelDrag();
         if (!commit || session is null || ids is null || target is null || !canMutate() || !ReferenceEquals(session, getSession()) ||
-            session.IsTransactionActive || session.SceneRevision != dragRevision) return;
+            session.IsTransactionActive || session.SceneRevision != dragRevision) {Refresh();return;}
         ReorderLayers(ids, target.Value, before); Refresh();
     }
 
@@ -267,13 +320,13 @@ internal sealed class LayersWindow : Wpf.Window
 
     private void ClearDropIndicator()
     {
-        if (dropTarget is { } id && rows.TryGetValue(id, out var row))
-        { row.Item.ClearValue(Controls.ListBoxItem.BorderBrushProperty); row.Item.ClearValue(Controls.ListBoxItem.BorderThicknessProperty); }
+        dragFeedback?.ClearTarget();
         dropTarget = null;
     }
     private void CancelDrag()
     {
-        ClearDropIndicator(); dragIds = null; dragSession = null;
+        ClearDropIndicator(); dragIds = null; dragSession = null;dragSource=null;dragRows=null;
+        dragFeedback?.Dispose();dragFeedback=null;
         foreach (var row in rows.Values) if (row.Handle.IsDragging) row.Handle.CancelDrag();
     }
     private bool RouteCommandKey(int key, bool control)

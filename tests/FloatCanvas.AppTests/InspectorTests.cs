@@ -72,6 +72,7 @@ internal static class InspectorTests
         InspectorColorTests.Run(assert);
         SymbolNames(assert);
         ContinuousPanelLayout(assert);
+        BillboardInspectorTests.Run(assert);
     }
 
     private static void LocalSizeEditing(Action<string, bool> assert)

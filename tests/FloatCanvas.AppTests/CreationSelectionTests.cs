@@ -123,14 +123,14 @@ internal static class CreationSelectionTests
         {
             var session = new EditorSession(); var controller = new EditorController(session) { Tool = tool };
             if (tool == EditorTool.Text)
-                controller.EditText += (existing, point) => TextEditCommand.TryCommit(session, null, ElementKind.Text, "Editable", controller.Style, point, renderer, out _);
+                controller.EditText += (existing, point) => CommitText(session, existing, point, controller.Style, renderer);
             if (tool == EditorTool.Image)
                 session.Add(new() { Kind = ElementKind.Image, AssetId = session.Assets.Add([1, 2, 3]), Width = 120, Height = 80, Transform = Affine2D.Translation(100, 100) });
             else Gesture(controller, new(100, 100), new(100, 100));
             var element = session.Document.Elements.Single(); var center = session.SelectionBounds()!.Value.Center; int history = session.UndoCount;
             check(tool + " successful insertion selects the object and keeps the active tool", session.Selection.SetEquals([element.Id]) && controller.Tool == tool && controller.ShouldShowSelection(OverlayModifiers.None));
             Gesture(controller, center, center + new PointD(15, 20));
-            check(tool + " the inserted object can be moved immediately in its creation mode", session.Document.Elements.Count == 1 && session.UndoCount == history + 1 && controller.Tool == tool);
+            check(tool + (tool==EditorTool.Text ? " clicking inserted text reopens editing without moving it" : " the inserted object can be moved immediately in its creation mode"), session.Document.Elements.Count == 1 && session.UndoCount == history + (tool==EditorTool.Text?0:1) && controller.Tool == tool);
             check(tool + " Ctrl temporarily hides its adjustment controls", !controller.ShouldShowSelection(OverlayModifiers.Control) && controller.ShouldShowSelection(OverlayModifiers.None));
         }
         var nonCreationSession = new EditorSession();
@@ -168,7 +168,7 @@ internal static class CreationSelectionTests
         {
             var session = new EditorSession(); var controller = new EditorController(session) { Tool = tool };
             if (tool == EditorTool.Text)
-                controller.EditText += (existing, point) => TextEditCommand.TryCommit(session, null, ElementKind.Text, "Editable", controller.Style, point, renderer, out _);
+                controller.EditText += (existing, point) => CommitText(session, existing, point, controller.Style, renderer);
             Gesture(controller, new(100, 100), new(100, 100));
             var first = session.Selection.Single(); string initial = JsonSerializer.Serialize(session.Document); int history = session.UndoCount;
             Gesture(controller, new(450, 300), new(450, 300));
@@ -188,10 +188,10 @@ internal static class CreationSelectionTests
                 JsonSerializer.Serialize(session.Document) == afterThird && session.Selection.SetEquals([third]) && controller.Tool == tool);
             var center = session.SelectionBounds()!.Value.Center;
             Gesture(controller, center, center + new PointD(20, 15));
-            check(tool + " dragging inside the newest selection still adjusts it instead of inserting", session.Document.Elements.Count == 3 &&
-                session.Selection.SetEquals([third]) && session.UndoCount == history + 3 && controller.Tool == tool &&
-                JsonSerializer.Serialize(session.Document.Elements[^1]) != JsonSerializer.Serialize(JsonSerializer.Deserialize<SceneDocument>(afterThird)!.Elements[^1]));
-            session.Undo();
+            check(tool + (tool==EditorTool.Text?" inside clicks reopen editing instead of inserting another text layer":" dragging inside the newest selection still adjusts it instead of inserting"), session.Document.Elements.Count == 3 &&
+                session.Selection.SetEquals([third]) && session.UndoCount == history + (tool==EditorTool.Text?2:3) && controller.Tool == tool &&
+                (tool==EditorTool.Text || JsonSerializer.Serialize(session.Document.Elements[^1]) != JsonSerializer.Serialize(JsonSerializer.Deserialize<SceneDocument>(afterThird)!.Elements[^1])));
+            if(tool!=EditorTool.Text)session.Undo();
             center = session.SelectionBounds()!.Value.Center;
             Gesture(controller, center, center, OverlayModifiers.Control);
             check(tool + " Ctrl starts an overlapping insertion rather than adjusting the selected object", session.Document.Elements.Count == 4 &&
@@ -208,6 +208,8 @@ internal static class CreationSelectionTests
 
     private static void Gesture(EditorController controller, PointD from, PointD to, OverlayModifiers modifiers = OverlayModifiers.None)
     { Send(controller, OverlayPointerKind.Down, from, modifiers); Send(controller, OverlayPointerKind.Move, to, modifiers); Send(controller, OverlayPointerKind.Up, to, modifiers); }
+    private static void CommitText(EditorSession session,CanvasElement? existing,PointD point,ElementStyle style,SceneRenderer renderer)
+    {using var edit=new InlineTextEdit(session,existing,point,style,renderer);edit.Input.Text="Editable";edit.Finish(true);}
     private static void Send(EditorController controller, OverlayPointerKind kind, PointD point, OverlayModifiers modifiers = OverlayModifiers.None) =>
         controller.Pointer(new(kind, new(point.X, point.Y), OverlayMouseButton.Left, modifiers));
 }

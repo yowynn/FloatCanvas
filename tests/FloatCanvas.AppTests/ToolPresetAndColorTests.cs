@@ -19,7 +19,7 @@ internal static class ToolPresetAndColorTests
         check("tool parameters reject blank emoji glyphs", !new ToolParameters { Emoji = " " }.IsValid());
         string root = Path.Combine(Path.GetTempPath(), "FloatCanvas-tool-presets", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        Presets(root, check); Colors(root, check); Fields(root, check);
+        Presets(root, check); OfficialSymbolPresetTests.Run(root, check); Colors(root, check); Fields(root, check);
     }
 
     private static void Presets(string root, Action<string, bool> check)

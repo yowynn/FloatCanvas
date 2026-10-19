@@ -69,7 +69,7 @@ internal static class SessionLifecycleFixture
             welcome = Get<Window>(session!, "_welcomeWindow"); handles.Add(new WindowInteropHelper(welcome).Handle);
             check("a new DesktopSession offers the welcome window again with fresh geometry", welcome.IsVisible &&
                 Get<UserSettings>(session!, "_settings").ToolbarX is null && Get<UserSettings>(session!, "_settings").ToolbarY is null);
-            ((WelcomeView)welcome.Content).StartButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+            WithForeground(welcome,()=>((WelcomeView)welcome.Content).StartButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))); Pump();
             check("the real start button closes the welcome window through SetEditing", NullableField(session!, "_welcomeWindow") is null && !welcome.IsVisible);
             check("start button enters editing through the fixture's bounded input surface", host!.IsEditing && host.Diagnostics.All(pair => pair.Bounds.Height <= 180));
             Invoke("SetEditing", false, false); Pump();
@@ -80,10 +80,22 @@ internal static class SessionLifecycleFixture
             NewSession(); Invoke("ShowWelcome"); Pump(); welcome = Get<Window>(session!, "_welcomeWindow");
             handles.Add(new WindowInteropHelper(welcome).Handle);
             var toggle = (Action)typeof(OverlayHost).GetField("ToggleRequested", PrivateInstance)!.GetValue(host!)!;
-            toggle(); Pump();
+            WithForeground(welcome,toggle); Pump();
             check("the host shortcut route closes welcome and enters the same editing path", NullableField(session!, "_welcomeWindow") is null && !welcome.IsVisible && host!.IsEditing);
             Invoke("SetEditing", false, false); Pump();
             check("shortcut edit session releases every input window", !host!.IsEditing && host.Diagnostics.All(pair => !pair.InputVisible));
+            Invoke("OpenWelcome",true);Pump();welcome=Get<Window>(session!,"_welcomeWindow");
+            handles.Add(new WindowInteropHelper(welcome).Handle);
+            WithForeground(welcome,toggle);Pump();
+            check("a manually reopened welcome survives entering drawing mode",welcome.IsVisible&&host.IsEditing);
+            Invoke("SetEditing",false,false);welcome.Close();Pump();
+            session!.Dispose();session=null;host=null;Pump();
+            NewSession();Invoke("ShowWelcome");Pump();welcome=Get<Window>(session!,"_welcomeWindow");
+            handles.Add(new WindowInteropHelper(welcome).Handle);
+            Invoke("OpenWelcome",true);Pump();
+            check("manual open promotes the existing startup welcome without duplicating it",ReferenceEquals(welcome,Get<Window>(session!,"_welcomeWindow"))&&Get<bool>(session!,"_welcomeManual"));
+            WithForeground(welcome,()=>Invoke("SetEditing",true,false));Pump();
+            check("promoted startup welcome survives drawing mode",welcome.IsVisible);
         }
         finally
         {
@@ -123,6 +135,16 @@ internal static class SessionLifecycleFixture
     {
         var frame = new DispatcherFrame(); Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () => frame.Continue = false); Dispatcher.PushFrame(frame);
     }
+    private static void WithForeground(Window window,Action action)
+    {
+        uint current=GetCurrentThreadId(),foreground=GetWindowThreadProcessId(GetForegroundWindow(),out _);
+        bool attached=current!=foreground&&AttachThreadInput(current,foreground,true);
+        try {SetForegroundWindow(new WindowInteropHelper(window).Handle);action();}
+        finally {if(attached)AttachThreadInput(current,foreground,false);}
+    }
+    [DllImport("user32.dll")]private static extern bool AttachThreadInput(uint from,uint to,bool attach);
+    [DllImport("user32.dll")]private static extern uint GetWindowThreadProcessId(nint handle,out uint process);
+    [DllImport("kernel32.dll")]private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint handle);
     [DllImport("user32.dll")] private static extern bool IsWindow(nint handle);

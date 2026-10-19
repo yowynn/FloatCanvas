@@ -24,8 +24,8 @@
     "en": "Keep aspect ratio"
   },
   "Inspector.GeometryHint": {
-    "zh": "X/Y 为屏幕外接框左上角；宽高沿元素自身方向且不含描边；角度为元素旋转。",
-    "en": "X/Y mark the top-left of the screen bounding box. Width and height follow the element's own axes and exclude its stroke. Angle controls rotation."
+    "zh": "X/Y 为外框左上角；宽高不含描边，角度控制旋转。",
+    "en": "X/Y locate the bounds. Width and height exclude the stroke; angle sets rotation."
   },
   "Inspector.WidthShort": {
     "zh": "宽",
@@ -164,8 +164,8 @@
     "en": "Delete"
   },
   "Inspector.BusySelectionRetained": {
-    "zh": "文档正在处理，当前选择与未应用输入已保留。",
-    "en": "The document is busy. Your selection and unapplied changes have been kept."
+    "zh": "正在处理，请稍候。",
+    "en": "Please wait for the current operation."
   },
   "Inspector.FinishBeforeLayerSelection": {
     "zh": "请先结束画布上的操作，再选择图层。",
@@ -200,8 +200,8 @@
     "en": "Unlock this element in the layer list to edit its properties."
   },
   "Inspector.ApplyHint": {
-    "zh": "修改后点击“应用属性”；一次应用可以整体撤销。",
-    "en": "Choose Apply properties when ready. All changes in one application can be undone together."
+    "zh": "属性修改立即生效，可撤销。",
+    "en": "Changes apply immediately and can be undone."
   },
   "Inspector.SelectionChanged": {
     "zh": "当前选择已改变。返回原元素后应用，或重载当前选择。",
@@ -288,8 +288,8 @@
     "en": "Unlock layer"
   },
   "Inspector.BusyLayersRetained": {
-    "zh": "文档正在处理，图层状态与未应用输入已保留。",
-    "en": "The document is busy. Layer states and unapplied changes have been kept."
+    "zh": "正在处理，请稍候。",
+    "en": "Please wait for the current operation."
   },
   "Inspector.DocumentChanged": {
     "zh": "文档已切换，请刷新图层列表。",

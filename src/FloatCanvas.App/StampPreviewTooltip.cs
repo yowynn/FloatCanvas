@@ -18,7 +18,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
     internal const double PreviewSize = 176;
     private readonly StampLibrary library;
     private readonly StampEntry entry;
-    private readonly Controls.Image preview = new() { Stretch = Media.Stretch.Fill, HorizontalAlignment = Wpf.HorizontalAlignment.Center, VerticalAlignment = Wpf.VerticalAlignment.Center };
+    private readonly Controls.Image preview = new() { Stretch = Media.Stretch.Uniform, HorizontalAlignment = Wpf.HorizontalAlignment.Center, VerticalAlignment = Wpf.VerticalAlignment.Center };
     private readonly Controls.TextBlock message = new() { Text = L.Get("Stamp.Loading"), TextWrapping = Wpf.TextWrapping.Wrap, HorizontalAlignment = Wpf.HorizontalAlignment.Center, VerticalAlignment = Wpf.VerticalAlignment.Center, MaxWidth = 160 };
     private readonly Controls.TextBlock scale = new() { FontSize = 11, Margin = new Wpf.Thickness(0, 7, 0, 0), HorizontalAlignment = Wpf.HorizontalAlignment.Center };
     private CancellationTokenSource? loading;
@@ -106,11 +106,16 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
 
     private void UpdateScale(Wpf.DpiScale dpi)
     {
-        var fit = Geometry(entry.Width, entry.Height, dpi);
+        // Captured live-effect thumbnails can have a different aspect from the stamp's
+        // plane-space dimensions. Fit the actual pixels, then report scale against the nominal stamp.
+        var bitmap = preview.Source as Imaging.BitmapSource;
+        var fit = Geometry(bitmap?.PixelWidth ?? entry.Width, bitmap?.PixelHeight ?? entry.Height, dpi);
         preview.Width = fit.WidthDip; preview.Height = fit.HeightDip;
-        scale.Text = Math.Abs(fit.ScaleX - fit.ScaleY) < .00001
-            ? L.Format("Acceptance2.StampPreview.Scale", fit.ScaleX * 100)
-            : L.Format("Acceptance2.StampPreview.ScaleAxes", fit.ScaleX * 100, fit.ScaleY * 100);
+        double scaleX = fit.WidthDip * dpi.DpiScaleX / entry.Width;
+        double scaleY = fit.HeightDip * dpi.DpiScaleY / entry.Height;
+        scale.Text = Math.Abs(scaleX - scaleY) < .00001
+            ? L.Format("Acceptance2.StampPreview.Scale", scaleX * 100)
+            : L.Format("Acceptance2.StampPreview.ScaleAxes", scaleX * 100, scaleY * 100);
     }
 
     internal static (double WidthDip, double HeightDip, double ScaleX, double ScaleY) Geometry(double width, double height, Wpf.DpiScale dpi)

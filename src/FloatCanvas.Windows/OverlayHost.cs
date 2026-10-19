@@ -39,10 +39,11 @@ public sealed partial class OverlayHost : IDisposable
     public event Action<SKSurface>? Draw;
     public event Action<OverlayPointerEvent>? Pointer;
     public event Action<int>? KeyPressed;
+    public event Action<OverlayModifiers,OverlayPoint,uint>? ModifierKeysChanged;
     public event Action? ToggleRequested;
     public event Action? HideRequested;
     public event Action? MonitorsChanged;
-    /// <summary>An input window became active. Raise visible tool windows without changing keyboard focus.</summary>
+    /// <summary>Input became active or monitor windows were rebuilt. Raise visible tools without changing keyboard focus.</summary>
     public event Action? InputActivated;
     /// <summary>Editing was released after focus or input isolation was lost. No foreground is restored.</summary>
     public event Action? EditingFocusLost;
@@ -50,7 +51,7 @@ public sealed partial class OverlayHost : IDisposable
 
     public bool IsEditing { get; private set; }
     public bool IsVisible { get; private set; } = true;
-    public OverlayMonitorScope Scope { get; }
+    public OverlayMonitorScope Scope { get; private set; }
     public WindowsCapabilities Capabilities => _capabilities ?? WindowsCapabilities.Current;
     /// <summary>The active screen used for primary-screen placement, including the first-screen fallback.</summary>
     public MonitorInfo PrimaryMonitor => _monitors[0];
@@ -58,6 +59,13 @@ public sealed partial class OverlayHost : IDisposable
     public IReadOnlyList<MonitorInfo> Monitors => _monitors;
     public nint ControlHandle => _control.Handle;
     public nint CaptureHandle => GetCapture();
+    private nint _pointerCursor;
+    /// <summary>Use a caller-owned cursor for canvas input; zero restores the standard pointer.</summary>
+    public void SetPointerCursor(nint cursor)
+    {
+        CheckThread(); _pointerCursor = cursor;
+        if (IsEditing) SetCursor(cursor != 0 ? cursor : LoadCursorW(0, 32512));
+    }
     public long PresentedFrameCount { get; private set; }
     public double LastRenderMilliseconds { get; private set; }
     /// <summary>Optional per-call timing. No timing records or output collections are allocated without a subscriber.</summary>
@@ -268,6 +276,19 @@ public sealed partial class OverlayHost : IDisposable
         SetVisibleCore(visible);
     }
 
+    /// <summary>Applies the selected monitor set immediately without changing visibility or the editing lease.</summary>
+    public void SetMonitorScope(OverlayMonitorScope scope)
+    {
+        CheckThread();
+        if (!Enum.IsDefined(scope)) throw new ArgumentOutOfRangeException(nameof(scope));
+        if (Scope == scope) return;
+        var previous = Scope;
+        Scope = scope;
+        try { RebuildMonitors(); }
+        catch { Scope = previous; throw; }
+        MonitorsChanged?.Invoke();
+    }
+
     private void SetVisibleCore(bool visible)
     {
         IsVisible = visible;
@@ -409,12 +430,17 @@ public sealed partial class OverlayHost : IDisposable
 
     private void RebuildMonitors()
     {
-        if (_captureActive) CancelPendingCapture();
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
+        var monitors = OverlayMonitorSelection.Select(_monitorProvider(), Scope);
+        if (_captureActive) CancelPendingCapture();
+        var foreground = GetForegroundWindow();
+        bool preserveToolFocus = IsEditing && IsForegroundFromThisProcess() && !OwnsWindow(foreground);
         EndDropReceptionCore();
         CancelPointer();
-        var monitors = OverlayMonitorSelection.Select(_monitorProvider(), Scope);
-        DestroyPairs();
+        var previousWindows = _windows.ToArray();
+        var previousMonitors = _monitors;
+        ReleaseMonitorSurfaces();
+        _windows.Clear();
         _monitors = monitors;
         try
         {
@@ -430,8 +456,6 @@ public sealed partial class OverlayHost : IDisposable
                     if (!SetLayeredWindowAttributes(input.Handle, 0, 1, 2)) throw new Win32Exception(Marshal.GetLastWin32Error());
                     buffer = new(monitor.Bounds.Width, monitor.Bounds.Height);
                     _windows.Add(new(monitor, display, input, buffer));
-                    if (IsVisible) ShowWindowPreservingZOrder(display.Handle);
-                    if (IsEditing) ShowWindow(input.Handle, 8);
                 }
                 catch
                 {
@@ -443,26 +467,55 @@ public sealed partial class OverlayHost : IDisposable
             }
             RegisterImageDropTargets();
             Render();
-            if (IsEditing && !ActivateInputAtCursor()) EndEditingAfterFocusLoss();
+            if (IsEditing)
+            {
+                // Establish the full stack while the new windows are hidden, so even the
+                // first displayed frame stays below input and the owner's tool windows.
+                foreach (var pair in _windows)
+                    SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, 0x13);
+            }
+            InputActivated?.Invoke();
+            foreach (var pair in _windows)
+            {
+                if (IsVisible) ShowWindowPreservingZOrder(pair.Display.Handle);
+                if (IsEditing) ShowWindowPreservingZOrder(pair.Input.Handle);
+            }
         }
-        catch { DestroyPairs(); IsEditing = false; throw; }
+        catch
+        {
+            DestroyPairs();
+            _windows.AddRange(previousWindows);
+            _monitors = previousMonitors;
+            throw;
+        }
+        // Commit only after every candidate HWND, first render and first show succeeded.
+        // A failed attempt leaves the old visible/input windows and editing lease intact.
+        foreach (var pair in previousWindows) DestroyMonitorPair(pair);
+        if (IsEditing && !preserveToolFocus && !ActivateInputAtCursor()) EndEditingAfterFocusLoss();
     }
 
     private void DestroyPairs()
+    {
+        ReleaseMonitorSurfaces();
+        foreach (var pair in _windows) DestroyMonitorPair(pair);
+        _windows.Clear();
+    }
+
+    private void ReleaseMonitorSurfaces()
     {
         if (_gpuRenderer is { } gpu)
         {
             try { using (gpu.MakeCurrent()) gpu.ReleaseSurfaces(); }
             catch (Exception ex) { FailGpu(ex); }
         }
-        foreach (var pair in _windows)
-        {
-            RevokeImageDropTarget(pair.Input.Handle);
-            DestroyWindow(pair.Input.Handle);
-            DestroyWindow(pair.Display.Handle);
-            pair.Buffer.Dispose();
-        }
-        _windows.Clear();
+    }
+
+    private void DestroyMonitorPair(MonitorPair pair)
+    {
+        RevokeImageDropTarget(pair.Input.Handle);
+        DestroyWindow(pair.Input.Handle);
+        DestroyWindow(pair.Display.Handle);
+        pair.Buffer.Dispose();
     }
 
     private bool OwnsWindow(nint hwnd) => hwnd == ControlHandle || _windows.Any(pair => pair.Input.Handle == hwnd || pair.Display.Handle == hwnd);
@@ -533,10 +586,11 @@ public sealed partial class OverlayHost : IDisposable
         // can see an older private packet, while the latest hook snapshot can include a
         // newer release. A button press uses its exact hook snapshot (including same-ms
         // ordering); continuous movement resolves its native event-time history.
-        var modifiers = _keyboardIsolation is { } isolation && isolation.TryGetPointerModifiers(messageTime ?? unchecked((uint)GetMessageTime()), pointerPosition, button,
+        uint inputTime=messageTime??unchecked((uint)GetMessageTime());
+        var modifiers = _keyboardIsolation is { } isolation && isolation.TryGetPointerModifiers(inputTime, pointerPosition, button,
             kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick, out var isolated)
             ? isolated : CurrentModifiers;
-        Pointer?.Invoke(new(kind, pointerPosition, button, modifiers, wheel));
+        Pointer?.Invoke(new(kind, pointerPosition, button, modifiers, wheel) {Time=inputTime});
     }
 
     private static OverlayPoint MessagePosition(WindowState state, uint message, nint lParam)
@@ -632,6 +686,12 @@ public sealed partial class OverlayHost : IDisposable
             return 0;
         }
         if (!IsEditing) return DefWindowProcW(state.Handle, message, wParam, lParam);
+        if (message == 0x20) { SetCursor(_pointerCursor != 0 ? _pointerCursor : LoadCursorW(0, 32512)); return 1; }
+        if(message is WmKeyDown or WmSysKeyDown or 0x101 or 0x105&&wParam is 0x10 or 0xA0 or 0xA1)
+        {
+            uint cursor=GetMessagePos();
+            ModifierKeysChanged?.Invoke(CurrentModifiers,new((short)(cursor&0xFFFF),(short)(cursor>>16)),unchecked((uint)GetMessageTime()));
+        }
         if (message is WmKeyDown or WmSysKeyDown) { KeyPressed?.Invoke((int)wParam); return 0; }
         if (message == WmMouseMove) { RaisePointer(OverlayPointerKind.Move, _pressedButton, position: MessagePosition(state, message, lParam)); return 0; }
         if (message == WmMouseWheel) { RaisePointer(OverlayPointerKind.Wheel, OverlayMouseButton.None, (short)((long)wParam >> 16), MessagePosition(state, message, lParam)); return 0; }

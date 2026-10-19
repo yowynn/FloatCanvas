@@ -112,5 +112,55 @@ internal static class StampLibraryTests
         bool refusedMutation = false;
         try { await broken.PinAsync(0, null); } catch (InvalidOperationException) { refusedMutation = true; }
         assert("malformed catalog blocks mutation and remains byte-for-byte available for repair", refused && refusedMutation && await File.ReadAllTextAsync(brokenIndex) == "{broken catalog");
+        await BillboardStampsAsync(profile + "-billboard", assert);
+    }
+
+    private static async Task BillboardStampsAsync(string profile, Action<string, bool> check)
+    {
+        var document = new SceneDocument { Viewport = new(0,0,800,600), Canvas = new()
+        { Projection = new() { Enabled = true, Matrix = new(1,.08,0,0,1,0,0,.001,1),
+            Quad = [new(0,0),new(800,0),new(600,400),new(0,400)] } } };
+        var face = new CanvasElement { Kind = ElementKind.Rectangle, Width = 80, Height = 100,
+            IsBillboard = true, BillboardAnchor = new(220,360), BillboardHeight = 90,
+            Transform = Affine2D.Rotation(12), Style = new() { Fill = 0xFFFF3333, StrokeWidth = 5 } };
+        var plane = new CanvasElement { Kind = ElementKind.Rectangle, Width = 150, Height = 70,
+            Transform = Affine2D.Translation(100,310), Style = new() { Fill = 0xFF3366FF, StrokeWidth = 3 } };
+        document.Elements.AddRange([face,plane]);
+        var session = new EditorSession(document); session.SetSelection([face.Id,plane.Id]);
+        var library = new StampLibrary(profile); await library.LoadAsync();
+        var editable = await library.SaveSelectionAsync(session,"Mixed modes");
+        var retained = await library.LoadStampAsync(editable.Id);
+        var original = session.CreateSelectionSnapshot();
+        check("editable mixed stamp preserves every member mode, anchor, height and geometry", JsonSerializer.Serialize(retained.Document) == JsonSerializer.Serialize(original) &&
+            retained.Document.Elements.Single(e=>e.IsBillboard).BillboardHeight == 90 && retained.Document.Elements.Any(e=>!e.IsBillboard));
+        var target = new EditorSession(document.Clone()); target.Document.Elements.Clear();
+        StampLibrary.Place(retained,target,new(400,350));
+        var moved = target.Document.Elements.Single(e=>e.IsBillboard);
+        check("editable stamp placement relocates billboard ground anchor with the group while retaining height and angle",
+            moved.BillboardAnchor != retained.Document.Elements.Single(e=>e.IsBillboard).BillboardAnchor && moved.BillboardHeight == 90 &&
+            moved.Transform.M11 == face.Transform.M11 && moved.Transform.M12 == face.Transform.M12 && target.UndoCount == 1);
+        var mergedEntry = await library.SaveSelectionAsync(session,"Mixed pixels",StampSaveMode.RasterMerge);
+        var merged = await library.LoadStampAsync(mergedEntry.Id);
+        var rasterImage = merged.Document.Elements.Single();
+        var expected = document.Clone(); expected.Canvas.BackgroundColor = 0; expected.Canvas.Grid.Visible = false;
+        var bounds = document.Elements.Select(e=>SceneRenderer.ProjectedBounds(document,e,true)).Aggregate(RectD.Union).Intersect(document.Viewport);
+        expected.Viewport = new(Math.Floor(bounds.Left),Math.Floor(bounds.Top),Math.Ceiling(bounds.Right)-Math.Floor(bounds.Left),Math.Ceiling(bounds.Bottom)-Math.Floor(bounds.Top));
+        using var renderer = new SceneRenderer();
+        var expectedPng = renderer.ExportPng(expected,session.Assets,transparent:true);
+        check("merged mixed stamp freezes the current projected appearance into a fresh plain image",
+            !rasterImage.IsBillboard && rasterImage.ProjectivePlacement is null && rasterImage.Transform == Affine2D.Identity &&
+            merged.Assets.Get(rasterImage.AssetId!).Data.Span.SequenceEqual(expectedPng));
+        var editableSource = await library.LoadSourceAsync(mergedEntry.Id);
+        check("merged mixed stamp retains an editable source with complete placement metadata",
+            JsonSerializer.Serialize(editableSource.Document) == JsonSerializer.Serialize(original));
+        var billboardTarget = new EditorSession(document.Clone()); billboardTarget.Document.Elements.Clear();
+        var mapping = CanvasMapping.Create(billboardTarget.Document);
+        check("raster stamp can choose a fresh insertion depth",mapping.TryGetEqualDepthLine(new(300,300),out var depth));
+        StampLibrary.PlaceBillboardRaster(merged,billboardTarget,depth,new(350,200));
+        var inserted = billboardTarget.Document.Elements.Single();
+        check("merged raster stamp uses new billboard placement without reviving child depths",
+            inserted.IsBillboard && billboardTarget.Document.Groups.Count == 0 &&
+            mapping.ElementToScreen(inserted).TransformPoint(ElementGeometry.LocalBounds(inserted).Center).DistanceTo(new(350,200)) < 1e-7 &&
+            billboardTarget.Assets.Get(inserted.AssetId!).Data.Span.SequenceEqual(expectedPng));
     }
 }

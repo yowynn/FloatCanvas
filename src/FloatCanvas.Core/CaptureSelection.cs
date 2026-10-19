@@ -7,9 +7,17 @@ public enum CaptureSource { Background, BackgroundAndCanvas, CanvasOnly }
 public sealed record CaptureSelection(CaptureShape Shape, CaptureSource Source, RectD Bounds,
     IReadOnlyList<PointD> Points, double BorderWidth, uint BorderColor)
 {
+    /// <summary>Original plane rectangle for a projected rectangular/elliptical capture.</summary>
+    public RectD? PlaneBounds { get; init; }
+    public Projective2D? PlaneToScreen { get; init; }
+    /// <summary>Chosen creation depth, frozen before asynchronous desktop acquisition.</summary>
+    public BillboardDepthLine? BillboardDepthLine { get; init; }
     public CaptureSelection Translate(PointD offset) => this with
     {
         Bounds = Bounds with { X = Bounds.X + offset.X, Y = Bounds.Y + offset.Y },
-        Points = Array.AsReadOnly(Points.Select(point => point + offset).ToArray())
+        Points = Array.AsReadOnly(Points.Select(point => point + offset).ToArray()),
+        BillboardDepthLine = BillboardDepthLine is { } depth ? depth with { ScreenPoint = depth.ScreenPoint + offset } : null,
+        PlaneToScreen = PlaneToScreen is { } projection
+            ? Projective2D.FromAffine(Affine2D.Translation(offset.X, offset.Y)).Compose(projection) : null
     };
 }

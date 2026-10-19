@@ -18,7 +18,79 @@ internal static class SnapshotImageTests
         SourcePixels(check);
         LayerOpacityAndLiveEffects(check);
         RequestGuards(check);
+        ProjectedCaptureShapes(check);
+        BillboardSnapshots(check);
         await InsertAndPersistenceAsync(check);
+    }
+
+    private static SceneDocument ProjectedDocument() => new()
+    {
+        Viewport = new(0, 0, 800, 600),
+        Canvas = new() { Projection = new() { Enabled = true,
+            Matrix = new(1, .08, 0, 0, 1, 0, 0, .001, 1),
+            Quad = [new(0,0),new(800,0),new(600,400),new(0,400)] } }
+    };
+
+    private static void ProjectedCaptureShapes(Action<string, bool> check)
+    {
+        foreach (var shape in new[] { CaptureShape.Rectangle, CaptureShape.Ellipse })
+        {
+            var source = ProjectedDocument();
+            source.Elements.Add(Box(0, 0, 1400, 1400, 0xFF0088FF));
+            var controller = new EditorController(new(source)) { Tool = EditorTool.CaptureRegion, CaptureShape = shape,
+                CaptureSource = CaptureSource.CanvasOnly, CaptureBorderWidth = 0 };
+            var mapping = CanvasMapping.Create(source);
+            CaptureSelection? selected = null;
+            controller.CaptureSelectionCompleted += value => selected = value;
+            void Point(OverlayPointerKind kind, PointD plane) => controller.Pointer(new(kind,
+                new(mapping.ToScreen(plane).X, mapping.ToScreen(plane).Y), OverlayMouseButton.Left, OverlayModifiers.None, 0));
+            Point(OverlayPointerKind.Down, new(100, 100)); Point(OverlayPointerKind.Up, new(240, 190));
+            check(shape + " capture uses a projected plane outline", selected is { PlaneBounds: { } bounds } &&
+                Math.Abs(bounds.Width - 140) < 1e-7 && Math.Abs(bounds.Height - 90) < 1e-7 &&
+                selected.Points.Count == (shape == CaptureShape.Rectangle ? 4 : 128));
+            var raster = SnapshotImageCommand.Render(source, [], selected!, null, [source.Viewport]);
+            var target = new EditorSession(ProjectedDocument());
+            var image = SnapshotImageCommand.Insert(target, raster);
+            check(shape + " capture preserves its encoded pixels during insertion", target.Assets.Get(image.AssetId!).Data.Span.SequenceEqual(raster.PngBytes));
+            target.Document.Canvas.Projection.Enabled = false;
+            using var renderer = new SceneRenderer();
+            using var pixels = SKBitmap.Decode(renderer.ExportPng(target.Document, target.Assets, transparent: true));
+            check(shape + " capture becomes the intended plane shape when perspective is disabled",
+                pixels.GetPixel(170, 145).Alpha > 250 && pixels.GetPixel(95, 145).Alpha == 0 && pixels.GetPixel(245, 145).Alpha == 0 &&
+                (shape == CaptureShape.Rectangle ? pixels.GetPixel(106, 106).Alpha > 250 : pixels.GetPixel(106, 106).Alpha == 0));
+        }
+        var lassoScene = ProjectedDocument();
+        var lasso = new EditorController(new(lassoScene)) { Tool = EditorTool.CaptureRegion, CaptureShape = CaptureShape.FreehandLasso };
+        CaptureSelection? contour = null; lasso.CaptureSelectionCompleted += value => contour = value;
+        foreach (var (kind, point) in new[] { (OverlayPointerKind.Down,new OverlayPoint(100,100)),
+            (OverlayPointerKind.Move,new OverlayPoint(240,100)), (OverlayPointerKind.Move,new OverlayPoint(240,190)),
+            (OverlayPointerKind.Up,new OverlayPoint(100,190)) }) lasso.Pointer(new(kind,point,OverlayMouseButton.Left,OverlayModifiers.None,0));
+        check("perspective lasso retains its screen-drawn contour", contour?.PlaneBounds is null && contour?.Points.SequenceEqual(
+            new[] {new PointD(100,100),new PointD(240,100),new PointD(240,190),new PointD(100,190)}) == true);
+    }
+
+    private static void BillboardSnapshots(Action<string, bool> check)
+    {
+        var session = new EditorSession(ProjectedDocument());
+        var mapping = CanvasMapping.Create(session.Document);
+        check("snapshot depth can be fixed independently of the captured screen region", mapping.TryGetEqualDepthLine(new(150,250), out var depth));
+        var bounds = new RectD(90, 60, 100, 80);
+        var png = Png(100,80,(_,_) => SKColors.Blue);
+        var element = SnapshotImageCommand.Insert(session,new(png,bounds,true),mapping.PlaneToScreen,depth);
+        var screen = mapping.ElementToScreen(element);
+        check("billboard screenshot stores shared logical dimensions while retaining exact screen placement",
+            element.IsBillboard && Math.Abs(element.Width - bounds.Width / depth.Scale) < 1e-7 &&
+            Math.Abs(element.Height - bounds.Height / depth.Scale) < 1e-7 &&
+            screen.TransformPoint(default).DistanceTo(new(bounds.X,bounds.Y)) < 1e-7 &&
+            screen.TransformPoint(new(element.Width,element.Height)).DistanceTo(new(bounds.Right,bounds.Bottom)) < 1e-7);
+        check("billboard screenshot preserves source pixels, selects one image and uses one undo entry",
+            session.Assets.Get(element.AssetId!).Data.Span.SequenceEqual(png) && session.UndoCount == 1 && session.Selection.SetEquals([element.Id]));
+        var imports = new EditorSession(ProjectedDocument());
+        ImageImportCommand.InsertBillboard(imports,[new(png,100,80)],imports.Document.Viewport,depth,new(300,200));
+        var imported = imports.Document.Elements.Single();
+        check("fresh image insertion uses the chosen depth and projected screen center", imported.IsBillboard &&
+            CanvasMapping.Create(imports.Document).ElementToScreen(imported).TransformPoint(ElementGeometry.LocalBounds(imported).Center).DistanceTo(new(300,200)) < 1e-7 &&
+            imports.Assets.Get(imported.AssetId!).Data.Span.SequenceEqual(png) && imports.UndoCount == 1);
     }
 
     private static void SourcePixels(Action<string, bool> check)

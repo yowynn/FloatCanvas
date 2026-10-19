@@ -133,6 +133,7 @@ internal sealed class ToolOptionsPanel : UserControl
             bool text = tool is EditorTool.Text or EditorTool.Number or EditorTool.Emoji;
             bool paint = stroke || tool is EditorTool.Text or EditorTool.Number;
             bool capture = tool == EditorTool.CaptureRegion;
+            bool boxRegion=tool is EditorTool.Crop or EditorTool.Blur or EditorTool.Pixelate||capture&&p.CaptureShape is CaptureShape.Rectangle or CaptureShape.Ellipse;
             paint |= capture;
             Show("Foreground", paint); Show("Background", shape || tool == EditorTool.Number);
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
@@ -142,12 +143,13 @@ internal sealed class ToolOptionsPanel : UserControl
             Show("NumberStart", tool == EditorTool.Number); Show("NumberStep", tool == EditorTool.Number); Show("NextNumber", tool == EditorTool.Number);
             Show("DefaultWidth", shape); Show("DefaultHeight", shape);
             Show("StartArrowHead", line); Show("EndArrowHead", line); Show("ArrowHeadSize", line); Show("StrokePattern", stroke);
-            Show("CornerRadius", tool is EditorTool.Rectangle or EditorTool.RoundedRectangle); Show("Aspect", shape);
+            Show("CornerRadius", tool is EditorTool.Rectangle or EditorTool.RoundedRectangle);
+            Show("Aspect",shape||boxRegion);
             Show("EffectStrength", tool is EditorTool.Blur or EditorTool.Pixelate);
             Show("TextAlignment", tool == EditorTool.Text);
             Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji);
             Show("CaptureShape", capture); Show("CaptureSource", capture); Show("CaptureBorderWidth", capture);
-            noParameters.Visibility = paint || text || tool is EditorTool.Blur or EditorTool.Pixelate or EditorTool.Image ? Visibility.Collapsed : Visibility.Visible;
+            noParameters.Visibility = paint || text || boxRegion || tool == EditorTool.Image ? Visibility.Collapsed : Visibility.Visible;
             foreground.Value = capture ? p.CaptureBorderColor : p.Style.Stroke; background.Value = p.Style.Fill; aspect.IsChecked = p.ConstrainAspect; ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
             ((TextBlock)((StackPanel)rows["Foreground"]).Children[0]).Text = L.Get(capture ? "Snapshot.BorderColor" : "Color.Foreground");
             SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);

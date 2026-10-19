@@ -114,6 +114,7 @@ internal static class UpdateRecoveryTests
             Set(Session, "_recoveryStore", Store); Set(Session, "_workspaceRecoveryHistory", History);
             Set(Session, "_assets", Assets); Set(Session, "_live", Live); Set(Session, "_documentLifetime", Lifetime);
             Set(Session, "_renderer", Renderer);
+            Set(Session, "_settings", new UserSettings());
             Set(Session, "_documentRecoveryTask", Task.CompletedTask);
             var files = typeof(DesktopSession).GetField("_documentFiles", Private)!; files.SetValue(Session, Activator.CreateInstance(files.FieldType));
         }

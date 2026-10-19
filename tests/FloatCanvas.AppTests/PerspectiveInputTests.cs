@@ -23,7 +23,11 @@ internal static class PerspectiveInputTests
         CaptureSelection? selection = null; controller.CaptureSelectionCompleted += value => selection = value;
         Pointer(controller, OverlayPointerKind.Down, new(220, 180), OverlayModifiers.Control);
         Pointer(controller, OverlayPointerKind.Up, new(370, 290), OverlayModifiers.Control);
-        check("perspective capture gestures retain screen geometry and screen origin", selection?.Bounds == new RectD(220, 180, 150, 110));
+        var capturePlane = RectD.FromPoints(mapping.ScreenToPlane.TransformPoint(new(220, 180)),
+            mapping.ScreenToPlane.TransformPoint(new(370, 290)));
+        check("perspective planar captures follow the plane rectangle and preserve screen origin", selection?.PlaneBounds == capturePlane &&
+            selection.Points.Count == 4 && selection.Points[0].DistanceTo(mapping.ToScreen(new(capturePlane.Left, capturePlane.Top))) < 1e-7 &&
+            selection.PlaneToScreen == mapping.PlaneToScreen && selection.Bounds == mapping.PlaneToScreen.TransformBounds(capturePlane));
 
         byte[] png = Checkerboard(80, 60);
         var raster = new CaptureRasterResult(png, new(320, 250, 80, 60), true);

@@ -50,7 +50,7 @@ internal static class TileDragReorderTests
                 Position(mouse, source, gallery, point);
             }
             void Release() => Button(first, mouse, false);
-            TileDragFeedback? Feedback() => AdornerLayer.GetAdornerLayer(gallery).GetAdorners(gallery)?.OfType<TileDragFeedback>().SingleOrDefault();
+            TileDragFeedback? Feedback() => Layer(gallery).GetAdorners(gallery)?.OfType<TileDragFeedback>().SingleOrDefault();
             void Start() { Press(); Move(At(second, .75)); }
             void Restored(string reason) => check(reason, Feedback() is null && Math.Abs(first.Opacity - 1) < .001 && ToolTipService.GetIsEnabled(first) && !first.IsMouseCaptured);
 
@@ -63,8 +63,8 @@ internal static class TileDragReorderTests
             check("right-half drag target shows an after insertion line", feedback?.TargetBounds is { } after && Math.Abs(after.X - (At(second, 1).X)) < .1 && after.Width == 0 && !feedback.IsExternalTarget);
             var beforeGhost = feedback!.GhostBounds;
             Move(At(second, .25));
-            check("the same ghost follows the pointer while the marker switches before the tile", ReferenceEquals(feedback, Feedback()) && Math.Abs(feedback.GhostBounds.X - beforeGhost.X + second.ActualWidth / 2) < .1 &&
-                feedback.TargetBounds is { } before && Math.Abs(before.X - At(second, 0).X) < .1);
+            check("the same ghost follows the pointer and clears the marker at its unchanged original gap", ReferenceEquals(feedback, Feedback()) && Math.Abs(feedback.GhostBounds.X - beforeGhost.X + second.ActualWidth / 2) < .1 &&
+                feedback.TargetBounds is null);
             SavePreview(window);
             Move(new Point(5, 170));
             check("leaving the visible scroll viewport clears the insertion marker", feedback.TargetBounds is null);
@@ -118,7 +118,7 @@ internal static class TileDragReorderTests
             var picker = (ColorPickerPanel)typeof(ColorField).GetField("picker", Private)!.GetValue(field)!;
             var gallery = (Panel)typeof(ColorPickerPanel).GetField("pinned", Private)!.GetValue(picker)!;
             var first = gallery.Children.OfType<Button>().First(); var second = gallery.Children.OfType<Button>().Last();
-            var layer = AdornerLayer.GetAdornerLayer(gallery);
+            var layer = TileDragFeedback.GetLayer(gallery);
             check("the production color Popup supplies an adorner layer for saved swatches", layer is not null && gallery.Children.Count == 2);
             var source = (HwndSource)PresentationSource.FromVisual(gallery); var root = (UIElement)source.RootVisual;
             root.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) e.Handled = true; };
@@ -169,7 +169,7 @@ internal static class TileDragReorderTests
         Start(slot); Button(first, mouse, false);
         check("ListBox item can pin to a slot once without reordering or ordinary activation", pins == 1 && reorders == 1 && ordinaryReleases == 0);
         Start(second); window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent }); Button(first, mouse, false);
-        check("cancelled ListBox drag suppresses the later ordinary release", pins == 1 && reorders == 1 && ordinaryReleases == 0 && activations == 0 && AdornerLayer.GetAdornerLayer(list).GetAdorners(list) is null);
+        check("cancelled ListBox drag suppresses the later ordinary release", pins == 1 && reorders == 1 && ordinaryReleases == 0 && activations == 0 && Layer(list).GetAdorners(list) is null);
         Start(second); window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
         var secondMouse = ControlledMouse(second);
         Position(secondMouse, source, list, second.TranslatePoint(new Point(20, 20), list)); Button(second, secondMouse, false);
@@ -202,14 +202,15 @@ internal static class TileDragReorderTests
             intendedPoint = slot.TranslatePoint(new Point(slot.ActualWidth / 2, slot.ActualHeight / 2), list);
             mouse.GetType().GetField("target")!.SetValue(mouse, list); At(slot);
             list.RaiseEvent(new MouseEventArgs(mouse, Environment.TickCount) { RoutedEvent = Mouse.PreviewMouseMoveEvent });
-            check("a first move beyond the source tile starts dragging through the captured parent route", first.IsMouseCaptured && AdornerLayer.GetAdornerLayer(list).GetAdorners(list)?.OfType<TileDragFeedback>().SingleOrDefault() is { IsExternalTarget: true, TargetBounds: not null });
+            check("a first move beyond the source tile starts dragging through the captured parent route", first.IsMouseCaptured && Layer(list).GetAdorners(list)?.OfType<TileDragFeedback>().SingleOrDefault() is { IsExternalTarget: true, TargetBounds: not null });
             mouse.GetType().GetField("target")!.SetValue(mouse, first); At(slot); mouse.GetType().GetField("pressed")!.SetValue(mouse, 0);
             Button(first, mouse, false);
-            check("the captured-parent first-move route drops externally once and fully cleans capture", pins == 2 && reorders == 1 && activations == 1 && !first.IsMouseCaptured && AdornerLayer.GetAdornerLayer(list).GetAdorners(list) is null);
+            check("the captured-parent first-move route drops externally once and fully cleans capture", pins == 2 && reorders == 1 && activations == 1 && !first.IsMouseCaptured && Layer(list).GetAdorners(list) is null);
         }
         finally { window.RemoveHandler(Mouse.PreviewMouseMoveEvent, holdControlledPosition); list.RemoveHandler(Mouse.PreviewMouseMoveEvent, stopNativeAutoScroll); Mouse.Capture(null); }
     }
 
+    private static AdornerLayer Layer(FrameworkElement element)=>TileDragFeedback.GetLayer(element)??throw new InvalidOperationException("The drag fixture has no root adorner layer.");
     private static void SavePreview(Window window)
     {
         string? output = Environment.GetEnvironmentVariable("FLOATCANVAS_TILE_DRAG_OUTPUT");

@@ -2,8 +2,9 @@ namespace FloatCanvas.Core;
 
 public static class ElementGeometry
 {
-    public static Projective2D LocalToPlane(CanvasElement element) => Projective2D.FromAffine(element.Transform)
-        .Compose(element.ProjectivePlacement ?? Projective2D.Identity);
+    public static Projective2D LocalToPlane(CanvasElement element) => element.IsBillboard
+        ? BillboardGeometry.LocalPlacement(element, element.BillboardAnchor, 1)
+        : Projective2D.FromAffine(element.Transform).Compose(element.ProjectivePlacement ?? Projective2D.Identity);
     public static RectD LocalBounds(CanvasElement element)
     {
         if (UsesPoints(element.Kind) && element.Points.Count > 0)
@@ -30,6 +31,8 @@ public static class ElementGeometry
     public static bool IsLine(ElementKind kind) => kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow;
     public static bool IsLiveEffect(ElementKind kind) => kind is ElementKind.LivePixelate or ElementKind.LiveBlur;
     public static bool IsBoxShape(ElementKind kind) => kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
+    public static bool PreservesAspect(CanvasElement element) => element.ConstrainAspect ??
+        (!IsBoxShape(element.Kind) && element.Kind != ElementKind.Text);
 
     /// <summary>Resize vector dimensions around their center, retaining circular corners and uniform strokes.</summary>
     public static void ResizeShapeGeometry(CanvasElement element, double scaleX, double scaleY)
@@ -58,7 +61,7 @@ public static class ElementGeometry
     /// <summary>Tests fill, stroke and tolerance in the target coordinate space, preserving local stroke widths under perspective.</summary>
     public static bool HitTestProjected(CanvasElement element, PointD worldPoint, Projective2D planeToTarget, double tolerance = 4)
     {
-        var transform = planeToTarget.Compose(LocalToPlane(element));
+        var transform = BillboardGeometry.ElementToTarget(element, planeToTarget);
         if (!element.Visible || !transform.TryInverse(out var inverse) || !inverse.TryTransformPoint(worldPoint, out var local)) return false;
         if (transform.Denominator(local) <= 0) return false;
         if (transform.TryTransformBounds(StrokedLocalBounds(element), out var projectedBounds) && !projectedBounds.Inflate(tolerance).Contains(worldPoint)) return false;

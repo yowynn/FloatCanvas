@@ -27,6 +27,8 @@ internal static class ToolOptionsKeyboardRouteTests
             }
             int before = commands.Count; Send(text, Key.B); Send(text, Key.D3); Send(text, Key.D2); Send(slider, Key.Right); Send(combo, Key.B);
             check("text, numeric, slider and font controls keep their local keys", commands.Count == before);
+            foreach(var source in new UIElement[]{button,text,slider,combo})
+                check("Tab navigation is disabled in "+source.GetType().Name,Send(source,Key.Tab).Handled);
             foreach (var source in new DependencyObject[] { button, text, slider, combo })
                 check(source.GetType().Name + " preserves project save and open shortcuts", ToolOptionsKeyboardRoute.ShouldRoute(0x53, ModifierKeys.Control, source) && ToolOptionsKeyboardRoute.ShouldRoute(0x4F, ModifierKeys.Control, source));
             check("textbox undo and clipboard keys remain local", !ToolOptionsKeyboardRoute.ShouldRoute(0x5A, ModifierKeys.Control, text) && !ToolOptionsKeyboardRoute.ShouldRoute(0x56, ModifierKeys.Control, text));

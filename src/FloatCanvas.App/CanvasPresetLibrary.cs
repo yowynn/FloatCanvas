@@ -1,15 +1,17 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using FloatCanvas.Core;
 using FloatCanvas.Storage;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>Portable canvas values. Screen corners and calibration matrices stay with the document.</summary>
+/// <summary>Canvas values, with an optional exact calibration snapshot for personal presets.</summary>
 internal sealed class CanvasPresetParameters
 {
+    [JsonIgnore] internal bool ResetProjection { get; set; }
     public uint BackgroundColor { get; set; }
     public bool ProjectionEnabled { get; set; }
     public int Columns { get; set; } = 8;
@@ -18,18 +20,36 @@ internal sealed class CanvasPresetParameters
     public uint GridColor { get; set; } = 0x80FFFFFF;
     public double GridWidth { get; set; } = 1;
     public StrokePattern GridPattern { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CanvasProjectionSettings? Calibration { get; set; }
     internal bool IsValid => Columns is >= 1 and <= CanvasCalibration.MaximumGridCount &&
-        Rows is >= 1 and <= CanvasCalibration.MaximumGridCount && double.IsFinite(GridWidth) && GridWidth is > 0 and <= 64 && Enum.IsDefined(GridPattern);
-    internal CanvasPresetParameters Clone() => (CanvasPresetParameters)MemberwiseClone();
+        Rows is >= 1 and <= CanvasCalibration.MaximumGridCount && double.IsFinite(GridWidth) && GridWidth is > 0 and <= 64 && Enum.IsDefined(GridPattern) && ValidCalibration();
+    internal CanvasPresetParameters Clone()
+    {
+        var copy = (CanvasPresetParameters)MemberwiseClone(); copy.Calibration = Calibration?.Clone(); return copy;
+    }
     internal bool Matches(CanvasPresetParameters other) => BackgroundColor == other.BackgroundColor && ProjectionEnabled == other.ProjectionEnabled &&
         Columns == other.Columns && Rows == other.Rows && GridVisible == other.GridVisible && GridColor == other.GridColor &&
-        GridWidth == other.GridWidth && GridPattern == other.GridPattern;
+        GridWidth == other.GridWidth && GridPattern == other.GridPattern && (Calibration is null || other.Calibration is { } c &&
+            Calibration.Enabled == c.Enabled && Calibration.Columns == c.Columns && Calibration.Rows == c.Rows &&
+            Calibration.Origin == c.Origin && Calibration.CellSize == c.CellSize && Calibration.Matrix == c.Matrix &&
+            Calibration.AlgorithmVersion == c.AlgorithmVersion && Calibration.Quad.SequenceEqual(c.Quad));
     internal static CanvasPresetParameters From(CanvasSettings settings) => new()
     {
         BackgroundColor = settings.BackgroundColor, ProjectionEnabled = settings.Projection.Enabled,
         Columns = settings.Projection.Columns, Rows = settings.Projection.Rows, GridVisible = settings.Grid.Visible,
-        GridColor = settings.Grid.Color, GridWidth = settings.Grid.Width, GridPattern = settings.Grid.Pattern
+        GridColor = settings.Grid.Color, GridWidth = settings.Grid.Width, GridPattern = settings.Grid.Pattern,
+        Calibration = settings.Projection.Quad.Count == 0 ? null : settings.Projection.Clone()
     };
+    private bool ValidCalibration()
+    {
+        if (Calibration is null) return true;
+        if (Calibration.Quad is not { Count: 4 } || Calibration.Columns != Columns || Calibration.Rows != Rows || Calibration.Enabled != ProjectionEnabled) return false;
+        // Disabled calibrations remain restorable after a desktop change. Apply checks the actual viewport before enabling.
+        var projection = Calibration.Clone(); projection.Enabled = false;
+        try { SceneValidation.Validate(new SceneDocument { Canvas = new() { Projection = projection } }); return true; }
+        catch (InvalidDataException) { return false; }
+    }
 }
 
 internal sealed class CanvasPreset
@@ -45,10 +65,10 @@ internal sealed class CanvasPresetLibrary
 {
     private sealed class State
     {
-        public int Version { get; set; } = 1;
+        public int Version { get; set; } = 2;
         public List<CanvasPreset> Presets { get; set; } = [];
     }
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly string path;
     private List<CanvasPreset> presets = [];
     internal bool CanEdit { get; } = true;
@@ -62,11 +82,17 @@ internal sealed class CanvasPresetLibrary
         try
         {
             var state = UserLibraryJson.Read<State>(this.path, JsonOptions, "CanvasPreset.InvalidLibrary", "Version", "Presets");
-            if (state is null || state.Version != 1 || state.Presets is null || state.Presets.Count > 1000 ||
+            if (state is null || state.Version is not (1 or 2) || state.Presets is null || state.Presets.Count > 1000 ||
                 state.Presets.Any(p => p is null || p.Id is not { Length: > 5 and <= 80 } || !p.Id.StartsWith("user-", StringComparison.Ordinal) ||
                     !ValidName(p.Name) || p.Parameters is null || !p.Parameters.IsValid) ||
                 state.Presets.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != state.Presets.Count)
                 throw new InvalidDataException(L.Get("CanvasPreset.InvalidLibrary"));
+            if (state.Version == 1)
+            {
+                using var raw = JsonDocument.Parse(File.ReadAllText(this.path));
+                if (raw.RootElement.GetProperty("Presets").EnumerateArray().Any(p => p.TryGetProperty("Parameters", out var parameters) && parameters.TryGetProperty("Calibration", out _)))
+                    throw new InvalidDataException(L.Get("CanvasPreset.InvalidLibrary"));
+            }
             presets = state.Presets.Select(p => p.Clone()).ToList();
         }
         catch (JsonException ex) { throw new InvalidDataException(L.Get("CanvasPreset.InvalidLibrary"), ex); }
@@ -120,7 +146,9 @@ internal sealed class CanvasPresetLibrary
     {
         Validate("preset", parameters);
         var result = current.Clone(); var projection = result.Projection;
-        if (projection.Quad.Count == 0)
+        if (parameters.ResetProjection) projection = CanvasCalibration.CreateInitial(referenceViewport, parameters.Columns, parameters.Rows);
+        else if (parameters.Calibration is { } snapshot) projection = snapshot.Clone();
+        else if (projection.Quad.Count == 0)
         {
             if (parameters.ProjectionEnabled || parameters.GridVisible)
                 projection = CanvasCalibration.CreateInitial(referenceViewport, parameters.Columns, parameters.Rows);
@@ -135,6 +163,8 @@ internal sealed class CanvasPresetLibrary
         }
         if (parameters.ProjectionEnabled && !CanvasCalibration.IsStableViewport(projection.Matrix, viewport))
             throw new InvalidDataException(L.Get("Canvas.UnstableProjection"));
+        // Applying a recipe establishes a fresh calibration reference, like Reset.
+        projection.LockedGridCellSize = null;
         projection.Enabled = parameters.ProjectionEnabled;
         result.BackgroundColor = parameters.BackgroundColor; result.Projection = projection;
         result.Grid = new() { Visible = parameters.GridVisible, Color = parameters.GridColor, Width = parameters.GridWidth, Pattern = parameters.GridPattern };
@@ -143,7 +173,12 @@ internal sealed class CanvasPresetLibrary
     }
 
     private static CanvasPreset OfficialPreset(string id, CanvasPresetParameters parameters) => new()
-    { Id = "official.canvas-" + id, Name = L.Get("CanvasPreset." + id), Parameters = parameters, IsOfficial = true };
+    {
+        Id = "official.canvas-" + id, Name = L.Get("CanvasPreset." + id),
+        Parameters = OfficialParameters(parameters), IsOfficial = true
+    };
+    private static CanvasPresetParameters OfficialParameters(CanvasPresetParameters parameters)
+    { parameters.ResetProjection = true; return parameters; }
     private CanvasPreset FindUser(string id) => presets.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id);
     private void Replace(CanvasPreset preset) => Persist(presets.Select(p => p.Id == preset.Id ? preset : p).ToList());
     private void Persist(List<CanvasPreset> next)
@@ -159,6 +194,25 @@ internal sealed class CanvasPresetLibrary
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
     private static bool ValidName(string? name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 80;
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(type =>
+        {
+            if (type.Type != typeof(CanvasProjectionSettings) && type.Type != typeof(Projective2D) && type.Type != typeof(PointD)) return;
+            foreach (var property in type.Properties.Where(p => p.Set is not null))
+            {
+                if (type.Type == typeof(CanvasProjectionSettings) && property.Name == nameof(CanvasProjectionSettings.LockedGridCellSize))
+                {
+                    // The adjustment lock belongs to the canvas session/project, not a preset.
+                    // Keep existing version-two preset files readable by older applications.
+                    property.IsRequired = false; property.ShouldSerialize = (_, _) => false;
+                }
+                else property.IsRequired = true;
+            }
+        });
+        return new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, TypeInfoResolver = resolver };
+    }
     private static void Validate(string name, CanvasPresetParameters parameters)
     {
         if (!ValidName(name)) throw new ArgumentException(L.Get("Preset.InvalidName"), nameof(name));

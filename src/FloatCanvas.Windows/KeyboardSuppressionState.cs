@@ -75,7 +75,7 @@ internal sealed class KeyboardSuppressionState
 
     /// <returns>True only when this event must be suppressed.</returns>
     public bool Process(uint vk, uint scan, uint eventFlags, uint time, bool up, uint message,
-        nint foreground, bool ownsForeground, bool healthy, long now)
+        nint foreground, bool ownsForeground, bool healthy, long now, OverlayPoint? pointerPosition = null, bool? pointerLeftDown = null)
     {
         if (vk is 0 or >= 255) return false;
         int key = Canonical((int)vk, scan, eventFlags);
@@ -147,7 +147,7 @@ internal sealed class KeyboardSuppressionState
             End(KeyboardLeaseEndReason.Toggle, now, KeyboardInputPacketKind.Toggle);
             return true;
         }
-        queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, up, repeat, foreground, message: message));
+        queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, up, repeat, foreground, message: message, pointerPosition: pointerPosition, pointerLeftDown: pointerLeftDown));
         return true;
     }
 
@@ -242,8 +242,8 @@ internal sealed class KeyboardSuppressionState
         queue.Enqueue(Packet(KeyboardInputPacketKind.LeaseEnded, 0, 0, 0, 0, false, false, 0, reason: reason));
     }
     private KeyboardInputPacket Packet(KeyboardInputPacketKind kind, uint key, uint scan, uint eventFlags, uint time,
-        bool up, bool repeat, nint foreground, bool balance = false, KeyboardLeaseEndReason? reason = null, uint message = 0) =>
-        new(++sequence, lease, kind, key, scan, eventFlags, time, up, repeat, foreground, local, balance, reason, message);
+        bool up, bool repeat, nint foreground, bool balance = false, KeyboardLeaseEndReason? reason = null, uint message = 0, OverlayPoint? pointerPosition = null, bool? pointerLeftDown = null) =>
+        new(++sequence, lease, kind, key, scan, eventFlags, time, up, repeat, foreground, local, balance, reason, message) {PointerPosition=pointerPosition,PointerLeftDown=pointerLeftDown};
     public void ExpireTails(long now)
     {
         for (int i = 1; i < 255; i++) if (tails[i] != 0 && now >= tails[i]) { tails[i] = 0; physical[i] = false; }

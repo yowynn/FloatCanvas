@@ -29,7 +29,7 @@ internal sealed partial class DesktopSession
                     await Task.Delay(100, _documentLifetime.Token);
                     continue;
                 }
-                _welcomeWindow?.Hide();
+                if (!_welcomeManual) _welcomeWindow?.Hide();
                 await OpenProjectPathAsync(_projectOpenRequests.Dequeue());
             }
         }

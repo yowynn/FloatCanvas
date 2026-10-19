@@ -9,7 +9,7 @@ public static class SceneValidation
     public static void Validate(SceneDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (document.Version is not (1 or 2 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+        if (document.Version is not (1 or 2 or 3 or 4 or 5 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
         Require(Enum.IsDefined(document.Kind), L.Get("Scene.InvalidDocumentKind"));
         Require(document.Elements is not null && document.DisplayLayout is not null && document.Groups is not null, L.Get("Scene.MissingCollections"));
         Require(document.Elements!.Count <= 100_000, L.Get("Scene.ElementCountExceeded"));
@@ -20,6 +20,14 @@ public static class SceneValidation
         ValidateCanvas(document);
         var ids = new HashSet<Guid>();
         foreach (var element in document.Elements) ValidateElement(element, ids);
+        if (document.Canvas.Projection.Enabled)
+        {
+            var mapping = CanvasMapping.Create(document);
+            foreach (var element in document.Elements.Where(e => e.IsBillboard))
+                Require(mapping.TryGetDepthScale(element.BillboardAnchor, out _) &&
+                    mapping.ElementToScreen(element).TryTransformBounds(ElementGeometry.StrokedLocalBounds(element), out var projected) && Rect(projected),
+                    L.Get("Scene.InvalidElementTransform"));
+        }
         ValidateGroups(document, ids);
         if (document.Background is not null)
         {
@@ -52,6 +60,7 @@ public static class SceneValidation
         Require(element.CornerRadius is null || Nonnegative(element.CornerRadius.Value), L.Get("Scene.InvalidElementSize"));
         Require(Enum.IsDefined(element.Symbol), L.Get("Scene.InvalidElementKind"));
         var t = element.Transform;
+        Require(Point(element.BillboardAnchor) && double.IsFinite(element.BillboardHeight), L.Get("Scene.InvalidElementTransform"));
         Require(Finite(t.M11, t.M12, t.M21, t.M22, t.OffsetX, t.OffsetY) && t.TryInverse(out _), L.Get("Scene.InvalidElementTransform"));
         Require(element.Points is not null && element.Points.Count <= 2_000_000 && element.Points.All(Point), L.Get("Scene.InvalidElementPath"));
         Require(element.Style is not null && element.Text is not null && element.Text.Length <= 2_000_000, L.Get("Scene.InvalidElementContent"));
@@ -91,6 +100,7 @@ public static class SceneValidation
             L.Get("Scene.InvalidCanvas"));
         Require(Point(projection.Origin) && projection.CellSize is >= .01 and <= 1_000_000 && double.IsFinite(projection.CellSize) &&
             projection.AlgorithmVersion == CanvasCalibration.AlgorithmVersion && projection.Matrix.IsFinite && projection.Matrix.TryInverse(out _), L.Get("Scene.InvalidCanvas"));
+        Require(projection.LockedGridCellSize is null || projection.LockedGridCellSize is >= .01 and <= 1_000_000 && double.IsFinite(projection.LockedGridCellSize.Value), L.Get("Scene.InvalidCanvas"));
         Require(projection.Quad is not null && projection.Quad.Count is 0 or 4 && projection.Quad.All(Point), L.Get("Scene.InvalidCanvas"));
         Require(canvas.Grid.Width is > 0 and <= 64 && double.IsFinite(canvas.Grid.Width) && Enum.IsDefined(canvas.Grid.Pattern), L.Get("Scene.InvalidCanvas"));
         if (projection.Quad.Count == 0)

@@ -117,6 +117,7 @@ try
     CaptureInputObservationTests.Run(Check);
     FocusTransitionTests.Run(Check);
     KeyboardModifierHistoryTests.Run(Check);
+    ShiftModifierPointTests.Run(Check);
     IsolatedPointerPressesTests.Run(Check);
     MonitorSelectionTests.Run(Check);
     LiveCapturePureTests.Run(Check);

@@ -54,6 +54,7 @@ internal static class StampPreviewTests
                 var thumbnail=Task.Run(()=>StampPreviewTooltip.GetThumbnailAsync(library,animated.entry)).GetAwaiter().GetResult();
                 check("small stamp thumbnail stays a frozen static bitmap",thumbnail is {IsFrozen:true});
             }
+            ProjectedFallbackAspect(library, check);
             using var cancelled = new CancellationTokenSource(); cancelled.Cancel(); bool cancelledRead = false;
             try { Task.Run(() => StampPreviewTooltip.GetPreviewAsync(library,saved.entry,cancelled.Token)).GetAwaiter().GetResult(); }
             catch (OperationCanceledException) {cancelledRead=true;}
@@ -142,6 +143,41 @@ internal static class StampPreviewTests
             check("preview tests show no application or tooltip windows",app.Windows.Cast<Wpf.Window>().All(window=>!window.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle==0));
         }
         finally {SynchronizationContext.SetSynchronizationContext(context);L.Initialize(language);}
+    }
+
+    private static void ProjectedFallbackAspect(StampLibrary library, Action<string, bool> check)
+    {
+        var saved = Task.Run(async () =>
+        {
+            var document = new SceneDocument { Viewport = new(0,0,640,480), Elements = [new() { Kind = ElementKind.LivePixelate,
+                Width = 80, Height = 60, Transform = Affine2D.Translation(150,150), Style = new() {StrokeWidth = 0}, Effects = [new() { Kind = ImageEffectKind.Pixelate, Bounds = new(0,0,1,1), Amount = 20 }] }] };
+            var initial = CanvasCalibration.CreateInitial(document.Viewport);
+            if (!CanvasCalibration.TryCalibrate(initial,initial.Quad.Select(p=>new PointD(p.X,p.Y*.5)).ToArray(),document.Viewport,out var projection,out _)) throw new InvalidOperationException("Invalid test perspective");
+            document.Canvas.Projection = projection;
+            var session = new EditorSession(document); session.SelectAll();
+            var entry = await library.SaveSelectionAsync(session,"Projected live-effect aspect",renderContext:new(document.Clone(),session.Assets));
+            var bitmap = (await StampPreviewTooltip.GetPreviewAsync(library,entry))!;
+            int slot = library.Pins.ToList().FindIndex(id => id == entry.Id); if (slot >= 0) await library.PinAsync(slot,null);
+            return (entry,bitmap);
+        }).GetAwaiter().GetResult();
+        check("projected live-effect fixture reaches a saved thumbnail with a different pixel aspect", Math.Abs(saved.bitmap.PixelWidth/(double)saved.bitmap.PixelHeight-saved.entry.Width/saved.entry.Height) > .2);
+        var tooltip = StampPreviewTooltip.Create(library,saved.entry,"");
+        var stage = ((Controls.StackPanel)tooltip.Content).Children.OfType<Controls.Grid>().Single();
+        stage.Children.OfType<Controls.Image>().Single().Source = saved.bitmap;
+        typeof(StampPreviewTooltip).GetMethod("UpdateScale",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(tooltip,[new Wpf.DpiScale(1,1)]);
+        foreach (var label in stage.Children.OfType<Controls.TextBlock>()) label.Visibility = Wpf.Visibility.Collapsed;
+        stage.Measure(new Wpf.Size(176,176));stage.Arrange(new Wpf.Rect(0,0,176,176));stage.UpdateLayout();
+        static double PixelAspect(Imaging.BitmapSource bitmap)
+        {
+            var converted = new Imaging.FormatConvertedBitmap(bitmap,Media.PixelFormats.Bgra32,null,0);
+            int w=converted.PixelWidth,h=converted.PixelHeight;byte[] pixels=new byte[w*h*4]; converted.CopyPixels(pixels,w*4,0);
+            int left=w,right=-1,top=h,bottom=-1;
+            for(int y=0;y<h;y++)for(int x=0;x<w;x++)if(pixels[(y*w+x)*4+3]>128){left=Math.Min(left,x);right=Math.Max(right,x);top=Math.Min(top,y);bottom=Math.Max(bottom,y);}
+            return (right-left+1d)/(bottom-top+1d);
+        }
+        var sourceAspect=PixelAspect(saved.bitmap);var displayedAspect=PixelAspect(Raster(stage));
+        Console.WriteLine($"Projected thumbnail source aspect={sourceAspect:F4}, actual tooltip pixels={displayedAspect:F4}, logical stamp={saved.entry.Width/saved.entry.Height:F4}");
+        check("the actual tooltip preserves saved preview pixel aspect even when logical stamp dimensions differ",Math.Abs(displayedAspect/sourceAspect-1)<.04);
     }
 
     private static Imaging.RenderTargetBitmap Raster(Wpf.FrameworkElement element)

@@ -1,0 +1,4 @@
+{
+  "Text.InlineHint": { "zh": "直接输入文字；Shift+Enter 换行，Enter 完成，Esc 取消本次编辑。", "en": "Type on the canvas. Shift+Enter adds a line; Enter finishes; Esc cancels this edit." },
+  "Text.CannotEdit": { "zh": "请选择未锁定的文字图层进行编辑。", "en": "Select an unlocked text layer to edit." }
+}

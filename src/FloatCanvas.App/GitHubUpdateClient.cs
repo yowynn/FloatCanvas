@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 namespace FloatCanvas.App;
 
 internal sealed record AvailableUpdate(string Version, string Notes, Uri ReleaseUrl, Uri PackageUrl, long Size, string? Sha256, Uri? ChecksumUrl);
+internal sealed record UpdateCheckResult(AvailableUpdate? Update, string? CurrentNotes);
 internal sealed record UpdateProgress(long ReceivedBytes, long TotalBytes);
 internal sealed record PreparedUpdate(string PackageDirectory, string Version, IReadOnlyList<string> Files);
 
@@ -32,14 +33,14 @@ internal sealed class GitHubUpdateClient : IDisposable
         this.client = client ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate }) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
-    internal async Task<AvailableUpdate?> CheckAsync(string currentVersion, CancellationToken cancellationToken)
+    internal async Task<UpdateCheckResult> CheckAsync(string currentVersion, CancellationToken cancellationToken, bool includePrereleases = false)
     {
         if (!SemVersion.TryParse(currentVersion, out var current)) throw new FormatException("The current application version is not a valid semantic version.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
         try
         {
-            AvailableUpdate? best = null; SemVersion? bestVersion = null;
+            AvailableUpdate? best = null; SemVersion? bestVersion = null; string? currentNotes = null;
             for (int page = 1; page <= 10; page++)
             {
                 var uri = new Uri($"https://api.github.com/repos/yowynn/FloatCanvas/releases?per_page=100&page={page}");
@@ -53,8 +54,10 @@ internal sealed class GitHubUpdateClient : IDisposable
                     if (release.ValueKind != JsonValueKind.Object || Boolean(release, "draft")) continue;
                     string tag = Text(release, "tag_name");
                     string value = tag.StartsWith('v') ? tag[1..] : tag;
-                    if (!SemVersion.TryParse(value, out var version) || version!.CompareTo(current) <= 0 ||
-                        (!current!.IsPrerelease && (version.IsPrerelease || Boolean(release, "prerelease"))) || version.CompareTo(bestVersion) <= 0) continue;
+                    if (!SemVersion.TryParse(value, out var version)) continue;
+                    if (version!.CompareTo(current) == 0 && currentNotes is null) currentNotes = Text(release, "body");
+                    if (version.CompareTo(current) <= 0 || (!includePrereleases && (version.IsPrerelease || Boolean(release, "prerelease"))) ||
+                        version.CompareTo(bestVersion) <= 0) continue;
                     string filename = PackageName(value) + ".zip";
                     if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) continue;
                     var packages = assets.EnumerateArray().Where(a => Text(a, "name") == filename && Text(a, "state") is "uploaded" or "").ToArray();
@@ -75,7 +78,7 @@ internal sealed class GitHubUpdateClient : IDisposable
                 }
                 if (count < 100) break;
             }
-            return best;
+            return new(best, currentNotes);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested) { throw new TimeoutException("Checking GitHub releases timed out. Please try again.", ex); }
         catch (JsonException ex) { throw new InvalidDataException("GitHub returned invalid release metadata.", ex); }

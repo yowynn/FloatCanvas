@@ -57,6 +57,7 @@ internal static class AppUpdateWindowTests
             }
             L.Initialize("zh-CN"); AppTheme.Apply("light");
             NoUpdateAndError(output, check);
+            PreviewChannelAndCurrentNotes(output, check);
             SingleCheckAndClose(output, check);
             DownloadCancellation(output, check);
             check("update UI fixtures leave no additional application windows", app.Windows.Cast<Window>().SequenceEqual(initialWindows));
@@ -66,6 +67,56 @@ internal static class AppUpdateWindowTests
             foreach (var window in app.Windows.Cast<Window>().Where(w => !initialWindows.Contains(w)).ToArray()) window.Close();
             L.Initialize(priorLanguage); AppTheme.Apply("light"); SynchronizationContext.SetSynchronizationContext(priorContext);
         }
+    }
+
+    private static void PreviewChannelAndCurrentNotes(string output, Action<string, bool> check)
+    {
+        string metadata = JsonSerializer.Serialize(new[] {
+            new { tag_name = "v0.2.0-preview.1", draft = false, prerelease = true, body = "Current preview notes", assets = Array.Empty<object>(), html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v0.2.0-preview.1" },
+            new { tag_name = "v0.4.0-preview.1", draft = false, prerelease = true, body = "Next preview notes", assets = new object[] { new { name = "FloatCanvas-0.4.0-preview.1-win-x64.zip", state = "uploaded", size = 1024, digest = "sha256:" + new string('a', 64), browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.4.0-preview.1/FloatCanvas-0.4.0-preview.1-win-x64.zip" } }, html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v0.4.0-preview.1" }
+        });
+        int requests = 0;
+        using var http = new HttpClient(new FakeHandler((_, _) => { requests++; return Task.FromResult(JsonResponse(metadata)); }));
+        using var client = new GitHubUpdateClient(http);
+        var persisted = new List<bool>();
+        var window = new AppUpdateWindow("0.2.0-preview.1", client, _ => Task.CompletedTask, true, output, autoCheck: false, savePreviewPreference: persisted.Add);
+        try
+        {
+            Await(window.CheckAsync());
+            check("update window defaults to stable only while showing current preview notes", window.PreviewUpdates.IsChecked == false && !window.InstallButton.IsEnabled && window.NotesText.Text == "Current preview notes" && window.StatusText.Text == L.Get("Updates.UpToDate"));
+            RenderCurrentNotes(window, Path.Combine(output, "updates-current-notes.png"));
+            window.PreviewUpdates.IsChecked = true; PumpUntil(() => !window.IsBusy);
+            check("enabling previews saves the choice and refreshes the update offer", persisted.SequenceEqual(new[] { true }) && window.InstallButton.IsEnabled && window.LatestVersionText.Text == "v0.4.0-preview.1" && window.NotesText.Text == "Next preview notes");
+            window.PreviewUpdates.IsChecked = false; PumpUntil(() => !window.IsBusy);
+            check("disabling previews removes the preview offer and restores current notes", persisted.SequenceEqual(new[] { true, false }) && !window.InstallButton.IsEnabled && window.NotesText.Text == "Current preview notes");
+        }
+        finally { window.Close(); }
+        var failing = new AppUpdateWindow("0.2.0-preview.1", client, _ => Task.CompletedTask, true, output, autoCheck: false, savePreviewPreference: _ => throw new IOException("fixture save failed"));
+        try
+        {
+            int before = requests;
+            failing.PreviewUpdates.IsChecked = true;
+            check("failed preview preference save restores the switch without starting a check", failing.PreviewUpdates.IsChecked == false && !failing.IsBusy && requests == before && failing.StatusText.Text == L.Get("Updates.PreferenceFailed"));
+        }
+        finally { failing.Close(); }
+        var retained = new AppUpdateWindow("0.2.0-preview.1", client, _ => Task.CompletedTask, true, output, autoCheck: false, includePrereleases: true);
+        try
+        {
+            Await(retained.CheckAsync());
+            check("reopening with saved preview preference offers previews immediately", retained.PreviewUpdates.IsChecked == true && retained.InstallButton.IsEnabled && retained.LatestVersionText.Text == "v0.4.0-preview.1");
+        }
+        finally { retained.Close(); }
+    }
+
+    private static void RenderCurrentNotes(AppUpdateWindow window, string path)
+    {
+        var body = (FrameworkElement)window.Content; window.Content = null;
+        var surface = new Border { Width = 498, Height = 450, Child = body };
+        surface.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
+        surface.Measure(new Size(498, 450)); surface.Arrange(new Rect(0, 0, 498, 450)); surface.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(498, 450, 96, 96, PixelFormats.Pbgra32); bitmap.Render(surface);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using (var file = File.Create(path)) encoder.Save(file);
+        surface.Child = null; window.Content = body; Console.WriteLine("UPDATE_RENDER " + path);
     }
 
     private static void NoUpdateAndError(string output, Action<string, bool> check)
@@ -111,9 +162,9 @@ internal static class AppUpdateWindowTests
         try
         {
             Task first = window.CheckAsync(); Await(window.CheckAsync());
-            check("only one update check runs at a time", requests == 1 && window.IsBusy && !window.CheckButton.IsEnabled && !window.InstallButton.IsEnabled);
+            check("only one update check runs at a time", requests == 1 && window.IsBusy && !window.CheckButton.IsEnabled && !window.InstallButton.IsEnabled && !window.PreviewUpdates.IsEnabled);
             response.SetResult(JsonResponse(ReleaseMetadata)); Await(first);
-            check("successful check restores buttons and hides cancellation", window.CheckButton.IsEnabled && window.InstallButton.IsEnabled && window.CancelButton.Visibility == Visibility.Collapsed && !window.IsBusy);
+            check("successful check restores buttons and hides cancellation", window.CheckButton.IsEnabled && window.InstallButton.IsEnabled && window.PreviewUpdates.IsEnabled && window.CancelButton.Visibility == Visibility.Collapsed && !window.IsBusy);
         }
         finally { window.Close(); }
         bool cancelled = false;

@@ -128,7 +128,8 @@ try {
     $manifest = [pscustomobject]@{
         Product = '浮绘 FloatCanvas'; Version = $Version; RuntimeIdentifier = 'win-x64'; SelfContained = $false
         Configuration = $Configuration; PublishedAt = [DateTimeOffset]::Now.ToString('o'); RequiredFrameworks = $requiredFrameworks
-        Validation = 'Preview build. See User-Guide.md for platform support and feature limitations.'
+        Validation = $(if ($Version.Contains('-')) { 'Preview build. See User-Guide.md for platform support and feature limitations.' }
+            else { 'Release build. See User-Guide.md for platform support and feature limitations.' })
     }
     # NativeAssets packages ship PDBs as native runtime assets, independently of DebugSymbols.
     # Filter only this invocation's verified staging tree, never source/cache/previous packages.

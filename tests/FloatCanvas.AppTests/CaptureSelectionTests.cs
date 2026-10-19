@@ -12,7 +12,41 @@ internal static class CaptureSelectionTests
         DragSelections(check);
         Lassos(check);
         SelectionAndCancellation(check);
+        BillboardCaptures(check);
         ParameterCompatibility(check);
+    }
+
+    private static void BillboardCaptures(Action<string, bool> check)
+    {
+        foreach (var shape in Enum.GetValues<CaptureShape>())
+        {
+            var document = new SceneDocument { Viewport = new(0,0,800,600), Canvas = new()
+            { Projection = new() { Enabled = true, Matrix = new(1,.08,0,0,1,0,0,.001,1),
+                Quad = [new(0,0),new(800,0),new(600,400),new(0,400)] } } };
+            var controller = new EditorController(new(document)) { Tool = EditorTool.CaptureRegion,
+                CaptureShape = shape, CaptureBorderWidth = 5, BillboardMode = true };
+            CaptureSelection? captured = null; controller.CaptureSelectionCompleted += value => captured = value;
+            Click(controller,new(150,250));
+            var depth = controller.ActiveBillboardDepthLine;
+            check(shape + " billboard capture fixes depth before beginning the original tool", depth is not null &&
+                controller.CapturePreview is null && !controller.HasCaptureGesture && document.Elements.Count == 0 && controller.Session.UndoCount == 0);
+            Pointer(controller,OverlayPointerKind.Down,new(100,100));
+            if (shape is CaptureShape.FreehandLasso or CaptureShape.PolygonLasso)
+            {
+                if (shape == CaptureShape.PolygonLasso) Pointer(controller,OverlayPointerKind.Up,new(100,100));
+                if (shape == CaptureShape.PolygonLasso) Click(controller,new(240,100));
+                else Pointer(controller,OverlayPointerKind.Move,new(240,100));
+                if (shape == CaptureShape.PolygonLasso) Click(controller,new(240,190));
+                else Pointer(controller,OverlayPointerKind.Move,new(240,190));
+            }
+            else Pointer(controller,OverlayPointerKind.Move,new(240,190));
+            check(shape + " billboard capture preview keeps screen geometry and projects preset border", controller.CapturePreview is { PlaneBounds: null } preview &&
+                preview.BillboardDepthLine == depth && Math.Abs(preview.BorderWidth - 5 * depth!.Value.Scale) < 1e-7);
+            if (shape == CaptureShape.PolygonLasso) controller.HandleCaptureKey(0x0D);
+            else Pointer(controller,OverlayPointerKind.Up,shape == CaptureShape.FreehandLasso ? new(100,190) : new(240,190));
+            check(shape + " billboard capture completes with frozen insertion depth and clears the transient guide", captured is not null &&
+                captured.BillboardDepthLine == depth && controller.ActiveBillboardDepthLine is null && !controller.HasCaptureGesture && controller.CapturePreview is null);
+        }
     }
 
     private static void DragSelections(Action<string, bool> check)

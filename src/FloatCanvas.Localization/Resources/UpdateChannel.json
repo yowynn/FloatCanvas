@@ -1,0 +1,5 @@
+{
+  "Updates.IncludePreviews": { "zh": "接收预览版本更新", "en": "Include preview releases" },
+  "Updates.PreviewHint": { "zh": "默认关闭，只检查正式版；开启后也检查预览版。当前版本日志不受此开关影响。", "en": "Off by default: check stable releases only. Enable to include previews. Current-version notes are shown either way." },
+  "Updates.PreferenceFailed": { "zh": "无法保存更新偏好", "en": "Could not save update preference" }
+}

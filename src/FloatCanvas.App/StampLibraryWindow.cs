@@ -382,38 +382,51 @@ internal sealed class StampLibraryWindow : Wpf.Window
         return false;
     }
 
-    private Controls.ContextMenu TileContextMenu(Guid id)
+    private Controls.ContextMenu TileContextMenu(Guid id) => EntryContextMenu(id,null,null);
+    internal Controls.ContextMenu CreateToolbarMenu(Guid id,int slot,Wpf.Window owner) => EntryContextMenu(id,slot,owner);
+    private Controls.ContextMenu EntryContextMenu(Guid id,int? toolbarSlot,Wpf.Window? owner)
     {
         var menu = new Controls.ContextMenu();
+        void RunEntryAsync(Func<Task> action) => RunAsync(async()=>
+        {
+            selected=id;var previous=dialogOwner;dialogOwner=owner;
+            try {await action();} finally {dialogOwner=previous;}
+        });
         void Add(string key, PanelActionIcon icon, Action action, string? shortcut = null)
         {
             var item = new Controls.MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = shortcut ?? "", Tag = key };
-            item.Click += (_, _) => action(); menu.Items.Add(item);
+            item.Click += (_, _) => {selected=id;action();}; menu.Items.Add(item);
         }
-        Add("Stamp.Use", PanelActionIcon.Use, UseSelected, "Enter");
-        if (useSource is not null) Add("Stamp.UseSource", PanelActionIcon.Source, UseSelectedSource);
-        menu.Items.Add(new Controls.Separator());
-        Add("Stamp.Rename", PanelActionIcon.Rename, () => RunAsync(RenameAsync), "F2");
-        Add("Stamp.Overwrite", PanelActionIcon.Save, () => RunAsync(() => SaveAsync(overwrite: true)));
-        Add("Stamp.Delete", PanelActionIcon.Delete, () => RunAsync(DeleteAsync), "Delete");
+        // A toolbar slot is already the direct use action. Its context menu is
+        // deliberately limited to maintenance; library tiles retain both use paths.
+        if (toolbarSlot is null)
+        {
+            Add("Stamp.Use", PanelActionIcon.Use, UseSelected, "Enter");
+            if (useSource is not null) Add("Stamp.UseSource", PanelActionIcon.Source, UseSelectedSource);
+            menu.Items.Add(new Controls.Separator());
+        }
+        Add("Stamp.Rename", PanelActionIcon.Rename, () => RunEntryAsync(RenameAsync), "F2");
+        Add("Stamp.Overwrite", PanelActionIcon.Save, () => RunEntryAsync(() => SaveAsync(overwrite: true)));
+        Add("Stamp.Delete", PanelActionIcon.Delete, () => RunEntryAsync(DeleteAsync), "Delete");
         menu.Items.Add(new Controls.Separator());
         var pins = new Controls.MenuItem { Header = L.Get("Stamp.Pin"), Icon = ActionIconButton.Glyph(PanelActionIcon.Pin), Tag = "Stamp.Pin" };
         var unpin = new Controls.MenuItem { Header = L.Get("Stamp.Unpin"), Icon = ActionIconButton.Glyph(PanelActionIcon.Unpin), Tag = "Stamp.Unpin" };
-        unpin.Click += (_, _) => RunAsync(() => UnpinFirstAsync(id));
+        unpin.Click += (_, _) => RunEntryAsync(()=>toolbarSlot is { } slot
+            ? library.Pins[slot]==id?library.PinAsync(slot,null):Task.CompletedTask : UnpinFirstAsync(id));
         for (int index = 0; index < 10; index++)
         {
             int slotIndex = index;
-            var pin = new Controls.MenuItem { Header = ((index + 1) % 10).ToString(), Tag = index };
+            var pin = new Controls.MenuItem { Header = ((index + 1) % 10).ToString(), Tag = index, Icon = ActionIconButton.Glyph(PanelActionIcon.Pin) };
             pin.Click += (_, _) => RunAsync(() => library.PinAsync(slotIndex, id)); pins.Items.Add(pin);
         }
         // Only one pin-related action is presented. Repeated unpins remove the
         // first displayed slot, without touching another stamp's slots.
-        if (FirstPinnedSlot(id) >= 0) menu.Items.Add(unpin); else menu.Items.Add(pins);
+        if (toolbarSlot is not null || FirstPinnedSlot(id) >= 0) menu.Items.Add(unpin); else menu.Items.Add(pins);
         menu.Opened += (_, _) =>
         {
             var tile = grid.Items.Cast<Controls.ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, id));
-            if (tile is null || closed || busy) { menu.IsOpen = false; return; }
-            grid.SelectedItem = tile;
+            if (closed || busy || toolbarSlot is null&&tile is null || toolbarSlot is { } slot&&library.Pins[slot]!=id) { menu.IsOpen = false; return; }
+            if(toolbarSlot is null)grid.SelectedItem = tile;else selected=id;
             bool ready = canMutate() && library.Items.Any(item => item.Id == id);
             foreach (var item in menu.Items.OfType<Controls.MenuItem>()) item.IsEnabled = ready;
             foreach (var item in menu.Items.OfType<Controls.MenuItem>().Where(item => Equals(item.Tag, "Stamp.UseSource")))

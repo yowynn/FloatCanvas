@@ -34,7 +34,7 @@ internal sealed partial class DesktopSession
         CloseImageDrop(); _editor.Cancel();
         _imageDropOrigin = _editor.ScreenOrigin;
         _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token);
-        _toolbar.Hide(); _inspector?.Hide(); _textEditor?.Hide();
+        _toolbar.Hide(); _inspector?.Hide(); FinishInlineText();
         // The source owns the mouse and its OLE loop until Drop returns. Showing a
         // target must not activate a window or acquire the ordinary keyboard lease.
         if (!_host.TryStartDropReception(out var failure))
@@ -111,6 +111,13 @@ internal sealed partial class DesktopSession
             if (!SetEditing(true, preserveImageDrop: true)) { request.Cancel(); return; }
             UpdateStatus(L.Get("ImageDrop.Importing"));
             var images = await NormalizeCanvasDropAsync(payload, request.Token);
+            if (_editor.BillboardMode && Active.Document.Canvas.Projection.Enabled)
+            {
+                if (_disposed || _documentStopped || !_host.IsVisible || images.Count == 0 ||
+                    !request.TryCompleteDeferred(_imageDropRequest, _live, _capture)) return;
+                if (!InsertImages(request.Target, images, false)) SwitchToolState(EditorTool.Select);
+                return;
+            }
             if (_disposed || _documentStopped || !_host.IsVisible || !request.TryCommit(_imageDropRequest, _live, _capture, images)) return;
             if (ReferenceEquals(Active, request.Target)) SwitchToolState(EditorTool.Select);
             ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("ImageDrop.Imported", images.Count));

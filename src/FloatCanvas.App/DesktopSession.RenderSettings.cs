@@ -12,7 +12,7 @@ internal sealed partial class DesktopSession
 {
     private CheckBox AddRenderSettings(Panel panel)
     {
-        panel.Children.Add(new TextBlock { Text = L.Get("Settings.Rendering"), Margin = new Thickness(0, 18, 0, 6) });
+        panel = AppSettingsWindow.AddGroup(panel, L.Get("Settings.Rendering"));
         var preferGpu = new CheckBox { Content = L.Get("Settings.PreferGpuAcceleration"),
             IsChecked = _settings.PreferGpuAcceleration, MinHeight = 28 };
         AutomationProperties.SetName(preferGpu, L.Get("Settings.PreferGpuAcceleration"));

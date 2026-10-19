@@ -58,6 +58,9 @@ internal static class WorkspaceRecoveryHistoryTests
         nextLaunch.WorkspaceRestored();
         assert("an explicit history selection can be saved even when selected workspace is empty", nextLaunch.ShouldWrite(new WorkspaceState()));
 
+        await ClearPolicyAsync(assert).ConfigureAwait(false);
+        await VersionPolicyAsync(assert).ConfigureAwait(false);
+
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
         bool rejected = false;
@@ -65,5 +68,91 @@ internal static class WorkspaceRecoveryHistoryTests
         catch (OperationCanceledException) { rejected = true; }
         assert("cancelled archive does not authorize replacement or change existing packages", rejected &&
             (await store.LoadAsync().ConfigureAwait(false))!.State.LiveDocument.Elements.Count == 0);
+    }
+    private static async Task ClearPolicyAsync(Action<string,bool> check)
+    {
+        foreach(bool recovered in new[]{false,true})
+        {
+            string directory=Path.Combine(Path.GetTempPath(),"FloatCanvas-ClearPolicy",Guid.NewGuid().ToString("N"));
+            var store=new RecoveryStore(directory);var assets=new AssetLibrary();
+            var previous=new WorkspaceState();previous.LiveDocument.Elements.Add(new(){Kind=ElementKind.Text,Text="previous canvas"});
+            await store.SaveAsync(previous,assets);
+            var history=new WorkspaceRecoveryHistory(store);
+            if(recovered)history.EnterWorkspace(previous);else history.BeginFreshWorkspace(new());
+            await history.PrepareClearAsync();
+            await store.SaveAsync(new(),assets);history.WriteCurrentInfo(new(),null);
+            var entries=history.GetEntries();
+            check(recovered?"clearing a recovered canvas does not push it to history":"clearing a fresh canvas preserves an unrelated previous session",entries.Count==(recovered?0:1));
+            if(!recovered)check("the preserved prior session retains its original drawing",(await history.LoadAsync(entries.Single()))!.State.LiveDocument.Elements.Single().Text=="previous canvas");
+        }
+    }
+    private static async Task VersionPolicyAsync(Action<string, bool> check)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "FloatCanvas-VersionPolicy", Guid.NewGuid().ToString("N"));
+        var store = new RecoveryStore(directory); var assets = new AssetLibrary();
+        var history = new WorkspaceRecoveryHistory(store);
+        var blank = new WorkspaceState();
+        history.BeginFreshWorkspace(blank);
+        for (int i = 0; i < 10; i++) await history.ArchiveAsync(blank, assets, null, null);
+        check("repeated blank new canvases never create history", history.GetEntries().Count == 0);
+        blank.LiveDocument.Canvas.BackgroundColor = 0xFF112233;
+        check("canvas settings alone do not consume drawing history slots", !history.HasNewVersion(blank));
+        await history.ArchiveAsync(blank, assets, null, null);
+        history.EnterWorkspace(blank);
+        check("inherited settings do not make the next empty canvas a new version", !history.HasNewVersion(blank));
+        var entered = blank.Clone();
+        entered.LiveDocument.Elements.Add(new() { Kind = ElementKind.Rectangle, Width = 12, Height = 15, Visible = false, Locked = true });
+        history.EnterWorkspace(entered);
+        await history.ArchiveAsync(entered, assets, null, "example.floatcanvas");
+        check("opening an unchanged saved file creates no history", history.GetEntries().Count == 0);
+        entered.LiveDocument.Elements[0].Width = 20;
+        check("an edited saved file is eligible independently of file saved status", history.HasNewVersion(entered));
+        await history.ArchiveAsync(entered, assets, null, "example.floatcanvas");
+        var original = history.GetEntries().Single(e => e.SourceFile is not null);
+        await store.SaveAsync(entered, assets); history.WriteCurrentInfo(entered, "example.floatcanvas");
+        check("current recovery does not duplicate its archived version", history.GetEntries().Count == 1);
+        var restored = (await history.LoadAsync(original))!.State;
+        history.EnterWorkspace(restored);
+        await history.ArchiveAsync(restored, assets, null, null);
+        check("restoring without editing preserves history order and timestamps", history.GetEntries().Count == 1 && history.GetEntries().Any(e => e.DirectoryPath == original.DirectoryPath && e.SavedAtUtc == original.SavedAtUtc));
+        restored.LiveDocument.Elements[0].Width++;
+        await history.ArchiveAsync(restored, assets, null, null);
+        var editedRestore = history.GetEntries()[0];
+        check("editing a restored canvas adds a new first version without moving its source", editedRestore.DirectoryPath != original.DirectoryPath &&
+            (await history.LoadAsync(editedRestore))!.State.LiveDocument.Elements[0].Width == restored.LiveDocument.Elements[0].Width &&
+            history.GetEntries().Single(e => e.DirectoryPath == original.DirectoryPath).SavedAtUtc == original.SavedAtUtc);
+        restored.LiveDocument.Elements[0].Width--;
+        check("undoing to the entry baseline removes new-version eligibility", !history.HasNewVersion(restored));
+        await history.ArchiveAsync(restored, assets, null, null, force: true);
+        check("archiving the same content twice reuses its prior snapshot", history.GetEntries().Count == 2);
+        history.EnterWorkspace(blank);
+        for (int i = 0; i < 65; i++)
+        {
+            var next = new WorkspaceState(); next.LiveDocument.Elements.Add(new() { Kind = ElementKind.Text, Text = "version " + i });
+            await history.ArchiveAsync(next, assets, null, null);
+        }
+        check("default history limit retains exactly sixty archives", history.GetEntries().Count(e => !e.IsCurrent) == 60);
+        check("oldest content is evicted when capacity is exceeded", !Directory.Exists(original.DirectoryPath));
+        history.MaximumVersions = 2; history.Trim();
+        check("reducing the limit immediately trims only oldest archives", history.GetEntries().Count(e => !e.IsCurrent) == 2 && File.Exists(store.CurrentPath));
+        check("trimming retains the two newest canvas versions", (await history.LoadAsync(history.GetEntries()[0]))!.State.LiveDocument.Elements.Single().Text == "version 64" &&
+            (await history.LoadAsync(history.GetEntries()[1]))!.State.LiveDocument.Elements.Single().Text == "version 63");
+        await store.SaveAsync(new WorkspaceState(), assets); history.EnterWorkspace(new()); history.WriteCurrentInfo(new(), null);
+        check("empty recovery persists without becoming a visible history entry", (await store.LoadAsync())!.State.LiveDocument.Elements.Count == 0 && history.GetEntries().All(e => !e.IsCurrent));
+        check("missing settings default to sixty versions", System.Text.Json.JsonSerializer.Deserialize<UserSettings>("{}")!.HistoryVersionLimit == 60);
+        check("invalid persisted limits normalize to sixty", System.Text.Json.JsonSerializer.Deserialize<UserSettings>("{\"HistoryVersionLimit\":0}")!.HistoryVersionLimit == 60);
+        foreach (int limit in new[] { 1, 60, 10000 })
+            check($"valid history limit {limit} is retained", new UserSettings { HistoryVersionLimit = limit }.HistoryVersionLimit == limit);
+        foreach (int limit in new[] { -1, 10001, int.MaxValue })
+            check($"invalid history limit {limit} falls back to sixty", new UserSettings { HistoryVersionLimit = limit }.HistoryVersionLimit == 60);
+        string brokenDirectory = Path.Combine(directory, "corrupt-recovery");
+        Directory.CreateDirectory(brokenDirectory);
+        var brokenStore = new RecoveryStore(brokenDirectory);
+        await File.WriteAllBytesAsync(brokenStore.CurrentPath, [1, 2, 3]);
+        var brokenHistory = new WorkspaceRecoveryHistory(brokenStore);
+        await brokenHistory.PreserveBeforeFirstWriteAsync();
+        check("corrupt prior recovery is quarantined byte-exact before a new write", Directory.GetFiles(Path.Combine(brokenDirectory, "quarantine"), "workspace.floatcanvas", SearchOption.AllDirectories).Any(path => File.ReadAllBytes(path).SequenceEqual(new byte[] {1,2,3})));
+        var settings = new UserSettings { HistoryVersionLimit = 12 };
+        check("history limit survives settings serialization", System.Text.Json.JsonSerializer.Deserialize<UserSettings>(System.Text.Json.JsonSerializer.Serialize(settings))!.HistoryVersionLimit == 12);
     }
 }

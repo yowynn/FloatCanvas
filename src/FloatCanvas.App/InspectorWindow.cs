@@ -32,6 +32,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private readonly Controls.ComboBox startArrow = new() { MinHeight = 34 };
     private readonly Controls.ComboBox endArrow = new() { MinHeight = 34 };
     private readonly Controls.ComboBox strokePattern = new() { MinHeight = 34 };
+    private readonly Controls.ComboBox placement = new() { MinHeight = 34 };
     private readonly List<NumericScrubber> scrubbers = [];
     private EditorSession? formSession;
     private Guid[] formSelection = [];
@@ -40,11 +41,14 @@ internal sealed class InspectorWindow : Wpf.Window
     private bool applying;
     private readonly System.Windows.Threading.DispatcherTimer editTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
     private string? formFingerprint;
+    private bool? formProjectionEnabled;
     private bool refreshing = true;
     private EditorSession? scrubSession;
     private CanvasElement[] scrubSources = [];
     private double scrubStartValue;
     private long scrubTransaction;
+    private readonly Controls.Button pin;
+    internal bool IsPinned { get; private set; }
 
     public event Action? Dismissed;
     public event Action<int>? CommandKey;
@@ -73,11 +77,13 @@ internal sealed class InspectorWindow : Wpf.Window
         selectionLabel.Margin = new(0, 2, 0, 8);
         body.Children.Add(selectionLabel);
         body.Children.Add(propertyPanel);
-        propertyPanel.Children.Add(SectionHeading("Inspector.GeometrySection", L.Get("Inspector.GeometryHint"), true));
+        propertyPanel.Children.Add(SectionHeading("Inspector.GeometrySection", L.Get("Inspector.GeometryHint")));
         propertyPanel.Children.Add(FieldPair("X", "X", "Y", "Y"));
         propertyPanel.Children.Add(FieldPair("W", L.Get("Inspector.WidthShort"), "H", L.Get("Inspector.HeightShort")));
         propertyPanel.Children.Add(FieldPair("Angle", L.Get("Inspector.AngleDegrees"), null, null));
         propertyPanel.Children.Add(keepAspect);
+        fieldContainers.Add("ConstrainAspect",keepAspect);
+        keepAspect.Click += (_,_) => ChangeField("ConstrainAspect");
         propertyPanel.Children.Add(SectionHeading("Inspector.AppearanceSection"));
         propertyPanel.Children.Add(FieldPair("StrokeWidth", L.Get("Inspector.StrokeWidth"), "CornerRadius", L.Get("Inspector.CornerRadius")));
         foreach (var (label, value) in new[] { (L.Get("Inspector.ArrowFilledTriangle"), ArrowHeadStyle.FilledTriangle), (L.Get("Inspector.ArrowOpen"), ArrowHeadStyle.Open), (L.Get("Inspector.ArrowDiamond"), ArrowHeadStyle.Diamond), (L.Get("Inspector.ArrowNone"), ArrowHeadStyle.None) })
@@ -110,7 +116,7 @@ internal sealed class InspectorWindow : Wpf.Window
         var colorHint = new Controls.TextBlock { Text = L.Get("Inspector.ColorHint"), FontSize = 11, Opacity = .65, Margin = new(0, 2, 0, 6) };
         fieldContainers.Add("ColorHint", colorHint); propertyPanel.Children.Add(colorHint);
         propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.OpacityPercent"), null, null));
-        textSection = SectionHeading("Inspector.TextSection");
+        textSection = SectionHeading("Inspector.TextSection",first:true);
         propertyPanel.Children.Add(textSection);
         propertyPanel.Children.Add(FieldPair("FontSize", L.Get("Inspector.FontSize"), "Number", L.Get("Editor.ElementKind.Number")));
         var fontRow = new Controls.StackPanel { Margin = new(0, 4, 0, 4) };
@@ -133,6 +139,25 @@ internal sealed class InspectorWindow : Wpf.Window
         var text = fields["Text"];
         text.AcceptsReturn = true; text.TextWrapping = Wpf.TextWrapping.Wrap;
         text.Height = 76; text.VerticalScrollBarVisibility = Controls.ScrollBarVisibility.Auto;
+        text.VerticalContentAlignment=Wpf.VerticalAlignment.Top; text.HorizontalContentAlignment=Wpf.HorizontalAlignment.Left;
+        var geometryRows=propertyPanel.Children.Cast<Wpf.UIElement>().Take(5).ToArray();
+        var textRows=propertyPanel.Children.Cast<Wpf.UIElement>().SkipWhile(row=>!ReferenceEquals(row,textSection)).ToArray();
+        foreach(var row in geometryRows.Concat(textRows))propertyPanel.Children.Remove(row);
+        foreach(var row in geometryRows)propertyPanel.Children.Add(row);
+        propertyPanel.Children.Insert(0,textSection);
+        propertyPanel.Children.Insert(1,fieldContainers["Text"]);
+        int textIndex=2;
+        foreach(var row in textRows.Where(row=>!ReferenceEquals(row,textSection)&&!ReferenceEquals(row,fieldContainers["Text"])))
+            propertyPanel.Children.Insert(textIndex++,row);
+        var placementSection=new Controls.StackPanel();
+        placementSection.Children.Add(SectionHeading("Billboard.Placement"));
+        placement.Items.Add(L.Get("Billboard.Surface"));placement.Items.Add(L.Get("Billboard.Name"));
+        Automation.AutomationProperties.SetName(placement,L.Get("Billboard.Placement"));
+        placement.SelectionChanged+=(_,_)=>{if(!refreshing)ChangeField("Placement");};
+        placementSection.Children.Add(placement);fieldContainers.Add("Placement",placementSection);
+        propertyPanel.Children.Add(placementSection);
+        placementSection.Children.Add(FieldPair("BillboardHeight",L.Get("Billboard.Height"),null,null));
+        placementSection.ToolTip=L.Get("Billboard.AnchorHint");
         var footer = new Controls.StackPanel();
         var footerBorder = new Controls.Border { Child = footer, BorderThickness = new(0, 1, 0, 0), Padding = new(12, 8, 26, 8) };
         footerBorder.SetResourceReference(Controls.Border.BorderBrushProperty, "CanvasBorder");
@@ -141,10 +166,10 @@ internal sealed class InspectorWindow : Wpf.Window
         status.Margin = new(0, 6, 0, 0);
         footer.Children.Add(status);
         editTimer.Tick += (_, _) => { if (!numericFields.Values.Any(field => field.Slider.IsMouseCaptureWithin)) CompleteEdit(); };
-        Deactivated += (_, _) => CompleteEdit();
+        Deactivated += (_, _) => {CompleteEdit();QueueFocusCheck();};
         propertyPanel.LostKeyboardFocus += (_, _) => { if (!propertyPanel.IsKeyboardFocusWithin) CompleteEdit(); };
         Closing += (_, e) => { e.Cancel = true; CompleteEdit(); CancelScrub(); CloseColorPickers(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
-        IsVisibleChanged += (_, _) => { if (!IsVisible) { CompleteEdit(); CloseColorPickers(); } };
+        IsVisibleChanged += (_, _) => { if (!IsVisible) { CompleteEdit(); CloseColorPickers(); IsPinned=false;UpdatePin();Dismissed?.Invoke(); } };
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
@@ -154,8 +179,37 @@ internal sealed class InspectorWindow : Wpf.Window
             if (RouteCommandKey(Input.KeyInterop.VirtualKeyFromKey(key), (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0, textInput)) e.Handled = true;
         };
         AppWindowChrome.Apply(this); Icon = AppIcon.WindowImage;
+        pin=ActionIconButton.Create(PanelActionIcon.Pin,L.Get("ToolbarV2.PinOptions"),()=>{IsPinned=!IsPinned;UpdatePin();});
+        pin.Width=28;pin.Height=28;
+        System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(pin,true);
+        AppWindowChrome.SetHeaderActions(this,pin);UpdatePin();
+        foreach(var color in colorFields.Values)color.PickerClosed+=QueueFocusCheck;
+        foreach(var picker in new[] {fontPicker,alignment,arrowStyle,startArrow,endArrow,strokePattern,placement})picker.DropDownClosed+=(_,_)=>QueueFocusCheck();
         refreshing = false;
         Refresh();
+    }
+
+    internal void Dismiss(WindowDismissReason reason=WindowDismissReason.Close)
+    {
+        CompletePendingEdit();CancelScrub();IsPinned=false;UpdatePin();
+        SessionWindowCoordinator.Hide(this,reason);
+    }
+    private void UpdatePin()
+    {
+        if(pin is null)return;
+        ActionIconButton.UpdatePin(pin,IsPinned);
+    }
+    private void QueueFocusCheck()=>Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,()=>
+    {
+        if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||colorFields.Values.Any(color=>color.IsPickerOpen)||
+            new[] {fontPicker,alignment,arrowStyle,startArrow,endArrow,strokePattern,placement}.Any(picker=>picker.IsDropDownOpen))return;
+        if(Wpf.Application.Current.Windows.Cast<Wpf.Window>().Any(window=>window.IsActive&&IsChildWindow(window)))return;
+        Dismiss(WindowDismissReason.ExternalFocus);
+    });
+    private bool IsChildWindow(Wpf.Window window)
+    {
+        for(var owner=window.Owner;owner is not null;owner=owner.Owner)if(ReferenceEquals(owner,this))return true;
+        return false;
     }
 
     /// <summary>Selection notifications replace the form; in-progress valid edits stay visible.</summary>
@@ -182,7 +236,7 @@ internal sealed class InspectorWindow : Wpf.Window
         var selected = session.SelectedElements().ToArray();
         var element = selected.FirstOrDefault();
         var fingerprint = JsonSerializer.Serialize(selected);
-        if (!discardDraft && ReferenceEquals(formSession, session) && fingerprint == formFingerprint) return;
+        if (!discardDraft && ReferenceEquals(formSession, session) && fingerprint == formFingerprint && formProjectionEnabled==session.Document.Canvas.Projection.Enabled) return;
         refreshing = true;
         try
         {
@@ -193,6 +247,7 @@ internal sealed class InspectorWindow : Wpf.Window
             }
             formSession = session; formSelection = selected.Select(e => e.Id).ToArray();
             formFingerprint = fingerprint;
+            formProjectionEnabled=session.Document.Canvas.Projection.Enabled;
             dirtyFields.Clear();
             propertyPanel.IsEnabled = selected.Length > 0 && selected.All(e => !e.Locked);
             SetPropertyVisibility(selected);
@@ -207,7 +262,9 @@ internal sealed class InspectorWindow : Wpf.Window
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = ElementGeometry.Bounds(element);
             var size = GeometricSize(element);
-            SetField("X", bounds.Left); SetField("Y", bounds.Top); SetField("W", size.X); SetField("H", size.Y);
+            SetField("X", element.IsBillboard?element.BillboardAnchor.X:bounds.Left); SetField("Y", element.IsBillboard?element.BillboardAnchor.Y:bounds.Top); SetField("W", size.X); SetField("H", size.Y);
+            SetField("BillboardHeight",element.BillboardHeight);
+            placement.SelectedIndex=selected.Select(e=>e.IsBillboard).Distinct().Count()>1?-1:element.IsBillboard?1:0;
             SetField("Angle", ElementAngle(element)); SetField("StrokeWidth", element.Style.StrokeWidth);
             arrowStyle.SelectedIndex = (int)element.Style.ArrowHeadStyle; SetField("ArrowHeadSize", element.Style.ArrowHeadSize);
             startArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element, reverse: true);
@@ -224,7 +281,8 @@ internal sealed class InspectorWindow : Wpf.Window
             fields["FontFamily"].IsEnabled = fontPicker.IsEnabled = element.Kind is ElementKind.Text or ElementKind.Number;
             alignment.IsEnabled = element.Kind == ElementKind.Text;
             alignment.SelectedIndex = (int)element.Style.TextAlignment;
-            keepAspect.IsChecked = selected.All(e => e.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Number);
+            keepAspect.IsThreeState=selected.Select(ElementGeometry.PreservesAspect).Distinct().Count()>1;
+            keepAspect.IsChecked=keepAspect.IsThreeState?null:ElementGeometry.PreservesAspect(element);
 
             if (selected.Length > 1)
             {
@@ -302,6 +360,9 @@ internal sealed class InspectorWindow : Wpf.Window
                     source.Transform = edited.Transform; source.Style = edited.Style;
                     source.Text = edited.Text; source.Number = edited.Number;
                     source.Width = edited.Width; source.Height = edited.Height; source.CornerRadius = edited.CornerRadius;
+                    source.ConstrainAspect = edited.ConstrainAspect; source.TextFrameFixed = edited.TextFrameFixed;
+                    source.IsBillboard=edited.IsBillboard;source.BillboardAnchor=edited.BillboardAnchor;source.BillboardHeight=edited.BillboardHeight;
+                    source.ProjectivePlacement=edited.ProjectivePlacement;
                 }
                 formFingerprint = JsonSerializer.Serialize(selected);
                 dirtyFields.Clear();
@@ -320,6 +381,9 @@ internal sealed class InspectorWindow : Wpf.Window
         refreshing = true;
         try
         {
+            if(changedKey=="ConstrainAspect")
+            {keepAspect.IsThreeState=false;keepAspect.IsChecked=selected.All(ElementGeometry.PreservesAspect);}
+            if(changedKey=="Placement")SetPropertyVisibility(selected);
             foreach (var (key, box) in fields)
             {
                 if (key == changedKey) continue;
@@ -335,6 +399,14 @@ internal sealed class InspectorWindow : Wpf.Window
     private CanvasElement EditElement(CanvasElement source)
     {
         var edited = source.Clone();
+        if(dirtyFields.Contains("Placement"))
+        {
+            if(!getSession().Document.Canvas.Projection.Enabled||placement.SelectedIndex is <0 or >1||
+                !BillboardGeometry.TrySetBillboard(edited,placement.SelectedIndex==1,CanvasMapping.Create(getSession().Document)))
+                throw new InvalidOperationException(L.Get("Billboard.ConversionFailed"));
+        }
+        if(dirtyFields.Contains("BillboardHeight"))edited.BillboardHeight=Number("BillboardHeight",L.Get("Billboard.Height"),-10000000,10000000);
+        if(dirtyFields.Contains("ConstrainAspect"))edited.ConstrainAspect=keepAspect.IsChecked==true;
         if (dirtyFields.Contains("Stroke")) edited.Style.Stroke = colorFields["Stroke"].Value;
         if (dirtyFields.Contains("Fill")) edited.Style.Fill = colorFields["Fill"].Value;
         if (dirtyFields.Contains("StrokeWidth")) edited.Style.StrokeWidth = Number("StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, 512);
@@ -370,8 +442,12 @@ internal sealed class InspectorWindow : Wpf.Window
         {
             using var renderer = new SceneRenderer();
             var metrics = renderer.MeasureText(edited.Text, edited.Style, edited.Width);
-            edited.Height = Math.Max(1, metrics.Height);
-            if (EmojiGlyphs.IsEmoji(edited.Text, edited.Style)) edited.Width = metrics.Width;
+            if(edited.TextFrameFixed)TextFrameLayout.Fit(edited,edited.Style.FontSize,renderer);
+            else
+            {
+                edited.Height = Math.Max(1, metrics.Height);
+                if (EmojiGlyphs.IsEmoji(edited.Text, edited.Style)) edited.Width = metrics.Width;
+            }
         }
         if (source.Kind == ElementKind.Number && dirtyFields.Contains("FontSize"))
         {
@@ -408,9 +484,10 @@ internal sealed class InspectorWindow : Wpf.Window
             ResizeElement(edited, sx, sy);
         }
         var bounds = ElementGeometry.Bounds(edited);
-        double dx = dirtyFields.Contains("X") ? Number("X", "X", -10000000, 10000000) - bounds.Left : 0;
-        double dy = dirtyFields.Contains("Y") ? Number("Y", "Y", -10000000, 10000000) - bounds.Top : 0;
-        edited.Transform = Affine2D.Translation(dx, dy).Compose(edited.Transform);
+        double dx = dirtyFields.Contains("X") ? Number("X", "X", -10000000, 10000000) - (edited.IsBillboard?edited.BillboardAnchor.X:bounds.Left) : 0;
+        double dy = dirtyFields.Contains("Y") ? Number("Y", "Y", -10000000, 10000000) - (edited.IsBillboard?edited.BillboardAnchor.Y:bounds.Top) : 0;
+        if(edited.IsBillboard)edited.BillboardAnchor+=new PointD(dx,dy);
+        else edited.Transform = Affine2D.Translation(dx, dy).Compose(edited.Transform);
         return edited;
     }
 
@@ -458,7 +535,7 @@ internal sealed class InspectorWindow : Wpf.Window
             var field = Field(key, label);
             var limits = key switch
             {
-                "X" or "Y" => (-10000000d, 10000000d, -8192d, 8192d, 1d),
+                "X" or "Y" or "BillboardHeight" => (-10000000d, 10000000d, -8192d, 8192d, 1d),
                 "W" or "H" => (0d, 10000000d, 0d, 1000d, 1d),
                 "Angle" => (-360000d, 360000d, -180d, 180d, 1d),
                 "StrokeWidth" => (0d, 512d, 0d, 50d, .1d),
@@ -512,6 +589,7 @@ internal sealed class InspectorWindow : Wpf.Window
             ChangeField(key);
         };
         field.EyedropperRequested += () => EyedropperRequested?.Invoke(field);
+        field.PickerClosed += CompleteEdit;
         row.Children.Add(caption); row.Children.Add(field);
         colorFields.Add(key, field); fieldContainers.Add(key, row);
         return row;
@@ -535,7 +613,7 @@ internal sealed class InspectorWindow : Wpf.Window
         if (selected.Any(e => key == "W" && GeometricSize(e).X < 1e-9 || key == "H" && GeometricSize(e).Y < 1e-9)) return false;
         scrubStartValue = key switch
         {
-            "X" => bounds.Left, "Y" => bounds.Top, "W" => size.X, "H" => size.Y,
+            "X" => source.IsBillboard?source.BillboardAnchor.X:bounds.Left, "Y" => source.IsBillboard?source.BillboardAnchor.Y:bounds.Top, "W" => size.X, "H" => size.Y,
             "Angle" => ElementAngle(source), "StrokeWidth" => source.Style.StrokeWidth,
             "CornerRadius" => ElementGeometry.CornerRadius(source), _ => 0
         };
@@ -565,8 +643,12 @@ internal sealed class InspectorWindow : Wpf.Window
             var edited = source.Clone();
             switch (key)
             {
-                case "X": edited.Transform = Affine2D.Translation(value - ElementGeometry.Bounds(source).Left, 0).Compose(source.Transform); break;
-                case "Y": edited.Transform = Affine2D.Translation(0, value - ElementGeometry.Bounds(source).Top).Compose(source.Transform); break;
+                case "X":
+                    if(source.IsBillboard)edited.BillboardAnchor=new(value,source.BillboardAnchor.Y);
+                    else edited.Transform = Affine2D.Translation(value - ElementGeometry.Bounds(source).Left, 0).Compose(source.Transform);break;
+                case "Y":
+                    if(source.IsBillboard)edited.BillboardAnchor=new(source.BillboardAnchor.X,value);
+                    else edited.Transform = Affine2D.Translation(0, value - ElementGeometry.Bounds(source).Top).Compose(source.Transform);break;
                 case "Angle": edited.Transform = Affine2D.Around(ElementGeometry.Bounds(source).Center, Affine2D.Rotation(value - ElementAngle(source))).Compose(source.Transform); break;
                 case "W": case "H":
                     var size = GeometricSize(source); double factor = value / (key == "W" ? size.X : size.Y);
@@ -578,6 +660,8 @@ internal sealed class InspectorWindow : Wpf.Window
             }
             target.Transform = edited.Transform; target.Style = edited.Style; target.CornerRadius = edited.CornerRadius;
             target.Width = edited.Width; target.Height = edited.Height;
+            target.TextFrameFixed = edited.TextFrameFixed;
+            target.BillboardAnchor=edited.BillboardAnchor;target.BillboardHeight=edited.BillboardHeight;
             if (source.Id == scrubSources[0].Id) displayValue = value;
         }
         session.NotifyChanged();
@@ -623,6 +707,7 @@ internal sealed class InspectorWindow : Wpf.Window
             "FontFamily" or "FontSize" => text || number,
             "Text" or "TextAlignment" => text,
             "Number" => number,
+            "BillboardHeight" => element.IsBillboard,
             "ArrowHeadStyle" => element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow,
             "ArrowHeadSize" or "ArrowHint" or "StartArrowHead" or "EndArrowHead" => element.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow,
             _ => true
@@ -631,7 +716,8 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private static object? PropertyValue(CanvasElement e, string key) => key switch
     {
-        "X" => ElementGeometry.Bounds(e).Left, "Y" => ElementGeometry.Bounds(e).Top,
+        "X" => e.IsBillboard?e.BillboardAnchor.X:ElementGeometry.Bounds(e).Left, "Y" => e.IsBillboard?e.BillboardAnchor.Y:ElementGeometry.Bounds(e).Top,
+        "BillboardHeight" => e.BillboardHeight,
         "W" => GeometricSize(e).X, "H" => GeometricSize(e).Y, "Angle" => ElementAngle(e),
         "Stroke" => e.Style.Stroke, "Fill" => e.Style.Fill, "StrokeWidth" => e.Style.StrokeWidth,
         "CornerRadius" => ElementGeometry.CornerRadius(e), "Opacity" => e.Style.Opacity,
@@ -652,6 +738,9 @@ internal sealed class InspectorWindow : Wpf.Window
         textSection.Visibility = editable && selected.All(e => Supports(e, "FontSize")) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
             container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        bool perspective=getSession().Document.Canvas.Projection.Enabled;
+        if(!perspective){fieldContainers["Placement"].Visibility=Wpf.Visibility.Collapsed;fieldContainers["BillboardHeight"].Visibility=Wpf.Visibility.Collapsed;}
+        foreach(var key in new[]{"X","Y"})fieldContainers[key].ToolTip=selected.Any(e=>e.IsBillboard)?L.Get("Billboard.AnchorHint"):null;
         foreach (var row in propertyPanel.Children.OfType<Controls.Grid>())
             row.Visibility = row.Children.OfType<Wpf.FrameworkElement>().Any(child => child.Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         ((Controls.TextBlock)fieldContainers["ColorHint"]).Text = element?.Kind == ElementKind.Text ? L.Get("Inspector.TextColorHint") : L.Get("Inspector.ColorHint");
@@ -695,7 +784,7 @@ internal sealed class InspectorWindow : Wpf.Window
         foreach (var field in colorFields.Values) if (field.TryClosePicker()) return;
         if (alignment.IsDropDownOpen) { alignment.IsDropDownOpen = false; return; }
         if (arrowStyle.IsDropDownOpen) { arrowStyle.IsDropDownOpen = false; return; }
-        foreach (var picker in new[] { startArrow, endArrow, strokePattern })
+        foreach (var picker in new[] { startArrow, endArrow, strokePattern, placement })
             if (picker.IsDropDownOpen) { picker.IsDropDownOpen = false; return; }
         SessionWindowCoordinator.Hide(this); Dismissed?.Invoke();
     }
@@ -719,7 +808,7 @@ internal sealed class InspectorWindow : Wpf.Window
     }
     private static PointD GeometricSize(CanvasElement element)
     {
-        if (element.ProjectivePlacement is not null)
+        if (!element.IsBillboard&&element.ProjectivePlacement is not null)
         {
             var bounds = ElementGeometry.Bounds(element, includeStroke: false);
             return new(bounds.Width, bounds.Height);
@@ -730,7 +819,12 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private static void ResizeElement(CanvasElement element, double x, double y)
     {
-        if (element.ProjectivePlacement is not null)
+        if(element.Kind==ElementKind.Text)
+        {
+            using var renderer=new SceneRenderer();
+            TextFrameLayout.Resize(element,element.Clone(),x,y,renderer);
+        }
+        else if (!element.IsBillboard&&element.ProjectivePlacement is not null)
             element.Transform = Affine2D.Around(ElementGeometry.Bounds(element, includeStroke: false).Center,
                 Affine2D.Scale(x, y)).Compose(element.Transform);
         else if (ElementGeometry.IsBoxShape(element.Kind)) ElementGeometry.ResizeShapeGeometry(element, x, y);
@@ -739,7 +833,7 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private static double ElementAngle(CanvasElement element)
     {
-        if (element.ProjectivePlacement is null) return Angle(element.Transform);
+        if (element.IsBillboard||element.ProjectivePlacement is null) return Angle(element.Transform);
         var mapping = ElementGeometry.LocalToPlane(element);
         var edge = mapping.TransformPoint(new(element.Width, 0)) - mapping.TransformPoint(new(0, 0));
         return Math.Atan2(edge.Y, edge.X) * 180 / Math.PI;

@@ -117,8 +117,8 @@ try {
     if ($process.ExitCode -ne 0) { throw "Package exited with code $($process.ExitCode)." }
     $appReport = Get-Content -LiteralPath (Join-Path $runDirectory 'artifacts\m1\app-smoke.json') -Raw | ConvertFrom-Json
     if (-not $appReport.Passed -or $appReport.CapturedInput) { throw 'Package did not initialize in pass-through mode.' }
-    if ($appReport.MonitorScope -ne 'PrimaryScreen' -or @($appReport.Monitors).Count -ne 1) {
-        throw 'A fresh package profile must initialize only the primary monitor.'
+    if ($appReport.MonitorScope -ne 'AllScreens' -or @($appReport.Monitors).Count -lt 1) {
+        throw 'A fresh package profile must initialize all-screen scope with at least one active monitor.'
     }
     if ($appReport.LanguagePreference -ne 'auto' -or $appReport.InterfaceLanguage -notin @('zh-CN', 'en')) {
         throw 'A fresh package profile must resolve a supported automatic interface language.'

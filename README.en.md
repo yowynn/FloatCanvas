@@ -10,21 +10,29 @@ A Windows screen annotation tool. Draw over your desktop, place images and edit 
 
 ![FloatCanvas preview showing a perspective grid, route annotations and the floating toolbar](Docs/Images/floatcanvas-preview.png)
 
-Current preview version: **0.2.0-preview.4**. Features and stability are still being refined. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions.
+Current release: **0.2.0**. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
+
+The toolbar separates gray New and red-broom Clear. New confirms according to file and edit state; Clear is immediate, undoable and adds no history. A folding filename bubble shows the bound project. Stamp-slot context menus contain four maintenance actions: Rename, Overwrite, Delete and Unpin.
 
 ## Features
 
 - Freehand pen, highlighter, lines and arrows, shapes, text, separate numbered markers, symbols and emoji; graphical official/custom presets, per-tool preset selections and edited parameters retained across restarts, and single-click shape creation at a default size.
 - Import PNG, JPEG, BMP, GIF and WebP through files, the clipboard or drag and drop. GIF/animated WebP retain their original data and play; move, rotate, resize, group and edit image objects.
 - Two aligned toolbar rows with a shared visibility switch for tool and stamp shortcut hints; movable Tool options, Properties and Layers windows, with independent editing and canvas visibility.
-- Independent canvas background color and opacity, four-corner perspective calibration, a customizable square-cell grid, and official/personal canvas presets. Shapes, text, images and animations follow the plane; screenshots start at the selected screen position and follow later plane adjustments. Version 3 projects save canvas settings, with v1/v2 projects still readable.
+- Independent canvas background color and opacity, corner dragging or unordered four-corner perspective placement, a customizable square-cell grid, and official/personal canvas presets. Default Surface objects follow the canvas projection. Opt into Billboard mode (experimental), choose an equal-depth line, then draw screen-facing objects that scale with anchor depth. Version 6 projects retain placement, ground anchors and elevation, with v1/v2/v3/v4/v5 projects still readable.
+- Opt into **Lock grid size while adjusting** to keep grid intersections aligned with anchors while fractional coverage counts update live. An origin marker follows the original top-left control point. Leaving the option off preserves existing calibration behavior.
+- Enable Depth-priority occlusion in Layers on a perspective canvas to order billboards by anchor depth and interleave canvas color, the grid and Surface content. Only identical depth uses layer order. The option is off by default and saved with the canvas.
+- Hold `Shift` while moving to constrain movement to a canvas X/Y axis through the original drag start. A billboard's body moves its anchor; its center handle adjusts elevation vertically on screen, including negative elevation, and corner resizing uses the center as its origin.
+- Reopen the welcome page from the main menu or system tray. The floating logo is on by default in pass-through mode, with click-to-draw, double-click visibility and an independent switch.
 - A stamp library with editable and flattened stamps, search, continuous scrolling, drag reordering and a ten-slot shelf ordered `1`–`9`, then `0`. Pin by dragging onto a slot or selecting a slot and clicking an entry. Editable groups retain animation when the library is reopened and the stamp is placed again.
-- Rectangle, ellipse and lasso captures place a static image at the selected position, using the background, background + canvas, or transparent canvas content. Includes single-image cropping, live blur and pixelation, and PNG/JPEG export. The red **Clear canvas** button requires a second click to confirm and archives current work before clearing.
+- Rectangle, ellipse and lasso captures place a static image at the selected position, using the background, background + canvas, or transparent canvas content. Surface rectangles/ellipses follow the canvas plane; lassos trace screen contours. Billboard captures choose depth first and retain their captured pixel appearance. Includes single-image cropping, live blur and pixelation, and PNG/JPEG export. New canvas and Clear current canvas are separate actions; clearing supports Undo and retains the file association.
 - Self-contained, editable `.floatcanvas` projects, Windows file-type registration and handoff to an already running instance; automatic recovery saves, a blank canvas on normal startup, and manual workspace-history restoration. Optional sign-in startup is off by default.
-- Light/dark themes and primary-screen scope by default, with an all-screens option.
-- GPU preference is on by default: filter scenes render the entire canvas on the GPU, while light canvases use CPU caching. Settings shows the last frame's actual backend and selection reason; unavailable or failed GPU rendering falls back to the CPU.
+- Light/dark themes and all-screen scope for new configurations, with a primary-screen-only option.
+- GPU preference is on by default: eligible filter scenes use the GPU, while light canvases use CPU caching. Depth-priority occlusion currently uses CPU composition. Settings shows the last frame's actual backend and selection reason; unavailable or failed GPU rendering falls back to the CPU.
 - Simplified Chinese and English interfaces, with automatic Windows display-language selection.
 - Check GitHub releases in the app, download and install updates, then restart automatically.
+
+Billboard creation is off by default and affects only new objects. Leaving it off retains existing tool workflows; the general Shift movement constraint and corrected Surface capture outlines apply independently. Disabling perspective resets new-object placement while preserving existing billboard data. Reading older projects does not mean older apps support v6 files.
 
 Animation requires the original file or encoded data. Clipboard sources supplying only PNG/Bitmap produce a static image; FloatCanvas does not fetch the original online. Hiding pauses refresh and pass-through keeps playback running. Snapshots, exports and merged image stamps take a static frame; animated export and playback controls are not available.
 
@@ -36,7 +44,7 @@ Extract the package, keep all files together, and run `FloatCanvas.exe`. The def
 
 If a compatible runtime is missing, the launcher displays a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then start FloatCanvas again. You can also find it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). Running FloatCanvas does not require the SDK.
 
-Click the version at the bottom of the welcome screen to open **Check for updates**. It checks this project's GitHub releases automatically and always links to the [project page](https://github.com/yowynn/FloatCanvas). When an update is available, choose **Update now** to download, verify and replace the app, then restart automatically. No manual extraction or overwriting is needed. Keep the complete extracted ZIP in a local folder writable by your Windows account. Stable versions receive stable releases; previews can also receive newer previews. See [updating the app](Docs/User-Guide.en.md#check-and-install-updates).
+Click the version at the bottom of the welcome screen to open **Check for updates**. It checks this project's GitHub releases automatically and always links to the [project page](https://github.com/yowynn/FloatCanvas). When an update is available, choose **Update now** to download, verify and replace the app, then restart automatically. No manual extraction or overwriting is needed. Keep the complete extracted ZIP in a local folder writable by your Windows account. Updates default to stable releases; enable **Include preview releases** to opt in. Current-version notes remain available when there is no update. See [updating the app](Docs/User-Guide.en.md#check-and-install-updates).
 
 | Shortcut | Action |
 | --- | --- |
@@ -54,13 +62,13 @@ Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` 
 
 Under **Main menu → Settings… → Language / 界面语言**, choose Automatic (`auto`), 简体中文 (`zh-CN`) or English (`en`). Save and restart to apply the change. Automatic follows the Windows display language: Chinese display languages use Simplified Chinese; other languages use English. Interface language is independent of annotation content, keyboard layout and input methods. [English](Docs/User-Guide.en.md) and [Chinese](Docs/User-Guide.md) guides are available.
 
-The minimum system baseline is **Windows 10 1607 (build 14393) x64**, including LTSB 2016, LTSC 2019 and LTSC 2021; Windows 11 x64 is also targeted. Install a compatible .NET 10 Windows Desktop Runtime and keep Windows and the runtime updated. Microsoft's official support also depends on the Windows version, edition and lifecycle. Testing has mainly used Windows 11; earlier Windows 10/LTSB/LTSC versions still need testing on real systems. Primary-screen scope is the default. Complete cross-screen, mixed-DPI and dual-4K behavior remain under development. Fullscreen compatibility depends on the application and display mode; not every exclusive-fullscreen scenario is guaranteed.
+The minimum system baseline is **Windows 10 1607 (build 14393) x64**, including LTSB 2016, LTSC 2019 and LTSC 2021; Windows 11 x64 is also targeted. Install a compatible .NET 10 Windows Desktop Runtime and keep Windows and the runtime updated. Microsoft's official support also depends on the Windows version, edition and lifecycle. Testing has mainly used Windows 11; earlier Windows 10/LTSB/LTSC versions still need testing on real systems. New configurations default to all screens, with a primary-screen-only option. Complete cross-screen, mixed-DPI and dual-4K behavior remain under development. Fullscreen compatibility depends on the application and display mode; not every exclusive-fullscreen scenario is guaranteed.
 
 **Live blur and pixelation require Windows 10 2004 (build 19041) or later.** Earlier systems use static snapshots for new desktop filter regions; frozen-screenshot and image effects remain available. Existing live regions loaded from projects use solid coverage with a warning on earlier systems, retaining the original objects for editing on a supported system.
 
 When the system supports session-local window exclusion, live filters exclude FloatCanvas only from its own capture, leaving the visible canvas available to other capture tools. Older systems use a compatibility path: external screenshots may omit the canvas while live blur or pixelation is visible. Use the in-app export for a complete composite, or remove or hide the live regions before capturing. Window detection in Windows Snipping Tool still has a known limitation.
 
-Annotations stay at screen coordinates; they do not follow web scrolling, game cameras or objects. HDR color accuracy, pressure-sensitive pens, touch, OCR, recording, scrolling capture, cloud synchronization and uploads are outside the current scope. Features and stability are still being refined in this preview.
+Annotations stay at screen coordinates; they do not follow web scrolling, game cameras or objects. HDR color accuracy, pressure-sensitive pens, touch, OCR, recording, scrolling capture, cloud synchronization and uploads are outside the current scope.
 
 Perspective calibration needs readjustment when the camera moves. Dense grids at high resolutions can noticeably slow CPU rendering; reduce the row or column count, or hide the grid.
 
@@ -92,3 +100,5 @@ After pushing to a repository with GitHub Actions enabled, branch updates and pu
 Maintained by **Heptayo**. The project code is licensed under [MIT](LICENSE). See [third-party notices](THIRD-PARTY-NOTICES.md) / [licenses](licenses) for distributed dependencies.
 
 FloatCanvas is independently implemented, drawing on published technical and interaction references from ppInk and ShareX.
+
+Canvas history filters blank and duplicate versions; its configurable limit defaults to 60. New canvas detaches the file association; Clear current canvas preserves it and supports Undo.

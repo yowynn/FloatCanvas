@@ -12,6 +12,7 @@ internal sealed class StampShelfControl : Controls.UserControl
 {
     private readonly StampLibrary library;
     private readonly Action<Guid> selectStamp;
+    internal Func<Guid,int,Controls.ContextMenu>? EntryMenuFactory { get; set; }
     private readonly Controls.StackPanel slots = new() { Orientation = Controls.Orientation.Horizontal };
     private Guid? active;
     private long revision;
@@ -68,9 +69,16 @@ internal sealed class StampShelfControl : Controls.UserControl
                 Guid id = entry.Id;
                 button.Click += (_, _) => selectStamp(id);
                 var menu = new Controls.ContextMenu();
-                var clear = new Controls.MenuItem { Header = L.Get("Stamp.Unpin") };
+                var clear = new Controls.MenuItem { Header = L.Get("Stamp.Unpin"), Icon = ActionIconButton.Glyph(PanelActionIcon.Unpin) };
                 clear.Click += async (_, _) => { try { await library.PinAsync(slotIndex, null); } catch (Exception ex) { button.ToolTip = ex.Message; } };
                 menu.Items.Add(clear); button.ContextMenu = menu;
+                button.ContextMenuOpening+=(_,e)=>
+                {
+                    if(EntryMenuFactory is null)return;
+                    e.Handled=true;
+                    var actions=EntryMenuFactory(id,slotIndex);actions.PlacementTarget=button;
+                    button.ContextMenu=actions;actions.IsOpen=true;
+                };
                 LoadThumbnail(entry, image, button, version);
             }
             slots.Children.Add(button);

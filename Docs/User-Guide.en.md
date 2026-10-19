@@ -2,7 +2,7 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers the Windows x64 preview **0.2.0-preview.4**. Earlier versions may have different interfaces and features; check the [changelog](../CHANGELOG.md). Save important work as a project file.
+This guide covers the Windows x64 release **0.2.0**. Earlier versions may have different interfaces and features; check the [changelog](../CHANGELOG.md). Save important work as a project file.
 
 A drag that starts on the canvas stays with the canvas, even when it crosses the toolbar or ends on a button. Buttons are not triggered on release. A gesture that starts on the toolbar stays with the toolbar and does not draw on the canvas.
 
@@ -25,15 +25,15 @@ The welcome screen labels the shortcuts **Drawing mode / pass-through mode** and
 
 Annotations stay at screen coordinates. They do not follow web scrolling or objects in a game.
 
-The default drawing scope is **Primary screen only**, limiting annotations and capture to that screen. Applications on secondary screens can keep running; switching to another application enters pass-through.
+New configurations default to **All screens**. Choose **Primary screen only** to limit annotations and capture to that screen. Existing saved scope choices are retained. Switching to another application enters pass-through.
 
-Open **Main menu → Settings…** and change **Drawing scope** to **All screens** for the next launch. The startup options `--primary-screen` or `--all-screens` override the scope for that run without changing the saved preference; do not use both together. Complete cross-screen and mixed-DPI behavior is still being refined. Objects outside the active screen keep their coordinates; use **Main menu → Canvas → Move annotations into view** to bring them back.
+Open **Main menu → Settings…** and choose **Primary screen only** or **All screens** under **Drawing scope**. Saving applies the change immediately, without restarting. The startup options `--primary-screen` or `--all-screens` override the scope for that run without changing the saved preference; do not use both together. A scope specified by a startup option remains in effect for that run. Complete cross-screen and mixed-DPI behavior is still being refined. Objects outside the active screen keep their coordinates; use **Main menu → Canvas → Move annotations into view** to bring them back.
 
 In edit mode, FloatCanvas receives normal window keyboard and mouse input. An unmapped letter should not be sent to the application underneath. Switching to another application hides editing tools and enters pass-through without removing annotations. If FloatCanvas cannot acquire the required input focus, it stays in pass-through and explains why.
 
 Switching between FloatCanvas windows, completing a rename or closing a panel keeps edit mode and the toolbar. Closing a child panel on its own returns to an available parent window. Clicking the canvas closes related temporary child panels and unpinned panels together, then handles that canvas action normally. Pinned panels stay open. Modal dialogs, such as Rename or Delete confirmation, require confirmation or cancellation before drawing can continue.
 
-Uncommitted text is retained when focus moves away and is restored when you resume editing the same canvas. Explicit cancellation or switching to pass-through closes the text editor.
+Text is edited directly on the canvas. Changing windows, layers or tools, or entering pass-through, commits it to the canvas. `Esc` cancels the current text edit.
 
 | Shortcut | Action |
 | --- | --- |
@@ -64,6 +64,16 @@ GPU drawing does not mean the entire application runs only on the GPU. Image and
 
 Toggle shortcuts use Ctrl/Alt/Shift combinations. Win and system navigation combinations remain available to Windows; `Ctrl+Alt+Esc` is reserved for emergency input release. An unresponsive editing UI or interrupted input ownership returns to pass-through; earlier drawing keys are not replayed into the application underneath.
 
+Choose **Open welcome page** from the toolbar menu or system tray to reopen it. A manually opened welcome page stays open when entering drawing mode; opening the startup welcome this way also keeps the existing window. Click its version to check for updates, or its credits to open the GitHub project.
+
+## Settings and the floating logo
+
+Settings are grouped into **General**, **Canvas & history**, **Shortcuts**, and **System**. Each category scrolls independently while Cancel and Save stay at the bottom. Cancel discards draft changes. An invalid history limit reveals its category and an explanation. Windows integration actions run only when their specific buttons are selected.
+
+**Show floating logo** is on by default. Toggle it from the main menu, system tray, or **Settings → General**. In pass-through mode, click or right-click the logo to draw; double-click to show or hide the canvas and update its eyes. The logo does not take focus from your current application.
+
+Drag the logo to move it. Its position is kept during this run. Small pointer movements still count as a click or double-click.
+
 ## Check and install updates
 
 Click the version in the lower-left corner of the welcome screen to open **Check for updates**. The panel automatically checks [FloatCanvas GitHub releases](https://github.com/yowynn/FloatCanvas/releases), showing your current version, an available newer version and its release notes. Use **Check again** to refresh. A link to the [project page](https://github.com/yowynn/FloatCanvas) remains at the bottom of the panel.
@@ -72,7 +82,9 @@ When an update is available, choose **Update now**. FloatCanvas shows download p
 
 In-app installation requires the complete official Windows x64 ZIP extracted to a **local folder writable by your Windows account**. Keep all package files together. Read-only folders, network locations and development runs cannot install updates directly; move the complete published app to a suitable folder first. Updating does not install the .NET runtime for you.
 
-Stable versions check only newer stable releases. Versions with a prerelease marker such as `preview` also check newer prereleases. Older versions are never installed. When there is no update, a network error or a temporary GitHub request limit, the panel shows the status and retains the project link so you can visit the releases page.
+**Include preview releases** is off by default. Both stable and preview builds then offer only newer stable releases. Enable it to include newer previews; older versions are never installed. Save this preference directly in the update panel, or through **Settings → Performance & system**. Changing it in the update panel checks again. The switch is disabled while checking or downloading.
+
+When no update is available, the panel still shows the matching current version's published release notes, including for a current preview regardless of this switch. If no published notes exist, it explains that no notes were provided. Network errors and temporary GitHub limits display their status while retaining the project link.
 
 If your older version has no **Check for updates** entry, first download and install a release containing this feature from GitHub. Subsequent updates can be installed in the app.
 
@@ -91,6 +103,8 @@ Interface language does not translate or rewrite annotations, project text, user
 The App's language selection applies to its own toolbar, menus, settings, messages, file-dialog titles and file-type filters. Windows-owned **Open**, **Save** and **Cancel** buttons may still use the Windows display language. Changing the App's language does not change Windows language settings.
 
 ## Toolbar and tool options
+
+Main and context menus use symbols for their actions. **Switch to pass-through** shares the toolbar's **Done** check mark; **Check for updates** uses circular arrows. Stamp pin submenus, shelf actions and canvas reset display choices also have matching icons.
 
 The app icon is on the left, followed by two rows aligned in columns:
 
@@ -115,7 +129,9 @@ Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` 
 
 Shortcut hints appear at the upper right of upper-row buttons and lower left of lower-row buttons. Turn off **Show tool shortcut hints** in Settings to hide letters, stamp-slot numbers and the `-`/`+` hints together. Shortcuts still work, and the preference is saved across restarts.
 
-Draw lines and arrows by dragging; they have no single-click default length or angle. Rectangles, ellipses and symbols have default width and height: click empty space to create one at that size, centered on the click, or drag to choose its size. Proportional mode or `Shift` creates squares and circles. Enter numeric options directly or drag the corresponding slider. Keys used inside text fields, dropdowns, the color spectrum and sliders operate those controls without switching tools or selecting stamps.
+Draw lines and arrows by dragging; they have no single-click default length or angle. Rectangles, ellipses and symbols have default width and height: click empty space to create one at that size, centered on the click, or drag to choose its size. The aspect setting creates squares and circles; hold `Shift` to temporarily invert it. Rectangle/ellipse snapshots, image crops and rectangular filter regions follow the same rule. Enter numeric options directly or drag the corresponding slider. Keys used inside text fields, dropdowns, the color spectrum and sliders operate those controls without switching tools or selecting stamps.
+
+All nine official symbol presets use a **100×100** default size for click insertion. Reselecting an official symbol preset used in an earlier version also restores that default size. Personal presets and existing objects keep their dimensions.
 
 For numbered markers and emoji, a click or slight pointer movement still inserts at the configured size, centered on the click. Drag to preview the size and release to create the object. The starting point forms one corner of the box, and you can drag in any of four directions. The whole object scales proportionally, keeping numbered markers circular and emoji at their original artwork ratio. Dragging changes only the new object, leaves the tool's configured size intact and commits one undo step.
 
@@ -129,13 +145,13 @@ Click a tile to apply and select it immediately. A tool always has one selected 
 
 Use the plus button to save a new preset, or right-click a personal tile to overwrite, rename or delete it. Saving and renaming use the shared name dialog. Drag with the left mouse button to reorder; dragging and right-clicking do not apply a recipe. Deleting the selected personal preset applies the first official preset.
 
-Dragging personal presets, saved colors or stamps shows a translucent preview that follows the pointer and a destination insertion line. Dropping onto a stamp slot highlights that slot instead. Release to commit, or press `Esc` or switch windows to cancel; dragging does not activate the item.
+Dragging personal tool/canvas presets, saved colors, stamps or layers shows a translucent preview that follows the pointer beyond the scrolling area and source window without taking focus or blocking input. Each gap has one blue insertion line with a dot at both ends, including at the first row and edges. Selected layers move together and the preview shows their count. Dropping onto a stamp slot highlights that slot instead. Release to commit, or press `Esc` or switch windows to cancel; dragging does not activate the item.
 
 Choose colors in tool options or Properties. Foreground controls strokes or text; background controls fill for applicable shapes. The primary row has a rounded color-value button and ten quick colors in two rows. Clicking a quick color applies it directly. Small swatches have square corners and subtle outlines; recent and saved colors fit ten per row, with pixel-aligned spacing at the current display scale.
 
-Open the value button for a saturation/value spectrum, hue strip, opacity and the 20 most recent colors. Changes are drafts until the child panel closes or loses focus, when they apply once without a confirmation button. Clicking the parent options window closes only the color panel. Tools based on strokes and fills use color opacity instead of a duplicate tool-opacity control.
+Open the value button for a saturation/value spectrum, hue strip, opacity and the 20 most recent colors. Valid colors immediately update the primary swatch, tool preview or selected objects. Closing the panel records only the final color once in recent colors, without a confirmation button. Swatches and tool previews retain alpha and blend with their underlying surface, without checkerboards. Clicking the parent options window closes only the color panel. Tools based on strokes and fills use color opacity instead of a duplicate tool-opacity control.
 
-My swatches saves named colors. Drag with the left mouse button to reorder, or right-click to overwrite, rename or delete a swatch. Scroll the fixed area to reach additional swatches. Custom input accepts `#RGB`, `#RRGGBB` or `#AARRGGBB`, such as `#FF2383E2`; `#00000000` is fully transparent. Activate the eyedropper and click the canvas to sample a color, or press `Esc` to cancel.
+My swatches saves named colors. Drag with the left mouse button to reorder, or right-click to overwrite, rename or delete a swatch. Scroll the fixed area to reach additional swatches. Save and rename dialogs keep the originating color panel open underneath. Custom input accepts `#RGB`, `#RRGGBB` or `#AARRGGBB`, such as `#FF2383E2`; `#00000000` is fully transparent. The eyedropper temporarily hides panels except the toolbar and shows a pointed cursor with a live color bubble. Click the canvas to confirm, or use `Esc` or right-click to cancel. Afterwards, the original panels return with the secondary color picker open.
 
 Tool options affect newly created elements. Use Properties to change existing elements.
 
@@ -143,15 +159,17 @@ Tool options affect newly created elements. Use Properties to change existing el
 
 - **Select:** click an element, or drag a selection box from an empty area. Shift-click to add or remove elements. Grouped elements select together; hold `Alt` while clicking to select one member.
 - **Move and resize:** drag an element to move it; drag a corner handle on its selection box to resize.
+- **Shift movement:** hold `Shift` while dragging the body to constrain movement to canvas X/Y axes through the original drag start. Pressing, releasing or pressing Shift again never resets that origin, and movement does not snap diagonally. With perspective enabled, canvas axes can differ from screen directions.
 - **Rotate:** drag the rotation handle above the selection box. Hold `Shift` to snap in 15° steps.
 - **Line endpoints:** select one line or arrow, then drag an endpoint.
-- **Text:** choose the text tool and click the canvas. Enter multiple lines and choose **Done** or press `Ctrl+Enter`. Double-click text in selection mode to edit it again.
+- **Shift drawing:** in Freehand, Highlighter and freehand lassos, holding `Shift` previews a straight segment. Releasing it fixes the endpoint and resumes free drawing; repeat within one drag for multiple straight segments. Lines, arrows, double arrows, their endpoint adjustments and the next polygon-lasso edge snap to eight horizontal, vertical and 45° directions while `Shift` is held.
+- **Text:** choose the text tool and click the canvas for an inline selection frame and caret. `Shift+Enter` adds a line; `Enter` finishes and keeps the object selected; `Esc` cancels this edit. Drag to select text and use normal caret keys, clipboard shortcuts and text undo. Clicking outside the current text frame commits it and starts a new text layer; `Ctrl`-click starts a new layer even inside the frame. Changing layers, tools or windows commits the edit. With the text tool, click existing text to edit it again. Edit numbers through Properties.
 - **Numbered markers:** click to add and select the next number at its configured size, or drag to choose its size. The number advances only when placement completes; `Esc` or cancelling a drag does not skip a number. Hold `Ctrl` to create from inside an existing selection. The number label stays on one line and shrinks to fit the badge without changing its size or the configured font size. Deleting a marker does not renumber the others.
 - **Erase:** the eraser removes whole elements. One erase gesture can be undone as one operation.
 
 Shapes, text, numbers and emoji select the newly inserted object so you can move, scale or rotate it without switching tools; clicking empty space creates and selects the next object. Freehand, Highlighter and stamps remain unselected for continuous use. Lines and arrows require a drag to create. Hold `Ctrl` to temporarily hide selection handles and create at an overlapping position. Mouse-down determines whether the drag creates or adjusts an object; pressing or releasing `Ctrl` during the drag does not switch that action.
 
-Without proportional constraints, rectangles, ellipses and symbols support independent width and height changes. Secondary edits change their actual geometry while retaining stroke width and corner radii, rather than stretching a raster image. Text and numbered markers offer a system-font dropdown with previews.
+Each layer's aspect constraint is saved with the project. Hold `Shift` while dragging a selection handle to temporarily invert it. Unconstrained rectangles, ellipses and symbols support independent width and height changes while retaining stroke width and corner radii. Text defaults to unconstrained resizing: its font and wrapping adapt to the frame, which is retained during later text edits. Text and numbered markers offer a system-font dropdown with previews.
 
 The Number tool has a starting number and a positive increment. New canvases start at that number. Next number on this canvas is saved independently in the document, can be edited and undone, and is not stored as a global counter in presets or application settings. Font size changes the size of markers inserted with a click; a dragged marker takes its size from that gesture.
 
@@ -159,7 +177,11 @@ Every basic element remains a selectable object, including freehand lines, text,
 
 **Properties** and **Layers** are separate windows. Open each from the toolbar or **Main menu → Windows**. Properties refreshes automatically when selection changes. Valid edits to position, size, angle, stroke, fill, opacity and text apply immediately; a short typing burst or leaving a field commits one undoable edit. Multiple selection is labeled accordingly and shows only properties applicable to every selected object. Mixed values appear empty; entering a value applies it to all selected objects.
 
-These tool windows share a floating-panel layout. Drag an empty part of the header to move a panel, or drag an edge or the two diagonal lines in the bottom-right corner to resize it. Close it with the top-right button and reopen it from its original entry point. Panels do not minimize or maximize, including when you double-click the header. Properties shows position and size, appearance, and text or numbering in one continuous view, with only fields applicable to the entire selection. Scroll when needed; the status message stays visible at the bottom.
+These tool windows share a floating-panel layout. Drag an empty part of the header to move a panel, or drag an edge or the two diagonal lines in the bottom-right corner to resize it. Close it with the top-right button and reopen it from its original entry point. Panels do not minimize or maximize, including when you double-click the header. Properties prioritizes text content and other settings that are harder to change on the canvas, with position and size last. Only fields applicable to the entire selection appear; the status message stays visible at the bottom.
+
+Double-click a canvas layer, or press `Enter` with multiple layers selected, to open Properties near the pointer. A panel that is already visible keeps its position. Double-clicking during inline text editing still selects text. Pin Properties with its header button to keep it open. An unpinned panel closes when focus leaves; nested color pickers and owned dialogs remain part of its focus stack. Closing the panel resets the pin.
+
+An active pin emphasizes its icon, border and background, using the same two-state feedback as canvas visibility. The canvas settings button also shows a complete active state when perspective is enabled; clicking it still opens settings rather than directly toggling perspective.
 
 Drag the label beside a numeric field, such as X, Y, width, height, angle or stroke width, horizontally to adjust it. `Shift` makes fine adjustments; `Ctrl` speeds them up. Release to commit one operation, or press `Esc` to cancel the drag. X/Y refer to the top-left of the element's bounds on the canvas plane and differ from screen coordinates when projection is enabled. Ordinary objects use width and height along their own axes, including existing scale but excluding the stroke; perspective-placed snapshots use their plane-aligned bounds. Resizing through these fields preserves rotation; with proportional resizing, you can change only width or height. If the geometry has zero size along an axis, adjust its endpoints before changing that dimension. Arrowheads can be filled triangles, open arrows or diamonds; a head size of 0 scales automatically with stroke width.
 
@@ -167,17 +189,79 @@ Elements higher in the layer list appear in front. Click an already selected lay
 
 Hiding Properties or changing selection commits valid edits already shown on the canvas. Incomplete or invalid numbers are never written to objects; choosing another object loads its current properties automatically.
 
-The canvas opacity slider at the upper right affects annotations and images, while the screenshot background keeps normal brightness. Clear canvas and visibility controls are beside it. The button has the same background size as adjacent buttons, with a red surface, a soft-bristle broom icon and the tooltip **Create a blank canvas**. The first click changes it to a confirmation checkmark and shows a red confirmation bubble with white **Clear canvas?** text; click again to create a blank canvas and restore the original button. A quick double-click also confirms. Clicking elsewhere, pressing `Esc` or leaving edit mode cancels confirmation without clearing content. Clearing archives the current workspace first; use **Restore workspace history** to retrieve it. Hiding keeps your content and the current edit/pass-through mode. New elements cannot be added while hidden. If a display change leaves annotations outside the visible screen, use **Main menu → Canvas → Move annotations into view**. This moves visible, unlocked objects while preserving their spacing and the screenshot crop.
+The canvas opacity slider at the upper right affects annotations and images, while the screenshot background keeps normal brightness. New canvas and visibility controls are beside it. Use the gray page-plus button for New canvas and the red broom beside it for immediate Clear. Hiding keeps your content and the current edit/pass-through mode. New elements cannot be added while hidden.
 
-Choose **Canvas** on the toolbar to open the canvas panel and set its background color and opacity. Background opacity is independent of the toolbar's annotation opacity; the background is transparent by default. A new canvas starts with an 8-column by 6-row square grid, sized to about 60% of the current monitor. You can also choose **Main menu → File → New canvas** to create a default canvas; this resets canvas settings and objects. Clearing objects keeps the current canvas settings.
+If a display change leaves annotations wholly off screen, use **Main menu → Canvas → Move annotations into view**. Any content partly visible on a display in the active drawing scope stays in place. Wholly offscreen, visible and unlocked objects move to the nearest usable position; groups retain spacing between editable members. Object sizes and the screenshot crop stay unchanged. Oversized content is made reachable without scaling. Recovery is one undo step, and repeated clicks do not keep shifting content.
 
-Properties appear on the left, with official and personal presets on the right. A preset applies the background, grid and projection setting in one undo step. Save the current configuration with the plus button; personal presets support overwrite, rename, delete and drag reordering. Presets keep the current calibrated corners and recalculate for their row and column counts. They store no screen coordinates or calibration matrix; a missing reference plane starts on the current monitor.
+Choose **Canvas** on the toolbar to open the canvas panel and set its background color and opacity. Background opacity is independent of the toolbar's annotation opacity; the background is transparent by default. A new canvas starts with an 8-column by 6-row square grid, sized to about 60% of the target display. Both New and Clear retain the current canvas settings. Reset the reference plane in the canvas panel.
 
-Enable **Enable perspective calibration**, then choose **Start calibration** before dragging a corner, an edge or the interior to match a plane on screen. Ordinary drawing pauses during calibration. A single-pixel reference grid with alternating black and white segments covers the screen, with the calibration frame and handles still visible. **Show grid** dims the reference and overlays your configured grid above it; ending calibration hides the reference and keeps only your enabled grid. Each drag is one undo step. Press `Esc` to cancel the current drag; press it again to end calibration. Losing focus or hiding the canvas cancels an unfinished drag. Enter columns and rows from 1 to 256 or use their sliders, which snap to whole numbers. Changes adjust the plane ratio and grid density while preserving the calibrated target corners. **Reset calibration** restores the initial fitted plane. Grid colors use the foreground presets; adjust color, opacity and line width, and choose a solid, dashed or dotted pattern from the illustrated list. The grid covers the plane beyond the calibrated frame and automatically reduces the number of visible lines when dense.
+**Reset perspective canvas** is a split button. Click its main action to execute the current choice, or use its arrow to choose the default option or an explicit numbered display. Choosing executes immediately and persists the application preference independently of projects and presets. With one active display only the default is shown; with several it uses the primary display. An unavailable choice falls back to the default, including after a drawing-scope change.
 
-Projection applies to shapes, text, images and animations. Live blur and pixelation regions follow the canvas plane, while their sampling amount remains measured in screen pixels. Perspective scaling uses the equal-depth direction through the nearest corner; parallelograms keep the maximum-stretch direction at 1:1. This is a scale convention; it does not recover a real camera. Concave or crossing quadrilaterals and projections crossing the horizon are rejected. Recalibrate after a game's camera moves. A newly placed screenshot is inverse-projected into its selected screen position, then follows later canvas projection changes. Version 3 projects save these settings; missing fields in older v1/v2 projects use defaults.
+Properties appear on the left, with official and personal presets on the right. Save the current canvas settings with the plus button. Newly saved or overwritten personal presets include the background, grid, corner positions and complete perspective calibration; applying one restores its saved corners and perspective state in one undo step. Personal presets support overwrite, rename, delete and drag reordering. Calibration is restored as saved, without automatically scaling or moving it to the target display; recalibrate as needed after a display-layout change.
 
-Dense grids at high resolutions can noticeably slow CPU rendering. Automatic line thinning does not guarantee smooth rendering at every setting. If drawing becomes slow, reduce the row or column count or turn off **Show grid**; calibration guides hide automatically when calibration ends.
+Official presets disable perspective and reset the default plane geometry. Older personal presets without calibration retain the current corners and recalculate for their row and column counts. Corner coordinates that an older preset never saved cannot be recovered automatically; recalibrate and overwrite that preset to restore the calibration on later use.
+
+Use **Place four corners**, beside Adjust, to click four corners in any order. Preview a line, then a triangle, then a quadrilateral with its grid. The fourth click commits one undo step; Esc cancels unfinished placement.
+
+Enable **Enable perspective canvas**, then choose **Adjust perspective canvas**. Adjustment and reset actions hide when perspective is disabled. Corners snap near adjacent horizontal or vertical axes; Ctrl bypasses snapping and Shift constrains movement to an axis through the drag origin. The toolbar uses a rectangle or trapezoid to reflect the current perspective state; its click still opens canvas settings. Drag the central four-way handle or an empty area inside the frame to move it as a whole, including across displays when **All screens** is active. Corners and edges adjust perspective. When a drag reaches the safe perspective boundary, the frame turns amber and a notice appears; movement stays within the valid range. Ordinary drawing pauses during calibration. A single-pixel reference grid with alternating black and white segments covers the screen, with the calibration frame and handles still visible. **Show grid** dims the reference and overlays your configured grid above it; ending calibration hides the reference and keeps only your enabled grid. Each drag is one undo step. Press `Esc` to cancel the current drag; press it again to end calibration. Losing focus or hiding the canvas cancels an unfinished drag.
+
+Rows appear on the left and columns on the right. Enter values from 1 to 256 or use their sliders, which snap to whole numbers. Changes adjust the plane ratio and grid density while preserving the calibrated target corners. **Reset perspective canvas** restores the initial fitted plane on the selected display. Grid colors use the foreground presets; adjust color, opacity and line width, and choose a solid, dashed or dotted pattern from the illustrated list. The grid covers the plane beyond the calibrated frame and automatically reduces the number of visible lines when dense.
+
+Projection applies to shapes, text, images and animations. Default Surface objects follow the canvas plane; experimental Billboards use the facing and depth rules below. Live blur and pixelation regions follow their placement while sampling amounts remain measured in screen pixels. Perspective scaling uses the equal-depth direction through the nearest corner; parallelograms keep the maximum-stretch direction at 1:1. This is a scale convention; it does not recover a real camera. Concave or crossing quadrilaterals and projections crossing the horizon are rejected. Recalibrate after a game's camera moves. A newly placed screenshot is inverse-projected into its selected screen position, then follows later canvas projection changes. Version 6 projects save canvas and per-layer placement settings; missing fields in older v1/v2/v3/v4/v5 projects use defaults.
+
+**Lock grid size while adjusting** is off by default. Enabling it captures the current grid spacing and origin in canvas coordinates without a visual jump. Four-corner adjustments keep the existing projection algorithm, while grid intersections remain aligned with anchors at the same canvas coordinates. Row and column fields become read-only coverage results that update during dragging, including fractional cells; these values do not feed back into calibration. Unlocking restores the original integer count controls and may rearrange the grid, without moving objects or anchors. Disabling perspective retains the lock; resetting or applying a canvas preset releases it. Version 6 projects and recovery data retain the lock; older projects default to unlocked.
+
+During calibration, an **Origin** label identifies the corner originally designated top-left, in amber when locked. It represents row zero and column zero and follows the same corner identity during dragging and rotation. Grid spacing and origin remain fixed in canvas coordinates; their screen projection still changes, and the grid extends in both directions beyond the origin.
+
+Dense grids at high resolutions can noticeably slow CPU rendering. Automatic line thinning does not guarantee smooth rendering at every setting. If drawing becomes slow, unlock the grid and reduce the row or column count or turn off **Show grid**; calibration guides hide automatically when calibration ends.
+
+## Surface and Billboard placement (experimental)
+
+**Surface** objects follow the canvas projection. **Billboard** objects face the screen, retain their own proportions and rotation, and scale with their ground-anchor depth. Billboard creation is off by default. Its switch is beside canvas adjustment in the toolbar and is also available from the main menu. Leaving it off retains existing creation workflows; the general Shift movement constraint and corrected Surface capture outlines apply independently.
+
+Enable canvas perspective, then **Billboard mode (experimental)**. The global switch affects only new objects, does not convert existing layers and is not stored separately in tool presets. Disabling perspective disables the switch and resets new-object placement to Surface; existing billboard flags, anchors and elevation remain stored and resume projection when perspective returns. **Placement** and **Elevation** appear in Properties with perspective enabled.
+
+### Choose depth, then use the original tool
+
+1. Select a tool that creates layers. Move the pointer to preview an equal-depth line, then click to fix its depth. This stage shows only the line, without a point at the click, and does not begin drawing.
+2. Use the original tool gesture: rectangles still drag from one corner to another; lassos, multi-point tools and text retain their completion rules. The fixed line stays visible, with a live outline center and a screen-vertical connection to the line.
+3. The intersection becomes the ground anchor. As the outline center moves sideways, the candidate anchor moves along the same line without changing depth. The first click selects depth rather than the final anchor position.
+4. A successful creation ends the equal-depth guide. The center, anchor and connection become selection guides and appear or hide with the selection outline. Choose depth again for the next creation.
+
+Snapshots choose depth before the normal rectangle or lasso operation and retain the selected screen pixels. File imports, plain bitmap pastes, external image drops and flattened stamps prepare the image first, then use one canvas click to choose depth and a second to place the image center. Choosing depth creates no empty layer or undo entry. Switching tools, Esc or cancellation clears unfinished depth selection; failed asynchronous work and changed projects cannot receive a late image.
+
+### Depth-priority occlusion (experimental)
+
+Perspective canvases expose **Depth-priority occlusion** in the Layers window, off by default. Billboards are ordered by their ground-anchor depth, with original layer order used only at exactly equal depth. Surface objects retain layer order within their common plane. The layer list does not reorder as anchors move, and Bring to front cannot override different spatial depths.
+
+Canvas color, the ordinary grid and Surface content belong to the common canvas plane. Equal-depth strips are composited between billboards, allowing one Surface object to cover part of a billboard while passing behind another part. Color and grid transparency is retained: opaque canvas color hides billboard portions behind the plane, while grid lines occlude only their actual painted pixels. The desktop and background image remain backdrops; pictured objects have no independent depth. Negative elevation can hide some or all of a billboard, which remains selectable in Layers with its editing handles available.
+
+The choice is saved in projects and recovery records and supports Undo. Disabling perspective hides and suspends it; enabling perspective restores the choice. Switching creation mode or applying a canvas preset retains it. Screen captures and image exports use the same occlusion; plane-content stamps retain plane semantics. Live blur and pixelation sample only the completed scene behind their current depth fragment. Blur support does not read nearer fragments that have not yet been composited, avoiding cyclic sampling between intersecting filters. Depth-strip drawing can increase rendering cost on complex canvases.
+
+Version 6 stores the option and reads versions 1–5. Older projects default to disabled; older applications cannot read the new format.
+
+### Logical dimensions and visible size
+
+All billboards share the canvas depth scale, without a separate first-placement 100% reference per object. Screen drag dimensions are divided by the depth scale to obtain stored logical dimensions. A stroke preset already specifies logical units and is projected directly. At a depth scale of 0.25, a screen rectangle of 100×100 stores logical dimensions of 400×400; a stroke preset of 5 remains 5, appearing as 1.25 throughout preview and after creation.
+
+Moving farther away reduces visible dimensions, stroke width and elevation together while retaining their logical values. Disabling perspective displays logical size: that rectangle becomes 400×400 with stroke 5 at ordinary 100% view scale. It does not return forcibly to its initial screen size.
+
+| Operation | Result |
+| --- | --- |
+| Drag the body | Move the ground anchor on the canvas plane; depth changes the projection, retaining logical dimensions, elevation and angle |
+| Hold Shift during body movement | Constrain the anchor to canvas X/Y axes through the original drag start, independently of screen axes, equal-depth lines and artwork angle |
+| Drag the center point | Use only screen-vertical motion to change elevation and move the entire layer up/down, retaining the anchor and logical dimensions |
+| Drag the outer rotation handle | Rotate in the screen-facing plane while retaining the anchor and elevation |
+| Drag a corner handle | Resize about the layer center while retaining the anchor and elevation; Shift temporarily inverts its aspect preference |
+| Click the ground anchor or connection | Display-only references, without a second drag or rebinding action |
+
+Elevation is signed: the center can pass through the anchor and continue down, without clamping at zero. At zero elevation the points coincide, but the center height handle remains usable. A billboard's Properties X/Y locate its ground anchor on the canvas plane. When an equal-depth line cannot intersect a screen-vertical line stably, the app reports that no anchor can be determined at that angle. Choose a valid location or adjust calibration; the app does not silently choose another depth.
+
+### Groups, conversions and files
+
+Editable group stamps, internal object copying, restored history and reopened projects retain every layer's placement, anchor, elevation and artwork, independently of the global switch. Editable stamps do not add a depth-selection step. Flattened image stamps capture the current visible appearance and become one fresh image, losing internal child depths. Rotating a mixed group changes only its Surface members; billboard anchors, elevation and individual angles all remain fixed, so their relative layout can change. Depth never automatically changes layer order.
+
+With perspective enabled, Properties can convert an existing layer's placement. Conversion keeps original content and logical geometry while allowing its visible outline to change: a distorted Surface layer cannot simultaneously regain a front-facing shape and retain every screen corner. Images are not repeatedly resampled when moved or converted.
 
 ## Stamp library and shelf
 
@@ -233,9 +317,11 @@ Select **Snapshot** again to open its options: selection shape, content source a
 
 | Selection shape | Operation |
 | --- | --- |
-| Rectangle / ellipse | Drag and release to finish; hold `Shift` to constrain to a square / circle |
-| Freehand lasso | Hold the mouse button and trace an outline; release to close it |
-| Polygon lasso | Click to add vertices and move to preview the next edge; click the first vertex, double-click or press `Enter` to finish, and `Backspace` to remove the last vertex |
+| Rectangle / ellipse | Drag and release to finish; `Shift` temporarily inverts the aspect setting |
+| Freehand lasso | Trace an outline; hold `Shift` for a straight segment, release `Shift` to resume the curve, then release the mouse to close it |
+| Polygon lasso | Click to add vertices and move to preview the next edge; `Shift` snaps to eight directions; click the first vertex, double-click or press `Enter` to finish, and `Backspace` to remove the last vertex |
+
+With perspective enabled and Surface placement selected, rectangles and ellipses are canvas-plane shapes, so their preview follows the projection. Disabling perspective restores the corresponding rectangular or elliptical content outline. Freehand and polygon lassos always trace the pointer in screen space. Billboard snapshots choose an equal-depth line first, then select a screen contour, derive logical dimensions and preserve captured pixels. Optional border presets use logical width and already reflect depth during preview.
 
 Clicking does not create a default-sized snapshot, and selections with no area insert nothing. Self-intersecting lassos use the even-odd fill rule: areas reached by crossing an even number of outline edges remain transparent.
 
@@ -272,7 +358,7 @@ Normal startup registers `.floatcanvas` files for the current user. You can also
 
 New captures are saved as images on the current canvas; older separate capture drafts remain supported. Export does not clear content. Projects retain original images for later editing; use a composite image export when sharing a redacted result.
 
-The current project format is **v3**. Older **v1/v2** projects remain readable; new projects include canvas background, grid and perspective settings. Older FloatCanvas versions reject unsupported newer formats to prevent silent data loss. Keep the original file when exchanging work with an older version.
+The current project format is **v6**. Older **v1/v2/v3/v4/v5** projects remain readable; new projects include canvas background, grid, perspective and layer placement, including billboard anchors, logical elevation, depth-priority occlusion and the grid-size lock. Missing placement flags in old files mean Surface. Older apps cannot read v6. Missing depth preferences default to disabled. Keep the original file when exchanging work with an older version.
 
 Committed edits trigger a recovery save after about one second. The App waits for pending recovery writes before exiting. Normal startup still uses a blank canvas. Choose **Main menu → File → Restore workspace history…** to select the latest or an earlier workspace and restore its live canvas and capture draft together. Restoring, cancelling or a failed restore keeps the edit/pass-through mode you started in. If you switch to another application or explicitly leave edit mode during restoration, FloatCanvas does not reclaim focus. Undo history is not retained across restarts.
 
@@ -303,10 +389,24 @@ The minimum system baseline is **Windows 10 1607 (build 14393) x64**, including 
 
 Install a compatible **.NET 10 Windows Desktop Runtime x64** available for your system, and keep Windows and the runtime updated. The app's minimum baseline is separate from Microsoft's support commitments, which also depend on the Windows version, edition and lifecycle; see [.NET 10 supported operating systems](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md). Testing has still mainly used Windows 11. Earlier Windows 10/LTSB/LTSC versions need testing on real systems; source inspection and compatibility-branch tests cannot replace that acceptance work.
 
-Primary-screen scope is the default. Complete cross-screen, mixed-DPI, portrait-display, hot-plug, lock-screen recovery and dual-4K behavior are still being refined. Behavior may vary across devices and applications.
+New configurations default to all screens, with a primary-screen-only option. Complete cross-screen, mixed-DPI, portrait-display, hot-plug, lock-screen recovery and dual-4K behavior are still being refined. Behavior may vary across devices and applications.
 
 FloatCanvas is intended for ordinary desktop and fullscreen applications without requiring windowed or borderless mode in every case. Fullscreen compatibility depends on the application and display mode; not every exclusive-fullscreen scenario is guaranteed.
 
 When using window detection in Windows Snipping Tool or another screenshot app, the drawing layer may become the capture target. To keep annotations in the result, use FloatCanvas's own capture or export commands. To capture only the application underneath, use the Hide canvas / Show canvas shortcut (default `` Ctrl+Shift+` ``) to hide the canvas, take the screenshot, then show it again. Pass-through keeps annotations visible. Canvas visibility keeps the current edit/pass-through mode; use the separate mode shortcut to change input behavior.
 
-HDR color accuracy, pressure-sensitive pens, touch, OCR, recording, scrolling capture, cloud synchronization and uploads are outside v1.
+HDR color accuracy, pressure-sensitive pens, touch, OCR, recording, scrolling capture, cloud synchronization and uploads are outside the current scope.
+
+When a file is bound, a speech bubble above the toolbar shows its name and a separate Unsaved badge for unsaved edits. Hover for the full path. It folds with the toolbar; right-click to detach the file or open its location. Detaching keeps the current content and undo history as an unnamed canvas.
+
+Right-click a filled toolbar stamp slot for exactly four maintenance actions: Rename, Overwrite, Delete and Unpin. Use and editable-source actions remain in the stamp library. Unpin affects only that slot; deleting the stamp removes every binding to it.
+
+### New canvas, clear and history versions
+
+The gray page-plus toolbar button starts a new canvas with the current settings and no file association. New unbound drawings require a second click on the same button. Empty canvases, unchanged history copies and clean saved projects start a new canvas in one click. Edited bound projects immediately offer Save and leave, Keep in history and leave, or Cancel. The red broom beside New immediately clears drawing objects with no confirmation or history entry. It retains the background, grid, calibration and file association, and supports Ctrl+Z. The project file changes only when you save again.
+
+History compares content with the version present when you entered a canvas, then archives on switching, starting a new canvas or exiting. Temporary work is kept automatically; edited projects remain eligible after saving. Opening without edits, blank canvases (including changes only to canvas settings) and duplicate content add no versions. Restoring creates an unnamed copy, retains the original history timestamp and position, and never automatically overwrites the source project. Further edits can create a new version at the top of history. Background recovery also persists empty states separately.
+
+Maximum saved history versions defaults to 60 and accepts integers from 1 to 10000. Saving settings or adding history removes the oldest excess versions. The current canvas and recovery quarantine are excluded. Save a project file for long-term retention.
+
+Stamp tooltips preserve the preview image aspect. Stamps with projected live effects use a captured thumbnail, which can differ from nominal plane-space dimensions; the preview stays undistorted and reports separate horizontal and vertical scales when needed.

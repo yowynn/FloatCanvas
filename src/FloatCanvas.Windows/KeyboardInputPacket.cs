@@ -39,6 +39,9 @@ public sealed class KeyboardInputPacket
     public bool IsLocalBalance { get; }
     public nint ForegroundWindow { get; }
     public OverlayModifiers Modifiers { get; }
+    /// <summary>Physical pointer position sampled with a Shift transition, before UI dispatch.</summary>
+    public OverlayPoint? PointerPosition { get; internal init; }
+    public bool? PointerLeftDown { get; internal init; }
     public KeyboardLeaseEndReason? EndReason { get; }
     public ReadOnlySpan<byte> KeyboardState => keyboardState;
     public byte[] CopyKeyboardState() => (byte[])keyboardState.Clone();

@@ -1,0 +1,46 @@
+using System.Windows;
+using FloatCanvas.Windows;
+
+namespace FloatCanvas.App;
+
+internal sealed partial class DesktopSession
+{
+    private PassThroughLauncherWindow? _passThroughLauncher;
+
+    private void ToggleFloatingLogo()
+    {
+        bool previous=_settings.ShowPassThroughLauncher;
+        _settings.ShowPassThroughLauncher=!previous;
+        try { _settings.Save(); }
+        catch { _settings.ShowPassThroughLauncher=previous; throw; }
+        RefreshPassThroughLauncher();
+    }
+
+    private void RefreshPassThroughLauncher()
+    {
+        if (_disposed || _toolbar is null) return;
+        if (!_settings.ShowPassThroughLauncher || _host.IsEditing)
+        { _passThroughLauncher?.Hide(); return; }
+        if (_passThroughLauncher is null)
+        {
+            _passThroughLauncher = new();
+            _passThroughLauncher.EnterEditingRequested += () => RunUiAction(() => SetEditing(true));
+            _passThroughLauncher.ToggleVisibilityRequested += () => RunUiAction(ToggleCanvasVisibility);
+        }
+        OverlayPoint origin;
+        if (_toolbarPlaced && PresentationSource.FromVisual(_toolbarLauncher) is not null)
+        {
+            var point = _toolbarLauncher.PointToScreen(new Point()); origin = new(point.X, point.Y);
+        }
+        else
+        {
+            var surface = (FrameworkElement)_toolbar.Content;
+            surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var primary = _host.PrimaryMonitor;
+            var target = _settings.ToolbarX is { } x && _settings.ToolbarY is { } y
+                ? _host.Monitors.FirstOrDefault(m => m.WorkArea.Contains(new OverlayPoint(x, y))) ?? primary : primary;
+            origin = SessionWindowLayout.ToolbarOrigin(target, surface.DesiredSize.Width, surface.DesiredSize.Height, _settings.ToolbarX, _settings.ToolbarY);
+        }
+        _passThroughLauncher.ShowAt(origin, _host.IsVisible);
+    }
+}

@@ -19,7 +19,7 @@ internal sealed class ColorField : UserControl
     private readonly TextBlock label = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 10, FontWeight = FontWeights.SemiBold };
     private readonly Popup popup;
     private readonly ColorPickerPanel picker;
-    private bool pickerSessionOpen, draftCommitted, isMixed;
+    private bool pickerSessionOpen, draftCommitted, pickerSessionChanged, isMixed;
 
     internal bool IsMixed
     {
@@ -33,6 +33,7 @@ internal sealed class ColorField : UserControl
     public uint Value { get => (uint)GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
     public event Action<uint>? ValueChanged;
     public event Action? EyedropperRequested;
+    internal event Action? PickerClosed;
 
     public ColorField(ColorRole role, ColorLibrary? library = null)
     {
@@ -62,6 +63,7 @@ internal sealed class ColorField : UserControl
         border.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };
+        PopupChildDialog.Attach(border, popup);
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && TryClosePicker()) e.Handled = true; };
         border.PreviewKeyDown += (_, e) =>
         {
@@ -71,7 +73,7 @@ internal sealed class ColorField : UserControl
         SessionWindowCoordinator? popupSession = null;
         popup.Opened += (_, _) =>
         {
-            pickerSessionOpen = true; draftCommitted = false;
+            pickerSessionOpen = true; draftCommitted = false; pickerSessionChanged = false;
             picker.Value = Value; picker.RefreshCollections();
             popupSession = SessionWindowCoordinator.Find(Window.GetWindow(this));
             popupSession?.RegisterPopup(popup, ClosePicker);
@@ -80,14 +82,17 @@ internal sealed class ColorField : UserControl
         {
             CommitPickerDraft(); pickerSessionOpen = false;
             popupSession?.UnregisterPopup(popup); popupSession = null;
+            PickerClosed?.Invoke();
         };
         button.Click += (_, _) => { if (popup.IsOpen) ClosePicker(); else popup.IsOpen = true; };
         picker.ColorChosen += color =>
         {
             // An explicit choice can intentionally unify a mixed selection even
             // when it equals the first layer's color. Plain popup closure cannot.
-            draftCommitted = true; SetUserValue(color); ClosePicker();
+            ApplyPickerValue(color); ClosePicker();
+            if (MayReturnFocus && button.IsVisible && button.IsEnabled) button.Focus();
         };
+        picker.DraftChanged += color => { if (pickerSessionOpen) ApplyPickerValue(color); };
         picker.EyedropperRequested += () => { ClosePicker(); EyedropperRequested?.Invoke(); };
         Unloaded += (_, _) => ClosePicker();
         if (role == ColorRole.Background) Value = 0;
@@ -96,14 +101,17 @@ internal sealed class ColorField : UserControl
 
     public void SetUserValue(uint value)
     {
+        if (popup.IsOpen)
+        {
+            bool returnToButton = picker.IsKeyboardFocusWithin;
+            picker.Value = value; ApplyPickerValue(value); ClosePicker();
+            if (returnToButton && MayReturnFocus && button.IsVisible && button.IsEnabled) button.Focus();
+            return;
+        }
         if (Value != value) library.Remember(value);
-        bool returnToButton = popup.IsOpen && picker.IsKeyboardFocusWithin;
         bool changed = IsMixed || Value != value;
         IsMixed = false;
-        Value = value; if (popup.IsOpen) { picker.Value = value; popup.IsOpen = false; }
-        // A committed choice completes this picker interaction. Keep keyboard access
-        // on its trigger, just as Escape does; closed/background updates stay silent.
-        if (returnToButton && MayReturnFocus && button.IsVisible && button.IsEnabled) button.Focus();
+        Value = value;
         if (changed) ValueChanged?.Invoke(value);
     }
     internal bool OwnsPickerInput(DependencyObject? source)
@@ -120,7 +128,23 @@ internal sealed class ColorField : UserControl
     {
         if (!pickerSessionOpen || draftCommitted) return;
         draftCommitted = true;
-        picker.CommitDraft(color => { if (!IsMixed || color != Value) SetUserValue(color); });
+        picker.Run(() =>
+        {
+            if (picker.TryGetDraft(out uint color) && (!IsMixed || color != Value)) ApplyPickerValue(color);
+            if (pickerSessionChanged) library.Remember(Value);
+        });
+    }
+    private void ApplyPickerValue(uint color)
+    {
+        if (!IsMixed && Value == color) return;
+        pickerSessionChanged = true; IsMixed = false; Value = color;
+        ValueChanged?.Invoke(color);
+    }
+    internal void OpenPicker(bool focus = false)
+    {
+        popup.IsOpen = true;
+        if (focus) Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
+        { if (popup.IsOpen) picker.MoveFocus(new TraversalRequest(FocusNavigationDirection.First)); });
     }
     public void ClosePicker()
     {

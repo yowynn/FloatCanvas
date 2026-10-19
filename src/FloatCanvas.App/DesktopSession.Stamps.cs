@@ -32,8 +32,10 @@ internal sealed partial class DesktopSession
 
     private void HandleCanvasPointer(OverlayPointerEvent e)
     {
-        if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _clearCanvasButton?.CancelConfirmation();
+        if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _newCanvasButton?.CancelConfirmation();
         if (DocumentOperationBusy || !_host.IsVisible) return;
+        if (HandleEyedropperPointer(e)) return;
+        if (HandleInlineTextPointer(e)) return;
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _inspector?.CompletePendingEdit();
         if (HandleCalibrationPointer(e)) return;
         using var destination = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick
@@ -48,13 +50,31 @@ internal sealed partial class DesktopSession
             if (_moreToolsMenu is not null) _moreToolsMenu.IsOpen = false;
         }
         ValidateSelectedStamp();
-        bool press = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left;
-        if (_eyedropper is { } color && press)
+        if (_editor.Tool == EditorTool.Stamp && _editor.BillboardMode && !_selectedStampUsesSource &&
+            _selectedStampId is { } billboardStampId &&
+            _stampLibrary.Items.FirstOrDefault(item => item.Id == billboardStampId) is { Mode: StampSaveMode.RasterMerge } rasterEntry)
         {
-            _eyedropper = null;
-            _ = RunCommand(() => SampleDesktopColorAsync(color, e.Position));
+            if (_selectedStamp is null || _stampSelectionPending) return;
+            if (_selectedStampRevision != rasterEntry.Revision)
+            { SelectStamp(billboardStampId, useSource: false, fromSlot: _selectedStampFromSlot); return; }
+            if (!_editor.HasPendingBillboardInsertion)
+            {
+                var loaded = _selectedStamp; var target = Active; var document = target.Document;
+                long revision = target.SceneRevision;
+                _editor.BeginBillboardInsertion((depth, center) =>
+                {
+                    var current = _stampLibrary.Items.FirstOrDefault(item => item.Id == billboardStampId);
+                    if (_disposed || _documentStopped || DocumentOperationBusy || !ReferenceEquals(Active, target) ||
+                        !ReferenceEquals(target.Document, document) || target.SceneRevision != revision ||
+                        current?.Revision != rasterEntry.Revision || _selectedStampId != billboardStampId || _selectedStampUsesSource) return;
+                    StampLibrary.PlaceBillboardRaster(loaded, target, depth, center);
+                    ScheduleRecovery(); RequestRender();
+                });
+            }
+            _editor.Pointer(e);
             return;
         }
+        bool press = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left;
         if (_editor.Tool == EditorTool.Stamp && press)
         {
             if (!_editor.TryToDocument(e.Position, out var stampPoint)) return;

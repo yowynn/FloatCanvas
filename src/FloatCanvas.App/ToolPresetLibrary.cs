@@ -116,7 +116,11 @@ internal sealed class ToolPresetLibrary
             }
             if (preset.Fields.HasFlag(ToolPresetFields.Corner)) result.CornerRadius = saved.CornerRadius;
             if (preset.Fields.HasFlag(ToolPresetFields.Aspect)) result.ConstrainAspect = saved.ConstrainAspect;
-            if (preset.Fields.HasFlag(ToolPresetFields.Symbol)) result.Symbol = saved.Symbol;
+            if (preset.Fields.HasFlag(ToolPresetFields.Symbol))
+            {
+                result.Symbol = saved.Symbol;
+                result.DefaultWidth = saved.DefaultWidth; result.DefaultHeight = saved.DefaultHeight;
+            }
             if (preset.Fields.HasFlag(ToolPresetFields.Capture))
             {
                 result.CaptureShape = saved.CaptureShape; result.CaptureSource = saved.CaptureSource;
@@ -154,7 +158,9 @@ internal sealed class ToolPresetLibrary
         var result = new List<ToolPreset>();
         void Add(string id, string key, EditorTool tool, ToolPresetFields fields = ToolPresetFields.Tool, Action<ToolParameters>? configure = null)
         {
-            var parameters = new ToolParameters { Tool = tool }; configure?.Invoke(parameters);
+            var parameters = new ToolParameters { Tool = tool };
+            if (tool == EditorTool.Symbol) parameters.DefaultWidth = parameters.DefaultHeight = 100;
+            configure?.Invoke(parameters);
             result.Add(new() { Id = "official." + id, Name = L.Get("Preset." + key), Parameters = parameters, IsOfficial = true, Fields = fields });
         }
         Add("freehand", "Freehand", EditorTool.Freehand); Add("highlighter", "Highlighter", EditorTool.Highlighter);

@@ -20,10 +20,40 @@ internal static class Feedback4OptionsTests
             foreach (string locale in new[] { "zh-CN", "en" })
             {
                 L.Initialize(locale); AppTheme.Apply("light");
-                Galleries(folder, locale, check); Parameters(folder, locale, check); Colors(folder, locale, check);
+                Galleries(folder, locale, check); CachedSymbolGallery(folder, locale, check); Parameters(folder, locale, check); Colors(folder, locale, check);
             }
         }
         finally { L.Initialize(language); Directory.Delete(folder, true); }
+    }
+    private static void CachedSymbolGallery(string folder, string locale, Action<string, bool> check)
+    {
+        var library = new ToolPresetLibrary(Path.Combine(folder, locale + "-symbol-gallery.json"));
+        string cachePath = Path.Combine(folder, locale + "-symbol-state.json");
+        var state = new ToolStateStore(cachePath);
+        var custom = new ToolParameters { Tool = EditorTool.Symbol, Symbol = SymbolKind.Heart, DefaultWidth = 234, DefaultHeight = 123 };
+        custom.Style.Stroke = 0xAB123456; custom.Style.StrokeWidth = 7;
+        var personal = library.Save("Custom symbol", custom);
+        foreach (var preset in library.OfficialFor(EditorTool.Symbol))
+        {
+            var baseline = custom.Clone(); baseline.Symbol = preset.Parameters.Symbol;
+            state.OfficialBaselines[preset.Id] = baseline;
+        }
+        state.Tools[EditorTool.Symbol] = custom.Clone(); state.Save();
+        byte[] originalCache = File.ReadAllBytes(cachePath);
+        var loaded = new ToolStateStore(cachePath);
+        var controller = new EditorController(new EditorSession()); controller.ApplyParameters(custom);
+        var gallery = new ToolPresetGallery(controller, library, loaded);
+        foreach (var button in gallery.OfficialTiles.Children.OfType<Button>())
+        {
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(locale + " clicking cached " + button.Tag + " restores 100 by 100 while preserving cached style",
+                controller.DefaultWidth == 100 && controller.DefaultHeight == 100 && controller.Style.Stroke == custom.Style.Stroke && controller.Style.StrokeWidth == 7);
+        }
+        gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, personal.Id)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(locale + " clicking a personal symbol keeps its saved independent dimensions", controller.DefaultWidth == 234 && controller.DefaultHeight == 123);
+        check(locale + " applying new official symbol dimensions leaves existing saved cache and baseline records intact",
+            File.ReadAllBytes(cachePath).SequenceEqual(originalCache) && loaded.OfficialBaselines.Values.All(p => p.DefaultWidth == 234 && p.DefaultHeight == 123) &&
+            loaded.Tools[EditorTool.Symbol].DefaultWidth == 234 && loaded.Tools[EditorTool.Symbol].DefaultHeight == 123);
     }
     internal static void Galleries(string folder, string locale, Action<string, bool> check)
     {

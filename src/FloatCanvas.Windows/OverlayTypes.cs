@@ -17,7 +17,10 @@ public enum OverlayMonitorScope { AllScreens, PrimaryScreen }
 public enum OverlayModifiers { None = 0, Alt = 1, Control = 2, Shift = 4, Windows = 8 }
 public enum OverlayPointerKind { Down, Move, Up, DoubleClick, Wheel, Cancel }
 public enum OverlayMouseButton { None, Left, Right, Middle }
-public sealed record OverlayPointerEvent(OverlayPointerKind Kind, OverlayPoint Position, OverlayMouseButton Button, OverlayModifiers Modifiers, int WheelDelta = 0);
+public sealed record OverlayPointerEvent(OverlayPointerKind Kind, OverlayPoint Position, OverlayMouseButton Button, OverlayModifiers Modifiers, int WheelDelta = 0)
+{
+    public uint? Time { get; init; }
+}
 
 /// <summary>Modifiers use the Win32 MOD_ALT/CONTROL/SHIFT/WIN bit values. MOD_NOREPEAT is applied automatically.</summary>
 public readonly record struct HotkeyBinding(uint Modifiers, uint VirtualKey)

@@ -7,7 +7,7 @@
   "Shell.ProjectType": { "zh": "浮绘工程", "en": "FloatCanvas project" },
   "Shell.RegistrationFailed": { "zh": "工程打开方式注册失败：", "en": "Project file registration failed: " },
   "Shell.StartWithWindows": { "zh": "登录 Windows 时启动浮绘", "en": "Start FloatCanvas when signing in to Windows" },
-  "Shell.StartupHint": { "zh": "默认关闭；开启后登录时在托盘中运行，不自动进入编辑模式。", "en": "Off by default. When enabled, starts in the tray without entering edit mode." },
+  "Shell.StartupHint": { "zh": "登录 Windows 后在托盘中运行。", "en": "Start in the tray when you sign in to Windows." },
   "Shell.RegisterProjectType": { "zh": "注册 .floatcanvas 打开方式", "en": "Register .floatcanvas file type" },
   "Shell.Registered": { "zh": "已注册工程打开方式。可以在 Windows 的“打开方式”中选择浮绘并设为默认应用。", "en": "Project file type registered. Choose FloatCanvas in Windows Open with to make it the default app." },
   "Shell.TestProfileHint": { "zh": "独立测试配置不修改系统启动项或文件关联。", "en": "Isolated test profiles do not change Windows startup or file associations." }

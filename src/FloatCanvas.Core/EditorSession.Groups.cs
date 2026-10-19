@@ -59,7 +59,7 @@ public sealed partial class EditorSession
         if (normalizeOrigin)
         {
             var translation = Affine2D.Translation(-bounds.Left, -bounds.Top);
-            foreach (var element in snapshot.Elements) element.Transform = translation.Compose(element.Transform);
+            foreach (var element in snapshot.Elements) BillboardGeometry.ApplyPlaneTransform(element, translation);
             snapshot.Viewport = new(0, 0, Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
         }
         // The preset carries object opacity. The receiving document owns its overall layer opacity.
@@ -94,7 +94,7 @@ public sealed partial class EditorSession
             Selection.Clear();
             foreach (var element in snapshot.Elements)
             {
-                element.Transform = transform.Compose(element.Transform);
+                BillboardGeometry.ApplyPlaneTransform(element, transform);
                 document.Elements.Add(element); Selection.Add(element.Id);
                 if (element.Kind == ElementKind.Number) document.NextNumber = Math.Max(document.NextNumber, (int)Math.Min(int.MaxValue, (long)element.Number + 1));
             }

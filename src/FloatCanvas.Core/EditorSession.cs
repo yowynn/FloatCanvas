@@ -139,7 +139,7 @@ public sealed partial class EditorSession
     /// <summary>For live gesture updates inside an existing transaction; transform is relative to current positions.</summary>
     public void ApplySelectionTransform(Affine2D transform)
     {
-        foreach (var element in SelectedElements().Where(e => !e.Locked)) element.Transform = transform.Compose(element.Transform);
+        foreach (var element in SelectedElements().Where(e => !e.Locked)) BillboardGeometry.ApplyPlaneTransform(element, transform);
         OnChanged(contentChanged: true);
     }
     public void UpdateSelection(Action<CanvasElement> update, string? label = null) => Execute(label ?? L.Get("History.UpdateProperties"), _ => { foreach (var e in SelectedElements().Where(e => !e.Locked)) update(e); });
@@ -153,7 +153,7 @@ public sealed partial class EditorSession
             var clones = snapshot.Elements;
             d.Groups.AddRange(snapshot.Groups);
             Selection.Clear();
-            foreach (var clone in clones) { clone.Transform = Affine2D.Translation(offsetX, offsetY).Compose(clone.Transform); d.Elements.Add(clone); Selection.Add(clone.Id); }
+            foreach (var clone in clones) { BillboardGeometry.ApplyPlaneTransform(clone, Affine2D.Translation(offsetX, offsetY)); d.Elements.Add(clone); Selection.Add(clone.Id); }
         });
     }
     public void ReorderSelection(LayerOrder order)

@@ -91,7 +91,7 @@ public sealed partial class SceneRenderer
     private static SKPath CaptureOutline(CaptureSelection selection)
     {
         using var builder = new SKPathBuilder { FillType = SKPathFillType.EvenOdd };
-        if (selection.Shape is CaptureShape.Rectangle or CaptureShape.Ellipse)
+        if (selection.Shape is CaptureShape.Rectangle or CaptureShape.Ellipse && selection.Points.Count == 0)
         {
             if (!Finite(selection.Bounds) || selection.Bounds.IsEmpty)
                 throw new ArgumentException(L.Get("Capture.EmptyRegion"), nameof(selection));

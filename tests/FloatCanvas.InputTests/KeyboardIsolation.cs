@@ -131,26 +131,24 @@ internal static partial class Program
         finally { text.Close(); }
         await Task.Delay(40);
         var draftPoint = fixture.SafePoint();
-        var textSession = Active(); string beforeText = JsonSerializer.Serialize(textSession.Document); int beforeTextHistory = textSession.UndoCount;
+        var textSession = Active(); int beforeTextCount=textSession.Document.Elements.Count; int beforeTextHistory = textSession.UndoCount;
         Call("ShowTextEditor", null, new PointD(draftPoint.X, draftPoint.Y)); await Task.Delay(70);
-        var draftWindow = Field<Wpf.Window>("_textEditor");
-        var draftInput = ((System.Windows.Controls.StackPanel)draftWindow.Content).Children.OfType<System.Windows.Controls.TextBox>().Single();
+        var (draftWindow,draftInput)=ProductionInlineInput();
         const string draftText = "自建未提交文字草稿\n第二行";
         draftInput.Text = draftText;
         KeyboardRequire(Host.IsEditing && draftWindow.IsVisible,
             "The real own text-editor window is a legitimate editing foreground");
         fixture.Activate(); await Task.Delay(180);
-        bool preservedText = !Host.IsEditing && !draftWindow.IsVisible && ReferenceEquals(Field<Wpf.Window?>("_textEditor"), draftWindow) &&
-            draftInput.Text == draftText && JsonSerializer.Serialize(textSession.Document) == beforeText && textSession.UndoCount == beforeTextHistory;
+        bool preservedText = !Host.IsEditing && !draftWindow.IsVisible && Field<object?>("_inlineText") is null &&
+            textSession.Document.Elements.Count==beforeTextCount+1&&textSession.Document.Elements[^1].Text==draftText&&textSession.UndoCount==beforeTextHistory+1&&!textSession.IsTransactionActive;
         KeyboardPhases.Add(new { Phase = "ProductionTextDraftFocusLoss", PreservedText = preservedText, TextAssignedProgrammatically = true,
             RealImeExercised = false, DraftText = draftInput.Text, WindowVisible = draftWindow.IsVisible });
-        KeyboardRequire(preservedText, "Automatic foreground loss hides the production text editor and retains its uncommitted text without changing history");
+        KeyboardRequire(preservedText, "Automatic foreground loss commits production inline text once and removes its invisible input surface");
         Call("SetEditing", true); await Task.Delay(80);
-        bool textResumed = Host.IsEditing && ReferenceEquals(Active(), textSession) && ReferenceEquals(Field<Wpf.Window?>("_textEditor"), draftWindow) &&
-            draftWindow.IsVisible && draftInput.Text == draftText;
+        bool textResumed = Host.IsEditing && ReferenceEquals(Active(), textSession) && Field<object?>("_inlineText") is null &&
+            textSession.Document.Elements[^1].Text==draftText&&textSession.UndoCount==beforeTextHistory+1;
         KeyboardPhases.Add(new { Phase = "ProductionTextDraftResume", PreservedText = textResumed, DraftText = draftInput.Text });
-        KeyboardRequire(textResumed, "Re-entering the same document restores the production text editor with its exact uncommitted draft");
-        draftWindow.Close(); await Task.Delay(30);
+        KeyboardRequire(textResumed, "Re-entering the same document retains committed text without reopening an editor");
         var live = Active(); var point = fixture.SafePoint();
         live.Execute("自建失焦事务已提交夹具", d => d.Elements.Add(new CanvasElement { Kind = ElementKind.Rectangle, Width = 50, Height = 35,
             Transform = Affine2D.Translation(point.X, point.Y), Style = new() { Stroke = 0xFF2383E2 } }));

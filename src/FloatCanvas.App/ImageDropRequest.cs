@@ -47,6 +47,13 @@ internal sealed class ImageDropRequest : IDisposable
         return true;
     }
 
+    internal bool TryCompleteDeferred(ImageDropRequest? current, EditorSession live, EditorSession? capture)
+    {
+        if (Completed || !IsCurrent(current, live, capture)) return false;
+        Completed = true;
+        return true;
+    }
+
     internal void Cancel() { if (!disposed) cancellation.Cancel(); }
     public void Dispose() { if (disposed) return; Cancel(); disposed = true; cancellation.Dispose(); }
 }

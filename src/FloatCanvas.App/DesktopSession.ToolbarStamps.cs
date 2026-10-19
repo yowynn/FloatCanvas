@@ -35,6 +35,7 @@ internal sealed partial class DesktopSession
     private void RefreshMascotVisibility(bool visible)
     {
         _toolbarLauncher?.SetCanvasVisible(visible);
+        _passThroughLauncher?.Launcher.SetCanvasVisible(visible);
         if(_mascotCanvasVisible==visible)return;
         _mascotCanvasVisible=visible;
         if(_toolbar is not null)_toolbar.Icon=visible?AppIcon.WindowImage:AppIcon.HiddenWindowImage;

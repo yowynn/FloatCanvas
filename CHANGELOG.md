@@ -2,6 +2,87 @@
 
 ## 未发布 / Unreleased
 
+## [0.2.0] - 2026-10-19
+
+0.2.0 正式发布，整合本轮预览版反馈，完善绘图、工程与历史画布流程。立牌和深度优先遮挡保留实验性标记并默认关闭。新工程格式为 v6，可读取 v1～v5；旧版应用不能读取新保存的 v6 工程。
+
+Version 0.2.0 completes this preview cycle with drawing, project and canvas-history improvements. Billboard placement and depth-priority occlusion remain experimental and off by default. New projects use format v6 and read versions 1–5; older apps cannot read newly saved v6 projects.
+
+- 优化开启“深度优先遮挡”后的画布调整：普通画面只合成各输出当前可见区域，并复用有内存上限的 CPU 工作缓冲，减少多屏拖动画布边时的重复计算与分配；保持原投影、网格和深度遮挡规则。
+- Speed up canvas adjustment with Depth-priority occlusion by composing ordinary scenes only within each output's visible region and reusing bounded CPU scratch surfaces. This reduces repeated work and allocations during multi-monitor edge dragging while preserving projection, grid and occlusion rules.
+
+- 新增默认关闭的“调整时锁定网格大小”：锁定显示网格格长与原点，保留原透视算法，倾斜四点调整时网格交点与图层锚点保持对齐；行列改为实时只读小数覆盖量。校准增加原点标记，普通／参考网格及四点预览共用格距；撤销、工程和恢复数据保留锁定，重置／应用预设解除锁定。v6 兼容读取 v1～v5。
+- Add opt-in **Lock grid size while adjusting**, retaining fixed display-grid spacing and origin with the existing projection algorithm. Tilted calibration keeps intersections aligned with anchors; row/column coverage updates as read-only fractional values. Calibration adds an origin marker; ordinary/reference grids and four-point previews share spacing. Undo, projects and recovery retain the lock; reset/presets release it. Version 6 reads versions 1–5.
+
+- 透视画布的图层窗口新增默认关闭的“深度优先遮挡”。立牌锚点深度优先，完全同深度沿用图层顺序；画布底色、网格和贴面沿等深线参与局部遮挡。统一空间选取、截图／导出、缓存与实时滤镜的有序后方采样；关闭透视保留选择。v6 工程保存此开关，兼容读取 v1～v5。
+- Add opt-in Depth-priority occlusion to Layers for perspective canvases. Anchor depth orders billboards, with layer-order ties only at identical depth; canvas color, the grid and Surface content participate in partial occlusion. Spatial picking, captures/exports, cache routing and finite rear-scene live-filter sampling follow the same rules. Disabling perspective retains the choice. Version 6 stores the option and reads versions 1–5.
+
+- 新增默认关闭的“立牌模式（实验性）”，与原“贴面”放置共存。透视下先预览并点击固定等深线，再沿用原工具输入；创建期间显示中心与屏幕竖直锚点连线，完成后辅助线随选中轮廓显示。主体移动地面锚点，中心手柄调整正负离地高度，角点以中心缩放；混合组合旋转只影响贴面成员。逻辑尺寸、描边和高度按同一深度比例显示，宽高由屏幕拖拽反算，描边预设 5 始终保留逻辑值 5。文件／位图插入及合并印章遵循新建方式，可编辑组合印章和内部复制保留各图层数据。v6 工程保存放置数据，兼容读取 v1／v2／v3／v4／v5，不承诺旧版应用读取新格式。
+- Add opt-in Billboard mode (experimental) alongside Surface placement. In perspective, preview and fix an equal-depth line before using the original tool gesture; show the center and vertical anchor connection while drawing and with selection handles afterwards. Moving the body moves the ground anchor, the center handle changes signed elevation, and corner resizing uses the center. Mixed-group rotation affects only Surface members. Logical dimensions, strokes and elevation share one depth scale: drag sizes are inverse-mapped, while a stroke preset of 5 stays logically 5. Fresh images and flattened stamps use new-object placement; editable stamps and internal copies retain per-layer metadata. Version 6 retains placement data and reads v1/v2/v3/v4/v5, without promising older-app support for new files.
+
+- 新增通用 Shift 拖动移动约束：以本次拖动最初起点为基准，仅沿画布 X／Y 轴移动，中途切换 Shift 不重设原点；立牌同样约束地面锚点，不沿屏幕或等深线方向。
+- Hold Shift while moving to constrain movement to canvas X/Y axes through the original drag start; changing Shift mid-drag never resets that origin. Billboard movement constrains its ground anchor rather than screen or equal-depth directions.
+
+- 固定按钮与显隐按钮统一二态强调，开启时同时改变图标、边框和背景。画布调整入口按透视状态显示完整强调，点击仍打开画布设置。
+- Unify active pin and visibility feedback across icon, border and background. The canvas settings action reflects perspective with its full active style while continuing to open settings on click.
+
+- 透视贴面矩形／椭圆截图选区按画布平面投影，关闭透视后恢复对应几何形状；自由与多边形套索保持屏幕轮廓。立牌截图先选深度，保留捕获像素并反算逻辑尺寸。
+- Project Surface rectangle/ellipse captures from canvas-plane geometry so their intended shape returns with perspective disabled; freehand and polygon lassos retain screen contours. Billboard captures choose depth first, preserve captured pixels and derive logical dimensions.
+
+- 绑定工程时在工具条上方显示随折叠的文件名气泡，标记未保存修改；右键可取消绑定及打开位置。印章槽右键仅保留重命名、覆盖、删除、取消固定四项维护操作；使用与使用可编辑源仍位于印章库，取消固定仅移除当前槽。
+- Show a folding filename bubble with unsaved state above the toolbar; detach or locate the file from its context menu. Limit stamp-slot menus to Rename, Overwrite, Delete and Unpin; use and editable-source actions remain in the library, and Unpin affects only the clicked slot.
+
+- 第二轮反馈：新增手动欢迎页入口和署名项目链接；浮动图标默认开启并可从主菜单、托盘及设置切换。统一固定按钮、恢复色板透明棋盘格、关闭 Tab 焦点轮转与焦点框，重绘固定像素取色光标；文字编辑框增加留白及独立粗光标，修复鼠标移动干扰闪烁。透视画布新增任意顺序四点定位与逐点网格预览，固定双行调整／重置按钮，并修复角点快速重复点击时的 Ctrl 拖动起拖。精简双语提示，调整欢迎页和设置宽度以避免英文意外换行。
+- Round two: reopen a persistent welcome page from menus and open the project from its credits. Enable the floating logo by default with menu, tray and settings switches. Unify pin buttons, restore transparency checkerboards for color controls, disable Tab focus navigation and rings, and redraw the fixed-size eyedropper. Add text editing padding and a distinct caret; keep idle mouse movement from resetting its blink. Add unordered four-corner perspective placement with progressive previews, fixed two-row controls, and corner double-click dragging with Ctrl. Shorten bilingual hints and improve English layout.
+
+- “将标注移回可见屏幕”仅恢复完全屏外内容，保留已可见和部分可见对象；按当前多屏范围选择最近可放置位置，分组保留间距，透视外观不变，整次一步撤销，重复操作不再偏移。
+- Recover only wholly offscreen content, leaving visible and partly visible objects untouched. Use the nearest usable position across the active displays, retain editable group spacing and projected appearance, and make recovery one undo step with no repeated drift.
+
+- 新增默认关闭的预览版更新开关，可在设置及更新面板持久修改；当前运行预览版也须主动开启才接收新预览版。没有可用更新时仍展示当前版本发行日志，日志获取不依赖可安装包。
+- Add a persistent preview-update switch, off by default, in Settings and the update panel. Preview builds also require opt-in for newer previews. Show current-version release notes even when no update is available, independently of installable assets.
+
+- 审查并补齐主菜单、嵌套菜单、画布操作、屏幕重置、印章槽位与托盘图标；移除通用方框占位，菜单工具显示对应图形，穿透菜单与工具条共用对号，检查更新使用循环箭头。
+- Audit main, nested, canvas, display-reset, stamp-slot and tray menu icons. Remove generic box placeholders, use distinct tool symbols, share the toolbar check mark for pass-through, and add circular arrows for updates.
+
+- 设置按四类组织，统一卡片、间距与固定底部操作；新增可选的穿透模式吉祥物。复用原图与显隐眼睛状态，支持延迟单击／即时右键进入绘画、双击切换显隐，以及带阈值的独立拖动和每次启动位置重置。
+- Group settings into four categories with consistent cards, spacing and fixed footer actions. Add an optional pass-through mascot using the same artwork and visibility states, delayed single-click or immediate right-click entry, double-click canvas visibility, threshold-based independent dragging and position reset on restart.
+
+- 统一预设、色板、印章和图层排序的拖动预览及蓝线双端圆点；修复非首项快照空白、同一空隙重复插入位置和边缘裁切。跟随图可移出原窗口，多图层预览显示数量，取消和完成均清理浮层与原项状态。
+- Unify drag previews and blue insertion lines with endpoint dots across presets, swatches, stamps and layers. Fix blank non-first-item snapshots, duplicate gap positions and edge clipping. Previews follow beyond the source window, show multi-layer counts and clean up fully on completion or cancellation.
+
+- Shift 统一临时反转形状、截图、裁剪和滤镜矩形区域的等比开关；画笔、荧光笔及自由套索支持一次拖动中的分段直线，直线／箭头端点和多边形套索支持八方向约束。按键时的指针位置随输入包传递，松键立即固定终点。
+- Shift temporarily inverts aspect constraints for shapes, snapshots, crops and rectangular filter regions. Freehand, Highlighter and freehand lassos support straight segments within one drag; line/arrow endpoints and polygon lassos support eight-direction snapping. Key packets carry pointer positions so releasing Shift fixes the endpoint immediately.
+
+- 图层等比偏好随工程和撤销保留，Shift 临时反转；文字默认自由缩放并在边框内调整字号和换行。属性内容优先、几何信息最后，支持固定、衍生弹窗保留，以及双击／多选 Enter 在鼠标附近打开。
+- Persist layer aspect preferences with Shift inversion; resize text by fitting its font and wrapping inside the frame. Prioritize content in Properties, put geometry last, and support pinning, nested focus retention and pointer-adjacent opening from double-click or multi-selection Enter.
+
+- 文字改为画布内输入、选择和光标编辑，支持旋转／透视位置映射；Shift+Enter 换行，Enter 提交并保留选中，失焦自动提交，Ctrl 点击强制新建文字层。移除旧文字输入窗口，序号改由属性面板编辑。
+- Edit text, selections and carets directly on the canvas with rotation/perspective mapping. Shift+Enter adds a line; Enter commits and keeps selection; blur commits; Ctrl-click forces a new text layer. Remove the old text dialog and edit numbers through Properties.
+
+- 颜色即时应用并保留预览透明度，关闭二级面板只记录最终颜色；色板命名保留父弹窗，取色支持指针颜色气泡及面板恢复。
+- Apply colors live with alpha-preserving previews and one final recent-color entry; retain the parent popup during swatch naming and restore panels after eyedropper sampling with a live color bubble.
+
+- 修复部分透视实时效果印章的提示预览被拉伸，按图像实际比例展示并更新水平／竖直比例提示。
+- Preserve pixel aspect in projected live-effect stamp previews and report their actual horizontal/vertical display scales.
+
+- preview.4 反馈：画布行列并排、透视平面重置分裂按钮和屏幕回退缓存；官方预设恢复默认平面，工具条反映透视状态，单角拖动支持吸附及 Ctrl／Shift。
+- preview.4 feedback: paired row/column controls, a display-aware split reset button with persisted fallback, default planes for official presets, perspective toolbar state and corner snapping with Ctrl/Shift.
+
+- 工具条保留灰色新建与右侧红色扫把，移除画布下拉和新建默认画布。新建按文件及修改状态确认；清空立即执行、可撤销且不入历史。历史过滤空白与重复版本，恢复保留原排序，设置新增历史上限（默认 60）。
+- Keep gray New and a red broom for immediate, undoable Clear without a history entry; remove the canvas dropdown and default-canvas command. Confirm New according to file and edit state; filter blank/duplicate history, preserve restore ordering and add a configurable 60-version default history limit.
+
+- 新配置的绘图范围默认使用“全部屏幕”，仍可选择“仅主屏”；已有保存的范围选择保持不变。范围在设置保存后立即生效，无需重启；显式启动参数仍优先决定本次运行范围。
+- New configurations default to All screens, with Primary screen only still available; existing saved scope choices are retained. Saving the scope in Settings applies it immediately, without restarting. Explicit startup options still determine the scope for that run.
+
+- 画布面板的“重置透视平面”分裂按钮可选择屏幕并立即重建参考平面，主按钮重复上次选择；默认使用主屏，失效选择回退默认。选择作为应用偏好跨启动保留，不属于预设或工程。中央四向把手或框内空白处可整体跨屏移动校准框；调整透视遇到安全边界时以琥珀色提示，并限制在有效范围内。
+- The canvas panel's Reset perspective plane split button selects a display and immediately rebuilds the plane; its main action repeats the last choice. The default uses the primary screen and unavailable choices fall back to it. This is an application preference retained across restarts, independent of presets and projects. Move the entire frame across displays with the central four-way handle or its interior. Perspective adjustments show an amber warning at the safe boundary and remain within the valid range.
+
+- 新保存或覆盖的个人画布预设包含四角位置和完整透视校准，应用时恢复保存状态；官方预设恢复默认平面并关闭透视。缺少校准的旧个人预设继续保留当前四角、应用面板参数；旧预设无法找回从未保存的四角，需重新校准后覆盖保存。个人预设不会根据重置屏幕偏好自动缩放或搬移校准。
+- Newly saved or overwritten personal canvas presets include corner positions and complete perspective calibration, restoring their saved state. Official presets restore the default plane and disable perspective. Older personal presets without calibration preserve current corners while applying panel parameters. Older presets cannot recover corners they never saved; recalibrate and overwrite them. Personal presets do not automatically scale or move calibration to the reset-display preference.
+
+- 九种官方符号预设的默认插入尺寸统一为 100×100，重新选择旧版使用过的官方预设时同样应用；个人预设和已有对象的尺寸保持不变。
+- All nine official symbol presets now use a 100×100 default insertion size, including when reselecting an official preset used in an earlier version. Personal presets and existing objects keep their dimensions.
+
 ## [0.2.0-preview.4] - 2026-10-18
 
 - 恢复画布显示时保留窗口层级，避免绘画内容短暂盖住工具条或面板；截图临时隐藏后的界面恢复使用同一保序方式。

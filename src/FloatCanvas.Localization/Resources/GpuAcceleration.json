@@ -2,8 +2,8 @@
   "Settings.Rendering": { "zh": "绘制性能", "en": "Rendering" },
   "Settings.PreferGpuAcceleration": { "zh": "优先使用 GPU 加速", "en": "Prefer GPU acceleration" },
   "Settings.GpuAccelerationHint": {
-    "zh": "滤镜场景优先让整幅画布在 GPU 上绘制；轻量画布使用 CPU 缓存，减少读回开销。GPU 不可用或失败时回退 CPU。保存后生效。",
-    "en": "Filter scenes prefer GPU rendering for the entire canvas. Light canvases use CPU caching to avoid readback overhead. Unavailable or failed GPU rendering falls back to the CPU. Applies on save."
+    "zh": "优先使用 GPU 处理滤镜，保存后生效。",
+    "en": "Prefer GPU acceleration for filters. Applies on save."
   },
   "Settings.RenderBackend": { "zh": "最近一帧实际后端：{0}", "en": "Last frame rendered with: {0}" },
   "Settings.RenderBackendPending": { "zh": "尚无已完成的画布帧", "en": "No completed canvas frame yet" },

@@ -1,5 +1,5 @@
 {
-  "Acceptance2.Welcome.ToggleMode": {"zh":"绘制模式 / 穿透模式","en":"Drawing mode / pass-through mode"},
+  "Acceptance2.Welcome.ToggleMode": {"zh":"绘制模式 / 穿透模式","en":"Drawing / pass-through"},
   "Acceptance2.Welcome.ToggleModeDescription": {"zh":"绘制时接管输入，穿透时操作桌面。","en":"Draw to edit; pass through to use your desktop."},
   "Acceptance2.Welcome.ToggleVisibility": {"zh":"隐藏画布 / 显示画布","en":"Hide canvas / Show canvas"},
   "Acceptance2.Welcome.ToggleVisibilityDescription": {"zh":"显隐不清空内容，也不改变当前模式。","en":"Keep your content and current mode when hiding or showing."},

@@ -520,8 +520,8 @@
     "en": "Keyboard isolation is unavailable."
   },
   "Keyboard.ForegroundRequired": {
-    "zh": "接管键盘输入前，编辑窗口必须拥有前台焦点。",
-    "en": "Editing must own foreground before acquiring keyboard input."
+    "zh": "请先切换到浮绘，再进入绘图模式。",
+    "en": "Switch to FloatCanvas before entering drawing mode."
   },
   "Keyboard.IsolationStopped": {
     "zh": "键盘输入接管已停止。",

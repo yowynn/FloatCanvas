@@ -98,7 +98,7 @@ internal static class PackageCodec
             }
             var manifest = await ReadJsonAsync<Manifest>(RequiredEntry(archive, "manifest.json"), 4 * 1024 * 1024, ct).ConfigureAwait(false);
             if (manifest.Format != "FloatCanvas." + kind) throw new InvalidDataException(L.Get("Project.UnexpectedFormat"));
-            if (manifest.Version is not (1 or 2 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
+            if (manifest.Version is not (1 or 2 or 3 or 4 or 5 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
             string payload = kind == "project" ? "scene.json" : "workspace.json";
             if (manifest.Payload != payload || manifest.Assets is null || manifest.Assets.Count > 4096) throw new InvalidDataException(L.Get("Project.InvalidManifest"));
             if (manifest.Assets.Any(a => a is null || !IsAssetId(a.Id) || string.IsNullOrWhiteSpace(a.MediaType) || a.MediaType.Length > 128 || a.Length <= 0 || a.Length > MaxAssetBytes) || manifest.Assets.Select(a => a.Id).Distinct(StringComparer.Ordinal).Count() != manifest.Assets.Count)
@@ -219,8 +219,10 @@ internal static class PackageCodec
             RequireProperties(json, "Canvas");
             var canvas = json.GetProperty("Canvas");
             RequireProperties(canvas, "BackgroundColor", "Projection", "Grid");
+            if (version >= 5) RequireProperties(canvas, "DepthPriorityOcclusion");
             var projection = canvas.GetProperty("Projection");
             RequireProperties(projection, "Enabled", "Columns", "Rows", "Origin", "CellSize", "Quad", "Matrix", "AlgorithmVersion");
+            if (version >= 6) RequireProperties(projection, "LockedGridCellSize");
             RequireMatrixProperties(projection.GetProperty("Matrix"));
             RequireProperties(projection.GetProperty("Origin"), "X", "Y");
             RequireProperties(canvas.GetProperty("Grid"), "Visible", "Color", "Width", "Pattern");
@@ -231,6 +233,11 @@ internal static class PackageCodec
     }
     private static void RequirePlacementProperties(JsonElement element)
     {
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("IsBillboard", out var billboard) && billboard.ValueKind == JsonValueKind.True)
+        {
+            RequireProperties(element, "BillboardAnchor", "BillboardHeight");
+            RequireProperties(element.GetProperty("BillboardAnchor"), "X", "Y");
+        }
         if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("ProjectivePlacement", out var placement) && placement.ValueKind != JsonValueKind.Null)
             RequireMatrixProperties(placement);
     }

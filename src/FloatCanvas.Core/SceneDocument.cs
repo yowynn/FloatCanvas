@@ -51,6 +51,12 @@ public sealed class CanvasElement
     public List<PointD> Points { get; set; } = [];
     public double Width { get; set; }
     public double Height { get; set; }
+    /// <summary>Null uses the element kind's default; text and box shapes resize freely.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ConstrainAspect { get; set; }
+    /// <summary>A resized text frame keeps its bounds while text is fitted and wrapped inside it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool TextFrameFixed { get; set; }
     /// <summary>Local pixels; null preserves the legacy rounded rectangle's 20 percent radius.</summary>
     public double? CornerRadius { get; set; }
     public SymbolKind Symbol { get; set; }
@@ -59,6 +65,13 @@ public sealed class CanvasElement
     /// <summary>Optional local placement applied before the ordinary editable affine transform.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Projective2D? ProjectivePlacement { get; set; }
+    /// <summary>Screen-facing placement using the canvas's shared depth scale. Missing in older files means planar.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsBillboard { get; set; }
+    /// <summary>Ground position in canvas-plane coordinates. Independent of the content's local center.</summary>
+    public PointD BillboardAnchor { get; set; }
+    /// <summary>Logical height above the ground anchor; screen distance is height times the depth scale.</summary>
+    public double BillboardHeight { get; set; }
     public ElementStyle Style { get; set; } = new();
     public string Text { get; set; } = "";
     public int Number { get; set; } = 1;
@@ -70,8 +83,9 @@ public sealed class CanvasElement
     public CanvasElement Clone(bool newId = false) => new()
     {
         Id = newId ? Guid.NewGuid() : Id, Name = Name, Kind = Kind, Points = [.. Points], Width = Width, Height = Height,
-        CornerRadius = CornerRadius, Symbol = Symbol, GroupId = GroupId,
-        Transform = Transform, ProjectivePlacement = ProjectivePlacement, Style = Style.Clone(), Text = Text, Number = Number, AssetId = AssetId,
+        CornerRadius = CornerRadius, Symbol = Symbol, GroupId = GroupId, ConstrainAspect = ConstrainAspect, TextFrameFixed = TextFrameFixed,
+        Transform = Transform, ProjectivePlacement = ProjectivePlacement, IsBillboard = IsBillboard,
+        BillboardAnchor = BillboardAnchor, BillboardHeight = BillboardHeight, Style = Style.Clone(), Text = Text, Number = Number, AssetId = AssetId,
         ImageCrop = ImageCrop, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked
     };
 }
@@ -87,7 +101,7 @@ public sealed class DisplayLayoutHint
 
 public sealed partial class SceneDocument
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 6;
     public int Version { get; set; } = CurrentVersion;
     public DocumentKind Kind { get; set; }
     public List<CanvasElement> Elements { get; set; } = [];
@@ -128,7 +142,7 @@ public sealed partial class SceneDocument
             Background = new() { Kind = ElementKind.Image, AssetId = backgroundAssetId, Width = region.Width, Height = region.Height, Locked = true },
             Elements = Elements.Where(e => e.Visible && ElementGeometry.Bounds(e).Intersects(region)).Select(e =>
             {
-                var clone = e.Clone(); clone.Transform = translation.Compose(clone.Transform); return clone;
+                var clone = e.Clone(); BillboardGeometry.ApplyPlaneTransform(clone, translation); return clone;
             }).ToList(),
             Groups = Groups.Select(g => g.Clone()).ToList(),
             DisplayLayout = DisplayLayout.Select(d => d.Clone()).ToList()

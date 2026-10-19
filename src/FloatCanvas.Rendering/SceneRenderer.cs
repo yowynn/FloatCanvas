@@ -29,7 +29,7 @@ public sealed partial class SceneRenderer : IDisposable
 
     /// <summary>Preserves the caller's matrix and clip. Viewport is in document coordinates.</summary>
     public void Draw(SKCanvas canvas, SceneDocument document, AssetLibrary assets, bool includeBackground = true,
-        SceneRenderSpace space = SceneRenderSpace.ScreenComposite, bool includeCanvasBackground = true, bool calibrationReference = false)
+        SceneRenderSpace space = SceneRenderSpace.ScreenComposite, bool includeCanvasBackground = true, bool calibrationReference = false, bool includeGrid = true)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(document);
@@ -39,6 +39,12 @@ public sealed partial class SceneRenderer : IDisposable
         try
         {
             canvas.ClipRect(ToRect(document.Viewport));
+            if (space == SceneRenderSpace.ScreenComposite && UsesDepthComposition(document))
+            {
+                DrawDepthScene(canvas, document, assets, includeBackground, includeCanvasBackground, includeGrid);
+                if (includeGrid && calibrationReference) DrawGridCore(canvas, document, true);
+                return;
+            }
             DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground);
             double opacity = Math.Clamp(document.LayerOpacity, 0, 1);
             if (opacity > 0)
@@ -49,11 +55,11 @@ public sealed partial class SceneRenderer : IDisposable
                     using var opacityPaint = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)) };
                     canvas.SaveLayer(ToRect(document.Viewport), opacityPaint);
                 }
-                if (!calibrationReference) DrawGrid(canvas, document);
+                if (includeGrid && !calibrationReference) DrawGrid(canvas, document);
                 DrawElements(canvas, document.Elements, assets, 0, document.Elements.Count);
                 if (opacity < 1) canvas.Restore();
             }
-            if (calibrationReference && space == SceneRenderSpace.ScreenComposite)
+            if (includeGrid && calibrationReference && space == SceneRenderSpace.ScreenComposite)
             {
                 // Editing guides stay visible over photographs and independent of annotation opacity.
                 DrawGridCore(canvas, document, true);
@@ -127,6 +133,13 @@ public sealed partial class SceneRenderer : IDisposable
         return _text.Measure(text, style, maxWidth);
     }
 
+    public TextEditingGeometry TextEditingGeometry(string text,ElementStyle style,double width)
+    {
+        if(!EmojiGlyphs.IsEmoji(text,style))return _text.EditingGeometry(text,style,width);
+        var metrics=EmojiGlyphs.Measure(text,style.FontSize);
+        return new([new(0,metrics.Height,[new(0,0),new(text.Length,metrics.Width)])]);
+    }
+
     private byte[] Export(SceneDocument document, AssetLibrary assets, SKEncodedImageFormat format, int quality, bool background, SceneRenderSpace space)
     {
         var viewport = document.Viewport.Normalize();
@@ -148,7 +161,7 @@ public sealed partial class SceneRenderer : IDisposable
         int saved = canvas.Save();
         try
         {
-            var matrix = ToMatrix(planeToTarget.Compose(ElementGeometry.LocalToPlane(element)));
+            var matrix = ToMatrix(BillboardGeometry.ElementToTarget(element, planeToTarget));
             canvas.Concat(in matrix);
             double opacity = Math.Clamp(element.Style.Opacity, 0, 1);
             // One element is a compositing unit, including arrow heads, fill+outline and number labels.
@@ -160,6 +173,7 @@ public sealed partial class SceneRenderer : IDisposable
             if (element.Kind == ElementKind.Image) DrawImage(canvas, element, assets);
             else if (element.Kind == ElementKind.Text)
             {
+                if (element.TextFrameFixed) canvas.ClipRect(new(0, 0, (float)element.Width, (float)element.Height));
                 SetPaint(element.Style.Stroke, SKPaintStyle.Fill);
                 if (EmojiGlyphs.IsEmoji(element.Text, element.Style)) EmojiGlyphs.Draw(canvas, element.Text, element.Style.FontSize, _paint);
                 else _text.Draw(canvas, element.Text, element.Style, element.Width, _paint);
@@ -440,6 +454,7 @@ public sealed partial class SceneRenderer : IDisposable
         if (_disposed) return;
         _disposed = true;
         ClearLiveEffectImages();
+        DisposeDepthBuffers();
         foreach (var entry in _paths.Values) entry.Dispose();
         foreach (var entry in _images.Values) entry.Dispose();
         foreach (var entry in _effects.Values) entry.Dispose();

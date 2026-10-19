@@ -15,6 +15,35 @@ internal static class Program
         {
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--depth-occlusion-ui-only")) { DepthOcclusionUiRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--depth-occlusion-only")) { DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-only")) { BillboardControllerTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-creation-only")) { BillboardCreationTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-audit-only")) { BillboardInteractionAuditTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-ui-runtime-only")) { BillboardUiRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-canvas-runtime-only")) { BillboardCanvasRuntimeTests.Run(Assert); return 0; }
+            if (args.FirstOrDefault(a=>a.StartsWith("--round2-ui-")) is { } round2) { Round2UiTests.Run(Assert,round2[12..]); return 0; }
+            if (args.Contains("--round2-canvas-only")) {Round2CanvasTests.Run(Assert);return 0;}
+            if (args.Contains("--preview4-canvas-only")) { Preview4CanvasTests.Run(Assert); return 0; }
+            if (args.Contains("--preview4-settings-only")) { Preview4SettingsTests.Run(Assert); LauncherGestureStateTests.Run(Assert); return 0; }
+            if (args.Contains("--preview4-menu-only")) { Preview4MenuTests.Run(Assert, true); LauncherMenuTests.Run(Assert); return 0; }
+            if (args.Contains("--move-into-view-only")) { MoveIntoViewTests.Run(Assert); return 0; }
+            if (args.Contains("--move-into-view-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "move-into-view"); return 0; }
+            if (args.Contains("--round2-stamps-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "round2-stamps"); return 0; }
+            if (args.Contains("--preview4-menu-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "preview4-menu"); return 0; }
+            if (args.Contains("--preview4-settings-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "preview4-settings"); return 0; }
+            if (args.Contains("--preview4-properties-only")) { Preview4PropertiesTests.Run(Assert); return 0; }
+            if (args.Contains("--preview4-shift-only")) { Preview4ShiftTests.Run(Assert); return 0; }
+            if (args.Contains("--preview4-drag-only")) { Preview4DragTests.Run(Assert); return 0; }
+            if (args.Contains("--preview4-drag-runtime-only")) { Preview4DragRuntimeFixture.Run(Assert); return 0; }
+            if (args.Contains("--preview4-shift-runtime-only")) { InlineTextRuntimeFixture.Run(Assert,shifts:true); return 0; }
+            if (args.Contains("--preview4-properties-runtime-only")) { InlineTextRuntimeFixture.Run(Assert,properties:true); return 0; }
+            if (args.Contains("--inline-text-only")) { Preview4InlineTextTests.Run(Assert); return 0; }
+            if (args.Contains("--inline-text-runtime-only")) { InlineTextRuntimeFixture.Run(Assert); return 0; }
+            if (args.Contains("--inline-text-preview")) { InlineTextRuntimeFixture.Run(Assert,true); return 0; }
+            if (args.Contains("--preview4-colors-only")) { Preview4ColorTests.Run(Assert); return 0; }
+            if (args.Contains("--preview4-colors-runtime-only")) { Preview4ColorRuntimeFixture.Run(Assert); return 0; }
+            if (args.Contains("--monitor-scope-only")) { MonitorScopeSettingsTests.Run(Assert); MonitorScopeRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-presets-only")) { CanvasPresetTests.Run(Assert); CanvasSettingsControlTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-shelf-only")) { Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult(); StampLibraryUiTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-shelf-native-geometry-only")) { StampLibraryUiTests.RunNativeGeometry(Assert); return 0; }
@@ -38,7 +67,7 @@ internal static class Program
             if (args.Contains("--windows-compatibility-only")) { LegacyWindowsEffectsTests.Run(Assert); return 0; }
             if (args.Contains("--tool-state-store-only")) { ToolStateStoreTests.Run(Assert); return 0; }
             if (args.Contains("--tool-state-only")) { ToolStateStoreTests.Run(Assert); ToolWorkingStateTests.Run(Assert); return 0; }
-            if (args.Contains("--clear-canvas-only")) { ClearCanvasButtonTests.Run(Assert); return 0; }
+            if (args.Contains("--clear-canvas-only")) { NewCanvasButtonTests.Run(Assert); return 0; }
             if (args.Contains("--updates-client-only")) { GitHubUpdateClientTests.Run(Assert); return 0; }
             if (args.Contains("--updates-recovery-only")) { UpdateRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--update-installer-only")) { UpdateInstallerTests.Run(Assert); return 0; }
@@ -90,14 +119,26 @@ internal static class Program
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert);
+            Round2CanvasTests.Run(Assert);
+            foreach(string group in new[]{"colors","welcome","pins","logo","text"})Round2UiTests.Run(Assert,group);
+            Preview4CanvasTests.Run(Assert);
+            Preview4InlineTextTests.Run(Assert);
+            Preview4PropertiesTests.Run(Assert);
+            Preview4ShiftTests.Run(Assert);
+            Preview4DragTests.Run(Assert);
+            Preview4SettingsTests.Run(Assert);
+            Preview4MenuTests.Run(Assert);
+            Preview4ColorTests.Run(Assert);
             CanvasPresetTests.Run(Assert);
             Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult();
             ShellIntegrationTests.Run(Assert);
             LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert);
+            BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert);
             PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert);
             GpuSettingsTests.Run(Assert);
             ApplicationDiagnosticsTests.Run(Assert);
-            ClearCanvasButtonTests.Run(Assert);
+            NewCanvasButtonTests.Run(Assert);
             WelcomeSessionTests.Run(Assert);
             GitHubUpdateClientTests.Run(Assert);
             UpdateInstallerTests.Run(Assert);
@@ -113,7 +154,7 @@ internal static class Program
             Feedback4GeometryTests.Run(Assert);
             StampPreviewTests.Run(Assert);
             HotkeyHintTests.Run((name, condition) => Assert(name, condition));
-            TextEditCommandTests.Run((name, condition) => Assert(name, condition));
+            InlineTextEditSafetyTests.Run((name, condition) => Assert(name, condition));
             CaptureViewportPlacementTests.Run((name, condition) => Assert(name, condition));
             MoveIntoViewTests.Run((name, condition) => Assert(name, condition));
             ImageToolTargetTests.Run((name, condition) => Assert(name, condition));
@@ -364,13 +405,13 @@ internal static class Program
     {
         var session = Session(); var text = new CanvasElement { Kind = ElementKind.Text, Text = "中文文字", Width = 160, Height = 70, Transform = Affine2D.Translation(50, 70) }; session.Add(text);
         var controller = new EditorController(session) { Tool = EditorTool.Select }; Guid? edited = null;
-        controller.EditText += (element, _) => edited = element?.Id;
+        controller.PropertiesRequested += _ => edited = session.Selection.SingleOrDefault();
         Down(controller, new(110, 100)); Move(controller, new(115, 105));
         controller.Pointer(new(OverlayPointerKind.DoubleClick, new(110, 100), OverlayMouseButton.Left, OverlayModifiers.None));
-        Assert("text double click cancels transform before editing", edited == text.Id && !session.IsTransactionActive && session.Document.Elements.Single().Transform == text.Transform);
+        Assert("text double click cancels transform before opening properties", edited == text.Id && !session.IsTransactionActive && session.Document.Elements.Single().Transform == text.Transform);
         var number = new CanvasElement { Kind = ElementKind.Number, Number = 5, Width = 40, Height = 40, Transform = Affine2D.Translation(250, 50) }; session.Add(number);
         controller.Pointer(new(OverlayPointerKind.DoubleClick, new(270, 70), OverlayMouseButton.Left, OverlayModifiers.None));
-        Assert("number double click requests secondary editor", edited == number.Id && !session.IsTransactionActive);
+        Assert("number double click requests properties", edited == number.Id && !session.IsTransactionActive);
     }
 
     private static void RasterPreviewRanges()

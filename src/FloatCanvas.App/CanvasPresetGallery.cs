@@ -98,7 +98,7 @@ internal sealed class CanvasPresetGallery : UserControl
         var menu = new ContextMenu();
         void Add(string key, PanelActionIcon icon, Action action, string shortcut = "")
         { var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = shortcut }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-        Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => Run(() => { library.Update(preset.Id, current); Refresh(current); }));
+        Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => Run(() => { library.Update(preset.Id, current); SelectedId = preset.Id; Refresh(current); }));
         Add("ToolOptions.Rename", PanelActionIcon.Rename, () => Rename(preset), "F2");
         Add("ToolOptions.Delete", PanelActionIcon.Delete, () => Delete(preset.Id), "Delete"); return menu;
     }

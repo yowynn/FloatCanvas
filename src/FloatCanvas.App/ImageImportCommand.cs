@@ -41,4 +41,28 @@ internal static class ImageImportCommand
             }
         });
     }
+
+    /// <summary>Fresh image pixels remain encoded; screen placement is converted to shared logical units once.</summary>
+    internal static void InsertBillboard(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD screenPlacement,
+        BillboardDepthLine depth, PointD screenCenter)
+    {
+        var mapping = CanvasMapping.Create(target.Document);
+        var elements = new List<CanvasElement>();
+        int index = 0;
+        foreach (var image in images)
+        {
+            double fit = Math.Min(1, Math.Min(screenPlacement.Width * .8 / image.Width, screenPlacement.Height * .8 / image.Height));
+            double screenWidth = image.Width * fit, screenHeight = image.Height * fit;
+            var bounds = new RectD(screenCenter.X - screenWidth / 2 + index * 20,
+                screenCenter.Y - screenHeight / 2 + index * 20, screenWidth, screenHeight);
+            elements.Add(SnapshotImageCommand.CreateBillboardElement(target.Assets,
+                new(image.PngBytes, bounds, true), mapping, depth));
+            index++;
+        }
+        target.Execute(L.Get("Image.ImportTitle"), document =>
+        {
+            target.Selection.Clear();
+            foreach (var element in elements) { document.Elements.Add(element); target.Selection.Add(element.Id); }
+        });
+    }
 }

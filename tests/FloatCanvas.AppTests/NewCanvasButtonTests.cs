@@ -12,7 +12,7 @@ using L = FloatCanvas.Localization.AppText;
 using DrawingPath = System.Windows.Shapes.Path;
 
 /// <summary>Real routed Click handlers and detached production controls; no visible windows or input injection.</summary>
-internal static class ClearCanvasButtonTests
+internal static class NewCanvasButtonTests
 {
     internal static void Run(Action<string, bool> check)
     {
@@ -26,6 +26,10 @@ internal static class ClearCanvasButtonTests
             ClickAndBusy(check);
             CancelAndGate(check);
             FailedClearRestores(check);
+            int fastCreates=0;
+            var immediate=new NewCanvasButton(()=>true,()=>{fastCreates++;return Task.CompletedTask;},()=>false);
+            Click(immediate);
+            check("clean or unchanged canvases create on the first click",fastCreates==1&&!immediate.IsConfirming);
             foreach (string language in new[] { "zh-CN", "en" })
             foreach (string theme in new[] { "light", "dark" })
             {
@@ -45,7 +49,7 @@ internal static class ClearCanvasButtonTests
     {
         int clears = 0;
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var button = new ClearCanvasButton(() => true, () => { clears++; return completion.Task; });
+        var button = new NewCanvasButton(() => true, () => { clears++; return completion.Task; });
         string original = Glyph(button).Data.ToString();
         Click(button);
         check("first routed click arms confirmation without clearing", button.IsConfirming && clears == 0 && button.IsEnabled);
@@ -55,7 +59,7 @@ internal static class ClearCanvasButtonTests
         Click(button);
         check("even a third routed click cannot launch a second clear while busy", clears == 1 && !button.IsConfirming && !button.IsEnabled);
         completion.SetResult(); PumpUntil(() => button.IsEnabled);
-        check("completed clear restores the initial broom action", !button.IsConfirming && Glyph(button).Data.ToString() == original && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas"));
+        check("completed clear restores the initial new-canvas action", !button.IsConfirming && Glyph(button).Data.ToString() == original && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas"));
         Click(button);
         check("a later first click requires a new confirmation instead of clearing again", button.IsConfirming && clears == 1);
         button.CancelConfirmation();
@@ -64,7 +68,7 @@ internal static class ClearCanvasButtonTests
     private static void CancelAndGate(Action<string, bool> check)
     {
         bool allowed = true; int clears = 0;
-        var button = new ClearCanvasButton(() => allowed, () => { clears++; return Task.CompletedTask; });
+        var button = new NewCanvasButton(() => allowed, () => { clears++; return Task.CompletedTask; });
         Click(button); button.CancelConfirmation();
         check("cancelling confirmation restores the idle action without clearing", !button.IsConfirming && clears == 0 && !button.ConfirmationPopup.IsOpen);
         Click(button);
@@ -87,7 +91,7 @@ internal static class ClearCanvasButtonTests
     private static void FailedClearRestores(Action<string, bool> check)
     {
         int clears = 0;
-        var button = new ClearCanvasButton(() => true, () => { clears++; return Task.FromException(new IOException("fixture clear failure")); });
+        var button = new NewCanvasButton(() => true, () => { clears++; return Task.FromException(new IOException("fixture clear failure")); });
         Await(button.ActivateAsync());
         bool threw = false;
         try { Await(button.ActivateAsync()); }
@@ -101,7 +105,7 @@ internal static class ClearCanvasButtonTests
     private static void Appearance(Action<string, bool> check, Application app, string language, string theme)
     {
         string context = language + " " + theme;
-        var button = new ClearCanvasButton(() => true, () => Task.CompletedTask);
+        var button = new NewCanvasButton(() => true, () => Task.CompletedTask);
         var host = new Border { Width = 280, Height = 80, Padding = new Thickness(12), Child = button };
         host.Resources["CanvasButtonCornerRadius"] = new CornerRadius(3);
         host.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
@@ -111,18 +115,18 @@ internal static class ClearCanvasButtonTests
         var normal = ((SolidColorBrush)chrome.Background).Color;
         CompareToolbarPaint(check, button, context + " idle");
         check(context + " idle name and tooltip describe creating a blank canvas", AutomationProperties.GetName(button) == L.Get("Feedback4.Toolbar.NewBlankCanvas") && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas"));
-        check(context + " danger action stays a compact 26-DIP target with the toolbar's 3-DIP corners", button.ActualWidth == 26 && button.ActualHeight == 26 && chrome.CornerRadius == new CornerRadius(3));
-        check(context + " normal action paints the red danger surface with a white glyph", normal == ((SolidColorBrush)app.Resources["CanvasDanger"]).Color && normal.R > normal.G * 2 && Glyph(button).Stroke == Brushes.White && Glyph(button).StrokeThickness == 1.5);
+        check(context + " new-canvas action stays a compact 26-DIP target with the toolbar's 3-DIP corners", button.ActualWidth == 26 && button.ActualHeight == 26 && chrome.CornerRadius == new CornerRadius(3));
+        check(context + " new-canvas action uses the regular gray surface and themed glyph", normal == ((SolidColorBrush)app.Resources["CanvasButton"]).Color && Glyph(button).Stroke == app.Resources["CanvasText"] && Glyph(button).StrokeThickness == 1.5);
         var popup = button.ConfirmationPopup;
         var bubble = (Border)popup.Child;
         var hint = (TextBlock)bubble.Child;
         check(context + " confirmation bubble is a noninteractive nonactivating hint beside the same target", popup.PlacementTarget == button && popup.Placement == PlacementMode.Bottom && popup.VerticalOffset > 0 && popup.AllowsTransparency && popup.StaysOpen && !popup.Focusable && !popup.IsHitTestVisible);
-        check(context + " confirmation question is localized plain text", hint.Text == (language == "zh-CN" ? "确定清除吗？" : "Clear canvas?") && !string.IsNullOrWhiteSpace(hint.Text));
-        check(context + " confirmation hint uses the same red emphasis as the action with white text", ((SolidColorBrush)bubble.Background).Color == normal && ((SolidColorBrush)bubble.BorderBrush).Color == normal && hint.Foreground == Brushes.White);
+        check(context + " confirmation question is localized plain text", hint.Text == L.Get("History.NewQuestion") && !string.IsNullOrWhiteSpace(hint.Text));
+        check(context + " confirmation hint uses the regular panel surface and text", bubble.Background == app.Resources["CanvasSurface"] && bubble.BorderBrush == app.Resources["CanvasAccent"] && bubble.BorderThickness == new Thickness(2) && hint.FontWeight == FontWeights.SemiBold && hint.Foreground == app.Resources["CanvasText"]);
         SavePreview(host, "clear-" + language + "-" + theme + "-idle.png");
         Click(button); Layout(host);
-        check(context + " armed action has its localized accessible name and no competing tooltip", AutomationProperties.GetName(button) == L.Get("Feedback4.Toolbar.ClearConfirm") && button.ToolTip is null);
-        check(context + " armed action preserves the red surface white glyph and hit target geometry", ((SolidColorBrush)chrome.Background).Color == normal && Glyph(button).Stroke == Brushes.White && button.ActualWidth == 26 && button.ActualHeight == 26 && chrome.CornerRadius == new CornerRadius(3));
+        check(context + " armed action has its localized accessible name and no competing tooltip", AutomationProperties.GetName(button) == L.Get("History.NewConfirm") && button.ToolTip is null);
+        check(context + " armed action preserves the gray surface themed glyph and hit target geometry", ((SolidColorBrush)chrome.Background).Color == normal && Glyph(button).Stroke == app.Resources["CanvasText"] && button.ActualWidth == 26 && button.ActualHeight == 26 && chrome.CornerRadius == new CornerRadius(3));
         CompareToolbarPaint(check, button, context + " confirm");
         SavePreview(host, "clear-" + language + "-" + theme + "-confirm.png");
         // Render the actual popup child detached, avoiding Popup.IsOpen and its native HWND.
@@ -132,7 +136,7 @@ internal static class ClearCanvasButtonTests
         button.CancelConfirmation(); host.Child = null;
     }
 
-    private static void CompareToolbarPaint(Action<string, bool> check, ClearCanvasButton clear, string context)
+    private static void CompareToolbarPaint(Action<string, bool> check, NewCanvasButton clear, string context)
     {
         // Create the peer through the production toolbar factory, not a copied test style.
         var session = System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
@@ -171,13 +175,13 @@ internal static class ClearCanvasButtonTests
             var ordinary = Paint(peer, ((SolidColorBrush)peerChrome.Background).Color);
             string state = context + (hover ? " hover" : " normal");
             Console.WriteLine($"TOOLBAR_PAINT {state}: target={clear.ActualWidth}x{clear.ActualHeight}/{peer.ActualWidth}x{peer.ActualHeight}; chrome={clearChrome.ActualWidth}x{clearChrome.ActualHeight}/{peerChrome.ActualWidth}x{peerChrome.ActualHeight}; paint={red}/{ordinary}; border={clearChrome.BorderThickness}/{peerChrome.BorderThickness}");
-            check(state + " red paint occupies the same 24-DIP bounds as ordinary toolbar chrome", red == new Rect(1, 1, 24, 24) && red == ordinary);
+            check(state + " button paint occupies the same 24-DIP bounds as ordinary toolbar chrome", red == new Rect(1, 1, 24, 24) && red == ordinary);
         }
         clear.SetValue(mouseOverKey, false); peer.SetValue(mouseOverKey, false);
         host.Child = null;
     }
 
-    private static DrawingPath Glyph(ClearCanvasButton button) => (DrawingPath)((Canvas)((Viewbox)button.Content).Child).Children[0];
+    private static DrawingPath Glyph(NewCanvasButton button) => (DrawingPath)((Canvas)((Viewbox)button.Content).Child).Children[0];
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, button));
     private static void Layout(FrameworkElement view)
     {

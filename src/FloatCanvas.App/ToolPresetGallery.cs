@@ -95,10 +95,16 @@ internal sealed class ToolPresetGallery : UserControl
     internal void Apply(string id) => Run(() =>
     {
         var tool = ToolPresetLibrary.Family(controller.Tool);
-        if (!library.OfficialFor(tool).Concat(library.UserFor(tool)).Any(p => p.Id == id)) return;
+        var preset = library.OfficialFor(tool).Concat(library.UserFor(tool)).FirstOrDefault(p => p.Id == id);
+        if (preset is null) return;
         selections[tool] = id;
         if (id.StartsWith("official.", StringComparison.Ordinal) && !officialBaselines.ContainsKey(id)) officialBaselines[id] = library.Apply(id, controller.Parameters);
-        controller.ApplyParameters(officialBaselines.TryGetValue(id, out var baseline) ? baseline.Clone() : library.Apply(id, controller.Parameters));
+        var parameters = officialBaselines.TryGetValue(id, out var baseline) ? baseline.Clone() : library.Apply(id, controller.Parameters);
+        if (preset.IsOfficial && preset.Parameters.Tool == EditorTool.Symbol)
+        {
+            parameters.DefaultWidth = preset.Parameters.DefaultWidth; parameters.DefaultHeight = preset.Parameters.DefaultHeight;
+        }
+        controller.ApplyParameters(parameters);
         Refresh(revealSelection: true); stateStore?.MarkChanged(); Applied?.Invoke();
     });
     internal void SaveNamed(string name)

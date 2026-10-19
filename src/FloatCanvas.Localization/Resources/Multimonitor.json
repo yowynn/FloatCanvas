@@ -1,0 +1,34 @@
+{
+  "Settings.ScopeImmediateHint": {
+    "zh": "保存后应用。",
+    "en": "Applies on save."
+  },
+  "Settings.SavedScopeApplied": {
+    "zh": "设置已保存。",
+    "en": "Settings saved."
+  },
+  "Canvas.ResetOnDisplay": {
+    "zh": "重置透视画布",
+    "en": "Reset perspective canvas"
+  },
+  "Canvas.ReferenceDisplayHint": {
+    "zh": "选择屏幕并重置透视画布。",
+    "en": "Choose a display to reset the perspective canvas."
+  },
+  "Canvas.MultiMonitorHelp": {
+    "zh": "拖动中央把手移动画布；下拉菜单可选择重置屏幕。",
+    "en": "Drag the center handle to move the canvas. Use the reset menu to choose a display."
+  },
+  "Canvas.DragBoundary": {
+    "zh": "已到达透视边界；拖动中央把手可整体移动。",
+    "en": "Perspective limit reached. Drag the center handle to move the canvas."
+  },
+  "Canvas.ResetOnNumberedDisplay": {
+    "zh": "重置透视画布（屏幕 {0}）",
+    "en": "Reset on display {0}"
+  },
+  "Canvas.ResetChoices": {
+    "zh": "选择重置屏幕",
+    "en": "Choose reset display"
+  }
+}

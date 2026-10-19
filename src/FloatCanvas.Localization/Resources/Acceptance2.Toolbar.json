@@ -1,5 +1,5 @@
 {
   "Acceptance2.Toolbar.Done": { "zh": "完成编辑，返回穿透模式", "en": "Finish editing and pass through" },
   "Acceptance2.Toolbar.Capture": { "zh": "截图", "en": "Snapshot" },
-  "Acceptance2.Toolbar.CaptureHint": { "zh": "圈选后将当前画面原位插为图片，原标注保留；可在参数面板选择形状、来源和描边。", "en": "Select a region to insert its current image in place, keeping existing annotations. Choose shape, content and border in tool options." }
+  "Acceptance2.Toolbar.CaptureHint": { "zh": "框选屏幕区域，原位插入图片。", "en": "Select a screen region to insert a snapshot in place." }
 }

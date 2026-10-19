@@ -8,7 +8,7 @@ namespace FloatCanvas.App;
 internal static class AppDialog
 {
     public static MessageBoxResult Show(Window? owner, string message, string title,
-        MessageBoxButton buttons = MessageBoxButton.OK, MessageBoxImage image = MessageBoxImage.None)
+        MessageBoxButton buttons = MessageBoxButton.OK, MessageBoxImage image = MessageBoxImage.None, string? yesKey = null, string? noKey = null)
     {
         if (owner is not null) new System.Windows.Interop.WindowInteropHelper(owner).EnsureHandle();
         var panel = new DockPanel { Margin = new Thickness(20), LastChildFill = true };
@@ -32,10 +32,10 @@ internal static class AppDialog
         switch (buttons)
         {
             case MessageBoxButton.YesNoCancel:
-                Add("Dialog.Yes", MessageBoxResult.Yes, true); Add("Dialog.No", MessageBoxResult.No);
+                Add(yesKey ?? "Dialog.Yes", MessageBoxResult.Yes, true); Add(noKey ?? "Dialog.No", MessageBoxResult.No);
                 Add("Dialog.Cancel", MessageBoxResult.Cancel, cancel: true); break;
             case MessageBoxButton.YesNo:
-                Add("Dialog.Yes", MessageBoxResult.Yes, true); Add("Dialog.No", MessageBoxResult.No); break;
+                Add(yesKey ?? "Dialog.Yes", MessageBoxResult.Yes, true); Add(noKey ?? "Dialog.No", MessageBoxResult.No); break;
             case MessageBoxButton.OKCancel:
                 Add("Dialog.OK", MessageBoxResult.OK, true); Add("Dialog.Cancel", MessageBoxResult.Cancel, cancel: true); break;
             default: Add("Dialog.OK", MessageBoxResult.OK, true); break;

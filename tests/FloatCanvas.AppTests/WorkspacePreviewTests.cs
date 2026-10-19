@@ -95,7 +95,8 @@ internal static class WorkspacePreviewTests
         File.WriteAllBytes(brokenStore.CurrentPath, [1, 2, 3]);
         File.WriteAllBytes(brokenStore.BackupPath, [4, 5, 6]);
         var brokenHistory = new WorkspaceRecoveryHistory(brokenStore);
-        var brokenEntry = brokenHistory.GetEntries().Single();
+        assert("corrupt recovery packages are excluded from the history list", brokenHistory.GetEntries().Count == 0);
+        var brokenEntry = new WorkspaceRecoveryEntry(brokenStore.DirectoryPath, DateTime.UtcNow, true);
         var window = new WorkspaceHistoryWindow(brokenHistory, [brokenEntry]);
         var image = new Image();
         var placeholder = new TextBlock { Text = FloatCanvas.Localization.AppText.Get("Recovery.PreviewLoading") };

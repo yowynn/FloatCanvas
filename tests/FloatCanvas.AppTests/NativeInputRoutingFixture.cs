@@ -27,7 +27,7 @@ internal static class NativeInputRoutingFixture
         if (Application.Current is not null) throw new InvalidOperationException("Run --native-input-routing-only in a fresh process.");
         string profile = Path.Combine(Path.GetTempPath(), "FloatCanvasNativeInput", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile); ApplicationPaths.Configure(["--profile", profile, "--primary-screen"]);
-        new UserSettings { Language = "en", Theme = "light" }.Save();
+        new UserSettings { Language = Environment.GetEnvironmentVariable("FLOATCANVAS_ROUND2_LANGUAGE")??"en", Theme = Environment.GetEnvironmentVariable("FLOATCANVAS_ROUND2_THEME")??"light" }.Save();
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         var oldContext = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(app.Dispatcher));
@@ -57,7 +57,7 @@ internal static class NativeInputRoutingFixture
             var dispatch = Field<Action<KeyboardInputPacket, Action>>(host, "_dispatchPrivateKey");
             var library = Field<StampLibrary>(session, "_stampLibrary");
             string scenario = scenarioOverride ?? Environment.GetEnvironmentVariable("FLOATCANVAS_INPUT_CASE") ?? "all";
-            if (scenario is not ("feedback4-panels" or "feedback4-workspace")) Task.Run(async () =>
+            if (scenario is not ("feedback4-panels" or "feedback4-workspace" or "preview4-settings" or "preview4-menu" or "round2-stamps" or "move-into-view")) Task.Run(async () =>
             {
                 await library.LoadAsync();
                 var source = new EditorSession(new SceneDocument { Elements = [new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 30 }] });
@@ -201,6 +201,10 @@ internal static class NativeInputRoutingFixture
             }
             if (scenario == "feedback4-panels") Feedback4Panels(check, app, session, host, toolbar, editor);
             if (scenario == "feedback4-workspace") Feedback4Workspace(check, session, host, toolbar, editor);
+            if (scenario == "preview4-settings") Preview4SettingsRuntimeFixture.Run(check, session, host, toolbar, action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
+            if (scenario == "preview4-menu") Preview4MenuRuntimeFixture.Run(check, session, host, toolbar);
+            if (scenario == "round2-stamps") Round2StampRuntimeFixture.Run(check,session,toolbar,editor);
+            if (scenario == "move-into-view") MoveIntoViewRuntimeFixture.Run(check, session, host);
             if (scenario is "all" or "options")
             {
                 Invoke("ActivateTool", EditorTool.Rectangle); if (!Field<Window>(session, "_toolOptionsWindow").IsVisible) Invoke("ActivateTool", EditorTool.Rectangle); Pump();
@@ -465,11 +469,10 @@ internal static class NativeInputRoutingFixture
             check((editAlpha ? "changed" : "unchanged") + " child close commits exactly its current color", editAlpha ? (editor.Style.Stroke >> 24) == 102 : editor.Style.Stroke == previous);
         }
 
-        // Closing a changed child commits synchronously and recreates preset preview visuals.
+        // Live color application recreates preset preview visuals synchronously.
         // Keep the event's real OriginalSource alive while its owning visual is removed before
         // PostProcessInput, matching a parent press during that same production commit.
         Field<Button>(field, "button").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
-        Field<Slider>(picker, "alpha").Value = 99;
         var gallery = Field<ToolPresetGallery>(panel, "presets");
         var previewTile = gallery.OfficialTiles.Children.OfType<Button>().First();
         var oldPreview = (UIElement)previewTile.Content;
@@ -477,6 +480,7 @@ internal static class NativeInputRoutingFixture
         MouseButtonEventHandler commitAndRefresh = (_, e) =>
         {
             if (!ReferenceEquals(e.OriginalSource, oldPreview)) return;
+            Field<Slider>(picker, "alpha").Value = 99;
             child.IsOpen = false;
             // Popup.Closed is dispatched by WPF; complete that real callback within
             // this press before post-processing inspects its original target.
@@ -486,7 +490,7 @@ internal static class NativeInputRoutingFixture
         previewTile.AddHandler(Mouse.PreviewMouseDownEvent, commitAndRefresh, true);
         try { Click(oldPreview); }
         finally { previewTile.RemoveHandler(Mouse.PreviewMouseDownEvent, commitAndRefresh); previewTile.ReleaseMouseCapture(); }
-        check("the production child auto-commit detaches this actual parent press source before post-processing", detachedDuringPress);
+        check("the production live color change detaches this actual parent press source before post-processing", detachedDuringPress);
         check("a parent press survives child auto-commit even after its original preview visual is detached", !child.IsOpen && options.IsVisible && toolbar.IsVisible && host.IsEditing && (editor.Style.Stroke >> 24) == 252);
 
         foreach (double percentage in new[] { 100d, 99d })
@@ -508,6 +512,7 @@ internal static class NativeInputRoutingFixture
         try
         {
             outsideWindow.Show(); Pump();
+            ActivateFixtureWindow(new WindowInteropHelper(options).Handle, () => { options.Activate(); parentInput.Focus(); }); Pump();
             Field<Button>(field, "button").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
             check("the parent remains active before a captured press on another physical window", options.IsActive);
             var outsidePoint = outsideWindow.PointToScreen(new(outsideWindow.ActualWidth / 2, outsideWindow.ActualHeight / 2));
@@ -561,9 +566,8 @@ internal static class NativeInputRoutingFixture
         typeof(OverlayHost).GetField("_hideHotkey", PrivateInstance)!.SetValue(host, (HotkeyBinding?)settings.Hide);
         Invoke("ShowHotkeySettings"); Pump();
         var settingsWindow = app.Windows.Cast<Window>().Single(window => window.Title == FloatCanvas.Localization.AppText.Get("Settings.Title"));
-        var settingsBody = (StackPanel)((ScrollViewer)settingsWindow.Content).Content;
-        settingsBody.Children.OfType<ComboBox>().First().SelectedIndex = 2;
-        settingsBody.Children.OfType<Button>().Single(button => Equals(button.Content, FloatCanvas.Localization.AppText.Get("Settings.Save"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+        SettingsWindowFixture.Descendants(settingsWindow).OfType<ComboBox>().Single(box => System.Windows.Automation.AutomationProperties.GetName(box) == FloatCanvas.Localization.AppText.Get("Settings.Theme")).SelectedIndex = 2;
+        ((AppSettingsWindow)settingsWindow).SaveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
         check("saving a new theme closes settings and retains the toolbar in editing", !settingsWindow.IsVisible && toolbar.IsVisible && host.IsEditing && UserSettings.Load().Theme == "dark");
         check("panel regression keeps native overlay surfaces bounded to the fixture", host.Diagnostics.All(pair => pair.Bounds.Width == 640 && pair.Bounds.Height == 360));
         CheckRecoveryTimerCancellation(check, session);
@@ -659,6 +663,123 @@ internal static class NativeInputRoutingFixture
         check("new canvas commits its blank workspace only after the complete archive", current is not null && current.State.LiveDocument.Elements.Count == 0 &&
             current.State.LiveDocument.NextNumber == 7 && current.State.CaptureDocument is null);
         check("workspace regression keeps every overlay HWND bounded to the fixture", host.Diagnostics.All(pair => pair.Bounds.Width == 640 && pair.Bounds.Height == 360));
+
+        string projectPath = Path.Combine(ApplicationPaths.ProfileDirectory, FloatCanvas.Localization.AppText.CurrentLanguage.StartsWith("zh")?"示例画布.floatcanvas":"saved-project.floatcanvas");
+        var project = new SceneDocument { Elements = [new() { Kind = ElementKind.Rectangle, Width = 35, Height = 25 }], Canvas = new() { BackgroundColor = 0xFF112233 } };
+        Await(new ProjectStore().SaveAsync(projectPath, project, assets));
+        Await((Task)Invoke("OpenProjectPathAsync", projectPath)!);
+        var bound = Field<EditorSession>(session, "_live");
+        Await(history.ArchiveAsync((WorkspaceState)Invoke("SnapshotWorkspace")!,assets,null,projectPath,force:true));
+        bound.Add(new() { Kind = ElementKind.Ellipse, Width = 18, Height = 19, Locked = true, Visible = false });
+        Await((Task<bool>)Invoke("SaveSessionAsync", bound, false)!);
+        byte[] savedProjectBytes = File.ReadAllBytes(projectPath);
+        int beforeClearHistory=history.GetEntries().Count(e=>!e.IsCurrent);
+        bool clearPrompted=false;
+        check("saving an edited project keeps its new-version history eligibility", history.HasNewVersion((WorkspaceState)Invoke("SnapshotWorkspace")!));
+        var confirmTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        confirmTimer.Tick += (_, _) =>
+        {
+            var dialog = Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w.Content is DockPanel);
+            if (dialog?.Content is not DockPanel panel) return;
+            clearPrompted=true;
+            var ok = panel.Children.OfType<StackPanel>().SelectMany(row => row.Children.OfType<Button>()).FirstOrDefault(b => Equals(b.Content, FloatCanvas.Localization.AppText.Get("Dialog.OK")));
+            if (ok is not null) { confirmTimer.Stop(); ok.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+        };
+        confirmTimer.Start();
+        try { Await((Task)Invoke("ClearCurrentCanvasAsync")!); } finally { confirmTimer.Stop(); }
+        check("clear is immediate and creates no history entry",!clearPrompted&&history.GetEntries().Count(e=>!e.IsCurrent)==beforeClearHistory);
+        string? BoundPath(EditorSession target)
+        {
+            object state = Invoke("FileState", target)!;
+            return (string?)state.GetType().GetField("Path")!.GetValue(state);
+        }
+        check("clear keeps the same file-bound session and canvas settings", ReferenceEquals(bound, Field<EditorSession>(session, "_live")) && BoundPath(bound) == projectPath && bound.Document.Canvas.BackgroundColor == project.Canvas.BackgroundColor);
+        check("clearing a bound canvas does not write its project file before an explicit save", savedProjectBytes.SequenceEqual(File.ReadAllBytes(projectPath)));
+        check("clear removes hidden and locked drawings with one undo", bound.Document.Elements.Count == 0 && bound.Undo() && bound.Document.Elements.Count == 2);
+        check("clear undo retains file association and redo", BoundPath(bound) == projectPath && bound.Redo() && bound.Document.Elements.Count == 0);
+        Await((Task<bool>)Invoke("SaveSessionAsync", bound, false)!);
+        check("saving after clear updates the original project file", Await(new ProjectStore().LoadAsync(projectPath)).Document.Elements.Count == 0);
+        int countBeforeEmptyNew = history.GetEntries().Count(e => !e.IsCurrent);
+        var newButton=Field<NewCanvasButton>(session,"_newCanvasButton");
+        Await(newButton.ActivateAsync());
+        check("saved clean file starts a new canvas on its first button activation",!newButton.IsConfirming&&!ReferenceEquals(bound,Field<EditorSession>(session,"_live")));
+        check("new from a saved empty project detaches its file without archiving empty content", BoundPath(Field<EditorSession>(session, "_live")) is null && history.GetEntries().Count(e => !e.IsCurrent) == countBeforeEmptyNew);
+        for (int i = 0; i < 4; i++) Await(newButton.ActivateAsync());
+        check("repeated production new-canvas commands do not consume history slots", history.GetEntries().Count(e => !e.IsCurrent) == countBeforeEmptyNew);
+
+        var sourceEntry = history.GetEntries().First(e => e.SourceFile == projectPath);
+        var restoreTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        restoreTimer.Tick += (_, _) =>
+        {
+            var chooser = Application.Current.Windows.Cast<Window>().OfType<WorkspaceHistoryWindow>().FirstOrDefault();
+            if (chooser?.Content is not StackPanel panel) return;
+            var list = panel.Children.OfType<ListBox>().Single();
+            list.SelectedItem = list.Items.OfType<ListBoxItem>().First(i => ((WorkspaceRecoveryEntry)i.Tag).DirectoryPath == sourceEntry.DirectoryPath);
+            restoreTimer.Stop();
+            panel.Children.OfType<StackPanel>().Single().Children.OfType<Button>().First().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        };
+        restoreTimer.Start();
+        try { Await((Task)Invoke("RestoreWorkspaceHistoryAsync")!); } finally { restoreTimer.Stop(); }
+        check("production history restore creates an editable unbound copy", BoundPath(Field<EditorSession>(session, "_live")) is null && Field<EditorSession>(session, "_live").Document.Elements.Count == project.Elements.Count);
+        Await(newButton.ActivateAsync());
+        check("unchanged history copy needs only one new-canvas click",!newButton.IsConfirming&&Field<EditorSession>(session,"_live").Document.Elements.Count==0);
+        check("leaving a restored version without edits neither duplicates nor retimestamps it", history.GetEntries().Count(e => !e.IsCurrent) == countBeforeEmptyNew && history.GetEntries().Any(e => e.DirectoryPath == sourceEntry.DirectoryPath && e.SavedAtUtc == sourceEntry.SavedAtUtc));
+
+        restoreTimer.Start();
+        try { Await((Task)Invoke("RestoreWorkspaceHistoryAsync")!); } finally { restoreTimer.Stop(); }
+        var restoredCopy=Field<EditorSession>(session,"_live");
+        restoredCopy.Add(new() {Kind=ElementKind.Rectangle,Width=29,Height=21});
+        int beforeEdited=history.GetEntries().Count(e=>!e.IsCurrent);
+        Await(newButton.ActivateAsync());
+        check("edited history copy arms the same gray button before archiving",newButton.IsConfirming&&ReferenceEquals(restoredCopy,Field<EditorSession>(session,"_live"))&&history.GetEntries().Count(e=>!e.IsCurrent)==beforeEdited);
+        Await(newButton.ActivateAsync());
+        check("second click archives the edited copy once and starts blank",!newButton.IsConfirming&&Field<EditorSession>(session,"_live").Document.Elements.Count==0&&history.GetEntries().Count(e=>!e.IsCurrent)==beforeEdited+1);
+        var empty=Field<EditorSession>(session,"_live");empty.Document.Canvas.Projection.Rows++;
+        int beforeSettings=history.GetEntries().Count(e=>!e.IsCurrent);
+        Await(newButton.ActivateAsync());
+        check("empty canvas with only setting changes neither confirms nor consumes history",!newButton.IsConfirming&&history.GetEntries().Count(e=>!e.IsCurrent)==beforeSettings);
+        Await((Task)Invoke("OpenProjectPathAsync",projectPath)!);
+        var dirty=Field<EditorSession>(session,"_live");
+        dirty.Add(new(){Kind=ElementKind.Rectangle,Width=31,Height=26});
+        bool RespondToNew(string key)
+        {
+            bool prompted=false;var timer=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(20)};
+            timer.Tick+=(_,_)=>
+            {
+                var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(w=>w.Content is DockPanel);
+                if(dialog?.Content is not DockPanel panel)return;
+                var button=panel.Children.OfType<StackPanel>().SelectMany(row=>row.Children.OfType<Button>()).FirstOrDefault(b=>Equals(b.Content,FloatCanvas.Localization.AppText.Get(key)));
+                if(button is null)return;prompted=true;timer.Stop();button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            };
+            timer.Start();try{Await(newButton.ActivateAsync());}finally{timer.Stop();}return prompted;
+        }
+        check("dirty bound file opens save prompt immediately and cancel preserves its session",RespondToNew("Dialog.Cancel")&&!newButton.IsConfirming&&ReferenceEquals(dirty,Field<EditorSession>(session,"_live"))&&BoundPath(dirty)==projectPath&&dirty.Document.Elements.Count==1);
+        check("save and leave writes the bound file before creating an unbound blank",RespondToNew("History.SaveLeave")&&Await(new ProjectStore().LoadAsync(projectPath)).Document.Elements.Count==1&&BoundPath(Field<EditorSession>(session,"_live")) is null&&Field<EditorSession>(session,"_live").Document.Elements.Count==0);
+
+        Await((Task)Invoke("OpenProjectPathAsync",projectPath)!);Pump();Invoke("RefreshBoundFileIndicator");
+        var bubble=Field<BoundFileIndicator>(session,"_boundFileIndicator");
+        check("bound-file speech bubble shows the filename and full-path tooltip",bubble.Visibility==Visibility.Visible&&Equals(bubble.ToolTip,projectPath)&&System.Windows.Automation.AutomationProperties.GetName(bubble)==Path.GetFileName(projectPath));
+        var launcher=Field<ToolbarLauncher>(session,"_toolbarLauncher");
+        var fold=(Action)typeof(ToolbarLauncher).GetField("ToggleExpandedRequested",PrivateInstance)!.GetValue(launcher)!;
+        fold();Pump();check("folding the production toolbar also hides the filename bubble",bubble.Visibility==Visibility.Collapsed);
+        fold();Pump();check("expanding the toolbar restores the filename bubble",bubble.Visibility==Visibility.Visible);
+        var rebound=Field<EditorSession>(session,"_live");int beforeDetachUndo=rebound.UndoCount;
+        rebound.Add(new(){Kind=ElementKind.Ellipse,Width=10,Height=10});Pump();Invoke("RefreshBoundFileIndicator");
+        check("bound-file bubble marks unsaved edits",System.Windows.Automation.AutomationProperties.GetItemStatus(bubble)==FloatCanvas.Localization.AppText.Get("Project.Unsaved"));
+        string? output=Environment.GetEnvironmentVariable("FLOATCANVAS_ROUND2_PREVIEW_DIR");
+        var selectButton=Field<Dictionary<EditorTool,Button>>(session,"_toolbarToolButtons")[EditorTool.Select];
+        var selectIcon=selectButton.Content is Grid selectRow?(FrameworkElement)selectRow.Children.OfType<ContentPresenter>().Single().Content:(FrameworkElement)selectButton.Content;
+        check("filename text starts at the selection icon's left edge",Math.Abs(Field<TextBlock>(bubble,"label").TranslatePoint(new Point(),toolbar).X-selectIcon.TranslatePoint(new Point(VisualTreeHelper.GetDescendantBounds(selectIcon).Left,0),toolbar).X)<.5);
+        if(output is not null)
+        {
+            Round2StampRuntimeFixture.Render((FrameworkElement)toolbar.Content,Path.Combine(output,"toolbar-bound-file.png"));
+            Round2StampRuntimeFixture.Render((FrameworkElement)toolbar.Content,Path.Combine(output,"toolbar-bound-file-"+FloatCanvas.Localization.AppText.CurrentLanguage+"-"+Field<UserSettings>(session,"_settings").Theme+".png"));
+        }
+        var detach=bubble.ContextMenu.Items.OfType<MenuItem>().Single(item=>Equals(item.Header,FloatCanvas.Localization.AppText.Get("Project.Detach")));
+        check("filename context menu includes detach and locate with icons",bubble.ContextMenu.Items.Count==2&&bubble.ContextMenu.Items.OfType<MenuItem>().All(item=>item.Icon is FrameworkElement));
+        detach.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Pump();
+        check("detaching preserves content and undo while hiding the binding bubble",BoundPath(rebound) is null&&rebound.Document.Elements.Count==2&&rebound.UndoCount==beforeDetachUndo+1&&bubble.Visibility==Visibility.Collapsed);
+        check("detaching leaves the saved file unchanged and retains unbound content for history",Await(new ProjectStore().LoadAsync(projectPath)).Document.Elements.Count==1&&(bool)Invoke("NeedsNewCanvasConfirmation")!);
 
         object? Invoke(string name, params object[] values) => typeof(DesktopSession).GetMethod(name, PrivateInstance)!.Invoke(session, values);
         void SetField(string name, object value) => typeof(DesktopSession).GetField(name, PrivateInstance)!.SetValue(session, value);

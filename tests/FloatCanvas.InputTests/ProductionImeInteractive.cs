@@ -70,15 +70,15 @@ internal static partial class Program
                 Console.WriteLine("PRODUCTION_IME_STATE: " + current);
             };
             status.Start();
-            Console.WriteLine($"PRODUCTION_IME_READY: pid={Environment.ProcessId}; hwnd={observation.Handle}; title=浮绘 · 编辑文字; stage=Create; timeoutTotal=300s; instructions=natural-code n/i/h/k+Space, Enter, n/i/h/k+Space, X, Escape(cancel-preedit), Ctrl+Enter(commit); report={ProductionImeReport}");
+            Console.WriteLine($"PRODUCTION_IME_READY: pid={Environment.ProcessId}; hwnd={observation.Handle}; title=FloatCanvas text input; stage=Create; timeoutTotal=300s; instructions=natural-code n/i/h/k+Space, Shift+Enter(newline), n/i/h/k+Space, X, Escape(cancel-preedit), Enter(commit); report={ProductionImeReport}");
             await WaitForProductionDialogClose(observation);
             await Task.Delay(120);
             ProductionImeDuring = await observer.SnapshotAsync();
             var live = Field<EditorSession>("_live");
             ProductionImeStages.Add(new { Stage = "Create", Actual = observation.Snapshot(), live.UndoCount, live.RedoCount });
-            ProductionImeRequire(observation.CtrlEnterSeen, "Actual Ctrl+Enter closes the real production editor through its existing command handler");
+            ProductionImeRequire(observation.EnterSeen&&observation.ShiftEnterSeen, "Actual Shift+Enter inserts a line and Enter completes production inline editing");
             ProductionImeRequire(observation.XPreeditObserved && observation.EscapeSeen && observation.EscapeRetainedDialog,
-                "Actual X creates IME preedit and actual Escape cancels it while retaining the production dialog");
+                "Actual X creates IME preedit and actual Escape cancels it while retaining inline editing");
             ProductionImeRequire(live.Document.Elements is [var text] && text.Kind == ElementKind.Text && text.Text.Replace("\r\n", "\n") == "你好\n你好",
                 "The real production live document contains the two actually typed Chinese lines and no canceled X");
             ProductionImeRequire(live.UndoCount == 1 && live.RedoCount == 0 && !live.IsTransactionActive,
@@ -100,14 +100,14 @@ internal static partial class Program
                     "The real existing-object production editor did not acquire focus.", TimeSpan.FromSeconds(3));
                 ProductionImeRequire(observation.Input.Text == beforeText && live.Selection.Contains(element.Id),
                     "Production ShowTextEditor(existing) reopens the same retained object's real text (method entry, not a double-click claim)");
-                Console.WriteLine($"PRODUCTION_IME_READY: pid={Environment.ProcessId}; hwnd={observation.Handle}; title=浮绘 · 编辑文字; stage=Reopen; instructions=actual Ctrl+Enter unchanged, or physically edit then Ctrl+Enter; remainingSeconds={Math.Max(0, 300 - Stopwatch.GetElapsedTime(ProductionImeStarted).TotalSeconds):F0}");
+                Console.WriteLine($"PRODUCTION_IME_READY: pid={Environment.ProcessId}; hwnd={observation.Handle}; title=FloatCanvas text input; stage=Reopen; instructions=actual Enter unchanged, or physically edit then Enter; remainingSeconds={Math.Max(0, 300 - Stopwatch.GetElapsedTime(ProductionImeStarted).TotalSeconds):F0}");
                 await WaitForProductionDialogClose(observation); await Task.Delay(120);
                 ProductionImeStages.Add(new { Stage = "Reopen", Actual = observation.Snapshot(), live.UndoCount, live.RedoCount });
-                ProductionImeRequire(observation.CtrlEnterSeen && live.Document.Elements is [var edited] && edited.Id == element.Id && edited.Kind == ElementKind.Text,
-                    "Actual Ctrl+Enter commits the reopened production editor without flattening or replacing object identity");
+                ProductionImeRequire(observation.EnterSeen && live.Document.Elements is [var edited] && edited.Id == element.Id && edited.Kind == ElementKind.Text,
+                    "Actual Enter commits the reopened production editor without flattening or replacing object identity");
                 int expectedUndo = live.Document.Elements.Single().Text == beforeText ? 1 : 2;
                 ProductionImeRequire(live.UndoCount == expectedUndo && !live.IsTransactionActive,
-                    "Reopen creates one undo only for a real text change and no extra undo for unchanged Ctrl+Enter");
+                    "Reopen creates one undo only for a real text change and no extra undo for unchanged Enter");
                 ProductionImeDuring = await observer.SnapshotAsync();
                 ProductionImeRequire(Quiet(ProductionImeDuring), "The independent child's X channels remain silent through optional actual production re-editing");
                 observation.Dispose(); observation = null;
@@ -123,7 +123,7 @@ internal static partial class Program
             ProductionImeRequire(ProductionImeAfter.WmDown > 0 && ProductionImeAfter.WmUp > 0 && ProductionImeAfter.AsyncPresses > 0 && RawPositive(ProductionImeAfter),
                 "Fresh pass-through X restores the independent child's WM/raw/async channels after production editing");
             await CallAsync("FlushRecoveryAsync");
-            ProductionImeFinishReason = "ProductionCtrlEnterCommitted";
+            ProductionImeFinishReason = "ProductionEnterCommitted";
         }
         finally
         {
@@ -143,10 +143,17 @@ internal static partial class Program
 
     private static ProductionImeObservation ObserveProductionTextEditor()
     {
-        var dialog = Field<Wpf.Window?>("_textEditor") ?? throw new InvalidOperationException("Production ShowTextEditor did not create its window.");
-        if (dialog.Content is not Panel panel || panel.Children.OfType<TextBox>().ToArray() is not [var input])
-            throw new InvalidOperationException("The actual production editor does not contain its expected single original TextBox.");
+        var (dialog,input)=ProductionInlineInput();
         return new(dialog, input, () => Host?.IsKeyboardIsolationActive == true);
+    }
+    private static (Wpf.Window Window,TextBox Input) ProductionInlineInput()
+    {
+        var surface=Field<object?>("_canvasTextInput")??throw new InvalidOperationException("Production inline text input was not created.");
+        surface.GetType().GetMethod("Focus",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(surface,null);
+        var window=(Wpf.Window)surface.GetType().GetField("window",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(surface)!;
+        var edit=Field<object>("_inlineText");
+        var input=(TextBox)edit.GetType().GetProperty("Input",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(edit)!;
+        return(window,input);
     }
     private static async Task WaitForProductionDialogClose(ProductionImeObservation observation)
     {
@@ -155,7 +162,7 @@ internal static partial class Program
             if (Stopwatch.GetElapsedTime(ProductionImeStarted).TotalSeconds >= 300)
             { ProductionImeFinishReason = "Timeout300Seconds"; throw new TimeoutException("The real production IME editor did not finish within 300 seconds."); }
             if (Host?.IsEditing != true || Host.IsKeyboardIsolationActive != true)
-            { ProductionImeFinishReason = "ProductionLeftEditingBeforeCommit"; throw new InvalidOperationException("Production stopped isolated editing before its dialog commit; no corrective input or focus action is performed."); }
+            { ProductionImeFinishReason = "ProductionLeftEditingBeforeCommit"; throw new InvalidOperationException("Production stopped isolated editing before its text commit; no corrective input or focus action is performed."); }
             await Task.Delay(30);
         }
     }
@@ -177,9 +184,9 @@ internal static partial class Program
             Stages = ProductionImeStages, Events = ProductionImeEvents, Observer = ProductionImeObserver,
             PositiveBefore = ProductionImeBefore, DuringProductionEditing = ProductionImeDuring, PositiveAfter = ProductionImeAfter,
             FinalDocument = ProductionImeDocument, HookAfterDispose = ProductionImeHook, CandidateUiVisuallyVerifiedByThisCli = false,
-            Method = "The actual DesktopSession is constructed, InitializeDocumentsAsync(false) runs, SetEditing(true) enables actual production isolation, and the unmodified production ShowTextEditor(null,point) opens. This test attaches only read-only listeners to its original Window/TextBox; no added input/state window, assigned Text, synthetic TextInput/WM_CHAR or test keyboard bridge is used. A coordinator supplies physical Natural Code double-pinyin n/i/h/k+Space, a real Enter newline, a second phrase, X+Escape preedit cancellation and actual Ctrl+Enter. Only pre/post positive controls inject guarded X into the separately owned child.",
-            ReopenMethod = "Optional --production-ime-reopen calls the same production ShowTextEditor(existing) with the retained ID and observes actual subsequent Ctrl+Enter. This is an explicit method entry, not evidence of a real double-click.",
-            Scope = "The first actual production commit must retain exactly 你好 newline 你好 as one Text object and one undo operation. Actual X preedit/Escape must leave the same original dialog open. Current Host editing/isolation, own text focus, input language and real IME state are printed only on changes. No input scheme, IME state or system profile is changed by this production probe.",
+            Method = "The actual DesktopSession is constructed, InitializeDocumentsAsync(false) runs, SetEditing(true) enables actual production isolation, and the unmodified production ShowTextEditor(null,point) opens. This test attaches only read-only listeners to its original Window/TextBox; no added input/state window, assigned Text, synthetic TextInput/WM_CHAR or test keyboard bridge is used. A coordinator supplies physical Natural Code double-pinyin n/i/h/k+Space, a real Shift+Enter newline, a second phrase, X+Escape preedit cancellation and actual Enter. Only pre/post positive controls inject guarded X into the separately owned child.",
+            ReopenMethod = "Optional --production-ime-reopen calls the same production ShowTextEditor(existing) with the retained ID and observes actual subsequent Enter. This is an explicit method entry, not evidence of a real double-click.",
+            Scope = "The first actual production commit must retain exactly 你好 newline 你好 as one Text object and one undo operation. Actual X preedit/Escape must leave the same inline input surface open. Current Host editing/isolation, own text focus, input language and real IME state are printed only on changes. No input scheme, IME state or system profile is changed by this production probe.",
             Safety = "Only the fixture's own session/profile/window and separate child are created or cleaned up. Physical interactive keys are controlled by the coordinator. Programmatic positive-control X has exact child HWND/PID foreground guards. A 300-second total timeout or production lease exit stops the run and disposes only this session; no correcting input/focus is injected. Global Ctrl+Alt+Esc is handled by the unchanged production isolation component.",
             Privacy = "Only the self-created production TextBox and retained test object are read. Text outside the self-test nihaok/x alphabet, greeting characters, whitespace and apostrophe is redacted. The separate child records X counters only.",
             Limitations = new[] { "CLI does not recognize screenshots or candidate windows; coordinator visual evidence remains separate.",

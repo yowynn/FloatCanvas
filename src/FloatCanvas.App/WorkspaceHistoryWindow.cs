@@ -55,7 +55,7 @@ internal sealed class WorkspaceHistoryWindow : Window
         thumbnail.Children.Add(image); thumbnail.Children.Add(placeholder); row.Children.Add(thumbnail);
         var text = new StackPanel { Margin = new(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(new TextBlock { Text = entry.SavedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), FontSize = 14, FontWeight = FontWeights.SemiBold });
-        text.Children.Add(new TextBlock { Text = L.Get(entry.IsCurrent ? "Recovery.LatestWorkspace" : "Recovery.HistoryWorkspace"), Margin = new(0, 7, 0, 0), Opacity = .7 });
+        text.Children.Add(new TextBlock { Text = entry.SourceFile is not null ? (entry.IsCurrent ? L.Get("Recovery.LatestWorkspace") + " · " : "") + Path.GetFileName(entry.SourceFile) : L.Get(entry.IsCurrent ? "Recovery.LatestWorkspace" : "Recovery.HistoryWorkspace"), Margin = new(0, 7, 0, 0), Opacity = .7 });
         Grid.SetColumn(text, 1); row.Children.Add(text);
         var item = new ListBoxItem { Tag = entry, Content = row, Padding = new(10, 8, 10, 8), HorizontalContentAlignment = HorizontalAlignment.Stretch };
         bool requested = false;

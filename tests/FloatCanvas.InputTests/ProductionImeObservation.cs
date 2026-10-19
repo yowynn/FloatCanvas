@@ -7,7 +7,7 @@ using Wpf = System.Windows;
 
 namespace FloatCanvas.InputTests;
 
-/// <summary>Read-only listeners on the unmodified production dialog/control.</summary>
+/// <summary>Read-only listeners on the production inline input surface.</summary>
 internal sealed class ProductionImeObservation : IDisposable
 {
     private readonly Func<bool> leaseActive;
@@ -21,6 +21,8 @@ internal sealed class ProductionImeObservation : IDisposable
     public nint Handle { get; }
     public bool IsClosed { get; private set; }
     public bool CtrlEnterSeen { get; private set; }
+    public bool EnterSeen { get; private set; }
+    public bool ShiftEnterSeen { get; private set; }
     public bool EscapeSeen { get; private set; }
     public bool EscapeRetainedDialog { get; private set; }
     public bool XPreeditObserved { get; private set; }
@@ -44,11 +46,11 @@ internal sealed class ProductionImeObservation : IDisposable
             Text = KeyboardBridgeImeFixture.ReportText(Input.Text), Input.SelectionStart, Input.SelectionLength, LeaseActive = leaseActive() });
         closed = (_, _) => { IsClosed = true; Events.Add(new { Kind = "ActualProductionDialogClosed", At = Stopwatch.GetTimestamp(),
             CtrlEnterObservedBeforeClosedEvent = CtrlEnterSeen, EscapeSeen,
-            EventOrdering = "The production Window handler can close before this later handled-events-too observer sees the same Ctrl+Enter." }); };
+            EventOrdering = "The production Window handler can close before this later handled-events-too observer sees the same Enter." }); };
         TextCompositionManager.AddPreviewTextInputStartHandler(Input, start);
         TextCompositionManager.AddPreviewTextInputUpdateHandler(Input, update);
         Input.PreviewTextInput += commit; Input.TextChanged += textChanged;
-        // Observe already-handled Ctrl+Enter too, without changing the production handler.
+        // Observe already-handled Enter too, without changing the production handler.
         Window.AddHandler(Keyboard.PreviewKeyDownEvent, keyDown, handledEventsToo: true);
         Window.AddHandler(Keyboard.PreviewKeyUpEvent, keyUp, handledEventsToo: true);
         Window.Closed += closed;
@@ -69,6 +71,8 @@ internal sealed class ProductionImeObservation : IDisposable
         if (effective is Key.LeftShift or Key.RightShift) ShiftEvents++;
         bool down = kind == "PreviewKeyDown";
         if (down && effective == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0) CtrlEnterSeen = true;
+        if(down&&effective==Key.Enter)
+        {if((Keyboard.Modifiers&ModifierKeys.Shift)!=0)ShiftEnterSeen=true;else EnterSeen=true;}
         Events.Add(new { Kind = kind, At = Stopwatch.GetTimestamp(), Key = e.Key.ToString(), ImeProcessedKey = e.ImeProcessedKey.ToString(),
             SystemKey = e.SystemKey.ToString(), Modifiers = Keyboard.Modifiers.ToString(), e.Handled, Composing = composing,
             LeaseActive = leaseActive(), ImeState = KeyboardBridgeImeFixture.ReadImeState() });
@@ -86,7 +90,7 @@ internal sealed class ProductionImeObservation : IDisposable
     public object Snapshot() => new { WindowHandle = Handle.ToInt64(), IsClosed, WindowVisible = Window.IsVisible, HasTextFocus,
         ImeState = KeyboardBridgeImeFixture.ReadImeState(), InputLanguage = InputLanguageManager.Current.CurrentInputLanguage.Name,
         ImeEnabled = InputMethod.GetIsInputMethodEnabled(Input), Text = KeyboardBridgeImeFixture.ReportText(Input.Text),
-        CtrlEnterSeen, EscapeSeen, EscapeRetainedDialog, XPreeditObserved, CompositionStarts, CompositionUpdates, CompositionCommits, ShiftEvents,
+        EnterSeen, ShiftEnterSeen, CtrlEnterSeen, EscapeSeen, EscapeRetainedDialog, XPreeditObserved, CompositionStarts, CompositionUpdates, CompositionCommits, ShiftEvents,
         Events = Events.ToArray() };
     public void Dispose()
     {

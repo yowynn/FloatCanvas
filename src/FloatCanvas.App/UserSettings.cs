@@ -17,9 +17,16 @@ internal sealed class UserSettings
     [JsonIgnore] public bool ToolbarExpanded { get; set; } = true;
     public string Theme { get; set; } = "system";
     public string Language { get; set; } = "auto";
-    public bool PrimaryScreenOnly { get; set; } = true;
+    public bool PrimaryScreenOnly { get; set; } = false;
+    public string? CanvasReferenceDisplay { get; set; }
     public bool ShowToolShortcutHints { get; set; } = true;
+    public bool ShowFloatingLogo { get; set; } = true;
+    // Supersede the old default-off preference once. New explicit choices persist.
+    [JsonIgnore] public bool ShowPassThroughLauncher { get => ShowFloatingLogo; set => ShowFloatingLogo = value; }
+    public bool IncludePrereleaseUpdates { get; set; }
     public bool PreferGpuAcceleration { get; set; } = true;
+    private int historyVersionLimit = 60;
+    public int HistoryVersionLimit { get => historyVersionLimit; set => historyVersionLimit = value is >= 1 and <= 10000 ? value : 60; }
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
     private static string FilePath => Path.Combine(ApplicationPaths.ProfileDirectory, "settings.json");

@@ -273,49 +273,9 @@
     "zh": "选择工具",
     "en": "Select"
   },
-  "Text.NumberTitle": {
-    "zh": "浮绘 · 编辑序号",
-    "en": "FloatCanvas · Edit number"
-  },
-  "Text.TextTitle": {
-    "zh": "浮绘 · 编辑文字",
-    "en": "FloatCanvas · Edit text"
-  },
-  "Text.Done": {
-    "zh": "完成  Ctrl+Enter",
-    "en": "Done  Ctrl+Enter"
-  },
-  "Text.InvalidNumber": {
-    "zh": "请输入 1 到 1000000 之间的整数序号。",
-    "en": "Enter a whole number from 1 to 1000000."
-  },
-  "Text.TargetMissing": {
-    "zh": "该元素已被删除。输入已保留；可撤销删除后重试，或取消本次编辑。",
-    "en": "This element was deleted. Your input has been kept. Undo the deletion and retry, or cancel this edit."
-  },
-  "Text.TargetTypeChanged": {
-    "zh": "元素类型已改变，无法提交此次编辑。输入已保留，请重新打开相应的编辑窗口。",
-    "en": "The element type has changed, so this edit cannot be applied. Your input has been kept. Reopen the appropriate editor."
-  },
-  "Text.TargetLocked": {
-    "zh": "该元素已被锁定。输入已保留，解锁后可以重试。",
-    "en": "This element is locked. Your input has been kept. Unlock the element and retry."
-  },
   "Text.ActionInProgress": {
-    "zh": "请先结束画布上的操作。输入已保留。",
-    "en": "Finish the current canvas action first. Your input has been kept."
-  },
-  "Text.Busy": {
-    "zh": "文档正在处理，输入已保留。请稍后重试。",
-    "en": "The document is busy. Your input has been kept. Please retry when it is ready."
-  },
-  "Text.SessionChanged": {
-    "zh": "当前画布已切换。输入已保留；返回原画布后重试。",
-    "en": "The active canvas has changed. Your input has been kept. Return to the original canvas and retry."
-  },
-  "History.EditNumber": {
-    "zh": "编辑序号",
-    "en": "Edit number"
+    "zh": "请先结束画布上的操作。",
+    "en": "Finish the current canvas action first."
   },
   "History.EditText": {
     "zh": "编辑文字",
@@ -382,8 +342,8 @@
     "en": "All screens"
   },
   "Settings.ScopeOverrideHint": {
-    "zh": "启动参数优先；保存的范围在不带屏幕参数启动时生效。",
-    "en": "The startup flag takes priority. Launch without a screen flag to use the saved scope."
+    "zh": "当前绘图范围由启动参数指定。",
+    "en": "Drawing scope is set by the startup options."
   },
   "Settings.ScopeRestartHint": {
     "zh": "范围修改在下次启动生效。",
@@ -406,28 +366,28 @@
     "en": "Settings saved."
   },
   "Settings.SavedScopeOverride": {
-    "zh": "设置已保存 · 不带屏幕参数启动时应用所选范围。",
-    "en": "Settings saved. Launch without a screen flag to apply the selected scope."
+    "zh": "已保存；下次常规启动时应用绘图范围。",
+    "en": "Saved. Drawing scope applies on the next normal launch."
   },
   "Settings.SavedScopeRestart": {
     "zh": "设置已保存 · 绘图范围下次启动生效。",
     "en": "Settings saved. The drawing scope will change after restarting FloatCanvas."
   },
   "Recovery.LoadFailedArchived": {
-    "zh": "恢复画布失败，原恢复世代已隔离保存在：\n",
-    "en": "Could not recover the canvas. Original recovery files were preserved in:\n"
+    "zh": "无法恢复画布，原文件已保存在：\n",
+    "en": "Could not restore the canvas. Original files are saved in:\n"
   },
   "Recovery.LoadFailedPreserved": {
-    "zh": "恢复画布失败，且无法安全隔离原恢复文件。自动恢复写入已暂停；原文件尚未被覆盖。\n",
-    "en": "Could not recover or safely archive the original recovery files. Automatic recovery writes are paused; the originals have been preserved.\n"
+    "zh": "无法恢复画布，原文件已保留。\n",
+    "en": "Could not restore the canvas. Original files have been kept.\n"
   },
   "Recovery.PreviousLoaded": {
-    "zh": "已从前代恢复画布；原恢复世代隔离于 ",
-    "en": "Recovered the previous canvas. Original recovery files were preserved in "
+    "zh": "已恢复上一版本，原文件保存在：",
+    "en": "Restored the previous version. Original files are saved in: "
   },
   "Recovery.PreviousArchiveFailed": {
-    "zh": "已从前代恢复画布，但无法隔离原恢复世代。自动恢复写入已暂停，原文件不会被覆盖。\n",
-    "en": "Recovered the previous canvas, but could not archive the original files. Automatic recovery writes are paused; the originals will not be overwritten.\n"
+    "zh": "已恢复上一版本，原文件已保留。\n",
+    "en": "Restored the previous version. Original files have been kept.\n"
   },
   "Recovery.SaveFailed": {
     "zh": "自动恢复保存失败：",
@@ -490,8 +450,8 @@
     "en": "Project saved · "
   },
   "Project.ReplaceQuestion": {
-    "zh": "。\n是否先另存当前内容？\n是：另存；否：放弃；取消：保留当前画布。",
-    "en": ".\nSave the current canvas as a separate project first?\nYes: Save as; No: Discard; Cancel: Keep the current canvas."
+    "zh": "。\n当前工程有未保存的修改。保存并离开会更新原文件；保留到历史并离开不会修改原文件。",
+    "en": ".\nThis project has unsaved changes. Save and leave updates the original file. Keep in history and leave preserves a separate snapshot."
   },
   "Export.TransparentTitle": {
     "zh": "导出透明标注 PNG",
@@ -626,8 +586,8 @@
     "en": "English"
   },
   "Settings.LanguageRestartHint": {
-    "zh": "语言修改在下次启动生效，不会改变输入法或画布内容。",
-    "en": "Language changes take effect after restarting FloatCanvas. Your input method and canvas content are unaffected."
+    "zh": "重启浮绘后应用新语言。",
+    "en": "Restart FloatCanvas to apply the language."
   },
   "Settings.LanguageSaved": {
     "zh": "设置已保存 · 语言修改在下次启动生效。",

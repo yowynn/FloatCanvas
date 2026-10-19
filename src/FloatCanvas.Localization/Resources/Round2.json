@@ -1,0 +1,30 @@
+{
+  "Welcome.Open": {
+    "zh": "打开欢迎页面",
+    "en": "Open welcome page"
+  },
+  "Welcome.ProjectHome": {
+    "zh": "打开项目主页",
+    "en": "Project homepage"
+  },
+  "Canvas.FourPoints": {
+    "zh": "四点定位",
+    "en": "Place four corners"
+  },
+  "Canvas.FourPointsHint": {
+    "zh": "依次点击四个角点，Esc 取消。",
+    "en": "Click four corners in any order. Esc cancels."
+  },
+  "Project.Detach": {
+    "zh": "取消文件绑定",
+    "en": "Detach file"
+  },
+  "Project.Locate": {
+    "zh": "打开文件位置",
+    "en": "Open file location"
+  },
+  "Project.Unsaved": {
+    "zh": "未保存",
+    "en": "Unsaved"
+  }
+}

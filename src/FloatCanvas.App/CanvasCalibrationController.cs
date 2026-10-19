@@ -1,4 +1,5 @@
 using FloatCanvas.Core;
+using FloatCanvas.Windows;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
@@ -6,14 +7,20 @@ namespace FloatCanvas.App;
 /// <summary>One calibration gesture is one document transaction, in output-screen coordinates.</summary>
 internal sealed class CanvasCalibrationController
 {
+    public const double CenterHandleHalfSize = 17;
     private EditorSession? session;
     private SceneDocument? dragDocument;
     private PointD start;
     private PointD[] initial = [];
     private int corner = -1, edge = -1;
     private long transactionId;
+    private readonly List<PointD> placed=[];
+    private PointD? hover;
+    public bool IsPlacing { get; private set; }
+    public IReadOnlyList<PointD> PlacementPreview => hover is { } point ? [..placed,point] : placed.ToArray();
     public bool IsActive => session is not null;
     public bool IsDragging => dragDocument is not null;
+    public bool IsDragConstrained { get; private set; }
     public event Action? Changed;
     public event Action<string>? Error;
 
@@ -22,9 +29,14 @@ internal sealed class CanvasCalibrationController
         if (ReferenceEquals(session, value)) return;
         End(); session = value; Changed?.Invoke();
     }
-    public void End() { CancelDrag(); session = null; Changed?.Invoke(); }
+    public void BeginPlacement(EditorSession value)
+    {
+        End();session=value;IsPlacing=true;Changed?.Invoke();
+    }
+    public void End() { CancelDrag(); IsPlacing=false;placed.Clear();hover=null;session = null; Changed?.Invoke(); }
     public bool Down(PointD point)
     {
+        if(IsPlacing)return Place(point);
         if (session is null || IsDragging || session.IsTransactionActive) return false;
         var quad = session.Document.Canvas.Projection.Quad;
         if (quad.Count != 4) return false;
@@ -35,7 +47,9 @@ internal sealed class CanvasCalibrationController
             double distance = quad[i].DistanceTo(point);
             if (distance <= closest) { closest = distance; corner = i; }
         }
-        if (corner < 0)
+        var center = new PointD(quad.Average(p => p.X), quad.Average(p => p.Y));
+        bool centerHandle = Math.Abs(point.X - center.X) <= CenterHandleHalfSize && Math.Abs(point.Y - center.Y) <= CenterHandleHalfSize;
+        if (corner < 0 && !centerHandle)
         {
             closest = 8;
             for (int i = 0; i < 4; i++)
@@ -45,40 +59,100 @@ internal sealed class CanvasCalibrationController
             }
             if (edge < 0 && !Inside(point, quad)) return false;
         }
-        start = point; initial = [.. quad]; dragDocument = session.Document;
+        start = point; initial = [.. quad]; dragDocument = session.Document; IsDragConstrained = false;
         session.BeginTransaction(L.Get("Canvas.CalibrationHistory")); transactionId = session.TransactionId;
         Changed?.Invoke(); return true;
     }
-    public bool Move(PointD point)
+    public bool Move(PointD point, OverlayModifiers modifiers = OverlayModifiers.None)
     {
+        if(IsPlacing)
+        {if(hover!=point){hover=point;Changed?.Invoke();}return true;}
         if (!ValidateDrag()) return false;
         var candidate = initial.ToArray(); var delta = point - start;
-        if (corner >= 0) candidate[corner] += delta;
+        if (corner >= 0)
+        {
+            bool shift = (modifiers & OverlayModifiers.Shift) != 0;
+            bool horizontal = Math.Abs(delta.X) >= Math.Abs(delta.Y);
+            if (shift) delta = horizontal ? new(delta.X, 0) : new(0, delta.Y);
+            var target = initial[corner] + delta;
+            if ((modifiers & OverlayModifiers.Control) == 0)
+            {
+                var adjacent = new[] { initial[(corner + 3) % 4], initial[(corner + 1) % 4] };
+                const double threshold = 8;
+                if (!shift || horizontal)
+                {
+                    var x = adjacent.OrderBy(p => Math.Abs(p.X - target.X)).First().X;
+                    if (Math.Abs(x - target.X) <= threshold) target = new(x, target.Y);
+                }
+                if (!shift || !horizontal)
+                {
+                    var y = adjacent.OrderBy(p => Math.Abs(p.Y - target.Y)).First().Y;
+                    if (Math.Abs(y - target.Y) <= threshold) target = new(target.X, y);
+                }
+            }
+            candidate[corner] = target;
+        }
         else if (edge >= 0) { candidate[edge] += delta; candidate[(edge + 1) % 4] += delta; }
         else for (int i = 0; i < 4; i++) candidate[i] += delta;
-        if (!CanvasCalibration.TryCalibrate(session!.Document.Canvas.Projection, candidate, session.Document.Viewport, out var settings, out var error))
-        { Error?.Invoke(error!); return false; }
+        var current = session!.Document.Canvas.Projection;
+        bool wasConstrained = IsDragConstrained;
+        IsDragConstrained = !CanvasCalibration.TryCalibrate(current, candidate, session.Document.Viewport, out var settings, out var error);
+        if (IsDragConstrained)
+        {
+            if (!wasConstrained) Error?.Invoke(error!);
+            // Keep following coarse pointer samples up to the safe boundary instead of dropping the entire move.
+            // Every preview still passes the same convexity, inverse and viewport-horizon checks.
+            var previous = current.Quad;
+            double lower = 0, upper = 1;
+            bool advanced = false;
+            for (int iteration = 0; iteration < 24; iteration++)
+            {
+                double amount = (lower + upper) / 2;
+                var clipped = candidate.Select((p, i) => previous[i] + (p - previous[i]) * amount).ToArray();
+                if (CanvasCalibration.TryCalibrate(current, clipped, session.Document.Viewport, out var valid, out _))
+                { lower = amount; settings = valid; advanced = true; }
+                else upper = amount;
+            }
+            if (!advanced || settings.Quad.Select((p, i) => p.DistanceTo(previous[i])).Max() < .01)
+            {
+                if (!wasConstrained) Changed?.Invoke();
+                return false;
+            }
+        }
         session.Document.Canvas.Projection = settings; session.NotifyChanged(); Changed?.Invoke(); return true;
     }
     public void Up()
     {
         if (!ValidateDrag()) return;
-        dragDocument = null; session!.Commit(); Changed?.Invoke();
+        dragDocument = null; IsDragConstrained = false; session!.Commit(); Changed?.Invoke();
     }
     public void CancelDrag()
     {
         if (dragDocument is null) return;
         bool owns = session is not null && ReferenceEquals(session.Document, dragDocument) && session.IsTransactionActive && session.TransactionId == transactionId;
-        dragDocument = null;
+        dragDocument = null; IsDragConstrained = false;
         if (owns) session!.Cancel();
         Changed?.Invoke();
     }
     public void Escape() { if (IsDragging) CancelDrag(); else End(); }
+    private bool Place(PointD point)
+    {
+        if(session is null||session.IsTransactionActive||!double.IsFinite(point.X)||!double.IsFinite(point.Y))return false;
+        if(placed.Any(p=>p.DistanceTo(point)<2))return false;
+        if(placed.Count<3){placed.Add(point);hover=null;Changed?.Invoke();return true;}
+        PointD[] candidate=[..placed,point];
+        string? error="Canvas.InvalidQuad";
+        if(!CanvasCalibration.TryOrderCorners(candidate,out var quad)||
+            !CanvasCalibration.TryCalibrate(session.Document.Canvas.Projection,quad,session.Document.Viewport,out var projection,out error))
+        {Error?.Invoke(error??"Canvas.InvalidQuad");return false;}
+        session.Execute(L.Get("Canvas.CalibrationHistory"),document=>document.Canvas.Projection=projection);
+        IsPlacing=false;placed.Clear();hover=null;Changed?.Invoke();return true;
+    }
     private bool ValidateDrag()
     {
         if (dragDocument is null) return false;
         if (session is not null && ReferenceEquals(session.Document, dragDocument) && session.IsTransactionActive && session.TransactionId == transactionId) return true;
-        dragDocument = null; Changed?.Invoke(); return false;
+        dragDocument = null; IsDragConstrained = false; Changed?.Invoke(); return false;
     }
     private static double SegmentDistance(PointD p, PointD a, PointD b)
     {

@@ -67,6 +67,7 @@ internal sealed partial class EditorController
         Changed?.Invoke();
     }
     public PointD ScreenOrigin { get; set; }
+    internal TimeSpan AnimationTime { get; set; }
     public RectD? Marquee { get; private set; }
     public IReadOnlyList<PointD>? EffectPreviewPolygon { get; private set; }
     public CaptureSelection? CapturePreview { get; private set; }
@@ -74,6 +75,8 @@ internal sealed partial class EditorController
     public event Action? Changed;
     public event Action<string>? Message;
     public event Action<CanvasElement?, PointD>? EditText;
+    internal event Action<PointD>? PropertiesRequested;
+    internal event Action? Cancelling;
     public event Action<CaptureSelection>? CaptureSelectionCompleted;
     public event Action<RectD, ImageEffectKind, double, uint>? DesktopEffectRequested;
     private PointD start;
@@ -85,10 +88,14 @@ internal sealed partial class EditorController
     private RectD selectionBounds;
     private Dictionary<Guid, Affine2D> transforms = [];
     private CanvasElement? resizeSource;
+    private CanvasElement? billboardEndpointSource;
+    private SceneRenderer? resizeTextRenderer;
+    private Dictionary<Guid,CanvasElement> resizeTextSources = [];
     private int endpoint;
     private RectD? imageRegion;
     private (PointD Position, OverlayModifiers Modifiers, OverlayMouseButton Button)? lastGestureMove;
     private bool deselectOnClick, gestureMoved;
+    private bool shiftDeselectOnClick;
     private readonly List<PointD> capturePoints = [];
     private const int MaximumCapturePoints = 65536;
 
@@ -124,6 +131,7 @@ internal sealed partial class EditorController
     public bool CanCropSelection => ImageToolEligibility.TryGetCropTarget(Session, out _);
     private void OnChanged(object? sender, EventArgs e)
     {
+        if (!Session.Document.Canvas.Projection.Enabled) { billboardMode = false; ClearBillboardDepth(); }
         if (gesture == "image-crop" && !IsCurrentCropTarget()) Cancel();
         if (tool == EditorTool.Crop && !CanCropSelection) tool = EditorTool.Select;
         Changed?.Invoke();
@@ -133,6 +141,7 @@ internal sealed partial class EditorController
         Cancel();
         Session.Changed -= OnChanged;
         Session = session;
+        if (!session.Document.Canvas.Projection.Enabled) billboardMode = false;
         session.Changed += OnChanged;
         ScreenOrigin = origin;
         if (tool == EditorTool.Crop && !CanCropSelection) tool = EditorTool.Select;
@@ -144,19 +153,29 @@ internal sealed partial class EditorController
         throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
     public void Cancel()
     {
-        gesture = null; drawing = effectTarget = resizeSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
+        Cancelling?.Invoke();
+        resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
+        resizeTextSources.Clear();
+        gesture = null; drawing = effectTarget = resizeSource = billboardEndpointSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
         lastGestureMove = null;
         CapturePreview = null; capturePoints.Clear();
+        straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null;
         deselectOnClick = gestureMoved = false;
+        shiftDeselectOnClick = false;
+        ClearBillboardDepth(); pendingBillboardInsertion = null; billboardSources.Clear(); billboardMoveDelta = null;
         Session.Cancel(); Changed?.Invoke();
     }
     public void Pointer(OverlayPointerEvent e)
     {
         if (e.Kind == OverlayPointerKind.Cancel) { Cancel(); return; }
+        if(e.Kind==OverlayPointerKind.Move&&gesture is not null&&e.Time is { } inputTime&&modifierTime is { } boundary&&unchecked((int)(inputTime-boundary))<0)return;
         pointerScreen = new(e.Position.X - ScreenOrigin.X, e.Position.Y - ScreenOrigin.Y);
+        if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); Tool = EditorTool.Select; return; }
+        if (HandleBillboardDepthInput(e)) return;
         bool screenGesture = HasCaptureGesture || Tool == EditorTool.CaptureRegion && gesture is null;
         PointD p;
         if (screenGesture) p = pointerScreen;
+        else if (UsesBillboardDrawingInput || gesture is null && billboardDepth is not null) p = BillboardInput(pointerScreen);
         else if (!CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out p))
         {
             if (e.Kind == OverlayPointerKind.Up) Cancel();
@@ -171,22 +190,34 @@ internal sealed partial class EditorController
                 capturePoints.Count >= 3 && p.DistanceTo(capturePoints[0]) <= 8) CompleteCaptureSelection();
             else
             {
-                AddCapturePoint(p);
+                AddCapturePoint((e.Modifiers&OverlayModifiers.Shift)!=0&&capturePoints.Count>0?EightDirectionEnd(capturePoints[^1],p):p);
                 UpdateCapturePreview(p, e.Modifiers, includeHover: false);
             }
             return;
         }
-        if (e.Kind == OverlayPointerKind.DoubleClick && Tool == EditorTool.Select)
+        if (e.Kind == OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left && Tool != EditorTool.Text)
         {
             Cancel();
             var hit = HitTestScreen(pointerScreen, 4);
-            if (hit?.Kind is ElementKind.Text or ElementKind.Number) { EditText?.Invoke(hit, p); return; }
+            if (hit is not null)
+            {
+                Session.SetSelection([hit.Id]);PropertiesRequested?.Invoke(pointerScreen);return;
+            }
         }
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
         {
-            Cancel(); start = p; startScreen = pointerScreen; lastGestureMove = (p, e.Modifiers, e.Button);
+            var retainedDepth = billboardDepth;
+            Cancel(); billboardDepth = retainedDepth;
+            start = p; startScreen = pointerScreen; lastGestureMove = (p, e.Modifiers, e.Button);
+            gestureModifiers=e.Modifiers;
             bool creating = IsCreationTool(Tool);
             bool forceCreate = (e.Modifiers & OverlayModifiers.Control) != 0;
+            if(Tool==EditorTool.Text)
+            {
+                var text=forceCreate?null:HitTestScreen(pointerScreen,4);
+                EditText?.Invoke(text?.Kind==ElementKind.Text?text:null,p);
+                return;
+            }
             deselectOnClick = creating && !forceCreate && Session.Selection.Count > 0;
             var selectionPoint = p;
             bool canSelect = !screenGesture || CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out selectionPoint);
@@ -194,8 +225,7 @@ internal sealed partial class EditorController
             { start = selectionPoint; StartSelect(selectionPoint, e.Modifiers, selectedOnly: true); deselectOnClick = false; return; }
             if (deselectOnClick && Tool == EditorTool.Image)
             { Session.SetSelection([]); return; }
-            if (Tool == EditorTool.Text) { EditText?.Invoke(null, p); return; }
-            if (Tool is EditorTool.Number or EditorTool.Emoji) { BeginSizedPlacement(p); return; }
+            if (Tool is EditorTool.Number or EditorTool.Emoji) { BeginSizedPlacement(p); BeginBillboardDrawing(); Session.NotifyChanged(); return; }
             if (Tool == EditorTool.Image) { Message?.Invoke(L.Get("Editor.ImportImageHint")); return; }
             if (Tool == EditorTool.Stamp) return;
             if (Tool == EditorTool.Crop)
@@ -203,12 +233,13 @@ internal sealed partial class EditorController
                 if (!ImageToolEligibility.TryGetCropTarget(Session, out effectTarget))
                 { Message?.Invoke(L.Get("Editor.CropImageHint")); return; }
                 cropRevision = Session.SceneRevision;
-                gesture = "image-crop"; UpdateImageRegion(p); return;
+                gesture = "image-crop"; UpdateImageRegion(p,e.Modifiers); return;
             }
             if (Tool == EditorTool.CaptureRegion)
             {
                 gesture = CaptureShape == CaptureShape.PolygonLasso ? "capture-polygon" : "capture";
                 if (CaptureShape is CaptureShape.FreehandLasso or CaptureShape.PolygonLasso) capturePoints.Add(p);
+                if(CaptureShape==CaptureShape.FreehandLasso&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
                 UpdateCapturePreview(p, e.Modifiers, includeHover: false); return;
             }
             if (Tool is EditorTool.Blur or EditorTool.Pixelate)
@@ -220,7 +251,7 @@ internal sealed partial class EditorController
                 if (effectTarget == null)
                 { gesture = "desktop-effect"; Marquee = new(p.X, p.Y, 0, 0); return; }
                 if (!CanEditImage(effectTarget)) return;
-                gesture = "effect"; UpdateImageRegion(p); return;
+                gesture = "effect"; UpdateImageRegion(p,e.Modifiers); return;
             }
             if (Tool == EditorTool.Eraser) { gesture = "erase"; Session.BeginTransaction(L.Get("Editor.History.Erase")); Erase(p); return; }
             if (Tool == EditorTool.Select) { StartSelect(p, e.Modifiers); return; }
@@ -228,7 +259,10 @@ internal sealed partial class EditorController
             Session.BeginTransaction(L.Format("Editor.History.Draw", L.Get("Editor.ElementKind." + Tool)));
             drawing = new CanvasElement { Kind = Enum.Parse<ElementKind>(Tool.ToString()), Style = Style.Clone(), CornerRadius = CornerRadius,
                 Symbol = Symbol, Transform = Affine2D.Translation(p.X, p.Y), Points = [new(0, 0)] };
+            if(ElementGeometry.IsBoxShape(drawing.Kind))drawing.ConstrainAspect=ConstrainAspect;
             if (Tool == EditorTool.Highlighter) drawing.Style.StrokeWidth = Math.Max(16, Style.StrokeWidth);
+            if(drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
+            BeginBillboardDrawing();
             Session.Document.Elements.Add(drawing);
             Session.Selection.Clear();
             if (Tool is not (EditorTool.Freehand or EditorTool.Highlighter)) Session.Selection.Add(drawing.Id);
@@ -254,6 +288,8 @@ internal sealed partial class EditorController
             }
             gestureMoved |= pointerScreen.DistanceTo(startScreen) >= 2;
             Move(p, e.Modifiers);
+            if (billboardDrawing && !billboardDraftValid)
+            { var depth = billboardDepth; Cancel(); billboardDepth = depth; Changed?.Invoke(); return; }
             var completed = gesture;
             gesture = null;
             if (completed == "marquee") SelectScreenRectangle(Marquee!.Value, (e.Modifiers & OverlayModifiers.Shift) != 0);
@@ -273,26 +309,37 @@ internal sealed partial class EditorController
                 else if (completed == "draw" && !gestureMoved && drawing is not null && ElementGeometry.IsLine(drawing.Kind))
                 { Session.Cancel(); if (deselectOnClick) Session.SetSelection([]); }
                 else if (completed == "draw" && !gestureMoved && drawing is not null && UsesDefaultSize(Tool))
-                { ApplyDefaultSize(drawing, start, e.Modifiers); Session.Commit(); }
+                { PrepareBillboardDrawing(); ApplyDefaultSize(drawing, start, e.Modifiers); if (RefreshBillboardDrawing()) Session.Commit(); else Session.Cancel(); }
                 else if (completed == "draw" && deselectOnClick && !gestureMoved)
                 { Session.Cancel(); Session.SetSelection([]); }
+                else if (completed == "move" && shiftDeselectOnClick && !gestureMoved)
+                { var ids = Session.SelectionUnitIds(HitTestScreen(pointerScreen, 7)!.Id).ToArray(); Session.Cancel(); Session.SetSelection(Session.Selection.Except(ids)); }
                 else Session.Commit();
             }
+            resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
+            resizeTextSources.Clear();
+            straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null;
             drawing = effectTarget = null; Marquee = imageRegion = null; EffectPreviewPolygon = null; Changed?.Invoke();
+            ClearBillboardDepth(); billboardSources.Clear();
         }
     }
 
     private bool IsWithinCurrentSelection(PointD point)
     {
         if (Session.SelectionBounds() is not { } bounds || !Session.SelectedElements().Any(e => e.Visible && !e.Locked)) return false;
-        return bounds.Contains(point) || SelectionScreenCorners.Any(c => c.DistanceTo(pointerScreen) < 12) ||
+        bool body = Session.SelectedElements().Any(e => e.IsBillboard) ?
+            Session.SelectedElements().Any(e => ElementHitTestScreen(e, pointerScreen, 4)) ||
+                SelectionScreenCorners is { Count: 4 } polygon && ElementGeometry.PointInPolygon(pointerScreen, polygon) : bounds.Contains(point);
+        if (body && CanvasDepthOrder.IsEnabled(Session.Document))
+            body = HitTestScreen(pointerScreen, 4) is { } visible && Session.Selection.Contains(visible.Id);
+        return body || BillboardSelectionGuide is { } guide && pointerScreen.DistanceTo(guide.Center) < 12 || SelectionScreenCorners.Any(c => c.DistanceTo(pointerScreen) < 12) ||
             SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14;
     }
 
     private void ApplyDefaultSize(CanvasElement element, PointD center, OverlayModifiers modifiers)
     {
         double width = DefaultWidth, height = DefaultHeight;
-        if (ConstrainAspect || (modifiers & OverlayModifiers.Shift) != 0) height = width;
+        if (ConstrainBox(modifiers)) height = width;
         element.Width = width; element.Height = height; element.Points.Clear();
         element.Transform = Affine2D.Translation(center.X - width / 2, center.Y - height / 2);
     }
@@ -349,67 +396,9 @@ internal sealed partial class EditorController
         return true;
     }
 
-    private void AddCapturePoint(PointD point)
-    {
-        if (capturePoints.Count < MaximumCapturePoints &&
-            (capturePoints.Count == 0 || capturePoints[^1].DistanceTo(point) >= .75)) capturePoints.Add(point);
-    }
-
-    private void UpdateCapturePreview(PointD point, OverlayModifiers modifiers, bool includeHover = true)
-    {
-        IReadOnlyList<PointD> contour = Array.Empty<PointD>();
-        RectD bounds;
-        if (CaptureShape is CaptureShape.Rectangle or CaptureShape.Ellipse)
-        {
-            if ((modifiers & OverlayModifiers.Shift) != 0)
-            {
-                var delta = point - start; double side = Math.Max(Math.Abs(delta.X), Math.Abs(delta.Y));
-                point = start + new PointD(Math.CopySign(side, delta.X), Math.CopySign(side, delta.Y));
-            }
-            bounds = RectD.FromPoints(start, point);
-        }
-        else
-        {
-            if (CaptureShape == CaptureShape.FreehandLasso) AddCapturePoint(point);
-            var points = capturePoints.ToList();
-            if (CaptureShape == CaptureShape.PolygonLasso && includeHover &&
-                (points.Count == 0 || points[^1] != point)) points.Add(point);
-            contour = Array.AsReadOnly(points.ToArray());
-            bounds = CaptureBounds(points);
-        }
-        CapturePreview = new(CaptureShape, CaptureSource, bounds, contour, CaptureBorderWidth, CaptureBorderColor);
-        Changed?.Invoke();
-    }
-
-    private void CompleteCaptureSelection()
-    {
-        if (gesture == "capture-polygon")
-            UpdateCapturePreview(capturePoints.LastOrDefault(), OverlayModifiers.None, includeHover: false);
-        var selection = CapturePreview;
-        bool valid = selection is { Bounds.Width: >= 2, Bounds.Height: >= 2 } &&
-            (selection.Shape is CaptureShape.Rectangle or CaptureShape.Ellipse || HasCaptureArea(selection.Points));
-        // Finishing and cancellation both discard only transient geometry, without a document transaction.
-        gesture = null; CapturePreview = null; capturePoints.Clear(); lastGestureMove = null;
-        deselectOnClick = gestureMoved = false;
-        Changed?.Invoke();
-        if (valid) CaptureSelectionCompleted?.Invoke(selection!);
-    }
-
-    private static RectD CaptureBounds(IReadOnlyList<PointD> points) => points.Count == 0 ? default :
-        new(points.Min(p => p.X), points.Min(p => p.Y), points.Max(p => p.X) - points.Min(p => p.X), points.Max(p => p.Y) - points.Min(p => p.Y));
-
-    private static bool HasCaptureArea(IReadOnlyList<PointD> points)
-    {
-        if (points.Count < 3) return false;
-        var first = points[0];
-        var edge = points.Skip(1).FirstOrDefault(point => point.DistanceTo(first) >= .75) - first;
-        // Signed polygon area would reject valid self-intersecting contours. Any non-collinear
-        // vertex is enough here; the renderer applies the even-odd mask and checks visible pixels.
-        return points.Any(point => Math.Abs(edge.X * (point.Y - first.Y) - edge.Y * (point.X - first.X)) >= 1);
-    }
-
     private void StartSelect(PointD p, OverlayModifiers modifiers, bool selectedOnly = false)
     {
+        if (TryStartBillboardHeight()) return;
         var bounds = Session.SelectionBounds();
         var selected = Session.SelectedElements().Where(x => !x.Locked).ToArray();
         if (bounds != null && selected.Length > 0)
@@ -419,11 +408,14 @@ internal sealed partial class EditorController
             {
                 var element = selected[0];
                 foreach (var i in new[] { 0, element.Points.Count - 1 })
-                    if (CanvasMapping.Create(Session.Document).ToScreen(element.Transform.TransformPoint(element.Points[i])).DistanceTo(pointerScreen) < 12)
-                    { drawing = element; endpoint = i; gesture = "endpoint"; Session.BeginTransaction(L.Get("Editor.History.AdjustEndpoint")); return; }
+                    if (CanvasMapping.Create(Session.Document).ElementToScreen(element).TransformPoint(element.Points[i]).DistanceTo(pointerScreen) < 12)
+                    { drawing = element; billboardEndpointSource = element.IsBillboard ? element.Clone() : null; endpoint = i; gesture = "endpoint"; Session.BeginTransaction(L.Get("Editor.History.AdjustEndpoint")); return; }
             }
             if (SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14) gesture = "rotate";
             else if (SelectionScreenCorners.Any(c => pointerScreen.DistanceTo(c) < 12)) gesture = "resize";
+            else if (selected.Any(e => e.IsBillboard) && SelectionScreenCorners is { Count: 4 } screenCorners &&
+                ElementGeometry.PointInPolygon(pointerScreen, screenCorners) &&
+                (!CanvasDepthOrder.IsEnabled(Session.Document) || HitTestScreen(pointerScreen, 0) is { } visible && Session.Selection.Contains(visible.Id))) gesture = "move";
         }
         if (gesture == null && selectedOnly && bounds is not null)
         { selectionBounds = bounds.Value; gesture = "move"; }
@@ -435,8 +427,8 @@ internal sealed partial class EditorController
             if ((modifiers & OverlayModifiers.Shift) != 0)
             {
                 var ids = Session.SelectionUnitIds(hit.Id, individual).ToArray();
-                Session.SetSelection(ids.All(Session.Selection.Contains) ? Session.Selection.Except(ids) : Session.Selection.Union(ids));
-                return;
+                if (ids.All(Session.Selection.Contains)) shiftDeselectOnClick = true;
+                else { Session.SetSelection(Session.Selection.Union(ids)); return; }
             }
             var unit = Session.SelectionUnitIds(hit.Id, individual);
             if (individual || !unit.All(Session.Selection.Contains)) Session.SetSelection(unit);
@@ -444,46 +436,70 @@ internal sealed partial class EditorController
             gesture = "move";
         }
         transforms = Session.SelectedElements().Where(x => !x.Locked).ToDictionary(x => x.Id, x => x.Transform);
-        resizeSource = gesture == "resize" && selected.Length == 1 && ElementGeometry.IsBoxShape(selected[0].Kind) ? selected[0].Clone() : null;
+        billboardSources = Session.SelectedElements().Where(x => !x.Locked && x.IsBillboard).ToDictionary(x => x.Id, x => x.Clone());
+        resizeSource = gesture == "resize" && selected.Length == 1 && (ElementGeometry.IsBoxShape(selected[0].Kind) || selected[0].Kind == ElementKind.Text) ? selected[0].Clone() : null;
+        resizeTextSources=gesture=="resize"?selected.Where(element=>element.Kind==ElementKind.Text).ToDictionary(element=>element.Id,element=>element.Clone()):[];
+        if (resizeTextSources.Count>0) resizeTextRenderer = new();
         Session.BeginTransaction(L.Get("Editor.History.Transform"));
     }
 
     private void Move(PointD p, OverlayModifiers modifiers)
     {
+        gestureModifiers=modifiers;
+        if (MoveBillboardSelection(p, modifiers)) return;
         if (HasCaptureGesture) { UpdateCapturePreview(p, modifiers); return; }
-        if (gesture is "effect" or "image-crop") { UpdateImageRegion(p); Changed?.Invoke(); return; }
+        if (gesture is "effect" or "image-crop") { UpdateImageRegion(p,modifiers); Changed?.Invoke(); return; }
         if (gesture == "marquee") { Marquee = RectD.FromPoints(startScreen, pointerScreen); Changed?.Invoke(); return; }
-        if (gesture == "desktop-effect") { Marquee = RectD.FromPoints(start, p); Changed?.Invoke(); return; }
+        if (gesture == "desktop-effect") { Marquee = RectD.FromPoints(start,ConstrainBox(modifiers)?SquareEnd(start,p):p); Changed?.Invoke(); return; }
         if (gesture == "erase") { Erase(p); return; }
         if (gesture == "endpoint" && drawing != null)
         {
-            drawing.Points[endpoint] = drawing.Transform.Inverse().TransformPoint(p); Session.NotifyChanged(); return;
+            if (drawing.IsBillboard)
+            {
+                var source = billboardEndpointSource ?? drawing;
+                var canvasMapping = CanvasMapping.Create(Session.Document);
+                var screenMap = canvasMapping.ElementToScreen(source);
+                if (!screenMap.TryInverse(out var toLocal)) return;
+                var end = pointerScreen;
+                if ((modifiers & OverlayModifiers.Shift) != 0)
+                    end = EightDirectionEnd(screenMap.TransformPoint(source.Points[endpoint == 0 ? source.Points.Count - 1 : 0]), end);
+                drawing.Points = [..source.Points]; drawing.Points[endpoint] = toLocal.TransformPoint(end);
+                if (canvasMapping.TryGetEqualDepthLine(canvasMapping.ToScreen(source.BillboardAnchor), out var depth))
+                    BillboardGeometry.TryPlaceFromScreen(drawing, canvasMapping, depth, screenMap);
+                Session.NotifyChanged(); return;
+            }
+            var mapping=ElementGeometry.LocalToPlane(drawing);
+            if(!mapping.TryInverse(out var inverse))return;
+            if((modifiers&OverlayModifiers.Shift)!=0)
+                p=EightDirectionEnd(mapping.TransformPoint(drawing.Points[endpoint==0?drawing.Points.Count-1:0]),p);
+            drawing.Points[endpoint] = inverse.TransformPoint(p); Session.NotifyChanged(); return;
         }
         if (gesture == "draw" && drawing != null)
         {
+            PrepareBillboardDrawing();
             if (Tool is EditorTool.Number or EditorTool.Emoji)
             {
-                ResizePlacement(p); Session.NotifyChanged(); return;
+                ResizePlacement(p); RefreshBillboardDrawing(); Session.NotifyChanged(); return;
             }
             var local = p - start;
             if (drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter)
             {
-                if (CanvasMapping.Create(Session.Document).ToScreen(drawing.Transform.TransformPoint(drawing.Points[^1])).DistanceTo(pointerScreen) >= .75) drawing.Points.Add(local);
-                if (drawing.Points.Count == 1) drawing.Points.Add(new(.1, .1));
+                UpdateStroke(drawing.Points,local,modifiers);
             }
-            else if (drawing.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow) drawing.Points = [new(0, 0), local];
+            else if (drawing.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
+                drawing.Points = [new(0, 0), (modifiers&OverlayModifiers.Shift)!=0?EightDirectionEnd(start,p)-start:local];
             else
             {
-                if (ConstrainAspect || (modifiers & OverlayModifiers.Shift) != 0)
-                { var side = Math.Max(Math.Abs(local.X), Math.Abs(local.Y)); p = start + new PointD(Math.CopySign(side, local.X), Math.CopySign(side, local.Y)); }
+                if (ConstrainBox(modifiers))p=SquareEnd(start,p);
                 var rect = RectD.FromPoints(start, p);
                 drawing.Width = Math.Max(1, rect.Width); drawing.Height = Math.Max(1, rect.Height);
                 drawing.Transform = Affine2D.Translation(rect.X, rect.Y); drawing.Points.Clear();
             }
-            Session.NotifyChanged(); return;
+            RefreshBillboardDrawing(); Session.NotifyChanged(); return;
         }
         Affine2D delta;
-        if (gesture == "move") delta = Affine2D.Translation(p.X - start.X, p.Y - start.Y);
+        if (gesture == "move")
+        { var move = billboardMoveDelta ?? ConstrainMove(p - start, modifiers); delta = Affine2D.Translation(move.X, move.Y); }
         else if (gesture == "rotate")
         {
             var center = selectionBounds.Center;
@@ -494,16 +510,21 @@ internal sealed partial class EditorController
         else if (gesture == "resize")
         {
             var single = Session.SelectedElements().Where(e => !e.Locked).ToArray();
-            if (single.Length == 1 && resizeSource is { } source && ElementGeometry.IsBoxShape(single[0].Kind))
+            if (single.Length == 1 && resizeSource is { } source)
             {
                 var element = single[0]; var original = transforms[element.Id];
-                if (!original.TryInverse(out var inverse)) return;
+                if (!ElementGeometry.LocalToPlane(source).TryInverse(out var inverse)) return;
                 var localCenter = ElementGeometry.LocalBounds(source).Center;
                 var fromLocal = inverse.TransformPoint(start) - localCenter;
                 var toLocal = inverse.TransformPoint(p) - localCenter;
                 double scaleX = Math.Abs(fromLocal.X) < .001 ? 1 : Math.Max(.02, toLocal.X / fromLocal.X);
                 double scaleY = Math.Abs(fromLocal.Y) < .001 ? 1 : Math.Max(.02, toLocal.Y / fromLocal.Y);
-                if ((modifiers & OverlayModifiers.Shift) != 0) scaleX = scaleY = UniformScale(fromLocal, toLocal);
+                if (ElementGeometry.PreservesAspect(source) ^ ((modifiers & OverlayModifiers.Shift) != 0)) scaleX = scaleY = UniformScale(fromLocal, toLocal);
+                if (source.Kind == ElementKind.Text)
+                {
+                    TextFrameLayout.Resize(element, source, scaleX, scaleY, resizeTextRenderer!);
+                    Session.NotifyChanged(); return;
+                }
                 element.Width = source.Width; element.Height = source.Height; element.CornerRadius = source.CornerRadius; element.Transform = original;
                 ElementGeometry.ResizeShapeGeometry(element, scaleX, scaleY);
                 Session.NotifyChanged(); return;
@@ -512,19 +533,29 @@ internal sealed partial class EditorController
             var from = start - center; var to = p - center;
             var sx = Math.Abs(from.X) < 1 ? 1 : Math.Max(.02, to.X / from.X);
             var sy = Math.Abs(from.Y) < 1 ? 1 : Math.Max(.02, to.Y / from.Y);
-            var shapeOnly = Session.SelectedElements().All(e => e.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle);
-            if (!shapeOnly || Session.Selection.Count > 1 || (modifiers & OverlayModifiers.Shift) != 0) sx = sy = UniformScale(from, to);
+            bool keepAspect = single.All(ElementGeometry.PreservesAspect);
+            if (keepAspect ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = UniformScale(from, to);
             delta = Affine2D.Around(center, Affine2D.Scale(sx, sy));
         }
         else return;
         foreach (var element in Session.SelectedElements())
-            if (transforms.TryGetValue(element.Id, out var original)) element.Transform = delta.Compose(original);
+            if (transforms.TryGetValue(element.Id, out var original))
+            {
+                if (element.IsBillboard) continue;
+                if(gesture=="resize"&&resizeTextSources.TryGetValue(element.Id,out var textSource))
+                    TextFrameLayout.Transform(element,textSource,delta,resizeTextRenderer!);
+                else element.Transform = delta.Compose(original);
+            }
         Session.NotifyChanged();
     }
 
     private void Erase(PointD p)
     {
-        Session.Document.Elements.RemoveAll(e => !e.Locked && ElementHitTestScreen(e, pointerScreen, 10));
+        if (CanvasDepthOrder.IsEnabled(Session.Document))
+        {
+            if (HitTestScreen(pointerScreen, 10) is { } visible) Session.Document.Elements.Remove(visible);
+        }
+        else Session.Document.Elements.RemoveAll(e => !e.Locked && ElementHitTestScreen(e, pointerScreen, 10));
         Session.NotifyChanged();
     }
     private void CommitEffect()
@@ -549,10 +580,21 @@ internal sealed partial class EditorController
         if (image?.Locked == true) { Message?.Invoke(L.Get("Editor.ImageTargetLocked")); return false; }
         return true;
     }
-    private void UpdateImageRegion(PointD p)
+    private void UpdateImageRegion(PointD p,OverlayModifiers modifiers)
     {
-        if (effectTarget == null || !ElementGeometry.LocalToPlane(effectTarget).TryInverse(out var inverse)) return;
-        imageRegion = RectD.FromPoints(inverse.TransformPoint(start), inverse.TransformPoint(p)).Intersect(new(0, 0, effectTarget.Width, effectTarget.Height));
+        if (effectTarget == null) return;
+        var targetMapping = effectTarget.IsBillboard ? CanvasMapping.Create(Session.Document).ElementToScreen(effectTarget) : ElementGeometry.LocalToPlane(effectTarget);
+        if (!targetMapping.TryInverse(out var inverse)) return;
+        var anchor=inverse.TransformPoint(effectTarget.IsBillboard ? startScreen : start);
+        var end=inverse.TransformPoint(effectTarget.IsBillboard ? pointerScreen : p);
+        if(ConstrainBox(modifiers))
+        {
+            anchor=new(Math.Clamp(anchor.X,0,effectTarget.Width),Math.Clamp(anchor.Y,0,effectTarget.Height));
+            end=SquareEnd(anchor,end);var delta=end-anchor;
+            double side=Math.Min(Math.Abs(delta.X),Math.Min(delta.X<0?anchor.X:effectTarget.Width-anchor.X,delta.Y<0?anchor.Y:effectTarget.Height-anchor.Y));
+            end=anchor+new PointD(Math.CopySign(side,delta.X),Math.CopySign(side,delta.Y));
+        }
+        imageRegion = RectD.FromPoints(anchor,end).Intersect(new(0, 0, effectTarget.Width, effectTarget.Height));
         EffectPreviewPolygon = Corners(imageRegion.Value).Select(ElementGeometry.LocalToPlane(effectTarget).TransformPoint).ToArray();
         Marquee = ElementGeometry.LocalToPlane(effectTarget).TransformBounds(imageRegion.Value);
     }

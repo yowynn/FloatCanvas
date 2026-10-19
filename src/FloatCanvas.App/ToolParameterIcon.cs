@@ -9,7 +9,7 @@ using System.Windows.Media.Imaging;
 
 namespace FloatCanvas.App;
 
-/// <summary>Small, opaque style samples rendered by the same geometry path as the actual document.</summary>
+/// <summary>Small style samples rendered by the same geometry path as the actual document.</summary>
 internal static class ToolParameterIcon
 {
     private static readonly Dictionary<string,BitmapSource> Cache = new(StringComparer.Ordinal);
@@ -48,10 +48,10 @@ internal static class ToolParameterIcon
 
     private static UIElement ControlIcon(ToolParameters parameters,string path,double size)
     {
-        uint color=parameters.Style.Stroke|0xFF000000;
-        var stroke=new SolidColorBrush(Color.FromArgb(255,(byte)(color>>16),(byte)(color>>8),(byte)color));stroke.Freeze();
+        uint color=parameters.Style.Stroke;
+        var stroke=new SolidColorBrush(Color.FromArgb((byte)(color>>24),(byte)(color>>16),(byte)(color>>8),(byte)color)) {Opacity=parameters.Style.Opacity};stroke.Freeze();
         uint fill=parameters.Style.Fill;
-        Brush? fillBrush=fill==0?null:new SolidColorBrush(Color.FromArgb(255,(byte)(fill>>16),(byte)(fill>>8),(byte)fill));
+        Brush? fillBrush=(fill>>24)==0?null:new SolidColorBrush(Color.FromArgb((byte)(fill>>24),(byte)(fill>>16),(byte)(fill>>8),(byte)fill)) {Opacity=parameters.Style.Opacity};
         var drawing=new DrawingGroup();drawing.Children.Add(new GeometryDrawing(Brushes.Transparent,null,new RectangleGeometry(new Rect(0,0,18,18))));
         var pen=new Pen(stroke,1.5) {StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round,LineJoin=PenLineJoin.Round};
         var geometry=Geometry.Parse(path).Clone();geometry.Transform=new TranslateTransform(1,1);
@@ -62,10 +62,9 @@ internal static class ToolParameterIcon
     private static BitmapSource Render(ToolParameters parameters)
     {
         var style=parameters.Style.Clone();
-        style.Stroke|=0xFF000000; if(style.Fill!=0)style.Fill|=0xFF000000;
         // Preserve useful width differences while leaving enough room to identify
         // arrow heads and dashed strokes in a 16-DIP sample.
-        style.Opacity=1;style.StrokeWidth=style.StrokeWidth==0 && style.Fill!=0?0:Math.Clamp(style.StrokeWidth,2,6);
+        style.StrokeWidth=style.StrokeWidth==0 && style.Fill!=0?0:Math.Clamp(style.StrokeWidth,2,6);
         if(parameters.Tool is EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow)style.StrokeWidth=Math.Min(style.StrokeWidth,4);
         if(style.StrokePattern!=StrokePattern.Solid)style.StrokeWidth=Math.Min(style.StrokeWidth,3);
         style.FontSize=32;

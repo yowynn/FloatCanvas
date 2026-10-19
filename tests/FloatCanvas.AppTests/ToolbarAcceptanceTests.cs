@@ -78,19 +78,38 @@ internal static class ToolbarAcceptanceTests
 
             CheckEqualRowInsets(check,body,grid,display,"production toolbar",1);
             check("production toolbar preserves two 26 DIP rows separated by two DIP",grid.RowDefinitions.Select(row=>row.Height.Value).SequenceEqual(new[]{26d,2d,26d}));
-            check("production toolbar shares 30 DIP columns around tool and action separators",grid.ColumnDefinitions.Count==30 && grid.ColumnDefinitions.Select((column,index)=>(column,index)).All(pair=>pair.column.Width.IsAbsolute && pair.column.Width.Value==(pair.index is 2 or 13 or 15 or 19 or 22?10:30)));
-            check("production upper row retains every action around its dedicated separators",buttons.Length==23 && buttons.Select(Controls.Grid.GetColumn).Order().SequenceEqual(Enumerable.Range(0,30).Where(column=>column is not (2 or 13 or 15 or 19 or 22 or 26 or 27))) && !buttons.Any(button=>Equals(button.Tag,"tool:Blur")));
+            check("production toolbar shares 30 DIP columns around tool and action separators",grid.ColumnDefinitions.Count==32 && grid.ColumnDefinitions.Select((column,index)=>(column,index)).All(pair=>pair.column.Width.IsAbsolute && pair.column.Width.Value==(pair.index is 2 or 13 or 16 or 20 or 23?10:30)));
+            check("production upper row retains every action around its dedicated separators",buttons.Length==25 && buttons.Select(Controls.Grid.GetColumn).Order().SequenceEqual(Enumerable.Range(0,32).Where(column=>column is not (2 or 13 or 16 or 20 or 23 or 28 or 29))) && !buttons.Any(button=>Equals(button.Tag,"tool:Blur")));
             check("compact 60 DIP tool body keeps its upper edge and the 100 DIP mascot anchor",Near(body.ActualHeight,60) && Near(body.TranslatePoint(new Wpf.Point(),shell).Y,39) && ToolbarLauncher.ArtworkSize==100 && Near(Field<ToolbarLauncher>(session,"_toolbarLauncher").TranslatePoint(new Wpf.Point(100,100),shell).Y,100));
             check("production lower row puts stamp actions under Select and Eraser",allButtons.Any(button=>Equals(button.Tag,"manage-stamps")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==0) && allButtons.Any(button=>Equals(button.Tag,"save-stamp")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==1));
-            check("production lower row binds ten slots under ten drawing tools and LCD under actions",Controls.Grid.GetRow(shelf)==2 && Controls.Grid.GetColumn(shelf)==3 && Controls.Grid.GetColumnSpan(shelf)==10 && Controls.Grid.GetRow(display)==2 && Controls.Grid.GetColumn(display)==14 && Controls.Grid.GetColumnSpan(display)==16);
+            check("production lower row keeps its stamp actions and fills the remaining width with LCD",Controls.Grid.GetRow(shelf)==2 && Controls.Grid.GetColumn(shelf)==3 && Controls.Grid.GetColumnSpan(shelf)==10 && Controls.Grid.GetRow(display)==2 && Controls.Grid.GetColumn(display)==14 && Controls.Grid.GetColumnSpan(display)==18 && allButtons.Where(button=>Controls.Grid.GetRow(button)==2).Select(Controls.Grid.GetColumn).Order().SequenceEqual(new[]{0,1}));
+            var billboard=allButtons.Single(button=>Equals(button.Tag,"billboard"));
+            check("placement entry sits immediately right of canvas in the upper row and is unavailable without perspective",Controls.Grid.GetColumn(billboard)==15&&Controls.Grid.GetRow(billboard)==0&&!billboard.IsEnabled&&!editor.BillboardMode&&Controls.ToolTipService.GetShowOnDisabled(billboard));
+            var surfaceArtwork=Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString();
+            editor.Session.Document.Canvas.Projection=CanvasCalibration.CreateInitial(new(0,0,1200,800),10,8);
+            editor.Session.Document.Canvas.Projection.Enabled=true;Invoke(session,"RefreshToolbarState");Measure(shell);
+            var canvasAction=buttons.Single(button=>Equals(button.Tag,"canvas"));
+            check("enabled perspective uses the eye toggle's full active icon border and background",billboard.IsEnabled&&canvasAction.Background==app.Resources["CanvasHiddenSurface"]&&canvasAction.BorderBrush==app.Resources["CanvasHiddenBorder"]&&Descendants(canvasAction).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasHiddenText"]);
+            var parametersBefore=System.Text.Json.JsonSerializer.Serialize(editor.Parameters);
+            billboard.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
+            Measure(shell);
+            check("billboard toggle changes its actual artwork and active style without changing tool parameters",editor.BillboardMode&&Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString()!=surfaceArtwork&&billboard.Background==app.Resources["CanvasHiddenSurface"]&&billboard.BorderBrush==app.Resources["CanvasHiddenBorder"]&&Descendants(billboard).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasHiddenText"]&&System.Text.Json.JsonSerializer.Serialize(editor.Parameters)==parametersBefore);
+            var placementMenu=Field<Controls.ContextMenu>(session,"_toolbarMenu");
+            placementMenu.RaiseEvent(new Wpf.RoutedEventArgs(Controls.ContextMenu.OpenedEvent));
+            var modeMenu=placementMenu.Items.OfType<Controls.MenuItem>().SelectMany(item=>item.Items.OfType<Controls.MenuItem>()).Single(item=>Equals(item.Tag,"billboard"));
+            check("main menu reflects the global billboard toggle and its actual artwork",modeMenu.IsEnabled&&modeMenu.IsChecked&&Descendants((Wpf.DependencyObject)modeMenu.Icon).OfType<Shapes.Path>().Single().Data.ToString()==Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString());
+            editor.Session.Document.Canvas.Projection.Enabled=false;Invoke(session,"RefreshToolbarState");Measure(shell);
+            check("disabling perspective restores the surface artwork and inactive appearance",!editor.BillboardMode&&!billboard.IsEnabled&&Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString()==surfaceArtwork&&billboard.Background==app.Resources["CanvasButton"]&&canvasAction.Background==app.Resources["CanvasButton"]);
             check("upper twelve tool order matches the requested Select Eraser then ten drawing entries",buttons.Where(button=>Controls.Grid.GetColumn(button)<13).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"tool:Select","tool:Eraser","tool:Freehand","tool:Highlighter","tool:Line","tool:Rectangle","tool:Ellipse","tool:Text","tool:Number","tool:Symbol","tool:Emoji","more"}));
             var opacity=Field<Controls.Slider>(session,"_opacitySlider");
-            check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==26&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
-            check("trailing actions follow canvas, images, inspector/layers, then history and canvas controls",buttons.Where(button=>Controls.Grid.GetColumn(button)>=14).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"canvas","import","capture","crop","properties","layers","undo","redo","clear","visibility","done"}));
+            check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==28&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
+            check("trailing actions follow canvas and placement, images, inspector/layers, then independent new and clear controls",buttons.Where(button=>Controls.Grid.GetColumn(button)>=14).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"canvas","billboard","import","capture","crop","properties","layers","undo","redo","new-canvas","clear","visibility","done"}));
             var more=buttons.Single(button=>Equals(button.Tag,"more"));
             check("More is enabled and owns its reserved single-letter command",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M");
             check("main keyboard minus and plus are independent stamp commands",ToolShortcutCatalog.StampLibraryKey==0xBD&&ToolShortcutCatalog.NewStampKey==0xBB&&ToolShortcutCatalog.IsReserved(0xBD)&&ToolShortcutCatalog.IsReserved(0xBB)&&!ToolShortcutCatalog.IsReserved(0x6B)&&!ToolShortcutCatalog.IsReserved(0x6D));
             check("toolbar controls retain keyboard input without focus frames or focus-only tooltips",allButtons.All(button=>button.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(button)==false)&&opacity.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(opacity)==false&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(Field<ToolbarLauncher>(session,"_toolbarLauncher"))==false);
+            var clearAction=buttons.Single(button=>Equals(button.Tag,"clear"));
+            check("clear broom uses danger red beside the gray new-canvas action",clearAction.Background==app.Resources["CanvasDanger"]&&buttons.Single(button=>Equals(button.Tag,"new-canvas")).Background==app.Resources["CanvasButton"]&&Controls.Grid.GetColumn(clearAction)==Controls.Grid.GetColumn(buttons.Single(button=>Equals(button.Tag,"new-canvas")))+1);
             var slotButtons=((Controls.StackPanel)shelf.Content).Children.OfType<Controls.Button>().ToArray();
             for(int index=0;index<10;index++)
             {
@@ -120,7 +139,7 @@ internal static class ToolbarAcceptanceTests
             var cropButton=buttons.Single(button=>Equals(button.Tag,"crop"));
             check("disabled crop retains a hover tooltip",Controls.ToolTipService.GetShowOnDisabled(cropButton) && cropButton.ToolTip?.ToString()==L.Get("Tool.Crop"));
             var cropMenus=Field<List<Controls.MenuItem>>(session,"_cropMenuItems");
-            check("image crop follows import and capture and is disabled consistently without a target",Controls.Grid.GetColumn(cropButton)==18 &&
+            check("image crop follows import and capture and is disabled consistently without a target",Controls.Grid.GetColumn(cropButton)==Controls.Grid.GetColumn(buttons.Single(button=>Equals(button.Tag,"capture")))+1 &&
                 ReferenceEquals(tools[EditorTool.Crop],cropButton) && !cropButton.IsEnabled && cropMenus.Count>0 && cropMenus.All(item=>!item.IsEnabled));
             var cropTarget=new CanvasElement {Kind=ElementKind.Image,Width=100,Height=80,AssetId=new string('a',64)};
             editor.Session.Document.Elements.Add(cropTarget);editor.Session.SetSelection([cropTarget.Id]);Invoke(session,"RefreshToolbarState");
@@ -181,7 +200,7 @@ internal static class ToolbarAcceptanceTests
 
             string longStatus=string.Concat(Enumerable.Repeat("这是用于验收省略与悬停滚动的长状态 · long toolbar status / ",8));
             Invoke(session,"UpdateStatus",longStatus);display.Refresh();Measure(shell);
-            check("LCD keeps long content while trimming its fixed layout",status.Text==longStatus && status.TextTrimming==Wpf.TextTrimming.CharacterEllipsis && double.IsNaN(status.Width) && Near(display.ActualWidth,416) && display.ClipToBounds);
+            check("LCD keeps long content while trimming its extended layout",status.Text==longStatus && status.TextTrimming==Wpf.TextTrimming.CharacterEllipsis && double.IsNaN(status.Width) && Near(display.ActualWidth,476) && display.ClipToBounds);
             display.RaiseEvent(new Input.MouseEventArgs(Input.Mouse.PrimaryDevice,Environment.TickCount) {RoutedEvent=Input.Mouse.MouseEnterEvent});
             var scroll=(Media.TranslateTransform)status.RenderTransform;
             check("LCD's actual hover handler begins a clipped scrolling animation",scroll.HasAnimatedProperties && status.TextTrimming==Wpf.TextTrimming.None && double.IsFinite(status.Width) && status.Width>display.ActualWidth);

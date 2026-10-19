@@ -33,23 +33,36 @@ internal static class GitHubUpdateClientTests
     private static async Task ReleaseSelection(Action<string, bool> check)
     {
         using var empty = Client(_ => Response("[]"));
-        check("repository with no releases is a normal empty result", await empty.CheckAsync("0.2.0-preview.1", default) is null);
+        check("repository with no releases is a normal empty result", (await empty.CheckAsync("0.2.0-preview.1", default)).Update is null);
         using var firstPreview = Client(_ => Response(JsonSerializer.Serialize(new[] { Release("0.2.0-preview.1", prerelease: true) })));
-        check("first-release rehearsal discovers preview.0 to preview.1", (await firstPreview.CheckAsync("0.2.0-preview.0", default))?.Version == "0.2.0-preview.1");
+        check("preview updates are opt-in even when the current build is a preview", (await firstPreview.CheckAsync("0.2.0-preview.0", default)).Update is null);
+        check("explicit opt-in discovers preview.0 to preview.1", (await firstPreview.CheckAsync("0.2.0-preview.0", default, true)).Update?.Version == "0.2.0-preview.1");
         string releases = JsonSerializer.Serialize(new[] { Release("0.3.0-preview.10"), Release("0.3.0-preview.2"), Release("0.2.0"), Release("9.0.0", draft: true), Release("1.0.0-beta", prerelease: false) });
         using var client = Client(_ => Response(releases));
-        check("preview build can update to highest compatible preview", (await client.CheckAsync("0.2.0-preview.1", default))?.Version == "1.0.0-beta");
-        check("stable build excludes both preview tags and GitHub prerelease flag", (await client.CheckAsync("0.1.0", default))?.Version == "0.2.0");
+        check("opted-in preview build can update to highest compatible preview", (await client.CheckAsync("0.2.0-preview.1", default, true)).Update?.Version == "1.0.0-beta");
+        check("preview build with opt-in off only sees stable releases", (await client.CheckAsync("0.2.0-preview.1", default)).Update?.Version == "0.2.0");
+        check("stable build excludes both preview tags and GitHub prerelease flag", (await client.CheckAsync("0.1.0", default)).Update?.Version == "0.2.0");
+        check("stable build may explicitly opt into previews", (await client.CheckAsync("0.1.0", default, true)).Update?.Version == "1.0.0-beta");
+        using var flagged = Client(_ => Response(JsonSerializer.Serialize(new[] { Release("1.0.0", prerelease: true) })));
+        check("GitHub prerelease flag excludes even a stable-looking tag by default", (await flagged.CheckAsync("0.2.0", default)).Update is null);
+        check("explicit opt-in permits a stable-looking tag marked prerelease by GitHub", (await flagged.CheckAsync("0.2.0", default, true)).Update?.Version == "1.0.0");
         using var numeric = Client(_ => Response(JsonSerializer.Serialize(new[] { Release("0.3.0-preview.2"), Release("0.3.0-preview.10") })));
-        check("highest preview is chosen independently of API order", (await numeric.CheckAsync("0.3.0-preview.1", default))?.Version == "0.3.0-preview.10");
+        check("highest preview is chosen independently of API order", (await numeric.CheckAsync("0.3.0-preview.1", default, true)).Update?.Version == "0.3.0-preview.10");
         using var equal = Client(_ => Response(JsonSerializer.Serialize(new[] { Release("0.2.0+server") })));
-        check("equal precedence with changed build metadata is not an update", await equal.CheckAsync("0.2.0+local", default) is null);
+        check("equal precedence with changed build metadata is not an update", (await equal.CheckAsync("0.2.0+local", default)).Update is null);
         using var noHash = Client(_ => Response(JsonSerializer.Serialize(new[] { Release("1.0.0", hash: false, sidecar: false) })));
-        check("release without integrity metadata is not offered", await noHash.CheckAsync("0.2.0", default) is null);
+        check("release without integrity metadata is not offered", (await noHash.CheckAsync("0.2.0", default)).Update is null);
         using var hostile = Client(_ => Response(JsonSerializer.Serialize(new[] { Release("1.0.0", host: "evil.example") })));
         await Reject<InvalidDataException>("release cannot point at another download host", () => hostile.CheckAsync("0.2.0", default), check);
         using var pages = Client(request => request.RequestUri!.Query.EndsWith("&page=1", StringComparison.Ordinal) ? Response(JsonSerializer.Serialize(Enumerable.Range(1, 100).Select(i => Release("0.1." + i)))) : Response(JsonSerializer.Serialize(new[] { Release("1.0.0") })));
-        check("release selection follows bounded API pagination", (await pages.CheckAsync("0.1.0", default))?.Version == "1.0.0");
+        check("release selection follows bounded API pagination", (await pages.CheckAsync("0.1.0", default)).Update?.Version == "1.0.0");
+        const string notes = "## Current version\n<script>literal only</script>";
+        using var current = Client(_ => Response(JsonSerializer.Serialize(new[] { new { tag_name = "v0.2.0-preview.4", draft = false, prerelease = true, body = notes } })));
+        var currentResult = await current.CheckAsync("0.2.0-preview.4+local", default);
+        check("up-to-date preview notes remain available with opt-in off and no package assets", currentResult.Update is null && currentResult.CurrentNotes == notes);
+        check("new and legacy settings leave preview updates disabled", !new UserSettings().IncludePrereleaseUpdates && !JsonSerializer.Deserialize<UserSettings>("{}")!.IncludePrereleaseUpdates);
+        foreach (bool enabled in new[] { false, true })
+            check($"preview update preference {enabled} survives persistence", JsonSerializer.Deserialize<UserSettings>(JsonSerializer.Serialize(new UserSettings { IncludePrereleaseUpdates = enabled }))!.IncludePrereleaseUpdates == enabled);
     }
 
     private static async Task HttpFailures(Action<string, bool> check)

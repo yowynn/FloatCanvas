@@ -36,6 +36,7 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--multimonitor-probe")) return RunMultimonitorProbe(args);
         WaitForActivation = args.Contains("--wait-for-activation");
         RasterOpacityProbe = args.Contains("--raster-opacity-probe");
         ExternalClipboardProbe = args.Contains("--external-clipboard-probe");

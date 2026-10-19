@@ -19,7 +19,14 @@ internal sealed partial class DesktopSession
         if (_host.IsEditing) SetEditing(false);
         var client = new GitHubUpdateClient();
         string version = typeof(DesktopSession).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
-        var window = new AppUpdateWindow(version, client, ApplyUpdateAsync, AppUpdateInstaller.CanUpdateDirectory(AppContext.BaseDirectory));
+        var window = new AppUpdateWindow(version, client, ApplyUpdateAsync, AppUpdateInstaller.CanUpdateDirectory(AppContext.BaseDirectory),
+            includePrereleases: _settings.IncludePrereleaseUpdates, savePreviewPreference: enabled =>
+            {
+                bool previous = _settings.IncludePrereleaseUpdates;
+                _settings.IncludePrereleaseUpdates = enabled;
+                try { _settings.Save(); }
+                catch { _settings.IncludePrereleaseUpdates = previous; throw; }
+            });
         _updatesWindow = window;
         ConfigureAppWindow(window, true);
         window.Owner = _welcomeWindow ?? _toolbar;

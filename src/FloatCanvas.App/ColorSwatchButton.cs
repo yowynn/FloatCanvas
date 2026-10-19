@@ -10,6 +10,7 @@ internal sealed class ColorSwatchButton : Button
     internal ColorSwatchButton(uint color)
     {
         Style = (Style)Application.Current.FindResource(typeof(Button));
+        Focusable = false;
         Resources["CanvasButtonCornerRadius"] = new CornerRadius(0);
         MinWidth = MinHeight = 0;
         Margin = Padding = new Thickness(0);
@@ -28,7 +29,7 @@ internal sealed class ColorSwatchButton : Button
     protected override void OnIsKeyboardFocusedChanged(DependencyPropertyChangedEventArgs e)
     { base.OnIsKeyboardFocusedChanged(e); UpdateOutline(); }
     private void UpdateOutline() => SetResourceReference(BorderBrushProperty,
-        IsMouseOver || IsKeyboardFocused ? "CanvasAccent" : "CanvasSwatchBorder");
+        IsMouseOver ? "CanvasAccent" : "CanvasSwatchBorder");
     private void UpdateThickness(DpiScale dpi) => BorderThickness = new Thickness(
         Math.Max(1, Math.Round(dpi.DpiScaleX, MidpointRounding.AwayFromZero)) / dpi.DpiScaleX,
         Math.Max(1, Math.Round(dpi.DpiScaleY, MidpointRounding.AwayFromZero)) / dpi.DpiScaleY,

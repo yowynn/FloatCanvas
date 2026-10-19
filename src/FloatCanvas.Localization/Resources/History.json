@@ -1,0 +1,38 @@
+{
+  "History.Limit": {
+    "zh": "保存的历史版本上限",
+    "en": "Maximum saved history versions"
+  },
+  "History.LimitHint": {
+    "zh": "默认 60，范围 1–10000。超出上限时删除最旧历史。",
+    "en": "Default 60; range 1–10000. Excess history is removed oldest first."
+  },
+  "History.InvalidLimit": {
+    "zh": "请输入 1 到 10000 之间的整数。",
+    "en": "Enter an integer from 1 to 10000."
+  },
+  "History.NewQuestion": {
+    "zh": "创建新画布？当前有效内容将保留到历史。",
+    "en": "Create a new canvas? Your current work will be kept in history."
+  },
+  "History.NewConfirm": {
+    "zh": "确认新建画布",
+    "en": "Confirm new canvas"
+  },
+  "History.ClearCurrent": {
+    "zh": "清空当前画布",
+    "en": "Clear current canvas"
+  },
+  "History.Cleared": {
+    "zh": "已清空，可撤销。",
+    "en": "Canvas cleared. Undo is available."
+  },
+  "History.SaveLeave": {
+    "zh": "保存并离开",
+    "en": "Save and leave"
+  },
+  "History.KeepLeave": {
+    "zh": "保留到历史并离开",
+    "en": "Keep in history and leave"
+  }
+}

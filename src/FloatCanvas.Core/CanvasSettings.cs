@@ -1,11 +1,15 @@
+using System.Text.Json.Serialization;
+
 namespace FloatCanvas.Core;
 
 public sealed class CanvasSettings
 {
     public uint BackgroundColor { get; set; }
+    /// <summary>Use canvas-plane depth for compositing while perspective is enabled. Retained when perspective is disabled.</summary>
+    public bool DepthPriorityOcclusion { get; set; }
     public CanvasProjectionSettings Projection { get; set; } = new();
     public CanvasGridSettings Grid { get; set; } = new();
-    public CanvasSettings Clone() => new() { BackgroundColor = BackgroundColor, Projection = Projection.Clone(), Grid = Grid.Clone() };
+    public CanvasSettings Clone() => new() { BackgroundColor = BackgroundColor, DepthPriorityOcclusion = DepthPriorityOcclusion, Projection = Projection.Clone(), Grid = Grid.Clone() };
 }
 
 public sealed class CanvasProjectionSettings
@@ -17,13 +21,21 @@ public sealed class CanvasProjectionSettings
     public PointD Origin { get; set; }
     /// <summary>Persisted plane units per square cell; loading never recalibrates this value.</summary>
     public double CellSize { get; set; } = 1;
+    /// <summary>Fixed display-grid spacing in plane units; null follows calibration's reference cell size.</summary>
+    public double? LockedGridCellSize { get; set; }
+    [JsonIgnore]
+    public double GridCellSize => LockedGridCellSize is { } size && double.IsFinite(size) && size > 0 ? size : CellSize;
+    [JsonIgnore]
+    public double GridColumns => Columns * (CellSize / GridCellSize);
+    [JsonIgnore]
+    public double GridRows => Rows * (CellSize / GridCellSize);
     /// <summary>Screen corners in top-left, top-right, bottom-right, bottom-left order. Empty means not yet initialized.</summary>
     public List<PointD> Quad { get; set; } = [];
     public Projective2D Matrix { get; set; } = Projective2D.Identity;
     public int AlgorithmVersion { get; set; } = 1;
     public CanvasProjectionSettings Clone() => new()
     {
-        Enabled = Enabled, Columns = Columns, Rows = Rows, Origin = Origin, CellSize = CellSize,
+        Enabled = Enabled, Columns = Columns, Rows = Rows, Origin = Origin, CellSize = CellSize, LockedGridCellSize = LockedGridCellSize,
         Quad = [.. Quad], Matrix = Matrix, AlgorithmVersion = AlgorithmVersion
     };
 }
@@ -42,6 +54,17 @@ public static class CanvasCalibration
 {
     public const int MaximumGridCount = 256;
     public const int AlgorithmVersion = 1;
+    public static bool TryOrderCorners(IReadOnlyList<PointD> points,out PointD[] quad)
+    {
+        quad=[];
+        if(points.Count!=4||points.Any(p=>!double.IsFinite(p.X)||!double.IsFinite(p.Y)))return false;
+        var center=new PointD(points.Sum(p=>p.X/4),points.Sum(p=>p.Y/4));
+        var ordered=points.OrderBy(p=>Math.Atan2(p.Y-center.Y,p.X-center.X)).ToArray();
+        int first=Enumerable.Range(0,4).OrderBy(i=>ordered[i].X+ordered[i].Y).ThenBy(i=>ordered[i].Y).ThenBy(i=>ordered[i].X).First();
+        var candidate=Enumerable.Range(0,4).Select(i=>ordered[(first+i)%4]).ToArray();
+        if(!TryGridToScreen(1,1,candidate,out _))return false;
+        quad=candidate;return true;
+    }
     public static CanvasProjectionSettings CreateInitial(RectD viewport, int columns = 8, int rows = 6)
     {
         if (columns is < 1 or > MaximumGridCount || rows is < 1 or > MaximumGridCount) throw new ArgumentOutOfRangeException(nameof(columns));
@@ -83,7 +106,7 @@ public static class CanvasCalibration
         var planeToGrid = Projective2D.FromAffine(Affine2D.Scale(1 / cellSize, 1 / cellSize).Compose(Affine2D.Translation(-origin.X, -origin.Y)));
         var matrix = gridToScreen.Compose(planeToGrid);
         if (!IsStableViewport(matrix, viewport)) { error = "Canvas.UnstableProjection"; return false; }
-        settings = new() { Enabled = true, Columns = current.Columns, Rows = current.Rows, Origin = origin, CellSize = cellSize,
+        settings = new() { Enabled = true, Columns = current.Columns, Rows = current.Rows, Origin = origin, CellSize = cellSize, LockedGridCellSize = current.LockedGridCellSize,
             Quad = [.. quad], Matrix = matrix, AlgorithmVersion = AlgorithmVersion };
         return true;
     }
@@ -161,8 +184,13 @@ public sealed class CanvasMapping
     {
         viewport = document.Viewport;
         var settings = document.Canvas.Projection;
-        var reference = settings.Quad.Count == 0 ? CanvasCalibration.CreateInitial(viewport, settings.Columns, settings.Rows) : settings;
-        GridOrigin = reference.Origin; GridCellSize = reference.CellSize;
+        var reference = settings;
+        if (settings.Quad.Count == 0)
+        {
+            reference = CanvasCalibration.CreateInitial(viewport, settings.Columns, settings.Rows);
+            reference.LockedGridCellSize = settings.LockedGridCellSize;
+        }
+        GridOrigin = reference.Origin; GridCellSize = reference.GridCellSize;
         PlaneToScreen = settings.Enabled ? reference.Matrix : Projective2D.Identity;
         ScreenToPlane = PlaneToScreen.Inverse();
         VisiblePlanePolygon = new PointD[] { new(viewport.Left, viewport.Top), new(viewport.Right, viewport.Top), new(viewport.Right, viewport.Bottom), new(viewport.Left, viewport.Bottom) }
@@ -172,9 +200,18 @@ public sealed class CanvasMapping
     public PointD ToScreen(PointD point) => PlaneToScreen.TransformPoint(point);
     public bool IsVisible(PointD plane) => PlaneToScreen.Denominator(plane) > 1e-8 && PlaneToScreen.TryTransformPoint(plane, out _);
     public bool TryToPlane(PointD point, out PointD plane) => ScreenToPlane.TryTransformPoint(point, out plane) && IsVisible(plane);
-    public Projective2D ElementToScreen(CanvasElement element) => PlaneToScreen.Compose(ElementGeometry.LocalToPlane(element));
+    public Projective2D ElementToScreen(CanvasElement element) => BillboardGeometry.ElementToTarget(element, PlaneToScreen);
+    public bool TryGetDepthScale(PointD anchor, out double scale) => BillboardGeometry.TryDepthScale(PlaneToScreen, anchor, out scale);
+    public bool TryGetEqualDepthLine(PointD screenPoint, out BillboardDepthLine line) => BillboardGeometry.TryEqualDepthLine(this, screenPoint, out line);
+    public bool TryGetBillboardAnchor(BillboardDepthLine line, PointD screenCenter, out PointD anchor, out double height)
+        => BillboardGeometry.TryAnchor(this, line, screenCenter, out anchor, out height);
     public RectD ProjectedBounds(CanvasElement element, bool includeStroke = true)
     {
+        if (element.IsBillboard)
+        {
+            if (!TryGetDepthScale(element.BillboardAnchor, out _)) return default;
+            return ElementToScreen(element).TryTransformBounds(ElementGeometry.StrokedLocalBounds(element, includeStroke), out var billboardBounds) ? billboardBounds : default;
+        }
         var planeBounds = ElementGeometry.Bounds(element, includeStroke);
         PointD[] corners = [new(planeBounds.Left, planeBounds.Top), new(planeBounds.Right, planeBounds.Top), new(planeBounds.Right, planeBounds.Bottom), new(planeBounds.Left, planeBounds.Bottom)];
         if (corners.All(p => PlaneToScreen.Denominator(p) <= 0)) return default;

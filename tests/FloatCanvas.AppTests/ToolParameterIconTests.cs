@@ -17,10 +17,10 @@ internal static class ToolParameterIconTests
         check("twelve reserved single-letter legends are unique",ToolShortcutCatalog.All.Count==12&&ToolShortcutCatalog.All.Select(item=>item.VirtualKey).Distinct().Count()==12&&ToolShortcutCatalog.All.All(item=>item.Hint.Length==1));
         foreach(var binding in ToolShortcutCatalog.All)
             check("catalog routes "+binding.Hint+" consistently",binding.Tool is { } tool?ToolShortcutCatalog.TryGetTool(binding.VirtualKey,out var actual)&&actual==tool:ToolShortcutCatalog.IsReserved(binding.VirtualKey)&&!ToolShortcutCatalog.TryGetTool(binding.VirtualKey,out _));
-        var parameters=new ToolParameters {Tool=EditorTool.Rectangle,Style=new ElementStyle {Stroke=0x031234D0,Fill=0x0424BC68,Opacity=.01,StrokeWidth=4}};
+        var parameters=new ToolParameters {Tool=EditorTool.Rectangle,Style=new ElementStyle {Stroke=0x801234D0,Fill=0x4024BC68,Opacity=.5,StrokeWidth=4}};
         string before=JsonSerializer.Serialize(parameters);
         var shape=Bitmap(parameters);
-        check("style icon keeps the actual stroke and fill colors fully opaque",Count(shape,Media.Color.FromRgb(0x12,0x34,0xD0))>15&&Count(shape,Media.Color.FromRgb(0x24,0xBC,0x68))>150);
+        check("style icon retains actual partial alpha and object opacity",MaxAlpha(shape) is > 30 and < 110);
         check("style icon never changes the user's translucent drawing parameters",JsonSerializer.Serialize(parameters)==before);
         check("cached style artwork is frozen and reusable at distinct UI sizes",shape.IsFrozen&&ReferenceEquals(shape,((Controls.Image)ToolParameterIcon.Create(parameters,32)).Source));
         var line=new ToolParameters {Tool=EditorTool.Line};
@@ -36,8 +36,8 @@ internal static class ToolParameterIconTests
         check("rounded corner presets change their image geometry",squareCorners!=Hash(Bitmap(rectangle)));
         rectangle.ConstrainAspect=true;
         check("square constraints remain visible in the geometry preview",squareCorners!=Hash(Bitmap(rectangle)));
-        var highlighter=new ToolParameters {Tool=EditorTool.Highlighter,Style=new ElementStyle {Stroke=0x0153C7D3,Opacity=.02,StrokeWidth=24}};
-        check("highlighter preview describes its selected color without document blending",Count(Bitmap(highlighter),Media.Color.FromRgb(0x53,0xC7,0xD3))>150);
+        var highlighter=new ToolParameters {Tool=EditorTool.Highlighter,Style=new ElementStyle {Stroke=0x8053C7D3,Opacity=.5,StrokeWidth=24}};
+        check("highlighter preview describes its selected alpha and opacity",MaxAlpha(Bitmap(highlighter)) is > 30 and < 110);
         var symbols=new ToolParameters {Tool=EditorTool.Symbol,Symbol=SymbolKind.Heart};string heart=Hash(Bitmap(symbols));symbols.Symbol=SymbolKind.Hexagon;
         check("symbol preset previews retain distinct actual outlines",heart!=Hash(Bitmap(symbols)));
         var toolbarTools=new[]{EditorTool.Freehand,EditorTool.Highlighter,EditorTool.Line,EditorTool.Arrow,EditorTool.DoubleArrow,EditorTool.Rectangle,EditorTool.Ellipse,EditorTool.Text,EditorTool.Number,EditorTool.Symbol};
@@ -123,6 +123,8 @@ internal static class ToolParameterIconTests
     }
     private static string Hash(Imaging.BitmapSource bitmap)
     {byte[] bytes=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(bytes,bitmap.PixelWidth*4,0);return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));}
+    private static int MaxAlpha(Imaging.BitmapSource bitmap)
+    {byte[] bytes=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(bytes,bitmap.PixelWidth*4,0);return bytes.Where((_,i)=>i%4==3).Max();}
     private static int Count(Imaging.BitmapSource bitmap,Media.Color color)
     {byte[] bytes=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(bytes,bitmap.PixelWidth*4,0);int count=0;for(int i=0;i<bytes.Length;i+=4)if(bytes[i+3]>250&&Math.Abs(bytes[i+2]-color.R)<4&&Math.Abs(bytes[i+1]-color.G)<4&&Math.Abs(bytes[i]-color.B)<4)count++;return count;}
 }

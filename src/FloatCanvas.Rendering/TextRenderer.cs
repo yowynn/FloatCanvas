@@ -1,4 +1,5 @@
 using System.Text;
+using System.Globalization;
 using FloatCanvas.Core;
 using SkiaSharp;
 using SkiaSharp.HarfBuzz;
@@ -15,6 +16,46 @@ internal sealed class TextRenderer : IDisposable
     private long _clock;
 
     public TextMetrics Measure(string text, ElementStyle style, double width) => GetLayout(text, style, width).Metrics;
+
+    public TextEditingGeometry EditingGeometry(string text,ElementStyle style,double width)
+    {
+        _clock++;
+        var primary=GetFont(new(style.FontFamily,Math.Clamp(style.FontSize,1,2048)));
+        var normalized=new StringBuilder();var originalIndices=new List<int> {0};
+        for(int i=0;i<text.Length;i++)
+        {
+            char character=text[i];
+            if(character=='\r') {if(i+1<text.Length&&text[i+1]=='\n')i++;character='\n';}
+            normalized.Append(character);originalIndices.Add(i+1);
+        }
+        var lines=new List<TextEditingLine>();double top=0;int offset=0;
+        foreach(string paragraph in normalized.ToString().Split('\n'))
+        {
+            foreach(string line in Wrap(paragraph,primary,width))
+            {
+                double advance=0,ascent=-primary.Font.Metrics.Ascent,descent=primary.Font.Metrics.Descent;
+                foreach(var (font,content) in Segment(line,primary))
+                {
+                    advance+=font.Shaper.Shape(content,font.Font).Width;
+                    ascent=Math.Max(ascent,-font.Font.Metrics.Ascent);descent=Math.Max(descent,font.Font.Metrics.Descent);
+                }
+                double x=style.TextAlignment switch
+                {TextAlignment.Center when width>0=>(width-advance)/2,TextAlignment.Right when width>0=>width-advance,_=>0};
+                double height=Math.Max(Math.Clamp(style.FontSize,1,2048)*1.35,ascent+descent);
+                bool rtl=line.EnumerateRunes().FirstOrDefault().Value is >=0x590 and <=0x8FF;
+                var stops=new List<TextCaretStop>();
+                foreach(int boundary in StringInfo.ParseCombiningCharacters(line).Append(line.Length).Distinct())
+                {
+                    double prefix=0;
+                    foreach(var (font,content) in Segment(line[..boundary],primary))prefix+=font.Shaper.Shape(content,font.Font).Width;
+                    stops.Add(new(originalIndices[offset+boundary],x+(rtl?advance-prefix:prefix)));
+                }
+                lines.Add(new(top,height,stops));top+=height;offset+=line.Length;
+            }
+            offset++;
+        }
+        return new(lines);
+    }
 
     public void Draw(SKCanvas canvas, string text, ElementStyle style, double width, SKPaint paint)
     {
@@ -94,11 +135,12 @@ internal sealed class TextRenderer : IDisposable
             if (width <= 0 || sourceLine.Length == 0) { lines.Add(sourceLine); continue; }
             var current = new StringBuilder();
             float advance = 0;
-            foreach (var rune in sourceLine.EnumerateRunes())
+            var characters = StringInfo.GetTextElementEnumerator(sourceLine);
+            while (characters.MoveNext())
             {
-                string character = rune.ToString();
-                var font = Resolve(primary, rune.Value);
-                float next = font.Font.MeasureText(character);
+                string character = characters.GetTextElement();
+                float next = 0;
+                foreach (var (font, content) in Segment(character, primary)) next += font.Shaper.Shape(content, font.Font).Width;
                 if (current.Length > 0 && advance + next > width)
                 {
                     lines.Add(current.ToString()); current.Clear(); advance = 0;

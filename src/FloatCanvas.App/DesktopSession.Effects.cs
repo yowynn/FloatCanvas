@@ -53,7 +53,12 @@ internal sealed partial class DesktopSession
         var animationTime = _renderer.AnimationTime;
         if (region.IsEmpty) return;
         var mapping = CanvasMapping.Create(target.Document);
-        if (!mapping.PlaneToScreen.TryTransformBounds(region, out var projectedRegion) ||
+        // Snapshot this transient choice before the controller ends the input gesture or an
+        // asynchronous desktop capture yields. The region is already logical screen/s here.
+        var billboardDepth = _editor.ActiveBillboardDepthLine;
+        var regionToScreen = billboardDepth is { } selectedDepth
+            ? Projective2D.FromAffine(Affine2D.Scale(selectedDepth.Scale, selectedDepth.Scale)) : mapping.PlaneToScreen;
+        if (!regionToScreen.TryTransformBounds(region, out var projectedRegion) ||
             projectedRegion.Intersect(target.Document.Viewport).IsEmpty) return;
         bool desktopFilter = kind is ImageEffectKind.Pixelate or ImageEffectKind.Blur && target.Document.Kind == DocumentKind.LiveOverlay;
         if (desktopFilter && _host.Capabilities.SupportsCaptureExclusion)
@@ -61,6 +66,9 @@ internal sealed partial class DesktopSession
             var effect = new CanvasElement { Kind = kind == ImageEffectKind.Blur ? ElementKind.LiveBlur : ElementKind.LivePixelate, Width = region.Width, Height = region.Height,
                 Transform = Affine2D.Translation(region.X, region.Y), Style = new() { StrokeWidth = 0 },
                 Effects = [new ImageEffect { Kind = kind, Amount = amount, Bounds = new(0,0,1,1) }] };
+            if (billboardDepth is { } depth && !BillboardGeometry.TryPlaceFromScreen(effect, mapping, depth,
+                regionToScreen.Compose(ElementGeometry.LocalToPlane(effect))))
+            { UpdateStatus(L.Get("Billboard.InvalidDepth")); return; }
             if (!await PrepareLiveEffectAsync(request, effect) || !CanFinishEffect(request)) return;
             target.Add(effect);
             UpdateStatus(L.Get("Effect.LiveReady"));
@@ -74,7 +82,7 @@ internal sealed partial class DesktopSession
             var capture = await captureDesktop();
             if (!CanFinishEffect(request)) return;
             var selection = new CaptureSelection(CaptureShape.PolygonLasso, CaptureSource.BackgroundAndCanvas,
-                projectedRegion, EditorController.Corners(region).Select(mapping.ToScreen).ToArray(), 0, 0);
+                projectedRegion, EditorController.Corners(region).Select(regionToScreen.TransformPoint).ToArray(), 0, 0);
             var raster = await Task.Run(() =>
             {
                 using var backdrop = CreateScreenBackdrop(capture);
@@ -82,7 +90,9 @@ internal sealed partial class DesktopSession
                 return renderer.ExportSelectionPng(snapshot, ResourceLibrary(resources), selection, includeBackground: true);
             }, _documentLifetime.Token);
             if (!CanFinishEffect(request) || !CanAddCanvasContent()) return;
-            var image = SnapshotImageCommand.CreateElement(_assets, raster, mapping.PlaneToScreen);
+            var image = billboardDepth is { } depth
+                ? SnapshotImageCommand.CreateBillboardElement(_assets, raster, mapping, depth)
+                : SnapshotImageCommand.CreateElement(_assets, raster, mapping.PlaneToScreen);
             image.Effects = [new ImageEffect { Kind = kind, Amount = amount, Color = color, Bounds = new(0, 0, 1, 1) }];
             target.Add(image);
             UpdateStatus(L.Get(desktopFilter ? kind == ImageEffectKind.Blur ? "Effect.LegacyBlurFrozen" : "Effect.LegacyPixelateFrozen" : "Effect.RegionFrozen"));
@@ -92,40 +102,104 @@ internal sealed partial class DesktopSession
 
     private void BeginEyedropper(ColorField field)
     {
-        CloseToolOptions();
+        var cursorHandle = EyedropperCursor.Handle;
+        EndEyedropper(restore: false);
         _editor.Cancel(); _eyedropper = field;
+        _eyedropperWindows = _app.Windows.Cast<System.Windows.Window>().Where(window => window.IsVisible && !ReferenceEquals(window, _toolbar)).ToArray();
+        _eyedropperOwner = System.Windows.Window.GetWindow(field);
+        using (var transition = _host.BeginInternalWindowTransition())
+            foreach (var window in _eyedropperWindows) SessionWindowCoordinator.Hide(window);
+        _host.SetPointerCursor(cursorHandle);
+        var cursor = System.Windows.Forms.Cursor.Position;
+        _eyedropperPoint = new(cursor.X,cursor.Y);
+        _eyedropperTimer ??= new(System.Windows.Threading.DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(100) };
+        _eyedropperTimer.Tick -= PreviewEyedropper;
+        _eyedropperTimer.Tick += PreviewEyedropper;
+        _eyedropperTimer.Start();
+        RequestRender();
         UpdateStatus(L.Get("Color.SampleHint"));
     }
 
-    private async Task SampleDesktopColorAsync(ColorField field, OverlayPoint position)
+    private System.Windows.Window[] _eyedropperWindows = [];
+    private System.Windows.Window? _eyedropperOwner;
+    private System.Windows.Threading.DispatcherTimer? _eyedropperTimer;
+    private OverlayPoint _eyedropperPoint;
+    private uint? _eyedropperPreview;
+    private bool _eyedropperPicked;
+
+    private bool HandleEyedropperPointer(OverlayPointerEvent pointer)
     {
-        var animationTime = _renderer.AnimationTime;
-        var request = BeginEffectRender(Active);
-        _documentBusy = true;
+        if (_eyedropper is not { } field) return false;
+        _eyedropperPoint = pointer.Position;
+        if (pointer.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
+        {
+            if (pointer.Button == OverlayMouseButton.Left)
+                _ = RunCommand(() => SampleDesktopColorAsync(field, pointer.Position));
+            else if (pointer.Button == OverlayMouseButton.Right)
+            { _eyedropperTimer?.Stop(); _eyedropperPicked = true; UpdateStatus(L.Get("Color.SampleCancelled")); }
+        }
+        else if (pointer.Kind is OverlayPointerKind.Up or OverlayPointerKind.Cancel && _eyedropperPicked) EndEyedropper();
+        RequestRender();
+        return true;
+    }
+
+    private void PreviewEyedropper(object? sender, EventArgs args)
+    {
+        if (_eyedropper is null || _documentBusy) return;
+        _eyedropperPreview = DesktopPixelSampler.Sample(_eyedropperPoint);
+        RequestRender();
+    }
+
+    private void EndEyedropper(bool restore = true)
+    {
+        var field = _eyedropper; _eyedropper = null;
+        _eyedropperTimer?.Stop(); _eyedropperPreview = null; _eyedropperPicked = false;
+        _host.SetPointerCursor(0);
+        var windows = _eyedropperWindows; _eyedropperWindows = [];
+        var owner = _eyedropperOwner; _eyedropperOwner = null;
+        if (restore && field is not null && !_disposed && _host.IsEditing && _host.IsVisible)
+        {
+            foreach (var window in windows) SessionWindowCoordinator.Show(window);
+            if (owner is { IsVisible: true, IsEnabled: true }) owner.Activate();
+            if (field.IsVisible) field.OpenPicker(focus: true);
+        }
+        RequestRender();
+    }
+
+    private void DrawEyedropperPreview(SKCanvas canvas)
+    {
+        if (_eyedropper is null) return;
+        var monitor = _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(_eyedropperPoint)) ?? _host.PrimaryMonitor;
+        float scale = monitor.DpiX / 96f;
+        float width = 126*scale, height = 40*scale;
+        float x = (float)Math.Clamp(_eyedropperPoint.X + 20*scale, monitor.Bounds.Left, monitor.Bounds.Right-width);
+        float y = (float)Math.Clamp(_eyedropperPoint.Y + 20*scale, monitor.Bounds.Top, monitor.Bounds.Bottom-height);
+        using var paint = new SKPaint { IsAntialias = true, Color = new SKColor(35,35,38,245) };
+        canvas.DrawRoundRect(x,y,width,height,8*scale,8*scale,paint);
+        paint.Color = _eyedropperPreview is { } color ? new SKColor(color) : SKColors.Transparent;
+        canvas.DrawCircle(x+20*scale,y+20*scale,11*scale,paint);
+        paint.Color=SKColors.White; paint.Style=SKPaintStyle.Stroke; paint.StrokeWidth=scale;
+        canvas.DrawCircle(x+20*scale,y+20*scale,11*scale,paint);
+        paint.Style=SKPaintStyle.Fill;
+        using var font = new SKFont(SKTypeface.Default,12*scale);
+        canvas.DrawText(_eyedropperPreview is { } current ? ColorLibrary.ToHtml(current,false) : "…",x+38*scale,y+25*scale,SKTextAlign.Left,font,paint);
+    }
+
+    private Task SampleDesktopColorAsync(ColorField field, OverlayPoint position)
+    {
+        _eyedropperTimer?.Stop();
         try
         {
-            var snapshot = request.Target.CreateCommittedSnapshot();
-            var point = new PointD(position.X - _editor.ScreenOrigin.X, position.Y - _editor.ScreenOrigin.Y);
-            snapshot.Viewport = new(point.X, point.Y, 1, 1);
-            var resources = ResourceSnapshot(snapshot).ToList();
-            CapturedDesktop? screenCapture = null;
-            if (snapshot.Background is null)
-            {
-                var capture = await CaptureCleanDesktopAsync();
-                if (!CanFinishEffect(request)) return;
-                screenCapture = capture;
-            }
-            uint color = await Task.Run(() =>
-            {
-                using var backdrop = CreateScreenBackdrop(screenCapture);
-                using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop }; using var image = SKBitmap.Decode(renderer.ExportPng(snapshot, ResourceLibrary(resources)));
-                var pixel = image.GetPixel(0, 0);
-                return (uint)(pixel.Alpha << 24 | pixel.Red << 16 | pixel.Green << 8 | pixel.Blue);
-            }, _documentLifetime.Token);
-            if (!CanFinishEffect(request)) return;
-            field.SetUserValue(color);
-            UpdateStatus(L.Get("Color.Sampled"));
+            // Sample the same displayed pixel as the live bubble. A second capture and
+            // export can differ from the screen and unnecessarily reads a whole desktop.
+            uint? color = DesktopPixelSampler.Sample(position);
+            if (color.HasValue && ReferenceEquals(_eyedropper, field))
+            { field.SetUserValue(color.Value); UpdateStatus(L.Get("Color.Sampled")); }
+            else UpdateStatus(L.Get("Color.SampleCancelled"));
         }
-        finally { _documentBusy = false; }
+        // The complete original canvas press must finish before restoring popups;
+        // other pointer subscribers still dismiss transient panels on this Down.
+        finally { _eyedropperPicked = true; }
+        return Task.CompletedTask;
     }
 }

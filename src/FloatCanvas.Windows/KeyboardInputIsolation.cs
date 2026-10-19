@@ -228,8 +228,11 @@ public sealed class KeyboardInputIsolation : IDisposable
                 nint foreground = Native.GetForegroundWindow();
                 bool own = OwnsWindow(foreground);
                 long tailsBefore = state.TailSuppressedCount;
+                bool shiftKey=key.VirtualKey is 0x10 or 0xA0 or 0xA1;
+                OverlayPoint? pointerPosition=shiftKey&&Native.GetPhysicalCursorPos(out var cursor)?new(cursor.X,cursor.Y):null;
+                bool? pointerLeftDown=shiftKey?Native.GetAsyncKeyState(1)<0:null;
                 suppress = state.Process(key.VirtualKey, key.ScanCode, key.Flags, key.Time, message is 0x101 or 0x105,
-                    (uint)message, foreground, own, now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds, now);
+                    (uint)message, foreground, own, now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds, now,pointerPosition,pointerLeftDown);
                 if (!own && message is 0x100 or 0x104)
                 {
                     long observedVersion = CaptureInputIntent.CountsKeyboard(own, suppress)
@@ -436,6 +439,7 @@ public sealed class KeyboardInputIsolation : IDisposable
         [DllImport("user32.dll", EntryPoint = "PostMessageW", SetLastError = true)] internal static extern bool PostMessage(nint window, uint message, nuint wParam, nint lParam);
         [DllImport("user32.dll", EntryPoint = "PostThreadMessageW", SetLastError = true)] internal static extern bool PostThreadMessage(uint thread, uint message, nuint wParam, nint lParam);
         [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetPhysicalCursorPos(out Point point);
         [DllImport("user32.dll")] internal static extern nint WindowFromPoint(Point point);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
         [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint processId);

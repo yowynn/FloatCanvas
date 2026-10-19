@@ -87,7 +87,7 @@ internal static class EmojiTests
         Console.WriteLine($"EMOJI_PROPERTY size={element.Style.FontSize} box={element.Width}x{element.Height} expected={metrics.Width}x{metrics.Height} selection={session.Selection.Count} status={((Controls.TextBlock)Field(inspector, "status")).Text}");
         check("emoji property size edits update both tight dimensions while preserving the explicit font size", element.Style.FontSize == 36 && element.Width == metrics.Width && element.Height == metrics.Height);
         using var renderer = new SceneRenderer();
-        TextEditCommand.TryCommit(session, element.Id, ElementKind.Text, "❤️", element.Style, new(), renderer, out _);
+        using(var edit=new InlineTextEdit(session,element,new(),element.Style,renderer)) {edit.Input.Text="❤️";edit.Finish(true);}
         element = session.Document.Elements.Single(); metrics = EmojiGlyphs.Measure("❤️", 36);
         check("editing an emoji sequence recomputes its tight dimensions without rasterizing the object", element.Kind == ElementKind.Text && element.Text == "❤️" && element.Width == metrics.Width && element.Height == metrics.Height);
         check("emoji detached edit checks create no native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);

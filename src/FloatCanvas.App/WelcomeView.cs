@@ -10,12 +10,14 @@ namespace FloatCanvas.App;
 /// <summary>The single startup introduction. Detached content is also used for layout verification.</summary>
 internal sealed class WelcomeView : StackPanel
 {
+    internal const double PreferredWidth = 480;
     internal TextBlock ToggleShortcut { get; } = ShortcutText();
     internal TextBlock HideShortcut { get; } = ShortcutText();
     internal Button StartButton { get; }
     internal Button VersionButton { get; }
+    internal Button ProjectButton { get; }
 
-    internal WelcomeView(HotkeyBinding toggle, HotkeyBinding hide, Action start, Action? checkUpdates = null)
+    internal WelcomeView(HotkeyBinding toggle, HotkeyBinding hide, Action start, Action? checkUpdates = null, Action? openProject = null)
     {
         Margin = new Thickness(24, 12, 24, 20);
         SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "CanvasText");
@@ -24,7 +26,7 @@ internal sealed class WelcomeView : StackPanel
         tagline.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); Children.Add(tagline);
         AddShortcut("Acceptance2.Welcome.ToggleMode", "Acceptance2.Welcome.ToggleModeDescription", ToggleShortcut);
         AddShortcut("Acceptance2.Welcome.ToggleVisibility", "Acceptance2.Welcome.ToggleVisibilityDescription", HideShortcut);
-        StartButton = new Button { MinHeight = 38, Padding = new Thickness(12, 7, 12, 7), IsDefault = true, ToolTip = L.Get("Acceptance2.Welcome.Description") };
+        StartButton = new Button { MinHeight = 38, Padding = new Thickness(12, 7, 12, 7), IsDefault = true };
         StartButton.SetResourceReference(FrameworkElement.StyleProperty, "CanvasPrimaryButton");
         StartButton.Click += (_, _) => start(); Children.Add(StartButton);
         Refresh(toggle, hide);
@@ -42,7 +44,14 @@ internal sealed class WelcomeView : StackPanel
         var heart = new Image { Source = EmojiArtwork.Image("❤️"), Width = 12, Height = 12, Stretch = Stretch.Uniform };
         System.Windows.Automation.AutomationProperties.SetName(heart, "❤️");
         credits.Inlines.Add(new System.Windows.Documents.InlineUIContainer(heart) { BaselineAlignment = BaselineAlignment.Center });
-        credits.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); footer.Children.Add(credits); Children.Add(footer);
+        credits.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
+        ProjectButton = new Button {Content=credits,MinWidth=0,MinHeight=0,Height=18,Padding=new Thickness(0),
+            HorizontalAlignment=HorizontalAlignment.Right,Background=Brushes.Transparent,BorderThickness=new Thickness(0),
+            Cursor=System.Windows.Input.Cursors.Hand,ToolTip=L.Get("Welcome.ProjectHome")};
+        ProjectButton.SetResourceReference(FrameworkElement.StyleProperty,"CanvasCaptionButton");
+        System.Windows.Automation.AutomationProperties.SetName(ProjectButton,L.Get("Welcome.ProjectHome"));
+        ProjectButton.Click+=(_,_)=>openProject?.Invoke();
+        footer.Children.Add(ProjectButton); Children.Add(footer);
     }
 
     internal void Refresh(HotkeyBinding toggle, HotkeyBinding hide)

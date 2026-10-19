@@ -17,9 +17,11 @@ internal static class AppTheme
         var app = System.Windows.Application.Current;
         if (app is null) return;
         app.Dispatcher.VerifyAccess();
+        AppInputPolicy.Initialize();
         bool dark = mode?.ToLowerInvariant() switch { "dark" => true, "light" => false, _ => SystemUsesDarkTheme() };
         var resources = app.Resources;
         SetBrush(resources, "CanvasSurface", dark ? "#24272C" : "#F8F9FB");
+        SetBrush(resources, "CanvasFileBubble", dark ? "#29384B" : "#EDF3FB");
         SetBrush(resources, "CanvasText", dark ? "#E9ECF1" : "#252B36");
         SetBrush(resources, "CanvasBorder", dark ? "#3A3F48" : "#DDE2EA");
         SetBrush(resources, "CanvasSwatchBorder", dark ? "#40FFFFFF" : "#380F172A");
@@ -83,18 +85,13 @@ internal static class AppTheme
                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
           <CornerRadius x:Key="CanvasButtonCornerRadius">6</CornerRadius>
           <Style x:Key="CanvasControlBase" TargetType="Control">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="KeyboardNavigation.TabNavigation" Value="None"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/>
             <Setter Property="Foreground" Value="{DynamicResource CanvasText}"/>
             <Setter Property="ToolTipService.InitialShowDelay" Value="700"/>
             <Setter Property="ToolTipService.ShowDuration" Value="8000"/>
-          </Style>
-          <Style x:Key="CanvasKeyboardFocus" TargetType="Control">
-            <Setter Property="Template">
-              <Setter.Value><ControlTemplate TargetType="Control">
-                <Border Margin="2" BorderBrush="{DynamicResource CanvasAccent}" BorderThickness="2" CornerRadius="5" IsHitTestVisible="False"/>
-              </ControlTemplate></Setter.Value>
-            </Setter>
           </Style>
           <Style TargetType="Window" BasedOn="{StaticResource CanvasControlBase}">
             <Setter Property="Icon" Value="pack://application:,,,/FloatCanvas;component/Assets/FloatCanvas.ico"/>
@@ -116,7 +113,7 @@ internal static class AppTheme
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="FocusVisualStyle" Value="{StaticResource CanvasKeyboardFocus}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
                 <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
@@ -168,9 +165,10 @@ internal static class AppTheme
             </Setter.Value></Setter>
           </Style>
           <Style x:Key="CanvasCaptionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{DynamicResource CanvasButton}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
-                <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="7"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
                   <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
@@ -195,7 +193,7 @@ internal static class AppTheme
             <Setter Property="Padding" Value="8,3,0,3"/>
             <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource CanvasBorder}"/>
-            <Setter Property="FocusVisualStyle" Value="{StaticResource CanvasKeyboardFocus}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="CheckBox">
@@ -281,7 +279,7 @@ internal static class AppTheme
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Height="4" Background="Transparent"/></ControlTemplate></Setter.Value></Setter>
           </Style>
           <Style TargetType="Slider" BasedOn="{StaticResource CanvasControlBase}">
-            <Setter Property="MinHeight" Value="24"/><Setter Property="FocusVisualStyle" Value="{StaticResource CanvasKeyboardFocus}"/>
+            <Setter Property="MinHeight" Value="24"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Slider">
                 <Grid x:Name="SliderRoot" Background="Transparent">
@@ -346,7 +344,7 @@ internal static class AppTheme
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="6,5"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="FocusVisualStyle" Value="{StaticResource CanvasKeyboardFocus}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="ListBoxItem">
                 <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
@@ -438,7 +436,7 @@ internal static class AppTheme
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="FocusVisualStyle" Value="{StaticResource CanvasKeyboardFocus}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
             <Setter Property="Template"><Setter.Value>

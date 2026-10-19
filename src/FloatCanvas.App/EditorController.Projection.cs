@@ -1,4 +1,5 @@
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 
 namespace FloatCanvas.App;
 
@@ -11,6 +12,14 @@ internal sealed partial class EditorController
         {
             if (Session.SelectionBounds() is not { } bounds) return [];
             var selected = Session.SelectedElements().Where(e => e.Visible && !e.Locked).ToArray();
+            var mapping = CanvasMapping.Create(Session.Document);
+            if (selected is [var billboard] && billboard.IsBillboard)
+                return Corners(ElementGeometry.LocalBounds(billboard)).Select(mapping.ElementToScreen(billboard).TransformPoint).ToArray();
+            if (selected.Any(e => e.IsBillboard))
+            {
+                var screenBounds = selected.Select(e => mapping.ProjectedBounds(e)).Aggregate(RectD.Union);
+                return Corners(screenBounds);
+            }
             var plane = selected is [var image] && image.Kind == ElementKind.Image
                 ? Corners(ElementGeometry.LocalBounds(image)).Select(ElementGeometry.LocalToPlane(image).TransformPoint)
                 : Corners(bounds);
@@ -38,12 +47,15 @@ internal sealed partial class EditorController
     }
 
     internal IReadOnlyList<PointD> SelectionScreenEndpoints => Session.SelectedElements().ToArray() is [var line] &&
-        ElementGeometry.IsLine(line.Kind) ? ToScreenPoints(line.Points.Select(line.Transform.TransformPoint)) : [];
+        ElementGeometry.IsLine(line.Kind) ? line.Points.Select(CanvasMapping.Create(Session.Document).ElementToScreen(line).TransformPoint).ToArray() : [];
 
     internal IReadOnlyList<PointD> MarqueeScreenPolygon => Marquee is not { } bounds ? [] :
-        gesture == "marquee" ? Corners(bounds) : ToScreenPoints(Corners(bounds));
+        gesture == "marquee" ? Corners(bounds) : gesture == "desktop-effect" && billboardDepth is { } depth ?
+        Corners(bounds).Select(p => p * depth.Scale).ToArray() : ToScreenPoints(Corners(bounds));
 
-    internal IReadOnlyList<PointD> EffectScreenPreview => EffectPreviewPolygon is { } points ? ToScreenPoints(points) : [];
+    internal IReadOnlyList<PointD> EffectScreenPreview => effectTarget is { IsBillboard: true } item && imageRegion is { } region ?
+        Corners(region).Select(CanvasMapping.Create(Session.Document).ElementToScreen(item).TransformPoint).ToArray() :
+        EffectPreviewPolygon is { } points ? ToScreenPoints(points) : [];
 
     private IReadOnlyList<PointD> ToScreenPoints(IEnumerable<PointD> points)
     {
@@ -57,8 +69,13 @@ internal sealed partial class EditorController
         return result;
     }
 
-    private CanvasElement? HitTestScreen(PointD point, double tolerance) => Session.Document.Elements
-        .LastOrDefault(element => !element.Locked && ElementHitTestScreen(element, point, tolerance));
+    private CanvasElement? HitTestScreen(PointD point, double tolerance)
+    {
+        if (!CanvasDepthOrder.IsEnabled(Session.Document)) return Session.Document.Elements
+            .LastOrDefault(element => !element.Locked && ElementHitTestScreen(element, point, tolerance));
+        using var renderer = new SceneRenderer { AnimationTime = AnimationTime };
+        return renderer.PickDepth(Session.Document, Session.Assets, point, tolerance);
+    }
 
     private bool ElementHitTestScreen(CanvasElement element, PointD point, double tolerance) =>
         ElementGeometry.HitTestProjected(element, point, CanvasMapping.Create(Session.Document).PlaneToScreen, tolerance);

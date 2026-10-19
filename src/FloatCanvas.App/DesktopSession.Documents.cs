@@ -21,7 +21,7 @@ internal sealed partial class DesktopSession
     private readonly ProjectStore _projectStore = new();
     private readonly RecoveryStore _recoveryStore = new(Path.Combine(ApplicationPaths.ProfileDirectory, "recovery"));
     private WorkspaceRecoveryHistory? _workspaceRecoveryHistory;
-    private WorkspaceRecoveryHistory RecoveryHistory => _workspaceRecoveryHistory ??= new(_recoveryStore);
+    private WorkspaceRecoveryHistory RecoveryHistory { get { var history = _workspaceRecoveryHistory ??= new(_recoveryStore); history.MaximumVersions = _settings.HistoryVersionLimit; return history; } }
     private readonly CaptureService _documentCaptureService = new();
     private readonly CancellationTokenSource _documentLifetime = new();
     private readonly Dictionary<EditorSession, DocumentFileState> _documentFiles = [];
@@ -107,7 +107,7 @@ internal sealed partial class DesktopSession
                 RecoveryHistory.BeginFreshWorkspace(baseline);
                 _documentRecoveryFingerprint = WorkspaceFingerprint(baseline);
             }
-            else RecoveryHistory.WorkspaceRestored();
+            else { RecoveryHistory.WorkspaceRestored(); RecoveryHistory.EnterWorkspace(SnapshotWorkspace()); }
             _host.SetEditing(false);
             _toolbar.Hide(); _inspector?.Hide(); RequestRender();
         }
@@ -170,6 +170,7 @@ internal sealed partial class DesktopSession
         if (!RecoveryHistory.ShouldWrite(snapshot)) return;
         string fingerprint = WorkspaceFingerprint(snapshot);
         await SaveRecoverySnapshotAsync(snapshot);
+        RecoveryHistory.WriteCurrentInfo(snapshot, FileState(Active).Path);
         _documentRecoveryFingerprint = fingerprint;
         RecoveryHistory.WorkspaceSaved();
     }
@@ -218,9 +219,9 @@ internal sealed partial class DesktopSession
             if (_capture is not null && !await ConfirmReplaceAsync(_capture, L.Get("Project.ReplaceCapture"))) return;
             if (!coordinator.CanContinue(request, _live.Document)) return;
             await FlushRecoveryAsync();
-            await RecoveryHistory.PreserveCurrentAsync(_documentLifetime.Token);
+            await ArchiveWorkspaceAsync();
             if (!coordinator.CanContinue(request, _live.Document)) return;
-            _textEditor?.Close();
+            FinishInlineText();
             MergeAssets(restored.Assets);
             _documentFiles.Clear();
             _live = new(restored.State.LiveDocument, _assets);
@@ -230,6 +231,7 @@ internal sealed partial class DesktopSession
             _editor.ReplaceSession(_live, new(0, 0));
             SwitchToolState(_documentLiveTool);
             RecoveryHistory.WorkspaceRestored();
+            RecoveryHistory.EnterWorkspace(SnapshotWorkspace());
             _documentRecoveryFingerprint = null;
             OnMonitorsChanged();
             await FlushRecoveryAsync();
@@ -242,7 +244,7 @@ internal sealed partial class DesktopSession
             if (coordinator.CanContinue(request, _live.Document)) ShowError(message);
             else UpdateStatus(message);
         }
-        finally { _documentBusy = false; PruneDocumentResources(); }
+        finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
     }
 
     private WorkspaceRecoveryEntry? ChooseRecoveryWorkspace(IReadOnlyList<WorkspaceRecoveryEntry> entries)
@@ -256,7 +258,7 @@ internal sealed partial class DesktopSession
         CloseImageDrop();
         _inspector?.CompletePendingEdit();
         _documentExitRequested = true; _editor.Cancel();
-        try { FlushToolState(commitDraft: true); await FlushRecoveryAsync(); _app.Shutdown(); }
+        try { FlushToolState(commitDraft: true); if (!await ConfirmLeaveWorkspaceAsync()) { _documentExitRequested = false; ScheduleRecovery(); return; } await FlushRecoveryAsync(); await ArchiveWorkspaceAsync(); _app.Shutdown(); }
         catch (Exception ex)
         {
             _documentExitRequested = false;
@@ -332,6 +334,7 @@ internal sealed partial class DesktopSession
             if (loaded.Document.Kind == DocumentKind.FrozenCapture)
             {
                 if (_capture is not null && !ReferenceEquals(previous, _capture) && !await ConfirmReplaceAsync(_capture, L.Get("Project.ReplaceCapture"))) return;
+                await FlushRecoveryAsync(); await ArchiveWorkspaceAsync();
                 if (ReferenceEquals(previous, _live)) _documentLiveTool = _editor.Tool;
                 if (_capture is not null) _documentFiles.Remove(_capture);
                 _capture = session; _captureOrigin = CenteredOrigin(loaded.Document.Viewport);
@@ -341,11 +344,15 @@ internal sealed partial class DesktopSession
             else
             {
                 if (!ReferenceEquals(previous, _live) && !await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return;
+                await FlushRecoveryAsync(); await ArchiveWorkspaceAsync();
                 _documentFiles.Remove(_live);
                 _live = session; _editor.ReplaceSession(session, new(0, 0)); SwitchToolState(_documentLiveTool);
                 OnMonitorsChanged();
             }
             _documentFiles[session] = new() { Path = projectPath, SavedFingerprint = Fingerprint(session.Document) };
+            RecoveryHistory.WorkspaceRestored();
+            RecoveryHistory.EnterWorkspace(SnapshotWorkspace());
+            _documentRecoveryFingerprint = null;
             bool editing;
             if (focusVersion != _host.ForegroundLossVersion)
             { SetEditing(false); editing = false; UpdateStatus(L.Get("Project.OpenedPassThrough")); }
@@ -355,7 +362,7 @@ internal sealed partial class DesktopSession
             RequestRender();
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Project.OpenFailed") + ex.Message); }
-        finally { _documentBusy = false; PruneDocumentResources(); }
+        finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
     }
     private async Task SaveProjectAsync(bool saveAs = false)
     {
@@ -364,7 +371,7 @@ internal sealed partial class DesktopSession
         _editor.Cancel(); _documentBusy = true;
         try { await SaveSessionAsync(Active, saveAs); }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Project.SaveFailed") + ex.Message); }
-        finally { _documentBusy = false; PruneDocumentResources(); }
+        finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
     }
     private async Task<bool> SaveSessionAsync(EditorSession session, bool saveAs)
     {
@@ -386,9 +393,9 @@ internal sealed partial class DesktopSession
     }
     private async Task<bool> ConfirmReplaceAsync(EditorSession session, string description)
     {
-        if (!IsDirty(session)) return true;
-        var result = AppDialog.Show(_toolbar, description + L.Get("Project.ReplaceQuestion"), L.Get("App.Name"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-        return result == MessageBoxResult.No || result == MessageBoxResult.Yes && await SaveSessionAsync(session, true);
+        if (FileState(session).Path is null || !IsDirty(session)) return true;
+        var result = AppDialog.Show(_toolbar, description + L.Get("Project.ReplaceQuestion"), L.Get("App.Name"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question, "History.SaveLeave", "History.KeepLeave");
+        return result == MessageBoxResult.No || result == MessageBoxResult.Yes && await SaveSessionAsync(session, false);
     }
 
     private async Task ExportAsync(bool transparent = false)
@@ -482,7 +489,7 @@ internal sealed partial class DesktopSession
             UpdateStatus(WithCaptureWarning(objects ? L.Get("Clipboard.CopiedObjects") : L.Get("Clipboard.CopiedImage"), captureWarning));
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Clipboard.CopyFailed") + ex.Message); }
-        finally { _documentBusy = false; PruneDocumentResources(); }
+        finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
     }
 
     private async Task PasteAsync()
@@ -524,12 +531,13 @@ internal sealed partial class DesktopSession
             if (bytes is not null)
             {
                 var normalized = await Task.Run(() => AssetImport.Normalize(bytes), _documentLifetime.Token);
-                if (ReferenceEquals(Active, target) && CanvasMapping.Create(target.Document).PlaneToScreen == projection && CanAddCanvasContent()) { InsertImages(target, [normalized], false); SwitchToolState(EditorTool.Select); }
+                if (ReferenceEquals(Active, target) && CanvasMapping.Create(target.Document).PlaneToScreen == projection && CanAddCanvasContent())
+                { if (!InsertImages(target, [normalized], false)) SwitchToolState(EditorTool.Select); }
             }
             else UpdateStatus(L.Get("Clipboard.Empty"));
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Clipboard.PasteFailed") + ex.Message); }
-        finally { _documentBusy = false; PruneDocumentResources(); }
+        finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
     }
     internal static byte[]? ReadClipboardImage(Wpf.IDataObject data)
     {
@@ -590,15 +598,32 @@ internal sealed partial class DesktopSession
             if (!CanAddCanvasContent()) return;
             if (!ReferenceEquals(Active, target) || CanvasMapping.Create(target.Document).PlaneToScreen != projection || replaceSelected && !target.Selection.SetEquals(selectedIds))
             { UpdateStatus(L.Get("Image.ImportChanged")); return; }
-            InsertImages(target, normalized, replaceSelected); SwitchToolState(EditorTool.Select);
+            if (!InsertImages(target, normalized, replaceSelected)) SwitchToolState(EditorTool.Select);
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Image.ImportFailed") + ex.Message); }
-        finally { _documentBusy = false; PruneDocumentResources(); }
+        finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
     }
-    private void InsertImages(EditorSession target, IReadOnlyList<NormalizedImage> images, bool replace)
+    private bool InsertImages(EditorSession target, IReadOnlyList<NormalizedImage> images, bool replace)
     {
+        var document = target.Document;
+        long revision = target.SceneRevision;
+        var projection = CanvasMapping.Create(document).PlaneToScreen;
+        if (!replace && _editor.BeginBillboardInsertion((depth, screenCenter) =>
+        {
+            if (_disposed || _documentStopped || !CanAddCanvasContent() || !ReferenceEquals(Active, target) ||
+                !ReferenceEquals(target.Document, document) || target.SceneRevision != revision ||
+                CanvasMapping.Create(document).PlaneToScreen != projection) return;
+            ImageImportCommand.InsertBillboard(target, images, document.Viewport, depth, screenCenter);
+            SwitchToolState(EditorTool.Select);
+            ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("Image.Imported", images.Count));
+        }))
+        {
+            RequestRender();
+            return true;
+        }
         ImageImportCommand.Insert(target, images, VisibleDocumentArea(), replace);
         UpdateStatus(replace ? L.Get("Image.Replaced") : L.Format("Image.Imported", images.Count));
+        return false;
     }
 
     private void ReturnToLive()

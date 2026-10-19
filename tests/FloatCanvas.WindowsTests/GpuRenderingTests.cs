@@ -99,6 +99,48 @@ internal static class GpuRenderingTests
         check(counts.Gpu >= 3 && counts.Raster == 0,
             "Both live filter intermediates use the actual GPU context without raster fallback");
 
+        var depthScene = new SceneDocument { Viewport = new(-40, -25, 400, 250), LayerOpacity = .72 };
+        depthScene.Canvas.Projection = projection.Clone();
+        depthScene.Canvas.DepthPriorityOcclusion = true;
+        depthScene.Canvas.BackgroundColor = 0x60162940;
+        depthScene.Canvas.Grid = new() { Visible = true, Color = 0x9070C0FF, Width = 1.5 };
+        var depthMapping = CanvasMapping.Create(depthScene);
+        CanvasElement AtDepth(ElementKind kind, PointD ground, PointD center, double width, double height, uint color, double amount = 7)
+        {
+            if (!depthMapping.TryToPlane(ground, out var anchor) || !depthMapping.TryGetDepthScale(anchor, out double scale))
+                throw new InvalidOperationException("The hardware depth fixture requires a visible ground anchor.");
+            return new() { Kind = kind, IsBillboard = true, BillboardAnchor = anchor,
+                BillboardHeight = (ground.Y - center.Y) / scale, Width = width / scale, Height = height / scale,
+                Style = new() { StrokeWidth = 0, Fill = color },
+                Effects = ElementGeometry.IsLiveEffect(kind) ? [new() {
+                    Kind = kind == ElementKind.LiveBlur ? ImageEffectKind.Blur : ImageEffectKind.Pixelate,
+                    Bounds = new(0, 0, 1, 1), Amount = amount }] : [] };
+        }
+        var depthFar = AtDepth(ElementKind.Rectangle, new(95, 55), new(95, 110), 160, 130, 0xD0E8A030);
+        var depthNear = AtDepth(ElementKind.Rectangle, new(265, 185), new(265, 105), 140, 150, 0xB040C8A0);
+        var depthFilter = AtDepth(ElementKind.LiveBlur, new(180, 125), new(180, 110), 170, 110, 0, 5);
+        depthScene.Elements = [depthNear, Box(15, 15, 270, 180, 0x804080D0),
+            Mask(ElementKind.LivePixelate, 90, 40, 170, 130, 11), depthFilter, depthFar];
+        cpu = RenderPixels(null, depthScene, assets, 440, 280, backdrop, TimeSpan.Zero, out var depthCpuCounts);
+        hardware = RenderPixels(gpu, depthScene, assets, 440, 280, backdrop, TimeSpan.Zero, out var depthGpuCounts);
+        var depth = Compare("depth strips, billboard overlap and finite live-filter prefixes", cpu, hardware); report.Pixels.Add(depth);
+        check(depth.MeanChannelDifference < 2.5 && depth.FractionPixelsOver32 < .025,
+            "GPU depth composition agrees with CPU for plane ink, billboards, grid, canvas alpha and live-filter prefixes within edge tolerance");
+        check(depthGpuCounts.Gpu >= 4 && depthGpuCounts.Raster == 0 && depthCpuCounts.Raster >= 4,
+            "Depth composition and its planar and billboard filters use real GPU intermediates without raster fallback");
+        Console.WriteLine($"Depth intermediates: GPU={depthGpuCounts.Gpu}, GPU raster fallback={depthGpuCounts.Raster}, CPU={depthCpuCounts.Raster}");
+
+        depthScene.Elements.RemoveAll(element => ElementGeometry.IsLiveEffect(element.Kind));
+        cpu = RenderPixels(null, depthScene, assets, 440, 280, backdrop, TimeSpan.Zero, out depthCpuCounts);
+        hardware = RenderPixels(gpu, depthScene, assets, 440, 280, backdrop, TimeSpan.Zero, out depthGpuCounts);
+        var ordinaryDepth = Compare("shared plane composition reused across billboard depth bands", cpu, hardware); report.Pixels.Add(ordinaryDepth);
+        check(ordinaryDepth.MeanChannelDifference < 2 && ordinaryDepth.FractionPixelsOver32 < .025,
+            "GPU shared plane composition agrees with CPU for ordinary depth bands, billboard alpha, grid and global opacity within edge tolerance");
+        check(depthGpuCounts.Gpu == 2 && depthGpuCounts.Raster == 0 && depthCpuCounts.Raster == 2,
+            "Ordinary depth bands reuse one plane image with exactly two composition intermediates and no GPU raster fallback");
+        Console.WriteLine($"Ordinary depth intermediates: GPU={depthGpuCounts.Gpu}, GPU raster fallback={depthGpuCounts.Raster}, CPU={depthCpuCounts.Raster}");
+        DepthOutputRecreation(gpu, depthScene, assets, check, report);
+
         string animated = assets.Add(Convert.FromBase64String(LoopGif), "image/gif");
         scene = new() { Viewport = new(0, 0, 440, 280), Elements = [
             new() { Kind = ElementKind.Image, AssetId = animated, Width = 150, Height = 80, Transform = Affine2D.Translation(20, 20),
@@ -114,6 +156,50 @@ internal static class GpuRenderingTests
                 $"Animated image effects at {time}ms use GPU intermediates and match the current CPU source frame");
             if (previous is not null) check(!hardware.AsSpan().SequenceEqual(previous), "GPU animated pixels advance or rewind with caller time");
             previous = hardware;
+        }
+    }
+
+    private static void DepthOutputRecreation(GpuRenderContext gpu, SceneDocument scene, AssetLibrary assets,
+        Action<bool, string> check, Report report)
+    {
+        using var cpuRenderer = new SceneRenderer();
+        using var hardwareRenderer = new SceneRenderer();
+        using var cpuCache = new OverlaySceneCache(cpuRenderer);
+        using var hardwareCache = new OverlaySceneCache(hardwareRenderer);
+        byte[]? previous = null;
+        int pass = 0;
+        foreach (var tile in new[] { new RectD(20, 15, 180, 130), new RectD(120, 60, 180, 130) })
+        {
+            using var cpuBuffer = new DibBuffer((int)tile.Width, (int)tile.Height);
+            using var hardwareBuffer = new DibBuffer((int)tile.Width, (int)tile.Height);
+            byte[] cpu = RenderTile(null, cpuBuffer, cpuCache, tile);
+            byte[] hardware;
+            long allocations = hardwareRenderer.GpuIntermediateSurfaceCount;
+            try { hardware = RenderTile(gpu, hardwareBuffer, hardwareCache, tile); }
+            finally { using (gpu.MakeCurrent()) gpu.ReleaseSurfaces(); }
+            var difference = Compare($"ordinary depth output tile after surface creation {++pass}", cpu, hardware);
+            report.Pixels.Add(difference);
+            check(difference.MeanChannelDifference < 2 && difference.FractionPixelsOver32 < .025,
+                $"GPU depth tile {pass} matches CPU after integer translation and output-surface recreation within edge tolerance");
+            check(hardwareRenderer.GpuIntermediateSurfaceCount - allocations == 2 &&
+                hardwareRenderer.RasterIntermediateSurfaceCount == 0 && hardwareRenderer.CachedDepthSurfaceCount == 0,
+                $"GPU depth tile {pass} uses two current-context intermediates with no raster fallback or retained CPU depth surfaces");
+            if (previous is not null)
+                check(!hardware.AsSpan().SequenceEqual(previous), "Recreated GPU output draws the newly translated region using the same renderer");
+            previous = hardware;
+        }
+
+        byte[] RenderTile(GpuRenderContext? context, DibBuffer buffer, OverlaySceneCache cache, RectD tile)
+        {
+            using var current = context?.MakeCurrent();
+            var surface = context?.SurfaceFor(buffer) ?? buffer.Surface;
+            var canvas = surface.Canvas;
+            canvas.RestoreToCount(1); canvas.ResetMatrix(); canvas.Clear(SKColors.Transparent); canvas.Save();
+            canvas.Translate(-(float)tile.X, -(float)tile.Y);
+            cache.DrawOnClearedRasterTarget(surface, scene, assets, 1, 1);
+            canvas.RestoreToCount(1); canvas.Flush();
+            context?.ReadPixels(surface, buffer);
+            return Copy(buffer);
         }
     }
 

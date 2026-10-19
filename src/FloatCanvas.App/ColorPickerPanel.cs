@@ -26,6 +26,7 @@ internal sealed class ColorPickerPanel : UserControl
     private string? revealSwatch;
     internal Func<Window?>? DialogOwner { get; set; }
     public event Action<uint>? ColorChosen;
+    public event Action<uint>? DraftChanged;
     public event Action? EyedropperRequested;
     public uint Value
     {
@@ -33,9 +34,8 @@ internal sealed class ColorPickerPanel : UserControl
         set
         {
             this.value = value; syncing = true;
-            try { hex.Text = ColorLibrary.ToHtml(value, false); alpha.Value = (value >> 24) * 100d / 255; error.Text = ""; }
+            try { hex.Text = ColorLibrary.ToHtml(value, false); alpha.Value = (value >> 24) * 100d / 255; error.Text = ""; RefreshPreview(); }
             finally { syncing = false; }
-            RefreshPreview();
         }
     }
 
@@ -143,7 +143,7 @@ internal sealed class ColorPickerPanel : UserControl
         Add("ToolOptions.Delete", PanelActionIcon.Delete, () => { library.Delete(saved.Id); RefreshCollections(); }); return menu;
     }
     private void Apply() { if (TryRead(out uint color)) ColorChosen?.Invoke(color); else InvalidInput(); }
-    private void Choose(uint color) { Value = color; }
+    private void Choose(uint color) { Value = color; DraftChanged?.Invoke(color); }
     internal bool TryGetDraft(out uint color) => TryRead(out color);
     internal void CommitDraft(Action<uint> commit) => Run(() => { if (TryRead(out uint color)) commit(color); });
     private void SaveSwatch()
@@ -171,10 +171,11 @@ internal sealed class ColorPickerPanel : UserControl
                 if ((spectrum.SelectedColor & 0xFFFFFF) != (color & 0xFFFFFF)) { spectrum.SelectedColor = color; hue.Value = spectrum.Hue; }
             }
             finally { syncing = wasSyncing; }
+            if (!syncing) DraftChanged?.Invoke(color);
         }
     }
     private void InvalidInput() => error.Text = L.Get("Color.InvalidHex");
-    private void Run(Action action)
+    internal void Run(Action action)
     {
         try { action(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { error.Text = ex.Message; }
@@ -189,13 +190,13 @@ internal sealed class ColorPickerPanel : UserControl
     private static TextBlock Heading(string key) => new() { Text = L.Get(key), FontSize = 11, Opacity = .75, Margin = new Thickness(0, 7, 0, 5) };
     internal static Grid CreateSwatch(uint color)
     {
-        var drawing = new DrawingGroup();
-        drawing.Children.Add(new GeometryDrawing(Brushes.White, null, new RectangleGeometry(new Rect(0, 0, 8, 8))));
-        drawing.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromRgb(207, 211, 207)), null, Geometry.Parse("M0,0 H4 V4 H0 Z M4,4 H8 V8 H4 Z")));
-        drawing.Freeze();
-        var checker = new DrawingBrush(drawing) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 8, 8), ViewportUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
-        checker.Freeze();
-        var grid = new Grid { Background = checker, IsHitTestVisible = false };
+        var grid = new Grid { IsHitTestVisible = false };
+        var checker = new DrawingGroup();
+        checker.Children.Add(new GeometryDrawing(Brushes.White,null,new RectangleGeometry(new Rect(0,0,8,8))));
+        checker.Children.Add(new GeometryDrawing(Brushes.LightGray,null,Geometry.Parse("M0,0 H4 V4 H0 Z M4,4 H8 V8 H4 Z")));
+        var brush = new DrawingBrush(checker) {TileMode=TileMode.Tile,ViewportUnits=BrushMappingMode.Absolute,Viewport=new Rect(0,0,8,8),Stretch=Stretch.None};
+        brush.Freeze();
+        grid.Children.Add(new Border {Background=brush});
         grid.Children.Add(new Border { Background = new SolidColorBrush(Color.FromArgb((byte)(color >> 24), (byte)(color >> 16), (byte)(color >> 8), (byte)color)) });
         return grid;
     }

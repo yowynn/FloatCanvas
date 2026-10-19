@@ -10,6 +10,24 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--depth-performance-diagnostics"))
+            {
+                int failures = 0;
+                DepthCompositionPerformanceTests.Run((name, condition) => { Console.WriteLine($"{(condition ? "PASS" : "FAIL")} {name}"); if (!condition) failures++; });
+                Console.WriteLine($"Depth composition diagnostics completed with {failures} failed checks."); return failures == 0 ? 0 : 1;
+            }
+            if (args.Contains("--depth-performance-only")) { DepthCompositionPerformanceTests.Run(Assert); Console.WriteLine($"PASS {_checks} depth composition performance checks."); return 0; }
+            if (args.Contains("--grid-lock-evidence")) { GridLockRenderingTests.Run(Assert); GridLockRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--grid-lock-evidence") + 1]); Console.WriteLine($"PASS {_checks} grid lock rendering checks and evidence."); return 0; }
+            if (args.Contains("--grid-lock-only")) { GridLockRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} grid lock rendering checks."); return 0; }
+            if (args.Contains("--depth-occlusion-only")) { DepthOcclusionRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} depth occlusion rendering checks."); return 0; }
+            if (args.Contains("--depth-occlusion-evidence")) { DepthOcclusionRenderingTests.Run(Assert); DepthOcclusionRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--depth-occlusion-evidence") + 1]); Console.WriteLine($"PASS {_checks} depth occlusion rendering checks and evidence."); return 0; }
+            if (args.Contains("--billboard-evidence"))
+            {
+                BillboardRenderingTests.Run(Assert);
+                BillboardRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--billboard-evidence") + 1]);
+                Console.WriteLine($"PASS {_checks} billboard render checks and evidence export."); return 0;
+            }
+            if (args.Contains("--billboard-only")) { BillboardRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} billboard rendering checks."); return 0; }
             if (args.Contains("--canvas-projection-performance-only")) { CanvasProjectionPerformanceTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-projection-only")) { CanvasProjectionRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} canvas projection rendering checks."); return 0; }
             if (args.Contains("--animated-overlay-cache-only")) { AnimatedOverlayCacheTests.Run(Assert); OverlaySceneCacheTests.Run(Assert); ClearedLiveOpacityTests.Run(Assert); Console.WriteLine($"PASS {_checks} animated overlay cache checks."); return 0; }
@@ -37,6 +55,10 @@ internal static class Program
             ClearedLiveOpacityTests.Run(Assert);
             CaptureSelectionRenderingTests.Run(Assert);
             CanvasProjectionRenderingTests.Run(Assert);
+            GridLockRenderingTests.Run(Assert);
+            BillboardRenderingTests.Run(Assert);
+            DepthOcclusionRenderingTests.Run(Assert);
+            DepthCompositionPerformanceTests.Run(Assert);
             Console.WriteLine($"PASS {_checks} real render/import/export checks.");
             return 0;
         }

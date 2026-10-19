@@ -1,0 +1,16 @@
+{
+  "Billboard.Toggle": { "zh": "立牌模式（实验性）", "en": "Billboard mode (experimental)" },
+  "Billboard.ToggleHint": { "zh": "立牌模式（实验性）\n朝向屏幕，按远近缩放。开启后，先选深度再创建图层。", "en": "Billboard mode (experimental)\nFace the screen and scale with depth. Pick a depth before creating new layers." },
+  "Billboard.RequiresPerspective": { "zh": "启用画布透视后，可开启立牌模式（实验性）。", "en": "Enable canvas perspective to use billboard mode (experimental)." },
+  "Billboard.Placement": { "zh": "放置方式", "en": "Placement" },
+  "Billboard.Surface": { "zh": "贴面", "en": "Surface" },
+  "Billboard.Name": { "zh": "立牌", "en": "Billboard" },
+  "Billboard.Height": { "zh": "离地高度", "en": "Elevation" },
+  "Billboard.AnchorHint": { "zh": "X / Y 表示画布平面上的地面锚点；离地高度使用逻辑长度。", "en": "X / Y locate the ground anchor on the canvas plane; elevation uses logical units." },
+  "Billboard.ConversionFailed": { "zh": "当前位置无法转换放置方式，请调整图层位置或画布透视。", "en": "Placement cannot be converted here. Adjust the layer position or canvas perspective." },
+  "Billboard.InvalidDepth": { "zh": "当前角度无法确定立牌落点。", "en": "Cannot determine a billboard anchor at this angle." },
+  "Billboard.ChooseDepth": { "zh": "点击选择深度，然后绘制", "en": "Click to choose a depth, then draw" },
+  "Billboard.DrawAfterDepth": { "zh": "深度已固定，请绘制", "en": "Depth fixed. Draw the object." },
+  "Billboard.PerspectiveOn": { "zh": "画布透视已开启", "en": "Canvas perspective enabled" },
+  "Billboard.PerspectiveOff": { "zh": "画布透视已关闭", "en": "Canvas perspective disabled" }
+}

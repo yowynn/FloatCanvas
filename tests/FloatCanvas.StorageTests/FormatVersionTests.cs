@@ -32,7 +32,7 @@ internal static class FormatVersionTests
         using (var zip = ZipFile.OpenRead(path))
         {
             check(await VersionAsync(zip, "manifest.json") == SceneDocument.CurrentVersion && await VersionAsync(zip, "scene.json") == SceneDocument.CurrentVersion,
-                "every new project save explicitly writes v3 envelope and v3 scene");
+                "every new project save explicitly writes the current envelope and scene version");
         }
         await ConvertToV1Async(path, "scene.json", n => RemoveNewFields(n));
         check(LegacyV1ReaderAccepts(path), "legacy fixture satisfies the real v1 manifest and scene version gates");
@@ -52,7 +52,7 @@ internal static class FormatVersionTests
         await store.SaveAsync(path, session.Document, session.Assets);
         var reloaded = await store.LoadAsync(path);
         check(!LegacyV1ReaderAccepts(path) && JsonSerializer.Serialize(reloaded.Document) == JsonSerializer.Serialize(session.Document),
-            "v1-open-edit-save writes v3 and roundtrips new groups, dashes, independent heads and radius without loss");
+            "v1-open-edit-save writes the current version and roundtrips new groups, dashes, independent heads and radius without loss");
 
         byte[] complete = await File.ReadAllBytesAsync(path);
         var future = session.Document.Clone(); future.Version = 99;
@@ -80,7 +80,7 @@ internal static class FormatVersionTests
         var workspace = await JsonAsync(savedRecovery, "workspace.json");
         check(await VersionAsync(savedRecovery, "manifest.json") == SceneDocument.CurrentVersion && workspace["LiveDocument"]!["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion &&
             workspace["CaptureDocument"]!["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion,
-            "saving migrated recovery writes v3 for the envelope and both documents");
+            "saving migrated recovery writes the current version for the envelope and both documents");
     }
 
     // These are the exact two version gates in the published v1 PackageCodec/SceneValidation.
