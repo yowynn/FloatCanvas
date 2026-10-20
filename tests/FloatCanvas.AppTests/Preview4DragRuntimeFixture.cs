@@ -26,17 +26,18 @@ internal static class Preview4DragRuntimeFixture
         try
         {
             window.Show();Pump();var list=Field<ListBox>(window,"layers");
-            Thumb? active=null;Point start=new();
+            Thumb? active=null;Point start=new(),screenStart=new();
             void Begin()
             {
                 var item=list.Items.Cast<ListBoxItem>().Single(row=>(Guid)row.Tag==a.Id);
                 active=((Grid)item.Content).Children.OfType<Thumb>().Single();
                 start=active.TranslatePoint(new(12,18),list);
+                screenStart=list.PointToScreen(start);
                 active.RaiseEvent(new DragStartedEventArgs(12,18) {RoutedEvent=Thumb.DragStartedEvent});
             }
             void Move(Point point){Invoke("UpdateDropTarget",point);Pump();}
             void Complete(Point point,bool cancelled=false)
-            {active!.RaiseEvent(new DragCompletedEventArgs(point.X-start.X,point.Y-start.Y,cancelled) {RoutedEvent=Thumb.DragCompletedEvent});Pump();}
+            {var delta=list.PointToScreen(point)-screenStart;active!.RaiseEvent(new DragCompletedEventArgs(delta.X,delta.Y,cancelled) {RoutedEvent=Thumb.DragCompletedEvent});Pump();}
             Point Front()=>list.Items.Cast<ListBoxItem>().First().TranslatePoint(new(40,6),list);
             Begin();Move(Front());
             var feedback=Field<TileDragFeedback>(window,"dragFeedback");

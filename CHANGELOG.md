@@ -2,6 +2,9 @@
 
 ## 未发布 / Unreleased
 
+- 修复高 DPI 下图层拖动排序松手后偏离占位符的问题，统一屏幕像素与列表逻辑坐标转换，单层与多选排序均保持预览落点。
+- Fix layer drops shifting away from the insertion marker at high DPI by converting Thumb's screen-pixel completion endpoint back to list coordinates for both single-layer and multi-layer reordering.
+
 ## [0.2.0] - 2026-10-19
 
 0.2.0 正式发布，整合本轮预览版反馈，完善绘图、工程与历史画布流程。立牌和深度优先遮挡保留实验性标记并默认关闭。新工程格式为 v6，可读取 v1～v5；旧版应用不能读取新保存的 v6 工程。

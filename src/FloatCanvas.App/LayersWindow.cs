@@ -29,7 +29,7 @@ internal sealed class LayersWindow : Wpf.Window
     private bool dropBefore, refreshing;
     private long dragRevision;
     private Guid? dragSource;
-    private Wpf.Point dragStart;
+    private Wpf.Point dragStart, dragStartScreen;
     private HashSet<Wpf.FrameworkElement>? dragRows;
     private TileDragFeedback? dragFeedback;
     private EditorSession? renameSession;
@@ -163,12 +163,17 @@ internal sealed class LayersWindow : Wpf.Window
         handle.DragStarted += (_, e) =>
         {
             if (!BeginDrag(id)) handle.CancelDrag();
-            else dragStart=handle.TranslatePoint(new Wpf.Point(e.HorizontalOffset,e.VerticalOffset),layers);
+            else
+            {
+                dragStart=handle.TranslatePoint(new Wpf.Point(e.HorizontalOffset,e.VerticalOffset),layers);
+                dragStartScreen=layers.PointToScreen(dragStart);
+            }
         };
         handle.DragDelta += (_, _) => UpdateDropTarget(Input.Mouse.GetPosition(layers));
         handle.DragCompleted += (_, e) =>
         {
-            if(!e.Canceled)UpdateDropTarget(dragStart+new Wpf.Vector(e.HorizontalChange,e.VerticalChange));
+            // Thumb completion reports screen pixels; convert the screen endpoint back to list DIPs.
+            if(!e.Canceled)UpdateDropTarget(layers.PointFromScreen(dragStartScreen+new Wpf.Vector(e.HorizontalChange,e.VerticalChange)));
             FinishDrag(!e.Canceled);
         };
         rows.Add(id, new(item, label, editor, visible, locked, handle)); layers.Items.Add(item);

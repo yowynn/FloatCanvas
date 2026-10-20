@@ -35,6 +35,7 @@ internal static class Program
             if (args.Contains("--preview4-properties-only")) { Preview4PropertiesTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-shift-only")) { Preview4ShiftTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-drag-only")) { Preview4DragTests.Run(Assert); return 0; }
+            if (args.Contains("--layer-drag-dpi-only")) { LayerDragDpiTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-drag-runtime-only")) { Preview4DragRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--preview4-shift-runtime-only")) { InlineTextRuntimeFixture.Run(Assert,shifts:true); return 0; }
             if (args.Contains("--preview4-properties-runtime-only")) { InlineTextRuntimeFixture.Run(Assert,properties:true); return 0; }
