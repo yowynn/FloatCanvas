@@ -10,6 +10,10 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--dotted-grid-only")) { DottedGridRenderingTests.Run(Assert); return 0; }
+            if (args.Contains("--flat-grid-reset-only")) { FlatGridResetRenderingTests.Run(Assert); return 0; }
+            if (args.Contains("--grid-tool-evidence")) { string output = args[Array.IndexOf(args, "--grid-tool-evidence") + 1]; DottedGridRenderingTests.WriteEvidence(output); FlatGridResetRenderingTests.WriteEvidence(output); return 0; }
+            if (args.Contains("--projection-hover-only")) { ProjectionUnsafeRegionRenderingTests.Run(Assert); RetainedBillboardAnimationTests.Run(Assert); return 0; }
             if (args.Contains("--horizon-safety-evidence")) { HorizonSafetyRenderingTests.Run(Assert); HorizonSafetyRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--horizon-safety-evidence") + 1]); return 0; }
             if (args.Contains("--horizon-safety-only")) { HorizonSafetyRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} horizon safety rendering checks."); return 0; }
             if (args.Contains("--depth-performance-diagnostics"))
@@ -58,6 +62,10 @@ internal static class Program
             CaptureSelectionRenderingTests.Run(Assert);
             CanvasProjectionRenderingTests.Run(Assert);
             HorizonSafetyRenderingTests.Run(Assert);
+            ProjectionUnsafeRegionRenderingTests.Run(Assert);
+            DottedGridRenderingTests.Run(Assert);
+            FlatGridResetRenderingTests.Run(Assert);
+            RetainedBillboardAnimationTests.Run(Assert);
             GridLockRenderingTests.Run(Assert);
             BillboardRenderingTests.Run(Assert);
             DepthOcclusionRenderingTests.Run(Assert);

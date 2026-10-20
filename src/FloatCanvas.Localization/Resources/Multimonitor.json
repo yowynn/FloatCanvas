@@ -8,16 +8,16 @@
     "en": "Settings saved."
   },
   "Canvas.ResetOnDisplay": {
-    "zh": "重置透视画布",
-    "en": "Reset perspective canvas"
+    "zh": "以主屏中心重置透视",
+    "en": "Reset at primary-screen center"
   },
   "Canvas.ReferenceDisplayHint": {
-    "zh": "选择屏幕并重置透视画布。",
-    "en": "Choose a display to reset the perspective canvas."
+    "zh": "以当前格长和横纵数量，在主屏中心重置透视；网格与非透视模式重合。",
+    "en": "Reset perspective at the primary-screen center using the current cell size and counts, matching the flat grid."
   },
   "Canvas.MultiMonitorHelp": {
-    "zh": "拖动中央把手移动画布；下拉菜单可选择重置屏幕。",
-    "en": "Drag the center handle to move the canvas. Use the reset menu to choose a display."
+    "zh": "拖动中央把手可将透视框整体移动到其他屏幕；重置统一回到主屏中心，使网格与非透视模式重合。",
+    "en": "Drag the central handle to move the perspective frame to another display. Reset returns it to the primary-screen center so the grid matches flat mode."
   },
   "Canvas.DragBoundary": {
     "zh": "已到达透视边界；拖动中央把手可整体移动。",

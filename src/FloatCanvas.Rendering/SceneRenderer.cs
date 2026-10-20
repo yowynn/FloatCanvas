@@ -398,10 +398,16 @@ public sealed partial class SceneRenderer : IDisposable
         return (first, last);
     }
 
-    private AnimatedImage? VisibleAnimation(CanvasElement element, SceneDocument document, AssetLibrary assets) =>
-        element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
-        ProjectedBounds(document, element).Intersects(document.Viewport) && element.AssetId is { } id &&
-        AnimatedImage.MayAnimate(assets.Get(id).Data.Span) ? GetImageEntry(id, assets).Playback : null;
+    private AnimatedImage? VisibleAnimation(CanvasElement element, SceneDocument document, AssetLibrary assets)
+    {
+        if (element.Kind != ElementKind.Image || !element.Visible || !(element.Style.Opacity > 0) || element.AssetId is not { } id) return null;
+        var mapping = CanvasMapping.Create(document);
+        // Retained unsafe billboards are hidden. Their empty projected bounds can still
+        // intersect an origin-containing viewport, so apply the drawing guard first.
+        if (element.IsBillboard && !mapping.IsElementSafe(element)) return null;
+        return mapping.ProjectedBounds(element, includeStroke: false).Intersects(document.Viewport) &&
+            AnimatedImage.MayAnimate(assets.Get(id).Data.Span) ? GetImageEntry(id, assets).Playback : null;
+    }
 
     private SKImage GetEffectImage(SKCanvas destination, CanvasElement element, SKImage original, int sourceFrame)
     {

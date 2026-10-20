@@ -33,7 +33,10 @@ internal static class LauncherMenuTests
             check(label + " tools match the active toolbar families without retired solid cover",
                 tools.SequenceEqual(new[] { EditorTool.Select, EditorTool.Eraser, EditorTool.Freehand, EditorTool.Highlighter,
                     EditorTool.Line, EditorTool.Rectangle, EditorTool.Ellipse, EditorTool.Text, EditorTool.Number,
-                    EditorTool.Symbol, EditorTool.Emoji, EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate, EditorTool.CaptureRegion }));
+                    EditorTool.Symbol, EditorTool.Emoji, EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate, EditorTool.CaptureRegion, EditorTool.Canvas }));
+            var canvasTool = entries.Single(item => Equals(item.Tag, EditorTool.Canvas));
+            check(label + " Canvas is one ordinary tool command with its reserved C shortcut", Equals(canvasTool.Header, L.Get("Canvas.Title")) &&
+                canvasTool.InputGestureText == "C" && ToolShortcutCatalog.TryGetTool(0x43, out var canvas) && canvas == EditorTool.Canvas);
             check(label + " legacy screenshot draft commands are absent", !entries.Any(item =>
                 Equals(item.Header, "返回实时画布") || Equals(item.Header, "Return to live canvas") ||
                 Equals(item.Header, "继续上一张截图") || Equals(item.Header, "Resume capture draft")));

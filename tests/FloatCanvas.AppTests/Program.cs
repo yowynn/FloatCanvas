@@ -16,6 +16,9 @@ internal static class Program
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--projection-hover-runtime-preview")) { ProjectionHoverRuntimeFixture.Run(Assert); return 0; }
+            if (args.Contains("--projection-hover-only")) { ProjectionUnsafeHoverTests.Run(Assert); RetainedBillboardInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-tool-only")) { CanvasToolInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-safety-dialog-runtime-only")) { CanvasSafetyDialogRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-safety-dialog-preview")) { CanvasSafetyDialogRuntimeTests.RunPreview(Assert); return 0; }
             if (args.Contains("--canvas-safety-resolution-only")) { CanvasSafetyResolutionTests.Run(Assert); return 0; }
@@ -160,6 +163,9 @@ internal static class Program
             BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert);
             PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert);
             PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert);
+            ProjectionUnsafeHoverTests.Run(Assert);
+            CanvasToolInteractionTests.Run(Assert);
+            RetainedBillboardInteractionTests.Run(Assert);
             GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert);
             GpuSettingsTests.Run(Assert);
             ApplicationDiagnosticsTests.Run(Assert);

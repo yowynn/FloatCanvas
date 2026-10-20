@@ -92,8 +92,10 @@ internal sealed partial class DesktopSession
         toolColumn = 14;
         void Action(string tag, string label, string geometry, Action action, string shortcut = "")
         { var button = ToolbarIcon(label, geometry, action, shortcut); button.Tag = tag; Cell(button, toolColumn++); }
-        Action("canvas", L.Get("Canvas.Title"), "M2,3 L14,3 L16,14 L0,14 Z M5,3 L4,14 M11,3 L12,14 M1,8 L15,8", ToggleCanvasSettings);
+        Action("canvas", L.Get("Canvas.Title"), CommandGlyphs.Canvas, () => ActivateTool(EditorTool.Canvas), ToolShortcutCatalog.Hint(EditorTool.Canvas));
         _canvasStateButton = content.Children.OfType<Controls.Button>().Last();
+        _toolbarToolButtons[EditorTool.Canvas] = _canvasStateButton;
+        AddShortcutHint(_canvasStateButton, ToolShortcutCatalog.Hint(EditorTool.Canvas), EditorTool.Canvas);
         RefreshCanvasStateGlyph();
         _billboardButton=ToolbarIcon(L.Get("Billboard.Toggle"),CommandGlyphs.Placement(_editor.BillboardMode),ToggleBillboardMode);
         _billboardButton.Tag="billboard";Cell(_billboardButton,toolColumn++);
@@ -220,19 +222,30 @@ internal sealed partial class DesktopSession
     private void ActivateTool(EditorTool tool)
     {
         if (DocumentOperationBusy) return;
-        EndCanvasCalibration();
+        if (tool != _editor.Tool) EndCanvasCalibration();
         if (tool == EditorTool.Crop && !_editor.CanCropSelection) return;
         if (tool == EditorTool.CaptureRegion && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
         var family = ToolFamily(tool); var currentFamily = ToolFamily(_editor.Tool);
         bool same = currentFamily == family && (tool is not (EditorTool.Arrow or EditorTool.DoubleArrow or EditorTool.RoundedRectangle) || AliasMatches(tool));
-        bool wasOpen = IsToolOptionsOpen;
+        bool wasOpen = IsToolOptionsOpen || IsCanvasSettingsOpen;
         if (!same)
         {
             SwitchToolState(tool, applyAlias: true);
         }
+        SynchronizeCanvasTool();
         UpdateStatus(ToolName(_editor.Tool)); RefreshToolbarState();
-        if (!_host.IsEditing) { CloseToolOptions(); return; }
-        if (ShouldOpenToolOptions(same, wasOpen)) OpenToolOptions(); else CloseToolOptions();
+        if (!_host.IsEditing) { CloseToolOptions(); DismissCanvasSettings(); return; }
+        bool open = ShouldOpenToolOptions(same, wasOpen);
+        if (tool == EditorTool.Canvas)
+        {
+            CloseToolOptions();
+            if (open) OpenCanvasSettings(); else DismissCanvasSettings();
+        }
+        else
+        {
+            DismissCanvasSettings();
+            if (open) OpenToolOptions(); else CloseToolOptions();
+        }
     }
 
     internal static bool ShouldOpenToolOptions(bool sameTool, bool wasOpen) => sameTool != wasOpen;
@@ -257,10 +270,10 @@ internal sealed partial class DesktopSession
             "M1,3 L15,3 L15,14 L1,14 Z M5,3 L5,14 M11,3 L11,14 M1,8 L15,8"),
             Width = 15, Height = 15, Stretch = Stretch.Uniform, StrokeThickness = 1.5,
             StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round };
-        glyph.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, enabled?"CanvasHiddenText":"CanvasText");
-        _canvasStateButton.Content = new Controls.Viewbox { Width = 16, Height = 16, Child = glyph };
-        ActionIconButton.UpdateToggleAppearance(_canvasStateButton,enabled);
-        System.Windows.Automation.AutomationProperties.SetItemStatus(_canvasStateButton,L.Get(enabled?"Billboard.PerspectiveOn":"Billboard.PerspectiveOff"));
+        glyph.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "CanvasText");
+        var content = new Controls.Viewbox { Width = 16, Height = 16, Child = glyph };
+        if (_toolbarGlyphHosts.TryGetValue(EditorTool.Canvas, out var presenter)) presenter.Content = content;
+        else _canvasStateButton.Content = content;
     }
     private void RefreshToolbarState()
     {
@@ -290,12 +303,12 @@ internal sealed partial class DesktopSession
         string fingerprint = JsonSerializer.Serialize(parameters);
         if (_toolbarParameterFingerprint != fingerprint)
         {
-            _toolbarToolMemory[ToolFamily(parameters.Tool)] = parameters;
+            if (parameters.Tool != EditorTool.Canvas) _toolbarToolMemory[ToolFamily(parameters.Tool)] = parameters;
             _toolbarParameterFingerprint = fingerprint;
-            _toolOptionsPanel?.Refresh();
+            if (parameters.Tool != EditorTool.Canvas) _toolOptionsPanel?.Refresh();
             foreach(var(tool,presenter)in _toolbarGlyphHosts)
             {
-                if(tool is EditorTool.Select or EditorTool.Eraser)continue;
+                if(tool is EditorTool.Select or EditorTool.Eraser or EditorTool.Canvas)continue;
                 var own=_toolbarToolMemory.TryGetValue(ToolFamily(tool),out var saved)?saved:new ToolParameters {Tool=tool};
                 presenter.Content=ToolParameterIcon.Create(own);
             }
@@ -334,14 +347,14 @@ internal sealed partial class DesktopSession
         EditorTool.Triangle => EditorTool.Symbol, var family => family };
     private static string ToolName(EditorTool tool) => L.Get(tool switch { EditorTool.Select => "ToolbarV2.Select", EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow => "ToolbarV2.Lines",
         EditorTool.Rectangle or EditorTool.RoundedRectangle => "ToolbarV2.Rectangles", EditorTool.Ellipse => "ToolbarV2.Ellipses", EditorTool.Symbol => "Tool.Symbol",
-        EditorTool.Emoji => "Tool.Emoji", EditorTool.Stamp => "Tool.Stamp", EditorTool.Image => "Toolbar.Image", EditorTool.Crop => "Tool.Crop", EditorTool.CaptureRegion => "Tool.CaptureRegion", _ => "Preset." + tool });
+        EditorTool.Emoji => "Tool.Emoji", EditorTool.Stamp => "Tool.Stamp", EditorTool.Image => "Toolbar.Image", EditorTool.Crop => "Tool.Crop", EditorTool.CaptureRegion => "Tool.CaptureRegion", EditorTool.Canvas => "Canvas.Title", _ => "Preset." + tool });
     private Controls.Button ToolbarIcon(string label, string geometry, Action action, string shortcut = "")
     {
         var button = ToolButton(label, geometry, action);
         button.MinWidth = button.Width = 26; button.MinHeight = button.Height = 26;
         button.FocusVisualStyle=null;Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(button,false);
         button.Margin = new Thickness(2, 0, 2, 0); button.BorderThickness = new Thickness(1); button.BorderBrush=Brushes.Transparent;button.Padding = new Thickness(3);
-        var glyph = new System.Windows.Shapes.Path { Data = Geometry.Parse(geometry), StrokeThickness = 1.5,
+        var glyph = new System.Windows.Shapes.Path { Data = Geometry.Parse(geometry), StrokeThickness = CommandGlyphs.StrokeThickness(geometry),
             StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
             RenderTransform = new TranslateTransform(1.5, 1.5) };
         glyph.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "CanvasText");

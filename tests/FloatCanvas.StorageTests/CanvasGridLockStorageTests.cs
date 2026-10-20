@@ -27,8 +27,8 @@ internal static class CanvasGridLockStorageTests
         using (var archive = ZipFile.OpenRead(path))
         {
             var manifest = await ReadAsync(archive, "manifest.json"); var payload = await ReadAsync(archive, "scene.json");
-            check(manifest["Version"]!.GetValue<int>() == 6 && payload["Version"]!.GetValue<int>() == 6,
-                "v6 package version prevents published v5 readers from silently losing locked grid semantics");
+            check(manifest["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion && payload["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion,
+                "current package version prevents older readers from silently losing grid semantics");
             check(payload["Canvas"]!["Projection"]!.AsObject().ContainsKey("LockedGridCellSize") &&
                 !payload["Canvas"]!["Projection"]!.AsObject().ContainsKey("GridColumns"), "package persists the lock rather than rounded display counts");
         }
@@ -72,14 +72,14 @@ internal static class CanvasGridLockStorageTests
             bool rejected = false; try { await store.LoadAsync(edited); } catch (InvalidDataException) { rejected = true; }
             check(rejected != accepted, name);
         }
-        await Mutate("v6 requires explicit lock state", n => n["Canvas"]!["Projection"]!.AsObject().Remove("LockedGridCellSize"));
+        await Mutate("current format requires explicit lock state", n => n["Canvas"]!["Projection"]!.AsObject().Remove("LockedGridCellSize"));
         await Mutate("null lock retains unlocked behavior", n => n["Canvas"]!["Projection"]!["LockedGridCellSize"] = null, true);
         await Mutate("zero locked spacing rejected", n => n["Canvas"]!["Projection"]!["LockedGridCellSize"] = 0);
         await Mutate("negative locked spacing rejected", n => n["Canvas"]!["Projection"]!["LockedGridCellSize"] = -10);
         await Mutate("undersized locked spacing rejected", n => n["Canvas"]!["Projection"]!["LockedGridCellSize"] = .001);
         await Mutate("oversized locked spacing rejected", n => n["Canvas"]!["Projection"]!["LockedGridCellSize"] = 1_000_001);
         await Mutate("nonnumeric locked spacing rejected", n => n["Canvas"]!["Projection"]!["LockedGridCellSize"] = "NaN");
-        await Mutate("old payload cannot hide in v6 envelope", n => n["Version"] = 5);
+        await Mutate("old payload cannot hide in current envelope", n => n["Version"] = 5);
         byte[] goodPackage = await File.ReadAllBytesAsync(path);
         foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
         {

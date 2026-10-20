@@ -61,7 +61,9 @@ internal static class CanvasProjectionRenderingTests
         scene.Elements = []; scene.LayerOpacity = 1;
         using (var grid = Pixels(renderer, scene, assets))
         using (var plane = SKBitmap.Decode(renderer.ExportPng(scene, assets, true, SceneRenderSpace.PlaneContent)))
-            check("grid projects throughout the viewport but does not become part of object baking", grid.GetPixel(58, 16).Green > 0 && plane.GetPixel(58, 16).Alpha == 0);
+            check("grid projects beyond the reference rectangle but does not become part of object baking",
+                Enumerable.Range(205, 30).Any(x => Enumerable.Range(5, 145).Any(y => grid.GetPixel(x, y).Green > 100 && grid.GetPixel(x, y).Alpha > 40)) &&
+                plane.Bytes.All(value => value == 0));
 
         scene.Canvas.Grid.Visible = false;
         var filter = new CanvasElement { Kind = ElementKind.LivePixelate, Width = 60, Height = 60,
@@ -104,16 +106,22 @@ internal static class CanvasProjectionRenderingTests
             using var pixels = Pixels(renderer, scene, assets);
             if (count > 12) continue; // Dense cases still exercise bounded rendering and recalibration.
             int missing = 0;
-            CanvasCalibration.TryGridToScreen(count, rows, quad, out var grid);
-            for (int n = 1; n < count; n++)
+            var mapping = CanvasMapping.Create(scene);
+            // The reference rectangle defines calibration scale, while the displayed grid
+            // is anchored at its screen center handle. Sample that grid's actual lattice.
+            int firstColumn = (int)Math.Ceiling((calibrated.Origin.X - mapping.GridOrigin.X) / mapping.GridCellSize + 1e-7);
+            int lastColumn = (int)Math.Floor((calibrated.Origin.X + count * calibrated.CellSize - mapping.GridOrigin.X) / mapping.GridCellSize - 1e-7);
+            for (int n = firstColumn; n <= lastColumn; n++)
             {
-                var point = grid.TransformPoint(new(n, rows * .37));
+                var point = mapping.ToScreen(new(mapping.GridOrigin.X + n * mapping.GridCellSize, calibrated.Origin.Y + rows * calibrated.CellSize * .37));
                 int x = (int)point.X, y = (int)point.Y;
                 if (!Enumerable.Range(-2, 5).Any(dx => Enumerable.Range(-2, 5).Any(dy => pixels.GetPixel(x + dx, y + dy).Alpha > 30))) missing++;
             }
-            for (int n = 1; n < rows; n++)
+            int firstRow = (int)Math.Ceiling((calibrated.Origin.Y - mapping.GridOrigin.Y) / mapping.GridCellSize + 1e-7);
+            int lastRow = (int)Math.Floor((calibrated.Origin.Y + rows * calibrated.CellSize - mapping.GridOrigin.Y) / mapping.GridCellSize - 1e-7);
+            for (int n = firstRow; n <= lastRow; n++)
             {
-                var point = grid.TransformPoint(new(count * .37, n));
+                var point = mapping.ToScreen(new(calibrated.Origin.X + count * calibrated.CellSize * .37, mapping.GridOrigin.Y + n * mapping.GridCellSize));
                 int x = (int)point.X, y = (int)point.Y;
                 if (!Enumerable.Range(-2, 5).Any(dx => Enumerable.Range(-2, 5).Any(dy => pixels.GetPixel(x + dx, y + dy).Alpha > 30))) missing++;
             }

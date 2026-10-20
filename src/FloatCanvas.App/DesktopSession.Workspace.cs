@@ -25,6 +25,7 @@ internal sealed partial class DesktopSession
         _editor.Cancel();
         CloseImageDrop();
         _host.SetVisible(!_host.IsVisible);
+        SynchronizeCanvasTool();
         RefreshPassThroughLauncher();
         UpdateStatus(L.Get(_host.IsVisible ? "Feedback4.Canvas.Visible" : "Feedback4.Canvas.Hidden"));
         RequestRender();

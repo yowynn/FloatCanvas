@@ -14,7 +14,7 @@ internal static class ToolParameterIconTests
         check("new and older profiles display shortcut legends by default",new UserSettings().ShowToolShortcutHints&&JsonSerializer.Deserialize<UserSettings>("{}")!.ShowToolShortcutHints);
         var settings=new UserSettings {ShowToolShortcutHints=false};
         check("shortcut legend visibility is a persistent preference",!JsonSerializer.Deserialize<UserSettings>(JsonSerializer.Serialize(settings))!.ShowToolShortcutHints);
-        check("twelve reserved single-letter legends are unique",ToolShortcutCatalog.All.Count==12&&ToolShortcutCatalog.All.Select(item=>item.VirtualKey).Distinct().Count()==12&&ToolShortcutCatalog.All.All(item=>item.Hint.Length==1));
+        check("thirteen reserved single-letter legends are unique",ToolShortcutCatalog.All.Count==13&&ToolShortcutCatalog.All.Select(item=>item.VirtualKey).Distinct().Count()==13&&ToolShortcutCatalog.All.All(item=>item.Hint.Length==1));
         foreach(var binding in ToolShortcutCatalog.All)
             check("catalog routes "+binding.Hint+" consistently",binding.Tool is { } tool?ToolShortcutCatalog.TryGetTool(binding.VirtualKey,out var actual)&&actual==tool:ToolShortcutCatalog.IsReserved(binding.VirtualKey)&&!ToolShortcutCatalog.TryGetTool(binding.VirtualKey,out _));
         var parameters=new ToolParameters {Tool=EditorTool.Rectangle,Style=new ElementStyle {Stroke=0x801234D0,Fill=0x4024BC68,Opacity=.5,StrokeWidth=4}};

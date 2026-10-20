@@ -1,13 +1,18 @@
 using System.Text.Json;
+using System.IO;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
+using FloatCanvas.Storage;
 using FloatCanvas.Windows;
+using SkiaSharp;
 
 internal static class CanvasSafetyResolutionTests
 {
     internal static void Run(Action<string, bool> check)
     {
         CornerCancelAndRelocate(check);
+        KeepLayers(check);
         EdgeDelete(check);
         FourthPoint(check);
         FailedRelocation(check);
@@ -71,6 +76,99 @@ internal static class CanvasSafetyResolutionTests
         controller.End();
     }
 
+    private static void KeepLayers(Action<string, bool> check)
+    {
+        var (session, target, groupIds) = CornerFixture();
+        var initial = session.Document.Canvas.Projection;
+        if (!CanvasCalibration.TryCalibrate(initial, initial.Quad, session.Document.Viewport, out var normalized, out _))
+            throw new InvalidOperationException("Keep fixture must begin with a production-calibrated reference.");
+        session.Document.Canvas.Projection = normalized;
+        session.Document.Canvas.Grid.FlatCellSize = normalized.GridCellSize;
+        var originalProjection = session.Document.Canvas.Projection.Clone();
+        var future = session.Document.Clone(); var quad = originalProjection.Quad.ToArray(); quad[0] = target;
+        if (!CanvasCalibration.TryCalibrate(originalProjection, quad, future.Viewport, out var changed, out _))
+            throw new InvalidOperationException("Keep fixture must have a valid target projection.");
+        future.Canvas.Projection = changed;
+        var futureMapping = CanvasMapping.Create(future); var originalMapping = CanvasMapping.Create(session.Document);
+        PointD? unsafeAnchor = null;
+        for (int y = -2000; y <= 2000 && unsafeAnchor is null; y += 40)
+            for (int x = -2000; x <= 2000 && unsafeAnchor is null; x += 40)
+            {
+                var point = new PointD(x, y);
+                if (originalMapping.TryGetDepthScale(point, out _) && !futureMapping.TryGetDepthScale(point, out _)) unsafeAnchor = point;
+            }
+        if (unsafeAnchor is null) throw new InvalidOperationException("Keep fixture needs an anchor safe before and unsafe after calibration.");
+        var billboard = new CanvasElement { Kind = ElementKind.Rectangle, Width = 90, Height = 140, IsBillboard = true,
+            BillboardAnchor = unsafeAnchor.Value, BillboardHeight = -20, Transform = Affine2D.Rotation(15),
+            Visible = false, Locked = true, GroupId = session.Document.Elements.Single(e => e.Id == groupIds[0]).GroupId,
+            Style = new() { StrokeWidth = 4, Fill = 0xFF339955 } };
+        session.Document.Elements.Add(billboard); session.SetSelection([.. groupIds, billboard.Id]);
+        var probeViewport = originalMapping.ProjectedBounds(billboard).Inflate(12);
+        using var renderer = new SceneRenderer();
+        byte[] originalRender = RenderBillboardProbe(renderer, session.Document, session.Assets, billboard.Id, probeViewport);
+        string before = JsonSerializer.Serialize(session.Document);
+        string elementsBefore = JsonSerializer.Serialize(session.Document.Elements), groupsBefore = JsonSerializer.Serialize(session.Document.Groups);
+        var selection = session.Selection.ToHashSet();
+        var controller = new CanvasCalibrationController(); controller.Begin(session);
+        controller.Down(originalProjection.Quad[0]); controller.Move(target, OverlayModifiers.Control); controller.Up();
+        string pending = JsonSerializer.Serialize(session.Document);
+        check("keep decision remains isolated from the committed recovery snapshot", controller.IsAwaitingResolution &&
+            controller.AffectedLayerIds.Contains(billboard.Id) && JsonSerializer.Serialize(session.CreateCommittedSnapshot()) == before && session.UndoCount == 0);
+        check("keep commits only the new perspective and preserves every layer and group exactly", controller.Resolve(CanvasSafetyAction.Keep) &&
+            !controller.IsAwaitingResolution && !session.IsTransactionActive && session.UndoCount == 1 &&
+            JsonSerializer.Serialize(session.Document) == pending && JsonSerializer.Serialize(session.Document.Elements) == elementsBefore &&
+            JsonSerializer.Serialize(session.Document.Groups) == groupsBefore && session.Selection.SetEquals(selection) &&
+            !CanvasMapping.Create(session.Document).TryGetDepthScale(billboard.BillboardAnchor, out _));
+
+        string root = Path.Combine(Path.GetTempPath(), "FloatCanvasSafetyKeepTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var store = new ProjectStore(); string path = Path.Combine(root, "kept-layers.floatcanvas");
+        store.SaveAsync(path, session.CreateCommittedSnapshot(), session.Assets).GetAwaiter().GetResult();
+        var loaded = store.LoadAsync(path).GetAwaiter().GetResult();
+        check("keep project saves and reopens unsafe hidden locked billboards and all original layers", JsonSerializer.Serialize(loaded.Document) == pending);
+        byte[] keptRender = RenderBillboardProbe(renderer, loaded.Document, loaded.Assets, billboard.Id, probeViewport);
+        using (var beforePixels = SKBitmap.Decode(originalRender))
+        using (var keptPixels = SKBitmap.Decode(keptRender))
+            check("a visibility-only render probe hides the kept unsafe billboard while preserving its source geometry",
+                beforePixels.Pixels.Any(pixel => pixel.Alpha > 0) && keptPixels.Pixels.All(pixel => pixel.Alpha == 0));
+        var recovery = new RecoveryStore(Path.Combine(root, "recovery"));
+        recovery.SaveAsync(new() { LiveDocument = session.CreateCommittedSnapshot() }, session.Assets).GetAwaiter().GetResult();
+        check("keep recovery stores the accepted new perspective and original layer contents", JsonSerializer.Serialize(
+            recovery.LoadAsync().GetAwaiter().GetResult()!.State.LiveDocument) == pending);
+        check("keep and the perspective change undo as one complete operation", session.Undo() && JsonSerializer.Serialize(session.Document) == before &&
+            session.Selection.SetEquals(selection) && session.Redo() && JsonSerializer.Serialize(session.Document) == pending);
+
+        var reopened = new EditorSession(loaded.Document, loaded.Assets);
+        var restore = new CanvasCalibrationController(); restore.Begin(reopened);
+        restore.Down(reopened.Document.Canvas.Projection.Quad[0]);
+        restore.Move(originalProjection.Quad[0], OverlayModifiers.Control); restore.Up();
+        if (restore.IsAwaitingResolution) restore.Resolve(CanvasSafetyAction.Keep);
+        check("moving the saved perspective back restores the original appearance coordinates without changing layers",
+            JsonSerializer.Serialize(reopened.Document) == before && CanvasMapping.Create(reopened.Document).TryGetDepthScale(billboard.BillboardAnchor, out _) &&
+            JsonSerializer.Serialize(reopened.Document.Elements) == elementsBefore && JsonSerializer.Serialize(reopened.Document.Groups) == groupsBefore);
+        byte[] restoredRender = RenderBillboardProbe(renderer, reopened.Document, reopened.Assets, billboard.Id, probeViewport);
+        using (var beforePixels = SKBitmap.Decode(originalRender))
+        using (var restoredPixels = SKBitmap.Decode(restoredRender))
+            check("restoring the saved perspective restores every pixel of the retained billboard render probe", beforePixels.Bytes.SequenceEqual(restoredPixels.Bytes));
+        File.WriteAllBytes(Path.Combine(root, "billboard-before.png"), originalRender);
+        File.WriteAllBytes(Path.Combine(root, "billboard-kept-unsafe.png"), keptRender);
+        File.WriteAllBytes(Path.Combine(root, "billboard-restored.png"), restoredRender);
+        Console.WriteLine("KEEP_RENDER_EVIDENCE " + root);
+        restore.End(); controller.End();
+    }
+
+    private static byte[] RenderBillboardProbe(SceneRenderer renderer, SceneDocument source, AssetLibrary assets, Guid billboardId, RectD viewport)
+    {
+        var probe = source.Clone();
+        var billboard = probe.Elements.Single(element => element.Id == billboardId);
+        // The real hidden/locked flags remain untouched. This isolated visibility probe
+        // demonstrates rendering restoration even for a layer intentionally kept hidden.
+        billboard.Visible = true; billboard.GroupId = null;
+        probe.Elements = [billboard]; probe.Groups = []; probe.Background = null;
+        probe.Viewport = viewport; probe.LayerOpacity = 1; probe.Canvas.BackgroundColor = 0; probe.Canvas.Grid.Visible = false;
+        return renderer.ExportPng(probe, assets, transparent: true);
+    }
+
     private static void EdgeDelete(Action<string, bool> check)
     {
         var document = Scene();
@@ -115,6 +213,10 @@ internal static class CanvasSafetyResolutionTests
         check("fourth point can be retried and resolved by deleting the offender", controller.Down(quad[3]) && controller.IsAwaitingResolution &&
             controller.Resolve(CanvasSafetyAction.Delete) && !controller.IsPlacing && session.Document.Elements.Count == 0 && session.UndoCount == 1);
         check("placement safety resolution is one reversible operation", session.Undo() && JsonSerializer.Serialize(session.Document) == before);
+        controller.BeginPlacement(session);
+        check("fourth point also permits explicitly keeping its unchanged unsafe layer", quad.All(controller.Down) && controller.IsAwaitingResolution &&
+            controller.Resolve(CanvasSafetyAction.Keep) && !controller.IsPlacing && session.Document.Elements.Count == 1 && session.UndoCount == 1);
+        check("fourth-point keep has the same complete single-step undo", session.Undo() && JsonSerializer.Serialize(session.Document) == before);
         controller.End();
     }
 
@@ -134,6 +236,11 @@ internal static class CanvasSafetyResolutionTests
         check("failed relocation is atomic even after finding a destination for an earlier layer", JsonSerializer.Serialize(session.Document) == pending &&
             JsonSerializer.Serialize(session.CreateCommittedSnapshot()) == before);
         check("failed relocation can still be cancelled exactly", controller.Resolve(CanvasSafetyAction.Cancel) && JsonSerializer.Serialize(session.Document) == before);
+        controller.Down(center); controller.Move(center + new PointD(20, 20)); controller.Up();
+        string originalLayers = JsonSerializer.Serialize(session.Document.Elements);
+        check("keep remains available when no safe relocation can be found", !CanvasSafetyResolution.TryRelocate(session.Document.Clone(), controller.AffectedLayerIds) &&
+            controller.Resolve(CanvasSafetyAction.Keep) && session.UndoCount == 1 && JsonSerializer.Serialize(session.Document.Elements) == originalLayers);
+        check("keeping unrelocatable layers can still undo the complete adjustment", session.Undo() && JsonSerializer.Serialize(session.Document) == before);
         controller.End();
     }
 

@@ -15,6 +15,8 @@ if (args.Contains("--billboard-only"))
 if (args.Contains("--canvas-only"))
 {
     await CanvasProjectionStorageTests.RunAsync(Check);
+    await CanvasPreservedLayersStorageTests.RunAsync(Check);
+    await CanvasGridGeometryStorageTests.RunAsync(Check);
     Console.WriteLine($"PASS {checks} canvas storage checks"); return;
 }
 if (args.Contains("--live-effects-only"))
@@ -190,6 +192,8 @@ await FormatVersionTests.RunAsync(store, root, Check);
 await LivePixelateStorageTests.RunAsync(Check);
 await RecoveryPreviewStorageTests.RunAsync(Check);
 await CanvasProjectionStorageTests.RunAsync(Check);
+await CanvasPreservedLayersStorageTests.RunAsync(Check);
+await CanvasGridGeometryStorageTests.RunAsync(Check);
 await BillboardStorageTests.RunAsync(Check);
 await DepthOcclusionStorageTests.RunAsync(Check);
 Console.WriteLine($"PASS {checks} storage checks");

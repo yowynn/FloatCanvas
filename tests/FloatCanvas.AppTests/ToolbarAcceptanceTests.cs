@@ -89,7 +89,7 @@ internal static class ToolbarAcceptanceTests
             editor.Session.Document.Canvas.Projection=CanvasCalibration.CreateInitial(new(0,0,1200,800),10,8);
             editor.Session.Document.Canvas.Projection.Enabled=true;Invoke(session,"RefreshToolbarState");Measure(shell);
             var canvasAction=buttons.Single(button=>Equals(button.Tag,"canvas"));
-            check("enabled perspective uses the eye toggle's full active icon border and background",billboard.IsEnabled&&canvasAction.Background==app.Resources["CanvasHiddenSurface"]&&canvasAction.BorderBrush==app.Resources["CanvasHiddenBorder"]&&Descendants(canvasAction).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasHiddenText"]);
+            check("enabled perspective changes the Canvas artwork while its unselected tool keeps the ordinary style",billboard.IsEnabled&&tools[EditorTool.Canvas]==canvasAction&&canvasAction.Background==app.Resources["CanvasSurface"]&&canvasAction.BorderBrush==Media.Brushes.Transparent&&Descendants(canvasAction).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasText"]);
             var parametersBefore=System.Text.Json.JsonSerializer.Serialize(editor.Parameters);
             billboard.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
             Measure(shell);
@@ -101,12 +101,21 @@ internal static class ToolbarAcceptanceTests
             check("placement menu and toolbar share their tool name, current mode and complete usage hint",Equals(modeMenu.Header,L.Get("Billboard.Toggle"))&&Equals(modeMenu.ToolTip,billboard.ToolTip)&&Controls.ToolTipService.GetShowOnDisabled(modeMenu));
             var import=buttons.Single(button=>Equals(button.Tag,"import"));
             check("image import uses the shared full-width menu artwork",Descendants(import).OfType<Shapes.Path>().Single().Data.ToString()==Media.Geometry.Parse(CommandGlyphs.Image).ToString()&&Media.Geometry.Parse(CommandGlyphs.Image).Bounds.Width>=14);
+            check("placement toolbar and menu use a heavier stroke while adjacent icons keep their standard weight",
+                Descendants(billboard).OfType<Shapes.Path>().Single().StrokeThickness==1.8&&
+                Descendants((Wpf.DependencyObject)modeMenu.Icon).OfType<Shapes.Path>().Single().StrokeThickness==1.8&&
+                Descendants(import).OfType<Shapes.Path>().Single().StrokeThickness==1.5&&
+                Descendants(canvasAction).OfType<Shapes.Path>().Single().StrokeThickness==1.5);
             var plane=Media.PathGeometry.CreateFromGeometry(Media.Geometry.Parse(CommandGlyphs.Surface));
-            var placementPen=new Media.Pen(Media.Brushes.Black,1.5) {StartLineCap=Media.PenLineCap.Round,EndLineCap=Media.PenLineCap.Round,LineJoin=Media.PenLineJoin.Round};
+            var placementPen=new Media.Pen(Media.Brushes.Black,1.8) {StartLineCap=Media.PenLineCap.Round,EndLineCap=Media.PenLineCap.Round,LineJoin=Media.PenLineJoin.Round};
             check("placement artwork fits the icon canvas including strokes",new Wpf.Rect(0,0,16,16).Contains(plane.GetRenderBounds(placementPen))&&
                 new Wpf.Rect(0,0,16,16).Contains(Media.Geometry.Parse(CommandGlyphs.Billboard).GetRenderBounds(placementPen)));
             editor.Session.Document.Canvas.Projection.Enabled=false;Invoke(session,"RefreshToolbarState");Measure(shell);
-            check("disabling perspective restores the surface artwork and inactive appearance",!editor.BillboardMode&&!billboard.IsEnabled&&Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString()==surfaceArtwork&&billboard.Background==app.Resources["CanvasButton"]&&canvasAction.Background==app.Resources["CanvasButton"]);
+            check("disabling perspective restores the surface artwork and leaves Canvas unselected",!editor.BillboardMode&&!billboard.IsEnabled&&Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString()==surfaceArtwork&&billboard.Background==app.Resources["CanvasButton"]&&canvasAction.Background==app.Resources["CanvasSurface"]&&canvasAction.BorderBrush==Media.Brushes.Transparent);
+            canvasAction.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));Measure(shell);
+            check("Canvas joins the mutually exclusive selected tool frames without opening settings on first activation",editor.Tool==EditorTool.Canvas&&canvasAction.BorderBrush==app.Resources["CanvasAccent"]&&tools[EditorTool.Freehand].BorderBrush==Media.Brushes.Transparent&&Field<CanvasSettingsWindow?>(session,"_canvasSettingsWindow") is null);
+            Invoke(session,"ActivateTool",EditorTool.Freehand);Measure(shell);
+            check("returning to Freehand restores its saved style and releases the Canvas frame",editor.Tool==EditorTool.Freehand&&tools[EditorTool.Freehand].BorderBrush==app.Resources["CanvasAccent"]&&canvasAction.BorderBrush==Media.Brushes.Transparent);
             check("upper twelve tool order matches the requested Select Eraser then ten drawing entries",buttons.Where(button=>Controls.Grid.GetColumn(button)<13).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"tool:Select","tool:Eraser","tool:Freehand","tool:Highlighter","tool:Line","tool:Rectangle","tool:Ellipse","tool:Text","tool:Number","tool:Symbol","tool:Emoji","more"}));
             var opacity=Field<Controls.Slider>(session,"_opacitySlider");
             check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==28&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
@@ -181,7 +190,7 @@ internal static class ToolbarAcceptanceTests
             check("returning to Freehand preserves the most recent symbol shape and paint",Fingerprint((Imaging.BitmapSource)rememberedSymbol.Source)==configuredSymbol && ContainsColor((Imaging.BitmapSource)rememberedSymbol.Source,Media.Color.FromRgb(0x16,0x8F,0x69)));
             check("returning to Freehand preserves the most recent emoji image",ReferenceEquals(((Controls.Image)Glyph(tools[EditorTool.Emoji])).Source,EmojiArtwork.Image("🔥")));
             var hints=Field<List<Controls.TextBlock>>(session,"_toolbarShortcutHintLabels");
-            check("all twelve tools share single-letter corner legends and stamp commands add minus/plus",hints.Count==14&&hints.Take(12).Select(hint=>hint.Text).SequenceEqual(ToolShortcutCatalog.All.Select(binding=>binding.Hint))&&hints.Skip(12).Select(hint=>hint.Text).SequenceEqual(new[]{"-","+"}));
+            check("all thirteen tools share single-letter corner legends and stamp commands add minus/plus",hints.Count==15&&hints.Take(13).Select(hint=>hint.Text).SequenceEqual(ToolShortcutCatalog.All.Select(binding=>binding.Hint))&&hints.Skip(13).Select(hint=>hint.Text).SequenceEqual(new[]{"-","+"}));
             foreach(var button in buttons.Where(button=>Controls.Grid.GetColumn(button)<13))
             {
                 var hint=((Controls.Grid)button.Content).Children.OfType<Controls.TextBlock>().Single();

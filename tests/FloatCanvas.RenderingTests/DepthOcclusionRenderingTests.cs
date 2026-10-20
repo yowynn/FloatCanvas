@@ -54,8 +54,24 @@ internal static class DepthOcclusionRenderingTests
         scene.LayerOpacity = 0;
         using (var pixels = Pixels(renderer, scene, assets, false)) check("zero annotation opacity retains canvas background", pixels.GetPixel(80, 80).Alpha is >= 127 and <= 129 && pixels.GetPixel(80, 80).Green == 255);
         scene.LayerOpacity = 1; scene.Canvas.BackgroundColor = 0; scene.Canvas.Grid = new() { Visible = true, Width = 6, Color = 0xFF00FF00 };
+        mapping = CanvasMapping.Create(scene);
+        double cell = mapping.GridCellSize;
+        var behindPlane = mapping.ScreenToPlane.TransformPoint(new(80, 40));
+        var frontPlane = mapping.ScreenToPlane.TransformPoint(new(80, 80));
+        double gridX = mapping.GridOrigin.X + Math.Round((behindPlane.X - mapping.GridOrigin.X) / cell) * cell;
+        double BetweenRows(double y) => mapping.GridOrigin.Y + (Math.Floor((y - mapping.GridOrigin.Y) / cell) + .5) * cell;
+        var coveredBehind = mapping.ToScreen(new(gridX, BetweenRows(behindPlane.Y)));
+        var gapBehind = mapping.ToScreen(new(gridX + cell / 2, BetweenRows(behindPlane.Y)));
+        var coveredFront = mapping.ToScreen(new(gridX, BetweenRows(frontPlane.Y)));
+        SKColor At(SKBitmap pixels, PointD point) => pixels.GetPixel((int)Math.Round(point.X), (int)Math.Round(point.Y));
+        board.Visible = false;
+        using (var gridOnly = Pixels(renderer, scene, assets))
+            check("grid occlusion fixture samples actual central-origin strokes and an adjacent empty cell",
+                At(gridOnly, coveredBehind).Green > 240 && At(gridOnly, coveredFront).Green > 240 && At(gridOnly, gapBehind).Alpha == 0);
+        board.Visible = true;
         using (var pixels = Pixels(renderer, scene, assets))
-            check("grid strokes occlude behind-plane billboard only at their covered pixels", pixels.GetPixel(80, 40).Green > 240 && pixels.GetPixel(80, 80) == SKColors.Red && pixels.GetPixel(83, 43) == SKColors.Red);
+            check("grid strokes occlude behind-plane billboard only at their covered pixels",
+                At(pixels, coveredBehind).Green > 240 && At(pixels, coveredFront) == SKColors.Red && At(pixels, gapBehind) == SKColors.Red);
 
         scene = Scene(); board = Billboard(scene, 60, 0x80FF0000); plane = Plane(scene, 0x8000FF00); scene.Elements = [plane, board];
         scene.LayerOpacity = .5;

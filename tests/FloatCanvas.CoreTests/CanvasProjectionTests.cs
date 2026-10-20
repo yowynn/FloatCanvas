@@ -75,6 +75,7 @@ internal static class CanvasProjectionTests
         check(session.Redo() && session.Document.Canvas.BackgroundColor == 0xFF123456 && session.Document.Canvas.Grid.Visible, "canvas settings redo atomically");
         check(!JsonSerializer.Serialize(document).Contains("IsFinite"), "computed projective properties excluded from JSON");
         CanvasGridLockTests.Run(check);
+        CanvasGridGeometryTests.Run(check);
         CanvasProjectionSafetyTests.Run(check);
     }
 }

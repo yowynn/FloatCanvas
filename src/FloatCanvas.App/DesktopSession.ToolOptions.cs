@@ -85,6 +85,7 @@ internal sealed partial class DesktopSession
 
     private void OpenToolOptions()
     {
+        if (_editor.Tool == EditorTool.Canvas) { OpenCanvasSettings(); return; }
         bool alreadyOpen = IsToolOptionsOpen;
         _toolOptionsPanel.Refresh();
         _toolOptionsWindow.Title = ToolName(_editor.Tool);
@@ -130,7 +131,9 @@ internal sealed partial class DesktopSession
         _toolOptionsWindow.Width = _toolOptionsPanel.Width + 2;
     }
 
-    private void PositionToolOptions()
+    private void PositionToolOptions() => PositionToolOptions(_toolOptionsWindow);
+
+    private void PositionToolOptions(Window target, FrameworkElement? selectedButton = null)
     {
         var origin = _toolbar.PointToScreen(new(0,0));
         var cursor = System.Windows.Forms.Cursor.Position;
@@ -138,18 +141,18 @@ internal sealed partial class DesktopSession
         var monitor = _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(point)) ?? _host.PrimaryMonitor;
         double sx=monitor.DpiX/96d, sy=monitor.DpiY/96d;
         var work = monitor.WorkArea;
-        double width=_toolOptionsWindow.ActualWidth*sx, height=_toolOptionsWindow.ActualHeight*sy;
+        double width=target.ActualWidth*sx, height=target.ActualHeight*sy;
         double x, y;
         if (_settings.ToolbarExpanded)
         {
-            var button = _toolbarToolButtons.GetValueOrDefault(ButtonFamily(_editor.Tool)) ?? _toolbarLauncher;
+            var button = selectedButton ?? _toolbarToolButtons.GetValueOrDefault(ButtonFamily(_editor.Tool)) ?? (FrameworkElement)_toolbarLauncher;
             var center=button.PointToScreen(new(button.ActualWidth/2,0));
             x=center.X-width/2;
             double below=origin.Y+_toolbar.ActualHeight*sy+8*sy;
             y=below+height<=work.Bottom ? below : origin.Y-height-8*sy;
         }
         else { x=cursor.X+12*sx; y=cursor.Y+12*sy; }
-        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(_toolOptionsWindow).Handle,
+        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(target).Handle,
             new(Math.Clamp(x,work.Left,Math.Max(work.Left,work.Right-width)),
                 Math.Clamp(y,work.Top,Math.Max(work.Top,work.Bottom-height))));
     }

@@ -10,7 +10,7 @@ internal enum EditorTool
     Select, Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse,
     Triangle, Text, Number, Image, Eraser, Crop, Blur, Pixelate,
     // Retained numeric value for reading old tool caches and presets only. Never activates.
-    Redact, CaptureRegion, Symbol, Emoji, Stamp
+    Redact, CaptureRegion, Symbol, Emoji, Stamp, Canvas
 }
 
 /// <summary>Converts native pointer gestures into atomic document operations.</summary>
@@ -174,7 +174,7 @@ internal sealed partial class EditorController
 
     internal void PointerForCanvas(OverlayPointerEvent e, bool propertiesDoubleClick)
     {
-        if (!HandleTemporaryMovePointer(e)) PointerCore(e, propertiesDoubleClick);
+        if (!HandleTemporaryMovePointer(e) && Tool != EditorTool.Canvas) PointerCore(e, propertiesDoubleClick);
     }
 
     private void PointerCore(OverlayPointerEvent e, bool propertiesDoubleClick)

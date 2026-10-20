@@ -36,7 +36,7 @@ internal static class CanvasGridLockTests
             [new(-100, -100), new(100, -100), new(220, 200), new(-200, 200)],
             shape.Select(p => p + new PointD(12, 8)).ToArray()
         ];
-        bool sawFraction = false, sawOldDrift = false;
+        bool sawFraction = false, sawSpacingChange = false;
         foreach (var changed in changes)
         {
             var quad = changed.Select(rotation.TransformPoint).ToArray();
@@ -47,22 +47,21 @@ internal static class CanvasGridLockTests
                 "grid lock never changes the calibration normalization or input counts");
             check(locked.Origin == start.Origin && locked.LockedGridCellSize == cellBefore, "drag retains fixed logical grid origin and spacing");
             scene.Canvas.Projection = locked; var mapping = CanvasMapping.Create(scene);
-            var gridIntersection = mapping.ToScreen(mapping.GridOrigin + new PointD(2 * mapping.GridCellSize, 3 * mapping.GridCellSize));
             var ground = mapping.ToScreen(rectangle.BillboardAnchor);
             var foot = mapping.ElementToScreen(rectangle).TransformPoint(new(40, 100));
-            Near(gridIntersection.DistanceTo(ground), 0, "tilted grid intersection and ground anchor remain coincident");
+            Near(mapping.GridCellSize, cellBefore, "locked grid retains its plane spacing while its centered phase follows the handle");
             Near(foot.DistanceTo(ground), 0, "billboard foot and anchor remain coincident throughout recalibration");
-            Near(mapping.ToScreen(mapping.GridOrigin).DistanceTo(quad[0]), 0, "logical origin remains attached to the original first corner");
+            Near(mapping.ToScreen(mapping.GridOrigin).DistanceTo(CanvasGridGeometry.ReferenceCenter(locked)), 0, "display origin follows the screen center handle independently of the placement origin");
             Near(locked.GridColumns * locked.GridCellSize, locked.Columns * locked.CellSize, "fractional horizontal coverage spans the calibration frame");
             Near(locked.GridRows * locked.GridCellSize, locked.Rows * locked.CellSize, "fractional vertical coverage spans the calibration frame");
             sawFraction |= Math.Abs(locked.GridColumns - Math.Round(locked.GridColumns)) > 1e-4;
             scene.Canvas.Projection = unlocked; var oldMapping = CanvasMapping.Create(scene);
             Near(oldMapping.ElementToScreen(rectangle).TransformPoint(new(40, 100)).DistanceTo(foot), 0, "lock leaves the element projection unchanged");
-            sawOldDrift |= oldMapping.ToScreen(oldMapping.GridOrigin + new PointD(2 * oldMapping.GridCellSize, 3 * oldMapping.GridCellSize)).DistanceTo(ground) > .1;
+            sawSpacingChange |= Math.Abs(oldMapping.GridCellSize - cellBefore) > .1;
             check(unlocked.GridCellSize == unlocked.CellSize && unlocked.GridColumns == unlocked.Columns && unlocked.GridRows == unlocked.Rows,
                 "unlocked mode retains legacy grid spacing and counts");
         }
-        check(sawFraction && sawOldDrift, "regression fixture exposes old tilted-grid drift and fractional locked coverage");
+        check(sawFraction && sawSpacingChange, "regression fixture exposes changing unlocked spacing and fractional locked coverage");
         check(JsonSerializer.Serialize(rectangle) == elementBefore, "all calibration changes preserve logical layer geometry and placement data");
         scene.Canvas.Projection = start;
         var cloned = scene.Clone(); cloned.Canvas.Projection.LockedGridCellSize = null;

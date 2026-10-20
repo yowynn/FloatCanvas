@@ -65,7 +65,8 @@ internal static class Feedback4OptionsTests
         var second = library.Save("Rectangle 2", controller.Parameters);
         var gallery = new ToolPresetGallery(controller, library); int changes = 0; gallery.Applied += () => changes++;
         gallery.Measure(new Size(250, 1000)); gallery.Arrange(new Rect(0, 0, 250, gallery.DesiredSize.Height)); gallery.UpdateLayout();
-        check(locale + " every active tool has official defaults", Enum.GetValues<EditorTool>().Where(tool => tool != EditorTool.Redact).All(tool => library.OfficialFor(tool).Count > 0));
+        check(locale + " every drawing tool has official defaults", Enum.GetValues<EditorTool>().Where(tool => tool is not (EditorTool.Redact or EditorTool.Canvas)).All(tool => library.OfficialFor(tool).Count > 0));
+        check(locale + " Canvas uses its dedicated canvas settings rather than drawing recipes", library.OfficialFor(EditorTool.Canvas).Count == 0);
         check(locale + " retired solid tool has no official defaults", library.OfficialFor(EditorTool.Redact).Count == 0);
         check(locale + " personal recipes only show the current tool", gallery.UserTiles.Children.OfType<Button>().Select(b => b.Tag).SequenceEqual(new[] { rectangle.Id, second.Id }));
         check(locale + " both galleries use equal preview-only square tiles", gallery.OfficialTiles.Children.OfType<Button>().Concat(gallery.UserTiles.Children.OfType<Button>()).All(button => Math.Abs(button.ActualWidth - 36) < .01 && Math.Abs(button.ActualHeight - 36) < .01 && button.Content is Image && button.ToolTip is string && button.BorderThickness.Left > 0));

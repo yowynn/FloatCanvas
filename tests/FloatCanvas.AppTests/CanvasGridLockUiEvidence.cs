@@ -24,6 +24,7 @@ internal static class CanvasGridLockUiEvidence
             {
                 L.Initialize(language); AppTheme.Apply(theme);
                 var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+                window.SetReferenceMonitors([], null);
                 var content = (FrameworkElement)window.Content; window.Content = null;
                 var root = new Border { Width = 600, Height = 590, Child = content, Background = (Brush)Application.Current.Resources["CanvasSurface"] };
                 root.SetValue(System.Windows.Documents.TextElement.ForegroundProperty, Application.Current.Resources["CanvasText"]);
@@ -44,6 +45,17 @@ internal static class CanvasGridLockUiEvidence
                     Render(root, Path.Combine(output, "settings-locked-" + language + "-" + theme + ".png"));
                     settings.Projection.LockedGridCellSize = null; window.Refresh(settings, true); Layout(root);
                     Render(root, Path.Combine(output, "settings-unlocked-" + language + "-" + theme + ".png"));
+                    settings.Projection.Enabled = false; settings.Grid.FlatCellSize = 73.1;
+                    window.Refresh(settings, false); Layout(root);
+                    var flatPanel = Field<StackPanel>(window, "flatSizePanel");
+                    var size = Field<NumericValueField>(window, "gridSize");
+                    var sizeBounds = size.Input.TransformToAncestor(root).TransformBounds(new Rect(size.Input.RenderSize));
+                    check(language + " " + theme + " flat settings expose a precise size editor within the default window", flatPanel.Visibility == Visibility.Visible &&
+                        size.TryGetValue(out double flatSize) && flatSize == 73.1 && size.Input.ActualWidth > 200 && size.Input.ActualHeight >= 30 &&
+                        sizeBounds.Left >= 0 && sizeBounds.Right <= 600 && sizeBounds.Top >= 0 && sizeBounds.Bottom <= 590);
+                    check(language + " " + theme + " flat settings omit calibration counts and the adjustment lock", Field<Grid>(window, "countPair").Visibility == Visibility.Collapsed &&
+                        toggle.Visibility == Visibility.Collapsed && Field<TextBox>(window, "lockedColumns").Visibility == Visibility.Collapsed);
+                    Render(root, Path.Combine(output, "settings-flat-" + language + "-" + theme + ".png"));
                     source.RootVisual = null; root.Child = null;
                 }
                 finally { root.Child = null; window.Content = content; window.CloseForDispose(); }

@@ -21,6 +21,7 @@ internal static class GridLockRenderingTests
             projection.LockedGridCellSize = projection.CellSize;
             var anchor = projection.Origin + new PointD(4 * projection.CellSize, 4 * projection.CellSize);
             var board = Board(anchor);
+            string boardJson = JsonSerializer.Serialize(board);
             scene.Elements = [board];
             var quad = projection.Quad.ToArray();
             if (widenBottom) { quad[2] += new PointD(40, 0); quad[3] += new PointD(-40, 0); }
@@ -29,15 +30,17 @@ internal static class GridLockRenderingTests
             check($"{gesture} remains a valid perspective calibration", CanvasCalibration.TryCalibrate(projection, quad, scene.Viewport, out var next, out _));
             scene.Canvas.Projection = next;
             var mapping = CanvasMapping.Create(scene);
-            var gridPoint = mapping.ToScreen(mapping.GridOrigin + new PointD(4 * mapping.GridCellSize, 4 * mapping.GridCellSize));
             var projectedAnchor = mapping.ToScreen(anchor);
             var foot = mapping.ElementToScreen(board).TransformPoint(new(board.Width / 2, board.Height));
-            check($"{gesture} keeps grid intersection, anchor and billboard foot coincident", gridPoint.DistanceTo(projectedAnchor) < 1e-7 && foot.DistanceTo(projectedAnchor) < 1e-7);
-            check($"{gesture} actually changes calibration scale without moving the logical anchor", Math.Abs(next.CellSize - projection.CellSize) > .01 && board.BillboardAnchor == anchor);
+            var handle = new PointD(next.Quad.Average(p => p.X), next.Quad.Average(p => p.Y));
+            check($"{gesture} keeps the locked grid centered on its current handle with fixed plane spacing",
+                mapping.ToScreen(mapping.GridOrigin).DistanceTo(handle) < 1e-7 && Math.Abs(mapping.GridCellSize - projection.CellSize) < 1e-7);
+            check($"{gesture} keeps the original logical billboard anchor and its rendered foot coincident", foot.DistanceTo(projectedAnchor) < 1e-7 && board.BillboardAnchor == anchor);
+            check($"{gesture} actually changes calibration scale without changing the original object", Math.Abs(next.CellSize - projection.CellSize) > .01 && JsonSerializer.Serialize(board) == boardJson);
 
             // Sample both grid families away from the billboard, including fractional
             // positions along each line, so a single accidental crossing cannot pass.
-            var samples = new[] { new PointD(2.37, 2), new PointD(2, 2.37), new PointD(5.37, 5), new PointD(5, 5.37) }
+            var samples = new[] { new PointD(-1.37, -1), new PointD(-1, -1.37), new PointD(1.37, 1), new PointD(1, 1.37) }
                 .Select(p => mapping.ToScreen(mapping.GridOrigin + p * mapping.GridCellSize)).ToArray();
             board.Visible = false;
             using (var grid = Pixels(renderer, scene, assets))
@@ -48,12 +51,18 @@ internal static class GridLockRenderingTests
             board.Visible = true;
             using var lockedBoard = Pixels(renderer, scene, assets);
             check($"{gesture} production renderer places the rectangle bottom at its anchor", Near(lockedBoard, projectedAnchor, color => color.Red > 200 && color.Alpha > 40));
+            var lockedIntersection = mapping.ToScreen(mapping.GridOrigin + new PointD(mapping.GridCellSize, 0));
+            var matrixBeforeUnlock = next.Matrix;
+            double cellBeforeUnlock = next.CellSize;
             next.LockedGridCellSize = null;
             using (var unlockedBoard = Pixels(renderer, scene, assets))
                 check($"{gesture} unlocking does not move or resize rendered objects", Difference(lockedBoard, unlockedBoard) == 0);
             var unlockedMapping = CanvasMapping.Create(scene);
-            var unlockedIntersection = unlockedMapping.ToScreen(unlockedMapping.GridOrigin + new PointD(4 * unlockedMapping.GridCellSize, 4 * unlockedMapping.GridCellSize));
-            check($"{gesture} unlocked grid resumes the original calibration scale", unlockedIntersection.DistanceTo(projectedAnchor) > 1 && unlockedMapping.GridCellSize == next.CellSize);
+            var unlockedIntersection = unlockedMapping.ToScreen(unlockedMapping.GridOrigin + new PointD(unlockedMapping.GridCellSize, 0));
+            check($"{gesture} unlocked grid resumes the original calibration scale while retaining its center",
+                unlockedIntersection.DistanceTo(lockedIntersection) > 1e-7 && Math.Abs(unlockedMapping.GridCellSize - mapping.GridCellSize) > .01 &&
+                unlockedMapping.GridCellSize == next.CellSize && unlockedMapping.GridOrigin.DistanceTo(mapping.GridOrigin) < 1e-7 &&
+                next.Matrix == matrixBeforeUnlock && next.CellSize == cellBeforeUnlock && JsonSerializer.Serialize(board) == boardJson);
         }
         CacheAndDepth(renderer, assets, check);
     }
@@ -85,7 +94,7 @@ internal static class GridLockRenderingTests
         scene.Elements = [Board(previous.Origin + new PointD(4 * previous.CellSize, 4 * previous.CellSize))];
         scene.Canvas.DepthPriorityOcclusion = true;
         var mapping = CanvasMapping.Create(scene);
-        var samples = new[] { new PointD(2.37, 2), new PointD(2, 2.37), new PointD(5.37, 5), new PointD(5, 5.37) }
+        var samples = new[] { new PointD(-1.37, -1), new PointD(-1, -1.37), new PointD(1.37, 1), new PointD(1, 1.37) }
             .Select(p => mapping.ToScreen(mapping.GridOrigin + p * mapping.GridCellSize)).ToArray();
         using (var depth = Pixels(renderer, scene, assets))
             check("depth plane composition retains locked grid positions outside billboard occlusion", samples.All(p => Near(depth, p, color => color.Green > 140 && color.Alpha > 40)));
@@ -121,10 +130,13 @@ internal static class GridLockRenderingTests
     private static object Coordinates(SceneDocument scene, CanvasElement board)
     {
         var mapping = CanvasMapping.Create(scene);
-        var intersection = mapping.ToScreen(mapping.GridOrigin + new PointD(4 * mapping.GridCellSize, 4 * mapping.GridCellSize));
+        var center = mapping.ToScreen(mapping.GridOrigin);
+        var handle = new PointD(scene.Canvas.Projection.Quad.Average(p => p.X), scene.Canvas.Projection.Quad.Average(p => p.Y));
+        var intersection = mapping.ToScreen(mapping.GridOrigin + new PointD(mapping.GridCellSize, 0));
         var anchor = mapping.ToScreen(board.BillboardAnchor);
         var foot = mapping.ElementToScreen(board).TransformPoint(new(board.Width / 2, board.Height));
-        return new { Intersection = intersection, Anchor = anchor, Foot = foot, GridAnchorError = intersection.DistanceTo(anchor), FootAnchorError = foot.DistanceTo(anchor) };
+        return new { Center = center, Handle = handle, GridOrigin = mapping.GridOrigin, GridCellSize = mapping.GridCellSize,
+            Intersection = intersection, Anchor = anchor, Foot = foot, GridCenterError = center.DistanceTo(handle), FootAnchorError = foot.DistanceTo(anchor) };
     }
 
     private static SceneDocument Scene()

@@ -38,8 +38,11 @@ internal static class CanvasProjectionRuntimeFixture
             check("projection runtime enters its own bounded production editor", host.IsEditing && host.IsVisible && host.Diagnostics.Single().Bounds.Width == 640);
             var editor = Get<EditorController>(session, "_editor");
             Invoke("ToggleCanvasSettings"); Pump();
+            check("first Canvas activation selects the tool without opening its settings", editor.Tool == EditorTool.Canvas &&
+                Get<CanvasSettingsWindow?>(session, "_canvasSettingsWindow")?.IsVisible != true);
+            Invoke("ToggleCanvasSettings"); Pump();
             var panel = Get<Window>(session, "_canvasSettingsWindow");
-            check("canvas settings opens through the production command", panel.IsVisible && panel.Owner == toolbar);
+            check("second Canvas activation opens settings through the production tool command", panel.IsVisible && panel.Owner == toolbar && editor.Tool == EditorTool.Canvas);
             ((Action<uint>)panel.GetType().GetField("BackgroundChanged", Private)!.GetValue(panel)!)(0x80123456);
             check("panel background event retains alpha in the active document", editor.Session.Document.Canvas.BackgroundColor == 0x80123456);
             Invoke("BeginCanvasCalibration");
@@ -86,15 +89,21 @@ internal static class CanvasProjectionRuntimeFixture
             check("Ctrl corner double-click drag follows its pointer",editor.Session.Document.Canvas.Projection.Quad[1].DistanceTo(nativeCorner+new PointD(7,27))<.001);
             NativePointer(0x202,nativeCorner+new PointD(7,27),8);HookControl(true);editor.Session.Undo();
             Invoke("RefreshToolbarState");
-            string Glyph() => ((System.Windows.Shapes.Path)((System.Windows.Controls.Viewbox)Get<System.Windows.Controls.Button>(session,"_canvasStateButton").Content).Child).Data.ToString();
+            string Glyph() => ((System.Windows.Shapes.Path)((System.Windows.Controls.Viewbox)Get<Dictionary<EditorTool,System.Windows.Controls.ContentPresenter>>(
+                session,"_toolbarGlyphHosts")[EditorTool.Canvas].Content).Child).Data.ToString();
             string perspectiveGlyph = Glyph();
             Invoke("SetCanvasProjection",false); Invoke("RefreshToolbarState");
             check("toolbar switches to rectangular canvas glyph when perspective is disabled", Glyph() != perspectiveGlyph);
             Invoke("SetCanvasProjection",true); Invoke("RefreshToolbarState");
             check("toolbar returns to perspective glyph without changing its command", Glyph() == perspectiveGlyph);
             var reset = Get<System.Windows.Controls.Button>(panel,"reset");
+            var resetReference = new RectD(bounds.Left - editor.ScreenOrigin.X, bounds.Top - editor.ScreenOrigin.Y, bounds.Width, bounds.Height);
+            var expectedReset = DesktopSession.CreateResetCanvasProjection(editor.Session.Document.Canvas, resetReference);
             reset.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
-            check("actual default split reset uses the sole active screen", editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(editor.Session.Document.Viewport).Quad));
+            check("actual primary reset preserves the current exact flat size and uses the sole active screen center",
+                editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(expectedReset.Quad) &&
+                editor.Session.Document.Canvas.Projection.CellSize == expectedReset.CellSize &&
+                CanvasGridGeometry.ReferenceCenter(editor.Session.Document.Canvas.Projection).DistanceTo(resetReference.Center) < 1e-10);
             editor.Session.Undo();
             moved = editor.Session.Document.Canvas.Projection.Quad.ToArray();
             Invoke("BeginCanvasCalibration");
@@ -103,15 +112,17 @@ internal static class CanvasProjectionRuntimeFixture
             undo = editor.Session.UndoCount;
             Pointer(OverlayPointerKind.Down, moved[0]); Pointer(OverlayPointerKind.Move, moved[0] + new PointD(9, 4)); Invoke("OnKey", 0x1B);
             check("production Escape rolls back the whole calibration gesture", calibration.IsActive && !calibration.IsDragging && editor.Session.UndoCount == undo && editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(moved));
-            Invoke("EndCanvasCalibration", false);
-            editor.Tool = EditorTool.Rectangle;
+            Invoke("ActivateTool", EditorTool.Rectangle);
+            check("selecting a drawing tool ends the Canvas reference interaction while preserving perspective",
+                editor.Tool == EditorTool.Rectangle && !calibration.IsActive && editor.Session.Document.Canvas.Projection.Enabled);
             var h = editor.Session.Document.Canvas.Projection.Matrix;
             PointD first = new(260, 170), last = new(300, 200);
             Pointer(OverlayPointerKind.Down, first); Pointer(OverlayPointerKind.Move, last); Pointer(OverlayPointerKind.Up, last);
             var element = editor.Session.Document.Elements.Single();
             var actual = h.TransformPoint(ElementGeometry.LocalToPlane(element).TransformPoint(new PointD(0, 0)));
             check("production drawing maps the screen press through inverse projection", actual.DistanceTo(first) < .01);
-            Invoke("EndCanvasCalibration",false);Invoke("BeginCanvasFourPoints");
+            Invoke("BeginCanvasFourPoints");
+            check("four-point placement selects Canvas and owns its reference interaction", editor.Tool == EditorTool.Canvas && calibration.IsPlacing);
             var placement=CanvasCalibration.CreateInitial(editor.Session.Document.Viewport).Quad;
             var beforePlacement=editor.Session.Document.Canvas.Projection.Clone();undo=editor.Session.UndoCount;
             int[] clickOrder=[2,0,3,1];
@@ -136,7 +147,7 @@ internal static class CanvasProjectionRuntimeFixture
             {
                 Invoke("OnKey", 0x1B);
                 editor.Session.Document.Canvas.Grid.Visible = true;
-                Invoke("EndCanvasCalibration", false); Invoke("BeginCanvasCalibration"); Pump();
+                Invoke("BeginCanvasCalibration"); Invoke("OpenCanvasSettings"); Pump();
                 Console.WriteLine("PREVIEW_READY: isolated production canvas settings and grid, 120 seconds"); Console.Out.Flush();
                 var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(120) };
                 timer.Tick += (_, _) => frame.Continue = false;

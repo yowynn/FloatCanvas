@@ -9,7 +9,7 @@ public static class SceneValidation
     public static void Validate(SceneDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (document.Version is not (1 or 2 or 3 or 4 or 5 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+        if (document.Version is not (1 or 2 or 3 or 4 or 5 or 6 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
         Require(Enum.IsDefined(document.Kind), L.Get("Scene.InvalidDocumentKind"));
         Require(document.Elements is not null && document.DisplayLayout is not null && document.Groups is not null, L.Get("Scene.MissingCollections"));
         Require(document.Elements!.Count <= 100_000, L.Get("Scene.ElementCountExceeded"));
@@ -24,9 +24,13 @@ public static class SceneValidation
         {
             var mapping = CanvasMapping.Create(document);
             foreach (var element in document.Elements.Where(e => e.IsBillboard))
-                Require(mapping.TryGetDepthScale(element.BillboardAnchor, out _) &&
-                    mapping.ElementToScreen(element).TryTransformBounds(ElementGeometry.StrokedLocalBounds(element), out var projected) && Rect(projected),
-                    L.Get("Scene.InvalidElementTransform"));
+            {
+                // A retained layer can lie outside the current drawing domain. Its local
+                // geometry is still validated above; rendering hides unsafe anchors.
+                if (mapping.TryGetDepthScale(element.BillboardAnchor, out _))
+                    Require(mapping.ElementToScreen(element).TryTransformBounds(ElementGeometry.StrokedLocalBounds(element), out var projected) && Rect(projected),
+                        L.Get("Scene.InvalidElementTransform"));
+            }
         }
         ValidateGroups(document, ids);
         if (document.Background is not null)
@@ -103,6 +107,9 @@ public static class SceneValidation
         Require(projection.LockedGridCellSize is null || projection.LockedGridCellSize is >= .01 and <= 1_000_000 && double.IsFinite(projection.LockedGridCellSize.Value), L.Get("Scene.InvalidCanvas"));
         Require(projection.Quad is not null && projection.Quad.Count is 0 or 4 && projection.Quad.All(Point), L.Get("Scene.InvalidCanvas"));
         Require(canvas.Grid.Width is > 0 and <= 64 && double.IsFinite(canvas.Grid.Width) && Enum.IsDefined(canvas.Grid.Pattern), L.Get("Scene.InvalidCanvas"));
+        Require(canvas.Grid.FlatCellSize is null || canvas.Grid.FlatCellSize is >= CanvasGridGeometry.MinimumCellSize and <= CanvasGridGeometry.MaximumCellSize &&
+            double.IsFinite(canvas.Grid.FlatCellSize.Value), L.Get("Scene.InvalidCanvas"));
+        Require(canvas.Grid.FlatOrigin is null || Point(canvas.Grid.FlatOrigin.Value), L.Get("Scene.InvalidCanvas"));
         if (projection.Quad.Count == 0)
         {
             Require(!projection.Enabled && projection.Matrix == Projective2D.Identity, L.Get("Scene.InvalidCanvas"));

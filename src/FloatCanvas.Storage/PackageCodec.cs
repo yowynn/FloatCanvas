@@ -98,7 +98,7 @@ internal static class PackageCodec
             }
             var manifest = await ReadJsonAsync<Manifest>(RequiredEntry(archive, "manifest.json"), 4 * 1024 * 1024, ct).ConfigureAwait(false);
             if (manifest.Format != "FloatCanvas." + kind) throw new InvalidDataException(L.Get("Project.UnexpectedFormat"));
-            if (manifest.Version is not (1 or 2 or 3 or 4 or 5 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
+            if (manifest.Version is not (1 or 2 or 3 or 4 or 5 or 6 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
             string payload = kind == "project" ? "scene.json" : "workspace.json";
             if (manifest.Payload != payload || manifest.Assets is null || manifest.Assets.Count > 4096) throw new InvalidDataException(L.Get("Project.InvalidManifest"));
             if (manifest.Assets.Any(a => a is null || !IsAssetId(a.Id) || string.IsNullOrWhiteSpace(a.MediaType) || a.MediaType.Length > 128 || a.Length <= 0 || a.Length > MaxAssetBytes) || manifest.Assets.Select(a => a.Id).Distinct(StringComparer.Ordinal).Count() != manifest.Assets.Count)
@@ -226,6 +226,13 @@ internal static class PackageCodec
             RequireMatrixProperties(projection.GetProperty("Matrix"));
             RequireProperties(projection.GetProperty("Origin"), "X", "Y");
             RequireProperties(canvas.GetProperty("Grid"), "Visible", "Color", "Width", "Pattern");
+            if (version >= 7)
+            {
+                var grid = canvas.GetProperty("Grid");
+                RequireProperties(grid, "FlatCellSize", "FlatOrigin");
+                if (grid.GetProperty("FlatOrigin").ValueKind != JsonValueKind.Null)
+                    RequireProperties(grid.GetProperty("FlatOrigin"), "X", "Y");
+            }
         }
         if (json.GetProperty("Elements").ValueKind == JsonValueKind.Array)
             foreach (var element in json.GetProperty("Elements").EnumerateArray()) RequirePlacementProperties(element);

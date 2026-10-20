@@ -27,7 +27,7 @@ internal sealed partial class DesktopSession
         _toolStateSaveTimer?.Stop();
         if (_toolStateStore is null) return;
         if (commitDraft) _toolOptionsPanel?.CloseColorPicker();
-        _toolbarToolMemory[ToolFamily(_editor.Tool)] = _editor.Parameters;
+        if (_editor.Tool != EditorTool.Canvas) _toolbarToolMemory[ToolFamily(_editor.Tool)] = _editor.Parameters;
         _toolStateStore.Save();
         _toolStateSaveTimer?.Stop();
     }
@@ -49,7 +49,12 @@ internal sealed partial class DesktopSession
         _inspector?.CompletePendingEdit();
         var family = ToolFamily(tool);
         if (ToolFamily(_editor.Tool) == family && !applyAlias) return;
-        _toolbarToolMemory[ToolFamily(_editor.Tool)] = _editor.Parameters;
+        if (_editor.Tool != EditorTool.Canvas) _toolbarToolMemory[ToolFamily(_editor.Tool)] = _editor.Parameters;
+        if (family == EditorTool.Canvas)
+        {
+            _editor.Tool = EditorTool.Canvas;
+            return;
+        }
         bool remembered = _toolbarToolMemory.TryGetValue(family, out var saved);
         var next = remembered ? saved!.Clone() :
             _toolPresets.Apply(_toolPresets.OfficialFor(family).First().Id, new ToolParameters { Tool = family });

@@ -14,10 +14,15 @@ internal sealed partial class EditorController
             var selected = Session.SelectedElements().Where(e => e.Visible && !e.Locked).ToArray();
             var mapping = CanvasMapping.Create(Session.Document);
             if (selected is [var billboard] && billboard.IsBillboard)
+            {
+                if (!mapping.IsElementSafe(billboard)) return [];
                 return Corners(ElementGeometry.LocalBounds(billboard)).Select(mapping.ElementToScreen(billboard).TransformPoint).ToArray();
+            }
             if (selected.Any(e => e.IsBillboard))
             {
-                var screenBounds = selected.Select(e => mapping.ProjectedBounds(e)).Aggregate(RectD.Union);
+                var displayed = selected.Where(e => !e.IsBillboard || mapping.IsElementSafe(e)).ToArray();
+                if (displayed.Length == 0) return [];
+                var screenBounds = displayed.Select(e => mapping.ProjectedBounds(e)).Aggregate(RectD.Union);
                 return Corners(screenBounds);
             }
             var plane = selected is [var image] && image.Kind == ElementKind.Image
@@ -46,8 +51,16 @@ internal sealed partial class EditorController
         }
     }
 
-    internal IReadOnlyList<PointD> SelectionScreenEndpoints => Session.SelectedElements().ToArray() is [var line] &&
-        ElementGeometry.IsLine(line.Kind) ? line.Points.Select(CanvasMapping.Create(Session.Document).ElementToScreen(line).TransformPoint).ToArray() : [];
+    internal IReadOnlyList<PointD> SelectionScreenEndpoints
+    {
+        get
+        {
+            if (Session.SelectedElements().ToArray() is not [var line] || !ElementGeometry.IsLine(line.Kind)) return [];
+            var mapping = CanvasMapping.Create(Session.Document);
+            if (line.IsBillboard && !mapping.IsElementSafe(line)) return [];
+            return line.Points.Select(mapping.ElementToScreen(line).TransformPoint).ToArray();
+        }
+    }
 
     internal IReadOnlyList<PointD> MarqueeScreenPolygon => Marquee is not { } bounds ? [] :
         gesture == "marquee" ? Corners(bounds) : gesture == "desktop-effect" && billboardDepth is { } depth ?
@@ -77,8 +90,12 @@ internal sealed partial class EditorController
         return renderer.PickDepth(Session.Document, Session.Assets, point, tolerance);
     }
 
-    private bool ElementHitTestScreen(CanvasElement element, PointD point, double tolerance) =>
-        ElementGeometry.HitTestProjected(element, point, CanvasMapping.Create(Session.Document).PlaneToScreen, tolerance);
+    private bool ElementHitTestScreen(CanvasElement element, PointD point, double tolerance)
+    {
+        var mapping = CanvasMapping.Create(Session.Document);
+        return (!element.IsBillboard || mapping.IsElementSafe(element)) &&
+            ElementGeometry.HitTestProjected(element, point, mapping.PlaneToScreen, tolerance);
+    }
 
     private void SelectScreenRectangle(RectD rectangle, bool additive)
     {
@@ -86,6 +103,7 @@ internal sealed partial class EditorController
         var selected = additive ? new HashSet<Guid>(Session.Selection) : [];
         foreach (var element in Session.Document.Elements.Where(e => e.Visible && !e.Locked))
         {
+            if (element.IsBillboard && !mapping.IsElementSafe(element)) continue;
             if (!mapping.ProjectedBounds(element).Intersects(rectangle)) continue;
             // The box is a screen gesture. Test the projected contour, rather than the
             // inverse-mapped AABB, which selects unrelated objects beside a trapezoid.

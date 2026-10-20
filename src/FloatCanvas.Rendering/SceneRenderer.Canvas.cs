@@ -36,7 +36,9 @@ public sealed partial class SceneRenderer
         var origin = mapping.GridOrigin;
         byte guideAlpha = grid.Visible && grid.Width > 0 && (grid.Color >> 24) != 0 && document.LayerOpacity > 0 ? (byte)88 : (byte)176;
         using var paint = new SKPaint { IsAntialias = true, Color = reference ? SKColors.White.WithAlpha(guideAlpha) : new SKColor(grid.Color),
-            StrokeWidth = reference ? 1 : (float)grid.Width, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Butt };
+            StrokeWidth = reference ? 1 : (float)grid.Width, Style = SKPaintStyle.Stroke,
+            // Dotted strokes use near-zero dash lengths; round caps provide each dot's visible area.
+            StrokeCap = !reference && grid.Pattern == StrokePattern.Dotted ? SKStrokeCap.Round : SKStrokeCap.Butt };
         using var dash = CreateDash(new ElementStyle { StrokeWidth = grid.Width, StrokePattern = grid.Pattern });
         using var whiteDashes = reference ? SKPathEffect.CreateDash([4, 4], 0) : null;
         using var blackDashes = reference ? SKPathEffect.CreateDash([4, 4], 4) : null;

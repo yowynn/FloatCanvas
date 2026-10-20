@@ -36,6 +36,7 @@ internal static class CommandGlyphs
     // The same plane's rear edges leave real gaps around the shared upright figure.
     internal const string Billboard = "M2.5,6.607 L1,8 L8,14.5 L15,8 L13.5,6.607 " + PlacementFigure;
     internal static string Placement(bool billboard)=>billboard?Billboard:Surface;
+    internal static double StrokeThickness(string geometry)=>geometry==Surface||geometry==Billboard?1.8:1.5;
 
     private static string SurfacePlacementGlyph()
     {
@@ -60,6 +61,7 @@ internal static class CommandGlyphs
 
     internal static string Tool(EditorTool tool) => tool switch
     {
+        EditorTool.Canvas => Canvas,
         EditorTool.Select => "M3,1 L3,15 L7,11 L10,16 L12,15 L9,10 L15,10 Z",
         EditorTool.Eraser => "M1,10 L8,2 L15,9 L8,16 L6,16 Z M5,6 L12,13 M8,16 L16,16",
         EditorTool.Freehand => "M2,13 L3,9 L11,1 L15,5 L7,13 Z M3,9 L7,13 M10,2 L14,6",
@@ -86,7 +88,7 @@ internal static class CommandGlyphs
 
     internal static FrameworkElement Create(string geometry)
     {
-        var path = new System.Windows.Shapes.Path { Data = Geometry.Parse(geometry), StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round,
+        var path = new System.Windows.Shapes.Path { Data = Geometry.Parse(geometry), StrokeThickness = StrokeThickness(geometry), StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round, IsHitTestVisible = false };
         path.SetResourceReference(Shape.StrokeProperty, "CanvasText");
         var canvas = new Canvas { Width = 16, Height = 16, IsHitTestVisible = false }; canvas.Children.Add(path);

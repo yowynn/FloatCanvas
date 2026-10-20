@@ -42,7 +42,7 @@ internal static class BillboardStorageTests
         var disabledLoaded = (await store.LoadAsync(disabledPath)).Document;
         check(disabledLoaded.Elements[0].IsBillboard && disabledLoaded.Elements[0].BillboardHeight == -80 && !disabledLoaded.Canvas.Projection.Enabled,
             "disabled projection persists signed height and mode for later restoration");
-        async Task Mutate(string name, Action<JsonObject> edit)
+        async Task Mutate(string name, Action<JsonObject> edit, bool accept = false)
         {
             string edited = Path.Combine(root, name + ".floatcanvas"); File.Copy(path, edited);
             using (var zip = ZipFile.Open(edited, ZipArchiveMode.Update))
@@ -53,12 +53,12 @@ internal static class BillboardStorageTests
                 using var writer = new StreamWriter(zip.CreateEntry("scene.json").Open()); await writer.WriteAsync(json.ToJsonString());
             }
             bool rejected = false; try { await store.LoadAsync(edited); } catch (InvalidDataException) { rejected = true; }
-            check(rejected, name);
+            check(rejected != accept, name);
         }
         await Mutate("missing required billboard anchor rejected", n => n["Elements"]![0]!.AsObject().Remove("BillboardAnchor"));
         await Mutate("partial billboard anchor rejected", n => n["Elements"]![0]!["BillboardAnchor"]!.AsObject().Remove("Y"));
         await Mutate("missing required billboard height rejected", n => n["Elements"]![0]!.AsObject().Remove("BillboardHeight"));
-        await Mutate("billboard behind horizon rejected", n => n["Elements"]![0]!["BillboardAnchor"]!["Y"] = -300);
+        await Mutate("retained billboard behind horizon remains loadable", n => n["Elements"]![0]!["BillboardAnchor"]!["Y"] = -300, accept: true);
         var invalid = scene.Clone(); invalid.Elements[0].BillboardHeight = double.NaN;
         bool nanRejected = false; try { SceneValidation.Validate(invalid); } catch (InvalidDataException) { nanRejected = true; }
         check(nanRejected, "nonfinite billboard height rejected");

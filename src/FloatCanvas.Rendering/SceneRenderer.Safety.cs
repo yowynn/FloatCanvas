@@ -5,6 +5,28 @@ namespace FloatCanvas.Rendering;
 
 public sealed partial class SceneRenderer
 {
+    /// <summary>Draws a transient editing hint in screen coordinates. Ordinary scene rendering and exports never call this.</summary>
+    public static void DrawProjectionUnsafeRegion(SKCanvas canvas, SceneDocument document, RectD screenViewport)
+    {
+        var bounds = screenViewport.Intersect(document.Viewport);
+        if (!document.Canvas.Projection.Enabled || bounds.IsEmpty || !Finite(bounds)) return;
+        var mapping = CanvasMapping.Create(document);
+        if (mapping.IsScreenSafe(new(bounds.Left, bounds.Top)) && mapping.IsScreenSafe(new(bounds.Right, bounds.Top)) &&
+            mapping.IsScreenSafe(new(bounds.Right, bounds.Bottom)) && mapping.IsScreenSafe(new(bounds.Left, bounds.Bottom))) return;
+        var safe = bounds == document.Viewport ? mapping.SafeScreenPolygon : mapping.Safety.ClipScreen(bounds);
+        using var builder = new SKPathBuilder { FillType = SKPathFillType.EvenOdd };
+        builder.AddRect(ToRect(bounds));
+        if (safe.Count >= 3)
+        {
+            builder.MoveTo(ToPoint(safe[0]));
+            foreach (var point in safe.Skip(1)) builder.LineTo(ToPoint(point));
+            builder.Close();
+        }
+        using var path = builder.Detach();
+        using var paint = new SKPaint { Color = new SKColor(220, 72, 72, 24), IsAntialias = true };
+        canvas.DrawPath(path, paint);
+    }
+
     private CanvasMapping MappingFor(SceneDocument document) =>
         ReferenceEquals(document, _drawingDocument) && _mapping is not null ? _mapping : CanvasMapping.Create(document);
 

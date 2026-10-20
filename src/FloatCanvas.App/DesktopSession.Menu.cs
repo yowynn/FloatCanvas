@@ -49,7 +49,7 @@ internal sealed partial class DesktopSession
         foreach (var tool in new[] { EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate }) images.Items.Add(ToolMenuItem(tool));
         var canvas = Group("ToolbarV2.Canvas", CommandGlyphs.Canvas);
         canvas.Items.Add(ToolMenuItem(EditorTool.CaptureRegion));
-        Item(canvas, L.Get("Canvas.Title"), CommandGlyphs.Canvas, ToggleCanvasSettings);
+        canvas.Items.Add(ToolMenuItem(EditorTool.Canvas));
         var billboard=new Controls.MenuItem {Header=L.Get("Billboard.Toggle"),Icon=CommandGlyphs.Create(CommandGlyphs.Placement(_editor.BillboardMode)),IsCheckable=true,Tag="billboard"};
         billboard.Click+=(_,_)=>RunUiAction(ToggleBillboardMode);canvas.Items.Add(billboard);
         menu.Opened+=(_,_)=>

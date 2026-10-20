@@ -46,6 +46,10 @@ public sealed class CanvasGridSettings
     public uint Color { get; set; } = 0x80FFFFFF;
     public double Width { get; set; } = 1;
     public StrokePattern Pattern { get; set; }
+    /// <summary>Exact square-cell size used without perspective. Null retains the saved projection spacing.</summary>
+    public double? FlatCellSize { get; set; }
+    /// <summary>Primary-screen center in document screen coordinates. Null uses the document viewport center.</summary>
+    public PointD? FlatOrigin { get; set; }
     public CanvasGridSettings Clone() => (CanvasGridSettings)MemberwiseClone();
 }
 
@@ -194,9 +198,11 @@ public sealed class CanvasMapping
             reference = CanvasCalibration.CreateInitial(viewport, settings.Columns, settings.Rows);
             reference.LockedGridCellSize = settings.LockedGridCellSize;
         }
-        GridOrigin = reference.Origin; GridCellSize = reference.GridCellSize;
         PlaneToScreen = settings.Enabled ? reference.Matrix : Projective2D.Identity;
         ScreenToPlane = PlaneToScreen.Inverse();
+        GridCellSize = CanvasGridGeometry.ResolveCellSize(document.Canvas, viewport);
+        GridOrigin = settings.Enabled ? ScreenToPlane.TransformPoint(CanvasGridGeometry.ReferenceCenter(reference)) :
+            document.Canvas.Grid.FlatOrigin ?? viewport.Center;
         Safety = new(PlaneToScreen);
         SafeScreenPolygon = Safety.ClipScreen(viewport);
         VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();

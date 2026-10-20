@@ -685,6 +685,7 @@ public sealed partial class OverlayHost : IDisposable
             return 0;
         }
         if (state.Kind != WindowKind.Input) return DefWindowProcW(state.Handle, message, wParam, lParam);
+        if (message == 0x02A3) { OnPointerLeft(state); return 0; }
         // Keep the original mouse message, but activate only after a new canvas press
         // passes the editing, modal, focus and capture checks below. OLE never activates.
         if (message == 0x21) return 3; // WM_MOUSEACTIVATE / MA_NOACTIVATE
@@ -718,7 +719,7 @@ public sealed partial class OverlayHost : IDisposable
             KeyPressed?.Invoke((int)wParam);
             return 0;
         }
-        if (message == WmMouseMove) { RaisePointer(OverlayPointerKind.Move, _pressedButton, position: MessagePosition(state, message, lParam)); return 0; }
+        if (message == WmMouseMove) { RaisePointer(OverlayPointerKind.Move, _pressedButton, position: MessagePosition(state, message, lParam)); TrackPointerWindow(state); return 0; }
         if (message == WmMouseWheel) { RaisePointer(OverlayPointerKind.Wheel, OverlayMouseButton.None, (short)((long)wParam >> 16), MessagePosition(state, message, lParam)); return 0; }
         var button = message switch
         {
@@ -737,6 +738,7 @@ public sealed partial class OverlayHost : IDisposable
                 _releasingCapture = true;
                 try { ReleaseCapture(); }
                 finally { _releasingCapture = false; }
+                TrackPointerWindow(state);
             }
             else
             {
@@ -826,6 +828,7 @@ public sealed partial class OverlayHost : IDisposable
         internal readonly MonitorInfo? Monitor = monitor;
         internal nint Handle;
         internal bool Freed;
+        internal bool TrackingPointerLeave;
     }
     private sealed record MonitorPair(MonitorInfo Monitor, WindowState Display, WindowState Input, DibBuffer Buffer);
 

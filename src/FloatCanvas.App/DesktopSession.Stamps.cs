@@ -36,6 +36,7 @@ internal sealed partial class DesktopSession
 
     private void HandleCanvasPointer(OverlayPointerEvent e)
     {
+        ObserveProjectionHover(e);
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
             _editor.ClickPlacementDragThreshold = ClickPlacementThresholdFor(_host.Monitors, e.Position);
         if (e.Kind == OverlayPointerKind.Cancel) _propertiesClicks?.Reset();
@@ -56,13 +57,13 @@ internal sealed partial class DesktopSession
             if (_eyedropper is not null) EndEyedropper(restore: false);
             DismissPanelsForCanvasPress();
         }
-        if (_editor.HandleTemporaryMovePointer(e)) { _propertiesClicks?.Reset(); return; }
+        if (_editor.HandleTemporaryMovePointer(e)) { SynchronizeCanvasTool(); _propertiesClicks?.Reset(); return; }
         if (HandleEyedropperPointer(e)) { _propertiesClicks?.Reset(); return; }
         if (HandleInlineTextPointer(e)) { _propertiesClicks?.Reset(); return; }
         bool dismissedProperties = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick &&
             _inspector is { IsVisible: true, IsPinned: false };
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _inspector?.CompletePendingEdit();
-        if (HandleCalibrationPointer(e)) { _propertiesClicks?.Reset(); return; }
+        if (HandleCanvasToolPointer(e) || HandleCalibrationPointer(e)) { _propertiesClicks?.Reset(); return; }
         using var destination = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick
             ? _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress) : null;
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
@@ -143,6 +144,7 @@ internal sealed partial class DesktopSession
     private void DismissPanelsForCanvasPress()
     {
         _toolOptionsPanel?.CloseColorPicker();
+        _canvasSettingsWindow?.ClosePickers();
         _windowCoordinator?.DismissTransient(WindowDismissReason.CanvasPress);
         if (_toolbarMenu is not null) _toolbarMenu.IsOpen = false;
         if (_moreToolsMenu is not null) _moreToolsMenu.IsOpen = false;

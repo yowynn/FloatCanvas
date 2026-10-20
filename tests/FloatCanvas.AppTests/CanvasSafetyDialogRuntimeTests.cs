@@ -3,6 +3,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -22,9 +24,10 @@ internal static class CanvasSafetyDialogRuntimeTests
             foreach (string locale in new[] { "zh-CN", "en" })
             foreach (string theme in new[] { "light", "dark" })
             foreach (bool canRelocate in new[] { true, false })
+            foreach (int count in new[] { 1, 12, 12345 })
             {
                 L.Initialize(locale); AppTheme.Apply(theme);
-                var dialog = CanvasSafetyDialog.Create(null, 3, canRelocate);
+                var dialog = CanvasSafetyDialog.Create(null, count, canRelocate);
                 var window = dialog.Window;
                 window.ShowInTaskbar = true;
                 window.ApplyTemplate();
@@ -34,7 +37,7 @@ internal static class CanvasSafetyDialogRuntimeTests
                 root.SetValue(System.Windows.Documents.TextElement.ForegroundProperty, window.Foreground);
                 root.SetValue(System.Windows.Documents.TextElement.FontFamilyProperty, window.FontFamily);
                 root.SetValue(System.Windows.Documents.TextElement.FontSizeProperty, window.FontSize);
-                string name = $"{locale} {theme} relocate={canRelocate}";
+                string name = $"{locale} {theme} relocate={canRelocate} count={count}";
                 using var source = new HwndSource(new HwndSourceParameters("FloatCanvas hidden perspective safety dialog")
                 { Width = 460, Height = 600, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x08000080 });
                 try
@@ -43,18 +46,22 @@ internal static class CanvasSafetyDialogRuntimeTests
                     root.Measure(new Size(460, double.PositiveInfinity));
                     double height = Math.Ceiling(root.DesiredSize.Height);
                     root.Arrange(new Rect(0, 0, 460, height)); root.UpdateLayout(); Pump();
-                    Verify(check, name, window, content, canRelocate, root);
+                    Verify(check, name, window, content, canRelocate, root, count);
                     check(name + " uses a hidden native source without showing the dialog", PresentationSource.FromVisual(content) is HwndSource && !window.IsVisible &&
                         new WindowInteropHelper(window).Handle == 0);
-                    Render(root, Path.Combine(output, $"dialog-{locale}-{theme}-{canRelocate}.png"));
+                    Render(root, Path.Combine(output, $"dialog-{locale}-{theme}-{canRelocate}-{count}.png"));
                     var escape = new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
                     window.RaiseEvent(escape);
                     check(name + " production Escape route cancels the adjustment", escape.Handled && dialog.Result() == CanvasSafetyAction.Cancel && !window.IsVisible);
                 }
                 finally { root.Child = null; source.RootVisual = null; window.Close(); }
-                var close = CanvasSafetyDialog.Create(null, 3, canRelocate);
+                var close = CanvasSafetyDialog.Create(null, count, canRelocate);
                 close.Window.Close();
                 check(name + " closing the window without an action cancels", close.Result() == CanvasSafetyAction.Cancel);
+                var keep = CanvasSafetyDialog.Create(null, count, canRelocate);
+                Buttons((DockPanel)keep.Window.Content).Single(button => AutomationProperties.GetAutomationId(button) == "KeepUnsafeLayers")
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                check(name + " explicit keep action applies unchanged layers even when relocation is unavailable", keep.Result() == CanvasSafetyAction.Keep && !keep.Window.IsVisible);
             }
             check("dialog checks retain their independent profile", string.Equals(ApplicationPaths.ProfileDirectory,
                 Path.Combine(output, "profile"), StringComparison.OrdinalIgnoreCase));
@@ -83,6 +90,7 @@ internal static class CanvasSafetyDialogRuntimeTests
                     {
                         var content = (DockPanel)window.Content;
                         Verify(check, $"native {sample.Locale} {sample.Theme}", window, content, sample.CanRelocate, content);
+                        VerifyHelpInteraction(check, $"native {sample.Locale} {sample.Theme}", window, PresentationSource.FromVisual(window)!);
                         var buttons = Buttons(content);
                         var focused = Keyboard.FocusedElement as FrameworkElement;
                         Console.WriteLine($"PREVIEW_READY locale={sample.Locale} theme={sample.Theme} canRelocate={sample.CanRelocate} hwnd={new WindowInteropHelper(window).Handle:X} " +
@@ -102,19 +110,38 @@ internal static class CanvasSafetyDialogRuntimeTests
         });
     }
 
-    private static void Verify(Action<string, bool> check, string name, Window window, DockPanel content, bool canRelocate, FrameworkElement root)
+    private static void Verify(Action<string, bool> check, string name, Window window, DockPanel content, bool canRelocate, FrameworkElement root, int count = 3)
     {
         var buttons = Buttons(content);
         var body = (TextBlock)((ScrollViewer)content.Children[1]).Content;
-        check(name + " presents the localized layer count and all three explicit decisions", window.Title == L.Get("Canvas.SafetyTitle") && body.Text.Contains(L.Format("Canvas.UnsafeLayers", 3), StringComparison.Ordinal) &&
-            buttons.Length == 3 && Equals(buttons[0].Content, L.Get("Canvas.ApplyRelocate")) && Equals(buttons[1].Content, L.Get("Canvas.ApplyDelete")) &&
-            Equals(buttons[2].Content, L.Get("Canvas.CancelAdjustment")));
-        check(name + " explains an unavailable relocation and disables only that action", buttons[0].IsEnabled == canRelocate && buttons[1].IsEnabled && buttons[2].IsEnabled &&
-            body.Text.Contains(L.Get("Canvas.RelocateFailed"), StringComparison.Ordinal) == !canRelocate);
+        string expectedBody = L.Format("Canvas.UnsafeLayerSummary", count);
+        var runs = body.Inlines.OfType<Run>().ToArray();
+        string countText = count.ToString(CultureInfo.CurrentCulture);
+        check(name + " presents only the short localized decision summary with one accurate count", body.Text == expectedBody && expectedBody.Length < 100 && runs.Length == 3 &&
+            string.Concat(runs.Select(run => run.Text)) == expectedBody && runs[1].Text == countText &&
+            body.Text.Split(countText, StringSplitOptions.None).Length == 2 && !body.Text.Contains(L.Get("Canvas.RelocateFailed"), StringComparison.Ordinal) &&
+            !body.Text.Contains(L.Get("Canvas.ApplyRelocate"), StringComparison.Ordinal) && !body.Text.Contains(L.Get("Canvas.ApplyKeep"), StringComparison.Ordinal));
+        check(name + " emphasizes only the layer count with bold larger themed accent text", runs[1].FontWeight == FontWeights.Bold &&
+            runs[1].FontSize == body.FontSize + 2 && runs[1].Foreground is SolidColorBrush { Color.A: 255 } accent &&
+            accent.Color == ((SolidColorBrush)window.FindResource("CanvasAccent")).Color &&
+            accent.Color != ((SolidColorBrush)body.Foreground).Color &&
+            runs.Where((_, index) => index != 1).All(run => run.FontWeight == body.FontWeight && run.FontSize == body.FontSize &&
+                ((SolidColorBrush)run.Foreground).Color == ((SolidColorBrush)body.Foreground).Color) &&
+            Contrast(accent.Color, ((SolidColorBrush)window.Background).Color) >= 3);
+        var countStart = runs[1].ContentStart.GetCharacterRect(LogicalDirection.Forward);
+        var countEnd = runs[1].ContentEnd.GetCharacterRect(LogicalDirection.Backward);
+        check(name + " lays out the complete emphasized count without splitting or clipping digits", !countStart.IsEmpty && !countEnd.IsEmpty &&
+            Math.Abs(countStart.Top - countEnd.Top) <= 1 && countStart.Left >= -1 && countEnd.Right <= body.ActualWidth + 1 &&
+            countStart.Top >= -1 && countEnd.Bottom <= body.ActualHeight + 1);
+        check(name + " presents the localized layer count and all four explicit decisions", window.Title == L.Get("Canvas.SafetyTitle") && body.Text.Contains(expectedBody, StringComparison.Ordinal) &&
+            buttons.Length == 4 && Equals(buttons[0].Content, L.Get("Canvas.ApplyRelocate")) && Equals(buttons[1].Content, L.Get("Canvas.ApplyDelete")) &&
+            Equals(buttons[2].Content, L.Get("Canvas.ApplyKeep")) && Equals(buttons[3].Content, L.Get("Canvas.CancelAdjustment")));
+        check(name + " explains an unavailable relocation and disables only that action", buttons[0].IsEnabled == canRelocate && buttons.Skip(1).All(button => button.IsEnabled) &&
+            ((string)window.Resources["CanvasWindowHelpText"]).Contains(L.Get("Canvas.RelocateFailed"), StringComparison.Ordinal) == !canRelocate);
         check(name + " defaults to relocation or cancellation and Escape is cancellation", buttons.Count(b => b.IsDefault) == 1 &&
-            buttons[canRelocate ? 0 : 2].IsDefault && buttons[2].IsCancel && buttons.All(b => b.Focusable));
+            buttons[canRelocate ? 0 : 3].IsDefault && buttons[3].IsCancel && !buttons[2].IsDefault && buttons.All(b => b.Focusable));
         check(name + " exposes stable accessibility action identifiers", buttons.Select(AutomationProperties.GetAutomationId)
-            .SequenceEqual(new[] { "RelocateUnsafeLayers", "DeleteUnsafeLayers", "CancelCanvasAdjustment" }));
+            .SequenceEqual(new[] { "RelocateUnsafeLayers", "DeleteUnsafeLayers", "KeepUnsafeLayers", "CancelCanvasAdjustment" }));
         check(name + " lays out full width actions with visible text", buttons.All(button =>
         {
             var text = new FormattedText((string)button.Content, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
@@ -124,17 +151,61 @@ internal static class CanvasSafetyDialogRuntimeTests
                 text.Height <= button.ActualHeight - button.Padding.Top - button.Padding.Bottom + 1;
         }));
         var positions = buttons.Select(button => button.TranslatePoint(new Point(), root)).ToArray();
-        check(name + " separates each action without overlapping or clipping the content", positions[1].Y >= positions[0].Y + buttons[0].ActualHeight + 7 &&
-            positions[2].Y >= positions[1].Y + buttons[1].ActualHeight + 7 && buttons.All(button =>
+        check(name + " separates each action without overlapping or clipping the content", Enumerable.Range(1, buttons.Length - 1)
+            .All(index => positions[index].Y >= positions[index - 1].Y + buttons[index - 1].ActualHeight + 7) && buttons.All(button =>
             {
                 var point = button.TranslatePoint(new Point(), root);
                 return point.X >= -1 && point.Y >= -1 && point.X + button.ActualWidth <= root.ActualWidth + 1 && point.Y + button.ActualHeight <= root.ActualHeight + 1;
             }));
         check(name + " uses the selected opaque application palette", window.Background is SolidColorBrush { Color.A: 255 } background &&
             background.Color == ((SolidColorBrush)Application.Current.Resources["CanvasSurface"]).Color && buttons.All(b => b.Foreground is SolidColorBrush { Color.A: 255 }));
+        VerifyHelpChrome(check, name, window, canRelocate);
+    }
+
+    private static void VerifyHelpChrome(Action<string, bool> check, string name, Window window, bool canRelocate)
+    {
+        var help = (Button)window.Template.FindName("Help", window);
+        var close = (Button)window.Template.FindName("Close", window);
+        var popup = (Popup)window.Template.FindName("HelpPopup", window);
+        var caption = (StackPanel)help.Parent;
+        if (!window.IsVisible)
+        {
+            caption.Measure(new Size(120, 36));
+            caption.Arrange(new Rect(0, 0, caption.DesiredSize.Width, 36)); caption.UpdateLayout();
+        }
+        double gap = close.TranslatePoint(new Point(), caption).X - help.TranslatePoint(new Point(), caption).X - help.ActualWidth;
+        check(name + " uses the existing question mark immediately beside Close", help.Visibility == Visibility.Visible &&
+            ReferenceEquals(close.Parent, caption) && caption.Children.IndexOf(close) == caption.Children.IndexOf(help) + 1 &&
+            help.ActualWidth == 28 && close.ActualWidth == 28 && gap is >= 0 and <= 4 &&
+            Equals(AutomationProperties.GetName(help), L.Get("Canvas.SafetyHelpTitle")));
+        var text = (TextBlock)((StackPanel)((Border)popup.Child).Child).Children[1];
+        string expected = L.Get("Canvas.SafetyHelpText") + (canRelocate ? "" : "\n\n" + L.Get("Canvas.RelocateFailed"));
+        check(name + " places every option explanation and relocation failure only in existing help", text.Text == expected &&
+            new[] { "Canvas.CancelAdjustment", "Canvas.ApplyRelocate", "Canvas.ApplyDelete", "Canvas.ApplyKeep" }
+                .All(key => text.Text.Contains(L.Get(key), StringComparison.Ordinal)));
+    }
+
+    private static void VerifyHelpInteraction(Action<string, bool> check, string name, Window window, PresentationSource source)
+    {
+        var help = (Button)window.Template.FindName("Help", window);
+        var popup = (Popup)window.Template.FindName("HelpPopup", window);
+        int closes = 0; window.Closing += (_, _) => closes++;
+        var click = new RoutedEventArgs(Button.ClickEvent); help.RaiseEvent(click); Pump();
+        check(name + " actual help-button route opens its popup without closing the confirmation", click.Handled && popup.IsOpen && closes == 0 && window.IsVisible);
+        var escape = new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+        window.RaiseEvent(escape); Pump();
+        check(name + " first Escape closes help and preserves the undecided confirmation", escape.Handled && !popup.IsOpen && closes == 0 && window.IsVisible);
     }
 
     private static Button[] Buttons(DockPanel content) => ((StackPanel)content.Children[0]).Children.OfType<Button>().ToArray();
+
+    private static double Contrast(Color first, Color second)
+    {
+        static double Channel(byte value) { double c = value / 255d; return c <= .04045 ? c / 12.92 : Math.Pow((c + .055) / 1.055, 2.4); }
+        static double Luminance(Color color) => .2126 * Channel(color.R) + .7152 * Channel(color.G) + .0722 * Channel(color.B);
+        double a = Luminance(first), b = Luminance(second);
+        return (Math.Max(a, b) + .05) / (Math.Min(a, b) + .05);
+    }
 
     private static void WithEnvironment(Action<Application, string> run)
     {

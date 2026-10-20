@@ -43,7 +43,10 @@ internal static class Preview4MenuTests
                 var main = (ContextMenu)Invoke(session, "CreateLauncherMenu")!;
                 Audit("main", main);
                 var mainItems = Items(main).ToArray();
-                check($"{locale} {theme} drawing commands have distinct tool symbols", mainItems.Where(item => item.Tag is EditorTool).Select(item => Data((FrameworkElement)item.Icon)).Distinct().Count() == 15);
+                var drawingItems = mainItems.Where(item => item.Tag is EditorTool).ToArray();
+                check($"{locale} {theme} drawing commands and Canvas have distinct tool symbols", drawingItems.Length == 16 &&
+                    drawingItems.Select(item => Data((FrameworkElement)item.Icon)).Distinct().Count() == drawingItems.Length &&
+                    drawingItems.Single(item => Equals(item.Tag, EditorTool.Canvas)).InputGestureText == "C");
                 check($"{locale} {theme} pass-through matches the toolbar check mark", Data((FrameworkElement)mainItems.Single(item => Equals(item.Header, L.Get("ToolbarV2.PassThrough"))).Icon) == Geometry.Parse(CommandGlyphs.PassThrough).ToString());
 
                 string profile = Path.Combine(root, locale + "-" + theme);
@@ -65,7 +68,8 @@ internal static class Preview4MenuTests
                     Audit("layer", (ContextMenu)Invoke(layers, "CreateContextMenu", layer.Id)!);
                     canvasWindow.SetReferenceMonitors([new("fixture primary", new(0, 0, 100, 100), new(0, 0, 100, 100), 96, 96, true),
                         new("fixture secondary", new(100, 0, 100, 100), new(100, 0, 100, 100), 96, 96, false)], null);
-                    Audit("reset display", Field<ContextMenu>(canvasWindow, "resetMenu"));
+                    check($"{locale} {theme} primary-center reset exposes no obsolete display menu", Field<ContextMenu>(canvasWindow, "resetMenu").Items.Count == 0 &&
+                        Field<FrameworkElement>(canvasWindow, "resetChoices").Visibility == Visibility.Collapsed);
                     Guid stamp = library.Items.Single().Id;
                     Task.Run(() => library.PinAsync(0, null)).GetAwaiter().GetResult();
                     var stampMenu = (ContextMenu)Invoke(stamps, "TileContextMenu", stamp)!;

@@ -13,7 +13,7 @@ internal static class CanvasSettingsControlTests
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
-        var window = new CanvasSettingsWindow();
+        var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
         try
         {
             var columns = Field<NumericValueField>(window, "columns");
@@ -28,7 +28,7 @@ internal static class CanvasSettingsControlTests
             int countEdits = 0, widthEdits = 0;
             window.GridCountsChanged += (_, _) => countEdits++;
             window.GridWidthChanged += _ => widthEdits++;
-            window.Refresh(new(), false);
+            window.Refresh(new() { Projection = new() { Enabled = true } }, false);
             check("canvas numeric refresh creates no semantic edits", countEdits == 0 && widthEdits == 0);
             columns.Input.Text = "9.5";
             check("fractional cell count draft is rejected without edits", !columns.TryGetValue(out _) && countEdits == 0);
@@ -46,6 +46,7 @@ internal static class CanvasSettingsControlTests
             GridSizeLock(window, check);
             MonitorSelection(window, check);
             ReferencePreference(window, check);
+            CanvasGridSettingsControlsTests.Run(check);
         }
         finally { window.CloseForDispose(); }
         if (Environment.GetEnvironmentVariable("FLOATCANVAS_GRID_LOCK_UI_OUTPUT") is { Length: > 0 } output)
@@ -86,8 +87,9 @@ internal static class CanvasSettingsControlTests
             double.Parse(lockedRows.Text, System.Globalization.CultureInfo.CurrentCulture) > 0);
         settings.Projection.Enabled = false;
         window.Refresh(settings, false);
-        check("turning perspective off retains a readable lock and computed counts", toggle.IsChecked == true && !toggle.IsEnabled &&
-            lockedColumns.Visibility == Visibility.Visible && columns.Visibility == Visibility.Collapsed && countEdits == 0);
+        check("turning perspective off retains dormant lock state while displaying only flat grid size", toggle.IsChecked == true && !toggle.IsEnabled &&
+            toggle.Visibility == Visibility.Collapsed && Field<Grid>(window, "countPair").Visibility == Visibility.Collapsed &&
+            Field<StackPanel>(window, "flatSizePanel").Visibility == Visibility.Visible && countEdits == 0);
         toggle.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         check("disabled perspective cannot emit a grid lock edit", lockEdits == 1);
         settings.Projection.Enabled = true; settings.Projection.CellSize = 105.1234; settings.Projection.LockedGridCellSize = null;
@@ -145,17 +147,16 @@ internal static class CanvasSettingsControlTests
             new("pad",new(307,2160,2160,1440),new(307,2160,2160,1380),120,120,false)];
         window.SetReferenceMonitors(monitors,"pad");
         var menu = Field<ContextMenu>(window,"resetMenu");
-        check("split reset menu contains the default and each active display", menu.Items.Count == 3 && menu.Items.Cast<MenuItem>().Select(i => (string)i.Tag).SequenceEqual(new[] { "", "main", "pad" }));
+        check("reset uses one primary-screen action without a competing display choice", menu.Items.Count == 0 &&
+            Field<Button>(window, "resetChoices").Visibility == Visibility.Collapsed);
         check("target-display dropdown was retired", typeof(CanvasSettingsWindow).GetField("referenceMonitor", BindingFlags.Instance|BindingFlags.NonPublic) is null);
         int requests = 0; string? selected = null;
         void Choose(string? device) { requests++; selected = device; }
         window.ResetDisplayRequested += Choose;
         try
         {
-            ((MenuItem)menu.Items[1]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            check("choosing an explicit menu option requests an immediate reset on that display", requests == 1 && selected == "main");
             Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check("main reset action executes the currently remembered choice", requests == 2 && selected == "pad");
+            check("main reset action requests the primary screen even with an older remembered choice", requests == 1 && selected is null);
         }
         finally { window.ResetDisplayRequested -= Choose; }
         var bounds = DesktopSession.ResolveCanvasReferenceBounds(monitors,"pad",default,default,new(0,0,3840,3600));
@@ -166,6 +167,6 @@ internal static class CanvasSettingsControlTests
         MonitorInfo[] left = [new("left",new(-1920,-200,1920,1080),new(-1920,-200,1920,1040),96,96,true)];
         check("reset converts negative screen coordinates once into document coordinates", DesktopSession.ResolveCanvasReferenceBounds(left,null,default,new(-2000,-500),new(0,0,6000,4000)) == new RectD(80,300,1920,1080));
         window.SetReferenceMonitors([monitors[1]],"pad");
-        check("a sole nonprimary scope display uses the unnumbered reset option", menu.Items.Count == 1 && (string)((MenuItem)menu.Items[0]).Tag == "");
+        check("a sole scope display does not revive the retired reset menu", menu.Items.Count == 0 && Field<Button>(window, "resetChoices").Visibility == Visibility.Collapsed);
     }
 }

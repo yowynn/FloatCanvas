@@ -2,7 +2,7 @@ using FloatCanvas.Core;
 
 namespace FloatCanvas.App;
 
-internal enum CanvasSafetyAction { Cancel, Relocate, Delete }
+internal enum CanvasSafetyAction { Cancel, Relocate, Delete, Keep }
 
 /// <summary>Resolves whole editing units without changing geometry, styles or group membership.</summary>
 internal static class CanvasSafetyResolution

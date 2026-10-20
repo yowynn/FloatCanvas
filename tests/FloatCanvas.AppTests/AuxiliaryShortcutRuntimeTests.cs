@@ -31,8 +31,13 @@ internal static class AuxiliaryShortcutRuntimeTests
         editor.Tool = EditorTool.Rectangle;
         try
         {
+            Invoke("CloseToolOptions");
+            Invoke("ToggleCanvasSettings"); Pump();
+            check("Canvas auxiliary command first selects its ordinary tool without opening settings", editor.Tool == EditorTool.Canvas &&
+                Field<CanvasSettingsWindow?>(session, "_canvasSettingsWindow")?.IsVisible != true);
             Invoke("ToggleCanvasSettings"); Pump();
             var canvas = Field<CanvasSettingsWindow>(session, "_canvasSettingsWindow");
+            check("Canvas auxiliary command opens settings when the tool is already selected", canvas.IsVisible && editor.Tool == EditorTool.Canvas);
             var gridVisible = Field<CheckBox>(canvas, "gridVisible");
             var original = CurrentElement().Transform;
             state.Execute("canvas settings undo marker", document => document.Elements.Single(item => item.Id == element.Id).Transform = Affine2D.Translation(17, 9).Compose(original));

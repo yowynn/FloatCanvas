@@ -44,12 +44,21 @@ internal static class Preview4CanvasTests
             MonitorInfo pad = new("pad",new(1920,0,1280,720),new(1920,0,1280,680),120,120,false);
             window.SetReferenceMonitors([main,pad], "pad");
             var menu = Field<ContextMenu>(window,"resetMenu");
-            check("reset split button has the default and two explicit display options", menu.Items.Count == 3 && Equals(((MenuItem)menu.Items[0]).Tag, ""));
-            check("reset main button names the persisted explicit display", Equals(Field<Button>(window,"reset").Content, ((MenuItem)menu.Items[2]).Header));
+            check("reset targets the primary screen without a display selection split button", menu.Items.Count == 0 &&
+                Field<Button>(window,"resetChoices").Visibility == Visibility.Collapsed && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+            string? requestedDevice = "unrequested";
+            window.ResetDisplayRequested += device => requestedDevice = device;
+            Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check("a dormant secondary display preference cannot change the reset request", requestedDevice is null);
             window.SetReferenceMonitors([main], "pad");
-            check("single display offers only the unnumbered default reset", menu.Items.Count == 1 && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+            check("single display retains the same primary reset without a hidden menu", menu.Items.Count == 0 && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
             window.SetReferenceMonitors([main,pad], "missing");
-            check("invalid display choice visibly falls back to the unnumbered default", Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+            check("invalid old display choices leave the same primary reset", menu.Items.Count == 0 && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+            var resetSettings = new CanvasSettings { Projection = custom.Clone(), Grid = new() { FlatCellSize = 73.1, FlatOrigin = viewport.Center } };
+            var reset = DesktopSession.CreateResetCanvasProjection(resetSettings, viewport);
+            check("primary reset preserves the exact flat spacing and count pair at the primary center", reset.Enabled &&
+                reset.Columns == custom.Columns && reset.Rows == custom.Rows && reset.CellSize == 73.1 &&
+                reset.Matrix == Projective2D.Identity && CanvasGridGeometry.ReferenceCenter(reset).DistanceTo(viewport.Center) < 1e-10);
         }
         finally { window.CloseForDispose(); }
         CornerModifiers(check, viewport);

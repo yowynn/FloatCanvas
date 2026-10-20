@@ -14,6 +14,11 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly CheckBox projection = new(), gridVisible = new(), gridSizeLock = new();
     private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true),
         rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true), width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5);
+    private readonly NumericValueField gridSize = new(CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize,
+        sliderMinimum: 1, sliderMaximum: 400, step: 1);
+    private readonly Grid countPair = new();
+    private readonly StackPanel flatSizePanel = new();
+    private readonly Button pin;
     private readonly TextBox lockedColumns = new() { IsReadOnly = true, MinHeight = 30 },
         lockedRows = new() { IsReadOnly = true, MinHeight = 30 };
     private readonly TextBlock gridSizeLockHint = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 8) };
@@ -33,6 +38,13 @@ internal sealed class CanvasSettingsWindow : Window
     public event Action<bool>? ProjectionChanged, GridVisibilityChanged, GridSizeLockChanged;
     public event Action<int, int>? GridCountsChanged;
     public event Action<double>? GridWidthChanged;
+    public event Action<double>? GridSizeChanged;
+    public bool IsPinned { get; private set; }
+    public event Action? PinChanged;
+    public bool IsColorPickerOpen => background.IsPickerOpen || gridColor.IsPickerOpen;
+    public bool TryCloseColorPicker() => background.TryClosePicker() || gridColor.TryClosePicker();
+    public bool OwnsColorPickerInput(DependencyObject? source) => background.OwnsPickerInput(source) || gridColor.OwnsPickerInput(source);
+    public void ClosePickers() { background.ClosePicker(); gridColor.ClosePicker(); }
     public event Action<StrokePattern>? GridPatternChanged;
     public event Action? CalibrationToggled, Dismissed;
     public event Action? FourPointsRequested;
@@ -43,7 +55,7 @@ internal sealed class CanvasSettingsWindow : Window
     public CanvasSettingsWindow(CanvasPresetLibrary? library = null)
     {
         Title = L.Get("Canvas.Title"); Width = 600; Height = 590; MinWidth = 600; MinHeight = 380;
-        Topmost = true; ShowInTaskbar = true; Icon = AppIcon.WindowImage;
+        Topmost = true; ShowInTaskbar = false; Icon = AppIcon.WindowImage;
         if (library is null)
         {
             try { library = new CanvasPresetLibrary(); }
@@ -61,10 +73,12 @@ internal sealed class CanvasSettingsWindow : Window
         gridSizeLock.Content = L.Get("Canvas.GridSizeLock"); gridSizeLock.Margin = new(0, 0, 0, 8);
         gridSizeLock.ToolTip = L.Get("Canvas.GridSizeLockHelp"); ToolTipService.SetShowOnDisabled(gridSizeLock, true);
         body.Children.Add(gridSizeLock);
-        var countPair = new Grid(); countPair.ColumnDefinitions.Add(new()); countPair.ColumnDefinitions.Add(new());
+        countPair.ColumnDefinitions.Add(new()); countPair.ColumnDefinitions.Add(new());
         var rowPanel = new StackPanel { Margin = new(0, 0, 8, 0) }; var columnPanel = new StackPanel();
         AddCountField(rowPanel, "Canvas.Rows", rows, lockedRows); AddCountField(columnPanel, "Canvas.Columns", columns, lockedColumns);
         Grid.SetColumn(columnPanel, 1); countPair.Children.Add(rowPanel); countPair.Children.Add(columnPanel); body.Children.Add(countPair);
+        AddField(flatSizePanel, "Canvas.GridSize", gridSize); body.Children.Add(flatSizePanel);
+        gridSize.ToolTip = L.Get("Canvas.GridSizeHelp");
         gridSizeLockHint.Text = L.Get("Canvas.GridSizeLockCountsHint"); body.Children.Add(gridSizeLockHint);
         var actions = new Grid {Width=PerspectiveActionsWidth,HorizontalAlignment=HorizontalAlignment.Left};
         actions.ColumnDefinitions.Add(new());actions.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
@@ -99,6 +113,13 @@ internal sealed class CanvasSettingsWindow : Window
         presetBorder.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         Grid.SetColumn(presetBorder, 1); content.Children.Add(presetBorder); layout.Children.Add(content); Content = layout;
         AppWindowChrome.Apply(this); AppWindowChrome.SetHelp(this, L.Get("Canvas.Help"), L.Get("Canvas.HelpText") + "\n\n" + L.Get("Canvas.GridSizeLockHelp") + "\n\n" + L.Get("Canvas.MultiMonitorHelp") + "\n\n" + L.Get("CanvasPreset.Scope"));
+        pin = ActionIconButton.Create(PanelActionIcon.Pin, L.Get("ToolbarV2.PinOptions"), () =>
+        {
+            IsPinned = !IsPinned; RefreshPin(); PinChanged?.Invoke();
+        });
+        pin.Width = pin.Height = 28; pin.Style = (Style)FindResource("CanvasCaptionButton");
+        System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(pin, true);
+        AppWindowChrome.SetHeaderActions(this, pin); ActionIconButton.UpdatePin(pin, false);
         background.ValueChanged += value => { if (!refreshing) BackgroundChanged?.Invoke(value); };
         gridColor.ValueChanged += value => { if (!refreshing) GridColorChanged?.Invoke(value); };
         projection.Click += (_, _) => { if (!refreshing) ProjectionChanged?.Invoke(projection.IsChecked == true); };
@@ -110,6 +131,15 @@ internal sealed class CanvasSettingsWindow : Window
         CommitOnExit(columns.Input, CommitCounts); CommitOnExit(rows.Input, CommitCounts);
         columns.SliderValueCommitted += () => { if (!refreshing) CommitCounts(); };
         rows.SliderValueCommitted += () => { if (!refreshing) CommitCounts(); };
+        void CommitGridSize()
+        {
+            if (refreshing || current.Projection.Enabled) return;
+            if (gridSize.TryGetValue(out double value))
+            { if (value != (current.Grid.FlatCellSize ?? current.Projection.GridCellSize)) GridSizeChanged?.Invoke(value); }
+            else RefreshGridSize(current.Grid.FlatCellSize ?? current.Projection.GridCellSize);
+        }
+        CommitOnExit(gridSize.Input, CommitGridSize);
+        gridSize.SliderValueCommitted += () => { if (!refreshing) CommitGridSize(); };
         void CommitWidth()
         {
             if (refreshing) return;
@@ -122,12 +152,13 @@ internal sealed class CanvasSettingsWindow : Window
         Closing += (_, e) => { if (disposing) return; e.Cancel = true; SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         ToolOptionsKeyboardRoute.Attach(this, () =>
         {
-            if (!background.TryClosePicker() && !gridColor.TryClosePicker())
-            { SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); }
-            return true;
+            if (TryCloseColorPicker()) return true;
+            if (IsPinned) return false;
+            SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); return true;
         }, () => background.IsPickerOpen || gridColor.IsPickerOpen, key =>
         {
             if (columns.Input.IsKeyboardFocusWithin || rows.Input.IsKeyboardFocusWithin) CommitCounts();
+            else if (gridSize.Input.IsKeyboardFocusWithin) CommitGridSize();
             else if (width.Input.IsKeyboardFocusWithin) CommitWidth();
             CommandKey?.Invoke(key);
         });
@@ -141,7 +172,9 @@ internal sealed class CanvasSettingsWindow : Window
             background.Value = settings.BackgroundColor; gridColor.Value = settings.Grid.Color;
             projection.IsChecked = settings.Projection.Enabled; gridVisible.IsChecked = settings.Grid.Visible;
             perspectiveActions.Visibility = settings.Projection.Enabled ? Visibility.Visible : Visibility.Collapsed;
+            flatSizePanel.Visibility = settings.Projection.Enabled ? Visibility.Collapsed : Visibility.Visible;
             RefreshGridCounts(settings.Projection);
+            if (!gridSize.IsKeyboardFocusWithin) RefreshGridSize(settings.Grid.FlatCellSize ?? settings.Projection.GridCellSize);
             if (!width.IsKeyboardFocusWithin) RefreshWidth(settings.Grid.Width);
             calibrate.Content = L.Get(calibrating ? "Canvas.EndCalibration" : "Canvas.Calibrate");
             pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(x => Equals(x.Tag, settings.Grid.Pattern));
@@ -156,9 +189,10 @@ internal sealed class CanvasSettingsWindow : Window
         try
         {
             bool locked = settings.LockedGridCellSize.HasValue;
+            countPair.Visibility = gridSizeLock.Visibility = settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
             gridSizeLock.IsChecked = locked; gridSizeLock.IsEnabled = settings.Enabled;
             columns.Visibility = rows.Visibility = locked ? Visibility.Collapsed : Visibility.Visible;
-            lockedColumns.Visibility = lockedRows.Visibility = gridSizeLockHint.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
+            lockedColumns.Visibility = lockedRows.Visibility = gridSizeLockHint.Visibility = locked && settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
             if (locked)
             {
                 RefreshLockedCount(lockedColumns, settings.GridColumns);
@@ -172,19 +206,15 @@ internal sealed class CanvasSettingsWindow : Window
     public void CloseForDispose() { disposing = true; Close(); }
     public void SetReferenceMonitors(IReadOnlyList<MonitorInfo> monitors, string? selectedDevice)
     {
-        selectedResetDevice = monitors.Count > 1 && monitors.Any(m => m.DeviceName == selectedDevice) ? selectedDevice : null;
-        resetMenu.Items.Clear();
-        void Add(string? device, string label)
-        {
-            var item = new MenuItem { Header = label, Tag = device ?? "", Icon = CommandGlyphs.Create(CommandGlyphs.Display), IsCheckable = true, IsChecked = device == selectedResetDevice };
-            item.Click += (_, _) => ResetDisplayRequested?.Invoke(device);
-            resetMenu.Items.Add(item);
-            if (device == selectedResetDevice) reset.Content = label;
-        }
-        Add(null, L.Get("Canvas.ResetOnDisplay"));
-        if (monitors.Count > 1)
-            for (int i = 0; i < monitors.Count; i++)
-                Add(monitors[i].DeviceName, L.Format("Canvas.ResetOnNumberedDisplay", i + 1));
+        resetChoices.Visibility = Visibility.Collapsed;
+        reset.Resources["CanvasButtonCornerRadius"] = new CornerRadius(6);
+        selectedResetDevice = null; resetMenu.Items.Clear(); reset.Content = L.Get("Canvas.ResetOnDisplay");
+    }
+    private void RefreshPin() => ActionIconButton.UpdatePin(pin, IsPinned);
+    private void RefreshGridSize(double value)
+    {
+        gridSize.Value = Math.Clamp(value, CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize);
+        gridSize.Input.Text = value.ToString("G", System.Globalization.CultureInfo.CurrentCulture);
     }
     private void RefreshWidth(double value)
     {
@@ -193,7 +223,7 @@ internal sealed class CanvasSettingsWindow : Window
     }
     private void CommitCounts()
     {
-        if (refreshing || current.Projection.LockedGridCellSize.HasValue) return;
+        if (refreshing || !current.Projection.Enabled || current.Projection.LockedGridCellSize.HasValue) return;
         if (columns.TryGetValue(out double c) && rows.TryGetValue(out double r))
         { if (c != current.Projection.Columns || r != current.Projection.Rows) GridCountsChanged?.Invoke((int)c, (int)r); }
         else { columns.Value = current.Projection.Columns; rows.Value = current.Projection.Rows; }

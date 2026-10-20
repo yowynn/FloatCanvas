@@ -10,7 +10,7 @@ A Windows screen annotation tool. Draw over your desktop, place images and edit 
 
 ![FloatCanvas preview showing a perspective grid, route annotations and the floating toolbar](Docs/Images/floatcanvas-preview.png)
 
-Current release: **0.2.1**. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
+Latest release: **0.2.1**. The features below also include unreleased source changes; see the [changelog](CHANGELOG.md) for release status and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
 
 The toolbar separates gray New and red-broom Clear. New confirms according to file and edit state; Clear is immediate, undoable and adds no history. A folding filename bubble shows the bound project. Stamp-slot context menus contain four maintenance actions: Rename, Overwrite, Delete and Unpin.
 
@@ -19,9 +19,10 @@ The toolbar separates gray New and red-broom Clear. New confirms according to fi
 - Freehand pen, highlighter, lines and arrows, shapes, text, separate numbered markers, symbols and emoji; graphical official/custom presets, per-tool preset selections and edited parameters retained across restarts, and single-click shape creation at a default size.
 - Import PNG, JPEG, BMP, GIF and WebP through files, the clipboard or drag and drop. GIF/animated WebP retain their original data and play; move, rotate, resize, group and edit image objects.
 - Two aligned toolbar rows with a shared visibility switch for tool and stamp shortcut hints; movable Tool options, Properties and Layers windows, with independent editing and canvas visibility.
-- Independent canvas background color and opacity, corner dragging or unordered four-corner perspective placement, a customizable square-cell grid, and official/personal canvas presets. Default Surface objects follow the canvas projection. Opt into Billboard mode (experimental), choose an equal-depth line, then draw screen-facing objects that scale with anchor depth. Version 6 projects retain placement, ground anchors and elevation, with v1/v2/v3/v4/v5 projects still readable.
-- Strong perspective can include the horizon on screen, with grids and Surface content clipped to a safe boundary. On release, cancel, move affected layers to an open safe position, or explicitly delete them in one undoable operation.
-- Opt into **Lock grid size while adjusting** to keep grid intersections aligned with anchors while fractional coverage counts update live. An origin marker follows the original top-left control point. Leaving the option off preserves existing calibration behavior.
+- Canvas is a tool exclusive with the drawing tools: click it or press `C` to select it with a blue border, then select it again for its options. Without perspective, drag empty space away from or toward the primary-screen center to enlarge or shrink the grid. With perspective, the reference grid and calibration frame appear immediately, with the origin at the central move handle.
+- Independent canvas background color and opacity, corner dragging or unordered four-corner placement, solid/dashed/dotted grids, and official/personal presets. Flat mode has one Grid size field; perspective has column/row counts. Switching modes preserves values, and Reset centers the reference on the primary screen while retaining exact spacing. Version 7 projects save these values and layer placement and read v1–v6 projects. Default Surface objects follow projection; experimental Billboards choose an equal-depth line and face the screen while scaling with anchor depth.
+- Strong perspective can include the horizon on screen, with grids and Surface content clipped to a safe boundary. Hovering over an unsafe area while editing softly tints its extent red. On release, cancel, relocate, delete, or keep the original layers so adjusting the perspective back restores their display (use with caution), in one undoable operation.
+- Opt into **Lock grid size while adjusting** to retain cell spacing while fractional coverage counts update live. The origin still follows the central handle, so the lock does not fix grid intersections to layer anchors. Explicitly editing the flat grid size establishes new counts and a reference frame, replacing the previous perspective deformation.
 - Enable Depth-priority occlusion in Layers on a perspective canvas to order billboards by anchor depth and interleave canvas color, the grid and Surface content. Only identical depth uses layer order. The option is off by default and saved with the canvas.
 - Hold `Shift` while moving to constrain movement to a canvas X/Y axis through the original drag start. A billboard's body moves its anchor; its center handle adjusts elevation vertically on screen, including negative elevation, and corner resizing uses the center as its origin.
 - Reopen the welcome page from the main menu or system tray. The floating logo is on by default in pass-through mode, with click-to-draw, double-click visibility and an independent switch.
@@ -33,7 +34,7 @@ The toolbar separates gray New and red-broom Clear. New confirms according to fi
 - Simplified Chinese and English interfaces, with automatic Windows display-language selection.
 - Check GitHub releases in the app, download and install updates, then restart automatically.
 
-Billboard creation is off by default and affects only new objects. Leaving it off retains existing tool workflows; the general Shift movement constraint and corrected Surface capture outlines apply independently. Disabling perspective resets new-object placement while preserving existing billboard data. Reading older projects does not mean older apps support v6 files.
+Billboard creation is off by default and affects only new objects. Leaving it off retains existing tool workflows; the general Shift movement constraint and corrected Surface capture outlines apply independently. Disabling perspective resets new-object placement while preserving existing billboard data. Older apps cannot read newly saved v7 projects.
 
 Animation requires the original file or encoded data. Clipboard sources supplying only PNG/Bitmap produce a static image; FloatCanvas does not fetch the original online. Hiding pauses refresh and pass-through keeps playback running. Snapshots, exports and merged image stamps take a static frame; animated export and playback controls are not available.
 
@@ -57,7 +58,7 @@ Click the version at the bottom of the welcome screen to open **Check for update
 
 Click the app icon on the left of the toolbar for the main menu, double-click to expand/collapse, or drag it to move the toolbar. Settings and exit commands are available through the main menu and system tray. See the [user guide](Docs/User-Guide.en.md) for more.
 
-Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` rectangle, `O` ellipse, `T` text, `N` numbered marker, `S` symbol and `J` emoji. `A` remains an arrow compatibility shortcut; `M` opens **More**, main-keyboard `-` opens the stamp library, and `+` saves the selection as a stamp. Letters remain normal text input while editing text.
+Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` rectangle, `O` ellipse, `T` text, `N` numbered marker, `S` symbol, `J` emoji and `C` Canvas. `A` remains an arrow compatibility shortcut; `M` opens **More**, main-keyboard `-` opens the stamp library, and `+` saves the selection as a stamp. Letters remain normal text input while editing text.
 
 ## Languages and scope
 

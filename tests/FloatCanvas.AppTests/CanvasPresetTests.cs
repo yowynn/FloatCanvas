@@ -17,7 +17,7 @@ internal static class CanvasPresetTests
         Directory.CreateDirectory(folder);
         try
         {
-            Persistence(folder, check); Calibration(folder, check); CalibrationSnapshots(folder, check); Controls(folder, check);
+            Persistence(folder, check); Calibration(folder, check); CalibrationSnapshots(folder, check); FlatGridPersistence(folder, check); CrossModeGridPresets(folder, check); Controls(folder, check);
         }
         finally { Directory.Delete(folder, true); }
     }
@@ -28,7 +28,7 @@ internal static class CanvasPresetTests
         var settings = new CanvasSettings { BackgroundColor = 0x80456789, Grid = new() { Visible = true, Color = 0xFFAABBCC, Width = 64, Pattern = StrokePattern.Dashed } };
         settings.Projection = CanvasCalibration.CreateInitial(new(80, 100, 1920, 1080), 12, 9); settings.Projection.Enabled = true;
         var preset = library.Save("  Perspective grid  ", settings); string json = File.ReadAllText(path);
-        check("personal canvas presets persist complete calibration and canvas fields in version two", json.Contains("\"Version\": 2") && json.Contains("Calibration") && json.Contains("Quad") && json.Contains("Matrix") && json.Contains("Origin") && json.Contains("CellSize") &&
+        check("personal canvas presets persist complete calibration and precise flat grid fields in version three", json.Contains("\"Version\": 3") && json.Contains("FlatCellSize") && json.Contains("Calibration") && json.Contains("Quad") && json.Contains("Matrix") && json.Contains("Origin") && json.Contains("CellSize") &&
             json.Contains("ProjectionEnabled") && json.Contains("BackgroundColor") && !json.Contains("Monitor") && !json.Contains("Display"));
         check("canvas preset save trims names and preserves legal wide grid lines", preset.Name == "Perspective grid" && preset.Parameters.GridWidth == 64);
         settings.BackgroundColor = 0; settings.Grid.Width = 2;
@@ -163,7 +163,8 @@ internal static class CanvasPresetTests
             check("invalid versions incomplete snapshots and display-bound fields leave the library untouched", Reject(() => _ = new CanvasPresetLibrary(brokenPath)) && File.ReadAllText(brokenPath) == bytes);
         }
         var legacyNode = JsonNode.Parse(valid)!; legacyNode["Version"] = 1;
-        foreach (var item in legacyNode["Presets"]!.AsArray()) item!["Parameters"]!.AsObject().Remove("Calibration");
+        foreach (var item in legacyNode["Presets"]!.AsArray())
+        { item!["Parameters"]!.AsObject().Remove("Calibration"); item["Parameters"]!.AsObject().Remove("FlatCellSize"); }
         string legacyPath = Path.Combine(folder, "legacy.json"), legacyBytes = legacyNode.ToJsonString(); File.WriteAllText(legacyPath, legacyBytes);
         var legacy = new CanvasPresetLibrary(legacyPath);
         check("reading a version-one canvas library performs no migration write", File.ReadAllText(legacyPath) == legacyBytes && legacy.User.All(p => p.Parameters.Calibration is null));
@@ -171,7 +172,117 @@ internal static class CanvasPresetTests
         check("legacy recipes preserve the current canvas geometry", legacyApplied.Projection.Quad.SequenceEqual(quad) && legacyApplied.Projection.Matrix == current.Projection.Matrix);
         legacy.Save("New perspective", current);
         var migrated = new CanvasPresetLibrary(legacyPath);
-        check("an explicit edit writes version two while retaining all legacy recipes and their portable semantics", File.ReadAllText(legacyPath).Contains("\"Version\": 2") && migrated.User.Count == legacy.User.Count && migrated.User.Single(p => p.Id == saved.Id).Parameters.Calibration is null && migrated.User.Last().Parameters.Calibration is not null);
+        check("an explicit edit writes version three while retaining all legacy recipes and their portable semantics", File.ReadAllText(legacyPath).Contains("\"Version\": 3") && migrated.User.Count == legacy.User.Count && migrated.User.Single(p => p.Id == saved.Id).Parameters.Calibration is null && migrated.User.Last().Parameters.Calibration is not null);
+    }
+
+    private static void FlatGridPersistence(string folder, Action<string, bool> check)
+    {
+        var viewport = new RectD(0, 0, 1920, 1080);
+        const double precise = 73.1234567890123;
+        var source = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(viewport),
+            Grid = new() { Visible = true, FlatCellSize = precise, FlatOrigin = new(960, 540) } };
+        string path = Path.Combine(folder, "flat-grid.json"); var library = new CanvasPresetLibrary(path);
+        var saved = library.Save("Precise flat grid", source);
+        string valid = File.ReadAllText(path);
+        var reloaded = new CanvasPresetLibrary(path);
+        check("precise flat preset size survives save and reload without formatting drift", reloaded.User.Single().Parameters.FlatCellSize == precise &&
+            reloaded.User.Single().Parameters.Matches(CanvasPresetParameters.From(source)));
+        check("flat origin is not copied into portable preset data", !valid.Contains("FlatOrigin", StringComparison.Ordinal));
+        var target = new CanvasSettings { Grid = new() { FlatOrigin = new(-320, 240) } };
+        var applied = reloaded.Apply(saved.Id, target, new(-1000, 0, 1280, 720), viewport);
+        check("applying a flat grid preset retains the destination origin and exact saved size", applied.Grid.FlatCellSize == precise &&
+            applied.Grid.FlatOrigin == target.Grid.FlatOrigin && target.Grid.FlatCellSize is null);
+        var mismatch = CanvasPresetParameters.From(source); mismatch.FlatCellSize = precise + .000000001;
+        check("personal preset matching detects a precise flat size change", !saved.Parameters.Matches(mismatch));
+        foreach (double invalid in new[] { 0, -.01, .001, 1_000_001, double.NaN, double.PositiveInfinity })
+        {
+            var bad = source.Clone(); bad.Grid.FlatCellSize = invalid;
+            check("invalid flat preset save preserves the existing library", Reject(() => reloaded.Save("Invalid grid", bad)) && File.ReadAllText(path) == valid);
+        }
+        foreach (var mutation in new Action<JsonNode>[]
+        {
+            node => node["Presets"]![0]!["Parameters"]!["FlatCellSize"] = 0,
+            node => node["Presets"]![0]!["Parameters"]!["FlatCellSize"] = "NaN",
+            node => node["Presets"]![0]!["Parameters"]!["FlatOrigin"] = new JsonObject { ["X"] = 1, ["Y"] = 2 }
+        })
+        {
+            var node = JsonNode.Parse(valid)!; mutation(node);
+            string badPath = Path.Combine(folder, "invalid-flat-" + Guid.NewGuid().ToString("N") + ".json");
+            string text = node.ToJsonString(); File.WriteAllText(badPath, text);
+            check("invalid or screen-bound flat preset fields are rejected without rewriting the library", Reject(() => _ = new CanvasPresetLibrary(badPath)) && File.ReadAllText(badPath) == text);
+        }
+        var legacyNode = JsonNode.Parse(valid)!; legacyNode["Version"] = 2;
+        legacyNode["Presets"]![0]!["Parameters"]!.AsObject().Remove("FlatCellSize");
+        string legacyPath = Path.Combine(folder, "legacy-v2-grid.json"), legacyText = legacyNode.ToJsonString(); File.WriteAllText(legacyPath, legacyText);
+        var legacy = new CanvasPresetLibrary(legacyPath);
+        var old = legacy.User.Single();
+        check("reading a version-two library preserves its file and calibration snapshot", File.ReadAllText(legacyPath) == legacyText && old.Parameters.FlatCellSize is null &&
+            JsonSerializer.Serialize(old.Parameters.Calibration) == JsonSerializer.Serialize(source.Projection));
+        var legacyApplied = legacy.Apply(old.Id, target, viewport, viewport);
+        check("version-two recipes derive flat size without changing their saved projection", legacyApplied.Grid.FlatCellSize == source.Projection.GridCellSize &&
+            legacyApplied.Projection.Matrix == source.Projection.Matrix && legacyApplied.Projection.Quad.SequenceEqual(source.Projection.Quad));
+        legacy.Save("Version three grid", source);
+        check("an explicit version-two library edit upgrades to v3 and preserves the prior recipe", File.ReadAllText(legacyPath).Contains("\"Version\": 3") &&
+            new CanvasPresetLibrary(legacyPath).User.Count == 2 && new CanvasPresetLibrary(legacyPath).User.Single(preset => preset.Id == old.Id).Parameters.FlatCellSize is null);
+    }
+
+    private static void CrossModeGridPresets(string folder, Action<string, bool> check)
+    {
+        var reference = new RectD(0, 0, 1920, 1080);
+        var initial = CanvasCalibration.CreateInitial(reference, 8, 6);
+        PointD[] quad = [new(200, 150), new(1200, 100), new(1500, 900), new(100, 850)];
+        check("cross-mode preset fixture has a nonaffine calibration", CanvasCalibration.TryCalibrate(initial, quad, reference, out var projection, out _));
+        projection.LockedGridCellSize = projection.CellSize * .75;
+        var locked = new CanvasSettings { Projection = projection,
+            Grid = new() { Visible = true, FlatCellSize = projection.LockedGridCellSize, FlatOrigin = reference.Center } };
+        var library = new CanvasPresetLibrary(Path.Combine(folder, "cross-mode-presets.json"));
+        var savedOn = library.Save("Locked perspective", locked);
+        var appliedOn = new CanvasPresetLibrary(Path.Combine(folder, "cross-mode-presets.json")).Apply(savedOn.Id,
+            new() { Grid = new() { FlatOrigin = reference.Center } }, reference, reference);
+        check("applying a locked on-mode preset derives flat spacing from its unlocked saved projection", appliedOn.Projection.Enabled &&
+            appliedOn.Projection.LockedGridCellSize is null && appliedOn.Grid.FlatCellSize == appliedOn.Projection.GridCellSize &&
+            appliedOn.Projection.Matrix == projection.Matrix);
+        check("normalizing an on-mode preset does not lose its From and Matches identity", savedOn.Parameters.Matches(CanvasPresetParameters.From(appliedOn)) &&
+            new CanvasPresetLibrary(Path.Combine(folder, "cross-mode-presets.json")).User.Single(preset => preset.Id == savedOn.Id).Parameters.Matches(CanvasPresetParameters.From(appliedOn)));
+        appliedOn.Projection.Enabled = false;
+        var offFromOn = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOn });
+        appliedOn.Projection.Enabled = true;
+        var resetOn = CanvasGridGeometry.CreateFlatReference(reference, appliedOn.Projection.Columns, appliedOn.Projection.Rows, appliedOn.Grid.FlatCellSize!.Value);
+        resetOn.Enabled = true; appliedOn.Projection = resetOn;
+        var resetFromOn = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOn });
+        check("an unlocked on-mode preset retains matching flat and reset perspective grids", offFromOn.GridCellSize == resetFromOn.GridCellSize &&
+            offFromOn.GridOrigin == resetFromOn.GridOrigin && resetFromOn.PlaneToScreen == Projective2D.Identity);
+
+        var recipe = new CanvasPresetParameters { ProjectionEnabled = false, GridVisible = true, Columns = 8, Rows = 6, FlatCellSize = 73.1 };
+        var plain = CanvasPresetLibrary.Apply(recipe, new() { Grid = new() { FlatOrigin = reference.Center } }, reference, reference);
+        check("a portable flat-size recipe without a snapshot creates an exact identity reference", plain.Projection.Quad.Count == 4 &&
+            plain.Projection.CellSize == 73.1 && plain.Projection.Matrix == Projective2D.Identity && plain.Grid.FlatCellSize == 73.1 && !plain.Projection.Enabled);
+        var beforeReset = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = plain });
+        plain.Projection.Enabled = true;
+        var plainReset = CanvasGridGeometry.CreateFlatReference(reference, plain.Projection.Columns, plain.Projection.Rows, plain.Grid.FlatCellSize!.Value);
+        plainReset.Enabled = true; plain.Projection = plainReset;
+        var afterReset = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = plain });
+        check("a portable flat-size recipe is unchanged by enabling and immediately resetting perspective", beforeReset.GridCellSize == afterReset.GridCellSize &&
+            beforeReset.GridOrigin == afterReset.GridOrigin && afterReset.PlaneToScreen == beforeReset.PlaneToScreen);
+
+        var offSnapshot = locked.Clone(); offSnapshot.Projection.Enabled = false; offSnapshot.Grid.FlatCellSize = 81.2345678901234;
+        var savedOff = library.Save("Flat with dormant perspective", offSnapshot);
+        var appliedOff = new CanvasPresetLibrary(Path.Combine(folder, "cross-mode-presets.json")).Apply(savedOff.Id,
+            new() { Grid = new() { FlatOrigin = reference.Center } }, reference, reference);
+        check("an off-mode snapshot preserves its independent exact size and dormant perspective", appliedOff.Grid.FlatCellSize == offSnapshot.Grid.FlatCellSize &&
+            appliedOff.Projection.Matrix == offSnapshot.Projection.Matrix && appliedOff.Projection.Quad.SequenceEqual(offSnapshot.Projection.Quad) &&
+            savedOff.Parameters.Matches(CanvasPresetParameters.From(appliedOff)));
+        var dormant = appliedOff.Projection.Clone();
+        for (int iteration = 0; iteration < 100; iteration++)
+        { appliedOff.Projection.Enabled = true; appliedOff.Projection.Enabled = false; }
+        check("off-mode snapshot toggles retain the precise size and exact count pair and geometry", appliedOff.Grid.FlatCellSize == offSnapshot.Grid.FlatCellSize &&
+            JsonSerializer.Serialize(appliedOff.Projection) == JsonSerializer.Serialize(dormant));
+        var offMapping = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOff });
+        var offReset = CanvasGridGeometry.CreateFlatReference(reference, dormant.Columns, dormant.Rows, appliedOff.Grid.FlatCellSize!.Value);
+        offReset.Enabled = true; appliedOff.Projection = offReset;
+        var offResetMapping = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOff });
+        check("resetting an off-mode snapshot uses its saved flat size rather than the dormant projection scale", offResetMapping.GridCellSize == offMapping.GridCellSize &&
+            offResetMapping.GridOrigin == offMapping.GridOrigin && offResetMapping.PlaneToScreen == Projective2D.Identity);
     }
 
     private static void Controls(string folder, Action<string, bool> check)

@@ -122,6 +122,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.CaptureDiagnostic += OnCaptureDiagnostic;
         _host.Draw += Draw;
         _host.Pointer += HandleCanvasPointer;
+        _host.PointerLeft += ClearProjectionHover;
         _editor.DesktopEffectRequested += (region, kind, amount, color) => _ = RunCommand(() => AddDesktopEffectAsync(region, kind, amount, color));
         _host.KeyInput += OnCanvasKeyInput;
         _host.ModifierKeysChanged += (modifiers,point,time)=>_editor.ModifiersChanged(modifiers,point,time);
@@ -137,11 +138,13 @@ internal sealed partial class DesktopSession : IDisposable
         _toolbar = CreateToolbarV2();
         _windowCoordinator = new(_host, _toolbar);
         _windowCoordinator.Register(_toolOptionsWindow, () => _toolOptionsPinned, DismissToolOptions);
+        InitializeCanvasTool();
         _windowLayout.BindRoot(_toolbar);
         RefreshHotkeyHints(_passThroughButton, null, _settings.Toggle, _settings.Hide);
         _host.InputActivated += RaiseVisibleToolWindows;
         _host.EditingFocusLost += () =>
         {
+            ClearProjectionHover();
             EndCanvasCalibration(hidePanel: true);
             CancelSnapshotCapture("ExternalFocus", userInitiated: false);
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.ExternalFocus);
@@ -260,7 +263,7 @@ internal sealed partial class DesktopSession : IDisposable
     private static readonly ToolOption[] ToolOptions = [new(EditorTool.Select,"Tool.Select"),new(EditorTool.Freehand,"Tool.Freehand"),new(EditorTool.Highlighter,"Tool.Highlighter"),
         new(EditorTool.Line,"Tool.Line"),new(EditorTool.Arrow,"Tool.Arrow"),new(EditorTool.DoubleArrow,"Tool.DoubleArrow"),new(EditorTool.Rectangle,"Tool.Rectangle"),new(EditorTool.RoundedRectangle,"Tool.RoundedRectangle"),
         new(EditorTool.Ellipse,"Tool.Ellipse"),new(EditorTool.Symbol,"Tool.Symbol"),new(EditorTool.Emoji,"Tool.Emoji"),new(EditorTool.Text,"Tool.Text"),new(EditorTool.Number,"Tool.Number"),new(EditorTool.Eraser,"Tool.Eraser"),
-        new(EditorTool.Crop,"Tool.Crop"),new(EditorTool.Blur,"Tool.Blur"),new(EditorTool.Pixelate,"Tool.Pixelate"),new(EditorTool.CaptureRegion,"Tool.CaptureRegion")];
+        new(EditorTool.Crop,"Tool.Crop"),new(EditorTool.Blur,"Tool.Blur"),new(EditorTool.Pixelate,"Tool.Pixelate"),new(EditorTool.CaptureRegion,"Tool.CaptureRegion"),new(EditorTool.Canvas,"Canvas.Title")];
     private System.Windows.Controls.Button Button(string label, Action action)
     {
         var button = new System.Windows.Controls.Button { Content = label, MinHeight = 34, Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(2, 0, 2, 0),
@@ -281,6 +284,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private bool SetEditing(bool editing, bool preserveImageDrop = false)
     {
+        ClearProjectionHover();
         if (!editing) EndCanvasCalibration(hidePanel: true);
         CancelSnapshotCapture(editing ? "ExplicitEntry" : "ModeExit");
         using var destination = editing ? null : _windowCoordinator?.DirectTransfer(WindowDismissReason.ModeExit);
@@ -316,6 +320,7 @@ internal sealed partial class DesktopSession : IDisposable
         }
         else { _toolbar.Hide(); _inspector?.Hide(); _layers?.Hide(); _stampWindow?.Hide(); CloseToolOptions(); EndEyedropper(restore: false); }
         RefreshPassThroughLauncher();
+        SynchronizeCanvasTool();
         RequestRender();
         return true;
     }
@@ -403,6 +408,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (_disposed) return;
         _host.NotifyInputProgress();
+        if (e.StagingItem.Input is System.Windows.Input.MouseEventArgs) ClearProjectionHover();
         if (e.StagingItem.Input is System.Windows.Input.MouseButtonEventArgs { ButtonState: System.Windows.Input.MouseButtonState.Pressed } mouse)
         {
             var source=mouse.OriginalSource as DependencyObject??mouse.MouseDevice.Target as DependencyObject;
@@ -444,6 +450,15 @@ internal sealed partial class DesktopSession : IDisposable
         if (!EditorShortcutPolicy.IsCommand(key, OverlayHost.CurrentModifiers)) return;
         if(_inlineText is not null&&key is 0x1B or 0x0D)
         {FinishInlineText(key==0x0D,selectEdited:key==0x0D);return;}
+        if (key == 0x1B && _editor.Tool == EditorTool.Canvas)
+        {
+            if (_canvasCalibration.IsDragging) _canvasCalibration.CancelDrag();
+            else if (_canvasGridScale.IsDragging) _canvasGridScale.Cancel();
+            else if (_canvasCalibration.IsPlacing) { _canvasCalibration.End(); SynchronizeCanvasTool(); }
+            else if (IsCanvasSettingsOpen && !_canvasSettingsWindow!.IsPinned) DismissCanvasSettings();
+            else ActivateTool(EditorTool.Select);
+            RequestRender(); return;
+        }
         if (key == 0x1B && _canvasCalibration.IsActive)
         { _canvasCalibration.Escape(); RequestRender(); return; }
         if (key == 0x1B && _snapshotCaptureRequest is not null) { CancelSnapshotCapture("Escape"); return; }
@@ -492,7 +507,7 @@ internal sealed partial class DesktopSession : IDisposable
                 case 0x4E: _ = RunCommand(StartNewCanvasAsync); break;
                 case 0x08: case 0x2E: _ = RunCommand(ClearCurrentCanvasAsync); break;
             }
-            return;
+            SynchronizeCanvasTool(); return;
         }
         if (key == ToolShortcutCatalog.MoreKey) { OpenMoreTools(); return; }
         if (key == ToolShortcutCatalog.StampLibraryKey) { ShowStampLibrary(); return; }
@@ -519,19 +534,20 @@ internal sealed partial class DesktopSession : IDisposable
         catch (InvalidOperationException error) when (error.Message == L.Get("Perspective.InputOutsidePlane"))
         { UpdateStatus(error.Message); }
     }
-    private void Undo() { _inspector?.CompletePendingEdit(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Undo(); }
-    private void Redo() { _inspector?.CompletePendingEdit(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Redo(); }
+    private void Undo() { _inspector?.CompletePendingEdit(); _canvasGridScale?.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Undo(); SynchronizeCanvasTool(); }
+    private void Redo() { _inspector?.CompletePendingEdit(); _canvasGridScale?.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Redo(); SynchronizeCanvasTool(); }
     private void Draw(SKSurface surface)
     {
         var canvas = surface.Canvas;
         canvas.Save(); canvas.Translate((float)_editor.ScreenOrigin.X,(float)_editor.ScreenOrigin.Y);
         var preview = _editor.RasterPreview;
-        if (_host.IsEditing && _canvasCalibration.IsActive)
+        if (_host.IsEditing && (_editor.Tool == EditorTool.Canvas || _canvasCalibration.IsActive))
             _renderer.Draw(canvas, Active.Document, _assets, calibrationReference: true, includeGrid: !_canvasCalibration.IsPlacing);
         else _overlayCache.DrawOnClearedRasterTarget(surface,Active.Document,_assets,Active.SceneRevision,Active.TransactionId,
             preview.First,preview.Last,preview.BypassCache || _canvasCalibration.IsDragging);
         if (_host.IsEditing)
         {
+            DrawProjectionHover(canvas);
             using var paint = new SKPaint { Color = new SKColor(35,131,226), Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, IsAntialias = true };
             if (_inlineText is null && !_canvasCalibration.IsActive && _editor.ShouldShowSelection(_host.InteractionModifiers) && _editor.SelectionScreenCorners is { Count: 4 } corners)
             {
@@ -592,6 +608,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnMonitorsChanged()
     {
+        ClearProjectionHover();
         EndCanvasCalibration(hidePanel: true);
         CancelSnapshotCapture("MonitorsChanged");
         StopLiveEffectsCapture();
@@ -607,6 +624,7 @@ internal sealed partial class DesktopSession : IDisposable
         _live.Document.DisplayLayout = _host.Monitors.Select(m => new DisplayLayoutHint { DeviceName = m.DeviceName,
             Bounds = new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height), DpiX = m.DpiX, DpiY = m.DpiY }).ToList();
         EnsureCaptureVisible();
+        SynchronizeFlatGridOrigin();
         RefreshCanvasReferenceMonitors();
         _overlayCache.Invalidate();
         _live.NotifyChanged();
@@ -646,6 +664,7 @@ internal sealed partial class DesktopSession : IDisposable
         try { await action(); }
         catch(OperationCanceledException) { UpdateStatus(L.Get("Desktop.Cancelled")); }
         catch(Exception ex) { _diagnostics.Write("Command.Error", exception: ex); ShowError(ex.Message); }
+        finally { SynchronizeCanvasTool(); }
     }
     private void RunUiAction(Action action)
     {
@@ -660,6 +679,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (_inspector is not null) _inspector.IsEnabled = enabled;
         if (_layers is not null) _layers.IsEnabled = enabled;
         if (_canvasSettingsWindow is not null) _canvasSettingsWindow.IsEnabled = enabled;
+        if (_editor is not null) SynchronizeCanvasTool();
         if (enabled) RestoreToolbarKeyboardFocus();
     }
     private void RestoreToolbarKeyboardFocus()

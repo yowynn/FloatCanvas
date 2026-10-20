@@ -1,4 +1,8 @@
 {
+  "Tool.Canvas": {
+    "zh": "画布",
+    "en": "Canvas"
+  },
   "Canvas.Title": {
     "zh": "画布",
     "en": "Canvas"
@@ -12,12 +16,20 @@
     "en": "Enable perspective canvas"
   },
   "Canvas.Columns": {
-    "zh": "列数",
-    "en": "Columns"
+    "zh": "网格横向数量",
+    "en": "Grid columns"
   },
   "Canvas.Rows": {
-    "zh": "行数",
-    "en": "Rows"
+    "zh": "网格纵向数量",
+    "en": "Grid rows"
+  },
+  "Canvas.GridSize": {
+    "zh": "网格大小",
+    "en": "Grid size"
+  },
+  "Canvas.GridSizeHelp": {
+    "zh": "格子的边长，使用与矩形宽高相同的画布单位。选中画布工具后，在空白处拖动也可调整；远离主屏中心放大，靠近缩小。",
+    "en": "Cell side length, in the same canvas units as rectangle width and height. With the Canvas tool selected, drag empty space away from the primary-screen center to enlarge it, or toward the center to shrink it."
   },
   "Canvas.GridSizeLock": {
     "zh": "调整时锁定网格大小",
@@ -32,8 +44,8 @@
     "en": "Counts show the coverage inside the four-point frame, including partial cells."
   },
   "Canvas.GridSizeLockHelp": {
-    "zh": "锁定后，调整四点保留每格代表的画布长度和原点，行列数自动变化，可含小数。勾选时画面保持原样；取消后恢复原网格规则，图层和锚点不因切换而移动。关闭透视保留锁定选择；重置或应用画布预设会解除锁定。",
-    "en": "When locked, adjusting the four points preserves each cell's canvas length and the grid origin. Counts update automatically and may include fractions. Enabling the lock keeps the view unchanged; disabling it restores the original grid rules without moving layers or anchors. Turning perspective off retains the lock. Resetting or applying a canvas preset clears it."
+    "zh": "锁定后，调整四点保留每格代表的画布长度，行列数自动变化，可含小数。网格原点仍跟随中央移动手柄。勾选时画面保持原样；图层和锚点不因切换而移动。关闭透视或重置保留锁定选择；应用画布预设会解除锁定。",
+    "en": "When locked, adjusting the four points preserves each cell's canvas length. Counts update automatically and may include fractions. The grid origin still follows the central move handle. Enabling the lock keeps the view unchanged without moving layers or anchors. Turning perspective off or resetting retains the lock; applying a canvas preset clears it."
   },
   "Canvas.Calibrate": {
     "zh": "调整透视画布",
@@ -84,8 +96,8 @@
     "en": "Canvas settings"
   },
   "Canvas.HelpText": {
-    "zh": "拖动角点或边缘调整透视，也可用四点定位。Ctrl 暂停吸附，Shift 约束横向或竖向移动。Esc 取消，再按一次结束调整。",
-    "en": "Drag corners or edges, or place four corners in any order. Hold Ctrl to bypass snapping or Shift to constrain movement. Esc cancels; press again to finish."
+    "zh": "按 C 选择画布工具，再次点击画布按钮打开设置。非透视时以主屏中心为原点，在空白处向外拖动放大网格、向内拖动缩小；透视时以中央移动手柄为网格原点，拖动角点、边缘或中央手柄调整，也可四点定位。Ctrl 暂停吸附，Shift 约束方向。Esc 取消当前拖动；空闲时切回选择工具。单纯切换透视保留原参数；主动修改非透视格长会建立新的平面参考。",
+    "en": "Press C to select the Canvas tool; click its button again to open settings. In flat mode, the origin is the primary-screen center: drag empty space outward to enlarge cells or inward to shrink them. In perspective mode, the origin follows the central move handle; drag corners, edges or the center, or place four points. Ctrl bypasses snapping; Shift constrains direction. Esc cancels a drag or returns to Select when idle. Toggling perspective retains its parameters; editing flat cell size creates a new flat reference."
   },
   "Canvas.InvalidGrid": {
     "zh": "列数和行数须为 1 至 256 的整数。",
@@ -107,9 +119,17 @@
     "zh": "处理透视范围外的图层",
     "en": "Layers outside the perspective range"
   },
-  "Canvas.UnsafeLayers": {
-    "zh": "本次调整使 {0} 个图层超出安全绘制范围（包含关联组合成员）。取消会恢复本次拖动前的状态。移回会将图层或整个组合放到四点框内或屏幕上的开阔位置，保留原始内容和尺寸；隐藏、锁定图层也会一起处理。应用与图层处理可以一次撤销。",
-    "en": "This adjustment puts {0} layers outside the safe drawing range, including related group members. Cancel restores the state before this gesture. Move back places layers or whole groups in an open area inside the reference frame or screen, preserving content and logical size. Hidden and locked layers are included. The adjustment and layer changes can be undone together."
+  "Canvas.UnsafeLayerSummary": {
+    "zh": "有 {0} 个图层超出安全绘制范围，需要选择处理方式。",
+    "en": "{0} layers are outside the safe drawing range. Choose how to handle them."
+  },
+  "Canvas.SafetyHelpTitle": {
+    "zh": "处理选项说明",
+    "en": "About these options"
+  },
+  "Canvas.SafetyHelpText": {
+    "zh": "数量包含需要一起处理的关联组合成员，隐藏和锁定图层也在其中。\n\n取消本次调整：恢复本次拖动前的透视和图层状态。\n\n应用并移回图层（推荐）：将图层或整个组合移到四点框内或屏幕上的开阔安全位置，保留原始内容、尺寸及组合关系。找不到合适位置时，此选项不可用。\n\n应用并删除这些图层：删除提示涉及的图层及关联组合成员，包括隐藏和锁定图层。\n\n应用并保留图层（慎用）：应用新透视，保留全部图层的原始内容、尺寸、位置、组合、显隐和锁定状态。越界部分可能被裁剪或暂时不可见，调回原透视后恢复显示。\n\n本次透视调整与图层处理可以一次撤销。",
+    "en": "The count includes related group members that must be handled together, including hidden and locked layers.\n\nCancel this adjustment: restore the perspective and layer state from before this gesture.\n\nApply and move layers back (recommended): move layers or whole groups to an open safe area inside the reference frame or screen, preserving original content, size and group relationships. This option is unavailable if no suitable position is found.\n\nApply and delete these layers: delete the affected layers and related group members, including hidden and locked layers.\n\nApply and keep layers (use caution): apply the new perspective while preserving every layer's content, size, position, groups, visibility and locked state. Unsafe parts may be clipped or temporarily hidden until the original perspective is restored.\n\nThe perspective adjustment and layer changes can be undone together in one step."
   },
   "Canvas.ApplyRelocate": {
     "zh": "应用并移回图层（推荐）",
@@ -119,12 +139,16 @@
     "zh": "应用并删除这些图层",
     "en": "Apply and delete these layers"
   },
+  "Canvas.ApplyKeep": {
+    "zh": "应用并保留图层（慎用）",
+    "en": "Apply and keep layers (use caution)"
+  },
   "Canvas.CancelAdjustment": {
     "zh": "取消本次调整",
     "en": "Cancel this adjustment"
   },
   "Canvas.RelocateFailed": {
-    "zh": "无法在保持图层尺寸和组合关系的前提下找到安全位置。可以取消本次调整，或明确选择删除这些图层。",
-    "en": "No safe position was found while preserving layer size and group relationships. Cancel this adjustment or explicitly choose to delete these layers."
+    "zh": "无法在保持图层尺寸和组合关系的前提下找到安全位置。可以取消本次调整、删除这些图层，或慎用原样保留。",
+    "en": "No safe position was found while preserving layer size and group relationships. Cancel this adjustment, delete these layers, or keep them unchanged with caution."
   }
 }

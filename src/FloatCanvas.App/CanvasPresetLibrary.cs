@@ -21,16 +21,19 @@ internal sealed class CanvasPresetParameters
     public double GridWidth { get; set; } = 1;
     public StrokePattern GridPattern { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? FlatCellSize { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CanvasProjectionSettings? Calibration { get; set; }
     internal bool IsValid => Columns is >= 1 and <= CanvasCalibration.MaximumGridCount &&
-        Rows is >= 1 and <= CanvasCalibration.MaximumGridCount && double.IsFinite(GridWidth) && GridWidth is > 0 and <= 64 && Enum.IsDefined(GridPattern) && ValidCalibration();
+        Rows is >= 1 and <= CanvasCalibration.MaximumGridCount && double.IsFinite(GridWidth) && GridWidth is > 0 and <= 64 && Enum.IsDefined(GridPattern) &&
+        (FlatCellSize is null || double.IsFinite(FlatCellSize.Value) && FlatCellSize is >= CanvasGridGeometry.MinimumCellSize and <= CanvasGridGeometry.MaximumCellSize) && ValidCalibration();
     internal CanvasPresetParameters Clone()
     {
         var copy = (CanvasPresetParameters)MemberwiseClone(); copy.Calibration = Calibration?.Clone(); return copy;
     }
     internal bool Matches(CanvasPresetParameters other) => BackgroundColor == other.BackgroundColor && ProjectionEnabled == other.ProjectionEnabled &&
         Columns == other.Columns && Rows == other.Rows && GridVisible == other.GridVisible && GridColor == other.GridColor &&
-        GridWidth == other.GridWidth && GridPattern == other.GridPattern && (Calibration is null || other.Calibration is { } c &&
+        GridWidth == other.GridWidth && GridPattern == other.GridPattern && (FlatCellSize is null || FlatCellSize == other.FlatCellSize) && (Calibration is null || other.Calibration is { } c &&
             Calibration.Enabled == c.Enabled && Calibration.Columns == c.Columns && Calibration.Rows == c.Rows &&
             Calibration.Origin == c.Origin && Calibration.CellSize == c.CellSize && Calibration.Matrix == c.Matrix &&
             Calibration.AlgorithmVersion == c.AlgorithmVersion && Calibration.Quad.SequenceEqual(c.Quad));
@@ -39,6 +42,10 @@ internal sealed class CanvasPresetParameters
         BackgroundColor = settings.BackgroundColor, ProjectionEnabled = settings.Projection.Enabled,
         Columns = settings.Projection.Columns, Rows = settings.Projection.Rows, GridVisible = settings.Grid.Visible,
         GridColor = settings.Grid.Color, GridWidth = settings.Grid.Width, GridPattern = settings.Grid.Pattern,
+        // Presets omit the adjustment lock, so an enabled preset saves its unlocked spacing.
+        FlatCellSize = settings.Projection.Enabled && settings.Projection.Quad.Count == 4
+            ? settings.Projection.CellSize
+            : settings.Grid.FlatCellSize ?? (settings.Projection.Quad.Count == 4 ? settings.Projection.GridCellSize : null),
         Calibration = settings.Projection.Quad.Count == 0 ? null : settings.Projection.Clone()
     };
     private bool ValidCalibration()
@@ -65,7 +72,7 @@ internal sealed class CanvasPresetLibrary
 {
     private sealed class State
     {
-        public int Version { get; set; } = 2;
+        public int Version { get; set; } = 3;
         public List<CanvasPreset> Presets { get; set; } = [];
     }
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
@@ -82,7 +89,7 @@ internal sealed class CanvasPresetLibrary
         try
         {
             var state = UserLibraryJson.Read<State>(this.path, JsonOptions, "CanvasPreset.InvalidLibrary", "Version", "Presets");
-            if (state is null || state.Version is not (1 or 2) || state.Presets is null || state.Presets.Count > 1000 ||
+            if (state is null || state.Version is not (1 or 2 or 3) || state.Presets is null || state.Presets.Count > 1000 ||
                 state.Presets.Any(p => p is null || p.Id is not { Length: > 5 and <= 80 } || !p.Id.StartsWith("user-", StringComparison.Ordinal) ||
                     !ValidName(p.Name) || p.Parameters is null || !p.Parameters.IsValid) ||
                 state.Presets.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != state.Presets.Count)
@@ -146,7 +153,9 @@ internal sealed class CanvasPresetLibrary
     {
         Validate("preset", parameters);
         var result = current.Clone(); var projection = result.Projection;
-        if (parameters.ResetProjection) projection = CanvasCalibration.CreateInitial(referenceViewport, parameters.Columns, parameters.Rows);
+        if (!parameters.ProjectionEnabled && parameters.Calibration is null && parameters.FlatCellSize is { } flatSize)
+            projection = CanvasGridGeometry.CreateFlatReference(referenceViewport, parameters.Columns, parameters.Rows, flatSize);
+        else if (parameters.ResetProjection) projection = CanvasCalibration.CreateInitial(referenceViewport, parameters.Columns, parameters.Rows);
         else if (parameters.Calibration is { } snapshot) projection = snapshot.Clone();
         else if (projection.Quad.Count == 0)
         {
@@ -167,7 +176,9 @@ internal sealed class CanvasPresetLibrary
         projection.LockedGridCellSize = null;
         projection.Enabled = parameters.ProjectionEnabled;
         result.BackgroundColor = parameters.BackgroundColor; result.Projection = projection;
-        result.Grid = new() { Visible = parameters.GridVisible, Color = parameters.GridColor, Width = parameters.GridWidth, Pattern = parameters.GridPattern };
+        result.Grid = new() { Visible = parameters.GridVisible, Color = parameters.GridColor, Width = parameters.GridWidth, Pattern = parameters.GridPattern,
+            FlatCellSize = projection.Enabled ? projection.GridCellSize : parameters.FlatCellSize ?? projection.GridCellSize,
+            FlatOrigin = current.Grid.FlatOrigin ?? referenceViewport.Center };
         SceneValidation.Validate(new SceneDocument { Canvas = result, Viewport = viewport });
         return result;
     }

@@ -13,6 +13,7 @@ internal sealed partial class DesktopSession
         if(DocumentOperationBusy||!Active.Document.Canvas.Projection.Enabled)return;
         EndCanvasCalibration();
         _editor.BillboardMode=!_editor.BillboardMode;
+        SynchronizeCanvasTool();
         RefreshBillboardState();RequestRender();
     }
 

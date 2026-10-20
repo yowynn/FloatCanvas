@@ -1,5 +1,28 @@
 # 更新日志 / Changelog
 
+## [Unreleased]
+
+- 将画布调整改为普通互斥工具：单击或按 `C` 选中并显示蓝框，再次选择打开参数板，位置、关闭与固定规则统一；非透视常显参考网格并支持空白处径向拖动调节格长，透视自动显示校准框与手柄。
+- Make Canvas an exclusive tool: click or press `C` to select it with a blue border, then select it again for options with shared positioning, dismissal and pinning. Flat mode shows a persistent reference grid with radial sizing from empty space; perspective shows calibration handles immediately.
+
+- 网格原点改为非透视时的主屏中心、透视时的中央整体移动手柄。非透视将行列数合并为精确“网格大小”，单位与矩形宽高一致；单纯开关保留行列数和校准，显式改格长才按主屏推导新格数与参考框，覆盖旧形变。重置始终围绕主屏并保留精确格长，使平面网格与开启透视后立即重置完全一致；隐藏旧的重置显示器选择。
+- Anchor flat grids at the primary-screen center and perspective grids at the central move handle. Replace flat-mode counts with an exact Grid size in the same units as rectangle dimensions. Mode switches retain counts and calibration; explicit size edits derive a new count pair and reference from the primary screen, replacing the prior deformation. Reset always uses the primary screen and exact spacing, matching the flat grid after enabling perspective; hide the old display choice.
+
+- “调整时锁定网格大小”仅锁格长，原点仍随中央手柄变化，不再固定格线交点与图层锚点的关系。修复点线网格因短划线端帽导致几乎不可见的问题，普通绘制与深度合成中的点线均使用可见圆点；参考线继续采用黑白交替线段。
+- Lock grid size while adjusting now retains spacing while the origin follows the central handle; it no longer fixes intersections to layer anchors. Fix nearly invisible dotted grids with round caps in ordinary and depth rendering; reference lines retain alternating black and white segments.
+
+- 新工程格式 v7 保存精确非透视格长与原点，兼容读取 v1～v6；画布预设库 v3 保留精确格长与校准快照。应用透视预设解除调整锁后按投影格长同步平面尺寸，非透视预设保留精确保存值；旧工程和预设继续可读。
+- Project format v7 retains exact flat spacing and origin and reads v1–v6; canvas preset library v3 retains exact spacing and calibration snapshots. Applying perspective presets releases the adjustment lock and synchronizes flat size with projection spacing; flat presets retain their exact saved size. Older projects and presets remain readable.
+
+- 正常编辑时，鼠标进入透视禁区会以淡红色轻提示整个禁止区域，离开即隐藏，不进入导出。
+- Softly highlight the whole unsafe perspective region in red while the pointer is inside it during editing. Hide the hint on leaving and exclude it from exports.
+
+- 透视越界处理新增“应用并保留图层（慎用）”，保存原始图层、位置与组合，危险部分临时裁剪或隐藏；保存重开、撤销重做均保留，调回透视后恢复显示。弹窗仅突出需处理的图层数量，各选项说明收进关闭按钮旁的问号帮助。
+- Add “Apply and keep layers (use with caution)” to perspective safety resolution. Preserve original layers, positions and groups through save/reopen and undo/redo; clip or hide unsafe parts until the perspective returns to safe space. Keep the dialog focused on the emphasized affected layer count and move option explanations into the help button beside Close.
+
+- 加重贴面与立牌放置图标的线条，使工具条和菜单中的视觉分量与其他图标更一致。
+- Increase Surface and Billboard placement icon stroke weight in both the toolbar and menus to match neighboring icons.
+
 ## [0.2.1] - 2026-10-21
 
 0.2.1 放宽强透视的调整范围，并完善安全区内的绘制与图层处理；同时修复编辑窗口拖动、快捷键、印章预览与高 DPI 图层排序等问题。工程格式继续使用 v6。

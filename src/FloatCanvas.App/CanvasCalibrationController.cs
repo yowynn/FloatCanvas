@@ -125,7 +125,9 @@ internal sealed class CanvasCalibrationController
                 return false;
             }
         }
-        session.Document.Canvas.Projection = settings; session.NotifyChanged(); Changed?.Invoke(); return true;
+        session.Document.Canvas.Projection = settings;
+        session.Document.Canvas.Grid.FlatCellSize = settings.GridCellSize;
+        session.NotifyChanged(); Changed?.Invoke(); return true;
     }
     public void Up(bool requestResolution = true)
     {
@@ -149,6 +151,7 @@ internal sealed class CanvasCalibrationController
     {
         if (!IsAwaitingResolution || !ValidateDrag()) return false;
         if (action == CanvasSafetyAction.Cancel) { CancelDrag(); return true; }
+        if (action == CanvasSafetyAction.Keep) { CommitDrag(); return true; }
         if (action == CanvasSafetyAction.Relocate && !CanvasSafetyResolution.TryRelocate(session!.Document, AffectedLayerIds))
         { Error?.Invoke("Canvas.RelocateFailed"); return false; }
         if (action == CanvasSafetyAction.Delete)
@@ -186,7 +189,9 @@ internal sealed class CanvasCalibrationController
         {Error?.Invoke(error??"Canvas.InvalidQuad");return false;}
         session.BeginTransaction(L.Get("Canvas.CalibrationHistory")); transactionId = session.TransactionId;
         dragDocument = session.Document; placementGesture = true; IsPlacing = false;
-        session.Document.Canvas.Projection = projection; session.NotifyChanged();
+        session.Document.Canvas.Projection = projection;
+        session.Document.Canvas.Grid.FlatCellSize = projection.GridCellSize;
+        session.NotifyChanged();
         // The fourth point is selected on Down. Wait for the physical Up before opening a modal.
         Up(requestResolution: false); Changed?.Invoke(); return true;
     }

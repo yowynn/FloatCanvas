@@ -34,21 +34,26 @@ internal static class CanvasGridLockCalibrationTests
             controller.Begin(session);
             var edge = (quad[0] + quad[1]) * .5;
             check("locked top edge can begin a normal calibration gesture", controller.Down(edge));
-            bool coincident = true, originFollows = true, liveCounts = true;
+            bool anchorFollows = true, originFollows = true, liveCounts = true, spacingLocked = true, projectionUnchanged = true;
             for (int sample = 1; sample <= 10; sample++)
             {
                 controller.Move(edge + new PointD(0, -5 * sample));
                 var current = session.Document.Canvas.Projection;
                 var mapping = CanvasMapping.Create(session.Document);
-                var gridPoint = mapping.ToScreen(mapping.GridOrigin + new PointD(4 * mapping.GridCellSize, 4 * mapping.GridCellSize));
                 var ground = mapping.ToScreen(rectangle.BillboardAnchor);
                 var foot = mapping.ElementToScreen(rectangle).TransformPoint(new(100, 100));
-                coincident &= ground.DistanceTo(gridPoint) < 1e-7 && foot.DistanceTo(ground) < 1e-7;
-                originFollows &= mapping.ToScreen(mapping.GridOrigin).DistanceTo(current.Quad[0]) < 1e-7;
+                anchorFollows &= foot.DistanceTo(ground) < 1e-7;
+                originFollows &= mapping.ToScreen(mapping.GridOrigin).DistanceTo(CanvasGridGeometry.ReferenceCenter(current)) < 1e-7;
+                spacingLocked &= mapping.GridCellSize == projection.LockedGridCellSize;
+                var unlocked = session.Document.Clone(); unlocked.Canvas.Projection.LockedGridCellSize = null;
+                var unlockedMapping = CanvasMapping.Create(unlocked);
+                projectionUnchanged &= unlockedMapping.PlaneToScreen == mapping.PlaneToScreen &&
+                    unlockedMapping.ElementToScreen(unlocked.Elements[0]) == mapping.ElementToScreen(rectangle);
                 liveCounts &= columns.Text == current.GridColumns.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture);
             }
-            check("all intermediate tilted drag samples keep grid anchor and rectangle foot together", coincident);
-            check("origin follows the original reference corner throughout the drag", originFollows);
+            check("all intermediate tilted drag samples keep rectangle foot at the unchanged ground anchor", anchorFollows);
+            check("grid origin follows the center handle throughout the drag", originFollows);
+            check("grid lock preserves spacing and never changes any intermediate layer projection", spacingLocked && projectionUnchanged);
             check("fractional count readout refreshes while the calibration transaction is still active", session.IsTransactionActive && liveCounts &&
                 Math.Abs(session.Document.Canvas.Projection.GridColumns - 8) > .001);
             check("calibration retains every element value and its anchor", JsonSerializer.Serialize(rectangle) == unchangedElement);
@@ -94,7 +99,7 @@ internal static class CanvasGridLockCalibrationTests
     private static void OriginMarker(SceneDocument document, Action<string, bool> check)
     {
         using var bitmap = new SKBitmap(1000, 800); using var canvas = new SKCanvas(bitmap);
-        var origin = document.Canvas.Projection.Quad[0];
+        var origin = CanvasGridGeometry.ReferenceCenter(document.Canvas.Projection);
         canvas.Clear(SKColors.Transparent); DesktopSession.DrawCanvasOriginMarker(canvas, origin, document.Viewport, true);
         check("locked reference origin has a visible amber center", bitmap.GetPixel((int)origin.X, (int)origin.Y) == new SKColor(210, 139, 63));
         canvas.Clear(SKColors.Transparent); DesktopSession.DrawCanvasOriginMarker(canvas, origin, document.Viewport, false);
