@@ -115,7 +115,12 @@ internal static class AppWindowChrome
     private static void AttachWindowBounds(Window window)
     {
         nint handle = new WindowInteropHelper(window).Handle;
-        HwndSource.FromHwnd(handle)?.AddHook(PanelWindowProc);
+        HwndSource.FromHwnd(handle)?.AddHook((nint hwnd, int message, nint wParam, nint lParam, ref bool handled) =>
+        {
+            if (message is 0x0231 or 0x0216 or 0x0214 or 0x0232)
+                SessionWindowCoordinator.Find(window)?.NotifyNativeInputProgress();
+            return PanelWindowProc(hwnd, message, wParam, lParam, ref handled);
+        });
         _ = SetWindowLongPtr(handle, -16, (nint)((long)GetWindowLongPtr(handle, -16) & ~0x00030000L));
         nint menu = GetSystemMenu(handle, false);
         foreach (uint command in new uint[] { 0xF020, 0xF030, 0xF120 }) _ = DeleteMenu(menu, command, 0);

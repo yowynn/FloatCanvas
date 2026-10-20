@@ -46,6 +46,13 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     internal static void TrackOwned(Window window) => Find(window)?.Register(window);
 
+    // Native caption movement runs a Win32 modal loop rather than WPF input staging.
+    // Renew only when this UI thread actually handles a move/size message.
+    internal void NotifyNativeInputProgress()
+    {
+        if (!disposed) host.NotifyInputProgress();
+    }
+
     internal void RegisterPopup(Popup popup, Action close) => popups[popup] = close;
     internal void UnregisterPopup(Popup popup) => popups.Remove(popup);
 

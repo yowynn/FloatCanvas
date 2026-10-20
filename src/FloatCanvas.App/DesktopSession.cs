@@ -156,6 +156,7 @@ internal sealed partial class DesktopSession : IDisposable
             Text = L.Get("App.NamePrefix") + FormatHotkey(_settings.Toggle), Visible = true };
         _host.KeyboardIsolationReleased += reason =>
         {
+            _diagnostics.Write("Input.IsolationReleased", new { Reason = reason, _host.LastRenderMilliseconds, _host.LastCompletedRenderBackend });
             if (!ShouldNotifyKeyboardRelease(reason)) return;
             var message = L.Get("Desktop.InputInterrupted");
             UpdateStatus(message);
@@ -329,7 +330,14 @@ internal sealed partial class DesktopSession : IDisposable
         _pixelsOnlyRender = false;
         if (_disposed) return;
         if (_renderingFrame) { _renderAgain = true; return; }
-        if (IsRenderPending) return;
+        if (IsRenderPending)
+        {
+            // An edit can arrive while a background-only refresh is queued.
+            // Keep edit feedback at the normal render priority.
+            if (_renderOperation is { Status: DispatcherOperationStatus.Pending } pending && pending.Priority < DispatcherPriority.Render)
+                pending.Priority = DispatcherPriority.Render;
+            return;
+        }
         // Coalesce a batch of changes without adding a fixed timer delay to every pointer update.
         // BeginInvoke also preserves the application's DispatcherUnhandledException reporting path.
         _renderOperation = _app.Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(RenderFrame));
@@ -337,10 +345,11 @@ internal sealed partial class DesktopSession : IDisposable
     private void RequestPixelRender()
     {
         // Animation and live background frames change pixels, not controls or document
-        // state. A queued full edit render always takes precedence over this shortcut.
+        // state. Let pending input run before these continuously arriving frames.
+        // A queued full edit render always takes precedence over this shortcut.
         if (_disposed || IsRenderPending) return;
         _pixelsOnlyRender = true;
-        _renderOperation = _app.Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(RenderFrame));
+        _renderOperation = _app.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RenderFrame));
     }
     private void RenderFrame()
     {

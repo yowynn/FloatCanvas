@@ -43,7 +43,7 @@ internal sealed partial class DesktopSession
 
     private DispatcherTimer CreateAnimationTimer()
     {
-        var timer = new DispatcherTimer(DispatcherPriority.Render, _app.Dispatcher);
+        var timer = new DispatcherTimer(DispatcherPriority.Background, _app.Dispatcher);
         timer.Tick += (_, _) =>
         {
             timer.Stop();
