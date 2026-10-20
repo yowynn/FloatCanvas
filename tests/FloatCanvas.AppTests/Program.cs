@@ -15,6 +15,8 @@ internal static class Program
         {
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--startup-dialog-only")) { StartupDialogTests.Run(Assert); return 0; }
+            if (args.Contains("--project-open-dispatch-only")) { ProjectOpenDispatchTests.Run(Assert); return 0; }
             if (args.Contains("--depth-occlusion-ui-only")) { DepthOcclusionUiRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--depth-occlusion-only")) { DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-only")) { BillboardControllerTests.Run(Assert); return 0; }

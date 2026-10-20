@@ -12,9 +12,15 @@ internal sealed partial class DesktopSession
     {
         if (_disposed || _documentExitRequested) return false;
         _projectOpenRequests.Enqueue(ProjectLaunchRequest.NormalizePath(path));
-        _ = DrainProjectOpenRequestsAsync();
+        ScheduleProjectOpenDrain(DrainProjectOpenRequestsAsync);
         return true;
     }
+
+    // An async drain can show a modal dialog before its first await. Defer that
+    // entire prefix so the activation callback can return its acknowledgement.
+    internal static void ScheduleProjectOpenDrain(Func<Task> drain) =>
+        System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+            System.Windows.Threading.DispatcherPriority.Background, new Action(() => _ = drain()));
 
     private async Task DrainProjectOpenRequestsAsync()
     {

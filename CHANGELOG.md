@@ -2,6 +2,9 @@
 
 ## 未发布 / Unreleased
 
+- 修复启动早期或工程转交失败时错误弹窗黑底黑字的问题；提前初始化主题并提供独立配色兜底，同时让工程转交确认在保存对话框之前完成。
+- Keep early startup and project-handoff error dialogs readable with startup theme initialization and a fallback palette, and acknowledge queued project handoffs before save confirmation dialogs.
+
 - 在前台窗口或窗口层级变化后检查并恢复画布的实际置顶顺序，保留输入层、工具窗口和对话框的相对顺序，并避开截图期间的临时隐藏状态。
 - Restore the canvas's actual topmost order after foreground or window-order changes while preserving input, tool and dialog order and temporary capture visibility.
 

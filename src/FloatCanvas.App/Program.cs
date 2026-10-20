@@ -64,6 +64,7 @@ internal static class Program
         {
             try
             {
+                AppTheme.InitializeStartup();
                 session = new DesktopSession(app);
                 while (pendingProjects.TryDequeue(out var pending)) session.QueueProjectOpen(pending);
                 session.Start(args);

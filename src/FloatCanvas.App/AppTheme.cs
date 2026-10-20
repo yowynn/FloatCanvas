@@ -12,6 +12,15 @@ internal static class AppTheme
 {
     private static ResourceDictionary? styles;
 
+    // The primary process calls this before constructing DesktopSession: its field
+    // initializers can fail before the session applies the saved theme itself.
+    internal static void InitializeStartup()
+    {
+        var settings = UserSettings.Load();
+        FloatCanvas.Localization.AppText.Initialize(settings.Language);
+        Apply(settings.Theme);
+    }
+
     public static void Apply(string mode)
     {
         var app = System.Windows.Application.Current;
@@ -20,6 +29,34 @@ internal static class AppTheme
         AppInputPolicy.Initialize();
         bool dark = mode?.ToLowerInvariant() switch { "dark" => true, "light" => false, _ => SystemUsesDarkTheme() };
         var resources = app.Resources;
+        ApplyPalette(resources, dark);
+        if (styles is null) styles = (ResourceDictionary)XamlReader.Parse(StyleMarkup);
+        if (!resources.MergedDictionaries.Contains(styles)) resources.MergedDictionaries.Add(styles);
+    }
+
+    // Early argument/forwarding errors have no Application; a failed bootstrap may
+    // also leave only part of its palette. Never combine that with default text.
+    internal static void EnsureDialogPalette(Window window)
+    {
+        string[] required = ["CanvasSurface", "CanvasText", "CanvasBorder", "CanvasButton",
+            "CanvasButtonHover", "CanvasPressed", "CanvasAccent", "CanvasMuted", "CanvasInput",
+            "CanvasCloseHover", "CanvasCloseForeground"];
+        if (required.All(key => window.TryFindResource(key) is SolidColorBrush { Color.A: 255, Opacity: 1 }) &&
+            Contrast(((SolidColorBrush)window.TryFindResource("CanvasSurface")).Color,
+                ((SolidColorBrush)window.TryFindResource("CanvasText")).Color) >= 4.5) return;
+        ApplyPalette(window.Resources, false);
+    }
+
+    private static double Contrast(Color first, Color second)
+    {
+        static double Channel(byte value) { double c = value / 255d; return c <= .04045 ? c / 12.92 : Math.Pow((c + .055) / 1.055, 2.4); }
+        static double Luminance(Color color) => .2126 * Channel(color.R) + .7152 * Channel(color.G) + .0722 * Channel(color.B);
+        double a = Luminance(first), b = Luminance(second);
+        return (Math.Max(a, b) + .05) / (Math.Min(a, b) + .05);
+    }
+
+    private static void ApplyPalette(ResourceDictionary resources, bool dark)
+    {
         SetBrush(resources, "CanvasSurface", dark ? "#24272C" : "#F8F9FB");
         SetBrush(resources, "CanvasFileBubble", dark ? "#29384B" : "#EDF3FB");
         SetBrush(resources, "CanvasText", dark ? "#E9ECF1" : "#252B36");
@@ -60,8 +97,6 @@ internal static class AppTheme
         resources[SystemColors.HighlightBrushKey] = resources["CanvasAccent"];
         resources[SystemColors.HighlightTextBrushKey] = Brushes.White;
 
-        if (styles is null) styles = (ResourceDictionary)XamlReader.Parse(StyleMarkup);
-        if (!resources.MergedDictionaries.Contains(styles)) resources.MergedDictionaries.Add(styles);
     }
 
     private static void SetBrush(ResourceDictionary resources, string key, string color)
