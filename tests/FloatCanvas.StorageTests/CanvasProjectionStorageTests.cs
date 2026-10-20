@@ -84,9 +84,18 @@ internal static class CanvasProjectionStorageTests
         check(!retainedScene.Canvas.Projection.Enabled && retainedScene.Canvas.Projection.Matrix == projection.Matrix,
             "disabled calibration survives a display layout that crosses its old horizon");
         retainedScene.Canvas.Projection.Enabled = true;
-        bool unsafeEnabled = false;
-        try { SceneValidation.Validate(retainedScene); } catch (InvalidDataException) { unsafeEnabled = true; }
-        check(unsafeEnabled, "same calibration cannot be enabled across the new viewport horizon");
+        SceneValidation.Validate(retainedScene);
+        string enabledPath = Path.Combine(root, "enabled-with-screen-horizon.floatcanvas");
+        await store.SaveAsync(enabledPath, retainedScene, assets);
+        var enabledLoaded = (await store.LoadAsync(enabledPath)).Document;
+        check(enabledLoaded.Canvas.Projection.Enabled && enabledLoaded.Canvas.Projection.Matrix == projection.Matrix &&
+            JsonSerializer.Serialize(enabledLoaded) == JsonSerializer.Serialize(retainedScene),
+            "enabled calibration with a screen horizon roundtrips without disabling or recalibrating");
+        var horizonRecovery = new RecoveryStore(Path.Combine(root, "horizon-recovery"));
+        await horizonRecovery.SaveAsync(new() { LiveDocument = retainedScene }, assets);
+        var horizonRecovered = (await horizonRecovery.LoadAsync())!.State.LiveDocument;
+        check(horizonRecovered.Canvas.Projection.Enabled && JsonSerializer.Serialize(horizonRecovered) == JsonSerializer.Serialize(retainedScene),
+            "recovery preserves enabled perspective when a changed display contains the horizon");
         await CanvasGridLockStorageTests.RunAsync(check);
     }
 }

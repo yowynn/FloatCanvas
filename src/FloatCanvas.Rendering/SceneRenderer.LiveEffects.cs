@@ -116,7 +116,7 @@ public sealed partial class SceneRenderer
         if (effect.IsBillboard && space == SceneRenderSpace.ScreenComposite)
         {
             var billboardMapping = CanvasMapping.Create(document);
-            if (!billboardMapping.TryGetDepthScale(effect.BillboardAnchor, out _)) return [];
+            if (!billboardMapping.IsElementSafe(effect)) return [];
             var billboardTransform = billboardMapping.ElementToScreen(effect);
             return ClipPolygon(ElementGeometry.Outline(effect).Select(billboardTransform.TransformPoint).ToArray(),
                 [new(document.Viewport.Left, document.Viewport.Top), new(document.Viewport.Right, document.Viewport.Top),

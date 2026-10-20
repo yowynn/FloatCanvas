@@ -234,7 +234,14 @@ internal sealed class StampLibrary(string profileDirectory)
     {
         if (!double.IsFinite(center.X) || !double.IsFinite(center.Y)) throw new ArgumentOutOfRangeException(nameof(center));
         var origin = stamp.Document.Viewport.Center;
-        target.InsertDocument(stamp.Document, stamp.Assets, Affine2D.Translation(center.X - origin.X, center.Y - origin.Y), group: true);
+        var transform = Affine2D.Translation(center.X - origin.X, center.Y - origin.Y);
+        var mapping = CanvasMapping.Create(target.Document);
+        foreach (var source in stamp.Document.Elements)
+        {
+            var candidate = source.Clone(); BillboardGeometry.ApplyPlaneTransform(candidate, transform);
+            if (!mapping.IsElementSafe(candidate)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
+        }
+        target.InsertDocument(stamp.Document, stamp.Assets, transform, group: true);
         target.SetSelection([]);
     }
 

@@ -11,7 +11,7 @@
     <Product>浮绘 FloatCanvas</Product>
     <Description>可编辑的 Windows 屏幕标注画布</Description>
     <SatelliteResourceLanguages>zh-Hans;zh-CN;en</SatelliteResourceLanguages>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets\FloatCanvas.ico" />

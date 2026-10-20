@@ -39,6 +39,7 @@ internal static class SnapshotImageCommand
         var image = billboardDepth is { } depth
             ? CreateBillboardElement(session.Assets, raster, mapping, depth)
             : CreateElement(session.Assets, raster, capturedPlaneToScreen ?? mapping.PlaneToScreen);
+        if (!mapping.IsElementSafe(image)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
         session.Add(image, L.Get("History.Snapshot"));
         return image;
     }
@@ -52,7 +53,7 @@ internal static class SnapshotImageCommand
             Style = new() { StrokeWidth = 0 } };
         var placement = Projective2D.FromAffine(Affine2D.Translation(raster.Bounds.X, raster.Bounds.Y)
             .Compose(Affine2D.Scale(depth.Scale, depth.Scale)));
-        if (!BillboardGeometry.TryPlaceFromScreen(image, mapping, depth, placement))
+        if (!BillboardGeometry.TryPlaceFromScreen(image, mapping, depth, placement) || !mapping.IsElementSafe(image))
             throw new InvalidOperationException(L.Get("Perspective.SnapshotOutsidePlane"));
         image.AssetId = assets.Add(raster.PngBytes);
         return image;
@@ -61,6 +62,9 @@ internal static class SnapshotImageCommand
     internal static CanvasElement CreateElement(AssetLibrary assets, CaptureRasterResult raster, Projective2D planeToScreen)
     {
         if (!raster.HasVisiblePixels) throw new InvalidOperationException(L.Get("Snapshot.Empty"));
+        var safety = new CanvasProjectionSafety(planeToScreen);
+        if (!EditorController.Corners(raster.Bounds).All(safety.IsScreenSafe))
+            throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
         var screenPlacement = Affine2D.Translation(raster.Bounds.Left, raster.Bounds.Top);
         Projective2D? placement = null;
         if (planeToScreen != Projective2D.Identity)

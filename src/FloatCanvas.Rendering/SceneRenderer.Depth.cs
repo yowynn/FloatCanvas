@@ -150,12 +150,18 @@ public sealed partial class SceneRenderer
         finally { canvas.RestoreToCount(saved); }
     }
 
-    private static void DrawPlaneColor(SKCanvas canvas, SceneDocument document, bool include, double opacity = 1)
+    private void DrawPlaneColor(SKCanvas canvas, SceneDocument document, bool include, double opacity = 1)
     {
         if (!include || (document.Canvas.BackgroundColor >> 24) == 0) return;
-        var color = new SKColor(document.Canvas.BackgroundColor);
-        using var paint = new SKPaint { Color = color.WithAlpha((byte)Math.Round(color.Alpha * opacity)) };
-        canvas.DrawRect(ToRect(document.Viewport), paint);
+        int saved = canvas.Save();
+        try
+        {
+            if (!ClipSafePlane(canvas, document)) return;
+            var color = new SKColor(document.Canvas.BackgroundColor);
+            using var paint = new SKPaint { Color = color.WithAlpha((byte)Math.Round(color.Alpha * opacity)) };
+            canvas.DrawRect(ToRect(document.Viewport), paint);
+        }
+        finally { canvas.RestoreToCount(saved); }
     }
 
     private void DrawEventBase(SKCanvas canvas, SceneDocument document, IReadOnlyList<PointD>? polygon, bool background, bool grid)

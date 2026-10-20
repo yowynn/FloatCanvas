@@ -25,7 +25,7 @@ internal static class CanvasCalibrationTests
         string? error = null; controller.Error += value => error = value;
         controller.Move(initial[2]);
         check("invalid target stops at a valid projection boundary", error == "Canvas.InvalidQuad" && controller.IsDragConstrained &&
-            CanvasCalibration.IsStableViewport(session.Document.Canvas.Projection.Matrix, document.Viewport) &&
+            CanvasCalibration.IsValidProjection(session.Document.Canvas.Projection.Matrix) &&
             CanvasCalibration.TryGridToScreen(8, 6, session.Document.Canvas.Projection.Quad, out _));
         controller.CancelDrag();
         check("cancelled constrained gesture adds no undo", session.UndoCount == 0 && !controller.IsDragConstrained && session.Document.Canvas.Projection.Quad.SequenceEqual(initial));
@@ -101,18 +101,17 @@ internal static class CanvasCalibrationTests
             var delta = new PointD(0, (initial[3].Y - start.Y) * .9);
             var target = initial.ToArray(); target[0] += delta;
             check($"{test.Name}: boundary fixture remains convex", CanvasCalibration.TryGridToScreen(8, 6, target, out _));
-            check($"{test.Name}: boundary fixture reaches horizon guard", !CanvasCalibration.TryCalibrate(document.Canvas.Projection, target, test.Desktop, out _, out var error) && error == "Canvas.UnstableProjection");
+            check($"{test.Name}: valid strong perspective is accepted with a horizon in the viewport", CanvasCalibration.TryCalibrate(document.Canvas.Projection, target, test.Desktop, out _, out _));
             int errors = 0; controller.Error += _ => errors++;
             controller.Down(start);
             bool advanced = controller.Move(start + delta);
             var clipped = document.Canvas.Projection.Quad[0];
-            check($"{test.Name}: coarse drag advances continuously to safe boundary", advanced && clipped.Y > start.Y + 4 && clipped.Y < start.Y + delta.Y && controller.IsDragConstrained);
-            check($"{test.Name}: clipped preview remains convex and stable", CanvasCalibration.TryGridToScreen(8, 6, document.Canvas.Projection.Quad, out _) && CanvasCalibration.IsStableViewport(document.Canvas.Projection.Matrix, test.Desktop));
+            check($"{test.Name}: coarse drag reaches the requested corner without a viewport constraint", advanced && clipped.DistanceTo(target[0]) < 1e-7 && !controller.IsDragConstrained);
+            check($"{test.Name}: strong preview remains convex and invertible", CanvasCalibration.TryGridToScreen(8, 6, document.Canvas.Projection.Quad, out _) && CanvasCalibration.IsValidProjection(document.Canvas.Projection.Matrix));
             var mapping = CanvasMapping.Create(document);
-            PointD[] samples = [new(test.Desktop.Left, test.Desktop.Top), new(test.Desktop.Right, test.Desktop.Bottom), test.Desktop.Center];
-            check($"{test.Name}: constrained preview retains finite viewport roundtrips", samples.All(p => mapping.TryToPlane(p, out var plane) && mapping.ToScreen(plane).DistanceTo(p) < .001));
+            check($"{test.Name}: clipped safe viewport retains finite roundtrips", mapping.SafeScreenPolygon.Count >= 3 && mapping.SafeScreenPolygon.All(p => mapping.TryToPlane(p, out var plane) && mapping.ToScreen(plane).DistanceTo(p) < .001));
             controller.Move(start + delta);
-            check($"{test.Name}: repeated blocked samples do not repeat errors", errors == 1);
+            check($"{test.Name}: accepted strong perspective reports no constraint error", errors == 0);
             controller.Up();
             check($"{test.Name}: constrained gesture commits one undo", session.UndoCount == 1 && !controller.IsDragConstrained);
             session.Undo();
@@ -137,7 +136,7 @@ internal static class CanvasCalibrationTests
         extremeController.Move(new(double.NaN, double.PositiveInfinity));
         check("nonfinite pointer samples preserve finite projection", extremeController.IsDragConstrained && extreme.Canvas.Projection.Quad.SequenceEqual(before) && extreme.Canvas.Projection.Matrix.IsFinite);
         extremeController.Move(before[2]);
-        check("crossing a corner remains constrained and never inverts the projection", extremeController.IsDragConstrained && CanvasCalibration.TryGridToScreen(8, 6, extreme.Canvas.Projection.Quad, out _) && CanvasCalibration.IsStableViewport(extreme.Canvas.Projection.Matrix, extreme.Viewport));
+        check("crossing a corner remains constrained and never inverts the projection", extremeController.IsDragConstrained && CanvasCalibration.TryGridToScreen(8, 6, extreme.Canvas.Projection.Quad, out _) && CanvasCalibration.IsValidProjection(extreme.Canvas.Projection.Matrix));
         var lastValid = extreme.Canvas.Projection.Quad.ToArray();
         extremeController.Move(new(1e300, -1e300));
         check("extreme finite pointer preserves last stable preview", extreme.Canvas.Projection.Quad.SequenceEqual(lastValid) && extreme.Canvas.Projection.Matrix.IsFinite);
@@ -149,7 +148,7 @@ internal static class CanvasCalibrationTests
             check($"corner {corner}: coarse crossing sample approaches valid boundary", extremeController.IsDragConstrained &&
                 extremeSession.Document.Canvas.Projection.Quad[corner].DistanceTo(before[corner]) > 4 &&
                 CanvasCalibration.TryGridToScreen(8, 6, extremeSession.Document.Canvas.Projection.Quad, out _) &&
-                CanvasCalibration.IsStableViewport(extremeSession.Document.Canvas.Projection.Matrix, extremeSession.Document.Viewport));
+                CanvasCalibration.IsValidProjection(extremeSession.Document.Canvas.Projection.Matrix));
             extremeController.CancelDrag();
         }
         var midpoint = (before[1] + before[2]) * .5;
@@ -158,7 +157,7 @@ internal static class CanvasCalibrationTests
         check("constrained edge drag keeps both endpoints together and the opposite edge fixed", extremeController.IsDragConstrained &&
             edgePreview[0] == before[0] && edgePreview[3] == before[3] &&
             (edgePreview[1] - before[1]).DistanceTo(edgePreview[2] - before[2]) < 1e-7 &&
-            edgePreview[1].X < before[1].X - 4 && CanvasCalibration.IsStableViewport(extremeSession.Document.Canvas.Projection.Matrix, extremeSession.Document.Viewport));
+            edgePreview[1].X < before[1].X - 4 && CanvasCalibration.IsValidProjection(extremeSession.Document.Canvas.Projection.Matrix));
         extremeController.Move(midpoint + new PointD(-10, 0));
         check("edge drag recovers original pointer tracking after constraint", !extremeController.IsDragConstrained && extremeSession.Document.Canvas.Projection.Quad[1].DistanceTo(before[1] + new PointD(-10, 0)) < 1e-7);
         extremeController.CancelDrag();

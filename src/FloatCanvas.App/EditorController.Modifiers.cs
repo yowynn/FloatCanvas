@@ -22,16 +22,19 @@ internal sealed partial class EditorController
         PointD current;
         if(HasCaptureGesture)current=screen;
         else if(UsesBillboardDrawingInput)current=BillboardInput(screen);
-        else if(!CanvasMapping.Create(Session.Document).TryToPlane(screen,out current))return;
+        else if(!CanvasMapping.Create(Session.Document).TryToPlane(screen,out current))
+        { if(IsPlanarStrokeDrawing)strokeInterrupted=true;RejectPointer();return; }
         pointerScreen=screen;
-        if((modifiers&OverlayModifiers.Shift)!=0&&ActiveStroke is { } points)
+        if(IsPlanarStrokeDrawing&&!IsStrokeCandidateSafe(current,out _))
+        {strokeInterrupted=true;RejectPointer();return;}
+        if((modifiers&OverlayModifiers.Shift)!=0&&!(IsPlanarStrokeDrawing&&strokeInterrupted)&&ActiveStroke is { } points)
         {
             AppendStrokePoint(points,gesture=="draw"?current-start:current,force:true);
             straightStrokeStart=points.Count-1;
         }
         TrackGestureMovement();
         lastGestureMove=null;
-        Move(current,modifiers);
+        MoveSafely(current,modifiers);
     }
 
     private bool ConstrainBox(OverlayModifiers modifiers)=>ConstrainAspect^((modifiers&OverlayModifiers.Shift)!=0);

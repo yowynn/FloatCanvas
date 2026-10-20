@@ -161,7 +161,7 @@ internal sealed class CanvasPresetLibrary
                 throw new InvalidDataException(L.Get(error!));
             projection = calibrated;
         }
-        if (parameters.ProjectionEnabled && !CanvasCalibration.IsStableViewport(projection.Matrix, viewport))
+        if (parameters.ProjectionEnabled && !CanvasCalibration.IsValidProjection(projection.Matrix))
             throw new InvalidDataException(L.Get("Canvas.UnstableProjection"));
         // Applying a recipe establishes a fresh calibration reference, like Reset.
         projection.LockedGridCellSize = null;

@@ -72,6 +72,7 @@ internal sealed partial class EditorController
     public IReadOnlyList<PointD>? EffectPreviewPolygon { get; private set; }
     public CaptureSelection? CapturePreview { get; private set; }
     public bool HasCaptureGesture => gesture is "capture" or "capture-polygon";
+    internal bool IsPointerBlocked { get; private set; }
     public event Action? Changed;
     public event Action<string>? Message;
     public event Action<CanvasElement?, PointD>? EditText;
@@ -122,7 +123,7 @@ internal sealed partial class EditorController
             for (int i = 0; i < Session.Document.Elements.Count; i++)
             {
                 var id = Session.Document.Elements[i].Id;
-                bool active = gesture is "draw" or "endpoint" ? drawing?.Id == id : transforms.ContainsKey(id);
+                bool active = gesture is "draw" or "endpoint" ? drawing?.Id == id || strokeFragmentIds.Contains(id) : transforms.ContainsKey(id);
                 if (active) { first = Math.Min(first, i); last = i; }
             }
             return last < 0 ? (-1, -1, true) : (first, last, false);
@@ -166,6 +167,7 @@ internal sealed partial class EditorController
         deselectOnClick = gestureMoved = false;
         shiftDeselectOnClick = false;
         ClearBillboardDepth(); pendingBillboardInsertion = null; billboardSources.Clear(); billboardMoveDelta = null;
+        IsPointerBlocked = false; strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
         Session.Cancel(); Changed?.Invoke();
     }
     public void Pointer(OverlayPointerEvent e) => PointerForCanvas(e, e.Kind == OverlayPointerKind.DoubleClick);
@@ -186,11 +188,18 @@ internal sealed partial class EditorController
         PointD p;
         if (screenGesture) p = pointerScreen;
         else if (UsesBillboardDrawingInput || gesture is null && billboardDepth is not null) p = BillboardInput(pointerScreen);
-        else if (!CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out p))
+        else if (!CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out p) && !TryBillboardSelectionInput(out p))
         {
-            if (e.Kind == OverlayPointerKind.Up) Cancel();
+            if (IsPlanarStrokeDrawing)
+            {
+                strokeInterrupted = true;
+                if (e.Kind == OverlayPointerKind.Up) FinishSafeStroke();
+            }
+            else if (e.Kind == OverlayPointerKind.Up) Cancel();
+            RejectPointer(e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick or OverlayPointerKind.Up);
             return;
         }
+        if (gesture is null || e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) SetPointerBlocked(false);
         if (gesture == "image-crop" && !IsCurrentCropTarget()) { Cancel(); return; }
         if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); Tool = EditorTool.Select; return; }
         if (gesture == "capture-polygon" && e.Button == OverlayMouseButton.Left &&
@@ -237,7 +246,12 @@ internal sealed partial class EditorController
             { start = selectionPoint; StartSelect(selectionPoint, e.Modifiers, selectedOnly: true); deselectOnClick = false; return; }
             if (deselectOnClick && Tool == EditorTool.Image)
             { Session.SetSelection([]); return; }
-            if (Tool is EditorTool.Number or EditorTool.Emoji) { BeginSizedPlacement(p); BeginBillboardDrawing(); Session.NotifyChanged(); return; }
+            if (Tool is EditorTool.Number or EditorTool.Emoji)
+            {
+                BeginSizedPlacement(p); BeginBillboardDrawing();
+                if (!IsDrawingSafe()) { Cancel(); RejectPointer(true); return; }
+                Session.NotifyChanged(); return;
+            }
             if (Tool == EditorTool.Image) { Message?.Invoke(L.Get("Editor.ImportImageHint")); return; }
             if (Tool == EditorTool.Stamp) return;
             if (Tool == EditorTool.Crop)
@@ -276,6 +290,7 @@ internal sealed partial class EditorController
             if(drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
             if (UsesDefaultSize(Tool)) ApplyDefaultSize(drawing, start, e.Modifiers);
             BeginBillboardDrawing();
+            if (!IsDrawingSafe()) { Cancel(); RejectPointer(true); return; }
             Session.Document.Elements.Add(drawing);
             Session.Selection.Clear();
             if (Tool is not (EditorTool.Freehand or EditorTool.Highlighter)) Session.Selection.Add(drawing.Id);
@@ -289,7 +304,7 @@ internal sealed partial class EditorController
             if (lastGestureMove == sample) return;
             lastGestureMove = sample;
             TrackGestureMovement();
-            Move(p, e.Modifiers);
+            MoveSafely(p, e.Modifiers);
         }
         else if (e.Kind == OverlayPointerKind.Up && gesture != null && e.Button == OverlayMouseButton.Left)
         {
@@ -300,7 +315,13 @@ internal sealed partial class EditorController
                 CompleteCaptureSelection(); return;
             }
             TrackGestureMovement();
-            Move(p, e.Modifiers);
+            MoveSafely(p, e.Modifiers);
+            if (IsPointerBlocked && !IsPlanarStrokeDrawing)
+            {
+                Cancel();
+                SetPointerBlocked(!CanvasMapping.Create(Session.Document).IsScreenSafe(pointerScreen));
+                Message?.Invoke(L.Get("Perspective.InputOutsidePlane")); return;
+            }
             if (billboardDrawing && !billboardDraftValid)
             { var depth = billboardDepth; Cancel(); billboardDepth = depth; Changed?.Invoke(); return; }
             var completed = gesture;
@@ -322,7 +343,7 @@ internal sealed partial class EditorController
                 else if (completed == "draw" && !gestureMoved && drawing is not null && ElementGeometry.IsLine(drawing.Kind))
                 { Session.Cancel(); if (deselectOnClick) Session.SetSelection([]); }
                 else if (completed == "draw" && !gestureMoved && drawing is not null && UsesDefaultSize(Tool))
-                { PrepareBillboardDrawing(); ApplyDefaultSize(drawing, start, e.Modifiers); if (RefreshBillboardDrawing()) Session.Commit(); else Session.Cancel(); }
+                { PrepareBillboardDrawing(); ApplyDefaultSize(drawing, start, e.Modifiers); if (RefreshBillboardDrawing() && IsDrawingSafe()) Session.Commit(); else { Session.Cancel(); RejectPointer(true); } }
                 else if (completed == "draw" && deselectOnClick && !gestureMoved)
                 { Session.Cancel(); Session.SetSelection([]); }
                 else if (completed == "move" && shiftDeselectOnClick && !gestureMoved)
@@ -333,6 +354,7 @@ internal sealed partial class EditorController
             resizeTextSources.Clear();
             straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null;
             drawing = effectTarget = null; Marquee = imageRegion = null; EffectPreviewPolygon = null; Changed?.Invoke();
+            strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
             ClearBillboardDepth(); billboardSources.Clear();
         }
     }

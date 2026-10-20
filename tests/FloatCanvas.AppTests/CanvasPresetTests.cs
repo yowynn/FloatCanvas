@@ -128,7 +128,11 @@ internal static class CanvasPresetTests
         var disabled = current.Clone(); disabled.Projection.Enabled = false;
         var disabledSaved = reloaded.Save("Disabled perspective", disabled);
         var extendedViewport = new RectD(-250, -500, 500, 900);
-        check("enabled snapshot refuses a current viewport crossing its horizon without changing the target", Reject(() => reloaded.Apply(saved.Id, fresh, viewport, extendedViewport)) && JsonSerializer.Serialize(fresh) == freshBefore);
+        var horizonApplied = reloaded.Apply(saved.Id, fresh, viewport, extendedViewport);
+        var horizonMapping = CanvasMapping.Create(new SceneDocument { Canvas = horizonApplied, Viewport = extendedViewport });
+        check("enabled snapshot preserves its projection when a new viewport crosses its horizon without changing the target", horizonApplied.Projection.Enabled &&
+            horizonApplied.Projection.Matrix == current.Projection.Matrix && JsonSerializer.Serialize(fresh) == freshBefore &&
+            horizonMapping.SafeScreenPolygon.Count >= 3 && horizonMapping.SafeScreenPolygon.All(p => horizonMapping.TryToPlane(p, out _)));
         var disabledApplied = new CanvasPresetLibrary(path).Apply(disabledSaved.Id, fresh, viewport, extendedViewport);
         check("disabled calibration survives restart and a viewport change without being forced enabled", !disabledApplied.Projection.Enabled && disabledApplied.Projection.Quad.SequenceEqual(quad) && disabledApplied.Projection.Matrix == current.Projection.Matrix);
         string beforeInvalid = File.ReadAllText(path);

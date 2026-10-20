@@ -105,11 +105,13 @@ public static class CanvasCalibration
         var origin = current.Quad.Count == 0 ? CreateInitial(viewport, current.Columns, current.Rows).Origin : current.Origin;
         var planeToGrid = Projective2D.FromAffine(Affine2D.Scale(1 / cellSize, 1 / cellSize).Compose(Affine2D.Translation(-origin.X, -origin.Y)));
         var matrix = gridToScreen.Compose(planeToGrid);
-        if (!IsStableViewport(matrix, viewport)) { error = "Canvas.UnstableProjection"; return false; }
+        if (!IsValidProjection(matrix)) { error = "Canvas.UnstableProjection"; return false; }
         settings = new() { Enabled = true, Columns = current.Columns, Rows = current.Rows, Origin = origin, CellSize = cellSize, LockedGridCellSize = current.LockedGridCellSize,
             Quad = [.. quad], Matrix = matrix, AlgorithmVersion = AlgorithmVersion };
         return true;
     }
+    public static bool IsValidProjection(Projective2D matrix) => matrix.IsFinite && matrix.TryInverse(out _);
+    /// <summary>Legacy diagnostic: whether the entire viewport and its guard avoid the horizon.</summary>
     public static bool IsStableViewport(Projective2D matrix, RectD viewport)
     {
         if (!matrix.TryInverse(out var inverse)) return false;
@@ -179,6 +181,8 @@ public sealed class CanvasMapping
     public Projective2D ScreenToPlane { get; }
     public PointD GridOrigin { get; }
     public double GridCellSize { get; }
+    public CanvasProjectionSafety Safety { get; }
+    public IReadOnlyList<PointD> SafeScreenPolygon { get; }
     public IReadOnlyList<PointD> VisiblePlanePolygon { get; }
     private CanvasMapping(SceneDocument document)
     {
@@ -193,15 +197,35 @@ public sealed class CanvasMapping
         GridOrigin = reference.Origin; GridCellSize = reference.GridCellSize;
         PlaneToScreen = settings.Enabled ? reference.Matrix : Projective2D.Identity;
         ScreenToPlane = PlaneToScreen.Inverse();
-        VisiblePlanePolygon = new PointD[] { new(viewport.Left, viewport.Top), new(viewport.Right, viewport.Top), new(viewport.Right, viewport.Bottom), new(viewport.Left, viewport.Bottom) }
-            .Select(ScreenToPlane.TransformPoint).ToArray();
+        Safety = new(PlaneToScreen);
+        SafeScreenPolygon = Safety.ClipScreen(viewport);
+        VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();
     }
     public static CanvasMapping Create(SceneDocument document) => new(document);
     public PointD ToScreen(PointD point) => PlaneToScreen.TransformPoint(point);
-    public bool IsVisible(PointD plane) => PlaneToScreen.Denominator(plane) > 1e-8 && PlaneToScreen.TryTransformPoint(plane, out _);
-    public bool TryToPlane(PointD point, out PointD plane) => ScreenToPlane.TryTransformPoint(point, out plane) && IsVisible(plane);
+    public bool IsVisible(PointD plane) => Safety.IsPlaneSafe(plane);
+    public bool IsScreenSafe(PointD point) => Safety.IsScreenSafe(point);
+    public bool TryToPlane(PointD point, out PointD plane) => Safety.TryToPlane(point, out plane);
     public Projective2D ElementToScreen(CanvasElement element) => BillboardGeometry.ElementToTarget(element, PlaneToScreen);
-    public bool TryGetDepthScale(PointD anchor, out double scale) => BillboardGeometry.TryDepthScale(PlaneToScreen, anchor, out scale);
+    public bool TryGetDepthScale(PointD anchor, out double scale)
+    {
+        scale = 0;
+        return IsVisible(anchor) && BillboardGeometry.TryDepthScale(PlaneToScreen, anchor, out scale);
+    }
+    /// <summary>Tests the complete stroked local envelope. Billboards use their ground anchor, not their screen top.</summary>
+    public bool IsElementSafe(CanvasElement element, bool includeStroke = true)
+    {
+        var local = ElementGeometry.StrokedLocalBounds(element, includeStroke);
+        if (element.IsBillboard)
+            return TryGetDepthScale(element.BillboardAnchor, out _) &&
+                ElementToScreen(element).TryTransformBounds(local, out var projected) &&
+                double.IsFinite(projected.Width) && double.IsFinite(projected.Height) &&
+                Math.Abs(projected.Left) <= CanvasProjectionSafety.MaximumCoordinate && Math.Abs(projected.Right) <= CanvasProjectionSafety.MaximumCoordinate &&
+                Math.Abs(projected.Top) <= CanvasProjectionSafety.MaximumCoordinate && Math.Abs(projected.Bottom) <= CanvasProjectionSafety.MaximumCoordinate;
+        var placement = ElementGeometry.LocalToPlane(element);
+        PointD[] corners = [new(local.Left, local.Top), new(local.Right, local.Top), new(local.Right, local.Bottom), new(local.Left, local.Bottom)];
+        return corners.All(p => placement.Denominator(p) > 0 && placement.TryTransformPoint(p, out var plane) && IsVisible(plane));
+    }
     public bool TryGetEqualDepthLine(PointD screenPoint, out BillboardDepthLine line) => BillboardGeometry.TryEqualDepthLine(this, screenPoint, out line);
     public bool TryGetBillboardAnchor(BillboardDepthLine line, PointD screenCenter, out PointD anchor, out double height)
         => BillboardGeometry.TryAnchor(this, line, screenCenter, out anchor, out height);

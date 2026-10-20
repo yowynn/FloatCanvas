@@ -46,6 +46,7 @@ public sealed partial class SceneRenderer
         int saved = canvas.Save();
         try
         {
+            if (!ClipSafePlane(canvas, document)) return;
             if (!reference) { var matrix = ToMatrix(mapping.PlaneToScreen); canvas.Concat(in matrix); }
             DrawFamily(true, left, right, origin.X);
             DrawFamily(false, top, bottom, origin.Y);

@@ -1,5 +1,5 @@
 {
-  "Perspective.InputOutsidePlane": { "zh": "当前位置不在画布可绘制区域内。", "en": "This position is outside the drawable canvas plane." },
+  "Perspective.InputOutsidePlane": { "zh": "接近透视极限，无法在此创建或放置图层。", "en": "Too close to the perspective limit. This layer cannot be created or placed here." },
   "Perspective.SnapshotOutsidePlane": { "zh": "截图区域跨过透视边界，请调整选区或画布透视。", "en": "The snapshot crosses the perspective boundary. Adjust the selection or canvas perspective." },
   "Perspective.InspectorPlaneBounds": { "zh": "截图的尺寸表示画布平面上的外框尺寸。", "en": "Snapshot dimensions describe its bounds on the canvas plane." }
 }

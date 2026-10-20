@@ -139,7 +139,11 @@ public sealed partial class EditorSession
     /// <summary>For live gesture updates inside an existing transaction; transform is relative to current positions.</summary>
     public void ApplySelectionTransform(Affine2D transform)
     {
-        foreach (var element in SelectedElements().Where(e => !e.Locked)) BillboardGeometry.ApplyPlaneTransform(element, transform);
+        var selected = SelectedElements().Where(e => !e.Locked).ToArray();
+        var candidates = selected.Select(e => e.Clone()).ToArray();
+        foreach (var candidate in candidates) BillboardGeometry.ApplyPlaneTransform(candidate, transform);
+        EnsureSafeInsertion(candidates);
+        foreach (var element in selected) BillboardGeometry.ApplyPlaneTransform(element, transform);
         OnChanged(contentChanged: true);
     }
     public void UpdateSelection(Action<CanvasElement> update, string? label = null) => Execute(label ?? L.Get("History.UpdateProperties"), _ => { foreach (var e in SelectedElements().Where(e => !e.Locked)) update(e); });
@@ -147,14 +151,22 @@ public sealed partial class EditorSession
     public void SetVisible(bool visible) => Execute(visible ? L.Get("History.ShowElements") : L.Get("History.HideElements"), _ => { foreach (var e in SelectedElements()) e.Visible = visible; });
     public void DuplicateSelection(double offsetX = 16, double offsetY = 16)
     {
+        var snapshot = Document.CloneElements(SelectedElements().Where(e => !e.Locked).Select(e => e.Id), true);
+        foreach (var clone in snapshot.Elements) BillboardGeometry.ApplyPlaneTransform(clone, Affine2D.Translation(offsetX, offsetY));
+        EnsureSafeInsertion(snapshot.Elements);
         Execute(L.Get("History.DuplicateElements"), d =>
         {
-            var snapshot = d.CloneElements(SelectedElements().Where(e => !e.Locked).Select(e => e.Id), true);
             var clones = snapshot.Elements;
             d.Groups.AddRange(snapshot.Groups);
             Selection.Clear();
-            foreach (var clone in clones) { BillboardGeometry.ApplyPlaneTransform(clone, Affine2D.Translation(offsetX, offsetY)); d.Elements.Add(clone); Selection.Add(clone.Id); }
+            foreach (var clone in clones) { d.Elements.Add(clone); Selection.Add(clone.Id); }
         });
+    }
+    private void EnsureSafeInsertion(IEnumerable<CanvasElement> elements)
+    {
+        if (!Document.Canvas.Projection.Enabled) return;
+        var mapping = CanvasMapping.Create(Document);
+        if (elements.Any(e => !mapping.IsElementSafe(e))) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
     }
     public void ReorderSelection(LayerOrder order)
     {

@@ -69,6 +69,7 @@ internal sealed partial class DesktopSession
             if (billboardDepth is { } depth && !BillboardGeometry.TryPlaceFromScreen(effect, mapping, depth,
                 regionToScreen.Compose(ElementGeometry.LocalToPlane(effect))))
             { UpdateStatus(L.Get("Billboard.InvalidDepth")); return; }
+            if (!mapping.IsElementSafe(effect)) { UpdateStatus(L.Get("Perspective.InputOutsidePlane")); return; }
             if (!await PrepareLiveEffectAsync(request, effect) || !CanFinishEffect(request)) return;
             target.Add(effect);
             UpdateStatus(L.Get("Effect.LiveReady"));
@@ -94,6 +95,7 @@ internal sealed partial class DesktopSession
                 ? SnapshotImageCommand.CreateBillboardElement(_assets, raster, mapping, depth)
                 : SnapshotImageCommand.CreateElement(_assets, raster, mapping.PlaneToScreen);
             image.Effects = [new ImageEffect { Kind = kind, Amount = amount, Color = color, Bounds = new(0, 0, 1, 1) }];
+            if (!mapping.IsElementSafe(image)) { UpdateStatus(L.Get("Perspective.InputOutsidePlane")); return; }
             target.Add(image);
             UpdateStatus(L.Get(desktopFilter ? kind == ImageEffectKind.Blur ? "Effect.LegacyBlurFrozen" : "Effect.LegacyPixelateFrozen" : "Effect.RegionFrozen"));
         }

@@ -1,6 +1,16 @@
 # 更新日志 / Changelog
 
-## 未发布 / Unreleased
+## [0.2.1] - 2026-10-20
+
+0.2.1 放宽强透视的调整范围，并完善安全区内的绘制与图层处理；同时修复编辑窗口拖动、快捷键、印章预览与高 DPI 图层排序等问题。工程格式继续使用 v6。
+
+Version 0.2.1 expands perspective adjustment with safe-area drawing and layer handling, and fixes tool-window dragging, shortcuts, stamp previews and high-DPI layer ordering. Projects continue to use format v6.
+
+- 放宽四点透视校准，允许地平线进入屏幕，统一安全区网格／贴面／效果裁剪与输入保护；立牌顶部仍可越过天际线并选取。调整松手后提供取消、整组移回开阔安全位置或明确删除，保留原始内容和尺寸，整次一步撤销；预设及工程重开保留强透视。
+- Allow four-corner calibration with the horizon on screen, sharing safe-domain clipping and input protection across grids, Surface content and effects. Billboard tops remain visible and selectable above the horizon. On release, cancel, move affected groups to open safe positions, or explicitly delete them; preserve content and logical size with one undo step. Presets and reopened projects retain strong perspective.
+
+- 修复编辑态拖动或缩放图层、属性等辅助窗口时明显卡顿并意外退出编辑的问题；连续刷新的画面优先让输入得到处理，正常的原生窗口移动和缩放保持编辑会话。
+- Fix severe lag and unintended exits from drawing mode when moving or resizing tool windows such as Layers and Properties. Continuous canvas refreshes yield to pending input, and normal native window movement and resizing retain the editing session.
 
 - “放置方式”的工具提示只显示名称和当前模式，主菜单同步；两种模式共用居中的大菱形地面和同一人物轮廓，默认模式沿正方形自身轴向平躺投影、略微缩小，立牌形象立于中央、圆头略高于菱形尖点，并断开被遮挡的地面线条，保持单色线条风格；加宽“置入图片”图标。
 - Show only the Placement name and selected mode in its tooltip, synchronized with the main menu. Both icons share a large central diamond and one figure outline. Default mode projects the figure flat along the square's own axes at a slightly smaller scale; Billboard mode stands it at the center with its round head just above the top corner and gaps in the occluded ground outline. Retain monochrome strokes and widen the image-import icon.

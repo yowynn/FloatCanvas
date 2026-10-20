@@ -22,13 +22,14 @@ internal sealed partial class EditorController
             Cancel();
             temporaryMove = true;
             pointerScreen = new(e.Position.X - ScreenOrigin.X, e.Position.Y - ScreenOrigin.Y);
-            if (CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out var point))
+            if (CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out var point) || TryBillboardSelectionInput(out point))
             {
                 start = point; startScreen = pointerScreen;
                 gestureModifiers = e.Modifiers;
                 lastGestureMove = (point, e.Modifiers, OverlayMouseButton.Left);
                 StartSelect(point, e.Modifiers);
             }
+            else RejectPointer(true);
             Changed?.Invoke();
             return true;
         }

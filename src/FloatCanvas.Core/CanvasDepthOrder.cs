@@ -41,7 +41,7 @@ public static class CanvasDepthOrder
     /// <summary>Convex screen polygon for a plane-depth interval. Infinity denotes the unbounded far end.</summary>
     public static IReadOnlyList<PointD> ClipPlaneDepthRange(CanvasMapping mapping, RectD viewport, double minimumDepth, double maximumDepth)
     {
-        List<PointD> polygon = [new(viewport.Left, viewport.Top), new(viewport.Right, viewport.Top), new(viewport.Right, viewport.Bottom), new(viewport.Left, viewport.Bottom)];
+        List<PointD> polygon = [.. mapping.Safety.ClipScreen(viewport)];
         if (minimumDepth > 0) polygon = Clip(polygon, p => 1 / minimumDepth - mapping.ScreenToPlane.Denominator(p));
         if (double.IsFinite(maximumDepth)) polygon = Clip(polygon, p => mapping.ScreenToPlane.Denominator(p) - 1 / maximumDepth);
         return polygon;

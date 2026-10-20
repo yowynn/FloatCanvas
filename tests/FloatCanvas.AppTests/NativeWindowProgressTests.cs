@@ -58,6 +58,11 @@ internal static class NativeWindowProgressTests
             typeof(OverlayHost).GetField("_keyboardLease", Private)!.SetValue(host, lease);
             typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
             var heartbeat = typeof(KeyboardInputIsolation).GetField("lastHeartbeat", Private)!;
+            heartbeat.SetValue(isolation, Environment.TickCount64 - 1300);
+            Invoke(session, "RequestPixelRender");
+            Pump(app.Dispatcher);
+            results.Add(("a completed canvas frame reports UI progress during a stationary native drag without control timers",
+                Environment.TickCount64 - (long)heartbeat.GetValue(isolation)! < 1200 && isolation.IsLeaseActive));
             var panels = new Window[] { new InspectorWindow(() => editor.Session), new LayersWindow(() => editor.Session), new CanvasSettingsWindow() };
             try
             {
@@ -90,6 +95,8 @@ internal static class NativeWindowProgressTests
                     [(uint)0x41, (uint)30, (uint)0, (uint)0, false, (uint)0x100, host.ControlHandle, true, healthyNow, Environment.TickCount64, null, null]);
                 Invoke(host, "HandleKeyboardControlMessage", (uint)0x8003, (nuint)0);
                 results.Add(("a genuinely stalled UI still releases input and exits editing", !host.IsEditing && isolation.LastEndReason == KeyboardLeaseEndReason.HeartbeatExpired));
+                Invoke(session, "RequestPixelRender"); Pump(app.Dispatcher);
+                results.Add(("later frame completion cannot reactivate an expired editing lease", !host.IsEditing && !isolation.IsLeaseActive));
             }
             finally
             {

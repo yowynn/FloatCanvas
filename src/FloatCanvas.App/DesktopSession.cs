@@ -109,6 +109,7 @@ internal sealed partial class DesktopSession : IDisposable
         document.NextNumber = _editor.NumberStart;
         _editor.Changed += () =>
         {
+            if (_eyedropper is null) _host.SetPointerCursor(_editor.IsPointerBlocked ? Forms.Cursors.No.Handle : 0);
             ValidateCanvasCalibrationSession();
             if (_liveEffectPreparation is { } pending && pending.Tool != _editor.Tool) CancelLivePreparation();
             RequestRender(); ScheduleRecovery();
@@ -372,6 +373,9 @@ internal sealed partial class DesktopSession : IDisposable
                 document.Background is { } background && ImageFilter(background) ||
                 document.LayerOpacity > 0 && document.Elements.Any(ImageFilter));
             _host.Render();
+            // A native caption loop can delay control timers even while frames
+            // complete. Successful UI work is progress; a blocked render is not.
+            _host.NotifyInputProgress();
             ScheduleAnimationFrame();
             if (pixelsOnly) return;
             _syncingControls = true;
@@ -481,7 +485,7 @@ internal sealed partial class DesktopSession : IDisposable
                 case 0x41: Active.SelectAll(); SelectTool(EditorTool.Select); break;
                 case 0x43: CopySelection(); break;
                 case 0x56: _ = RunCommand(PasteAsync); break;
-                case 0x44: if (CanAddCanvasContent()) Active.DuplicateSelection(); break;
+                case 0x44: if (CanAddCanvasContent()) RunSafeSelectionCommand(() => Active.DuplicateSelection()); break;
                 case 0x47: if (shift) Active.UngroupSelection(); else Active.GroupSelection(); break;
                 case 0x53: _ = RunCommand(() => SaveProjectAsync(shift)); break;
                 case 0x4F: _ = RunCommand(OpenProjectAsync); break;
@@ -503,10 +507,17 @@ internal sealed partial class DesktopSession : IDisposable
         if (key is >= 0x25 and <= 0x28)
         {
             _editor.Cancel(); var amount = shift ? 10 : 1;
-            Active.TransformSelection(Affine2D.Translation(key == 0x25 ? -amount : key == 0x27 ? amount : 0, key == 0x26 ? -amount : key == 0x28 ? amount : 0)); return;
+            RunSafeSelectionCommand(() => Active.TransformSelection(Affine2D.Translation(key == 0x25 ? -amount : key == 0x27 ? amount : 0,
+                key == 0x26 ? -amount : key == 0x28 ? amount : 0))); return;
         }
         if (ToolShortcutCatalog.IsReserved(key)) return;
         if (ToolShortcutCatalog.TryGetTool(key, out var tool)) SelectTool(tool);
+    }
+    private void RunSafeSelectionCommand(Action command)
+    {
+        try { command(); }
+        catch (InvalidOperationException error) when (error.Message == L.Get("Perspective.InputOutsidePlane"))
+        { UpdateStatus(error.Message); }
     }
     private void Undo() { _inspector?.CompletePendingEdit(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Undo(); }
     private void Redo() { _inspector?.CompletePendingEdit(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Redo(); }
@@ -588,7 +599,7 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.Cancel();
         var bounds = _host.Monitors.Select(m=>new RectD(m.Bounds.Left,m.Bounds.Top,m.Bounds.Width,m.Bounds.Height)).Aggregate(RectD.Union);
         _live.Document.Viewport=bounds;
-        if (_live.Document.Canvas.Projection.Enabled && !CanvasCalibration.IsStableViewport(_live.Document.Canvas.Projection.Matrix, bounds))
+        if (_live.Document.Canvas.Projection.Enabled && !CanvasCalibration.IsValidProjection(_live.Document.Canvas.Projection.Matrix))
         {
             _live.Document.Canvas.Projection.Enabled = false;
             UpdateStatus(L.Get("Canvas.UnstableProjection"));

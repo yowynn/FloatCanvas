@@ -23,11 +23,11 @@ internal sealed partial class EditorController
             if (ActiveBillboardDepthLine is null && mapping.PlaneToScreen != Projective2D.Identity)
             {
                 if (!mapping.TryToPlane(start, out var planeStart) || !mapping.TryToPlane(point, out var planeEnd))
-                { CapturePreview = null; Changed?.Invoke(); return; }
+                { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
                 if (ConstrainBox(modifiers)) planeEnd = SquareEnd(planeStart, planeEnd);
                 var box = RectD.FromPoints(planeStart, planeEnd);
                 if (!mapping.PlaneToScreen.TryTransformBounds(box, out _))
-                { CapturePreview = null; Changed?.Invoke(); return; }
+                { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
                 var points = CaptureShape == CaptureShape.Rectangle ? Corners(box)
                     : Enumerable.Range(0, 128).Select(i =>
                     {
@@ -55,6 +55,11 @@ internal sealed partial class EditorController
             contour = Array.AsReadOnly(points.ToArray());
             bounds = CaptureBounds(points);
         }
+        var safeMapping = CanvasMapping.Create(Session.Document);
+        if (ActiveBillboardDepthLine is null &&
+            !(contour.Count > 0 ? contour : Corners(bounds)).All(safeMapping.IsScreenSafe))
+        { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
+        SetPointerBlocked(false);
         CapturePreview = new(CaptureShape, CaptureSource, bounds, contour,
             CaptureBorderWidth * (ActiveBillboardDepthLine?.Scale ?? 1), CaptureBorderColor)
         { PlaneBounds = planeBounds, PlaneToScreen = projection, BillboardDepthLine = ActiveBillboardDepthLine };
@@ -66,7 +71,8 @@ internal sealed partial class EditorController
         if (gesture == "capture-polygon")
             UpdateCapturePreview(capturePoints.LastOrDefault(), OverlayModifiers.None, includeHover: false);
         var selection = CapturePreview;
-        bool valid = selection is { Bounds.Width: >= 2, Bounds.Height: >= 2 } &&
+        bool invalidRegion = IsPointerBlocked;
+        bool valid = !invalidRegion && selection is { Bounds.Width: >= 2, Bounds.Height: >= 2 } &&
             (selection.Shape is CaptureShape.Rectangle or CaptureShape.Ellipse || HasCaptureArea(selection.Points));
         // Finishing and cancellation both discard only transient geometry, without a document transaction.
         gesture = null; CapturePreview = null; capturePoints.Clear(); lastGestureMove = null;
@@ -74,6 +80,7 @@ internal sealed partial class EditorController
         deselectOnClick = gestureMoved = false;
         ClearBillboardDepth();
         Changed?.Invoke();
+        if (invalidRegion) RejectPointer(true);
         if (valid) CaptureSelectionCompleted?.Invoke(selection!);
     }
 

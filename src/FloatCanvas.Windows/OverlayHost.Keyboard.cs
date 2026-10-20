@@ -18,8 +18,8 @@ public sealed partial class OverlayHost
     public event Action<KeyboardLeaseEndReason>? KeyboardIsolationReleased;
 
     /// <summary>
-    /// Called only by the owner UI thread when it actually processes input. WM_TIMER alone
-    /// is insufficient: Windows can defer low-priority timers during continuous drawing.
+    /// Called only by the owner UI thread after real progress, such as handling input or
+    /// completing a render. Windows can defer low-priority WM_TIMER during continuous work.
     /// A blocked UI handler still stops this heartbeat and is released by the watchdog.
     /// </summary>
     public void NotifyInputProgress()

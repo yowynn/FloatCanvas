@@ -10,6 +10,8 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--horizon-safety-evidence")) { HorizonSafetyRenderingTests.Run(Assert); HorizonSafetyRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--horizon-safety-evidence") + 1]); return 0; }
+            if (args.Contains("--horizon-safety-only")) { HorizonSafetyRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} horizon safety rendering checks."); return 0; }
             if (args.Contains("--depth-performance-diagnostics"))
             {
                 int failures = 0;
@@ -55,6 +57,7 @@ internal static class Program
             ClearedLiveOpacityTests.Run(Assert);
             CaptureSelectionRenderingTests.Run(Assert);
             CanvasProjectionRenderingTests.Run(Assert);
+            HorizonSafetyRenderingTests.Run(Assert);
             GridLockRenderingTests.Run(Assert);
             BillboardRenderingTests.Run(Assert);
             DepthOcclusionRenderingTests.Run(Assert);

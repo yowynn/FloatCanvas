@@ -27,6 +27,7 @@ internal sealed partial class DesktopSession
             return;
         }
         var edit=new InlineTextEdit(Active,existing,point,_editor.Style,_renderer,depth);
+        edit.PlacementRejected+=()=>UpdateStatus(FloatCanvas.Localization.AppText.Get("Perspective.InputOutsidePlane"));
         _inlineBillboardDepth = depth;
         _inlineText=edit;
         edit.Changed+=()=>
@@ -93,6 +94,7 @@ internal sealed partial class DesktopSession
     private void DrawInlineText(SKCanvas canvas)
     {
         if(_inlineText is not {IsActive:true} edit)return;
+        if(!CanvasMapping.Create(Active.Document).IsElementSafe(edit.Target))return;
         var matrix=edit.LocalToScreen;
         double padding=InlineTextEdit.FramePadding;
         var corners=EditorController.Corners(new(-padding,-padding,edit.Target.Width+padding*2,edit.Target.Height+padding*2)).Select(matrix.TransformPoint).ToArray();

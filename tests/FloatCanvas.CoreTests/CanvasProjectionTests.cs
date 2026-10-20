@@ -37,7 +37,7 @@ internal static class CanvasProjectionTests
         check(mapping.ToScreen(lower + new PointD(50, 50)).DistanceTo(mapping.ToScreen(lower + new PointD(0, 50))) > 50, "nearward extension grows outside calibration box");
         check(!CanvasCalibration.TryCalibrate(reference, [quad[0], quad[2], quad[1], quad[3]], document.Viewport, out _, out _), "crossed quad rejected");
         check(!CanvasCalibration.TryCalibrate(reference, [quad[0], quad[1], new(0, 0), quad[3]], document.Viewport, out _, out _), "concave quad rejected");
-        check(!CanvasCalibration.TryCalibrate(reference, quad, new(-250, -500, 500, 900), out _, out _), "horizon entering viewport rejected");
+        check(CanvasCalibration.TryCalibrate(reference, quad, new(-250, -500, 500, 900), out _, out _), "horizon entering viewport accepted for a valid convex reference quad");
         check(!new Projective2D(1, 0, 0, 0, 1, 0, 0, 0, 0).TryInverse(out _), "singular homography rejected");
         var pole = new Projective2D(1, 0, 0, 0, 1, 0, 1, 0, 1);
         check(!pole.TryTransformPoint(new(-1, 3), out _) && !pole.TryTransformBounds(new(-2, 0, 4, 4), out _), "points and bounds crossing infinity are rejected");
@@ -75,5 +75,6 @@ internal static class CanvasProjectionTests
         check(session.Redo() && session.Document.Canvas.BackgroundColor == 0xFF123456 && session.Document.Canvas.Grid.Visible, "canvas settings redo atomically");
         check(!JsonSerializer.Serialize(document).Contains("IsFinite"), "computed projective properties excluded from JSON");
         CanvasGridLockTests.Run(check);
+        CanvasProjectionSafetyTests.Run(check);
     }
 }

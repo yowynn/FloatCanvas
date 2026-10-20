@@ -81,7 +81,7 @@ internal sealed partial class EditorController
         var mapping = CanvasMapping.Create(Session.Document);
         bool selectedHit = pendingBillboardInsertion is null && billboardDepth is null &&
             (e.Modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0 &&
-            mapping.TryToPlane(pointerScreen, out var selectionPlane) && IsWithinCurrentSelection(selectionPlane);
+            (mapping.TryToPlane(pointerScreen, out var selectionPlane) || TryBillboardSelectionInput(out selectionPlane)) && IsWithinCurrentSelection(selectionPlane);
         bool existingText = Tool == EditorTool.Text && HitTestScreen(pointerScreen, 4) is { Kind: ElementKind.Text } &&
             (e.Modifiers & OverlayModifiers.Control) == 0;
         if (selectedHit || existingText) { billboardPreviewDepth = null; return false; }
@@ -92,10 +92,10 @@ internal sealed partial class EditorController
             {
                 if (billboardPreviewDepth is { } valid)
                 { billboardDepth = valid; Session.SetSelection([]); Message?.Invoke(L.Get("Billboard.DrawAfterDepth")); }
-                else Message?.Invoke(L.Get("Billboard.InvalidDepth"));
+                else { RejectPointer(); Message?.Invoke(L.Get("Billboard.InvalidDepth")); }
                 Changed?.Invoke(); return true;
             }
-            if (e.Kind == OverlayPointerKind.Move) { Changed?.Invoke(); return true; }
+            if (e.Kind == OverlayPointerKind.Move) { SetPointerBlocked(billboardPreviewDepth is null); Changed?.Invoke(); return true; }
             return e.Kind == OverlayPointerKind.Up;
         }
         if (pendingBillboardInsertion is { } insert &&
@@ -166,8 +166,12 @@ internal sealed partial class EditorController
             if (source is not null && canvas.ElementToScreen(source).TryInverse(out var inverse) &&
                 inverse.TryTransformPoint(startScreen, out var grab) && BillboardGeometry.TryMoveAnchor(source, canvas, grab, pointerScreen, out var moved))
                 billboardMoveDelta = ConstrainMove(moved - source.BillboardAnchor, modifiers);
-            else billboardMoveDelta = ConstrainMove(p - start, modifiers);
-            if (billboardSources.Values.Any(e => !canvas.TryGetDepthScale(e.BillboardAnchor + billboardMoveDelta.Value, out _))) return true;
+            else
+            {
+                if (source is not null && !canvas.TryToPlane(pointerScreen, out _)) { RejectPointer(); return true; }
+                billboardMoveDelta = ConstrainMove(p - start, modifiers);
+            }
+            if (billboardSources.Values.Any(e => !canvas.TryGetDepthScale(e.BillboardAnchor + billboardMoveDelta.Value, out _))) { RejectPointer(); return true; }
         }
         if (selected.Length > 1 && (gesture == "resize" || gesture == "rotate" && !mixed))
         {
@@ -205,7 +209,7 @@ internal sealed partial class EditorController
                     !double.IsFinite(candidate.BillboardHeight) ||
                     !new[] { transform.M11, transform.M12, transform.M21, transform.M22, transform.OffsetX, transform.OffsetY }.All(double.IsFinite) ||
                     !transform.TryInverse(out _) ||
-                    !canvas.ElementToScreen(candidate).TryTransformBounds(ElementGeometry.StrokedLocalBounds(candidate), out _)) return true;
+                    !canvas.ElementToScreen(candidate).TryTransformBounds(ElementGeometry.StrokedLocalBounds(candidate), out _)) { RejectPointer(); return true; }
                 candidates.Add(source.Id, candidate);
             }
             foreach (var item in selected.Where(e => e.IsBillboard))

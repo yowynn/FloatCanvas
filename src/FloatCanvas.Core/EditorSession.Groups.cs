@@ -77,9 +77,12 @@ public sealed partial class EditorSession
             throw new ArgumentException("The insertion transform must be finite and invertible.", nameof(transform));
         // Resolve every resource before adding any entities to the receiving document.
         var resources = source.Elements.Where(e => e.AssetId is not null).Select(e => e.AssetId!).Distinct(StringComparer.Ordinal).Select(sourceAssets.Get).ToArray();
-        var map = resources.ToDictionary(r => r.Id, r => Assets.Add(r.Data.ToArray(), r.MediaType), StringComparer.Ordinal);
-        var snapshot = source.CloneElements(source.Elements.Select(e => e.Id), true, map);
+        var snapshot = source.CloneElements(source.Elements.Select(e => e.Id), true);
         if (snapshot.Elements.Count == 0) return;
+        foreach (var element in snapshot.Elements) BillboardGeometry.ApplyPlaneTransform(element, transform);
+        EnsureSafeInsertion(snapshot.Elements);
+        var map = resources.ToDictionary(r => r.Id, r => Assets.Add(r.Data.ToArray(), r.MediaType), StringComparer.Ordinal);
+        foreach (var element in snapshot.Elements.Where(e => e.AssetId is not null)) element.AssetId = map[element.AssetId!];
         if (group && snapshot.Elements.Count > 1 &&
             (snapshot.RootGroupId(snapshot.Elements[0]) is not { } existing || snapshot.Elements.Any(e => snapshot.RootGroupId(e) != existing)))
         {
@@ -94,7 +97,6 @@ public sealed partial class EditorSession
             Selection.Clear();
             foreach (var element in snapshot.Elements)
             {
-                BillboardGeometry.ApplyPlaneTransform(element, transform);
                 document.Elements.Add(element); Selection.Add(element.Id);
                 if (element.Kind == ElementKind.Number) document.NextNumber = Math.Max(document.NextNumber, (int)Math.Min(int.MaxValue, (long)element.Number + 1));
             }

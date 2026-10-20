@@ -21,6 +21,22 @@ internal static class ImageImportCommand
 
     internal static void Insert(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD placement, bool replace = false, PointD? dropCenter = null)
     {
+        var elements = new List<CanvasElement>();
+        if (!replace)
+        {
+            var mapping = CanvasMapping.Create(target.Document);
+            int index = 0;
+            foreach (var image in images)
+            {
+                double scale = Math.Min(1, Math.Min(placement.Width * .8 / image.Width, placement.Height * .8 / image.Height));
+                double width = image.Width * scale, height = image.Height * scale;
+                var center = dropCenter ?? placement.Center;
+                var element = new CanvasElement { Kind = ElementKind.Image, Width = width, Height = height,
+                    Transform = Affine2D.Translation(center.X - width / 2 + index * 20, center.Y - height / 2 + index * 20) };
+                if (!mapping.IsElementSafe(element)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
+                elements.Add(element); index++;
+            }
+        }
         var resources = images.Select(image => (Image: image, Id: target.Assets.Add(image.PngBytes, image.MediaType))).ToArray();
         target.Execute(replace ? L.Get("History.ReplaceImage") : L.Get("Image.ImportTitle"), document =>
         {
@@ -29,15 +45,11 @@ internal static class ImageImportCommand
                 target.SelectedElements().Single(e => e.Kind == ElementKind.Image && !e.Locked).AssetId = resources[0].Id;
                 return;
             }
-            target.Selection.Clear(); int index = 0;
-            foreach (var resource in resources)
+            target.Selection.Clear();
+            for (int index = 0; index < elements.Count; index++)
             {
-                double scale = Math.Min(1, Math.Min(placement.Width * .8 / resource.Image.Width, placement.Height * .8 / resource.Image.Height));
-                double width = resource.Image.Width * scale, height = resource.Image.Height * scale;
-                var center = dropCenter ?? placement.Center;
-                var element = new CanvasElement { Kind = ElementKind.Image, AssetId = resource.Id, Width = width, Height = height,
-                    Transform = Affine2D.Translation(center.X - width / 2 + index * 20, center.Y - height / 2 + index * 20) };
-                document.Elements.Add(element); target.Selection.Add(element.Id); index++;
+                var element = elements[index]; element.AssetId = resources[index].Id;
+                document.Elements.Add(element); target.Selection.Add(element.Id);
             }
         });
     }

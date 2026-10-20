@@ -13,9 +13,14 @@ internal static class Program
     {
         try
         {
+            if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--canvas-safety-dialog-runtime-only")) { CanvasSafetyDialogRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-safety-dialog-preview")) { CanvasSafetyDialogRuntimeTests.RunPreview(Assert); return 0; }
+            if (args.Contains("--canvas-safety-resolution-only")) { CanvasSafetyResolutionTests.Run(Assert); return 0; }
             if (args.Contains("--native-window-progress-only")) { NativeWindowProgressTests.Run(Assert); return 0; }
+            if (args.Contains("--perspective-safety-only")) { PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert); GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert); return 0; }
             if (args.Contains("--startup-dialog-only")) { StartupDialogTests.Run(Assert); return 0; }
             if (args.Contains("--project-open-dispatch-only")) { ProjectOpenDispatchTests.Run(Assert); return 0; }
             if (args.Contains("--depth-occlusion-ui-only")) { DepthOcclusionUiRuntimeTests.Run(Assert); return 0; }
@@ -64,7 +69,7 @@ internal static class Program
             if (args.Contains("--launcher-menu-only")) { LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-projection-preview")) { CanvasProjectionRuntimeFixture.Run(Assert, true); return 0; }
             if (args.Contains("--canvas-projection-runtime-only")) { CanvasProjectionRuntimeFixture.Run(Assert); return 0; }
-            if (args.Contains("--perspective-input-only")) { PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert); return 0; }
+            if (args.Contains("--perspective-input-only")) { PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert); PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert); GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert); return 0; }
             if (args.Contains("--session-capture-background-helper")) { SessionCaptureRoutingFixture.RunBackgroundHelper(args); return 0; }
             if (args.Contains("--focus-external-helper")) { FocusSessionRoutingFixture.RunExternalHelper(args); return 0; }
             if (args.Contains("--focus-session-only")) { FocusSessionRoutingFixture.Run(Assert); return 0; }
@@ -154,6 +159,8 @@ internal static class Program
             LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert);
             BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert);
             PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert);
+            PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert);
+            GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert);
             GpuSettingsTests.Run(Assert);
             ApplicationDiagnosticsTests.Run(Assert);
             NewCanvasButtonTests.Run(Assert);

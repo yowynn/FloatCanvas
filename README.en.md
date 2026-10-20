@@ -10,7 +10,7 @@ A Windows screen annotation tool. Draw over your desktop, place images and edit 
 
 ![FloatCanvas preview showing a perspective grid, route annotations and the floating toolbar](Docs/Images/floatcanvas-preview.png)
 
-Current release: **0.2.0**. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
+Current release: **0.2.1**. See the [changelog](CHANGELOG.md) for version changes and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
 
 The toolbar separates gray New and red-broom Clear. New confirms according to file and edit state; Clear is immediate, undoable and adds no history. A folding filename bubble shows the bound project. Stamp-slot context menus contain four maintenance actions: Rename, Overwrite, Delete and Unpin.
 
@@ -20,6 +20,7 @@ The toolbar separates gray New and red-broom Clear. New confirms according to fi
 - Import PNG, JPEG, BMP, GIF and WebP through files, the clipboard or drag and drop. GIF/animated WebP retain their original data and play; move, rotate, resize, group and edit image objects.
 - Two aligned toolbar rows with a shared visibility switch for tool and stamp shortcut hints; movable Tool options, Properties and Layers windows, with independent editing and canvas visibility.
 - Independent canvas background color and opacity, corner dragging or unordered four-corner perspective placement, a customizable square-cell grid, and official/personal canvas presets. Default Surface objects follow the canvas projection. Opt into Billboard mode (experimental), choose an equal-depth line, then draw screen-facing objects that scale with anchor depth. Version 6 projects retain placement, ground anchors and elevation, with v1/v2/v3/v4/v5 projects still readable.
+- Strong perspective can include the horizon on screen, with grids and Surface content clipped to a safe boundary. On release, cancel, move affected layers to an open safe position, or explicitly delete them in one undoable operation.
 - Opt into **Lock grid size while adjusting** to keep grid intersections aligned with anchors while fractional coverage counts update live. An origin marker follows the original top-left control point. Leaving the option off preserves existing calibration behavior.
 - Enable Depth-priority occlusion in Layers on a perspective canvas to order billboards by anchor depth and interleave canvas color, the grid and Surface content. Only identical depth uses layer order. The option is off by default and saved with the canvas.
 - Hold `Shift` while moving to constrain movement to a canvas X/Y axis through the original drag start. A billboard's body moves its anchor; its center handle adjusts elevation vertically on screen, including negative elevation, and corner resizing uses the center as its origin.

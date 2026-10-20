@@ -40,6 +40,12 @@ internal sealed partial class DesktopSession
             _editor.ClickPlacementDragThreshold = ClickPlacementThresholdFor(_host.Monitors, e.Position);
         if (e.Kind == OverlayPointerKind.Cancel) _propertiesClicks?.Reset();
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _newCanvasButton?.CancelConfirmation();
+        if (_canvasCalibration?.IsAwaitingResolution == true)
+        {
+            if (e.Kind == OverlayPointerKind.Cancel) _canvasCalibration.CancelDrag();
+            else if (e.Kind == OverlayPointerKind.Up && e.Button == OverlayMouseButton.Left) _canvasCalibration.Up();
+            _propertiesClicks?.Reset(); return;
+        }
         if (DocumentOperationBusy || !_host.IsVisible) { _propertiesClicks?.Reset(); return; }
         if (e.Button == OverlayMouseButton.Middle && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && !_editor.IsTemporaryMove)
         {
@@ -93,8 +99,11 @@ internal sealed partial class DesktopSession
                     if (_disposed || _documentStopped || DocumentOperationBusy || !ReferenceEquals(Active, target) ||
                         !ReferenceEquals(target.Document, document) || target.SceneRevision != revision ||
                         current?.Revision != rasterEntry.Revision || _selectedStampId != billboardStampId || _selectedStampUsesSource) return;
-                    StampLibrary.PlaceBillboardRaster(loaded, target, depth, center);
-                    ScheduleRecovery(); RequestRender();
+                    PlaceStampSafely(() =>
+                    {
+                        StampLibrary.PlaceBillboardRaster(loaded, target, depth, center);
+                        ScheduleRecovery(); RequestRender();
+                    });
                 });
             }
             _editor.PointerForCanvas(e, propertiesDoubleClick);
@@ -103,7 +112,8 @@ internal sealed partial class DesktopSession
         bool press = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left;
         if (_editor.Tool == EditorTool.Stamp && press)
         {
-            if (!_editor.TryToDocument(e.Position, out var stampPoint)) return;
+            if (!_editor.TryToDocument(e.Position, out var stampPoint))
+            { UpdateStatus(L.Get("Perspective.InputOutsidePlane")); return; }
             if (_stampSelectionPending) { UpdateStatus(L.Get("Stamp.Loading")); return; }
             if (_selectedStamp is null || _stampLibrary.Items.All(item => item.Id != _selectedStampId))
             { UpdateStatus(L.Get("Stamp.Missing")); return; }
@@ -115,12 +125,20 @@ internal sealed partial class DesktopSession
                 _ = RunCommand(() => ReloadStampAndPlaceAsync(request));
                 return;
             }
-            StampLibrary.Place(_selectedStamp, Active, stampPoint);
+            PlaceStampSafely(() => StampLibrary.Place(_selectedStamp, Active, stampPoint));
             return;
         }
         if (e.Kind == OverlayPointerKind.Down && e.Button == OverlayMouseButton.Right) SwitchToolState(EditorTool.Select);
         _editor.PointerForCanvas(e, propertiesDoubleClick);
     }
+
+    private void PlaceStampSafely(Action placement) => RunUiAction(() =>
+    {
+        try { placement(); }
+        catch (InvalidOperationException ex) when (ex.Message == L.Get("Perspective.InputOutsidePlane") ||
+            ex.Message == L.Get("Perspective.SnapshotOutsidePlane"))
+        { UpdateStatus(ex.Message); RequestRender(); }
+    });
 
     private void DismissPanelsForCanvasPress()
     {

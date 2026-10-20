@@ -41,6 +41,13 @@ internal static class ObjectClipboardCommand
         var shiftedBounds = new RectD(bounds.X + offset.X, bounds.Y + offset.Y, bounds.Width, bounds.Height);
         // Keep the normal paste offset unless the entire selection would be off the current screen.
         if (!shiftedBounds.Intersects(visibleArea)) offset += visibleArea.Center - shiftedBounds.Center;
+        var mapping = CanvasMapping.Create(target.Document);
+        foreach (var element in snapshot.Elements)
+        {
+            var candidate = element.Clone();
+            BillboardGeometry.ApplyPlaneTransform(candidate, Affine2D.Translation(offset.X, offset.Y));
+            if (!mapping.IsElementSafe(candidate)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
+        }
         target.InsertDocument(snapshot, assets, Affine2D.Translation(offset.X, offset.Y), label: L.Get("History.Paste"));
     }
 }

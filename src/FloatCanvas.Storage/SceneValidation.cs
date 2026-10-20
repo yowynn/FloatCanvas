@@ -115,9 +115,8 @@ public static class SceneValidation
         for (int i = 0; i < corners.Length; i++)
             Require(projection.Matrix.Denominator(corners[i]) > 0 && projection.Matrix.TryTransformPoint(corners[i], out var actual) &&
                 actual.DistanceTo(projection.Quad[i]) <= 1e-5, L.Get("Scene.InvalidCanvas"));
-        // A disabled calibration remains restorable even after the display layout changes.
-        // Enabling it must pass the current viewport guard again.
-        Require(!projection.Enabled || CanvasCalibration.IsStableViewport(projection.Matrix, document.Viewport), L.Get("Scene.InvalidCanvas"));
+        // The screen may contain the horizon; drawing and editing clip against the finite ground domain.
+        Require(CanvasCalibration.IsValidProjection(projection.Matrix), L.Get("Scene.InvalidCanvas"));
     }
     private static void ValidateGroups(SceneDocument document, HashSet<Guid> ids)
     {

@@ -10,6 +10,7 @@ internal sealed partial class DesktopSession
     private readonly CanvasCalibrationController _canvasCalibration = new();
     private CanvasSettingsWindow? _canvasSettingsWindow;
     private EditorSession? _calibrationSession;
+    private bool _canvasSafetyPromptOpen;
 
     private void ToggleCanvasSettings()
     {
@@ -45,7 +46,8 @@ internal sealed partial class DesktopSession
                 window.RefreshGridCounts(Active.Document.Canvas.Projection);
                 RequestRender(); ScheduleRecovery();
             };
-            _canvasCalibration.Error += error => UpdateStatus(L.Get(_canvasCalibration.IsPlacing ? error : "Canvas.DragBoundary"));
+            _canvasCalibration.Error += error => UpdateStatus(L.Get(error == "Canvas.RelocateFailed" || _canvasCalibration.IsPlacing ? error : "Canvas.DragBoundary"));
+            _canvasCalibration.ResolutionRequired += QueueCanvasSafetyResolution;
         }
         RefreshCanvasReferenceMonitors();
         _canvasSettingsWindow.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
@@ -129,7 +131,7 @@ internal sealed partial class DesktopSession
         ChangeCanvas(settings =>
         {
             EnsureCanvasReference(settings);
-            if (enabled && !CanvasCalibration.IsStableViewport(settings.Projection.Matrix, Active.Document.Viewport))
+            if (enabled && !CanvasCalibration.IsValidProjection(settings.Projection.Matrix))
             { UpdateStatus(L.Get("Canvas.UnstableProjection")); return; }
             settings.Projection.Enabled = enabled;
         });
@@ -240,9 +242,37 @@ internal sealed partial class DesktopSession
         return true;
     }
 
+    private void QueueCanvasSafetyResolution()
+    {
+        var expected = Active; long transaction = expected.TransactionId;
+        // Let the native mouse-up release capture before transferring focus to the dialog.
+        _toolbar.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Normal, new Action(() =>
+        {
+            if (_canvasSafetyPromptOpen || !_canvasCalibration.IsAwaitingResolution ||
+                !ReferenceEquals(expected, Active) || expected.TransactionId != transaction || !expected.IsTransactionActive) return;
+            _canvasSafetyPromptOpen = true;
+            try
+            {
+                bool canRelocate = CanvasSafetyResolution.TryRelocate(expected.Document.Clone(), _canvasCalibration.AffectedLayerIds);
+                var dialog = CanvasSafetyDialog.Create(_canvasSettingsWindow is { IsVisible: true } ? _canvasSettingsWindow : _toolbar,
+                    _canvasCalibration.AffectedLayerIds.Count, canRelocate);
+                SessionWindowCoordinator.ShowModal(dialog.Window);
+                if (!_canvasCalibration.Resolve(dialog.Result()) && _canvasCalibration.IsAwaitingResolution)
+                    _canvasCalibration.Resolve(CanvasSafetyAction.Cancel);
+            }
+            catch (Exception ex)
+            {
+                // A dialog/focus failure must never implicitly apply a destructive resolution.
+                _canvasCalibration.CancelDrag(); UpdateStatus(ex.Message);
+            }
+            finally { _canvasSafetyPromptOpen = false; RequestRender(); ScheduleRecovery(); }
+        }));
+    }
+
     private void DrawCanvasCalibration(SKCanvas canvas)
     {
         if (!_canvasCalibration.IsActive) return;
+        DrawCanvasSafetyBoundary(canvas);
         if(_canvasCalibration.IsPlacing){DrawCanvasFourPoints(canvas);return;}
         var settings = Active.Document.Canvas.Projection;
         if (settings.Quad.Count != 4) return;
@@ -274,6 +304,25 @@ internal sealed partial class DesktopSession
             canvas.DrawLine(x, y + sign * 10, x - 4, y + sign * 6, line); canvas.DrawLine(x, y + sign * 10, x + 4, y + sign * 6, line);
         }
         DrawCanvasOriginMarker(canvas, settings.Quad[0], Active.Document.Viewport, settings.LockedGridCellSize is not null);
+    }
+
+    private void DrawCanvasSafetyBoundary(SKCanvas canvas)
+    {
+        var mapping = CanvasMapping.Create(Active.Document);
+        var inverse = mapping.ScreenToPlane;
+        double normal = Math.Sqrt(inverse.M31 * inverse.M31 + inverse.M32 * inverse.M32);
+        if (normal < 1e-15) return;
+        using var dash = SKPathEffect.CreateDash([6, 5], 0);
+        using var paint = new SKPaint { Color = new SKColor(210, 139, 63, 190), StrokeWidth = 1.5f,
+            IsAntialias = true, Style = SKPaintStyle.Stroke, PathEffect = dash };
+        var polygon = mapping.SafeScreenPolygon;
+        for (int i = 0; i < polygon.Count; i++)
+        {
+            var a = polygon[i]; var b = polygon[(i + 1) % polygon.Count];
+            if (Math.Abs(inverse.Denominator(a) / normal - CanvasProjectionSafety.HorizonMargin) > .01 ||
+                Math.Abs(inverse.Denominator(b) / normal - CanvasProjectionSafety.HorizonMargin) > .01) continue;
+            canvas.DrawLine((float)a.X, (float)a.Y, (float)b.X, (float)b.Y, paint);
+        }
     }
 
     internal static void DrawCanvasOriginMarker(SKCanvas canvas, PointD origin, RectD viewport, bool locked)

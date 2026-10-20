@@ -9,7 +9,7 @@ public sealed partial class SceneRenderer
     public CanvasElement? PickDepth(SceneDocument document, AssetLibrary assets, PointD point, double tolerance = 4)
     {
         var mapping = CanvasMapping.Create(document);
-        if (!CanvasDepthOrder.TryPlaneDepth(mapping, point, out double planeDepth)) return null;
+        bool planeSafe = CanvasDepthOrder.TryPlaneDepth(mapping, point, out double planeDepth);
         using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Bgra8888, SKAlphaType.Premul))
             ?? throw new InvalidOperationException("Cannot allocate the selection sample.");
         BeginFrame(document);
@@ -26,17 +26,19 @@ public sealed partial class SceneRenderer
             }
             byte planeAlpha = Sample(canvas =>
             {
-                canvas.Clear(new SKColor(document.Canvas.BackgroundColor));
+                DrawPlaneColor(canvas, document, true);
                 DrawGrid(canvas, document);
             });
             foreach (int index in CanvasDepthOrder.BackToFrontAt(document, mapping, point).Reverse())
             {
                 var item = document.Elements[index];
                 if (!item.Visible || item.Style.Opacity <= 0) continue;
+                if (!item.IsBillboard && !planeSafe) continue;
+                if (item.IsBillboard && !mapping.IsElementSafe(item)) continue;
                 double depth = planeDepth;
                 if (item.IsBillboard && !CanvasDepthOrder.TryAnchorDepth(mapping, item.BillboardAnchor, out depth)) continue;
                 // Base color and grid lie behind all elements at the plane depth, but in front of farther billboards.
-                if (depth > planeDepth && planeAlpha == 255) return null;
+                if (planeSafe && depth > planeDepth && planeAlpha == 255) return null;
                 bool hit = ElementGeometry.HitTestProjected(item, point, mapping.PlaneToScreen, tolerance);
                 if (!hit) continue;
                 byte alpha = ElementGeometry.IsLiveEffect(item.Kind)

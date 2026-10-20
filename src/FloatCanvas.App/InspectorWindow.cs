@@ -47,6 +47,8 @@ internal sealed class InspectorWindow : Wpf.Window
     private CanvasElement[] scrubSources = [];
     private double scrubStartValue;
     private long scrubTransaction;
+    private Controls.TextBlock? scrubCaption;
+    private bool scrubUnsafe;
     private readonly Controls.Button pin;
     internal bool IsPinned { get; private set; }
 
@@ -356,6 +358,9 @@ internal sealed class InspectorWindow : Wpf.Window
             if (JsonSerializer.Serialize(selected) != formFingerprint) throw new InvalidOperationException(L.Get("Inspector.ElementChanged"));
             var changedKey = dirtyFields.Single();
             var changes = selected.Select(source => (Source: source, Edited: EditElement(source))).ToArray();
+            var mapping = CanvasMapping.Create(session.Document);
+            if (changes.Any(change => !mapping.IsElementSafe(change.Edited)))
+                throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
             if (!ownsTransaction)
             {
                 session.BeginTransaction(L.Get("Inspector.History.EditProperties"));
@@ -627,6 +632,8 @@ internal sealed class InspectorWindow : Wpf.Window
             "CornerRadius" => ElementGeometry.CornerRadius(source), _ => 0
         };
         scrubSources = selected.Select(e => e.Clone()).ToArray(); scrubSession = session;
+        scrubCaption = ((Controls.Grid)fieldContainers[key]).Children.OfType<Controls.TextBlock>().Single();
+        scrubUnsafe = false;
         session.BeginTransaction(L.Get("Inspector.History.EditProperties")); scrubTransaction = session.TransactionId;
         return true;
     }
@@ -638,6 +645,7 @@ internal sealed class InspectorWindow : Wpf.Window
         if (!canMutate() || !ReferenceEquals(session, getSession()) || !session.IsTransactionActive || session.TransactionId != scrubTransaction)
         { CancelScrub(); return; }
         double displayValue = scrubStartValue;
+        var changes = new List<(CanvasElement Target, CanvasElement Edited)>();
         foreach (var source in scrubSources)
         {
             var target = session.Document.Elements.FirstOrDefault(e => e.Id == source.Id);
@@ -667,11 +675,20 @@ internal sealed class InspectorWindow : Wpf.Window
                 case "StrokeWidth": edited.Style.StrokeWidth = value; break;
                 case "CornerRadius": edited.CornerRadius = value; break;
             }
+            changes.Add((target, edited));
+            if (source.Id == scrubSources[0].Id) displayValue = value;
+        }
+        var mapping = CanvasMapping.Create(session.Document);
+        scrubUnsafe = changes.Any(change => !mapping.IsElementSafe(change.Edited));
+        if (scrubCaption is not null) scrubCaption.Cursor = scrubUnsafe ? Input.Cursors.No : Input.Cursors.SizeWE;
+        if (scrubUnsafe) { status.Text = L.Get("Perspective.InputOutsidePlane"); return; }
+        status.Text = "";
+        foreach (var (target, edited) in changes)
+        {
             target.Transform = edited.Transform; target.Style = edited.Style; target.CornerRadius = edited.CornerRadius;
             target.Width = edited.Width; target.Height = edited.Height;
             target.TextFrameFixed = edited.TextFrameFixed;
             target.BillboardAnchor=edited.BillboardAnchor;target.BillboardHeight=edited.BillboardHeight;
-            if (source.Id == scrubSources[0].Id) displayValue = value;
         }
         session.NotifyChanged();
         refreshing = true;
@@ -682,13 +699,17 @@ internal sealed class InspectorWindow : Wpf.Window
     private void FinishScrub(bool commit)
     {
         var session = scrubSession;
+        bool unsafePlacement = commit && scrubUnsafe;
+        if (scrubCaption is not null) scrubCaption.Cursor = Input.Cursors.SizeWE;
+        scrubCaption = null; scrubUnsafe = false;
         scrubSession = null; scrubSources = [];
         if (session is null) return;
         if (session.IsTransactionActive && session.TransactionId == scrubTransaction)
         {
-            if (commit && canMutate() && ReferenceEquals(session, getSession())) session.Commit(); else session.Cancel();
+            if (commit && !unsafePlacement && canMutate() && ReferenceEquals(session, getSession())) session.Commit(); else session.Cancel();
         }
         LoadSelection(true);
+        if (unsafePlacement) status.Text = L.Get("Perspective.InputOutsidePlane");
     }
 
     private void CancelScrub()

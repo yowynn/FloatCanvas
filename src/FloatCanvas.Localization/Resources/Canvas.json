@@ -102,5 +102,29 @@
   "Scene.InvalidCanvas": {
     "zh": "画布设置无效。",
     "en": "Invalid canvas settings."
+  },
+  "Canvas.SafetyTitle": {
+    "zh": "处理透视范围外的图层",
+    "en": "Layers outside the perspective range"
+  },
+  "Canvas.UnsafeLayers": {
+    "zh": "本次调整使 {0} 个图层超出安全绘制范围（包含关联组合成员）。取消会恢复本次拖动前的状态。移回会将图层或整个组合放到四点框内或屏幕上的开阔位置，保留原始内容和尺寸；隐藏、锁定图层也会一起处理。应用与图层处理可以一次撤销。",
+    "en": "This adjustment puts {0} layers outside the safe drawing range, including related group members. Cancel restores the state before this gesture. Move back places layers or whole groups in an open area inside the reference frame or screen, preserving content and logical size. Hidden and locked layers are included. The adjustment and layer changes can be undone together."
+  },
+  "Canvas.ApplyRelocate": {
+    "zh": "应用并移回图层（推荐）",
+    "en": "Apply and move layers back (recommended)"
+  },
+  "Canvas.ApplyDelete": {
+    "zh": "应用并删除这些图层",
+    "en": "Apply and delete these layers"
+  },
+  "Canvas.CancelAdjustment": {
+    "zh": "取消本次调整",
+    "en": "Cancel this adjustment"
+  },
+  "Canvas.RelocateFailed": {
+    "zh": "无法在保持图层尺寸和组合关系的前提下找到安全位置。可以取消本次调整，或明确选择删除这些图层。",
+    "en": "No safe position was found while preserving layer size and group relationships. Cancel this adjustment or explicitly choose to delete these layers."
   }
 }

@@ -96,10 +96,7 @@ public sealed partial class SceneRenderer : IDisposable
         {
             if (includeBackground) (ScreenBackdrop ?? (sampling && document.Background is null ? LiveBackdrop : null))?.Draw(canvas);
             if (includeCanvasBackground && (document.Canvas.BackgroundColor >> 24) != 0)
-            {
-                using var color = new SKPaint { Color = new SKColor(document.Canvas.BackgroundColor) };
-                canvas.DrawRect(ToRect(document.Viewport), color);
-            }
+                DrawPlaneColor(canvas, document, true);
         }
         if (includeBackground && document.Background is { Visible: true } background)
             DrawElement(canvas, background, assets, TransformFor(document), document);
@@ -161,8 +158,37 @@ public sealed partial class SceneRenderer : IDisposable
         int saved = canvas.Save();
         try
         {
-            var matrix = ToMatrix(BillboardGeometry.ElementToTarget(element, planeToTarget));
+            var transform = BillboardGeometry.ElementToTarget(element, planeToTarget);
+            if (_renderSpace == SceneRenderSpace.ScreenComposite && document is not null)
+            {
+                var mapping = MappingFor(document);
+                if (element.IsBillboard)
+                {
+                    if (!mapping.IsElementSafe(element)) return;
+                }
+                else
+                {
+                    if (!ClipSafePlane(canvas, document)) return;
+                    var localBounds = ElementGeometry.StrokedLocalBounds(element);
+                    if (!transform.TryTransformBounds(localBounds, out _))
+                    {
+                        DrawClippedSource(canvas, element, assets, transform, mapping);
+                        return;
+                    }
+                }
+            }
+            var matrix = ToMatrix(transform);
             canvas.Concat(in matrix);
+            DrawLocalElement(canvas, element, assets);
+        }
+        finally { canvas.RestoreToCount(saved); }
+    }
+
+    private void DrawLocalElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets)
+    {
+        int saved = canvas.Save();
+        try
+        {
             double opacity = Math.Clamp(element.Style.Opacity, 0, 1);
             // One element is a compositing unit, including arrow heads, fill+outline and number labels.
             if (opacity < 1)

@@ -41,7 +41,7 @@ internal sealed partial class DesktopSession
         set { if (_documentExitRequestedValue == value) return; _documentExitRequestedValue = value; UpdateInteractionAvailability(); }
     }
     private EditorTool _documentLiveTool = EditorTool.Freehand;
-    private bool DocumentOperationBusy => _documentBusy || _documentExitRequested;
+    private bool DocumentOperationBusy => _documentBusy || _documentExitRequested || _canvasCalibration?.IsAwaitingResolution == true;
     private sealed class DocumentFileState { public string? Path; public string? SavedFingerprint; }
     private sealed class ClipboardObjects
     {

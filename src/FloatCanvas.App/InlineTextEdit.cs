@@ -26,6 +26,7 @@ internal sealed class InlineTextEdit : IDisposable
     internal Projective2D LocalToScreen => CanvasMapping.Create(session.Document).ElementToScreen(Target);
     internal event Action? Changed;
     internal event Action? Finished;
+    internal event Action? PlacementRejected;
 
     internal InlineTextEdit(EditorSession session,CanvasElement? existing,PointD point,ElementStyle style,SceneRenderer renderer, BillboardDepthLine? billboardDepth = null)
     {
@@ -143,13 +144,15 @@ internal sealed class InlineTextEdit : IDisposable
         Detach();
         if(owns)
         {
-            if(!commit||isNew&&string.IsNullOrWhiteSpace(Target.Text))session.Cancel();
+            bool unsafePlacement = commit && Target.Text.Length > 0 && !CanvasMapping.Create(session.Document).IsElementSafe(Target);
+            if(!commit||unsafePlacement||isNew&&string.IsNullOrWhiteSpace(Target.Text))session.Cancel();
             else
             {
                 if(Target.Text.Length==0)session.Document.Elements.Remove(Target);
                 session.Commit();
                 if(selectEdited&&session.Document.Elements.Contains(Target))session.SetSelection([Target.Id]);
             }
+            if(unsafePlacement)PlacementRejected?.Invoke();
         }
         Finished?.Invoke();
     }
