@@ -113,6 +113,7 @@ public sealed partial class OverlayHost
         _captureActive = false; _captureOperation = null;
         if (_disposed) return Outcome(CaptureRestoreStatus.Cancelled, "Disposed");
         CheckThread();
+        RequestWindowOrderCheck(); // Posted only: CaptureVisibilityScope has already restored visual state.
         // A carrier that cannot return on-screen is no longer a healthy input surface.
         // Fail open instead of leaving an invisible editing window holding keyboard input.
         if (operation.UnsafeInputGeometry)

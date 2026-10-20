@@ -137,6 +137,7 @@ public sealed partial class OverlayHost : IDisposable
             // Out-of-context delivery runs on our message-pump thread; no injection or polling.
             _foregroundHook = SetWinEventHook(3, 3, 0, _foregroundProcedure, 0, 0, 0); // EVENT_SYSTEM_FOREGROUND
             if (_foregroundHook == 0) throw new InvalidOperationException(L.Get("Overlay.FocusMonitorFailed"));
+            StartWindowOrderMonitoring();
             RebuildMonitors();
         }
         catch { Dispose(); throw; }
@@ -205,6 +206,7 @@ public sealed partial class OverlayHost : IDisposable
     private bool TryEnterEditingCore(out string? failure)
     {
         EndDropReceptionCore();
+        RequestWindowOrderCheck();
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         failure = null;
         if (IsEditing && IsForegroundFromThisProcess() &&
@@ -302,6 +304,7 @@ public sealed partial class OverlayHost : IDisposable
             else ShowWindow(pair.Display.Handle, 0);
         }
         if (visible) Render();
+        if (visible) RequestWindowOrderCheck();
     }
 
     /// <summary>Renders only when requested. Canvas coordinates are global desktop physical pixels.</summary>
@@ -380,6 +383,7 @@ public sealed partial class OverlayHost : IDisposable
     {
         if (_disposed) return;
         CheckThread();
+        StopWindowOrderMonitoring();
         CancelPendingCapture();
         EndDropReceptionCore();
         _focusTransitions.EndSession();
@@ -429,6 +433,18 @@ public sealed partial class OverlayHost : IDisposable
     }
 
     private void RebuildMonitors()
+    {
+        bool wasRebuilding = _windowOrderRebuilding;
+        _windowOrderRebuilding = true;
+        try { RebuildMonitorsCore(); }
+        finally
+        {
+            _windowOrderRebuilding = wasRebuilding;
+            if (!wasRebuilding) RequestWindowOrderCheck();
+        }
+    }
+
+    private void RebuildMonitorsCore()
     {
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         var monitors = OverlayMonitorSelection.Select(_monitorProvider(), Scope);
@@ -541,6 +557,7 @@ public sealed partial class OverlayHost : IDisposable
         // Defer through our control window so own toolbars, dialogs and IME transitions can settle.
         // Never unwind managed exceptions across a native callback or activate another window here.
         if (_disposed) return;
+        RequestWindowOrderCheck();
         if (_captureActive)
         {
             // Use the event's own target: reading only the latest foreground would miss
@@ -621,6 +638,7 @@ public sealed partial class OverlayHost : IDisposable
         }
         if (state.Kind == WindowKind.Control)
         {
+            if (HandleWindowOrderMessage(message, wParam)) return 0;
             if (HandleKeyboardControlMessage(message, wParam)) return 0;
             if (message == WmValidateEditingFocus)
             {

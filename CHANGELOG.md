@@ -2,6 +2,9 @@
 
 ## 未发布 / Unreleased
 
+- 在前台窗口或窗口层级变化后检查并恢复画布的实际置顶顺序，保留输入层、工具窗口和对话框的相对顺序，并避开截图期间的临时隐藏状态。
+- Restore the canvas's actual topmost order after foreground or window-order changes while preserving input, tool and dialog order and temporary capture visibility.
+
 - 修复高 DPI 下图层拖动排序松手后偏离占位符的问题，统一屏幕像素与列表逻辑坐标转换，单层与多选排序均保持预览落点。
 - Fix layer drops shifting away from the insertion marker at high DPI by converting Thumb's screen-pixel completion endpoint back to list coordinates for both single-layer and multi-layer reordering.
 

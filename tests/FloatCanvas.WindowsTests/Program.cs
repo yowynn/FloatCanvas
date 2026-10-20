@@ -29,6 +29,13 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if (args.Contains("--window-order-peer")) return NativeWindowOrderTests.RunPeer(args);
+    if (args.Contains("--window-order-native"))
+    {
+        NativeWindowOrderTests.Run(Check);
+        Console.WriteLine($"Native window order checks: {checks}; passed=true; own offscreen windows and own child process; no activation/input/profile.");
+        return 0;
+    }
     if (args.Contains("--wgc-session-state-only"))
     {
         WgcSessionStateTests.Run(Check);
