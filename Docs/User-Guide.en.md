@@ -51,6 +51,14 @@ Text is edited directly on the canvas. Changing windows, layers or tools, or ent
 | Arrow keys / `Shift` + arrow keys | Move selected elements by 1/10 document pixels |
 | `Ctrl+S` / `Ctrl+Shift+S` | Save/save the current project as another file |
 | `Ctrl+O` | Open a project |
+| `Enter` | Open Properties for one or more selected layers; retain text completion while editing text |
+| Hold the middle mouse button | Temporarily use Move; release to restore the previous tool |
+| `Ctrl+N` | Start a new canvas after archiving current content and checking bound-project saves |
+| `Ctrl+Backspace` / `Ctrl+Delete` | Clear the current canvas in one undo step; text fields retain their text-deletion keys |
+
+Shortcut ownership follows focus. Ordinary controls in the canvas, toolbar, Properties, tool options and canvas settings share drawing commands; arrows in Layers and the stamp library navigate their lists. Text fields, dropdowns, sliders and menus retain local typing, undo, clipboard and deletion. Preset items retain Enter/F2/Delete for applying, renaming and deleting presets. `Ctrl+S`/`Ctrl+O`/`Ctrl+N` remain available while typing, committing inline text or a layer rename first. In the stamp library, `Ctrl+N` saves the selection as a stamp, `Ctrl+F` searches, and Enter/F2/Delete act on its selected stamp; Esc first cancels slot selection, then closes the library. Settings, shortcut recording, confirmation dialogs and file dialogs keep their own commands.
+
+Tools, window commands, New, Save and grouping run once per press. Arrows, deletion and undo/redo support holding the key. Alt/Win system combinations are never treated as ordinary drawing shortcuts.
 
 Open **Main menu → Settings…** to change shortcuts or the light/dark theme. A registration conflict detected when saving displays a reason and preserves the previous working shortcut. Windows or another application may intercept a combination before the recorder receives it; choose another combination if the field does not change. The system tray also offers editing, visibility, settings and exit commands.
 
@@ -62,7 +70,7 @@ Settings shows the last frame's actual backend, its selection reason, the availa
 
 GPU drawing does not mean the entire application runs only on the GPU. Image and animation decoding, desktop-capture readback and final window submission still involve CPU work; the GPU canvas also reads back into a window pixel buffer. Forcing light scenes onto this path may be slower. Performance gains depend on the device and canvas content.
 
-Toggle shortcuts use Ctrl/Alt/Shift combinations. Win and system navigation combinations remain available to Windows; `Ctrl+Alt+Esc` is reserved for emergency input release. An unresponsive editing UI or interrupted input ownership returns to pass-through; earlier drawing keys are not replayed into the application underneath.
+Toggle shortcuts use Ctrl/Alt/Shift combinations. Win and system navigation combinations remain available to Windows. Pressing Win alone no longer immediately leaves editing; use `Win+Space` to switch input methods in controls and filename fields. Opening Start or actually switching to another application still releases input. `Ctrl+Alt+Esc` is reserved for emergency input release. An unresponsive editing UI or interrupted input ownership returns to pass-through; earlier drawing keys are not replayed into the application underneath.
 
 Choose **Open welcome page** from the toolbar menu or system tray to reopen it. A manually opened welcome page stays open when entering drawing mode; opening the startup welcome this way also keeps the existing window. Click its version to check for updates, or its credits to open the GitHub project.
 
@@ -129,7 +137,7 @@ Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` 
 
 Shortcut hints appear at the upper right of upper-row buttons and lower left of lower-row buttons. Turn off **Show tool shortcut hints** in Settings to hide letters, stamp-slot numbers and the `-`/`+` hints together. Shortcuts still work, and the preference is saved across restarts.
 
-Draw lines and arrows by dragging; they have no single-click default length or angle. Rectangles, ellipses and symbols have default width and height: click empty space to create one at that size, centered on the click, or drag to choose its size. The aspect setting creates squares and circles; hold `Shift` to temporarily invert it. Rectangle/ellipse snapshots, image crops and rectangular filter regions follow the same rule. Enter numeric options directly or drag the corresponding slider. Keys used inside text fields, dropdowns, the color spectrum and sliders operate those controls without switching tools or selecting stamps.
+Draw lines and arrows by dragging; they have no single-click default length or angle. Rectangles, ellipses and symbols have default width and height: click empty space to create one at that size, centered on the click, or drag to choose its size. Rectangles, ellipses, symbols, numbered markers and emoji use a **six-DIP** drag tolerance, converted using the starting monitor's display scale. Slight movement within that distance counts as a click; reaching it starts drag sizing. The aspect setting creates squares and circles; hold `Shift` to temporarily invert it. Rectangle/ellipse snapshots, image crops and rectangular filter regions follow the same aspect rule. Enter numeric options directly or drag the corresponding slider. Keys used inside text fields, dropdowns, the color spectrum and sliders operate those controls without switching tools or selecting stamps.
 
 All nine official symbol presets use a **100×100** default size for click insertion. Reselecting an official symbol preset used in an earlier version also restores that default size. Personal presets and existing objects keep their dimensions.
 
@@ -179,7 +187,7 @@ Every basic element remains a selectable object, including freehand lines, text,
 
 These tool windows share a floating-panel layout. Drag an empty part of the header to move a panel, or drag an edge or the two diagonal lines in the bottom-right corner to resize it. Close it with the top-right button and reopen it from its original entry point. Panels do not minimize or maximize, including when you double-click the header. Properties prioritizes text content and other settings that are harder to change on the canvas, with position and size last. Only fields applicable to the entire selection appear; the status message stays visible at the bottom.
 
-Double-click a canvas layer, or press `Enter` with multiple layers selected, to open Properties near the pointer. A panel that is already visible keeps its position. Double-clicking during inline text editing still selects text. Pin Properties with its header button to keep it open. An unpinned panel closes when focus leaves; nested color pickers and owned dialogs remain part of its focus stack. Closing the panel resets the pin.
+Double-click a canvas layer, or press `Enter` with one or more layers selected, to open Properties near the pointer. A panel that is already visible keeps its position. After clicking the canvas to dismiss an unpinned panel, a fresh double-click is required to reopen it. Double-clicking during inline text editing still selects text. Pin Properties with its header button to keep it open. An unpinned panel closes when focus leaves; nested color pickers and owned dialogs remain part of its focus stack. Closing the panel resets the pin.
 
 An active pin emphasizes its icon, border and background, using the same two-state feedback as canvas visibility. The canvas settings button also shows a complete active state when perspective is enabled; clicking it still opens settings rather than directly toggling perspective.
 
@@ -219,7 +227,7 @@ Dense grids at high resolutions can noticeably slow CPU rendering. Automatic lin
 
 **Surface** objects follow the canvas projection. **Billboard** objects face the screen, retain their own proportions and rotation, and scale with their ground-anchor depth. Billboard creation is off by default. Its switch is beside canvas adjustment in the toolbar and is also available from the main menu. Leaving it off retains existing creation workflows; the general Shift movement constraint and corrected Surface capture outlines apply independently.
 
-Enable canvas perspective, then **Billboard mode (experimental)**. The global switch affects only new objects, does not convert existing layers and is not stored separately in tool presets. Disabling perspective disables the switch and resets new-object placement to Surface; existing billboard flags, anchors and elevation remain stored and resume projection when perspective returns. **Placement** and **Elevation** appear in Properties with perspective enabled.
+The toolbar and main menu call this action **Placement**. Its tooltip shows only the action name and the current **Default mode** or **Billboard mode**; Default mode uses Surface placement. Enable canvas perspective, then use this button to switch to Billboard mode (experimental). The global switch affects only new objects, does not convert existing layers and is not stored separately in tool presets. Disabling perspective disables the switch and resets new-object placement to Default mode; existing billboard flags, anchors and elevation remain stored and resume projection when perspective returns. **Placement** and **Elevation** appear in Properties with perspective enabled.
 
 ### Choose depth, then use the original tool
 
@@ -278,7 +286,7 @@ Stamps reuse artwork you create. Select one or more elements and choose **New st
 
 Editable groups retain the original GIF/animated WebP data. Animation still plays when the library is reopened and the stamp is placed again. Small toolbar and library thumbnails remain static; ordinary animated stamps play in the larger hover preview. Groups containing live desktop blur or pixelation use their saved static thumbnail for previews, even when they also contain animation; placed objects keep their normal behavior. Choosing a stamp from the library keeps the library button highlighted and shows the selected stamp on it. Clicking that button still opens the library.
 
-Search or scroll through the library, choose **Use** or double-click a thumbnail, then click the canvas to place it. Each click keeps the saved visual size and relative rotations, centered on the clicked position. No size-drawing gesture is needed, and repeated clicks place further copies. Each placement can be undone separately and leaves the copy unselected. Hover a slot or library entry to see its name, shortcut, larger preview and the preview-to-actual-size ratio. New stamps fill the first empty shortcut slot automatically.
+Search or scroll through the library, choose **Use** or double-click a thumbnail, then click the canvas to place it. Each click keeps the saved visual size and relative rotations, centered on the clicked position. No size-drawing gesture is needed, and repeated clicks place further copies. Each placement can be undone separately and leaves the copy unselected. Hover a slot or library entry to see its name, shortcut, larger preview and the preview-to-actual-size ratio. The larger editable-stamp preview uses plane coordinates, preserving the relative positions and elevation of Surface and Billboard artwork; the saved small thumbnail retains its original perspective appearance. New stamps fill the first empty shortcut slot automatically.
 
 Select a library entry to rename it, overwrite it with the current canvas selection, or delete it. Editing a placed copy does not automatically change the library original; use overwrite to update that original.
 

@@ -167,7 +167,11 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
             var document = stamp.Document.Clone();
             double factor = 320 / Math.Max(document.Viewport.Width, document.Viewport.Height);
             var transform = Affine2D.Scale(factor, factor).Compose(Affine2D.Translation(-document.Viewport.X, -document.Viewport.Y));
-            foreach (var element in document.Elements) element.Transform = transform.Compose(element.Transform);
+            foreach (var element in document.Elements)
+            {
+                BillboardGeometry.ApplyPlaneTransform(element, transform);
+                if (element.IsBillboard) element.BillboardHeight *= factor;
+            }
             if (document.Background is { } background) background.Transform = transform.Compose(background.Transform);
             document.Viewport = new(0, 0, Math.Max(1, expected.Width * factor), Math.Max(1, expected.Height * factor));
             this.document=document;assets=stamp.Assets;renderer=new SceneRenderer();

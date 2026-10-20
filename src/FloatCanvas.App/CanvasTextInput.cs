@@ -19,6 +19,7 @@ internal sealed class CanvasTextInput : IDisposable
     internal bool Owns(DependencyObject? source)=>source is not null&&ReferenceEquals(Window.GetWindow(source),window);
     internal event Action? Deactivated;
     internal event Action<bool>? CompleteRequested;
+    internal event Action<int>? CommandKey;
 
     internal CanvasTextInput(Window owner,InlineTextEdit edit,Func<PointD> screenOrigin)
     {
@@ -35,6 +36,10 @@ internal sealed class CanvasTextInput : IDisposable
         {
             var key=e.Key==Key.System?e.SystemKey:e.Key;
             var modifiers=Keyboard.Modifiers;
+            if ((modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
+            int command = KeyInterop.VirtualKeyFromKey(key);
+            if (EditorShortcutPolicy.IsProjectCommand(command, (OverlayModifiers)modifiers))
+            { e.Handled = true; if (!e.IsRepeat) CommandKey?.Invoke(command); return; }
             if(key==Key.Escape){e.Handled=true;CompleteRequested?.Invoke(false);}
             else if(key==Key.Enter&&(modifiers&ModifierKeys.Shift)==0){e.Handled=true;CompleteRequested?.Invoke(true);}
             else if((modifiers&~ModifierKeys.Shift)==0&&edit.Navigate(key,(modifiers&ModifierKeys.Shift)!=0))e.Handled=true;

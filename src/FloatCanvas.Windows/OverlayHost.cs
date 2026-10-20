@@ -39,6 +39,7 @@ public sealed partial class OverlayHost : IDisposable
     public event Action<SKSurface>? Draw;
     public event Action<OverlayPointerEvent>? Pointer;
     public event Action<int>? KeyPressed;
+    public event Action<OverlayKeyEvent>? KeyInput;
     public event Action<OverlayModifiers,OverlayPoint,uint>? ModifierKeysChanged;
     public event Action? ToggleRequested;
     public event Action? HideRequested;
@@ -257,6 +258,7 @@ public sealed partial class OverlayHost : IDisposable
 
     private void ExitEditingCore(bool restorePreviousForeground = true)
     {
+        StopInputMethodContext();
         EndDropReceptionCore();
         if (!IsEditing) return;
         _focusTransitions.EndSession();
@@ -710,7 +712,12 @@ public sealed partial class OverlayHost : IDisposable
             uint cursor=GetMessagePos();
             ModifierKeysChanged?.Invoke(CurrentModifiers,new((short)(cursor&0xFFFF),(short)(cursor>>16)),unchecked((uint)GetMessageTime()));
         }
-        if (message is WmKeyDown or WmSysKeyDown) { KeyPressed?.Invoke((int)wParam); return 0; }
+        if (message is WmKeyDown or WmSysKeyDown)
+        {
+            KeyInput?.Invoke(new((int)wParam, CurrentModifiers, ((long)lParam & 0x40000000L) != 0));
+            KeyPressed?.Invoke((int)wParam);
+            return 0;
+        }
         if (message == WmMouseMove) { RaisePointer(OverlayPointerKind.Move, _pressedButton, position: MessagePosition(state, message, lParam)); return 0; }
         if (message == WmMouseWheel) { RaisePointer(OverlayPointerKind.Wheel, OverlayMouseButton.None, (short)((long)wParam >> 16), MessagePosition(state, message, lParam)); return 0; }
         var button = message switch

@@ -61,6 +61,7 @@ public sealed partial class OverlayHost
 
     private bool HandleKeyboardControlMessage(uint message, nuint wParam)
     {
+        if (message == 0x113 && wParam == InputMethodFocusTimer) { CheckInputMethodContext(); return true; }
         if (message == 0x113 && wParam == KeyboardHeartbeatTimer)
         {
             _keyboardIsolation?.Heartbeat();
@@ -105,6 +106,7 @@ public sealed partial class OverlayHost
                     if (IsEditing)
                     {
                         var reason = packet.EndReason ?? KeyboardLeaseEndReason.HookFailure;
+                        if (reason == KeyboardLeaseEndReason.ForegroundLost && TryKeepInputMethodContext()) break;
                         if (reason == KeyboardLeaseEndReason.ForegroundLost && _focusTransitions.HasPending)
                         {
                             if (IsForegroundFromThisProcess() && EnsureEditingKeyboardIsolation()) break;
@@ -131,6 +133,7 @@ public sealed partial class OverlayHost
 
     private void DisposeKeyboardIsolation()
     {
+        StopInputMethodContext();
         if (_keyboardIsolation is null) return;
         KillTimer(ControlHandle, KeyboardHeartbeatTimer);
         _keyboardIsolation.Dispose(); _keyboardIsolation = null; _dispatchPrivateKey = null;

@@ -2,6 +2,21 @@
 
 ## 未发布 / Unreleased
 
+- “放置方式”的工具提示只显示名称和当前模式，主菜单同步；两种模式共用居中的大菱形地面和同一人物轮廓，默认模式沿正方形自身轴向平躺投影、略微缩小，立牌形象立于中央、圆头略高于菱形尖点，并断开被遮挡的地面线条，保持单色线条风格；加宽“置入图片”图标。
+- Show only the Placement name and selected mode in its tooltip, synchronized with the main menu. Both icons share a large central diamond and one figure outline. Default mode projects the figure flat along the square's own axes at a slightly smaller scale; Billboard mode stands it at the center with its round head just above the top corner and gaps in the occluded ground outline. Retain monochrome strokes and widen the image-import icon.
+
+- 修复立牌及贴面／立牌混合的可编辑印章悬停预览偏移、裁切的问题，缩放时同步处理地面锚点与离地高度；已有印章无需重新保存。
+- Fix shifted and clipped hover previews for editable billboard and mixed Surface/Billboard stamps by scaling ground anchors and elevation together with the artwork. Existing stamps do not need to be saved again.
+
+- 为矩形、椭圆、符号、序号和 Emoji 的单击放置增加 6 个逻辑像素的拖拽容差，按起始屏幕 DPI 换算；轻微抖动保留预设尺寸，超过容差后自由定大小。
+- Add a six-DIP drag tolerance to click placement for rectangles, ellipses, symbols, numbered markers and emoji, scaled for the starting monitor's DPI. Slight movement keeps the configured size; crossing the tolerance starts free sizing.
+
+- 统一画布、工具条与各编辑面板的快捷键路由，补齐属性、图层、画布设置和印章库的主命令入口；保留文本、列表、滑块、下拉框和预设的本地操作。支持行内文字及图层重命名先提交再执行工程命令，修复 Alt／Win 组合误触发和长按工具键反复开关参数的问题。
+- Unify shortcut routing across the canvas, toolbar and editing panels, including missing Properties, Layers, canvas settings and stamp-library command routes. Preserve local text, list, slider, dropdown and preset operations; commit inline text and layer renames before project commands, reject Alt/Win aliases, and prevent held tool keys from toggling options repeatedly.
+
+- 修复属性双击配对及 Enter 单选／多选入口，补齐属性窗口的编组快捷键；Ctrl 仅隐藏选框并保留选择。新增中键临时移动、Ctrl+N 新建及 Ctrl+Backspace／Ctrl+Delete 清空；Win+空格切换输入法不再仅因 Win 按下就退出编辑。
+- Fix property double-click pairing and Enter routing for single and multiple selections, and forward grouping commands from Properties while Ctrl hides only selection handles. Add temporary Move with the middle button, Ctrl+N for a new canvas, and Ctrl+Backspace/Ctrl+Delete to clear. Preserve editing when Win+Space switches input methods instead of exiting on Win keydown.
+
 - 修复启动早期或工程转交失败时错误弹窗黑底黑字的问题；提前初始化主题并提供独立配色兜底，同时让工程转交确认在保存对话框之前完成。
 - Keep early startup and project-handoff error dialogs readable with startup theme initialization and a fallback palette, and acknowledge queued project handoffs before save confirmation dialogs.
 

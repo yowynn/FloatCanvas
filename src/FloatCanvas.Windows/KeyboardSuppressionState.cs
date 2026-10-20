@@ -24,6 +24,8 @@ internal sealed class KeyboardSuppressionState
     private KeyboardInputPacket? inFlightPacket;
     private bool notificationPending;
     private bool foregroundResumeVeto;
+    private nint inputMethodOrigin;
+    private long inputMethodDeadline;
 
     public KeyboardSuppressionState(int capacity, long tailLifetime)
     {
@@ -55,6 +57,7 @@ internal sealed class KeyboardSuppressionState
         ValidateHotkey(toggle); ValidateHotkey(hide);
         if (toggle == hide) throw new ArgumentException(L.Get("Hotkeys.DuplicateBindings"));
         if (IsActive) End(KeyboardLeaseEndReason.Replaced, now);
+        CancelInputMethodSwitch();
         // Keep queued balancing/end packets from the old lease, but never stale input keydowns.
         var controls = queue.Where(p => p.IsLocalBalance || p.Kind == KeyboardInputPacketKind.LeaseEnded).ToArray();
         queue.Clear(); foreach (var packet in controls) queue.Enqueue(packet);
@@ -82,19 +85,26 @@ internal sealed class KeyboardSuppressionState
         ExpireTails(now);
         // A bounded exception after lease end: only the exact previously swallowed key stream.
         if (ConsumeTail(key, scan, eventFlags, up, now)) return true;
+        bool switchNavigation = IsInputMethodNavigation(key, up, now);
+        if (!up && (!ownsForeground && !switchNavigation ||
+            ownsForeground && key is not (0x5B or 0x5C or 0x20))) CancelInputMethodSwitch();
         if (!IsActive)
         {
-            if (!ownsForeground && !up) foregroundResumeVeto = true;
+            if (!ownsForeground && !up && !switchNavigation) foregroundResumeVeto = true;
+            if (switchNavigation) TrackInputMethodNavigation(key, up, now);
             TrackPassed(key, up); return false;
         }
         if (!ownsForeground || !healthy)
         {
-            bool freshExternalDown = !ownsForeground && !up && !suppressed[key] && !inherited[key];
+            bool freshExternalDown = !ownsForeground && !up && !suppressed[key] && !inherited[key] && !switchNavigation;
             End(!ownsForeground ? KeyboardLeaseEndReason.ForegroundLost : KeyboardLeaseEndReason.HeartbeatExpired, now);
             if (freshExternalDown) foregroundResumeVeto = true;
             if (ConsumeTail(key, scan, eventFlags, up, now)) return true;
+            if (switchNavigation) TrackInputMethodNavigation(key, up, now);
             TrackPassed(key, up); return false;
         }
+        if (!up && key == 0x20 && (Modifiers() & OverlayModifiers.Windows) != 0 && !suppressed[key])
+        { inputMethodOrigin = foreground; inputMethodDeadline = now + 2000; }
         if (inherited[key])
         {
             UpdateLocal(key, up, false);
@@ -113,6 +123,17 @@ internal sealed class KeyboardSuppressionState
             End(escape, now);
             TrackPassed(key, up);
             return false; // No global reconstruction of an already-suppressed Alt/Ctrl modifier.
+        }
+        // Windows shortcuts belong to the OS. Keep editing until an actual foreground
+        // change, and pass each new chord's whole stream (including release after Win-up).
+        // A stream we already swallowed must still retain its matching release.
+        if (key is 0x5B or 0x5C || (Modifiers() & OverlayModifiers.Windows) != 0 && !suppressed[key])
+        {
+            if (!up && (key is 0x5B or 0x5C ? !physical[key] : key != 0x20)) CancelInputMethodSwitch();
+            UpdateLocal(key, up, !up && !physical[key]);
+            inherited[key] = !up;
+            TrackPassed(key, up);
+            return false;
         }
         if (up && !suppressed[key]) { UpdateLocal(key, true, false); TrackPassed(key, true); return false; }
         // Visibility is independent of editing. A consumed visibility key keeps its
@@ -162,7 +183,7 @@ internal sealed class KeyboardSuppressionState
         reason = KeyboardLeaseEndReason.SystemEscape;
         if (key == 0x1B && (modifiers & (OverlayModifiers.Control | OverlayModifiers.Alt)) == (OverlayModifiers.Control | OverlayModifiers.Alt))
         { reason = KeyboardLeaseEndReason.EmergencyEscape; return true; }
-        return key is 0x5B or 0x5C || (key is 9 or 0x1B && (modifiers & OverlayModifiers.Alt) != 0) ||
+        return (key is 9 or 0x1B && (modifiers & OverlayModifiers.Alt) != 0) ||
             (key == 0x1B && (modifiers & OverlayModifiers.Control) != 0) ||
             (key == 0x2E && (modifiers & (OverlayModifiers.Control | OverlayModifiers.Alt)) == (OverlayModifiers.Control | OverlayModifiers.Alt));
     }
@@ -207,6 +228,21 @@ internal sealed class KeyboardSuppressionState
         local[0x12] = (byte)((local[0x12] & 0x7F) | ((local[0xA4] | local[0xA5]) & 0x80));
     }
     private void TrackPassed(int key, bool up) { globalKnown[key] = true; globalDown[key] = !up; }
+    internal bool TryGetInputMethodSwitch(long expectedLease, long now, out nint origin)
+    {
+        origin = inputMethodOrigin;
+        return expectedLease == lease && origin != 0 && now < inputMethodDeadline && !foregroundResumeVeto &&
+            (IsActive || LastEndReason == KeyboardLeaseEndReason.ForegroundLost);
+    }
+    internal void CancelInputMethodSwitch() { inputMethodOrigin = 0; inputMethodDeadline = 0; }
+    private bool IsInputMethodNavigation(int key, bool up, long now) =>
+        TryGetInputMethodSwitch(lease, now, out _) && (key is 0x5B or 0x5C
+            ? up || physical[key] : key == 0x20 && (Modifiers() & OverlayModifiers.Windows) != 0);
+    private void TrackInputMethodNavigation(int key, bool up, long now)
+    {
+        UpdateLocal(key, up, false);
+        if (key == 0x20 && !up) inputMethodDeadline = now + 2000;
+    }
     internal void ObserveExternalPointerPress(long now)
     {
         if (IsActive) End(KeyboardLeaseEndReason.ForegroundLost, now);
@@ -216,6 +252,7 @@ internal sealed class KeyboardSuppressionState
     }
     public void End(KeyboardLeaseEndReason reason, long now, KeyboardInputPacketKind? command = null)
     {
+        if (reason != KeyboardLeaseEndReason.ForegroundLost) CancelInputMethodSwitch();
         if (!IsActive) return;
         IsActive = false; LastEndReason = reason;
         Array.Clear(visibilityCommand);

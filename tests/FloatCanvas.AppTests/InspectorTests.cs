@@ -115,7 +115,9 @@ internal static class InspectorTests
         int count = keys.Count;
         assert("text input retains its editing chords and Delete", new[] { 0x5A, 0x59, 0x41, 0x43, 0x56, 0x44 }.All(key => !Route(key, true, true)) && !Route(0x2E, false, true) && keys.Count == count);
         assert("text input forwards project Save and Open", Route(0x53, true, true) && Route(0x4F, true, true) && keys.TakeLast(2).SequenceEqual([0x53, 0x4F]));
-        assert("layer arrows retain native navigation", !Route(0x25, false, false) && !Route(0x28, false, false));
+        assert("nonediting property controls forward object movement arrows", Route(0x25, false, false) && Route(0x28, false, false));
+        foreach (var source in new Wpf.DependencyObject[] { new Controls.TextBox(), new Controls.ComboBox(), new Controls.Slider(), new Controls.Primitives.Thumb(), new Controls.MenuItem() })
+            assert(source.GetType().Name + " retains local Enter and deletion instead of canvas commands", InspectorWindow.OwnsLocalEditingKeys(source) && !Route(0x0D, false, true) && !Route(0x08, true, true) && !Route(0x2E, true, true));
         allowed = false; count = keys.Count;
         assert("busy inspector consumes project and object commands without forwarding", Route(0x53, true, true) && Route(0x2E, false, false) && keys.Count == count);
     }

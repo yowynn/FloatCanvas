@@ -12,7 +12,8 @@ namespace FloatCanvas.Windows;
 /// A matching held-key tail remains suppressed until its release or two seconds of stream silence.
 /// Only matching observed hook releases (VK/scan/extended flag) clear a tail early; the zero
 /// global async state of a suppressed key is not evidence that the physical key was released.
-/// Win/Alt+Tab/etc end the lease. Already-suppressed modifiers are never reconstructed globally,
+/// Windows chords pass to the OS; actual external foreground and Alt+Tab/etc end the lease.
+/// Already-suppressed modifiers are never reconstructed globally,
 /// so this alone does not promise a working OS Alt+Tab chord. Ctrl+Alt+Esc releases the lease
 /// on the hook thread. Hook/native/notification failures unconditionally fail open, including tails.
 /// </summary>
@@ -136,6 +137,31 @@ public sealed class KeyboardInputIsolation : IDisposable
             if (Volatile.Read(ref disposed) != 0 || Volatile.Read(ref stopped) != 0 || Failure is not null ||
                 state.LeaseId != endedLease || !state.CanResumeForegroundLoss ||
                 !OwnsWindow(Native.GetForegroundWindow()) || !IsInputDesktopAvailable()) return false;
+            lease = BeginLeaseCore(toggle, hide);
+            return true;
+        }
+    }
+
+    internal bool TryGetInputMethodSwitch(long expectedLease, out nint origin)
+    {
+        lock (gate)
+        {
+            origin = 0;
+            return Failure is null && Volatile.Read(ref stopped) == 0 &&
+                state.TryGetInputMethodSwitch(expectedLease, Environment.TickCount64, out origin) && OwnsWindow(origin);
+        }
+    }
+
+    internal void CancelInputMethodSwitch() { lock (gate) state.CancelInputMethodSwitch(); }
+
+    internal bool TryResumeInputMethodLease(long endedLease, HotkeyBinding toggle, HotkeyBinding hide, out long lease)
+    {
+        lock (gate)
+        {
+            lease = 0;
+            if (Volatile.Read(ref disposed) != 0 || Volatile.Read(ref stopped) != 0 || Failure is not null ||
+                !state.CanResumeForegroundLoss || !state.TryGetInputMethodSwitch(endedLease, Environment.TickCount64, out var origin) ||
+                Native.GetForegroundWindow() != origin || !OwnsWindow(origin) || !IsInputDesktopAvailable()) return false;
             lease = BeginLeaseCore(toggle, hide);
             return true;
         }

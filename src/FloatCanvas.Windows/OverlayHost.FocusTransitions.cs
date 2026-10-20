@@ -6,6 +6,26 @@ public sealed partial class OverlayHost
 {
     private const uint CompleteFocusTransitionMessage = 0x8004;
     private readonly FocusTransitionState _focusTransitions = new();
+    private const nuint InputMethodFocusTimer = 0x4645;
+    private bool _inputMethodFocusPending;
+    private nint _inputMethodReturnWindow;
+    private long _inputMethodReturnUntil;
+
+    /// <summary>A bounded Win+Space return candidate, never permission to isolate an external window's input.</summary>
+    public bool IsInputMethodSwitchPending
+    {
+        get
+        {
+            CheckThread();
+            if (!IsEditing || _captureActive || _keyboardIsolation is null) return false;
+            // Native foreground return can precede WPF's IsActive update and its queued
+            // Deactivated check. This brief own-window-only guard never permits external input.
+            if (_keyboardIsolation.IsLeaseActive && GetForegroundWindow() == _inputMethodReturnWindow &&
+                Environment.TickCount64 < _inputMethodReturnUntil) return true;
+            if (!_keyboardIsolation.TryGetInputMethodSwitch(_keyboardLease, out var origin)) return false;
+            return GetForegroundWindow() == origin || !IsForegroundFromThisProcess();
+        }
+    }
 
     /// <summary>Changes whenever an editing session starts or ends. Queued work must retain its original value.</summary>
     public long EditingSessionVersion => _focusTransitions.SessionVersion;
@@ -66,6 +86,7 @@ public sealed partial class OverlayHost
         // Re-read the real foreground after the caller's synchronous owner/target restoration.
         // External input has already failed open on the hook thread throughout this boundary.
         bool own = IsForegroundFromThisProcess();
+        if (!own && TryKeepInputMethodContext()) { _focusTransitions.Complete(token); return; }
         bool inputReady = own && EnsureEditingKeyboardIsolation();
         _focusTransitions.Complete(token);
         if (IsEditing && (!own || !inputReady)) EndEditingAfterFocusLoss();
@@ -75,15 +96,23 @@ public sealed partial class OverlayHost
     {
         if (_keyboardIsolation is null) return true;
         if (_keyboardIsolation.IsLeaseActive) return true;
-        if (!_focusTransitions.CanResume(_keyboardLease, _keyboardIsolation.LastEndReason, IsForegroundFromThisProcess()))
+        bool inputMethod = _keyboardIsolation.TryGetInputMethodSwitch(_keyboardLease, out var origin) &&
+            GetForegroundWindow() == origin;
+        if (!inputMethod && !_focusTransitions.CanResume(_keyboardLease, _keyboardIsolation.LastEndReason, IsForegroundFromThisProcess()))
             return false;
         try
         {
-            if (!_keyboardIsolation.TryResumeForegroundLease(_keyboardLease,
-                _toggleHotkey ?? HotkeyBinding.DefaultToggle, _hideHotkey ?? HotkeyBinding.DefaultHide, out var lease))
+            var toggle = _toggleHotkey ?? HotkeyBinding.DefaultToggle;
+            var hide = _hideHotkey ?? HotkeyBinding.DefaultHide;
+            long lease;
+            bool resumed = inputMethod
+                ? _keyboardIsolation.TryResumeInputMethodLease(_keyboardLease, toggle, hide, out lease)
+                : _keyboardIsolation.TryResumeForegroundLease(_keyboardLease, toggle, hide, out lease);
+            if (!resumed)
                 return false;
             _keyboardLease = lease;
             _focusTransitions.ReplacedLease(lease);
+            if (inputMethod) KeepInputMethodReturnGuard(origin);
             return true;
         }
         catch (Exception error)
@@ -102,11 +131,50 @@ public sealed partial class OverlayHost
         if (!IsEditing || sessionVersion != EditingSessionVersion) return;
         if (!IsForegroundFromThisProcess())
         {
-            // The one already queued completion performs the final decision. No timer,
-            // modal lifetime exemption or repeated foreground acquisition is introduced.
+            if (TryKeepInputMethodContext()) return;
+            // Outside the explicit IME candidate, only the already queued internal
+            // transition completion may defer this decision; never reacquire foreground.
             if (!_focusTransitions.HasPending) EndEditingAfterFocusLoss();
         }
         else if (!EnsureEditingKeyboardIsolation() && IsEditing) EndEditingAfterFocusLoss();
+        else if (_inputMethodFocusPending)
+        {
+            KeepInputMethodReturnGuard(GetForegroundWindow());
+            StopInputMethodContext(returned: true);
+        }
+    }
+
+    private bool TryKeepInputMethodContext()
+    {
+        if (!IsInputMethodSwitchPending) return false;
+        if (IsForegroundFromThisProcess())
+        {
+            if (!EnsureEditingKeyboardIsolation()) return false;
+            KeepInputMethodReturnGuard(GetForegroundWindow());
+            StopInputMethodContext(returned: true);
+            return true;
+        }
+        if (!_inputMethodFocusPending)
+            _inputMethodFocusPending = SetTimer(ControlHandle, InputMethodFocusTimer, 50, 0) != 0;
+        return _inputMethodFocusPending;
+    }
+
+    private void CheckInputMethodContext()
+    {
+        KillTimer(ControlHandle, InputMethodFocusTimer);
+        _inputMethodFocusPending = false;
+        if (IsEditing && !TryKeepInputMethodContext()) ValidateEditingFocus(EditingSessionVersion);
+    }
+
+    private void KeepInputMethodReturnGuard(nint window)
+    { _inputMethodReturnWindow = window; _inputMethodReturnUntil = Environment.TickCount64 + 250; }
+
+    private void StopInputMethodContext(bool returned = false)
+    {
+        KillTimer(ControlHandle, InputMethodFocusTimer);
+        _inputMethodFocusPending = false;
+        if (!returned) { _inputMethodReturnWindow = 0; _inputMethodReturnUntil = 0; }
+        _keyboardIsolation?.CancelInputMethodSwitch();
     }
 
     private sealed class InternalWindowTransition(OverlayHost owner, FocusTransitionToken token) : IDisposable

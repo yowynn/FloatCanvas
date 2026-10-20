@@ -29,7 +29,7 @@ internal sealed partial class EditorController
             {
                 var parameters = Parameters; parameters.Tool = value; ApplyParameters(parameters); return;
             }
-            if (tool != value) { Cancel(); tool = value; Changed?.Invoke(); }
+            if (temporaryMove || tool != value) { Cancel(); tool = value; Changed?.Invoke(); }
         }
     }
     public ElementStyle Style { get; private set; } = new() { Stroke = ColorLibrary.ForegroundRed };
@@ -95,6 +95,8 @@ internal sealed partial class EditorController
     private RectD? imageRegion;
     private (PointD Position, OverlayModifiers Modifiers, OverlayMouseButton Button)? lastGestureMove;
     private bool deselectOnClick, gestureMoved;
+    internal double ClickPlacementDragThreshold { get; set; } = 6;
+    private double clickPlacementGestureThreshold = 6;
     private bool shiftDeselectOnClick;
     private readonly List<PointD> capturePoints = [];
     private const int MaximumCapturePoints = 65536;
@@ -105,7 +107,7 @@ internal sealed partial class EditorController
     internal static bool UsesDefaultSize(EditorTool value) => value is
         EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol;
     internal bool ShouldShowSelection(OverlayModifiers modifiers) =>
-        (Tool == EditorTool.Select || IsCreationTool(Tool)) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
+        (InteractionTool == EditorTool.Select || IsCreationTool(InteractionTool)) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
 
     /// <summary>The contiguous z-order span whose pixels can change during this pointer gesture.</summary>
     public (int First, int Last, bool BypassCache) RasterPreview
@@ -153,6 +155,7 @@ internal sealed partial class EditorController
         throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
     public void Cancel()
     {
+        temporaryMove = false;
         Cancelling?.Invoke();
         resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
         resizeTextSources.Clear();
@@ -165,7 +168,14 @@ internal sealed partial class EditorController
         ClearBillboardDepth(); pendingBillboardInsertion = null; billboardSources.Clear(); billboardMoveDelta = null;
         Session.Cancel(); Changed?.Invoke();
     }
-    public void Pointer(OverlayPointerEvent e)
+    public void Pointer(OverlayPointerEvent e) => PointerForCanvas(e, e.Kind == OverlayPointerKind.DoubleClick);
+
+    internal void PointerForCanvas(OverlayPointerEvent e, bool propertiesDoubleClick)
+    {
+        if (!HandleTemporaryMovePointer(e)) PointerCore(e, propertiesDoubleClick);
+    }
+
+    private void PointerCore(OverlayPointerEvent e, bool propertiesDoubleClick)
     {
         if (e.Kind == OverlayPointerKind.Cancel) { Cancel(); return; }
         if(e.Kind==OverlayPointerKind.Move&&gesture is not null&&e.Time is { } inputTime&&modifierTime is { } boundary&&unchecked((int)(inputTime-boundary))<0)return;
@@ -195,7 +205,7 @@ internal sealed partial class EditorController
             }
             return;
         }
-        if (e.Kind == OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left && Tool != EditorTool.Text)
+        if (propertiesDoubleClick && e.Button == OverlayMouseButton.Left && Tool != EditorTool.Text)
         {
             Cancel();
             var hit = HitTestScreen(pointerScreen, 4);
@@ -209,6 +219,8 @@ internal sealed partial class EditorController
             var retainedDepth = billboardDepth;
             Cancel(); billboardDepth = retainedDepth;
             start = p; startScreen = pointerScreen; lastGestureMove = (p, e.Modifiers, e.Button);
+            clickPlacementGestureThreshold = double.IsFinite(ClickPlacementDragThreshold) && ClickPlacementDragThreshold > 0
+                ? ClickPlacementDragThreshold : 6;
             gestureModifiers=e.Modifiers;
             bool creating = IsCreationTool(Tool);
             bool forceCreate = (e.Modifiers & OverlayModifiers.Control) != 0;
@@ -262,6 +274,7 @@ internal sealed partial class EditorController
             if(ElementGeometry.IsBoxShape(drawing.Kind))drawing.ConstrainAspect=ConstrainAspect;
             if (Tool == EditorTool.Highlighter) drawing.Style.StrokeWidth = Math.Max(16, Style.StrokeWidth);
             if(drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
+            if (UsesDefaultSize(Tool)) ApplyDefaultSize(drawing, start, e.Modifiers);
             BeginBillboardDrawing();
             Session.Document.Elements.Add(drawing);
             Session.Selection.Clear();
@@ -275,7 +288,7 @@ internal sealed partial class EditorController
             var sample = (p, e.Modifiers, e.Button);
             if (lastGestureMove == sample) return;
             lastGestureMove = sample;
-            gestureMoved |= pointerScreen.DistanceTo(startScreen) >= 2;
+            TrackGestureMovement();
             Move(p, e.Modifiers);
         }
         else if (e.Kind == OverlayPointerKind.Up && gesture != null && e.Button == OverlayMouseButton.Left)
@@ -286,7 +299,7 @@ internal sealed partial class EditorController
                 UpdateCapturePreview(p, e.Modifiers, includeHover: false);
                 CompleteCaptureSelection(); return;
             }
-            gestureMoved |= pointerScreen.DistanceTo(startScreen) >= 2;
+            TrackGestureMovement();
             Move(p, e.Modifiers);
             if (billboardDrawing && !billboardDraftValid)
             { var depth = billboardDepth; Cancel(); billboardDepth = depth; Changed?.Invoke(); return; }
@@ -343,6 +356,10 @@ internal sealed partial class EditorController
         element.Width = width; element.Height = height; element.Points.Clear();
         element.Transform = Affine2D.Translation(center.X - width / 2, center.Y - height / 2);
     }
+
+    private void TrackGestureMovement() => gestureMoved |= pointerScreen.DistanceTo(startScreen) >=
+        (gesture == "draw" && (UsesDefaultSize(Tool) || Tool is EditorTool.Number or EditorTool.Emoji)
+            ? clickPlacementGestureThreshold : 2);
 
     private void BeginSizedPlacement(PointD center)
     {
@@ -477,6 +494,11 @@ internal sealed partial class EditorController
         if (gesture == "draw" && drawing != null)
         {
             PrepareBillboardDrawing();
+            if (UsesDefaultSize(Tool) && !gestureMoved)
+            {
+                ApplyDefaultSize(drawing, start, modifiers);
+                RefreshBillboardDrawing(); Session.NotifyChanged(); return;
+            }
             if (Tool is EditorTool.Number or EditorTool.Emoji)
             {
                 ResizePlacement(p); RefreshBillboardDrawing(); Session.NotifyChanged(); return;

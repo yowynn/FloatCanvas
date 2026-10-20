@@ -1,7 +1,8 @@
 {
-  "Billboard.Toggle": { "zh": "立牌模式（实验性）", "en": "Billboard mode (experimental)" },
-  "Billboard.ToggleHint": { "zh": "立牌模式（实验性）\n朝向屏幕，按远近缩放。开启后，先选深度再创建图层。", "en": "Billboard mode (experimental)\nFace the screen and scale with depth. Pick a depth before creating new layers." },
-  "Billboard.RequiresPerspective": { "zh": "启用画布透视后，可开启立牌模式（实验性）。", "en": "Enable canvas perspective to use billboard mode (experimental)." },
+  "Billboard.Toggle": { "zh": "放置方式", "en": "Placement" },
+  "Billboard.DefaultMode": { "zh": "默认模式", "en": "Default mode" },
+  "Billboard.BillboardMode": { "zh": "立牌模式", "en": "Billboard mode" },
+  "Billboard.CurrentMode": { "zh": "当前：{0}", "en": "Current: {0}" },
   "Billboard.Placement": { "zh": "放置方式", "en": "Placement" },
   "Billboard.Surface": { "zh": "贴面", "en": "Surface" },
   "Billboard.Name": { "zh": "立牌", "en": "Billboard" },

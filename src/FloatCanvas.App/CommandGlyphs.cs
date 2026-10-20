@@ -27,12 +27,25 @@ internal static class CommandGlyphs
     internal const string Delete = "M2,4 H14 M6,4 V1 H10 V4 M4,4 L5,15 H11 L12,4 M6.5,7 V12 M9.5,7 V12";
     internal const string Group = "M1,1 H15 V15 H1 Z M4,4 H8 V8 H4 Z M8,8 H12 V12 H8 Z";
     internal const string Ungroup = "M1,1 H6 V6 H1 Z M10,10 H15 V15 H10 Z M10,6 L15,1 M11,1 H15 V5 M1,11 V15 H5 M1,15 L6,10";
-    internal const string Image = "M2,2 L14,2 L14,14 L2,14 Z M2,12 L6,8 L9,11 L11,9 L14,12 M10,5 L10.1,5";
+    internal const string Image = "M1,2 H15 V14 H1 Z M1,11.5 L5,7.5 L8.5,11 L11,8.5 L15,12.5 M12,5.5 A1,1 0 1 1 10,5.5 A1,1 0 1 1 12,5.5";
     internal const string ReplaceImage = "M1,2 H11 V8 M1,2 V13 H7 M2,10 L5,7 L8,10 M9,11 H16 M13,8 L16,11 L13,14";
     internal const string Canvas = "M2,3 L14,3 L16,14 L0,14 Z M5,3 L4,14 M11,3 L12,14 M1,8 L15,8";
-    internal const string Surface = "M1,12 L5,4 H15 L11,12 Z M3,8 H13 M10,4 L6,12";
-    internal const string Billboard = "M3,1 H13 V11 H3 Z M8,11 V15 M4,15 H12 M5,4 H11 M5,7 H11";
+    private const string PlacementPlane = "M8,1.5 L15,8 L8,14.5 L1,8 Z";
+    private const string PlacementFigure = "M6.6,4.05 A1.75,1.75 0 1 1 9.4,4.05 Q11,4.5 11,6 V8 H5 V6 Q5,4.5 6.6,4.05 Z";
+    internal static readonly string Surface = SurfacePlacementGlyph();
+    // The same plane's rear edges leave real gaps around the shared upright figure.
+    internal const string Billboard = "M2.5,6.607 L1,8 L8,14.5 L15,8 L13.5,6.607 " + PlacementFigure;
     internal static string Placement(bool billboard)=>billboard?Billboard:Surface;
+
+    private static string SurfacePlacementGlyph()
+    {
+        var figure=Geometry.Parse(PlacementFigure).Clone();
+        var bounds=figure.Bounds;double cx=bounds.X+bounds.Width/2,cy=bounds.Y+bounds.Height/2;
+        // The square's axes follow the diamond edges, rather than the screen's vertical axis.
+        const double x=.6,y=x*6.5/7;
+        figure.Transform=new MatrixTransform(new Matrix(x,y,-x,y,8-x*(cx-cy),8-y*(cx+cy)));
+        return PlacementPlane+" "+figure.GetFlattenedPathGeometry(.01,ToleranceType.Absolute).ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
     internal const string Visibility = "M1,8 Q8,-1 15,8 Q8,17 1,8 Z M8,5 A3,3 0 1 1 7.99,5";
     internal const string MoveIntoView = "M1,5 V1 H5 M11,1 H15 V5 M15,11 V15 H11 M5,15 H1 V11 M3,8 H13 M10,5 L13,8 L10,11";
     internal const string Properties = "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15";

@@ -80,8 +80,10 @@ internal sealed class ToolPresetGallery : UserControl
             TileDragReorder.Attach(button, UserTiles, (target, after) => Run(() => { library.Move(preset.Id, (string)target.Tag, after); Refresh(); }));
             button.PreviewKeyDown += (_, e) =>
             {
-                if (e.Key == Key.F2 && library.User.FirstOrDefault(item => item.Id == id) is { } current) { Rename(current); e.Handled = true; }
-                else if (e.Key == Key.Delete) { Delete(preset); e.Handled = true; }
+                if (Keyboard.Modifiers != ModifierKeys.None || e.Key is not (Key.F2 or Key.Delete)) return;
+                e.Handled = true; if (e.IsRepeat) return;
+                if (e.Key == Key.F2 && library.User.FirstOrDefault(item => item.Id == id) is { } current) Rename(current);
+                else if (e.Key == Key.Delete) Delete(preset);
             };
             return button;
         }, (button, id) => { var preset = users.Single(p => p.Id == id); UpdateTile(button, preset); button.ContextMenu = Menu(preset); });

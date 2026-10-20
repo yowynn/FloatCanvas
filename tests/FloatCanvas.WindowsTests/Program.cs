@@ -29,6 +29,19 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if (args.Contains("--windows-shortcuts-peer")) return WindowsShortcutNativeTests.Peer(args);
+    if (args.Contains("--windows-shortcuts-native"))
+    {
+        WindowsShortcutNativeTests.Run(Check);
+        Console.WriteLine($"Native Windows shortcut checks: {checks}; passed=true; own bounded foreground fixtures; no global key injection/profile.");
+        return 0;
+    }
+    if (args.Contains("--windows-shortcuts-only"))
+    {
+        WindowsShortcutTests.Run(Check);
+        Console.WriteLine($"Windows shortcut checks: {checks}; passed=true; pure keyboard state only; no global keys/input/windows.");
+        return 0;
+    }
     if (args.Contains("--window-order-peer")) return NativeWindowOrderTests.RunPeer(args);
     if (args.Contains("--window-order-native"))
     {
@@ -123,6 +136,7 @@ try
     CaptureContinuationTests.Run(Check);
     CaptureInputObservationTests.Run(Check);
     FocusTransitionTests.Run(Check);
+    WindowsShortcutTests.Run(Check);
     KeyboardModifierHistoryTests.Run(Check);
     ShiftModifierPointTests.Run(Check);
     IsolatedPointerPressesTests.Run(Check);
@@ -227,7 +241,7 @@ try
     state = New(); Key(state, 0xA4);
     Check(!Key(state, 9) && !state.IsActive && state.LastEndReason == KeyboardLeaseEndReason.SystemEscape,
         "Alt+Tab ends the lease and passes Tab without pretending to restore a global Alt");
-    state = New(); Check(!Key(state, 0x5B) && !state.IsActive, "Windows key immediately exits isolation and passes to the OS");
+    state = New(); Check(!Key(state, 0x5B) && state.IsActive, "Windows key passes to the OS and waits for actual foreground intent");
     state = New(); Key(state, 0xA2); Key(state, 0xA4);
     Check(Key(state, 0x1B) && !state.IsActive && state.LastEndReason == KeyboardLeaseEndReason.EmergencyEscape,
         "Ctrl+Alt+Esc terminates the lease directly in pure hook state, without UI cooperation");

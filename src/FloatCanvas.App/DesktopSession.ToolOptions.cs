@@ -174,6 +174,7 @@ internal sealed partial class DesktopSession
     }
     private void CheckToolOptionsFocus()
     {
+        if (_host.IsInputMethodSwitchPending) return;
         if (IsToolOptionsOpen && !_toolOptionsPinned && !_toolOptionsWindow.IsActive && !HasActiveOptionsDialog() &&
             !_toolOptionsPanel.IsColorPickerOpen && !IsOptionsInput(Keyboard.FocusedElement as DependencyObject) &&
             !IsOptionsInput(Mouse.DirectlyOver as DependencyObject) && !_toolbar.IsActive) CloseToolOptions();

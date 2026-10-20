@@ -32,6 +32,13 @@ internal static class ToolOptionsKeyboardRouteTests
             foreach (var source in new DependencyObject[] { button, text, slider, combo })
                 check(source.GetType().Name + " preserves project save and open shortcuts", ToolOptionsKeyboardRoute.ShouldRoute(0x53, ModifierKeys.Control, source) && ToolOptionsKeyboardRoute.ShouldRoute(0x4F, ModifierKeys.Control, source));
             check("textbox undo and clipboard keys remain local", !ToolOptionsKeyboardRoute.ShouldRoute(0x5A, ModifierKeys.Control, text) && !ToolOptionsKeyboardRoute.ShouldRoute(0x56, ModifierKeys.Control, text));
+            foreach (int command in new[] { 0x0D, 0x4E, 0x08, 0x2E })
+            {
+                var modifiers = command == 0x0D ? ModifierKeys.None : ModifierKeys.Control;
+                check("ordinary tool controls forward canvas command " + command, ToolOptionsKeyboardRoute.ShouldRoute(command, modifiers, button));
+                check("text controls retain local Enter and word deletion, except explicit new canvas " + command,
+                    ToolOptionsKeyboardRoute.ShouldRoute(command, modifiers, text) == (command == 0x4E));
+            }
             check("menus and system modifier keys are not repurposed as tools", !ToolOptionsKeyboardRoute.ShouldRoute(0x42, ModifierKeys.None, new MenuItem()) && !ToolOptionsKeyboardRoute.ShouldRoute(0x42, ModifierKeys.Alt, button));
             var modalSource = new Button(); var modalWindow = new Window { Content = modalSource };
             var modalKey = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.OemPlus) { RoutedEvent = Keyboard.PreviewKeyDownEvent };

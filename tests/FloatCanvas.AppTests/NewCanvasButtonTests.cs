@@ -59,7 +59,7 @@ internal static class NewCanvasButtonTests
         Click(button);
         check("even a third routed click cannot launch a second clear while busy", clears == 1 && !button.IsConfirming && !button.IsEnabled);
         completion.SetResult(); PumpUntil(() => button.IsEnabled);
-        check("completed clear restores the initial new-canvas action", !button.IsConfirming && Glyph(button).Data.ToString() == original && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas"));
+        check("completed clear restores the initial new-canvas action", !button.IsConfirming && Glyph(button).Data.ToString() == original && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas") + "  Ctrl+N");
         Click(button);
         check("a later first click requires a new confirmation instead of clearing again", button.IsConfirming && clears == 1);
         button.CancelConfirmation();
@@ -114,7 +114,7 @@ internal static class NewCanvasButtonTests
         var chrome = (Border)button.Template.FindName("Chrome", button);
         var normal = ((SolidColorBrush)chrome.Background).Color;
         CompareToolbarPaint(check, button, context + " idle");
-        check(context + " idle name and tooltip describe creating a blank canvas", AutomationProperties.GetName(button) == L.Get("Feedback4.Toolbar.NewBlankCanvas") && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas"));
+        check(context + " idle name and tooltip describe creating a blank canvas", AutomationProperties.GetName(button) == L.Get("Feedback4.Toolbar.NewBlankCanvas") && button.ToolTip as string == L.Get("Feedback4.Toolbar.NewBlankCanvas") + "  Ctrl+N");
         check(context + " new-canvas action stays a compact 26-DIP target with the toolbar's 3-DIP corners", button.ActualWidth == 26 && button.ActualHeight == 26 && chrome.CornerRadius == new CornerRadius(3));
         check(context + " new-canvas action uses the regular gray surface and themed glyph", normal == ((SolidColorBrush)app.Resources["CanvasButton"]).Color && Glyph(button).Stroke == app.Resources["CanvasText"] && Glyph(button).StrokeThickness == 1.5);
         var popup = button.ConfirmationPopup;

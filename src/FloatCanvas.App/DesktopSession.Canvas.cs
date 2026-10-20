@@ -20,6 +20,7 @@ internal sealed partial class DesktopSession
         {
             var window = _canvasSettingsWindow = new() { Owner = _toolbar };
             ConfigureAppWindow(window);
+            window.CommandKey += OnKey;
             window.BackgroundChanged += color => ChangeCanvas(c => c.BackgroundColor = color);
             window.ProjectionChanged += SetCanvasProjection;
             window.GridCountsChanged += SetCanvasGridCounts;

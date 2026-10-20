@@ -49,6 +49,7 @@ internal sealed partial class DesktopSession
                 FinishInlineText(commit,selectEdited:commit);
                 if(!_disposed&&_host.IsEditing)_host.TryFocusEditingCanvas();
             };
+            _canvasTextInput.CommandKey += key => { FinishInlineText(); OnKey(key); };
             _canvasTextInput.Deactivated+=()=>QueueInlineTextFocusCheck(edit);
             _inlineCaretVisible=true;
             if(_inlineCaretTimer is null)
@@ -64,7 +65,8 @@ internal sealed partial class DesktopSession
 
     private void QueueInlineTextFocusCheck(InlineTextEdit edit)=>_app.Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>
     {
-        if(!_disposed&&ReferenceEquals(_inlineText,edit)&&!edit.IsSelecting&&_canvasTextInput?.IsActive!=true)
+        if(!_disposed&&ReferenceEquals(_inlineText,edit)&&!edit.IsSelecting&&_canvasTextInput?.IsActive!=true&&
+            !_host.IsInputMethodSwitchPending)
             FinishInlineText();
     });
 

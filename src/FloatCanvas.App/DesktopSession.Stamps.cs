@@ -17,6 +17,10 @@ internal sealed partial class DesktopSession
     private StampPlacementRequestGuard? _stampPlacementGuard;
     private ColorField? _eyedropper;
     private bool _selectedStampFromSlot;
+    private PropertiesClickSequence? _propertiesClicks;
+    private EditorSession? _propertiesClickSession;
+    private EditorTool _propertiesClickTool;
+    private long _propertiesClickEditingSession;
 
     private StampPlacementRequestGuard StampRequestGuard
     {
@@ -32,23 +36,45 @@ internal sealed partial class DesktopSession
 
     private void HandleCanvasPointer(OverlayPointerEvent e)
     {
+        if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
+            _editor.ClickPlacementDragThreshold = ClickPlacementThresholdFor(_host.Monitors, e.Position);
+        if (e.Kind == OverlayPointerKind.Cancel) _propertiesClicks?.Reset();
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _newCanvasButton?.CancelConfirmation();
-        if (DocumentOperationBusy || !_host.IsVisible) return;
-        if (HandleEyedropperPointer(e)) return;
-        if (HandleInlineTextPointer(e)) return;
+        if (DocumentOperationBusy || !_host.IsVisible) { _propertiesClicks?.Reset(); return; }
+        if (e.Button == OverlayMouseButton.Middle && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && !_editor.IsTemporaryMove)
+        {
+            using var middleDestination = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
+            FinishInlineText();
+            _inspector?.CompletePendingEdit();
+            EndCanvasCalibration();
+            if (_eyedropper is not null) EndEyedropper(restore: false);
+            DismissPanelsForCanvasPress();
+        }
+        if (_editor.HandleTemporaryMovePointer(e)) { _propertiesClicks?.Reset(); return; }
+        if (HandleEyedropperPointer(e)) { _propertiesClicks?.Reset(); return; }
+        if (HandleInlineTextPointer(e)) { _propertiesClicks?.Reset(); return; }
+        bool dismissedProperties = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick &&
+            _inspector is { IsVisible: true, IsPinned: false };
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _inspector?.CompletePendingEdit();
-        if (HandleCalibrationPointer(e)) return;
+        if (HandleCalibrationPointer(e)) { _propertiesClicks?.Reset(); return; }
         using var destination = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick
             ? _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress) : null;
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
         {
             // Commit a color draft before this very gesture reads the tool parameters.
             // The clicked canvas remains the destination throughout the whole dismissal.
-            _toolOptionsPanel?.CloseColorPicker();
-            _windowCoordinator?.DismissTransient(WindowDismissReason.CanvasPress);
-            if (_toolbarMenu is not null) _toolbarMenu.IsOpen = false;
-            if (_moreToolsMenu is not null) _moreToolsMenu.IsOpen = false;
+            DismissPanelsForCanvasPress();
         }
+        _propertiesClicks ??= new((uint)System.Windows.Forms.SystemInformation.DoubleClickTime,
+            System.Windows.Forms.SystemInformation.DoubleClickSize.Width, System.Windows.Forms.SystemInformation.DoubleClickSize.Height);
+        if (!ReferenceEquals(_propertiesClickSession, Active) || _propertiesClickTool != _editor.Tool ||
+            _propertiesClickEditingSession != _host.EditingSessionVersion) _propertiesClicks.Reset();
+        _propertiesClickSession = Active; _propertiesClickTool = _editor.Tool;
+        _propertiesClickEditingSession = _host.EditingSessionVersion;
+        bool propertiesDoubleClick;
+        if (_editor.Tool == EditorTool.Text)
+        { _propertiesClicks.Reset(); propertiesDoubleClick = false; }
+        else propertiesDoubleClick = _propertiesClicks.Observe(e, dismissedProperties);
         ValidateSelectedStamp();
         if (_editor.Tool == EditorTool.Stamp && _editor.BillboardMode && !_selectedStampUsesSource &&
             _selectedStampId is { } billboardStampId &&
@@ -71,7 +97,7 @@ internal sealed partial class DesktopSession
                     ScheduleRecovery(); RequestRender();
                 });
             }
-            _editor.Pointer(e);
+            _editor.PointerForCanvas(e, propertiesDoubleClick);
             return;
         }
         bool press = e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left;
@@ -93,7 +119,15 @@ internal sealed partial class DesktopSession
             return;
         }
         if (e.Kind == OverlayPointerKind.Down && e.Button == OverlayMouseButton.Right) SwitchToolState(EditorTool.Select);
-        _editor.Pointer(e);
+        _editor.PointerForCanvas(e, propertiesDoubleClick);
+    }
+
+    private void DismissPanelsForCanvasPress()
+    {
+        _toolOptionsPanel?.CloseColorPicker();
+        _windowCoordinator?.DismissTransient(WindowDismissReason.CanvasPress);
+        if (_toolbarMenu is not null) _toolbarMenu.IsOpen = false;
+        if (_moreToolsMenu is not null) _moreToolsMenu.IsOpen = false;
     }
 
     private async Task ReloadStampAndPlaceAsync(StampPlacementRequest request)
@@ -162,6 +196,7 @@ internal sealed partial class DesktopSession
         {
             _stampWindow = new StampLibraryWindow(_stampLibrary, () => Active, SelectStamp, () => !DocumentOperationBusy, SelectStampSource);
             _stampWindow.PrepareRendering=PrepareStampRenderingAsync;
+            _stampWindow.CommandKey += OnKey;
             ConfigureAppWindow(_stampWindow);
             _stampWindow.Closed += (_, _) => _stampWindow = null;
         }

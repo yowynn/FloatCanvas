@@ -50,8 +50,10 @@ internal sealed class CanvasPresetGallery : UserControl
             TileDragReorder.Attach(button, UserTiles, (target, after) => Run(() => { library.Move(id, (string)target.Tag, after); Refresh(current); }));
             button.PreviewKeyDown += (_, e) =>
             {
-                if (e.Key == Key.F2 && library.User.FirstOrDefault(item => item.Id == id) is { } latest) { Rename(latest); e.Handled = true; }
-                else if (e.Key == Key.Delete) { Delete(id); e.Handled = true; }
+                if (Keyboard.Modifiers != ModifierKeys.None || e.Key is not (Key.F2 or Key.Delete)) return;
+                e.Handled = true; if (e.IsRepeat) return;
+                if (e.Key == Key.F2 && library.User.FirstOrDefault(item => item.Id == id) is { } latest) Rename(latest);
+                else if (e.Key == Key.Delete) Delete(id);
             };
             return button;
         }, (button, id) => { var preset = users.Single(p => p.Id == id); UpdateTile(button, preset); button.ContextMenu = Menu(preset); });

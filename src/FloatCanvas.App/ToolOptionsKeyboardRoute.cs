@@ -15,30 +15,26 @@ internal static class ToolOptionsKeyboardRoute
         {
             var source = e.OriginalSource as DependencyObject ?? Keyboard.FocusedElement as DependencyObject;
             var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (e.Handled || (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
             if (key == Key.Escape)
             {
                 if (Ancestors(source).Any(value => value is MenuBase or MenuItem || value is ComboBox { IsDropDownOpen: true } || value is Thumb { IsDragging: true })) return;
-                if (!dismissOneLevel()) command(0x1B);
-                e.Handled = true; return;
+                e.Handled = true;
+                if (!e.IsRepeat && !AppWindowChrome.TryCloseHelp(window) && !dismissOneLevel()) command(0x1B);
+                return;
             }
             if (colorPickerOpen()) return;
             int virtualKey = KeyInterop.VirtualKeyFromKey(key);
             if (!ShouldRoute(virtualKey, Keyboard.Modifiers, source)) return;
             // Commands may enter a nested modal loop before returning. Consume the
             // originating key before the dialog receives keyboard focus.
-            e.Handled = true; command(virtualKey);
+            e.Handled = true;
+            if (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(virtualKey, (FloatCanvas.Windows.OverlayModifiers)Keyboard.Modifiers)) command(virtualKey);
         };
     }
     internal static bool ShouldRoute(int key, ModifierKeys modifiers, DependencyObject? source)
     {
-        var ancestors = Ancestors(source).ToArray();
-        if ((modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0 || ancestors.Any(value => value is MenuItem or MenuBase)) return false;
-        bool control = (modifiers & ModifierKeys.Control) != 0;
-        if (control && key is 0x53 or 0x4F) return true;
-        if (ancestors.Any(value => value is TextBoxBase or PasswordBox or ComboBox or Slider or Thumb)) return false;
-        if (control) return key is 0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47;
-        if (key == 0x2E && ancestors.Any(value => value is ToolPresetGallery)) return false;
-        return key is 0x2E or >= 0x25 and <= 0x28 or >= 0x30 and <= 0x39 || ToolShortcutCatalog.TryGetTool(key, out _) || ToolShortcutCatalog.IsReserved(key);
+        return EditorShortcutPolicy.ShouldRoute(key, modifiers, source);
     }
     private static IEnumerable<DependencyObject> Ancestors(DependencyObject? source)
     {

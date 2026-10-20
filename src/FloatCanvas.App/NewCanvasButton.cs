@@ -74,7 +74,7 @@ internal sealed class NewCanvasButton : Button
     private void Refresh()
     {
         string label = L.Get(IsConfirming ? "History.NewConfirm" : "Feedback4.Toolbar.NewBlankCanvas");
-        ToolTip = IsConfirming ? null : label;
+        ToolTip = IsConfirming ? null : label + "  Ctrl+N";
         AutomationProperties.SetName(this, label);
         var path = new Path { Data = Geometry.Parse(IsConfirming ? "M3 8 L6.5 11.5 L13 4.5" :
             CommandGlyphs.NewCanvas),

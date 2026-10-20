@@ -74,9 +74,7 @@ internal static class AppWindowChrome
         }));
         window.PreviewKeyDown += (_, e) =>
         {
-            if (e.Key != Key.Escape || window.Template.FindName("HelpPopup", window) is not Popup { IsOpen: true } popup) return;
-            popup.IsOpen = false;
-            e.Handled = true;
+            if (e.Key == Key.Escape && TryCloseHelp(window)) e.Handled = true;
         };
         window.StateChanged += (_, _) =>
         {
@@ -91,6 +89,12 @@ internal static class AppWindowChrome
         };
         if (new WindowInteropHelper(window).Handle != 0) AttachWindowBounds(window);
         else window.SourceInitialized += (_, _) => AttachWindowBounds(window);
+    }
+
+    internal static bool TryCloseHelp(Window window)
+    {
+        if (window.Template?.FindName("HelpPopup", window) is not Popup { IsOpen: true } popup) return false;
+        popup.IsOpen = false; return true;
     }
 
     private static ControlTemplate CreateTemplate()

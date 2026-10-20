@@ -17,6 +17,8 @@ public enum OverlayMonitorScope { AllScreens, PrimaryScreen }
 public enum OverlayModifiers { None = 0, Alt = 1, Control = 2, Shift = 4, Windows = 8 }
 public enum OverlayPointerKind { Down, Move, Up, DoubleClick, Wheel, Cancel }
 public enum OverlayMouseButton { None, Left, Right, Middle }
+/// <summary>Native keydown metadata; modifiers belong to this UI message and repeat is its previous-down bit.</summary>
+public sealed record OverlayKeyEvent(int VirtualKey, OverlayModifiers Modifiers, bool IsRepeat);
 public sealed record OverlayPointerEvent(OverlayPointerKind Kind, OverlayPoint Position, OverlayMouseButton Button, OverlayModifiers Modifiers, int WheelDelta = 0)
 {
     public uint? Time { get; init; }

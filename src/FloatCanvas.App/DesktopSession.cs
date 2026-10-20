@@ -122,7 +122,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.Draw += Draw;
         _host.Pointer += HandleCanvasPointer;
         _editor.DesktopEffectRequested += (region, kind, amount, color) => _ = RunCommand(() => AddDesktopEffectAsync(region, kind, amount, color));
-        _host.KeyPressed += OnKey;
+        _host.KeyInput += OnCanvasKeyInput;
         _host.ModifierKeysChanged += (modifiers,point,time)=>_editor.ModifiersChanged(modifiers,point,time);
         _host.ToggleRequested += ToggleEditing;
         _host.HideRequested += ToggleCanvasVisibility;
@@ -420,8 +420,15 @@ internal sealed partial class DesktopSession : IDisposable
     {
         ActivateTool(tool);
     }
+    private void OnCanvasKeyInput(OverlayKeyEvent key)
+    {
+        if (!EditorShortcutPolicy.IsCommand(key.VirtualKey, key.Modifiers) ||
+            key.IsRepeat && !EditorShortcutPolicy.AllowsRepeat(key.VirtualKey, key.Modifiers)) return;
+        OnKey(key.VirtualKey);
+    }
     private void OnKey(int key)
     {
+        if (!EditorShortcutPolicy.IsCommand(key, OverlayHost.CurrentModifiers)) return;
         if(_inlineText is not null&&key is 0x1B or 0x0D)
         {FinishInlineText(key==0x0D,selectEdited:key==0x0D);return;}
         if (key == 0x1B && _canvasCalibration.IsActive)
@@ -435,7 +442,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (DocumentOperationBusy || _layers?.IsRenaming == true) return;
         _inspector?.CompletePendingEdit();
         if (_editor.HandleCaptureKey(key)) return;
-        if(key==0x0D&&Active.Selection.Count>1)
+        if(key==0x0D&&Active.Selection.Count>0)
         {
             var pointer=Forms.Cursor.Position;
             ShowInspectorNear(new(pointer.X-_editor.ScreenOrigin.X,pointer.Y-_editor.ScreenOrigin.Y));return;
@@ -455,7 +462,7 @@ internal sealed partial class DesktopSession : IDisposable
         {
             // Modifiers (including a repeated or delayed Ctrl packet) are not editor
             // commands. They must not roll back a pointer transaction in progress.
-            if (key is not (0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F)) return;
+            if (key is not (0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F or 0x4E or 0x08 or 0x2E)) return;
             EndCanvasCalibration();
             _editor.Cancel();
             switch (key)
@@ -469,6 +476,8 @@ internal sealed partial class DesktopSession : IDisposable
                 case 0x47: if (shift) Active.UngroupSelection(); else Active.GroupSelection(); break;
                 case 0x53: _ = RunCommand(() => SaveProjectAsync(shift)); break;
                 case 0x4F: _ = RunCommand(OpenProjectAsync); break;
+                case 0x4E: _ = RunCommand(StartNewCanvasAsync); break;
+                case 0x08: case 0x2E: _ = RunCommand(ClearCurrentCanvasAsync); break;
             }
             return;
         }

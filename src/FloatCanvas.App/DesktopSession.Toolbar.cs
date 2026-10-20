@@ -100,7 +100,7 @@ internal sealed partial class DesktopSession
         Controls.ToolTipService.SetShowOnDisabled(_billboardButton,true);
         RefreshBillboardState();
         Cell(Separator(), toolColumn++);
-        Action("import", L.Get("Toolbar.Image"), "M2,2 L14,2 L14,14 L2,14 Z M2,12 L6,8 L9,11 L11,9 L14,12 M10,5 L10.1,5", () => _ = RunCommand(() => ImportImagesAsync()));
+        Action("import", L.Get("Toolbar.Image"), CommandGlyphs.Image, () => _ = RunCommand(() => ImportImagesAsync()));
         Action("capture", L.Get("Acceptance2.Toolbar.Capture"), "M1,6 L1,2 L5,2 M11,2 L15,2 L15,6 M15,10 L15,14 L11,14 M5,14 L1,14 L1,10 M4,5 L12,5 L12,11 L4,11 Z", () => ActivateTool(EditorTool.CaptureRegion));
         var captureButton = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.CaptureRegion] = captureButton;
@@ -117,7 +117,7 @@ internal sealed partial class DesktopSession
         Action("redo", L.Get("ToolbarV2.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13", Redo, "Ctrl+Y");
         _newCanvasButton = new NewCanvasButton(() => !DocumentOperationBusy, () => RunCommand(StartNewCanvasAsync),NeedsNewCanvasConfirmation);
         Cell(_newCanvasButton, toolColumn++);
-        var clearCurrent=ToolbarIcon(L.Get("History.ClearCurrent"),CommandGlyphs.ClearCanvas,()=>_ = RunCommand(ClearCurrentCanvasAsync));
+        var clearCurrent=ToolbarIcon(L.Get("History.ClearCurrent"),CommandGlyphs.ClearCanvas,()=>_ = RunCommand(ClearCurrentCanvasAsync),"Ctrl+Backspace / Ctrl+Delete");
         clearCurrent.Tag="clear";clearCurrent.SetResourceReference(Controls.Control.StyleProperty,"CanvasDangerButton");
         clearCurrent.ClearValue(Controls.Control.BackgroundProperty);
         var clearGlyph=(System.Windows.Shapes.Path)((Controls.Canvas)((Controls.Viewbox)clearCurrent.Content).Child).Children[0];
@@ -199,10 +199,11 @@ internal sealed partial class DesktopSession
         window.PreviewKeyDown += (_, e) =>
         {
             if(IsOptionsInput(e.OriginalSource as DependencyObject))return;
-            if (e.OriginalSource is Controls.TextBox || e.OriginalSource is Controls.Primitives.TextBoxBase || e.OriginalSource is ToolbarLauncher && e.Key is Key.Enter or Key.Space or Key.Apps) return;
+            if (e.OriginalSource is ToolbarLauncher && e.Key is Key.Enter or Key.Space or Key.Apps) return;
             var key = KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key);
-            if (key is 0x1B or 0x2E or >= 0x25 and <= 0x28 or >= 0x30 and <= 0x39 || ToolShortcutCatalog.TryGetTool(key, out var routedTool) || ToolShortcutCatalog.IsReserved(key) ||
-                (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0) { e.Handled = true; OnKey(key); }
+            if (!EditorShortcutPolicy.ShouldRoute(key, Keyboard.Modifiers, e.OriginalSource as DependencyObject)) return;
+            e.Handled = true;
+            if (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(key, (OverlayModifiers)Keyboard.Modifiers)) OnKey(key);
         };
         window.Closing += (_, e) => { if (!_disposed) { e.Cancel = true; RunUiAction(() => SetEditing(false)); } };
         return window;

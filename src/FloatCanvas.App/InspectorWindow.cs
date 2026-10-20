@@ -173,10 +173,18 @@ internal sealed class InspectorWindow : Wpf.Window
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
-            if (key == Input.Key.Escape) { HandleEscape(); e.Handled = true; return; }
-            if (key == Input.Key.Enter && (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0) { Apply(); e.Handled = true; return; }
-            bool textInput = Input.Keyboard.FocusedElement is Controls.TextBox || IsTextInput(e.OriginalSource as Wpf.DependencyObject);
-            if (RouteCommandKey(Input.KeyInterop.VirtualKeyFromKey(key), (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0, textInput)) e.Handled = true;
+            var modifiers = Input.Keyboard.Modifiers;
+            var source = e.OriginalSource as Wpf.DependencyObject;
+            if (e.Handled || (modifiers & (Input.ModifierKeys.Alt | Input.ModifierKeys.Windows)) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
+            if (key == Input.Key.Escape) { e.Handled = true; if (!e.IsRepeat && !AppWindowChrome.TryCloseHelp(this)) HandleEscape(); return; }
+            if (key == Input.Key.Enter && (modifiers & Input.ModifierKeys.Control) != 0) { e.Handled = true; if (!e.IsRepeat) Apply(); return; }
+            bool textInput = OwnsLocalEditingKeys(Input.Keyboard.FocusedElement as Wpf.DependencyObject) ||
+                OwnsLocalEditingKeys(e.OriginalSource as Wpf.DependencyObject);
+            int command = Input.KeyInterop.VirtualKeyFromKey(key);
+            bool control = (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0;
+            if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, localInput: textInput)) return;
+            e.Handled = true;
+            if (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, control, textInput);
         };
         AppWindowChrome.Apply(this); Icon = AppIcon.WindowImage;
         pin=ActionIconButton.Create(PanelActionIcon.Pin,L.Get("ToolbarV2.PinOptions"),()=>{IsPinned=!IsPinned;UpdatePin();});
@@ -201,6 +209,7 @@ internal sealed class InspectorWindow : Wpf.Window
     }
     private void QueueFocusCheck()=>Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,()=>
     {
+        if(SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending==true)return;
         if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||colorFields.Values.Any(color=>color.IsPickerOpen)||
             new[] {fontPicker,alignment,arrowStyle,startArrow,endArrow,strokePattern,placement}.Any(picker=>picker.IsDropDownOpen))return;
         if(Wpf.Application.Current.Windows.Cast<Wpf.Window>().Any(window=>window.IsActive&&IsChildWindow(window)))return;
@@ -790,21 +799,16 @@ internal sealed class InspectorWindow : Wpf.Window
     }
     private bool RouteCommandKey(int key, bool control, bool textInput)
     {
-        bool projectCommand = control && key is 0x53 or 0x4F;
-        bool objectCommand = !textInput && (control && key is 0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 || !control && key == 0x2E);
-        if (!projectCommand && !objectCommand) return false;
+        if (!CanRouteCommandKey(key, control, textInput)) return false;
         if (!canMutate()) { SetStatus(L.Get("Inspector.BusyDraftRetained"), true); return true; }
         CompletePendingEdit();
         CommandKey?.Invoke(key); return true;
     }
-    private static bool IsTextInput(Wpf.DependencyObject? source)
+    private static bool CanRouteCommandKey(int key, bool control, bool textInput) =>
+        EditorShortcutPolicy.ShouldRoute(key, control ? Input.ModifierKeys.Control : Input.ModifierKeys.None, null, localInput: textInput);
+    internal static bool OwnsLocalEditingKeys(Wpf.DependencyObject? source)
     {
-        while (source is not null)
-        {
-            if (source is Controls.TextBox) return true;
-            source = source is Media.Visual || source is System.Windows.Media.Media3D.Visual3D ? Media.VisualTreeHelper.GetParent(source) : Wpf.LogicalTreeHelper.GetParent(source);
-        }
-        return false;
+        return EditorShortcutPolicy.OwnsLocalEditingKeys(source) || EditorShortcutPolicy.OwnsMenu(source);
     }
     private static PointD GeometricSize(CanvasElement element)
     {

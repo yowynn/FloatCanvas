@@ -30,8 +30,22 @@ internal sealed partial class DesktopSession
         }
         button.IsEnabled=perspective&&!DocumentOperationBusy;
         ActionIconButton.UpdateToggleAppearance(button,billboard);
-        button.ToolTip=AppText.Get(perspective?"Billboard.ToggleHint":"Billboard.RequiresPerspective");
-        AutomationProperties.SetName(button,AppText.Get("Billboard.Toggle"));
-        AutomationProperties.SetItemStatus(button,AppText.Get(billboard?"Billboard.Name":"Billboard.Surface"));
+        string title=AppText.Get("Billboard.Toggle");
+        string mode=AppText.Get(billboard?"Billboard.BillboardMode":"Billboard.DefaultMode");
+        string tooltip=PlacementTooltip(billboard);
+        button.ToolTip=tooltip;
+        AutomationProperties.SetName(button,title);
+        AutomationProperties.SetItemStatus(button,mode);
+        if(_toolbarMenu is {} menu)
+            foreach(var item in menu.Items.OfType<Controls.MenuItem>().SelectMany(group=>group.Items.OfType<Controls.MenuItem>()).Where(item=>Equals(item.Tag,"billboard")))
+            {
+                item.Header=title;item.ToolTip=tooltip;
+                Controls.ToolTipService.SetShowOnDisabled(item,true);
+                AutomationProperties.SetName(item,title);AutomationProperties.SetItemStatus(item,mode);
+            }
     }
+
+    internal static string PlacementTooltip(bool billboard)=>string.Join("\n",
+        AppText.Get("Billboard.Toggle"),
+        AppText.Format("Billboard.CurrentMode",AppText.Get(billboard?"Billboard.BillboardMode":"Billboard.DefaultMode")));
 }

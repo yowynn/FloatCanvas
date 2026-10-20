@@ -52,7 +52,7 @@ internal static class NativeInputRoutingFixture
             var isolation = typeof(OverlayHost).GetField("_keyboardIsolation", PrivateInstance)!;
             bool realCtrlInput = Environment.GetEnvironmentVariable("FLOATCANVAS_INPUT_CASE")?.StartsWith("ctrl-native-selection", StringComparison.Ordinal) == true;
             if (realCtrlInput) observedIsolation = (KeyboardInputIsolation)isolation.GetValue(host)!;
-            if (!realCtrlInput) { (isolation.GetValue(host) as IDisposable)?.Dispose(); isolation.SetValue(host, null); }
+            if (!realCtrlInput && scenarioOverride != "input-method-ui") { (isolation.GetValue(host) as IDisposable)?.Dispose(); isolation.SetValue(host, null); }
             var editor = Field<EditorController>(session, "_editor");
             var dispatch = Field<Action<KeyboardInputPacket, Action>>(host, "_dispatchPrivateKey");
             var library = Field<StampLibrary>(session, "_stampLibrary");
@@ -200,6 +200,11 @@ internal static class NativeInputRoutingFixture
                 finally { ActivateKeyboardLayout(layout, 0); }
             }
             if (scenario == "feedback4-panels") Feedback4Panels(check, app, session, host, toolbar, editor);
+            if (scenario == "canvas-commands") CanvasCommandRuntimeTests.Run(check, session, host, toolbar,
+                (vk, up, ctrl, shift) => Key(vk, up, control: ctrl, shift: shift));
+            if (scenario == "input-method-ui") InputMethodUiContextTests.Run(check, session, host, toolbar);
+            if (scenario == "shortcut-matrix") ShortcutRoutingMatrixRuntimeTests.Run(check, session, host, toolbar, dispatch);
+            if (scenario == "aux-shortcut-runtime") AuxiliaryShortcutRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "feedback4-workspace") Feedback4Workspace(check, session, host, toolbar, editor);
             if (scenario == "preview4-settings") Preview4SettingsRuntimeFixture.Run(check, session, host, toolbar, action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
             if (scenario == "preview4-menu") Preview4MenuRuntimeFixture.Run(check, session, host, toolbar);

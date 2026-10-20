@@ -66,26 +66,45 @@ internal sealed class LayersWindow : Wpf.Window
         layers.SelectionChanged += (_, _) => SelectRows();
         depthPriorityOcclusion.Click += (_, _) => SetDepthPriorityOcclusion(depthPriorityOcclusion.IsChecked == true);
         Closing += (_, e) => { e.Cancel = true; CommitRename(); CancelDrag(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
-        Deactivated += (_, _) => { CommitRename(); CancelDrag(); };
+        Deactivated += (_, _) => { if (SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending != true) { CommitRename(); CancelDrag(); } };
+        IsVisibleChanged += (_, _) => { if (!IsVisible) { CommitRename(); CancelDrag(); } };
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
+            var modifiers = Input.Keyboard.Modifiers;
+            var source = e.OriginalSource as Wpf.DependencyObject;
+            if (e.Handled || (modifiers & (Input.ModifierKeys.Alt | Input.ModifierKeys.Windows)) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
             // TextBox owns editing keys and the IME until this rename has finished.
-            if (IsRenaming) return;
-            if (key == Input.Key.F2 && layers.SelectedItems.Count == 1)
-            { BeginRename((Guid)((Controls.ListBoxItem)layers.SelectedItem).Tag); e.Handled = true; return; }
+            if (IsRenaming)
+            {
+                int projectKey = Input.KeyInterop.VirtualKeyFromKey(key);
+                if (!renameComposing && EditorShortcutPolicy.IsProjectCommand(projectKey, (FloatCanvas.Windows.OverlayModifiers)modifiers))
+                {
+                    e.Handled = true;
+                    if (!e.IsRepeat && this.canMutate()) { CommitRename(); CommandKey?.Invoke(projectKey); }
+                }
+                return;
+            }
+            if (key == Input.Key.F2 && modifiers == Input.ModifierKeys.None && layers.SelectedItems.Count == 1)
+            { e.Handled = true; if (!e.IsRepeat) BeginRename((Guid)((Controls.ListBoxItem)layers.SelectedItem).Tag); return; }
             if (key == Input.Key.Escape)
             {
-                if (dragIds is not null) CancelDrag(); else { SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); }
-                e.Handled = true; return;
+                e.Handled = true;
+                if (!e.IsRepeat && !AppWindowChrome.TryCloseHelp(this)) { if (dragIds is not null) CancelDrag(); else { SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); } }
+                return;
             }
             bool ctrl = (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0;
-            if (ctrl && key == Input.Key.G)
+            bool localInput = EditorShortcutPolicy.OwnsLocalEditingKeys(source) || EditorShortcutPolicy.OwnsLocalEditingKeys(Input.Keyboard.FocusedElement as Wpf.DependencyObject);
+            if (ctrl && key == Input.Key.G && !localInput)
             {
-                RunLayerCommand(s => { if ((Input.Keyboard.Modifiers & Input.ModifierKeys.Shift) != 0) s.UngroupSelection(); else s.GroupSelection(); });
-                e.Handled = true; return;
+                e.Handled = true;
+                if (!e.IsRepeat) RunLayerCommand(s => { if ((modifiers & Input.ModifierKeys.Shift) != 0) s.UngroupSelection(); else s.GroupSelection(); });
+                return;
             }
-            if (RouteCommandKey(Input.KeyInterop.VirtualKeyFromKey(key), ctrl)) e.Handled = true;
+            int command = Input.KeyInterop.VirtualKeyFromKey(key);
+            if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: true, localInput: localInput)) return;
+            e.Handled = true;
+            if (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, ctrl);
         };
         Refresh();
     }
@@ -152,7 +171,10 @@ internal sealed class LayersWindow : Wpf.Window
         var item = new Controls.ListBoxItem { Tag = id, Content = row, HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch, Padding = new(2) };
         label.PreviewMouseLeftButtonDown += (_, e) => { if (item.IsSelected && BeginRename(id)) e.Handled = true; };
         editor.PreviewKeyDown += (_, e) => { if (HandleRenameKey(e.Key)) e.Handled = true; };
-        editor.LostKeyboardFocus += (_, _) => { if (renameId == id && !editor.IsKeyboardFocusWithin) CommitRename(); };
+        editor.LostKeyboardFocus += (_, _) =>
+        {
+            if (renameId == id && !editor.IsKeyboardFocusWithin && SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending != true) CommitRename();
+        };
         Input.TextCompositionManager.AddPreviewTextInputStartHandler(editor, (_, _) => renameComposing = true);
         Input.TextCompositionManager.AddPreviewTextInputUpdateHandler(editor, (_, _) => renameComposing = true);
         Input.TextCompositionManager.AddPreviewTextInputHandler(editor, (_, _) => renameComposing = false);
@@ -336,10 +358,11 @@ internal sealed class LayersWindow : Wpf.Window
     }
     private bool RouteCommandKey(int key, bool control)
     {
-        if (IsRenaming) return false;
-        if (!(control && key is 0x53 or 0x4F or 0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 || !control && key == 0x2E)) return false;
+        if (!CanRouteCommandKey(key, control)) return false;
         if (canMutate()) CommandKey?.Invoke(key); return true;
     }
+    private bool CanRouteCommandKey(int key, bool control) => !IsRenaming &&
+        EditorShortcutPolicy.ShouldRoute(key, control ? Input.ModifierKeys.Control : Input.ModifierKeys.None, null, preserveListNavigation: true);
 
     private bool BeginRename(Guid id)
     {

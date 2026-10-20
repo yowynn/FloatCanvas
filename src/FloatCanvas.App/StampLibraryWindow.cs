@@ -46,6 +46,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private int? selectedSlot;
     private bool busy, closed;
     private Wpf.Window? dialogOwner;
+    public event Action<int>? CommandKey;
 
     public StampLibraryWindow(StampLibrary library, Func<EditorSession> getSession, Action<Guid> selectStamp, Func<bool>? canMutate = null, Action<Guid>? useSource = null)
     {
@@ -93,7 +94,26 @@ internal sealed class StampLibraryWindow : Wpf.Window
         Wpf.Automation.AutomationProperties.SetName(grid, L.Get("Stamp.LibraryTitle"));
         body.Children.Add(grid); Content = body; AppWindowChrome.Apply(this);
         AppWindowChrome.SetHelp(this, L.Get("StampShelf.Help"), L.Get("StampShelf.HelpText"));
-        PreviewKeyDown += (_, e) => { var key = e.Key == Input.Key.System ? e.SystemKey : e.Key; if (HandleShortcut(key, Input.Keyboard.Modifiers, e.OriginalSource as Wpf.DependencyObject)) e.Handled = true; };
+        PreviewKeyDown += (_, e) =>
+        {
+            var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
+            var modifiers = Input.Keyboard.Modifiers;
+            var source = e.OriginalSource as Wpf.DependencyObject;
+            if (e.Handled || (modifiers & (Input.ModifierKeys.Alt | Input.ModifierKeys.Windows)) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
+            if (OwnsShortcut(key, modifiers, source))
+            {
+                e.Handled = true;
+                if (!e.IsRepeat) HandleShortcut(key, modifiers, source);
+                return;
+            }
+            // Ctrl+N belongs to this library even while search owns editing keys.
+            if (key == Input.Key.N && modifiers == Input.ModifierKeys.Control) return;
+            int command = Input.KeyInterop.VirtualKeyFromKey(key);
+            bool localInput = IsTextInput(source) || IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject);
+            if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: true, localInput: localInput)) return;
+            e.Handled = true;
+            if (!closed && !busy && this.canMutate() && (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers))) CommandKey?.Invoke(command);
+        };
         search.TextChanged += (_, _) => Refresh();
         library.Changed += OnLibraryChanged;
         Closed += (_, _) => { closed = true; CloseTileMenus(); thumbnails.Cancel(); thumbnails.Dispose(); library.Changed -= OnLibraryChanged; };
@@ -366,13 +386,21 @@ internal sealed class StampLibraryWindow : Wpf.Window
         if (closed || busy) return false;
         if (key == Input.Key.F && modifiers == Input.ModifierKeys.Control) { search.Focus(); search.SelectAll(); return true; }
         if (key == Input.Key.Escape && modifiers == Input.ModifierKeys.None && selectedSlot is not null) { selectedSlot = null; RefreshSlotSelection(); return true; }
+        if (key == Input.Key.Escape && modifiers == Input.ModifierKeys.None) { SessionWindowCoordinator.Close(this); return true; }
+        if (key == Input.Key.N && modifiers == Input.ModifierKeys.Control) { if (canMutate()) RunAsync(() => SaveAsync(overwrite: false)); return true; }
         if (IsTextInput(source) || IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject) || !canMutate()) return false;
-        if (key == Input.Key.N && modifiers == Input.ModifierKeys.Control) { RunAsync(() => SaveAsync(overwrite: false)); return true; }
         if (modifiers != Input.ModifierKeys.None || selected is null) return false;
         if (key == Input.Key.Enter) { UseSelected(); return true; }
         if (key == Input.Key.F2) { RunAsync(RenameAsync); return true; }
         if (key == Input.Key.Delete) { RunAsync(DeleteAsync); return true; }
         return false;
+    }
+
+    private bool OwnsShortcut(Input.Key key, Input.ModifierKeys modifiers, Wpf.DependencyObject? source)
+    {
+        if (key is Input.Key.F or Input.Key.N && modifiers == Input.ModifierKeys.Control || key == Input.Key.Escape && modifiers == Input.ModifierKeys.None) return true;
+        if (IsTextInput(source) || IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject)) return false;
+        return modifiers == Input.ModifierKeys.None && key is Input.Key.Enter or Input.Key.F2 or Input.Key.Delete;
     }
 
     private static bool IsTextInput(Wpf.DependencyObject? source)

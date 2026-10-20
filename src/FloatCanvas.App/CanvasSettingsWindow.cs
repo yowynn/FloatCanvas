@@ -38,6 +38,7 @@ internal sealed class CanvasSettingsWindow : Window
     public event Action? FourPointsRequested;
     public event Action<CanvasPresetParameters>? PresetApplied;
     public event Action<string?>? ResetDisplayRequested;
+    public event Action<int>? CommandKey;
 
     public CanvasSettingsWindow(CanvasPresetLibrary? library = null)
     {
@@ -119,7 +120,17 @@ internal sealed class CanvasSettingsWindow : Window
         CommitOnExit(width.Input, CommitWidth);
         width.SliderValueCommitted += () => { if (!refreshing) CommitWidth(); };
         Closing += (_, e) => { if (disposing) return; e.Cancel = true; SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
-        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { if (!background.TryClosePicker() && !gridColor.TryClosePicker()) { SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); } e.Handled = true; } };
+        ToolOptionsKeyboardRoute.Attach(this, () =>
+        {
+            if (!background.TryClosePicker() && !gridColor.TryClosePicker())
+            { SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); }
+            return true;
+        }, () => background.IsPickerOpen || gridColor.IsPickerOpen, key =>
+        {
+            if (columns.Input.IsKeyboardFocusWithin || rows.Input.IsKeyboardFocusWithin) CommitCounts();
+            else if (width.Input.IsKeyboardFocusWithin) CommitWidth();
+            CommandKey?.Invoke(key);
+        });
         Refresh(new(), false);
     }
     public void Refresh(CanvasSettings settings, bool calibrating)

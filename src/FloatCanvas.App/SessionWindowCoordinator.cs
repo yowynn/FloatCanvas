@@ -31,6 +31,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
     }
 
     internal bool IsDirectTransfer => !disposed && destination is not null && intentSession == host.EditingSessionVersion;
+    internal bool IsInputMethodSwitchPending => !disposed && host.IsInputMethodSwitchPending;
 
     internal bool CanContinue(WindowSessionRequest request, object document) => !disposed &&
         request.IsCurrent(host.EditingSessionVersion, host.IsEditing, document) && (!request.Editing || OwnsForeground());

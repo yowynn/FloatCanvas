@@ -16,7 +16,7 @@ internal sealed partial class EditorController
         if(gesture is null||(gestureModifiers&OverlayModifiers.Shift)==(modifiers&OverlayModifiers.Shift))return;
         if(time is { } inputTime&&modifierTime is { } boundary&&unchecked((int)(inputTime-boundary))<0)return;
         modifierTime=time??modifierTime;
-        if(pointerLeftDown==false&&gesture!="capture-polygon")
+        if(pointerLeftDown==false&&!temporaryMove&&gesture!="capture-polygon")
         {gestureModifiers=modifiers;return;}
         var screen=position is { } point?new PointD(point.X-ScreenOrigin.X,point.Y-ScreenOrigin.Y):pointerScreen;
         PointD current;
@@ -29,7 +29,7 @@ internal sealed partial class EditorController
             AppendStrokePoint(points,gesture=="draw"?current-start:current,force:true);
             straightStrokeStart=points.Count-1;
         }
-        gestureMoved|=pointerScreen.DistanceTo(startScreen)>=2;
+        TrackGestureMovement();
         lastGestureMove=null;
         Move(current,modifiers);
     }

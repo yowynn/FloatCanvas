@@ -98,6 +98,13 @@ internal static class ToolbarAcceptanceTests
             placementMenu.RaiseEvent(new Wpf.RoutedEventArgs(Controls.ContextMenu.OpenedEvent));
             var modeMenu=placementMenu.Items.OfType<Controls.MenuItem>().SelectMany(item=>item.Items.OfType<Controls.MenuItem>()).Single(item=>Equals(item.Tag,"billboard"));
             check("main menu reflects the global billboard toggle and its actual artwork",modeMenu.IsEnabled&&modeMenu.IsChecked&&Descendants((Wpf.DependencyObject)modeMenu.Icon).OfType<Shapes.Path>().Single().Data.ToString()==Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString());
+            check("placement menu and toolbar share their tool name, current mode and complete usage hint",Equals(modeMenu.Header,L.Get("Billboard.Toggle"))&&Equals(modeMenu.ToolTip,billboard.ToolTip)&&Controls.ToolTipService.GetShowOnDisabled(modeMenu));
+            var import=buttons.Single(button=>Equals(button.Tag,"import"));
+            check("image import uses the shared full-width menu artwork",Descendants(import).OfType<Shapes.Path>().Single().Data.ToString()==Media.Geometry.Parse(CommandGlyphs.Image).ToString()&&Media.Geometry.Parse(CommandGlyphs.Image).Bounds.Width>=14);
+            var plane=Media.PathGeometry.CreateFromGeometry(Media.Geometry.Parse(CommandGlyphs.Surface));
+            var placementPen=new Media.Pen(Media.Brushes.Black,1.5) {StartLineCap=Media.PenLineCap.Round,EndLineCap=Media.PenLineCap.Round,LineJoin=Media.PenLineJoin.Round};
+            check("placement artwork fits the icon canvas including strokes",new Wpf.Rect(0,0,16,16).Contains(plane.GetRenderBounds(placementPen))&&
+                new Wpf.Rect(0,0,16,16).Contains(Media.Geometry.Parse(CommandGlyphs.Billboard).GetRenderBounds(placementPen)));
             editor.Session.Document.Canvas.Projection.Enabled=false;Invoke(session,"RefreshToolbarState");Measure(shell);
             check("disabling perspective restores the surface artwork and inactive appearance",!editor.BillboardMode&&!billboard.IsEnabled&&Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString()==surfaceArtwork&&billboard.Background==app.Resources["CanvasButton"]&&canvasAction.Background==app.Resources["CanvasButton"]);
             check("upper twelve tool order matches the requested Select Eraser then ten drawing entries",buttons.Where(button=>Controls.Grid.GetColumn(button)<13).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"tool:Select","tool:Eraser","tool:Freehand","tool:Highlighter","tool:Line","tool:Rectangle","tool:Ellipse","tool:Text","tool:Number","tool:Symbol","tool:Emoji","more"}));
@@ -242,6 +249,7 @@ internal static class ToolbarAcceptanceTests
                 check(theme+" production body resolves the actual current theme surface",((Media.SolidColorBrush)body.Background).Color==expected);
                 check(theme+" LCD follows its dedicated surface and readable text theme",((Media.SolidColorBrush)display.Background).Color==((Media.SolidColorBrush)app.Resources["CanvasLcdSurface"]).Color&&((Media.SolidColorBrush)status.Foreground).Color==((Media.SolidColorBrush)app.Resources["CanvasLcdText"]).Color);
                 RenderVisibilityStates(session,host,shell,theme,output);
+                RenderPlacementStates(check,session,editor,billboard,import,placementMenu,modeMenu,shell,theme,output);
                 var bitmap=Save(shell,Path.Combine(output,"production-toolbar-"+theme+".png"),1.5);
                 var legend=hints.Single(value=>value.Text=="R");
                 check(theme+" small shortcut lettering has strong contrast against its masking surface",Contrast(((Media.SolidColorBrush)legend.Foreground).Color,expected)>=7);
@@ -277,6 +285,51 @@ internal static class ToolbarAcceptanceTests
     }
 
     private static bool Near(double a,double b)=>Math.Abs(a-b)<.05;
+    private static void RenderPlacementStates(Action<string,bool> check,DesktopSession session,EditorController editor,
+        Controls.Button placement,Controls.Button import,Controls.ContextMenu menu,Controls.MenuItem modeMenu,
+        Wpf.FrameworkElement shell,string theme,string output)
+    {
+        string language=L.Preference;bool perspective=editor.Session.Document.Canvas.Projection.Enabled,mode=editor.BillboardMode;
+        try
+        {
+            foreach(string locale in new[]{"zh-CN","en"})
+            {
+                L.Initialize(locale);
+                var row=new Controls.StackPanel {Orientation=Controls.Orientation.Horizontal};
+                row.SetResourceReference(Controls.Panel.BackgroundProperty,"CanvasSurface");
+                foreach(bool billboard in new[]{false,true})
+                {
+                    editor.Session.Document.Canvas.Projection.Enabled=true;editor.BillboardMode=billboard;
+                    menu.RaiseEvent(new Wpf.RoutedEventArgs(Controls.ContextMenu.OpenedEvent));Measure(shell);
+                    string tooltip=(string)placement.ToolTip;
+                    string[] lines=tooltip.Split('\n');
+                    check($"{locale} {theme} {billboard} placement hint contains only its title and currently selected mode",
+                        lines.Length==2&&lines[0]==L.Get("Billboard.Toggle")&&lines[1]==L.Format("Billboard.CurrentMode",L.Get(billboard?"Billboard.BillboardMode":"Billboard.DefaultMode"))&&Equals(modeMenu.ToolTip,tooltip)&&
+                        System.Windows.Automation.AutomationProperties.GetItemStatus(placement)==L.Get(billboard?"Billboard.BillboardMode":"Billboard.DefaultMode"));
+                    var card=new Controls.StackPanel {Width=340,Margin=new Wpf.Thickness(14)};
+                    var icons=new Controls.StackPanel {Orientation=Controls.Orientation.Horizontal,Margin=new Wpf.Thickness(0,0,0,12)};
+                    icons.Children.Add(new Controls.Image {Source=ControlPixels(placement),Width=52,Height=52,Stretch=Media.Stretch.Uniform});
+                    icons.Children.Add(new Controls.Image {Source=ControlPixels(import),Width=52,Height=52,Margin=new Wpf.Thickness(14,0,0,0),Stretch=Media.Stretch.Uniform});
+                    card.Children.Add(icons);
+                    var text=new Controls.TextBlock {Text=tooltip,TextWrapping=Wpf.TextWrapping.Wrap,FontSize=14,LineHeight=22};
+                    text.SetResourceReference(Controls.TextBlock.ForegroundProperty,"CanvasText");card.Children.Add(text);row.Children.Add(card);
+                }
+                Measure(row);Save(row,Path.Combine(output,$"placement-tooltip-{locale}-{theme}.png"),1.5);
+            }
+        }
+        finally
+        {
+            L.Initialize(language);editor.Session.Document.Canvas.Projection.Enabled=perspective;editor.BillboardMode=mode;
+            menu.RaiseEvent(new Wpf.RoutedEventArgs(Controls.ContextMenu.OpenedEvent));Measure(shell);
+        }
+        Imaging.BitmapSource ControlPixels(Controls.Button button)
+        {
+            var point=button.TranslatePoint(new Wpf.Point(),shell);
+            var pixels=Raster(shell,4);
+            return new Imaging.CroppedBitmap(pixels,new Wpf.Int32Rect((int)Math.Round(point.X*4),(int)Math.Round(point.Y*4),
+                (int)Math.Round(button.ActualWidth*4),(int)Math.Round(button.ActualHeight*4)));
+        }
+    }
     private static void RenderVisibilityStates(DesktopSession session,OverlayHost host,
         Wpf.FrameworkElement shell,string theme,string output)
     {

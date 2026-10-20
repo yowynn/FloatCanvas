@@ -22,7 +22,7 @@ internal sealed partial class DesktopSession
             item.Click += (_, _) => RunUiAction(action); group.Items.Add(item);
         }
         var file = Group("ToolbarV2.File", CommandGlyphs.Open);
-        Item(file, L.Get("Feedback4.Toolbar.NewBlankCanvas"), CommandGlyphs.NewCanvas, () => _ = _newCanvasButton!.ActivateAsync());
+        Item(file, L.Get("Feedback4.Toolbar.NewBlankCanvas"), CommandGlyphs.NewCanvas, () => _ = _newCanvasButton!.ActivateAsync(), "Ctrl+N");
         Item(file, L.Get("ToolbarV2.Open"), CommandGlyphs.Open, () => _ = RunCommand(OpenProjectAsync), "Ctrl+O");
         Item(file, L.Get("ToolbarV2.Save"), CommandGlyphs.Save, () => _ = RunCommand(() => SaveProjectAsync()), "Ctrl+S");
         Item(file, L.Get("ToolbarV2.SaveAs"), CommandGlyphs.SaveAs, () => _ = RunCommand(() => SaveProjectAsync(true)), "Ctrl+Shift+S");
@@ -59,9 +59,9 @@ internal sealed partial class DesktopSession
         };
         Item(canvas, L.Get("Desktop.ToggleVisibility"), CommandGlyphs.Visibility, ToggleCanvasVisibility, FormatHotkey(_settings.Hide));
         Item(canvas, L.Get("Menu.MoveIntoView"), CommandGlyphs.MoveIntoView, MoveIntoView);
-        Item(canvas, L.Get("History.ClearCurrent"), CommandGlyphs.ClearCanvas, () => _ = RunCommand(ClearCurrentCanvasAsync));
+        Item(canvas, L.Get("History.ClearCurrent"), CommandGlyphs.ClearCanvas, () => _ = RunCommand(ClearCurrentCanvasAsync), "Ctrl+Backspace / Ctrl+Delete");
         var windows = Group("ToolbarV2.Windows", CommandGlyphs.Windows);
-        Item(windows, L.Get("ToolbarV2.Properties"), CommandGlyphs.Properties, ToggleInspector); Item(windows, L.Get("ToolbarV2.Layers"), CommandGlyphs.Layers, ToggleLayers);
+        Item(windows, L.Get("ToolbarV2.Properties"), CommandGlyphs.Properties, ToggleInspector, "Enter"); Item(windows, L.Get("ToolbarV2.Layers"), CommandGlyphs.Layers, ToggleLayers);
         Item(windows, L.Get("Stamp.LibraryTitle"), CommandGlyphs.Stamp, ShowStampLibrary, "-");
         Item(edit, L.Get("Feedback3.Toolbar.NewStamp"), CommandGlyphs.NewStamp, SaveStampSelection, "+");
         menu.Items.Add(new Controls.Separator());

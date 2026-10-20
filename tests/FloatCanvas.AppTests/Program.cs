@@ -35,6 +35,14 @@ internal static class Program
             if (args.Contains("--preview4-menu-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "preview4-menu"); return 0; }
             if (args.Contains("--preview4-settings-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "preview4-settings"); return 0; }
             if (args.Contains("--preview4-properties-only")) { Preview4PropertiesTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-commands-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "canvas-commands"); return 0; }
+            if (args.Contains("--shortcut-matrix-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "shortcut-matrix"); return 0; }
+            if (args.Contains("--shortcut-surfaces-only")) { ShortcutSurfaceRoutingTests.Run(Assert); return 0; }
+            if (args.Contains("--aux-shortcuts-only")) { AuxiliaryShortcutRoutingTests.Run(Assert); return 0; }
+            if (args.Contains("--aux-shortcut-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "aux-shortcut-runtime"); return 0; }
+            if (args.Contains("--input-method-ui-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "input-method-ui"); return 0; }
+            if (args.Contains("--temporary-move-controller-only")) { TemporaryMoveControllerTests.Run(Assert); return 0; }
+            if (args.Contains("--properties-click-sequence-only")) { PropertiesClickSequenceTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-shift-only")) { Preview4ShiftTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-drag-only")) { Preview4DragTests.Run(Assert); return 0; }
             if (args.Contains("--layer-drag-dpi-only")) { LayerDragDpiTests.Run(Assert); return 0; }
@@ -99,8 +107,10 @@ internal static class Program
             if (args.Contains("--stamp-selection-only")) { StampSelectionIntegrationTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar2-only")) { ToolbarAcceptanceTests.Run(Assert); return 0; }
             if (args.Contains("--creation-selection-only")) { CreationSelectionTests.Run(Assert); return 0; }
+            if (args.Contains("--click-placement-threshold-only")) { ClickPlacementThresholdTests.Run(Assert); return 0; }
             if (args.Contains("--drag-sized-objects-only")) { DragSizedObjectsTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-preview-only")) { StampPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-stamp-preview-only")) { BillboardStampPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--emoji-only")) { EmojiTests.Run(Assert); return 0; }
             if (args.Contains("--layer-names-only")) { LayerRenameTests.Run(Assert); return 0; }
             if (args.Contains("--welcome-only")) { WelcomeSessionTests.Run(Assert); HotkeyHintTests.Run(Assert); return 0; }
@@ -128,6 +138,10 @@ internal static class Program
             Preview4CanvasTests.Run(Assert);
             Preview4InlineTextTests.Run(Assert);
             Preview4PropertiesTests.Run(Assert);
+            TemporaryMoveControllerTests.Run(Assert);
+            PropertiesClickSequenceTests.Run(Assert);
+            ShortcutSurfaceRoutingTests.Run(Assert);
+            AuxiliaryShortcutRoutingTests.Run(Assert);
             Preview4ShiftTests.Run(Assert);
             Preview4DragTests.Run(Assert);
             Preview4SettingsTests.Run(Assert);
@@ -150,12 +164,14 @@ internal static class Program
             LayerRenameTests.Run(Assert);
             EmojiTests.Run(Assert);
             CreationSelectionTests.Run(Assert);
+            ClickPlacementThresholdTests.Run(Assert);
             DragSizedObjectsTests.Run(Assert);
             CaptureSelectionTests.Run(Assert);
             SnapshotImageTests.Run(Assert);
             SnapshotCoordinateTests.Run(Assert);
             Feedback4GeometryTests.Run(Assert);
             StampPreviewTests.Run(Assert);
+            BillboardStampPreviewTests.Run(Assert);
             HotkeyHintTests.Run((name, condition) => Assert(name, condition));
             InlineTextEditSafetyTests.Run((name, condition) => Assert(name, condition));
             CaptureViewportPlacementTests.Run((name, condition) => Assert(name, condition));
