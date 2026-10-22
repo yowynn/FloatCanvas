@@ -126,7 +126,6 @@ internal sealed class PrivateKeyboardBridge
         var foreground = GetForegroundWindow();
         var focus = GetFocus();
         if (!IsOurWindow(foreground) || !IsOurWindow(focus)) return false;
-        if (packet.VirtualKey == 0x09) return true;
 
         uint flags = packet.Flags;
         uint keyData = 1 | ((packet.ScanCode & 0xff) << 16) | ((flags & 1) << 24) |

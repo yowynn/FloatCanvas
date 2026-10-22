@@ -176,14 +176,7 @@ internal sealed partial class DesktopSession
             if (_toolbarMenu.IsOpen) _toolbarMenu.Items.OfType<Controls.MenuItem>().FirstOrDefault()?.Focus();
         });
         _toolbarLauncher.MenuRequested += () => { if (!_toolOptionsPinned) CloseToolOptions(); _toolbarMenu.IsOpen = true; };
-        _toolbarLauncher.ToggleExpandedRequested += () =>
-        {
-            _settings.ToolbarExpanded = !_settings.ToolbarExpanded;
-            _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;
-            RefreshBoundFileIndicator();
-            if (_settings.ToolbarExpanded)
-                window.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (window.IsVisible) { PlaceToolbar(); SaveToolbarPosition(); } });
-        };
+        _toolbarLauncher.ToggleVisibilityRequested += () => RunUiAction(ToggleCanvasVisibility);
         _toolbarLauncher.DragRequested += () =>
         {
             _toolbarMenu.IsOpen = false;
@@ -198,8 +191,10 @@ internal sealed partial class DesktopSession
         window.SizeChanged += (_, _) => RepositionToolOptions();
         window.Deactivated += (_, _) => { _newCanvasButton.CancelConfirmation(); QueueToolOptionsFocusCheck(); };
         window.IsVisibleChanged += (_, _) => { if (!window.IsVisible) { _newCanvasButton.CancelConfirmation(); CloseToolOptions(); _toolbarMenu.IsOpen = false; _moreToolsMenu.IsOpen=false; _toolbarLauncher.CancelPendingGestures(); } };
+        AppInputPolicy.AttachToolbarToggle(window, () => OnKey(0x09));
         window.PreviewKeyDown += (_, e) =>
         {
+            if(e.Handled)return;
             if(IsOptionsInput(e.OriginalSource as DependencyObject))return;
             if (e.OriginalSource is ToolbarLauncher && e.Key is Key.Enter or Key.Space or Key.Apps) return;
             var key = KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key);
@@ -209,6 +204,17 @@ internal sealed partial class DesktopSession
         };
         window.Closing += (_, e) => { if (!_disposed) { e.Cancel = true; RunUiAction(() => SetEditing(false)); } };
         return window;
+    }
+
+    private void ToggleToolbarExpanded()
+    {
+        if (_disposed || DocumentOperationBusy || !_host.IsEditing || !_toolbar.IsVisible) return;
+        _settings.ToolbarExpanded = !_settings.ToolbarExpanded;
+        _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;
+        RefreshToolbarExpansionMenuItem();
+        RefreshBoundFileIndicator();
+        if (_settings.ToolbarExpanded)
+            _toolbar.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_toolbar.IsVisible) { PlaceToolbar(); SaveToolbarPosition(); } });
     }
 
     private void OpenMoreTools()

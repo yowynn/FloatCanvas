@@ -22,12 +22,12 @@ internal static class LauncherGestureStateTests
         assert("second launcher down consumes the pending first click", state.PointerDown(13, 24, 1500) == LauncherGestureAction.None &&
             !state.HasPendingClick && state.PendingClickDeadlineMs is null);
         assert("double-click decision waits for release so a drag can win", state.AdvanceTime(2000) == LauncherGestureAction.None);
-        assert("second launcher up toggles expansion once with no later menu", state.PointerUp(13, 24, 2010) == LauncherGestureAction.ToggleExpanded &&
+        assert("second launcher up toggles visibility once with no later menu", state.PointerUp(13, 24, 2010) == LauncherGestureAction.ToggleVisibility &&
             state.PointerUp(13, 24, 2020) == LauncherGestureAction.None && state.AdvanceTime(3000) == LauncherGestureAction.None && Idle(state));
 
         Click(state, 0, 0, 4000);
         state.PointerDown(6, 10, 4650);
-        assert("double-click accepts the supplied time and rectangle boundaries", state.PointerUp(6, 10, 4670) == LauncherGestureAction.ToggleExpanded && Idle(state));
+        assert("double-click accepts the supplied time and rectangle boundaries", state.PointerUp(6, 10, 4670) == LauncherGestureAction.ToggleVisibility && Idle(state));
 
         Click(state, 0, 0, 5000);
         assert("a late second press completes the earlier single click", state.PointerDown(0, 0, 5651) == LauncherGestureAction.OpenMenu);
@@ -111,7 +111,7 @@ internal static class LauncherGestureStateTests
         assert("launcher gesture honors a different supplied double-click interval", alternate.PendingClickDeadlineMs == 1500 &&
             alternate.AdvanceTime(1499) == LauncherGestureAction.None);
         alternate.PointerDown(29, 39, 1499);
-        assert("launcher gesture honors a different supplied double-click rectangle", alternate.PointerUp(29, 39, 1510) == LauncherGestureAction.ToggleExpanded && Idle(alternate));
+        assert("launcher gesture honors a different supplied double-click rectangle", alternate.PointerUp(29, 39, 1510) == LauncherGestureAction.ToggleVisibility && Idle(alternate));
     }
 
     private static LauncherGestureState NewState() => new(650, 7, 11, 12, 20);

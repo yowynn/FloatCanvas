@@ -11,6 +11,7 @@ internal static class ToolOptionsKeyboardRoute
 {
     internal static void Attach(Window window, Func<bool> dismissOneLevel, Func<bool> colorPickerOpen, Action<int> command)
     {
+        AppInputPolicy.AttachToolbarToggle(window, () => command(0x09), () => !colorPickerOpen());
         window.PreviewKeyDown += (_, e) =>
         {
             var source = e.OriginalSource as DependencyObject ?? Keyboard.FocusedElement as DependencyObject;

@@ -7,7 +7,7 @@ public enum LauncherGestureAction
 {
     None,
     OpenMenu,
-    ToggleExpanded,
+    ToggleVisibility,
     BeginDrag
 }
 
@@ -82,7 +82,7 @@ public sealed class LauncherGestureState
             pendingClicks.Clear();
             return LauncherGestureAction.None;
         }
-        if (wasSecondClick) return LauncherGestureAction.ToggleExpanded;
+        if (wasSecondClick) return LauncherGestureAction.ToggleVisibility;
         pendingClicks.Add(press);
         return AdvanceTime(nowMs);
     }

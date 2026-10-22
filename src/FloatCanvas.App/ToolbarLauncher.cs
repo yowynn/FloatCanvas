@@ -9,7 +9,7 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>One accessible launcher with mutually exclusive menu, fold and window-drag gestures.</summary>
+/// <summary>One accessible launcher with mutually exclusive primary, visibility and window-drag gestures.</summary>
 internal sealed class ToolbarLauncher : System.Windows.Controls.Button
 {
     internal const double ArtworkSize = 100;
@@ -18,7 +18,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
     private LauncherGestureState gestures = null!;
     private readonly DispatcherTimer clickTimer;
     public event Action? MenuRequested;
-    public event Action? ToggleExpandedRequested;
+    public event Action? ToggleVisibilityRequested;
     public event Action? DragRequested;
 
     public ToolbarLauncher()
@@ -119,7 +119,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
         switch (action)
         {
             case LauncherGestureAction.OpenMenu: MenuRequested?.Invoke(); break;
-            case LauncherGestureAction.ToggleExpanded: ToggleExpandedRequested?.Invoke(); break;
+            case LauncherGestureAction.ToggleVisibility: ToggleVisibilityRequested?.Invoke(); break;
             case LauncherGestureAction.BeginDrag:
                 clickTimer.Stop();
                 if (IsMouseCaptured) ReleaseMouseCapture();

@@ -25,7 +25,7 @@ The toolbar separates gray New and red-broom Clear. New confirms according to fi
 - Opt into **Lock grid size while adjusting** to retain cell spacing while fractional coverage counts update live. The origin still follows the central handle, so the lock does not fix grid intersections to layer anchors. Explicitly editing the flat grid size establishes new counts and a reference frame, replacing the previous perspective deformation.
 - Enable Depth-priority occlusion in Layers on a perspective canvas to order billboards by anchor depth and interleave canvas color, the grid and Surface content. Only identical depth uses layer order. The option is off by default and saved with the canvas.
 - Hold `Shift` while moving to constrain movement to a canvas X/Y axis through the original drag start. A billboard's body moves its anchor; its center handle adjusts elevation vertically on screen, including negative elevation, and corner resizing uses the center as its origin.
-- Reopen the welcome page from the main menu or system tray. The floating logo is on by default in pass-through mode, with click-to-draw, double-click visibility and an independent switch.
+- Reopen the welcome page from the main menu or system tray. The smaller floating logo with a pass-through indicator is on by default in pass-through mode, with click-to-draw, double-click visibility and an independent switch.
 - A stamp library with editable and flattened stamps, search, continuous scrolling, drag reordering and a ten-slot shelf ordered `1`–`9`, then `0`. Pin by dragging onto a slot or selecting a slot and clicking an entry. Editable groups retain animation when the library is reopened and the stamp is placed again.
 - Rectangle, ellipse and lasso captures place a static image at the selected position, using the background, background + canvas, or transparent canvas content. Surface rectangles/ellipses follow the canvas plane; lassos trace screen contours. Billboard captures choose depth first and retain their captured pixel appearance. Includes single-image cropping, live blur and pixelation, and PNG/JPEG export. New canvas and Clear current canvas are separate actions; clearing supports Undo and retains the file association.
 - Self-contained, editable `.floatcanvas` projects, Windows file-type registration and handoff to an already running instance; automatic recovery saves, a blank canvas on normal startup, and manual workspace-history restoration. Optional sign-in startup is off by default.
@@ -52,11 +52,12 @@ Click the version at the bottom of the welcome screen to open **Check for update
 | --- | --- |
 | `` Ctrl+` `` | Switch edit/pass-through; annotations remain visible while you use the application underneath |
 | `` Ctrl+Shift+` `` | Hide canvas / Show canvas; keep the current edit/pass-through mode |
+| `Tab` | Expand/collapse the toolbar while editing; text fields, menus and dialogs keep their own key behavior |
 | `Esc` | Cancel the operation or close child/unpinned panels first; then enter pass-through |
 | `Ctrl+Z` / `Ctrl+Y` | Undo/redo |
 | `Ctrl+S` / `Ctrl+O` | Save/open an editable project |
 
-Click the app icon on the left of the toolbar for the main menu, double-click to expand/collapse, or drag it to move the toolbar. Settings and exit commands are available through the main menu and system tray. See the [user guide](Docs/User-Guide.en.md) for more.
+Click the app icon on the left of the toolbar to open the main menu after a short delay, or right-click to open it immediately. Double-click the logo in either edit or pass-through mode to show/hide the canvas, and drag it to move it. Press `Tab` or use the main menu's first item, **Collapse toolbar / Expand toolbar**, to fold or unfold the toolbar; right-click still opens the menu when folded. Clicking or right-clicking the pass-through logo only enters editing and does not open the main menu. Settings and exit commands are available through the main menu and system tray. See the [user guide](Docs/User-Guide.en.md) for more.
 
 Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` rectangle, `O` ellipse, `T` text, `N` numbered marker, `S` symbol, `J` emoji and `C` Canvas. `A` remains an arrow compatibility shortcut; `M` opens **More**, main-keyboard `-` opens the stamp library, and `+` saves the selection as a stamp. Letters remain normal text input while editing text.
 

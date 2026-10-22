@@ -39,6 +39,7 @@ Text is edited directly on the canvas. Changing windows, layers or tools, or ent
 | --- | --- |
 | `` Ctrl+` `` | Switch between edit and pass-through |
 | `` Ctrl+Shift+` `` | Hide canvas / Show canvas; keep the current edit/pass-through mode |
+| `Tab` | Expand/collapse the toolbar while editing; text fields, menus and dialogs keep their own key behavior |
 | `Esc` | Cancel the operation or close the color child panel, then an unpinned panel; finally enter pass-through |
 | `Ctrl+Z` / `Ctrl+Y` | Undo/redo; `Ctrl+Shift+Z` also redoes |
 | `Ctrl+A` | Select all editable elements |
@@ -78,7 +79,9 @@ Choose **Open welcome page** from the toolbar menu or system tray to reopen it. 
 
 Settings are grouped into **General**, **Canvas & history**, **Shortcuts**, and **System**. Each category scrolls independently while Cancel and Save stay at the bottom. Cancel discards draft changes. An invalid history limit reveals its category and an explanation. Windows integration actions run only when their specific buttons are selected.
 
-**Show floating logo** is on by default. Toggle it from the main menu, system tray, or **Settings → General**. In pass-through mode, click or right-click the logo to draw; double-click to show or hide the canvas and update its eyes. The logo does not take focus from your current application.
+**Show floating logo** is on by default. Toggle it from the main menu, system tray, or **Settings → General**. In pass-through mode, a single click waits for double-click detection before entering drawing mode; right-click enters immediately. Neither opens the main menu. Double-click has the same behavior in both modes: show or hide the canvas and update the eyes, preserving the current mode and toolbar expansion. Showing or dragging the logo does not take focus from your current application.
+
+The pass-through logo is 75% of the editing logo's size and carries a **Pass-through** indicator, so the modes remain distinguishable when the editing toolbar is collapsed. The indicator describes the current state and is not a button; open/closed eyes only indicate whether the canvas is visible/hidden.
 
 Drag the logo to move it. Its position is kept during this run. Small pointer movements still count as a click or double-click.
 
@@ -124,7 +127,8 @@ The idle Stamp library button has the same gray background as New stamp. Using a
 The upper-right controls are grouped in this order: the Canvas tool; import, capture and crop; Properties and Layers; undo/redo, blank canvas, opacity, visibility and Done. Separators divide these groups. Crop is enabled only for one selected editable image and still shows its tooltip when disabled. An open eye means the canvas is visible; a closed eye with an amber accent means it is hidden. The mascot icon also closes its eyes while the canvas is hidden; only its eyes change, and the tray and taskbar icons switch with it. The hover tooltip describes the next action. Open Blur and Pixelate through More. The opacity slider occupies two button widths. The status readout follows the light/dark theme, truncates long messages and scrolls on hover. The toolbar starts centered on the primary screen with the crown at the screen's top edge. Window positions, sizes and toolbar expansion are remembered for the current session and reset on restart; custom shortcuts and other preferences remain saved.
 
 - **Click the app icon:** open the main menu. A single click waits for the system double-click interval to avoid conflicting actions; right-click opens the menu immediately.
-- **Double-click the app icon:** expand/collapse the toolbar. The collapsed toolbar keeps only the icon.
+- **Double-click the app icon:** show/hide the canvas and update its eyes; preserve editing mode and toolbar expansion.
+- **Press `Tab` or choose the main menu's first item:** expand/collapse the toolbar. The item shows **Collapse toolbar** or **Expand toolbar** for the current state, with a `Tab` hint. The collapsed toolbar keeps only the icon; right-click it to reopen the menu and expand. `Tab` works during ordinary editing and does not repeat while held; text editing, input fields, menus and dialogs keep their own `Tab` behavior.
 - **Drag the app icon:** move the toolbar and remember its position.
 - **Click a tool icon:** select the tool. Hover for its name and shortcut; the main menu's **Drawing tools** and **Images and effects** sections also offer tool commands.
 - **Select the current tool again:** click the same icon or press its shortcut again to open/close its options. Switching tools while options are open updates the panel for the new tool.

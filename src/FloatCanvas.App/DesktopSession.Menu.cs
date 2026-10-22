@@ -7,11 +7,18 @@ namespace FloatCanvas.App;
 internal sealed partial class DesktopSession
 {
     private Controls.ContextMenu _toolbarMenu = null!;
+    private Controls.MenuItem _toolbarExpansionMenuItem = null!;
     private readonly List<Controls.MenuItem> _cropMenuItems = [];
 
     private Controls.ContextMenu CreateLauncherMenu()
     {
         var menu = new Controls.ContextMenu();
+        _toolbarExpansionMenuItem = new Controls.MenuItem { InputGestureText = "Tab" };
+        _toolbarExpansionMenuItem.Click += (_, _) => RunUiAction(ToggleToolbarExpanded);
+        RefreshToolbarExpansionMenuItem();
+        menu.Items.Add(_toolbarExpansionMenuItem);
+        menu.Items.Add(new Controls.Separator());
+        menu.Opened += (_, _) => RefreshToolbarExpansionMenuItem();
         Controls.MenuItem Group(string key, string geometry)
         {
             var group = new Controls.MenuItem { Header = L.Get(key), Icon = CommandGlyphs.Create(geometry) }; menu.Items.Add(group); return group;
@@ -79,6 +86,12 @@ internal sealed partial class DesktopSession
         var exit = new Controls.MenuItem { Header = L.Get("Desktop.Exit"), Icon = CommandGlyphs.Create(CommandGlyphs.Exit) };
         exit.Click += (_, _) => _ = ExitAfterSnapshotAsync(); menu.Items.Add(exit);
         return menu;
+    }
+
+    private void RefreshToolbarExpansionMenuItem()
+    {
+        _toolbarExpansionMenuItem.Header = L.Get(_settings.ToolbarExpanded ? "Toolbar.Collapse" : "Toolbar.Expand");
+        _toolbarExpansionMenuItem.Icon = CommandGlyphs.Create(_settings.ToolbarExpanded ? CommandGlyphs.CollapseToolbar : CommandGlyphs.ExpandToolbar);
     }
 
     private Controls.MenuItem ToolMenuItem(EditorTool tool)

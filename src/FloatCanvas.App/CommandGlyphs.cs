@@ -58,6 +58,8 @@ internal static class CommandGlyphs
     internal const string Exit = "M9,2 L2,2 L2,14 L9,14 M7,8 L16,8 M12,4 L16,8 L12,12";
     internal const string Display = "M1,2 H15 V11 H1 Z M8,11 V15 M5,15 H11";
     internal const string Windows = "M2,1 H11 V11 H2 Z M5,5 H15 V15 H5 M2,5 H11 M11,9 H15";
+    internal const string CollapseToolbar = "M7,3 L2,8 L7,13 M14,3 L9,8 L14,13";
+    internal const string ExpandToolbar = "M2,3 L7,8 L2,13 M9,3 L14,8 L9,13";
 
     internal static string Tool(EditorTool tool) => tool switch
     {

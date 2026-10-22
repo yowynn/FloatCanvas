@@ -448,6 +448,11 @@ internal sealed partial class DesktopSession : IDisposable
     private void OnKey(int key)
     {
         if (!EditorShortcutPolicy.IsCommand(key, OverlayHost.CurrentModifiers)) return;
+        if (key == 0x09)
+        {
+            if (_inlineText is null && _layers?.IsRenaming != true) ToggleToolbarExpanded();
+            return;
+        }
         if(_inlineText is not null&&key is 0x1B or 0x0D)
         {FinishInlineText(key==0x0D,selectEdited:key==0x0D);return;}
         if (key == 0x1B && _editor.Tool == EditorTool.Canvas)

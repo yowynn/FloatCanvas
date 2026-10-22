@@ -8,5 +8,6 @@
   "Settings.System": { "zh": "性能与系统", "en": "System" },
   "Settings.SystemHint": { "zh": "配置性能和系统集成。", "en": "Configure performance and system integration." },
   "Settings.PassThroughLauncher": { "zh": "显示浮动图标", "en": "Show floating logo" },
+  "Settings.PassThroughState": { "zh": "穿透", "en": "Pass-through" },
   "Settings.PassThroughLauncherHint": { "zh": "单击或右键进入绘画，双击切换画布显隐。", "en": "Click or right-click to draw; double-click to show or hide the canvas." }
 }

@@ -68,6 +68,7 @@ internal sealed class LayersWindow : Wpf.Window
         Closing += (_, e) => { e.Cancel = true; CommitRename(); CancelDrag(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         Deactivated += (_, _) => { if (SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending != true) { CommitRename(); CancelDrag(); } };
         IsVisibleChanged += (_, _) => { if (!IsVisible) { CommitRename(); CancelDrag(); } };
+        AppInputPolicy.AttachToolbarToggle(this, () => CommandKey?.Invoke(0x09), () => !IsRenaming && this.canMutate());
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;

@@ -70,6 +70,7 @@ internal static class Program
             if (args.Contains("--shell-integration-only")) { ShellIntegrationTests.Run(Assert); return 0; }
             if (args.Contains("--shell-runtime-only")) { ShellRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--launcher-menu-only")) { LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert); return 0; }
+            if (args.Contains("--launcher-tab-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "launcher-tab"); return 0; }
             if (args.Contains("--canvas-projection-preview")) { CanvasProjectionRuntimeFixture.Run(Assert, true); return 0; }
             if (args.Contains("--canvas-projection-runtime-only")) { CanvasProjectionRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--perspective-input-only")) { PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert); PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert); GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert); return 0; }

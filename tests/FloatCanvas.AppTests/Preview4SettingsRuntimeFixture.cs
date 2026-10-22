@@ -19,12 +19,16 @@ internal static class Preview4SettingsRuntimeFixture
     {
         var settings = Field<UserSettings>(session, "_settings");
         check("disabled mascot creates no pass-through window", Field<PassThroughLauncherWindow?>(session, "_passThroughLauncher") is null);
-        var toolbarPoint = Field<ToolbarLauncher>(session, "_toolbarLauncher").PointToScreen(new Point());
+        var toolbarLauncher = Field<ToolbarLauncher>(session, "_toolbarLauncher");
+        var toolbarAnchor = toolbarLauncher.PointToScreen(new Point(ToolbarLauncher.ArtworkSize, ToolbarLauncher.ArtworkSize));
         settings.ShowPassThroughLauncher = true;
         Invoke(session, "SetEditing", false, false); Pump();
         var mascot = Field<PassThroughLauncherWindow>(session, "_passThroughLauncher");
-        check("pass-through displays the same mascot at the toolbar position without canvas input", mascot.IsVisible && !toolbar.IsVisible && !host.IsEditing &&
-            Near(mascot.PointToScreen(new Point()), toolbarPoint) && ReferenceEquals(((Image)mascot.Launcher.Content).Source, ((Image)Field<ToolbarLauncher>(session, "_toolbarLauncher").Content).Source));
+        check("pass-through keeps the mascot eye art and toolbar bottom-right anchor without canvas input", mascot.IsVisible && !toolbar.IsVisible && !host.IsEditing &&
+            Near(mascot.PointToScreen(new Point(mascot.ActualWidth, mascot.ActualHeight)), toolbarAnchor) &&
+            ReferenceEquals(((Image)mascot.Launcher.Content).Source, ((Image)toolbarLauncher.Content).Source));
+        check("pass-through shrinks the actual window and hit surface to three quarters", Math.Abs(mascot.ActualWidth - 75) < 1 && Math.Abs(mascot.ActualHeight - 75) < 1 &&
+            mascot.Launcher.TransformToAncestor((Visual)mascot.Content).TransformBounds(new Rect(mascot.Launcher.RenderSize)).Size == new Size(75, 75));
         nint handle = new WindowInteropHelper(mascot).Handle;
         check("mascot stays non-activating while accepting mouse clicks", !mascot.ShowActivated && !mascot.Focusable && !mascot.Launcher.Focusable &&
             ((long)GetWindowLongPtr(handle, -20) & 0x08000080L) == 0x08000080L && SendMessage(handle, 0x21, 0, 0) == 3);
@@ -34,7 +38,8 @@ internal static class Preview4SettingsRuntimeFixture
         var expected = mascot.PointToScreen(new Point());
         toolbar.Left += 20; toolbar.Top += 14; Invoke(session, "SaveToolbarPosition"); Invoke(session, "RefreshPassThroughLauncher"); Pump();
         check("a bound mascot follows later toolbar movement", !mascot.IsDetached && !Near(mascot.PointToScreen(new Point()), expected) &&
-            Near(mascot.PointToScreen(new Point()), Field<ToolbarLauncher>(session, "_toolbarLauncher").PointToScreen(new Point())));
+            Near(mascot.PointToScreen(new Point(mascot.ActualWidth, mascot.ActualHeight)),
+                toolbarLauncher.PointToScreen(new Point(ToolbarLauncher.ArtworkSize, ToolbarLauncher.ArtworkSize))));
         var gestures = Field<LauncherGestureState>(mascot.Launcher, "gestures");
         long now = Environment.TickCount64;
         gestures.PointerDown(10, 10, now);

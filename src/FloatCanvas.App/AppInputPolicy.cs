@@ -6,6 +6,20 @@ namespace FloatCanvas.App;
 internal static class AppInputPolicy
 {
     private static bool initialized;
+    internal static void AttachToolbarToggle(Window window, Action toggle, Func<bool>? canRoute = null)
+    {
+        // Tab navigation is suppressed globally. Only editor surfaces opt into the
+        // toolbar command, without borrowing Tab from their local input controls.
+        window.AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler((_, e) =>
+        {
+            if (e.Key != Key.Tab || canRoute?.Invoke() == false) return;
+            var source = e.OriginalSource as DependencyObject ?? Keyboard.FocusedElement as DependencyObject;
+            if (!EditorShortcutPolicy.ShouldRoute(0x09, Keyboard.Modifiers, source)) return;
+            e.Handled = true;
+            if (!e.IsRepeat) toggle();
+        }), handledEventsToo: true);
+    }
+
     internal static void Initialize()
     {
         if (initialized) return;

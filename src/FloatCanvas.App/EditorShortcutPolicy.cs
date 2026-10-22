@@ -12,6 +12,7 @@ internal static class EditorShortcutPolicy
 {
     internal static bool IsCommand(int key, OverlayModifiers modifiers)
     {
+        if (key == 0x09) return modifiers == OverlayModifiers.None;
         if ((modifiers & (OverlayModifiers.Alt | OverlayModifiers.Windows)) != 0) return false;
         if ((modifiers & OverlayModifiers.Control) != 0)
             return key is 0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F or 0x4E or 0x08 or 0x2E;

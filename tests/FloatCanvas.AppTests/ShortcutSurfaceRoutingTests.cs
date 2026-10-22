@@ -53,7 +53,7 @@ internal static class ShortcutSurfaceRoutingTests
             var ordinary = new[]
             {
                 Key.V, Key.E, Key.B, Key.H, Key.L, Key.R, Key.O, Key.T, Key.N, Key.S, Key.J, Key.A,
-                Key.M, Key.OemMinus, Key.OemPlus, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5,
+                Key.M, Key.Tab, Key.OemMinus, Key.OemPlus, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5,
                 Key.D6, Key.D7, Key.D8, Key.D9, Key.D0, Key.Enter, Key.Delete,
                 Key.Left, Key.Up, Key.Right, Key.Down
             };
@@ -91,7 +91,7 @@ internal static class ShortcutSurfaceRoutingTests
                 {
                     sources[surface].Panel.Children.Add(control);
                     SetModifiers(ModifierKeys.None);
-                    foreach (var key in new[] { Key.B, Key.D4, Key.OemMinus, Key.OemPlus, Key.Enter, Key.Delete, Key.Right }) ExpectLocal(surface, control, key);
+                    foreach (var key in new[] { Key.B, Key.Tab, Key.D4, Key.OemMinus, Key.OemPlus, Key.Enter, Key.Delete, Key.Right }) ExpectLocal(surface, control, key);
                     SetModifiers(ModifierKeys.Control);
                     foreach (var key in new[] { Key.Z, Key.Y, Key.A, Key.C, Key.V, Key.D, Key.G, Key.Back, Key.Delete }) ExpectLocal(surface, control, key);
                     foreach (var key in new[] { Key.S, Key.O, Key.N }) ExpectRoute(surface, control, key);
@@ -107,7 +107,7 @@ internal static class ShortcutSurfaceRoutingTests
             var list = (ListBox)typeof(LayersWindow).GetField("layers", Private)!.GetValue(layers)!;
             foreach (var key in new[] { Key.Left, Key.Up, Key.Right, Key.Down }) ExpectLocal(1, list, key);
             typeof(LayersWindow).GetMethod("BeginRename", Private)!.Invoke(layers, [first.Id]);
-            foreach (var key in new[] { Key.B, Key.D4, Key.Enter, Key.Delete }) ExpectLocal(1, sources[1].Button, key);
+            foreach (var key in new[] { Key.B, Key.Tab, Key.D4, Key.Enter, Key.Delete }) ExpectLocal(1, sources[1].Button, key);
             SetModifiers(ModifierKeys.Control);
             foreach (var key in new[] { Key.S, Key.O, Key.N })
             {

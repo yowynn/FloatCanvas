@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Media;
 using FloatCanvas.Windows;
 
 namespace FloatCanvas.App;
@@ -28,9 +29,11 @@ internal sealed partial class DesktopSession
             _passThroughLauncher.ToggleVisibilityRequested += () => RunUiAction(ToggleCanvasVisibility);
         }
         OverlayPoint origin;
+        DpiScale toolbarDpi;
         if (_toolbarPlaced && PresentationSource.FromVisual(_toolbarLauncher) is not null)
         {
             var point = _toolbarLauncher.PointToScreen(new Point()); origin = new(point.X, point.Y);
+            toolbarDpi = VisualTreeHelper.GetDpi(_toolbarLauncher);
         }
         else
         {
@@ -40,7 +43,8 @@ internal sealed partial class DesktopSession
             var target = _settings.ToolbarX is { } x && _settings.ToolbarY is { } y
                 ? _host.Monitors.FirstOrDefault(m => m.WorkArea.Contains(new OverlayPoint(x, y))) ?? primary : primary;
             origin = SessionWindowLayout.ToolbarOrigin(target, surface.DesiredSize.Width, surface.DesiredSize.Height, _settings.ToolbarX, _settings.ToolbarY);
+            toolbarDpi = new DpiScale(target.DpiX / 96d, target.DpiY / 96d);
         }
-        _passThroughLauncher.ShowAt(origin, _host.IsVisible);
+        _passThroughLauncher.ShowAt(origin, _host.IsVisible, toolbarDpi);
     }
 }

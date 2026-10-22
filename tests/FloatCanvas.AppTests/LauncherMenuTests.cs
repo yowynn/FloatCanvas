@@ -19,12 +19,22 @@ internal static class LauncherMenuTests
         {
             L.Initialize(language); AppTheme.Apply(theme);
             var session = (DesktopSession)RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
-            Set(session, "_settings", new UserSettings());
+            var settings = new UserSettings();
+            Set(session, "_settings", settings);
             Set(session, "_editor", new EditorController(new EditorSession()));
             Set(session, "_cropMenuItems", new List<Controls.MenuItem>());
             var menu = (Controls.ContextMenu)typeof(DesktopSession).GetMethod("CreateLauncherMenu", Private)!.Invoke(session, null)!;
             var entries = Descendants(menu).ToArray();
             string label = language + " " + theme;
+            var expansion = (Controls.MenuItem)menu.Items[0];
+            check(label + " the first main-menu item offers collapse with a separate Tab hint", Equals(expansion.Header, L.Get("Toolbar.Collapse")) &&
+                expansion.InputGestureText == "Tab" && expansion.Items.Count == 0);
+            settings.ToolbarExpanded = false;
+            typeof(DesktopSession).GetMethod("RefreshToolbarExpansionMenuItem", Private)!.Invoke(session, null);
+            check(label + " a collapsed toolbar offers expansion through the same first menu item", ReferenceEquals(menu.Items[0], expansion) &&
+                Equals(expansion.Header, L.Get("Toolbar.Expand")) && expansion.InputGestureText == "Tab");
+            settings.ToolbarExpanded = true;
+            typeof(DesktopSession).GetMethod("RefreshToolbarExpansionMenuItem", Private)!.Invoke(session, null);
             check(label + " menu has one settings entry and no duplicate shortcut visibility toggle",
                 entries.Count(item => Equals(item.Header, L.Get("Menu.Settings"))) == 1 &&
                 !entries.Any(item => Equals(item.Header, L.Get("Feedback3.Toolbar.ShowShortcutHints"))));

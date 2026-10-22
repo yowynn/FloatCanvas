@@ -21,14 +21,20 @@ internal static class ToolbarInteractionTests
             {
                 L.Initialize(language);
                 var launcher = new ToolbarLauncher();
-                int menus = 0, folds = 0, drags = 0;
+                int menus = 0, visibilityChanges = 0, drags = 0;
                 launcher.MenuRequested += () => menus++;
-                launcher.ToggleExpandedRequested += () => folds++;
+                launcher.ToggleVisibilityRequested += () => visibilityChanges++;
                 launcher.DragRequested += () => drags++;
                 var gestures = (LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(launcher)!;
                 gestures.PointerDown(10, 10, 1000); gestures.PointerUp(10, 10, 1010);
                 typeof(ToolbarLauncher).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(launcher, null);
-                assert(language + " keyboard/automation launcher entry opens one menu and cancels pending mouse gestures", menus == 1 && folds == 0 && drags == 0 && !gestures.HasPendingClick && !gestures.IsPointerDown);
+                assert(language + " keyboard/automation launcher entry opens one menu and cancels pending mouse gestures", menus == 1 && visibilityChanges == 0 && drags == 0 && !gestures.HasPendingClick && !gestures.IsPointerDown);
+                gestures.PointerDown(10, 10, 2000); gestures.PointerUp(10, 10, 2010);
+                gestures.PointerDown(10, 10, 2100);
+                var doubleClick = gestures.PointerUp(10, 10, 2110);
+                typeof(ToolbarLauncher).GetMethod("Execute", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(launcher, [doubleClick]);
+                assert(language + " a completed launcher double-click requests visibility only and leaves no delayed menu", visibilityChanges == 1 && menus == 1 && drags == 0 &&
+                    gestures.AdvanceTime(10000) == LauncherGestureAction.None && !gestures.HasPendingClick && !gestures.IsPointerDown);
                 assert(language + " launcher displays the adopted application resource with a delayed hint", launcher.Content is Controls.Image image &&
                     ReferenceEquals(image.Source, AppIcon.ToolbarImage) && launcher.Focusable && Controls.ToolTipService.GetInitialShowDelay(launcher) > 0 && !string.IsNullOrWhiteSpace(launcher.ToolTip as string) && Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(launcher)==false);
                 foreach (string name in new[] { "Open", "Save", "SaveAs", "Copy", "Paste", "Undo", "Redo", "Duplicate", "Delete", "PassThrough" })

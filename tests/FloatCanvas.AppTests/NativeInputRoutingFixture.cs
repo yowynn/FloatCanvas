@@ -57,7 +57,7 @@ internal static class NativeInputRoutingFixture
             var dispatch = Field<Action<KeyboardInputPacket, Action>>(host, "_dispatchPrivateKey");
             var library = Field<StampLibrary>(session, "_stampLibrary");
             string scenario = scenarioOverride ?? Environment.GetEnvironmentVariable("FLOATCANVAS_INPUT_CASE") ?? "all";
-            if (scenario is not ("feedback4-panels" or "feedback4-workspace" or "preview4-settings" or "preview4-menu" or "round2-stamps" or "move-into-view")) Task.Run(async () =>
+            if (scenario is not ("feedback4-panels" or "feedback4-workspace" or "preview4-settings" or "preview4-menu" or "round2-stamps" or "move-into-view" or "launcher-tab")) Task.Run(async () =>
             {
                 await library.LoadAsync();
                 var source = new EditorSession(new SceneDocument { Elements = [new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 30 }] });
@@ -205,6 +205,7 @@ internal static class NativeInputRoutingFixture
             if (scenario == "input-method-ui") InputMethodUiContextTests.Run(check, session, host, toolbar);
             if (scenario == "shortcut-matrix") ShortcutRoutingMatrixRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "aux-shortcut-runtime") AuxiliaryShortcutRuntimeTests.Run(check, session, host, toolbar, dispatch);
+            if (scenario == "launcher-tab") LauncherTabRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "feedback4-workspace") Feedback4Workspace(check, session, host, toolbar, editor);
             if (scenario == "preview4-settings") Preview4SettingsRuntimeFixture.Run(check, session, host, toolbar, action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
             if (scenario == "preview4-menu") Preview4MenuRuntimeFixture.Run(check, session, host, toolbar);
@@ -548,9 +549,7 @@ internal static class NativeInputRoutingFixture
         double left = options.Left + 32, top = options.Top + 18; options.Left = left; options.Top = top; Pump();
         toolbar.Left += 29; Invoke("AnchorToolOptions"); Pump();
         check("moving the toolbar preserves the manually placed options window", options.IsVisible && Math.Abs(options.Left - left) < 1 && Math.Abs(options.Top - top) < 1);
-        var launcher = Field<ToolbarLauncher>(session, "_toolbarLauncher");
-        var fold = (Action)typeof(ToolbarLauncher).GetField("ToggleExpandedRequested", PrivateInstance)!.GetValue(launcher)!;
-        fold(); Pump();
+        Invoke("ToggleToolbarExpanded"); Pump();
         check("collapsing the toolbar preserves the independently positioned options window", options.IsVisible && Math.Abs(options.Left - left) < 1 && Math.Abs(options.Top - top) < 1 && !Field<UserSettings>(session, "_settings").ToolbarExpanded);
 
         Field<Button>(field, "button").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
@@ -765,9 +764,21 @@ internal static class NativeInputRoutingFixture
         var bubble=Field<BoundFileIndicator>(session,"_boundFileIndicator");
         check("bound-file speech bubble shows the filename and full-path tooltip",bubble.Visibility==Visibility.Visible&&Equals(bubble.ToolTip,projectPath)&&System.Windows.Automation.AutomationProperties.GetName(bubble)==Path.GetFileName(projectPath));
         var launcher=Field<ToolbarLauncher>(session,"_toolbarLauncher");
-        var fold=(Action)typeof(ToolbarLauncher).GetField("ToggleExpandedRequested",PrivateInstance)!.GetValue(launcher)!;
-        fold();Pump();check("folding the production toolbar also hides the filename bubble",bubble.Visibility==Visibility.Collapsed);
-        fold();Pump();check("expanding the toolbar restores the filename bubble",bubble.Visibility==Visibility.Visible);
+        var visibility=(Action)typeof(ToolbarLauncher).GetField("ToggleVisibilityRequested",PrivateInstance)!.GetValue(launcher)!;
+        bool wasVisible=host.IsVisible;
+        visibility();Pump();
+        check("editing logo double-click changes only canvas visibility without folding the toolbar",host.IsVisible!=wasVisible&&host.IsEditing&&
+            Field<UserSettings>(session,"_settings").ToolbarExpanded&&Field<FrameworkElement>(session,"_toolbarExpandedContent").Visibility==Visibility.Visible);
+        var expansion=(MenuItem)Field<ContextMenu>(session,"_toolbarMenu").Items[0];
+        expansion.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Pump();
+        check("the first menu item folds the toolbar and filename bubble while preserving canvas visibility and editing",bubble.Visibility==Visibility.Collapsed&&
+            !Field<UserSettings>(session,"_settings").ToolbarExpanded&&host.IsVisible!=wasVisible&&host.IsEditing&&
+            Equals(expansion.Header,FloatCanvas.Localization.AppText.Get("Toolbar.Expand"))&&expansion.InputGestureText=="Tab");
+        expansion.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Pump();
+        check("the same first menu item restores the toolbar and filename bubble without changing visibility or editing",bubble.Visibility==Visibility.Visible&&
+            Field<UserSettings>(session,"_settings").ToolbarExpanded&&host.IsVisible!=wasVisible&&host.IsEditing&&
+            Equals(expansion.Header,FloatCanvas.Localization.AppText.Get("Toolbar.Collapse")));
+        visibility();Pump();
         var rebound=Field<EditorSession>(session,"_live");int beforeDetachUndo=rebound.UndoCount;
         rebound.Add(new(){Kind=ElementKind.Ellipse,Width=10,Height=10});Pump();Invoke("RefreshBoundFileIndicator");
         check("bound-file bubble marks unsaved edits",System.Windows.Automation.AutomationProperties.GetItemStatus(bubble)==FloatCanvas.Localization.AppText.Get("Project.Unsaved"));
