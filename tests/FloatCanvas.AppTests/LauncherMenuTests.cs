@@ -25,6 +25,9 @@ internal static class LauncherMenuTests
             Set(session, "_cropMenuItems", new List<Controls.MenuItem>());
             var menu = (Controls.ContextMenu)typeof(DesktopSession).GetMethod("CreateLauncherMenu", Private)!.Invoke(session, null)!;
             var entries = Descendants(menu).ToArray();
+            var artwork = entries.Select(item => VisualDescendants((Wpf.DependencyObject)item.Icon)
+                .OfType<System.Windows.Shapes.Path>().Single().Data.ToString()).ToArray();
+            check(language + " every distinct main-menu command and category has its own artwork", artwork.Distinct().Count() == artwork.Length);
             string label = language + " " + theme;
             var expansion = (Controls.MenuItem)menu.Items[0];
             check(label + " the first main-menu item offers collapse with a separate Tab hint", Equals(expansion.Header, L.Get("Toolbar.Collapse")) &&

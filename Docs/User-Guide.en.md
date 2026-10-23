@@ -123,6 +123,8 @@ The App's language selection applies to its own toolbar, menus, settings, messag
 
 ## Toolbar and tool options
 
+Menu categories, Welcome, Settings and the floating logo each have distinct icons. Matching tray commands use the same artwork.
+
 More tools shows the active Blur or Mosaic icon. Selecting another tool restores its three-dot icon.
 
 You can clear a hidden canvas. Showing it refreshes the retained display first, preventing old content from flashing back.

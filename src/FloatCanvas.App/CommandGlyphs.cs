@@ -11,6 +11,14 @@ namespace FloatCanvas.App;
 /// <summary>Command artwork shared by menus and their matching toolbar actions. No fallback glyph.</summary>
 internal static class CommandGlyphs
 {
+    internal const string File = "M3,1 H10 L14,5 V15 H3 Z M10,1 V5 H14 M6,8 H11 M6,11 H10";
+    internal const string EditObjects = "M1,1 H4 V4 H1 Z M12,1 H15 V4 H12 Z M1,12 H4 V15 H1 Z M12,12 H15 V15 H12 Z M4,2.5 H12 M2.5,4 V12 M13.5,4 V12 M4,13.5 H12 M6,6 H10 V10 H6 Z";
+    internal const string DrawingTools = "M8,1 C3,1 1,4 1,8 C1,12 4,15 8,15 H10 C12,15 12,12 10,12 H9 C7,12 8,9 11,9 H13 C17,8 14,1 8,1 Z M5,4 H5.1 M10,4 H10.1 M4,8 H4.1";
+    internal const string ImageTools = "M1,1 H12 V10 H1 Z M2,8 L5,5 L8,8 M9,4 H9.1 M8,15 L15,8 M12,8 H15 V11";
+    internal const string CanvasTools = "M2,3 H14 V14 H2 Z M2,7 H14 M6,3 V14 M0,1 H4 M0,1 V5 M12,16 H16 V12";
+    internal const string Welcome = "M1,7 L8,1 L15,7 M3,6 V15 H13 V6 M6,15 V10 H10 V15";
+    internal const string Settings = "M6,1 H10 L10.5,4 L13,3 L15,6 L13,8 L15,10 L13,13 L10.5,12 L10,15 H6 L5.5,12 L3,13 L1,10 L3,8 L1,6 L3,3 L5.5,4 Z M8,5 A3,3 0 1 1 7.99,5";
+    internal const string FloatingLogo = "M1,4 L4,7 L8,2 L12,7 L15,4 L13,13 H3 Z M3,15 H13";
     internal const string NewCanvas = "M3,1 L10,1 L14,5 L14,15 L3,15 Z M10,1 L10,5 L14,5 M6,10 L11,10 M8.5,7.5 L8.5,12.5";
     internal const string ClearCanvas = "M13.5,1.5 L8.8,6.2 M7.2,5.8 Q9,5.3 10.2,7.1 Q11.4,9.6 9.4,13.1 Q5.5,15.7 1.5,10 Q5.4,10 7.2,5.8 Z M4.1,12.7 L6.6,10.6 M6.8,14 L8.2,11.5";
     internal const string Open = "M1,4 H6 L8,6 H15 L13,14 H1 Z M1,4 V2 H6 L8,4 H13 V6";

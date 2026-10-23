@@ -199,18 +199,18 @@ internal sealed partial class DesktopSession : IDisposable
             _tray.ShowBalloonTip(4000,L.Get("Desktop.InputReleasedTitle"),message,Forms.ToolTipIcon.Info);
         };
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.ToggleEditing"), CommandGlyphs.Tool(EditorTool.Freehand), (_, _) =>
+        menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.ToggleEditing"), CommandGlyphs.EditObjects, (_, _) =>
             _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, ToggleEditing)));
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.ToggleVisibility"), CommandGlyphs.Visibility, (_, _) => ToggleCanvasVisibility()));
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.OpenProject"), CommandGlyphs.Open, async (_, _) => await RunCommand(OpenProjectAsync)));
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.RecoveryHistory"), CommandGlyphs.History, async (_, _) => await RunCommand(RestoreWorkspaceHistoryAsync)));
-        menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.HotkeySettings"), CommandGlyphs.Properties, (_, _) => RunUiAction(ShowHotkeySettings)));
+        menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.HotkeySettings"), CommandGlyphs.Settings, (_, _) => RunUiAction(ShowHotkeySettings)));
         if (_host.UsesSystemInput && protection is not null)
             menu.Items.Add(CommandGlyphs.TrayItem(L.Get("OverlaySafety.DesktopCommand"), CommandGlyphs.Windows,
                 (_, _) => RequestDesktopFallback("User selected ordinary desktop mode.")));
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.Exit"), CommandGlyphs.Exit, async (_, _) => await ExitAfterSnapshotAsync()));
-        menu.Items.Insert(4, CommandGlyphs.TrayItem(L.Get("Welcome.Open"), CommandGlyphs.Windows, (_, _) => RunUiAction(() => OpenWelcome(true))));
-        var floatingLogo = CommandGlyphs.TrayItem(L.Get("Settings.PassThroughLauncher"), CommandGlyphs.Visibility, (_, _) => RunUiAction(ToggleFloatingLogo));
+        menu.Items.Insert(4, CommandGlyphs.TrayItem(L.Get("Welcome.Open"), CommandGlyphs.Welcome, (_, _) => RunUiAction(() => OpenWelcome(true))));
+        var floatingLogo = CommandGlyphs.TrayItem(L.Get("Settings.PassThroughLauncher"), CommandGlyphs.FloatingLogo, (_, _) => RunUiAction(ToggleFloatingLogo));
         menu.Items.Insert(5, floatingLogo);
         menu.Opening += (_, _) => floatingLogo.Checked = _settings.ShowPassThroughLauncher;
         _tray.ContextMenuStrip = menu;

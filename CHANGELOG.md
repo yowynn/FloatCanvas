@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 为主菜单各功能分组、欢迎页、设置和悬浮头像分配独立图标，消除不同功能复用画笔、窗口、属性或眼睛图标的情况；托盘同步相同命令图标。
+- Give menu categories, Welcome, Settings and the floating logo distinct artwork; share each command's matching icon with the tray.
+
 - “更多工具”在选中模糊或马赛克时显示该工具的实时图标，选择其他工具后恢复三点图标。
 - Show the active Blur or Mosaic artwork on More tools; restore three dots when another tool is selected.
 
