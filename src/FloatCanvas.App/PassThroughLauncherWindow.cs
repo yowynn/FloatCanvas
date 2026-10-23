@@ -21,6 +21,7 @@ internal sealed class PassThroughLauncherWindow : Window
 
     internal PassThroughLauncherWindow()
     {
+        OverlayWindowScope.Prepare(this);
         Title = L.Get("Settings.PassThroughLauncher");
         Width = Height = ArtworkSize;
         Launcher.LayoutTransform = new ScaleTransform(ArtworkScale, ArtworkScale);
@@ -46,6 +47,7 @@ internal sealed class PassThroughLauncherWindow : Window
         Launcher.DragRequested += () =>
         {
             var before = new Point(Left, Top);
+            if(OverlayWindowDrag.TryStart(this,()=>CompleteDrag(before)))return;
             if (Mouse.LeftButton == MouseButtonState.Pressed) DragMove();
             CompleteDrag(before);
         };

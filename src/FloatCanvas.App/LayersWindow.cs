@@ -202,9 +202,9 @@ internal sealed class LayersWindow : Wpf.Window
         rows.Add(id, new(item, label, editor, visible, locked, handle)); layers.Items.Add(item);
     }
 
-    private Controls.ContextMenu CreateContextMenu(Guid id)
+    private OverlayContextMenu CreateContextMenu(Guid id)
     {
-        var menu = new Controls.ContextMenu();
+        var menu = new OverlayContextMenu();
         var rename = new Controls.MenuItem { Header = L.Get("Layers.Rename"), InputGestureText = "F2", Icon = IconPath("M 2,11 L 2,14 L 5,14 L 13,6 L 10,3 Z M 9,4 L 12,7") };
         rename.Click += (_, _) => BeginRename(id); menu.Items.Add(rename);
         menu.Items.Add(new Controls.Separator());

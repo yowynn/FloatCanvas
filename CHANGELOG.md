@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- 将全屏增强作为可选后端：启动前由独立进程探测，接口缺失、初始化失败或上次异常退出时回退到普通桌面模式。运行中安全释放输入后重建桌面界面，保留画布、资源、文件绑定及撤销记录；增加 `--desktop-mode` 与 `--retry-fullscreen` 启动入口。
+- Make fullscreen enhancement optional: probe it in an isolated startup process and use ordinary desktop mode after missing interfaces, initialization failures or an unclean prior exit. After safely releasing input, rebuild desktop surfaces while preserving documents, assets, file bindings and undo history; add `--desktop-mode` and `--retry-fullscreen` launch options.
+
+- 进入编辑的松键等待期间保留穿透悬浮头像，工具条实际出现时再隐藏头像，避免两者都不可见的间隔。
+- Keep the pass-through logo visible while waiting for entry keys to be released, then hide it when the editing toolbar appears, avoiding a gap with neither visible.
+
+- 系统打开／保存文件框期间暂停覆盖输入，保留同一编辑会话；关闭或取消后恢复绘画，显式退出则不再恢复。不再拦截系统文件框的前台激活，某些游戏可能因此离开全屏。
+- Suspend overlay input while a system Open/Save dialog runs, retain the editing session, and resume drawing on return or cancellation. An explicit exit cancels restoration. File dialogs use normal foreground activation, which may take some games out of fullscreen.
+
+- 修复进入覆盖编辑时提前接管输入、退出后残留按下状态的问题：在触发消息处理结束后结合异步与线程队列状态，等待仍按下的键盘按键和鼠标按钮释放，再申请输入委托。
+- Fix premature input takeover and residual pressed states when entering overlay editing. After the triggering message returns, combine asynchronous and thread-queue state and wait for held keyboard keys and mouse buttons to be released before requesting input delegation.
+
 - 编辑与穿透模式的头像双击统一为画布显隐，保留模式与工具条折叠状态。单击继续延迟执行右键对应动作：编辑态打开主菜单，穿透态只进入编辑。工具条折叠改为按 `Tab` 或使用主菜单第一项“收起工具条／展开工具条”；不在头像旁新增按钮，输入框、菜单与对话框保留自身的 `Tab` 行为。
 - Unify logo double-clicks across edit and pass-through modes to toggle canvas visibility while retaining mode and toolbar expansion. A delayed single click still mirrors immediate right-click: open the main menu while editing, or only enter editing from pass-through. Fold/unfold the toolbar with `Tab` or the first main-menu item, **Collapse toolbar / Expand toolbar**, without adding buttons beside the logo; input fields, menus and dialogs retain their own `Tab` behavior.
 

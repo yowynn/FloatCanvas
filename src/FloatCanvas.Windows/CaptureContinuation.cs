@@ -64,16 +64,16 @@ internal sealed class CaptureContinuationState(object issuer, long operation, lo
     public CaptureVisibilityStrategy Strategy { get; private set; }
     public bool OutcomeReported { get; set; }
     public bool UnsafeInputGeometry { get; private set; }
-    public void Begin(nint ownForeground, uint time) { ExpectedForeground = ownForeground; StartTime = time; }
+    public void Begin(nint foreground, uint time) { ExpectedForeground = foreground; StartTime = time; }
     public void Ready(long version, nint foreground, uint time, CaptureVisibilityStrategy strategy, nint requiredMouseCapture)
     {
         CaptureVersion = version; ReadyForeground = foreground; BoundaryTime = time; Strategy = strategy;
         RequiredMouseCapture = requiredMouseCapture;
         if (version != OriginVersion) Cancel(CaptureRestoreStatus.Cancelled, "SessionChanged");
     }
-    public void ObserveForeground(nint hwnd, uint time, bool ownProcessWindow)
+    public void ObserveForeground(nint hwnd, uint time, bool ownProcessWindow, bool delegatedTarget = false)
     {
-        if (unchecked((int)(time - StartTime)) < 0 || hwnd == 0 || ownProcessWindow) return;
+        if (unchecked((int)(time - StartTime)) < 0 || hwnd == 0 || ownProcessWindow || delegatedTarget) return;
         Cancel(CaptureRestoreStatus.ForegroundChanged, "ForegroundEventMismatch");
     }
     public void Cancel(CaptureRestoreStatus reason = CaptureRestoreStatus.Cancelled, string detail = "ExplicitCancel")

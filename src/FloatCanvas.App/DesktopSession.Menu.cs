@@ -6,13 +6,13 @@ namespace FloatCanvas.App;
 
 internal sealed partial class DesktopSession
 {
-    private Controls.ContextMenu _toolbarMenu = null!;
+    private OverlayContextMenu _toolbarMenu = null!;
     private Controls.MenuItem _toolbarExpansionMenuItem = null!;
     private readonly List<Controls.MenuItem> _cropMenuItems = [];
 
-    private Controls.ContextMenu CreateLauncherMenu()
+    private OverlayContextMenu CreateLauncherMenu()
     {
-        var menu = new Controls.ContextMenu();
+        var menu = new OverlayContextMenu();
         _toolbarExpansionMenuItem = new Controls.MenuItem { InputGestureText = "Tab" };
         _toolbarExpansionMenuItem.Click += (_, _) => RunUiAction(ToggleToolbarExpanded);
         RefreshToolbarExpansionMenuItem();

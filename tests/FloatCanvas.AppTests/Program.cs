@@ -11,11 +11,29 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args is ["--overlay-probe-exit"]) return 73;
+        if (args is ["--overlay-probe-wait"]) { Thread.Sleep(10000); return 0; }
         try
         {
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--overlay-protection-only")) { OverlayProtectionTests.Run(Assert); return 0; }
+            if (args.Contains("--overlay-protection-runtime")) { OverlayProtectionRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--system-overlay-production")) return SystemOverlayProof.Production();
+            if (args.Contains("--system-overlay-performance")) return SystemOverlayProof.Production(measurePerformance:true);
+            if (args.Contains("--system-overlay-native-dialog")) return SystemOverlayProof.Production(measurePerformance:true,nativeDialogOnly:true);
+            if (args.Contains("--system-overlay-native-dialog-interaction")) return SystemOverlayProof.Production(measurePerformance:true,nativeDialogOnly:true);
+            if (args.Contains("--system-overlay-document-dialog")) return SystemOverlayProof.Production(measurePerformance:true,nativeDialogOnly:true);
+            if (args.Contains("--system-overlay-document-dialog-interaction")) return SystemOverlayProof.Production(measurePerformance:true,nativeDialogOnly:true);
+            if (args.Contains("--system-overlay-aux-only")) { SystemOverlayProof.AuxiliaryGate(); return 0; }
+            if (args.Contains("--system-overlay-popup-only")) { SystemOverlayProof.PopupGate(); return 0; }
+            if (args.Contains("--system-overlay-ime-focus-only")) { SystemOverlayProof.ImeFocusGate(); return 0; }
+            if (args.Contains("--system-overlay-options-focus-only")) { SystemOverlayProof.OptionsFocusGate(); return 0; }
+            if (args.Contains("--system-overlay-window-contract")) { SystemOverlayProof.WindowContract(); return 0; }
+            if (args.Contains("--system-overlay-receiver")) { SystemOverlayProof.Receiver(); return 0; }
+            if (args.Contains("--relative-input-receiver")) { RelativeInputReceiver.Run(); return 0; }
+            if (args.Contains("--system-overlay-confinement-observation")) { SystemOverlayProof.ConfinementObservation(); return 0; }
             if (args.Contains("--projection-hover-runtime-preview")) { ProjectionHoverRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--projection-hover-only")) { ProjectionUnsafeHoverTests.Run(Assert); RetainedBillboardInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-tool-only")) { CanvasToolInteractionTests.Run(Assert); return 0; }
@@ -160,6 +178,7 @@ internal static class Program
             CanvasPresetTests.Run(Assert);
             Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult();
             ShellIntegrationTests.Run(Assert);
+            OverlayProtectionTests.Run(Assert);
             LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert);
             BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert);
             PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert);

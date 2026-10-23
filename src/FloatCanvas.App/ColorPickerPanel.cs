@@ -127,9 +127,9 @@ internal sealed class ColorPickerPanel : UserControl
             button?.BringIntoView(); revealSwatch = null;
         }));
     }
-    private ContextMenu SavedColorMenu(SavedColor saved)
+    private OverlayContextMenu SavedColorMenu(SavedColor saved)
     {
-        var menu = new ContextMenu();
+        var menu = new OverlayContextMenu();
         void Add(string key, PanelActionIcon icon, Action action)
         {
             var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon) }; item.Click += (_, _) => Run(action); menu.Items.Add(item);

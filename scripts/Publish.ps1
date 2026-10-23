@@ -66,7 +66,7 @@ try {
     & dotnet @publishArguments
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
     foreach ($required in @('FloatCanvas.exe', 'FloatCanvas.dll', 'FloatCanvas.Core.dll', 'FloatCanvas.Localization.dll',
-        'FloatCanvas.Rendering.dll', 'FloatCanvas.Storage.dll', 'FloatCanvas.Windows.dll', 'SkiaSharp.dll',
+        'FloatCanvas.Rendering.dll', 'FloatCanvas.Storage.dll', 'FloatCanvas.Windows.dll', 'FloatCanvas.SystemOverlay.dll', 'SkiaSharp.dll',
         'SkiaSharp.HarfBuzz.dll', 'HarfBuzzSharp.dll', 'libSkiaSharp.dll', 'libHarfBuzzSharp.dll',
         'FloatCanvas.deps.json', 'FloatCanvas.runtimeconfig.json')) {
         $requiredPath = Join-Path $stagingPackage $required

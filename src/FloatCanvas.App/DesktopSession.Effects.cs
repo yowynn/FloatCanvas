@@ -162,7 +162,7 @@ internal sealed partial class DesktopSession
         if (restore && field is not null && !_disposed && _host.IsEditing && _host.IsVisible)
         {
             foreach (var window in windows) SessionWindowCoordinator.Show(window);
-            if (owner is { IsVisible: true, IsEnabled: true }) owner.Activate();
+            if (owner is { IsVisible: true, IsEnabled: true }) SessionWindowCoordinator.Show(owner,true);
             if (field.IsVisible) field.OpenPicker(focus: true);
         }
         RequestRender();

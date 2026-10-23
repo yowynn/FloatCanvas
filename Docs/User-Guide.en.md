@@ -16,6 +16,10 @@ For the packaged app, extract the Windows x64 ZIP for your version, keep all fil
 
 If a compatible runtime is missing, the launcher displays a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then run `FloatCanvas.exe` again. You can also select it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). The SDK is not required; the plain .NET Runtime, ASP.NET Core Runtime and .NET Framework do not replace the required desktop runtime.
 
+Fullscreen enhancement is optional. An isolated startup probe checks availability. Unsupported systems, enhancement initialization failures or an unclean previous enhanced session select ordinary desktop mode, retaining desktop drawing and file operations while limiting coverage above some fullscreen applications. A recoverable runtime input-interface failure releases input before rebuilding desktop surfaces with the same canvas, assets, file bindings and undo history. The tray also offers **Switch to ordinary desktop mode**.
+
+To bypass enhancement explicitly, exit FloatCanvas and run `FloatCanvas.exe --desktop-mode`. Failures disable automatic retries; after fixing the environment or updating the application, exit and use `FloatCanvas.exe --retry-fullscreen` to probe again. The two options cannot be combined and do not change canvas data. Native crashes or hangs cannot be guaranteed to recover in place; the safety marker selects desktop mode on the next launch, and unsaved content may be available in recovery history. Enhancement is enabled only on a verified system build and does not promise every fullscreen presentation path.
+
 1. Choose **Start drawing** on the welcome screen, or press `` Ctrl+` `` to enter edit mode.
 2. Press `` Ctrl+` `` again for pass-through. The toolbar disappears, annotations stay visible, and the application underneath receives input again.
 
@@ -32,6 +36,8 @@ Open **Main menu → Settings…** and choose **Primary screen only** or **All s
 In edit mode, FloatCanvas receives normal window keyboard and mouse input. An unmapped letter should not be sent to the application underneath. Switching to another application hides editing tools and enters pass-through without removing annotations. If FloatCanvas cannot acquire the required input focus, it stays in pass-through and explains why.
 
 Switching between FloatCanvas windows, completing a rename or closing a panel keeps edit mode and the toolbar. Closing a child panel on its own returns to an available parent window. Clicking the canvas closes related temporary child panels and unpinned panels together, then handles that canvas action normally. Pinned panels stay open. Modal dialogs, such as Rename or Delete confirmation, require confirmation or cancellation before drawing can continue.
+
+When entering editing from another application, FloatCanvas waits for held keyboard keys and mouse buttons to be released before requesting input and showing the toolbar, avoiding residual pressed states in the application underneath. If the floating logo is enabled, it stays visible while waiting and hides when the toolbar appears.
 
 Text is edited directly on the canvas. Changing windows, layers or tools, or entering pass-through, commits it to the canvas. `Esc` cancels the current text edit.
 
@@ -411,6 +417,8 @@ Install a compatible **.NET 10 Windows Desktop Runtime x64** available for your 
 New configurations default to all screens, with a primary-screen-only option. Complete cross-screen, mixed-DPI, portrait-display, hot-plug, lock-screen recovery and dual-4K behavior are still being refined. Behavior may vary across devices and applications.
 
 FloatCanvas is intended for ordinary desktop and fullscreen applications without requiring windowed or borderless mode in every case. Fullscreen compatibility depends on the application and display mode; not every exclusive-fullscreen scenario is guaranteed.
+
+System Open/Save As dialogs use normal Windows input and foreground activation. Closing or cancelling returns to FloatCanvas editing. Opening a file dialog may take some games out of fullscreen.
 
 When using window detection in Windows Snipping Tool or another screenshot app, the drawing layer may become the capture target. To keep annotations in the result, use FloatCanvas's own capture or export commands. To capture only the application underneath, use the Hide canvas / Show canvas shortcut (default `` Ctrl+Shift+` ``) to hide the canvas, take the screenshot, then show it again. Pass-through keeps annotations visible. Canvas visibility keeps the current edit/pass-through mode; use the separate mode shortcut to change input behavior.
 

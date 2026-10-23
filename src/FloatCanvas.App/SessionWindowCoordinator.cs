@@ -19,7 +19,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
     private readonly OverlayHost host;
     private readonly Window toolbar;
     private readonly Dictionary<Window, Registration> windows = [];
-    private readonly Dictionary<Popup, Action> popups = [];
+    private readonly Dictionary<object, Action> popups = [];
     private WindowDismissReason? destination;
     private long nextIntent, intentToken, intentSession;
     private bool disposed;
@@ -34,7 +34,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
     internal bool IsInputMethodSwitchPending => !disposed && host.IsInputMethodSwitchPending;
 
     internal bool CanContinue(WindowSessionRequest request, object document) => !disposed &&
-        request.IsCurrent(host.EditingSessionVersion, host.IsEditing, document) && (!request.Editing || OwnsForeground());
+        request.IsCurrent(host.EditingSessionVersion, host.IsEditing, document) && (!request.Editing || OwnsEditingInput());
 
     internal static SessionWindowCoordinator? Find(Window? window)
     {
@@ -53,8 +53,8 @@ internal sealed class SessionWindowCoordinator : IDisposable
         if (!disposed) host.NotifyInputProgress();
     }
 
-    internal void RegisterPopup(Popup popup, Action close) => popups[popup] = close;
-    internal void UnregisterPopup(Popup popup) => popups.Remove(popup);
+    internal void RegisterPopup(object popup, Action close) => popups[popup] = close;
+    internal void UnregisterPopup(object popup) => popups.Remove(popup);
 
     internal void Register(Window window, Func<bool>? pinned = null, Action<WindowDismissReason>? dismissTransient = null)
     {
@@ -74,11 +74,14 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     internal static void Show(Window window, bool activate = false)
     {
+        OverlayWindowScope.Prepare(window);
         var coordinator = Find(window);
         using var transfer = coordinator?.BeginTransition();
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         window.Show();
-        if (activate) window.Activate();
+        if (activate && coordinator is not null && coordinator.host.UsesSystemInput && coordinator.host.IsEditing)
+            coordinator.host.TryFocusEditingWindow(new WindowInteropHelper(window).Handle);
+        else if(activate) window.Activate();
     }
 
     internal static void Hide(Window window, WindowDismissReason reason = WindowDismissReason.Close)
@@ -124,8 +127,12 @@ internal sealed class SessionWindowCoordinator : IDisposable
     {
         var coordinator = Find(owner);
         long version = coordinator?.host.EditingSessionVersion ?? 0;
+        using var native = coordinator?.host.BeginNativeDialog();
         using var entering = coordinator?.BeginTransition();
-        try { return show(); }
+        try
+        {
+            return show();
+        }
         finally
         {
             if (coordinator is not null && coordinator.host.EditingSessionVersion == version)
@@ -211,7 +218,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     private void ReturnBeforeDismiss(Window source)
     {
-        if (disposed || !host.IsEditing || IsDirectTransfer || !OwnsForeground() || !ContainsForeground(source)) return;
+        if (disposed || !host.IsEditing || IsDirectTransfer || !OwnsEditingInput() || !ContainsForeground(source)) return;
         // A visible modal owner remains disabled until ShowDialog has unwound. Its finally
         // block will repeat this handoff after WPF reenables it, without focusing the canvas.
         ReturnToOwner(source.Owner);
@@ -219,7 +226,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     private void ReturnToOwner(Window? firstOwner)
     {
-        if (disposed || !host.IsEditing || IsDirectTransfer || !OwnsForeground()) return;
+        if (disposed || !host.IsEditing || IsDirectTransfer || !OwnsEditingInput()) return;
         for (var owner = firstOwner; owner is not null; owner = owner.Owner)
         {
             if (ActivateIfOwned(owner)) return;
@@ -229,7 +236,8 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     private bool ActivateIfOwned(Window target)
     {
-        if (disposed || !host.IsEditing || IsDirectTransfer || !CanActivate(target) || !OwnsForeground()) return false;
+        if (disposed || !host.IsEditing || IsDirectTransfer || !CanActivate(target) || !OwnsEditingInput()) return false;
+        if(host.UsesSystemInput) return host.TryFocusEditingWindow(new WindowInteropHelper(target).Handle);
         return target.Activate() && GetForegroundWindow() == new WindowInteropHelper(target).Handle;
     }
 
@@ -240,17 +248,18 @@ internal sealed class SessionWindowCoordinator : IDisposable
             handle != 0 && IsWindow(handle) && IsWindowVisible(handle) && IsWindowEnabled(handle);
     }
 
-    private static bool OwnsForeground()
+    private bool OwnsEditingInput()
     {
+        if(host.UsesSystemInput) return host.HasEditingInput;
         var foreground = GetForegroundWindow();
         return foreground != 0 && GetWindowThreadProcessId(foreground, out var process) != 0 && process == Environment.ProcessId;
     }
 
-    private static bool ContainsForeground(Window source)
+    private bool ContainsForeground(Window source)
     {
         var sourceHandle = new WindowInteropHelper(source).Handle;
         if (sourceHandle == 0) return false;
-        for (var handle = GetForegroundWindow(); handle != 0; handle = GetWindow(handle, 4))
+        for (var handle = host.UsesSystemInput?GetFocus():GetForegroundWindow(); handle != 0; handle = GetWindow(handle, 4))
             if (handle == sourceHandle) return true;
         return false;
     }
@@ -305,6 +314,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
     [DllImport("user32.dll")] private static extern nint WindowFromPhysicalPoint(PixelPoint point);
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint handle, uint flags);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern nint GetFocus();
     [DllImport("user32.dll")] private static extern nint GetCapture();
     [DllImport("user32.dll")] private static extern nint GetWindow(nint window, uint command);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindow(nint window);

@@ -18,7 +18,7 @@ internal static class AppWindowChrome
     internal const double PanelCornerRadius = 12;
     private static readonly DependencyProperty AppliedProperty = DependencyProperty.RegisterAttached(
         "Applied", typeof(bool), typeof(AppWindowChrome), new PropertyMetadata(false));
-    private static ControlTemplate? template;
+    private static ControlTemplate? template, layeredTemplate;
 
     public static void Apply(Window window) => ApplyCore(window);
     public static void ApplyDialog(Window window) => ApplyCore(window);
@@ -33,6 +33,7 @@ internal static class AppWindowChrome
 
     private static void ApplyCore(Window window)
     {
+        OverlayWindowScope.Prepare(window);
         SessionWindowLayout.TrackOwned(window);
         SessionWindowCoordinator.TrackOwned(window);
         window.Dispatcher.VerifyAccess();
@@ -49,12 +50,13 @@ internal static class AppWindowChrome
             CaptionHeight = CaptionHeight,
             ResizeBorderThickness = new Thickness(CanResize(window) ? 6 : 0),
             // A WPF region, even a rectangular one, prevents native DWM rounding.
-            GlassFrameThickness = new Thickness(OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) ? 1 : 0),
+            GlassFrameThickness = new Thickness(!window.AllowsTransparency && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) ? 1 : 0),
             CornerRadius = new CornerRadius(PanelCornerRadius),
             UseAeroCaptionButtons = false,
             NonClientFrameEdges = NonClientFrameEdges.None
         });
-        window.Template = template ??= CreateTemplate();
+        window.Template = window.AllowsTransparency ? layeredTemplate??=CreateTemplate(false) :
+            template??=CreateTemplate(OperatingSystem.IsWindowsVersionAtLeast(10,0,22000));
         if ((bool)window.GetValue(AppliedProperty)) return;
         window.SetValue(AppliedProperty, true);
         window.CommandBindings.Add(new CommandBinding(SystemCommands.CloseWindowCommand, (_, _) => SessionWindowCoordinator.Close(window)));
@@ -63,7 +65,7 @@ internal static class AppWindowChrome
         window.AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, e) =>
         {
             if (!ReferenceEquals(e.OriginalSource, window.Template.FindName("Help", window))) return;
-            var popup = (Popup)window.Template.FindName("HelpPopup", window);
+            var popup = PopupHandle.For((Popup)window.Template.FindName("HelpPopup", window));
             popup.CustomPopupPlacementCallback = (size, target, _) =>
             [
                 new(new Point(target.Width - size.Width, target.Height + 4), PopupPrimaryAxis.Vertical),
@@ -85,7 +87,7 @@ internal static class AppWindowChrome
         window.IsVisibleChanged += (_, _) =>
         {
             if (window.IsVisible) window.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => EnsureVisibleBounds(window));
-            else if (window.Template.FindName("HelpPopup", window) is Popup popup) popup.IsOpen = false;
+            else if (window.Template.FindName("HelpPopup", window) is Popup popup) PopupHandle.For(popup).IsOpen = false;
         };
         if (new WindowInteropHelper(window).Handle != 0) AttachWindowBounds(window);
         else window.SourceInitialized += (_, _) => AttachWindowBounds(window);
@@ -93,16 +95,17 @@ internal static class AppWindowChrome
 
     internal static bool TryCloseHelp(Window window)
     {
-        if (window.Template?.FindName("HelpPopup", window) is not Popup { IsOpen: true } popup) return false;
-        popup.IsOpen = false; return true;
+        if (window.Template?.FindName("HelpPopup", window) is not Popup popup) return false;
+        var display=PopupHandle.For(popup);
+        if(!display.IsOpen)return false;
+        display.IsOpen=false;return true;
     }
 
-    private static ControlTemplate CreateTemplate()
+    private static ControlTemplate CreateTemplate(bool nativeFrame)
     {
         // DWM owns the Windows 11 outline and chooses its radius. A second, fixed-radius
         // client stroke exposes the backplate between the two arcs at the corners.
         // Keep the one-DIP inset so removing that stroke does not move panel content.
-        bool nativeFrame = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000);
         return (ControlTemplate)XamlReader.Parse(TemplateMarkup
             .Replace("__WINDOW_EDGE_BRUSH__", nativeFrame ? "Transparent" : "{DynamicResource CanvasBorder}")
             .Replace("__WINDOW_EDGE_RADIUS__", nativeFrame ? "0" : "12"));

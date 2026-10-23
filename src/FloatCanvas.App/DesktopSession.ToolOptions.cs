@@ -219,6 +219,7 @@ internal sealed partial class DesktopSession
             {
                 ComboBoxItem item=>ItemsControl.ItemsControlFromItemContainer(item),
                 ContextMenu menu=>menu.PlacementTarget,
+                OverlayPopup popup=>popup.PlacementTarget??popup.TemplatedParent,
                 _=>source is Visual || source is System.Windows.Media.Media3D.Visual3D
                     ? VisualTreeHelper.GetParent(source)??LogicalTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source)
             };

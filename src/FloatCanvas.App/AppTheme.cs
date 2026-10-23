@@ -11,6 +11,7 @@ namespace FloatCanvas.App;
 internal static class AppTheme
 {
     private static ResourceDictionary? styles;
+    private static ResourceDictionary? overlayStyles;
 
     // The primary process calls this before constructing DesktopSession: its field
     // initializers can fail before the session applies the saved theme itself.
@@ -30,8 +31,22 @@ internal static class AppTheme
         bool dark = mode?.ToLowerInvariant() switch { "dark" => true, "light" => false, _ => SystemUsesDarkTheme() };
         var resources = app.Resources;
         ApplyPalette(resources, dark);
-        if (styles is null) styles = (ResourceDictionary)XamlReader.Parse(StyleMarkup);
-        if (!resources.MergedDictionaries.Contains(styles)) resources.MergedDictionaries.Add(styles);
+        ResourceDictionary selected;
+        if(OverlayWindowScope.Current is not null)
+        {
+            overlayStyles??=(ResourceDictionary)XamlReader.Parse(StyleMarkup
+                .Replace("<ResourceDictionary ","<ResourceDictionary xmlns:overlay=\"clr-namespace:FloatCanvas.App;assembly=FloatCanvas\" ")
+                .Replace("<Style x:Key=\"CanvasControlBase\" TargetType=\"Control\">",
+                    "<Style x:Key=\"CanvasControlBase\" TargetType=\"Control\"><Setter Property=\"InputMethod.IsInputMethodEnabled\" Value=\"False\"/>")
+                .Replace("<Style TargetType=\"TextBox\" BasedOn=\"{StaticResource CanvasControlBase}\">",
+                    "<Style TargetType=\"TextBox\" BasedOn=\"{StaticResource CanvasControlBase}\"><Setter Property=\"InputMethod.IsInputMethodEnabled\" Value=\"True\"/>")
+                .Replace("<Popup ","<overlay:OverlayPopup ").Replace("</Popup>","</overlay:OverlayPopup>"));
+            selected=overlayStyles;
+        }
+        else selected=styles??=(ResourceDictionary)XamlReader.Parse(StyleMarkup);
+        if(styles is not null && !ReferenceEquals(selected,styles)) resources.MergedDictionaries.Remove(styles);
+        if(overlayStyles is not null && !ReferenceEquals(selected,overlayStyles)) resources.MergedDictionaries.Remove(overlayStyles);
+        if (!resources.MergedDictionaries.Contains(selected)) resources.MergedDictionaries.Add(selected);
     }
 
     // Early argument/forwarding errors have no Application; a failed bootstrap may

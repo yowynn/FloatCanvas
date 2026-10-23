@@ -68,7 +68,7 @@ internal sealed class StampShelfControl : Controls.UserControl
             {
                 Guid id = entry.Id;
                 button.Click += (_, _) => selectStamp(id);
-                var menu = new Controls.ContextMenu();
+                var menu = new OverlayContextMenu();
                 var clear = new Controls.MenuItem { Header = L.Get("Stamp.Unpin"), Icon = ActionIconButton.Glyph(PanelActionIcon.Unpin) };
                 clear.Click += async (_, _) => { try { await library.PinAsync(slotIndex, null); } catch (Exception ex) { button.ToolTip = ex.Message; } };
                 menu.Items.Add(clear); button.ContextMenu = menu;
@@ -77,7 +77,7 @@ internal sealed class StampShelfControl : Controls.UserControl
                     if(EntryMenuFactory is null)return;
                     e.Handled=true;
                     var actions=EntryMenuFactory(id,slotIndex);actions.PlacementTarget=button;
-                    button.ContextMenu=actions;actions.IsOpen=true;
+                    button.ContextMenu=actions;OverlayContextMenu.SetOpen(actions,true);
                 };
                 LoadThumbnail(entry, image, button, version);
             }

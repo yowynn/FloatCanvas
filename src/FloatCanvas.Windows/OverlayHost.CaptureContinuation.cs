@@ -31,7 +31,7 @@ public sealed partial class OverlayHost
             _captureIntentVersion, ForegroundLossVersion, ExternalCaptureInputVersion);
         operation.Begin(GetForegroundWindow(), unchecked((uint)Environment.TickCount64));
         if (IsEditing && _keyboardIsolation is { IsLeaseActive: false }) operation.Cancel(CaptureRestoreStatus.Failed, "LeaseFailure");
-        if (IsEditing && !IsForegroundFromThisProcess()) operation.Cancel(CaptureRestoreStatus.ForegroundChanged, "UnexpectedForeground");
+        if (IsEditing && !OwnsEditingInput()) operation.Cancel(CaptureRestoreStatus.ForegroundChanged, "UnexpectedForeground");
         _captureActive = true; _captureOperation = operation;
         ReportCapture(operation, "Begin", operation.Reason);
         try
@@ -66,7 +66,7 @@ public sealed partial class OverlayHost
         out long restoredEditingSessionVersion)
     {
         CheckThread(); ArgumentNullException.ThrowIfNull(receipt); restoredEditingSessionVersion = 0;
-        if (_captureActive || (receipt.WasEditing && (!IsForegroundFromThisProcess() ||
+        if (_captureActive || (receipt.WasEditing && (!OwnsEditingInput() ||
             (_keyboardIsolation is not null && !_keyboardIsolation.IsLeaseActive))) ||
             !receipt.TryConsume(this, _captureOperationId, originalEditingSessionVersion, EditingSessionVersion, IsEditing,
                 _captureIntentVersion, ForegroundLossVersion, ExternalCaptureInputVersion))
@@ -94,7 +94,7 @@ public sealed partial class OverlayHost
         if (appGuard?.Invoke() == false) return Reject(CaptureRestoreStatus.GuardRejected, "AppGuard");
         if (_keyboardIsolation is { } isolation && (isolation.Failure is not null || !isolation.IsThreadAlive ||
             operation.WasEditing && !isolation.IsLeaseActive)) return Reject(CaptureRestoreStatus.Failed, "LeaseFailure");
-        if (operation.WasEditing && !IsForegroundFromThisProcess())
+        if (operation.WasEditing && !OwnsEditingInput())
             return Reject(CaptureRestoreStatus.ForegroundChanged, GetForegroundWindow() == 0 ? "ZeroForeground" : "UnexpectedForeground");
         if (operation.RequiredMouseCapture != 0 && GetCapture() != operation.RequiredMouseCapture)
             return Reject(CaptureRestoreStatus.Cancelled, "PointerCaptureLost");
@@ -127,7 +127,7 @@ public sealed partial class OverlayHost
             operation.Cancel(CaptureRestoreStatus.Failed, "Failed");
             // A capture/render/App guard failure is not an instruction to exit editing.
             // Only actual outside focus or a dead lease releases input, without activation.
-            if (IsEditing && (!IsForegroundFromThisProcess() || _keyboardIsolation is { IsLeaseActive: false }))
+            if (IsEditing && (!OwnsEditingInput() || _keyboardIsolation is { IsLeaseActive: false }))
                 EndEditingAfterFocusLoss();
             return Outcome(operation.Status, operation.Reason);
         }

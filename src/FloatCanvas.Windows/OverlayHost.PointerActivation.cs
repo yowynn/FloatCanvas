@@ -28,7 +28,7 @@ public sealed partial class OverlayHost
         if (button is not (OverlayMouseButton.Left or OverlayMouseButton.Right or OverlayMouseButton.Middle) ||
             clickCount < 1 || !double.IsFinite(point.X) || !double.IsFinite(point.Y) ||
             point.X < int.MinValue || point.X > int.MaxValue || point.Y < int.MinValue || point.Y > int.MaxValue ||
-            !IsEditing || !IsVisible || !IsForegroundFromThisProcess() ||
+            !IsEditing || !IsVisible || !OwnsEditingInput() ||
             (_keyboardIsolation is not null && !_keyboardIsolation.IsLeaseActive) ||
             _startingCanvasPointer || _pressedButton != OverlayMouseButton.None || GetCapture() != 0 ||
             HasDisabledOwnOwner(GetForegroundWindow())) return false;
@@ -58,6 +58,12 @@ public sealed partial class OverlayHost
         try
         {
             if (!CanStartCanvasPointer(state) || GetCapture() != 0) return false;
+            if(_systemInput is not null)
+            {
+                if(!_systemInput.Acknowledged || !TryFocusEditingWindow(state.Handle)) return false;
+                SetCapture(state.Handle);
+                return GetCapture()==state.Handle && GetFocus()==state.Handle && CanStartCanvasPointer(state);
+            }
 
             // Use this press's exact input HWND, not the cursor's potentially new screen.
             // Each native call may synchronously run application focus handlers.
@@ -95,14 +101,14 @@ public sealed partial class OverlayHost
     private bool CanStartCanvasPointer(WindowState state)
     {
         if (_disposed || !IsEditing) return false;
-        if (!IsForegroundFromThisProcess()) return FailCanvasPointerStart();
+        if (!OwnsEditingInput()) return FailCanvasPointerStart();
         if (!IsCanvasPointerAvailable(state)) return false;
         // Recheck business/modal denial even on an activation failure, before deciding
         // to release isolation. LostFocus can synchronously open an owned modal window.
         bool applicationAllows = CanBeginCanvasGesture?.Invoke() != false;
         bool modalBlocked = HasDisabledOwnOwner(GetForegroundWindow());
         // A denial must not conceal a real external foreground change during the gate.
-        if (!IsForegroundFromThisProcess() || !EnsureEditingKeyboardIsolation())
+        if (!OwnsEditingInput() || (_systemInput is null && !EnsureEditingKeyboardIsolation()))
             return FailCanvasPointerStart();
         return applicationAllows && !modalBlocked && IsCanvasPointerAvailable(state);
     }

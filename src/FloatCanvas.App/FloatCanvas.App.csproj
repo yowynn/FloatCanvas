@@ -14,6 +14,7 @@
     <Version>0.2.1</Version>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="$(IntermediateOutputPath)system-overlay/FloatCanvas.SystemOverlay.dll" Link="FloatCanvas.SystemOverlay.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\FloatCanvas.ico" />
     <Resource Include="Assets\FloatCanvas.png" />
     <Resource Include="Assets\FloatCanvas.Hidden.png" />
@@ -24,6 +25,11 @@
     <ProjectReference Include="../FloatCanvas.Storage/FloatCanvas.Storage.csproj" />
     <ProjectReference Include="../FloatCanvas.Windows/FloatCanvas.Windows.csproj" />
   </ItemGroup>
+  <Target Name="BuildSystemOverlayHost" BeforeTargets="PrepareForBuild"
+          Inputs="$(MSBuildProjectDirectory)/../FloatCanvas.SystemOverlay.Native/SystemOverlay.cpp;$(MSBuildProjectDirectory)/../../scripts/Build-SystemOverlayNative.ps1"
+          Outputs="$(IntermediateOutputPath)system-overlay/FloatCanvas.SystemOverlay.dll" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/../../scripts/Build-SystemOverlayNative.ps1&quot; -OutputDirectory &quot;$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'system-overlay'))&quot;" />
+  </Target>
   <Target Name="ExcludeReleasePublishDebugSymbols" AfterTargets="ComputeFilesToPublish" Condition="'$(Configuration)' == 'Release'">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Extension)' == '.pdb'" />

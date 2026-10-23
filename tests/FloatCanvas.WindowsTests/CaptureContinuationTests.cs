@@ -66,6 +66,11 @@ internal static class CaptureContinuationTests
         check(state.CanRestore(20, 3, 4, 5), "An event before this capture start cannot cancel it");
         state.ObserveForeground(90, 101, true);
         check(state.CanRestore(20, 3, 4, 5), "An own-window focus transfer does not need an external window whitelist");
+        state = New(); state.Ready(20, 42, 101, CaptureVisibilityStrategy.ExcludeVisible, 0);
+        state.ObserveForeground(42, 101, false, true);
+        check(state.CanRestore(20, 3, 4, 5), "The actual delegated foreground retains capture ownership without pretending to own that process");
+        state.ObserveForeground(43, 102, false, false);
+        check(state.Status == CaptureRestoreStatus.ForegroundChanged, "Switching away from the delegated target still cancels capture continuation");
         state = New(); state.Begin(42, uint.MaxValue - 1); state.Ready(20, 42, uint.MaxValue, CaptureVisibilityStrategy.ExcludeVisible, 0);
         state.ObserveForeground(43, 0, false);
         check(state.Status == CaptureRestoreStatus.ForegroundChanged, "Capture event ordering handles the 32-bit tick wrap");

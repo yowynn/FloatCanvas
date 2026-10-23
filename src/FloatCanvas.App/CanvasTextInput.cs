@@ -25,6 +25,7 @@ internal sealed class CanvasTextInput : IDisposable
     {
         this.edit=edit;this.screenOrigin=screenOrigin;
         var input=edit.Input;
+        InputMethod.SetIsInputMethodEnabled(input,true);
         input.Background=Brushes.Transparent;input.Foreground=Brushes.Transparent;input.CaretBrush=Brushes.Transparent;
         input.BorderThickness=new(0);input.Padding=new(0);input.SelectionBrush=Brushes.Transparent;
         window=new Window {Title="FloatCanvas text input",Owner=owner,Content=input,Width=400,Height=160,

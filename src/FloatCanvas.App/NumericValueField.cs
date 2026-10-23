@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Automation;
+using System.Windows.Input;
 
 namespace FloatCanvas.App;
 
@@ -26,6 +27,7 @@ internal sealed class NumericValueField : UserControl
     {
         if (!double.IsFinite(minimum) || !double.IsFinite(maximum) || maximum < minimum || step <= 0 || !double.IsFinite(step)) throw new ArgumentOutOfRangeException(nameof(minimum));
         this.minimum = minimum; this.maximum = maximum; this.integerOnly = integerOnly; Input = input;
+        if(OverlayWindowScope.Current is not null)InputMethod.SetIsInputMethodEnabled(Input,false);
         Slider = new Slider { Minimum = Math.Clamp(sliderMinimum ?? minimum, minimum, maximum),
             Maximum = Math.Clamp(sliderMaximum ?? maximum, minimum, maximum), SmallChange = step, LargeChange = step * 10,
             TickFrequency = step, IsSnapToTickEnabled = integerOnly, IsMoveToPointEnabled = true, MinHeight = 20, Margin = new(1, 1, 1, 0) };

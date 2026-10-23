@@ -95,9 +95,9 @@ internal sealed class CanvasPresetGallery : UserControl
         button.Content = Preview(preset.Parameters);
         button.SetResourceReference(BorderBrushProperty, preset.Id == SelectedId ? "CanvasAccent" : "CanvasBorder");
     }
-    private ContextMenu Menu(CanvasPreset preset)
+    private OverlayContextMenu Menu(CanvasPreset preset)
     {
-        var menu = new ContextMenu();
+        var menu = new OverlayContextMenu();
         void Add(string key, PanelActionIcon icon, Action action, string shortcut = "")
         { var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = shortcut }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => Run(() => { library.Update(preset.Id, current); SelectedId = preset.Id; Refresh(current); }));

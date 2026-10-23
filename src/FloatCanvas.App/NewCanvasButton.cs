@@ -18,6 +18,7 @@ internal sealed class NewCanvasButton : Button
     private bool executing;
     internal bool IsConfirming { get; private set; }
     internal Popup ConfirmationPopup { get; }
+    private readonly PopupHandle confirmationDisplay;
 
     internal NewCanvasButton(Func<bool> canCreate, Func<Task> create,Func<bool>? needsConfirmation=null)
     {
@@ -38,8 +39,12 @@ internal sealed class NewCanvasButton : Button
             { BlurRadius = 6, ShadowDepth = 1, Opacity = .18, Color = Colors.Black } };
         bubble.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
         bubble.SetResourceReference(Border.BorderBrushProperty, "CanvasAccent");
-        ConfirmationPopup = new Popup { Child = bubble, PlacementTarget = this, Placement = PlacementMode.Bottom,
+        // HwndSource autosizing excludes its root's Margin. Keep the shadow gutter
+        // inside a marginless layout root so the native client fits the whole bubble.
+        var popupRoot=new Grid();popupRoot.Children.Add(bubble);
+        ConfirmationPopup = new Popup { Child = popupRoot, PlacementTarget = this, Placement = PlacementMode.Bottom,
             VerticalOffset = 4, AllowsTransparency = true, StaysOpen = true, Focusable = false, IsHitTestVisible = false };
+        confirmationDisplay=PopupHandle.For(ConfirmationPopup);
         Click += async (_, _) => await ActivateAsync();
         Unloaded += (_, _) => CancelConfirmation();
         Refresh();
@@ -55,8 +60,8 @@ internal sealed class NewCanvasButton : Button
             if (IsLoaded)
             {
                 if (Window.GetWindow(this) is { } window)
-                    ConfirmationPopup.VerticalOffset = Math.Max(4, window.ActualHeight - TranslatePoint(new Point(0, ActualHeight), window).Y + 4);
-                ConfirmationPopup.IsOpen = true;
+                    confirmationDisplay.VerticalOffset = Math.Max(4, window.ActualHeight - TranslatePoint(new Point(0, ActualHeight), window).Y + 4);
+                confirmationDisplay.IsOpen = true;
             }
             return;
         }
@@ -68,7 +73,7 @@ internal sealed class NewCanvasButton : Button
     internal void CancelConfirmation()
     {
         if (!IsConfirming) return;
-        IsConfirming = false; ConfirmationPopup.IsOpen = false; Refresh();
+        IsConfirming = false; confirmationDisplay.IsOpen = false; Refresh();
     }
 
     private void Refresh()

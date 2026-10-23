@@ -118,7 +118,8 @@ internal static class NewCanvasButtonTests
         check(context + " new-canvas action stays a compact 26-DIP target with the toolbar's 3-DIP corners", button.ActualWidth == 26 && button.ActualHeight == 26 && chrome.CornerRadius == new CornerRadius(3));
         check(context + " new-canvas action uses the regular gray surface and themed glyph", normal == ((SolidColorBrush)app.Resources["CanvasButton"]).Color && Glyph(button).Stroke == app.Resources["CanvasText"] && Glyph(button).StrokeThickness == 1.5);
         var popup = button.ConfirmationPopup;
-        var bubble = (Border)popup.Child;
+        var popupRoot = (Grid)popup.Child;
+        var bubble = (Border)popupRoot.Children[0];
         var hint = (TextBlock)bubble.Child;
         check(context + " confirmation bubble is a noninteractive nonactivating hint beside the same target", popup.PlacementTarget == button && popup.Placement == PlacementMode.Bottom && popup.VerticalOffset > 0 && popup.AllowsTransparency && popup.StaysOpen && !popup.Focusable && !popup.IsHitTestVisible);
         check(context + " confirmation question is localized plain text", hint.Text == L.Get("History.NewQuestion") && !string.IsNullOrWhiteSpace(hint.Text));
@@ -131,8 +132,8 @@ internal static class NewCanvasButtonTests
         SavePreview(host, "clear-" + language + "-" + theme + "-confirm.png");
         // Render the actual popup child detached, avoiding Popup.IsOpen and its native HWND.
         popup.Child = null;
-        Layout(bubble); SavePreview(bubble, "clear-" + language + "-" + theme + "-hint.png");
-        popup.Child = bubble;
+        Layout(popupRoot); SavePreview(popupRoot, "clear-" + language + "-" + theme + "-hint.png");
+        popup.Child = popupRoot;
         button.CancelConfirmation(); host.Child = null;
     }
 

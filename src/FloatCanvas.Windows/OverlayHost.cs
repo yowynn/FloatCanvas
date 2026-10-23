@@ -207,6 +207,7 @@ public sealed partial class OverlayHost : IDisposable
     private bool TryEnterEditingCore(out string? failure)
     {
         EndDropReceptionCore();
+        if(_systemInput is not null) return TryEnterSystemEditing(out failure);
         RequestWindowOrderCheck();
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         failure = null;
@@ -261,6 +262,10 @@ public sealed partial class OverlayHost : IDisposable
         StopInputMethodContext();
         EndDropReceptionCore();
         if (!IsEditing) return;
+        _nativeDialogDepth=0;
+        KillTimer(ControlHandle,SystemInputTimer);
+        _systemInputReady=false;
+        _systemInput?.End();
         _focusTransitions.EndSession();
         EndKeyboardIsolation();
         CancelPointer();
@@ -390,6 +395,7 @@ public sealed partial class OverlayHost : IDisposable
         EndDropReceptionCore();
         _focusTransitions.EndSession();
         DisposeKeyboardIsolation();
+        KillTimer(ControlHandle,SystemInputTimer);
         if (_foregroundHook != 0) { UnhookWinEvent(_foregroundHook); _foregroundHook = 0; }
         CancelPointer();
         IsEditing = false;
@@ -399,7 +405,9 @@ public sealed partial class OverlayHost : IDisposable
             UnregisterHotKey(_control.Handle, ToggleHotkeyId);
             UnregisterHotKey(_control.Handle, HideHotkeyId);
         }
+        _systemInput?.End();
         DestroyPairs();
+        _systemInput?.Dispose();_systemInput=null;
         DisposeImageDrops();
         ReleaseGpuRenderer();
         if (_control.Handle != 0) DestroyWindow(_control.Handle);
@@ -451,8 +459,8 @@ public sealed partial class OverlayHost : IDisposable
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         var monitors = OverlayMonitorSelection.Select(_monitorProvider(), Scope);
         if (_captureActive) CancelPendingCapture();
-        var foreground = GetForegroundWindow();
-        bool preserveToolFocus = IsEditing && IsForegroundFromThisProcess() && !OwnsWindow(foreground);
+        var foreground = _systemInput is not null?GetFocus():GetForegroundWindow();
+        bool preserveToolFocus = IsEditing && OwnsEditingInput() && !OwnsWindow(foreground);
         EndDropReceptionCore();
         CancelPointer();
         var previousWindows = _windows.ToArray();
@@ -484,8 +492,9 @@ public sealed partial class OverlayHost : IDisposable
                 }
             }
             RegisterImageDropTargets();
+            if(IsEditing && _systemInput is not null)_systemInput.SetReceiver(_windows[0].Input.Handle);
             Render();
-            if (IsEditing)
+            if (IsEditing && _nativeDialogDepth==0)
             {
                 // Establish the full stack while the new windows are hidden, so even the
                 // first displayed frame stays below input and the owner's tool windows.
@@ -496,7 +505,7 @@ public sealed partial class OverlayHost : IDisposable
             foreach (var pair in _windows)
             {
                 if (IsVisible) ShowWindowPreservingZOrder(pair.Display.Handle);
-                if (IsEditing) ShowWindowPreservingZOrder(pair.Input.Handle);
+                if (IsEditing && _nativeDialogDepth==0) ShowWindowPreservingZOrder(pair.Input.Handle);
             }
         }
         catch
@@ -509,7 +518,7 @@ public sealed partial class OverlayHost : IDisposable
         // Commit only after every candidate HWND, first render and first show succeeded.
         // A failed attempt leaves the old visible/input windows and editing lease intact.
         foreach (var pair in previousWindows) DestroyMonitorPair(pair);
-        if (IsEditing && !preserveToolFocus && !ActivateInputAtCursor()) EndEditingAfterFocusLoss();
+        if (IsEditing && _nativeDialogDepth==0 && !preserveToolFocus && !ActivateInputAtCursor()) EndEditingAfterFocusLoss();
     }
 
     private void DestroyPairs()
@@ -542,6 +551,7 @@ public sealed partial class OverlayHost : IDisposable
     {
         GetCursorPos(out var cursor);
         var active = _windows.FirstOrDefault(pair => pair.Monitor.Bounds.Contains(new(cursor.X, cursor.Y))) ?? _windows.First();
+        if(_systemInput is not null) {_systemInput.SetReceiver(active.Input.Handle);return TryFocusEditingWindow(active.Input.Handle);}
         SetForegroundWindow(active.Input.Handle);
         if (GetForegroundWindow() != active.Input.Handle) return false;
         SetFocus(active.Input.Handle);
@@ -567,10 +577,11 @@ public sealed partial class OverlayHost : IDisposable
             if (_captureOperation is { } capture)
             {
                 bool ownProcessWindow = GetWindowThreadProcessId(hwnd, out var process) != 0 && process == Environment.ProcessId;
-                capture.ObserveForeground(hwnd, eventTime, ownProcessWindow);
+                bool sameInputTarget=_systemInput is not null && hwnd==_systemInput.Target;
+                capture.ObserveForeground(hwnd, eventTime, ownProcessWindow,sameInputTarget);
                 ReportCapture(capture, "ForegroundEvent", capture.Reason, eventForeground: hwnd, eventTime: eventTime);
             }
-            if (IsEditing && !IsForegroundFromThisProcess()) EndEditingAfterFocusLoss();
+            if (IsEditing && !OwnsEditingInput()) EndEditingAfterFocusLoss();
             return;
         }
 
@@ -579,6 +590,9 @@ public sealed partial class OverlayHost : IDisposable
 
     private void EndEditingAfterFocusLoss()
     {
+        // Our native modal owns the input handoff. A changed foreground here does
+        // not cancel the user's editing intent; explicit ExitEditing still does.
+        if(_nativeDialogDepth!=0)return;
         ExitEditing(restorePreviousForeground: false);
         ForegroundLossVersion++;
         EditingFocusLost?.Invoke();
@@ -622,6 +636,21 @@ public sealed partial class OverlayHost : IDisposable
 
     private nint OnMessage(WindowState state, uint message, nuint wParam, nint lParam)
     {
+        if(_nativeDialogDepth!=0 && (message==0x8462 || message==0x113 && wParam==SystemInputTimer))return 0;
+        if(message==0x8462 && _systemInput is { } system && system.IsCurrentChange(wParam))
+        {
+            if(IsEditing && !system.Acknowledged)
+            {bool interrupted=system.OwnsInput;EndEditingAfterFocusLoss();if(interrupted)SystemInputUnavailable?.Invoke();}
+            else if(IsEditing) SystemInputReady();
+            return 0;
+        }
+        if(message==0x113 && wParam==SystemInputTimer)
+        {
+            if(IsEditing && _systemInput is {WaitingForEntryKeys:true})_systemInputDeadline=Environment.TickCount64+2000;
+            if(IsEditing && _systemInput is {Acknowledged:false} && Environment.TickCount64>=_systemInputDeadline)
+            {EndEditingAfterFocusLoss();SystemInputUnavailable?.Invoke();}
+            return 0;
+        }
         if (state.Kind == WindowKind.Input && message == WmMouseMove) ObservePointerMessage(state, message, wParam, lParam);
         if (state.Kind == WindowKind.Input && (message is >= 0x100 and <= 0x109 or >= 0x200 and <= 0x20E))
             NotifyInputProgress();
@@ -677,6 +706,7 @@ public sealed partial class OverlayHost : IDisposable
         if (message == WmDpiChanged && state.Handle == _captureGeometryWindow) return 0;
         if (message == WmDisplayChange || message == WmDpiChanged)
         {
+            if(_systemInput is not null && IsEditing)EndEditingAfterFocusLoss();
             if (!_refreshPosted && !_disposed)
             {
                 _refreshPosted = true;
@@ -685,6 +715,11 @@ public sealed partial class OverlayHost : IDisposable
             return 0;
         }
         if (state.Kind != WindowKind.Input) return DefWindowProcW(state.Handle, message, wParam, lParam);
+        if (message == 0x7 && _systemInput is not null) // WM_SETFOCUS: native canvas has no TSF text store.
+        {
+            _systemInput.FocusCanvas(state.Handle);
+            return 0;
+        }
         if (message == 0x02A3) { OnPointerLeft(state); return 0; }
         // Keep the original mouse message, but activate only after a new canvas press
         // passes the editing, modal, focus and capture checks below. OLE never activates.
@@ -756,14 +791,17 @@ public sealed partial class OverlayHost : IDisposable
     {
         var state = new WindowState(this, kind, monitor);
         var reference = GCHandle.Alloc(state);
-        var hwnd = CreateWindowExW(extendedStyle, ClassName, kind == WindowKind.Control ? "FloatCanvas Control" : $"FloatCanvas {kind}",
-            WsPopup, bounds.Left, bounds.Top, bounds.Width, bounds.Height, 0, 0, GetModuleHandleW(null), GCHandle.ToIntPtr(reference));
+        var title=kind == WindowKind.Control ? "FloatCanvas Control" : $"FloatCanvas {kind}";
+        var hwnd = _systemInput is not null && kind!=WindowKind.Control
+            ?SystemOverlayInput.CreateWindow(extendedStyle,ClassName,title,WsPopup,bounds.Left,bounds.Top,bounds.Width,bounds.Height,GCHandle.ToIntPtr(reference))
+            :CreateWindowExW(extendedStyle,ClassName,title,WsPopup,bounds.Left,bounds.Top,bounds.Width,bounds.Height,0,0,GetModuleHandleW(null),GCHandle.ToIntPtr(reference));
         if (hwnd == 0)
         {
             var error = Marshal.GetLastWin32Error();
             if (!state.Freed) reference.Free();
             throw new Win32Exception(error, L.Get("Overlay.WindowCreationFailed"));
         }
+        if(_systemInput is not null && kind==WindowKind.Input)DisableCanvasInputMethod(hwnd);
         // The full monitor client area is an effect/input surface, not a fullscreen application.
         // Set the Shell's documented opt-out before any ShowWindow, including layout rebuilds.
         // https://learn.microsoft.com/windows/win32/api/shobjidl_core/nf-shobjidl_core-itaskbarlist2-markfullscreenwindow
@@ -814,7 +852,8 @@ public sealed partial class OverlayHost : IDisposable
         catch (Exception error)
         {
             // Never unwind a managed exception through the native window procedure.
-            try { state.Owner.CancelPointer(); state.Owner.Error?.Invoke(error); } catch { }
+            try { state.Owner.CancelPointer(); } catch { }
+            try { state.Owner.Error?.Invoke(error); } catch { }
             return DefWindowProcW(hwnd, message, wParam, lParam);
         }
     }

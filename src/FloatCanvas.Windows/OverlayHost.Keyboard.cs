@@ -14,7 +14,7 @@ public sealed partial class OverlayHost
     private long _keyboardLease;
 
     public bool IsKeyboardIsolationEnabled => _keyboardIsolation is not null;
-    public bool IsKeyboardIsolationActive => _keyboardIsolation?.IsLeaseActive == true;
+    public bool IsKeyboardIsolationActive => _systemInput?.Acknowledged??(_keyboardIsolation?.IsLeaseActive == true);
     public event Action<KeyboardLeaseEndReason>? KeyboardIsolationReleased;
 
     /// <summary>

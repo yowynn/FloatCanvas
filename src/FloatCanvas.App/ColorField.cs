@@ -18,6 +18,7 @@ internal sealed class ColorField : UserControl
     private readonly Grid swatch = new() { IsHitTestVisible = false };
     private readonly TextBlock label = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 10, FontWeight = FontWeights.SemiBold };
     private readonly Popup popup;
+    private readonly PopupHandle popupDisplay;
     private readonly ColorPickerPanel picker;
     private bool pickerSessionOpen, draftCommitted, pickerSessionChanged, isMixed;
 
@@ -27,7 +28,7 @@ internal sealed class ColorField : UserControl
         set { if (isMixed == value) return; isMixed = value; RefreshValue(); }
     }
 
-    internal bool IsPickerOpen => popup.IsOpen;
+    internal bool IsPickerOpen => popupDisplay.IsOpen;
     internal DependencyObject PickerRoot => popup.Child;
     public ColorRole Role { get; }
     public uint Value { get => (uint)GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
@@ -63,7 +64,8 @@ internal sealed class ColorField : UserControl
         border.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };
-        PopupChildDialog.Attach(border, popup);
+        popupDisplay=new(popup);
+        PopupChildDialog.Attach(border, popupDisplay.Key);
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && TryClosePicker()) e.Handled = true; };
         border.PreviewKeyDown += (_, e) =>
         {
@@ -71,20 +73,20 @@ internal sealed class ColorField : UserControl
             ClosePicker(); button.Focus(); e.Handled = true;
         };
         SessionWindowCoordinator? popupSession = null;
-        popup.Opened += (_, _) =>
+        popupDisplay.OnOpened((_, _) =>
         {
             pickerSessionOpen = true; draftCommitted = false; pickerSessionChanged = false;
             picker.Value = Value; picker.RefreshCollections();
             popupSession = SessionWindowCoordinator.Find(Window.GetWindow(this));
-            popupSession?.RegisterPopup(popup, ClosePicker);
-        };
-        popup.Closed += (_, _) =>
+            popupSession?.RegisterPopup(popupDisplay.Key, ClosePicker);
+        });
+        popupDisplay.OnClosed((_, _) =>
         {
             CommitPickerDraft(); pickerSessionOpen = false;
-            popupSession?.UnregisterPopup(popup); popupSession = null;
+            popupSession?.UnregisterPopup(popupDisplay.Key); popupSession = null;
             PickerClosed?.Invoke();
-        };
-        button.Click += (_, _) => { if (popup.IsOpen) ClosePicker(); else popup.IsOpen = true; };
+        });
+        button.Click += (_, _) => { if (popupDisplay.IsOpen) ClosePicker(); else popupDisplay.IsOpen = true; };
         picker.ColorChosen += color =>
         {
             // An explicit choice can intentionally unify a mixed selection even
@@ -101,7 +103,7 @@ internal sealed class ColorField : UserControl
 
     public void SetUserValue(uint value)
     {
-        if (popup.IsOpen)
+        if (popupDisplay.IsOpen)
         {
             bool returnToButton = picker.IsKeyboardFocusWithin;
             picker.Value = value; ApplyPickerValue(value); ClosePicker();
@@ -119,7 +121,7 @@ internal sealed class ColorField : UserControl
         for (var current = source; current is not null; current = current is Visual || current is System.Windows.Media.Media3D.Visual3D
             ? VisualTreeHelper.GetParent(current) ?? LogicalTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current))
         {
-            if (ReferenceEquals(current, picker) || ReferenceEquals(current, popup.Child)) return true;
+            if (ReferenceEquals(current, picker) || ReferenceEquals(current, popupDisplay.Child)) return true;
             if (current is ContextMenu menu && menu.PlacementTarget is { } target) { if (OwnsPickerInput(target)) return true; }
         }
         return false;
@@ -142,18 +144,18 @@ internal sealed class ColorField : UserControl
     }
     internal void OpenPicker(bool focus = false)
     {
-        popup.IsOpen = true;
+        popupDisplay.IsOpen = true;
         if (focus) Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
-        { if (popup.IsOpen) picker.MoveFocus(new TraversalRequest(FocusNavigationDirection.First)); });
+        { if (popupDisplay.IsOpen) picker.MoveFocus(new TraversalRequest(FocusNavigationDirection.First)); });
     }
     public void ClosePicker()
     {
         CommitPickerDraft();
-        popup.IsOpen = false;
+        popupDisplay.IsOpen = false;
     }
     public bool TryClosePicker()
     {
-        if (!popup.IsOpen && !pickerSessionOpen) return false;
+        if (!popupDisplay.IsOpen && !pickerSessionOpen) return false;
         ClosePicker(); if (MayReturnFocus) button.Focus(); return true;
     }
     private bool MayReturnFocus => SessionWindowCoordinator.Find(Window.GetWindow(this))?.IsDirectTransfer != true;

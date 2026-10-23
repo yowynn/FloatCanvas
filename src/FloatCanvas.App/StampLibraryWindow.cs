@@ -410,11 +410,11 @@ internal sealed class StampLibraryWindow : Wpf.Window
         return false;
     }
 
-    private Controls.ContextMenu TileContextMenu(Guid id) => EntryContextMenu(id,null,null);
-    internal Controls.ContextMenu CreateToolbarMenu(Guid id,int slot,Wpf.Window owner) => EntryContextMenu(id,slot,owner);
-    private Controls.ContextMenu EntryContextMenu(Guid id,int? toolbarSlot,Wpf.Window? owner)
+    private OverlayContextMenu TileContextMenu(Guid id) => EntryContextMenu(id,null,null);
+    internal OverlayContextMenu CreateToolbarMenu(Guid id,int slot,Wpf.Window owner) => EntryContextMenu(id,slot,owner);
+    private OverlayContextMenu EntryContextMenu(Guid id,int? toolbarSlot,Wpf.Window? owner)
     {
-        var menu = new Controls.ContextMenu();
+        var menu = new OverlayContextMenu();
         void RunEntryAsync(Func<Task> action) => RunAsync(async()=>
         {
             selected=id;var previous=dialogOwner;dialogOwner=owner;
@@ -465,7 +465,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     }
 
     private void CloseTileMenus()
-    { foreach (var item in grid.Items.OfType<Controls.ListBoxItem>()) if (item.ContextMenu is { } menu) menu.IsOpen = false; }
+    { foreach (var item in grid.Items.OfType<Controls.ListBoxItem>()) if (item.ContextMenu is { } menu)OverlayContextMenu.SetOpen(menu,false); }
 
     private (string Name, StampSaveMode Mode)? Prompt(string initialName, StampSaveMode mode, bool showMode)
     {

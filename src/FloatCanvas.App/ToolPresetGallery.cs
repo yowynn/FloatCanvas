@@ -153,9 +153,9 @@ internal sealed class ToolPresetGallery : UserControl
         var selected = Tiles().FirstOrDefault(button => Equals(button.Tag, SelectedId));
         selected?.BringIntoView();
     }));
-    private ContextMenu Menu(ToolPreset preset)
+    private OverlayContextMenu Menu(ToolPreset preset)
     {
-        var menu = new ContextMenu();
+        var menu = new OverlayContextMenu();
         void Add(string key, PanelActionIcon icon, Action action, string shortcut = "")
         { var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = shortcut }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => Run(() => { library.Update(preset.Id, controller.Parameters); Refresh(); }));

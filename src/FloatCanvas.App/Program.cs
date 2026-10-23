@@ -9,6 +9,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args is ["--probe-system-overlay"])
+        {
+            Environment.ExitCode = OverlayBackendProtection.RunProbe();
+            return;
+        }
         if (Array.IndexOf(args, "--apply-update") >= 0)
         {
             Environment.ExitCode = args.Length == 2 && args[0] == "--apply-update" ? AppUpdateInstaller.Run(args[1]) : 2;
@@ -43,15 +48,47 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         { if (e.ExceptionObject is Exception exception) diagnostics.WriteUnhandled(exception); };
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        DesktopSession? session = null;
+        OverlayBackendProtection? protection = null;
+        bool recovering = false;
+        var pendingProjects = new Queue<string>();
         app.DispatcherUnhandledException += (_, e) =>
         {
             diagnostics.WriteUnhandled(e.Exception);
+            if (session?.TryRequestDesktopFallback(e.Exception) == true) { e.Handled = true; return; }
+            if (session?.UsesEnhancedOverlay == true) protection?.Disable(e.Exception.Message);
             if (args.Contains("--smoke")) app.Shutdown(1);
             else AppDialog.Show(null, e.Exception.Message, L.Get("App.OperationFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
             e.Handled = true;
         };
-        DesktopSession? session = null;
-        var pendingProjects = new Queue<string>();
+        async void RecoverDesktop(string reason)
+        {
+            if (recovering || session is null || app.Dispatcher.HasShutdownStarted) return;
+            recovering = true;
+            try
+            {
+                var previous = session;
+                var state = await previous.PrepareDesktopFallbackAsync();
+                session = null;
+                previous.Dispose();
+                var replacement = new DesktopSession(app, null, protection, state);
+                session = replacement;
+                replacement.DesktopFallbackRequested += RecoverDesktop;
+                while (pendingProjects.TryDequeue(out var pending)) replacement.QueueProjectOpen(pending);
+                replacement.Start(args);
+            }
+            catch (OperationCanceledException) when (app.Dispatcher.HasShutdownStarted) { }
+            catch (Exception error) when (OverlayBackendProtection.Recoverable(error))
+            {
+                protection?.Disable(error.Message);
+                diagnostics.Write("Input.DesktopFallbackFailed", exception: error);
+                if (!app.Dispatcher.HasShutdownStarted)
+                    AppDialog.Show(null, L.Get("OverlaySafety.RecoverFailed") + "\n\n" + error.Message,
+                        L.Get("App.OperationFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
+                if (session is null) app.Shutdown(1);
+            }
+            finally { recovering = false; }
+        }
         using var activation = new ProjectActivation(profileId, async path =>
             await app.Dispatcher.InvokeAsync(() =>
             {
@@ -65,7 +102,10 @@ internal static class Program
             try
             {
                 AppTheme.InitializeStartup();
-                session = new DesktopSession(app);
+                protection = new OverlayBackendProtection(ApplicationPaths.ProfileDirectory,
+                    args.Contains("--desktop-mode"), args.Contains("--retry-fullscreen"));
+                session = new DesktopSession(app, null, protection);
+                session.DesktopFallbackRequested += RecoverDesktop;
                 while (pendingProjects.TryDequeue(out var pending)) session.QueueProjectOpen(pending);
                 session.Start(args);
             }
@@ -78,7 +118,11 @@ internal static class Program
                 app.Shutdown(1);
             }
         };
-        app.Exit += (_, _) => session?.Dispose();
+        app.Exit += (_, _) =>
+        {
+            session?.Dispose();
+            protection?.Complete();
+        };
         app.Run();
     }
 }

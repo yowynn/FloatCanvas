@@ -27,7 +27,7 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly Button fourPoints = new() {Width=34,MinWidth=0,MinHeight=32,Padding=new(7),ToolTip=L.Get("Canvas.FourPoints")};
     private readonly ComboBox pattern = new();
     private readonly StackPanel perspectiveActions = new() { Margin = new(0, 8, 0, 8) };
-    private readonly ContextMenu resetMenu = new();
+    private readonly OverlayContextMenu resetMenu = new();
     private readonly Button resetChoices = new() { Content = "▾", Width = 26, MinHeight = 32, Padding = new(2) };
     private string? selectedResetDevice;
     private readonly CanvasPresetGallery presets;

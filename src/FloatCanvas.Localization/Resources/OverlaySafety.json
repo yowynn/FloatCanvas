@@ -1,0 +1,6 @@
+{
+  "OverlaySafety.DesktopTitle": { "zh": "已使用普通桌面模式", "en": "Using ordinary desktop mode" },
+  "OverlaySafety.DesktopNotice": { "zh": "全屏增强不可用，已回退到普通桌面模式。绘画和文件功能仍可使用；部分全屏应用上方可能无法显示。", "en": "Fullscreen enhancement is unavailable. Ordinary desktop mode keeps drawing and file operations available; coverage above some fullscreen applications may be limited." },
+  "OverlaySafety.RecoverFailed": { "zh": "无法完成自动回退。请保存画布后退出，并使用 --desktop-mode 重新启动浮绘。", "en": "Automatic fallback could not finish. Save your canvas, exit, and restart FloatCanvas with --desktop-mode." },
+  "OverlaySafety.DesktopCommand": { "zh": "改用普通桌面模式", "en": "Switch to ordinary desktop mode" }
+}

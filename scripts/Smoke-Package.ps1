@@ -18,7 +18,7 @@ $executables = @(Get-ChildItem -LiteralPath $runDirectory -Filter FloatCanvas.ex
 if ($executables.Count -ne 1) { throw 'The distribution must contain exactly one FloatCanvas.exe.' }
 $executablePath = $executables[0].FullName
 $packageDirectory = $executables[0].DirectoryName
-foreach ($required in @('LICENSE', 'CHANGELOG.md', 'README.md', 'README.en.md', 'User-Guide.md', 'User-Guide.en.md', 'FloatCanvas.Localization.dll', 'FloatCanvas.runtimeconfig.json', 'PACKAGE-INFO.json')) {
+foreach ($required in @('LICENSE', 'CHANGELOG.md', 'README.md', 'README.en.md', 'User-Guide.md', 'User-Guide.en.md', 'FloatCanvas.Localization.dll', 'FloatCanvas.SystemOverlay.dll', 'FloatCanvas.runtimeconfig.json', 'PACKAGE-INFO.json')) {
     if (-not (Test-Path -LiteralPath (Join-Path $packageDirectory $required) -PathType Leaf)) { throw "Package is missing $required" }
 }
 $documentationPrefix = $packageDirectory.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar

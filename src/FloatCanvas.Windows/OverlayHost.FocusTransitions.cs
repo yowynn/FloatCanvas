@@ -54,7 +54,7 @@ public sealed partial class OverlayHost
         CheckThread();
         bool Available() => IsEditing && IsVisible && !_captureActive && !IsReceivingDrop && !IsOleDragOver &&
             !_startingCanvasPointer && _pressedButton == OverlayMouseButton.None && GetCapture() == 0 &&
-            IsForegroundFromThisProcess() && (_keyboardIsolation is null || _keyboardIsolation.IsLeaseActive) &&
+            OwnsEditingInput() && (_keyboardIsolation is null || _keyboardIsolation.IsLeaseActive) &&
             _windows.Count != 0 && _windows.All(pair => IsWindowVisible(pair.Input.Handle) && IsWindowEnabled(pair.Input.Handle)) &&
             !HasDisabledOwnOwner(GetForegroundWindow());
         if (!Available() || CanBeginCanvasGesture?.Invoke() == false || !Available()) return false;
@@ -72,6 +72,12 @@ public sealed partial class OverlayHost
     private void PostTransitionCompletion(FocusTransitionToken token)
     {
         if (!_focusTransitions.IsCurrent(token)) return;
+        if(_systemInput is not null)
+        {
+            _focusTransitions.Complete(token);
+            if(IsEditing && !OwnsEditingInput()) EndEditingAfterFocusLoss();
+            return;
+        }
         if (!PostMessageW(ControlHandle, CompleteFocusTransitionMessage,
             unchecked((nuint)token.SessionVersion), unchecked((nint)token.TransitionVersion)))
         {
@@ -129,6 +135,8 @@ public sealed partial class OverlayHost
     private void ValidateEditingFocus(long sessionVersion)
     {
         if (!IsEditing || sessionVersion != EditingSessionVersion) return;
+        if(_systemInput is not null)
+        {if(!OwnsEditingInput()) EndEditingAfterFocusLoss();return;}
         if (!IsForegroundFromThisProcess())
         {
             if (TryKeepInputMethodContext()) return;

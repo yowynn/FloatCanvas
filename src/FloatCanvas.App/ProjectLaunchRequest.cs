@@ -7,6 +7,8 @@ internal static class ProjectLaunchRequest
 {
     internal static string? Parse(string[] args)
     {
+        if (args.Contains("--desktop-mode") && args.Contains("--retry-fullscreen"))
+            throw new ArgumentException(L.Get("Shell.InvalidArguments"));
         string? project = null;
         for (int i = 0; i < args.Length; i++)
         {
@@ -16,7 +18,8 @@ internal static class ProjectLaunchRequest
                 if (++i == args.Length) throw new ArgumentException(L.Get("Shell.InvalidArguments"));
                 continue;
             }
-            if (argument is "--recover" or "--primary-screen" or "--all-screens" or "--smoke" or "--startup") continue;
+            if (argument is "--recover" or "--primary-screen" or "--all-screens" or "--smoke" or "--startup" or
+                "--desktop-mode" or "--retry-fullscreen") continue;
             if (argument == "--open")
             {
                 if (++i == args.Length) throw new ArgumentException(L.Get("Shell.InvalidArguments"));

@@ -131,6 +131,7 @@ internal sealed partial class EditorController
     }
 
     public EditorController(EditorSession session) { Session = session; session.Changed += OnChanged; }
+    internal void DetachSession() => Session.Changed -= OnChanged;
     public bool CanCropSelection => ImageToolEligibility.TryGetCropTarget(Session, out _);
     private void OnChanged(object? sender, EventArgs e)
     {

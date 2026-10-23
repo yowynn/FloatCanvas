@@ -17,7 +17,7 @@ internal sealed partial class DesktopSession
     private ToolbarLauncher _toolbarLauncher = null!;
     private StampShelfControl _stampShelf = null!;
     private Controls.Border _toolbarExpandedContent = null!;
-    private Controls.ContextMenu _moreToolsMenu = null!;
+    private OverlayContextMenu _moreToolsMenu = null!;
     private Controls.Button? _canvasVisibilityButton;
     private static readonly Geometry VisibleCanvasEye = Geometry.Parse("M1,8 Q8,-1 15,8 Q8,17 1,8 Z M8,5 A3,3 0 1 1 7.99,5");
     private static readonly Geometry HiddenCanvasEye = Geometry.Parse("M1,5.5 Q8,12.5 15,5.5 M3.5,7.5 L2,10 M8,9 L8,12 M12.5,7.5 L14,10");
@@ -83,7 +83,7 @@ internal sealed partial class DesktopSession
         Tool(EditorTool.Emoji, L.Get("Tool.Emoji"));
         var more=ToolbarIcon(L.Get("Feedback4.Toolbar.More"),"M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8",OpenMoreTools,"M");
         AddShortcutHint(more,"M");more.Padding=new Thickness(0);more.Tag="more";Cell(more,toolColumn++);
-        _moreToolsMenu=new Controls.ContextMenu {PlacementTarget=more,Placement=Primitives.PlacementMode.Bottom};
+        _moreToolsMenu=new OverlayContextMenu {PlacementTarget=more,Placement=Primitives.PlacementMode.Bottom};
         foreach(var tool in new[]{EditorTool.Blur,EditorTool.Pixelate})_moreToolsMenu.Items.Add(ToolMenuItem(tool));
         more.ContextMenu=_moreToolsMenu;
         _toolbarToolButtons[EditorTool.Blur]=more;
@@ -167,6 +167,7 @@ internal sealed partial class DesktopSession
             Background = Brushes.Transparent, ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight,
             Topmost = true, ShowInTaskbar = true, Icon = _host.IsVisible?AppIcon.WindowImage:AppIcon.HiddenWindowImage, FontSize = 14, FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"),
             UseLayoutRounding = true, SnapsToDevicePixels = true };
+        OverlayWindowScope.Prepare(window);
         _toolbarMenu = CreateLauncherMenu();
         _toolbarMenu.PlacementTarget = _toolbarLauncher;
         _toolbarMenu.Placement = Primitives.PlacementMode.Custom;
@@ -180,6 +181,7 @@ internal sealed partial class DesktopSession
         _toolbarLauncher.DragRequested += () =>
         {
             _toolbarMenu.IsOpen = false;
+            if(OverlayWindowDrag.TryStart(window,()=>{SaveToolbarPosition();RepositionToolOptions();}))return;
             if (Mouse.LeftButton == MouseButtonState.Pressed) window.DragMove();
             SaveToolbarPosition(); RepositionToolOptions();
         };
