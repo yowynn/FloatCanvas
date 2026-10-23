@@ -26,6 +26,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, MinHeight = 28, FontSize = 11 };
     private readonly Controls.Border textSection;
     private readonly Controls.CheckBox keepAspect = new() { Content = L.Get("Inspector.KeepAspect"), MinHeight = 30 };
+    private readonly Controls.CheckBox linkColors = new() { Content = L.Get("Color.LinkColors"), MinHeight = 30 };
     private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
     private readonly Controls.ComboBox alignment = new() { MinHeight = 34, Margin = new(0, 4, 5, 4) };
     private readonly Controls.ComboBox arrowStyle = new() { MinHeight = 34, Margin = new(0, 4, 5, 4) };
@@ -116,6 +117,8 @@ internal sealed class InspectorWindow : Wpf.Window
         var fillColor = CreateColorField("Fill", L.Get("Inspector.Fill"), ColorRole.Background, colorLibrary);
         colors.Children.Add(fillColor);
         propertyPanel.Children.Add(colors);
+        propertyPanel.Children.Add(linkColors); fieldContainers.Add("LinkColors", linkColors);
+        linkColors.Click += (_, _) => ChangeField("LinkColors");
         var colorHint = new Controls.TextBlock { Text = L.Get("Inspector.ColorHint"), FontSize = 11, Opacity = .65, Margin = new(0, 2, 0, 6) };
         fieldContainers.Add("ColorHint", colorHint); propertyPanel.Children.Add(colorHint);
         propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.OpacityPercent"), null, null));
@@ -271,8 +274,10 @@ internal sealed class InspectorWindow : Wpf.Window
             selectionLabel.Visibility = selected.Length == 1 ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
             AppWindowChrome.SetHeaderDetail(this, selected.Length > 1 ? L.Get("Feedback4.Inspector.MultipleHeader") : selected.Length == 1 ? selectionLabel.Text : "");
             foreach (var box in fields.Values) box.Text = "";
-            colorFields["Stroke"].Value = element?.Style.Stroke ?? ColorLibrary.ForegroundRed;
-            colorFields["Fill"].Value = element?.Style.Fill ?? 0;
+            colorFields["Stroke"].Value = element is null ? ColorLibrary.ForegroundRed : (uint)PropertyValue(element, "Stroke")!;
+            colorFields["Fill"].Value = element is null ? 0 : (uint)PropertyValue(element, "Fill")!;
+            linkColors.IsThreeState = selected.Select(e => e.Style.LinkColors).Distinct().Count() > 1;
+            linkColors.IsChecked = linkColors.IsThreeState ? null : element?.Style.LinkColors == true;
             foreach (var color in colorFields.Values) color.IsMixed = false;
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = ElementGeometry.Bounds(element);
@@ -385,6 +390,7 @@ internal sealed class InspectorWindow : Wpf.Window
                     source.Text = edited.Text; source.Number = edited.Number;
                     source.Width = edited.Width; source.Height = edited.Height; source.CornerRadius = edited.CornerRadius;
                     source.ConstrainAspect = edited.ConstrainAspect; source.TextFrameFixed = edited.TextFrameFixed;
+                    source.NumberUsesForeground = edited.NumberUsesForeground;
                     source.IsBillboard=edited.IsBillboard;source.BillboardAnchor=edited.BillboardAnchor;source.BillboardHeight=edited.BillboardHeight;
                     source.ProjectivePlacement=edited.ProjectivePlacement;
                 }
@@ -408,6 +414,7 @@ internal sealed class InspectorWindow : Wpf.Window
             if(changedKey=="ConstrainAspect")
             {keepAspect.IsThreeState=false;keepAspect.IsChecked=selected.All(ElementGeometry.PreservesAspect);}
             if(changedKey=="Placement")SetPropertyVisibility(selected);
+            if(changedKey=="LinkColors")SetPropertyVisibility(selected);
             foreach (var (key, box) in fields)
             {
                 if (key == changedKey) continue;
@@ -431,6 +438,13 @@ internal sealed class InspectorWindow : Wpf.Window
         }
         if(dirtyFields.Contains("BillboardHeight"))edited.BillboardHeight=Number("BillboardHeight",L.Get("Billboard.Height"),-10000000,10000000);
         if(dirtyFields.Contains("ConstrainAspect"))edited.ConstrainAspect=keepAspect.IsChecked==true;
+        if(dirtyFields.Contains("LinkColors"))edited.Style.LinkColors=linkColors.IsChecked==true;
+        if (source.Kind == ElementKind.Number && !source.NumberUsesForeground && dirtyFields.Overlaps(["Stroke", "Fill"]))
+        {
+            edited.Style.Stroke = (uint)PropertyValue(source, "Stroke")!;
+            edited.Style.Fill = (uint)PropertyValue(source, "Fill")!;
+            edited.NumberUsesForeground = true;
+        }
         if (dirtyFields.Contains("Stroke")) edited.Style.Stroke = colorFields["Stroke"].Value;
         if (dirtyFields.Contains("Fill")) edited.Style.Fill = colorFields["Fill"].Value;
         if (dirtyFields.Contains("StrokeWidth")) edited.Style.StrokeWidth = Number("StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, 512);
@@ -742,10 +756,12 @@ internal sealed class InspectorWindow : Wpf.Window
         return key switch
         {
             "Stroke" or "ColorHint" => !image,
-            "Fill" => !image && !text,
+            "Fill" => number || ElementGeometry.IsBoxShape(element.Kind) && !element.Style.LinkColors,
+            "LinkColors" => ElementGeometry.IsBoxShape(element.Kind),
             "StrokeWidth" or "StrokePattern" => !image && !text && !number,
             "CornerRadius" => element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle,
-            "FontFamily" or "FontSize" => text || number,
+            "FontFamily" => text || number,
+            "FontSize" => text && !EmojiGlyphs.IsEmoji(element.Text, element.Style),
             "Text" or "TextAlignment" => text,
             "Number" => number,
             "BillboardHeight" => element.IsBillboard,
@@ -760,7 +776,8 @@ internal sealed class InspectorWindow : Wpf.Window
         "X" => e.IsBillboard?e.BillboardAnchor.X:ElementGeometry.Bounds(e).Left, "Y" => e.IsBillboard?e.BillboardAnchor.Y:ElementGeometry.Bounds(e).Top,
         "BillboardHeight" => e.BillboardHeight,
         "W" => GeometricSize(e).X, "H" => GeometricSize(e).Y, "Angle" => ElementAngle(e),
-        "Stroke" => e.Style.Stroke, "Fill" => e.Style.Fill, "StrokeWidth" => e.Style.StrokeWidth,
+        "Stroke" => e.Kind == ElementKind.Number && !e.NumberUsesForeground ? (e.Style.Fill >> 24) == 0 ? e.Style.Stroke : e.Style.Fill : e.Style.Stroke,
+        "Fill" => e.Kind == ElementKind.Number && !e.NumberUsesForeground ? 0xFFFFFFFF : e.Style.Fill, "StrokeWidth" => e.Style.StrokeWidth,
         "CornerRadius" => ElementGeometry.CornerRadius(e), "Opacity" => e.Style.Opacity,
         "ArrowHeadStyle" => e.Style.ArrowHeadStyle, "ArrowHeadSize" => e.Style.ArrowHeadSize,
         "StartArrowHead" => ElementGeometry.ArrowStyle(e, reverse: true), "EndArrowHead" => ElementGeometry.ArrowStyle(e),
@@ -779,6 +796,10 @@ internal sealed class InspectorWindow : Wpf.Window
         textSection.Visibility = editable && selected.All(e => Supports(e, "FontSize")) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
             container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        bool number = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Number);
+        bool shape = selected.Length > 0 && selected.All(e => ElementGeometry.IsBoxShape(e.Kind));
+        ((Controls.TextBlock)((Controls.StackPanel)fieldContainers["Stroke"]).Children[0]).Text = L.Get(number ? "Color.NumberShape" : shape ? selected.All(e => e.Style.LinkColors) ? "Color.Unified" : "Color.Outline" : "Inspector.Stroke");
+        ((Controls.TextBlock)((Controls.StackPanel)fieldContainers["Fill"]).Children[0]).Text = L.Get(number ? "Color.NumberText" : "Color.Interior");
         bool perspective=getSession().Document.Canvas.Projection.Enabled;
         if(!perspective){fieldContainers["Placement"].Visibility=Wpf.Visibility.Collapsed;fieldContainers["BillboardHeight"].Visibility=Wpf.Visibility.Collapsed;}
         foreach(var key in new[]{"X","Y"})fieldContainers[key].ToolTip=selected.Any(e=>e.IsBillboard)?L.Get("Billboard.AnchorHint"):null;

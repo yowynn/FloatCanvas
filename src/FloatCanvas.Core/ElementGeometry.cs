@@ -92,7 +92,7 @@ public static class ElementGeometry
             if (PointInPolygon(local, outline)) return true;
             return ProjectedContourHit(transform, outline, worldPoint, tolerance);
         }
-        if ((element.Style.Fill >> 24) != 0 && (PointInPolygon(local, outline) || ProjectedContourHit(transform, outline, worldPoint, tolerance))) return true;
+        if (((element.Style.LinkColors ? element.Style.Stroke : element.Style.Fill) >> 24) != 0 && (PointInPolygon(local, outline) || ProjectedContourHit(transform, outline, worldPoint, tolerance))) return true;
         return element.Style.StrokeWidth > 0 && StrokePathHit(element, transform, outline, true, worldPoint, local, strokeRadius, tolerance);
     }
     public static IReadOnlyList<PointD> Outline(CanvasElement element)

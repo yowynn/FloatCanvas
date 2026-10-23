@@ -181,7 +181,7 @@ internal static class InspectorTests
             if (kind == ElementKind.Text)
                 assert("text inspector shows fonts alignment and content without number", Visible("FontFamily") && Visible("FontSize") && Visible("TextAlignment") && Visible("Text") && !Visible("Number"));
             if (kind == ElementKind.Number)
-                assert("number inspector shows fonts and number without text alignment", Visible("FontFamily") && Visible("FontSize") && Visible("Number") && !Visible("Text") && !Visible("TextAlignment"));
+                assert("number inspector shows font family and number while badge geometry controls size", Visible("FontFamily") && !Visible("FontSize") && Visible("Number") && !Visible("Text") && !Visible("TextAlignment"));
         }
         assert("contextual property layout remains detached", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);
     }

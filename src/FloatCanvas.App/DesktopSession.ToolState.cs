@@ -64,7 +64,7 @@ internal sealed partial class DesktopSession
             next.NumberStart = Math.Clamp(_settings.NumberStart, 1, 999999);
             next.NumberStep = Math.Clamp(_settings.NumberStep, 1, 999999);
             if (family == EditorTool.Highlighter) next.Style.StrokeWidth = Math.Max(24, next.Style.StrokeWidth);
-            if (family == EditorTool.Emoji) next.Style.FontSize = 48;
+            if (family == EditorTool.Number) next.Style.Fill = 0xFFFFFFFF;
         }
         if (applyAlias && tool is EditorTool.Arrow or EditorTool.DoubleArrow)
             next = ApplyToolbarPreset(tool == EditorTool.Arrow ? "official.arrow" : "official.double-arrow", next);

@@ -51,7 +51,7 @@ internal static class Feedback4GeometryTests
         numberEditor.Style.FontSize = 64;
         Gesture(numberEditor, new(200, 200), new(200, 200));
         var number = numbers.Document.Elements.Single();
-        check("number font size determines its insertion bounds", Math.Abs(number.Width - 64 / .58) < 1e-8 && number.Height == number.Width && number.Style.FontSize == 64);
+        check("number Size directly determines its insertion bounds", number.Width == 64 && number.Height == 64 && number.Style.FontSize == 64);
         NumberRules(check);
         ShapeGeometry(check);
         InspectorGeometry(check);
@@ -127,10 +127,11 @@ internal static class Feedback4GeometryTests
         var shape = session.Document.Elements.Single();
         check("numeric shape width editing rebuilds geometry while preserving line and corner sizes", shape.Width == 240 && shape.Height == 60 && shape.Transform.M11 == 1 && shape.Style.StrokeWidth == 4 && shape.CornerRadius == 12);
         session.ReplaceDocument(new() { Elements = [new() { Kind = ElementKind.Number, Width = 40, Height = 40, Style = new() { FontSize = 24 } }] });
-        session.SelectAll(); inspector.Refresh(); fields["FontSize"].Text = "64";
+        session.SelectAll(); inspector.Refresh(); fields["W"].Text = "64";
         typeof(InspectorWindow).GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(inspector, null);
         var number = session.Document.Elements.Single();
-        check("existing number font editing enlarges its circle in the same undoable operation", Math.Abs(number.Width - 64 / .58) < 1e-8 && number.Height == number.Width && number.Style.FontSize == 64 && session.UndoCount == 1);
+        var bounds = ElementGeometry.Bounds(number);
+        check("existing number width editing enlarges its locked circle in one undoable operation", Math.Abs(bounds.Width - 64) < 1e-8 && Math.Abs(bounds.Height - 64) < 1e-8 && number.Style.FontSize == 24 && session.UndoCount == 1);
     }
 
     private static void Gesture(EditorController editor, PointD from, PointD to)

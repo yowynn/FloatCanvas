@@ -13,6 +13,8 @@ internal static class EmojiTests
 {
     public static void Run(Action<string, bool> check)
     {
+        _ = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+        AppTheme.Apply("light");
         check("emoji catalog retains all thirty distinct choices", EmojiArtwork.BuiltIn.Count == 30 && EmojiArtwork.BuiltIn.Distinct().Count() == 30);
         using var renderer = new SceneRenderer();
         var assets = new AssetLibrary();
@@ -77,19 +79,19 @@ internal static class EmojiTests
         controller.Pointer(new(OverlayPointerKind.Down, new(-250, 160), OverlayMouseButton.Left, OverlayModifiers.None));
         controller.Pointer(new(OverlayPointerKind.Up, new(-250, 160), OverlayMouseButton.Left, OverlayModifiers.None));
         var element = session.Document.Elements.Single(); var metrics = EmojiGlyphs.Measure("🤔", 18);
-        check("emoji creation centers a tightly bounded editable text element at the document click", element.Kind == ElementKind.Text && element.Text == "🤔" && element.Style.FontSize == 18 &&
-            element.Width == metrics.Width && element.Height == metrics.Height && element.Transform == Affine2D.Translation(50 - metrics.Width / 2, 60 - metrics.Height / 2));
+        check("emoji creation centers its configured size at the document click", element.Kind == ElementKind.Text && element.Text == "🤔" && element.Style.FontSize == 18 &&
+            element.Width == 18 && element.Height == 18 && element.Transform == Affine2D.Translation(41, 51));
         check("emoji creation remains one undoable object", session.UndoCount == 1 && session.Undo() && session.Document.Elements.Count == 0 && session.Redo());
         var inspector = new InspectorWindow(() => session);
         var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
-        fields["FontSize"].Text = "36";
+        fields["W"].Text = "36";
         Invoke(inspector, "Apply"); element = session.Document.Elements.Single(); metrics = EmojiGlyphs.Measure("🤔", 36);
         Console.WriteLine($"EMOJI_PROPERTY size={element.Style.FontSize} box={element.Width}x{element.Height} expected={metrics.Width}x{metrics.Height} selection={session.Selection.Count} status={((Controls.TextBlock)Field(inspector, "status")).Text}");
-        check("emoji property size edits update both tight dimensions while preserving the explicit font size", element.Style.FontSize == 36 && element.Width == metrics.Width && element.Height == metrics.Height);
+        check("emoji property geometry edits update both dimensions while aspect is locked", element.Width == 36 && element.Height == 36);
         using var renderer = new SceneRenderer();
         using(var edit=new InlineTextEdit(session,element,new(),element.Style,renderer)) {edit.Input.Text="❤️";edit.Finish(true);}
         element = session.Document.Elements.Single(); metrics = EmojiGlyphs.Measure("❤️", 36);
-        check("editing an emoji sequence recomputes its tight dimensions without rasterizing the object", element.Kind == ElementKind.Text && element.Text == "❤️" && element.Width == metrics.Width && element.Height == metrics.Height);
+        check("editing an emoji sequence preserves its editable sized frame", element.Kind == ElementKind.Text && element.Text == "❤️" && element.Width == 36 && element.Height == 36);
         check("emoji detached edit checks create no native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);
     }
 

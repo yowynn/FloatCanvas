@@ -23,6 +23,9 @@
 - 绘图范围按全部屏幕、仅主屏排列，多屏时列出具体屏幕；按设备保存选择，断开回退主屏、重连恢复，并随屏幕布局更新列表，保留已打开设置中的未保存范围选择。恢复重置透视的屏幕选择，单活动屏时禁用下拉。
 - Order drawing scope as All screens, Primary screen only, then individual screens. Save device identity, fall back to primary on disconnect, restore on reconnect, and refresh lists after topology changes while retaining pending scope edits. Restore reset-display choices and disable the dropdown for a single active screen.
 
+- 统一官方尺度：文字 36、符号／序号／Emoji 72、自由形状至少一边 108。序号按图形大小自动适配文字，使用图形／文字独立色板；Emoji 实际随边框拉伸。形状在工具和图层属性中可链接边框与填充颜色，并随预设、工程和恢复数据保存。
+- Standardize official sizing at 36 for text, 72 for symbols, numbers and emoji, and a 108-pixel side for free shapes. Fit numbered labels to badge geometry with separate shape/text palettes, stretch emoji artwork with its frame, and persist linked outline/fill colors in tool presets, projects and recovery data.
+
 - 将全屏增强作为可选后端：启动前由独立进程探测，接口缺失、初始化失败或上次异常退出时回退到普通桌面模式。运行中安全释放输入后重建桌面界面，保留画布、资源、文件绑定及撤销记录；增加 `--desktop-mode` 与 `--retry-fullscreen` 启动入口。
 - Make fullscreen enhancement optional: probe it in an isolated startup process and use ordinary desktop mode after missing interfaces, initialization failures or an unclean prior exit. After safely releasing input, rebuild desktop surfaces while preserving documents, assets, file bindings and undo history; add `--desktop-mode` and `--retry-fullscreen` launch options.
 

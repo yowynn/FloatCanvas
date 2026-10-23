@@ -240,7 +240,21 @@ internal static class PerspectiveSafetyInputTests
         check("capture can be retried normally inside safety", captures == 1 && !editor.IsPointerBlocked);
 
         editor.Tool = EditorTool.Number;
-        var parameters = editor.Parameters; parameters.Style.FontSize = 1000; editor.ApplyParameters(parameters);
+        var numberMapping = CanvasMapping.Create(session.Document);
+        var numberScreenCenter = new PointD(100, 188);
+        check("number placement fixture center remains inside the finite ground domain", numberMapping.TryToPlane(numberScreenCenter, out var numberCenter));
+        CanvasElement Badge(double size) => new() { Kind = ElementKind.Number, Width = size, Height = size,
+            Transform = Affine2D.Translation(numberCenter.X - size / 2, numberCenter.Y - size / 2) };
+        foreach (double size in new[] { 1000, 1000 / .58, 2000 })
+        {
+            var badge = Badge(size);
+            var plane = ElementGeometry.Bounds(badge); var screen = numberMapping.ProjectedBounds(badge);
+            Console.WriteLine($"NUMBER_SAFETY size={size:R} plane=[{plane.Left:R},{plane.Top:R},{plane.Right:R},{plane.Bottom:R}] screen=[{screen.Left:R},{screen.Top:R},{screen.Right:R},{screen.Bottom:R}] safe={numberMapping.IsElementSafe(badge)} safeScreenMaxY={numberMapping.SafeScreenPolygon.Max(p => p.Y):R}");
+        }
+        check("a 1000 pixel badge is safe while its former font-derived diameter crosses the finite margin", numberMapping.IsElementSafe(Badge(1000)) && !numberMapping.IsElementSafe(Badge(1000 / .58)));
+        check("a 2000 pixel badge has an unsafe envelope despite a safe center", !numberMapping.IsElementSafe(Badge(2000)) && numberMapping.ProjectedBounds(Badge(2000)).Bottom > numberMapping.SafeScreenPolygon.Max(p => p.Y));
+        // Number Size is the badge diameter now, so use an actual size that crosses the finite margin.
+        var parameters = editor.Parameters; parameters.Style.FontSize = 2000; editor.ApplyParameters(parameters);
         session.Document.NextNumber = 42;
         Send(editor, OverlayPointerKind.Down, new(100, 188), create: true);
         check("unsafe number badge neither inserts a layer nor consumes the next number", editor.IsPointerBlocked &&

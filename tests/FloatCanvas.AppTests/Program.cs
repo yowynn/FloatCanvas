@@ -18,6 +18,7 @@ internal static class Program
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--preset-sizing-only")) { PresetSizingCompatibilityTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-protection-only")) { OverlayProtectionTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-protection-runtime")) { OverlayProtectionRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--system-overlay-production")) return SystemOverlayProof.Production();

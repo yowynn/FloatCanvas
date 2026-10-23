@@ -21,8 +21,8 @@ internal static class OfficialSymbolPresetTests
         foreach (var preset in official)
         {
             var applied = library.Apply(preset.Id, current);
-            check(preset.Id + " declares and applies a 100 by 100 default independent of current dimensions",
-                preset.Parameters.DefaultWidth == 100 && preset.Parameters.DefaultHeight == 100 && applied.DefaultWidth == 100 && applied.DefaultHeight == 100);
+            check(preset.Id + " declares and applies a 72 by 72 default independent of current dimensions",
+                preset.Parameters.DefaultWidth == 72 && preset.Parameters.DefaultHeight == 72 && applied.DefaultWidth == 72 && applied.DefaultHeight == 72);
             check(preset.Id + " preserves its symbol geometry and existing style merge contract",
                 applied.Tool == EditorTool.Symbol && applied.Symbol == preset.Parameters.Symbol && !applied.ConstrainAspect &&
                 applied.CornerRadius == current.CornerRadius && applied.EffectStrength == current.EffectStrength &&
@@ -33,8 +33,8 @@ internal static class OfficialSymbolPresetTests
         var reloaded = new ToolPresetLibrary(path);
         check("personal symbol preset dimensions survive save reload and application", JsonSerializer.Serialize(reloaded.Apply(saved.Id, new ToolParameters())) == original);
         var emoji = library.Apply("official.emoji", current);
-        check("official emoji preserves current dimensions and glyph size", emoji.DefaultWidth == 234 && emoji.DefaultHeight == 123 && emoji.Style.FontSize == current.Style.FontSize && emoji.Emoji == current.Emoji);
+        check("official emoji applies the shared 72 size and preserves the glyph", emoji.Style.FontSize == 72 && emoji.Emoji == current.Emoji);
         var rectangle = library.Apply("official.rectangle", current);
-        check("other official shape recipes retain their existing dimensions", rectangle.DefaultWidth == 234 && rectangle.DefaultHeight == 123);
+        check("official rectangle uses its shared 108 side", rectangle.DefaultWidth == 144 && rectangle.DefaultHeight == 108);
     }
 }

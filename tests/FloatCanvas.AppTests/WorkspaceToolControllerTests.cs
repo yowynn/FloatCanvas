@@ -35,10 +35,9 @@ internal static class WorkspaceToolControllerTests
         emoji.Style.FontSize = 18;
         Gesture(emoji, new(-250, 160), new(-250, 160));
         var sticker = emojiSession.Document.Elements.Single();
-        var emojiMetrics = EmojiGlyphs.Measure("👩‍🎨", 18);
         check("emoji click inserts the full Unicode sequence at document coordinates", sticker.Kind == ElementKind.Text && sticker.Text == "👩‍🎨" &&
-            sticker.Transform == Affine2D.Translation(50 - emojiMetrics.Width / 2, 60 - emojiMetrics.Height / 2) && sticker.Style.FontFamily == "Segoe UI Emoji");
-        check("emoji click respects explicit size and independent tool style", sticker.Style.FontSize == 18 && sticker.Width == emojiMetrics.Width && sticker.Height == emojiMetrics.Height && emoji.Style.FontSize == 18);
+            sticker.Transform == Affine2D.Translation(41, 51) && sticker.Style.FontFamily == "Segoe UI Emoji");
+        check("emoji click respects explicit frame size and independent tool style", sticker.Style.FontSize == 18 && sticker.Width == 18 && sticker.Height == 18 && emoji.Style.FontSize == 18);
         check("emoji click adds one editable object without a leftover gesture", emojiSession.UndoCount == 1 && !emojiSession.IsTransactionActive &&
             emoji.Marquee is null && emojiSession.Undo() && emojiSession.Document.Elements.Count == 0 && emojiSession.Redo());
     }

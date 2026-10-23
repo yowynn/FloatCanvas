@@ -46,8 +46,8 @@ internal static class Feedback4OptionsTests
         foreach (var button in gallery.OfficialTiles.Children.OfType<Button>())
         {
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(locale + " clicking cached " + button.Tag + " restores 100 by 100 while preserving cached style",
-                controller.DefaultWidth == 100 && controller.DefaultHeight == 100 && controller.Style.Stroke == custom.Style.Stroke && controller.Style.StrokeWidth == 7);
+            check(locale + " clicking cached " + button.Tag + " restores 72 by 72 while preserving cached style",
+                controller.DefaultWidth == 72 && controller.DefaultHeight == 72 && controller.Style.Stroke == custom.Style.Stroke && controller.Style.StrokeWidth == 7);
         }
         gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, personal.Id)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(locale + " clicking a personal symbol keeps its saved independent dimensions", controller.DefaultWidth == 234 && controller.DefaultHeight == 123);

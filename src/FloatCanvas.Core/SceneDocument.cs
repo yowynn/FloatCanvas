@@ -16,6 +16,8 @@ public sealed class ElementStyle
 {
     public uint Stroke { get; set; } = 0xFFEF4444;
     public uint Fill { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LinkColors { get; set; }
     public double StrokeWidth { get; set; } = 4;
     public ArrowHeadStyle ArrowHeadStyle { get; set; } = ArrowHeadStyle.FilledTriangle;
     /// <summary>Head length in local document pixels; zero preserves automatic max(10, StrokeWidth * 4).</summary>
@@ -75,6 +77,9 @@ public sealed class CanvasElement
     public ElementStyle Style { get; set; } = new();
     public string Text { get; set; } = "";
     public int Number { get; set; } = 1;
+    /// <summary>New badges use Stroke for their shape and Fill for text; absent preserves legacy badge colors.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool NumberUsesForeground { get; set; }
     public string? AssetId { get; set; }
     public RectD? ImageCrop { get; set; }
     public List<ImageEffect> Effects { get; set; } = [];
@@ -86,7 +91,8 @@ public sealed class CanvasElement
         CornerRadius = CornerRadius, Symbol = Symbol, GroupId = GroupId, ConstrainAspect = ConstrainAspect, TextFrameFixed = TextFrameFixed,
         Transform = Transform, ProjectivePlacement = ProjectivePlacement, IsBillboard = IsBillboard,
         BillboardAnchor = BillboardAnchor, BillboardHeight = BillboardHeight, Style = Style.Clone(), Text = Text, Number = Number, AssetId = AssetId,
-        ImageCrop = ImageCrop, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked
+        ImageCrop = ImageCrop, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked,
+        NumberUsesForeground = NumberUsesForeground
     };
 }
 

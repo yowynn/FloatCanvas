@@ -23,6 +23,7 @@ internal sealed class ToolOptionsPanel : UserControl
     private readonly Dictionary<string, FrameworkElement> rows = [];
     private readonly ColorField foreground, background;
     private readonly CheckBox aspect = new() { Content = L.Get("Inspector.KeepAspect"), MinHeight = 30 };
+    private readonly CheckBox linkColors = new() { Content = L.Get("Color.LinkColors"), MinHeight = 30 };
     private readonly ComboBox fontFamily = ToolOptionPreviews.FontPicker();
     private readonly Grid parameterGrid = new();
     private readonly ToolPresetGallery presets;
@@ -95,6 +96,8 @@ internal sealed class ToolOptionsPanel : UserControl
         Number(parameterGrid, "CaptureBorderWidth", L.Get("Snapshot.BorderWidth"), 0, 1024, (p, value) => p.CaptureBorderWidth = value);
         rows.Add("Aspect", aspect); parameterGrid.Children.Add(aspect);
         aspect.Click += (_, _) => Change(p => p.ConstrainAspect = aspect.IsChecked == true);
+        rows.Add("LinkColors", linkColors); parameterGrid.Children.Add(linkColors);
+        linkColors.Click += (_, _) => { Change(p => p.Style.LinkColors = linkColors.IsChecked == true); Refresh(); };
         foreach (var symbol in Enum.GetValues<SymbolKind>())
         {
             var points = SymbolGeometry.Outline(symbol, 16, 16);
@@ -136,9 +139,9 @@ internal sealed class ToolOptionsPanel : UserControl
             bool capture = tool == EditorTool.CaptureRegion;
             bool boxRegion=tool is EditorTool.Crop or EditorTool.Blur or EditorTool.Pixelate||capture&&p.CaptureShape is CaptureShape.Rectangle or CaptureShape.Ellipse;
             paint |= capture;
-            Show("Foreground", paint); Show("Background", shape || tool == EditorTool.Number);
+            Show("Foreground", paint); Show("Background", shape && !p.Style.LinkColors || tool == EditorTool.Number); Show("LinkColors", shape);
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
-            background.Visibility = shape || tool == EditorTool.Number ? Visibility.Visible : Visibility.Collapsed;
+            background.Visibility = shape && !p.Style.LinkColors || tool == EditorTool.Number ? Visibility.Visible : Visibility.Collapsed;
             Show("StrokeWidth", stroke); Show("Opacity", tool is EditorTool.Emoji or EditorTool.Image);
             Show("FontSize", text); Show("FontFamily", tool is EditorTool.Text or EditorTool.Number);
             Show("NumberStart", tool == EditorTool.Number); Show("NumberStep", tool == EditorTool.Number); Show("NextNumber", tool == EditorTool.Number);
@@ -152,7 +155,9 @@ internal sealed class ToolOptionsPanel : UserControl
             Show("CaptureShape", capture); Show("CaptureSource", capture); Show("CaptureBorderWidth", capture);
             noParameters.Visibility = paint || text || boxRegion || tool == EditorTool.Image ? Visibility.Collapsed : Visibility.Visible;
             foreground.Value = capture ? p.CaptureBorderColor : p.Style.Stroke; background.Value = p.Style.Fill; aspect.IsChecked = p.ConstrainAspect; ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
-            ((TextBlock)((StackPanel)rows["Foreground"]).Children[0]).Text = L.Get(capture ? "Snapshot.BorderColor" : "Color.Foreground");
+            linkColors.IsChecked = p.Style.LinkColors;
+            ((TextBlock)((StackPanel)rows["Foreground"]).Children[0]).Text = L.Get(capture ? "Snapshot.BorderColor" : tool == EditorTool.Number ? "Color.NumberShape" : shape ? p.Style.LinkColors ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
+            ((TextBlock)((StackPanel)rows["Background"]).Children[0]).Text = L.Get(tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
             SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);
             SetNumber("StrokeWidth", tool == EditorTool.Highlighter ? Math.Max(16, p.Style.StrokeWidth) : p.Style.StrokeWidth); SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
             SetNumber("EffectStrength", p.EffectStrength); SetNumber("CornerRadius", p.CornerRadius ?? 0); SetNumber("ArrowHeadSize", p.Style.ArrowHeadSize);
@@ -164,7 +169,7 @@ internal sealed class ToolOptionsPanel : UserControl
             SetPicker("StrokePattern", p.Style.StrokePattern);
             SetPicker("TextAlignment", p.Style.TextAlignment);
             HighlightGallery(symbolGallery, p.Symbol); HighlightGallery(emojiGallery, p.Emoji);
-            ((TextBlock)((StackPanel)rows["FontSize"]).Children[0]).Text = L.Get(tool == EditorTool.Emoji ? "ToolOptions.Size" : "Inspector.FontSize");
+            ((TextBlock)((StackPanel)rows["FontSize"]).Children[0]).Text = L.Get(tool is EditorTool.Emoji or EditorTool.Number ? "ToolOptions.Size" : "Inspector.FontSize");
             presets.Refresh();
             LayoutParameters();
         }
@@ -175,7 +180,7 @@ internal sealed class ToolOptionsPanel : UserControl
     private void LayoutParameters()
     {
         parameterGrid.RowDefinitions.Clear();
-        string[][] groups = [ ["CaptureShape"], ["CaptureSource"], ["Foreground"], ["CaptureBorderWidth"], ["Background"], ["StrokeWidth", "Opacity"],
+        string[][] groups = [ ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["Foreground"], ["CaptureBorderWidth"], ["Background"], ["StrokeWidth", "Opacity"],
             ["DefaultWidth", "DefaultHeight"], ["FontSize", "TextAlignment"], ["FontFamily"], ["NumberStart", "NumberStep"], ["NextNumber"], ["StartArrowHead", "EndArrowHead"],
             ["StrokePattern", "ArrowHeadSize"], ["CornerRadius", "Aspect"], ["EffectStrength"], ["Symbols"], ["Emoji"] ];
         foreach (var group in groups)

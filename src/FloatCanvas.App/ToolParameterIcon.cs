@@ -84,7 +84,7 @@ internal static class ToolParameterIcon
             case EditorTool.Text:
                 element.Kind=ElementKind.Text;element.Text="T";element.Width=38;element.Height=40;element.Transform=Affine2D.Translation(6,2);break;
             case EditorTool.Number:
-                element.Kind=ElementKind.Number;element.Number=1;element.Width=32;element.Height=32;style.FontSize=24;element.Transform=Affine2D.Translation(8,8);break;
+                element.Kind=ElementKind.Number;element.NumberUsesForeground=true;element.Number=1;element.Width=32;element.Height=32;style.FontSize=24;element.Transform=Affine2D.Translation(8,8);break;
             case EditorTool.Highlighter:
                 // A preview describes the chosen color; document highlighter blending must
                 // not make its toolbar swatch hard to distinguish.

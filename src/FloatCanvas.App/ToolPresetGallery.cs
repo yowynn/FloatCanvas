@@ -102,9 +102,10 @@ internal sealed class ToolPresetGallery : UserControl
         selections[tool] = id;
         if (id.StartsWith("official.", StringComparison.Ordinal) && !officialBaselines.ContainsKey(id)) officialBaselines[id] = library.Apply(id, controller.Parameters);
         var parameters = officialBaselines.TryGetValue(id, out var baseline) ? baseline.Clone() : library.Apply(id, controller.Parameters);
-        if (preset.IsOfficial && preset.Parameters.Tool == EditorTool.Symbol)
+        if (preset.IsOfficial && preset.Fields.HasFlag(ToolPresetFields.Size))
         {
-            parameters.DefaultWidth = preset.Parameters.DefaultWidth; parameters.DefaultHeight = preset.Parameters.DefaultHeight;
+            if (preset.Parameters.Tool is EditorTool.Text or EditorTool.Number or EditorTool.Emoji) parameters.Style.FontSize = preset.Parameters.Style.FontSize;
+            else { parameters.DefaultWidth = preset.Parameters.DefaultWidth; parameters.DefaultHeight = preset.Parameters.DefaultHeight; }
         }
         controller.ApplyParameters(parameters);
         Refresh(revealSelection: true); stateStore?.MarkChanged(); Applied?.Invoke();

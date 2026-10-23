@@ -67,7 +67,7 @@ internal static class PresetIsolationTests
 
         Activate(session, target); gallery.Refresh();
         check(target + " first visit uses its independent default color and solid line", controller.Style.Stroke == DefaultStroke && controller.Style.StrokePattern == StrokePattern.Solid);
-        check(target + " first visit does not inherit the previous tools width or fill", controller.Style.Fill == new ToolParameters().Style.Fill &&
+        check(target + " first visit does not inherit the previous tools width or fill", controller.Style.Fill == (target == EditorTool.Number ? 0xFFFFFFFF : new ToolParameters().Style.Fill) &&
             Math.Abs(controller.Style.StrokeWidth - (target == EditorTool.Highlighter ? 24 : new ToolParameters().Style.StrokeWidth)) < .001);
         check(target + " first selected official baseline uses independent defaults", baselines[gallery.SelectedId].Style.Stroke == DefaultStroke && baselines[gallery.SelectedId].Style.StrokePattern == StrokePattern.Solid);
         var previews = PreviewHashes(gallery);

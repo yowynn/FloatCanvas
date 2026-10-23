@@ -390,15 +390,14 @@ internal sealed partial class EditorController
         if (Tool == EditorTool.Number)
         {
             if (NumberStep < 1) throw new ArgumentOutOfRangeException(nameof(NumberStep));
-            double diameter = Math.Max(12, style.FontSize / .58);
+            double diameter = style.FontSize;
             drawing = new() { Kind = ElementKind.Number, Width = diameter, Height = diameter,
-                Style = style, Number = Session.Document.NextNumber };
+                Style = style, Number = Session.Document.NextNumber, NumberUsesForeground = true, ConstrainAspect = true };
         }
         else
         {
             style.FontFamily = EmojiGlyphs.FontFamily;
-            var size = EmojiGlyphs.Measure(Emoji, style.FontSize);
-            drawing = new() { Kind = ElementKind.Text, Text = Emoji, Width = size.Width, Height = size.Height, Style = style };
+            drawing = new() { Kind = ElementKind.Text, Text = Emoji, Width = style.FontSize, Height = style.FontSize, Style = style, ConstrainAspect = true };
         }
         drawing.Transform = Affine2D.Translation(center.X - drawing.Width / 2, center.Y - drawing.Height / 2);
         Session.BeginTransaction(L.Get("History.AddElement"));

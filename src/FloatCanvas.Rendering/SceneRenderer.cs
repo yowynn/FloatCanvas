@@ -201,7 +201,12 @@ public sealed partial class SceneRenderer : IDisposable
             {
                 if (element.TextFrameFixed) canvas.ClipRect(new(0, 0, (float)element.Width, (float)element.Height));
                 SetPaint(element.Style.Stroke, SKPaintStyle.Fill);
-                if (EmojiGlyphs.IsEmoji(element.Text, element.Style)) EmojiGlyphs.Draw(canvas, element.Text, element.Style.FontSize, _paint);
+                if (EmojiGlyphs.IsEmoji(element.Text, element.Style))
+                {
+                    var glyph = EmojiGlyphs.Measure(element.Text, element.Style.FontSize);
+                    canvas.Scale((float)(element.Width / glyph.Width), (float)(element.Height / glyph.Height));
+                    EmojiGlyphs.Draw(canvas, element.Text, element.Style.FontSize, _paint);
+                }
                 else _text.Draw(canvas, element.Text, element.Style, element.Width, _paint);
             }
             else if (element.Kind == ElementKind.Number) DrawNumber(canvas, element);
@@ -209,9 +214,10 @@ public sealed partial class SceneRenderer : IDisposable
             {
                 var geometry = GetPath(element);
                 bool shape = element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
-                if (shape && (element.Style.Fill >> 24) != 0)
+                uint fill = element.Style.LinkColors ? element.Style.Stroke : element.Style.Fill;
+                if (shape && (fill >> 24) != 0)
                 {
-                    SetPaint(element.Style.Fill, SKPaintStyle.Fill);
+                    SetPaint(fill, SKPaintStyle.Fill);
                     canvas.DrawPath(geometry.Path, _paint);
                 }
                 if (element.Style.StrokeWidth > 0)
@@ -314,11 +320,11 @@ public sealed partial class SceneRenderer : IDisposable
     {
         float width = (float)element.Width, height = (float)element.Height;
         if (width <= 0 || height <= 0) return;
-        SetPaint((element.Style.Fill >> 24) == 0 ? element.Style.Stroke : element.Style.Fill, SKPaintStyle.Fill);
+        SetPaint(element.NumberUsesForeground ? element.Style.Stroke : (element.Style.Fill >> 24) == 0 ? element.Style.Stroke : element.Style.Fill, SKPaintStyle.Fill);
         canvas.DrawOval(new SKRect(0, 0, width, height), _paint);
         string label = element.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var style = element.Style.Clone();
-        style.FontSize = Math.Clamp(Math.Min(style.FontSize, Math.Min(width, height) * .58), 1, 2048);
+        style.FontSize = Math.Clamp(element.NumberUsesForeground ? Math.Min(width, height) * .58 : Math.Min(style.FontSize, Math.Min(width, height) * .58), 1, 2048);
         style.TextAlignment = TextAlignment.Left;
         // Measure the entire label without wrapping before fitting it. Canvas scaling
         // also keeps very small badges within bounds below the font engine's minimum size.
@@ -326,7 +332,7 @@ public sealed partial class SceneRenderer : IDisposable
         float scale = (float)Math.Min(1, Math.Min(width * .8 / metrics.Width, height * .8 / metrics.Height));
         canvas.Translate((width - (float)metrics.Width * scale) / 2, (height - (float)metrics.Height * scale) / 2);
         canvas.Scale(scale, scale);
-        SetPaint(0xFFFFFFFF, SKPaintStyle.Fill);
+        SetPaint(element.NumberUsesForeground ? element.Style.Fill : 0xFFFFFFFF, SKPaintStyle.Fill);
         _text.Draw(canvas, label, style, 0, _paint);
     }
 
