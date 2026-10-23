@@ -19,6 +19,10 @@
     <Resource Include="Assets\FloatCanvas.png" />
     <Resource Include="Assets\FloatCanvas.Hidden.png" />
     <Resource Include="Assets\FloatCanvas.Hidden.ico" />
+    <Resource Include="Assets\FloatCanvas.PassThrough.png" />
+    <Resource Include="Assets\FloatCanvas.PassThrough.ico" />
+    <Resource Include="Assets\FloatCanvas.PassThrough.Hidden.png" />
+    <Resource Include="Assets\FloatCanvas.PassThrough.Hidden.ico" />
     <ProjectReference Include="../FloatCanvas.Localization/FloatCanvas.Localization.csproj" />
     <ProjectReference Include="../FloatCanvas.Core/FloatCanvas.Core.csproj" />
     <ProjectReference Include="../FloatCanvas.Rendering/FloatCanvas.Rendering.csproj" />

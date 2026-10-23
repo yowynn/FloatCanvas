@@ -41,6 +41,7 @@ internal sealed partial class DesktopSession
     private object? _stampLibraryDefaultGlyph;
     private StampEntry? _toolbarLibraryStamp;
     private bool? _mascotCanvasVisible;
+    private bool? _mascotEditing;
     private Controls.Button? _canvasStateButton;
     private bool? _canvasPerspectiveShown;
     private Controls.Button? _billboardButton;

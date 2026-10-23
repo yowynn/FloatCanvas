@@ -126,6 +126,8 @@ The App's language selection applies to its own toolbar, menus, settings, messag
 
 ## Toolbar and tool options
 
+The mascot wears her crown while editing and holds it in both hands, without a pen or text badge, during pass-through. The new pair retains the original framing and other contours, changing only the eyes, hands and crown position and removing the pen. Open eyes mean the canvas is visible; closed eyes mean it is hidden. Only the eyes change within each pair. The tray also reflects mode and visibility.
+
 A tray left click enters editing after the double-click interval. A double-click toggles canvas visibility. Right-click retains the tray menu, with shortcut hints on its right side.
 
 The new-canvas confirmation bubble appears above its button, with a small pointer toward the same confirmation target. It stays within the mascot's crown height.

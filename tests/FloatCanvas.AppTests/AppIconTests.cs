@@ -59,6 +59,55 @@ internal static class AppIconTests
         using var hiddenTray=AppIcon.CreateTrayIcon(true);
         assert("hidden tray icon owns a native handle independently",hiddenTray.Handle!=0&&hiddenTray.Handle!=secondTray.Handle);
         assert("application assembly identifies Heptayo as company", typeof(AppIcon).Assembly.GetCustomAttribute<AssemblyCompanyAttribute>()?.Company == "Heptayo");
+        VerifyPassThroughPair(assert);
+    }
+
+    private static void VerifyPassThroughPair(Action<string, bool> assert)
+    {
+        var open = AppIcon.PassThroughToolbarImage; var closed = AppIcon.HiddenPassThroughToolbarImage;
+        assert("held-crown states share a transparent square canvas", open.PixelWidth == closed.PixelWidth && open.PixelHeight == closed.PixelHeight &&
+            open.PixelWidth == open.PixelHeight && MeasureArtwork(open).TransparentCorners && MeasureArtwork(closed).TransparentCorners);
+        var mask = EyeMask(open.PixelWidth, open.PixelHeight);
+        var diff = StateDifferences(open, closed, mask);
+        assert("held-crown visibility states change only eyes, retaining every other BGRA and alpha byte", diff.Changed > 0 && diff.Outside == 0 && diff.Alpha == 0);
+        assert("held-crown states use the original master's canvas and pixel registration", open.PixelWidth == AppIcon.ToolbarImage.PixelWidth && open.PixelHeight == AppIcon.ToolbarImage.PixelHeight &&
+            open.DpiX == AppIcon.ToolbarImage.DpiX && open.DpiY == AppIcon.ToolbarImage.DpiY);
+        var gestureMask = new bool[mask.Length];
+        for (int y = 0; y < open.PixelHeight; y++) for (int x = 0; x < open.PixelWidth; x++)
+            gestureMask[y * open.PixelWidth + x] = x >= 530 && y <= 535 || x >= 245 && x <= 985 && y >= 645 && y <= 1110;
+        var gestureDiff = StateDifferences(AppIcon.ToolbarImage, open, gestureMask);
+        Console.WriteLine($"Held-crown pose diff: {gestureDiff}");
+        assert("new pose preserves all original BGRA pixels outside crown, hands and pen restoration areas", gestureDiff.Changed > 0 && gestureDiff.Outside == 0);
+        var oldPixels = Pixels(AppIcon.ToolbarImage); var oldClosedPixels = Pixels(AppIcon.HiddenToolbarImage); var newPixels = Pixels(open);
+        var capEdges = Enumerable.Range(460, 51).Select(y => Enumerable.Range(940, 121).Last(x => newPixels[(y * open.PixelWidth + x) * 4 + 3] >= 128)).ToArray();
+        assert("restored head crown boundary joins the original side hair without an alpha step", capEdges.Zip(capEdges.Skip(1)).All(pair => Math.Abs(pair.First - pair.Second) <= 2));
+        assert("held-crown open eyes retain the original eye artwork exactly", Enumerable.Range(0, mask.Length).Where(i => !oldPixels.AsSpan(i * 4, 4).SequenceEqual(oldClosedPixels.AsSpan(i * 4, 4))).All(i =>
+            oldPixels.AsSpan(i * 4, 4).SequenceEqual(newPixels.AsSpan(i * 4, 4))));
+        VerifyProtectedDetails(AppIcon.ToolbarImage, open, assert);
+        using var openIconStream = Wpf.Application.GetResourceStream(new Uri("/FloatCanvas;component/Assets/FloatCanvas.PassThrough.ico", UriKind.Relative))!.Stream;
+        using var closedIconStream = Wpf.Application.GetResourceStream(new Uri("/FloatCanvas;component/Assets/FloatCanvas.PassThrough.Hidden.ico", UriKind.Relative))!.Stream;
+        var openIcons = new Imaging.IconBitmapDecoder(openIconStream, Imaging.BitmapCreateOptions.PreservePixelFormat, Imaging.BitmapCacheOption.OnLoad);
+        var closedIcons = new Imaging.IconBitmapDecoder(closedIconStream, Imaging.BitmapCreateOptions.PreservePixelFormat, Imaging.BitmapCacheOption.OnLoad);
+        assert("held-crown ICO pair includes all seven matching Windows sizes", openIcons.Frames.Select(f => f.PixelWidth).Order().SequenceEqual([16,24,32,48,64,128,256]) &&
+            closedIcons.Frames.Select(f => f.PixelWidth).Order().SequenceEqual([16,24,32,48,64,128,256]));
+        foreach (var frame in openIcons.Frames)
+        {
+            var counterpart = closedIcons.Frames.Single(f => f.PixelWidth == frame.PixelWidth);
+            var iconDiff = StateDifferences(frame, counterpart, ScaleEyeMask(mask, open.PixelWidth, open.PixelHeight, frame.PixelWidth, 2));
+            assert($"held-crown {frame.PixelWidth}px ICOs change only filtered eye pixels", iconDiff.Alpha == 0 && iconDiff.Outside == 0 &&
+                SameCanvasPlacement(open, frame) && SameCanvasPlacement(closed, counterpart));
+        }
+        VerifyLauncherRendering(mask, open.PixelWidth, open.PixelHeight, assert, editing: false);
+        var launcher = new ToolbarLauncher(editing: false);
+        var image = (System.Windows.Controls.Image)launcher.Content;
+        assert("pass-through launcher displays the held-crown open state", ReferenceEquals(image.Source, open));
+        launcher.SetCanvasVisible(false);
+        assert("pass-through visibility swaps only the image source", ReferenceEquals(image, launcher.Content) && ReferenceEquals(image.Source, closed));
+        foreach (bool hidden in new[] { false, true })
+        {
+            using var icon = AppIcon.CreateTrayIcon(hidden, passThrough: true);
+            assert("held-crown tray resource is available for hidden=" + hidden, icon.Handle != 0);
+        }
     }
 
     private static void VerifyStatePair(Imaging.BitmapSource open, Imaging.BitmapSource hidden,
@@ -120,9 +169,9 @@ internal static class AppIconTests
         return $"{contexts?.Count ?? 0}:" + string.Join(";", contexts?.Select(context => context.ProfileUri?.ToString() ?? "embedded") ?? []);
     }
 
-    private static void VerifyLauncherRendering(bool[] masterMask, int width, int height, Action<string, bool> assert)
+    private static void VerifyLauncherRendering(bool[] masterMask, int width, int height, Action<string, bool> assert, bool editing = true)
     {
-        var launcher = new ToolbarLauncher();
+        var launcher = new ToolbarLauncher(editing);
         var image = (System.Windows.Controls.Image)launcher.Content;
         var surface = new System.Windows.Controls.Grid { Width = 100, Height = 100 };
         surface.Children.Add(launcher);

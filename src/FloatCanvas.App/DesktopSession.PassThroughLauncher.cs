@@ -20,6 +20,7 @@ internal sealed partial class DesktopSession
     private void RefreshPassThroughLauncher()
     {
         if (_disposed || _toolbar is null) return;
+        RefreshMascotVisibility(_host.IsVisible);
         // An editing request can still be waiting for entry keys or input acknowledgement.
         // Keep the launcher until ShowEditingWindows has actually shown its replacement.
         if (!_settings.ShowPassThroughLauncher || (_host.IsEditing && _toolbar.IsVisible))

@@ -183,7 +183,7 @@ internal sealed partial class DesktopSession : IDisposable
             RefreshPassThroughLauncher();
             UpdateStatus(L.Get("Desktop.FocusLost"));
         };
-        _tray = new Forms.NotifyIcon { Icon = AppIcon.CreateTrayIcon(!_host.IsVisible),
+        _tray = new Forms.NotifyIcon { Icon = AppIcon.CreateTrayIcon(!_host.IsVisible, passThrough: !_host.IsEditing),
             Text = L.Get("App.NamePrefix") + FormatHotkey(_settings.Toggle), Visible = true };
         _host.KeyboardIsolationReleased += reason =>
         {

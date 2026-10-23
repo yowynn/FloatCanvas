@@ -62,27 +62,18 @@ internal static class Preview4SettingsTests
         {
             var surface = (Grid)window.Content;
             surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            check($"{language} {theme} passive mascot measures at 75 DIP including its status label", surface.DesiredSize == new Size(75, 75) && window.Width == 75 && window.Height == 75);
+            check($"{language} {theme} passive mascot measures at 75 DIP", surface.DesiredSize == new Size(75, 75) && window.Width == 75 && window.Height == 75);
             surface.Arrange(new Rect(0, 0, 75, 75)); surface.UpdateLayout();
-            var badge = surface.Children.OfType<Border>().Single();
-            var label = (TextBlock)badge.Child;
-            var badgeBounds = new Rect(badge.TranslatePoint(new Point(), surface), badge.RenderSize);
             WritePreview(surface, language, theme, true);
-            check($"{language} {theme} passive status is localized and uses the theme's text contrast",
-                label.Text == (language == "en" ? "Pass-through" : "穿透") &&
-                ((SolidColorBrush)label.Foreground).Color == ((SolidColorBrush)Application.Current.Resources["CanvasText"]).Color &&
-                ((SolidColorBrush)badge.Background).Color == ((SolidColorBrush)Application.Current.Resources["CanvasSurface"]).Color);
-            check($"{language} {theme} passive status text is not clipped", label.ActualWidth + 1e-6 >= label.DesiredSize.Width);
-            check($"{language} {theme} passive status fits inside the smaller window", new Rect(0, 0, 75, 75).Contains(badgeBounds));
-            check($"{language} {theme} status label adds no button or input target", !badge.IsHitTestVisible &&
+            check($"{language} {theme} crown artwork conveys pass-through without a text overlay", surface.Children.Count == 1 &&
                 SettingsWindowFixture.Descendants(surface).OfType<Button>().SequenceEqual(new[] { window.Launcher }));
             check($"{language} {theme} launcher hit surface shrinks with its artwork",
                 window.Launcher.TransformToAncestor(surface).TransformBounds(new Rect(window.Launcher.RenderSize)) == new Rect(0, 0, 75, 75));
             foreach (bool visible in new[] { true, false })
             {
                 window.Launcher.SetCanvasVisible(visible);
-                check($"{language} {theme} passive mascot preserves the original {(visible ? "open" : "closed")} eye source",
-                    ReferenceEquals(((Image)window.Launcher.Content).Source, visible ? AppIcon.ToolbarImage : AppIcon.HiddenToolbarImage));
+                check($"{language} {theme} passive mascot uses its held-crown {(visible ? "open" : "closed")} eye source",
+                    ReferenceEquals(((Image)window.Launcher.Content).Source, visible ? AppIcon.PassThroughToolbarImage : AppIcon.HiddenPassThroughToolbarImage));
                 if (!visible) WritePreview(surface, language, theme, false);
             }
         }

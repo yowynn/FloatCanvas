@@ -36,13 +36,15 @@ internal sealed partial class DesktopSession
     {
         _toolbarLauncher?.SetCanvasVisible(visible);
         _passThroughLauncher?.Launcher.SetCanvasVisible(visible);
-        if(_mascotCanvasVisible==visible)return;
+        bool editing = _host.IsEditing && _toolbar?.IsVisible == true;
+        if(_mascotCanvasVisible==visible && _mascotEditing==editing)return;
         _mascotCanvasVisible=visible;
+        _mascotEditing=editing;
         if(_toolbar is not null)_toolbar.Icon=visible?AppIcon.WindowImage:AppIcon.HiddenWindowImage;
         if(_tray is not null)
         {
             var previous=_tray.Icon;
-            _tray.Icon=AppIcon.CreateTrayIcon(!visible);
+            _tray.Icon=AppIcon.CreateTrayIcon(!visible, passThrough: !editing);
             previous?.Dispose();
         }
     }

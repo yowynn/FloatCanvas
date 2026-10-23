@@ -59,8 +59,8 @@
 - 编辑与穿透模式的头像双击统一为画布显隐，保留模式与工具条折叠状态。单击继续延迟执行右键对应动作：编辑态打开主菜单，穿透态只进入编辑。工具条折叠改为按 `Tab` 或使用主菜单第一项“收起工具条／展开工具条”；不在头像旁新增按钮，输入框、菜单与对话框保留自身的 `Tab` 行为。
 - Unify logo double-clicks across edit and pass-through modes to toggle canvas visibility while retaining mode and toolbar expansion. A delayed single click still mirrors immediate right-click: open the main menu while editing, or only enter editing from pass-through. Fold/unfold the toolbar with `Tab` or the first main-menu item, **Collapse toolbar / Expand toolbar**, without adding buttons beside the logo; input fields, menus and dialogs retain their own `Tab` behavior.
 
-- 穿透浮动图标缩小至编辑头像的 75%，添加非交互的穿透状态标识；睁眼／闭眼继续只表示画布显隐。
-- Reduce the pass-through logo to 75% of the editing logo's size and add a non-interactive pass-through indicator; open/closed eyes continue to represent canvas visibility only.
+- 穿透浮动头像为编辑头像的 75%，改为双手捧皇冠、无笔，移除文字遮罩；编辑态继续戴冠。两组均以睁眼／闭眼表示画布显隐，托盘图标同步状态。
+- Keep the pass-through mascot at 75% scale, holding her crown in both hands without a pen or text badge. Editing keeps the crown on her head. Both pairs use open/closed eyes for visibility, with matching tray states.
 
 - 将画布调整改为普通互斥工具：单击或按 `C` 选中并显示蓝框，再次选择打开参数板，位置、关闭与固定规则统一；非透视常显参考网格并支持空白处径向拖动调节格长，透视自动显示校准框与手柄。
 - Make Canvas an exclusive tool: click or press `C` to select it with a blue border, then select it again for options with shared positioning, dismissal and pinning. Flat mode shows a persistent reference grid with radial sizing from empty space; perspective shows calibration handles immediately.

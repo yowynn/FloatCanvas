@@ -14,7 +14,7 @@ internal sealed class PassThroughLauncherWindow : Window
 {
     internal const double ArtworkScale = .75;
     internal const double ArtworkSize = ToolbarLauncher.ArtworkSize * ArtworkScale;
-    internal ToolbarLauncher Launcher { get; } = new() { Focusable = false };
+    internal ToolbarLauncher Launcher { get; } = new(editing: false) { Focusable = false };
     internal bool IsDetached { get; private set; }
     internal event Action? EnterEditingRequested;
     internal event Action? ToggleVisibilityRequested;
@@ -27,17 +27,6 @@ internal sealed class PassThroughLauncherWindow : Window
         Launcher.LayoutTransform = new ScaleTransform(ArtworkScale, ArtworkScale);
         var surface = new Grid();
         surface.Children.Add(Launcher);
-        var label = new TextBlock { Text = L.Get("Settings.PassThroughState"), FontSize = 9, FontWeight = FontWeights.SemiBold };
-        label.SetResourceReference(TextBlock.ForegroundProperty, "CanvasText");
-        var badge = new Border
-        {
-            Child = label, IsHitTestVisible = false, CornerRadius = new CornerRadius(7),
-            BorderThickness = new Thickness(1), Padding = new Thickness(4, 0, 4, 0),
-            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom
-        };
-        badge.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
-        badge.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
-        surface.Children.Add(badge);
         Content = surface;
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
         ResizeMode = ResizeMode.NoResize; ShowInTaskbar = false; ShowActivated = false; Focusable = false; Topmost = true;

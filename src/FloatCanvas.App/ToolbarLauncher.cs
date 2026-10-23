@@ -17,12 +17,14 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
     internal const double Expansion = ArtworkSize - 64;
     private LauncherGestureState gestures = null!;
     private readonly DispatcherTimer clickTimer;
+    private readonly bool editing;
     public event Action? MenuRequested;
     public event Action? ToggleVisibilityRequested;
     public event Action? DragRequested;
 
-    public ToolbarLauncher()
+    public ToolbarLauncher(bool editing = true)
     {
+        this.editing = editing;
         MinWidth = Width = ArtworkSize; MinHeight = Height = ArtworkSize; Padding = new Thickness(0); BorderThickness = new Thickness(0);
         Background = Brushes.Transparent; Focusable = true; Cursor = Cursors.Arrow;
         FocusVisualStyle = null;
@@ -33,7 +35,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
         {
             VisualTree = hitSurface
         };
-        Content = new Image { Source = AppIcon.ToolbarImage, Width = ArtworkSize, Height = ArtworkSize, Stretch = Stretch.Uniform, IsHitTestVisible = false };
+        Content = new Image { Source = AppIcon.LauncherImage(true, editing), Width = ArtworkSize, Height = ArtworkSize, Stretch = Stretch.Uniform, IsHitTestVisible = false };
         ToolTip = L.Get("ToolbarV2.LauncherHint");
         ToolTipService.SetShowsToolTipOnKeyboardFocus(this, false);
         ToolTipService.SetInitialShowDelay(this, 650); ToolTipService.SetShowDuration(this, 12000);
@@ -69,7 +71,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
 
     internal void SetCanvasVisible(bool visible)
     {
-        if(Content is Image artwork)artwork.Source=visible?AppIcon.ToolbarImage:AppIcon.HiddenToolbarImage;
+        if(Content is Image artwork)artwork.Source=AppIcon.LauncherImage(visible, editing);
     }
 
     protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
