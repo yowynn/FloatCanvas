@@ -31,19 +31,31 @@ internal sealed class NewCanvasButton : Button
         SetResourceReference(BackgroundProperty,"CanvasButton");
         ToolTipService.SetShowsToolTipOnKeyboardFocus(this, false);
         ToolTipService.SetInitialShowDelay(this, 650);
-        var text = new TextBlock { Text = L.Get("History.NewQuestion"), FontSize = 13, FontWeight=FontWeights.SemiBold };
+        var text = new TextBlock { Text = L.Get("History.NewQuestion"), FontSize = 12, FontWeight=FontWeights.SemiBold };
         text.SetResourceReference(TextBlock.ForegroundProperty,"CanvasText");
         var bubble = new Border { Child = text, CornerRadius = new CornerRadius(6),
-            BorderThickness = new Thickness(2), Padding = new Thickness(10, 6, 10, 6),
-            Margin = new Thickness(4), Effect = new System.Windows.Media.Effects.DropShadowEffect
+            BorderThickness = new Thickness(2), Padding = new Thickness(8, 3, 8, 3),
+            Margin = new Thickness(4, 4, 4, 10), Effect = new System.Windows.Media.Effects.DropShadowEffect
             { BlurRadius = 6, ShadowDepth = 1, Opacity = .18, Color = Colors.Black } };
         bubble.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
         bubble.SetResourceReference(Border.BorderBrushProperty, "CanvasAccent");
         // HwndSource autosizing excludes its root's Margin. Keep the shadow gutter
         // inside a marginless layout root so the native client fits the whole bubble.
         var popupRoot=new Grid();popupRoot.Children.Add(bubble);
-        ConfirmationPopup = new Popup { Child = popupRoot, PlacementTarget = this, Placement = PlacementMode.Bottom,
-            VerticalOffset = 4, AllowsTransparency = true, StaysOpen = true, Focusable = false, IsHitTestVisible = false };
+        var tail = new Path { Data = Geometry.Parse("M0,0 L6,6 L12,0"), Width = 12, Height = 7,
+            StrokeThickness = 2, StrokeLineJoin = PenLineJoin.Round,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 0, 4), IsHitTestVisible = false };
+        tail.SetResourceReference(Shape.FillProperty, "CanvasSurface");
+        tail.SetResourceReference(Shape.StrokeProperty, "CanvasAccent");
+        popupRoot.Children.Add(tail);
+        ConfirmationPopup = new Popup { Child = popupRoot, PlacementTarget = this, Placement = PlacementMode.Custom,
+            CustomPopupPlacementCallback = (size, target, _) =>
+            {
+                double top = Window.GetWindow(this) is { } window ? TranslatePoint(new Point(), window).Y : ToolbarLauncher.Expansion + 5;
+                return [new(new Point((target.Width - size.Width) / 2, Math.Max(-top, -size.Height - 1)), PopupPrimaryAxis.None)];
+            },
+            AllowsTransparency = true, StaysOpen = true, Focusable = false, IsHitTestVisible = false };
         confirmationDisplay=PopupHandle.For(ConfirmationPopup);
         Click += async (_, _) => await ActivateAsync();
         Unloaded += (_, _) => CancelConfirmation();
@@ -59,8 +71,6 @@ internal sealed class NewCanvasButton : Button
             IsConfirming = true; Refresh();
             if (IsLoaded)
             {
-                if (Window.GetWindow(this) is { } window)
-                    confirmationDisplay.VerticalOffset = Math.Max(4, window.ActualHeight - TranslatePoint(new Point(0, ActualHeight), window).Y + 4);
                 confirmationDisplay.IsOpen = true;
             }
             return;

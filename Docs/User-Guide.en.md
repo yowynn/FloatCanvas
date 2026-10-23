@@ -123,6 +123,8 @@ The App's language selection applies to its own toolbar, menus, settings, messag
 
 ## Toolbar and tool options
 
+The new-canvas confirmation bubble appears above its button, with a small pointer toward the same confirmation target. It stays within the mascot's crown height.
+
 Menu categories, Welcome, Settings and the floating logo each have distinct icons. Matching tray commands use the same artwork.
 
 More tools shows the active Blur or Mosaic icon. Selecting another tool restores its three-dot icon.

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 新建画布的二次确认气泡移到上排按钮上方，限制在头像皇冠高度以内，并以小尾巴指向原确认按钮。
+- Place the new-canvas confirmation bubble above its upper-row button, within the mascot's crown height, with a pointer toward the confirmation target.
+
 - 为主菜单各功能分组、欢迎页、设置和悬浮头像分配独立图标，消除不同功能复用画笔、窗口、属性或眼睛图标的情况；托盘同步相同命令图标。
 - Give menu categories, Welcome, Settings and the floating logo distinct artwork; share each command's matching icon with the tray.
 

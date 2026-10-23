@@ -121,7 +121,7 @@ internal static class NewCanvasButtonTests
         var popupRoot = (Grid)popup.Child;
         var bubble = (Border)popupRoot.Children[0];
         var hint = (TextBlock)bubble.Child;
-        check(context + " confirmation bubble is a noninteractive nonactivating hint beside the same target", popup.PlacementTarget == button && popup.Placement == PlacementMode.Bottom && popup.VerticalOffset > 0 && popup.AllowsTransparency && popup.StaysOpen && !popup.Focusable && !popup.IsHitTestVisible);
+        check(context + " confirmation bubble is a noninteractive nonactivating hint above the same target", popup.PlacementTarget == button && popup.Placement == PlacementMode.Custom && popup.CustomPopupPlacementCallback is not null && popup.AllowsTransparency && popup.StaysOpen && !popup.Focusable && !popup.IsHitTestVisible);
         check(context + " confirmation question is localized plain text", hint.Text == L.Get("History.NewQuestion") && !string.IsNullOrWhiteSpace(hint.Text));
         check(context + " confirmation hint uses the regular panel surface and text", bubble.Background == app.Resources["CanvasSurface"] && bubble.BorderBrush == app.Resources["CanvasAccent"] && bubble.BorderThickness == new Thickness(2) && hint.FontWeight == FontWeights.SemiBold && hint.Foreground == app.Resources["CanvasText"]);
         SavePreview(host, "clear-" + language + "-" + theme + "-idle.png");
@@ -133,6 +133,8 @@ internal static class NewCanvasButtonTests
         // Render the actual popup child detached, avoiding Popup.IsOpen and its native HWND.
         popup.Child = null;
         Layout(popupRoot); SavePreview(popupRoot, "clear-" + language + "-" + theme + "-hint.png");
+        var position = popup.CustomPopupPlacementCallback!(popupRoot.DesiredSize, new Size(26, 26), new Point())[0].Point;
+        check(context + " hint and pointer fit above the upper row within the crown's height", position.Y < 0 && position.Y >= -(ToolbarLauncher.Expansion + 5) && position.Y + popupRoot.ActualHeight <= 0 && popupRoot.Children.OfType<DrawingPath>().Count() == 1);
         popup.Child = popupRoot;
         button.CancelConfirmation(); host.Child = null;
     }
