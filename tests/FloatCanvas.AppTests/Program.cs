@@ -126,6 +126,7 @@ internal static class Program
             if (args.Contains("--lcd-only")) { LcdPaletteTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-library-ui-only")) { StampLibraryUiTests.Run(Assert); return 0; }
             if (args.Contains("--inspector-only")) { InspectorTests.Run(Assert); return 0; }
+            if (args.Contains("--inspector-validation-only")) { InspectorValidationLifecycleTests.Run(Assert,windowLifecycle:true); return 0; }
             if (args.Contains("--inspector3-only")) { InspectorFeedbackTests.Run(Assert); return 0; }
             if (args.Contains("--tool-icons-only")) { ToolParameterIconTests.Run(Assert); return 0; }
             if (args.Contains("--feedback-options-only")) { OptionsFeedbackTests.Run(Assert); return 0; }

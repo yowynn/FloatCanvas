@@ -69,6 +69,7 @@ internal static class InspectorTests
         InspectorLayerPanelTests.Run(assert);
         InspectorScrubTests.Run(assert);
         InspectorLiveTests.Run(assert);
+        InspectorValidationLifecycleTests.Run(assert);
         InspectorColorTests.Run(assert);
         SymbolNames(assert);
         ContinuousPanelLayout(assert);

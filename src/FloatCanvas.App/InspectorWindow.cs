@@ -43,6 +43,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private string? formFingerprint;
     private bool? formProjectionEnabled;
     private bool refreshing = true;
+    private bool invalidDraft; // Field validation can fail before an edit transaction exists.
     private EditorSession? scrubSession;
     private CanvasElement[] scrubSources = [];
     private double scrubStartValue;
@@ -248,7 +249,8 @@ internal sealed class InspectorWindow : Wpf.Window
         var selected = session.SelectedElements().ToArray();
         var element = selected.FirstOrDefault();
         var fingerprint = JsonSerializer.Serialize(selected);
-        if (!discardDraft && ReferenceEquals(formSession, session) && fingerprint == formFingerprint && formProjectionEnabled==session.Document.Canvas.Projection.Enabled) return;
+        if (!discardDraft && ReferenceEquals(formSession, session) && fingerprint == formFingerprint && formProjectionEnabled==session.Document.Canvas.Projection.Enabled &&
+            (!invalidDraft || (IsVisible && propertyPanel.IsKeyboardFocusWithin) || !canMutate())) return;
         refreshing = true;
         try
         {
@@ -261,6 +263,7 @@ internal sealed class InspectorWindow : Wpf.Window
             formFingerprint = fingerprint;
             formProjectionEnabled=session.Document.Canvas.Projection.Enabled;
             dirtyFields.Clear();
+            invalidDraft=false;
             propertyPanel.IsEnabled = selected.Length > 0 && selected.All(e => !e.Locked);
             SetPropertyVisibility(selected);
             selectionLabel.Text = selected.Length > 1 ? L.Format("Feedback4.Inspector.MultipleSelection", selected.Length) : element is null ? L.Get("Inspector.SelectElement")
@@ -329,22 +332,26 @@ internal sealed class InspectorWindow : Wpf.Window
         editTimer.Stop();
         var session = editSession;
         editSession = null;
-        if (session is null || !session.IsTransactionActive || session.TransactionId != editTransaction) return;
-        applying = true;
-        try { session.Commit(); }
-        finally { applying = false; }
+        if (session is not null && session.IsTransactionActive && session.TransactionId == editTransaction)
+        {
+            applying = true;
+            try { session.Commit(); }
+            finally { applying = false; }
+        }
+        else if (!invalidDraft || !canMutate()) return;
         // Preserve the caret and intermediate input when completing an idle typing burst.
-        if (!propertyPanel.IsKeyboardFocusWithin) LoadSelection(true);
+        if (!IsVisible || !propertyPanel.IsKeyboardFocusWithin) LoadSelection(true);
     }
 
     private void Apply()
     {
         ApplyLive();
-        CompleteEdit();
+        if (!invalidDraft) CompleteEdit();
     }
 
     private void ApplyLive()
     {
+        bool validatingDraft=false;
         try
         {
             if (!canMutate()) throw new InvalidOperationException(L.Get("Inspector.BusyDraftRetained"));
@@ -358,10 +365,12 @@ internal sealed class InspectorWindow : Wpf.Window
             if (dirtyFields.Count == 0) return;
             if (JsonSerializer.Serialize(selected) != formFingerprint) throw new InvalidOperationException(L.Get("Inspector.ElementChanged"));
             var changedKey = dirtyFields.Single();
+            validatingDraft=true;
             var changes = selected.Select(source => (Source: source, Edited: EditElement(source))).ToArray();
             var mapping = CanvasMapping.Create(session.Document);
             if (changes.Any(change => !mapping.IsElementSafe(change.Edited)))
                 throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
+            validatingDraft=false;invalidDraft=false;
             if (!ownsTransaction)
             {
                 session.BeginTransaction(L.Get("Inspector.History.EditProperties"));
@@ -388,7 +397,7 @@ internal sealed class InspectorWindow : Wpf.Window
             editTimer.Stop(); editTimer.Start();
             SetStatus(L.Get("Inspector.PropertiesApplied"), false);
         }
-        catch (Exception ex) { SetStatus(ex.Message, true); }
+        catch (Exception ex) { invalidDraft=validatingDraft;SetStatus(ex.Message, true); }
     }
 
     private void SynchronizeOtherFields(CanvasElement[] selected, string changedKey)
@@ -617,6 +626,7 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private bool BeginScrub(string key)
     {
+        if (invalidDraft) return false;
         CompleteEdit();
         if (!canMutate() || dirtyFields.Count > 0) return false;
         var session = getSession();

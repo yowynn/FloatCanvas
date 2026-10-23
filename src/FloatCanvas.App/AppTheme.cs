@@ -309,6 +309,7 @@ internal static class AppTheme
             <Style.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="12"/><Setter Property="MinHeight" Value="12"/><Setter Property="MinWidth" Value="0"/></Trigger></Style.Triggers>
           </Style>
           <Style TargetType="ScrollViewer">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="ScrollViewer">
                 <Grid Background="{TemplateBinding Background}">

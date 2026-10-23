@@ -121,6 +121,8 @@ The App's language selection applies to its own toolbar, menus, settings, messag
 
 ## Toolbar and tool options
 
+Invalid tool-option and layer-property entries retain the current effective value. Correcting the entry, leaving the input area or reopening the panel clears stale feedback and restores the current value. Busy operations retain unapplied property drafts so they can be applied afterwards. Scrolling content has no dashed focus outline; fields and buttons retain their own focus feedback.
+
 Main and context menus use symbols for their actions. **Switch to pass-through** shares the toolbar's **Done** check mark; **Check for updates** uses circular arrows. Stamp pin submenus and shelf actions also have matching icons.
 
 The app icon is on the left, followed by two rows aligned in columns:

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 修复工具配置与图层属性数值错误提示残留：纠正输入、离开输入区域或重新打开面板后清除过期提示，保留忙碌时尚未应用的属性草稿；统一移除滚动内容区域的键盘焦点虚框。
+- Clear stale tool-option and layer-property errors after correcting an entry, leaving the input area or reopening the panel, while retaining unapplied property drafts during busy operations; remove the dashed keyboard focus outline from scrolling content areas.
+
 - 将全屏增强作为可选后端：启动前由独立进程探测，接口缺失、初始化失败或上次异常退出时回退到普通桌面模式。运行中安全释放输入后重建桌面界面，保留画布、资源、文件绑定及撤销记录；增加 `--desktop-mode` 与 `--retry-fullscreen` 启动入口。
 - Make fullscreen enhancement optional: probe it in an isolated startup process and use ordinary desktop mode after missing interfaces, initialization failures or an unclean prior exit. After safely releasing input, rebuild desktop surfaces while preserving documents, assets, file bindings and undo history; add `--desktop-mode` and `--retry-fullscreen` launch options.
 

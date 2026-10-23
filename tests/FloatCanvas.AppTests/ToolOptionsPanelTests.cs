@@ -42,6 +42,14 @@ internal static class ToolOptionsPanelTests
         var numbers = Field<Dictionary<string, Controls.TextBox>>(panel, "numbers");
         var pickers = Field<Dictionary<string, Controls.ComboBox>>(panel, "pickers");
         var status = Field<Controls.TextBlock>(panel, "status");
+        controller.Tool = EditorTool.Freehand; panel.Refresh();
+        string validWidth = numbers["StrokeWidth"].Text;
+        numbers["StrokeWidth"].Text = "-1";
+        numbers["StrokeWidth"].Text = validWidth;
+        check("correcting an invalid draft back to the effective value clears the error", string.IsNullOrEmpty(status.Text));
+        numbers["StrokeWidth"].Text = "-1";
+        controller.Tool = EditorTool.Text; panel.Refresh();
+        check("changing or reopening a tool clears stale validation feedback", string.IsNullOrEmpty(status.Text));
         int changes = 0; panel.ParametersChanged += () => changes++;
         string document = JsonSerializer.Serialize(controller.Session.Document);
 

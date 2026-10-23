@@ -125,6 +125,7 @@ internal sealed class ToolOptionsPanel : UserControl
         refreshing = true;
         try
         {
+            status.Text = "";
             var p = controller.Parameters; var tool = p.Tool;
             heading.Text = L.Get("ToolDescription." + ToolPresetLibrary.Family(tool));
             bool line = tool is EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow;
@@ -242,6 +243,7 @@ internal sealed class ToolOptionsPanel : UserControl
         var field = new NumericValueField(min, max, sliderMaximum: Math.Min(max, sliderMax), step: key == "EffectStrength" ? .1 : 1);
         if (key is "NumberStart" or "NumberStep" or "NextNumber") field.Slider.IsSnapToTickEnabled = true;
         var box = field.Input; numbers.Add(key, box); numericFields.Add(key, field); AddRow(body, key, label, field);
+        box.LostKeyboardFocus += (_, _) => { if (!refreshing) Refresh(); };
         if (key == "StrokeWidth") ((StackPanel)rows[key]).Children.Add(ToolOptionPreviews.StrokeWidth(field));
         field.ValueChanged += value =>
         {
@@ -250,6 +252,7 @@ internal sealed class ToolOptionsPanel : UserControl
             if (key == "NextNumber")
             {
                 controller.Session.Execute(L.Get("History.NumberCounter"), document => document.NextNumber = (int)value);
+                status.Text = "";
                 ParametersChanged?.Invoke(); return;
             }
             if (key == "StrokeWidth" && controller.Tool == EditorTool.Highlighter && value < 16) { Error(L.Get("ToolOptions.InvalidNumber")); return; }

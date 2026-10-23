@@ -13,6 +13,7 @@ internal sealed class NumericValueField : UserControl
     private readonly double minimum, maximum;
     private readonly bool integerOnly;
     private bool synchronizing;
+    private bool invalidDraft;
     private double value;
     internal TextBox Input { get; }
     internal Slider Slider { get; }
@@ -39,20 +40,22 @@ internal sealed class NumericValueField : UserControl
         Input.TextChanged += (_, _) =>
         {
             if (synchronizing) return;
-            if (!TryGetValue(out double next)) { InvalidInput?.Invoke(); return; }
+            if (!TryGetValue(out double next)) { invalidDraft = true; InvalidInput?.Invoke(); return; }
+            bool corrected = invalidDraft; invalidDraft = false;
             synchronizing = true;
             try { Slider.Value = Math.Clamp(next, Slider.Minimum, Slider.Maximum); }
             finally { synchronizing = false; }
-            if (value == next) return; value = next; ValueChanged?.Invoke(next);
+            if (value == next && !corrected) return; value = next; ValueChanged?.Invoke(next);
         };
         Slider.ValueChanged += (_, _) =>
         {
             if (synchronizing) return;
             double next = Math.Round(Math.Clamp(Slider.Value, minimum, maximum), integerOnly ? 0 : 3);
+            bool corrected = invalidDraft; invalidDraft = false;
             synchronizing = true;
             try { Slider.Value = next; Input.Text = next.ToString("0.###", CultureInfo.CurrentCulture); }
             finally { synchronizing = false; }
-            if (value == next) return; value = next; ValueChanged?.Invoke(next);
+            if (value == next && !corrected) return; value = next; ValueChanged?.Invoke(next);
             SliderValueCommitted?.Invoke();
         };
         value = minimum;
@@ -67,7 +70,7 @@ internal sealed class NumericValueField : UserControl
         {
             if (!double.IsFinite(value) || value < minimum || value > maximum || (integerOnly && value != Math.Truncate(value))) throw new ArgumentOutOfRangeException(nameof(value));
             synchronizing = true;
-            try { this.value = value; Input.Text = value.ToString("0.###", CultureInfo.CurrentCulture); Slider.Value = Math.Clamp(value, Slider.Minimum, Slider.Maximum); }
+            try { invalidDraft = false; this.value = value; Input.Text = value.ToString("0.###", CultureInfo.CurrentCulture); Slider.Value = Math.Clamp(value, Slider.Minimum, Slider.Maximum); }
             finally { synchronizing = false; }
         }
     }
