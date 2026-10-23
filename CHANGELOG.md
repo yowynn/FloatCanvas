@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 托盘左键单击延迟进入编辑、双击切换画布显隐；右键继续打开原生菜单。加宽菜单并在右侧显示快捷键。
+- Delay a tray single click to enter editing, use double-click to toggle canvas visibility, retain the native right-click menu, and widen it with right-aligned shortcut hints.
+
 - 新建画布的二次确认气泡移到上排按钮上方，限制在头像皇冠高度以内，并以小尾巴指向原确认按钮。
 - Place the new-canvas confirmation bubble above its upper-row button, within the mascot's crown height, with a pointer toward the confirmation target.
 

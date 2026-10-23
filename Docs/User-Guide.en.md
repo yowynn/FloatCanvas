@@ -126,6 +126,8 @@ The App's language selection applies to its own toolbar, menus, settings, messag
 
 ## Toolbar and tool options
 
+A tray left click enters editing after the double-click interval. A double-click toggles canvas visibility. Right-click retains the tray menu, with shortcut hints on its right side.
+
 The new-canvas confirmation bubble appears above its button, with a small pointer toward the same confirmation target. It stays within the mascot's crown height.
 
 Menu categories, Welcome, Settings and the floating logo each have distinct icons. Matching tray commands use the same artwork.

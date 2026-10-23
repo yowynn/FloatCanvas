@@ -25,6 +25,7 @@ internal sealed partial class DesktopSession : IDisposable
     private readonly OverlayWindowScope? _overlayWindows;
     private readonly Window _toolbar;
     private readonly Forms.NotifyIcon _tray;
+    private readonly TrayLauncherGestures _trayClicks;
     private readonly TextBlock _status = new();
     private readonly UserSettings _settings;
     private readonly ToolPresetLibrary _toolPresets;
@@ -198,7 +199,7 @@ internal sealed partial class DesktopSession : IDisposable
             var message=L.Get("Desktop.InputInterrupted");UpdateStatus(message);
             _tray.ShowBalloonTip(4000,L.Get("Desktop.InputReleasedTitle"),message,Forms.ToolTipIcon.Info);
         };
-        var menu = new Forms.ContextMenuStrip();
+        var menu = new Forms.ContextMenuStrip { MinimumSize = new System.Drawing.Size(340, 0) };
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.ToggleEditing"), CommandGlyphs.EditObjects, (_, _) =>
             _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, ToggleEditing)));
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.ToggleVisibility"), CommandGlyphs.Visibility, (_, _) => ToggleCanvasVisibility()));
@@ -214,7 +215,15 @@ internal sealed partial class DesktopSession : IDisposable
         menu.Items.Insert(5, floatingLogo);
         menu.Opening += (_, _) => floatingLogo.Checked = _settings.ShowPassThroughLauncher;
         _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => ToggleEditing();
+        _trayClicks = new(_tray, () => RunUiAction(() => SetEditing(true)), () => RunUiAction(ToggleCanvasVisibility));
+        menu.Opening += (_, _) =>
+        {
+            _trayClicks.Cancel();
+            ((Forms.ToolStripMenuItem)menu.Items[0]).ShortcutKeyDisplayString = FormatHotkey(_settings.Toggle);
+            ((Forms.ToolStripMenuItem)menu.Items[1]).ShortcutKeyDisplayString = FormatHotkey(_settings.Hide);
+            ((Forms.ToolStripMenuItem)menu.Items[2]).ShortcutKeyDisplayString = "Ctrl+O";
+            menu.Items.OfType<Forms.ToolStripMenuItem>().Single(item => item.Text == L.Get("Desktop.HotkeySettings")).ShortcutKeyDisplayString = "Ctrl+,";
+        };
     }
 
     public async void Start(string[] args)
@@ -1022,6 +1031,7 @@ internal sealed partial class DesktopSession : IDisposable
         System.Windows.Input.InputManager.Current.PostProcessInput -= OnWpfPointerFocus;
         Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemThemeChanged;
         StopDocumentTimers(); _renderOperation?.Abort(); _renderOperation = null; _renderAgain = false;
+        _trayClicks.Dispose();
         _tray.Visible = false; var trayIcon = _tray.Icon; _tray.ContextMenuStrip?.Dispose(); _tray.Dispose(); trayIcon?.Dispose();
         _welcomeWindow?.Close();
         _updatesWindow?.Close();
