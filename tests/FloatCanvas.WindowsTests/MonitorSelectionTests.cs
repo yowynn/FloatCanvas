@@ -17,6 +17,10 @@ internal static class MonitorSelectionTests
             "All-screens scope preserves every screen and places the primary first");
         check(ReferenceEquals(layout[0], left) && ReferenceEquals(layout[1], primary),
             "Screen selection does not reorder the provider's collection");
+        selected = OverlayMonitorSelection.Select(layout, OverlayMonitorScope.SpecificScreen, "LEFT");
+        check(selected.Count == 1 && ReferenceEquals(selected[0], left), "Specific scope matches device identity case-insensitively and preserves negative coordinates and DPI");
+        selected = OverlayMonitorSelection.Select(layout, OverlayMonitorScope.SpecificScreen, "disconnected");
+        check(selected.Count == 1 && ReferenceEquals(selected[0], primary), "A missing saved monitor falls back to the actual primary");
 
         var abovePortrait = new MonitorInfo("above-portrait", new(100, -2560, 1440, 2560),
             new(100, -2560, 1440, 2520), 192, 192, false);

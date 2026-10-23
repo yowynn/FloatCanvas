@@ -83,8 +83,8 @@ internal sealed partial class DesktopSession : IDisposable
         _overlayCache = new(_renderer);
         AppTheme.Apply(_settings.Theme);
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
-        _host = testHost ?? new OverlayHost(ApplicationPaths.RequestedMonitorScope ??
-            (_settings.PrimaryScreenOnly ? OverlayMonitorScope.PrimaryScreen : OverlayMonitorScope.AllScreens));
+        _host = testHost ?? new OverlayHost(ApplicationPaths.RequestedMonitorScope ?? MonitorScopeControl.Saved(_settings).Scope,
+            ApplicationPaths.RequestedMonitorScope.HasValue ? null : _settings.MonitorDeviceName);
         if(testHost is null)
         {
             if (protection is null) _host.EnableSystemInput();
@@ -880,10 +880,16 @@ internal sealed partial class DesktopSession : IDisposable
         var language = new ComboBox { ItemsSource = new[] { L.Get("Settings.AutomaticLanguage"), L.Get("Settings.ChineseLanguage"), L.Get("Settings.EnglishLanguage") },
             MinHeight = 34, SelectedIndex = L.NormalizePreference(_settings.Language) == "zh-CN" ? 1 : L.NormalizePreference(_settings.Language) == "en" ? 2 : 0 };
         AppSettingsWindow.AddSetting(general, L.Get("Settings.Language"), language, L.Get("Settings.LanguageRestartHint"));
-        var screenScope = new ComboBox { ItemsSource = new[] { L.Get("Settings.PrimaryOnly"), L.Get("Settings.AllScreens") }, MinHeight = 34,
-            SelectedIndex = _settings.PrimaryScreenOnly ? 0 : 1 };
+        var screenScope = new ComboBox { MinHeight = 34 };
+        var pendingScope = new MonitorScopeSelection(screenScope, MonitorScopeControl.Saved(_settings));
+        pendingScope.Refresh(_host.AvailableMonitors);
+        void RefreshScreenScope() => pendingScope.Refresh(_host.AvailableMonitors);
+        _host.MonitorsChanged += RefreshScreenScope;
+        window.Closed += (_, _) => _host.MonitorsChanged -= RefreshScreenScope;
         AppSettingsWindow.AddSetting(canvas, L.Get("Settings.Scope"), screenScope,
-            L.Format("Settings.CurrentScope", _host.Scope == OverlayMonitorScope.PrimaryScreen ? L.Get("Settings.PrimaryOnly") : L.Get("Settings.AllScreens")) +
+            L.Format("Settings.CurrentScope", _host.Scope == OverlayMonitorScope.AllScreens ? L.Get("Settings.AllScreens") :
+                _host.Scope == OverlayMonitorScope.PrimaryScreen ? L.Get("Settings.PrimaryOnly") :
+                L.Format("Settings.NumberedScreen", _host.AvailableMonitors.ToList().FindIndex(m => m.DeviceName == _host.PrimaryMonitor.DeviceName) + 1)) +
             (ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.ScopeOverrideHint") : L.Get("Settings.ScopeImmediateHint")));
         var historyLimit = new TextBox { Text = _settings.HistoryVersionLimit.ToString(), MinHeight = 34, Padding = new Thickness(8) };
         AppSettingsWindow.AddSetting(canvas, L.Get("History.Limit"), historyLimit, L.Get("History.LimitHint"));
@@ -898,6 +904,7 @@ internal sealed partial class DesktopSession : IDisposable
             var oldHide = _settings.Hide;
             var oldTheme = _settings.Theme;
             var oldPrimaryScreenOnly = _settings.PrimaryScreenOnly;
+            var oldMonitorDevice = _settings.MonitorDeviceName;
             var oldLanguage = _settings.Language;
             var oldShortcutHints = _settings.ShowToolShortcutHints;
             var oldPreferGpu = _settings.PreferGpuAcceleration;
@@ -910,7 +917,9 @@ internal sealed partial class DesktopSession : IDisposable
                 _settings.Toggle = toggle;
                 _settings.Hide = hide;
                 _settings.Theme = theme.SelectedIndex == 1 ? "light" : theme.SelectedIndex == 2 ? "dark" : "system";
-                _settings.PrimaryScreenOnly = screenScope.SelectedIndex == 0;
+                var monitorChoice = pendingScope.Pending;
+                _settings.PrimaryScreenOnly = monitorChoice.Scope == OverlayMonitorScope.PrimaryScreen;
+                _settings.MonitorDeviceName = monitorChoice.DeviceName;
                 _settings.Language = language.SelectedIndex == 1 ? "zh-CN" : language.SelectedIndex == 2 ? "en" : "auto";
                 _settings.ShowToolShortcutHints = shortcutHints.IsChecked == true;
                 _settings.PreferGpuAcceleration = preferGpu.IsChecked == true;
@@ -935,6 +944,7 @@ internal sealed partial class DesktopSession : IDisposable
                     _settings.Hide = oldHide;
                     _settings.Theme = oldTheme;
                     _settings.PrimaryScreenOnly = oldPrimaryScreenOnly;
+                    _settings.MonitorDeviceName = oldMonitorDevice;
                     _settings.Language = oldLanguage;
                     _settings.ShowToolShortcutHints = oldShortcutHints;
                     _settings.PreferGpuAcceleration = oldPreferGpu;
@@ -964,7 +974,7 @@ internal sealed partial class DesktopSession : IDisposable
                 _ = CompleteStartupAsync();
                 if (_host.IsEditing) RaiseVisibleToolWindows();
                 UpdateStatus(oldLanguage != _settings.Language ? L.Get("Settings.LanguageSaved") :
-                    oldPrimaryScreenOnly == _settings.PrimaryScreenOnly ? L.Get("Settings.Saved") :
+                    oldPrimaryScreenOnly == _settings.PrimaryScreenOnly && oldMonitorDevice == _settings.MonitorDeviceName ? L.Get("Settings.Saved") :
                     ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.SavedScopeOverride") : L.Get("Settings.SavedScopeApplied"));
             }
             catch (Exception ex) { error.Text = ex.Message; }
@@ -974,7 +984,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
 
     internal void ApplyMonitorScopeSetting() => _host.SetMonitorScope(ApplicationPaths.RequestedMonitorScope ??
-        (_settings.PrimaryScreenOnly ? OverlayMonitorScope.PrimaryScreen : OverlayMonitorScope.AllScreens));
+        MonitorScopeControl.Saved(_settings).Scope, ApplicationPaths.RequestedMonitorScope.HasValue ? null : _settings.MonitorDeviceName);
 
     public void Dispose()
     {

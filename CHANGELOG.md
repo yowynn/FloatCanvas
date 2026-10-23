@@ -20,6 +20,9 @@
 - 修复原生画布在 Ctrl 快捷键松开后不刷新选框：复制保留原选择，粘贴与复制副本选中新图层；移除未公开的 A 工具别名，Ctrl+A 全选时保留当前工具。
 - Restore selection handles immediately after releasing Ctrl on the native canvas. Copy keeps the original selection, paste and duplicate select new layers, unbound A no longer changes tools, and Ctrl+A retains the active tool.
 
+- 绘图范围按全部屏幕、仅主屏排列，多屏时列出具体屏幕；按设备保存选择，断开回退主屏、重连恢复，并随屏幕布局更新列表，保留已打开设置中的未保存范围选择。恢复重置透视的屏幕选择，单活动屏时禁用下拉。
+- Order drawing scope as All screens, Primary screen only, then individual screens. Save device identity, fall back to primary on disconnect, restore on reconnect, and refresh lists after topology changes while retaining pending scope edits. Restore reset-display choices and disable the dropdown for a single active screen.
+
 - 将全屏增强作为可选后端：启动前由独立进程探测，接口缺失、初始化失败或上次异常退出时回退到普通桌面模式。运行中安全释放输入后重建桌面界面，保留画布、资源、文件绑定及撤销记录；增加 `--desktop-mode` 与 `--retry-fullscreen` 启动入口。
 - Make fullscreen enhancement optional: probe it in an isolated startup process and use ordinary desktop mode after missing interfaces, initialization failures or an unclean prior exit. After safely releasing input, rebuild desktop surfaces while preserving documents, assets, file bindings and undo history; add `--desktop-mode` and `--retry-fullscreen` launch options.
 
@@ -41,8 +44,8 @@
 - 将画布调整改为普通互斥工具：单击或按 `C` 选中并显示蓝框，再次选择打开参数板，位置、关闭与固定规则统一；非透视常显参考网格并支持空白处径向拖动调节格长，透视自动显示校准框与手柄。
 - Make Canvas an exclusive tool: click or press `C` to select it with a blue border, then select it again for options with shared positioning, dismissal and pinning. Flat mode shows a persistent reference grid with radial sizing from empty space; perspective shows calibration handles immediately.
 
-- 网格原点改为非透视时的主屏中心、透视时的中央整体移动手柄。非透视将行列数合并为精确“网格大小”，单位与矩形宽高一致；单纯开关保留行列数和校准，显式改格长才按主屏推导新格数与参考框，覆盖旧形变。重置始终围绕主屏并保留精确格长，使平面网格与开启透视后立即重置完全一致；隐藏旧的重置显示器选择。
-- Anchor flat grids at the primary-screen center and perspective grids at the central move handle. Replace flat-mode counts with an exact Grid size in the same units as rectangle dimensions. Mode switches retain counts and calibration; explicit size edits derive a new count pair and reference from the primary screen, replacing the prior deformation. Reset always uses the primary screen and exact spacing, matching the flat grid after enabling perspective; hide the old display choice.
+- 网格原点为非透视时的主屏中心、透视时的中央整体移动手柄。非透视将行列数合并为精确“网格大小”，单位与矩形宽高一致；单纯开关保留行列数和校准，显式改格长才按主屏推导新格数与参考框，覆盖旧形变。重置默认围绕主屏并保留精确格长，多活动屏幕时可从下拉菜单选择重置屏幕。
+- Anchor flat grids at the primary-screen center and perspective grids at the central move handle. Flat mode uses an exact Grid size in the same units as rectangle dimensions. Mode switches retain counts and calibration; explicit size edits derive new counts and a reference from the primary screen. Reset defaults to the primary screen with exact spacing; a dropdown selects another active display when multiple screens are in use.
 
 - “调整时锁定网格大小”仅锁格长，原点仍随中央手柄变化，不再固定格线交点与图层锚点的关系。修复点线网格因短划线端帽导致几乎不可见的问题，普通绘制与深度合成中的点线均使用可见圆点；参考线继续采用黑白交替线段。
 - Lock grid size while adjusting now retains spacing while the origin follows the central handle; it no longer fixes intersections to layer anchors. Fix nearly invisible dotted grids with round caps in ordinary and depth rendering; reference lines retain alternating black and white segments.

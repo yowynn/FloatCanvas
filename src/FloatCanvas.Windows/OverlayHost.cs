@@ -27,6 +27,7 @@ public sealed partial class OverlayHost : IDisposable
     private readonly WindowsCapabilities? _capabilities;
     private nint _foregroundHook;
     private IReadOnlyList<MonitorInfo> _monitors = [];
+    private IReadOnlyList<MonitorInfo> _availableMonitors = [];
     private HotkeyBinding? _toggleHotkey, _hideHotkey;
     private nint _previousForeground;
     private OverlayMouseButton _pressedButton;
@@ -53,6 +54,8 @@ public sealed partial class OverlayHost : IDisposable
     public bool IsEditing { get; private set; }
     public bool IsVisible { get; private set; } = true;
     public OverlayMonitorScope Scope { get; private set; }
+    public string? SelectedMonitorDevice { get; private set; }
+    public IReadOnlyList<MonitorInfo> AvailableMonitors => _availableMonitors;
     public WindowsCapabilities Capabilities => _capabilities ?? WindowsCapabilities.Current;
     /// <summary>The active screen used for primary-screen placement, including the first-screen fallback.</summary>
     public MonitorInfo PrimaryMonitor => _monitors[0];
@@ -108,6 +111,8 @@ public sealed partial class OverlayHost : IDisposable
     public OverlayHost() : this(OverlayMonitorScope.AllScreens) { }
 
     public OverlayHost(OverlayMonitorScope scope) : this(scope, EnumerateMonitors) { }
+    public OverlayHost(OverlayMonitorScope scope, string? deviceName)
+        : this(scope, EnumerateMonitors, true, WindowsCapabilities.Current, deviceName) { }
 
     // Hidden native-contract fixture: real monitor HWNDs without showing or activating a desktop surface.
     internal OverlayHost(OverlayMonitorScope scope, bool initiallyVisible) : this(scope, EnumerateMonitors, initiallyVisible) { }
@@ -118,11 +123,16 @@ public sealed partial class OverlayHost : IDisposable
 
     internal OverlayHost(OverlayMonitorScope scope, Func<IReadOnlyList<MonitorInfo>> monitorProvider,
         bool initiallyVisible, WindowsCapabilities capabilities)
+        : this(scope, monitorProvider, initiallyVisible, capabilities, null) { }
+
+    private OverlayHost(OverlayMonitorScope scope, Func<IReadOnlyList<MonitorInfo>> monitorProvider,
+        bool initiallyVisible, WindowsCapabilities capabilities, string? deviceName)
     {
         ArgumentNullException.ThrowIfNull(monitorProvider);
         ArgumentNullException.ThrowIfNull(capabilities);
         if (!Enum.IsDefined(scope)) throw new ArgumentOutOfRangeException(nameof(scope));
         Scope = scope;
+        SelectedMonitorDevice = scope == OverlayMonitorScope.SpecificScreen ? deviceName : null;
         IsVisible = initiallyVisible;
         _monitorProvider = monitorProvider;
         _capabilities = capabilities;
@@ -286,15 +296,20 @@ public sealed partial class OverlayHost : IDisposable
     }
 
     /// <summary>Applies the selected monitor set immediately without changing visibility or the editing lease.</summary>
-    public void SetMonitorScope(OverlayMonitorScope scope)
+    public void SetMonitorScope(OverlayMonitorScope scope) => SetMonitorScope(scope, null);
+
+    public void SetMonitorScope(OverlayMonitorScope scope, string? deviceName)
     {
         CheckThread();
         if (!Enum.IsDefined(scope)) throw new ArgumentOutOfRangeException(nameof(scope));
-        if (Scope == scope) return;
+        deviceName = scope == OverlayMonitorScope.SpecificScreen ? deviceName : null;
+        if (Scope == scope && string.Equals(SelectedMonitorDevice, deviceName, StringComparison.OrdinalIgnoreCase)) return;
         var previous = Scope;
+        var previousDevice = SelectedMonitorDevice;
         Scope = scope;
+        SelectedMonitorDevice = deviceName;
         try { RebuildMonitors(); }
-        catch { Scope = previous; throw; }
+        catch { Scope = previous; SelectedMonitorDevice = previousDevice; throw; }
         MonitorsChanged?.Invoke();
     }
 
@@ -459,7 +474,8 @@ public sealed partial class OverlayHost : IDisposable
     private void RebuildMonitorsCore()
     {
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
-        var monitors = OverlayMonitorSelection.Select(_monitorProvider(), Scope);
+        var available = OverlayMonitorSelection.Select(_monitorProvider(), OverlayMonitorScope.AllScreens);
+        var monitors = OverlayMonitorSelection.Select(available, Scope, SelectedMonitorDevice);
         if (_captureActive) CancelPendingCapture();
         var foreground = _systemInput is not null?GetFocus():GetForegroundWindow();
         bool preserveToolFocus = IsEditing && OwnsEditingInput() && !OwnsWindow(foreground);
@@ -519,6 +535,7 @@ public sealed partial class OverlayHost : IDisposable
         }
         // Commit only after every candidate HWND, first render and first show succeeded.
         // A failed attempt leaves the old visible/input windows and editing lease intact.
+        _availableMonitors = available;
         foreach (var pair in previousWindows) DestroyMonitorPair(pair);
         if (IsEditing && _nativeDialogDepth==0 && !preserveToolFocus && !ActivateInputAtCursor()) EndEditingAfterFocusLoss();
     }

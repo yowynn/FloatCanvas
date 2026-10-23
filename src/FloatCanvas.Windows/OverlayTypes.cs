@@ -11,7 +11,7 @@ public readonly record struct PixelBounds(int Left, int Top, int Width, int Heig
 
 public sealed record MonitorInfo(string DeviceName, PixelBounds Bounds, PixelBounds WorkArea, uint DpiX, uint DpiY, bool IsPrimary);
 
-public enum OverlayMonitorScope { AllScreens, PrimaryScreen }
+public enum OverlayMonitorScope { AllScreens, PrimaryScreen, SpecificScreen }
 
 [Flags]
 public enum OverlayModifiers { None = 0, Alt = 1, Control = 2, Shift = 4, Windows = 8 }

@@ -132,13 +132,14 @@ internal sealed partial class DesktopSession
 
     private void RefreshCanvasReferenceMonitors()
     {
-        _canvasSettingsWindow?.SetReferenceMonitors(_host.Monitors, null);
+        _canvasSettingsWindow?.SetReferenceMonitors(_host.Monitors, _settings.CanvasReferenceDisplay);
     }
 
     private void ResetCanvasProjectionOnDisplay(string? device)
     {
         if (DocumentOperationBusy || !_host.IsVisible || !_host.IsEditing) return;
-        ResetCanvasProjection();
+        RememberCanvasReferenceDisplay(_settings, device);
+        ResetCanvasProjection(ResolveCanvasReferenceBounds(_host.Monitors, device, default, _editor.ScreenOrigin, Active.Document.Viewport));
         RefreshCanvasReferenceMonitors();
     }
 
@@ -266,11 +267,11 @@ internal sealed partial class DesktopSession
         });
     }
 
-    private void ResetCanvasProjection()
+    private void ResetCanvasProjection(RectD? reference = null)
     {
         try { ChangeCanvas(settings =>
         {
-            settings.Projection = CreateResetCanvasProjection(settings, CanvasReferenceViewport());
+            settings.Projection = CreateResetCanvasProjection(settings, reference ?? CanvasReferenceViewport());
             settings.Grid.FlatCellSize = settings.Projection.GridCellSize;
         }); }
         catch (ArgumentOutOfRangeException) { UpdateStatus(L.Get("Canvas.InvalidGrid")); }

@@ -18,6 +18,7 @@ internal sealed class UserSettings
     public string Theme { get; set; } = "system";
     public string Language { get; set; } = "auto";
     public bool PrimaryScreenOnly { get; set; } = false;
+    public string? MonitorDeviceName { get; set; }
     public string? CanvasReferenceDisplay { get; set; }
     public bool ShowToolShortcutHints { get; set; } = true;
     public bool ShowFloatingLogo { get; set; } = true;

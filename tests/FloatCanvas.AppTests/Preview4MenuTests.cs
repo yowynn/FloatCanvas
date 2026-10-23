@@ -68,8 +68,8 @@ internal static class Preview4MenuTests
                     Audit("layer", (ContextMenu)Invoke(layers, "CreateContextMenu", layer.Id)!);
                     canvasWindow.SetReferenceMonitors([new("fixture primary", new(0, 0, 100, 100), new(0, 0, 100, 100), 96, 96, true),
                         new("fixture secondary", new(100, 0, 100, 100), new(100, 0, 100, 100), 96, 96, false)], null);
-                    check($"{locale} {theme} primary-center reset exposes no obsolete display menu", Field<ContextMenu>(canvasWindow, "resetMenu").Items.Count == 0 &&
-                        Field<FrameworkElement>(canvasWindow, "resetChoices").Visibility == Visibility.Collapsed);
+                    check($"{locale} {theme} multi-screen reset lists both active displays", Field<ContextMenu>(canvasWindow, "resetMenu").Items.Count == 2 &&
+                        Field<FrameworkElement>(canvasWindow, "resetChoices") is { Visibility: Visibility.Visible, IsEnabled: true });
                     Guid stamp = library.Items.Single().Id;
                     Task.Run(() => library.PinAsync(0, null)).GetAwaiter().GetResult();
                     var stampMenu = (ContextMenu)Invoke(stamps, "TileContextMenu", stamp)!;

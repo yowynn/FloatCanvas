@@ -44,16 +44,19 @@ internal static class Preview4CanvasTests
             MonitorInfo pad = new("pad",new(1920,0,1280,720),new(1920,0,1280,680),120,120,false);
             window.SetReferenceMonitors([main,pad], "pad");
             var menu = Field<ContextMenu>(window,"resetMenu");
-            check("reset targets the primary screen without a display selection split button", menu.Items.Count == 0 &&
-                Field<Button>(window,"resetChoices").Visibility == Visibility.Collapsed && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+            check("reset lists active displays and retains the selected secondary screen", menu.Items.Count == 2 &&
+                Field<Button>(window,"resetChoices").Visibility == Visibility.Visible && Field<Button>(window,"resetChoices").IsEnabled &&
+                Equals(Field<Button>(window,"reset").Content, L.Format("Canvas.ResetOnNumberedDisplay", 2)));
             string? requestedDevice = "unrequested";
             window.ResetDisplayRequested += device => requestedDevice = device;
             Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check("a dormant secondary display preference cannot change the reset request", requestedDevice is null);
+            check("the reset action requests its selected secondary display", requestedDevice == "pad");
             window.SetReferenceMonitors([main], "pad");
-            check("single display retains the same primary reset without a hidden menu", menu.Items.Count == 0 && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+            check("single display retains reset and disables its display chooser", menu.Items.Count == 1 &&
+                !Field<Button>(window,"resetChoices").IsEnabled && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
             window.SetReferenceMonitors([main,pad], "missing");
-            check("invalid old display choices leave the same primary reset", menu.Items.Count == 0 && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+            check("missing display choices fall back to primary while retaining the active display menu", menu.Items.Count == 2 &&
+                Field<Button>(window,"resetChoices").IsEnabled && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
             var resetSettings = new CanvasSettings { Projection = custom.Clone(), Grid = new() { FlatCellSize = 73.1, FlatOrigin = viewport.Center } };
             var reset = DesktopSession.CreateResetCanvasProjection(resetSettings, viewport);
             check("primary reset preserves the exact flat spacing and count pair at the primary center", reset.Enabled &&

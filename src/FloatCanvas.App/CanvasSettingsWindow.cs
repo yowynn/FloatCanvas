@@ -206,9 +206,25 @@ internal sealed class CanvasSettingsWindow : Window
     public void CloseForDispose() { disposing = true; Close(); }
     public void SetReferenceMonitors(IReadOnlyList<MonitorInfo> monitors, string? selectedDevice)
     {
-        resetChoices.Visibility = Visibility.Collapsed;
-        reset.Resources["CanvasButtonCornerRadius"] = new CornerRadius(6);
-        selectedResetDevice = null; resetMenu.Items.Clear(); reset.Content = L.Get("Canvas.ResetOnDisplay");
+        resetMenu.IsOpen = false;
+        resetChoices.Visibility = Visibility.Visible;
+        resetChoices.IsEnabled = monitors.Count > 1;
+        selectedResetDevice = monitors.Any(m => m.DeviceName == selectedDevice) ? selectedDevice : null;
+        resetMenu.Items.Clear(); reset.Content = L.Get("Canvas.ResetOnDisplay");
+        for (int i = 0; i < monitors.Count; i++)
+        {
+            var monitor = monitors[i]; int number = i + 1;
+            var item = new MenuItem { Header = L.Format("Settings.NumberedScreen", number), Tag = monitor.DeviceName,
+                IsCheckable = true, IsChecked = monitor.DeviceName == selectedResetDevice || selectedResetDevice is null && i == 0 };
+            item.Click += (_, _) =>
+            {
+                selectedResetDevice = monitor.DeviceName;
+                reset.Content = L.Format("Canvas.ResetOnNumberedDisplay", number);
+                ResetDisplayRequested?.Invoke(selectedResetDevice);
+            };
+            resetMenu.Items.Add(item);
+            if (monitor.DeviceName == selectedResetDevice) reset.Content = L.Format("Canvas.ResetOnNumberedDisplay", number);
+        }
     }
     private void RefreshPin() => ActionIconButton.UpdatePin(pin, IsPinned);
     private void RefreshGridSize(double value)

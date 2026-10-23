@@ -40,16 +40,26 @@ internal static class MonitorScopeRuntimeTests
         check("Saving unchanged scope avoids native rebuild and notifications", reads == beforeReads && changes == 1 && handles.SequenceEqual(host.Diagnostics.Select(x => x.DisplayHandle)));
         apply.Invoke(host, [OverlayMonitorScope.PrimaryScreen]);
         check("Changing back immediately removes the secondary overlay", host.Scope == OverlayMonitorScope.PrimaryScreen && host.Monitors.Count == 1 && host.PrimaryMonitor == primary && changes == 2);
+        host.SetMonitorScope(OverlayMonitorScope.SpecificScreen, "secondary");
+        check("Specific scope creates only the chosen physical monitor while retaining the complete inventory", host.Monitors.Count == 1 && host.PrimaryMonitor == secondary && host.AvailableMonitors.SequenceEqual(new[] { primary, secondary }));
+        layout = [primary];
+        SendMessageW(host.ControlHandle, 0x8001, 0, 0);
+        check("Disconnect falls back to primary without losing the saved device", host.PrimaryMonitor == primary && host.SelectedMonitorDevice == "secondary" && host.AvailableMonitors.Count == 1);
+        layout = [secondary, primary];
+        SendMessageW(host.ControlHandle, 0x8001, 0, 0);
+        check("Reconnected display resumes the saved specific scope using fresh physical bounds", host.PrimaryMonitor == secondary && host.Monitors.Count == 1 && host.AvailableMonitors.Count == 2);
+        apply.Invoke(host, [OverlayMonitorScope.PrimaryScreen]);
+        int beforeFailures = changes;
         bool invalid = false;
         try { apply.Invoke(host, [(OverlayMonitorScope)99]); }
         catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException) { invalid = true; }
-        check("Invalid scope is rejected without replacing live windows", invalid && host.Scope == OverlayMonitorScope.PrimaryScreen && changes == 2);
+        check("Invalid scope is rejected without replacing live windows", invalid && host.Scope == OverlayMonitorScope.PrimaryScreen && changes == beforeFailures);
         handles = host.Diagnostics.Select(x => x.DisplayHandle).ToArray();
         layout = [];
         bool unavailable = false;
         try { apply.Invoke(host, [OverlayMonitorScope.AllScreens]); }
         catch (TargetInvocationException ex) when (ex.InnerException is InvalidOperationException) { unavailable = true; }
-        check("Failed enumeration preserves the previous scope, monitors and window handles", unavailable && host.Scope == OverlayMonitorScope.PrimaryScreen && host.PrimaryMonitor == primary && changes == 2 && handles.SequenceEqual(host.Diagnostics.Select(x => x.DisplayHandle)));
+        check("Failed enumeration preserves the previous scope, monitors and window handles", unavailable && host.Scope == OverlayMonitorScope.PrimaryScreen && host.PrimaryMonitor == primary && changes == beforeFailures && handles.SequenceEqual(host.Diagnostics.Select(x => x.DisplayHandle)));
         layout = new[] { secondary, primary };
         int notificationsBeforeFailure = changes;
         handles = host.Diagnostics.Select(x => x.DisplayHandle).ToArray();
@@ -116,6 +126,7 @@ internal static class MonitorScopeRuntimeTests
         finally { ApplicationPaths.Configure(["--profile", originalProfile]); }
     }
 
+    [DllImport("user32.dll")] private static extern nint SendMessageW(nint hwnd, uint message, nint wParam, nint lParam);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern nint SetThreadDpiAwarenessContext(nint context);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindow(nint handle);

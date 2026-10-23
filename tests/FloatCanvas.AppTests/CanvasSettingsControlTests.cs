@@ -147,8 +147,8 @@ internal static class CanvasSettingsControlTests
             new("pad",new(307,2160,2160,1440),new(307,2160,2160,1380),120,120,false)];
         window.SetReferenceMonitors(monitors,"pad");
         var menu = Field<ContextMenu>(window,"resetMenu");
-        check("reset uses one primary-screen action without a competing display choice", menu.Items.Count == 0 &&
-            Field<Button>(window, "resetChoices").Visibility == Visibility.Collapsed);
+        check("reset lists every active monitor and enables the display dropdown", menu.Items.Count == 2 &&
+            Field<Button>(window, "resetChoices").Visibility == Visibility.Visible && Field<Button>(window, "resetChoices").IsEnabled);
         check("target-display dropdown was retired", typeof(CanvasSettingsWindow).GetField("referenceMonitor", BindingFlags.Instance|BindingFlags.NonPublic) is null);
         int requests = 0; string? selected = null;
         void Choose(string? device) { requests++; selected = device; }
@@ -156,7 +156,7 @@ internal static class CanvasSettingsControlTests
         try
         {
             Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check("main reset action requests the primary screen even with an older remembered choice", requests == 1 && selected is null);
+            check("main reset action uses the selected display", requests == 1 && selected == "pad");
         }
         finally { window.ResetDisplayRequested -= Choose; }
         var bounds = DesktopSession.ResolveCanvasReferenceBounds(monitors,"pad",default,default,new(0,0,3840,3600));
@@ -167,6 +167,6 @@ internal static class CanvasSettingsControlTests
         MonitorInfo[] left = [new("left",new(-1920,-200,1920,1080),new(-1920,-200,1920,1040),96,96,true)];
         check("reset converts negative screen coordinates once into document coordinates", DesktopSession.ResolveCanvasReferenceBounds(left,null,default,new(-2000,-500),new(0,0,6000,4000)) == new RectD(80,300,1920,1080));
         window.SetReferenceMonitors([monitors[1]],"pad");
-        check("a sole scope display does not revive the retired reset menu", menu.Items.Count == 0 && Field<Button>(window, "resetChoices").Visibility == Visibility.Collapsed);
+        check("a sole active display disables reset choices while retaining reset itself", menu.Items.Count == 1 && !Field<Button>(window, "resetChoices").IsEnabled && Field<Button>(window, "reset").IsEnabled);
     }
 }

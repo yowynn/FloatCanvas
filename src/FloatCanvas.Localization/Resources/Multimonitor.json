@@ -1,4 +1,8 @@
 {
+  "Settings.NumberedScreen": {
+    "zh": "屏幕 {0}",
+    "en": "Screen {0}"
+  },
   "Settings.ScopeImmediateHint": {
     "zh": "保存后应用。",
     "en": "Applies on save."
@@ -8,16 +12,16 @@
     "en": "Settings saved."
   },
   "Canvas.ResetOnDisplay": {
-    "zh": "以主屏中心重置透视",
-    "en": "Reset at primary-screen center"
+    "zh": "重置透视",
+    "en": "Reset perspective"
   },
   "Canvas.ReferenceDisplayHint": {
-    "zh": "以当前格长和横纵数量，在主屏中心重置透视；网格与非透视模式重合。",
-    "en": "Reset perspective at the primary-screen center using the current cell size and counts, matching the flat grid."
+    "zh": "以当前格长和横纵数量，在所选屏幕中心重置透视；多个活动屏幕时可用下拉菜单选择。",
+    "en": "Reset perspective at the selected screen center using the current cell size and counts. Choose a display when multiple screens are active."
   },
   "Canvas.MultiMonitorHelp": {
-    "zh": "拖动中央把手可将透视框整体移动到其他屏幕；重置统一回到主屏中心，使网格与非透视模式重合。",
-    "en": "Drag the central handle to move the perspective frame to another display. Reset returns it to the primary-screen center so the grid matches flat mode."
+    "zh": "拖动中央把手可整体移动透视框；重置默认使用主屏，多个活动屏幕时可选择具体屏幕。",
+    "en": "Drag the central handle to move the perspective frame. Reset defaults to the primary screen; choose a display when multiple screens are active."
   },
   "Canvas.DragBoundary": {
     "zh": "已到达透视边界；拖动中央把手可整体移动。",
