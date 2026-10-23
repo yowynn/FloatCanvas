@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 修复隐藏画布后清除、再次显示时旧内容短暂闪回：所有显示窗口先提交当前画面，再恢复可见。
+- Refresh every retained display before showing it, preventing cleared hidden canvas content from flashing back.
+
 - 修复工具配置与图层属性数值错误提示残留：纠正输入、离开输入区域或重新打开面板后清除过期提示，保留忙碌时尚未应用的属性草稿；统一移除滚动内容区域的键盘焦点虚框。
 - Clear stale tool-option and layer-property errors after correcting an entry, leaving the input area or reopening the panel, while retaining unapplied property drafts during busy operations; remove the dashed keyboard focus outline from scrolling content areas.
 

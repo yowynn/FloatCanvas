@@ -29,6 +29,12 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if (args.Contains("--hidden-canvas-refresh-only"))
+    {
+        HiddenCanvasRefreshTests.Run(Check);
+        Console.WriteLine($"Hidden canvas refresh checks: {checks}; passed=true; offscreen own HWNDs, no input or profile.");
+        return 0;
+    }
     if (args.Contains("--windows-shortcuts-peer")) return WindowsShortcutNativeTests.Peer(args);
     if (args.Contains("--windows-shortcuts-native"))
     {

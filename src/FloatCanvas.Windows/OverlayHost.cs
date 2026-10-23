@@ -301,6 +301,9 @@ public sealed partial class OverlayHost : IDisposable
     private void SetVisibleCore(bool visible)
     {
         IsVisible = visible;
+        // A hidden canvas may have been cleared, replaced or undone. Submit the
+        // current scene before showing retained layered-window pixels again.
+        if (visible) Render();
         // Keep both repeated requests and a real hidden-to-visible transition from
         // raising the canvas above the input carrier, toolbar or owned panels.
         // Capture scopes can change actual HWND visibility independently.
@@ -310,7 +313,6 @@ public sealed partial class OverlayHost : IDisposable
             if (visible) ShowWindowPreservingZOrder(pair.Display.Handle);
             else ShowWindow(pair.Display.Handle, 0);
         }
-        if (visible) Render();
         if (visible) RequestWindowOrderCheck();
     }
 
