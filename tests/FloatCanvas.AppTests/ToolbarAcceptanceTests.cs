@@ -121,6 +121,17 @@ internal static class ToolbarAcceptanceTests
             check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==28&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
             check("trailing actions follow canvas and placement, images, inspector/layers, then independent new and clear controls",buttons.Where(button=>Controls.Grid.GetColumn(button)>=14).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"canvas","billboard","import","capture","crop","properties","layers","undo","redo","new-canvas","clear","visibility","done"}));
             var more=buttons.Single(button=>Equals(button.Tag,"more"));
+            string MoreGlyph() => Descendants(more).OfType<Shapes.Path>().FirstOrDefault()?.Data.ToString() ??
+                ((Media.DrawingGroup)((Media.DrawingImage)Descendants(more).OfType<Controls.Image>().Single().Source).Drawing)
+                    .Children.OfType<Media.GeometryDrawing>().Last().Geometry.ToString();
+            string idleMoreGlyph = MoreGlyph();
+            editor.Tool = EditorTool.Blur; Invoke(session,"RefreshToolbarState"); Measure(shell);
+            string blurMoreGlyph = MoreGlyph();
+            check("More displays the selected blur tool artwork", blurMoreGlyph != idleMoreGlyph);
+            editor.Tool = EditorTool.Pixelate; Invoke(session,"RefreshToolbarState"); Measure(shell);
+            check("More distinguishes mosaic from blur", MoreGlyph() != idleMoreGlyph && MoreGlyph() != blurMoreGlyph);
+            editor.Tool = EditorTool.Freehand; Invoke(session,"RefreshToolbarState"); Measure(shell);
+            check("More restores three dots when another toolbar tool is selected", MoreGlyph() == idleMoreGlyph);
             check("More is enabled and owns its reserved single-letter command",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M");
             check("main keyboard minus and plus are independent stamp commands",ToolShortcutCatalog.StampLibraryKey==0xBD&&ToolShortcutCatalog.NewStampKey==0xBB&&ToolShortcutCatalog.IsReserved(0xBD)&&ToolShortcutCatalog.IsReserved(0xBB)&&!ToolShortcutCatalog.IsReserved(0x6B)&&!ToolShortcutCatalog.IsReserved(0x6D));
             check("toolbar controls retain keyboard input without focus frames or focus-only tooltips",allButtons.All(button=>button.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(button)==false)&&opacity.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(opacity)==false&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(Field<ToolbarLauncher>(session,"_toolbarLauncher"))==false);

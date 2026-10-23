@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- “更多工具”在选中模糊或马赛克时显示该工具的实时图标，选择其他工具后恢复三点图标。
+- Show the active Blur or Mosaic artwork on More tools; restore three dots when another tool is selected.
+
 - 修复隐藏画布后清除、再次显示时旧内容短暂闪回：所有显示窗口先提交当前画面，再恢复可见。
 - Refresh every retained display before showing it, preventing cleared hidden canvas content from flashing back.
 

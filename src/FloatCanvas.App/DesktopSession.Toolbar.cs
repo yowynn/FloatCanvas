@@ -82,7 +82,7 @@ internal sealed partial class DesktopSession
         Tool(EditorTool.Symbol, L.Get("Tool.Symbol"));
         Tool(EditorTool.Emoji, L.Get("Tool.Emoji"));
         var more=ToolbarIcon(L.Get("Feedback4.Toolbar.More"),"M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8",OpenMoreTools,"M");
-        AddShortcutHint(more,"M");more.Padding=new Thickness(0);more.Tag="more";Cell(more,toolColumn++);
+        AddShortcutHint(more,"M",EditorTool.Blur);more.Padding=new Thickness(0);more.Tag="more";Cell(more,toolColumn++);
         _moreToolsMenu=new OverlayContextMenu {PlacementTarget=more,Placement=Primitives.PlacementMode.Bottom};
         foreach(var tool in new[]{EditorTool.Blur,EditorTool.Pixelate})_moreToolsMenu.Items.Add(ToolMenuItem(tool));
         more.ContextMenu=_moreToolsMenu;
@@ -317,6 +317,13 @@ internal sealed partial class DesktopSession
             foreach(var(tool,presenter)in _toolbarGlyphHosts)
             {
                 if(tool is EditorTool.Select or EditorTool.Eraser or EditorTool.Canvas)continue;
+                if (tool == EditorTool.Blur)
+                {
+                    presenter.Content = parameters.Tool is EditorTool.Blur or EditorTool.Pixelate
+                        ? ToolParameterIcon.Create(parameters)
+                        : CommandGlyphs.Create("M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8");
+                    continue;
+                }
                 var own=_toolbarToolMemory.TryGetValue(ToolFamily(tool),out var saved)?saved:new ToolParameters {Tool=tool};
                 presenter.Content=ToolParameterIcon.Create(own);
             }
