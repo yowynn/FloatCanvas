@@ -66,7 +66,6 @@ internal sealed partial class DesktopSession
             var button = ToolbarIcon(label, CommandGlyphs.Tool(tool), () => ActivateTool(ToolFamily(ButtonFamily(_editor.Tool) == tool ? _editor.Tool : _toolbarButtonMemory.GetValueOrDefault(tool, tool))), shortcut);
             if (tool != EditorTool.Select) button.ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
             if(shortcut.Length>0)AddShortcutHint(button,shortcut,tool);
-            button.Padding=new Thickness(0);
             button.Tag = "tool:" + tool; _toolbarToolButtons[tool] = button; Cell(button, toolColumn++);
         }
         Tool(EditorTool.Select, L.Get("ToolbarV2.Select"));
@@ -84,7 +83,7 @@ internal sealed partial class DesktopSession
         Tool(EditorTool.Emoji, L.Get("Tool.Emoji"));
         var more=ToolbarIcon(L.Get("Feedback4.Toolbar.More"),"M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8",OpenMoreTools,"M");
         more.ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
-        AddShortcutHint(more,"M",EditorTool.Blur);more.Padding=new Thickness(0);more.Tag="more";Cell(more,toolColumn++);
+        AddShortcutHint(more,"M",EditorTool.Blur);more.Tag="more";Cell(more,toolColumn++);
         _moreToolsMenu=new OverlayContextMenu {PlacementTarget=more,Placement=Primitives.PlacementMode.Bottom};
         foreach(var tool in new[]{EditorTool.Blur,EditorTool.Pixelate})_moreToolsMenu.Items.Add(ToolMenuItem(tool));
         more.ContextMenu=_moreToolsMenu;
@@ -137,12 +136,12 @@ internal sealed partial class DesktopSession
         _passThroughButton = ToolbarIcon(L.Get("Acceptance2.Toolbar.Done"), CommandGlyphs.PassThrough, () => SetEditing(false), FormatHotkey(_settings.Toggle));
         _passThroughButton.Tag = "done"; Cell(_passThroughButton, toolColumn++);
         var manage=ToolbarIcon(L.Get("Stamp.LibraryTitle"),"M6,8.5 V7 C6,5.5 4.8,4.7 4.8,3.2 C4.8,.6 11.2,.6 11.2,3.2 C11.2,4.7 10,5.5 10,7 V8.5 M6,8.5 H10 Q12,8.5 12,11 M6,8.5 Q4,8.5 4,11 M1.5,11 H14.5 V13.5 H1.5 Z M3,15.5 H13",ShowStampLibrary,"-");
-        AddShortcutHint(manage,"-",lowerRow:true);manage.Padding=new Thickness(0);manage.Tag="manage-stamps";Cell(manage,0,1);
+        AddShortcutHint(manage,"-",lowerRow:true);manage.Tag="manage-stamps";Cell(manage,0,1);
         _stampLibraryButton=manage;
         _stampLibraryGlyph=((Controls.Grid)manage.Content).Children.OfType<Controls.ContentPresenter>().Single();
         _stampLibraryDefaultGlyph=_stampLibraryGlyph.Content;
         var save=ToolbarIcon(L.Get("Feedback3.Toolbar.NewStamp"),"M4.5,8.5 V7 C4.5,5.5 3.5,4.7 3.5,3.2 C3.5,.6 8.5,.6 8.5,3.2 C8.5,4.7 7.5,5.5 7.5,7 V8.5 M4.5,8.5 H7.5 Q9.5,8.5 9.5,11 M4.5,8.5 Q2.5,8.5 2.5,11 M1,11 H11 V13.5 H1 Z M2,15.5 H10 M12.5,2.5 V7.5 M10,5 H15",SaveStampSelection,"+");
-        AddShortcutHint(save,"+",lowerRow:true);save.Padding=new Thickness(0);save.Tag="save-stamp";Cell(save,1,1);
+        AddShortcutHint(save,"+",lowerRow:true);save.Tag="save-stamp";Cell(save,1,1);
         _stampShelf = new(_stampLibrary, SelectStampSlot); Cell(_stampShelf, 3, 1, 10);
         _stampShelf.EntryMenuFactory=(id,slot)=>
         {
@@ -279,13 +278,7 @@ internal sealed partial class DesktopSession
         bool enabled = Active.Document.Canvas.Projection.Enabled;
         if (_canvasPerspectiveShown == enabled) return;
         _canvasPerspectiveShown = enabled;
-        var glyph = new System.Windows.Shapes.Path { Data = Geometry.Parse(enabled ?
-            "M2,3 L14,3 L16,14 L0,14 Z M5,3 L4,14 M11,3 L12,14 M1,8 L15,8" :
-            "M1,3 L15,3 L15,14 L1,14 Z M5,3 L5,14 M11,3 L11,14 M1,8 L15,8"),
-            Width = 15, Height = 15, Stretch = Stretch.Uniform, StrokeThickness = 1.5,
-            StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round };
-        glyph.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "CanvasText");
-        var content = new Controls.Viewbox { Width = 16, Height = 16, Child = glyph };
+        var content = CommandGlyphs.Create(enabled ? CommandGlyphs.Canvas : CommandGlyphs.CanvasFlat);
         if (_toolbarGlyphHosts.TryGetValue(EditorTool.Canvas, out var presenter)) presenter.Content = content;
         else _canvasStateButton.Content = content;
     }
@@ -305,8 +298,10 @@ internal sealed partial class DesktopSession
         {
             if (tool == EditorTool.Crop) button.IsEnabled = _editor.CanCropSelection;
             bool selected = ButtonFamily(_editor.Tool) == tool;
-            if(selected)button.SetResourceReference(Controls.Control.BorderBrushProperty,"CanvasAccent");else button.BorderBrush=Brushes.Transparent;
-            button.SetResourceReference(Controls.Control.BackgroundProperty, selected ? "CanvasHover" : "CanvasSurface");
+            bool perspective = tool == EditorTool.Canvas && Active.Document.Canvas.Projection.Enabled;
+            if (tool == EditorTool.Canvas) ActionIconButton.UpdateToggleAppearance(button,perspective);
+            if(selected)button.SetResourceReference(Controls.Control.BorderBrushProperty,"CanvasAccent");else if(!perspective)button.BorderBrush=Brushes.Transparent;
+            if(!perspective)button.SetResourceReference(Controls.Control.BackgroundProperty, selected ? "CanvasHover" : "CanvasSurface");
             System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? L.Get("ToolbarV2.Selected") : "");
         }
         foreach (var item in _cropMenuItems) item.IsEnabled = _editor.CanCropSelection;
@@ -322,7 +317,7 @@ internal sealed partial class DesktopSession
             if (parameters.Tool != EditorTool.Canvas) _toolOptionsPanel?.Refresh();
             foreach(var(tool,presenter)in _toolbarGlyphHosts)
             {
-                if(tool is EditorTool.Select or EditorTool.Eraser or EditorTool.Canvas)continue;
+                if(tool is EditorTool.Select or EditorTool.Eraser or EditorTool.Canvas or EditorTool.CaptureRegion)continue;
                 if (tool == EditorTool.Blur)
                 {
                     presenter.Content = parameters.Tool is EditorTool.Blur or EditorTool.Pixelate
@@ -375,12 +370,7 @@ internal sealed partial class DesktopSession
         button.MinWidth = button.Width = 26; button.MinHeight = button.Height = 26;
         button.FocusVisualStyle=null;Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(button,false);
         button.Margin = new Thickness(2, 0, 2, 0); button.BorderThickness = new Thickness(1); button.BorderBrush=Brushes.Transparent;button.Padding = new Thickness(3);
-        var glyph = new System.Windows.Shapes.Path { Data = Geometry.Parse(geometry), StrokeThickness = CommandGlyphs.StrokeThickness(geometry),
-            StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
-            RenderTransform = new TranslateTransform(1.5, 1.5) };
-        glyph.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "CanvasText");
-        var bounds = new Controls.Canvas { Width = 20, Height = 20 }; bounds.Children.Add(glyph);
-        button.Content = new Controls.Viewbox { Width = 16, Height = 16, Stretch = Stretch.Uniform, Child = bounds };
+        button.Content = CommandGlyphs.Create(geometry);
         button.ToolTip = shortcut.Length == 0 ? label : label + " · " + shortcut;
         if(shortcut.Length>0)System.Windows.Automation.AutomationProperties.SetAcceleratorKey(button,shortcut);
         Controls.ToolTipService.SetInitialShowDelay(button, 650); Controls.ToolTipService.SetBetweenShowDelay(button, 300); Controls.ToolTipService.SetShowDuration(button, 7000);
@@ -388,16 +378,9 @@ internal sealed partial class DesktopSession
     }
     private void AddShortcutHint(Controls.Button button,string shortcut,EditorTool? tool=null,bool lowerRow=false)
     {
-        // Rounded borders leave a fractional inner size at mixed DPI. Let the
-        // content fill that size so WPF does not clip the corner legend to a
-        // fixed 24-DIP layout slot which can exceed the available space.
-        button.HorizontalContentAlignment=HorizontalAlignment.Stretch;button.VerticalContentAlignment=VerticalAlignment.Stretch;
-        var grid=new Controls.Grid();
-        var presenter=new Controls.ContentPresenter {Content=button.Content,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};grid.Children.Add(presenter);
-        if(tool is { } key)_toolbarGlyphHosts[key]=presenter;
-        var hint=ToolbarShortcutHint.Create(shortcut,lowerRow);
-        if(lowerRow)hint.RenderTransform=new TranslateTransform(-6,1);
-        _toolbarShortcutHintLabels.Add(hint);grid.Children.Add(hint);button.Content=grid;
+        var content=ToolbarShortcutHint.CreateButtonContent(button,shortcut,lowerRow);
+        if(tool is { } key)_toolbarGlyphHosts[key]=content.Glyph;
+        _toolbarShortcutHintLabels.Add(content.Hint);button.Content=content.Content;
     }
     private void RefreshToolShortcutHints()
     {

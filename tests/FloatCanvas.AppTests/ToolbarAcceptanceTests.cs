@@ -89,7 +89,9 @@ internal static class ToolbarAcceptanceTests
             editor.Session.Document.Canvas.Projection=CanvasCalibration.CreateInitial(new(0,0,1200,800),10,8);
             editor.Session.Document.Canvas.Projection.Enabled=true;Invoke(session,"RefreshToolbarState");Measure(shell);
             var canvasAction=buttons.Single(button=>Equals(button.Tag,"canvas"));
-            check("enabled perspective changes the Canvas artwork while its unselected tool keeps the ordinary style",billboard.IsEnabled&&tools[EditorTool.Canvas]==canvasAction&&canvasAction.Background==app.Resources["CanvasSurface"]&&canvasAction.BorderBrush==Media.Brushes.Transparent&&Descendants(canvasAction).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasText"]);
+            CheckCanvasPresentation(check,session,editor,toolbar,shell,canvasAction,billboard,
+                buttons.Single(button=>Equals(button.Tag,"import")),buttons.Single(button=>Equals(button.Tag,"capture")),output);
+            check("enabled perspective gives the idle Canvas its amber fill border and artwork",billboard.IsEnabled&&tools[EditorTool.Canvas]==canvasAction&&canvasAction.Background==app.Resources["CanvasHiddenSurface"]&&canvasAction.BorderBrush==app.Resources["CanvasHiddenBorder"]&&Descendants(canvasAction).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasHiddenText"]);
             var parametersBefore=System.Text.Json.JsonSerializer.Serialize(editor.Parameters);
             billboard.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
             Measure(shell);
@@ -101,13 +103,13 @@ internal static class ToolbarAcceptanceTests
             check("placement menu and toolbar share their tool name, current mode and complete usage hint",Equals(modeMenu.Header,L.Get("Billboard.Toggle"))&&Equals(modeMenu.ToolTip,billboard.ToolTip)&&Controls.ToolTipService.GetShowOnDisabled(modeMenu));
             var import=buttons.Single(button=>Equals(button.Tag,"import"));
             check("image import uses the shared full-width menu artwork",Descendants(import).OfType<Shapes.Path>().Single().Data.ToString()==Media.Geometry.Parse(CommandGlyphs.Image).ToString()&&Media.Geometry.Parse(CommandGlyphs.Image).Bounds.Width>=14);
-            check("placement toolbar and menu use a heavier stroke while adjacent icons keep their standard weight",
-                Descendants(billboard).OfType<Shapes.Path>().Single().StrokeThickness==1.8&&
-                Descendants((Wpf.DependencyObject)modeMenu.Icon).OfType<Shapes.Path>().Single().StrokeThickness==1.8&&
+            check("placement toolbar menu and adjacent icons share the standard stroke weight",
+                Descendants(billboard).OfType<Shapes.Path>().Single().StrokeThickness==1.5&&
+                Descendants((Wpf.DependencyObject)modeMenu.Icon).OfType<Shapes.Path>().Single().StrokeThickness==1.5&&
                 Descendants(import).OfType<Shapes.Path>().Single().StrokeThickness==1.5&&
                 Descendants(canvasAction).OfType<Shapes.Path>().Single().StrokeThickness==1.5);
             var plane=Media.PathGeometry.CreateFromGeometry(Media.Geometry.Parse(CommandGlyphs.Surface));
-            var placementPen=new Media.Pen(Media.Brushes.Black,1.8) {StartLineCap=Media.PenLineCap.Round,EndLineCap=Media.PenLineCap.Round,LineJoin=Media.PenLineJoin.Round};
+            var placementPen=new Media.Pen(Media.Brushes.Black,1.5) {StartLineCap=Media.PenLineCap.Round,EndLineCap=Media.PenLineCap.Round,LineJoin=Media.PenLineJoin.Round};
             check("placement artwork fits the icon canvas including strokes",new Wpf.Rect(0,0,16,16).Contains(plane.GetRenderBounds(placementPen))&&
                 new Wpf.Rect(0,0,16,16).Contains(Media.Geometry.Parse(CommandGlyphs.Billboard).GetRenderBounds(placementPen)));
             editor.Session.Document.Canvas.Projection.Enabled=false;Invoke(session,"RefreshToolbarState");Measure(shell);
@@ -202,7 +204,7 @@ internal static class ToolbarAcceptanceTests
             check("returning to Freehand preserves the most recent emoji image",ReferenceEquals(((Controls.Image)Glyph(tools[EditorTool.Emoji])).Source,EmojiArtwork.Image("🔥")));
             var hints=Field<List<Controls.TextBlock>>(session,"_toolbarShortcutHintLabels");
             check("all tool and image commands share corner legends and stamp commands add minus/plus",hints.Count==17&&hints.Take(15).Select(hint=>hint.Text).SequenceEqual(ToolShortcutCatalog.All.Select(binding=>binding.Hint))&&hints.Skip(15).Select(hint=>hint.Text).SequenceEqual(new[]{"-","+"}));
-            foreach(var button in buttons.Where(button=>Controls.Grid.GetColumn(button)<13))
+            foreach(var button in buttons.Where(button=>button.Content is Controls.Grid content&&content.Children.OfType<Controls.TextBlock>().Any()))
             {
                 var hint=((Controls.Grid)button.Content).Children.OfType<Controls.TextBlock>().Single();
                 var origin=hint.TranslatePoint(new Wpf.Point(),button);
@@ -290,7 +292,7 @@ internal static class ToolbarAcceptanceTests
                 var actual=ColorAt(bitmap,(int)(sample.X*1.5),(int)(sample.Y*1.5));
                 check(theme+" full production preview paints that surface in actual pixels",Math.Abs(actual.R-expected.R)<=2 && Math.Abs(actual.G-expected.G)<=2 && Math.Abs(actual.B-expected.B)<=2 && actual.A==255);
             }
-            CheckNativeDpiLegends(check,shell,hints,tools,shelf,output);
+            foreach(double scale in new[]{1d,1.25,1.5,2d})CheckNativeDpiLegends(check,shell,hints,tools,shelf,output,scale);
             check("full-toolbar fixture never enters editing or shows canvas/input/tool windows",!host.IsEditing && !host.IsVisible && host.Diagnostics.All(pair=>!pair.InputVisible && !pair.DisplayVisible) && app.Windows.Cast<Wpf.Window>().All(window=>!window.IsVisible));
         }
         finally
@@ -305,6 +307,75 @@ internal static class ToolbarAcceptanceTests
     }
 
     private static bool Near(double a,double b)=>Math.Abs(a-b)<.05;
+    private static void CheckCanvasPresentation(Action<string,bool> check,DesktopSession session,EditorController editor,
+        Wpf.Window toolbar,Wpf.FrameworkElement shell,Controls.Button canvas,Controls.Button placement,
+        Controls.Button import,Controls.Button capture,string output)
+    {
+        var app=Wpf.Application.Current;
+        var originalTool=editor.Tool;bool originalProjection=editor.Session.Document.Canvas.Projection.Enabled;
+        var findings=new List<(string Name,bool Passed)>();
+        try
+        {
+            foreach(string theme in new[]{"light","dark"})
+            {
+                toolbar.Content=shell;AppTheme.Apply(theme);PumpToIdle(app.Dispatcher);toolbar.Content=null;
+                var row=new Controls.StackPanel {Orientation=Controls.Orientation.Horizontal};
+                row.SetResourceReference(Controls.Panel.BackgroundProperty,"CanvasSurface");
+                foreach(bool perspective in new[]{false,true})foreach(bool selected in new[]{false,true})
+                {
+                    editor.Session.Document.Canvas.Projection.Enabled=perspective;editor.Tool=selected?EditorTool.Canvas:EditorTool.Freehand;
+                    Invoke(session,"RefreshToolbarState");Measure(shell);
+                    var path=Descendants(canvas).OfType<Shapes.Path>().Single();
+                    string state=$"{theme} {(perspective?"perspective":"flat")} {(selected?"selected":"idle")}";
+                    bool Same(Media.Brush actual,string resource)=>actual is Media.SolidColorBrush brush&&brush.Color==((Media.SolidColorBrush)app.Resources[resource]).Color;
+                    findings.Add((state+" retains the expected canvas fill and glyph color",
+                        Same(canvas.Background,perspective?"CanvasHiddenSurface":selected?"CanvasHover":"CanvasSurface")&&Same(path.Stroke,perspective?"CanvasHiddenText":"CanvasText")));
+                    findings.Add((state+" gives selection priority over the perspective border",selected?Same(canvas.BorderBrush,"CanvasAccent"):
+                        perspective?Same(canvas.BorderBrush,"CanvasHiddenBorder"):canvas.BorderBrush is Media.SolidColorBrush idle&&idle.Color.A==0));
+                    var hint=Descendants(canvas).OfType<Controls.TextBlock>().Single(value=>value.Text=="C");
+                    var origin=hint.TranslatePoint(new Wpf.Point(),canvas);
+                    findings.Add((state+" anchors C on the upper right frame",Near(origin.X+hint.ActualWidth/2,canvas.ActualWidth)&&Near(origin.Y,0)));
+                    var card=new Controls.StackPanel {Margin=new Wpf.Thickness(10),Width=240};
+                    var label=new Controls.TextBlock {Text=state,Margin=new Wpf.Thickness(0,0,0,8)};label.SetResourceReference(Controls.TextBlock.ForegroundProperty,"CanvasText");card.Children.Add(label);
+                    var icons=new Controls.StackPanel {Orientation=Controls.Orientation.Horizontal};
+                    foreach(var button in new[]{canvas,placement,import,capture})
+                    {
+                        // Include the complete overhanging shortcut, while hiding
+                        // neighboring controls only for this detached visual capture.
+                        var neighbors=Descendants(shell).OfType<Controls.Button>().Where(other=>!ReferenceEquals(other,button)).Select(other=>(Button:other,other.Visibility)).ToArray();
+                        foreach(var neighbor in neighbors)neighbor.Button.Visibility=Wpf.Visibility.Hidden;
+                        Measure(shell);var point=button.TranslatePoint(new Wpf.Point(),shell);var pixels=Raster(shell,4);
+                        foreach(var neighbor in neighbors)neighbor.Button.Visibility=neighbor.Visibility;
+                        Measure(shell);
+                        var crop=new Imaging.CroppedBitmap(pixels,new Wpf.Int32Rect((int)Math.Round((point.X-2)*4),(int)Math.Round((point.Y-2)*4),136,120));
+                        icons.Children.Add(new Controls.Image {Source=crop,Width=57,Height=50,Margin=new Wpf.Thickness(0,0,2,0)});
+                    }
+                    card.Children.Add(icons);row.Children.Add(card);
+                }
+                Measure(row);Save(row,Path.Combine(output,"canvas-states-"+theme+".png"),1.5);
+            }
+            foreach(var button in new[]{canvas,placement,import,capture})
+            {
+                var path=Descendants(button).OfType<Shapes.Path>().SingleOrDefault();
+                if(path is null){findings.Add((button.Tag+" retains the shared command glyph canvas",false));continue;}
+                var transform=path.TransformToAncestor(button);
+                var delta=transform.Transform(new Wpf.Point(1,0))-transform.Transform(new Wpf.Point());
+                var pen=new Media.Pen(path.Stroke,path.StrokeThickness) {StartLineCap=path.StrokeStartLineCap,EndLineCap=path.StrokeEndLineCap,LineJoin=path.StrokeLineJoin};
+                var bounds=transform.TransformBounds(path.RenderedGeometry.GetRenderBounds(pen));
+                Console.WriteLine($"CANVAS GLYPH {button.Tag}: stroke={delta.Length*path.StrokeThickness:F2} bounds={bounds}");
+                findings.Add((button.Tag+" uses the common 1.5 DIP rendered stroke",Near(delta.Length*path.StrokeThickness,1.5)));
+                findings.Add((button.Tag+" has a bounded matching visual size",bounds.Width is >=13 and <=16&&bounds.Height is >=12 and <=16));
+            }
+        }
+        finally
+        {
+            editor.Tool=originalTool;editor.Session.Document.Canvas.Projection.Enabled=originalProjection;
+            toolbar.Content=shell;AppTheme.Apply("light");PumpToIdle(app.Dispatcher);toolbar.Content=null;Invoke(session,"RefreshToolbarState");Measure(shell);
+        }
+        foreach(var finding in findings)Console.WriteLine($"CANVAS PRESENTATION {(finding.Passed?"PASS":"FAIL")}: {finding.Name}");
+        foreach(var finding in findings)check(finding.Name,finding.Passed);
+    }
+
     private static void RenderPlacementStates(Action<string,bool> check,DesktopSession session,EditorController editor,
         Controls.Button placement,Controls.Button import,Controls.ContextMenu menu,Controls.MenuItem modeMenu,
         Wpf.FrameworkElement shell,string theme,string output)
@@ -407,12 +478,11 @@ internal static class ToolbarAcceptanceTests
         return DifferentPixels(before,after,new Wpf.Int32Rect(left,top,(int)Math.Ceiling(2*scale),(int)Math.Floor(8*scale)))==0;
     }
     private static void CheckNativeDpiLegends(Action<string,bool> check,Wpf.FrameworkElement shell,
-        IReadOnlyList<Controls.TextBlock> hints,Dictionary<EditorTool,Controls.Button> tools,StampShelfControl shelf,string output)
+        IReadOnlyList<Controls.TextBlock> hints,Dictionary<EditorTool,Controls.Button> tools,StampShelfControl shelf,string output,double scale)
     {
         // RTB resolution alone does not change WPF layout DPI. A hidden native
         // source and the production Window's rounding policy reproduce the
         // fractional inner size of a 26-DIP button with its one-DIP border.
-        const double scale=1.5;
         var root=new Controls.Border {Child=shell,UseLayoutRounding=true,SnapsToDevicePixels=true};
         nint priorContext=SetThreadDpiAwarenessContext(-4),handle=0;
         try
@@ -420,28 +490,35 @@ internal static class ToolbarAcceptanceTests
             using var source=new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("FloatCanvas toolbar DPI regression")
                 {Width=1600,Height=180,WindowStyle=unchecked((int)0x80000000),ExtendedWindowStyle=0x08000000});
             handle=source.Handle;source.RootVisual=root;
-            // Set the actual layout DPI explicitly so CI also covers 150% on
+            // Set the actual layout DPI explicitly so CI covers mixed scales on
             // machines whose physical monitor happens to use another scale.
             Media.VisualTreeHelper.SetRootDpi(root,new Wpf.DpiScale(scale,scale));Measure(root);
-            check("native toolbar DPI probe lays out at 150% without showing its HWND",IsWindow(handle)&&!IsWindowVisible(handle)&&Near(Media.VisualTreeHelper.GetDpi(shell).DpiScaleX,scale));
+            check($"native toolbar DPI probe lays out at {scale:P0} without showing its HWND",IsWindow(handle)&&!IsWindowVisible(handle)&&Near(Media.VisualTreeHelper.GetDpi(shell).DpiScaleX,scale));
             var body=shell is Controls.Grid surface?surface.Children.OfType<Controls.Border>().Single():throw new InvalidOperationException("Toolbar surface has no body.");
             var grid=(Controls.Grid)body.Child;
             var display=grid.Children.OfType<ToolbarStatusDisplay>().Single();
-            CheckEqualRowInsets(check,body,grid,display,"native 150% toolbar",scale);
+            // Retain the existing 150% row-spacing gate; additional DPI cases
+            // exercise shortcut placement and clipping rather than redefine spacing.
+            if(scale==1.5)CheckEqualRowInsets(check,body,grid,display,$"native {scale:P0} toolbar",scale);
             var measured=new List<(string Text,int Expected,int Actual)>();
             foreach(var hint in hints)
             {
+                var button=Descendants(shell).OfType<Controls.Button>().Single(button=>hint.IsDescendantOf(button));
+                var origin=hint.TranslatePoint(new Wpf.Point(),button);bool lower=Controls.Grid.GetRow(button)==2;
+                double horizontal=origin.X+hint.ActualWidth/2-(lower?0:button.ActualWidth);
+                double vertical=lower?origin.Y+hint.ActualHeight-button.ActualHeight:origin.Y;
+                check($"{scale:P0} native {hint.Text} stays on its shared frame corner",Math.Abs(horizontal*scale)<=1.01&&Math.Abs(vertical*scale)<=1.01);
                 int expected=ReferenceInk(hint,scale,layoutDpi:true),actual=LegendInk(shell,hint,scale);
                 Console.WriteLine($"NATIVE LEGEND {hint.Text}: actual={actual}, reference={expected}");
                 measured.Add((hint.Text,expected,actual));
             }
-            foreach(var result in measured)check("150% native toolbar retains the complete "+result.Text+" shortcut legend",result.Expected>0&&result.Actual>=result.Expected*.8);
-            check("150% native upper mask preserves its neighboring selected frame",NeighborUnchanged(shell,hints.Single(hint=>hint.Text=="R"),tools[EditorTool.Ellipse],Controls.Control.BorderBrushProperty,true,scale));
+            foreach(var result in measured)check($"{scale:P0} native toolbar retains the complete "+result.Text+" shortcut legend",result.Expected>0&&result.Actual>=result.Expected*.8);
+            check($"{scale:P0} native upper mask preserves its neighboring selected frame",NeighborUnchanged(shell,hints.Single(hint=>hint.Text=="R"),tools[EditorTool.Ellipse],Controls.Control.BorderBrushProperty,true,scale));
             var slots=((Controls.StackPanel)shelf.Content).Children.OfType<Controls.Button>().ToArray();
             var current=(Controls.Grid)slots[1].Content;
             var previous=((Controls.Grid)slots[0].Content).Children.OfType<Controls.Border>().Single();
-            check("150% native lower mask preserves its previous slot frame",NeighborUnchanged(shell,current.Children.OfType<Controls.TextBlock>().Single(),previous,Controls.Border.BorderBrushProperty,false,scale));
-            Save(shell,Path.Combine(output,"production-toolbar-native-150.png"),scale);
+            check($"{scale:P0} native lower mask preserves its previous slot frame",NeighborUnchanged(shell,current.Children.OfType<Controls.TextBlock>().Single(),previous,Controls.Border.BorderBrushProperty,false,scale));
+            Save(shell,Path.Combine(output,$"production-toolbar-native-{scale*100:0}.png"),scale);
             source.RootVisual=null;
         }
         finally

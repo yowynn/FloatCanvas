@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 统一工具条快捷键角标的共享布局，修正 C／I／P 偏移；恢复画布按钮透视琥珀态并叠加蓝色工具选框，统一画布、放置模式、置图与截图的图标画幅和笔宽。
+- Share toolbar shortcut layout to align C/I/P; restore amber perspective styling beneath the Canvas tool's blue selection border, and unify icon canvas size and stroke weight across Canvas, placement, import and capture.
+
 - 托盘左键单击延迟进入编辑、双击切换画布显隐；右键继续打开原生菜单。加宽菜单并在右侧显示快捷键。
 - Delay a tray single click to enter editing, use double-click to toggle canvas visibility, retain the native right-click menu, and widen it with right-aligned shortcut hints.
 

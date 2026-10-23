@@ -28,14 +28,31 @@ internal static class ToolShortcutCatalog
 
 internal static class ToolbarShortcutHint
 {
-    internal static System.Windows.Controls.TextBlock Create(string text, bool lowerRow = false)
+    internal static (System.Windows.Controls.Grid Content, System.Windows.Controls.ContentPresenter Glyph,
+        System.Windows.Controls.TextBlock Hint) CreateButtonContent(System.Windows.Controls.Button button,string text,bool lowerRow=false)
+    {
+        // Fill the rounded frame's actual inner size at each DPI; individual
+        // toolbar actions must not add padding or their own hint offsets.
+        button.Padding=new System.Windows.Thickness(0);
+        button.HorizontalContentAlignment=System.Windows.HorizontalAlignment.Stretch;
+        button.VerticalContentAlignment=System.Windows.VerticalAlignment.Stretch;
+        var content=new System.Windows.Controls.Grid();
+        var glyph=new System.Windows.Controls.ContentPresenter {Content=button.Content,
+            HorizontalAlignment=System.Windows.HorizontalAlignment.Center,VerticalAlignment=System.Windows.VerticalAlignment.Center};
+        var hint=Create(text,lowerRow,button.BorderThickness);
+        content.Children.Add(glyph);content.Children.Add(hint);
+        return(content,glyph,hint);
+    }
+
+    internal static System.Windows.Controls.TextBlock Create(string text, bool lowerRow = false,System.Windows.Thickness frameInset=default)
     {
         var hint=new System.Windows.Controls.TextBlock {Text=text,FontSize=9,FontFamily=new System.Windows.Media.FontFamily("Consolas"),
             FontWeight=System.Windows.FontWeights.SemiBold,Width=10,Height=12,TextAlignment=System.Windows.TextAlignment.Center,
             LineHeight=12,LineStackingStrategy=System.Windows.LineStackingStrategy.BlockLineHeight,
             HorizontalAlignment=lowerRow?System.Windows.HorizontalAlignment.Left:System.Windows.HorizontalAlignment.Right,
             VerticalAlignment=lowerRow?System.Windows.VerticalAlignment.Bottom:System.Windows.VerticalAlignment.Top,
-            RenderTransform=new System.Windows.Media.TranslateTransform(lowerRow?-5:6,lowerRow?0:-1),IsHitTestVisible=false};
+            RenderTransform=new System.Windows.Media.TranslateTransform(lowerRow?-5-frameInset.Left:5+frameInset.Right,
+                lowerRow?frameInset.Bottom:-frameInset.Top),IsHitTestVisible=false};
         System.Windows.Media.TextOptions.SetTextFormattingMode(hint,System.Windows.Media.TextFormattingMode.Display);
         hint.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,"CanvasText");
         hint.SetResourceReference(MaskSurfaceProperty,"CanvasSurface");return hint;

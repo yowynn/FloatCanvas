@@ -37,14 +37,15 @@ internal static class CommandGlyphs
     internal const string Ungroup = "M1,1 H6 V6 H1 Z M10,10 H15 V15 H10 Z M10,6 L15,1 M11,1 H15 V5 M1,11 V15 H5 M1,15 L6,10";
     internal const string Image = "M1,2 H15 V14 H1 Z M1,11.5 L5,7.5 L8.5,11 L11,8.5 L15,12.5 M12,5.5 A1,1 0 1 1 10,5.5 A1,1 0 1 1 12,5.5";
     internal const string ReplaceImage = "M1,2 H11 V8 M1,2 V13 H7 M2,10 L5,7 L8,10 M9,11 H16 M13,8 L16,11 L13,14";
-    internal const string Canvas = "M2,3 L14,3 L16,14 L0,14 Z M5,3 L4,14 M11,3 L12,14 M1,8 L15,8";
+    internal const string Canvas = "M3,2 H13 L15,14 H1 Z M6,2 L5,14 M10,2 L11,14 M2,8 H14";
+    internal const string CanvasFlat = "M1,2 H15 V14 H1 Z M5,2 V14 M11,2 V14 M1,8 H15";
     private const string PlacementPlane = "M8,1.5 L15,8 L8,14.5 L1,8 Z";
     private const string PlacementFigure = "M6.6,4.05 A1.75,1.75 0 1 1 9.4,4.05 Q11,4.5 11,6 V8 H5 V6 Q5,4.5 6.6,4.05 Z";
     internal static readonly string Surface = SurfacePlacementGlyph();
     // The same plane's rear edges leave real gaps around the shared upright figure.
     internal const string Billboard = "M2.5,6.607 L1,8 L8,14.5 L15,8 L13.5,6.607 " + PlacementFigure;
     internal static string Placement(bool billboard)=>billboard?Billboard:Surface;
-    internal static double StrokeThickness(string geometry)=>geometry==Surface||geometry==Billboard?1.8:1.5;
+    internal static double StrokeThickness(string geometry)=>1.5;
 
     private static string SurfacePlacementGlyph()
     {
