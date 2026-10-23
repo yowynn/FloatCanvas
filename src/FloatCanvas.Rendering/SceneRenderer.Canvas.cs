@@ -64,11 +64,22 @@ public sealed partial class SceneRenderer
             for (int i = 0; i < 52 && (maximum - minimum) / stride > 2048; i++) stride *= 2;
             double first = Math.Ceiling((minimum - anchor) / stride), last = Math.Floor((maximum - anchor) / stride);
             if (!double.IsFinite(first) || !double.IsFinite(last) || last - first > 2048) return;
+            double strideCells = stride / cell;
+            var candidates = new SortedSet<double>();
+            for (int i = 0; i <= (int)(last - first); i++) candidates.Add((first + i) * strideCells);
+            // A long inverse-projected far edge must not make clearly separated cells
+            // inside the calibration frame disappear through a global candidate stride.
+            var projection = document.Canvas.Projection;
+            double coverage = vertical ? projection.GridColumns : projection.GridRows;
+            int fineCount = (int)Math.Min(256, Math.Ceiling(coverage / 2));
+            for (int i = -fineCount; i <= fineCount; i++)
+                if (anchor + i * cell >= minimum && anchor + i * cell <= maximum) candidates.Add(i);
             PointD? previousStart = null;
             PointD previousEnd = default;
-            for (int i = 0; i <= (int)(last - first); i++)
+            foreach (double candidate in candidates)
             {
-                double coordinate = anchor + (first + i) * stride;
+                GridCandidateCount++;
+                double coordinate = anchor + candidate * cell;
                 if (!GridSpan(polygon, vertical, coordinate, out double start, out double end)) continue;
                 var a = vertical ? new PointD(coordinate, start) : new PointD(start, coordinate);
                 var b = vertical ? new PointD(coordinate, end) : new PointD(end, coordinate);
@@ -77,6 +88,20 @@ public sealed partial class SceneRenderer
                 // pixels of the last retained line. Compression at one remote corner must
                 // never remove well-separated cells in the reference region.
                 if (previousStart is { } previous && Crowded(screenStart, screenEnd, previous, previousEnd)) continue;
+                double index = candidate;
+                double densityStride = cell;
+                for (int level = 0; level < 30 && index != 0 && index % 2 == 0; level++) { densityStride *= 2; index /= 2; }
+                if (index != 0 && !TrimDenseSpan(mapping, vertical, coordinate, densityStride, ref screenStart, ref screenEnd)) continue;
+                a = mapping.ScreenToPlane.TransformPoint(screenStart); b = mapping.ScreenToPlane.TransformPoint(screenEnd);
+                if (!reference && grid.Pattern != StrokePattern.Solid)
+                {
+                    double period = Math.Max(.1, grid.Width) * (grid.Pattern == StrokePattern.Dotted ? 2.501 : 7);
+                    UnresolvedGridDashIntervalCount += a.DistanceTo(b) / period;
+                    if (!TrimUnresolvedDashes(mapping, a, b, period, grid.Pattern == StrokePattern.Dashed ? 4 : 2, ref screenStart, ref screenEnd)) continue;
+                    a = mapping.ScreenToPlane.TransformPoint(screenStart); b = mapping.ScreenToPlane.TransformPoint(screenEnd);
+                    GridDashIntervalCount += a.DistanceTo(b) / period;
+                }
+                GridLineCount++;
                 previousStart = screenStart; previousEnd = screenEnd;
                 if (reference)
                 {
@@ -96,6 +121,60 @@ public sealed partial class SceneRenderer
         double Cross(PointD point) => direction.X * (point.Y - previousFirst.Y) - direction.Y * (point.X - previousFirst.X);
         double a = Cross(first), b = Cross(last);
         return Math.Max(a * a, b * b) < 4 * lengthSquared;
+    }
+
+    private static bool TrimDenseSpan(CanvasMapping mapping, bool vertical, double coordinate, double stride,
+        ref PointD start, ref PointD end)
+    {
+        const double minimumSpacing = 8;
+        var inverse = mapping.ScreenToPlane;
+        // A plane-grid line becomes a screen line A*x+B*y+C=0. Distances to both
+        // neighboring lines are linear along this line, so clipping needs no sampling.
+        for (int sign = -1; sign <= 1; sign += 2)
+        {
+            double neighbor = coordinate + sign * stride;
+            double a = (vertical ? inverse.M11 : inverse.M21) - neighbor * inverse.M31;
+            double b = (vertical ? inverse.M12 : inverse.M22) - neighbor * inverse.M32;
+            double c = (vertical ? inverse.M13 : inverse.M23) - neighbor * inverse.M33;
+            double norm = Math.Sqrt(a * a + b * b);
+            if (norm < 1e-12) continue;
+            double before = (a * start.X + b * start.Y + c) / norm;
+            double after = (a * end.X + b * end.Y + c) / norm;
+            double side = Math.Sign(Math.Abs(before) > Math.Abs(after) ? before : after);
+            before = before * side - minimumSpacing; after = after * side - minimumSpacing;
+            if (before < 0 && after < 0) return false;
+            if ((before < 0) != (after < 0))
+            {
+                var crossing = start + (end - start) * (before / (before - after));
+                if (before < 0) start = crossing; else end = crossing;
+            }
+        }
+        return start.DistanceTo(end) > .01;
+    }
+
+    private static bool TrimUnresolvedDashes(CanvasMapping mapping, PointD planeStart, PointD planeEnd, double period, double minimumPeriod,
+        ref PointD start, ref PointD end)
+    {
+        var direction = planeEnd - planeStart;
+        double length = direction.DistanceTo(default);
+        if (length < 1e-12) return false;
+        var middle = (start + end) * .5;
+        var planeMiddle = mapping.ScreenToPlane.TransformPoint(middle);
+        double scale = mapping.PlaneToScreen.Jacobian(planeMiddle).TransformPoint(direction * (1 / length)).DistanceTo(default);
+        double depth = mapping.ScreenToPlane.Denominator(middle);
+        // Along a projected straight line, local dash scale is proportional to inverse
+        // depth squared. Omit only the span whose dash period is below screen resolution;
+        // this also bounds Skia's plane-space dash expansion near the horizon.
+        double minimumDepth = depth * Math.Sqrt(minimumPeriod / (period * scale));
+        double before = mapping.ScreenToPlane.Denominator(start) - minimumDepth;
+        double after = mapping.ScreenToPlane.Denominator(end) - minimumDepth;
+        if (before < 0 && after < 0) return false;
+        if ((before < 0) != (after < 0))
+        {
+            var crossing = start + (end - start) * (before / (before - after));
+            if (before < 0) start = crossing; else end = crossing;
+        }
+        return start.DistanceTo(end) > .01;
     }
 
     private static bool GridSpan(IReadOnlyList<PointD> polygon, bool vertical, double coordinate, out double start, out double end)

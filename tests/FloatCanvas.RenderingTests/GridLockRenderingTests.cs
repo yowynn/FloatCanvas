@@ -32,7 +32,7 @@ internal static class GridLockRenderingTests
             var mapping = CanvasMapping.Create(scene);
             var projectedAnchor = mapping.ToScreen(anchor);
             var foot = mapping.ElementToScreen(board).TransformPoint(new(board.Width / 2, board.Height));
-            var handle = new PointD(next.Quad.Average(p => p.X), next.Quad.Average(p => p.Y));
+            var handle = CanvasGridGeometry.ReferenceCenter(next);
             check($"{gesture} keeps the locked grid centered on its current handle with fixed plane spacing",
                 mapping.ToScreen(mapping.GridOrigin).DistanceTo(handle) < 1e-7 && Math.Abs(mapping.GridCellSize - projection.CellSize) < 1e-7);
             check($"{gesture} keeps the original logical billboard anchor and its rendered foot coincident", foot.DistanceTo(projectedAnchor) < 1e-7 && board.BillboardAnchor == anchor);
@@ -131,7 +131,7 @@ internal static class GridLockRenderingTests
     {
         var mapping = CanvasMapping.Create(scene);
         var center = mapping.ToScreen(mapping.GridOrigin);
-        var handle = new PointD(scene.Canvas.Projection.Quad.Average(p => p.X), scene.Canvas.Projection.Quad.Average(p => p.Y));
+        var handle = CanvasGridGeometry.ReferenceCenter(scene.Canvas.Projection);
         var intersection = mapping.ToScreen(mapping.GridOrigin + new PointD(mapping.GridCellSize, 0));
         var anchor = mapping.ToScreen(board.BillboardAnchor);
         var foot = mapping.ElementToScreen(board).TransformPoint(new(board.Width / 2, board.Height));

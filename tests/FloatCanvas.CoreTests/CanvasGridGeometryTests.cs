@@ -46,10 +46,16 @@ internal static class CanvasGridGeometryTests
         check(CanvasCalibration.TryCalibrate(reset, quad, viewport, out var calibrated, out _), "asymmetric perspective reference calibrates");
         scene.Canvas.Projection = calibrated;
         var mapping = CanvasMapping.Create(scene);
+        var cornerPlane = calibrated.Origin;
+        Near((cornerPlane.X - mapping.GridOrigin.X) / mapping.GridCellSize, -calibrated.Columns / 2d,
+            "even-count left edge stays on its original grid line after perspective deformation");
+        Near((cornerPlane.Y - mapping.GridOrigin.Y) / mapping.GridCellSize, -calibrated.Rows / 2d,
+            "even-count top edge stays on its original grid line after perspective deformation");
         var handle = CanvasGridGeometry.ReferenceCenter(calibrated);
-        Near(mapping.ToScreen(mapping.GridOrigin).DistanceTo(handle), 0, "perspective grid origin lands at the actual arithmetic center handle");
+        Near(mapping.ToScreen(mapping.GridOrigin).DistanceTo(handle), 0, "perspective grid origin lands at the projective center handle");
         var planeCenter = calibrated.Origin + new PointD(calibrated.Columns * calibrated.CellSize / 2, calibrated.Rows * calibrated.CellSize / 2);
-        check(mapping.ToScreen(planeCenter).DistanceTo(handle) > 10, "fixture distinguishes the screen handle from the projective plane center");
+        var arithmeticCenter = new PointD(calibrated.Quad.Average(p => p.X), calibrated.Quad.Average(p => p.Y));
+        check(mapping.ToScreen(planeCenter).DistanceTo(arithmeticCenter) > 10, "fixture distinguishes the corrected projective center from the arithmetic screen center");
         var element = new CanvasElement { Kind = ElementKind.Rectangle, Width = 50, Height = 30,
             Transform = Affine2D.Translation(calibrated.Origin.X + 80, calibrated.Origin.Y + 80), Style = new() { StrokeWidth = 2 } };
         scene.Elements.Add(element);
@@ -66,6 +72,22 @@ internal static class CanvasGridGeometryTests
             "repeated mode toggles never reverse-convert counts or perturb dormant calibration");
         check(JsonSerializer.Serialize(scene.Elements) == layers && CanvasMapping.Create(scene).ProjectedBounds(element) == bounds,
             "grid origins and mode roundtrips leave element placement and the final projection unchanged");
+        foreach (var pair in new[] { (8, 6), (12, 10), (256, 256) })
+        {
+            var input = CanvasCalibration.CreateInitial(viewport, pair.Item1, pair.Item2);
+            check(CanvasCalibration.TryCalibrate(input, quad, viewport, out var result, out _), "even-count alignment fixture calibrates");
+            scene.Canvas.Projection = result;
+            var aligned = CanvasMapping.Create(scene);
+            foreach (var corner in result.Quad)
+            {
+                var plane = aligned.ScreenToPlane.TransformPoint(corner);
+                double column = (plane.X - aligned.GridOrigin.X) / aligned.GridCellSize;
+                double row = (plane.Y - aligned.GridOrigin.Y) / aligned.GridCellSize;
+                Near(column, Math.Round(column), "every even-count corner stays on a column after deformation");
+                Near(row, Math.Round(row), "every even-count corner stays on a row after deformation");
+            }
+        }
+        scene.Canvas.Projection = calibrated;
         scene.Canvas.Grid.FlatCellSize = calibrated.GridCellSize;
         var session = new EditorSession(scene);
         string before = JsonSerializer.Serialize(session.Document);

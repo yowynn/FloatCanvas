@@ -29,6 +29,9 @@
 - 修复原生画布在 Ctrl 快捷键松开后不刷新选框：复制保留原选择，粘贴与复制副本选中新图层；移除未公开的 A 工具别名，Ctrl+A 全选时保留当前工具。
 - Restore selection handles immediately after releasing Ctrl on the native canvas. Copy keeps the original selection, paste and duplicate select new layers, unbound A no longer changes tools, and Ctrl+A retains the active tool.
 
+- 以透视矩形中心的投影统一网格原点和中央把手，修复偶数行列时四边／四角脱离格线；远端网格按屏幕间距局部抽稀，保留近景格线，并在 Skia 展开前移除无法分辨的虚线／点线周期，避免天际线附近长路径拖慢校准。
+- Align the grid origin and center handle with the projected rectangle center so even-count edges and corners stay on the grid. Thin compressed spans by screen spacing while retaining near lines, and remove unresolvable dash/dot spans before Skia expands their long paths near the horizon.
+
 - 绘图范围按全部屏幕、仅主屏排列，多屏时列出具体屏幕；按设备保存选择，断开回退主屏、重连恢复，并随屏幕布局更新列表，保留已打开设置中的未保存范围选择。恢复重置透视的屏幕选择，单活动屏时禁用下拉。
 - Order drawing scope as All screens, Primary screen only, then individual screens. Save device identity, fall back to primary on disconnect, restore on reconnect, and refresh lists after topology changes while retaining pending scope edits. Restore reset-display choices and disable the dropdown for a single active screen.
 

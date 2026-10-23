@@ -439,7 +439,7 @@ internal sealed partial class DesktopSession
             canvas.DrawRect((float)p.X-4,(float)p.Y-4,8,8,fill);
             canvas.DrawRect((float)p.X-4,(float)p.Y-4,8,8,line);
         }
-        var center = settings.Quad.Aggregate(new PointD(), (sum, point) => sum + point) * .25;
+        var center = CanvasGridGeometry.ReferenceCenter(settings);
         float x = (float)center.X, y = (float)center.Y;
         float halfSize = (float)CanvasCalibrationController.CenterHandleHalfSize;
         canvas.DrawRoundRect(x - halfSize, y - halfSize, halfSize * 2, halfSize * 2, 6, 6, fill);
@@ -503,28 +503,21 @@ internal sealed partial class DesktopSession
             var projection=Active.Document.Canvas.Projection;
             if(CanvasCalibration.TryCalibrate(projection,quad,Active.Document.Viewport,out var preview,out _))
             {
-                line.StrokeWidth=1;line.Color=new(35,131,226,170);
-                double columns=preview.GridColumns,rows=preview.GridRows;
-                var center=CanvasGridGeometry.ReferenceCenter(preview);
-                var gridOrigin=preview.Matrix.Inverse().TransformPoint(center);
-                double left=preview.Origin.X,top=preview.Origin.Y;
-                double right=left+columns*preview.GridCellSize,bottom=top+rows*preview.GridCellSize;
-                void GridLine(PointD a,PointD b)
+                int saved = canvas.Save();
+                try
                 {
-                    a=preview.Matrix.TransformPoint(a);
-                    b=preview.Matrix.TransformPoint(b);
-                    canvas.DrawLine((float)a.X,(float)a.Y,(float)b.X,(float)b.Y,line);
+                    using var clipBuilder = new SKPathBuilder();
+                    clipBuilder.MoveTo((float)quad[0].X, (float)quad[0].Y);
+                    foreach (var point in quad.Skip(1)) clipBuilder.LineTo((float)point.X, (float)point.Y);
+                    clipBuilder.Close();
+                    using var clip = clipBuilder.Detach(); canvas.ClipPath(clip);
+                    var scene = new SceneDocument { Viewport = Active.Document.Viewport,
+                        Canvas = new CanvasSettings { Projection = preview } };
+                    _renderer.Draw(canvas, scene, _assets, includeBackground: false,
+                        includeCanvasBackground: false, calibrationReference: true);
                 }
-                double columnStride=1,rowStride=1;
-                while(columns/columnStride>2048)columnStride*=2;
-                while(rows/rowStride>2048)rowStride*=2;
-                double firstColumn=Math.Ceiling((left-gridOrigin.X)/preview.GridCellSize/columnStride)*columnStride;
-                for(double column=firstColumn;gridOrigin.X+column*preview.GridCellSize<right;column+=columnStride)
-                {double x=gridOrigin.X+column*preview.GridCellSize;GridLine(new(x,top),new(x,bottom));}
-                double firstRow=Math.Ceiling((top-gridOrigin.Y)/preview.GridCellSize/rowStride)*rowStride;
-                for(double row=firstRow;gridOrigin.Y+row*preview.GridCellSize<bottom;row+=rowStride)
-                {double y=gridOrigin.Y+row*preview.GridCellSize;GridLine(new(left,y),new(right,y));}
-                previewOrigin=center;
+                finally { canvas.RestoreToCount(saved); }
+                previewOrigin=CanvasGridGeometry.ReferenceCenter(preview);
                 line.StrokeWidth=2;line.Color=new(35,131,226);
             }
         }

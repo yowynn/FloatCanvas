@@ -201,7 +201,7 @@ public sealed class CanvasMapping
         PlaneToScreen = settings.Enabled ? reference.Matrix : Projective2D.Identity;
         ScreenToPlane = PlaneToScreen.Inverse();
         GridCellSize = CanvasGridGeometry.ResolveCellSize(document.Canvas, viewport);
-        GridOrigin = settings.Enabled ? ScreenToPlane.TransformPoint(CanvasGridGeometry.ReferenceCenter(reference)) :
+        GridOrigin = settings.Enabled ? CanvasGridGeometry.ReferencePlaneCenter(reference) :
             document.Canvas.Grid.FlatOrigin ?? viewport.Center;
         Safety = new(PlaneToScreen);
         SafeScreenPolygon = Safety.ClipScreen(viewport);

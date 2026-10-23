@@ -25,6 +25,12 @@ public sealed partial class SceneRenderer : IDisposable
     public TimeSpan AnimationTime { get; set; }
     public TimeSpan? NextAnimationDelay { get; private set; }
     public long PathBuildCount { get; private set; }
+    /// <summary>Grid candidates and retained lines in the most recent frame, including calibration guides.</summary>
+    public int GridCandidateCount { get; private set; }
+    public int GridLineCount { get; private set; }
+    /// <summary>Estimated plane-space dash periods after and before screen-resolution trimming.</summary>
+    public double GridDashIntervalCount { get; private set; }
+    public double UnresolvedGridDashIntervalCount { get; private set; }
     public long CachedImageBytes => _images.Values.Sum(e => e.CachedBytes) + _effects.Values.Sum(e => e.CachedBytes);
 
     /// <summary>Preserves the caller's matrix and clip. Viewport is in document coordinates.</summary>
@@ -81,6 +87,9 @@ public sealed partial class SceneRenderer : IDisposable
     internal void BeginFrame(SceneDocument document, SceneRenderSpace space = SceneRenderSpace.ScreenComposite)
     {
         ObjectDisposedException.ThrowIf(_disposed, this); ClearLiveEffectImages(); NextAnimationDelay = null; _clock++;
+        GridCandidateCount = GridLineCount = 0;
+        GridDashIntervalCount = 0;
+        UnresolvedGridDashIntervalCount = 0;
         if (space == SceneRenderSpace.PlaneContent && document.Elements.Any(e => e.Visible && ElementGeometry.IsLiveEffect(e.Kind)))
             throw new InvalidOperationException("Live desktop filters require screen composition before being placed back on the plane.");
         _drawingDocument = document; _renderSpace = space; _mapping = CanvasMapping.Create(document);

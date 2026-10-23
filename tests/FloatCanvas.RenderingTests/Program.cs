@@ -10,6 +10,8 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--grid-density-only")) { GridDensityRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} grid density checks."); return 0; }
+            if (args.Contains("--grid-density-diagnostics")) { GridDensityRenderingTests.Run((n, b) => Console.WriteLine($"{(b ? "PASS" : "FAIL")} {n}")); return 0; }
             if (args.Contains("--dotted-grid-only")) { DottedGridRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--flat-grid-reset-only")) { FlatGridResetRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--grid-tool-evidence")) { string output = args[Array.IndexOf(args, "--grid-tool-evidence") + 1]; DottedGridRenderingTests.WriteEvidence(output); FlatGridResetRenderingTests.WriteEvidence(output); return 0; }
@@ -61,6 +63,7 @@ internal static class Program
             ClearedLiveOpacityTests.Run(Assert);
             CaptureSelectionRenderingTests.Run(Assert);
             CanvasProjectionRenderingTests.Run(Assert);
+            GridDensityRenderingTests.Run(Assert);
             HorizonSafetyRenderingTests.Run(Assert);
             ProjectionUnsafeRegionRenderingTests.Run(Assert);
             DottedGridRenderingTests.Run(Assert);

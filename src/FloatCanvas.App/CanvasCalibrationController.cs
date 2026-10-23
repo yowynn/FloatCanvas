@@ -52,7 +52,7 @@ internal sealed class CanvasCalibrationController
             double distance = quad[i].DistanceTo(point);
             if (distance <= closest) { closest = distance; corner = i; }
         }
-        var center = new PointD(quad.Average(p => p.X), quad.Average(p => p.Y));
+        var center = CanvasGridGeometry.ReferenceCenter(session.Document.Canvas.Projection);
         bool centerHandle = Math.Abs(point.X - center.X) <= CenterHandleHalfSize && Math.Abs(point.Y - center.Y) <= CenterHandleHalfSize;
         if (corner < 0 && !centerHandle)
         {

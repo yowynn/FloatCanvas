@@ -15,8 +15,12 @@ public static class CanvasGridGeometry
         return settings.Projection.LockedGridCellSize ?? initial.CellSize;
     }
 
+    public static PointD ReferencePlaneCenter(CanvasProjectionSettings projection) =>
+        projection.Origin + new PointD(projection.Columns * projection.CellSize / 2, projection.Rows * projection.CellSize / 2);
+
+    /// <summary>The projective rectangle center, at the intersection of its screen diagonals.</summary>
     public static PointD ReferenceCenter(CanvasProjectionSettings projection) =>
-        new(projection.Quad.Average(p => p.X), projection.Quad.Average(p => p.Y));
+        projection.Matrix.TransformPoint(ReferencePlaneCenter(projection));
 
     public static (int Columns, int Rows) CountsForCellSize(RectD reference, double cellSize)
     {
