@@ -414,6 +414,10 @@ The history list shows the save time and a canvas thumbnail to distinguish recor
 
 Default data paths:
 
+Use **Main menu → System and diagnostics** to open the install directory or current user-data directory. Settings, working tool state, tool presets, canvas presets and colors tolerate unknown fields and enum values. Missing, unreadable or out-of-range fields use local defaults while other preferences remain available. Reading does not rewrite files; later unrelated edits retain unknown data and unchanged original values for other app versions. Legacy number presets retain their original badge color and white text.
+
+Damaged JSON, duplicate fields or an unreadable structure offers **Exit** to retain every file or **Backup and repair**. Repair first copies all five configuration files into a timestamped `configuration-backups` subdirectory under the current user-data directory, then resets only the unreadable file. A failed backup stops repair. During normal use, a separate backup confirmation appears only when saving must replace an original value this version could not read; cancelling retains the original file. Projects, canvas content, stamps and recovery data are retained. Full technical errors stay in local logs.
+
 - Settings: `%LOCALAPPDATA%\FloatCanvas\settings.json`
 - Latest recovery: `%LOCALAPPDATA%\FloatCanvas\recovery\workspace.floatcanvas`
 - Previous recovery: `%LOCALAPPDATA%\FloatCanvas\recovery\workspace.previous.floatcanvas`

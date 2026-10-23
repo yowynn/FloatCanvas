@@ -31,20 +31,18 @@ internal sealed class UserSettings
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
     private static string FilePath => Path.Combine(ApplicationPaths.ProfileDirectory, "settings.json");
+    private CompatibleConfiguration? compatibility;
+    private static readonly JsonSerializerOptions JsonOptions = new() {WriteIndented=true};
 
     public static UserSettings Load()
     {
         if (!File.Exists(FilePath)) return new();
-        // Do not silently overwrite malformed settings. The application reports the failure.
-        return JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(FilePath))
-            ?? throw new InvalidDataException(L.Get("App.SettingsEmpty") + FilePath);
+        var source=new CompatibleConfiguration(FilePath);
+        var settings=source.Read<UserSettings>(JsonOptions);settings.compatibility=source;return settings;
     }
 
     public void Save()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        var temporary = FilePath + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temporary, FilePath, true);
+        (compatibility??=new CompatibleConfiguration(FilePath)).Save(this,JsonOptions);
     }
 }

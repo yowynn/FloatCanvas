@@ -77,30 +77,29 @@ internal sealed class CanvasPresetLibrary
     }
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly string path;
+    private readonly CompatibleConfiguration compatibility;
     private List<CanvasPreset> presets = [];
     internal bool CanEdit { get; } = true;
     internal static CanvasPresetLibrary OfficialOnly() => new(readOnly: true);
-    private CanvasPresetLibrary(bool readOnly) { path = ""; CanEdit = !readOnly; }
+    private CanvasPresetLibrary(bool readOnly) { path = ""; compatibility=new(path); CanEdit = !readOnly; }
 
     internal CanvasPresetLibrary(string? path = null)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "canvas-presets.json"));
+        compatibility=new(this.path);
         if (!File.Exists(this.path)) return;
         try
         {
-            var state = UserLibraryJson.Read<State>(this.path, JsonOptions, "CanvasPreset.InvalidLibrary", "Version", "Presets");
+            var state = compatibility.Read<State>(JsonOptions);
+            foreach(var preset in state.Presets.Where(p=>p?.Parameters is not null && !p.Parameters.IsValid && p.Parameters.Calibration is not null))
+                preset.Parameters.Calibration=null;
             if (state is null || state.Version is not (1 or 2 or 3) || state.Presets is null || state.Presets.Count > 1000 ||
                 state.Presets.Any(p => p is null || p.Id is not { Length: > 5 and <= 80 } || !p.Id.StartsWith("user-", StringComparison.Ordinal) ||
                     !ValidName(p.Name) || p.Parameters is null || !p.Parameters.IsValid) ||
                 state.Presets.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != state.Presets.Count)
                 throw new InvalidDataException(L.Get("CanvasPreset.InvalidLibrary"));
-            if (state.Version == 1)
-            {
-                using var raw = JsonDocument.Parse(File.ReadAllText(this.path));
-                if (raw.RootElement.GetProperty("Presets").EnumerateArray().Any(p => p.TryGetProperty("Parameters", out var parameters) && parameters.TryGetProperty("Calibration", out _)))
-                    throw new InvalidDataException(L.Get("CanvasPreset.InvalidLibrary"));
-            }
             presets = state.Presets.Select(p => p.Clone()).ToList();
+            compatibility.Capture(state,JsonOptions);
         }
         catch (JsonException ex) { throw new InvalidDataException(L.Get("CanvasPreset.InvalidLibrary"), ex); }
     }
@@ -195,14 +194,7 @@ internal sealed class CanvasPresetLibrary
     private void Persist(List<CanvasPreset> next)
     {
         if (!CanEdit) throw new InvalidOperationException(L.Get("CanvasPreset.ReadOnly"));
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new State { Presets = next }, JsonOptions));
-            File.Move(temporary, path, true); presets = next;
-        }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        compatibility.Save(new State { Presets = next },JsonOptions); presets = next;
     }
     private static bool ValidName(string? name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 80;
     private static JsonSerializerOptions CreateJsonOptions()

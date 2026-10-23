@@ -125,10 +125,12 @@ internal static class CanvasSettingsControlTests
             DesktopSession.RememberCanvasReferenceDisplay(settings,"missing");
             DesktopSession.NormalizeCanvasResetDisplay(settings,[main,pad]);
             check("a missing device falls back even when multiple active displays remain", settings.CanvasReferenceDisplay is null && UserSettings.Load().CanvasReferenceDisplay is null);
-            string blocked = Path.Combine(directory,"settings.json.tmp"); Directory.CreateDirectory(blocked);
             bool failed = false;
-            try { DesktopSession.RememberCanvasReferenceDisplay(settings,"pad"); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed = true; }
+            using(var held=new FileStream(Path.Combine(directory,"settings.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
+            {
+                try { DesktopSession.RememberCanvasReferenceDisplay(settings,"pad"); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed = true; }
+            }
             check("failed reset preference save restores memory and disk", failed && settings.CanvasReferenceDisplay is null && UserSettings.Load().CanvasReferenceDisplay is null);
             DesktopSession.RememberCanvasReferenceDisplay(settings,null);
             check("selecting the current default requires no redundant settings write", settings.CanvasReferenceDisplay is null);

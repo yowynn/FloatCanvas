@@ -1,7 +1,6 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 
@@ -22,8 +21,9 @@ internal sealed class ToolStateStore
 
     private const string ErrorKey = "ToolState.InvalidCache";
     private const int MaximumBytes = 4 * 1024 * 1024;
-    private static readonly JsonSerializerOptions JsonOptions = CreateOptions();
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented=true };
     private readonly string path;
+    private readonly CompatibleConfiguration compatibility;
     private string savedFingerprint;
 
     public Dictionary<EditorTool, ToolParameters> Tools { get; }
@@ -36,21 +36,17 @@ internal sealed class ToolStateStore
     public ToolStateStore(string? path = null)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "tool-state.json"));
+        compatibility = new(this.path);
         State state = new();
         if (File.Exists(this.path))
         {
-            state = UserLibraryJson.Read<State>(this.path, JsonOptions, ErrorKey,
-                "Version", "Tools", "Buttons", "Selections", "OfficialBaselines", "PreviewSources") ?? throw Invalid();
-            // Enum dictionary keys accept numeric aliases in System.Text.Json. Require
-            // canonical names before accepting the deserialized dictionaries.
-            using var raw = JsonDocument.Parse(File.ReadAllText(this.path));
-            foreach (string key in new[] { "Tools", "Buttons", "Selections", "PreviewSources" })
-            {
-                var dictionary = raw.RootElement.GetProperty(key);
-                if (dictionary.ValueKind != JsonValueKind.Object) throw Invalid();
-                foreach (var entry in dictionary.EnumerateObject())
-                    if (!Enum.TryParse<EditorTool>(entry.Name, out var tool) || !Enum.IsDefined(tool) || entry.Name != tool.ToString()) throw Invalid();
-            }
+            try { state = compatibility.Read<State>(JsonOptions); }
+            catch (JsonException ex) { throw new InvalidDataException(L.Get(ErrorKey),ex); }
+            foreach(var key in state.Tools.Where(p=>!ValidParameters(p.Key,p.Value)).Select(p=>p.Key).ToArray())state.Tools.Remove(key);
+            foreach(var key in state.PreviewSources.Where(p=>!ValidParameters(p.Key,p.Value)).Select(p=>p.Key).ToArray())state.PreviewSources.Remove(key);
+            foreach(var key in state.Buttons.Where(p=>!IsFamily(p.Key)||ButtonFamily(p.Value)!=p.Key).Select(p=>p.Key).ToArray())state.Buttons.Remove(key);
+            foreach(var key in state.Selections.Where(p=>!IsFamily(p.Key)||!ValidPresetId(p.Value)).Select(p=>p.Key).ToArray())state.Selections.Remove(key);
+            foreach(var key in state.OfficialBaselines.Where(p=>!ValidPresetId(p.Key,true)||!p.Value.IsValid()).Select(p=>p.Key).ToArray())state.OfficialBaselines.Remove(key);
             Validate(state);
             // Retired solid-cover entries are compatibility input only. They must not
             // restore an executable tool, family selection, preview, or toolbar alias.
@@ -58,6 +54,7 @@ internal sealed class ToolStateStore
             state.Selections.Remove(EditorTool.Redact);
             foreach (var key in state.Buttons.Where(entry => entry.Value == EditorTool.Redact).Select(entry => entry.Key).ToArray()) state.Buttons.Remove(key);
             foreach (var key in state.OfficialBaselines.Where(entry => entry.Value.Tool == EditorTool.Redact).Select(entry => entry.Key).ToArray()) state.OfficialBaselines.Remove(key);
+            compatibility.Capture(state,JsonOptions);
         }
         Tools = state.Tools; Buttons = state.Buttons; Selections = state.Selections;
         OfficialBaselines = state.OfficialBaselines; PreviewSources = state.PreviewSources;
@@ -74,15 +71,8 @@ internal sealed class ToolStateStore
         string serialized = JsonSerializer.Serialize(state, JsonOptions);
         if (serialized == savedFingerprint) return;
         if (System.Text.Encoding.UTF8.GetByteCount(serialized) > MaximumBytes) throw Invalid();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            File.WriteAllText(temporary, serialized);
-            File.Move(temporary, path, true);
-            savedFingerprint = serialized;
-        }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        compatibility.Save(state,JsonOptions);
+        savedFingerprint = serialized;
     }
 
     private static void Validate(State state)
@@ -109,19 +99,4 @@ internal sealed class ToolStateStore
         id.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_');
     private static InvalidDataException Invalid() => new(L.Get(ErrorKey));
 
-    private static JsonSerializerOptions CreateOptions()
-    {
-        var resolver = new DefaultJsonTypeInfoResolver();
-        resolver.Modifiers.Add(type =>
-        {
-            if (type.Type != typeof(ToolParameters) && type.Type != typeof(ElementStyle)) return;
-            foreach (var property in type.Properties)
-                // Version-one caches predate capture options. Missing new fields inherit their
-                // explicit defaults; all original fields remain required and unknown fields rejected.
-                property.IsRequired = property.Name != nameof(ElementStyle.LinkColors) && (type.Type != typeof(ToolParameters) || property.Name is not
-                    (nameof(ToolParameters.CaptureShape) or nameof(ToolParameters.CaptureSource) or
-                     nameof(ToolParameters.CaptureBorderWidth) or nameof(ToolParameters.CaptureBorderColor)));
-        });
-        return new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, TypeInfoResolver = resolver };
-    }
 }

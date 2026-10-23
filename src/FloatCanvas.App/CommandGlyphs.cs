@@ -19,6 +19,9 @@ internal static class CommandGlyphs
     internal const string Welcome = "M1,7 L8,1 L15,7 M3,6 V15 H13 V6 M6,15 V10 H10 V15";
     internal const string Settings = "M6,1 H10 L10.5,4 L13,3 L15,6 L13,8 L15,10 L13,13 L10.5,12 L10,15 H6 L5.5,12 L3,13 L1,10 L3,8 L1,6 L3,3 L5.5,4 Z M8,5 A3,3 0 1 1 7.99,5";
     internal const string FloatingLogo = "M1,4 L4,7 L8,2 L12,7 L15,4 L13,13 H3 Z M3,15 H13";
+    internal const string SystemDiagnostics = "M1,2 H15 V14 H1 Z M4,6 L6,8 L4,10 M8,11 H12";
+    internal const string InstallDirectory = "M1,5 V3 H6 L8,5 H15 V14 H1 Z M5,8 L8,6 L11,8 V11 L8,13 L5,11 Z M5,8 L8,10 L11,8 M8,10 V13";
+    internal const string UserDataDirectory = "M1,5 V3 H6 L8,5 H15 V14 H1 Z M8,7 A1.5,1.5 0 1 1 7.99,7 M5,13 V12 Q5,10 8,10 Q11,10 11,12 V13";
     internal const string NewCanvas = "M3,1 L10,1 L14,5 L14,15 L3,15 Z M10,1 L10,5 L14,5 M6,10 L11,10 M8.5,7.5 L8.5,12.5";
     internal const string ClearCanvas = "M13.5,1.5 L8.8,6.2 M7.2,5.8 Q9,5.3 10.2,7.1 Q11.4,9.6 9.4,13.1 Q5.5,15.7 1.5,10 Q5.4,10 7.2,5.8 Z M4.1,12.7 L6.6,10.6 M6.8,14 L8.2,11.5";
     internal const string Open = "M1,4 H6 L8,6 H15 L13,14 H1 Z M1,4 V2 H6 L8,4 H13 V6";

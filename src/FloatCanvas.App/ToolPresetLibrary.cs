@@ -30,15 +30,17 @@ internal sealed class ToolPresetLibrary
     }
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     private readonly string path;
+    private readonly CompatibleConfiguration compatibility;
     private List<ToolPreset> presets = [];
 
     public ToolPresetLibrary(string? path = null)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "tool-presets.json"));
+        compatibility = new(this.path);
         if (!File.Exists(this.path)) return;
         try
         {
-            var state = UserLibraryJson.Read<State>(this.path, JsonOptions, "Preset.InvalidLibrary", "Version", "Presets");
+            var state = compatibility.Read<State>(JsonOptions);
             if (state is null || state.Version != 1 || state.Presets is null || state.Presets.Count > 1000 ||
                 state.Presets.Any(p => p is null || p.Id is not { Length: > 5 and <= 80 } || !p.Id.StartsWith("user-", StringComparison.Ordinal) ||
                     !ValidName(p.Name) || p.Parameters is null || !p.Parameters.IsValid()) || state.Presets.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != state.Presets.Count)
@@ -132,8 +134,8 @@ internal sealed class ToolPresetLibrary
                 result.CaptureBorderWidth = saved.CaptureBorderWidth; result.CaptureBorderColor = saved.CaptureBorderColor;
             }
         }
-        if (!(includeColors ?? !preset.IsOfficial)) { result.Style.Stroke = current.Style.Stroke; result.Style.Fill = current.Style.Fill; }
-        else if (preset.IsOfficial) { result.Style.Stroke = preset.Parameters.Style.Stroke; result.Style.Fill = preset.Parameters.Style.Fill; }
+        if (!(includeColors ?? !preset.IsOfficial)) { result.Style.Stroke = current.Style.Stroke; result.Style.Fill = current.Style.Fill; result.NumberColorRolesVersion=current.NumberColorRolesVersion; }
+        else if (preset.IsOfficial) { result.Style.Stroke = preset.Parameters.Style.Stroke; result.Style.Fill = preset.Parameters.Style.Fill; result.NumberColorRolesVersion=preset.Parameters.NumberColorRolesVersion; }
         return result;
     }
 
@@ -141,14 +143,7 @@ internal sealed class ToolPresetLibrary
     private void Replace(ToolPreset preset) => Persist(presets.Select(p => p.Id == preset.Id ? preset : p).ToList());
     private void Persist(List<ToolPreset> next)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new State { Presets = next }, JsonOptions));
-            File.Move(temporary, path, true); presets = next;
-        }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        compatibility.Save(new State { Presets = next },JsonOptions); presets = next;
     }
     private static bool ValidName(string? name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 80;
     private static void Validate(string name, ToolParameters parameters)

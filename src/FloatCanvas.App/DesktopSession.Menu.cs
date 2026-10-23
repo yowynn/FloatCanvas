@@ -82,6 +82,9 @@ internal sealed partial class DesktopSession
         settings.Click += (_, _) => RunUiAction(ShowHotkeySettings); menu.Items.Add(settings);
         var updates = new Controls.MenuItem { Header = L.Get("Updates.Title"), Icon = CommandGlyphs.Create(CommandGlyphs.Updates) };
         updates.Click += (_, _) => RunUiAction(ShowUpdates); menu.Items.Add(updates);
+        var system = Group("Menu.SystemDiagnostics",CommandGlyphs.SystemDiagnostics);
+        Item(system,L.Get("Menu.OpenInstallDirectory"),CommandGlyphs.InstallDirectory,()=>System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppContext.BaseDirectory){UseShellExecute=true}));
+        Item(system,L.Get("Menu.OpenUserDataDirectory"),CommandGlyphs.UserDataDirectory,()=>{System.IO.Directory.CreateDirectory(ApplicationPaths.ProfileDirectory);System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ApplicationPaths.ProfileDirectory){UseShellExecute=true});});
         var pass = new Controls.MenuItem { Header = L.Get("ToolbarV2.PassThrough"), InputGestureText = FormatHotkey(_settings.Toggle), Icon = CommandGlyphs.Create(CommandGlyphs.PassThrough) };
         pass.Click += (_, _) => RunUiAction(() => SetEditing(false)); menu.Items.Add(pass);
         var exit = new Controls.MenuItem { Header = L.Get("Desktop.Exit"), Icon = CommandGlyphs.Create(CommandGlyphs.Exit) };

@@ -58,6 +58,8 @@ internal sealed partial class EditorController
             parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol :
             parameters.Tool == EditorTool.Crop && !CanCropSelection ? EditorTool.Select : parameters.Tool;
         Style = parameters.Style.Clone(); CornerRadius = parameters.CornerRadius;
+        if(parameters.Tool==EditorTool.Number && parameters.NumberColorRolesVersion==0)
+        { Style.Stroke=(Style.Fill>>24)==0?Style.Stroke:Style.Fill;Style.Fill=0xFFFFFFFF; }
         Symbol = parameters.Tool == EditorTool.Triangle ? SymbolKind.Triangle : parameters.Symbol;
         ConstrainAspect = parameters.ConstrainAspect; EffectStrength = parameters.EffectStrength;
         Emoji = parameters.Emoji; DefaultWidth = parameters.DefaultWidth; DefaultHeight = parameters.DefaultHeight;

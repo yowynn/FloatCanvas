@@ -92,7 +92,8 @@ internal static class ToolStateStoreTests
             string path = Path.Combine(folder, "invalid.json"); File.WriteAllText(path, json);
             bool rejected = false;
             try { _ = new ToolStateStore(path); } catch (InvalidDataException) { rejected = true; }
-            check("tool state rejects and preserves " + name, rejected && File.ReadAllText(path) == json);
+            bool shouldReject=name is "duplicate root field" or "duplicate nested field";
+            check("tool state " + (shouldReject?"rejects ambiguous ":"compatibly reads ") + name + " and preserves source bytes", rejected==shouldReject && File.ReadAllText(path) == json);
         }
     }
 

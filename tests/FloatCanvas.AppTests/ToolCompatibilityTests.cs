@@ -109,26 +109,24 @@ internal static class ToolCompatibilityTests
         session.SetSelection([]);
         int before = session.UndoCount; Gesture(controller, new(-250, 160), new(-250, 160));
         var element = session.Document.Elements.Last();
-        var emojiMetrics = EmojiGlyphs.Measure("👩‍🎨", 18);
         check("emoji insertion uses the displayed preset size for font and object bounds", element.Kind == ElementKind.Text && element.Text == "👩‍🎨" &&
-            element.Style.FontFamily == "Segoe UI Emoji" && element.Style.FontSize == 18 && element.Width == emojiMetrics.Width && element.Height == emojiMetrics.Height &&
-            element.Transform == Affine2D.Translation(50 - emojiMetrics.Width / 2, 60 - emojiMetrics.Height / 2) && element.Style.Opacity == .65 && session.UndoCount == before + 1);
+            element.Style.FontFamily == "Segoe UI Emoji" && element.Style.FontSize == 18 && element.Width == 18 && element.Height == 18 &&
+            element.Transform == Affine2D.Translation(41, 51) && element.Style.Opacity == .65 && session.UndoCount == before + 1);
         numbers["FontSize"].Text = "12";
         session.SetSelection([]); // This check starts a new insertion; selected-object blank clicks now deselect first.
         Gesture(controller, new(-200, 180), new(-200, 180));
         check("editing the emoji size field changes subsequent objects without resizing earlier ones", controller.Style.FontSize == 12 &&
-            session.Document.Elements.Last().Style.FontSize == 12 && session.Document.Elements.Last().Width == EmojiGlyphs.Measure("👩‍🎨", 12).Width && session.Document.Elements[^2].Style.FontSize == 18);
+            session.Document.Elements.Last().Style.FontSize == 12 && session.Document.Elements.Last().Width == 12 && session.Document.Elements[^2].Style.FontSize == 18);
         session.SetSelection([element.Id]);
         var inspector = new InspectorWindow(() => session, colorLibrary: new ColorLibrary(Path.Combine(root, "emoji-inspector-colors.json")));
         var fields = Field<Dictionary<string, Controls.TextBox>>(inspector, "fields");
-        check("inserted emoji retains its exact size for later property editing", fields["FontSize"].Text == "18" && fields["FontFamily"].Text == "Segoe UI Emoji");
-        fields["FontSize"].Text = "36"; before = session.UndoCount; Invoke(inspector, "Apply");
+        check("inserted emoji retains its exact frame size for later property editing", fields["W"].Text == "18" && fields["FontFamily"].Text == "Segoe UI Emoji");
+        fields["W"].Text = "36"; before = session.UndoCount; Invoke(inspector, "Apply");
         element = session.Document.Elements.Single(item => item.Id == element.Id);
-        using var renderer = new SceneRenderer();
-        check("emoji can be re-edited as text with one undo step and recomputed text height", element.Style.FontSize == 36 && element.Text == "👩‍🎨" &&
-            element.Style.FontFamily == "Segoe UI Emoji" && element.Height == renderer.MeasureText(element.Text, element.Style, element.Width).Height && session.UndoCount == before + 1);
-        check("emoji property undo and redo retain the exact explicit sizes", session.Undo() && session.Document.Elements.Single(item => item.Id == element.Id).Style.FontSize == 18 &&
-            session.Redo() && session.Document.Elements.Single(item => item.Id == element.Id).Style.FontSize == 36);
+        check("emoji geometry can be re-edited with one undo step", element.Width == 36 && element.Height == 36 && element.Text == "👩‍🎨" &&
+            element.Style.FontFamily == "Segoe UI Emoji" && session.UndoCount == before + 1);
+        check("emoji property undo and redo retain the exact explicit frame sizes", session.Undo() && session.Document.Elements.Single(item => item.Id == element.Id).Width == 18 &&
+            session.Redo() && session.Document.Elements.Single(item => item.Id == element.Id).Width == 36);
         check("emoji insertion and later editing do not affect unselected objects or saved tool parameters", JsonSerializer.Serialize(session.Document.Elements[0]) == original &&
             controller.Style.FontSize == 12 && library.User.Single().Parameters.Style.FontSize == 18);
     }

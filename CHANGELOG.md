@@ -38,6 +38,9 @@
 - 绘图范围按全部屏幕、仅主屏排列，多屏时列出具体屏幕；按设备保存选择，断开回退主屏、重连恢复，并随屏幕布局更新列表，保留已打开设置中的未保存范围选择。恢复重置透视的屏幕选择，单活动屏时禁用下拉。
 - Order drawing scope as All screens, Primary screen only, then individual screens. Save device identity, fall back to primary on disconnect, restore on reconnect, and refresh lists after topology changes while retaining pending scope edits. Restore reset-display choices and disable the dropdown for a single active screen.
 
+- 配置兼容读取会忽略未知字段／枚举并为缺失、不可解析或越界字段提供局部默认值；后续修改其他设置仍保留原始未知数据。损坏配置在启动前提供“退出／备份并修复配置”，自动备份全部配置后只重置出错文件；启动错误的完整堆栈保留在日志。主菜单新增“系统与调试”，可打开安装和用户数据目录。
+- Read configuration compatibly with local defaults for missing, unreadable or out-of-range values while retaining unknown fields and enums through later saves. Damaged configuration offers Exit or Backup and repair before native session startup, backs up all configuration and resets only the unreadable file. Keep startup stack traces in logs and add System and diagnostics folder shortcuts.
+
 - 统一官方尺度：文字 36、符号／序号／Emoji 72、自由形状至少一边 108。序号按图形大小自动适配文字，使用图形／文字独立色板；Emoji 实际随边框拉伸。形状在工具和图层属性中可链接边框与填充颜色，并随预设、工程和恢复数据保存。
 - Standardize official sizing at 36 for text, 72 for symbols, numbers and emoji, and a 108-pixel side for free shapes. Fit numbered labels to badge geometry with separate shape/text palettes, stretch emoji artwork with its frame, and persist linked outline/fill colors in tool presets, projects and recovery data.
 

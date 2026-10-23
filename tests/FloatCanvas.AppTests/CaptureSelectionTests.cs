@@ -171,9 +171,12 @@ internal static class CaptureSelectionTests
                 { CaptureShape: CaptureShape.Rectangle, CaptureSource: CaptureSource.Background, CaptureBorderWidth: 0 } &&
                 restored.Selections[EditorTool.CaptureRegion] == "official.capture" && restored.Tools[EditorTool.CaptureRegion].CaptureBorderColor == ColorLibrary.ForegroundRed);
             check("reading a legacy cache does not rewrite or replace the user's file", File.ReadAllText(file) == oldBytes);
-            legacy["Tools"]!["CaptureRegion"]!.AsObject().Remove("NumberStep"); File.WriteAllText(file, legacy.ToJsonString());
-            bool rejected = false; try { _ = new ToolStateStore(file); } catch (InvalidDataException) { rejected = true; }
-            check("new optional capture fields do not weaken original required cache fields", rejected);
+            string expectedTools = JsonSerializer.Serialize(restored.Tools), expectedBaselines = JsonSerializer.Serialize(restored.OfficialBaselines), expectedPreviews = JsonSerializer.Serialize(restored.PreviewSources);
+            legacy["Tools"]!["CaptureRegion"]!.AsObject().Remove("NumberStep"); string missingStepBytes = legacy.ToJsonString(); File.WriteAllText(file, missingStepBytes);
+            restored = new(file);
+            check("a missing legacy parameter defaults locally while other capture state and source bytes remain intact", restored.Tools[EditorTool.CaptureRegion].NumberStep == 1 &&
+                JsonSerializer.Serialize(restored.Tools) == expectedTools && JsonSerializer.Serialize(restored.OfficialBaselines) == expectedBaselines &&
+                JsonSerializer.Serialize(restored.PreviewSources) == expectedPreviews && restored.Selections[EditorTool.CaptureRegion] == "official.capture" && File.ReadAllText(file) == missingStepBytes);
             check("invalid capture enum and border width fail parameter validation", !new ToolParameters { CaptureShape = (CaptureShape)99 }.IsValid() &&
                 !new ToolParameters { CaptureSource = (CaptureSource)99 }.IsValid() && !new ToolParameters { CaptureBorderWidth = -1 }.IsValid() &&
                 !new ToolParameters { CaptureBorderWidth = double.NaN }.IsValid());

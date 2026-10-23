@@ -67,7 +67,8 @@ internal static class ToolPresetAndColorTests
         {
             File.WriteAllText(invalid, json); bool rejected = false;
             try { _ = new ToolPresetLibrary(invalid); } catch (InvalidDataException) { rejected = true; }
-            check("invalid preset library is rejected and preserved: " + json, rejected && File.ReadAllText(invalid) == json);
+            bool shouldReject=json.Contains("\"Version\":1,\"Version\":1");
+            check("preset library compatibility preserves source bytes: " + json, rejected==shouldReject && File.ReadAllText(invalid) == json);
         }
         var brokenParameters = current.Clone(); brokenParameters.Style.Opacity = double.NaN;
         bool invalidSave = false;
@@ -103,7 +104,8 @@ internal static class ToolPresetAndColorTests
         {
             File.WriteAllText(invalid, json); bool rejected = false;
             try { _ = new ColorLibrary(invalid); } catch (InvalidDataException) { rejected = true; }
-            check("invalid color library is rejected without overwrite: " + json, rejected && File.ReadAllText(invalid) == json);
+            bool shouldReject=json.Contains("[1,1]");
+            check("color library compatibility preserves source bytes: " + json, rejected==shouldReject && File.ReadAllText(invalid) == json);
         }
         string blockedPath = Path.Combine(root, "blocked-colors.json"); Directory.CreateDirectory(blockedPath);
         var blocked = new ColorLibrary(blockedPath); bool ioRejected = false;

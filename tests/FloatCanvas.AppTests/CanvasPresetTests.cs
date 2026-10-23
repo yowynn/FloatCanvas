@@ -59,7 +59,7 @@ internal static class CanvasPresetTests
         check("deleting a custom canvas preset persists without touching its peers", reloaded.Delete(second.Id) && new CanvasPresetLibrary(path).User.Count == 2 && new CanvasPresetLibrary(path).User.Any(p => p.Id == preset.Id));
         string corrupt = Path.Combine(folder, "corrupt.json"); File.WriteAllText(corrupt, "{\"Version\":1,\"Presets\":[{\"Id\":\"user-bad\",\"Name\":\"bad\",\"Parameters\":{\"Quad\":[]}}]}");
         string corruptBefore = File.ReadAllText(corrupt);
-        check("unknown screen-bound preset fields are rejected without overwriting the library", Reject(() => _ = new CanvasPresetLibrary(corrupt)) && File.ReadAllText(corrupt) == corruptBefore);
+        check("unknown preset fields are ignored without overwriting the library", !Reject(() => _ = new CanvasPresetLibrary(corrupt)) && File.ReadAllText(corrupt) == corruptBefore);
         var readOnly = CanvasPresetLibrary.OfficialOnly();
         check("damaged-library fallback retains official presets and cannot write custom files", readOnly.Official.Count == 5 && !readOnly.CanEdit && Reject(() => readOnly.Save("No write", new())));
     }
@@ -160,7 +160,7 @@ internal static class CanvasPresetTests
         {
             var node = JsonNode.Parse(valid)!; corrupt(node); string brokenPath = Path.Combine(folder, "snapshot-broken-" + Guid.NewGuid().ToString("N") + ".json");
             string bytes = node.ToJsonString(); File.WriteAllText(brokenPath, bytes);
-            check("invalid versions incomplete snapshots and display-bound fields leave the library untouched", Reject(() => _ = new CanvasPresetLibrary(brokenPath)) && File.ReadAllText(brokenPath) == bytes);
+            check("future versions incomplete snapshots and unknown fields read compatibly without rewriting the library", !Reject(() => _ = new CanvasPresetLibrary(brokenPath)) && File.ReadAllText(brokenPath) == bytes);
         }
         var legacyNode = JsonNode.Parse(valid)!; legacyNode["Version"] = 1;
         foreach (var item in legacyNode["Presets"]!.AsArray())
@@ -209,7 +209,7 @@ internal static class CanvasPresetTests
             var node = JsonNode.Parse(valid)!; mutation(node);
             string badPath = Path.Combine(folder, "invalid-flat-" + Guid.NewGuid().ToString("N") + ".json");
             string text = node.ToJsonString(); File.WriteAllText(badPath, text);
-            check("invalid or screen-bound flat preset fields are rejected without rewriting the library", Reject(() => _ = new CanvasPresetLibrary(badPath)) && File.ReadAllText(badPath) == text);
+            check("invalid flat preset values default and unknown fields are ignored without rewriting the library", !Reject(() => _ = new CanvasPresetLibrary(badPath)) && File.ReadAllText(badPath) == text);
         }
         var legacyNode = JsonNode.Parse(valid)!; legacyNode["Version"] = 2;
         legacyNode["Presets"]![0]!["Parameters"]!.AsObject().Remove("FlatCellSize");

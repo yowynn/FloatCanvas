@@ -27,7 +27,7 @@ internal static class PresetSizingCompatibilityTests
         var rows = Field<Dictionary<string, System.Windows.FrameworkElement>>(panel, "rows");
         check("emoji tools hide aspect options", rows["Aspect"].Visibility == System.Windows.Visibility.Collapsed);
         editor.Tool = EditorTool.Number; panel.Refresh();
-        check("number tools label their size and color roles", ((Controls.TextBlock)((Controls.StackPanel)rows["FontSize"]).Children[0]).Text == "大小" && ((Controls.TextBlock)((Controls.StackPanel)rows["Foreground"]).Children[0]).Text == "图形颜色");
+        check("number tools label their size and color roles", ((Controls.TextBlock)((Controls.StackPanel)rows["FontSize"]).Children[0]).Text == FloatCanvas.Localization.AppText.Get("ToolOptions.Size") && ((Controls.TextBlock)((Controls.StackPanel)rows["Foreground"]).Children[0]).Text == FloatCanvas.Localization.AppText.Get("Color.NumberShape"));
         check("number tools hide aspect options", rows["Aspect"].Visibility == System.Windows.Visibility.Collapsed);
         check("linked colors are persistent model state", typeof(ElementStyle).GetProperty("LinkColors") is not null);
         foreach (var preset in library.Official.Where(p => p.Parameters.Tool is EditorTool.Rectangle or EditorTool.Ellipse))

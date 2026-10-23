@@ -16,6 +16,7 @@ internal sealed class ToolParameters
     public double DefaultHeight { get; set; } = 100;
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
+    public int NumberColorRolesVersion { get; set; } = 1;
     public CaptureShape CaptureShape { get; set; } = CaptureShape.Rectangle;
     public CaptureSource CaptureSource { get; set; } = CaptureSource.Background;
     public double CaptureBorderWidth { get; set; }
@@ -25,12 +26,13 @@ internal sealed class ToolParameters
     {
         Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius, Symbol = Symbol,
         ConstrainAspect = ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
-        NumberStart = NumberStart, NumberStep = NumberStep, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
+        NumberStart = NumberStart, NumberStep = NumberStep, NumberColorRolesVersion = NumberColorRolesVersion, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
         CaptureBorderWidth = CaptureBorderWidth, CaptureBorderColor = CaptureBorderColor
     };
 
     internal bool IsValid() => Enum.IsDefined(Tool) && Style is { } s && Enum.IsDefined(Symbol) && Emoji is { Length: > 0 and <= 32 } &&
         NumberStart is >= 1 and <= 999999 && NumberStep is >= 1 and <= 999999 &&
+        NumberColorRolesVersion is 0 or 1 &&
         Enum.IsDefined(CaptureShape) && Enum.IsDefined(CaptureSource) && double.IsFinite(CaptureBorderWidth) && CaptureBorderWidth is >= 0 and <= 1024 &&
         double.IsFinite(DefaultWidth) && DefaultWidth >= 1 && DefaultWidth <= 1000000 && double.IsFinite(DefaultHeight) && DefaultHeight >= 1 && DefaultHeight <= 1000000 &&
         !string.IsNullOrWhiteSpace(Emoji) && System.Globalization.StringInfo.GetNextTextElement(Emoji).Length == Emoji.Length &&

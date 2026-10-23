@@ -48,6 +48,7 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         { if (e.ExceptionObject is Exception exception) diagnostics.WriteUnhandled(exception); };
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        CompatibleConfiguration.ConfirmRepair=(path,fields)=>ConfigurationStartup.ConfirmWrite(path,fields,diagnostics);
         DesktopSession? session = null;
         OverlayBackendProtection? protection = null;
         bool recovering = false;
@@ -101,6 +102,7 @@ internal static class Program
         {
             try
             {
+                if(!ConfigurationStartup.Prepare(diagnostics,interactive:!args.Contains("--smoke"))){app.Shutdown(1);return;}
                 AppTheme.InitializeStartup();
                 protection = new OverlayBackendProtection(ApplicationPaths.ProfileDirectory,
                     args.Contains("--desktop-mode"), args.Contains("--retry-fullscreen"));
@@ -113,7 +115,7 @@ internal static class Program
             {
                 diagnostics.Write("App.StartupFailed", exception: ex);
                 if (!args.Contains("--smoke"))
-                    AppDialog.Show(null, ex.ToString(), L.Get("App.StartupFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(null, L.Format("Configuration.StartupFailed",ApplicationPaths.ProfileDirectory), L.Get("App.StartupFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
                 else Console.Error.WriteLine(ex);
                 app.Shutdown(1);
             }

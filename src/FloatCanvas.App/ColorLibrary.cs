@@ -30,6 +30,7 @@ internal sealed class ColorLibrary
     private static readonly uint[] Foreground = [0xFF252525, 0xFFFFFFFF, ForegroundRed, 0xFF9F6B53, 0xFFD9730D, 0xFFCB912F, 0xFF2383E2, 0xFF448361, 0xFF9065B0, 0xFFC14C8A];
     private static readonly uint[] Background = [0xFFE4E4E4, 0xFFFFFFFF, BackgroundRed, 0xFFEADDD4, 0xFFFFE5CC, 0xFFFFF2BB, 0xFFDCEEFF, 0xFFDCEFE5, 0xFFEBDFF5, 0xFFF6DDEB];
     private readonly string path;
+    private readonly CompatibleConfiguration compatibility;
     private static ColorLibrary? shared;
     public static ColorLibrary Shared
     {
@@ -44,10 +45,11 @@ internal sealed class ColorLibrary
     public ColorLibrary(string? path = null)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "colors.json"));
+        compatibility = new(this.path);
         if (!File.Exists(this.path)) return;
         try
         {
-            var loaded = UserLibraryJson.Read<State>(this.path, JsonOptions, "Color.InvalidLibrary", "Version", "History", "Pinned");
+            var loaded = compatibility.Read<State>(JsonOptions);
             if (loaded is null || loaded.Version != 1 || loaded.History is null || loaded.Pinned is null || loaded.History.Count > 20 || loaded.Pinned.Count > 100 ||
                 loaded.History.Distinct().Count() != loaded.History.Count || loaded.Pinned.Distinct().Count() != loaded.Pinned.Count ||
                 loaded.Swatches is null || loaded.Swatches.Count > 100 || loaded.Swatches.Any(p => p is null || string.IsNullOrWhiteSpace(p.Id) || p.Id.Length > 80 || string.IsNullOrWhiteSpace(p.Name) || p.Name.Length > 80) ||
@@ -120,43 +122,6 @@ internal sealed class ColorLibrary
     private State Copy() => new() { History = [.. state.History], Pinned = [], Swatches = [.. state.Swatches] };
     private void Persist(State next)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(next, JsonOptions));
-            File.Move(temporary, path, true); state = next;
-        }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
-    }
-}
-
-internal static class UserLibraryJson
-{
-    internal static T? Read<T>(string path, JsonSerializerOptions options, string errorKey, params string[] required)
-    {
-        if (new FileInfo(path).Length > 4 * 1024 * 1024) throw new InvalidDataException(L.Get(errorKey));
-        try
-        {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
-            if (document.RootElement.ValueKind != JsonValueKind.Object || required.Any(key => !document.RootElement.TryGetProperty(key, out _)))
-                throw new InvalidDataException(L.Get(errorKey));
-            CheckProperties(document.RootElement, errorKey);
-            return document.RootElement.Deserialize<T>(options);
-        }
-        catch (JsonException ex) { throw new InvalidDataException(L.Get(errorKey), ex); }
-    }
-    private static void CheckProperties(JsonElement element, string errorKey)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            var names = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var property in element.EnumerateObject())
-            {
-                if (!names.Add(property.Name)) throw new InvalidDataException(L.Get(errorKey));
-                CheckProperties(property.Value, errorKey);
-            }
-        }
-        else if (element.ValueKind == JsonValueKind.Array) foreach (var child in element.EnumerateArray()) CheckProperties(child, errorKey);
+        compatibility.Save(next,JsonOptions); state = next;
     }
 }
