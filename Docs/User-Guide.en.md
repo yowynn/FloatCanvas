@@ -63,6 +63,8 @@ Text is edited directly on the canvas. Changing windows, layers or tools, or ent
 | `Ctrl+N` | Start a new canvas after archiving current content and checking bound-project saves |
 | `Ctrl+Backspace` / `Ctrl+Delete` | Clear the current canvas in one undo step; text fields retain their text-deletion keys |
 
+Holding `Ctrl` hides selection handles temporarily; releasing it restores them immediately without moving the mouse. Copy keeps the original selection; paste and duplicate select the new layers.
+
 Shortcut ownership follows focus. Ordinary controls in the canvas, toolbar, Properties, tool options and canvas settings share drawing commands; arrows in Layers and the stamp library navigate their lists. Text fields, dropdowns, sliders and menus retain local typing, undo, clipboard and deletion. Preset items retain Enter/F2/Delete for applying, renaming and deleting presets. `Ctrl+S`/`Ctrl+O`/`Ctrl+N` remain available while typing, committing inline text or a layer rename first. In the stamp library, `Ctrl+N` saves the selection as a stamp, `Ctrl+F` searches, and Enter/F2/Delete act on its selected stamp; Esc first cancels slot selection, then closes the library. Settings, shortcut recording, confirmation dialogs and file dialogs keep their own commands.
 
 Tools, window commands, New, Save and grouping run once per press. Arrows, deletion and undo/redo support holding the key. Alt/Win system combinations are never treated as ordinary drawing shortcuts.
@@ -145,7 +147,7 @@ The options window uses the current tool name as its title, with a short descrip
 
 Lines share independent start/end arrowheads for plain, single-arrow and double-arrow combinations, with solid, dashed or dotted strokes. Set a rectangle's corner radius for rounded corners; enable proportional drawing for squares or circles. Symbols include triangles, stars, hearts, checks and crosses with editable colors. The emoji tool provides a gallery: click to insert at its configured Size, or drag to choose the size for that insertion. Size supports precise numeric entry and a larger slider range. Line-pattern and arrowhead choices include diagrams, and stroke width has a thickness preview.
 
-Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` rectangle, `O` ellipse, `T` text, `N` numbered marker, `S` symbol, `J` emoji and `C` Canvas. `A` remains an arrow compatibility shortcut; `M` opens More, main-keyboard `-` opens the stamp library, and `+` (the `=/+` key) saves the selection as a stamp. While editing text, these letters are treated as text input.
+Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` rectangle, `O` ellipse, `T` text, `N` numbered marker, `S` symbol, `J` emoji and `C` Canvas. `A` has no tool binding; `Ctrl+A` only selects all and keeps the current tool. `M` opens More, main-keyboard `-` opens the stamp library, and `+` (the `=/+` key) saves the selection as a stamp. While editing text, these letters are treated as text input.
 
 Shortcut hints appear at the upper right of upper-row buttons and lower left of lower-row buttons. Turn off **Show tool shortcut hints** in Settings to hide letters, stamp-slot numbers and the `-`/`+` hints together. Shortcuts still work, and the preference is saved across restarts.
 

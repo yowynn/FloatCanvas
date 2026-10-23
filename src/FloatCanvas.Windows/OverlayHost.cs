@@ -743,7 +743,7 @@ public sealed partial class OverlayHost : IDisposable
         }
         if (!IsEditing) return DefWindowProcW(state.Handle, message, wParam, lParam);
         if (message == 0x20) { SetCursor(_pointerCursor != 0 ? _pointerCursor : LoadCursorW(0, 32512)); return 1; }
-        if(message is WmKeyDown or WmSysKeyDown or 0x101 or 0x105&&wParam is 0x10 or 0xA0 or 0xA1)
+        if(message is WmKeyDown or WmSysKeyDown or 0x101 or 0x105&&wParam is 0x10 or 0xA0 or 0xA1 or 0x11 or 0xA2 or 0xA3)
         {
             uint cursor=GetMessagePos();
             ModifierKeysChanged?.Invoke(CurrentModifiers,new((short)(cursor&0xFFFF),(short)(cursor>>16)),unchecked((uint)GetMessageTime()));

@@ -19,7 +19,6 @@ internal static class ToolShortcutCatalog
     internal static bool IsReserved(int virtualKey) => virtualKey is MoreKey or StampLibraryKey or NewStampKey;
     internal static bool TryGetTool(int virtualKey,out EditorTool tool)
     {
-        if(virtualKey==0x41){tool=EditorTool.Arrow;return true;}
         var binding=All.FirstOrDefault(item=>item.VirtualKey==virtualKey);
         if(binding?.Tool is { } value){tool=value;return true;}
         tool=default;return false;

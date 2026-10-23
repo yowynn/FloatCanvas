@@ -145,7 +145,11 @@ internal sealed partial class DesktopSession : IDisposable
         _host.PointerLeft += ClearProjectionHover;
         _editor.DesktopEffectRequested += (region, kind, amount, color) => _ = RunCommand(() => AddDesktopEffectAsync(region, kind, amount, color));
         _host.KeyInput += OnCanvasKeyInput;
-        _host.ModifierKeysChanged += (modifiers,point,time)=>_editor.ModifiersChanged(modifiers,point,time);
+        _host.ModifierKeysChanged += (modifiers,point,time)=>
+        {
+            _editor.ModifiersChanged(modifiers,point,time);
+            RequestRender();
+        };
         _host.ToggleRequested += ToggleEditing;
         _host.HideRequested += ToggleCanvasVisibility;
         _host.EnableImageDrops(SupportsCanvasImageDrop, ReceiveCanvasImageDrop);
@@ -552,7 +556,7 @@ internal sealed partial class DesktopSession : IDisposable
             {
                 case 0x5A: if (shift) Redo(); else Undo(); break;
                 case 0x59: Redo(); break;
-                case 0x41: Active.SelectAll(); SelectTool(EditorTool.Select); break;
+                case 0x41: Active.SelectAll(); break;
                 case 0x43: CopySelection(); break;
                 case 0x56: _ = RunCommand(PasteAsync); break;
                 case 0x44: if (CanAddCanvasContent()) RunSafeSelectionCommand(() => Active.DuplicateSelection()); break;

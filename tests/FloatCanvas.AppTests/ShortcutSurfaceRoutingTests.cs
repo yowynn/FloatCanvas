@@ -52,7 +52,7 @@ internal static class ShortcutSurfaceRoutingTests
             SetModifiers(ModifierKeys.None);
             var ordinary = new[]
             {
-                Key.V, Key.E, Key.B, Key.H, Key.L, Key.R, Key.O, Key.T, Key.N, Key.S, Key.J, Key.A,
+                Key.V, Key.E, Key.B, Key.H, Key.L, Key.R, Key.O, Key.T, Key.N, Key.S, Key.J,
                 Key.M, Key.Tab, Key.OemMinus, Key.OemPlus, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5,
                 Key.D6, Key.D7, Key.D8, Key.D9, Key.D0, Key.Enter, Key.Delete,
                 Key.Left, Key.Up, Key.Right, Key.Down
