@@ -72,6 +72,7 @@ internal static class Program
             if (args.Contains("--temporary-move-controller-only")) { TemporaryMoveControllerTests.Run(Assert); return 0; }
             if (args.Contains("--selection-shortcut-regression-only")) { SelectionShortcutRegressionTests.Run(Assert); return 0; }
             if (args.Contains("--additional-shortcuts-only")) { AdditionalShortcutTests.Run(Assert); return 0; }
+            if (args.Contains("--text-tool-transforms-only")) { TextToolTransformTests.Run(Assert); return 0; }
             if (args.Contains("--properties-click-sequence-only")) { PropertiesClickSequenceTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-shift-only")) { Preview4ShiftTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-drag-only")) { Preview4DragTests.Run(Assert); return 0; }
@@ -170,6 +171,7 @@ internal static class Program
             foreach(string group in new[]{"colors","welcome","pins","logo","text"})Round2UiTests.Run(Assert,group);
             Preview4CanvasTests.Run(Assert);
             Preview4InlineTextTests.Run(Assert);
+            TextToolTransformTests.Run(Assert);
             Preview4PropertiesTests.Run(Assert);
             TemporaryMoveControllerTests.Run(Assert);
             PropertiesClickSequenceTests.Run(Assert);

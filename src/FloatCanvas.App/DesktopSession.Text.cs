@@ -76,7 +76,7 @@ internal sealed partial class DesktopSession
         if(_inlineText is not {IsActive:true} edit)return false;
         var point=new PointD(pointer.Position.X-_editor.ScreenOrigin.X,pointer.Position.Y-_editor.ScreenOrigin.Y);
         bool down=pointer.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick;
-        if(down&&(pointer.Button!=OverlayMouseButton.Left||(pointer.Modifiers&OverlayModifiers.Control)!=0||!edit.Contains(point)))
+        if(down&&(pointer.Button!=OverlayMouseButton.Left||(pointer.Modifiers&OverlayModifiers.Control)!=0||_editor.IsSelectionFrameHit(point)||!edit.Contains(point)))
         {FinishInlineText();return false;}
         if(pointer.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick or OverlayPointerKind.Move or OverlayPointerKind.Up)
         {

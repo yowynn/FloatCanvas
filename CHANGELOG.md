@@ -20,6 +20,9 @@
 - 修复工具配置与图层属性数值错误提示残留：纠正输入、离开输入区域或重新打开面板后清除过期提示，保留忙碌时尚未应用的属性草稿；统一移除滚动内容区域的键盘焦点虚框。
 - Clear stale tool-option and layer-property errors after correcting an entry, leaving the input area or reopening the panel, while retaining unapplied property drafts during busy operations; remove the dashed keyboard focus outline from scrolling content areas.
 
+- 修复文字工具抢占选框控制区域：文本内区编辑、边框移动、角点缩放、手柄旋转；编辑中的边框也可变换。文字框改宽高后重新适配字号与换行，消除旧自动换行留下的空高，保留手动空段落。
+- Keep text editing inside the text interior and restore border movement, corner resizing and handle rotation, including during inline editing. Refit font size and wrapping after frame changes so removed automatic line breaks leave no empty height; preserve deliberate empty paragraphs.
+
 - 添加 I 置图、P 截图、Ctrl+PageUp/PageDown 调节透明度，以及仅打开的 Ctrl+L 图层、Ctrl+, 设置、Ctrl+T 当前工具参数；补齐工具提示、菜单提示和 I/P 角标，属性提示标注 Enter。
 - Add I for image import, P for capture, Ctrl+PageUp/PageDown for opacity, and open-only Ctrl+L for Layers, Ctrl+, for Settings and Ctrl+T for current tool options. Complete toolbar/menu hints, I/P corner legends and the Enter property hint.
 

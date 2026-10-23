@@ -27,7 +27,9 @@ internal static class TextFrameLayout
         target.Transform=source.Transform;target.TextFrameFixed=true;
         var movedCenter=ElementGeometry.LocalToPlane(target).TransformPoint(new(target.Width/2,target.Height/2));
         target.Transform=Affine2D.Translation(center.X-movedCenter.X,center.Y-movedCenter.Y).Compose(target.Transform);
-        Fit(target,source.Style.FontSize*y,renderer);
+        // A wider frame can remove wrapped lines, so the old font size is no longer
+        // an upper bound. Fit the full frame while keeping glyph axes undistorted.
+        Fit(target,EmojiGlyphs.IsEmoji(source.Text,source.Style)?source.Style.FontSize*y:target.Height,renderer);
     }
     internal static void Fit(CanvasElement target,double requestedSize,SceneRenderer renderer)
     {

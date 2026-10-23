@@ -236,6 +236,8 @@ internal sealed partial class EditorController
             bool forceCreate = (e.Modifiers & OverlayModifiers.Control) != 0;
             if(Tool==EditorTool.Text)
             {
+                if (!forceCreate && IsSelectionFrameHit(pointerScreen))
+                { StartSelect(p, e.Modifiers, selectedOnly: true); return; }
                 var text=forceCreate?null:HitTestScreen(pointerScreen,4);
                 EditText?.Invoke(text?.Kind==ElementKind.Text?text:null,p);
                 return;
@@ -370,6 +372,18 @@ internal sealed partial class EditorController
             body = HitTestScreen(pointerScreen, 4) is { } visible && Session.Selection.Contains(visible.Id);
         return body || BillboardSelectionGuide is { } guide && pointerScreen.DistanceTo(guide.Center) < 12 || SelectionScreenCorners.Any(c => c.DistanceTo(pointerScreen) < 12) ||
             SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14;
+    }
+
+    internal bool IsSelectionFrameHit(PointD screen)
+    {
+        if (!Session.SelectedElements().Any(element => element.Visible && !element.Locked)) return false;
+        if (SelectionScreenRotationHandle is { } rotation && screen.DistanceTo(rotation) < 14 ||
+            BillboardSelectionGuide is { } guide && screen.DistanceTo(guide.Center) < 12 ||
+            SelectionScreenEndpoints.Any(endpoint => screen.DistanceTo(endpoint) < 12)) return true;
+        var corners = SelectionScreenCorners;
+        return corners.Any(corner => corner.DistanceTo(screen) < 12) ||
+            corners.Count == 4 && Enumerable.Range(0, 4).Any(index =>
+                ElementGeometry.DistanceToSegment(screen, corners[index], corners[(index + 1) % 4]) <= 6);
     }
 
     private void ApplyDefaultSize(CanvasElement element, PointD center, OverlayModifiers modifiers)
