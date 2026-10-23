@@ -547,6 +547,17 @@ internal sealed partial class DesktopSession : IDisposable
         }
         if (ctrl)
         {
+            switch (key)
+            {
+                case 0x4C: OpenLayers(); return;
+                case 0xBC: ShowHotkeySettings(); return;
+                case 0x54: OpenCurrentToolOptions(); return;
+                case 0x21: case 0x22:
+                    _editor.Cancel();
+                    Active.Execute(L.Get("History.LayerOpacity"), document => document.LayerOpacity =
+                        Math.Clamp(Math.Round(document.LayerOpacity + (key == 0x21 ? .05 : -.05), 10), 0, 1));
+                    return;
+            }
             // Modifiers (including a repeated or delayed Ctrl packet) are not editor
             // commands. They must not roll back a pointer transaction in progress.
             if (key is not (0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F or 0x4E or 0x08 or 0x2E)) return;
@@ -585,6 +596,7 @@ internal sealed partial class DesktopSession : IDisposable
                 key == 0x26 ? -amount : key == 0x28 ? amount : 0))); return;
         }
         if (ToolShortcutCatalog.IsReserved(key)) return;
+        if (key == 0x49) { _ = RunCommand(() => ImportImagesAsync()); return; }
         if (ToolShortcutCatalog.TryGetTool(key, out var tool)) SelectTool(tool);
     }
     private void RunSafeSelectionCommand(Action command)
@@ -791,8 +803,10 @@ internal sealed partial class DesktopSession : IDisposable
         if (hideShortcut is not null) hideShortcut.Text = FormatHotkey(hide);
     }
 
+    private Window? _settingsWindow;
     private void ShowHotkeySettings()
     {
+        if (_settingsWindow?.IsVisible == true) return;
         _inspector?.CompletePendingEdit();
         _editor.Cancel();
         var toggle = _settings.Toggle;
@@ -802,6 +816,8 @@ internal sealed partial class DesktopSession : IDisposable
             MaxHeight = Math.Max(240, _host.PrimaryMonitor.WorkArea.Height * 96 / _host.PrimaryMonitor.DpiY - 24),
             MaxWidth = Math.Max(360, _host.PrimaryMonitor.WorkArea.Width * 96 / _host.PrimaryMonitor.DpiX - 24)
         };
+        _settingsWindow = window;
+        window.Closed += (_, _) => { if (ReferenceEquals(_settingsWindow, window)) _settingsWindow = null; };
         var general = window.AddSection(L.Get("Settings.General"), L.Get("Settings.GeneralHint"));
         var canvas = window.AddSection(L.Get("Settings.CanvasHistory"), L.Get("Settings.CanvasHistoryHint"));
         var shortcuts = window.AddSection(L.Get("Settings.Shortcuts"), L.Get("Settings.ShortcutsHint"));

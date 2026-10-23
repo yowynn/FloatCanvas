@@ -83,6 +83,13 @@ internal sealed partial class DesktopSession
         ActionIconButton.UpdatePin(_toolOptionsPin,_toolOptionsPinned);
     }
 
+    private void OpenCurrentToolOptions()
+    {
+        if (_editor.Tool is EditorTool.Select or EditorTool.Stamp) return;
+        if (_editor.Tool == EditorTool.Canvas ? IsCanvasSettingsOpen : IsToolOptionsOpen) return;
+        OpenToolOptions();
+    }
+
     private void OpenToolOptions()
     {
         if (_editor.Tool == EditorTool.Canvas) { OpenCanvasSettings(); return; }

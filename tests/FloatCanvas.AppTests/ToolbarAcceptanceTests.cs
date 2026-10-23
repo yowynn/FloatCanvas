@@ -132,7 +132,7 @@ internal static class ToolbarAcceptanceTests
             check("More distinguishes mosaic from blur", MoreGlyph() != idleMoreGlyph && MoreGlyph() != blurMoreGlyph);
             editor.Tool = EditorTool.Freehand; Invoke(session,"RefreshToolbarState"); Measure(shell);
             check("More restores three dots when another toolbar tool is selected", MoreGlyph() == idleMoreGlyph);
-            check("More is enabled and owns its reserved single-letter command",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M");
+            check("More is enabled and discloses its menu and tool options commands",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M\n"+L.Get("ToolOptions.Title")+" · Ctrl+T");
             check("main keyboard minus and plus are independent stamp commands",ToolShortcutCatalog.StampLibraryKey==0xBD&&ToolShortcutCatalog.NewStampKey==0xBB&&ToolShortcutCatalog.IsReserved(0xBD)&&ToolShortcutCatalog.IsReserved(0xBB)&&!ToolShortcutCatalog.IsReserved(0x6B)&&!ToolShortcutCatalog.IsReserved(0x6D));
             check("toolbar controls retain keyboard input without focus frames or focus-only tooltips",allButtons.All(button=>button.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(button)==false)&&opacity.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(opacity)==false&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(Field<ToolbarLauncher>(session,"_toolbarLauncher"))==false);
             var clearAction=buttons.Single(button=>Equals(button.Tag,"clear"));
@@ -164,7 +164,7 @@ internal static class ToolbarAcceptanceTests
             var imageMenu=more.ContextMenu;
             check("More owns only general canvas blur and mosaic",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is not null && imageMenu.Items.OfType<Controls.MenuItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{L.Get("Tool.Blur"),L.Get("Tool.Pixelate")}));
             var cropButton=buttons.Single(button=>Equals(button.Tag,"crop"));
-            check("disabled crop retains a hover tooltip",Controls.ToolTipService.GetShowOnDisabled(cropButton) && cropButton.ToolTip?.ToString()==L.Get("Tool.Crop"));
+            check("disabled crop retains a hover tooltip and the tool options shortcut",Controls.ToolTipService.GetShowOnDisabled(cropButton) && cropButton.ToolTip?.ToString()==L.Get("Tool.Crop")+"\n"+L.Get("ToolOptions.Title")+" · Ctrl+T");
             var cropMenus=Field<List<Controls.MenuItem>>(session,"_cropMenuItems");
             check("image crop follows import and capture and is disabled consistently without a target",Controls.Grid.GetColumn(cropButton)==Controls.Grid.GetColumn(buttons.Single(button=>Equals(button.Tag,"capture")))+1 &&
                 ReferenceEquals(tools[EditorTool.Crop],cropButton) && !cropButton.IsEnabled && cropMenus.Count>0 && cropMenus.All(item=>!item.IsEnabled));
@@ -201,7 +201,7 @@ internal static class ToolbarAcceptanceTests
             check("returning to Freehand preserves the most recent symbol shape and paint",Fingerprint((Imaging.BitmapSource)rememberedSymbol.Source)==configuredSymbol && ContainsColor((Imaging.BitmapSource)rememberedSymbol.Source,Media.Color.FromRgb(0x16,0x8F,0x69)));
             check("returning to Freehand preserves the most recent emoji image",ReferenceEquals(((Controls.Image)Glyph(tools[EditorTool.Emoji])).Source,EmojiArtwork.Image("🔥")));
             var hints=Field<List<Controls.TextBlock>>(session,"_toolbarShortcutHintLabels");
-            check("all thirteen tools share single-letter corner legends and stamp commands add minus/plus",hints.Count==15&&hints.Take(13).Select(hint=>hint.Text).SequenceEqual(ToolShortcutCatalog.All.Select(binding=>binding.Hint))&&hints.Skip(13).Select(hint=>hint.Text).SequenceEqual(new[]{"-","+"}));
+            check("all tool and image commands share corner legends and stamp commands add minus/plus",hints.Count==17&&hints.Take(15).Select(hint=>hint.Text).SequenceEqual(ToolShortcutCatalog.All.Select(binding=>binding.Hint))&&hints.Skip(15).Select(hint=>hint.Text).SequenceEqual(new[]{"-","+"}));
             foreach(var button in buttons.Where(button=>Controls.Grid.GetColumn(button)<13))
             {
                 var hint=((Controls.Grid)button.Content).Children.OfType<Controls.TextBlock>().Single();

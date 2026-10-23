@@ -58,6 +58,7 @@ internal static class CommandGlyphs
     internal const string Visibility = "M1,8 Q8,-1 15,8 Q8,17 1,8 Z M8,5 A3,3 0 1 1 7.99,5";
     internal const string MoveIntoView = "M1,5 V1 H5 M11,1 H15 V5 M15,11 V15 H11 M5,15 H1 V11 M3,8 H13 M10,5 L13,8 L10,11";
     internal const string Properties = "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15";
+    internal const string ToolOptions = "M10,1 L8,3 L9,6 L12,7 L14,5 L15,6 C15,9 12,11 9,10 L4,15 C2,16 0,14 1,12 L6,7 C5,4 6,1 10,1 Z M2.7,12.5 L3.5,13.3";
     internal const string Layers = "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13";
     internal const string Stamp = "M6,8.5 V7 C6,5.5 4.8,4.7 4.8,3.2 C4.8,.6 11.2,.6 11.2,3.2 C11.2,4.7 10,5.5 10,7 V8.5 M6,8.5 H10 Q12,8.5 12,11 M6,8.5 Q4,8.5 4,11 M1.5,11 H14.5 V13.5 H1.5 Z M3,15.5 H13";
     internal const string NewStamp = "M4.5,8.5 V7 C4.5,5.5 3.5,4.7 3.5,3.2 C3.5,.6 8.5,.6 8.5,3.2 C8.5,4.7 7.5,5.5 7.5,7 V8.5 M4.5,8.5 H7.5 Q9.5,8.5 9.5,11 M4.5,8.5 Q2.5,8.5 2.5,11 M1,11 H11 V13.5 H1 Z M2,15.5 H10 M12.5,2.5 V7.5 M10,5 H15";

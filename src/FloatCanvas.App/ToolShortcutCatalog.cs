@@ -10,7 +10,8 @@ internal static class ToolShortcutCatalog
         new(EditorTool.Freehand,"B",0x42),new(EditorTool.Highlighter,"H",0x48),
         new(EditorTool.Line,"L",0x4C),new(EditorTool.Rectangle,"R",0x52),new(EditorTool.Ellipse,"O",0x4F),
         new(EditorTool.Text,"T",0x54),new(EditorTool.Number,"N",0x4E),new(EditorTool.Symbol,"S",0x53),
-        new(EditorTool.Emoji,"J",0x4A),new(null,"M",0x4D),new(EditorTool.Canvas,"C",0x43)
+        new(EditorTool.Emoji,"J",0x4A),new(null,"M",0x4D),new(EditorTool.Canvas,"C",0x43),
+        new(EditorTool.Image,"I",0x49),new(EditorTool.CaptureRegion,"P",0x50)
     });
     internal const int MoreKey = 0x4D;
     internal const int StampLibraryKey = 0xBD;

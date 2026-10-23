@@ -15,13 +15,14 @@ internal static class EditorShortcutPolicy
         if (key == 0x09) return modifiers == OverlayModifiers.None;
         if ((modifiers & (OverlayModifiers.Alt | OverlayModifiers.Windows)) != 0) return false;
         if ((modifiers & OverlayModifiers.Control) != 0)
-            return key is 0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F or 0x4E or 0x08 or 0x2E;
+            return key is 0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F or 0x4E or 0x08 or 0x2E ||
+                modifiers == OverlayModifiers.Control && key is 0x21 or 0x22 or 0x4C or 0xBC or 0x54;
         return key is 0x1B or 0x0D or 0x08 or 0x2E or >= 0x25 and <= 0x28 or >= 0x30 and <= 0x39 ||
             ToolShortcutCatalog.TryGetTool(key, out _) || ToolShortcutCatalog.IsReserved(key);
     }
 
     internal static bool AllowsRepeat(int key, OverlayModifiers modifiers) =>
-        (modifiers & OverlayModifiers.Control) != 0 ? key is 0x5A or 0x59 : key is 0x08 or 0x2E or >= 0x25 and <= 0x28;
+        (modifiers & OverlayModifiers.Control) != 0 ? key is 0x5A or 0x59 or 0x21 or 0x22 : key is 0x08 or 0x2E or >= 0x25 and <= 0x28;
 
     internal static bool IsProjectCommand(int key, OverlayModifiers modifiers) =>
         IsCommand(key, modifiers) && (modifiers & OverlayModifiers.Control) != 0 && key is 0x53 or 0x4F or 0x4E;

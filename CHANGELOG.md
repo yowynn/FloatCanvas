@@ -17,6 +17,9 @@
 - 修复工具配置与图层属性数值错误提示残留：纠正输入、离开输入区域或重新打开面板后清除过期提示，保留忙碌时尚未应用的属性草稿；统一移除滚动内容区域的键盘焦点虚框。
 - Clear stale tool-option and layer-property errors after correcting an entry, leaving the input area or reopening the panel, while retaining unapplied property drafts during busy operations; remove the dashed keyboard focus outline from scrolling content areas.
 
+- 添加 I 置图、P 截图、Ctrl+PageUp/PageDown 调节透明度，以及仅打开的 Ctrl+L 图层、Ctrl+, 设置、Ctrl+T 当前工具参数；补齐工具提示、菜单提示和 I/P 角标，属性提示标注 Enter。
+- Add I for image import, P for capture, Ctrl+PageUp/PageDown for opacity, and open-only Ctrl+L for Layers, Ctrl+, for Settings and Ctrl+T for current tool options. Complete toolbar/menu hints, I/P corner legends and the Enter property hint.
+
 - 修复原生画布在 Ctrl 快捷键松开后不刷新选框：复制保留原选择，粘贴与复制副本选中新图层；移除未公开的 A 工具别名，Ctrl+A 全选时保留当前工具。
 - Restore selection handles immediately after releasing Ctrl on the native canvas. Copy keeps the original selection, paste and duplicate select new layers, unbound A no longer changes tools, and Ctrl+A retains the active tool.
 

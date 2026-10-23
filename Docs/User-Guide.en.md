@@ -51,6 +51,9 @@ Text is edited directly on the canvas. Changing windows, layers or tools, or ent
 | `Ctrl+A` | Select all editable elements |
 | `Ctrl+C` / `Ctrl+V` | Copy/paste |
 | `Ctrl+D` | Duplicate selected elements with a small offset |
+| `I` / `P` | Import images / select the capture tool |
+| `Ctrl+PageUp` / `Ctrl+PageDown` | Increase / decrease canvas opacity by 5%; hold to repeat |
+| `Ctrl+L` / `Ctrl+,` / `Ctrl+T` | Open Layers / Settings / current tool options; keep an open window open |
 | `Ctrl+G` / `Ctrl+Shift+G` | Group/ungroup |
 | `1`–`9`, `0` | Select the corresponding stamp from the ten-slot shelf, then click the canvas to place it |
 | `M` / `-` / `+` | More tools / open stamp library / save selection as a stamp; use main-keyboard `-` and `+` |
@@ -150,6 +153,7 @@ The upper-right controls are grouped in this order: the Canvas tool; import, cap
 - **Drag the app icon:** move the toolbar and remember its position.
 - **Click a tool icon:** select the tool. Hover for its name and shortcut; the main menu's **Drawing tools** and **Images and effects** sections also offer tool commands.
 - **Select the current tool again:** click the same icon or press its shortcut again to open/close its options. Switching tools while options are open updates the panel for the new tool.
+- **Press `Ctrl+T`:** open the current tool's options (Canvas opens canvas settings). An open window stays open; tools without an options window do nothing.
 
 The options window uses the current tool name as its title, with a short description and parameters alongside presets. With the toolbar expanded, it initially opens above or below the bar. Drag it elsewhere afterwards; moving or collapsing the toolbar does not move or close it. When the toolbar is collapsed, press the current tool key again to open options near the pointer, within the screen bounds. An unpinned window closes when you click the canvas or another interface; pin it to keep drawing with options visible. Escape closes the color child panel first, then an unpinned tool window. Entering pass-through hides editing panels.
 

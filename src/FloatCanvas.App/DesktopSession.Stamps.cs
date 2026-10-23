@@ -230,6 +230,13 @@ internal sealed partial class DesktopSession
         SwitchToolState(EditorTool.Select);
     }
 
+    private void OpenLayers()
+    {
+        if (_layers?.IsVisible == true) return;
+        _layersWanted = false;
+        ToggleLayers();
+    }
+
     private void ToggleLayers()
     {
         _editor.Cancel(); _layersWanted = !_layersWanted;

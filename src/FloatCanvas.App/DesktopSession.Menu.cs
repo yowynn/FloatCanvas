@@ -50,7 +50,7 @@ internal sealed partial class DesktopSession
         foreach (var tool in new[] { EditorTool.Select, EditorTool.Eraser, EditorTool.Freehand, EditorTool.Highlighter, EditorTool.Line, EditorTool.Rectangle,
             EditorTool.Ellipse, EditorTool.Text, EditorTool.Number, EditorTool.Symbol, EditorTool.Emoji }) drawing.Items.Add(ToolMenuItem(tool));
         var images = Group("ToolbarV2.ImageTools", CommandGlyphs.ImageTools);
-        Item(images, L.Get("Toolbar.Image"), CommandGlyphs.Image, () => _ = RunCommand(() => ImportImagesAsync()));
+        Item(images, L.Get("Toolbar.Image"), CommandGlyphs.Image, () => _ = RunCommand(() => ImportImagesAsync()), "I");
         Item(images, L.Get("Menu.ReplaceImage"), CommandGlyphs.ReplaceImage, () => _ = RunCommand(() => ImportImagesAsync(null, true)));
         images.Items.Add(new Controls.Separator());
         foreach (var tool in new[] { EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate }) images.Items.Add(ToolMenuItem(tool));
@@ -68,7 +68,8 @@ internal sealed partial class DesktopSession
         Item(canvas, L.Get("Menu.MoveIntoView"), CommandGlyphs.MoveIntoView, MoveIntoView);
         Item(canvas, L.Get("History.ClearCurrent"), CommandGlyphs.ClearCanvas, () => _ = RunCommand(ClearCurrentCanvasAsync), "Ctrl+Backspace / Ctrl+Delete");
         var windows = Group("ToolbarV2.Windows", CommandGlyphs.Windows);
-        Item(windows, L.Get("ToolbarV2.Properties"), CommandGlyphs.Properties, ToggleInspector, "Enter"); Item(windows, L.Get("ToolbarV2.Layers"), CommandGlyphs.Layers, ToggleLayers);
+        Item(windows, L.Get("ToolbarV2.Properties"), CommandGlyphs.Properties, ToggleInspector, "Enter"); Item(windows, L.Get("ToolbarV2.Layers"), CommandGlyphs.Layers, ToggleLayers, "Ctrl+L");
+        Item(windows, L.Get("ToolOptions.Title"), CommandGlyphs.ToolOptions, OpenCurrentToolOptions, "Ctrl+T");
         Item(windows, L.Get("Stamp.LibraryTitle"), CommandGlyphs.Stamp, ShowStampLibrary, "-");
         Item(edit, L.Get("Feedback3.Toolbar.NewStamp"), CommandGlyphs.NewStamp, SaveStampSelection, "+");
         menu.Items.Add(new Controls.Separator());
@@ -77,7 +78,7 @@ internal sealed partial class DesktopSession
         var floatingLogo = new Controls.MenuItem {Header=L.Get("Settings.PassThroughLauncher"),Icon=CommandGlyphs.Create(CommandGlyphs.FloatingLogo),IsCheckable=true};
         floatingLogo.Click+=(_,_)=>RunUiAction(ToggleFloatingLogo); menu.Items.Add(floatingLogo);
         menu.Opened+=(_,_)=>floatingLogo.IsChecked=_settings.ShowPassThroughLauncher;
-        var settings = new Controls.MenuItem { Header = L.Get("Menu.Settings"), Icon = CommandGlyphs.Create(CommandGlyphs.Settings) };
+        var settings = new Controls.MenuItem { Header = L.Get("Menu.Settings"), InputGestureText = "Ctrl+,", Icon = CommandGlyphs.Create(CommandGlyphs.Settings) };
         settings.Click += (_, _) => RunUiAction(ShowHotkeySettings); menu.Items.Add(settings);
         var updates = new Controls.MenuItem { Header = L.Get("Updates.Title"), Icon = CommandGlyphs.Create(CommandGlyphs.Updates) };
         updates.Click += (_, _) => RunUiAction(ShowUpdates); menu.Items.Add(updates);
@@ -98,10 +99,11 @@ internal sealed partial class DesktopSession
     {
         string shortcut = ToolShortcutCatalog.Hint(tool);
         var item = new Controls.MenuItem { Header = ToolName(tool), Tag = tool, InputGestureText = shortcut, Icon = CommandGlyphs.Create(CommandGlyphs.Tool(tool)) };
+        if (tool != EditorTool.Select) item.ToolTip = L.Get("ToolOptions.Title") + " · Ctrl+T";
         if (tool == EditorTool.Crop)
         {
             item.IsEnabled = _editor.CanCropSelection;
-            item.ToolTip = L.Get("Editor.CropImageHint"); Controls.ToolTipService.SetShowOnDisabled(item, true);
+            item.ToolTip = L.Get("Editor.CropImageHint") + "\n" + item.ToolTip; Controls.ToolTipService.SetShowOnDisabled(item, true);
             _cropMenuItems.Add(item);
         }
         item.Click += (_, _) => RunUiAction(() => ActivateTool(tool)); return item;

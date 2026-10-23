@@ -52,7 +52,7 @@ internal static class ShortcutSurfaceRoutingTests
             SetModifiers(ModifierKeys.None);
             var ordinary = new[]
             {
-                Key.V, Key.E, Key.B, Key.H, Key.L, Key.R, Key.O, Key.T, Key.N, Key.S, Key.J,
+                Key.V, Key.E, Key.B, Key.H, Key.L, Key.R, Key.O, Key.T, Key.N, Key.S, Key.J, Key.I, Key.P,
                 Key.M, Key.Tab, Key.OemMinus, Key.OemPlus, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5,
                 Key.D6, Key.D7, Key.D8, Key.D9, Key.D0, Key.Enter, Key.Delete,
                 Key.Left, Key.Up, Key.Right, Key.Down
@@ -72,7 +72,8 @@ internal static class ShortcutSurfaceRoutingTests
 
             SetModifiers(ModifierKeys.Control);
             check("shortcut matrix controls only its thread-local Ctrl state", Keyboard.Modifiers == ModifierKeys.Control);
-            foreach (var key in new[] { Key.Z, Key.Y, Key.A, Key.C, Key.V, Key.D, Key.S, Key.O, Key.N, Key.Back, Key.Delete })
+            foreach (var key in new[] { Key.Z, Key.Y, Key.A, Key.C, Key.V, Key.D, Key.S, Key.O, Key.N, Key.Back, Key.Delete,
+                Key.PageUp, Key.PageDown, Key.L, Key.OemComma, Key.T })
                 for (int surface = 0; surface < surfaces.Length; surface++) ExpectRoute(surface, sources[surface].Button, key);
             foreach (bool shift in new[] { false, true })
             {

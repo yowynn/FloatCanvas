@@ -71,6 +71,7 @@ internal static class Program
             if (args.Contains("--input-method-ui-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "input-method-ui"); return 0; }
             if (args.Contains("--temporary-move-controller-only")) { TemporaryMoveControllerTests.Run(Assert); return 0; }
             if (args.Contains("--selection-shortcut-regression-only")) { SelectionShortcutRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--additional-shortcuts-only")) { AdditionalShortcutTests.Run(Assert); return 0; }
             if (args.Contains("--properties-click-sequence-only")) { PropertiesClickSequenceTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-shift-only")) { Preview4ShiftTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-drag-only")) { Preview4DragTests.Run(Assert); return 0; }

@@ -64,6 +64,7 @@ internal sealed partial class DesktopSession
             // A toolbar revisit restores its family's working state. Remembered
             // legacy aliases must not act like an explicit recipe selection.
             var button = ToolbarIcon(label, CommandGlyphs.Tool(tool), () => ActivateTool(ToolFamily(ButtonFamily(_editor.Tool) == tool ? _editor.Tool : _toolbarButtonMemory.GetValueOrDefault(tool, tool))), shortcut);
+            if (tool != EditorTool.Select) button.ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
             if(shortcut.Length>0)AddShortcutHint(button,shortcut,tool);
             button.Padding=new Thickness(0);
             button.Tag = "tool:" + tool; _toolbarToolButtons[tool] = button; Cell(button, toolColumn++);
@@ -82,6 +83,7 @@ internal sealed partial class DesktopSession
         Tool(EditorTool.Symbol, L.Get("Tool.Symbol"));
         Tool(EditorTool.Emoji, L.Get("Tool.Emoji"));
         var more=ToolbarIcon(L.Get("Feedback4.Toolbar.More"),"M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8",OpenMoreTools,"M");
+        more.ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
         AddShortcutHint(more,"M",EditorTool.Blur);more.Padding=new Thickness(0);more.Tag="more";Cell(more,toolColumn++);
         _moreToolsMenu=new OverlayContextMenu {PlacementTarget=more,Placement=Primitives.PlacementMode.Bottom};
         foreach(var tool in new[]{EditorTool.Blur,EditorTool.Pixelate})_moreToolsMenu.Items.Add(ToolMenuItem(tool));
@@ -95,6 +97,7 @@ internal sealed partial class DesktopSession
         Action("canvas", L.Get("Canvas.Title"), CommandGlyphs.Canvas, () => ActivateTool(EditorTool.Canvas), ToolShortcutCatalog.Hint(EditorTool.Canvas));
         _canvasStateButton = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.Canvas] = _canvasStateButton;
+        _canvasStateButton.ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
         AddShortcutHint(_canvasStateButton, ToolShortcutCatalog.Hint(EditorTool.Canvas), EditorTool.Canvas);
         RefreshCanvasStateGlyph();
         _billboardButton=ToolbarIcon(L.Get("Billboard.Toggle"),CommandGlyphs.Placement(_editor.BillboardMode),ToggleBillboardMode);
@@ -102,18 +105,21 @@ internal sealed partial class DesktopSession
         Controls.ToolTipService.SetShowOnDisabled(_billboardButton,true);
         RefreshBillboardState();
         Cell(Separator(), toolColumn++);
-        Action("import", L.Get("Toolbar.Image"), CommandGlyphs.Image, () => _ = RunCommand(() => ImportImagesAsync()));
-        Action("capture", L.Get("Acceptance2.Toolbar.Capture"), "M1,6 L1,2 L5,2 M11,2 L15,2 L15,6 M15,10 L15,14 L11,14 M5,14 L1,14 L1,10 M4,5 L12,5 L12,11 L4,11 Z", () => ActivateTool(EditorTool.CaptureRegion));
+        Action("import", L.Get("Toolbar.Image"), CommandGlyphs.Image, () => _ = RunCommand(() => ImportImagesAsync()), "I");
+        AddShortcutHint(content.Children.OfType<Controls.Button>().Last(), "I");
+        Action("capture", L.Get("Acceptance2.Toolbar.Capture"), "M1,6 L1,2 L5,2 M11,2 L15,2 L15,6 M15,10 L15,14 L11,14 M5,14 L1,14 L1,10 M4,5 L12,5 L12,11 L4,11 Z", () => ActivateTool(EditorTool.CaptureRegion), "P");
         var captureButton = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.CaptureRegion] = captureButton;
-        captureButton.ToolTip = L.Get("Acceptance2.Toolbar.Capture") + "\n" + L.Get("Acceptance2.Toolbar.CaptureHint");
+        AddShortcutHint(captureButton, "P", EditorTool.CaptureRegion);
+        captureButton.ToolTip = L.Get("Acceptance2.Toolbar.Capture") + " · P\n" + L.Get("Acceptance2.Toolbar.CaptureHint") + "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
         Action("crop", L.Get("Tool.Crop"), "M4,1 L4,11 Q4,12 5,12 L15,12 M1,4 L11,4 Q12,4 12,5 L12,15", () => ActivateTool(EditorTool.Crop));
         _toolbarToolButtons[EditorTool.Crop] = content.Children.OfType<Controls.Button>().Last();
+        _toolbarToolButtons[EditorTool.Crop].ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
         _toolbarToolButtons[EditorTool.Crop].IsEnabled = _editor.CanCropSelection;
         Controls.ToolTipService.SetShowOnDisabled(_toolbarToolButtons[EditorTool.Crop], true);
         Cell(Separator(), toolColumn++);
-        Action("properties", L.Get("ToolbarV2.Properties"), "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15", ToggleInspector);
-        Action("layers", L.Get("ToolbarV2.Layers"), "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13", ToggleLayers);
+        Action("properties", L.Get("ToolbarV2.Properties"), "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15", ToggleInspector, "Enter");
+        Action("layers", L.Get("ToolbarV2.Layers"), "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13", ToggleLayers, "Ctrl+L");
         Cell(Separator(), toolColumn++);
         Action("undo", L.Get("ToolbarV2.Undo"), "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,13", Undo, "Ctrl+Z");
         Action("redo", L.Get("ToolbarV2.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13", Redo, "Ctrl+Y");
@@ -402,7 +408,7 @@ internal sealed partial class DesktopSession
     {var separator=new Controls.Border {Width=1,Margin=new Thickness(4,4,4,4)};separator.SetResourceReference(Controls.Border.BackgroundProperty,"CanvasBorder");return separator;}
     private Controls.Slider CreateToolbarOpacitySlider()
     {
-        var opacity=new Controls.Slider {Minimum=0,Maximum=1,Value=1,Width=56,Height=26,Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=L.Get("Feedback3.Toolbar.Opacity")};
+        var opacity=new Controls.Slider {Minimum=0,Maximum=1,Value=1,Width=56,Height=26,Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=L.Get("Feedback3.Toolbar.Opacity")+" · Ctrl+PageUp / Ctrl+PageDown"};
         opacity.FocusVisualStyle=null;Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(opacity,false);
         System.Windows.Automation.AutomationProperties.SetName(opacity,L.Get("Feedback3.Toolbar.Opacity"));
         opacity.PreviewMouseLeftButtonDown+=(_,_)=>{if(!DocumentOperationBusy){_editor.Cancel();Active.BeginTransaction(L.Get("History.LayerOpacity"));}};
