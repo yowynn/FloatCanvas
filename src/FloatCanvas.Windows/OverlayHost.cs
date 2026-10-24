@@ -842,6 +842,15 @@ public sealed partial class OverlayHost : IDisposable
             throw new Win32Exception(error, L.Get("Overlay.WindowCreationFailed"));
         }
         if(_systemInput is not null && kind==WindowKind.Input)DisableCanvasInputMethod(hwnd);
+        if (kind == WindowKind.Display)
+        {
+            // The canvas annotates the desktop rather than participating in application Peek.
+            // Keep its pixels present while Alt+Tab previews another window. Apply before showing,
+            // including replacement monitor windows, in both ordinary and enhanced modes.
+            // https://learn.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
+            int enabled = 1;
+            _ = DwmSetWindowAttribute(hwnd, 12, in enabled, sizeof(int)); // DWMWA_EXCLUDED_FROM_PEEK
+        }
         // The full monitor client area is an effect/input surface, not a fullscreen application.
         // Set the Shell's documented opt-out before any ShowWindow, including layout rebuilds.
         // https://learn.microsoft.com/windows/win32/api/shobjidl_core/nf-shobjidl_core-itaskbarlist2-markfullscreenwindow

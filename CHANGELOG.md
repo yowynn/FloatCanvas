@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 画布显示窗口退出 Windows Peek 淡出，避免 Alt+Tab 预览其他应用时画布瞬间消失；监视器重建后同样保留此规则。
+- Exclude canvas display windows from Windows Peek fading, keeping annotations visible while Alt+Tab previews another application and after monitor rebuilds.
+
 - 颜色面板改为带标题栏、拖动与关闭按钮的常规所属窗口；新建／重命名色板的模态窗口直接归属颜色窗口，点击来源面板关闭二级窗口并保留该次点击。
 - Present colors in a regular owned window with caption dragging and Close. Own swatch naming dialogs from that window, and close the secondary panel on a source-panel press without consuming the press.
 
