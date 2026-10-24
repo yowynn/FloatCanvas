@@ -34,7 +34,7 @@ internal sealed partial class DesktopSession : IDisposable
     private readonly StampLibrary _stampLibrary;
     private readonly AssetLibrary _assets = new();
     private readonly SceneRenderer _renderer = new();
-    private readonly OverlaySceneCache _overlayCache;
+    private readonly CanvasPreviewPump _canvasPreview;
     private readonly EditorController _editor;
     private DispatcherOperation? _renderOperation;
     private EditorSession _live;
@@ -84,7 +84,6 @@ internal sealed partial class DesktopSession : IDisposable
         _colorLibrary = ColorLibrary.Shared;
         _colorLibrary.HistorySession = _presetHistorySession;
         _stampLibrary = new(ApplicationPaths.ProfileDirectory);
-        _overlayCache = new(_renderer);
         AppTheme.Apply(_settings.Theme);
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
         _host = testHost ?? new OverlayHost(ApplicationPaths.RequestedMonitorScope ?? MonitorScopeControl.Saved(_settings).Scope,
@@ -140,6 +139,13 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.Cancelling += () => FinishInlineText();
         _editor.CaptureSelectionCompleted += BeginSnapshotCapture;
         _host.CaptureDiagnostic += OnCaptureDiagnostic;
+        _canvasPreview = new(_app.Dispatcher, CaptureCanvasPreview);
+        _canvasPreview.FrameReady += PresentCanvasPreview;
+        _canvasPreview.Failed += error =>
+        {
+            _diagnostics.Write("Rendering.PreviewFailed", exception: error);
+            ShowError(error.Message);
+        };
         _host.Draw += Draw;
         _host.Pointer += pointer=>
         {
@@ -440,15 +446,10 @@ internal sealed partial class DesktopSession : IDisposable
             _pixelsOnlyRender = false;
             PrepareAnimationFrame();
             if (!pixelsOnly) SyncLiveEffectsCapture();
-            // GPU readback is worthwhile for filter computation, while the raster cache
-            // is faster for ordinary shapes and small animated images on the current host.
-            var document = _host.IsVisible ? Active.Document : HiddenCanvasPreview();
-            bool ImageFilter(CanvasElement element) => element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
-                SceneRenderer.ProjectedBounds(document, element).Intersects(document.Viewport) &&
-                element.Effects.Any(effect => effect.Kind is ImageEffectKind.Blur or ImageEffectKind.Pixelate);
-            _host.SetGpuWorkload(SceneRenderer.HasLiveEffects(document) ||
-                document.Background is { } background && ImageFilter(background) ||
-                document.LayerOpacity > 0 && document.Elements.Any(ImageFilter));
+            _canvasPreview.Request();
+            // Heavy scene computation, GPU filtering and readback happen on the preview worker.
+            // The UI only copies completed CPU tiles and draws current handles.
+            _host.SetGpuWorkload(false);
             _host.Render(dirtyRegions);
             // A native caption loop can delay control timers even while frames
             // complete. Successful UI work is progress; a blocked render is not.
@@ -657,14 +658,10 @@ internal sealed partial class DesktopSession : IDisposable
     private void Draw(SKSurface surface)
     {
         var canvas = surface.Canvas;
+        if (_canvasPreview.Frame is { } frame && frame.Context == CurrentPreviewContext())
+            frame.Pixels.Draw(canvas);
+        else _canvasPreview.Request();
         canvas.Save(); canvas.Translate((float)_editor.ScreenOrigin.X,(float)_editor.ScreenOrigin.Y);
-        var preview = _editor.RasterPreview;
-        if (!_host.IsVisible)
-            _renderer.Draw(canvas, HiddenCanvasPreview(), _assets, calibrationReference: _editor.Tool == EditorTool.Canvas);
-        else if (_host.IsEditing && (_editor.Tool == EditorTool.Canvas || _canvasCalibration.IsActive))
-            _renderer.Draw(canvas, Active.Document, _assets, calibrationReference: true, includeGrid: !_canvasCalibration.IsPlacing);
-        else _overlayCache.DrawOnClearedRasterTarget(surface,Active.Document,_assets,Active.SceneRevision,Active.TransactionId,
-            preview.First,preview.Last,preview.BypassCache || _canvasCalibration.IsDragging);
         if (_host.IsEditing)
         {
             DrawProjectionHover(canvas);
@@ -746,7 +743,6 @@ internal sealed partial class DesktopSession : IDisposable
         EnsureCaptureVisible();
         SynchronizeFlatGridOrigin();
         RefreshCanvasReferenceMonitors();
-        _overlayCache.Invalidate();
         _live.NotifyChanged();
         _toolbarPlaced=false;
         if(_host.IsEditing) PlaceToolbar();
@@ -1088,6 +1084,6 @@ internal sealed partial class DesktopSession : IDisposable
         FinishInlineText();
         _inspector?.Close(); _layers?.Close(); _stampWindow?.Close(); _toolbar.Close();
         _editor.DetachSession();
-        _host.Dispose(); _overlayCache.Dispose(); _renderer.Dispose();
+        _canvasPreview.Dispose(); _host.Dispose(); _renderer.Dispose();
     }
 }

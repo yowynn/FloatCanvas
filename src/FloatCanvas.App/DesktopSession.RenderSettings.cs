@@ -38,16 +38,17 @@ internal sealed partial class DesktopSession
         {
             if (_disposed || backend.Dispatcher.HasShutdownStarted) { refresh.Stop(); return; }
             if (!backend.Dispatcher.CheckAccess()) { _ = backend.Dispatcher.InvokeAsync(RefreshBackend); return; }
-            bool hasFrame = _host.GpuFrameCount + _host.CpuFrameCount > 0;
-            backend.Text = hasFrame ? L.Format("Settings.RenderBackend", _host.LastCompletedRenderBackend == OverlayRenderBackend.Gpu ? "GPU" : "CPU") :
+            var frame = _canvasPreview.Frame;
+            bool hasFrame = frame is not null;
+            backend.Text = hasFrame ? L.Format("Settings.RenderBackend", frame!.Backend == OverlayRenderBackend.Gpu ? "GPU" : "CPU") :
                 L.Get("Settings.RenderBackendPending");
             string reasonKey = !hasFrame ? "Settings.RenderReasonPending" :
-                _host.LastCompletedRenderBackend == OverlayRenderBackend.Gpu ? "Settings.RenderReasonGpu" :
+                frame!.Backend == OverlayRenderBackend.Gpu ? "Settings.RenderReasonGpu" :
                 !_settings.PreferGpuAcceleration ? "Settings.RenderReasonDisabled" :
-                !_host.CurrentGpuWorkload ? "Settings.RenderReasonLight" :
-                _host.LastGpuFailure is not null ? "Settings.RenderReasonFallback" : "Settings.RenderReasonPending";
+                !frame.GpuWorkload ? "Settings.RenderReasonLight" :
+                frame.GpuFailure is not null ? "Settings.RenderReasonFallback" : "Settings.RenderReasonPending";
             reason.Text = L.Get(reasonKey);
-            string? details = _host.GpuDetails;
+            string? details = frame?.GpuDetails;
             device.Visibility = string.IsNullOrWhiteSpace(details) ? Visibility.Collapsed : Visibility.Visible;
             if (details is not null)
             {
@@ -56,20 +57,20 @@ internal sealed partial class DesktopSession
                 device.ToolTip = details;
             }
             timing.Visibility = hasFrame ? Visibility.Visible : Visibility.Collapsed;
-            if (hasFrame) timing.Text = L.Format("Settings.RenderTiming", _host.LastRenderMilliseconds, _host.GpuFrameCount, _host.CpuFrameCount);
+            if (hasFrame) timing.Text = L.Format("Settings.RenderTiming", frame!.RenderMilliseconds, _canvasPreview.GpuFrames, _canvasPreview.CpuFrames);
         }
         refresh.Tick += (_, _) => RefreshBackend();
         RefreshBackend();
         preferGpu.Loaded += (_, _) =>
         {
             if (observing) return;
-            observing = true; _host.RenderBackendChanged += RefreshBackend;
+            observing = true; PreviewBackendChanged += RefreshBackend;
             RefreshBackend(); refresh.Start();
         };
         preferGpu.Unloaded += (_, _) =>
         {
             if (!observing) return;
-            observing = false; refresh.Stop(); _host.RenderBackendChanged -= RefreshBackend;
+            observing = false; refresh.Stop(); PreviewBackendChanged -= RefreshBackend;
         };
         return preferGpu;
     }

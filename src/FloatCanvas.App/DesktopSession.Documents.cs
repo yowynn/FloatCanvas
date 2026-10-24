@@ -27,6 +27,7 @@ internal sealed partial class DesktopSession
     private readonly Dictionary<EditorSession, DocumentFileState> _documentFiles = [];
     private DispatcherTimer? _documentRecoveryTimer;
     private Task _documentRecoveryTask = Task.CompletedTask;
+    private readonly SemaphoreSlim _documentRecoveryGate = new(1, 1);
     private string? _documentRecoveryFingerprint;
     private DateTime _documentRecoveryLastWriteUtc;
     private bool _documentRecoveryFlushing;
@@ -164,36 +165,52 @@ internal sealed partial class DesktopSession
     private async Task FlushRecoveryAsync()
     {
         _documentRecoveryTimer?.Stop();
-        await _documentRecoveryTask;
-        if (_documentStopped) return;
-        if (_documentRecoveryWritesBlocked) await PreserveRecoveryGenerationsAsync();
-        PruneDocumentResources();
+        await _documentRecoveryGate.WaitAsync(_documentLifetime.Token);
+        try
+        {
+            await _documentRecoveryTask;
+            if (_documentStopped) return;
+            if (_documentRecoveryWritesBlocked) await PreserveRecoveryGenerationsAsync();
+            PruneDocumentResources();
+            // Claim the complete check/write sequence before its first await.
+            _documentRecoveryTask = CheckAndWriteRecoveryAsync();
+            try { await _documentRecoveryTask; }
+            finally { if (_documentRecoveryTask.IsCompleted) _documentRecoveryTask = Task.CompletedTask; }
+        }
+        finally { _documentRecoveryGate.Release(); }
+    }
+    private async Task CheckAndWriteRecoveryAsync()
+    {
         var snapshot = SnapshotWorkspace();
-        string fingerprint = WorkspaceFingerprint(snapshot);
-        if (fingerprint == _documentRecoveryFingerprint || !RecoveryHistory.ShouldWrite(snapshot)) return;
-        _documentRecoveryTask = WriteRecoveryAsync();
-        try { await _documentRecoveryTask; }
-        finally { if (_documentRecoveryTask.IsCompleted) _documentRecoveryTask = Task.CompletedTask; }
+        string fingerprint = await Task.Run(() => WorkspaceFingerprint(snapshot), _documentLifetime.Token);
+        if (fingerprint == _documentRecoveryFingerprint || !await RecoveryHistory.ShouldWriteAsync(snapshot, _documentLifetime.Token)) return;
+        await WriteRecoveryAsync();
     }
     private async Task WriteRecoveryAsync()
     {
         await RecoveryHistory.PreserveBeforeFirstWriteAsync(_documentLifetime.Token);
         // The archive can take time. Capture current committed content and resources after it completes.
         var snapshot = SnapshotWorkspace();
-        if (!RecoveryHistory.ShouldWrite(snapshot)) return;
-        string fingerprint = WorkspaceFingerprint(snapshot);
-        await SaveRecoverySnapshotAsync(snapshot);
+        var writeInfo = RecoveryHistory.CreateCurrentInfoWriter(snapshot, FileState(Active).Path);
+        var resources = RecoveryResourceSnapshot(snapshot);
+        var animationTime = _renderer.AnimationTime;
+        if (!await RecoveryHistory.ShouldWriteAsync(snapshot, _documentLifetime.Token)) return;
+        string fingerprint = await Task.Run(() => WorkspaceFingerprint(snapshot), _documentLifetime.Token);
+        await SaveRecoverySnapshotAsync(snapshot, resources, animationTime);
         _documentRecoveryLastWriteUtc = DateTime.UtcNow;
-        RecoveryHistory.WriteCurrentInfo(snapshot, FileState(Active).Path);
+        await Task.Run(writeInfo, _documentLifetime.Token);
         _documentRecoveryFingerprint = fingerprint;
         RecoveryHistory.WorkspaceSaved();
     }
 
-    private Task SaveRecoverySnapshotAsync(WorkspaceState snapshot)
-    {
-        var animationTime = _renderer.AnimationTime;
-        var resources = snapshot.LiveDocument.ReferencedAssets.Concat(snapshot.CaptureDocument?.ReferencedAssets ?? [])
+    private AssetResource[] RecoveryResourceSnapshot(WorkspaceState snapshot) =>
+        snapshot.LiveDocument.ReferencedAssets.Concat(snapshot.CaptureDocument?.ReferencedAssets ?? [])
             .Distinct().Select(_assets.Get).ToArray();
+
+    private Task SaveRecoverySnapshotAsync(WorkspaceState snapshot, AssetResource[]? capturedResources = null, TimeSpan? capturedTime = null)
+    {
+        var animationTime = capturedTime ?? _renderer.AnimationTime;
+        var resources = capturedResources ?? RecoveryResourceSnapshot(snapshot);
         var token = _documentLifetime.Token;
         return Task.Run(async () =>
         {

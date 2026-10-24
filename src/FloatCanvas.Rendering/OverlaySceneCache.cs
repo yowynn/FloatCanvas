@@ -6,7 +6,7 @@ using SkiaSharp;
 namespace FloatCanvas.Rendering;
 
 /// <summary>
-/// UI-thread raster cache for translation-only monitor tiles. Revision and transaction stamps are supplied
+/// Single-thread raster cache for translation-only monitor tiles. Revision and transaction stamps are supplied
 /// by the editor. Static prefix/suffix remain in z order around one continuous dynamic span.
 /// Does not own the supplied SceneRenderer. Export continues to use the uncached renderer.
 /// </summary>
@@ -45,9 +45,11 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
     /// controls afterward. Live BGRA premultiplied tiles can apply group opacity directly to these
     /// pixels with the same byte rounding as SaveLayer; all other cases use the ordinary Draw path.
     /// The caller must not snapshot or access the surface concurrently with this call.
+    /// An optional stable sceneIdentity allows detached snapshots to reuse cached static spans.
+    /// Its revision, transaction and dynamic-span contract must match the ordinary Draw contract.
     /// </summary>
     public void DrawOnClearedRasterTarget(SKSurface surface, SceneDocument document, AssetLibrary assets, long sceneRevision,
-        long transactionId, int dynamicFirst = -1, int dynamicLast = -1, bool bypassCache = false)
+        long transactionId, int dynamicFirst = -1, int dynamicLast = -1, bool bypassCache = false, object? sceneIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(document); ArgumentNullException.ThrowIfNull(assets);
@@ -60,7 +62,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
             eligible = format is not null &&
                 format.ColorType == SKColorType.Bgra8888 && format.AlphaType == SKAlphaType.Premul;
         }
-        if (!DrawCore(surface.Canvas, document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, bypassCache, eligible)) return;
+        if (!DrawCore(surface.Canvas, document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, bypassCache, eligible, sceneIdentity)) return;
         surface.Canvas.Flush();
         using var pixels = surface.PeekPixels() ?? throw new InvalidOperationException(L.Get("Overlay.RasterTargetUnreadable"));
         // The preceding caller Clear and scene draw have already detached any older snapshots.
@@ -84,7 +86,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
 
     // Returns true only when the cache composed raw annotation alpha for the raster caller.
     private bool DrawCore(SKCanvas canvas, SceneDocument document, AssetLibrary assets, long sceneRevision,
-        long transactionId, int dynamicFirst, int dynamicLast, bool bypassCache, bool inPlaceOpacity)
+        long transactionId, int dynamicFirst, int dynamicLast, bool bypassCache, bool inPlaceOpacity, object? sceneIdentity = null)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(canvas); ArgumentNullException.ThrowIfNull(document); ArgumentNullException.ThrowIfNull(assets);
@@ -108,7 +110,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         var grid = document.Canvas.Grid;
         var appearance = new CanvasKey(mapping.PlaneToScreen, mapping.GridOrigin, mapping.GridCellSize,
             document.Canvas.BackgroundColor, grid.Visible, grid.Color, grid.Width, grid.Pattern);
-        var key = new ContentKey(document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, document.Elements.Count, document.Viewport, appearance);
+        var key = new ContentKey(sceneIdentity ?? document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, document.Elements.Count, document.Viewport, appearance);
         if (content != key) { Invalidate(); content = key; }
         clock++;
         if (!tiles.TryGetValue(tile, out var entry))
@@ -216,7 +218,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         if (disposed) return;
         Invalidate(); disposed = true;
     }
-    private readonly record struct ContentKey(SceneDocument Document, AssetLibrary Assets, long Revision, long Transaction, int First, int Last, int Count, RectD Viewport, CanvasKey Canvas);
+    private readonly record struct ContentKey(object Document, AssetLibrary Assets, long Revision, long Transaction, int First, int Last, int Count, RectD Viewport, CanvasKey Canvas);
     private readonly record struct CanvasKey(Projective2D Projection, PointD Origin, double CellSize, uint Background,
         bool GridVisible, uint GridColor, double GridWidth, StrokePattern Pattern);
     private readonly record struct TileKey(SKRectI Bounds, float TranslateX, float TranslateY);

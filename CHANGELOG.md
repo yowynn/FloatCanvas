@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 将画布、网格和图像效果预览移到独立线程；忙碌时合并中间输入，完成后读取最新快照，最终值保留。选择框、透视手柄与输入留在界面线程，CPU／GPU 预览资源独立管理；后台恢复记录的内容哈希和元数据写入同样移出界面线程。
+- Render canvas, grid and image-effect previews on a dedicated thread. Coalesce intermediate input and capture the latest state after each frame, including the final value. Keep selection guides, perspective handles and input on the UI thread, with independent CPU/GPU resources. Move recovery hashing and metadata writes off the UI thread as well.
+
 - 层级恢复不再争抢后来出现的同层置顶窗口；截图等界面可覆盖画布，丢失置顶状态时在既有置顶窗口后恢复工具与画布顺序。
 - Respect later topmost peers during overlay-order recovery, allowing screenshot UI above the canvas and restoring lost topmost state behind existing peers while preserving tool order.
 

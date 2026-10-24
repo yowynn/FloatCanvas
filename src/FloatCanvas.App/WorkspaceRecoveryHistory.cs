@@ -25,9 +25,18 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     private static bool HasObjects(WorkspaceState workspace) => workspace.LiveDocument.Elements.Count > 0 ||
         workspace.LiveDocument.Background is not null || workspace.CaptureDocument is not null;
     public void WriteCurrentInfo(WorkspaceState workspace, string? sourceFile)
+        => CreateCurrentInfoWriter(workspace, sourceFile)();
+    // Capture the entry identity on UI; hashing and file IO can then run on a worker
+    // without reading mutable recovery policy after a canvas switch.
+    public Action CreateCurrentInfoWriter(WorkspaceState workspace, string? sourceFile)
     {
         var path = Path.Combine(store.DirectoryPath, "history-info.json");
-        WriteInfo(path, new(ContentFingerprint(workspace), sourceFile, HasNewVersion(workspace)));
+        var baseline = entryBaseline;
+        return () =>
+        {
+            string fingerprint = ContentFingerprint(workspace);
+            WriteInfo(path, new(fingerprint, sourceFile, fingerprint != baseline && HasValue(workspace)));
+        };
     }
     private static void WriteInfo(string path, HistoryInfo info)
     {
@@ -123,6 +132,12 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     public void WorkspaceRestored() => freshBaseline = null;
     public void WorkspaceSaved() => freshBaseline = null;
     public bool ShouldWrite(WorkspaceState workspace) => freshBaseline is null || ContentFingerprint(workspace) != freshBaseline;
+    public Task<bool> ShouldWriteAsync(WorkspaceState workspace, CancellationToken token = default)
+    {
+        var baseline = freshBaseline;
+        return baseline is null ? Task.FromResult(true) :
+            Task.Run(() => ContentFingerprint(workspace) != baseline, token);
+    }
 
     public async Task PreserveBeforeFirstWriteAsync(CancellationToken ct = default)
     {

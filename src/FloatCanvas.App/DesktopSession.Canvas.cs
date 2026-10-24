@@ -519,20 +519,8 @@ internal sealed partial class DesktopSession
             var projection=Active.Document.Canvas.Projection;
             if(CanvasCalibration.TryCalibrate(projection,quad,Active.Document.Viewport,out var preview,out _))
             {
-                int saved = canvas.Save();
-                try
-                {
-                    using var clipBuilder = new SKPathBuilder();
-                    clipBuilder.MoveTo((float)quad[0].X, (float)quad[0].Y);
-                    foreach (var point in quad.Skip(1)) clipBuilder.LineTo((float)point.X, (float)point.Y);
-                    clipBuilder.Close();
-                    using var clip = clipBuilder.Detach(); canvas.ClipPath(clip);
-                    var scene = new SceneDocument { Viewport = Active.Document.Viewport,
-                        Canvas = new CanvasSettings { Projection = preview } };
-                    _renderer.Draw(canvas, scene, _assets, includeBackground: false,
-                        includeCanvasBackground: false, calibrationReference: true);
-                }
-                finally { canvas.RestoreToCount(saved); }
+                // The grid is rendered from a detached snapshot on the preview worker.
+                // Only the current contour, anchors and origin remain in this UI draw.
                 previewOrigin=CanvasGridGeometry.ReferenceCenter(preview);
                 line.StrokeWidth=2;line.Color=new(35,131,226);
             }

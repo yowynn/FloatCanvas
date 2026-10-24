@@ -23,6 +23,7 @@ internal static class WorkspaceRecoveryHistoryTests
         var history = new WorkspaceRecoveryHistory(store);
         var fresh = new WorkspaceState();
         history.BeginFreshWorkspace(fresh);
+        assert("background recovery decisions retain the blank baseline", !await history.ShouldWriteAsync(fresh));
         assert("blank startup and exit do not authorize recovery writes", !history.ShouldWrite(fresh));
         fresh.LiveDocument.Viewport = new(-1920, 0, 3840, 1440);
         fresh.LiveDocument.DisplayLayout = [new() { DeviceName = "changed monitor", Bounds = fresh.LiveDocument.Viewport }];
@@ -32,6 +33,7 @@ internal static class WorkspaceRecoveryHistoryTests
         assert("old workspace is available for manual recovery before any new edits", history.GetEntries().Count == 1 && history.GetEntries()[0].IsCurrent);
 
         fresh.LiveDocument.Elements.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 80 });
+        assert("background recovery decisions recognize committed content", await history.ShouldWriteAsync(fresh));
         assert("first new committed content authorizes recovery", history.ShouldWrite(fresh));
         await history.PreserveBeforeFirstWriteAsync().ConfigureAwait(false);
         await store.SaveAsync(fresh, new()).ConfigureAwait(false);
