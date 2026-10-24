@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 颜色窗口改为左右布局：左侧调色，右侧显示最近使用和我的色板，每排保持十个；移除标题下方的额外描边，标题栏只保留关闭按钮。
+- Arrange color adjustments on the left and recent/personal swatches on the right, retaining ten swatches per row. Remove the extra line below the caption and keep only Close in the color caption.
+
 - 颜色子窗口只使用应用主题资源，不再继承并搬走来源窗口的标题按钮或帮助内容。
 - Keep source caption buttons and help in their own window when opening a color child, using application theme resources for the child.
 

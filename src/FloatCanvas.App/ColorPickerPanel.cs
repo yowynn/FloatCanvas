@@ -8,7 +8,7 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>Detached popup content: role colors, exact custom ARGB, shared history and removable pins.</summary>
+/// <summary>Color adjustments beside ten-column recent and personal swatches.</summary>
 internal sealed class ColorPickerPanel : UserControl
 {
     private readonly ColorLibrary library;
@@ -45,15 +45,26 @@ internal sealed class ColorPickerPanel : UserControl
         this.library = library;
         SetResourceReference(BackgroundProperty, "CanvasSurface");
         SetResourceReference(ForegroundProperty, "CanvasText");
-        // Reserve scrollbar space outside the ten-column color grid, even when it appears.
-        var body = new StackPanel { MinWidth = 298 + SystemParameters.VerticalScrollBarWidth, Margin = new Thickness(12) };
+        var body = new StackPanel { Width = 300, VerticalAlignment = VerticalAlignment.Top };
+        // Reserve scrollbar space outside the ten-column grid, even when it appears.
+        var collections = new StackPanel { MinWidth = 298 + SystemParameters.VerticalScrollBarWidth,
+            VerticalAlignment = VerticalAlignment.Top };
+        var columns = new Grid { Margin = new Thickness(12) };
+        columns.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        columns.ColumnDefinitions.Add(new() { Width = new GridLength(24) });
+        columns.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        columns.Children.Add(body);
+        var divider = new Border { Width = 1, HorizontalAlignment = HorizontalAlignment.Center };
+        divider.SetResourceReference(Border.BackgroundProperty, "CanvasBorder");
+        Grid.SetColumn(divider, 1); columns.Children.Add(divider);
+        Grid.SetColumn(collections, 2); columns.Children.Add(collections);
         var title = new TextBlock { Text = L.Get(role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
         DragHandle = title;
         body.Children.Add(title);
-        body.Children.Add(historyHeading); body.Children.Add(history);
+        collections.Children.Add(historyHeading); collections.Children.Add(history);
         var savedHeader = new DockPanel(); var save = IconButton(PanelActionIcon.Add, "Color.SaveSwatch", SaveSwatch);
-        DockPanel.SetDock(save, Dock.Right); savedHeader.Children.Add(save); savedHeader.Children.Add(pinnedHeading); body.Children.Add(savedHeader);
-        body.Children.Add(new ScrollViewer { Content = pinned, Height = 84, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        DockPanel.SetDock(save, Dock.Right); savedHeader.Children.Add(save); savedHeader.Children.Add(pinnedHeading); collections.Children.Add(savedHeader);
+        collections.Children.Add(new ScrollViewer { Content = pinned, Height = 180, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         body.Children.Add(Heading("Color.Custom"));
         body.Children.Add(spectrum);
         AutomationProperties.SetName(hue, L.Get("Color.Hue"));
@@ -79,7 +90,7 @@ internal sealed class ColorPickerPanel : UserControl
         body.Children.Add(actions);
         error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); body.Children.Add(error);
         AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
-        Content = new ScrollViewer { Content = body, MaxHeight = 520, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Content = new ScrollViewer { Content = columns, MaxHeight = 520, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         hex.TextChanged += (_, _) =>
         {
             if (syncing) return;

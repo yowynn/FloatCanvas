@@ -64,7 +64,7 @@ internal sealed class ColorField : UserControl
         picker = new ColorPickerPanel(role, this.library);
         picker.DialogOwner = () => Window.GetWindow(picker) ?? Window.GetWindow(this);
         picker.DragHandle.Visibility = Visibility.Collapsed;
-        var border = new Border { Child = new System.Windows.Documents.AdornerDecorator { Child = picker }, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
+        var border = new Border { Child = new System.Windows.Documents.AdornerDecorator { Child = picker } };
         border.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         var popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };

@@ -27,7 +27,7 @@ internal static class PaletteLayoutTests
                     PixelSpacing(scale, metric.Columns, metric.Size, metric.Gap, check);
             DpiChange(check);
             var colors = new ColorLibrary(Path.Combine(folder, "colors.json"));
-            for (uint i = 0; i < 32; i++)
+            for (uint i = 0; i < 72; i++)
             {
                 uint color = 0xFF000000 | (i * 7919 & 0xFFFFFF);
                 colors.Save("Color " + i, color); colors.Remember(color);
@@ -63,15 +63,17 @@ internal static class PaletteLayoutTests
         string name = $"{theme} {scale * 100:0}% {role} popup";
         var field = new ColorField(role, new ColorLibrary(Path.Combine(folder, "empty-footer-colors.json")));
         var root = (FrameworkElement)field.PickerRoot;
+        check(name + " has no duplicate border below the window caption", root is Border { BorderThickness.Top: 0 });
         var picker = Field<ColorPickerPanel>(field, "picker");
         var error = Field<TextBlock>(picker, "error");
         var hex = Field<TextBox>(picker, "hex");
-        var body = (StackPanel)((ScrollViewer)picker.Content).Content;
+        var columns = (Grid)((ScrollViewer)picker.Content).Content;
+        var body = columns.Children.OfType<StackPanel>().First();
         var actions = body.Children.OfType<WrapPanel>().Single();
         Layout(root, scale);
         double normalHeight = root.ActualHeight;
         check(name + " has only normal padding below its final actions", error.Visibility == Visibility.Collapsed &&
-            root.ActualHeight - Bounds(actions, root).Bottom <= body.Margin.Bottom + 2);
+            root.ActualHeight - Bounds(actions, root).Bottom <= columns.Margin.Bottom + 2);
 
         hex.Text = "invalid color";
         typeof(ColorPickerPanel).GetMethod("Apply", Private)!.Invoke(picker, null);
@@ -86,7 +88,7 @@ internal static class PaletteLayoutTests
             error.Text.Contains("fixture write failed") && root.ActualHeight > normalHeight);
         picker.Value = 0xFF123456; Layout(root, scale);
         check(name + " releases error space after resynchronizing valid input", error.Visibility == Visibility.Collapsed &&
-            Near(root.ActualHeight, normalHeight) && root.ActualHeight - Bounds(actions, root).Bottom <= body.Margin.Bottom + 2);
+            Near(root.ActualHeight, normalHeight) && root.ActualHeight - Bounds(actions, root).Bottom <= columns.Margin.Bottom + 2);
     }
 
     private static void PixelSpacing(double scale, int columns, double size, double gap, Action<string, bool> check)
@@ -140,6 +142,9 @@ internal static class PaletteLayoutTests
         check(name + " current-color pixels leave no button-background band inside the outline", chrome is not null && colorRuns.Count > 0 &&
             Math.Abs(colorRuns[0].Start - chrome.BorderThickness.Left * scale) <= 1);
         var picker = new ColorPickerPanel(ColorRole.Foreground, colors); Layout(picker, scale);
+        check(name + " places color adjustments to the left of both swatch collections",
+            Bounds(Field<ColorSpectrum>(picker, "spectrum"), picker).Right + 12 <= Bounds(Field<PixelTilePanel>(picker, "history"), picker).Left &&
+            Bounds(Field<PixelTilePanel>(picker, "history"), picker).Left == Bounds(Field<PixelTilePanel>(picker, "pinned"), picker).Left);
         check(name + " detached color picker resolves the theme text color", picker.Foreground is SolidColorBrush actualText &&
             Application.Current.FindResource("CanvasText") is SolidColorBrush expectedText && actualText.Color == expectedText.Color);
         var history = Field<Panel>(picker, "history"); var pinned = Field<Panel>(picker, "pinned");
