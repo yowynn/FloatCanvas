@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 保留个人预设蓝点的滚动区顶部空间，同时对齐官方／个人预设的标题到首行间距。
+- Keep room above personal presets for modification dots while matching the official and personal heading-to-tile spacing.
+
 - 颜色窗口改为左右布局：左侧调色，右侧显示最近使用和我的色板，每排保持十个；移除标题下方的额外描边，标题栏只保留关闭按钮。
 - Arrange color adjustments on the left and recent/personal swatches on the right, retaining ten swatches per row. Remove the extra line below the caption and keep only Close in the color caption.
 

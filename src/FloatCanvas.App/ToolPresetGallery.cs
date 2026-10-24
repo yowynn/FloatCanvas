@@ -40,7 +40,8 @@ internal sealed class ToolPresetGallery : UserControl
         officialHeader.Children.Add(Heading("ToolOptions.Official"));
         headings.Children.Add(officialHeader); headings.Children.Add(OfficialTiles);
         DockPanel.SetDock(headings, Dock.Top); body.Children.Add(headings);
-        var userHeader = new DockPanel { Height = 34, Margin = new(0, 12, 0, 4) };
+        // Three of the four gap DIPs sit inside the viewport so the modification dot is not clipped.
+        var userHeader = new DockPanel { Height = 34, Margin = new(0, 12, 0, 1) };
         var save = ActionIconButton.Create(PanelActionIcon.Add, L.Get("ToolOptions.NewPresetHint"), Save);
         DockPanel.SetDock(save, Dock.Right); userHeader.Children.Add(save); userHeader.Children.Add(Heading("ToolOptions.User")); headings.Children.Add(userHeader);
         userArea.Children.Add(empty);
