@@ -217,7 +217,7 @@ internal static class AppTheme
                 <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                   RecognizesAccessKey="True" ContentSource="Content"/>
               </Border>
-              <Ellipse x:Name="ModifiedDot" Width="4" Height="4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="1"
+              <Ellipse x:Name="ModifiedDot" Width="8" Height="8" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-3,0,0"
                        Fill="{DynamicResource CanvasAccent}" Visibility="Collapsed" IsHitTestVisible="False" UseLayoutRounding="True"/>
             </Grid>
             <ControlTemplate.Triggers>

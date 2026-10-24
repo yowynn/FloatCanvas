@@ -45,8 +45,9 @@ internal static class PresetSelectionAppearanceTests
                     tile.SetSelected(true, modified: true); Layout(root, scale);
                     var modified = Raster(root, scale);
                     var dotBounds = new Rect(dot.TranslatePoint(new Point(), root), dot.RenderSize);
-                    check(name + " places a small accent dot in the border corner outside the preview", dot.Visibility == Visibility.Visible && !dot.IsHitTestVisible &&
-                        dotBounds.Width <= 4.01 && dotBounds.Height <= 4.01 && dotBounds.Right <= root.ActualWidth && dotBounds.Top >= 0 &&
+                    check(name + " centers a larger accent dot on the upper border outside the preview", dot.Visibility == Visibility.Visible && !dot.IsHitTestVisible &&
+                        dotBounds.Width >= 7 && dotBounds.Height >= 7 && dotBounds.Right <= root.ActualWidth + 1 &&
+                        dotBounds.Top < 0 && Math.Abs(dotBounds.Top + dotBounds.Height / 2 - 1) <= 1 &&
                         !dotBounds.IntersectsWith(previewBounds) && Equals(dot.Fill, app.Resources["CanvasAccent"]));
                     check(name + " modified chrome keeps the original preview pixels and accessible state", SamePreview(before, modified, previewBounds, scale) &&
                         AutomationProperties.GetItemStatus(tile) == L.Get("Audit.SelectedModified"));

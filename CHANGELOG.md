@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 放大预设参数修改蓝点并将其中心移到上边框；为个人预设首行预留空间，避免圆点被滚动区域裁切。
+- Enlarge the preset-modification dot and center it on the upper border, reserving space above personal presets to avoid clipping.
+
 - 统一点选与框选的可见像素判断，排除文字留白、图片透明区域及空心内部；已选框内部可拖动，单图层选框随旋转。印章保留已有选框；文字工具仍单击编辑、拖边框移动。
 - Unify selection around visible ink, excluding empty text, transparent image regions and hollow interiors. Move selected layers from frame interiors and rotate single-layer frames; retain Stamp selection frames and Text-tool click editing with border dragging.
 
