@@ -79,7 +79,7 @@ internal sealed partial class DesktopSession
 
     private async Task InsertSnapshotAsync(CaptureSelection selection)
     {
-        if (_snapshotCaptureRequest is not null || !_host.IsEditing || !_host.IsVisible || Active.Document.Kind != DocumentKind.LiveOverlay)
+        if (_snapshotCaptureRequest is not null || !_host.IsEditing || Active.Document.Kind != DocumentKind.LiveOverlay)
         {
             _diagnostics.Write("Snapshot.BeginRejected", new { _host.IsEditing, _host.IsVisible, Kind = Active.Document.Kind });
             return;
@@ -92,7 +92,7 @@ internal sealed partial class DesktopSession
         {
             string? rejection = _disposed ? "Disposed" : _documentStopped ? "Stopped" : _documentExitRequested ? "ApplicationExit" :
                 !ReferenceEquals(_snapshotCaptureRequest, request) ? "Superseded" : request.ContentRejection(Active) ??
-                (!_host.IsVisible ? "CanvasHidden" : !_host.IsEditing ? "NotEditing" :
+                (!_host.IsEditing ? "NotEditing" :
                 _windowCoordinator?.CanContinue(new(request.EditingVersion, true, Active.Document), Active.Document) != true ? "SessionOrForegroundChanged" : null);
             if (rejection is null) return true;
             LogSnapshot(request, "InsertRejected", rejection);
@@ -108,7 +108,7 @@ internal sealed partial class DesktopSession
             // release its gesture capture before a clean-capture carrier acquires it.
             await Dispatcher.Yield(DispatcherPriority.Input);
             if (!CanInsert()) return;
-            var snapshot = Active.CreateCommittedSnapshot();
+            var snapshot = _host.IsVisible ? Active.CreateCommittedSnapshot() : HiddenCanvasPreview().Clone();
             // Capture and rendering use the same raw opacity, including invisible live effects.
             snapshot.LayerOpacity = 1;
             var resources = ResourceSnapshot(snapshot);

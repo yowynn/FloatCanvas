@@ -9,9 +9,8 @@ internal sealed partial class DesktopSession
 {
     private bool CanAddCanvasContent()
     {
-        if (_host.IsVisible) return true;
-        UpdateStatus(L.Get("Feedback4.Canvas.Hidden"));
-        return false;
+        UpdateHiddenCanvasState();
+        return true;
     }
 
     private void ToggleCanvasVisibility()
@@ -25,6 +24,7 @@ internal sealed partial class DesktopSession
         _editor.Cancel();
         CloseImageDrop();
         _host.SetVisible(!_host.IsVisible);
+        UpdateHiddenCanvasState();
         SynchronizeCanvasTool();
         RefreshPassThroughLauncher();
         UpdateStatus(L.Get(_host.IsVisible ? "Feedback4.Canvas.Visible" : "Feedback4.Canvas.Hidden"));

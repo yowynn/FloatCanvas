@@ -16,11 +16,11 @@ internal sealed class CanvasGridScaleController
     private bool previewChanged;
     public bool IsDragging => document is not null;
 
-    public bool Down(EditorSession value, PointD point, RectD referenceViewport)
+    public bool Down(EditorSession value, PointD point, RectD referenceViewport, bool hitExistingContent = true)
     {
         if (IsDragging || value.IsTransactionActive || value.Document.Canvas.Projection.Enabled ||
             !double.IsFinite(point.X) || !double.IsFinite(point.Y) || !value.Document.Viewport.Contains(point) ||
-            value.Document.LayerOpacity > 0 && value.Document.Elements.Any(element =>
+            hitExistingContent && value.Document.LayerOpacity > 0 && value.Document.Elements.Any(element =>
                 element.Style.Opacity > 0 && ElementGeometry.HitTest(element, point))) return false;
         session = value; document = value.Document; reference = referenceViewport;
         initialCanvas = document.Canvas.Clone(); previewChanged = false;

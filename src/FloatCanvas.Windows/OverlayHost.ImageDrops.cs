@@ -50,7 +50,7 @@ public sealed partial class OverlayHost
         CheckThread(); failure = null;
         if (IsReceivingDrop) return true;
         if (imageDropRegistrations is null || imageDropRegistrations.Targets.Count != _windows.Count || _windows.Count == 0 ||
-            IsEditing || IsKeyboardIsolationActive || _captureActive || !IsVisible)
+            IsEditing || IsKeyboardIsolationActive || _captureActive)
         { failure = L.Get("ImageDropHost.Unavailable"); return false; }
         IsReceivingDrop = true;
         try

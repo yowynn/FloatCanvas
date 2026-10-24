@@ -68,7 +68,7 @@ internal sealed partial class DesktopSession
 
     private bool ReceiveCanvasImageDrop(OleDataObject data, OverlayPoint point)
     {
-        if (_disposed || !_host.IsVisible || DocumentOperationBusy || (!_host.IsEditing && !_host.IsReceivingDrop)) return false;
+        if (_disposed || DocumentOperationBusy || (!_host.IsEditing && !_host.IsReceivingDrop)) return false;
         _editor.Cancel();
         var request = _imageDropRequest;
         if (request is null)
@@ -104,7 +104,7 @@ internal sealed partial class DesktopSession
     {
         try
         {
-            if (_disposed || !_host.IsVisible || !request.IsCurrent(_imageDropRequest, _live, _capture) ||
+            if (_disposed || !request.IsCurrent(_imageDropRequest, _live, _capture) ||
                 GetToolbarForegroundWindow() != sourceForeground) return;
             _host.EndDropReception();
             // This runs only after the native Drop callback has returned to OLE.
@@ -113,12 +113,12 @@ internal sealed partial class DesktopSession
             var images = await NormalizeCanvasDropAsync(payload, request.Token);
             if (_editor.BillboardMode && Active.Document.Canvas.Projection.Enabled)
             {
-                if (_disposed || _documentStopped || !_host.IsVisible || images.Count == 0 ||
+                if (_disposed || _documentStopped || images.Count == 0 ||
                     !request.TryCompleteDeferred(_imageDropRequest, _live, _capture)) return;
                 if (!InsertImages(request.Target, images, false)) SwitchToolState(EditorTool.Select);
                 return;
             }
-            if (_disposed || _documentStopped || !_host.IsVisible || !request.TryCommit(_imageDropRequest, _live, _capture, images)) return;
+            if (_disposed || _documentStopped || !request.TryCommit(_imageDropRequest, _live, _capture, images)) return;
             if (ReferenceEquals(Active, request.Target)) SwitchToolState(EditorTool.Select);
             ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("ImageDrop.Imported", images.Count));
         }

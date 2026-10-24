@@ -53,6 +53,8 @@ public sealed partial class OverlayHost : IDisposable
 
     public bool IsEditing { get; private set; }
     public bool IsVisible { get; private set; } = true;
+    /// <summary>Only transient editing guides or a new draft are being presented over a hidden canvas.</summary>
+    public bool IsPreviewVisible { get; private set; }
     public OverlayMonitorScope Scope { get; private set; }
     public string? SelectedMonitorDevice { get; private set; }
     public IReadOnlyList<MonitorInfo> AvailableMonitors => _availableMonitors;
@@ -316,6 +318,7 @@ public sealed partial class OverlayHost : IDisposable
     private void SetVisibleCore(bool visible)
     {
         IsVisible = visible;
+        IsPreviewVisible = false;
         // A hidden canvas may have been cleared, replaced or undone. Submit the
         // current scene before showing retained layered-window pixels again.
         if (visible) Render();
@@ -331,11 +334,26 @@ public sealed partial class OverlayHost : IDisposable
         if (visible) RequestWindowOrderCheck();
     }
 
+    /// <summary>Shows transient preview pixels without changing the user's canvas visibility preference.</summary>
+    public void SetPreviewVisible(bool visible)
+    {
+        CheckThread();
+        if (IsPreviewVisible == visible) return;
+        IsPreviewVisible = visible;
+        if (IsVisible) return;
+        if (visible) Render();
+        foreach (var pair in _windows)
+        {
+            if (visible) ShowWindowPreservingZOrder(pair.Display.Handle);
+            else ShowWindow(pair.Display.Handle, 0);
+        }
+    }
+
     /// <summary>Renders only when requested. Canvas coordinates are global desktop physical pixels.</summary>
     public void Render(IReadOnlyList<PixelBounds>? dirtyRegions = null)
     {
         CheckThread();
-        if (!IsVisible || _rendering) return;
+        if ((!IsVisible && !IsPreviewVisible) || _rendering) return;
         _rendering = true;
         var started = Stopwatch.GetTimestamp();
         var observer = FrameSubmitted;

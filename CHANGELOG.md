@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 闭眼编辑时允许新增内容和调整画布，只预览当前新内容；提交后自动睁眼并选中新图层，取消保留闭眼。隐藏旧图层无法被选择或修改，插图、文字、截图和效果入口不再因闭眼被禁止。
+- Allow creation and canvas adjustment while hidden, previewing only the new content. Reveal and select after commit, or remain hidden after cancellation. Protect hidden existing layers and allow image, text, capture and effect insertion entry points.
+
 - 创建新图层的点击不再成为打开属性的双击首击；Ctrl 双击可连续创建两个序号等预设图层。
 - Keep creation clicks out of properties double-click pairing, allowing Ctrl-double-click to create two numbered or preset layers.
 

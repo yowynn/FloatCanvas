@@ -50,7 +50,7 @@ internal sealed partial class DesktopSession
             window.DepthPriorityOcclusionChanged += enabled =>
             {
                 ApplyCanvasDepthPriorityOcclusion(Active, window.DisplayedSettings, enabled,
-                    !DocumentOperationBusy && _host.IsVisible && _host.IsEditing, ChangeCanvas);
+                    !DocumentOperationBusy && _host.IsEditing, ChangeCanvas);
                 window.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
             };
             window.GridCountsChanged += SetCanvasGridCounts;
@@ -144,7 +144,7 @@ internal sealed partial class DesktopSession
 
     private void ResetCanvasProjectionOnDisplay(string? device)
     {
-        if (DocumentOperationBusy || !_host.IsVisible || !_host.IsEditing) return;
+        if (DocumentOperationBusy || !_host.IsEditing) return;
         RememberCanvasReferenceDisplay(_settings, device);
         ResetCanvasProjection(ResolveCanvasReferenceBounds(_host.Monitors, device, default, _editor.ScreenOrigin, Active.Document.Viewport));
         RefreshCanvasReferenceMonitors();
@@ -191,7 +191,7 @@ internal sealed partial class DesktopSession
 
     private void ChangeCanvas(Action<CanvasSettings> change)
     {
-        if (DocumentOperationBusy || !_host.IsVisible || !_host.IsEditing) return;
+        if (DocumentOperationBusy || !_host.IsEditing) return;
         _canvasGridScale.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel();
         CancelSnapshotCapture("CanvasSettingsChanged"); CancelLivePreparation();
         Active.Execute(L.Get("Canvas.Title"), document => change(document.Canvas));
@@ -229,7 +229,7 @@ internal sealed partial class DesktopSession
 
     private void ApplyCanvasPreset(CanvasPresetParameters parameters)
     {
-        if (DocumentOperationBusy || !_host.IsVisible || !_host.IsEditing) return;
+        if (DocumentOperationBusy || !_host.IsEditing) return;
         CanvasSettings preset;
         try
         {
@@ -305,7 +305,7 @@ internal sealed partial class DesktopSession
 
     private void BeginCanvasCalibration()
     {
-        if (DocumentOperationBusy || !_host.IsVisible || !_host.IsEditing) return;
+        if (DocumentOperationBusy || !_host.IsEditing) return;
         _editor.Cancel(); CloseImageDrop(); CancelSnapshotCapture("CanvasCalibration"); CancelLivePreparation();
         SetCanvasProjection(true);
         if (!Active.Document.Canvas.Projection.Enabled) return;
@@ -325,7 +325,7 @@ internal sealed partial class DesktopSession
 
     private void BeginCanvasFourPoints()
     {
-        if(DocumentOperationBusy||!_host.IsVisible||!_host.IsEditing)return;
+        if(DocumentOperationBusy||!_host.IsEditing)return;
         _editor.Cancel();CloseImageDrop();CancelSnapshotCapture("CanvasFourPoints");CancelLivePreparation();
         if (_editor.Tool != EditorTool.Canvas) SwitchToolState(EditorTool.Canvas);
         _calibrationSession=Active;
@@ -346,7 +346,7 @@ internal sealed partial class DesktopSession
         _synchronizingCanvasTool = true;
         try
         {
-            bool selected = _editor.Tool == EditorTool.Canvas && _host.IsEditing && _host.IsVisible &&
+            bool selected = _editor.Tool == EditorTool.Canvas && _host.IsEditing &&
                 !_disposed && !_editor.IsTemporaryMove && (!DocumentOperationBusy || _canvasCalibration.IsAwaitingResolution);
             if (!selected)
             {
@@ -386,7 +386,7 @@ internal sealed partial class DesktopSession
         var point = new PointD(e.Position.X - _editor.ScreenOrigin.X, e.Position.Y - _editor.ScreenOrigin.Y);
         if (e.Kind == OverlayPointerKind.Cancel) _canvasGridScale.Cancel();
         else if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
-            _canvasGridScale.Down(Active, point, PrimaryCanvasReferenceViewport());
+            _canvasGridScale.Down(Active, point, PrimaryCanvasReferenceViewport(), hitExistingContent: _host.IsVisible);
         else if (e.Kind == OverlayPointerKind.Move) _canvasGridScale.Move(point);
         else if (e.Kind == OverlayPointerKind.Up && e.Button == OverlayMouseButton.Left)
         { _canvasGridScale.Move(point); _canvasGridScale.Up(); }

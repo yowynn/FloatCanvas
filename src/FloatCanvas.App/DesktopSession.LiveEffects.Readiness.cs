@@ -27,7 +27,7 @@ internal sealed partial class DesktopSession
         _liveBackdropMonitors.SequenceEqual(_host.Monitors);
 
     private bool IsLivePreparationCurrent(LiveEffectPreparation pending) =>
-        _host.IsVisible && pending.Tool == _editor.Tool && CanFinishEffect(pending.Request);
+        pending.Tool == _editor.Tool && CanFinishEffect(pending.Request);
 
     private void ClearLiveBackdrop()
     {

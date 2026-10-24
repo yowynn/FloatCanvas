@@ -47,7 +47,9 @@ internal sealed partial class DesktopSession
             else if (e.Kind == OverlayPointerKind.Up && e.Button == OverlayMouseButton.Left) _canvasCalibration.Up();
             _propertiesClicks?.Reset(); return;
         }
-        if (DocumentOperationBusy || !_host.IsVisible) { _propertiesClicks?.Reset(); return; }
+        UpdateHiddenCanvasState();
+        if (DocumentOperationBusy) { _propertiesClicks?.Reset(); return; }
+        if (!_host.IsVisible && !EditorController.IsCreationTool(_editor.Tool) && _editor.Tool is not (EditorTool.Canvas or EditorTool.Stamp or EditorTool.Blur or EditorTool.Pixelate)) return;
         if (e.Button == OverlayMouseButton.Middle && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && !_editor.IsTemporaryMove)
         {
             using var middleDestination = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
@@ -244,7 +246,7 @@ internal sealed partial class DesktopSession
         _editor.Cancel(); _layersWanted = !_layersWanted;
         if (_layers is null)
         {
-            _layers = new LayersWindow(() => Active, () => !DocumentOperationBusy);
+            _layers = new LayersWindow(() => Active, () => !DocumentOperationBusy && _host.IsVisible);
             ConfigureAppWindow(_layers);
             _layers.CommandKey += OnKey;
             _windowCoordinator?.Register(_layers, () => true);

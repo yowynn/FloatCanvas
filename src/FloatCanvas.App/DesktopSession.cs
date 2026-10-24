@@ -128,6 +128,7 @@ internal sealed partial class DesktopSession : IDisposable
         document.NextNumber = _editor.NumberStart;
         _editor.Changed += () =>
         {
+            UpdateHiddenCanvasState();
             if (_eyedropper is null) _host.SetPointerCursor(_editor.IsPointerBlocked ? Forms.Cursors.No.Handle : 0);
             ValidateCanvasCalibrationSession();
             if (_liveEffectPreparation is { } pending && pending.Tool != _editor.Tool) CancelLivePreparation();
@@ -376,6 +377,7 @@ internal sealed partial class DesktopSession : IDisposable
         else { _toolbar.Hide(); _inspector?.Hide(); _layers?.Hide(); _stampWindow?.Hide(); CloseToolOptions(); EndEyedropper(restore: false); }
         RefreshPassThroughLauncher();
         SynchronizeCanvasTool();
+        UpdateHiddenCanvasState();
         RequestRender();
         return true;
     }
@@ -440,7 +442,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (!pixelsOnly) SyncLiveEffectsCapture();
             // GPU readback is worthwhile for filter computation, while the raster cache
             // is faster for ordinary shapes and small animated images on the current host.
-            var document = Active.Document;
+            var document = _host.IsVisible ? Active.Document : HiddenCanvasPreview();
             bool ImageFilter(CanvasElement element) => element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
                 SceneRenderer.ProjectedBounds(document, element).Intersects(document.Viewport) &&
                 element.Effects.Any(effect => effect.Kind is ImageEffectKind.Blur or ImageEffectKind.Pixelate);
@@ -559,6 +561,7 @@ internal sealed partial class DesktopSession : IDisposable
         }
         var ctrl = (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0;
         var shift = (OverlayHost.CurrentModifiers & OverlayModifiers.Shift) != 0;
+        if (!_host.IsVisible && ctrl && key is 0x41 or 0x43 or 0x44 or 0x47) return;
         if (key == 0x1B)
         {
             if (_eyedropper is not null) { EndEyedropper(); UpdateStatus(L.Get("Color.SampleCancelled")); }
@@ -656,7 +659,9 @@ internal sealed partial class DesktopSession : IDisposable
         var canvas = surface.Canvas;
         canvas.Save(); canvas.Translate((float)_editor.ScreenOrigin.X,(float)_editor.ScreenOrigin.Y);
         var preview = _editor.RasterPreview;
-        if (_host.IsEditing && (_editor.Tool == EditorTool.Canvas || _canvasCalibration.IsActive))
+        if (!_host.IsVisible)
+            _renderer.Draw(canvas, HiddenCanvasPreview(), _assets, calibrationReference: _editor.Tool == EditorTool.Canvas);
+        else if (_host.IsEditing && (_editor.Tool == EditorTool.Canvas || _canvasCalibration.IsActive))
             _renderer.Draw(canvas, Active.Document, _assets, calibrationReference: true, includeGrid: !_canvasCalibration.IsPlacing);
         else _overlayCache.DrawOnClearedRasterTarget(surface,Active.Document,_assets,Active.SceneRevision,Active.TransactionId,
             preview.First,preview.Last,preview.BypassCache || _canvasCalibration.IsDragging);
@@ -691,7 +696,7 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.Cancel(); _inspectorWanted = !_inspectorWanted;
         if (_inspector == null)
         {
-            _inspector = new InspectorWindow(() => Active, () => !DocumentOperationBusy) { Owner = _toolbar };
+            _inspector = new InspectorWindow(() => Active, () => !DocumentOperationBusy && _host.IsVisible) { Owner = _toolbar };
             ConfigureAppWindow(_inspector);
             _inspector.CommandKey += OnKey;
             _inspector.EyedropperRequested += BeginEyedropper;

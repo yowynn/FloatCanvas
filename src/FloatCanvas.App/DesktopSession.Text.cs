@@ -30,9 +30,11 @@ internal sealed partial class DesktopSession
         edit.PlacementRejected+=()=>UpdateStatus(FloatCanvas.Localization.AppText.Get("Perspective.InputOutsidePlane"));
         _inlineBillboardDepth = depth;
         _inlineText=edit;
+        UpdateHiddenCanvasState();
         edit.Changed+=()=>
         {
             _inlineCaretVisible=true;
+            UpdateHiddenCanvasState();
             _inlineCaretTimer?.Stop();_inlineCaretTimer?.Start();RequestRender();
         };
         edit.Finished+=()=>
@@ -40,6 +42,7 @@ internal sealed partial class DesktopSession
             if(!ReferenceEquals(_inlineText,edit))return;
             _inlineText=null;_inlineBillboardDepth=null;_inlineCaretTimer?.Stop();
             var input=_canvasTextInput;_canvasTextInput=null;input?.Dispose();
+            UpdateHiddenCanvasState();
             RequestRender();
         };
         try

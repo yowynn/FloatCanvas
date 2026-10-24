@@ -84,6 +84,7 @@ internal sealed partial class EditorController
 
     private CanvasElement? HitTestScreen(PointD point, double tolerance)
     {
+        if (CanvasContentHidden) return null;
         if (!CanvasDepthOrder.IsEnabled(Session.Document)) return Session.Document.Elements
             .LastOrDefault(element => !element.Locked && ElementHitTestScreen(element, point, tolerance));
         using var renderer = new SceneRenderer { AnimationTime = AnimationTime };
@@ -99,6 +100,7 @@ internal sealed partial class EditorController
 
     private void SelectScreenRectangle(RectD rectangle, bool additive)
     {
+        if (CanvasContentHidden) return;
         var mapping = CanvasMapping.Create(Session.Document);
         var selected = additive ? new HashSet<Guid>(Session.Selection) : [];
         foreach (var element in Session.Document.Elements.Where(e => e.Visible && !e.Locked))

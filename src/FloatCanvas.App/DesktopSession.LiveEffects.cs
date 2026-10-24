@@ -32,8 +32,8 @@ internal sealed partial class DesktopSession
         if (_liveEffectPreparation is { } pending && !IsLivePreparationCurrent(pending)) CancelLivePreparation();
         if (_desktopBackdrop is not null && !IsLiveBackdropCompatible()) ClearLiveBackdrop();
         bool hasEffects = SceneRenderer.HasLiveEffects(Active.Document);
-        bool needed = !_disposed && _cleanCaptureDepth == 0 && _host.IsVisible && Active.Document.Kind == DocumentKind.LiveOverlay &&
-            (hasEffects || _liveEffectPreparation is not null);
+        bool needed = !_disposed && _cleanCaptureDepth == 0 && Active.Document.Kind == DocumentKind.LiveOverlay &&
+            (_host.IsVisible && hasEffects || _liveEffectPreparation is not null);
         if (!needed)
         {
             if (!_disposed && !_host.IsVisible && _cleanCaptureDepth == 0 && hasEffects && IsLiveBackdropCompatible())

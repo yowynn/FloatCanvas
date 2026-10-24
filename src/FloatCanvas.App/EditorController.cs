@@ -17,6 +17,7 @@ internal enum EditorTool
 internal sealed partial class EditorController
 {
     public EditorSession Session { get; private set; }
+    internal bool CanvasContentHidden { get; set; }
     private EditorTool tool = EditorTool.Freehand;
     public EditorTool Tool
     {
@@ -110,7 +111,7 @@ internal sealed partial class EditorController
     internal static bool UsesDefaultSize(EditorTool value) => value is
         EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol;
     internal bool ShouldShowSelection(OverlayModifiers modifiers) =>
-        (InteractionTool == EditorTool.Select || IsCreationTool(InteractionTool)) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
+        !CanvasContentHidden && (InteractionTool == EditorTool.Select || IsCreationTool(InteractionTool)) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
 
     /// <summary>The contiguous z-order span whose pixels can change during this pointer gesture.</summary>
     public (int First, int Last, bool BypassCache) RasterPreview
@@ -366,6 +367,7 @@ internal sealed partial class EditorController
 
     private bool IsWithinCurrentSelection(PointD point)
     {
+        if (CanvasContentHidden) return false;
         if (Session.SelectionBounds() is not { } bounds || !Session.SelectedElements().Any(e => e.Visible && !e.Locked)) return false;
         bool body = Session.SelectedElements().Any(e => e.IsBillboard) ?
             Session.SelectedElements().Any(e => ElementHitTestScreen(e, pointerScreen, 4)) ||
@@ -378,6 +380,7 @@ internal sealed partial class EditorController
 
     internal bool IsSelectionFrameHit(PointD screen)
     {
+        if (CanvasContentHidden) return false;
         if (!Session.SelectedElements().Any(element => element.Visible && !element.Locked)) return false;
         if (SelectionScreenRotationHandle is { } rotation && screen.DistanceTo(rotation) < 14 ||
             BillboardSelectionGuide is { } guide && screen.DistanceTo(guide.Center) < 12 ||

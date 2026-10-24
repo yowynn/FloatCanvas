@@ -86,6 +86,7 @@ internal static class Program
             if (args.Contains("--phase2-save-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-save"); return 0; }
             if (args.Contains("--phase2-focus-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-focus"); return 0; }
             if (args.Contains("--phase2-creation-click-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-creation-click"); return 0; }
+            if (args.Contains("--phase2-hidden-canvas-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-hidden"); return 0; }
             if (args.Contains("--input-method-ui-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "input-method-ui"); return 0; }
             if (args.Contains("--temporary-move-controller-only")) { TemporaryMoveControllerTests.Run(Assert); return 0; }
             if (args.Contains("--selection-shortcut-regression-only")) { SelectionShortcutRegressionTests.Run(Assert); return 0; }
