@@ -70,6 +70,7 @@ internal static class HistoryRestoreRoutingFixture
         }
         bool entryEditing = scenario != "history-pass-through";
         if (!entryEditing) typeof(DesktopSession).GetMethod("SetEditing", Private)!.Invoke(session, [false, false]);
+        if (!entryEditing) typeof(DesktopSession).GetMethod("OpenWelcome", Private)!.Invoke(session, [true]);
         Process? external = null; nint externalHandle = 0;
         if (scenario == "history-external")
         {
@@ -83,6 +84,12 @@ internal static class HistoryRestoreRoutingFixture
         }
         int stage = 0; Exception? dialogFailure = null;
         Task? nativeSave = null; string savePath = Path.Combine(run, "current-before-restoration.floatcanvas");
+        if (scenario != "history-pass-through")
+        {
+            Await(new ProjectStore().SaveAsync(savePath, new SceneDocument(), new AssetLibrary()));
+            var binding = typeof(DesktopSession).GetMethod("FileState", Private)!.Invoke(session, [editor.Session])!;
+            binding.GetType().GetField("Path")!.SetValue(binding, savePath);
+        }
         var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(40) };
         var deadline = DateTime.UtcNow.AddSeconds(10);
         timer.Tick += (_, _) =>
@@ -98,13 +105,21 @@ internal static class HistoryRestoreRoutingFixture
                     snapshot("history-chooser-opened");
                     check("history restore opens the actual populated production chooser", Descendants(chooser).OfType<ListBox>().Single().Items.Count > 0 && host.IsEditing == entryEditing && host.IsKeyboardIsolationActive == entryEditing);
                     stage = 1;
-                    Click(Descendants(chooser).OfType<Button>().Single(button => button.IsDefault));
+                    if (scenario == "history-pass-through")
+                    {
+                        check("opening history closes the manually opened welcome window", Field<Window?>(session, "_welcomeWindow") is null);
+                        var list = Descendants(chooser).OfType<ListBox>().Single();
+                        var item = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(list.SelectedIndex);
+                        list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,
+                            Environment.TickCount, System.Windows.Input.MouseButton.Left) { RoutedEvent = Control.MouseDoubleClickEvent, Source = item });
+                    }
+                    else Click(Descendants(chooser).OfType<Button>().Single(button => button.IsDefault));
                     return;
                 }
                 if (stage == 1)
                 {
                     var confirmation = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w.Title == L.Get("App.Name") &&
-                        Descendants(w).OfType<Button>().Any(button => Equals(button.Content, L.Get("Dialog.No"))));
+                        Descendants(w).OfType<Button>().Any(button => Equals(button.Content, L.Get("History.KeepLeave"))));
                     if (confirmation is null) return;
                     snapshot("history-unsaved-confirmation-opened");
                     check("history replacement reaches the actual unsaved confirmation without changing its entry mode", host.IsEditing == entryEditing && host.IsKeyboardIsolationActive == entryEditing);
@@ -120,7 +135,7 @@ internal static class HistoryRestoreRoutingFixture
                         Wait(() => GetForegroundWindow() == externalHandle && !host.IsEditing, "external foreground release");
                         snapshot("history-external-foreground-before-late-confirmation");
                     }
-                    string key = scenario == "history-cancel" ? "Dialog.Cancel" : scenario == "history-save" ? "Dialog.Yes" : "Dialog.No";
+                    string key = scenario == "history-cancel" ? "Dialog.Cancel" : scenario == "history-save" ? "History.SaveLeave" : "History.KeepLeave";
                     stage = 2;
                     Click(Descendants(confirmation).OfType<Button>().Single(button => Equals(button.Content, L.Get(key))));
                     return;
@@ -153,7 +168,7 @@ internal static class HistoryRestoreRoutingFixture
             nativeSave?.GetAwaiter().GetResult();
             if (dialogFailure is not null) throw dialogFailure;
             Pump(200); snapshot("history-restore-completed");
-            check("history fixture completes its actual production dialog sequence", stage == (scenario == "history-save" ? 3 : 2));
+            check("history fixture completes its actual production dialog sequence", stage == (scenario == "history-pass-through" ? 1 : 2));
             if (scenario == "history-cancel")
                 check("cancelling history replacement preserves the current document", editor.Session.Document.Elements.Select(element => element.Id).SequenceEqual([original.Id]));
             else if (scenario is not ("history-mode-exit" or "history-external"))
@@ -163,8 +178,8 @@ internal static class HistoryRestoreRoutingFixture
                 var saved = new ProjectStore().LoadAsync(savePath).GetAwaiter().GetResult();
                 check("choosing save writes the actual pre-restoration document into only this fixture directory", saved.Document.Elements.Select(element => element.Id).SequenceEqual([original.Id]));
             }
-            bool expectedEditing = entryEditing && scenario is not ("history-mode-exit" or "history-external");
-            check("history restore preserves the chosen mode and matching toolbar visibility", host.IsEditing == expectedEditing && toolbar.IsVisible == expectedEditing && toolbar.IsEnabled);
+            bool expectedEditing = scenario == "history-cancel" ? entryEditing : scenario is not ("history-mode-exit" or "history-external");
+            check("successful history restoration enters editing with its toolbar", host.IsEditing == expectedEditing && toolbar.IsVisible == expectedEditing && toolbar.IsEnabled);
             check("history restore keeps the matching actual keyboard lease without native mouse capture", host.IsKeyboardIsolationActive == expectedEditing && host.CaptureHandle == 0);
             if (scenario == "history-external") check("late history completion leaves the external receiver in foreground", GetForegroundWindow() == externalHandle);
         }

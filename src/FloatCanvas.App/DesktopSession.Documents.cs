@@ -209,6 +209,8 @@ internal sealed partial class DesktopSession
     private async Task RestoreWorkspaceHistoryAsync()
     {
         if (DocumentOperationBusy || _windowCoordinator is not { } coordinator) return;
+        _welcomeManual = false;
+        _welcomeWindow?.Close();
         _inspector?.CompletePendingEdit();
         var request = new WindowSessionRequest(_host.EditingSessionVersion, _host.IsEditing, _live.Document);
         CloseImageDrop();
@@ -247,6 +249,10 @@ internal sealed partial class DesktopSession
             RecoveryHistory.EnterWorkspace(SnapshotWorkspace());
             _documentRecoveryFingerprint = null;
             OnMonitorsChanged();
+            // The chosen history entry becomes the current editable workspace.
+            // Enter before awaiting recovery IO; later callbacks must not reacquire input.
+            _host.SetVisible(true);
+            SetEditing(true);
             await FlushRecoveryAsync();
             RequestRender();
             UpdateStatus(L.Get(_host.IsEditing ? "Recovery.RestoredEditing" : "Recovery.RestoredPassThrough"));

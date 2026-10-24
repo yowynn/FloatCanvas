@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 历史画布支持双击列表项恢复；打开历史时关闭欢迎界面，成功恢复后显示画布并进入编辑模式。
+- Restore canvas history by double-clicking an entry; close Welcome when opening history and enter editing with the restored canvas visible after success.
+
 - 手动关闭工具配置后重置固定状态；退出编辑时记住打开的固定窗口并在下次进入时恢复，图层窗口始终按固定窗口处理。窗口层级遵循最近焦点及父子关系，标题按钮统一为帮助、固定、关闭。
 - Reset tool-options pins on manual close; restore open pinned windows on the next editing session and treat Layers as pinned. Stack windows by recent focus and ownership, with Help, Pin and Close in caption order.
 

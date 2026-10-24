@@ -39,6 +39,13 @@ internal sealed class WorkspaceHistoryWindow : Window
         var restore = new Button { Content = L.Get("Recovery.Restore"), IsDefault = true, MinWidth = 90,
             IsEnabled = false, Padding = new(12, 6, 12, 6), Margin = new(0, 0, 8, 0) };
         restore.Click += (_, _) => DialogResult = SelectedEntry is not null;
+        list.MouseDoubleClick += (_, e) =>
+        {
+            if (e.ChangedButton != System.Windows.Input.MouseButton.Left || !restore.IsEnabled ||
+                e.OriginalSource is not DependencyObject source || ItemsControl.ContainerFromElement(list, source) is not ListBoxItem) return;
+            e.Handled = true;
+            restore.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, restore));
+        };
         list.SelectionChanged += (_, _) => restore.IsEnabled = SelectedEntry is not null;
         buttons.Children.Add(restore);
         buttons.Children.Add(new Button { Content = L.Get("Recovery.Cancel"), IsCancel = true, MinWidth = 90, Padding = new(12, 6, 12, 6) });
