@@ -487,7 +487,7 @@ internal sealed partial class EditorController
         }
         if (gesture == null && selectedOnly && bounds is not null)
         { selectionBounds = bounds.Value; gesture = "move"; }
-        if (gesture == "move" && !selectedOnly && modifiers == OverlayModifiers.None &&
+        if (gesture == "move" && !temporaryMove && !selectedOnly && modifiers == OverlayModifiers.None &&
             HitTestScreen(pointerScreen, 7) is { } foreground && !Session.Selection.Contains(foreground.Id))
             selectionOnClick = Session.SelectionUnitIds(foreground.Id).ToArray();
         if (gesture == null)
