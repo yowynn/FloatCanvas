@@ -111,7 +111,7 @@ internal static class TileDragReorderTests
         var library = new ColorLibrary(Path.Combine(folder, "colors.json"));
         var firstColor = library.Save("A", 0xFF112233); library.Save("B", 0xFF445566);
         var field = new ColorField(ColorRole.Foreground, library);
-        var popup = (Popup)typeof(ColorField).GetField("popup", Private)!.GetValue(field)!;
+        var popup = (PopupHandle)typeof(ColorField).GetField("popupDisplay", Private)!.GetValue(field)!;
         try
         {
             window.Content = field; Pump(); popup.IsOpen = true; Pump();

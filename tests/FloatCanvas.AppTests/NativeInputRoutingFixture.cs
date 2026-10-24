@@ -304,7 +304,7 @@ internal static class NativeInputRoutingFixture
                 }
 
                 var foreground = Field<ColorField>(panel, "foreground");
-                var colorPopup = Field<Popup>(foreground, "popup");
+                var colorPopup = Field<PopupHandle>(foreground, "popupDisplay");
                 var picker = Field<ColorPickerPanel>(foreground, "picker");
                 bool hexResult = true, hueResult = true, spectrumResult = true;
                 OpenColor();
@@ -462,7 +462,7 @@ internal static class NativeInputRoutingFixture
         var options = Field<Window>(session, "_toolOptionsWindow");
         var panel = Field<ToolOptionsPanel>(session, "_toolOptionsPanel");
         var field = Field<ColorField>(panel, "foreground");
-        var child = Field<Popup>(field, "popup");
+        var child = Field<PopupHandle>(field, "popupDisplay");
         var picker = Field<ColorPickerPanel>(field, "picker");
         var parentInput = Field<Dictionary<string, TextBox>>(panel, "numbers")["StrokeWidth"];
         check("tool options are a visible independently owned window", options.IsVisible && options.Owner == toolbar && host.IsEditing && toolbar.IsVisible);

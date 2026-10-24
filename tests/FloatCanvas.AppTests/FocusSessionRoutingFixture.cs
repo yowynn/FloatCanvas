@@ -287,7 +287,7 @@ internal static class FocusSessionRoutingFixture
                 Pump(75);
                 var panel = Field<ToolOptionsPanel>(session, "_toolOptionsPanel");
                 var color = Field<ColorField>(panel, "foreground");
-                var popup = Field<Popup>(color, "popup");
+                var popup = Field<PopupHandle>(color, "popupDisplay");
                 Field<Button>(color, "button").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(100);
                 Snapshot("color-child-opened");
                 check("production parameter and color child are simultaneously open", options.IsVisible && popup.IsOpen && host.IsEditing && host.IsKeyboardIsolationActive);

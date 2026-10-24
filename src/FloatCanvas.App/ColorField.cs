@@ -18,7 +18,6 @@ internal sealed class ColorField : UserControl
     private readonly System.Windows.Controls.Button button = new() { MinHeight = 34, Padding = new Thickness(6, 4, 6, 4) };
     private readonly Grid swatch = new() { IsHitTestVisible = false };
     private readonly TextBlock label = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 10, FontWeight = FontWeights.SemiBold };
-    private readonly Popup popup;
     private readonly PopupHandle popupDisplay;
     private readonly ColorPickerPanel picker;
     private bool pickerSessionOpen, draftCommitted, pickerSessionChanged, isMixed;
@@ -62,13 +61,14 @@ internal sealed class ColorField : UserControl
             AutomationProperties.SetName(tile, color.Name); tile.Click += (_, _) => SetUserValue(color.Value); palette.Children.Add(tile);
         }
         Content = row;
-        picker = new ColorPickerPanel(role, this.library) { DialogOwner = () => Window.GetWindow(this) };
+        picker = new ColorPickerPanel(role, this.library);
+        picker.DialogOwner = () => Window.GetWindow(picker) ?? Window.GetWindow(this);
+        picker.DragHandle.Visibility = Visibility.Collapsed;
         var border = new Border { Child = new System.Windows.Documents.AdornerDecorator { Child = picker }, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
         border.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
-        popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
+        var popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };
-        popupDisplay=new(popup) { TargetPressToggles = true };
-        PopupDrag.Attach(picker.DragHandle, popupDisplay);
+        popupDisplay=new(popup, L.Get(role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background")) { TargetPressToggles = true };
         PopupChildDialog.Attach(border, popupDisplay.Key);
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && TryClosePicker()) e.Handled = true; };
         border.PreviewKeyDown += (_, e) =>

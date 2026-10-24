@@ -119,37 +119,35 @@ internal static class ColorPopupOwnershipTests
     }
     private static void ColorActionBubbling(Grid owner, Action<string, bool> check)
     {
+        var panel = new Grid();
+        var host = new Window { Content = panel, Width = 450, Height = 150, ShowActivated = false, ShowInTaskbar = false };
         var field = new ColorField(ColorRole.Foreground, new ColorLibrary(Path.Combine(ApplicationPaths.ProfileDirectory, "popup-bubbling-colors.json")));
-        owner.Children.Add(field); Layout(owner);
+        panel.Children.Add(field); host.Show(); Layout(panel);
         var display = (PopupHandle)typeof(ColorField).GetField("popupDisplay", Private)!.GetValue(field)!;
-        var popup = (OverlayPopup)display.Key;
         var trigger = (Button)typeof(ColorField).GetField("button", Private)!.GetValue(field)!;
-        var content = (Border)popup.Child!; var original = content.Child;
+        var content = (Border)display.Child!; var original = content.Child;
         var action = new Button { Content = "Nested color action" }; content.Child = action;
         int routed = 0;
         trigger.AddHandler(Button.ClickEvent, new RoutedEventHandler((_, e) =>
         { if (ReferenceEquals(e.OriginalSource, action)) routed++; }), true);
-        // The routed-event path is built before handlers run. Detach only its
-        // presentation here so a regression cannot show a native popup in this fixture.
-        action.Click += (_, _) => popup.Child = null;
         try
         {
             foreach (bool open in new[] { false, true })
             {
-                popup.Child = null; popup.IsOpen = open; popup.Child = content;
+                display.IsOpen = open;
                 int before = routed;
                 action.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, action));
-                check("nested color action really bubbles through the overlay placement target", routed == before + 1);
+                check("a regular color window keeps child actions outside its source button route", routed == before);
                 check(open ? "returning from a nested color action leaves its owner popup open" :
                     "a color action cannot reopen an already-closed owner popup", field.IsPickerOpen == open);
             }
-            popup.Child = null; popup.IsOpen = false;
+            display.IsOpen = false;
             trigger.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, trigger));
             check("the actual color trigger still toggles its own picker", field.IsPickerOpen);
         }
         finally
         {
-            field.ClosePicker(); content.Child = original; popup.Child = content; owner.Children.Remove(field);
+            field.ClosePicker(); content.Child = original; host.Close();
         }
     }
     private static bool Press(UIElement target)

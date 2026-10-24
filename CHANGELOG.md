@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 颜色面板改为带标题栏、拖动与关闭按钮的常规所属窗口；新建／重命名色板的模态窗口直接归属颜色窗口，点击来源面板关闭二级窗口并保留该次点击。
+- Present colors in a regular owned window with caption dragging and Close. Own swatch naming dialogs from that window, and close the secondary panel on a source-panel press without consuming the press.
+
 - 放大预设参数修改蓝点并将其中心移到上边框；为个人预设首行预留空间，避免圆点被滚动区域裁切。
 - Enlarge the preset-modification dot and center it on the upper border, reserving space above personal presets to avoid clipping.
 
