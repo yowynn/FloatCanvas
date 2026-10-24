@@ -24,6 +24,7 @@ internal static class Program
             if (args.Contains("--audit-data-only")) { DataRemediationTests.Run(Assert); return 0; }
             if (args.Contains("--audit-ux-only")) { AuditUxTests.Run(Assert); return 0; }
             if (args.Contains("--preset-history-only")) { PresetHistoryTests.Run(Assert); PresetHistoryKeyboardTests.Run(Assert); return 0; }
+            if (args.Contains("--text-double-click-only")) { TextDoubleClick(); return 0; }
             if (args.Contains("--audit-ux-preview")) { AuditUxPreview.Run(); return 0; }
             if (args.Contains("--audit-engineering-only")) { EngineeringAuditTests.Run(Assert); UpdateInstallerTests.Run(Assert); UpdateCacheTests.Run(Assert); return 0; }
             if (args.Contains("--update-cache-only")) { UpdateCacheTests.Run(Assert); return 0; }
@@ -508,8 +509,16 @@ internal static class Program
         var session = Session(); var text = new CanvasElement { Kind = ElementKind.Text, Text = "中文文字", Width = 160, Height = 70, Transform = Affine2D.Translation(50, 70) }; session.Add(text);
         var controller = new EditorController(session) { Tool = EditorTool.Select }; Guid? edited = null;
         controller.PropertiesRequested += _ => edited = session.Selection.SingleOrDefault();
-        Down(controller, new(110, 100)); Move(controller, new(115, 105));
-        controller.Pointer(new(OverlayPointerKind.DoubleClick, new(110, 100), OverlayMouseButton.Left, OverlayModifiers.None));
+        using var renderer = new SceneRenderer(); using var pixels = Decode(renderer.ExportPng(session.Document, session.Assets, true));
+        // Use rendered glyph ink; the former fixed point could fall in Chinese glyph whitespace.
+        PointD? ink = null;
+        for (int y = 80; y < 140 && ink is null; y++)
+            for (int x = 60; x < 210; x++)
+                if (pixels.GetPixel(x, y).Alpha > 0) { ink = new(x, y); break; }
+        Assert("text properties fixture targets rendered glyph ink", ink.HasValue);
+        var point = ink!.Value;
+        Down(controller, point); Move(controller, point + new PointD(5, 5));
+        controller.Pointer(new(OverlayPointerKind.DoubleClick, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None));
         Assert("text double click cancels transform before opening properties", edited == text.Id && !session.IsTransactionActive && session.Document.Elements.Single().Transform == text.Transform);
         var number = new CanvasElement { Kind = ElementKind.Number, Number = 5, Width = 40, Height = 40, Transform = Affine2D.Translation(250, 50) }; session.Add(number);
         controller.Pointer(new(OverlayPointerKind.DoubleClick, new(270, 70), OverlayMouseButton.Left, OverlayModifiers.None));

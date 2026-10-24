@@ -66,10 +66,9 @@ internal static class InspectorColorTests
                 requested!.SetUserValue(0x7F102030); inspector.Refresh();
                 check(language + " sampled colors apply immediately", colors["Fill"].Value == 0x7F102030 &&
                     session.Document.Elements.Single().Style.Fill == 0x7F102030 && library.History.Contains(0x7F102030u));
-                var popup = Field<Primitives.Popup>(colors["Fill"], "popup");
                 var escape = new Input.KeyEventArgs(Input.Keyboard.PrimaryDevice, new DetachedPresentationSource(), 0, Input.Key.Escape)
                     { RoutedEvent = Input.Keyboard.PreviewKeyDownEvent };
-                ((Wpf.UIElement)popup.Child).RaiseEvent(escape);
+                ((Wpf.UIElement)colors["Fill"].PickerRoot).RaiseEvent(escape);
                 check(language + " popup Escape is consumed without losing the pending paint draft", escape.Handled &&
                     colors["Fill"].Value == 0x7F102030 && session.Document.Elements.Single().Style.Fill == 0x7F102030);
                 check(language + " closed picker does not consume a parent's next Escape", !colors["Fill"].TryClosePicker());
