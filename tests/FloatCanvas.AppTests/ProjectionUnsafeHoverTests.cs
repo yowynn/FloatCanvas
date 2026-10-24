@@ -34,11 +34,17 @@ internal static class ProjectionUnsafeHoverTests
         typeof(OverlayHost).GetProperty("IsVisible")!.SetValue(host, true);
         var session = (DesktopSession)RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
         using var renderer = new SceneRenderer();
-        using var cache = new OverlaySceneCache(renderer);
         var calibration = new CanvasCalibrationController();
         Set(session, "_app", app); Set(session, "_host", host); Set(session, "_editor", editor);
-        Set(session, "_assets", state.Assets); Set(session, "_renderer", renderer); Set(session, "_overlayCache", cache);
+        Set(session, "_assets", state.Assets); Set(session, "_renderer", renderer);
         Set(session, "_canvasCalibration", calibration);
+        // This fixture verifies UI adorners only. The independent preview worker publishes empty tiles.
+        using var preview = new CanvasPreviewPump(app.Dispatcher, () => new()
+        {
+            Context = (CanvasPreviewContext)Invoke(session, "CurrentPreviewContext")!,
+            SceneIdentity = document, Document = new(), Resources = [], Outputs = []
+        }, snapshot => new(snapshot.Context, new([]), OverlayRenderBackend.Cpu, false, null, null, 0));
+        Set(session, "_canvasPreview", preview);
         // GetUninitializedObject bypasses the production collection initializer.
         var dirtyRegions = new List<PixelBounds>();
         Set(session, "_pixelDirtyRegions", dirtyRegions);

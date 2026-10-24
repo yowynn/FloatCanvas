@@ -136,7 +136,9 @@ internal static class CreationSelectionTests
         var nonCreationSession = new EditorSession();
         nonCreationSession.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60 });
         var plain = new EditorController(nonCreationSession);
-        foreach (var tool in new[] { EditorTool.Stamp, EditorTool.Eraser, EditorTool.Pixelate })
+        plain.Tool = EditorTool.Stamp;
+        check("Stamp displays an existing selection without making new stamps selected", plain.ShouldShowSelection(OverlayModifiers.None));
+        foreach (var tool in new[] { EditorTool.Eraser, EditorTool.Pixelate })
         { plain.Tool = tool; check(tool + " is not accidentally promoted to a creation selection mode", !plain.ShouldShowSelection(OverlayModifiers.None)); }
         plain.Tool = EditorTool.CaptureRegion;
         check("capture retains the current image and object adjustment contract", plain.ShouldShowSelection(OverlayModifiers.None));

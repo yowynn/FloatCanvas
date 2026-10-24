@@ -369,23 +369,24 @@ internal static partial class Program
             await Task.Delay(130); long frames = host.PresentedFrameCount;
             await Task.Delay(230); IdleFrames = host.PresentedFrameCount - frames;
             Check(IdleFrames == 0, "Static pass-through presents zero stale rendering frames");
-            long beforeBatch = host.PresentedFrameCount;
+            await WaitForPreview(session);
+            long beforeBatch = host.PresentedFrameCount, previewsBefore = PreviewProperty<long>(session, "CompletedFrames");
             for (int i = 0; i < 100; i++) Call(session, "RequestRender");
             Check(Property<bool>(session, "IsRenderPending"), "A batch of rendering requests schedules one pending dispatcher operation");
-            await Task.Delay(120);
-            Check(!Property<bool>(session, "IsRenderPending") && host.PresentedFrameCount - beforeBatch == host.Monitors.Count,
-                "One hundred rendering requests coalesce into exactly one complete multi-output presentation");
+            await WaitForPreview(session);
+            Check(PreviewProperty<long>(session, "CompletedFrames") == previewsBefore + 1 &&
+                host.PresentedFrameCount - beforeBatch is var presented && presented >= host.Monitors.Count && presented <= 2 * host.Monitors.Count,
+                "One hundred requests coalesce into one scene preview plus bounded UI-guide presentation");
             if (RasterOpacityProbe)
             {
-                var cache = Field<FloatCanvas.Rendering.OverlaySceneCache>(session, "_overlayCache");
-                long beforeOpacity = cache.InPlaceOpacityFrameCount;
+                long beforeOpacity = PreviewCacheMetric(session, "InPlaceOpacityFrameCount");
                 live.Execute("半透明光栅验收", d => d.LayerOpacity = .7);
-                await Task.Delay(80);
-                Check(cache.InPlaceOpacityFrameCount == beforeOpacity + host.Monitors.Count,
-                    "Production Host DIB callback uses exact in-place group opacity for every live monitor");
+                await WaitForPreview(session);
+                Check(PreviewCacheMetric(session, "InPlaceOpacityFrameCount") == beforeOpacity + host.Monitors.Count,
+                    "The production preview worker uses exact in-place group opacity for every live monitor");
                 Check(live.Undo() && live.Document.LayerOpacity == 1, "Opacity probe restores the original live document through undo");
-                await Task.Delay(80);
-                Check(cache.InPlaceOpacityFrameCount == beforeOpacity + host.Monitors.Count,
+                await WaitForPreview(session);
+                Check(PreviewCacheMetric(session, "InPlaceOpacityFrameCount") == beforeOpacity + host.Monitors.Count,
                     "Fully opaque production frames bypass the in-place alpha pass");
             }
             await CallAsync(session, "FlushRecoveryAsync");
@@ -625,6 +626,25 @@ internal static partial class Program
     private static EditorSession Active(object session) => Property<EditorSession>(session, "Active");
     private static T Field<T>(object instance, string name) => (T)DesktopType.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
     private static T Property<T>(object instance, string name) => (T)DesktopType.GetProperty(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
+    private static T PreviewProperty<T>(object session, string name)
+    {
+        var pump = Field<object>(session, "_canvasPreview");
+        return (T)pump.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(pump)!;
+    }
+    private static long PreviewCacheMetric(object session, string name)
+    {
+        var metrics = PreviewProperty<object>(session, "CacheMetrics");
+        return (long)metrics.GetType().GetProperty(name)!.GetValue(metrics)!;
+    }
+    private static async Task WaitForPreview(object session)
+    {
+        var timer = Stopwatch.StartNew();
+        while (Property<bool>(session, "IsRenderPending") || PreviewProperty<bool>(session, "Busy"))
+        {
+            if (timer.Elapsed.TotalSeconds > 15) throw new TimeoutException("The production preview did not settle.");
+            await Task.Delay(2);
+        }
+    }
     private static void SetProperty(object instance, string name, object value) => DesktopType.GetProperty(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(instance, value);
     private static object? Call(object instance, string name, params object?[] args)
     {

@@ -109,8 +109,7 @@ internal static partial class Program
         var state = new PresentationRunState { SequenceBase = PresentationCases.Count * PresentationMeasurements.SampleCapacity };
         long counterBefore = Host.PresentedFrameCount;
         var cacheBefore = ReadOverlayCache();
-        var overlayCache = Field<OverlaySceneCache>("_overlayCache");
-        long opacityFramesBefore = overlayCache.InPlaceOpacityFrameCount;
+        long opacityFramesBefore = ReadPreviewMetric("InPlaceOpacityFrameCount");
         var observed = new BoundedSamples<PresentationObservedMove>(PresentationMeasurements.SampleCapacity);
         var frames = new BoundedSamples<OverlayFrameTiming>(PresentationMeasurements.SampleCapacity);
         var rawMessages = new BoundedSamples<OverlayPointerMessageDiagnostic>(PresentationMeasurements.SampleCapacity);
@@ -205,8 +204,8 @@ internal static partial class Program
             Check(!frames.Overflowed && !observed.Overflowed, "Native frame and observed-input recording stayed bounded");
             Check(frames.Count > 0 && frames.Values.All(f => f.Succeeded && f.Outputs.Count == 1 && f.Outputs[0].Bounds == PresentationTile!.Bounds),
                 "Every recorded native Render call successfully submits exactly the intended 1920x1080 output");
-            Check(opacity < 1 ? overlayCache.InPlaceOpacityFrameCount > opacityFramesBefore :
-                overlayCache.InPlaceOpacityFrameCount == opacityFramesBefore, "The production raster-opacity branch matches the requested layer opacity");
+            Check(opacity < 1 ? ReadPreviewMetric("InPlaceOpacityFrameCount") > opacityFramesBefore :
+                ReadPreviewMetric("InPlaceOpacityFrameCount") == opacityFramesBefore, "The worker raster-opacity branch matches the requested layer opacity");
         }
         catch (Exception ex) { caseFailure = ex.ToString(); throw; }
         finally
@@ -248,7 +247,7 @@ internal static partial class Program
                 StaleTaggedMovesFromOtherCases = staleTaggedMoves,
                 MergeDefinition = "Sent tagged Move sequences in the measured window minus distinct matching production Move observations after final-input drain; includes coalesced or otherwise unobserved moves, not a hardware loss claim.",
                 CacheBefore = cacheBefore, CacheAfter = ReadOverlayCache(), Producer = producer,
-                InPlaceOpacityFrames = overlayCache.InPlaceOpacityFrameCount - opacityFramesBefore,
+                InPlaceOpacityFrames = ReadPreviewMetric("InPlaceOpacityFrameCount") - opacityFramesBefore,
                 LastInjectedPoint = producer is null ? null : new { producer.LastPoint.X, producer.LastPoint.Y },
                 ObservedMoves = observed.Values, FrameSamples = frames.Values,
                 NativeMessageEntries = rawMessages.Values, PointerDecisions = pointerDecisions.Values,

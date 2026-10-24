@@ -46,7 +46,7 @@ internal static partial class Program
         if (Field<DispatcherTimer?>("_documentRecoveryTimer") is { } recoveryTimer)
         { recoveryTimer.Stop(); recoveryTimer.Interval = TimeSpan.FromHours(1); PerformanceRecoveryIntervalSeconds = recoveryTimer.Interval.TotalSeconds; }
         Host = Field<OverlayHost>("_host"); Monitors = Host.Monitors;
-        // This reads the existing production object. No alternate rendering or production diagnostic API is installed.
+        // Read an immutable publication from the production preview worker.
         _ = ReadOverlayCache();
         var origin = Lower.ScreenPoint(190, 220);
         Anchor = new(origin.X + 60, origin.Y + 40);
@@ -210,7 +210,8 @@ internal static partial class Program
     private static async Task WaitForRenderToSettle()
     {
         await WaitPerformance(() => !(bool)(DesktopType.GetProperty("IsRenderPending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(Session)
-            ?? throw new InvalidOperationException("The production render scheduler's IsRenderPending property is unavailable.")),
+            ?? throw new InvalidOperationException("The production render scheduler's IsRenderPending property is unavailable.")) &&
+            !ReadPreviewProperty<bool>("Busy"),
             "A scheduled production render did not complete");
         await Task.Delay(20);
     }
@@ -225,12 +226,19 @@ internal static partial class Program
     }
     private static CacheCounters ReadOverlayCache()
     {
-        var field = DesktopType.GetField("_overlayCache", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("Production _overlayCache has not been integrated; performance mode requires that completed integration.");
-        var cache = field.GetValue(Session) ?? throw new InvalidOperationException("The production overlay cache is null.");
-        long Read(string name) => (long)(cache.GetType().GetProperty(name)?.GetValue(cache)
-            ?? throw new InvalidOperationException("Missing existing cache counter " + name));
+        long Read(string name) => ReadPreviewMetric(name);
         return new(Read("BuildCount"), Read("HitCount"), Read("CachedRasterBytes"), Read("RasterCacheByteLimit"));
+    }
+    private static T ReadPreviewProperty<T>(string name)
+    {
+        var pump = Field<object>("_canvasPreview");
+        return (T)(pump.GetType().GetProperty(name, System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!.GetValue(pump)!);
+    }
+    private static long ReadPreviewMetric(string name)
+    {
+        var metrics = ReadPreviewProperty<object>("CacheMetrics");
+        return (long)metrics.GetType().GetProperty(name)!.GetValue(metrics)!;
     }
     private static object ReadPerformanceHardware()
     {

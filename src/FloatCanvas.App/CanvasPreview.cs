@@ -33,10 +33,13 @@ internal sealed class CanvasPreviewSnapshot : IDisposable
 
 internal sealed record CanvasPreviewFrame(CanvasPreviewContext Context, PreviewRasterFrame Pixels,
     OverlayRenderBackend Backend, bool GpuWorkload, string? GpuDetails, string? GpuFailure,
-    double RenderMilliseconds) : IDisposable
+    double RenderMilliseconds, CanvasPreviewMetrics? Cache = null) : IDisposable
 {
     public void Dispose() => Pixels.Dispose();
 }
+
+internal sealed record CanvasPreviewMetrics(long BuildCount, long HitCount, long CachedRasterBytes,
+    long RasterCacheByteLimit, long InPlaceOpacityFrameCount);
 
 /// <summary>All mutable Skia/cache/GPU state belongs to the preview worker.</summary>
 internal sealed class CanvasPreviewRenderer : IDisposable
@@ -86,7 +89,8 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                 finally { canvas.RestoreToCount(saved); }
             });
             return new(snapshot.Context, pixels, targets.Backend, gpuWorkload,
-                targets.GpuDetails, targets.GpuFailure, timer.Elapsed.TotalMilliseconds);
+                targets.GpuDetails, targets.GpuFailure, timer.Elapsed.TotalMilliseconds,
+                new(cache.BuildCount, cache.HitCount, cache.CachedRasterBytes, cache.RasterCacheByteLimit, cache.InPlaceOpacityFrameCount));
         }
         finally { renderer.LiveBackdrop = null; }
     }
@@ -108,6 +112,7 @@ internal sealed class CanvasPreviewPump : IDisposable
     private bool disposed, pending, stopped;
     internal bool Busy { get; private set; }
     internal CanvasPreviewFrame? Frame { get; private set; }
+    internal CanvasPreviewMetrics CacheMetrics => Frame?.Cache ?? new(0, 0, 0, 128L * 1024 * 1024, 0);
     internal long CompletedFrames { get; private set; }
     internal long GpuFrames { get; private set; }
     internal long CpuFrames { get; private set; }
