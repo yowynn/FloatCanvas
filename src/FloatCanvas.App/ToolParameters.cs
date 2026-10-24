@@ -22,13 +22,10 @@ internal sealed class ToolParameters
     public double CaptureBorderWidth { get; set; }
     public uint CaptureBorderColor { get; set; } = ColorLibrary.ForegroundRed;
 
-    public ToolParameters Clone() => new()
+    public ToolParameters Clone()
     {
-        Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius, Symbol = Symbol,
-        ConstrainAspect = ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
-        NumberStart = NumberStart, NumberStep = NumberStep, NumberColorRolesVersion = NumberColorRolesVersion, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
-        CaptureBorderWidth = CaptureBorderWidth, CaptureBorderColor = CaptureBorderColor
-    };
+        var copy = (ToolParameters)MemberwiseClone(); copy.Style = Style.Clone(); return copy;
+    }
 
     internal bool IsValid() => Enum.IsDefined(Tool) && Style is { } s && Enum.IsDefined(Symbol) && Emoji is { Length: > 0 and <= 32 } &&
         NumberStart is >= 1 and <= 999999 && NumberStep is >= 1 and <= 999999 &&

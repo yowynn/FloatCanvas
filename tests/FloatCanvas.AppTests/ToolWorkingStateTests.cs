@@ -38,17 +38,16 @@ internal static class ToolWorkingStateTests
             var state = Field<ToolStateStore>(session!, "_toolStateStore");
             Change(p => { p.Style.Stroke = 0xFF448361; p.Style.Fill = 0; p.Style.StrokePattern = StrokePattern.Dotted; p.Style.StrokeWidth = 9; });
             check("working state changes use the real options entry without changing its selected official recipe", gallery.SelectedId == "official.freehand" && editor.Style.Stroke == 0xFF448361);
-            string penBaseline = JsonSerializer.Serialize(state.OfficialBaselines["official.freehand"]);
-            string penPreview = JsonSerializer.Serialize(state.PreviewSources[EditorTool.Freehand]);
-            check("working pen parameters remain separate from its official baseline", state.OfficialBaselines["official.freehand"].Style.Stroke == ColorLibrary.ForegroundRed &&
-                state.OfficialBaselines["official.freehand"].Style.StrokePattern == StrokePattern.Solid);
+            string penBaseline = JsonSerializer.Serialize(Official(session!, "official.freehand"));
+            check("working pen parameters remain separate from its fixed official definition", Official(session!, "official.freehand").Style.Stroke == ColorLibrary.ForegroundRed &&
+                Official(session!, "official.freehand").Style.StrokePattern == StrokePattern.Solid);
 
             Activate(EditorTool.Line); gallery.Apply("official.dashed-line");
-            string lineBaseline = JsonSerializer.Serialize(state.OfficialBaselines["official.dashed-line"]);
-            string lineBaselineStyle = JsonSerializer.Serialize(state.OfficialBaselines["official.dashed-line"].Style);
+            string lineBaseline = JsonSerializer.Serialize(Official(session!, "official.dashed-line"));
+            string lineBaselineStyle = JsonSerializer.Serialize(Official(session!, "official.dashed-line").Style);
             Change(p => { p.Style.Stroke = 0xFF9065B0; p.Style.StrokePattern = StrokePattern.Dotted; p.Style.StartArrowHead = ArrowHeadStyle.Open; p.Style.EndArrowHead = ArrowHeadStyle.Diamond; p.Style.StrokeWidth = 11; });
             check("working line changes retain its selected dashed recipe", gallery.SelectedId == "official.dashed-line" && editor.Style.StrokePattern == StrokePattern.Dotted);
-            check("working line changes cannot mutate the saved official recipe baseline", JsonSerializer.Serialize(state.OfficialBaselines["official.dashed-line"]) == lineBaseline);
+            check("working line changes cannot mutate the fixed official definition", JsonSerializer.Serialize(Official(session!, "official.dashed-line")) == lineBaseline);
 
             Activate(EditorTool.Rectangle);
             Change(p => { p.Style.Stroke = 0xFFD9730D; p.Style.Fill = 0x338899AA; p.CornerRadius = 23; p.DefaultWidth = 210; p.DefaultHeight = 120; p.ConstrainAspect = true; });
@@ -63,6 +62,15 @@ internal static class ToolWorkingStateTests
             Activate(EditorTool.Number);
             Change(p => { p.NumberStart = 103; p.NumberStep = 7; p.Style.FontSize = 32; p.DefaultWidth = 177; p.DefaultHeight = 99; p.Style.Stroke = 0xFF9F6B53; });
             check("real number options update the independent tool snapshot", state.Tools[EditorTool.Number] is { NumberStart: 103, NumberStep: 7 } && state.Tools[EditorTool.Number].Style.FontSize == 32);
+            var rememberedLine = state.Tools[EditorTool.Line].Clone();
+            Activate(EditorTool.Line); gallery.Apply("official.dashed-line");
+            var settings = Field<UserSettings>(session!, "_settings");
+            check("applying a complete line preset resets its number fields without changing number preferences", editor.NumberStart == 1 && editor.NumberStep == 1 &&
+                settings.NumberStart == 103 && settings.NumberStep == 7);
+            editor.ApplyParameters(rememberedLine); Invoke("RefreshToolbarState");
+            Activate(EditorTool.Number);
+            check("returning from an explicitly applied line preset restores the number tool's own start and step", editor.NumberStart == 103 && editor.NumberStep == 7 &&
+                settings.NumberStart == 103 && settings.NumberStep == 7);
             Activate(EditorTool.Pixelate); Change(p => p.EffectStrength = 41);
             Activate(EditorTool.Blur); Change(p => p.EffectStrength = 27);
             Activate(EditorTool.Pixelate);
@@ -105,15 +113,15 @@ internal static class ToolWorkingStateTests
                 { Stroke: 0xFF00AA11, FontSize: 72, StrokePattern: StrokePattern.Dashed } && editor.Style.FontSize == expectedPen.Style.FontSize);
             check("new session restores the selected recipe IDs for every previously configured tool", gallery.SelectedId == "official.freehand" &&
                 state.Selections[EditorTool.Line] == "official.dashed-line" && state.Selections[EditorTool.Rectangle] == userPresetId && state.Selections[EditorTool.Number] == "official.number");
-            check("reconstructing the session does not derive official pen visuals from its edited cache", JsonSerializer.Serialize(state.OfficialBaselines["official.freehand"]) == penBaseline &&
-                JsonSerializer.Serialize(state.PreviewSources[EditorTool.Freehand]) == penPreview);
+            check("reconstructing the session retains the fixed official pen definition", JsonSerializer.Serialize(Official(session!, "official.freehand")) == penBaseline);
+            check("working state no longer creates personalized official baseline or preview caches", state.OfficialBaselines.Count == 0 && state.PreviewSources.Count == 0);
             check("reconstructing the session retains the shared effect button choice", state.Buttons[EditorTool.Blur] == EditorTool.Pixelate);
             check("number tool defaults survive instead of reverting to startup defaults", editor.NumberStart == 103 && editor.NumberStep == 7);
 
             Activate(EditorTool.Line);
             check("restored line cache includes custom color pattern and both arrow ends", gallery.SelectedId == "official.dashed-line" && editor.Style.Stroke == 0xFF9065B0 &&
                 editor.Style.StrokePattern == StrokePattern.Dotted && editor.Style.StartArrowHead == ArrowHeadStyle.Open && editor.Style.EndArrowHead == ArrowHeadStyle.Diamond && editor.Style.StrokeWidth == 11);
-            check("restored line official baseline remains independent from the current parameters", JsonSerializer.Serialize(state.OfficialBaselines["official.dashed-line"]) == lineBaseline);
+            check("restored line official definition remains independent from the current parameters", JsonSerializer.Serialize(Official(session!, "official.dashed-line")) == lineBaseline);
             gallery.Apply("official.dashed-line");
             check("explicitly reselecting the same official recipe restores its original baseline after restart", JsonSerializer.Serialize(editor.Style) == lineBaselineStyle && gallery.SelectedId == "official.dashed-line");
             Activate(EditorTool.Arrow);
@@ -184,7 +192,7 @@ internal static class ToolWorkingStateTests
                 ClickToolbar(family);
                 check($"actual toolbar restores edited {alias} after reconstruction", SameParameters(editor.Parameters, expected) && gallery.SelectedId == presetId);
                 Activate(EditorTool.Freehand); Activate(alias);
-                var baseline = state.OfficialBaselines[presetId];
+                var baseline = Official(session!, presetId);
                 check($"explicit {alias} command still applies its official recipe", JsonSerializer.Serialize(editor.Style) == JsonSerializer.Serialize(baseline.Style) &&
                     editor.CornerRadius == baseline.CornerRadius && gallery.SelectedId == presetId);
                 session!.Dispose(); session = null; host = null; PumpFor(TimeSpan.FromMilliseconds(10));
@@ -222,6 +230,7 @@ internal static class ToolWorkingStateTests
     }
 
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
+    private static ToolParameters Official(DesktopSession session, string id) => Field<ToolPresetLibrary>(session, "_toolPresets").Official.Single(p => p.Id == id).Parameters;
     private static void SetField(object owner, string name, object? value) => owner.GetType().GetField(name, Private)!.SetValue(owner, value);
 
     private static void PumpFor(TimeSpan duration)

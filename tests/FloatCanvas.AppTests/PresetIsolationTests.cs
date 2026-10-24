@@ -57,31 +57,30 @@ internal static class PresetIsolationTests
         string definitionsBefore = JsonSerializer.Serialize(library.Official);
         var gallery = new ToolPresetGallery(controller, library);
         var session = Desktop(controller, library);
-        var baselines = Field<Dictionary<string, ToolParameters>>(gallery, "officialBaselines");
-        string penBaseline = JsonSerializer.Serialize(baselines["official.freehand"]);
+        string penBaseline = JsonSerializer.Serialize(library.Official.Single(p => p.Id == "official.freehand").Parameters);
         string penPreview = PreviewHashes(gallery)["official.freehand"];
         controller.Style.Stroke = EditedPen; controller.Style.StrokePattern = StrokePattern.Dotted;
         controller.Style.StrokeWidth = 13; controller.Style.Fill = 0xAA331144;
         gallery.Refresh();
-        check(target + " editing the pen preserves its original official baseline and preview", penBaseline == JsonSerializer.Serialize(baselines["official.freehand"]) && penPreview == PreviewHashes(gallery)["official.freehand"]);
+        check(target + " editing the pen preserves its fixed official definition and preview", penBaseline == JsonSerializer.Serialize(library.Official.Single(p => p.Id == "official.freehand").Parameters) && penPreview == PreviewHashes(gallery)["official.freehand"]);
 
         Activate(session, target); gallery.Refresh();
         check(target + " first visit uses its independent default color and solid line", controller.Style.Stroke == DefaultStroke && controller.Style.StrokePattern == StrokePattern.Solid);
         check(target + " first visit does not inherit the previous tools width or fill", controller.Style.Fill == (target == EditorTool.Number ? 0xFFFFFFFF : new ToolParameters().Style.Fill) &&
             Math.Abs(controller.Style.StrokeWidth - (target == EditorTool.Highlighter ? 24 : new ToolParameters().Style.StrokeWidth)) < .001);
-        check(target + " first selected official baseline uses independent defaults", baselines[gallery.SelectedId].Style.Stroke == DefaultStroke && baselines[gallery.SelectedId].Style.StrokePattern == StrokePattern.Solid);
+        check(target + " first selected official definition uses independent defaults", library.Official.Single(p => p.Id == gallery.SelectedId).Parameters.Style.Stroke == DefaultStroke && library.Official.Single(p => p.Id == gallery.SelectedId).Parameters.Style.StrokePattern == StrokePattern.Solid);
         var previews = PreviewHashes(gallery);
-        string baselineBefore = JsonSerializer.Serialize(baselines[gallery.SelectedId]);
+        string baselineBefore = JsonSerializer.Serialize(library.Official.Single(p => p.Id == gallery.SelectedId).Parameters);
         controller.Style.Stroke = EditedTarget; controller.Style.StrokePattern = StrokePattern.Dashed; controller.Style.StrokeWidth = 9;
         gallery.Refresh();
         check(target + " parameter editing preserves every official thumbnail including unselected recipes", previews.OrderBy(pair => pair.Key).SequenceEqual(PreviewHashes(gallery).OrderBy(pair => pair.Key)));
-        check(target + " temporary editing does not rewrite its official baseline", baselineBefore == JsonSerializer.Serialize(baselines[gallery.SelectedId]));
+        check(target + " temporary editing does not rewrite its official definition", baselineBefore == JsonSerializer.Serialize(library.Official.Single(p => p.Id == gallery.SelectedId).Parameters));
 
         Activate(session, EditorTool.Freehand); gallery.Refresh();
         check(target + " switching back restores the edited pen state", controller.Style.Stroke == EditedPen && controller.Style.StrokePattern == StrokePattern.Dotted && controller.Style.StrokeWidth == 13);
         Activate(session, target); gallery.Refresh();
-        check(target + " revisiting restores its own latest edited state", controller.Style.Stroke == EditedTarget && controller.Style.StrokeWidth == 9 &&
-            controller.Style.StrokePattern == (target == EditorTool.Arrow ? StrokePattern.Solid : StrokePattern.Dashed));
+        check(target + " revisiting restores working state while an explicit arrow alias restores its factory preset", controller.Style.Stroke == (target == EditorTool.Arrow ? DefaultStroke : EditedTarget) &&
+            controller.Style.StrokeWidth == (target == EditorTool.Arrow ? 4 : 9) && controller.Style.StrokePattern == (target == EditorTool.Arrow ? StrokePattern.Solid : StrokePattern.Dashed));
         check(target + " tool switching does not write user recipes or official definitions", fileBefore == Hash(File.ReadAllBytes(path)) && definitionsBefore == JsonSerializer.Serialize(library.Official));
     }
 
@@ -93,10 +92,10 @@ internal static class PresetIsolationTests
         controller.Style.Stroke = 0xBE456789; controller.Style.Fill = 0x77123456; controller.Style.StrokeWidth = 11;
         controller.Style.StrokePattern = StrokePattern.Dotted;
         gallery.Apply("official.rounded-rectangle");
-        check("explicit first use of another official recipe preserves the active tools edited colors and width", controller.Style.Stroke == 0xBE456789 && controller.Style.Fill == 0x77123456 && controller.Style.StrokeWidth == 11 && controller.CornerRadius == 12);
+        check("explicit first use of another official preset restores its fixed colors and width", controller.Style.Stroke == DefaultStroke && controller.Style.Fill == 0 && controller.Style.StrokeWidth == 4 && controller.CornerRadius == 12);
         controller.Style.Stroke = 0xFF000000; controller.Style.StrokeWidth = 21; gallery.Refresh();
         gallery.Apply("official.rounded-rectangle");
-        check("clicking an explicitly applied official recipe restores its own session baseline", controller.Style.Stroke == 0xBE456789 && controller.Style.StrokeWidth == 11 && controller.CornerRadius == 12);
+        check("clicking an explicitly applied official preset restores the same factory parameters", controller.Style.Stroke == DefaultStroke && controller.Style.StrokeWidth == 4 && controller.CornerRadius == 12);
     }
 
     private static void HeadingLayout(ToolPresetLibrary library, ColorLibrary colors, string theme, double scale, Action<string, bool> check)

@@ -47,6 +47,12 @@ internal sealed partial class DesktopSession
             window.CommandKey += OnKey;
             window.BackgroundChanged += color => ChangeCanvas(c => c.BackgroundColor = color);
             window.ProjectionChanged += SetCanvasProjection;
+            window.DepthPriorityOcclusionChanged += enabled =>
+            {
+                ApplyCanvasDepthPriorityOcclusion(Active, window.DisplayedSettings, enabled,
+                    !DocumentOperationBusy && _host.IsVisible && _host.IsEditing, ChangeCanvas);
+                window.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+            };
             window.GridCountsChanged += SetCanvasGridCounts;
             window.GridSizeChanged += SetCanvasGridSize;
             window.GridSizeLockChanged += SetCanvasGridSizeLock;
@@ -193,6 +199,14 @@ internal sealed partial class DesktopSession
         RequestRender();
     }
 
+    internal static void ApplyCanvasDepthPriorityOcclusion(EditorSession session, CanvasSettings? displayed, bool enabled,
+        bool canMutate, Action<Action<CanvasSettings>> change)
+    {
+        if (!canMutate || session.IsTransactionActive || !ReferenceEquals(session.Document.Canvas, displayed) ||
+            !session.Document.Canvas.Projection.Enabled || session.Document.Canvas.DepthPriorityOcclusion == enabled) return;
+        change(settings => settings.DepthPriorityOcclusion = enabled);
+    }
+
     private void SetCanvasProjection(bool enabled)
     {
         if (!enabled) EndCanvasCalibration();
@@ -231,6 +245,7 @@ internal sealed partial class DesktopSession
         ChangeCanvas(settings =>
         {
             settings.BackgroundColor = preset.BackgroundColor;
+            settings.DepthPriorityOcclusion = preset.DepthPriorityOcclusion;
             settings.Grid = preset.Grid;
             settings.Projection = preset.Projection;
         });

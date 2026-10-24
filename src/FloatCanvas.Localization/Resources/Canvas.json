@@ -19,6 +19,14 @@
     "zh": "网格横向数量",
     "en": "Grid columns"
   },
+  "Canvas.DepthPriorityOcclusion": {
+    "zh": "深度优先遮挡",
+    "en": "Depth-priority occlusion"
+  },
+  "Canvas.DepthPriorityOcclusionHint": {
+    "zh": "实验性：按立牌锚点深度决定遮挡；同深度时按图层顺序。画布底色、网格和贴面参与遮挡。",
+    "en": "Experimental: order occlusion by billboard anchor depth, using layer order at equal depth. Canvas color, grid and surface layers participate."
+  },
   "Canvas.Rows": {
     "zh": "网格纵向数量",
     "en": "Grid rows"

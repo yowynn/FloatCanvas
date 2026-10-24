@@ -34,12 +34,12 @@ internal sealed partial class DesktopSession
 
     private ToolParameters ApplyToolbarPreset(string id, ToolParameters current)
     {
-        if (_toolStateStore is not { } state) return _toolPresets.Apply(id, current);
-        if (!state.OfficialBaselines.TryGetValue(id, out var baseline))
-            state.OfficialBaselines[id] = baseline = _toolPresets.Apply(id, current);
-        state.Selections[ToolFamily(current.Tool)] = id;
-        state.MarkChanged();
-        return baseline.Clone();
+        if (_toolStateStore is { } state)
+        {
+            state.Selections[ToolFamily(current.Tool)] = id;
+            state.MarkChanged();
+        }
+        return _toolPresets.Apply(id);
     }
 
     // Internal capture/import transitions use the same memory without opening UI
@@ -57,7 +57,7 @@ internal sealed partial class DesktopSession
         }
         bool remembered = _toolbarToolMemory.TryGetValue(family, out var saved);
         var next = remembered ? saved!.Clone() :
-            _toolPresets.Apply(_toolPresets.OfficialFor(family).First().Id, new ToolParameters { Tool = family });
+            _toolPresets.Apply(_toolPresets.OfficialFor(family).First().Id);
         next.Tool = family;
         if (!remembered)
         {

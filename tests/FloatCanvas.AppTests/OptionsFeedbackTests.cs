@@ -91,10 +91,10 @@ internal static class OptionsFeedbackTests
     {
         string file = Path.Combine(path, "defaults.json"); var library = new ToolPresetLibrary(file);
         var p = new ToolParameters { Tool = EditorTool.Rectangle, DefaultWidth = 321, DefaultHeight = 123 };
-        var preset = library.Save("Dimensions", p); var read = new ToolPresetLibrary(file).Apply(preset.Id, new());
+        var preset = library.Save("Dimensions", p); var read = new ToolPresetLibrary(file).Apply(preset.Id);
         check("user presets persist complete default dimensions", read.DefaultWidth == 321 && read.DefaultHeight == 123);
-        var official = library.Apply("official.rounded-rectangle", p);
-        check("official geometry recipes retain user-configured default dimensions", official.DefaultWidth == 321 && official.DefaultHeight == 123);
+        var official = library.Apply("official.rounded-rectangle");
+        check("official geometry presets restore their fixed default dimensions", official.DefaultWidth == 144 && official.DefaultHeight == 108);
         var legacy = JsonSerializer.Deserialize<ToolParameters>("{\"Tool\":5}")!;
         check("existing presets missing default dimensions gain safe initial values", legacy.DefaultWidth == 160 && legacy.DefaultHeight == 100 && legacy.IsValid());
     }

@@ -46,8 +46,8 @@ internal static class Feedback4OptionsTests
         foreach (var button in gallery.OfficialTiles.Children.OfType<Button>())
         {
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(locale + " clicking cached " + button.Tag + " restores 72 by 72 while preserving cached style",
-                controller.DefaultWidth == 72 && controller.DefaultHeight == 72 && controller.Style.Stroke == custom.Style.Stroke && controller.Style.StrokeWidth == 7);
+            check(locale + " clicking cached " + button.Tag + " restores complete factory geometry and style",
+                controller.DefaultWidth == 72 && controller.DefaultHeight == 72 && controller.Style.Stroke == ColorLibrary.ForegroundRed && controller.Style.StrokeWidth == 4);
         }
         gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, personal.Id)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(locale + " clicking a personal symbol keeps its saved independent dimensions", controller.DefaultWidth == 234 && controller.DefaultHeight == 123);
@@ -80,9 +80,9 @@ internal static class Feedback4OptionsTests
         check(locale + " clicking the same personal recipe restores saved parameters", controller.Style.StrokeWidth == 7 && changes == 2);
         controller.Style.Stroke = 0xBE456789; controller.Style.StrokeWidth = 11;
         gallery.Apply("official.rounded-rectangle");
-        check(locale + " first official application preserves current colors", controller.Style.Stroke == 0xBE456789 && controller.Style.StrokeWidth == 11 && controller.CornerRadius == 12);
+        check(locale + " first official application restores factory colors and width", controller.Style.Stroke == ColorLibrary.ForegroundRed && controller.Style.StrokeWidth == 4 && controller.CornerRadius == 12);
         controller.Style.StrokeWidth = 21; controller.Style.Stroke = 0xFF000000; gallery.Refresh(); gallery.Apply("official.rounded-rectangle");
-        check(locale + " clicking the same official restores its session baseline", controller.Style.Stroke == 0xBE456789 && controller.Style.StrokeWidth == 11 && controller.CornerRadius == 12);
+        check(locale + " clicking the same official restores its fixed factory parameters", controller.Style.Stroke == ColorLibrary.ForegroundRed && controller.Style.StrokeWidth == 4 && controller.CornerRadius == 12);
         controller.Tool = EditorTool.Freehand; gallery.Refresh(); check(locale + " changing tools filters personal recipes", gallery.UserTiles.Children.OfType<Button>().Single().Tag.Equals(pen.Id));
         controller.Tool = EditorTool.Rectangle; gallery.Refresh(); check(locale + " changing back remembers that tools selected recipe", gallery.SelectedId == "official.rounded-rectangle");
         library.Move(second.Id, rectangle.Id); gallery.Refresh();

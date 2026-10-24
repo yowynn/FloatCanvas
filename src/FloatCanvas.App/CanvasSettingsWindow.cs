@@ -11,7 +11,7 @@ namespace FloatCanvas.App;
 internal sealed class CanvasSettingsWindow : Window
 {
     private readonly ColorField background = new(ColorRole.Background), gridColor = new(ColorRole.Foreground);
-    private readonly CheckBox projection = new(), gridVisible = new(), gridSizeLock = new();
+    private readonly CheckBox projection = new(), gridVisible = new(), gridSizeLock = new(), depthPriorityOcclusion = new();
     private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true),
         rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true), width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5);
     private readonly NumericValueField gridSize = new(CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize,
@@ -34,8 +34,10 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 10, 0, 0) };
     private bool refreshing, disposing;
     private CanvasSettings current = new();
+    internal CanvasSettings? DisplayedSettings { get; private set; }
     public event Action<uint>? BackgroundChanged, GridColorChanged;
     public event Action<bool>? ProjectionChanged, GridVisibilityChanged, GridSizeLockChanged;
+    public event Action<bool>? DepthPriorityOcclusionChanged;
     public event Action<int, int>? GridCountsChanged;
     public event Action<double>? GridWidthChanged;
     public event Action<double>? GridSizeChanged;
@@ -70,6 +72,10 @@ internal sealed class CanvasSettingsWindow : Window
         var body = new StackPanel { Margin = new Thickness(0, 0, 4, 0) };
         AddField(body, "Canvas.Background", background);
         projection.Content = L.Get("Canvas.Projection"); projection.Margin = new(0, 14, 0, 8); body.Children.Add(projection);
+        depthPriorityOcclusion.Content = L.Get("Canvas.DepthPriorityOcclusion"); depthPriorityOcclusion.Margin = new(0, 0, 0, 8);
+        depthPriorityOcclusion.ToolTip = L.Get("Canvas.DepthPriorityOcclusionHint");
+        System.Windows.Automation.AutomationProperties.SetName(depthPriorityOcclusion, L.Get("Canvas.DepthPriorityOcclusion"));
+        body.Children.Add(depthPriorityOcclusion);
         gridSizeLock.Content = L.Get("Canvas.GridSizeLock"); gridSizeLock.Margin = new(0, 0, 0, 8);
         gridSizeLock.ToolTip = L.Get("Canvas.GridSizeLockHelp"); ToolTipService.SetShowOnDisabled(gridSizeLock, true);
         body.Children.Add(gridSizeLock);
@@ -135,6 +141,11 @@ internal sealed class CanvasSettingsWindow : Window
         background.ValueChanged += value => { if (!refreshing) BackgroundChanged?.Invoke(value); };
         gridColor.ValueChanged += value => { if (!refreshing) GridColorChanged?.Invoke(value); };
         projection.Click += (_, _) => { if (!refreshing) ProjectionChanged?.Invoke(projection.IsChecked == true); };
+        depthPriorityOcclusion.Click += (_, _) =>
+        {
+            if (!refreshing && current.Projection.Enabled) DepthPriorityOcclusionChanged?.Invoke(depthPriorityOcclusion.IsChecked == true);
+            depthPriorityOcclusion.IsChecked = DisplayedSettings?.DepthPriorityOcclusion ?? false;
+        };
         gridSizeLock.Click += (_, _) => { if (!refreshing && current.Projection.Enabled) GridSizeLockChanged?.Invoke(gridSizeLock.IsChecked == true); };
         gridVisible.Click += (_, _) => { if (!refreshing) GridVisibilityChanged?.Invoke(gridVisible.IsChecked == true); };
         calibrate.Click += (_, _) => CalibrationToggled?.Invoke(); reset.Click += (_, _) => ResetDisplayRequested?.Invoke(selectedResetDevice);
@@ -178,11 +189,12 @@ internal sealed class CanvasSettingsWindow : Window
     }
     public void Refresh(CanvasSettings settings, bool calibrating)
     {
-        current = settings.Clone(); refreshing = true;
+        DisplayedSettings = settings; current = settings.Clone(); refreshing = true;
         try
         {
             background.Value = settings.BackgroundColor; gridColor.Value = settings.Grid.Color;
             projection.IsChecked = settings.Projection.Enabled; gridVisible.IsChecked = settings.Grid.Visible;
+            depthPriorityOcclusion.IsChecked = settings.DepthPriorityOcclusion;
             perspectiveActions.Visibility = settings.Projection.Enabled ? Visibility.Visible : Visibility.Collapsed;
             flatSizePanel.Visibility = settings.Projection.Enabled ? Visibility.Collapsed : Visibility.Visible;
             RefreshGridCounts(settings.Projection);
@@ -201,6 +213,7 @@ internal sealed class CanvasSettingsWindow : Window
         try
         {
             bool locked = settings.LockedGridCellSize.HasValue;
+            depthPriorityOcclusion.Visibility = settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
             countPair.Visibility = gridSizeLock.Visibility = settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
             gridSizeLock.IsChecked = locked; gridSizeLock.IsEnabled = settings.Enabled;
             columns.Visibility = rows.Visibility = locked ? Visibility.Collapsed : Visibility.Visible;

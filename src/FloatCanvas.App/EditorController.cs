@@ -65,7 +65,7 @@ internal sealed partial class EditorController
         Emoji = parameters.Emoji; DefaultWidth = parameters.DefaultWidth; DefaultHeight = parameters.DefaultHeight;
         CaptureShape = parameters.CaptureShape; CaptureSource = parameters.CaptureSource;
         CaptureBorderWidth = parameters.CaptureBorderWidth; CaptureBorderColor = parameters.CaptureBorderColor;
-        if (parameters.Tool == EditorTool.Number) { NumberStart = parameters.NumberStart; NumberStep = parameters.NumberStep; }
+        NumberStart = parameters.NumberStart; NumberStep = parameters.NumberStep;
         Changed?.Invoke();
     }
     public PointD ScreenOrigin { get; set; }

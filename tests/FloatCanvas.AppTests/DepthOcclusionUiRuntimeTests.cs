@@ -11,9 +11,10 @@ using FloatCanvas.App;
 using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 
-/// <summary>Render the production Layers content in hidden native presentation sources; no user desktop input.</summary>
+/// <summary>Render production Canvas settings in hidden native presentation sources; no desktop input.</summary>
 internal static class DepthOcclusionUiRuntimeTests
 {
+    private const int Width = 600, Height = 590;
     public static void Run(Action<string, bool> check)
     {
         if (Application.Current is not null) throw new InvalidOperationException("Run --depth-occlusion-ui-only in a fresh process.");
@@ -26,45 +27,60 @@ internal static class DepthOcclusionUiRuntimeTests
             foreach (var theme in new[] { "light", "dark" })
             {
                 L.Initialize(locale); AppTheme.Apply(theme);
-                var session = new EditorSession(new() { Canvas = new() { Projection = new() { Enabled = true } }, Elements =
-                    [new() { Kind = ElementKind.Rectangle, Width = 100, Height = 80, IsBillboard = true, Name = locale == "zh-CN" ? "立牌矩形" : "Billboard rectangle" },
-                     new() { Kind = ElementKind.Ellipse, Width = 100, Height = 80, Name = locale == "zh-CN" ? "贴面椭圆" : "Surface ellipse" }] });
-                var window = new LayersWindow(() => session);
-                var option = (CheckBox)typeof(LayersWindow).GetField("depthPriorityOcclusion", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+                var session = new EditorSession(new() { Canvas = new() { Projection = new() { Enabled = true } } });
+                var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+                window.Refresh(session.Document.Canvas, false);
+                window.DepthPriorityOcclusionChanged += value =>
+                {
+                    DesktopSession.ApplyCanvasDepthPriorityOcclusion(session, window.DisplayedSettings, value, true,
+                        change => session.Execute(L.Get("Canvas.Title"), document => change(document.Canvas)));
+                    window.Refresh(session.Document.Canvas, false);
+                };
+                var option = Field<CheckBox>(window, "depthPriorityOcclusion");
+                var projection = Field<CheckBox>(window, "projection");
+                var gridLock = Field<CheckBox>(window, "gridSizeLock");
                 var content = (FrameworkElement)window.Content; window.Content = null;
-                var root = new Border { Width = 320, Height = 520, Child = content, Background = (Brush)app.Resources["CanvasSurface"] };
+                var root = new Border { Width = Width, Height = Height, Child = content, Background = (Brush)app.Resources["CanvasSurface"] };
                 root.SetValue(System.Windows.Documents.TextElement.ForegroundProperty, app.Resources["CanvasText"]);
                 root.SetValue(System.Windows.Documents.TextElement.FontFamilyProperty, window.FontFamily);
                 root.SetValue(System.Windows.Documents.TextElement.FontSizeProperty, window.FontSize);
-                using (var source = new HwndSource(new HwndSourceParameters("FloatCanvas depth Layers UI")
-                { Width = 320, Height = 520, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x08000080 }))
+                using (var source = new HwndSource(new HwndSourceParameters("FloatCanvas depth Canvas settings UI")
+                { Width = Width, Height = Height, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x08000080 }))
                 {
                     source.RootVisual = root; Layout(root);
-                    check(locale + " " + theme + " production depth option participates in native Layers layout", PresentationSource.FromVisual(option) is HwndSource &&
-                        option.Visibility == Visibility.Visible && option.ActualHeight > 10 && option.ActualWidth > 150 && option.TranslatePoint(new Point(), root).Y < 100);
+                    double optionY = option.TranslatePoint(new Point(), root).Y;
+                    check(locale + " " + theme + " production depth option is below perspective and above grid lock in native Canvas layout",
+                        PresentationSource.FromVisual(option) is HwndSource && option.Visibility == Visibility.Visible &&
+                        option.ActualHeight > 10 && option.ActualWidth > 150 && optionY > projection.TranslatePoint(new Point(), root).Y &&
+                        optionY < gridLock.TranslatePoint(new Point(), root).Y && optionY + option.ActualHeight < Height);
+                    check(locale + " " + theme + " Canvas depth option has its localized accessible name",
+                        Equals(option.Content, L.Get("Canvas.DepthPriorityOcclusion")) &&
+                        System.Windows.Automation.AutomationProperties.GetName(option) == L.Get("Canvas.DepthPriorityOcclusion"));
                     option.IsChecked = true; option.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout(root);
-                    check(locale + " " + theme + " routed native depth option commits one undo step", session.Document.Canvas.DepthPriorityOcclusion && session.UndoCount == 1);
-                    Render(root, Path.Combine(output, "layers-depth-" + locale + "-" + theme + ".png"));
-                    session.Undo(); window.Refresh(); Layout(root);
-                    check(locale + " " + theme + " native checkbox tracks undo", option.IsChecked == false);
-                    session.Document.Canvas.Projection.Enabled = false; window.Refresh(); Layout(root);
-                    check(locale + " " + theme + " flat canvas removes the depth row from layout", option.Visibility == Visibility.Collapsed && option.DesiredSize.Height == 0);
+                    check(locale + " " + theme + " routed native Canvas depth option commits one undo step", session.Document.Canvas.DepthPriorityOcclusion && session.UndoCount == 1);
+                    Render(root, Path.Combine(output, "canvas-depth-" + locale + "-" + theme + ".png"));
+                    session.Undo(); window.Refresh(session.Document.Canvas, false); Layout(root);
+                    check(locale + " " + theme + " native Canvas depth checkbox tracks undo", option.IsChecked == false);
+                    session.Document.Canvas.Projection.Enabled = false; window.Refresh(session.Document.Canvas, false); Layout(root);
+                    check(locale + " " + theme + " flat Canvas settings remove the depth row from layout", option.Visibility == Visibility.Collapsed && option.DesiredSize.Height == 0);
+                    Render(root, Path.Combine(output, "canvas-flat-" + locale + "-" + theme + ".png"));
                     root.Child = null; source.RootVisual = null;
                 }
-                window.Content = content; window.Close();
+                window.Content = content; window.CloseForDispose();
             }
         }
         finally { L.Initialize("zh-CN"); app.Shutdown(); }
     }
 
+    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
     private static void Layout(FrameworkElement root)
     {
-        root.Measure(new Size(320, 520)); root.Arrange(new Rect(0, 0, 320, 520)); root.UpdateLayout();
+        root.Measure(new Size(Width, Height)); root.Arrange(new Rect(0, 0, Width, Height)); root.UpdateLayout();
         Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
     }
     private static void Render(FrameworkElement root, string path)
     {
-        var bitmap = new RenderTargetBitmap(320, 520, 96, 96, PixelFormats.Pbgra32); bitmap.Render(root);
+        var bitmap = new RenderTargetBitmap(Width, Height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(root);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var stream = File.Create(path); encoder.Save(stream);
     }

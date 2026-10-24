@@ -8,11 +8,12 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>Canvas values, with an optional exact calibration snapshot for personal presets.</summary>
+/// <summary>Portable canvas values; omitted calibration uses default reference geometry.</summary>
 internal sealed class CanvasPresetParameters
 {
     [JsonIgnore] internal bool ResetProjection { get; set; }
     public uint BackgroundColor { get; set; }
+    public bool DepthPriorityOcclusion { get; set; }
     public bool ProjectionEnabled { get; set; }
     public int Columns { get; set; } = 8;
     public int Rows { get; set; } = 6;
@@ -31,7 +32,7 @@ internal sealed class CanvasPresetParameters
     {
         var copy = (CanvasPresetParameters)MemberwiseClone(); copy.Calibration = Calibration?.Clone(); return copy;
     }
-    internal bool Matches(CanvasPresetParameters other) => BackgroundColor == other.BackgroundColor && ProjectionEnabled == other.ProjectionEnabled &&
+    internal bool Matches(CanvasPresetParameters other) => BackgroundColor == other.BackgroundColor && DepthPriorityOcclusion == other.DepthPriorityOcclusion && ProjectionEnabled == other.ProjectionEnabled &&
         Columns == other.Columns && Rows == other.Rows && GridVisible == other.GridVisible && GridColor == other.GridColor &&
         GridWidth == other.GridWidth && GridPattern == other.GridPattern && (FlatCellSize is null || FlatCellSize == other.FlatCellSize) && (Calibration is null || other.Calibration is { } c &&
             Calibration.Enabled == c.Enabled && Calibration.Columns == c.Columns && Calibration.Rows == c.Rows &&
@@ -39,7 +40,7 @@ internal sealed class CanvasPresetParameters
             Calibration.AlgorithmVersion == c.AlgorithmVersion && Calibration.Quad.SequenceEqual(c.Quad));
     internal static CanvasPresetParameters From(CanvasSettings settings) => new()
     {
-        BackgroundColor = settings.BackgroundColor, ProjectionEnabled = settings.Projection.Enabled,
+        BackgroundColor = settings.BackgroundColor, DepthPriorityOcclusion = settings.DepthPriorityOcclusion, ProjectionEnabled = settings.Projection.Enabled,
         Columns = settings.Projection.Columns, Rows = settings.Projection.Rows, GridVisible = settings.Grid.Visible,
         GridColor = settings.Grid.Color, GridWidth = settings.Grid.Width, GridPattern = settings.Grid.Pattern,
         // Presets omit the adjustment lock, so an enabled preset saves its unlocked spacing.
@@ -160,33 +161,24 @@ internal sealed class CanvasPresetLibrary
     internal static CanvasSettings Apply(CanvasPresetParameters parameters, CanvasSettings current, RectD referenceViewport, RectD viewport)
     {
         Validate("preset", parameters);
-        var result = current.Clone(); var projection = result.Projection;
-        if (!parameters.ProjectionEnabled && parameters.Calibration is null && parameters.FlatCellSize is { } flatSize)
-            projection = CanvasGridGeometry.CreateFlatReference(referenceViewport, parameters.Columns, parameters.Rows, flatSize);
-        else if (parameters.ResetProjection) projection = CanvasCalibration.CreateInitial(referenceViewport, parameters.Columns, parameters.Rows);
+        CanvasProjectionSettings projection;
+        if (parameters.ResetProjection) projection = CanvasCalibration.CreateInitial(referenceViewport, parameters.Columns, parameters.Rows);
         else if (parameters.Calibration is { } snapshot) projection = snapshot.Clone();
-        else if (projection.Quad.Count == 0)
-        {
-            if (parameters.ProjectionEnabled || parameters.GridVisible)
-                projection = CanvasCalibration.CreateInitial(referenceViewport, parameters.Columns, parameters.Rows);
-            else { projection.Columns = parameters.Columns; projection.Rows = parameters.Rows; }
-        }
-        else if (projection.Columns != parameters.Columns || projection.Rows != parameters.Rows)
-        {
-            projection.Columns = parameters.Columns; projection.Rows = parameters.Rows;
-            if (!CanvasCalibration.TryCalibrate(projection, projection.Quad, viewport, out var calibrated, out var error))
-                throw new InvalidDataException(L.Get(error!));
-            projection = calibrated;
-        }
+        else if (parameters.FlatCellSize is { } flatSize)
+            projection = CanvasGridGeometry.CreateFlatReference(referenceViewport, parameters.Columns, parameters.Rows, flatSize);
+        else projection = CanvasCalibration.CreateInitial(referenceViewport, parameters.Columns, parameters.Rows);
         if (parameters.ProjectionEnabled && !CanvasCalibration.IsValidProjection(projection.Matrix))
             throw new InvalidDataException(L.Get("Canvas.UnstableProjection"));
         // Applying a recipe establishes a fresh calibration reference, like Reset.
         projection.LockedGridCellSize = null;
         projection.Enabled = parameters.ProjectionEnabled;
-        result.BackgroundColor = parameters.BackgroundColor; result.Projection = projection;
-        result.Grid = new() { Visible = parameters.GridVisible, Color = parameters.GridColor, Width = parameters.GridWidth, Pattern = parameters.GridPattern,
-            FlatCellSize = projection.Enabled ? projection.GridCellSize : parameters.FlatCellSize ?? projection.GridCellSize,
-            FlatOrigin = current.Grid.FlatOrigin ?? referenceViewport.Center };
+        var result = new CanvasSettings
+        {
+            BackgroundColor = parameters.BackgroundColor, DepthPriorityOcclusion = parameters.DepthPriorityOcclusion, Projection = projection,
+            Grid = new() { Visible = parameters.GridVisible, Color = parameters.GridColor, Width = parameters.GridWidth, Pattern = parameters.GridPattern,
+                FlatCellSize = projection.Enabled ? projection.GridCellSize : parameters.FlatCellSize ?? projection.GridCellSize,
+                FlatOrigin = current.Grid.FlatOrigin ?? referenceViewport.Center }
+        };
         SceneValidation.Validate(new SceneDocument { Canvas = result, Viewport = viewport });
         return result;
     }

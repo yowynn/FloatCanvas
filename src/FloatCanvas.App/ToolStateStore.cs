@@ -6,7 +6,7 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>Last working tool state, kept separately from immutable recipes and documents.</summary>
+/// <summary>Last working tool state, kept separately from complete presets and documents.</summary>
 internal sealed class ToolStateStore
 {
     private sealed class State
@@ -29,6 +29,8 @@ internal sealed class ToolStateStore
     public Dictionary<EditorTool, ToolParameters> Tools { get; }
     public Dictionary<EditorTool, EditorTool> Buttons { get; }
     public Dictionary<EditorTool, string> Selections { get; }
+    // Retain these legacy dictionaries for configuration round-tripping only.
+    // Official applications and previews always use the complete library definition.
     public Dictionary<string, ToolParameters> OfficialBaselines { get; }
     public Dictionary<EditorTool, ToolParameters> PreviewSources { get; }
     internal event Action? Changed;

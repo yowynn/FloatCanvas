@@ -16,10 +16,10 @@ internal static class PresetSizingCompatibilityTests
         AppTheme.Apply("light");
         var session = new EditorSession(); var editor = new EditorController(session);
         var library = new ToolPresetLibrary(Path.Combine(ApplicationPaths.ProfileDirectory, "sizing-presets.json"));
-        editor.ApplyParameters(library.Apply("official.number", editor.Parameters, includeColors: true));
+        editor.ApplyParameters(library.Apply("official.number"));
         Click(editor, 200, 200); var number = session.Document.Elements.Single();
         check("official number has a 72 pixel badge and locked instance aspect", number.Width == 72 && number.Height == 72 && ElementGeometry.PreservesAspect(number));
-        editor.ApplyParameters(library.Apply("official.emoji", editor.Parameters));
+        editor.ApplyParameters(library.Apply("official.emoji"));
         Click(editor, 400, 200); var emoji = session.Document.Elements.Last();
         check("equal number and emoji sizes have equal geometric selection frames", ElementGeometry.LocalBounds(number) == ElementGeometry.LocalBounds(emoji));
         check("emoji instances preserve aspect by default", ElementGeometry.PreservesAspect(emoji));
@@ -32,7 +32,7 @@ internal static class PresetSizingCompatibilityTests
         check("linked colors are persistent model state", typeof(ElementStyle).GetProperty("LinkColors") is not null);
         foreach (var preset in library.Official.Where(p => p.Parameters.Tool is EditorTool.Rectangle or EditorTool.Ellipse))
             check(preset.Id + " has one consistent 108 pixel side", preset.Parameters.DefaultWidth == 108 || preset.Parameters.DefaultHeight == 108);
-        check("official text uses 36 point type", library.Apply("official.text", editor.Parameters).Style.FontSize == 36);
+        check("official text uses 36 point type", library.Apply("official.text").Style.FontSize == 36);
         var stretched = emoji.Clone(); stretched.Width = 144; stretched.Height = 36; stretched.Transform = Affine2D.Translation(10, 10);
         using var renderer = new SceneRenderer(); using var bitmap = SKBitmap.Decode(renderer.ExportPng(new SceneDocument { Viewport = new(0, 0, 180, 80), Elements = [stretched] }, session.Assets, true));
         var ink = Enumerable.Range(0, bitmap.Height).SelectMany(y => Enumerable.Range(0, bitmap.Width).Where(x => bitmap.GetPixel(x, y).Alpha > 16).Select(x => (X:x,Y:y))).ToArray();

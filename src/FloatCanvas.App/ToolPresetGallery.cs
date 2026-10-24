@@ -14,8 +14,6 @@ internal sealed class ToolPresetGallery : UserControl
     private readonly EditorController controller;
     private readonly ToolPresetLibrary library;
     private readonly Dictionary<EditorTool, string> selections = [];
-    private readonly Dictionary<string, ToolParameters> officialBaselines = [];
-    private readonly Dictionary<EditorTool, ToolParameters> previewSources = [];
     private readonly ToolStateStore? stateStore;
     internal readonly PixelTilePanel OfficialTiles = new(5, 36, 4), UserTiles = new(5, 36, 4);
     private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
@@ -36,8 +34,6 @@ internal sealed class ToolPresetGallery : UserControl
         if (stateStore is not null)
         {
             selections = stateStore.Selections;
-            officialBaselines = stateStore.OfficialBaselines;
-            previewSources = stateStore.PreviewSources;
         }
         var body = new DockPanel { MinWidth = 196 + SystemParameters.VerticalScrollBarWidth, LastChildFill = true };
         headings = new StackPanel();
@@ -71,13 +67,10 @@ internal sealed class ToolPresetGallery : UserControl
     {
         var tool = ToolPresetLibrary.Family(controller.Tool); var official = library.OfficialFor(tool); var users = library.UserFor(tool);
         bool changed = false;
-        if (!previewSources.ContainsKey(tool)) { previewSources[tool] = controller.Parameters; changed = true; }
         undoButton.IsEnabled = library.CanUndoResourceChange;
         var focus = TileCollection.Capture(this, Tiles());
         bool toolChanged = observedTool != tool; observedTool = tool;
         if (!official.Concat(users).Any(p => p.Id == SelectedId)) { selections[tool] = official.First().Id; changed = true; }
-        if (SelectedId.StartsWith("official.", StringComparison.Ordinal) && !officialBaselines.ContainsKey(SelectedId))
-        { officialBaselines[SelectedId] = library.Apply(SelectedId, controller.Parameters); changed = true; }
         var selectedPreset = official.Concat(users).FirstOrDefault(p => p.Id == SelectedId);
         selectedModified = selectedPreset is not null && JsonSerializer.Serialize(PreviewParameters(selectedPreset)) != JsonSerializer.Serialize(controller.Parameters);
         TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)), (button, id) => UpdateTile(button, official.Single(p => p.Id == id)));
@@ -108,14 +101,7 @@ internal sealed class ToolPresetGallery : UserControl
         var preset = library.OfficialFor(tool).Concat(library.UserFor(tool)).FirstOrDefault(p => p.Id == id);
         if (preset is null) return;
         selections[tool] = id;
-        if (id.StartsWith("official.", StringComparison.Ordinal) && !officialBaselines.ContainsKey(id)) officialBaselines[id] = library.Apply(id, controller.Parameters);
-        var parameters = officialBaselines.TryGetValue(id, out var baseline) ? baseline.Clone() : library.Apply(id, controller.Parameters);
-        if (preset.IsOfficial && preset.Fields.HasFlag(ToolPresetFields.Size))
-        {
-            if (preset.Parameters.Tool is EditorTool.Text or EditorTool.Number or EditorTool.Emoji) parameters.Style.FontSize = preset.Parameters.Style.FontSize;
-            else { parameters.DefaultWidth = preset.Parameters.DefaultWidth; parameters.DefaultHeight = preset.Parameters.DefaultHeight; }
-        }
-        controller.ApplyParameters(parameters);
+        controller.ApplyParameters(library.Apply(id));
         Refresh(revealSelection: true); stateStore?.MarkChanged(); Applied?.Invoke();
     });
     internal void SaveNamed(string name)
@@ -153,8 +139,7 @@ internal sealed class ToolPresetGallery : UserControl
         button.Content = ToolParameterIcon.Create(PreviewParameters(preset), 24);
         ((SelectionTileButton)button).SetSelected(preset.Id == SelectedId, selectedModified);
     }
-    private ToolParameters PreviewParameters(ToolPreset preset) => !preset.IsOfficial ? preset.Parameters :
-        officialBaselines.GetValueOrDefault(preset.Id) ?? library.Apply(preset.Id, previewSources[ToolPresetLibrary.Family(preset.Parameters.Tool)]);
+    private static ToolParameters PreviewParameters(ToolPreset preset) => preset.Parameters;
     private IEnumerable<Button> Tiles() => OfficialTiles.Children.OfType<Button>().Concat(UserTiles.Children.OfType<Button>());
     private void RevealSelection() => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
     {

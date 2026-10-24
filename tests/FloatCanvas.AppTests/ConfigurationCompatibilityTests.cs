@@ -49,7 +49,7 @@ internal static class ConfigurationCompatibilityTests
                 var editor=new EditorController(new EditorSession());editor.ApplyParameters(parameters);
                 check("legacy number "+label+" fill "+fill+" retains its badge and readable white labels",editor.Style.Stroke==(fill==0?ColorLibrary.ForegroundRed:fill) && editor.Style.Fill==0xFFFFFFFF && File.ReadAllText(path)==original);
             }
-            var library=new ToolPresetLibrary(Path.Combine(folder,"official-legacy-"+fill+".json"));var refreshed=library.Apply("official.number",state.Tools[EditorTool.Number],includeColors:true);var current=new EditorController(new EditorSession());current.ApplyParameters(refreshed);
+            var library=new ToolPresetLibrary(Path.Combine(folder,"official-legacy-"+fill+".json"));var refreshed=library.Apply("official.number");var current=new EditorController(new EditorSession());current.ApplyParameters(refreshed);
             check("explicit official colors replace legacy number color semantics together",current.Style.Stroke==ColorLibrary.ForegroundRed && current.Style.Fill==0xFFFFFFFF);
         }
     }
@@ -83,9 +83,9 @@ internal static class ConfigurationCompatibilityTests
         File.WriteAllText(presetPath,raw.ToJsonString());library=new(presetPath);library.Rename(preset.Id,"Renamed");raw=JsonNode.Parse(File.ReadAllText(presetPath))!;
         check("preset rename retains future version nested fields and unreadable values",raw["Version"]!.GetValue<int>()==23 && raw["Presets"]![0]!["Parameters"]!["Style"]!["FutureColor"]!.GetValue<int>()==123 && raw["Presets"]![0]!["Parameters"]!["Style"]!["StrokeWidth"]!.GetValue<string>()=="new-width");
         string numbersPath=Path.Combine(folder,"legacy-number-presets.json");var numberLibrary=new ToolPresetLibrary(numbersPath);var numberPreset=numberLibrary.Save("Legacy number",new ToolParameters {Tool=EditorTool.Number,Style=new(){Stroke=0xFF00FF00,Fill=0xFF2383E2}});raw=JsonNode.Parse(File.ReadAllText(numbersPath))!;raw["Presets"]![0]!["Parameters"]!.AsObject().Remove("NumberColorRolesVersion");File.WriteAllText(numbersPath,raw.ToJsonString());string oldNumber=File.ReadAllText(numbersPath);
-        numberLibrary=new(numbersPath);var controller=new EditorController(new EditorSession());controller.ApplyParameters(numberLibrary.Apply(numberPreset.Id,controller.Parameters));
+        numberLibrary=new(numbersPath);var controller=new EditorController(new EditorSession());controller.ApplyParameters(numberLibrary.Apply(numberPreset.Id));
         check("legacy number presets convert their former badge color to foreground and retain white labels without rewriting",controller.Style.Stroke==0xFF2383E2 && controller.Style.Fill==0xFFFFFFFF && controller.Parameters.NumberColorRolesVersion==1 && File.ReadAllText(numbersPath)==oldNumber);
-        var currentNumber=controller.Parameters;currentNumber.Style.Fill=0xFF000000;var modern=numberLibrary.Save("Modern labels",currentNumber);controller.ApplyParameters(new ToolPresetLibrary(numbersPath).Apply(modern.Id,currentNumber));
+        var currentNumber=controller.Parameters;currentNumber.Style.Fill=0xFF000000;var modern=numberLibrary.Save("Modern labels",currentNumber);controller.ApplyParameters(new ToolPresetLibrary(numbersPath).Apply(modern.Id));
         check("modern number presets retain custom text colors across save reload and apply",controller.Style.Fill==0xFF000000);
         string colorsPath=Path.Combine(folder,"colors.json");File.WriteAllText(colorsPath,"{\"Future\":{\"x\":1},\"History\":[],\"Pinned\":[]}");var colors=new ColorLibrary(colorsPath);colors.Save("Blue",0xFF2383E2);
         check("missing color-library fields default while future data survives a save",JsonNode.Parse(File.ReadAllText(colorsPath))!["Future"]!["x"]!.GetValue<int>()==1 && colors.Swatches.Count==1);

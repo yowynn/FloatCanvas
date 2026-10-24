@@ -66,7 +66,7 @@ internal static class ToolCompatibilityTests
             JsonSerializer.Serialize(legacy) == originalParameters);
 
         var official = Field<ToolPresetGallery>(panel, "presets").OfficialTiles.Children.OfType<Controls.Button>().Single(button => Equals(button.Tag, "official.triangle"));
-        var officialBaseline = Field<Dictionary<string, ToolParameters>>(Field<ToolPresetGallery>(panel, "presets"), "officialBaselines")["official.triangle"].Clone();
+        var officialBaseline = library.Apply("official.triangle");
         controller.Tool = EditorTool.Symbol; controller.Symbol = SymbolKind.Heart; controller.ConstrainAspect = true;
         official.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
         check("the official triangle recipe restores its baseline shape and paint", controller.Tool == EditorTool.Symbol && controller.Symbol == SymbolKind.Triangle &&

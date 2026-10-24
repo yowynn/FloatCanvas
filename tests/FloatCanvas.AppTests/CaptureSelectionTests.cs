@@ -184,9 +184,9 @@ internal static class CaptureSelectionTests
             var saved = library.Save("capture", parameters);
             check("user capture preset round trip retains independent source shape and border", new ToolPresetLibrary(Path.Combine(directory, "tool-presets.json")).User.Single().Parameters is
                 { CaptureShape: CaptureShape.PolygonLasso, CaptureSource: CaptureSource.BackgroundAndCanvas, CaptureBorderWidth: 4, CaptureBorderColor: 0x7F123456 });
-            var official = library.Apply("official.capture", parameters);
-            check("explicit default capture preset resets capture fields while preserving unrelated style", official is
-                { CaptureShape: CaptureShape.Rectangle, CaptureSource: CaptureSource.Background, CaptureBorderWidth: 0 } && official.Style.Stroke == parameters.Style.Stroke);
+            var official = library.Apply("official.capture");
+            check("explicit default capture preset resets capture fields and style", official is
+                { CaptureShape: CaptureShape.Rectangle, CaptureSource: CaptureSource.Background, CaptureBorderWidth: 0 } && official.Style.Stroke == ColorLibrary.ForegroundRed);
         }
         finally { Directory.Delete(directory, recursive: true); }
     }

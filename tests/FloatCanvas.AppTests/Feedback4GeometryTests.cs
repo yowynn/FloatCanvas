@@ -83,7 +83,7 @@ internal static class Feedback4GeometryTests
             check("editing the current document number is independently undoable", session.Undo() && session.Document.NextNumber == 13 && session.Undo() && session.Document.NextNumber == 10);
             check("tool settings remain independent of document undo and current counter", editor.NumberStart == 7 && editor.NumberStep == 3 && editor.Parameters.NumberStart == 7);
             editor.ApplyParameters(new() { Tool = EditorTool.Text });
-            check("other tool presets cannot reset the numbering rules", editor.NumberStart == 7 && editor.NumberStep == 3 && editor.Session.Document.NextNumber == 10);
+            check("a complete non-number snapshot restores default sequence parameters while preserving the document counter", editor.NumberStart == 1 && editor.NumberStep == 1 && editor.Session.Document.NextNumber == 10);
             editor.ApplyParameters(loaded);
             session.Document.NextNumber = int.MaxValue - 1; session.SetSelection([]);
             Gesture(editor, new(600, 50), new(600, 50));

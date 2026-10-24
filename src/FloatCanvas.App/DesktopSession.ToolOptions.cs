@@ -51,7 +51,7 @@ internal sealed partial class DesktopSession
             QueueToolOptionsFocusCheck();
         _toolOptionsPanel.ParametersChanged += () =>
         {
-            if (_settings.NumberStart != _editor.NumberStart || _settings.NumberStep != _editor.NumberStep)
+            if (_editor.Tool == EditorTool.Number && (_settings.NumberStart != _editor.NumberStart || _settings.NumberStep != _editor.NumberStep))
             {
                 _settings.NumberStart = _editor.NumberStart; _settings.NumberStep = _editor.NumberStep;
                 try { _settings.Save(); } catch (System.IO.IOException ex) { UpdateStatus(ex.Message); }

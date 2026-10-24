@@ -16,6 +16,8 @@ internal sealed class CanvasPresetGallery : UserControl
     private readonly ScrollViewer userScroll;
     private readonly Button undoButton;
     private CanvasSettings current = new();
+    // Session-only selection evidence; definitions, previews and application never use these snapshots.
+    private CanvasPresetParameters? selectedSnapshot, selectedDefinition;
     internal string SelectedId { get; private set; } = "";
     internal event Action<CanvasPresetParameters>? Applied;
     internal event Action<string>? Failed;
@@ -43,7 +45,10 @@ internal sealed class CanvasPresetGallery : UserControl
     internal void Refresh(CanvasSettings settings)
     {
         current = settings.Clone(); var official = library.Official; var users = library.User;
-        if (library.All.FirstOrDefault(p => p.Id == SelectedId) is not { } selected || !selected.Parameters.Matches(CanvasPresetParameters.From(current))) SelectedId = "";
+        var selected = library.All.FirstOrDefault(p => p.Id == SelectedId); var actual = CanvasPresetParameters.From(current);
+        if (selected is null || selectedDefinition is { } definition && (!definition.Matches(selected.Parameters) || !selected.Parameters.Matches(definition)) ||
+            !(selectedSnapshot ?? selected.Parameters).Matches(actual) || selectedSnapshot is { } applied && !actual.Matches(applied))
+        { SelectedId = ""; selectedSnapshot = selectedDefinition = null; }
         undoButton.IsEnabled = library.CanUndoResourceChange;
         var focus = TileCollection.Capture(this, Tiles());
         TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)),
@@ -69,15 +74,16 @@ internal sealed class CanvasPresetGallery : UserControl
     internal void Apply(string id) => Run(() =>
     {
         var preset = library.All.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id);
-        SelectedId = id;
+        SelectedId = id; selectedSnapshot = selectedDefinition = null;
         foreach (var button in Tiles()) button.SetResourceReference(BorderBrushProperty, Equals(button.Tag, id) ? "CanvasAccent" : "CanvasBorder");
         Applied?.Invoke(preset.Parameters.Clone());
+        if (SelectedId == id) { selectedSnapshot = CanvasPresetParameters.From(current); selectedDefinition = preset.Parameters.Clone(); }
     });
     internal void SaveNamed(string name)
     {
-        var saved = library.Save(name, current); SelectedId = saved.Id; Refresh(current); RevealSelection();
+        var saved = library.Save(name, current); SelectedId = saved.Id; selectedSnapshot = selectedDefinition = saved.Parameters.Clone(); Refresh(current); RevealSelection();
     }
-    internal void Delete(string id) => Run(() => { library.Delete(id); if (SelectedId == id) SelectedId = ""; Refresh(current); });
+    internal void Delete(string id) => Run(() => { library.Delete(id); if (SelectedId == id) { SelectedId = ""; selectedSnapshot = selectedDefinition = null; } Refresh(current); });
     private void Save()
     {
         string? name = NamePrompt.Show(this, L.Get("CanvasPreset.Name"), L.Get("CanvasPreset.DefaultName"));
@@ -104,7 +110,7 @@ internal sealed class CanvasPresetGallery : UserControl
         var menu = new OverlayContextMenu();
         void Add(string key, PanelActionIcon icon, Action action, string shortcut = "")
         { var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = shortcut }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-        Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => Run(() => { library.Update(preset.Id, current); SelectedId = preset.Id; Refresh(current); }));
+        Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => Run(() => { library.Update(preset.Id, current); SelectedId = preset.Id; selectedSnapshot = selectedDefinition = CanvasPresetParameters.From(current); Refresh(current); }));
         Add("ToolOptions.Rename", PanelActionIcon.Rename, () => Rename(preset), "F2");
         Add("ToolOptions.Delete", PanelActionIcon.Delete, () => Delete(preset.Id), "Delete"); return menu;
     }

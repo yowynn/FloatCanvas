@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- 官方与个人工具预设统一应用完整、确定的参数；旧个人预设缺少的新增参数恢复为默认值。官方预览固定，移除首次选用时继承颜色、线宽并保存为官方基线的行为，旧官方缓存不再影响应用；各工具当前工作状态继续独立保存。
+- Apply complete, deterministic parameters for official and personal tool presets, using defaults for new parameters missing from older personal presets. Keep official previews fixed, remove first-use color and stroke-width inheritance, and ignore older official baseline caches while retaining each tool's independent working state.
+
+- 将“深度优先遮挡”移到画布工具配置，仅在启用透视画布时显示；画布预设保存该开关，旧预设缺少时默认关闭。缺少校准时按参考屏幕与预设行列、格长生成默认几何，避免继承当前四角。应用仍解除网格调整锁，目标画布的非透视原点与重置屏幕偏好保持独立。
+- Move Depth-priority occlusion to Canvas tool settings, visible only with perspective enabled. Save it in canvas presets, defaulting to off when missing. Generate default geometry from the reference display and preset counts/spacing when calibration is absent instead of inheriting current corners. Application still releases the adjustment lock; the destination's flat origin and reset-display preference remain independent.
+
 - 优化半透明笔迹、荧光笔和形状的绘制，避免每个对象都进行全屏临时图层合成；复杂填充、描边与箭头仍保持整体透明度语义。
 - Optimize translucent strokes, highlighters and shapes to avoid a full-screen temporary layer per element; preserve whole-element opacity for combined fills, outlines and arrowheads.
 

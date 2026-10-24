@@ -37,22 +37,23 @@ internal static class ToolPresetAndColorTests
             Style = new() { Stroke = 0x7F112233, Fill = 0x33445566, StrokeWidth = 13, Opacity = .42, FontSize = 35, FontFamily = "Arial",
                 StartArrowHead = ArrowHeadStyle.Open, EndArrowHead = ArrowHeadStyle.None, ArrowHeadSize = 45, StrokePattern = StrokePattern.Dotted }
         };
-        var applied = library.Apply("official.arrow", current);
-        check("official unified arrow changes relevant line parameters and preserves colors and unrelated values", applied.Tool == EditorTool.Line &&
+        var applied = library.Apply("official.arrow");
+        check("official unified arrow restores its complete fixed parameters", applied.Tool == EditorTool.Line &&
             applied.Style.StartArrowHead == ArrowHeadStyle.None && applied.Style.EndArrowHead == ArrowHeadStyle.FilledTriangle && applied.Style.StrokePattern == StrokePattern.Solid &&
-            applied.Style.Stroke == current.Style.Stroke && applied.Style.Fill == current.Style.Fill && applied.Style.StrokeWidth == 13 && applied.Style.Opacity == .42 && applied.CornerRadius == 27 && applied.EffectStrength == 42);
-        var circle = library.Apply("official.circle", current);
-        check("circle recipe constrains ellipse without replacing font or effect state", circle.Tool == EditorTool.Ellipse && circle.ConstrainAspect && circle.Style.FontFamily == "Arial" && circle.EffectStrength == 42);
-        var rounded = library.Apply("official.rounded-rectangle", current);
+            applied.Style.Stroke == initial.Style.Stroke && applied.Style.Fill == initial.Style.Fill && applied.Style.StrokeWidth == initial.Style.StrokeWidth &&
+            applied.Style.Opacity == initial.Style.Opacity && applied.CornerRadius == initial.CornerRadius && applied.EffectStrength == initial.EffectStrength);
+        var circle = library.Apply("official.circle");
+        check("circle preset restores its default font effect and ellipse constraint", circle.Tool == EditorTool.Ellipse && circle.ConstrainAspect && circle.Style.FontFamily == initial.Style.FontFamily && circle.EffectStrength == initial.EffectStrength);
+        var rounded = library.Apply("official.rounded-rectangle");
         check("rounded recipe uses unified rectangle radius and releases square constraint", rounded.Tool == EditorTool.Rectangle && rounded.CornerRadius == 12 && !rounded.ConstrainAspect);
-        check("plain and double arrow recipes remain independent", library.Apply("official.line", current).Style.EndArrowHead == ArrowHeadStyle.None && library.Apply("official.double-arrow", current).Style.StartArrowHead == ArrowHeadStyle.FilledTriangle);
-        check("official dashed and dotted recipes preserve custom colors", library.Apply("official.dashed-line", current).Style.StrokePattern == StrokePattern.Dashed && library.Apply("official.dotted-line", current).Style.Stroke == current.Style.Stroke);
+        check("plain and double arrow recipes remain independent", library.Apply("official.line").Style.EndArrowHead == ArrowHeadStyle.None && library.Apply("official.double-arrow").Style.StartArrowHead == ArrowHeadStyle.FilledTriangle);
+        check("official dashed and dotted presets restore factory colors", library.Apply("official.dashed-line").Style.StrokePattern == StrokePattern.Dashed && library.Apply("official.dotted-line").Style.Stroke == initial.Style.Stroke);
         string savedState = JsonSerializer.Serialize(current);
         var saved = library.Save(" My preset ", current); current.Style.Stroke = 0xFFFFFFFF;
         check("user save keeps complete independent parameter snapshot", saved.Name == "My preset" && JsonSerializer.Serialize(saved.Parameters) == savedState && library.User[0].Parameters.Style.Stroke == 0x7F112233);
-        var userApplied = library.Apply(saved.Id, current);
+        var userApplied = library.Apply(saved.Id);
         check("user preset defaults to complete saved colors and parameters", JsonSerializer.Serialize(userApplied) == savedState);
-        check("explicit user color preservation merges only active colors", library.Apply(saved.Id, current, includeColors: false).Style.Stroke == 0xFFFFFFFF && library.Apply(saved.Id, current, includeColors: false).Style.Fill == current.Style.Fill);
+        check("user application always restores the saved colors", library.Apply(saved.Id).Style.Stroke == 0x7F112233 && library.Apply(saved.Id).Style.Fill == 0x33445566);
         userApplied.Style.FontSize = 99;
         check("applying a user preset does not mutate library snapshot", library.User[0].Parameters.Style.FontSize == 35);
         saved.Parameters.Style.FontSize = 111;

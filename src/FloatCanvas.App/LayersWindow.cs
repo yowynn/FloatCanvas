@@ -17,11 +17,6 @@ internal sealed class LayersWindow : Wpf.Window
     private readonly Controls.ListBox layers = new() { SelectionMode = Controls.SelectionMode.Extended, BorderThickness = new(0) };
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, FontSize = 12 };
     private readonly Controls.TextBlock empty = new() { Text = L.Get("Layers.Empty"), TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(12) };
-    private readonly Controls.CheckBox depthPriorityOcclusion = new()
-    {
-        Content = L.Get("Layers.DepthPriorityOcclusion"), ToolTip = L.Get("Layers.DepthPriorityOcclusionHint"),
-        Margin = new(2, 4, 0, 10), Visibility = Wpf.Visibility.Collapsed
-    };
     private readonly Dictionary<Guid, LayerRow> rows = [];
     private EditorSession? displayedSession, dragSession;
     private Guid[]? dragIds;
@@ -48,23 +43,18 @@ internal sealed class LayersWindow : Wpf.Window
         Title = L.Get("Layers.Title"); Width = 320; Height = 520; MinWidth = 260; MinHeight = 260;
         Topmost = true; ShowInTaskbar = true; Icon = AppIcon.WindowImage;
         var body = new Controls.Grid { Margin = new(12, 4, 12, 12) };
-        body.RowDefinitions.Add(new() { Height = Wpf.GridLength.Auto });
         body.RowDefinitions.Add(new() { Height = new(1, Wpf.GridUnitType.Star) });
         body.RowDefinitions.Add(new() { Height = Wpf.GridLength.Auto });
         var footer = new Controls.DockPanel { Margin = new(0, 6, 0, 0) };
         var listSite = new Controls.Grid(); listSite.Children.Add(layers); listSite.Children.Add(empty);
-        Automation.AutomationProperties.SetName(depthPriorityOcclusion, L.Get("Layers.DepthPriorityOcclusion"));
-        body.Children.Add(depthPriorityOcclusion);
-        Controls.Grid.SetRow(listSite, 1);
         body.Children.Add(listSite);
         Automation.AutomationProperties.SetName(layers, L.Get("Inspector.LayerList"));
         status.Margin = new(0, 3, 20, 0); status.SetResourceReference(Controls.TextBlock.ForegroundProperty, "CanvasMuted");
         footer.Children.Add(status);
-        Controls.Grid.SetRow(footer, 2); body.Children.Add(footer); Content = body;
+        Controls.Grid.SetRow(footer, 1); body.Children.Add(footer); Content = body;
         AppWindowChrome.Apply(this);
         AppWindowChrome.SetHelp(this, L.Get("Layers.Help"), L.Get("Layers.HelpWithRename"));
         layers.SelectionChanged += (_, _) => SelectRows();
-        depthPriorityOcclusion.Click += (_, _) => SetDepthPriorityOcclusion(depthPriorityOcclusion.IsChecked == true);
         Closing += (_, e) => { e.Cancel = true; CommitRename(); CancelDrag(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         Deactivated += (_, _) => { if (SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending != true) { CommitRename(); CancelDrag(); } };
         IsVisibleChanged += (_, _) => { if (!IsVisible) { CommitRename(); CancelDrag(); } };
@@ -122,8 +112,6 @@ internal sealed class LayersWindow : Wpf.Window
         refreshing = true;
         try
         {
-            depthPriorityOcclusion.Visibility = session.Document.Canvas.Projection.Enabled ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-            depthPriorityOcclusion.IsChecked = session.Document.Canvas.DepthPriorityOcclusion;
             var ordered = session.Document.Elements.AsEnumerable().Reverse().ToArray();
             if (renameId is { } editing && (!ReferenceEquals(renameSession, session) || !ordered.Any(e => e.Id == editing))) CancelRename();
             if (!ReferenceEquals(displayedSession, session) || !ordered.Select(e => e.Id).SequenceEqual(layers.Items.Cast<Controls.ListBoxItem>().Select(i => (Guid)i.Tag)))
@@ -253,21 +241,6 @@ internal sealed class LayersWindow : Wpf.Window
                 var element = document.Elements.FirstOrDefault(e => e.Id == id) ?? throw new InvalidOperationException(L.Get("Inspector.LayerMissing"));
                 if (visibility) element.Visible = value; else element.Locked = value;
             });
-        }
-        catch (Exception ex) { status.Text = ex.Message; }
-        RefreshRows(getSession());
-    }
-
-    private void SetDepthPriorityOcclusion(bool value)
-    {
-        if (refreshing) return;
-        try
-        {
-            var session = getSession();
-            if (!canMutate() || !ReferenceEquals(session, displayedSession) || session.IsTransactionActive)
-                throw new InvalidOperationException(L.Get("Inspector.BusyLayersRetained"));
-            if (session.Document.Canvas.Projection.Enabled && session.Document.Canvas.DepthPriorityOcclusion != value)
-                session.Execute(L.Get("Layers.DepthPriorityOcclusion"), document => document.Canvas.DepthPriorityOcclusion = value);
         }
         catch (Exception ex) { status.Text = ex.Message; }
         RefreshRows(getSession());

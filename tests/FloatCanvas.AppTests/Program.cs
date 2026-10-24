@@ -176,6 +176,7 @@ internal static class Program
             if (args.Contains("--tool-options-input-only")) { ToolOptionsInputFixture.Run(Assert); return 0; }
             if (args.Contains("--tool-options-only")) { ToolOptionsPanelTests.Run(Assert); return 0; }
             if (args.Contains("--tool-compatibility-only")) { ToolCompatibilityTests.Run(Assert); return 0; }
+            if (args.Contains("--complete-presets-only")) { CompletePresetContractTests.Run(Assert); return 0; }
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
@@ -244,6 +245,7 @@ internal static class Program
             ObjectClipboardTests.Run(Assert);
             LauncherGestureStateTests.Run(Assert);
             ToolbarInteractionTests.Run(Assert);
+            CompletePresetContractTests.Run(Assert);
             ToolPresetAndColorTests.Run(Assert);
             PresetSizingCompatibilityTests.Run(Assert);
             ConfigurationCompatibilityTests.Run(Assert);

@@ -17,9 +17,46 @@ internal static class CanvasPresetTests
         Directory.CreateDirectory(folder);
         try
         {
-            Persistence(folder, check); Calibration(folder, check); CalibrationSnapshots(folder, check); FlatGridPersistence(folder, check); CrossModeGridPresets(folder, check); Controls(folder, check);
+            CompleteSnapshots(folder, check); Persistence(folder, check); Calibration(folder, check); CalibrationSnapshots(folder, check); FlatGridPersistence(folder, check); CrossModeGridPresets(folder, check); Controls(folder, check);
         }
         finally { Directory.Delete(folder, true); }
+    }
+
+    private static void CompleteSnapshots(string folder, Action<string, bool> check)
+    {
+        var viewport = new RectD(0, 0, 1920, 1080);
+        var source = new CanvasSettings { DepthPriorityOcclusion = true, Projection = CanvasCalibration.CreateInitial(viewport, 11, 7) };
+        source.Projection.Enabled = true;
+        string path = Path.Combine(folder, "complete-canvas.json"); var library = new CanvasPresetLibrary(path);
+        var saved = library.Save("Depth priority", source);
+        var reloaded = new CanvasPresetLibrary(path);
+        var target = new CanvasSettings { Grid = new() { FlatOrigin = new(-320, 240) } };
+        var applied = reloaded.Apply(saved.Id, target, viewport, viewport);
+        check("personal canvas presets restore saved depth priority after reload instead of inheriting the destination", applied.DepthPriorityOcclusion && !target.DepthPriorityOcclusion);
+        var changed = source.Clone(); changed.DepthPriorityOcclusion = false;
+        check("changing depth priority invalidates a personal canvas preset match", !saved.Parameters.Matches(CanvasPresetParameters.From(changed)));
+        reloaded.Update(saved.Id, changed);
+        var disabled = new CanvasPresetLibrary(path).Apply(saved.Id, source, viewport, viewport);
+        check("overwritten canvas presets restore disabled depth priority without changing the source", !disabled.DepthPriorityOcclusion && source.DepthPriorityOcclusion);
+        foreach (var official in reloaded.Official)
+            check(official.Id + " explicitly restores default depth priority", !reloaded.Apply(official.Id, source, viewport, viewport).DepthPriorityOcclusion);
+
+        var legacy = JsonNode.Parse(File.ReadAllText(path))!; legacy["Version"] = 1;
+        var parameters = legacy["Presets"]![0]!["Parameters"]!.AsObject();
+        parameters.Remove("DepthPriorityOcclusion"); parameters.Remove("Calibration"); parameters.Remove("FlatCellSize");
+        string legacyPath = Path.Combine(folder, "complete-canvas-legacy.json"), legacyBytes = legacy.ToJsonString();
+        File.WriteAllText(legacyPath, legacyBytes); var legacyLibrary = new CanvasPresetLibrary(legacyPath);
+        var different = source.Clone(); different.Projection = CanvasCalibration.CreateInitial(new(50, 70, 1000, 600), 3, 4);
+        different.Projection.Enabled = true; different.Grid.FlatOrigin = target.Grid.FlatOrigin;
+        var legacyApplied = legacyLibrary.Apply(saved.Id, different, viewport, viewport);
+        var expected = CanvasCalibration.CreateInitial(viewport, source.Projection.Columns, source.Projection.Rows); expected.Enabled = true;
+        check("missing legacy canvas fields use defaults and reference geometry without inheriting destination state or rewriting the file",
+            !legacyApplied.DepthPriorityOcclusion && JsonSerializer.Serialize(legacyApplied.Projection) == JsonSerializer.Serialize(expected) &&
+            legacyApplied.Grid.FlatOrigin == target.Grid.FlatOrigin && File.ReadAllText(legacyPath) == legacyBytes);
+        var withSize = legacyLibrary.User.Single().Parameters.Clone(); withSize.FlatCellSize = 73.125;
+        var sized = CanvasPresetLibrary.Apply(withSize, different, viewport, viewport);
+        check("legacy perspective recipes without calibration use their own saved grid size for default geometry", sized.Projection.Enabled &&
+            sized.Projection.Matrix == Projective2D.Identity && sized.Projection.CellSize == 73.125 && sized.Grid.FlatCellSize == 73.125);
     }
 
     private static void Persistence(string folder, Action<string, bool> check)
@@ -68,13 +105,13 @@ internal static class CanvasPresetTests
     {
         var viewport = new RectD(-200, -100, 1600, 1000); var reference = new RectD(0, 0, 1000, 700);
         var current = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(reference, 8, 6) };
-        var originalQuad = current.Projection.Quad.ToArray(); var originalOrigin = current.Projection.Origin;
         var parameters = new CanvasPresetParameters { BackgroundColor = 0xFF445566, ProjectionEnabled = true, Columns = 13, Rows = 7,
             GridVisible = true, GridColor = 0xA0334455, GridWidth = .25, GridPattern = StrokePattern.Dotted };
         string before = JsonSerializer.Serialize(current);
         var applied = CanvasPresetLibrary.Apply(parameters, current, reference, viewport);
         check("applying a canvas preset leaves its source document untouched", JsonSerializer.Serialize(current) == before);
-        check("changing preset counts preserves current screen corners and plane origin", applied.Projection.Quad.SequenceEqual(originalQuad) && applied.Projection.Origin == originalOrigin);
+        var expected = CanvasCalibration.CreateInitial(reference, 13, 7); expected.Enabled = true;
+        check("presets without calibration restore reference geometry using their own counts", JsonSerializer.Serialize(applied.Projection) == JsonSerializer.Serialize(expected));
         check("preset counts recalculate a valid transform with all portable fields", applied.Projection.Columns == 13 && applied.Projection.Rows == 7 && applied.Projection.Enabled &&
             CanvasCalibration.IsStableViewport(applied.Projection.Matrix, viewport) && parameters.Matches(CanvasPresetParameters.From(applied)));
         var sameCounts = CanvasPresetParameters.From(applied); sameCounts.BackgroundColor = 0;
@@ -83,10 +120,11 @@ internal static class CanvasPresetTests
         var initialized = CanvasPresetLibrary.Apply(parameters, new(), reference, viewport);
         check("presets initialize an uncalibrated canvas from the current screen reference", initialized.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(reference, 13, 7).Quad));
         var hidden = CanvasPresetLibrary.Apply(new() { Columns = 10, Rows = 4 }, new(), reference, viewport);
-        check("plain presets preserve an uninitialized reference until needed", hidden.Projection.Quad.Count == 0 && hidden.Projection.Columns == 10 && hidden.Projection.Rows == 4 && !hidden.Projection.Enabled);
+        check("plain presets restore default reference geometry independently of their destination", hidden.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(reference, 10, 4).Quad) && !hidden.Projection.Enabled);
         var broken = new CanvasSettings(); broken.Projection.Quad = [new(0, 0), new(200, 0), new(0, 200), new(200, 200)];
         string brokenBefore = JsonSerializer.Serialize(broken);
-        check("invalid calibration refuses a preset without partial mutation", Reject(() => CanvasPresetLibrary.Apply(parameters, broken, reference, viewport)) && JsonSerializer.Serialize(broken) == brokenBefore);
+        var repaired = CanvasPresetLibrary.Apply(parameters, broken, reference, viewport);
+        check("a preset without calibration replaces invalid destination geometry without mutating its source", JsonSerializer.Serialize(repaired.Projection) == JsonSerializer.Serialize(expected) && JsonSerializer.Serialize(broken) == brokenBefore);
         check("preset initialization refuses a viewport too small for valid calibration", Reject(() => CanvasPresetLibrary.Apply(parameters, new(), new(0, 0, 1, 1), new(0, 0, 1, 1))));
         var library = new CanvasPresetLibrary(Path.Combine(folder, "calibration.json"));
         string id = library.Save("Portable", applied).Id;
@@ -169,7 +207,7 @@ internal static class CanvasPresetTests
         var legacy = new CanvasPresetLibrary(legacyPath);
         check("reading a version-one canvas library performs no migration write", File.ReadAllText(legacyPath) == legacyBytes && legacy.User.All(p => p.Parameters.Calibration is null));
         var legacyApplied = legacy.Apply(saved.Id, current, viewport, viewport);
-        check("legacy recipes preserve the current canvas geometry", legacyApplied.Projection.Quad.SequenceEqual(quad) && legacyApplied.Projection.Matrix == current.Projection.Matrix);
+        check("legacy recipes without calibration restore default reference geometry", legacyApplied.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(viewport, current.Projection.Columns, current.Projection.Rows).Quad) && legacyApplied.Projection.Matrix == Projective2D.Identity);
         legacy.Save("New perspective", current);
         var migrated = new CanvasPresetLibrary(legacyPath);
         check("an explicit edit writes version three while retaining all legacy recipes and their portable semantics", File.ReadAllText(legacyPath).Contains("\"Version\": 3") && migrated.User.Count == legacy.User.Count && migrated.User.Single(p => p.Id == saved.Id).Parameters.Calibration is null && migrated.User.Last().Parameters.Calibration is not null);
@@ -338,6 +376,20 @@ internal static class CanvasPresetTests
             var savedTile = gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, perspectiveId));
             savedTile.ContextMenu!.Items.OfType<MenuItem>().First().RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check("overwriting a changed personal calibration selects the new matching snapshot", gallery.SelectedId == perspectiveId && new CanvasPresetLibrary(Path.Combine(folder, "controls.json")).User.Single(p => p.Id == perspectiveId).Parameters.Calibration!.Quad.SequenceEqual(changedQuad));
+            library.UndoResourceChange(); window.Refresh(session.Document.Canvas, false);
+            check("undoing an overwrite clears selection when the restored preset differs from the current canvas", gallery.SelectedId == "");
+
+            var legacy = library.Save("Legacy default geometry", new() { Projection = new() { Enabled = true } });
+            gallery.Apply(legacy.Id);
+            check("applying a preset without saved calibration keeps its resolved default geometry selected", gallery.SelectedId == legacy.Id);
+            var alternate = CanvasCalibration.CreateInitial(new(0, 0, 1280, 720)); alternate.Enabled = true;
+            session.Document.Canvas.Projection = alternate; window.Refresh(session.Document.Canvas, false);
+            check("changing geometry after applying a legacy preset clears its selection despite omitted calibration and size", gallery.SelectedId == "");
+            gallery.Apply(legacy.Id);
+            library.Rename(legacy.Id, "Renamed legacy default"); window.Refresh(session.Document.Canvas, false);
+            check("renaming an applied legacy preset preserves selection of its resolved geometry", gallery.SelectedId == legacy.Id);
+            library.UndoResourceChange(); window.Refresh(session.Document.Canvas, false);
+            check("undoing a preset rename preserves its resolved geometry selection", gallery.SelectedId == legacy.Id);
         }
         finally { window.CloseForDispose(); }
         string previousProfile = ApplicationPaths.ProfileDirectory; string corruptProfile = Path.Combine(folder, "broken-profile");
