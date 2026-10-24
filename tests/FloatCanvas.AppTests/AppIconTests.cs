@@ -105,8 +105,15 @@ internal static class AppIconTests
         assert("pass-through visibility swaps only the image source", ReferenceEquals(image, launcher.Content) && ReferenceEquals(image.Source, closed));
         foreach (bool hidden in new[] { false, true })
         {
-            using var icon = AppIcon.CreateTrayIcon(hidden, passThrough: true);
-            assert("held-crown tray resource is available for hidden=" + hidden, icon.Handle != 0);
+            using var icon = AppIcon.CreateTrayIcon(hidden);
+            using var crownedStream = Wpf.Application.GetResourceStream(new Uri(
+                "/FloatCanvas;component/Assets/FloatCanvas" + (hidden ? ".Hidden" : "") + ".ico", UriKind.Relative))!.Stream;
+            using var crowned = new System.Drawing.Icon(crownedStream, System.Windows.Forms.SystemInformation.SmallIconSize);
+            using var actual = icon.ToBitmap();
+            using var expected = crowned.ToBitmap();
+            assert("shell icon retains its crowned artwork for hidden=" + hidden,
+                actual.Size == expected.Size && Enumerable.Range(0, actual.Width).All(x =>
+                    Enumerable.Range(0, actual.Height).All(y => actual.GetPixel(x, y) == expected.GetPixel(x, y))));
         }
     }
 

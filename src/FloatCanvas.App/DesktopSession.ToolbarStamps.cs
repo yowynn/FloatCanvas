@@ -44,7 +44,7 @@ internal sealed partial class DesktopSession
         if(_tray is not null)
         {
             var previous=_tray.Icon;
-            _tray.Icon=AppIcon.CreateTrayIcon(!visible, passThrough: !editing);
+            _tray.Icon=AppIcon.CreateTrayIcon(!visible);
             previous?.Dispose();
         }
     }

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 任务栏和托盘始终使用戴皇冠图标，仅按画布显隐切换睁眼／闭眼；悬浮头像继续区分编辑与穿透模式。
+- Keep crowned taskbar and tray icons, switching only between open and closed eyes with canvas visibility; floating launchers retain their mode-specific artwork.
+
 - 官方与个人工具预设统一应用完整、确定的参数；旧个人预设缺少的新增参数恢复为默认值。官方预览固定，移除首次选用时继承颜色、线宽并保存为官方基线的行为，旧官方缓存不再影响应用；各工具当前工作状态继续独立保存。
 - Apply complete, deterministic parameters for official and personal tool presets, using defaults for new parameters missing from older personal presets. Keep official previews fixed, remove first-use color and stroke-width inheritance, and ignore older official baseline caches while retaining each tool's independent working state.
 

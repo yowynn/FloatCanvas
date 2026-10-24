@@ -22,9 +22,9 @@ internal static class AppIcon
         : (visible ? PassThroughToolbarImage : HiddenPassThroughToolbarImage);
 
     // The caller owns the returned icon. Clone it so its resource stream can close immediately.
-    public static Drawing.Icon CreateTrayIcon(bool hidden = false, bool passThrough = false)
+    public static Drawing.Icon CreateTrayIcon(bool hidden = false)
     {
-        using var stream = OpenResource(hidden, passThrough);
+        using var stream = OpenResource(hidden);
         using var icon = new Drawing.Icon(stream, Forms.SystemInformation.SmallIconSize);
         return (Drawing.Icon)icon.Clone();
     }
@@ -49,8 +49,7 @@ internal static class AppIcon
         return master;
     }
 
-    private static Stream OpenResource(bool hidden = false, bool passThrough = false) => Application.GetResourceStream(passThrough
-        ? new Uri("/FloatCanvas;component/Assets/FloatCanvas.PassThrough" + (hidden ? ".Hidden" : "") + ".ico", UriKind.Relative)
-        : hidden ? new Uri("/FloatCanvas;component/Assets/FloatCanvas.Hidden.ico", UriKind.Relative) : ResourceUri)?.Stream
+    private static Stream OpenResource(bool hidden = false) => Application.GetResourceStream(
+        hidden ? new Uri("/FloatCanvas;component/Assets/FloatCanvas.Hidden.ico", UriKind.Relative) : ResourceUri)?.Stream
         ?? throw new InvalidOperationException("The FloatCanvas application icon resource is missing.");
 }
