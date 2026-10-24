@@ -79,7 +79,7 @@ internal sealed partial class DesktopSession
         _propertiesClickSession = Active; _propertiesClickTool = _editor.Tool;
         _propertiesClickEditingSession = _host.EditingSessionVersion;
         bool propertiesDoubleClick;
-        if (_editor.Tool == EditorTool.Text)
+        if (_editor.Tool == EditorTool.Text || (e.Modifiers & OverlayModifiers.Control) != 0)
         { _propertiesClicks.Reset(); propertiesDoubleClick = false; }
         else propertiesDoubleClick = _propertiesClicks.Observe(e, dismissedProperties);
         ValidateSelectedStamp();
@@ -130,7 +130,9 @@ internal sealed partial class DesktopSession
             return;
         }
         if (e.Kind == OverlayPointerKind.Down && e.Button == OverlayMouseButton.Right) SwitchToolState(EditorTool.Select);
+        int elementCount = Active.Document.Elements.Count;
         _editor.PointerForCanvas(e, propertiesDoubleClick);
+        if (Active.Document.Elements.Count > elementCount) _propertiesClicks.Reset();
     }
 
     private void PlaceStampSafely(Action placement) => RunUiAction(() =>

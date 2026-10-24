@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 创建新图层的点击不再成为打开属性的双击首击；Ctrl 双击可连续创建两个序号等预设图层。
+- Keep creation clicks out of properties double-click pairing, allowing Ctrl-double-click to create two numbered or preset layers.
+
 - 编辑头像拖动不再留下隐藏键盘焦点；选中图层后 Enter 正常打开属性，主菜单仍可通过鼠标和菜单键打开。
 - Prevent editing-mascot drags from retaining hidden keyboard focus; Enter opens selected-layer properties while mouse and menu-key access remain available.
 
