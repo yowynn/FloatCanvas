@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 放大新画布二次确认气泡与文字，使用连续描边连接气泡和尾巴。
+- Enlarge the new-canvas confirmation hint and text, joining its body and pointer with one continuous outline.
+
 - 任务栏和托盘始终使用戴皇冠图标，仅按画布显隐切换睁眼／闭眼；悬浮头像继续区分编辑与穿透模式。
 - Keep crowned taskbar and tray icons, switching only between open and closed eyes with canvas visibility; floating launchers retain their mode-specific artwork.
 

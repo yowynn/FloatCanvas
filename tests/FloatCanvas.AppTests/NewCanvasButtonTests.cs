@@ -123,6 +123,7 @@ internal static class NewCanvasButtonTests
         var hint = (TextBlock)bubble.Child;
         check(context + " confirmation bubble is a noninteractive nonactivating hint above the same target", popup.PlacementTarget == button && popup.Placement == PlacementMode.Custom && popup.CustomPopupPlacementCallback is not null && popup.AllowsTransparency && popup.StaysOpen && !popup.Focusable && !popup.IsHitTestVisible);
         check(context + " confirmation question is localized plain text", hint.Text == L.Get("History.NewQuestion") && !string.IsNullOrWhiteSpace(hint.Text));
+        check(context + " confirmation text is at least tooltip size", hint.FontSize >= 14 && bubble.Padding.Top >= 6);
         check(context + " confirmation hint uses the regular panel surface and text", bubble.Background == app.Resources["CanvasSurface"] && bubble.BorderBrush == app.Resources["CanvasAccent"] && bubble.BorderThickness == new Thickness(2) && hint.FontWeight == FontWeights.SemiBold && hint.Foreground == app.Resources["CanvasText"]);
         SavePreview(host, "clear-" + language + "-" + theme + "-idle.png");
         Click(button); Layout(host);
@@ -134,7 +135,11 @@ internal static class NewCanvasButtonTests
         popup.Child = null;
         Layout(popupRoot); SavePreview(popupRoot, "clear-" + language + "-" + theme + "-hint.png");
         var position = popup.CustomPopupPlacementCallback!(popupRoot.DesiredSize, new Size(26, 26), new Point())[0].Point;
-        check(context + " hint and pointer fit above the upper row within the crown's height", position.Y < 0 && position.Y >= -(ToolbarLauncher.Expansion + 5) && position.Y + popupRoot.ActualHeight <= 0 && popupRoot.Children.OfType<DrawingPath>().Count() == 1);
+        check(context + " enlarged hint and pointer fit above the same target", position.Y < 0 && position.Y + popupRoot.ActualHeight <= 0 && bubble is ConfirmationBubble);
+        var outline = ConfirmationBubble.Outline(bubble.RenderSize);
+        var join = new Point(bubble.ActualWidth / 2, bubble.ActualHeight - 1);
+        check(context + " bubble pointer has no internal divider", outline.FillContains(join) &&
+            !outline.StrokeContains(new Pen(Brushes.Black, 2), join) && outline.FillContains(new Point(join.X, join.Y + 4)));
         popup.Child = popupRoot;
         button.CancelConfirmation(); host.Child = null;
     }
