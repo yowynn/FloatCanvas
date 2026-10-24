@@ -205,7 +205,7 @@ internal sealed partial class DesktopSession
         {
             if(e.Handled)return;
             if(IsOptionsInput(e.OriginalSource as DependencyObject))return;
-            if (e.OriginalSource is ToolbarLauncher && e.Key is Key.Enter or Key.Space or Key.Apps) return;
+            if (e.OriginalSource is ToolbarLauncher && e.Key is Key.Space or Key.Apps) return;
             var key = KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key);
             if (!EditorShortcutPolicy.ShouldRoute(key, Keyboard.Modifiers, e.OriginalSource as DependencyObject)) return;
             e.Handled = true;

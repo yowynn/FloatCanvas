@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 编辑头像拖动不再留下隐藏键盘焦点；选中图层后 Enter 正常打开属性，主菜单仍可通过鼠标和菜单键打开。
+- Prevent editing-mascot drags from retaining hidden keyboard focus; Enter opens selected-layer properties while mouse and menu-key access remain available.
+
 - 保存及另存为完成后立即刷新文件绑定气泡，无需继续操作画布。
 - Refresh the bound-file bubble immediately after Save or Save As completes.
 

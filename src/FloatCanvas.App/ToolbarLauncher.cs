@@ -26,7 +26,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
     {
         this.editing = editing;
         MinWidth = Width = ArtworkSize; MinHeight = Height = ArtworkSize; Padding = new Thickness(0); BorderThickness = new Thickness(0);
-        Background = Brushes.Transparent; Focusable = true; Cursor = Cursors.Arrow;
+        Background = Brushes.Transparent; Focusable = !editing; Cursor = Cursors.Arrow;
         FocusVisualStyle = null;
         var hitSurface = new FrameworkElementFactory(typeof(Border));
         hitSurface.SetValue(Border.BackgroundProperty, Brushes.Transparent);
@@ -77,7 +77,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
     protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         if (!gestures.HasPendingClick && !gestures.IsPointerDown) ResetMetrics();
-        Focus();
+        if (!editing) Focus();
         var point = PointToScreen(e.GetPosition(this));
         Execute(gestures.PointerDown(point.X, point.Y, Environment.TickCount64));
         CaptureMouse(); ArmTimer(); e.Handled = true;
@@ -102,7 +102,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
     }
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
-        if (e.Key is Key.Enter or Key.Space or Key.Apps || e.Key == Key.F10 && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        if (!editing && e.Key is Key.Enter or Key.Space || e.Key == Key.Apps || e.Key == Key.F10 && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
         {
             if (!e.IsRepeat) OpenMenuImmediately();
             e.Handled = true; return;
