@@ -19,7 +19,7 @@ internal sealed partial class DesktopSession
             {
                 _hiddenCanvasSession = null;
                 _editor.CanvasContentHidden = false;
-                _host.SetPreviewVisible(false);
+                if (_host.IsPreviewVisible) _host.SetPreviewVisible(false);
                 return;
             }
             if (!ReferenceEquals(_hiddenCanvasSession, Active))
