@@ -39,6 +39,9 @@ internal static class ToolOptionsKeyboardRouteTests
             var tab = Send(button, Key.Tab);
             check("Tab on an ordinary tool control routes exactly one toolbar command", tab.Handled && commands.Count == before + 1 && commands[^1] == 0x09);
             before = commands.Count;
+            var canvasTab = Send(window, Key.Tab);
+            check("Tab on the empty editor surface still routes one toolbar command", canvasTab.Handled && commands.Count == before + 1 && commands[^1] == 0x09);
+            before = commands.Count;
             foreach(var source in new UIElement[]{text,slider,combo})
             {
                 Send(source,Key.Tab);

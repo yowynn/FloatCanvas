@@ -58,7 +58,8 @@ public sealed class RecoveryStore
             {
                 try
                 {
-                    await PackageCodec.LoadAsync<WorkspaceState>(CurrentPath, "recovery", ct).ConfigureAwait(false);
+                    if (!PackageCodec.IsKnownValid(CurrentPath, "recovery"))
+                        await PackageCodec.LoadAsync<WorkspaceState>(CurrentPath, "recovery", ct).ConfigureAwait(false);
                     await CopyAtomicallyAsync(CurrentPath, BackupPath, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or System.Text.Json.JsonException or NotSupportedException) { }

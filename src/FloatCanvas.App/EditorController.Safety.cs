@@ -74,7 +74,7 @@ internal sealed partial class EditorController
     {
         private readonly Affine2D transform;
         private readonly Projective2D? placement;
-        private readonly List<PointD> points;
+        private readonly PointCollection points;
         private readonly double width, height, billboardHeight;
         private readonly double? cornerRadius;
         private readonly ElementStyle style;

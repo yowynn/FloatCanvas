@@ -17,7 +17,7 @@ internal sealed class WelcomeView : StackPanel
     internal Button VersionButton { get; }
     internal Button ProjectButton { get; }
 
-    internal WelcomeView(HotkeyBinding toggle, HotkeyBinding hide, Action start, Action? checkUpdates = null, Action? openProject = null)
+    internal WelcomeView(HotkeyBinding toggle, HotkeyBinding hide, Action start, Action? checkUpdates = null, Action? openProject = null, Action? restoreHistory = null, WorkspaceRecoveryHistory? history = null)
     {
         Margin = new Thickness(24, 12, 24, 20);
         SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "CanvasText");
@@ -29,6 +29,24 @@ internal sealed class WelcomeView : StackPanel
         StartButton = new Button { MinHeight = 38, Padding = new Thickness(12, 7, 12, 7), IsDefault = true };
         StartButton.SetResourceReference(FrameworkElement.StyleProperty, "CanvasPrimaryButton");
         StartButton.Click += (_, _) => start(); Children.Add(StartButton);
+        if (restoreHistory is not null && history is not null)
+        {
+            var recoveryHint = new TextBlock { Text = L.Get("Audit.WelcomeRestoreHint"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 10, 0, 0) };
+            recoveryHint.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); Children.Add(recoveryHint);
+            var resume = new Button { Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
+            resume.Click += (_, _) => restoreHistory(); Children.Add(resume);
+            Loaded += async (_, _) =>
+            {
+                try
+                {
+                    var entries = await history.GetEntriesAsync();
+                    if (entries.FirstOrDefault() is { } latest)
+                    { resume.Content = L.Format("Audit.RecentHistory", latest.SavedAtUtc.ToLocalTime().ToString("g")); resume.Visibility = Visibility.Visible; }
+                    else recoveryHint.Text = L.Get("Audit.WelcomeRestoreEmpty");
+                }
+                catch (Exception) { resume.Content = L.Get("Recovery.HistoryTitle"); resume.Visibility = Visibility.Visible; }
+            };
+        }
         Refresh(toggle, hide);
         var footer = new Grid { Margin = new Thickness(0, 16, 0, 0) };
         var version = typeof(DesktopSession).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "";

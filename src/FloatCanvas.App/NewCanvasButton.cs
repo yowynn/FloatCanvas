@@ -26,7 +26,8 @@ internal sealed class NewCanvasButton : Button
         this.needsConfirmation=needsConfirmation??(()=>true);
         Tag = "new-canvas"; Width = MinWidth = Height = MinHeight = 26;
         Margin = new Thickness(2, 0, 2, 0); Padding = new Thickness(3);
-        BorderThickness = new Thickness(1); BorderBrush = Brushes.Transparent; FocusVisualStyle = null;
+        BorderThickness = new Thickness(1); BorderBrush = Brushes.Transparent;
+        FocusVisualStyle = null;
         SetResourceReference(StyleProperty, typeof(Button));
         SetResourceReference(BackgroundProperty,"CanvasButton");
         ToolTipService.SetShowsToolTipOnKeyboardFocus(this, false);

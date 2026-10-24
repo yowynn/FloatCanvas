@@ -79,6 +79,15 @@ internal sealed class CanvasPresetLibrary
     private readonly string path;
     private readonly CompatibleConfiguration compatibility;
     private List<CanvasPreset> presets = [];
+    private readonly Stack<List<CanvasPreset>> undo = new();
+    private bool restoringResource;
+    internal bool CanUndoResourceChange => undo.Count > 0;
+    internal void UndoResourceChange()
+    {
+        if (!undo.TryPeek(out var previous)) return;
+        restoringResource = true; try { Persist(previous.Select(p => p.Clone()).ToList()); undo.Pop(); } finally { restoringResource = false; }
+    }
+    private void RememberResourceChange(List<CanvasPreset> previous) { undo.Push(previous); if (undo.Count > 20) { var keep = undo.Take(20).Reverse().ToArray(); undo.Clear(); foreach (var value in keep) undo.Push(value); } }
     internal bool CanEdit { get; } = true;
     internal static CanvasPresetLibrary OfficialOnly() => new(readOnly: true);
     private CanvasPresetLibrary(bool readOnly) { path = ""; compatibility=new(path); CanEdit = !readOnly; }
@@ -194,7 +203,9 @@ internal sealed class CanvasPresetLibrary
     private void Persist(List<CanvasPreset> next)
     {
         if (!CanEdit) throw new InvalidOperationException(L.Get("CanvasPreset.ReadOnly"));
+        var previous = presets.Select(p => p.Clone()).ToList();
         compatibility.Save(new State { Presets = next },JsonOptions); presets = next;
+        if (!restoringResource) RememberResourceChange(previous);
     }
     private static bool ValidName(string? name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 80;
     private static JsonSerializerOptions CreateJsonOptions()

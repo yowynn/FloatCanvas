@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+await DataRemediationTests.RunAsync(Check);
 if (args.Contains("--billboard-only"))
 {
     await BillboardStorageTests.RunAsync(Check);

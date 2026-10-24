@@ -62,7 +62,7 @@ internal sealed class StampShelfControl : Controls.UserControl
             var button = new Controls.Button { Content = content, Width = 30, Height = 26, MinWidth = 30, MinHeight = 26,
                 Padding = new Wpf.Thickness(0), Margin = new Wpf.Thickness(0), Template = SlotTemplate,
                 ToolTip = entry is null ? digit + " · " + L.Get("Stamp.EmptySlot") : StampPreviewTooltip.Create(library, entry, digit) };
-            button.FocusVisualStyle=null;Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(button,false);
+            button.FocusVisualStyle=null; Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(button,false);
             Wpf.Automation.AutomationProperties.SetName(button, digit + " " + (entry?.Name ?? L.Get("Stamp.EmptySlot")));
             if (entry is not null)
             {
@@ -94,11 +94,12 @@ internal sealed class StampShelfControl : Controls.UserControl
         {
             byte[] bytes = await library.GetThumbnailAsync(entry.Id);
             if (version != revision || !StampPreviewTooltip.IsCurrent(library, entry)) return;
+            _ = FloatCanvas.Rendering.ImageDecodeBudget.ReadPixelCount(bytes);
             using var stream = new MemoryStream(bytes);
             var bitmap = new Imaging.BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = Imaging.BitmapCacheOption.OnLoad; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze();
             image.Source = bitmap;
         }
-        catch (Exception ex) when (ex is IOException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
         { if (version == revision) button.ToolTip = ex.Message; }
     }
 }

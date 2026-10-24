@@ -65,7 +65,22 @@ jobs:
       - name: Publish framework-dependent Windows Release package without debug symbols
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
-        run: ./scripts/Publish.ps1 -Configuration Release -Version $env:PACKAGE_VERSION
+          FLOATCANVAS_RELEASE_KEY_ID: ${{ vars.FLOATCANVAS_RELEASE_KEY_ID }}
+          FLOATCANVAS_RELEASE_PRIVATE_KEY_PEM: ${{ secrets.FLOATCANVAS_RELEASE_PRIVATE_KEY_PEM }}
+          FLOATCANVAS_SIGNING_CERT_THUMBPRINT: ${{ vars.FLOATCANVAS_SIGNING_CERT_THUMBPRINT }}
+          FLOATCANVAS_TIMESTAMP_URL: ${{ vars.FLOATCANVAS_TIMESTAMP_URL }}
+        run: |
+          # The runner must already provide the reviewed Authenticode identity.
+          # This workflow never creates certificates or changes Windows trust stores.
+          if ([string]::IsNullOrWhiteSpace($env:FLOATCANVAS_RELEASE_PRIVATE_KEY_PEM)) { throw 'The publisher signing key is not configured.' }
+          $env:FLOATCANVAS_RELEASE_PRIVATE_KEY_PATH = Join-Path $env:RUNNER_TEMP 'floatcanvas-release-private.pem'
+          try {
+              [IO.File]::WriteAllText($env:FLOATCANVAS_RELEASE_PRIVATE_KEY_PATH, $env:FLOATCANVAS_RELEASE_PRIVATE_KEY_PEM)
+              Remove-Item Env:/FLOATCANVAS_RELEASE_PRIVATE_KEY_PEM
+              ./scripts/Publish.ps1 -Configuration Release -Version $env:PACKAGE_VERSION
+          } finally {
+              if (Test-Path -LiteralPath $env:FLOATCANVAS_RELEASE_PRIVATE_KEY_PATH) { Remove-Item -LiteralPath $env:FLOATCANVAS_RELEASE_PRIVATE_KEY_PATH -Force }
+          }
       - name: Smoke-test the extracted package
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
@@ -85,6 +100,7 @@ jobs:
           path: |
             dist/FloatCanvas-${{ steps.version.outputs.version }}-win-x64.zip
             dist/FloatCanvas-${{ steps.version.outputs.version }}-win-x64.zip.sha256
+            dist/FloatCanvas-${{ steps.version.outputs.version }}-win-x64.zip.release.json
             dist/release-notes.md
           if-no-files-found: error
           overwrite: false
@@ -99,6 +115,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out the reviewed trust configuration and verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
       - name: Download this run's verified package
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -116,6 +137,8 @@ jobs:
           Set-StrictMode -Version Latest
           $zip = Join-Path 'dist' "FloatCanvas-$env:PACKAGE_VERSION-win-x64.zip"
           $sha = "$zip.sha256"
+          $signature = "$zip.release.json"
+          ./scripts/Protect-Release.ps1 -Mode VerifyManifest -ZipPath $zip -Version $env:PACKAGE_VERSION
           $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           $expectedLine = "$hash  $([IO.Path]::GetFileName($zip))"
           if ((Get-Content -LiteralPath $sha -Raw).Trim() -cne $expectedLine) {
@@ -140,7 +163,7 @@ jobs:
 
           # create refuses an existing Release. Do not delete releases, upload with
           # --clobber, or let gh automatically create an unverified tag.
-          $arguments = @('release', 'create', $env:RELEASE_TAG, $zip, $sha,
+          $arguments = @('release', 'create', $env:RELEASE_TAG, $zip, $sha, $signature,
               '--verify-tag', '--title', "FloatCanvas $env:PACKAGE_VERSION", '--notes-file', 'dist/release-notes.md')
           if ($env:PACKAGE_VERSION.Contains('-')) { $arguments += @('--prerelease', '--latest=false') }
           & gh @arguments

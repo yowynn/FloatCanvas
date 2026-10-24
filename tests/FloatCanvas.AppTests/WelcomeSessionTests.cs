@@ -1,7 +1,10 @@
 using System.IO;
 using System.Text.Json;
 using FloatCanvas.App;
+using FloatCanvas.Core;
+using FloatCanvas.Storage;
 using FloatCanvas.Windows;
+using System.Windows.Threading;
 using Wpf = System.Windows;
 using Controls = System.Windows.Controls;
 using Media = System.Windows.Media;
@@ -15,6 +18,13 @@ internal static class WelcomeSessionTests
     {
         var app = Wpf.Application.Current ?? new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
         string preference = L.Preference;
+        string historyRoot = Path.Combine(AppContext.BaseDirectory, "welcome-tests", Guid.NewGuid().ToString("N"));
+        var storedRecovery = new RecoveryStore(Path.Combine(historyRoot, "saved"));
+        var workspace = new WorkspaceState(); workspace.LiveDocument.Elements.Add(new CanvasElement { Width = 20, Height = 20 });
+        storedRecovery.SaveAsync(workspace, new AssetLibrary()).GetAwaiter().GetResult();
+        DateTime savedAt = new(2026, 10, 23, 10, 11, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(storedRecovery.CurrentPath, savedAt);
+        new WorkspaceRecoveryHistory(storedRecovery).WriteCurrentInfo(workspace, null);
         try
         {
             check("fresh toggle is Ctrl+backtick without Alt", HotkeyBinding.DefaultToggle == new HotkeyBinding(2, 0xC0));
@@ -86,10 +96,41 @@ internal static class WelcomeSessionTests
                 }
                 view.Refresh(new(6,0x47),new(6,0x48));
                 check(language + theme + " settings refresh both hints and start action", view.ToggleShortcut.Text == "Ctrl+Shift+G" && view.HideShortcut.Text == "Ctrl+Shift+H" && view.StartButton.Content?.ToString()?.Contains("Ctrl+Shift+G") == true);
+                foreach (bool hasHistory in new[] { false, true })
+                {
+                    int restoreRequests = 0;
+                    var history = new WorkspaceRecoveryHistory(hasHistory ? storedRecovery : new RecoveryStore(Path.Combine(historyRoot, "empty")));
+                    var recoveryView = new WelcomeView(HotkeyBinding.DefaultToggle, HotkeyBinding.DefaultHide, () => { }, restoreHistory: () => restoreRequests++, history: history);
+                    var hint = recoveryView.Children.OfType<Controls.TextBlock>().Single(text => text.Text == L.Get("Audit.WelcomeRestoreHint"));
+                    var resume = recoveryView.Children.OfType<Controls.Button>().Single(button => button != recoveryView.StartButton);
+                    Dispatcher.CurrentDispatcher.BeginInvoke(() => recoveryView.RaiseEvent(new Wpf.RoutedEventArgs(Wpf.FrameworkElement.LoadedEvent)));
+                    PumpUntil(() => hasHistory ? resume.Visibility == Wpf.Visibility.Visible : hint.Text == L.Get("Audit.WelcomeRestoreEmpty"));
+                    var recoveryHost = new Controls.Border { Width = 430, Child = recoveryView };
+                    recoveryHost.Measure(new(430, double.PositiveInfinity)); recoveryHost.Arrange(new(0, 0, 430, recoveryHost.DesiredSize.Height)); recoveryHost.UpdateLayout();
+                    check(language + theme + hasHistory + " recovery adds one focused hint without repeating startup text", recoveryView.Children.OfType<Controls.TextBlock>().Count(text => text.Text == hint.Text) == 1 &&
+                        !Descendants(recoveryView).OfType<Controls.TextBlock>().Any(text => text.Text == L.Get("Acceptance2.Welcome.Description")) && restoreRequests == 0);
+                    check(language + theme + hasHistory + " recovery content keeps the compact welcome surface", recoveryHost.ActualHeight > 220 && recoveryHost.ActualHeight < 450);
+                    if (hasHistory)
+                    {
+                        check(language + theme + " available history exposes its saved date and recovery explanation", resume.Content?.ToString() == L.Format("Audit.RecentHistory", savedAt.ToLocalTime().ToString("g")) && hint.Text == L.Get("Audit.WelcomeRestoreHint"));
+                        resume.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
+                        check(language + theme + " history resumes only after the user's explicit click", restoreRequests == 1);
+                    }
+                    else check(language + theme + " empty history explains how to open a saved project without a dead resume button", hint.Text == L.Get("Audit.WelcomeRestoreEmpty") && resume.Visibility == Wpf.Visibility.Collapsed);
+                }
             }
             check("welcome checks create no visible or native windows", app.Windows.Cast<Wpf.Window>().All(window=>!window.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle == 0));
         }
         finally {L.Initialize(preference);}
+    }
+
+    private static void PumpUntil(Func<bool> completed)
+    {
+        var frame = new DispatcherFrame(); var clock = System.Diagnostics.Stopwatch.StartNew();
+        var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(10) };
+        timer.Tick += (_, _) => { if (completed() || clock.Elapsed > TimeSpan.FromSeconds(10)) frame.Continue = false; };
+        timer.Start(); Dispatcher.PushFrame(frame); timer.Stop();
+        if (!completed()) throw new TimeoutException("Welcome history did not finish loading.");
     }
 
     private static Media.Color Color(Wpf.Application app,string key) => ((Media.SolidColorBrush)app.Resources[key]).Color;

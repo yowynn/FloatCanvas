@@ -29,6 +29,10 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if (args.Contains("--dirty-output-performance")) { DirtyOutputRenderingTests.Performance(); return 0; }
+    if (args.Contains("--dirty-output-only")) { DirtyOutputRenderingTests.Run(Check); Console.WriteLine($"PASS {checks} dirty output checks."); return 0; }
+    RetryableCapabilityProbeTests.Run(Check);
+    if (args.Contains("--capture-retry-only")) { Console.WriteLine($"PASS {checks} capture retry checks."); return 0; }
     if (args.Contains("--hidden-canvas-refresh-only"))
     {
         HiddenCanvasRefreshTests.Run(Check);

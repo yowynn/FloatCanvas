@@ -29,7 +29,7 @@ internal static class LauncherMenuTests
                 .OfType<System.Windows.Shapes.Path>().Single().Data.ToString()).ToArray();
             check(language + " every distinct main-menu command and category has its own artwork", artwork.Distinct().Count() == artwork.Length);
             var diagnostics=entries.Single(item=>Equals(item.Header,L.Get("Menu.SystemDiagnostics")));
-            check(language+" "+theme+" system diagnostics offers install and user-data folders",diagnostics.Items.OfType<Controls.MenuItem>().Select(item=>item.Header).SequenceEqual(new[]{L.Get("Menu.OpenInstallDirectory"),L.Get("Menu.OpenUserDataDirectory")}));
+            check(language+" "+theme+" system diagnostics offers reviewed export and install and user-data folders",diagnostics.Items.OfType<Controls.MenuItem>().Select(item=>item.Header).SequenceEqual(new[]{L.Get("Engineering.ExportDiagnostics"),L.Get("Menu.OpenInstallDirectory"),L.Get("Menu.OpenUserDataDirectory")}));
             string label = language + " " + theme;
             var expansion = (Controls.MenuItem)menu.Items[0];
             check(label + " the first main-menu item offers collapse with a separate Tab hint", Equals(expansion.Header, L.Get("Toolbar.Collapse")) &&

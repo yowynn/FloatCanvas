@@ -44,7 +44,7 @@ internal sealed partial class DesktopSession
     {
         if(DocumentOperationBusy)return;
         var file=FileState(Active);if(file.Path is null)return;
-        file.Path=null;file.SavedFingerprint=null;
+        file.Path=null;file.SavedFingerprint=null;file.SavedContentVersion=-1;file.DiskVersion=null;
         RecoveryHistory.EnterWorkspace(new());
         _documentRecoveryFingerprint=null;ScheduleRecovery();RequestRender();
     }

@@ -45,8 +45,8 @@ internal static class StampLibraryUiTests
                 var scroll = Visuals(list).OfType<Controls.ScrollViewer>().First();
                 var viewport = Visuals(scroll).OfType<Controls.ScrollContentPresenter>().First();
                 var presenter = Visuals(list).OfType<Controls.ItemsPresenter>().First();
-                var wrap = Visuals(list).OfType<Controls.WrapPanel>().First();
-                var tiles = list.Items.OfType<Controls.ListBoxItem>().ToArray();
+                var wrap = Visuals(list).OfType<VirtualizingTilePanel>().First();
+                var tiles = Realized(list).ToArray();
                 var first = tiles[0].TranslatePoint(new Wpf.Point(), wrap);
                 var row = tiles.Where(tile => Math.Abs(tile.TranslatePoint(new Wpf.Point(), wrap).Y - first.Y) < 1).ToArray();
                 nint handle = new Wpf.Interop.WindowInteropHelper(window).Handle;
@@ -113,6 +113,8 @@ internal static class StampLibraryUiTests
         return (library, editable.Id, merged.Id);
     }
 
+    private static IEnumerable<Controls.ListBoxItem> Realized(Controls.ListBox list) => list.Items.Cast<object>().Select(item => list.ItemContainerGenerator.ContainerFromItem(item)).OfType<Controls.ListBoxItem>();
+
     private static void Panel(StampLibrary library, Guid editable, Guid merged, string output, string locale, Action<string, bool> check)
     {
         AppTheme.Apply("light"); bool allowed = true; var session = new EditorSession(); var uses = new List<Guid>(); var sources = new List<Guid>();
@@ -120,10 +122,12 @@ internal static class StampLibraryUiTests
         var window = new StampLibraryWindow(library, () => session, uses.Add, () => allowed, sources.Add);
         var list = Field<Controls.ListBox>(window, "grid"); var search = Field<Controls.TextBox>(window, "search");
         var buttons = Field<Dictionary<string, Controls.Button>>(window, "commandButtons");
-        Controls.ListBoxItem Tile(Guid id) => list.Items.OfType<Controls.ListBoxItem>().Single(item => Equals(item.Tag, id));
+        Controls.ListBoxItem Tile(Guid id) => Realized(list).Single(item => Equals(item.Tag, id));
+        StampEntry Entry(Guid id) => list.Items.Cast<StampEntry>().Single(item => item.Id == id);
         Controls.MenuItem Menu(Guid id, string key) => Tile(id).ContextMenu.Items.OfType<Controls.MenuItem>().Single(item => Equals(item.Tag, key));
         try
         {
+            var root = (Wpf.FrameworkElement)window.Content; root.Measure(new Wpf.Size(window.Width - 2, 580)); root.Arrange(new Wpf.Rect(0, 0, window.Width - 2, 580)); root.UpdateLayout();
             check(locale + " management actions share compact icon buttons and delayed accessible tooltips", buttons.Count == 6 && buttons.Values.All(button =>
                 button.Content is Controls.Viewbox && button.Width == 30 && button.Height == 30 && Controls.ToolTipService.GetInitialShowDelay(button) == 650 &&
                 !string.IsNullOrWhiteSpace(Wpf.Automation.AutomationProperties.GetName(button))));
@@ -132,10 +136,10 @@ internal static class StampLibraryUiTests
             window.ApplyTemplate();
             check(locale + " instructions live in the shared question-mark help beside Close", window.Template.FindName("Help", window) is Controls.Button { Visibility: Wpf.Visibility.Visible } help &&
                 Wpf.Automation.AutomationProperties.GetName(help) == L.Get("StampShelf.Help") && (string)window.Resources["CanvasWindowHelpText"] == L.Get("StampShelf.HelpText"));
-            check(locale + " all entries retain their names with compact group or raster labels and overlaid pin badges", list.Items.Count == 51 && list.Items.OfType<Controls.ListBoxItem>().All(item =>
+            check(locale + " all entries retain their names with compact group or raster labels and overlaid pin badges", list.Items.Count == 51 && Realized(list).All(item =>
                 item.Content is Controls.StackPanel tile && tile.Children.Count == 3 && tile.Children[0] is Controls.Grid && tile.Children[1] is Controls.TextBlock && tile.Children[2] is Controls.TextBlock { Tag: "Stamp.Mode" }));
-            PumpUntil(() => list.Items.OfType<Controls.ListBoxItem>().All(item => Thumbnail(item).Source is not null));
-            check(locale + " all continuous-list thumbnails load from the isolated real revisions", list.Items.OfType<Controls.ListBoxItem>().All(item => Thumbnail(item).Source is not null));
+            PumpUntil(() => Realized(list).All(item => Thumbnail(item).Source is not null));
+            check(locale + " all realized continuous-list thumbnails load from the isolated real revisions", Realized(list).All(item => Thumbnail(item).Source is not null));
             check(locale + " shelf matches toolbar digit order one through nine then zero", Field<Controls.WrapPanel>(window, "slotShelf").Children.OfType<Controls.Border>()
                 .Select(frame => ((int)frame.Tag + 1) % 10).SequenceEqual(Enumerable.Range(0, 10).Select(index => (index + 1) % 10)) && Field<int?>(window, "selectedSlot") is null);
             check(locale + " fixed compact slots stay left aligned with small independent clear buttons", Field<Controls.WrapPanel>(window, "slotShelf").HorizontalAlignment == Wpf.HorizontalAlignment.Left &&
@@ -144,10 +148,10 @@ internal static class StampLibraryUiTests
             check(locale + " shelf slot number badges remain plain digits without duplicated pin glyphs", Field<Dictionary<int, Controls.Button>>(window, "slotButtons").Values.All(button =>
                 ((Controls.Grid)button.Content).Children.OfType<Controls.Border>().Single().Child is Controls.TextBlock));
 
-            list.SelectedItem = Tile(editable);
+            list.SelectedItem = Entry(editable);
             check(locale + " editable stamps cannot invoke the merged-source action", !buttons["Stamp.UseSource"].IsEnabled);
             var tile = Tile(merged); tile.RaiseEvent(new Input.MouseButtonEventArgs(Input.Mouse.PrimaryDevice, Environment.TickCount, Input.MouseButton.Right) { RoutedEvent = Input.Mouse.PreviewMouseDownEvent });
-            check(locale + " right-click selects the target stamp before its context actions", Equals(((Controls.ListBoxItem)list.SelectedItem).Tag, merged) && buttons["Stamp.UseSource"].IsEnabled);
+            check(locale + " right-click selects the target stamp before its context actions", ((StampEntry)list.SelectedItem).Id == merged && buttons["Stamp.UseSource"].IsEnabled);
             var menu = Tile(merged).ContextMenu;
             menu.RaiseEvent(new Wpf.RoutedEventArgs(Controls.ContextMenu.OpenedEvent));
             check(locale + " a pinned stamp exposes only one unpin action alongside its normal management commands", menu.Items.OfType<Controls.MenuItem>().Any(item => Equals(item.Tag, "Stamp.Unpin")) &&
@@ -182,7 +186,7 @@ internal static class StampLibraryUiTests
             Invoke(window, "ActivateTile", merged);
             check(locale + " an ordinary tile click without a selected slot retains normal selection-only behavior", uses.Count == 0 && library.Pins[5] is null);
 
-            list.SelectedItem = Tile(merged);
+            list.SelectedItem = Entry(merged);
             Invoke(window, "UseSelectedSource"); check(locale + " merged-source icon retains its exact stamp callback", sources.SequenceEqual([merged]));
             bool handled = (bool)Invoke(window, "HandleShortcut", Input.Key.Enter, Input.ModifierKeys.None, list)!;
             check(locale + " Enter uses the selected stamp through the normal action path", handled && uses.SequenceEqual([merged]));
@@ -204,11 +208,13 @@ internal static class StampLibraryUiTests
 
             var oldToken = Field<CancellationTokenSource>(window, "thumbnails").Token;
             search.Text = "Archive";
+            PumpUntil(() => oldToken.IsCancellationRequested && list.Items.Count == 49);
             check(locale + " changing search cancels obsolete thumbnail work and keeps every matching entry", oldToken.IsCancellationRequested && list.Items.Count == 49);
             search.Text = "not-present";
+            PumpUntil(() => list.Items.Count == 0);
             check(locale + " empty search results contain no stale entries", list.Items.Count == 0);
-            search.Text = ""; list.SelectedItem = Tile(merged); Invoke(window, "ShowStatus", "");
-            PumpUntil(() => list.Items.OfType<Controls.ListBoxItem>().All(item => Thumbnail(item).Source is not null));
+            search.Text = ""; PumpUntil(() => list.Items.Count == 51); list.SelectedItem = Entry(merged); Invoke(window, "ShowStatus", "");
+            PumpUntil(() => Realized(list).All(item => Thumbnail(item).Source is not null));
             CompactLayout(window, locale, check);
             Render(window, output, locale);
             check(locale + " stamp management checks open no native library or popup window", !window.IsVisible && new Wpf.Interop.WindowInteropHelper(window).Handle == 0);
@@ -230,13 +236,14 @@ internal static class StampLibraryUiTests
             Layout(defaultContentWidth);
             var list = Field<Controls.ListBox>(window, "grid"); var scroll = Visuals(list).OfType<Controls.ScrollViewer>().First();
             var viewport = Visuals(scroll).OfType<Controls.ScrollContentPresenter>().First();
-            var tiles = list.Items.OfType<Controls.ListBoxItem>().ToArray();
+            var tiles = Realized(list).ToArray();
             var first = tiles[0].TranslatePoint(new Wpf.Point(), viewport);
             var row = tiles.Where(tile => Math.Abs(tile.TranslatePoint(new Wpf.Point(), viewport).Y - first.Y) < 1).ToArray();
             double rightEdge = row[^1].TranslatePoint(new Wpf.Point(row[^1].ActualWidth + row[^1].Margin.Right, 0), viewport).X;
             check(locale + " default width derives from five complete tile footprints plus DPI-rounded list and window edges", window.Width == StampLibraryWindow.WidthForColumns(StampLibraryWindow.DefaultTileColumns, scale) &&
                 row.Length == StampLibraryWindow.DefaultTileColumns && rightEdge <= viewport.ActualWidth + .1 && viewport.ActualWidth - rightEdge < 2 / scale);
             scroll.ScrollToEnd(); background.UpdateLayout();
+            tiles = Realized(list).ToArray();
             var lastBounds = new Wpf.Rect(tiles[^1].TranslatePoint(new Wpf.Point(), viewport), tiles[^1].RenderSize);
             check(locale + " one continuous scroll reaches the final entry without a page command", list.Items.Count == 51 && scroll.ScrollableHeight > 0 &&
                 lastBounds.Bottom <= viewport.ActualHeight + 1 && lastBounds.Bottom > 0);

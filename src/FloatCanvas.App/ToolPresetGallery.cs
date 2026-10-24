@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Text.Json;
 using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 
@@ -19,9 +20,11 @@ internal sealed class ToolPresetGallery : UserControl
     internal readonly PixelTilePanel OfficialTiles = new(5, 36, 4), UserTiles = new(5, 36, 4);
     private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
     private readonly ScrollViewer userScroll;
+    private readonly Button undoButton;
     private readonly StackPanel headings;
     private readonly Grid userArea = new();
     private EditorTool? observedTool;
+    private bool selectedModified;
     internal string SelectedId => selections.GetValueOrDefault(ToolPresetLibrary.Family(controller.Tool)) ?? "";
     internal event Action? Applied;
     internal event Action<string>? Failed;
@@ -47,6 +50,8 @@ internal sealed class ToolPresetGallery : UserControl
         DockPanel.SetDock(save, Dock.Right); userHeader.Children.Add(save); userHeader.Children.Add(Heading("ToolOptions.User")); headings.Children.Add(userHeader);
         userArea.Children.Add(empty);
         userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        undoButton = new Button { Content = L.Get("Audit.UndoResource"), FontSize = 11, MinHeight = 28 };
+        undoButton.Click += (_, _) => Run(() => { library.UndoResourceChange(); Refresh(); }); DockPanel.SetDock(undoButton, Dock.Bottom); body.Children.Add(undoButton);
         userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body; Refresh();
     }
 
@@ -67,11 +72,14 @@ internal sealed class ToolPresetGallery : UserControl
         var tool = ToolPresetLibrary.Family(controller.Tool); var official = library.OfficialFor(tool); var users = library.UserFor(tool);
         bool changed = false;
         if (!previewSources.ContainsKey(tool)) { previewSources[tool] = controller.Parameters; changed = true; }
+        undoButton.IsEnabled = library.CanUndoResourceChange;
         var focus = TileCollection.Capture(this, Tiles());
         bool toolChanged = observedTool != tool; observedTool = tool;
         if (!official.Concat(users).Any(p => p.Id == SelectedId)) { selections[tool] = official.First().Id; changed = true; }
         if (SelectedId.StartsWith("official.", StringComparison.Ordinal) && !officialBaselines.ContainsKey(SelectedId))
         { officialBaselines[SelectedId] = library.Apply(SelectedId, controller.Parameters); changed = true; }
+        var selectedPreset = official.Concat(users).FirstOrDefault(p => p.Id == SelectedId);
+        selectedModified = selectedPreset is not null && JsonSerializer.Serialize(PreviewParameters(selectedPreset)) != JsonSerializer.Serialize(controller.Parameters);
         TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)), (button, id) => UpdateTile(button, official.Single(p => p.Id == id)));
         TileCollection.Synchronize(UserTiles, users.Select(p => p.Id), id =>
         {
@@ -132,18 +140,18 @@ internal sealed class ToolPresetGallery : UserControl
     });
     private Button Tile(ToolPreset preset)
     {
-        var button = new Button { Tag = preset.Id, MinWidth = 0, MinHeight = 0, Padding = new(4), Margin = new(0),
+        var button = new SelectionTileButton { Tag = preset.Id, MinWidth = 0, MinHeight = 0, Padding = new(4), Margin = new(0),
             BorderThickness = new(1),
-            ToolTip = preset.Name, Content = ToolParameterIcon.Create(PreviewParameters(preset), 24) };
-        button.SetResourceReference(BorderBrushProperty, preset.Id == SelectedId ? "CanvasAccent" : "CanvasBorder");
+            ToolTip = preset.Name + (preset.Id == SelectedId && selectedModified ? "\n" + L.Get("Audit.SelectedModified") : ""), Content = ToolParameterIcon.Create(PreviewParameters(preset), 24) };
+        ((SelectionTileButton)button).SetSelected(preset.Id == SelectedId, selectedModified);
         ToolTipService.SetInitialShowDelay(button, 600); AutomationProperties.SetName(button, preset.Name);
         button.Click += (_, _) => Apply(preset.Id); return button;
     }
     private void UpdateTile(Button button, ToolPreset preset)
     {
-        button.ToolTip = preset.Name; AutomationProperties.SetName(button, preset.Name);
+        button.ToolTip = preset.Name + (preset.Id == SelectedId && selectedModified ? "\n" + L.Get("Audit.SelectedModified") : ""); AutomationProperties.SetName(button, preset.Name);
         button.Content = ToolParameterIcon.Create(PreviewParameters(preset), 24);
-        button.SetResourceReference(BorderBrushProperty, preset.Id == SelectedId ? "CanvasAccent" : "CanvasBorder");
+        ((SelectionTileButton)button).SetSelected(preset.Id == SelectedId, selectedModified);
     }
     private ToolParameters PreviewParameters(ToolPreset preset) => !preset.IsOfficial ? preset.Parameters :
         officialBaselines.GetValueOrDefault(preset.Id) ?? library.Apply(preset.Id, previewSources[ToolPresetLibrary.Family(preset.Parameters.Tool)]);

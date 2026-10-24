@@ -36,7 +36,7 @@ internal sealed class AppSettingsWindow : Window
         var actions = new Grid { Margin = new Thickness(20, 12, 20, 12) };
         actions.ColumnDefinitions.Add(new ColumnDefinition());
         actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasDanger");
+        Error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText");
         AutomationProperties.SetLiveSetting(Error, AutomationLiveSetting.Polite);
         actions.Children.Add(Error);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };

@@ -1,0 +1,8 @@
+{
+  "Engineering.UpdatesPreparing": { "zh": "正在校验并准备安装，仍可取消…", "en": "Verifying and preparing installation. You can still cancel…" },
+  "Engineering.ExportDiagnostics": { "zh": "预览并导出诊断包…", "en": "Preview and export diagnostics…" },
+  "Engineering.IncludeLogs": { "zh": "包含最近的脱敏日志（最多 2 MiB）", "en": "Include recent redacted logs (up to 2 MiB)" },
+  "Engineering.DiagnosticHint": { "zh": "下方即将写入诊断包的内容。默认替换用户名、计算机名、文件路径与网址；请检查后再分享。不会加入画布、工程、图片或自动上传。", "en": "The contents below will be exported. Usernames, computer names, paths and URLs are replaced by default; review before sharing. Canvas, projects and images are excluded. Nothing is uploaded." },
+  "Engineering.Export": { "zh": "导出 ZIP…", "en": "Export ZIP…" },
+  "Engineering.ExportComplete": { "zh": "诊断包已保存。你可以自行选择是否分享。", "en": "Diagnostics saved. You choose whether to share them." }
+}

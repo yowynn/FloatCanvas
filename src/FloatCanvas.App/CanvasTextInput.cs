@@ -64,7 +64,7 @@ internal sealed class CanvasTextInput : IDisposable
     {
         if(disposed||!edit.IsActive)return;
         var dpi=VisualTreeHelper.GetDpi(window);
-        var caret=edit.Geometry.Caret(edit.Input.CaretIndex);
+        var caret=edit.Caret;
         if(!edit.LocalToScreen.TryTransformPoint(new(caret.X,caret.Y),out var position))return;
         var jacobian=edit.LocalToScreen.Jacobian(new(caret.X,caret.Y));
         double scale=Math.Sqrt(jacobian.M11*jacobian.M11+jacobian.M21*jacobian.M21)/dpi.DpiScaleX;

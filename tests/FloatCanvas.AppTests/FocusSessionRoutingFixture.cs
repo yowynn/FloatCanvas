@@ -375,11 +375,12 @@ internal static class FocusSessionRoutingFixture
         int index = Array.IndexOf(args, "--focus-helper-directory");
         if (index < 0 || index + 1 >= args.Length) throw new ArgumentException("Missing helper directory.");
         string directory = Path.GetFullPath(args[index + 1]);
+        bool watchdogGate = args.Contains("--focus-helper-watchdog");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        var receiverInput = new TextBox { Text = "Independent test receiver", IsReadOnly = true, Margin = new Thickness(20) };
-        var window = new Window { Title = "FloatCanvas owned external foreground fixture", Width = 280, Height = 110,
+        var receiverInput = new TextBox { Text = watchdogGate ? "Click here, release all keys/buttons, then wait about 8 seconds." : "Independent test receiver", IsReadOnly = true, Margin = new Thickness(20) };
+        var window = new Window { Title = watchdogGate ? "FloatCanvas Watchdog Receiver - click to start" : "FloatCanvas owned external foreground fixture", Width = watchdogGate ? 500 : 280, Height = 110,
             Left = 650, Top = 500, Content = receiverInput,
-            ShowActivated = false, ShowInTaskbar = false, Topmost = true };
+            ShowActivated = false, ShowInTaskbar = watchdogGate, Topmost = true };
         int f6Down = 0, f6Up = 0;
         void InputResult()
         {
@@ -392,7 +393,7 @@ internal static class FocusSessionRoutingFixture
         window.PreviewKeyUp += (_, e) => { if (e.Key == Key.F6) { f6Up++; InputResult(); } };
         window.Show();
         File.WriteAllText(Path.Combine(directory, "external-ready.json"), JsonSerializer.Serialize(new { Process = Environment.ProcessId, Handle = (long)new WindowInteropHelper(window).Handle }));
-        var deadline = DateTime.UtcNow.AddSeconds(45);
+        var deadline = DateTime.UtcNow.AddSeconds(watchdogGate ? 75 : 45);
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
         bool activated = false;
         timer.Tick += (_, _) =>

@@ -13,6 +13,8 @@ internal static class NativeWindowProgressTests
 
     internal static void Run(Action<string, bool> check)
     {
+        // Program has selected a unique test profile; keep the user's live hotkeys free.
+        new UserSettings { Toggle = new(7, 0x7A), Hide = new(7, 0x79), ShowFloatingLogo = false }.Save();
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         nint foreground = GetForegroundWindow();
         var bounds = new PixelBounds(-20000, -20000, 64, 64);
@@ -31,7 +33,7 @@ internal static class NativeWindowProgressTests
             // Render into the existing hidden output HWNDs without showing them.
             typeof(OverlayHost).GetProperty("IsVisible")!.SetValue(host, true);
             long frames = host.PresentedFrameCount;
-            Invoke(session, "RequestPixelRender");
+            Invoke(session, "RequestPixelRender", (object?)null);
             long framesAtInput = -1;
             app.Dispatcher.BeginInvoke(DispatcherPriority.Input, () => framesAtInput = host.PresentedFrameCount);
             Pump(app.Dispatcher);
@@ -39,7 +41,7 @@ internal static class NativeWindowProgressTests
             results.Add(("deferred pixel refresh still presents its frame", host.PresentedFrameCount > frames));
             Console.WriteLine($"PIXEL_RENDER_INPUT_ORDER framesBefore={frames} framesAtInput={framesAtInput} framesAfter={host.PresentedFrameCount}");
             frames = host.PresentedFrameCount;
-            Invoke(session, "RequestPixelRender");
+            Invoke(session, "RequestPixelRender", (object?)null);
             Invoke(session, "RequestRender");
             app.Dispatcher.BeginInvoke(DispatcherPriority.Input, () => framesAtInput = host.PresentedFrameCount);
             Pump(app.Dispatcher);
@@ -59,7 +61,7 @@ internal static class NativeWindowProgressTests
             typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
             var heartbeat = typeof(KeyboardInputIsolation).GetField("lastHeartbeat", Private)!;
             heartbeat.SetValue(isolation, Environment.TickCount64 - 1300);
-            Invoke(session, "RequestPixelRender");
+            Invoke(session, "RequestPixelRender", (object?)null);
             Pump(app.Dispatcher);
             results.Add(("a completed canvas frame reports UI progress during a stationary native drag without control timers",
                 Environment.TickCount64 - (long)heartbeat.GetValue(isolation)! < 1200 && isolation.IsLeaseActive));
@@ -95,7 +97,7 @@ internal static class NativeWindowProgressTests
                     [(uint)0x41, (uint)30, (uint)0, (uint)0, false, (uint)0x100, host.ControlHandle, true, healthyNow, Environment.TickCount64, null, null]);
                 Invoke(host, "HandleKeyboardControlMessage", (uint)0x8003, (nuint)0);
                 results.Add(("a genuinely stalled UI still releases input and exits editing", !host.IsEditing && isolation.LastEndReason == KeyboardLeaseEndReason.HeartbeatExpired));
-                Invoke(session, "RequestPixelRender"); Pump(app.Dispatcher);
+                Invoke(session, "RequestPixelRender", (object?)null); Pump(app.Dispatcher);
                 results.Add(("later frame completion cannot reactivate an expired editing lease", !host.IsEditing && !isolation.IsLeaseActive));
             }
             finally

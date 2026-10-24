@@ -31,7 +31,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private readonly Action<Guid>? useSource;
     private readonly Func<bool> canMutate;
     private readonly Controls.TextBox search = new() { Height = 34, MinHeight = 34, MinWidth = 0, Padding = new(28, 5, 8, 5) };
-    private readonly Controls.ListBox grid = new() { HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch };
+    private readonly StampListBox grid = new() { HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch };
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(0, 6, 0, 0), Visibility = Wpf.Visibility.Collapsed };
     private readonly Controls.WrapPanel slotShelf = new() { HorizontalAlignment = Wpf.HorizontalAlignment.Left, Margin = new(0, 0, 0, 6) };
     private readonly Dictionary<int, Controls.Button> slotButtons = [];
@@ -44,6 +44,12 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private CancellationTokenSource thumbnails = new();
     private Guid? selected;
     private int? selectedSlot;
+    private readonly System.Windows.Threading.DispatcherTimer searchDelay = new() { Interval = TimeSpan.FromMilliseconds(180) };
+    private readonly SemaphoreSlim thumbnailGate = new(2, 2);
+    private readonly Dictionary<(Guid Id, Guid Revision), Imaging.BitmapSource> thumbnailCache = [];
+    private readonly Queue<(Guid Id, Guid Revision)> thumbnailOrder = new();
+    private readonly Controls.TextBlock emptyText = new() { TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(8) };
+    private readonly Controls.Button emptyAction = new() { MinWidth = 100, Margin = new(8) };
     private bool busy, closed;
     private Wpf.Window? dialogOwner;
     public event Action<int>? CommandKey;
@@ -85,11 +91,17 @@ internal sealed class StampLibraryWindow : Wpf.Window
         Controls.DockPanel.SetDock(actions, Controls.Dock.Left); commandRow.Children.Add(actions); commandRow.Children.Add(searchBox); top.Children.Add(commandRow);
         top.Children.Add(slotShelf);
         Controls.DockPanel.SetDock(status, Controls.Dock.Bottom); body.Children.Add(status);
+        var empty = new Controls.StackPanel(); empty.Children.Add(emptyText); empty.Children.Add(emptyAction);
+        Controls.DockPanel.SetDock(empty, Controls.Dock.Top); body.Children.Add(empty);
+        emptyAction.Click += (_, _) => { if (search.Text.Length > 0) search.Text = ""; else { CommandKey?.Invoke(0x56); Hide(); } };
         grid.Padding = new(ListPadding); grid.BorderThickness = new(ListBorder);
-        grid.ItemsPanel = new Controls.ItemsPanelTemplate(new Wpf.FrameworkElementFactory(typeof(Controls.WrapPanel)));
+        grid.ItemsPanel = new Controls.ItemsPanelTemplate(new Wpf.FrameworkElementFactory(typeof(VirtualizingTilePanel)));
+        Controls.ScrollViewer.SetCanContentScroll(grid, true); Controls.VirtualizingPanel.SetIsVirtualizing(grid, true);
+        Controls.VirtualizingPanel.SetVirtualizationMode(grid, Controls.VirtualizationMode.Recycling);
+        grid.PrepareTile = PrepareTile;
         Controls.ScrollViewer.SetHorizontalScrollBarVisibility(grid, Controls.ScrollBarVisibility.Disabled);
         Controls.ScrollViewer.SetVerticalScrollBarVisibility(grid, Controls.ScrollBarVisibility.Visible);
-        grid.SelectionChanged += (_, _) => { selected = (grid.SelectedItem as Controls.ListBoxItem)?.Tag as Guid?; RefreshActions(); };
+        grid.SelectionChanged += (_, _) => { selected = (grid.SelectedItem as StampEntry)?.Id; RefreshActions(); };
         grid.MouseDoubleClick += (_, e) => { if (e.ChangedButton == Input.MouseButton.Left && selectedSlot is null) UseSelected(); };
         Wpf.Automation.AutomationProperties.SetName(grid, L.Get("Stamp.LibraryTitle"));
         body.Children.Add(grid); Content = body; AppWindowChrome.Apply(this);
@@ -114,10 +126,26 @@ internal sealed class StampLibraryWindow : Wpf.Window
             e.Handled = true;
             if (!closed && !busy && this.canMutate() && (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers))) CommandKey?.Invoke(command);
         };
-        search.TextChanged += (_, _) => Refresh();
+        searchDelay.Tick += (_, _) => { searchDelay.Stop(); Refresh(); };
+        search.TextChanged += (_, _) => { searchDelay.Stop(); searchDelay.Start(); };
         library.Changed += OnLibraryChanged;
-        Closed += (_, _) => { closed = true; CloseTileMenus(); thumbnails.Cancel(); thumbnails.Dispose(); library.Changed -= OnLibraryChanged; };
+        Closed += (_, _) => { closed = true; searchDelay.Stop(); CloseTileMenus(); thumbnails.Cancel(); thumbnails.Dispose(); library.Changed -= OnLibraryChanged; };
         Refresh();
+    }
+
+    private sealed class StampListBox : Controls.ListBox
+    {
+        internal Action<Controls.ListBoxItem, StampEntry>? PrepareTile;
+        protected override void PrepareContainerForItemOverride(Wpf.DependencyObject element, object item)
+        {
+            base.PrepareContainerForItemOverride(element, item);
+            if (element is Controls.ListBoxItem container && item is StampEntry entry) PrepareTile?.Invoke(container, entry);
+        }
+        protected override void ClearContainerForItemOverride(Wpf.DependencyObject element, object item)
+        {
+            if (element is Controls.ListBoxItem container && container.Resources["thumbnail-lifetime"] is CancellationTokenSource lifetime) { lifetime.Cancel(); lifetime.Dispose(); container.Resources.Remove("thumbnail-lifetime"); }
+            base.ClearContainerForItemOverride(element, item);
+        }
     }
 
     private static Controls.ControlTemplate SearchTemplate()
@@ -145,34 +173,51 @@ internal sealed class StampLibraryWindow : Wpf.Window
         thumbnails.Cancel(); thumbnails.Dispose(); thumbnails = new();
         var token = thumbnails.Token;
         var items = library.Items.Where(item => item.Name.Contains(search.Text.Trim(), StringComparison.CurrentCultureIgnoreCase)).ToArray();
+        emptyText.Text = L.Get(library.Items.Count == 0 ? "Audit.EmptyStamps" : "Audit.NoStampMatches");
+        emptyText.Visibility = emptyAction.Visibility = items.Length == 0 ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        emptyAction.Content = L.Get(search.Text.Length > 0 ? "Audit.ClearSearch" : "Audit.SelectObjects");
         Guid? keep = selected;
         RefreshSlots(token);
-        CloseTileMenus(); grid.Items.Clear();
-        foreach (var entry in items)
-        {
-            int pinnedSlot = FirstPinnedSlot(entry.Id);
-            string shortcut = pinnedSlot < 0 ? "" : ((pinnedSlot + 1) % 10).ToString();
-            var tile = new Controls.StackPanel { Width = TileContentWidth, Margin = new Wpf.Thickness(TileContentMargin), ToolTip = StampPreviewTooltip.Create(library, entry, shortcut) };
-            var artwork = new Controls.Grid();
-            var image = new Controls.Image { Height = 82, Width = 100, Stretch = Media.Stretch.Uniform, Margin = new(0, 2, 0, 6) };
-            artwork.Children.Add(image);
-            if (pinnedSlot >= 0) artwork.Children.Add(Badge(shortcut, Wpf.HorizontalAlignment.Left, "Stamp.PinBadge"));
-            tile.Children.Add(artwork);
-            tile.Children.Add(new Controls.TextBlock { Text = entry.Name, TextTrimming = Wpf.TextTrimming.CharacterEllipsis, TextAlignment = Wpf.TextAlignment.Center });
-            var mode = new Controls.TextBlock { Text = L.Get(entry.Mode == StampSaveMode.EditableGroup ? "StampShelf.Group" : "StampShelf.Raster"),
-                FontSize = 11, TextAlignment = Wpf.TextAlignment.Center, Margin = new(0, 3, 0, 0), Tag = "Stamp.Mode" };
-            mode.SetResourceReference(Controls.TextBlock.ForegroundProperty, "CanvasMuted"); tile.Children.Add(mode);
-            var item = new Controls.ListBoxItem { Content = tile, Tag = entry.Id, Margin = new Wpf.Thickness(TileMargin), Padding = new Wpf.Thickness(TilePadding), BorderThickness = new(TileBorder) };
-            Wpf.Automation.AutomationProperties.SetName(item, entry.Name);
-            item.ContextMenu = TileContextMenu(entry.Id);
-            item.PreviewMouseRightButtonDown += (_, _) => { if (!busy) grid.SelectedItem = item; };
-            AttachTileDrag(item, entry.Id);
-            grid.Items.Add(item);
-            if (entry.Id == keep) grid.SelectedItem = item;
-            LoadThumbnail(entry, image, item, token);
-        }
+        CloseTileMenus();
+        grid.ItemsSource = items;
+        grid.SelectedItem = items.FirstOrDefault(item => item.Id == keep);
         RefreshActions();
     }
+
+    private void PrepareTile(Controls.ListBoxItem item, StampEntry entry)
+    {
+        if (item.Resources["thumbnail-lifetime"] is CancellationTokenSource previous) { previous.Cancel(); previous.Dispose(); }
+        var linked = CancellationTokenSource.CreateLinkedTokenSource(thumbnails.Token);
+        item.Resources["thumbnail-lifetime"] = linked;
+        item.Tag = entry.Id;
+        int pinnedSlot = FirstPinnedSlot(entry.Id);
+        string shortcut = pinnedSlot < 0 ? "" : ((pinnedSlot + 1) % 10).ToString();
+        var tile = new Controls.StackPanel { Width = TileContentWidth, Margin = new Wpf.Thickness(TileContentMargin), ToolTip = StampPreviewTooltip.Create(library, entry, shortcut) };
+        var artwork = new Controls.Grid();
+        var image = new Controls.Image { Height = 82, Width = 100, Stretch = Media.Stretch.Uniform, Margin = new(0, 2, 0, 6) };
+        artwork.Children.Add(image);
+        var placeholder = new Controls.TextBlock { Text = L.Get("Recovery.PreviewLoading"), FontSize = 11, TextWrapping = Wpf.TextWrapping.Wrap, HorizontalAlignment = Wpf.HorizontalAlignment.Center, VerticalAlignment = Wpf.VerticalAlignment.Center };
+        artwork.Children.Add(placeholder);
+        if (pinnedSlot >= 0) artwork.Children.Add(Badge(shortcut, Wpf.HorizontalAlignment.Left, "Stamp.PinBadge"));
+        tile.Children.Add(artwork);
+        tile.Children.Add(new Controls.TextBlock { Text = entry.Name, TextTrimming = Wpf.TextTrimming.CharacterEllipsis, TextAlignment = Wpf.TextAlignment.Center });
+        var mode = new Controls.TextBlock { Text = L.Get(entry.Mode == StampSaveMode.EditableGroup ? "StampShelf.Group" : "StampShelf.Raster"), FontSize = 11, TextAlignment = Wpf.TextAlignment.Center, Margin = new(0, 3, 0, 0), Tag = "Stamp.Mode" };
+        mode.SetResourceReference(Controls.TextBlock.ForegroundProperty, "CanvasMuted"); tile.Children.Add(mode);
+        item.Content = tile; item.Margin = new(TileMargin); item.Padding = new(TilePadding); item.BorderThickness = new(TileBorder);
+        Wpf.Automation.AutomationProperties.SetName(item, entry.Name); item.ContextMenu = TileContextMenu(entry.Id);
+        if (!item.Resources.Contains("tile-events"))
+        {
+            item.Resources["tile-events"] = true;
+            item.PreviewMouseRightButtonDown += (_, _) => { if (!busy) grid.SelectedItem = grid.Items.Cast<StampEntry>().FirstOrDefault(value => Equals(item.Tag, value.Id)); };
+            TileDragReorder.Attach(item, grid,
+                (target, after) => { if (item.Tag is Guid id && target.Tag is Guid targetId) RunAsync(() => library.MoveAsync(id, targetId, after)); },
+                () => slotButtons.Select(pair => new TileDragReorder.ExternalDropTarget(pair.Value, () => { if (item.Tag is Guid id) RunAsync(() => library.PinAsync(pair.Key, id)); })),
+                clicked: () => { if (item.Tag is Guid id) ActivateTile(id); });
+        }
+        LoadThumbnail(entry, image, item, linked.Token, placeholder);
+    }
+
+    private IEnumerable<Controls.ListBoxItem> RealizedTiles() => grid.Items.Cast<StampEntry>().Select(entry => grid.ItemContainerGenerator.ContainerFromItem(entry)).OfType<Controls.ListBoxItem>();
 
     private void RefreshSlots(CancellationToken token)
     {
@@ -184,7 +229,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
             var artwork = new Controls.Grid();
             var image = new Controls.Image { Width = 26, Height = 26, Stretch = Media.Stretch.Uniform, Margin = new(2, 14, 2, 0) };
             artwork.Children.Add(image); artwork.Children.Add(Badge(digit.ToString(), Wpf.HorizontalAlignment.Left));
-            var button = new Controls.Button { Content = artwork, MinWidth = 0, MinHeight = 0, Padding = new(0),
+            var button = new SelectionTileButton { Content = artwork, MinWidth = 0, MinHeight = 0, Padding = new(0),
                 HorizontalContentAlignment = Wpf.HorizontalAlignment.Stretch, Tag = index,
                 ToolTip = entry is null ? L.Format("StampShelf.EmptySlot", digit) : StampPreviewTooltip.Create(library, entry, digit.ToString()) };
             Wpf.Automation.AutomationProperties.SetName(button, L.Format("StampShelf.Slot", digit, entry?.Name ?? L.Get("StampShelf.Empty")));
@@ -239,7 +284,10 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private void RefreshSlotSelection()
     {
         foreach (var (index, frame) in slotFrames)
+        {
             frame.SetResourceReference(Controls.Border.BorderBrushProperty, selectedSlot == index ? "CanvasAccent" : "CanvasBorder");
+            ((SelectionTileButton)slotButtons[index]).SetSelected(selectedSlot == index);
+        }
     }
 
     private void ActivateTile(Guid id)
@@ -247,34 +295,57 @@ internal sealed class StampLibraryWindow : Wpf.Window
         if (selectedSlot is { } index) RunAsync(() => library.PinAsync(index, id));
     }
 
-    private void AttachTileDrag(Controls.ListBoxItem item, Guid id) => TileDragReorder.Attach(item, grid,
-        (target, after) => { if (target.Tag is Guid targetId) RunAsync(() => library.MoveAsync(id, targetId, after)); },
-        () => slotButtons.Select(pair => new TileDragReorder.ExternalDropTarget(pair.Value, () => RunAsync(() => library.PinAsync(pair.Key, id)))),
-        clicked: () => ActivateTile(id));
-
     private Task UnpinFirstAsync(Guid id)
     {
         int index = FirstPinnedSlot(id);
         return index < 0 ? Task.CompletedTask : library.PinAsync(index, null);
     }
 
-    private async void LoadThumbnail(StampEntry entry, Controls.Image image, Wpf.FrameworkElement tile, CancellationToken token)
+    private async void LoadThumbnail(StampEntry entry, Controls.Image image, Wpf.FrameworkElement tile, CancellationToken token, Controls.TextBlock? placeholder = null)
     {
         try
         {
-            byte[] bytes = await library.GetThumbnailAsync(entry.Id, token);
-            token.ThrowIfCancellationRequested();
-            using var stream = new MemoryStream(bytes);
-            var bitmap = new Imaging.BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = Imaging.BitmapCacheOption.OnLoad; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze();
-            image.Source = bitmap;
+            var key = (entry.Id, entry.Revision);
+            if (!thumbnailCache.TryGetValue(key, out var bitmap))
+            {
+                await thumbnailGate.WaitAsync(token);
+                try
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (!thumbnailCache.TryGetValue(key, out bitmap))
+                    {
+                        byte[] bytes = await library.GetThumbnailAsync(entry.Id, token); token.ThrowIfCancellationRequested();
+                        _ = FloatCanvas.Rendering.ImageDecodeBudget.ReadPixelCount(bytes);
+                        using var stream = new MemoryStream(bytes);
+                        using var codec = SkiaSharp.SKCodec.Create(stream);
+                        if (codec is null || codec.Info.Width <= 0 || codec.Info.Height <= 0 || (long)codec.Info.Width * codec.Info.Height > 4_194_304)
+                            throw new InvalidDataException(L.Get("Audit.ThumbnailFailed"));
+                        stream.Position = 0;
+                        var decoded = new Imaging.BitmapImage(); decoded.BeginInit(); decoded.CacheOption = Imaging.BitmapCacheOption.OnLoad;
+                        if (codec.Info.Width >= codec.Info.Height) decoded.DecodePixelWidth = Math.Min(200, codec.Info.Width); else decoded.DecodePixelHeight = Math.Min(200, codec.Info.Height);
+                        decoded.StreamSource = stream; decoded.EndInit(); decoded.Freeze(); bitmap = decoded;
+                        thumbnailCache[key] = bitmap; thumbnailOrder.Enqueue(key);
+                        while (thumbnailOrder.Count > 64) thumbnailCache.Remove(thumbnailOrder.Dequeue());
+                    }
+                }
+                finally { thumbnailGate.Release(); }
+            }
+            token.ThrowIfCancellationRequested(); image.Source = bitmap; image.Visibility = Wpf.Visibility.Visible;
+            if (placeholder is not null) placeholder.Visibility = Wpf.Visibility.Collapsed;
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is IOException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
         {
             if (!token.IsCancellationRequested)
             {
-                tile.ToolTip = ex.Message;
+                tile.ToolTip = L.Get("Audit.ThumbnailFailed") + "\n" + ex.Message;
+                if (placeholder is not null) placeholder.Text = "⚠ " + L.Get("Audit.ThumbnailFailed");
                 image.Visibility = Wpf.Visibility.Hidden;
+                if (tile.ContextMenu is { } menu)
+                {
+                    var retry = new Controls.MenuItem { Header = L.Get("Audit.Retry") };
+                    retry.Click += (_, _) => { menu.Items.Remove(retry); LoadThumbnail(entry, image, tile, token, placeholder); }; menu.Items.Add(retry);
+                }
             }
         }
     }
@@ -347,11 +418,11 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private async void RunAsync(Func<Task> action)
     {
         if (closed || busy || !canMutate()) return;
-        busy = true; SetBusyControls(); ShowStatus("");
+        busy = true; SetBusyControls(); ShowStatus(L.Get("Audit.Working"));
         try { await action(); }
         catch (OperationCanceledException) { }
         catch (Exception ex) { ShowStatus(L.Get("Stamp.OperationFailed") + ex.Message); }
-        finally { busy = false; SetBusyControls(); }
+        finally { busy = false; SetBusyControls(); if (status.Text == L.Get("Audit.Working")) ShowStatus(""); }
     }
 
     private void SetBusyControls()
@@ -452,7 +523,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         if (toolbarSlot is not null || FirstPinnedSlot(id) >= 0) menu.Items.Add(unpin); else menu.Items.Add(pins);
         menu.Opened += (_, _) =>
         {
-            var tile = grid.Items.Cast<Controls.ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, id));
+            var tile = grid.Items.Cast<StampEntry>().FirstOrDefault(item => item.Id == id);
             if (closed || busy || toolbarSlot is null&&tile is null || toolbarSlot is { } slot&&library.Pins[slot]!=id) { menu.IsOpen = false; return; }
             if(toolbarSlot is null)grid.SelectedItem = tile;else selected=id;
             bool ready = canMutate() && library.Items.Any(item => item.Id == id);
@@ -465,7 +536,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     }
 
     private void CloseTileMenus()
-    { foreach (var item in grid.Items.OfType<Controls.ListBoxItem>()) if (item.ContextMenu is { } menu)OverlayContextMenu.SetOpen(menu,false); }
+    { foreach (var item in RealizedTiles()) if (item.ContextMenu is { } menu)OverlayContextMenu.SetOpen(menu,false); }
 
     private (string Name, StampSaveMode Mode)? Prompt(string initialName, StampSaveMode mode, bool showMode)
     {
@@ -479,6 +550,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var save = Button("Stamp.Save", () => { }); save.IsDefault = true; buttons.Children.Add(save);
         var cancel = Button("Stamp.Cancel", () => { }); cancel.IsCancel = true; buttons.Children.Add(cancel); panel.Children.Add(buttons);
         var dialog = Dialog(panel, L.Get(showMode ? "Stamp.SaveSelection" : "Stamp.Rename"));
+        NamePrompt.AttachValidation(name, save, panel);
         save.Click += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) dialog.DialogResult = true; };
         dialog.Loaded += (_, _) => { name.Focus(); name.SelectAll(); };
         return SessionWindowCoordinator.ShowModal(dialog) == true ? (name.Text.Trim(), raster.IsChecked == true ? StampSaveMode.RasterMerge : StampSaveMode.EditableGroup) : null;

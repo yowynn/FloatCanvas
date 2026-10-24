@@ -11,6 +11,9 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 Push-Location $projectRoot
 try {
+    & (Join-Path $PSScriptRoot 'Test-ReleaseTrust.ps1') -OutputDirectory (Join-Path ([IO.Path]::GetTempPath()) 'FloatCanvas-release-trust-tests')
+    Write-Host 'Running native overlay contracts (hidden owned windows; no injected input).'
+    & (Join-Path $PSScriptRoot 'Build-SystemOverlayNative.ps1') -OutputDirectory (Join-Path $projectRoot 'artifacts/native-tests') -RunTests
     foreach ($suite in @('Core', 'Rendering', 'Storage', 'Windows', 'App')) {
         Write-Host "Running $suite checks (no UI or injected input)."
         & dotnet run --project "tests/FloatCanvas.${suite}Tests" -c $Configuration

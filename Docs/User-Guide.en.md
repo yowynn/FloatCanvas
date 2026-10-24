@@ -23,7 +23,7 @@ To bypass enhancement explicitly, exit FloatCanvas and run `FloatCanvas.exe --de
 1. Choose **Start drawing** on the welcome screen, or press `` Ctrl+` `` to enter edit mode.
 2. Press `` Ctrl+` `` again for pass-through. The toolbar disappears, annotations stay visible, and the application underneath receives input again.
 
-Normal launches show the welcome screen in the middle of the screen and open a blank canvas without automatically showing earlier annotations or captures. Closing it, choosing Start drawing or entering edit mode with the toggle shortcut dismisses it for this session. To continue earlier work, click the app icon on the left of the toolbar and choose **File → Restore workspace history…**, or use the same command in the system tray. Restoration keeps the mode you started in: continue editing immediately when restoring from edit mode, or remain in pass-through when restoring from pass-through.
+Normal launches show the welcome screen in the middle of the screen and open a blank canvas without automatically showing earlier annotations or captures. Closing it, choosing Start drawing or entering edit mode with the toggle shortcut dismisses it for this session. When saved history is available, the welcome screen shows its latest date and a Continue from history entry. You can also click the app icon on the left of the toolbar and choose **File → Restore workspace history…**, or use the same command in the system tray. Restoration keeps the mode you started in: continue editing immediately when restoring from edit mode, or remain in pass-through when restoring from pass-through.
 
 The welcome screen labels the shortcuts **Drawing mode / pass-through mode** and **Hide canvas / Show canvas**, with the version and an author credit containing a red heart below. Hiding keeps your content. Canvas visibility is independent of edit/pass-through mode: entering edit mode does not reveal a hidden canvas, and showing the canvas keeps the current mode. Tool windows remain usable while the canvas is hidden, but new content cannot be added.
 
@@ -45,7 +45,7 @@ Text is edited directly on the canvas. Changing windows, layers or tools, or ent
 | --- | --- |
 | `` Ctrl+` `` | Switch between edit and pass-through |
 | `` Ctrl+Shift+` `` | Hide canvas / Show canvas; keep the current edit/pass-through mode |
-| `Tab` | Expand/collapse the toolbar while editing; text fields, menus and dialogs keep their own key behavior |
+| `Tab` | Expand/collapse the toolbar while editing; this command is not triggered from input fields, menus or dialogs |
 | `Esc` | Cancel the operation or close the color child panel, then an unpinned panel; finally enter pass-through |
 | `Ctrl+Z` / `Ctrl+Y` | Undo/redo; `Ctrl+Shift+Z` also redoes |
 | `Ctrl+A` | Select all editable elements |
@@ -104,7 +104,7 @@ When an update is available, choose **Update now**. FloatCanvas shows download p
 
 In-app installation requires the complete official Windows x64 ZIP extracted to a **local folder writable by your Windows account**. Keep all package files together. Read-only folders, network locations and development runs cannot install updates directly; move the complete published app to a suitable folder first. Updating does not install the .NET runtime for you.
 
-**Include preview releases** is off by default. Both stable and preview builds then offer only newer stable releases. Enable it to include newer previews; older versions are never installed. Save this preference directly in the update panel, or through **Settings → Performance & system**. Changing it in the update panel checks again. The switch is disabled while checking or downloading.
+**Include preview releases** is off by default. Both stable and preview builds then offer only newer stable releases. Enable it to include newer previews; older versions are never installed. Save this preference directly in the update panel, or through **Settings → System**. Changing it in the update panel checks again. The switch is disabled while checking or downloading.
 
 When no update is available, the panel still shows the matching current version's published release notes, including for a current preview regardless of this switch. If no published notes exist, it explains that no notes were provided. Network errors and temporary GitHub limits display their status while retaining the project link.
 
@@ -138,7 +138,7 @@ More tools shows the active Blur or Mosaic icon. Selecting another tool restores
 
 You can clear a hidden canvas. Showing it refreshes the retained display first, preventing old content from flashing back.
 
-Invalid tool-option and layer-property entries retain the current effective value. Correcting the entry, leaving the input area or reopening the panel clears stale feedback and restores the current value. Busy operations retain unapplied property drafts so they can be applied afterwards. Scrolling content has no dashed focus outline; fields and buttons retain their own focus feedback.
+Invalid tool-option and layer-property entries retain the current effective value. Correcting the entry, leaving the input area or reopening the panel clears stale feedback and restores the current value. Busy operations retain unapplied property drafts so they can be applied afterwards. Scrolling content, buttons and sliders have no additional dashed keyboard focus outline; input-field editing borders and tool/preset selection states remain visible.
 
 Main and context menus use symbols for their actions. **Switch to pass-through** shares the toolbar's **Done** check mark; **Check for updates** uses circular arrows. Stamp pin submenus and shelf actions also have matching icons.
 
@@ -153,7 +153,7 @@ The upper-right controls are grouped in this order: the Canvas tool; import, cap
 
 - **Click the app icon:** open the main menu. A single click waits for the system double-click interval to avoid conflicting actions; right-click opens the menu immediately.
 - **Double-click the app icon:** show/hide the canvas and update its eyes; preserve editing mode and toolbar expansion.
-- **Press `Tab` or choose the main menu's first item:** expand/collapse the toolbar. The item shows **Collapse toolbar** or **Expand toolbar** for the current state, with a `Tab` hint. The collapsed toolbar keeps only the icon; right-click it to reopen the menu and expand. `Tab` works during ordinary editing and does not repeat while held; text editing, input fields, menus and dialogs keep their own `Tab` behavior.
+- **Press `Tab` or choose the main menu's first item:** expand/collapse the toolbar. The item shows **Collapse toolbar** or **Expand toolbar** for the current state, with a `Tab` hint. The collapsed toolbar keeps only the icon; right-click it to reopen the menu and expand. `Tab` works during ordinary editing, does not repeat while held and does not move focus between buttons. Text editing, input fields, menus and dialogs do not trigger toolbar folding. Windows system file dialogs retain their native `Tab` navigation.
 - **Drag the app icon:** move the toolbar and remember its position.
 - **Click a tool icon:** select the tool. Hover for its name and shortcut; the main menu's **Drawing tools** and **Images and effects** sections also offer tool commands.
 - **Select the current tool again:** click the same icon or press its shortcut again to open/close its options. Switching tools while options are open updates the panel for the new tool.
@@ -437,6 +437,26 @@ If something appears to fail, note the time and steps, and keep `diagnostics.log
 When manually restoring a workspace whose latest recovery is damaged, the App tries that workspace's previous version. A read failure is reported without replacing the original file. Exiting a blank startup canvas without editing does not overwrite the earlier recovery. Recovery helps retrieve recent work; save important work as your own project file as well.
 
 Closing the toolbar or entering pass-through does not exit the App. To quit, use the system tray or **Main menu → Exit FloatCanvas**. Startup with Windows is disabled by default.
+
+## Controls, messages and personal resources
+
+FloatCanvas uses the mouse for drawing and selection, with shortcuts to speed up actions. Within the app, `Tab` and `Shift+Tab` do not traverse buttons or form controls, and no additional dashed keyboard focus outline is shown. `Tab` retains its expand/collapse toolbar command. Windows system file dialogs retain native keyboard navigation. When Windows High Contrast is enabled, the interface follows the system window, text and selection colors; the usual light/dark preference resumes when it is disabled. Selected presets and stamp slots also show a check mark, and errors include text and a warning symbol.
+
+Tool presets, canvas presets and My swatches provide **Undo preset change** for the last 20 resource changes in the current app session, including deletion, overwrite, rename and ordering. This is separate from canvas `Ctrl+Z` and does not survive an app restart. Undoing a swatch change retains recent color history. A blank or whitespace-only name disables Save until corrected.
+
+Commands become unavailable when there is nothing to undo/redo or the selection does not meet their requirements; hover for the reason. The Inspector reports the number of locked objects in a mixed selection and explains that those objects must be unlocked before editing properties. When a font is missing, the font field retains its original name and identifies the rendering fallback. Choosing an installed font explicitly replaces the stored name.
+
+Click the toolbar status display to read and copy the last 20 complete messages from this session. Long messages do not animate when Windows interface animations are disabled. History and stamp previews load for the visible area. The stamp library retains continuous scrolling and distinguishes an empty library, no search matches and failed previews, with an appropriate next action. Narrow tool and canvas settings place presets below the parameters.
+
+## Help, diagnostics and uninstalling
+
+**Main menu → Help** contains the bundled offline user guide, shortcuts and **Report an issue**. Reporting first displays the app version, operating-system version and writing guidance. The browser opens only when you choose **Open issue page**; no content is sent or uploaded automatically.
+
+Choose **Main menu → System and diagnostics → Export diagnostic bundle…** to preview the app version, system information, execution mode and redacted logs. You can exclude logs before saving a local ZIP file. The application does not upload it; inspect the bundle before attaching it to a report. The bundle excludes canvases, projects, stamps and configuration files. Original logs remain in the user-data directory.
+
+Before deleting a portable installation, exit FloatCanvas and run `FloatCanvas.exe --unregister-integration` from that installation directory. It removes current-user startup and file-opening registrations owned by that installation, preserving registrations belonging to other installations, Windows `UserChoice` and user data. Once the command completes, delete the portable application directory. Presets, stamps and history under `%LOCALAPPDATA%\FloatCanvas` are retained; back up important work separately. A custom `--profile` keeps data in the selected directory.
+
+Building from source requires **.NET SDK 10.0.402**, or a later patch allowed by the repository's `global.json`, plus **Visual Studio C++ Build Tools**, including MSVC and a Windows SDK, for the native component. Running a published package requires only the desktop runtime described earlier. Release signing depends on the configured release process; a successful local build does not establish that a package is signed.
 
 ## Support and limitations
 

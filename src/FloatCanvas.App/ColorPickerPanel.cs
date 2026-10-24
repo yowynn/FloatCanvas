@@ -22,6 +22,7 @@ internal sealed class ColorPickerPanel : UserControl
     private readonly PixelTilePanel history = new(10, 28), pinned = new(10, 28);
     private readonly TextBlock historyHeading = Heading("Color.History"), pinnedHeading = Heading("Color.Pinned");
     private bool syncing;
+    private readonly Button undo;
     private uint value;
     private string? revealSwatch;
     internal Func<Window?>? DialogOwner { get; set; }
@@ -34,7 +35,7 @@ internal sealed class ColorPickerPanel : UserControl
         set
         {
             this.value = value; syncing = true;
-            try { hex.Text = ColorLibrary.ToHtml(value, false); alpha.Value = (value >> 24) * 100d / 255; error.Text = ""; RefreshPreview(); }
+            try { hex.Text = ColorLibrary.ToHtml(value, false); alpha.Value = (value >> 24) * 100d / 255; ClearInputError(); RefreshPreview(); }
             finally { syncing = false; }
         }
     }
@@ -75,7 +76,10 @@ internal sealed class ColorPickerPanel : UserControl
         actions.Children.Add(IconButton(PanelActionIcon.Eyedropper, "Color.Eyedropper", () => EyedropperRequested?.Invoke()));
         actions.Children.Add(IconButton(PanelActionIcon.Transparent, "Color.Transparent", () => Choose(0)));
         body.Children.Add(actions);
-        error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasCloseHover"); body.Children.Add(error);
+        undo = new Button { Content = L.Get("Audit.UndoResource"), MinHeight = 28 };
+        undo.Click += (_, _) => Run(() => { library.UndoResourceChange(); RefreshCollections(); }); body.Children.Add(undo);
+        error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); body.Children.Add(error);
+        AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
         Content = new ScrollViewer { Content = body, MaxHeight = 520, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         hex.TextChanged += (_, _) =>
         {
@@ -84,9 +88,10 @@ internal sealed class ColorPickerPanel : UserControl
             {
                 syncing = true; alpha.Value = (parsed >> 24) * 100d / 255; syncing = false;
             }
-            error.Text = ""; RefreshPreview();
+            ClearInputError(); RefreshPreview();
         };
         hex.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Run(Apply); e.Handled = true; } };
+        hex.LostKeyboardFocus += (_, _) => { if (!syncing && !TryRead(out _)) InvalidInput(); };
         alpha.ValueChanged += (_, _) => { if (!syncing) RefreshPreview(); };
         hue.ValueChanged += (_, _) => { if (!syncing) spectrum.ChangeHue(hue.Value); };
         spectrum.ColorChanged += color => { if (!syncing) hex.Text = ColorLibrary.ToHtml(color, false); };
@@ -97,6 +102,7 @@ internal sealed class ColorPickerPanel : UserControl
 
     public void RefreshCollections()
     {
+        undo.IsEnabled = library.CanUndoResourceChange;
         var focus = TileCollection.Capture(this, history.Children.OfType<Button>().Concat(pinned.Children.OfType<Button>()));
         TileCollection.Synchronize(history, library.History.Select(color => color.ToString("X8")), id =>
         {
@@ -174,11 +180,22 @@ internal sealed class ColorPickerPanel : UserControl
             if (!syncing) DraftChanged?.Invoke(color);
         }
     }
-    private void InvalidInput() => error.Text = L.Get("Color.InvalidHex");
+    private void InvalidInput()
+    {
+        error.Text = "⚠ " + L.Get("Color.InvalidHex");
+        hex.SetResourceReference(BorderBrushProperty, "CanvasErrorText");
+        AutomationProperties.SetHelpText(hex, error.Text);
+        System.Windows.Automation.Peers.UIElementAutomationPeer.FromElement(error)?.RaiseAutomationEvent(System.Windows.Automation.Peers.AutomationEvents.LiveRegionChanged);
+        error.BringIntoView();
+    }
+    private void ClearInputError()
+    {
+        error.Text = ""; hex.SetResourceReference(BorderBrushProperty, "CanvasBorder"); AutomationProperties.SetHelpText(hex, "");
+    }
     internal void Run(Action action)
     {
         try { action(); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { error.Text = ex.Message; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { error.Text = "⚠ " + ex.Message; }
     }
     private System.Windows.Controls.Button IconButton(PanelActionIcon icon, string key, Action action, string? shortcut = null) =>
         ActionIconButton.Create(icon, L.Get(key), () => Run(action), shortcut);

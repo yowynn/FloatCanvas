@@ -10,6 +10,8 @@ namespace FloatCanvas.App;
 /// <summary>Shared neutral palette and native WPF control styles. Registry access is read-only.</summary>
 internal static class AppTheme
 {
+    private static string currentMode = "system";
+    private static bool observingSystemColors;
     private static ResourceDictionary? styles;
     private static ResourceDictionary? overlayStyles;
 
@@ -28,6 +30,21 @@ internal static class AppTheme
         if (app is null) return;
         app.Dispatcher.VerifyAccess();
         AppInputPolicy.Initialize();
+        currentMode = mode;
+        if (!observingSystemColors)
+        {
+            observingSystemColors = true;
+            SystemEvents.UserPreferenceChanged += (_, e) =>
+            {
+                if (e.Category is UserPreferenceCategory.Accessibility or UserPreferenceCategory.Color or UserPreferenceCategory.VisualStyle or UserPreferenceCategory.General)
+                    app.Dispatcher.BeginInvoke(() => Apply(currentMode));
+            };
+            SystemParameters.StaticPropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(SystemParameters.HighContrast) or "")
+                    app.Dispatcher.BeginInvoke(() => Apply(currentMode));
+            };
+        }
         bool dark = mode?.ToLowerInvariant() switch { "dark" => true, "light" => false, _ => SystemUsesDarkTheme() };
         var resources = app.Resources;
         ApplyPalette(resources, dark);
@@ -70,7 +87,7 @@ internal static class AppTheme
         return (Math.Max(a, b) + .05) / (Math.Min(a, b) + .05);
     }
 
-    private static void ApplyPalette(ResourceDictionary resources, bool dark)
+    internal static void ApplyPalette(ResourceDictionary resources, bool dark, bool? highContrast = null)
     {
         SetBrush(resources, "CanvasSurface", dark ? "#24272C" : "#F8F9FB");
         SetBrush(resources, "CanvasFileBubble", dark ? "#29384B" : "#EDF3FB");
@@ -103,6 +120,19 @@ internal static class AppTheme
         SetBrush(resources, "CanvasCloseHover", dark ? "#6A3B45" : "#F7D2D7");
         SetBrush(resources, "CanvasCloseForeground", dark ? "#FFADB4" : "#B62335");
 
+        SetBrush(resources, "CanvasErrorText", dark ? "#FFADB4" : "#A7192C");
+        resources["CanvasOnAccent"] = Brushes.White;
+        if (highContrast ?? SystemParameters.HighContrast)
+        {
+            foreach (var key in resources.Keys.OfType<string>().Where(key => key.StartsWith("Canvas", StringComparison.Ordinal)).ToArray())
+                resources[key] = SystemColors.WindowBrush;
+            foreach (var key in new[] { "CanvasText", "CanvasMuted", "CanvasErrorText", "CanvasBorder", "CanvasSwatchBorder", "CanvasLcdText", "CanvasLcdBorder", "CanvasHiddenText", "CanvasHiddenBorder", "CanvasCodeText", "CanvasCloseForeground" })
+                resources[key] = SystemColors.WindowTextBrush;
+            foreach (var key in new[] { "CanvasAccent", "CanvasPrimary", "CanvasPrimaryHover", "CanvasPrimaryPressed", "CanvasDanger", "CanvasDangerHover", "CanvasDangerPressed" })
+                resources[key] = SystemColors.HighlightBrush;
+            resources["CanvasOnAccent"] = SystemColors.HighlightTextBrush;
+        }
+
         // Standard WPF popups, lists and checkboxes also use the same palette.
         resources[SystemColors.WindowBrushKey] = resources["CanvasInput"];
         resources[SystemColors.WindowTextBrushKey] = resources["CanvasText"];
@@ -110,7 +140,7 @@ internal static class AppTheme
         resources[SystemColors.ControlTextBrushKey] = resources["CanvasText"];
         resources[SystemColors.GrayTextBrushKey] = resources["CanvasMuted"];
         resources[SystemColors.HighlightBrushKey] = resources["CanvasAccent"];
-        resources[SystemColors.HighlightTextBrushKey] = Brushes.White;
+        resources[SystemColors.HighlightTextBrushKey] = resources["CanvasOnAccent"];
 
     }
 
@@ -182,7 +212,7 @@ internal static class AppTheme
           </Style>
           <Style x:Key="CanvasPrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{DynamicResource CanvasPrimary}"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="{DynamicResource CanvasOnAccent}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
@@ -199,7 +229,7 @@ internal static class AppTheme
           </Style>
           <Style x:Key="CanvasDangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{DynamicResource CanvasDanger}"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="{DynamicResource CanvasOnAccent}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
                 <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"

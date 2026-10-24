@@ -6,7 +6,6 @@ namespace FloatCanvas.Rendering;
 /// <summary>A single-threaded codec with two reusable compositing buffers and one displayed frame.</summary>
 internal sealed class AnimatedImage : IDisposable
 {
-    private const long MaximumPixels = 16_777_216;
     private const int MaximumFrames = 10_000;
     private readonly SKData data;
     private readonly SKCodec codec;
@@ -28,7 +27,8 @@ internal sealed class AnimatedImage : IDisposable
 
     internal static void Validate(SKImageInfo info, int count)
     {
-        if (info.Width <= 0 || info.Height <= 0 || (long)info.Width * info.Height > MaximumPixels || count > MaximumFrames)
+        ImageDecodeBudget.ValidateDimensions(info.Width, info.Height);
+        if (count > MaximumFrames)
             throw new InvalidDataException(L.Get("Images.BufferTooLarge"));
     }
 

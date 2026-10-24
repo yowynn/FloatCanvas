@@ -20,6 +20,11 @@ internal static class CommandGlyphs
     internal const string Settings = "M6,1 H10 L10.5,4 L13,3 L15,6 L13,8 L15,10 L13,13 L10.5,12 L10,15 H6 L5.5,12 L3,13 L1,10 L3,8 L1,6 L3,3 L5.5,4 Z M8,5 A3,3 0 1 1 7.99,5";
     internal const string FloatingLogo = "M1,4 L4,7 L8,2 L12,7 L15,4 L13,13 H3 Z M3,15 H13";
     internal const string SystemDiagnostics = "M1,2 H15 V14 H1 Z M4,6 L6,8 L4,10 M8,11 H12";
+    internal const string DiagnosticExport = "M2,1 H10 L14,5 V8 M2,1 V15 H7 M4,6 H9 M9,11 H16 M13,8 L16,11 L13,14";
+    internal const string Help = "M8,1 A7,7 0 1 1 7.99,1 M5.5,5 A2.5,2.5 0 0 1 10.5,5 C10.5,7 8,7 8,9 M8,11.5 V12";
+    internal const string Guide = "M8,3 Q4,0 1,2 V14 Q4,12 8,15 Q12,12 15,14 V2 Q12,0 8,3 V15 M3,5 L6,6 M10,6 L13,5";
+    internal const string Shortcuts = "M1,3 H15 V13 H1 Z M3,5 H5 M7,5 H9 M11,5 H13 M3,8 H5 M7,8 H9 M11,8 H13 M5,11 H11";
+    internal const string ReportIssue = "M1,1 H15 V12 H8 L4,15 V12 H1 Z M8,3 V7 M8,9 V10";
     internal const string InstallDirectory = "M1,5 V3 H6 L8,5 H15 V14 H1 Z M5,8 L8,6 L11,8 V11 L8,13 L5,11 Z M5,8 L8,10 L11,8 M8,10 V13";
     internal const string UserDataDirectory = "M1,5 V3 H6 L8,5 H15 V14 H1 Z M8,7 A1.5,1.5 0 1 1 7.99,7 M5,13 V12 Q5,10 8,10 Q11,10 11,12 V13";
     internal const string NewCanvas = "M3,1 L10,1 L14,5 L14,15 L3,15 Z M10,1 L10,5 L14,5 M6,10 L11,10 M8.5,7.5 L8.5,12.5";

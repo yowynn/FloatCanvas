@@ -7,6 +7,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using L = FloatCanvas.Localization.AppText;
 
 internal static class InspectorValidationLifecycleTests
 {
@@ -16,6 +17,20 @@ internal static class InspectorValidationLifecycleTests
         _=Application.Current??new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};AppTheme.Apply("light");
         var report=check;var failures=new List<string>();
         check=(name,passed)=>{if(passed)report(name,true);else{failures.Add(name);Console.WriteLine("INSPECTOR VALIDATION FAIL: "+name);}};
+        foreach (string theme in new[] { "light", "dark" })
+        {
+            AppTheme.Apply(theme);
+            var (session, window, fields) = Fixture(); var status = Field<TextBlock>(window, "status");
+            fields["W"].Text = "-";
+            check(theme + " invalid inspector value has meaningful text in the theme error color", IsError(status) && status.Text == "⚠ " + L.Format("Inspector.NumberRange", L.Get("Inspector.Width"), .01, 10000000) &&
+                status.Foreground is SolidColorBrush actual && status.TryFindResource("CanvasErrorText") is SolidColorBrush expected && actual.Color == expected.Color &&
+                !session.IsTransactionActive && session.Document.Elements[0].Width == 100);
+            window.Refresh();
+            check(theme + " refreshing invalid inspector clears its warning without retaining error styling", !IsError(status) &&
+                status.Foreground is SolidColorBrush normal && status.TryFindResource(SystemColors.GrayTextBrushKey) is SolidColorBrush muted && normal.Color == muted.Color && fields["W"].Text == "100");
+            window.Close();
+        }
+        AppTheme.Apply("light");
         foreach(string boundary in new[]{"original value","focus loss","refresh","selection"})
         {
             var (session,window,fields)=Fixture();var status=Field<TextBlock>(window,"status");int undo=session.UndoCount;
@@ -38,7 +53,7 @@ internal static class InspectorValidationLifecycleTests
             var (session,window,fields)=Fixture();bool allowed=false;
             typeof(InspectorWindow).GetField("canMutate",Private)!.SetValue(window,(Func<bool>)(()=>allowed));
             fields["W"].Text="125";window.CompletePendingEdit();window.Refresh();
-            check("a busy document still retains its draft and meaningful error",fields["W"].Text=="125"&&IsError(Field<TextBlock>(window,"status"))&&session.Document.Elements[0].Width==100);
+            check("a busy document still retains its draft and meaningful error",fields["W"].Text=="125"&&IsError(Field<TextBlock>(window,"status"))&&Field<TextBlock>(window,"status").Text=="⚠ "+L.Get("Inspector.BusyDraftRetained")&&session.Document.Elements[0].Width==100);
             allowed=true;window.Refresh();
             check("unblocking a busy document does not silently discard its retained draft",fields["W"].Text=="125"&&session.Document.Elements[0].Width==100);
             typeof(InspectorWindow).GetMethod("Apply",Private)!.Invoke(window,null);
@@ -79,7 +94,7 @@ internal static class InspectorValidationLifecycleTests
         var session=new EditorSession(new() {Elements=[first,second]});session.SetSelection([first.Id]);
         var window=new InspectorWindow(()=>session);return(session,window,Field<Dictionary<string,TextBox>>(window,"fields"));
     }
-    private static bool IsError(TextBlock status)=>status.Foreground is SolidColorBrush brush&&brush.Color==Color.FromRgb(190,60,55);
+    private static bool IsError(TextBlock status)=>status.Text.StartsWith("⚠ ",StringComparison.Ordinal)&&!string.IsNullOrWhiteSpace(status.Text[2..]);
     private static T Field<T>(object target,string name)=>(T)target.GetType().GetField(name,Private)!.GetValue(target)!;
     [DllImport("user32.dll")]private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")][return:MarshalAs(UnmanagedType.Bool)]private static extern bool IsWindow(nint window);

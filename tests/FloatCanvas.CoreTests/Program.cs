@@ -5,6 +5,7 @@ int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
 void Near(double actual, double expected, string message) => Check(Math.Abs(actual - expected) < 1e-8, $"{message}: {actual} != {expected}");
 if (args.Contains("--billboard-only")) { BillboardGeometryTests.Run(Check); Console.WriteLine($"PASS {checks} billboard core checks"); return; }
+DataRemediationTests.Run(Check);
 BillboardGeometryTests.Run(Check);
 if (args.Contains("--canvas-only")) { CanvasProjectionTests.Run(Check); Console.WriteLine($"PASS {checks} canvas core checks"); return; }
 CanvasElement Box(double x = 0, double y = 0) => new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60, Transform = Affine2D.Translation(x, y), Style = new() { Fill = 0xFF0000FF, StrokeWidth = 2 } };

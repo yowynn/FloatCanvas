@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+- 统一编辑、保存与恢复的容量边界，避免合法操作生成无法重开的工程；检测外部文件变化，优化脏状态查询、撤销快照、历史预览和资源写入，并限制单次图片导入的内存预算。
+- Align editing, saving and recovery limits so valid edits remain reopenable; detect external file changes and reduce dirty-state, undo, preview and asset-copy costs, with bounded image imports.
+
+- 增加增强输入的独立停滞保护；共享文字塑形、按词换行与双向光标映射，捕获探测失败可退避重试，局部动图与滤镜仅刷新受影响输出。
+- Add independent stalled-input protection, shared text shaping, word wrapping and bidirectional caret mapping; retry transient capture probes and restrict animated/effect updates to affected outputs.
+
+- 保留鼠标为主、快捷键加速的操作方式，Tab 继续展开／收起工具条，不遍历按钮或显示额外的焦点虚框；支持高对比主题、明确错误和锁定反馈、缺失字体提示及预设撤销。历史和印章列表按视口加载，窄窗口可滚动操作，欢迎页可继续最近工作，应用内可阅读离线帮助。
+- Preserve mouse-led interaction with shortcuts for faster actions. Tab expands/collapses the toolbar without button traversal or additional dashed focus outlines. Add high-contrast styling, explicit validation/lock/font feedback and preset undo; bound history and stamp lists to the viewport, retain actions in narrow windows, expose recent work and provide offline help.
+
+- 更新安装改用持久事务和独立原生恢复启动器，准备阶段可取消，保留受保护的失败恢复证据并限制成功更新缓存；配置目录别名共享单实例身份。
+- Make updates recoverable through a durable transaction and native recovery launcher, with cancellable preparation, protected failure evidence and bounded completed-update caches; normalize profile aliases for single-instance ownership.
+
+- 新增可预览、可选择日志的脱敏诊断导出及本安装的系统集成注销入口；发布依赖锁定并附带 CycloneDX 清单。正式发布必须具备受信签名身份；本地未签名验证包单独标识，不能作为正式更新安装。
+- Add previewable, optional-log diagnostic exports and an installation-owned integration removal command; lock release dependencies and include a CycloneDX inventory. Formal releases require trusted signing identities, while unsigned local validation packages remain distinct and ineligible for automatic updates.
+
 - 统一工具条快捷键角标的共享布局，修正 C／I／P 偏移；恢复画布按钮透视琥珀态并叠加蓝色工具选框，统一画布、放置模式、置图与截图的图标画幅和笔宽。
 - Share toolbar shortcut layout to align C/I/P; restore amber perspective styling beneath the Canvas tool's blue selection border, and unify icon canvas size and stroke weight across Canvas, placement, import and capture.
 

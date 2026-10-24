@@ -54,10 +54,14 @@ internal sealed partial class DesktopSession
         if (_liveDesktopCapture?.Completion.IsCompleted==true)StopLiveEffectsCapture();
         if (_liveDesktopCapture is null)
         {
-            if (_sessionCaptureProbe is null)
+            if (_sessionCaptureProbe is null || _sessionCaptureProbe.IsFaulted)
             {
-                _sessionCaptureProbe = LiveDesktopCapture.ProbeSessionExclusionAsync();
-                _ = ObserveSessionCaptureProbeAsync(_sessionCaptureProbe);
+                var probe = LiveDesktopCapture.ProbeSessionExclusionAsync();
+                if (!ReferenceEquals(probe, _sessionCaptureProbe))
+                {
+                    _sessionCaptureProbe = probe;
+                    _ = ObserveSessionCaptureProbeAsync(probe);
+                }
             }
             if (!_sessionCaptureProbe.IsCompleted) return;
             if (!_sessionCaptureProbe.IsCompletedSuccessfully)
@@ -137,7 +141,7 @@ internal sealed partial class DesktopSession
                     RememberLiveBackdrop(source, frame.TargetVersion);
                     _liveCaptureError=null;
                     if (_liveEffectPreparation is { } pending && IsLivePreparationCurrent(pending)) pending.Ready.TrySetResult(true);
-                    RequestPixelRender();
+                    RequestPixelRender(frame.Outputs.Select(output => output.Bounds));
                 }
                 catch { foreach(var tile in tiles)tile.Image.Dispose(); throw; }
             }

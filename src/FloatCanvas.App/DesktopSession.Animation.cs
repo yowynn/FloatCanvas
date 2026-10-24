@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows.Threading;
 using FloatCanvas.Core;
+using FloatCanvas.Windows;
 
 namespace FloatCanvas.App;
 
@@ -10,6 +11,7 @@ internal sealed partial class DesktopSession
     private EditorSession? _animationSession;
     private DispatcherTimer? _animationTimer;
     private bool _pixelsOnlyRender;
+    private readonly List<PixelBounds> _pixelDirtyRegions = [];
 
     private void PrepareAnimationFrame()
     {
@@ -48,7 +50,10 @@ internal sealed partial class DesktopSession
         {
             timer.Stop();
             if (!_host.IsVisible || _cleanCaptureDepth != 0) return;
-            RequestPixelRender();
+            RequestPixelRender(_renderer.AnimatedImageBounds(Active.Document, Active.Assets).Select(bounds => bounds.Inflate(1)).Select(bounds =>
+                new PixelBounds((int)Math.Floor(bounds.Left + _editor.ScreenOrigin.X), (int)Math.Floor(bounds.Top + _editor.ScreenOrigin.Y),
+                    checked((int)Math.Ceiling(bounds.Right) - (int)Math.Floor(bounds.Left)),
+                    checked((int)Math.Ceiling(bounds.Bottom) - (int)Math.Floor(bounds.Top)))));
         };
         return timer;
     }

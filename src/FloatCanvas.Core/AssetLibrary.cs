@@ -19,6 +19,12 @@ public sealed class AssetLibrary
         return id;
     }
     public AssetResource Get(string id) => resources.TryGetValue(id, out var resource) ? resource : throw new KeyNotFoundException(L.Format("Assets.MissingResource", id));
+    /// <summary>Shares an already immutable content-addressed resource, without copying or rehashing its pixels.</summary>
+    public void Add(AssetResource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        resources.TryAdd(resource.Id, resource);
+    }
     public bool TryGet(string id, out AssetResource resource) => resources.TryGetValue(id, out resource!);
     public void Prune(IEnumerable<string> retainedIds)
     {

@@ -332,7 +332,7 @@ public sealed partial class OverlayHost : IDisposable
     }
 
     /// <summary>Renders only when requested. Canvas coordinates are global desktop physical pixels.</summary>
-    public void Render()
+    public void Render(IReadOnlyList<PixelBounds>? dirtyRegions = null)
     {
         CheckThread();
         if (!IsVisible || _rendering) return;
@@ -377,6 +377,9 @@ public sealed partial class OverlayHost : IDisposable
         {
             foreach (var pair in _windows)
             {
+                if (dirtyRegions is not null && !dirtyRegions.Any(region =>
+                    region.Width > 0 && region.Height > 0 && region.Left < pair.Monitor.Bounds.Right &&
+                    region.Right > pair.Monitor.Bounds.Left && region.Top < pair.Monitor.Bounds.Bottom && region.Bottom > pair.Monitor.Bounds.Top)) continue;
                 long outputStarted = observer is null ? 0 : Stopwatch.GetTimestamp();
                 var surface = gpu?.SurfaceFor(pair.Buffer) ?? pair.Buffer.Surface;
                 var canvas = surface.Canvas;

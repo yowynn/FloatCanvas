@@ -8,8 +8,8 @@ internal sealed partial class EditorController
     private OverlayModifiers gestureModifiers;
     private int? straightStrokeStart;
     private uint? modifierTime;
-    private List<PointD>? ActiveStroke => gesture=="draw"&&drawing is {Kind:ElementKind.Freehand or ElementKind.Highlighter} stroke
-        ? stroke.Points : gesture=="capture"&&CaptureShape==CaptureShape.FreehandLasso ? capturePoints : null;
+    private IList<PointD>? ActiveStroke => gesture=="draw"&&drawing is {Kind:ElementKind.Freehand or ElementKind.Highlighter} stroke
+        ? (IList<PointD>)stroke.Points : gesture=="capture"&&CaptureShape==CaptureShape.FreehandLasso ? (IList<PointD>)capturePoints : null;
 
     internal void ModifiersChanged(OverlayModifiers modifiers,OverlayPoint? position=null,uint? time=null,bool? pointerLeftDown=null)
     {
@@ -50,7 +50,7 @@ internal sealed partial class EditorController
         double x=Math.Cos(angle),y=Math.Sin(angle),distance=delta.X*x+delta.Y*y;
         return anchor+new PointD(x*distance,y*distance);
     }
-    private void UpdateStroke(List<PointD> points,PointD point,OverlayModifiers modifiers)
+    private void UpdateStroke(IList<PointD> points,PointD point,OverlayModifiers modifiers)
     {
         bool straight=(modifiers&OverlayModifiers.Shift)!=0;
         if(straight||straightStrokeStart is not null)
@@ -63,7 +63,7 @@ internal sealed partial class EditorController
         }
         else AppendStrokePoint(points,point);
     }
-    private void AppendStrokePoint(List<PointD> points,PointD point,bool force=false)
+    private void AppendStrokePoint(IList<PointD> points,PointD point,bool force=false)
     {
         if(gesture!="draw"&&points.Count>=MaximumCapturePoints)return;
         if(points.Count==0){points.Add(point);return;}

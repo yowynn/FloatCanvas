@@ -10,6 +10,8 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--unicode-layout-only")) { UnicodeTextLayoutTests.Run(Assert); Console.WriteLine($"PASS {_checks} Unicode text layout checks."); return 0; }
+            if (args.Contains("--image-budget-only")) { ImageDecodeBudgetTests.Run(Assert); Console.WriteLine($"PASS {_checks} image decode budget checks."); return 0; }
             if (args.Contains("--grid-density-only")) { GridDensityRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} grid density checks."); return 0; }
             if (args.Contains("--grid-density-diagnostics")) { GridDensityRenderingTests.Run((n, b) => Console.WriteLine($"{(b ? "PASS" : "FAIL")} {n}")); return 0; }
             if (args.Contains("--dotted-grid-only")) { DottedGridRenderingTests.Run(Assert); return 0; }
@@ -49,9 +51,11 @@ internal static class Program
             AlphaAndBackground();
             ImagesAndEffects();
             TextAndNumbers();
+            UnicodeTextLayoutTests.Run(Assert);
             NumberFitRenderingTests.Run(Assert);
             OrientationAndFormats();
             AssetImportLosslessTests.Run(Assert);
+            ImageDecodeBudgetTests.Run(Assert);
             AnimatedImageRenderingTests.Run(Assert);
             AnimatedOverlayCacheTests.Run(Assert);
             IntermediateSurfaceRenderingTests.Run(Assert);

@@ -45,6 +45,7 @@ internal sealed partial class DesktopSession
     private Controls.Button? _canvasStateButton;
     private bool? _canvasPerspectiveShown;
     private Controls.Button? _billboardButton;
+    private readonly Dictionary<string, Controls.Button> _commandStateButtons = [];
 
     private Window CreateToolbarV2()
     {
@@ -93,7 +94,7 @@ internal sealed partial class DesktopSession
             Cell(Separator(),13,row);
         toolColumn = 14;
         void Action(string tag, string label, string geometry, Action action, string shortcut = "")
-        { var button = ToolbarIcon(label, geometry, action, shortcut); button.Tag = tag; Cell(button, toolColumn++); }
+        { var button = ToolbarIcon(label, geometry, action, shortcut); button.Tag = tag; _commandStateButtons[tag] = button; Cell(button, toolColumn++); }
         Action("canvas", L.Get("Canvas.Title"), CommandGlyphs.Canvas, () => ActivateTool(EditorTool.Canvas), ToolShortcutCatalog.Hint(EditorTool.Canvas));
         _canvasStateButton = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.Canvas] = _canvasStateButton;
@@ -290,6 +291,13 @@ internal sealed partial class DesktopSession
         RefreshCanvasStateGlyph();
         RefreshBillboardState();
         if (_toolbarToolButtons.Count == 0) return;
+        foreach (var (key, button) in _commandStateButtons.Where(pair => pair.Key is "undo" or "redo"))
+        {
+            button.IsEnabled = CanExecuteUiCommand(key);
+            string label = L.Get(key == "undo" ? "ToolbarV2.Undo" : "ToolbarV2.Redo") + (key == "undo" ? " · Ctrl+Z" : " · Ctrl+Y");
+            button.ToolTip = button.IsEnabled ? label : label + "\n" + UiCommandDisabledHint(key);
+            Controls.ToolTipService.SetShowOnDisabled(button, true);
+        }
         ValidateSelectedStamp();
         _toolbarStatusDisplay?.Refresh();
         // Crop is a dedicated entry with no remembered aliases. Keep legacy shared
@@ -369,7 +377,7 @@ internal sealed partial class DesktopSession
     {
         var button = ToolButton(label, geometry, action);
         button.MinWidth = button.Width = 26; button.MinHeight = button.Height = 26;
-        button.FocusVisualStyle=null;Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(button,false);
+        button.FocusVisualStyle=null; Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(button,false);
         button.Margin = new Thickness(2, 0, 2, 0); button.BorderThickness = new Thickness(1); button.BorderBrush=Brushes.Transparent;button.Padding = new Thickness(3);
         button.Content = CommandGlyphs.Create(geometry);
         button.ToolTip = shortcut.Length == 0 ? label : label + " · " + shortcut;
@@ -393,7 +401,7 @@ internal sealed partial class DesktopSession
     private Controls.Slider CreateToolbarOpacitySlider()
     {
         var opacity=new Controls.Slider {Minimum=0,Maximum=1,Value=1,Width=56,Height=26,Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=L.Get("Feedback3.Toolbar.Opacity")+" · Ctrl+PageUp / Ctrl+PageDown"};
-        opacity.FocusVisualStyle=null;Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(opacity,false);
+        opacity.FocusVisualStyle=null; Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(opacity,false);
         System.Windows.Automation.AutomationProperties.SetName(opacity,L.Get("Feedback3.Toolbar.Opacity"));
         opacity.PreviewMouseLeftButtonDown+=(_,_)=>{if(!DocumentOperationBusy){_editor.Cancel();Active.BeginTransaction(L.Get("History.LayerOpacity"));}};
         opacity.ValueChanged+=(_,_)=>

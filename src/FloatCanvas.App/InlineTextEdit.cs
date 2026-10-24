@@ -16,6 +16,11 @@ internal sealed class InlineTextEdit : IDisposable
     private readonly bool isNew;
     private readonly long transaction;
     private int anchor;
+    private PointD? caretAffinity;
+    private int affinityIndex = -1;
+    private bool movingCaret;
+    private int ActiveCaretIndex => Input.SelectionLength > 0 && affinityIndex >= Input.SelectionStart && affinityIndex <= Input.SelectionStart + Input.SelectionLength ? affinityIndex : Input.CaretIndex;
+    internal RectD Caret => Geometry.Caret(ActiveCaretIndex, ActiveCaretIndex == affinityIndex ? caretAffinity : null);
     internal TextBox Input { get; } = new() { AcceptsReturn=true,AcceptsTab=true,TextWrapping=System.Windows.TextWrapping.Wrap };
     internal CanvasElement Target { get; }
     internal bool IsActive { get; private set; } = true;
@@ -44,7 +49,7 @@ internal sealed class InlineTextEdit : IDisposable
         if(isNew)session.Document.Elements.Add(Target);
         session.SetSelection([Target.Id]);
         Input.TextChanged+=OnTextChanged;
-        Input.SelectionChanged+=(_,_)=>Changed?.Invoke();
+        Input.SelectionChanged+=(_,_)=> { if (!movingCaret) { caretAffinity=null; affinityIndex=-1; } Changed?.Invoke(); };
         session.Changed+=OnSessionChanged;
         if(!isNew)Input.SelectAll();
         session.NotifyChanged();
@@ -54,6 +59,7 @@ internal sealed class InlineTextEdit : IDisposable
     private void OnTextChanged(object sender,TextChangedEventArgs args)
     {
         if(!IsActive)return;
+        caretAffinity=null;affinityIndex=-1;
         Target.Text=Normalize(Input.Text);
         if(!isNew&&Target.Text==Normalize(original.Text))
         {Target.Text=original.Text;Target.Width=original.Width;Target.Height=original.Height;Target.Style.FontSize=original.Style.FontSize;}
@@ -96,7 +102,8 @@ internal sealed class InlineTextEdit : IDisposable
     {
         if(!IsActive||!LocalToScreen.TryInverse(out var inverse)||!inverse.TryTransformPoint(screen,out var local))return;
         if(!down&&!IsSelecting)return;
-        int index=Geometry.HitTest(local);
+        var position=Geometry.HitTestPosition(local);
+        int index=position.Index;
         if(down)
         {
             anchor=extend?(Input.CaretIndex==Input.SelectionStart?Input.SelectionStart+Input.SelectionLength:Input.SelectionStart):index;
@@ -113,30 +120,42 @@ internal sealed class InlineTextEdit : IDisposable
                 }
             }
         }
-        if(IsSelecting)Input.Select(Math.Min(anchor,index),Math.Abs(index-anchor));
+        if(IsSelecting)Select(Math.Min(anchor,index),Math.Abs(index-anchor));
+        RememberCaret(position);
         if(up)IsSelecting=false;
         Changed?.Invoke();
     }
     internal bool Navigate(Key key,bool shift)
     {
-        if(key is not (Key.Up or Key.Down or Key.Home or Key.End))return false;
-        var caret=Geometry.Caret(Input.CaretIndex);
-        int index=Input.CaretIndex;
-        if(key is Key.Up or Key.Down)
-            index=Geometry.HitTest(new(caret.X,caret.Y+(key==Key.Up?-.5:caret.Height+.5)));
+        if(key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End))return false;
+        var caret=Caret;
+        int index=ActiveCaretIndex;
+        TextCaretPosition position;
+        if(key is Key.Left or Key.Right && !shift && Input.SelectionLength > 0)
+            position=Geometry.CollapseSelection(Input.SelectionStart,Input.SelectionLength,key==Key.Left?-1:1);
+        else if(key is Key.Left or Key.Right) position=Geometry.MoveHorizontalPosition(index,key==Key.Left?-1:1,new(caret.X,caret.Y));
+        else if(key is Key.Up or Key.Down)
+            position=Geometry.HitTestPosition(new(caret.X,caret.Y+(key==Key.Up?-.5:caret.Height+.5)));
         else
         {
-            var line=Geometry.Lines.LastOrDefault(line=>index>=line.Carets[0].Index)??Geometry.Lines[0];
-            index=key==Key.Home?line.Carets[0].Index:line.Carets[^1].Index;
+            var line=Geometry.Lines.MinBy(line=>Math.Abs(line.Top-caret.Y))!;
+            var stop=(key==Key.Home?line.Carets.MinBy(stop=>stop.X):line.Carets.MaxBy(stop=>stop.X))!;
+            position=new(stop.Index,stop.X,line.Top);
         }
-        if(!shift) {Input.Select(index,0);anchor=index;}
+        index=position.Index;
+        if(!shift) {Select(index,0);anchor=index;}
         else
         {
-            if(Input.SelectionLength==0)anchor=Input.CaretIndex;
-            Input.Select(Math.Min(anchor,index),Math.Abs(index-anchor));
+            if(Input.SelectionLength==0)anchor=ActiveCaretIndex;
+            Select(Math.Min(anchor,index),Math.Abs(index-anchor));
         }
+        RememberCaret(position);Changed?.Invoke();
         return true;
     }
+    private void RememberCaret(TextCaretPosition position)
+    { affinityIndex=position.Index;caretAffinity=new(position.X,position.Top); }
+    private void Select(int start,int length)
+    { movingCaret=true;try {Input.Select(start,length);}finally {movingCaret=false;} }
     internal void Finish(bool commit,bool selectEdited=true)
     {
         if(!IsActive)return;

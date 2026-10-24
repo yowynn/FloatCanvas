@@ -9,6 +9,17 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args is ["--unregister-integration"] or ["--register-integration"])
+        {
+            try
+            {
+                if (args[0] == "--unregister-integration") WindowsShellIntegration.Current().UnregisterOwnedIntegration();
+                else WindowsShellIntegration.Current().RegisterProjectType();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            { AppDialog.Show(null, ex.Message, L.Get("App.OperationFailed"), MessageBoxButton.OK, MessageBoxImage.Error); Environment.ExitCode = 1; }
+            return;
+        }
         if (args is ["--probe-system-overlay"])
         {
             Environment.ExitCode = OverlayBackendProtection.RunProbe();
@@ -27,7 +38,7 @@ internal static class Program
             Environment.ExitCode = 2;
             return;
         }
-        var profileId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ApplicationPaths.ProfileDirectory.ToUpperInvariant())))[..16];
+        var profileId = ApplicationPaths.ProfileIdentity(ApplicationPaths.ProfileDirectory);
         using var instance = new Mutex(true, "Local\\FloatCanvas.App." + profileId, out var created);
         if (!created)
         {

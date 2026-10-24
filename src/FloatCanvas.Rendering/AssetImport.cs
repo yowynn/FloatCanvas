@@ -27,6 +27,7 @@ public static class AssetImport
     {
         using var data = SKData.CreateCopy(bytes);
         using var codec = SKCodec.Create(data) ?? throw new InvalidDataException(L.Get("Images.UnsupportedOrCorrupt"));
+        ImageDecodeBudget.ValidateDimensions(codec.Info.Width, codec.Info.Height);
         bool animated = codec.EncodedFormat is SKEncodedImageFormat.Gif or SKEncodedImageFormat.Webp && codec.FrameCount > 1;
         if (animated || codec.EncodedFormat == SKEncodedImageFormat.Gif) AnimatedImage.Validate(codec.Info, codec.FrameCount);
         if (animated && codec.FrameInfo.Any(frame => !frame.FullyRecieved))
@@ -39,6 +40,7 @@ public static class AssetImport
         var result = codec.GetPixels(info, bitmap.GetPixels());
         if (result != SKCodecResult.Success) throw new InvalidDataException(L.Format("Images.DecodeFailed", result));
         bitmap.SetImmutable();
+        if (codec.EncodedOrigin == SKEncodedOrigin.TopLeft) return SKImage.FromBitmap(bitmap);
         using var original = SKImage.FromBitmap(bitmap);
         return ApplyOrientation(original, codec.EncodedOrigin);
     }

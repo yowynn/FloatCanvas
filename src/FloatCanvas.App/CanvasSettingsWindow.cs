@@ -54,7 +54,7 @@ internal sealed class CanvasSettingsWindow : Window
 
     public CanvasSettingsWindow(CanvasPresetLibrary? library = null)
     {
-        Title = L.Get("Canvas.Title"); Width = 600; Height = 590; MinWidth = 600; MinHeight = 380;
+        Title = L.Get("Canvas.Title"); Width = 600; Height = 590; MinWidth = 280; MinHeight = 240;
         Topmost = true; ShowInTaskbar = false; Icon = AppIcon.WindowImage;
         if (library is null)
         {
@@ -109,9 +109,21 @@ internal sealed class CanvasSettingsWindow : Window
         presets = new CanvasPresetGallery(library);
         presets.Applied += parameters => PresetApplied?.Invoke(parameters);
         presets.Failed += message => status.Text = message;
-        var presetBorder = new Border { BorderThickness = new(1, 0, 0, 0), Margin = new(12, 0, 0, 0), Padding = new(12, 0, 0, 0), Child = presets };
+        var presetBorder = new Border { BorderThickness = new(1, 0, 0, 0), Margin = new(12, 0, 0, 0), Padding = new(12, 0, 0, 0), Child = new ScrollViewer { Content = presets, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } };
         presetBorder.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         Grid.SetColumn(presetBorder, 1); content.Children.Add(presetBorder); layout.Children.Add(content); Content = layout;
+        SizeChanged += (_, _) =>
+        {
+            bool compact = ActualWidth < 560;
+            actions.Width = resetActions.Width = Math.Min(PerspectiveActionsWidth, Math.Max(1, ActualWidth - 40));
+            content.RowDefinitions.Clear(); content.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            content.ColumnDefinitions[1].Width = compact ? new GridLength(0) : GridLength.Auto;
+            Grid.SetColumn(presetBorder, compact ? 0 : 1); Grid.SetRow(presetBorder, compact ? 1 : 0);
+            presetBorder.MaxHeight = compact ? 180 : double.PositiveInfinity;
+            presetBorder.Margin = compact ? new(0, 8, 0, 0) : new(12, 0, 0, 0);
+            presetBorder.Padding = compact ? new(0, 6, 0, 0) : new(12, 0, 0, 0);
+            presetBorder.BorderThickness = compact ? new(0, 1, 0, 0) : new(1, 0, 0, 0);
+        };
         AppWindowChrome.Apply(this); AppWindowChrome.SetHelp(this, L.Get("Canvas.Help"), L.Get("Canvas.HelpText") + "\n\n" + L.Get("Canvas.GridSizeLockHelp") + "\n\n" + L.Get("Canvas.MultiMonitorHelp") + "\n\n" + L.Get("CanvasPreset.Scope"));
         pin = ActionIconButton.Create(PanelActionIcon.Pin, L.Get("ToolbarV2.PinOptions"), () =>
         {

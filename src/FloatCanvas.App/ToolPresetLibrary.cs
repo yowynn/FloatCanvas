@@ -32,6 +32,15 @@ internal sealed class ToolPresetLibrary
     private readonly string path;
     private readonly CompatibleConfiguration compatibility;
     private List<ToolPreset> presets = [];
+    private readonly Stack<List<ToolPreset>> undo = new();
+    private bool restoringResource;
+    internal bool CanUndoResourceChange => undo.Count > 0;
+    internal void UndoResourceChange()
+    {
+        if (!undo.TryPeek(out var previous)) return;
+        restoringResource = true; try { Persist(previous.Select(p => p.Clone()).ToList()); undo.Pop(); } finally { restoringResource = false; }
+    }
+    private void RememberResourceChange(List<ToolPreset> previous) { undo.Push(previous); if (undo.Count > 20) { var keep = undo.Take(20).Reverse().ToArray(); undo.Clear(); foreach (var value in keep) undo.Push(value); } }
 
     public ToolPresetLibrary(string? path = null)
     {
@@ -143,7 +152,9 @@ internal sealed class ToolPresetLibrary
     private void Replace(ToolPreset preset) => Persist(presets.Select(p => p.Id == preset.Id ? preset : p).ToList());
     private void Persist(List<ToolPreset> next)
     {
+        var previous = presets.Select(p => p.Clone()).ToList();
         compatibility.Save(new State { Presets = next },JsonOptions); presets = next;
+        if (!restoringResource) RememberResourceChange(previous);
     }
     private static bool ValidName(string? name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 80;
     private static void Validate(string name, ToolParameters parameters)

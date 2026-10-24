@@ -75,7 +75,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
             clock.Restart(); ScheduleAnimation();
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is IOException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
         { if (!token.IsCancellationRequested && version == request && IsOpen) message.Text = ex.Message; }
     }
 
@@ -94,7 +94,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
             preview.Source=playback.Render(clock.Elapsed);
             ScheduleAnimation();
         }
-        catch(Exception ex) when(ex is IOException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
+        catch(Exception ex) when(ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
         {CancelLoading();message.Text=ex.Message;message.Visibility=Wpf.Visibility.Visible;}
     }
 
@@ -188,7 +188,8 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
 
     private static Imaging.BitmapSource Decode(byte[] bytes)
     {
-        using var stream = new MemoryStream(bytes);
+        _ = FloatCanvas.Rendering.ImageDecodeBudget.ReadPixelCount(bytes);
+            using var stream = new MemoryStream(bytes);
         var bitmap = new Imaging.BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = Imaging.BitmapCacheOption.OnLoad; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze();
         return bitmap;
     }

@@ -314,7 +314,7 @@ internal sealed class InspectorWindow : Wpf.Window
                 foreach (var (key, color) in colorFields)
                     color.IsMixed = selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)));
             }
-            SetStatus(element.Locked ? L.Get("Inspector.UnlockToEdit") : L.Get("Feedback4.Inspector.LiveHint"), false);
+            SetStatus(selected.Any(item => item.Locked) ? L.Format("Audit.LockedSelection", selected.Count(item => item.Locked)) : L.Get("Feedback4.Inspector.LiveHint"), false);
         }
         finally { refreshing = false; }
     }
@@ -835,7 +835,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private void SetStatus(string text, bool error)
     {
         status.Text = text;
-        if (error) status.Foreground = new Media.SolidColorBrush(Media.Color.FromRgb(190, 60, 55));
+        if (error) { status.SetResourceReference(Controls.TextBlock.ForegroundProperty, "CanvasErrorText"); status.Text = "⚠ " + text; }
         else status.SetResourceReference(Controls.TextBlock.ForegroundProperty, Wpf.SystemColors.GrayTextBrushKey);
     }
 

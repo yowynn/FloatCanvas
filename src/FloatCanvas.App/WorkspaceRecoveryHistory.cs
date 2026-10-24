@@ -14,7 +14,7 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     private string? entryBaseline;
     public int MaximumVersions { get; set; } = 60;
     private sealed record HistoryInfo(string Fingerprint, string? SourceFile, bool Eligible = true, long PackageTicks = 0, long PackageLength = 0);
-    private readonly Dictionary<string, (long Ticks, long Length, HistoryInfo Info)> legacyInfo = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Ticks, long Length, HistoryInfo Info)> legacyInfo = new(StringComparer.OrdinalIgnoreCase);
 
     public void EnterWorkspace(WorkspaceState workspace)
     {
@@ -46,25 +46,31 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
         Directory.CreateDirectory(parent);
         string identity = DateTime.UtcNow.ToString("yyyyMMdd-HHmmssfff") + "-" + Guid.NewGuid().ToString("N");
         string pending = Path.Combine(parent, ".pending-" + identity);
-        await new RecoveryStore(pending).SaveWithPreviewAsync(workspace, assets, preview, ct).ConfigureAwait(false);
-        WriteInfo(Path.Combine(pending, "history-info.json"), new(fingerprint, sourceFile));
-        ct.ThrowIfCancellationRequested();
-        Directory.Move(pending, Path.Combine(parent, identity));
+        Directory.CreateDirectory(pending); File.WriteAllText(Path.Combine(pending, ".owner"), "FloatCanvas.History.v1");
+        try
+        {
+            await new RecoveryStore(pending).SaveWithPreviewAsync(workspace, assets, preview, ct).ConfigureAwait(false);
+            WriteInfo(Path.Combine(pending, "history-info.json"), new(fingerprint, sourceFile));
+            ct.ThrowIfCancellationRequested();
+            Directory.Move(pending, Path.Combine(parent, identity));
+        }
+        finally { PublicationCleanup.RemovePendingDirectory(pending); }
         Trim();
     }
     public void Trim()
     {
         string parent = Path.GetFullPath(Path.Combine(store.DirectoryPath, "history"));
+        PublicationCleanup.SweepPending(parent);
         foreach (var entry in GetEntries().Where(e => !e.IsCurrent).Skip(Math.Clamp(MaximumVersions, 1, 10000)))
         {
             string target = Path.GetFullPath(entry.DirectoryPath);
             if (!string.Equals(Path.GetDirectoryName(target), parent, StringComparison.OrdinalIgnoreCase) ||
                 !System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(target), @"^\d{8}-\d{9}-[a-f0-9]{32}$") ||
                 (File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0) continue;
-            Directory.Delete(target, true);
+            PublicationCleanup.RemovePendingDirectory(target);
         }
     }
-    private HistoryInfo? EntryInfo(string directory)
+    private HistoryInfo? EntryInfo(string directory, CancellationToken ct = default)
     {
         string path = Path.Combine(directory, "history-info.json");
         var package = new FileInfo(Path.Combine(directory, "workspace.floatcanvas"));
@@ -79,7 +85,7 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
             catch (JsonException) { }
         }
         else if (legacyInfo.TryGetValue(directory, out var cached) && ticks == cached.Ticks && length == cached.Length) return cached.Info;
-        var recovered = new RecoveryStore(directory).LoadAsync().GetAwaiter().GetResult();
+        var recovered = new RecoveryStore(directory).LoadAsync(ct).GetAwaiter().GetResult();
         if (recovered is null) return null;
         var state = recovered.State;
         string fingerprint = ContentFingerprint(state);
@@ -143,31 +149,37 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
             Directory.CreateDirectory(history);
             string identity = DateTime.UtcNow.ToString("yyyyMMdd-HHmmssfff") + "-" + Guid.NewGuid().ToString("N");
             string pending = Path.Combine(history, ".pending-" + identity);
-            Directory.CreateDirectory(pending);
-            foreach (string source in sources)
+            Directory.CreateDirectory(pending); File.WriteAllText(Path.Combine(pending, ".owner"), "FloatCanvas.History.v1");
+            try
             {
-                ct.ThrowIfCancellationRequested();
-                string destination = Path.Combine(pending, Path.GetFileName(source));
-                DateTime savedAt = File.GetLastWriteTimeUtc(source);
-                await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous))
-                await using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.WriteThrough))
+                foreach (string source in sources)
                 {
-                    await input.CopyToAsync(output, ct).ConfigureAwait(false);
-                    await output.FlushAsync(ct).ConfigureAwait(false);
-                    output.Flush(true);
+                    ct.ThrowIfCancellationRequested();
+                    string destination = Path.Combine(pending, Path.GetFileName(source));
+                    DateTime savedAt = File.GetLastWriteTimeUtc(source);
+                    await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous))
+                    await using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.WriteThrough))
+                    {
+                        await input.CopyToAsync(output, ct).ConfigureAwait(false);
+                        await output.FlushAsync(ct).ConfigureAwait(false);
+                        output.Flush(true);
+                    }
+                    File.SetLastWriteTimeUtc(destination, savedAt);
                 }
-                File.SetLastWriteTimeUtc(destination, savedAt);
+                WriteInfo(Path.Combine(pending, "history-info.json"), info!);
+                ct.ThrowIfCancellationRequested();
+                // Publish only after both generations are complete. A failed copy cannot authorize a new save.
+                Directory.Move(pending, Path.Combine(history, identity));
             }
-            WriteInfo(Path.Combine(pending, "history-info.json"), info!);
-            ct.ThrowIfCancellationRequested();
-            // Publish only after both generations are complete. A failed copy cannot authorize a new save.
-            Directory.Move(pending, Path.Combine(history, identity));
+            finally { PublicationCleanup.RemovePendingDirectory(pending); }
         }
         archiveBeforeWrite = false;
         Trim();
     }
 
-    public IReadOnlyList<WorkspaceRecoveryEntry> GetEntries()
+    public Task<IReadOnlyList<WorkspaceRecoveryEntry>> GetEntriesAsync(CancellationToken ct = default) => Task.Run(() => GetEntries(ct), ct);
+
+    public IReadOnlyList<WorkspaceRecoveryEntry> GetEntries(CancellationToken ct = default)
     {
         var entries = new List<WorkspaceRecoveryEntry>();
         AddEntry(store.DirectoryPath, true);
@@ -179,16 +191,17 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
                     AddEntry(directory, false);
         }
         return entries.OrderBy(entry => entry.IsCurrent).ThenBy(entry => entry.SavedAtUtc)
-            .DistinctBy(entry => EntryInfo(entry.DirectoryPath)?.Fingerprint ?? entry.DirectoryPath)
+            .DistinctBy(entry => EntryInfo(entry.DirectoryPath, ct)?.Fingerprint ?? entry.DirectoryPath)
             .OrderByDescending(entry => entry.SavedAtUtc).ToArray();
 
         void AddEntry(string directory, bool current)
         {
+            ct.ThrowIfCancellationRequested();
             var files = new[] { "workspace.floatcanvas", "workspace.previous.floatcanvas" }.Select(name => Path.Combine(directory, name)).Where(File.Exists).ToArray();
             if (files.Length == 0) return;
             try
             {
-                var info = EntryInfo(directory);
+                var info = EntryInfo(directory, ct);
                 if (info is { Eligible: true }) entries.Add(new(directory, files.Max(File.GetLastWriteTimeUtc), current, info.SourceFile));
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or UnauthorizedAccessException or NotSupportedException) { }
@@ -196,7 +209,12 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
         }
     }
 
-    public Task<RecoveredWorkspace?> LoadAsync(WorkspaceRecoveryEntry entry, CancellationToken ct = default) => new RecoveryStore(entry.DirectoryPath).LoadAsync(ct);
+    public async Task<RecoveredWorkspace?> LoadAsync(WorkspaceRecoveryEntry entry, CancellationToken ct = default)
+    {
+        var loaded = await new RecoveryStore(entry.DirectoryPath).LoadAsync(ct).ConfigureAwait(false);
+        if (loaded is not null) ImageImportBudget.ValidateResources(loaded.Assets.Resources);
+        return loaded;
+    }
 
     public async Task<byte[]?> LoadPreviewAsync(WorkspaceRecoveryEntry entry, CancellationToken ct = default)
     {
@@ -206,6 +224,7 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
         // Older history has no embedded preview. Render its own saved annotations on demand;
         // do not alter the archive or capture whatever happens to be on the desktop now.
         var restored = await entryStore.LoadAsync(ct).ConfigureAwait(false);
+        if (restored is not null) ImageImportBudget.ValidateResources(restored.Assets.Resources);
         return restored is null ? null : WorkspacePreview.Render(restored.State.LiveDocument, restored.Assets);
     }
 

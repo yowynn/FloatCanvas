@@ -51,7 +51,7 @@ public sealed class LiveDesktopFrame : IDisposable
 /// </summary>
 public sealed class LiveDesktopCapture : IDisposable
 {
-    private static readonly Lazy<Task<bool>> SessionExclusionProbe = new(() => Task.Run(WgcDesktopSession.ProbeSessionExclusion));
+    private static readonly RetryableCapabilityProbe SessionExclusionProbe = new(WgcDesktopSession.ProbeSessionExclusion);
     private readonly object _gate = new();
     private readonly AutoResetEvent _wake = new(false);
     private readonly CancellationTokenSource _stop = new();
@@ -79,8 +79,8 @@ public sealed class LiveDesktopCapture : IDisposable
     public long SamplingPassCount => Interlocked.Read(ref _samplingPassCount);
 
     /// <summary>Queries the actual display-session interface on an MTA thread without starting capture or showing a picker.
-    /// Only known absent APIs return false; device, policy and unexpected failures fault the cached task.</summary>
-    public static Task<bool> ProbeSessionExclusionAsync() => SessionExclusionProbe.Value;
+    /// Known absent APIs return cached false; device/policy failures allow a later retry with backoff.</summary>
+    public static Task<bool> ProbeSessionExclusionAsync() => SessionExclusionProbe.GetAsync();
 
     public LiveDesktopCapture(bool useSessionWindowExclusion = false)
     {

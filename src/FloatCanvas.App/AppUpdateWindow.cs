@@ -19,6 +19,7 @@ internal sealed class AppUpdateWindow : Window
     private readonly string currentVersion, cacheDirectory;
     private readonly GitHubUpdateClient client;
     private readonly Func<PreparedUpdate, Task> applyUpdate;
+    private readonly Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate;
     private readonly bool canInstall;
     private readonly Action<bool>? savePreviewPreference;
     private bool restoringPreviewPreference;
@@ -45,9 +46,11 @@ internal sealed class AppUpdateWindow : Window
 
     internal AppUpdateWindow(string currentVersion, GitHubUpdateClient client,
         Func<PreparedUpdate, Task> applyUpdate, bool canInstall, string? cacheDirectory = null, bool autoCheck = true,
-        bool includePrereleases = false, Action<bool>? savePreviewPreference = null)
+        bool includePrereleases = false, Action<bool>? savePreviewPreference = null,
+        Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate = null)
     {
         this.currentVersion = currentVersion; this.client = client; this.applyUpdate = applyUpdate; this.canInstall = canInstall;
+        this.prepareAndApplyUpdate = prepareAndApplyUpdate;
         this.savePreviewPreference = savePreviewPreference;
         PreviewUpdates.IsChecked = includePrereleases;
         PreviewUpdates.Content = L.Get("Updates.IncludePreviews"); PreviewUpdates.ToolTip = L.Get("Updates.PreviewHint");
@@ -75,7 +78,7 @@ internal sealed class AppUpdateWindow : Window
             e.Handled = true;
         };
         Closing += OnClosing;
-        Closed += (_, _) => { closed = true; operation?.Cancel(); };
+        Closed += (_, _) => { closed = true; if (!applying) operation?.Cancel(); };
         if (autoCheck) Loaded += OnFirstLoaded;
     }
 
@@ -175,8 +178,10 @@ internal sealed class AppUpdateWindow : Window
             var progress = new DownloadProgressReporter(this, cancellation);
             var prepared = await client.DownloadAsync(update, cacheDirectory, progress, cancellation.Token);
             if (closed || cancellation.IsCancellationRequested) return;
-            applying = true; CancelButton.IsEnabled = false; StatusText.Text = L.Get("Updates.Restarting");
-            await applyUpdate(prepared);
+            StatusText.Text = L.Get("Engineering.UpdatesPreparing");
+            void Commit() { cancellation.Token.ThrowIfCancellationRequested(); applying = true; CancelButton.IsEnabled = false; StatusText.Text = L.Get("Updates.Restarting"); }
+            if (prepareAndApplyUpdate is not null) await prepareAndApplyUpdate(prepared, cancellation.Token, Commit);
+            else { Commit(); await applyUpdate(prepared); }
         }
         catch (OperationCanceledException) { if (!closed) StatusText.Text = L.Get("Updates.Cancelled"); }
         catch (Exception ex) { if (!closed) ShowFailure(applying ? "Updates.InstallFailed" : "Updates.DownloadFailed", ex); }

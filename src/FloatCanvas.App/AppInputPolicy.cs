@@ -8,8 +8,8 @@ internal static class AppInputPolicy
     private static bool initialized;
     internal static void AttachToolbarToggle(Window window, Action toggle, Func<bool>? canRoute = null)
     {
-        // Tab navigation is suppressed globally. Only editor surfaces opt into the
-        // toolbar command, without borrowing Tab from their local input controls.
+        // Tab is an editor command in this mouse-first application, not button navigation.
+        // Editor surfaces opt in without borrowing Tab from local input controls.
         window.AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler((_, e) =>
         {
             if (e.Key != Key.Tab || canRoute?.Invoke() == false) return;

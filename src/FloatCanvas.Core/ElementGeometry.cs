@@ -171,11 +171,28 @@ public static class ElementGeometry
             else
             {
                 double cycle = ink + gap;
-                for (double start = -offset % cycle; start < length; start += cycle)
+                // First reject the whole stroke, then visit only dash periods beside the target.
+                // The inverse image of the screen tolerance rectangle bounds all possible hits.
+                if (!StrokeSegmentHit(transform, worldPoint, localPoint, a, b, radius, tolerance)) { offset += length; continue; }
+                var direction = (b - a) * (1 / length);
+                double along = (localPoint.X - a.X) * direction.X + (localPoint.Y - a.Y) * direction.Y;
+                double minimum = along - radius, maximum = along + radius;
+                if (tolerance > 0 && transform.TryInverse(out var inverse))
+                {
+                    foreach (var corner in new[] { new PointD(-tolerance, -tolerance), new PointD(tolerance, -tolerance), new PointD(tolerance, tolerance), new PointD(-tolerance, tolerance) })
+                        if (inverse.TryTransformPoint(worldPoint + corner, out var local))
+                        {
+                            double projection = (local.X - a.X) * direction.X + (local.Y - a.Y) * direction.Y;
+                            minimum = Math.Min(minimum, projection - radius); maximum = Math.Max(maximum, projection + radius);
+                        }
+                }
+                minimum = Math.Max(0, minimum); maximum = Math.Min(length, maximum);
+                double phase = -offset % cycle;
+                double initial = phase + Math.Floor((minimum - ink - phase) / cycle) * cycle;
+                for (double start = initial; start <= maximum; start += cycle)
                 {
                     double first = Math.Max(0, start), last = Math.Min(length, start + ink);
                     if (last < first) continue;
-                    var direction = (b - a) * (1 / length);
                     if (StrokeSegmentHit(transform, worldPoint, localPoint, a + direction * first, a + direction * last, radius, tolerance)) return true;
                 }
             }

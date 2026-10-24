@@ -38,5 +38,9 @@ jobs:
         run: dotnet restore FloatCanvas.slnx --locked-mode
       - name: Build Release
         run: dotnet build FloatCanvas.slnx --configuration Release --no-restore --nologo
+      - name: Verify reviewed Windows publish dependency locks
+        run: |
+          ./scripts/Test-PublishDependencies.ps1
+          dotnet restore src/FloatCanvas.App/FloatCanvas.App.csproj -r win-x64 --locked-mode -p:NuGetLockFilePath=packages.win-x64.lock.json --artifacts-path artifacts/rid-check
       - name: Run default checks without UI or injected input
         run: ./scripts/Test.ps1 -Configuration Release

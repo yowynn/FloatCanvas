@@ -12,8 +12,8 @@ public static class SceneValidation
         if (document.Version is not (1 or 2 or 3 or 4 or 5 or 6 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
         Require(Enum.IsDefined(document.Kind), L.Get("Scene.InvalidDocumentKind"));
         Require(document.Elements is not null && document.DisplayLayout is not null && document.Groups is not null, L.Get("Scene.MissingCollections"));
-        Require(document.Elements!.Count <= 100_000, L.Get("Scene.ElementCountExceeded"));
-        Require(document.Groups!.Count <= 100_000, L.Get("Scene.ElementCountExceeded"));
+        SceneLimits.ValidateCapacity(document);
+        Require(document.Groups!.Count <= SceneLimits.MaximumElements, L.Get("Scene.ElementCountExceeded"));
         Require(Unit(document.LayerOpacity), L.Get("Scene.InvalidLayerOpacity"));
         Require(document.NextNumber >= 1, L.Get("Scene.InvalidNumberCounter"));
         Require(Rect(document.Viewport) && document.Viewport.Width > 0 && document.Viewport.Height > 0, L.Get("Scene.InvalidViewport"));
@@ -66,7 +66,7 @@ public static class SceneValidation
         var t = element.Transform;
         Require(Point(element.BillboardAnchor) && double.IsFinite(element.BillboardHeight), L.Get("Scene.InvalidElementTransform"));
         Require(Finite(t.M11, t.M12, t.M21, t.M22, t.OffsetX, t.OffsetY) && t.TryInverse(out _), L.Get("Scene.InvalidElementTransform"));
-        Require(element.Points is not null && element.Points.Count <= 2_000_000 && element.Points.All(Point), L.Get("Scene.InvalidElementPath"));
+        Require(element.Points is not null && element.Points.Count <= SceneLimits.MaximumPathPoints && element.Points.All(Point), L.Get("Scene.InvalidElementPath"));
         Require(element.Style is not null && element.Text is not null && element.Text.Length <= 2_000_000, L.Get("Scene.InvalidElementContent"));
         var s = element.Style!;
         Require(Nonnegative(s.StrokeWidth) && Unit(s.Opacity) && Positive(s.FontSize) && s.FontFamily is not null && s.FontFamily.Length <= 1024 && Enum.IsDefined(s.TextAlignment), L.Get("Scene.InvalidElementStyle"));

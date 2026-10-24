@@ -103,7 +103,7 @@ internal static class WorkspacePreviewTests
         try
         {
             var loader = typeof(WorkspaceHistoryWindow).GetMethod("LoadPreviewAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            AwaitUi((Task)loader.Invoke(window, [brokenEntry, image, placeholder])!);
+            AwaitUi((Task)loader.Invoke(window, [brokenEntry, image, placeholder, CancellationToken.None])!);
             assert("corrupt history generations are contained by the actual window preview loader", placeholder.Text == FloatCanvas.Localization.AppText.Get("Recovery.NoPreview") && image.Source is null);
             assert("failed preview leaves hidden history window usable and selection intact", !window.IsVisible && window.IsEnabled && ReferenceEquals(window.SelectedEntry, brokenEntry));
             var validStore = new RecoveryStore(Path.Combine(directory, "valid"));
@@ -111,8 +111,24 @@ internal static class WorkspacePreviewTests
             var assets = new AssetLibrary();
             AwaitUi(validStore.SaveWithPreviewAsync(state, assets, WorkspacePreview.Render(state.LiveDocument, assets)));
             var validEntry = new WorkspaceRecoveryHistory(validStore).GetEntries().Single();
-            AwaitUi((Task)loader.Invoke(window, [validEntry, image, placeholder])!);
+            var gate = (SemaphoreSlim)typeof(WorkspaceHistoryWindow).GetField("previewGate", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+            using (var canceled = new CancellationTokenSource())
+            {
+                string originalPlaceholder = placeholder.Text;
+                gate.Wait();
+                try
+                {
+                    Task obsolete = (Task)loader.Invoke(window, [validEntry, image, placeholder, canceled.Token])!;
+                    assert("history preview waits for its bounded loader gate", !obsolete.IsCompleted && gate.CurrentCount == 0);
+                    canceled.Cancel(); AwaitUi(obsolete);
+                    assert("canceling an obsolete queued row leaves content and selection unchanged without releasing another row's gate", gate.CurrentCount == 0 &&
+                        image.Source is null && placeholder.Text == originalPlaceholder && ReferenceEquals(window.SelectedEntry, brokenEntry));
+                }
+                finally { gate.Release(); }
+            }
+            AwaitUi((Task)loader.Invoke(window, [validEntry, image, placeholder, CancellationToken.None])!);
             assert("history preview loader releases its gate after failure and loads the next valid row", image.Source is not null && placeholder.Visibility == Visibility.Collapsed);
+            assert("a valid preview restores the gate after an obsolete row was canceled", gate.CurrentCount == 1);
         }
         finally
         {

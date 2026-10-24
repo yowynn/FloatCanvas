@@ -1,8 +1,10 @@
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -60,6 +62,7 @@ internal static class AppUpdateWindowTests
             PreviewChannelAndCurrentNotes(output, check);
             SingleCheckAndClose(output, check);
             DownloadCancellation(output, check);
+            PreparationAndCommit(output, check);
             check("update UI fixtures leave no additional application windows", app.Windows.Cast<Window>().SequenceEqual(initialWindows));
         }
         finally
@@ -210,12 +213,74 @@ internal static class AppUpdateWindowTests
     }
 
     private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+
+    private static void PreparationAndCommit(string output, Action<string, bool> check)
+    {
+        // Drive the real metadata/download validation with an in-memory release;
+        // preparation itself is gated so the test observes the exact cancellation boundary.
+        byte[] package;
+        using (var stream = new MemoryStream())
+        {
+            using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, true))
+            {
+                foreach (string name in new[] { "FloatCanvas.exe", "FloatCanvas.dll", "FloatCanvas.deps.json", "FloatCanvas.runtimeconfig.json", "PACKAGE-INFO.json" })
+                {
+                    using var writer = new StreamWriter(zip.CreateEntry("FloatCanvas-0.3.0-win-x64/" + name).Open());
+                    writer.Write(name == "PACKAGE-INFO.json" ? JsonSerializer.Serialize(new { Product = "浮绘 FloatCanvas", Version = "0.3.0", RuntimeIdentifier = "win-x64", Configuration = "Release", SelfContained = false }) : "fixture");
+                }
+            }
+            package = stream.ToArray();
+        }
+        string metadata = ReleaseMetadata.Replace("\"size\":1024", "\"size\":" + package.Length).Replace(new string('a', 64), Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant());
+        using var http = new HttpClient(new FakeHandler((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com"
+            ? JsonResponse(metadata) : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(request.RequestUri.AbsolutePath.EndsWith(".release.json", StringComparison.Ordinal) ? ReleaseSignatureTestData.Sign(ReleaseSignatureTestData.Payload(package, "0.3.0")) : package) })));
+        using var client = new GitHubUpdateClient(http, ReleaseSignatureTestData.Trust);
+        int oldApplyCalls = 0, commits = 0, exits = 0;
+        foreach (bool cancelBeforeCommit in new[] { true, false })
+        {
+            var preparation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var committedWork = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken observed = default; bool entered = false;
+            var window = new AppUpdateWindow("0.2.0-preview.1", client, _ => { oldApplyCalls++; return Task.CompletedTask; }, true,
+                Path.Combine(output, cancelBeforeCommit ? "prepare-cancel" : "prepare-commit"), autoCheck: false,
+                prepareAndApplyUpdate: async (_, token, beginCommit) =>
+                {
+                    observed = token; entered = true;
+                    await preparation.Task.WaitAsync(token);
+                    beginCommit(); commits++;
+                    await committedWork.Task.WaitAsync(token);
+                    exits++;
+                });
+            try
+            {
+                Await(window.CheckAsync()); Task update = window.DownloadUpdateAsync(); PumpUntil(() => entered || update.IsCompleted);
+                check("update preparation begins after a validated download", entered && !update.IsCompleted && window.IsBusy);
+                bool responded = false; _ = window.Dispatcher.BeginInvoke(() => responded = true, DispatcherPriority.Input); PumpUntil(() => responded);
+                check("slow update preparation keeps Dispatcher and cancellation responsive", responded && window.CancelButton.IsEnabled && window.CancelButton.Visibility == Visibility.Visible);
+                if (cancelBeforeCommit)
+                {
+                    window.CancelButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Await(update);
+                    check("cancelling preparation cancels its token without commit or legacy apply", observed.IsCancellationRequested && commits == 0 && oldApplyCalls == 0 && exits == 0 && window.StatusText.Text == L.Get("Updates.Cancelled"));
+                }
+                else
+                {
+                    preparation.SetResult(); PumpUntil(() => commits == 1);
+                    check("commit disables cancellation and presents restart state", !window.CancelButton.IsEnabled && window.StatusText.Text == L.Get("Updates.Restarting"));
+                    window.Close();
+                    check("closing a committed update does not cancel its shutdown work", !observed.IsCancellationRequested);
+                    committedWork.SetResult(); Await(update);
+                    check("committed application exit work completes after the update panel closes", exits == 1 && commits == 1 && oldApplyCalls == 0);
+                }
+            }
+            finally { preparation.TrySetResult(); committedWork.TrySetResult(); window.Close(); }
+        }
+    }
     private const string Notes = "## Clearer palettes\n<script>never execute this</script>\n[Project](https://github.com/yowynn/FloatCanvas)";
     private static readonly string ReleaseMetadata = JsonSerializer.Serialize(new[] { new
     {
         tag_name = "v0.3.0", draft = false, prerelease = false, body = Notes,
         html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v0.3.0",
-        assets = new[] { new { name = "FloatCanvas-0.3.0-win-x64.zip", state = "uploaded", size = 1024, digest = "sha256:" + new string('a', 64), browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.3.0/FloatCanvas-0.3.0-win-x64.zip" } }
+        assets = new[] { new { name = "FloatCanvas-0.3.0-win-x64.zip", state = "uploaded", size = 1024, digest = "sha256:" + new string('a', 64), browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.3.0/FloatCanvas-0.3.0-win-x64.zip" }, new { name = "FloatCanvas-0.3.0-win-x64.zip.release.json", state = "uploaded", size = 1024, digest = "", browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.3.0/FloatCanvas-0.3.0-win-x64.zip.release.json" } }
     } });
 
     private static void Await(Task task) { PumpUntil(() => task.IsCompleted); task.GetAwaiter().GetResult(); }

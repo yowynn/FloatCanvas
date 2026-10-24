@@ -135,7 +135,7 @@ internal static class PresetIsolationTests
     }
     private static void Activate(DesktopSession session, EditorTool tool) => typeof(DesktopSession).GetMethod("ActivateTool", Private)!.Invoke(session, [tool]);
     private static Dictionary<string, string> PreviewHashes(ToolPresetGallery gallery) => gallery.OfficialTiles.Children.OfType<Button>().ToDictionary(button => (string)button.Tag,
-        button => { var image = (BitmapSource)((Image)button.Content).Source; var bytes = new byte[image.PixelHeight * image.PixelWidth * 4]; image.CopyPixels(bytes, image.PixelWidth * 4, 0); return Hash(bytes); });
+        button => { var image = (BitmapSource)Visuals((DependencyObject)button.Content).OfType<Image>().Single().Source; var bytes = new byte[image.PixelHeight * image.PixelWidth * 4]; image.CopyPixels(bytes, image.PixelWidth * 4, 0); return Hash(bytes); });
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
     private static double FirstTop(Panel panel, UIElement root) => panel.Children.OfType<FrameworkElement>().First().TranslatePoint(new Point(), root).Y;
     private static double Bottom(FrameworkElement element, UIElement root) => element.TranslatePoint(new Point(0, element.ActualHeight), root).Y;

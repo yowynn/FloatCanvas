@@ -1,0 +1,11 @@
+{
+  "Scene.JsonCapacityExceeded": { "zh": "画布内容超过工程正文 128 MiB 上限，请减少内容或拆分为多个工程。当前操作未应用。", "en": "Canvas content exceeds the 128 MiB document limit. Reduce content or split it into separate projects; the operation was not applied." },
+  "Scene.GroupDepthExceeded": { "zh": "组合层级达到 64 层上限。请取消部分编组后重试；当前操作未保存。", "en": "Groups cannot exceed 64 levels. Ungroup some layers and try again; the operation was not applied." },
+  "Scene.PathCapacityExceeded": { "zh": "单条路径达到 200 万点上限，请分成多笔绘制。当前操作未应用。", "en": "A path cannot exceed 2 million points. Draw separate strokes; the operation was not applied." },
+  "Images.ImportCapacityExceeded": { "zh": "图片超过导入预算：每批最多 32 个文件、单个 64 MiB、合计 128 MiB，解码后单张最多 1678 万像素、合计 6711 万像素。请缩小图片或分批导入。", "en": "Image import budget exceeded: up to 32 files, 64 MiB each and 128 MiB total, 16.8 million decoded pixels per image and 67.1 million per batch. Resize the images or import smaller batches." },
+  "Project.ExternalChange": { "zh": "磁盘上的工程已被其他程序修改或移走，本次保存已停止。", "en": "The project on disk was changed or moved by another application. This save was stopped." },
+  "Project.ExternalCopyPreserved": { "zh": "检测到同时写入，外部版本已完整保留在：{0}", "en": "A concurrent write was detected. Its complete version was preserved at: {0}" },
+  "Project.SaveConflictChoice": { "zh": "可将当前画布另存为副本，或保留当前画布，稍后重新打开磁盘工程。", "en": "Save the current canvas as a copy, or keep it and reopen the project from disk later." },
+  "Project.SaveCopy": { "zh": "另存副本", "en": "Save a copy" },
+  "Project.KeepCurrent": { "zh": "保留当前画布", "en": "Keep current canvas" }
+}

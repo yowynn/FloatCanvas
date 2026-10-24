@@ -9,11 +9,26 @@ internal static class ImageImportCommand
 {
     internal static Task<IReadOnlyList<NormalizedImage>> NormalizeFilesAsync(string[] paths, CancellationToken token) => Task.Run(async () =>
     {
+        if (paths.Length > ImageImportBudget.MaximumFiles) throw new InvalidDataException(L.Get("Images.ImportCapacityExceeded"));
+        long encodedTotal = 0;
+        foreach (var path in paths)
+        {
+            long length = new FileInfo(path).Length; ImageImportBudget.RequireBytes(length);
+            encodedTotal += length; ImageImportBudget.RequireBytes(encodedTotal, ImageImportBudget.MaximumBatchBytes);
+        }
+        long normalizedTotal = 0, pixelTotal = 0;
         var images = new List<NormalizedImage>();
         foreach (string path in paths)
         {
             token.ThrowIfCancellationRequested();
-            images.Add(AssetImport.Normalize(await File.ReadAllBytesAsync(path, token)));
+            await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
+            byte[] encoded = await ImageImportBudget.ReadAsync(input, token);
+            pixelTotal = checked(pixelTotal + ImageDecodeBudget.ReadPixelCount(encoded));
+            if (pixelTotal > ImageDecodeBudget.MaximumBatchPixels) throw new InvalidDataException(L.Get("Images.ImportCapacityExceeded"));
+            var image = AssetImport.Normalize(encoded);
+            normalizedTotal += image.PngBytes.LongLength;
+            ImageImportBudget.RequireBytes(normalizedTotal, ImageImportBudget.MaximumBatchBytes);
+            images.Add(image);
         }
         token.ThrowIfCancellationRequested();
         return (IReadOnlyList<NormalizedImage>)images;

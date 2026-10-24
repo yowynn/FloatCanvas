@@ -1,0 +1,134 @@
+{
+  "Audit.LockedSelection": {
+    "zh": "已锁定 {0} 项。请解锁后编辑这些对象。",
+    "en": "{0} selected items are locked. Unlock them to edit these properties."
+  },
+  "Audit.Selected": {
+    "zh": "已选中",
+    "en": "Selected"
+  },
+  "Audit.UndoResource": {
+    "zh": "撤销预设更改",
+    "en": "Undo preset change"
+  },
+  "Audit.MissingFont": {
+    "zh": "{0}（未安装；替代为 {1}）",
+    "en": "{0} (not installed; rendered with {1})"
+  },
+  "Audit.ReplaceFont": {
+    "zh": "从列表选择已安装字体以明确替换；未选择时保留原字体名。",
+    "en": "Choose an installed font to replace it. The original font name is preserved until you choose."
+  },
+  "Audit.RecentHistory": {
+    "zh": "查看历史，继续上次工作 · {0}",
+    "en": "Continue from history · {0}"
+  },
+  "Audit.WelcomeRestoreHint": {
+    "zh": "从历史继续之前的画布，或从菜单打开已保存的工程。",
+    "en": "Continue a previous canvas from history, or open a saved project from the menu."
+  },
+  "Audit.WelcomeRestoreEmpty": {
+    "zh": "还没有可恢复的历史。已保存的工程可从菜单打开。",
+    "en": "No canvas history yet. Open a saved project from the menu to continue."
+  },
+  "Audit.EmptyStamps": {
+    "zh": "还没有印章。先在画布选择对象，再保存为印章。",
+    "en": "No stamps yet. Select objects on the canvas, then save a stamp."
+  },
+  "Audit.NoStampMatches": {
+    "zh": "没有匹配的印章，试试其他关键词。",
+    "en": "No matching stamps. Try a different search."
+  },
+  "Audit.ClearSearch": {
+    "zh": "清除搜索",
+    "en": "Clear search"
+  },
+  "Audit.SelectObjects": {
+    "zh": "到画布选择对象",
+    "en": "Select objects on canvas"
+  },
+  "Audit.ThumbnailFailed": {
+    "zh": "缩略图无法读取；右键可重试。",
+    "en": "Preview unavailable; right-click to retry."
+  },
+  "Audit.Retry": {
+    "zh": "重试缩略图",
+    "en": "Retry preview"
+  },
+  "Audit.Working": {
+    "zh": "正在处理，请稍候…",
+    "en": "Working…"
+  },
+  "Audit.RequiredName": {
+    "zh": "请输入名称，不能只包含空格。",
+    "en": "Enter a name that is not only whitespace."
+  },
+  "Audit.FeedbackHint": {
+    "zh": "请描述操作步骤、预期结果与实际结果。可从“系统与调试”导出脱敏诊断包并自行检查后附上。不要包含私人画布或原始日志。打开反馈页不会自动上传内容。",
+    "en": "Describe the steps, expected result and actual result. You can export a redacted diagnostic bundle from System & diagnostics and inspect it before attaching. Do not include private canvases or raw logs. Opening the issue page uploads nothing."
+  },
+  "Audit.ReportIssue": {
+    "zh": "报告问题",
+    "en": "Report an issue"
+  },
+  "Audit.UserGuide": {
+    "zh": "用户指南",
+    "en": "User guide"
+  },
+  "Audit.Help": {
+    "zh": "帮助",
+    "en": "Help"
+  },
+  "Audit.Copy": {
+    "zh": "复制全文",
+    "en": "Copy all"
+  },
+  "Audit.OpenIssuePage": {
+    "zh": "打开反馈页面",
+    "en": "Open issue page"
+  },
+  "Audit.StatusHistory": {
+    "zh": "最近操作消息（可复制）",
+    "en": "Recent messages (copyable)"
+  },
+  "Audit.GuideUnavailable": {
+    "zh": "此开发构建未附带用户指南。发布包在程序目录包含 User-Guide.md 与 User-Guide.en.md。",
+    "en": "This development build does not include the guide. Release packages include User-Guide.md and User-Guide.en.md beside the application."
+  },
+  "Audit.CommandBusy": {
+    "en": "Finish the current operation first.",
+    "zh": "请先完成当前操作。"
+  },
+  "Audit.NoUndo": {
+    "en": "No actions to undo on this canvas.",
+    "zh": "当前画布没有可撤销的操作。"
+  },
+  "Audit.NoRedo": {
+    "en": "No actions to redo on this canvas.",
+    "zh": "当前画布没有可重做的操作。"
+  },
+  "Audit.GroupRequirement": {
+    "en": "Select at least two unlocked objects.",
+    "zh": "请选择至少两个未锁定的对象。"
+  },
+  "Audit.UngroupRequirement": {
+    "en": "Select every member of a group.",
+    "zh": "请选择一个组的所有成员。"
+  },
+  "Audit.ImageRequirement": {
+    "en": "Select one unlocked image.",
+    "zh": "请选择一张未锁定的图片。"
+  },
+  "Audit.SelectionRequirement": {
+    "en": "Select objects on the canvas first.",
+    "zh": "请先选择画布中的对象。"
+  },
+  "Audit.EditableSelectionRequirement": {
+    "en": "Select unlocked objects first.",
+    "zh": "请先选择未锁定的对象。"
+  },
+  "Audit.SelectedModified": {
+    "zh": "已选中；参数已修改",
+    "en": "Selected; parameters modified"
+  }
+}

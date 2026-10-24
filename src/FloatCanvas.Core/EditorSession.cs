@@ -1,17 +1,18 @@
 using L = FloatCanvas.Localization.AppText;
-using System.Text.Json;
 
 namespace FloatCanvas.Core;
 
 /// <summary>One editable document and atomic user operations. Assets are never copied into history.</summary>
 public sealed partial class EditorSession
 {
-    private sealed record HistoryEntry(string Label, SceneDocument Before, SceneDocument After, HashSet<Guid> SelectionBefore, HashSet<Guid> SelectionAfter, long Bytes, long Sequence, string[] AssetIds);
+    private sealed record HistoryEntry(string Label, SceneDocument Before, SceneDocument After, HashSet<Guid> SelectionBefore, HashSet<Guid> SelectionAfter, long Bytes, long Sequence, string[] AssetIds, long BeforeVersion, long AfterVersion);
     private readonly List<HistoryEntry> undo = [], redo = [];
     private SceneDocument? transactionBefore;
     private HashSet<Guid>? transactionSelection;
     private string transactionLabel = "";
-    private long sequence;
+    private long sequence, nextContentVersion, transactionContentVersion;
+    public long ContentVersion { get; private set; }
+    public bool HasPendingChanges { get; private set; }
 
     public EditorSession(SceneDocument? document = null, AssetLibrary? assets = null, int historyLimit = 100, long historyByteLimit = 256L * 1024 * 1024)
     {
@@ -43,28 +44,31 @@ public sealed partial class EditorSession
     public void BeginTransaction(string label)
     {
         if (IsTransactionActive) throw new InvalidOperationException(L.Get("History.TransactionAlreadyActive"));
+        transactionContentVersion = ContentVersion; HasPendingChanges = false;
         transactionBefore = Document.Clone(); transactionSelection = [.. Selection]; transactionLabel = label; TransactionId++;
     }
     public void Commit()
     {
         if (transactionBefore is null) throw new InvalidOperationException(L.Get("History.NoActiveTransaction"));
         var before = transactionBefore; var selectedBefore = transactionSelection!;
-        Document.PruneGroups();
+        try { Document.PruneGroups(); SceneLimits.ValidateCapacity(Document); }
+        catch { Cancel(); throw; }
         PruneSelection();
-        if (JsonSerializer.SerializeToUtf8Bytes(before).AsSpan().SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(Document)))
+        if (SceneContent.Equal(before, Document))
         {
-            transactionBefore = null; transactionSelection = null; OnChanged(); return;
+            transactionBefore = null; transactionSelection = null; HasPendingChanges = false; OnChanged(); return;
         }
         var after = Document.Clone();
-        transactionBefore = null; transactionSelection = null;
+        transactionBefore = null; transactionSelection = null; HasPendingChanges = false;
+        ContentVersion = ++nextContentVersion;
         redo.Clear();
-        undo.Add(new(transactionLabel, before, after, selectedBefore, [.. Selection], EstimateBytes(before) + EstimateBytes(after), ++sequence, before.ReferencedAssets.Concat(after.ReferencedAssets).Distinct(StringComparer.Ordinal).ToArray()));
-        TrimHistory(); OnChanged(contentChanged: true);
+        undo.Add(new(transactionLabel, before, after, selectedBefore, [.. Selection], EstimateBytes(before) + EstimateBytes(after), ++sequence, before.ReferencedAssets.Concat(after.ReferencedAssets).Distinct(StringComparer.Ordinal).ToArray(), transactionContentVersion, ContentVersion));
+        TrimHistory(); OnChanged(contentChanged: true, preserveContentVersion: true);
     }
     public void Cancel()
     {
         if (transactionBefore is null) return;
-        Document = transactionBefore; SetSelectionCore(transactionSelection!); transactionBefore = null; transactionSelection = null; OnChanged(contentChanged: true);
+        Document = transactionBefore; SetSelectionCore(transactionSelection!); transactionBefore = null; transactionSelection = null; HasPendingChanges = false; ContentVersion = transactionContentVersion; OnChanged(contentChanged: true, preserveContentVersion: true);
     }
     public void Execute(string label, Action<SceneDocument> operation)
     {
@@ -83,14 +87,14 @@ public sealed partial class EditorSession
         Cancel();
         if (!CanUndo) return false;
         var item = undo[^1]; undo.RemoveAt(undo.Count - 1); redo.Add(item);
-        Document = item.Before.Clone(); SetSelectionCore(item.SelectionBefore); OnChanged(contentChanged: true); return true;
+        Document = item.Before.Clone(); ContentVersion = item.BeforeVersion; SetSelectionCore(item.SelectionBefore); OnChanged(contentChanged: true, preserveContentVersion: true); return true;
     }
     public bool Redo()
     {
         Cancel();
         if (!CanRedo) return false;
         var item = redo[^1]; redo.RemoveAt(redo.Count - 1); undo.Add(item);
-        Document = item.After.Clone(); SetSelectionCore(item.SelectionAfter); OnChanged(contentChanged: true); return true;
+        Document = item.After.Clone(); ContentVersion = item.AfterVersion; SetSelectionCore(item.SelectionAfter); OnChanged(contentChanged: true, preserveContentVersion: true); return true;
     }
     public void ReplaceDocument(SceneDocument document)
     {
@@ -204,9 +208,10 @@ public sealed partial class EditorSession
             size += 512 + e!.Points.Count * 16L + e.Text.Length * 2L + (e.Name?.Length ?? 0) * 2L + e.Style.FontFamily.Length * 2L + (e.AssetId?.Length ?? 0) * 2L + e.Effects.Count * 96L;
         return size;
     }
-    private void OnChanged(bool contentChanged = false)
+    private void OnChanged(bool contentChanged = false, bool preserveContentVersion = false)
     {
-        if (contentChanged && !IsTransactionActive) SceneRevision++;
+        if (contentChanged && IsTransactionActive) HasPendingChanges = true;
+        if (contentChanged && !IsTransactionActive) { SceneRevision++; if (!preserveContentVersion) ContentVersion = ++nextContentVersion; }
         Changed?.Invoke(this, EventArgs.Empty);
     }
 }

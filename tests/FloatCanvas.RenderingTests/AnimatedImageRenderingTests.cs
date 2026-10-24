@@ -20,6 +20,7 @@ internal static class AnimatedImageRenderingTests
         var document = Scene(id);
         using var renderer = new SceneRenderer();
         check("Animation detection reads metadata without frame decoding", renderer.HasAnimatedImages(document, assets) && renderer.AnimationFrameDecodeCount == 0);
+        check("Animation damage stays within the projected image", renderer.AnimatedImageBounds(document, assets).SequenceEqual([SceneRenderer.ProjectedBounds(document, document.Elements[0]).Intersect(document.Viewport)]));
         Expect(0, [SKColors.Red, SKColors.Red, SKColors.Red], 100);
         Expect(99, [SKColors.Red, SKColors.Red, SKColors.Red], 1);
         check("Repeated sampling within one frame reuses its decoded pixels", renderer.AnimationFrameDecodeCount == 1);

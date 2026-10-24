@@ -11,6 +11,9 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--update-fault-child")
+            return args is [_, var planPath, var stage, var index] && int.TryParse(index, out int faultIndex)
+                ? UpdateProcessRecoveryTests.Child(planPath, stage, faultIndex) : 72;
         if (args is ["--overlay-probe-exit"]) return 73;
         if (args is ["--overlay-probe-wait"]) { Thread.Sleep(10000); return 0; }
         try
@@ -18,11 +21,19 @@ internal static class Program
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--audit-data-only")) { DataRemediationTests.Run(Assert); return 0; }
+            if (args.Contains("--audit-ux-only")) { AuditUxTests.Run(Assert); return 0; }
+            if (args.Contains("--audit-ux-preview")) { AuditUxPreview.Run(); return 0; }
+            if (args.Contains("--audit-engineering-only")) { EngineeringAuditTests.Run(Assert); UpdateInstallerTests.Run(Assert); UpdateCacheTests.Run(Assert); return 0; }
+            if (args.Contains("--update-cache-only")) { UpdateCacheTests.Run(Assert); return 0; }
+            if (args.Contains("--update-process-recovery-only")) { UpdateProcessRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--configuration-compatibility-only")) { ConfigurationCompatibilityTests.Run(Assert); return 0; }
             if (args.Contains("--preset-sizing-only")) { PresetSizingCompatibilityTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-protection-only")) { OverlayProtectionTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-protection-runtime")) { OverlayProtectionRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--system-overlay-production")) return SystemOverlayProof.Production();
+            if (args is ["--system-overlay-watchdog-gate"]) return SystemOverlayWatchdogFixture.Run();
+            if (args is ["--system-overlay-watchdog-owner", var watchdogRun]) return SystemOverlayWatchdogFixture.Owner(watchdogRun);
             if (args.Contains("--system-overlay-performance")) return SystemOverlayProof.Production(measurePerformance:true);
             if (args.Contains("--system-overlay-native-dialog")) return SystemOverlayProof.Production(measurePerformance:true,nativeDialogOnly:true);
             if (args.Contains("--system-overlay-native-dialog-interaction")) return SystemOverlayProof.Production(measurePerformance:true,nativeDialogOnly:true);
@@ -197,10 +208,14 @@ internal static class Program
             GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert);
             GpuSettingsTests.Run(Assert);
             ApplicationDiagnosticsTests.Run(Assert);
+            AuditUxTests.Run(Assert);
+            EngineeringAuditTests.Run(Assert);
             NewCanvasButtonTests.Run(Assert);
             WelcomeSessionTests.Run(Assert);
             GitHubUpdateClientTests.Run(Assert);
             UpdateInstallerTests.Run(Assert);
+            UpdateCacheTests.Run(Assert);
+            UpdateProcessRecoveryTests.Run(Assert);
             UpdateRecoveryTests.Run(Assert);
             AppUpdateWindowTests.Run(Assert);
             LayerRenameTests.Run(Assert);
@@ -236,6 +251,7 @@ internal static class Program
             Feedback4OptionsTests.Run(Assert);
             PaletteLayoutTests.Run(Assert);
             ToolOptionsKeyboardRouteTests.Run(Assert);
+            DataRemediationTests.Run(Assert);
             Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult();
             Task.Run(() => LiveEffectStampTests.RunAsync(Assert)).GetAwaiter().GetResult();
             Task.Run(() => StampPlacementRequestTests.RunAsync(Assert)).GetAwaiter().GetResult();

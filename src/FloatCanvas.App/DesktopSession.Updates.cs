@@ -26,7 +26,7 @@ internal sealed partial class DesktopSession
                 _settings.IncludePrereleaseUpdates = enabled;
                 try { _settings.Save(); }
                 catch { _settings.IncludePrereleaseUpdates = previous; throw; }
-            });
+            }, prepareAndApplyUpdate: ApplyUpdateAsync);
         _updatesWindow = window;
         ConfigureAppWindow(window, true);
         window.Owner = _welcomeWindow ?? _toolbar;
@@ -36,6 +36,9 @@ internal sealed partial class DesktopSession
     }
 
     private async Task ApplyUpdateAsync(PreparedUpdate update)
+        => await ApplyUpdateAsync(update, System.Threading.CancellationToken.None, () => { });
+
+    private async Task ApplyUpdateAsync(PreparedUpdate update, System.Threading.CancellationToken cancellationToken, Action beginCommit)
     {
         if (DocumentOperationBusy) throw new InvalidOperationException(L.Get("Desktop.Busy"));
         CloseImageDrop(); _editor.Cancel(); _documentExitRequested = true;
@@ -46,8 +49,15 @@ internal sealed partial class DesktopSession
             var arguments = new List<string> { "--profile", ApplicationPaths.ProfileDirectory, "--recover" };
             if (ApplicationPaths.RequestedMonitorScope is { } scope)
                 arguments.Add(scope == FloatCanvas.Windows.OverlayMonitorScope.PrimaryScreen ? "--primary-screen" : "--all-screens");
-            string plan = AppUpdateInstaller.Prepare(update, AppContext.BaseDirectory, ApplicationPaths.ProfileDirectory, arguments.ToArray());
-            AppUpdateInstaller.Launch(plan);
+            string plan = await Task.Run(() => AppUpdateInstaller.Prepare(update, AppContext.BaseDirectory, ApplicationPaths.ProfileDirectory, arguments.ToArray(), cancellationToken), cancellationToken);
+            try { cancellationToken.ThrowIfCancellationRequested(); beginCommit(); }
+            catch
+            {
+                try { await Task.Run(() => AppUpdateInstaller.DiscardPreparation(plan)); }
+                catch (Exception cleanupError) when (cleanupError is IOException or UnauthorizedAccessException or InvalidOperationException) { }
+                throw;
+            }
+            await Task.Run(() => AppUpdateInstaller.Launch(plan));
             _app.Shutdown();
         }
         catch { _documentExitRequested = false; throw; }
@@ -79,6 +89,11 @@ internal sealed partial class DesktopSession
 
     private void NotifyUpdateResult()
     {
+        _ = Task.Run(() =>
+        {
+            try { AppUpdateInstaller.CleanupCompletedJobs(ApplicationPaths.ProfileDirectory); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException) { }
+        });
         try
         {
             if (AppUpdateInstaller.ConsumeResult(ApplicationPaths.ProfileDirectory) is { Success: false } result)

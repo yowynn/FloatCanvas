@@ -87,6 +87,8 @@ internal sealed class OverlayBackendProtection
     {
         // Always run the actual apphost, including when invoked from a test assembly.
         string executable = Path.Combine(AppContext.BaseDirectory, "FloatCanvas.exe");
+        string managedHost = Path.Combine(AppContext.BaseDirectory, "FloatCanvas.Host.exe");
+        if (File.Exists(managedHost)) executable = managedHost;
         var start = new ProcessStartInfo(executable)
         {
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,

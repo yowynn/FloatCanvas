@@ -69,12 +69,13 @@ internal static class Feedback4OptionsTests
         check(locale + " Canvas uses its dedicated canvas settings rather than drawing recipes", library.OfficialFor(EditorTool.Canvas).Count == 0);
         check(locale + " retired solid tool has no official defaults", library.OfficialFor(EditorTool.Redact).Count == 0);
         check(locale + " personal recipes only show the current tool", gallery.UserTiles.Children.OfType<Button>().Select(b => b.Tag).SequenceEqual(new[] { rectangle.Id, second.Id }));
-        check(locale + " both galleries use equal preview-only square tiles", gallery.OfficialTiles.Children.OfType<Button>().Concat(gallery.UserTiles.Children.OfType<Button>()).All(button => Math.Abs(button.ActualWidth - 36) < .01 && Math.Abs(button.ActualHeight - 36) < .01 && button.Content is Image && button.ToolTip is string && button.BorderThickness.Left > 0));
+        check(locale + " both galleries use equal square previews with separate selection indicators", gallery.OfficialTiles.Children.OfType<Button>().Concat(gallery.UserTiles.Children.OfType<Button>()).All(button => Math.Abs(button.ActualWidth - 36) < .01 && Math.Abs(button.ActualHeight - 36) < .01 && Descendants((DependencyObject)button.Content).OfType<Image>().Count() == 1 && button.ToolTip is string && button.BorderThickness.Left > 0));
         check(locale + " a first official preset starts selected", gallery.SelectedId == library.OfficialFor(controller.Tool).First().Id);
         gallery.UserTiles.Children.OfType<Button>().First().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(locale + " one click applies and selects a personal preset", gallery.SelectedId == rectangle.Id && controller.Style.StrokeWidth == 7 && changes == 1);
         controller.Style.StrokeWidth = 18; gallery.Refresh();
         check(locale + " editing keeps the chosen recipe selected", gallery.SelectedId == rectangle.Id);
+        check(locale + " modified selected recipe exposes its distinct accessible state", System.Windows.Automation.AutomationProperties.GetItemStatus(gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, rectangle.Id))) == L.Get("Audit.SelectedModified"));
         gallery.Apply(rectangle.Id);
         check(locale + " clicking the same personal recipe restores saved parameters", controller.Style.StrokeWidth == 7 && changes == 2);
         controller.Style.Stroke = 0xBE456789; controller.Style.StrokeWidth = 11;

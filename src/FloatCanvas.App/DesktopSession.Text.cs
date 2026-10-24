@@ -109,7 +109,7 @@ internal sealed partial class DesktopSession
             canvas.DrawRect((float)rectangle.X,(float)rectangle.Y,(float)rectangle.Width,(float)rectangle.Height,selection);
         if(_inlineCaretVisible&&edit.Input.SelectionLength==0)
         {
-            var caret=edit.Geometry.Caret(edit.Input.CaretIndex);
+            var caret=edit.Caret;
             var top=matrix.TransformPoint(new(caret.X,caret.Y));var bottom=matrix.TransformPoint(new(caret.X,caret.Bottom));
             canvas.Restore();canvas.Save();
             using var outline=new SKPaint {Color=SKColors.White,StrokeWidth=5,IsAntialias=true,StrokeCap=SKStrokeCap.Round};

@@ -37,6 +37,7 @@ internal sealed class StampLibrary(string profileDirectory)
     public IReadOnlyList<StampEntry> Items => catalog.Items.AsReadOnly();
     public IReadOnlyList<Guid?> Pins => Array.AsReadOnly(catalog.Pins);
     public event Action? Changed;
+    internal Action<string>? PublicationCheckpoint { get; set; }
 
     public async Task LoadAsync(CancellationToken ct = default)
     {
@@ -67,6 +68,7 @@ internal sealed class StampLibrary(string profileDirectory)
                 catch (Exception ex) when (ex is JsonException or InvalidDataException or NotSupportedException)
                 { throw new InvalidDataException(L.Get("Stamp.InvalidLibrary") + CatalogPath, ex); }
             }
+            PublicationCleanup.Sweep(DirectoryPath, catalog.Items.SelectMany(item => new[] { PackagePath(item), SourcePath(item), ThumbnailPath(item) }));
             loaded = true;
         }
         finally { gate.Release(); }
@@ -113,16 +115,18 @@ internal sealed class StampLibrary(string profileDirectory)
         foreach (string id in source.ReferencedAssets)
         {
             var resource = session.Assets.Get(id);
-            sourceAssets.Add(resource.Data.ToArray(), resource.MediaType);
+            sourceAssets.Add(resource);
         }
         await gate.WaitAsync(ct);
         StampEntry entry;
+        string? publication = null; bool published = false;
         StampEntry? previous = null;
         try
         {
             EnsureLoaded();
             if (replaceId is { } replace) previous = Find(replace);
             entry = new(replaceId ?? Guid.NewGuid(), name, mode, source.Viewport.Width, source.Viewport.Height, DateTime.UtcNow, Guid.NewGuid());
+            publication = PublicationCleanup.Begin(DirectoryPath, new[] { PackagePath(entry), SourcePath(entry), ThumbnailPath(entry) });
             var rendered = await Task.Run(() =>
             {
                 using var renderer = new SceneRenderer { AnimationTime = renderContext?.AnimationTime ?? TimeSpan.Zero };
@@ -175,9 +179,12 @@ internal sealed class StampLibrary(string profileDirectory)
                 if (hasBillboards) entry = entry with { Width = document.Viewport.Width, Height = document.Viewport.Height };
                 // A raster stamp still retains the original editable project and encoded image bytes.
                 await projects.SaveAsync(SourcePath(entry), source, sourceAssets, ct);
+                PublicationCheckpoint?.Invoke("source");
             }
             await projects.SaveAsync(PackagePath(entry), document, assets, ct);
+            PublicationCheckpoint?.Invoke("package");
             await WriteAtomicallyAsync(ThumbnailPath(entry), rendered.preview, ct);
+            PublicationCheckpoint?.Invoke("thumbnail");
             var next = catalog.Clone();
             if (previous is null)
             {
@@ -186,9 +193,11 @@ internal sealed class StampLibrary(string profileDirectory)
                 if (emptySlot >= 0) next.Pins[emptySlot] = entry.Id;
             }
             else next.Items[next.Items.FindIndex(item => item.Id == previous.Id)] = entry;
-            await PublishAsync(next, ct);
+            PublicationCheckpoint?.Invoke("before-catalog");
+            await PublishAsync(next, ct); published = true;
+            PublicationCheckpoint?.Invoke("published");
         }
-        finally { gate.Release(); }
+        finally { PublicationCleanup.Finish(publication, published); gate.Release(); }
         if (previous is not null) DeleteRevision(previous);
         Changed?.Invoke();
         return entry;
@@ -204,6 +213,7 @@ internal sealed class StampLibrary(string profileDirectory)
             try
             {
                 var stamp = await projects.LoadAsync(PackagePath(entry), ct);
+                ImageImportBudget.ValidateResources(stamp.Assets.Resources);
                 if (stamp.Document.Elements.Count == 0) throw new InvalidDataException();
                 return stamp;
             }
@@ -220,7 +230,7 @@ internal sealed class StampLibrary(string profileDirectory)
         {
             EnsureLoaded();
             var entry = Find(id);
-            try { return await projects.LoadAsync(entry.Mode == StampSaveMode.RasterMerge ? SourcePath(entry) : PackagePath(entry), ct); }
+            try { var stamp = await projects.LoadAsync(entry.Mode == StampSaveMode.RasterMerge ? SourcePath(entry) : PackagePath(entry), ct); ImageImportBudget.ValidateResources(stamp.Assets.Resources); return stamp; }
             catch (Exception ex) when (ex is InvalidDataException or IOException or JsonException or NotSupportedException)
             { throw new InvalidDataException(L.Get("Stamp.Corrupt") + entry.Name, ex); }
         }
@@ -351,6 +361,7 @@ internal sealed class StampLibrary(string profileDirectory)
 
     private static byte[] Thumbnail(byte[] png)
     {
+        _ = ImageDecodeBudget.ReadPixelCount(png);
         using var image = SKImage.FromEncodedData(png) ?? throw new InvalidDataException(L.Get("Images.UnsupportedOrCorrupt"));
         double scale = 160d / Math.Max(image.Width, image.Height);
         using var surface = SKSurface.Create(new SKImageInfo(Math.Max(1, (int)Math.Ceiling(image.Width * scale)),

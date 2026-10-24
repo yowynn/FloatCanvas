@@ -372,6 +372,10 @@ public sealed partial class SceneRenderer : IDisposable
     {
         if (_images.TryGetValue(id, out var entry)) return entry;
         var bytes = assets.Get(id).Data.Span;
+        // Evict before decoding, not after the entire scene has accumulated decoded images.
+        long pixels = ImageDecodeBudget.ReadPixelCount(bytes);
+        long workingBytes = pixels * 4 * (AnimatedImage.MayAnimate(bytes) ? 3 : 2);
+        TrimImageCaches(Math.Max(0, CacheByteLimit - workingBytes));
         var playback = AnimatedImage.TryCreate(bytes);
         entry = playback is null ? new(AssetImport.Decode(bytes), _clock) : new(playback, _clock);
         _images.Add(id, entry); ImageDecodeCount++; return entry;
@@ -382,6 +386,26 @@ public sealed partial class SceneRenderer : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return VisibleAnimations(document, assets).Any();
+    }
+
+    /// <summary>Dynamic image bounds in desktop coordinates, for invalidating only affected outputs.</summary>
+    public IReadOnlyList<RectD> AnimatedImageBounds(SceneDocument document, AssetLibrary assets)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var mapping = CanvasMapping.Create(document);
+        IEnumerable<CanvasElement> elements = document.LayerOpacity > 0 ? document.Elements : [];
+        if (document.Background is { } background) elements = elements.Prepend(background);
+        var bounds = elements.Where(element => VisibleAnimation(element, document, assets) is not null)
+            .Select(element => mapping.ProjectedBounds(element, includeStroke: false).Intersect(document.Viewport))
+            .Where(bounds => !bounds.IsEmpty).ToList();
+        // A lower animated object can also change a filter whose sampling halo crosses
+        // a monitor boundary. Propagate those dependencies before pruning outputs.
+        foreach (var effect in document.Elements.Where(element => element.Visible && element.Style.Opacity > 0 && ElementGeometry.IsLiveEffect(element.Kind)))
+        {
+            var sampling = LiveEffectSamplingBounds(document, effect);
+            if (bounds.Any(bound => bound.Intersects(sampling))) bounds.Add(sampling);
+        }
+        return bounds;
     }
 
     /// <summary>Whole-scene metadata scheduling, independent of monitor draw order and without decoding pixels.</summary>
@@ -431,6 +455,7 @@ public sealed partial class SceneRenderer : IDisposable
         if (_effects.TryGetValue(element.Id, out var cached) && cached.IsGpu == gpu && cached.AssetId == element.AssetId && cached.SourceFrame == sourceFrame && cached.Effects.SequenceEqual(snapshots))
         { cached.Used = _clock; return cached.Image; }
         if (cached is not null) { _effects.Remove(element.Id); cached.Dispose(); }
+        TrimImageCaches(Math.Max(0, CacheByteLimit - Bytes(original) * 2), element.AssetId);
         using var surface = CreateIntermediateSurface(destination,
             new SKImageInfo(original.Width, original.Height, SKColorType.Bgra8888, SKAlphaType.Premul), L.Get("Images.EffectBufferFailed"));
         var canvas = surface.Canvas;
@@ -486,10 +511,16 @@ public sealed partial class SceneRenderer : IDisposable
         { _paths[id].Dispose(); _paths.Remove(id); }
         foreach (var id in _effects.Where(p => p.Value.Used < _clock - 2).Select(p => p.Key).ToArray())
         { _effects[id].Dispose(); _effects.Remove(id); }
-        while (CachedImageBytes > Math.Max(0, CacheByteLimit) && _images.Count + _effects.Count > 0)
+        TrimImageCaches(Math.Max(0, CacheByteLimit));
+    }
+
+    private void TrimImageCaches(long limit, string? protectedImage = null)
+    {
+        while (CachedImageBytes > limit && _images.Count + _effects.Count > 0)
         {
-            var image = _images.Count == 0 ? default : _images.MinBy(e => e.Value.Used);
+            var image = _images.Where(entry => entry.Key != protectedImage).OrderBy(e => e.Value.Used).FirstOrDefault();
             var effect = _effects.Count == 0 ? default : _effects.MinBy(e => e.Value.Used);
+            if (image.Value is null && effect.Value is null) break;
             if (image.Value is not null && (effect.Value is null || image.Value.Used <= effect.Value.Used))
             { image.Value.Dispose(); _images.Remove(image.Key); }
             else if (effect.Value is not null) { effect.Value.Dispose(); _effects.Remove(effect.Key); }
@@ -536,7 +567,7 @@ public sealed partial class SceneRenderer : IDisposable
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
             _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
             _patterned == (e.Style.StrokePattern != StrokePattern.Solid) &&
-            _points.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(e.Points));
+            _points.AsSpan().SequenceEqual(e.Points.AsSpan());
         public void Dispose() { Path.Dispose(); patternedStroke?.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
     }
     private class ImageEntry : IDisposable

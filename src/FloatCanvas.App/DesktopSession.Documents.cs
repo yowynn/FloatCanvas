@@ -28,6 +28,8 @@ internal sealed partial class DesktopSession
     private DispatcherTimer? _documentRecoveryTimer;
     private Task _documentRecoveryTask = Task.CompletedTask;
     private string? _documentRecoveryFingerprint;
+    private DateTime _documentRecoveryLastWriteUtc;
+    private bool _documentRecoveryFlushing;
     private string? _documentFrozenCaptureWarning;
     private bool _documentBusyValue, _documentExitRequestedValue, _documentStopped, _documentRecoveryWritesBlocked;
     private bool _documentBusy
@@ -42,7 +44,7 @@ internal sealed partial class DesktopSession
     }
     private EditorTool _documentLiveTool = EditorTool.Freehand;
     private bool DocumentOperationBusy => _documentBusy || _documentExitRequested || _canvasCalibration?.IsAwaitingResolution == true;
-    private sealed class DocumentFileState { public string? Path; public string? SavedFingerprint; }
+    private sealed class DocumentFileState { public string? Path; public string? SavedFingerprint; public long SavedContentVersion = -1; public ProjectFileVersion? DiskVersion; }
     private sealed class ClipboardObjects
     {
         public int Version { get; set; } = 1;
@@ -65,9 +67,14 @@ internal sealed partial class DesktopSession
             if (recover)
             {
                 RecoveredWorkspace? restored = null;
-                try { restored = await _recoveryStore.LoadAsync(_documentLifetime.Token); }
+                try
+                {
+                    restored = await _recoveryStore.LoadAsync(_documentLifetime.Token);
+                    if (restored is not null) ImageImportBudget.ValidateResources(restored.Assets.Resources);
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    restored = null;
                     try
                     {
                         string location = await PreserveRecoveryGenerationsAsync();
@@ -102,7 +109,7 @@ internal sealed partial class DesktopSession
             if (EnsureCaptureVisible()) ScheduleRecovery();
             if (!restoredWorkspace)
             {
-                FileState(_live).SavedFingerprint = Fingerprint(_live.Document);
+                FileState(_live).SavedFingerprint = Fingerprint(_live.Document); FileState(_live).SavedContentVersion = _live.ContentVersion;
                 var baseline = SnapshotWorkspace();
                 RecoveryHistory.BeginFreshWorkspace(baseline);
                 _documentRecoveryFingerprint = WorkspaceFingerprint(baseline);
@@ -142,11 +149,17 @@ internal sealed partial class DesktopSession
     }
     private async Task FlushRecoveryFromTimerAsync()
     {
+        if (_documentRecoveryFlushing) { ScheduleRecovery(); return; }
+        // Bound sustained full-package IO, including previous-generation preservation.
+        double minimumSeconds = Math.Max(1, _assets.TotalBytes * 4.0 / (32 * 1024 * 1024));
+        if ((DateTime.UtcNow - _documentRecoveryLastWriteUtc).TotalSeconds < minimumSeconds) { ScheduleRecovery(); return; }
+        _documentRecoveryFlushing = true;
         try { await FlushRecoveryAsync(); }
         // Disposing a session intentionally cancels in-flight recovery writes. The
         // async timer callback must observe that cancellation before returning to WPF.
         catch (OperationCanceledException) when (_documentLifetime.IsCancellationRequested) { }
         catch (Exception ex) when (ex is not OperationCanceledException) { UpdateStatus(L.Get("Recovery.SaveFailed") + ex.Message); }
+        finally { _documentRecoveryFlushing = false; }
     }
     private async Task FlushRecoveryAsync()
     {
@@ -170,6 +183,7 @@ internal sealed partial class DesktopSession
         if (!RecoveryHistory.ShouldWrite(snapshot)) return;
         string fingerprint = WorkspaceFingerprint(snapshot);
         await SaveRecoverySnapshotAsync(snapshot);
+        _documentRecoveryLastWriteUtc = DateTime.UtcNow;
         RecoveryHistory.WriteCurrentInfo(snapshot, FileState(Active).Path);
         _documentRecoveryFingerprint = fingerprint;
         RecoveryHistory.WorkspaceSaved();
@@ -206,9 +220,7 @@ internal sealed partial class DesktopSession
             _documentRecoveryTimer?.Stop();
             await _documentRecoveryTask;
             if (!coordinator.CanContinue(request, _live.Document)) return;
-            var entries = RecoveryHistory.GetEntries();
-            if (entries.Count == 0) { UpdateStatus(L.Get("Recovery.NoHistory")); return; }
-            var selected = ChooseRecoveryWorkspace(entries);
+            var selected = ChooseRecoveryWorkspace();
             if (selected is null) return;
             // Read fully before replacing or writing either workspace.
             var restored = await RecoveryHistory.LoadAsync(selected, _documentLifetime.Token);
@@ -222,6 +234,7 @@ internal sealed partial class DesktopSession
             await ArchiveWorkspaceAsync();
             if (!coordinator.CanContinue(request, _live.Document)) return;
             FinishInlineText();
+            ImageImportBudget.ValidateResources(restored.Assets.Resources);
             MergeAssets(restored.Assets);
             _documentFiles.Clear();
             _live = new(restored.State.LiveDocument, _assets);
@@ -247,9 +260,9 @@ internal sealed partial class DesktopSession
         finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
     }
 
-    private WorkspaceRecoveryEntry? ChooseRecoveryWorkspace(IReadOnlyList<WorkspaceRecoveryEntry> entries)
+    private WorkspaceRecoveryEntry? ChooseRecoveryWorkspace()
     {
-        var dialog = new WorkspaceHistoryWindow(RecoveryHistory, entries) { Owner = _toolbar };
+        var dialog = new WorkspaceHistoryWindow(RecoveryHistory) { Owner = _toolbar };
         return SessionWindowCoordinator.ShowModal(dialog) == true ? dialog.SelectedEntry : null;
     }
     private async Task RequestExitAsync()
@@ -282,7 +295,7 @@ internal sealed partial class DesktopSession
         if (!_documentFiles.TryGetValue(session, out var state)) _documentFiles.Add(session, state = new());
         return state;
     }
-    private bool IsDirty(EditorSession session) => FileState(session).SavedFingerprint != Fingerprint(session.Document);
+    private bool IsDirty(EditorSession session) => FileState(session).SavedContentVersion != session.ContentVersion || session.HasPendingChanges;
     private void PruneDocumentResources()
     {
         if (_documentBusy || _live.IsTransactionActive || _capture?.IsTransactionActive == true) return;
@@ -295,13 +308,13 @@ internal sealed partial class DesktopSession
     private void MergeAssets(AssetLibrary source)
     {
         foreach (var resource in source.Resources)
-            if (!_assets.TryGet(resource.Id, out _)) _assets.Add(resource.Data.ToArray(), resource.MediaType);
+            if (!_assets.TryGet(resource.Id, out _)) _assets.Add(resource);
     }
     private AssetResource[] ResourceSnapshot(SceneDocument document) => document.ReferencedAssets.Select(_assets.Get).ToArray();
     private static AssetLibrary ResourceLibrary(IEnumerable<AssetResource> resources)
     {
         var assets = new AssetLibrary();
-        foreach (var resource in resources) assets.Add(resource.Data.ToArray(), resource.MediaType);
+        foreach (var resource in resources) assets.Add(resource);
         return assets;
     }
 
@@ -329,6 +342,7 @@ internal sealed partial class DesktopSession
             var loaded = await _projectStore.LoadAsync(projectPath, _documentLifetime.Token);
             if (!ReferenceEquals(Active, previous) || Fingerprint(previous.Document) != previousContent)
             { UpdateStatus(L.Get("Project.OpenChanged")); return; }
+            ImageImportBudget.ValidateResources(loaded.Assets.Resources);
             MergeAssets(loaded.Assets);
             var session = new EditorSession(loaded.Document, _assets);
             if (loaded.Document.Kind == DocumentKind.FrozenCapture)
@@ -349,7 +363,7 @@ internal sealed partial class DesktopSession
                 _live = session; _editor.ReplaceSession(session, new(0, 0)); SwitchToolState(_documentLiveTool);
                 OnMonitorsChanged();
             }
-            _documentFiles[session] = new() { Path = projectPath, SavedFingerprint = Fingerprint(session.Document) };
+            _documentFiles[session] = new() { Path = projectPath, SavedFingerprint = Fingerprint(session.Document), SavedContentVersion = session.ContentVersion, DiskVersion = loaded.FileVersion };
             RecoveryHistory.WorkspaceRestored();
             RecoveryHistory.EnterWorkspace(SnapshotWorkspace());
             _documentRecoveryFingerprint = null;
@@ -386,9 +400,18 @@ internal sealed partial class DesktopSession
             if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return false;
             path = dialog.FileName;
         }
+        long savedContentVersion = session.ContentVersion;
         var snapshot = session.Document.Clone(); string fingerprint = Fingerprint(snapshot);
-        await _projectStore.SaveAsync(path, snapshot, _assets, _documentLifetime.Token);
-        state.Path = path; state.SavedFingerprint = fingerprint;
+        var diskVersion = !saveAs && string.Equals(path, state.Path, StringComparison.OrdinalIgnoreCase) ? state.DiskVersion : await ProjectFileVersion.ReadAsync(path, _documentLifetime.Token);
+        ProjectFileVersion writtenVersion;
+        try { writtenVersion = await _projectStore.SaveVersionedAsync(path, snapshot, _assets, _documentLifetime.Token, diskVersion); }
+        catch (ProjectFileConflictException ex)
+        {
+            var answer = AppDialog.Show(_toolbar, ex.Message + "\n" + L.Get("Project.SaveConflictChoice"), L.Get("App.Name"), MessageBoxButton.YesNo, MessageBoxImage.Warning, "Project.SaveCopy", "Project.KeepCurrent");
+            return answer == MessageBoxResult.Yes && await SaveSessionAsync(session, true);
+        }
+        state.DiskVersion = writtenVersion;
+        state.Path = path; state.SavedFingerprint = fingerprint; state.SavedContentVersion = savedContentVersion;
         UpdateStatus(L.Get("Project.SavedPrefix") + Path.GetFileName(path)); return true;
     }
     private async Task<bool> ConfirmReplaceAsync(EditorSession session, string description)
@@ -506,15 +529,18 @@ internal sealed partial class DesktopSession
             if (data.GetDataPresent(ObjectClipboardFormat))
             {
                 string? json = data.GetData(ObjectClipboardFormat) as string;
-                if (json is null || json.Length > 256 * 1024 * 1024) throw new InvalidDataException(L.Get("Clipboard.InvalidObjects"));
+                if (json is null || json.Length > ImageImportBudget.MaximumBatchBytes) throw new InvalidDataException(L.Get("Clipboard.InvalidObjects"));
                 var payload = await Task.Run(() =>
                 {
                     var objects = JsonSerializer.Deserialize<ClipboardObjects>(json) ?? throw new InvalidDataException(L.Get("Clipboard.NullObjects"));
                     if (objects.Version != 1 || objects.Assets is null) throw new InvalidDataException(L.Get("Clipboard.InvalidVersion"));
                     SceneValidation.Validate(objects.Document);
+                    if (objects.Assets.Count > ImageImportBudget.MaximumFiles) throw new InvalidDataException(L.Get("Images.ImportCapacityExceeded"));
+                    ImageImportBudget.RequireBytes(objects.Assets.Sum(a => a.Bytes?.LongLength ?? 0), ImageImportBudget.MaximumBatchBytes);
                     var assets = new AssetLibrary();
                     foreach (var asset in objects.Assets)
                         if (asset.Bytes is null || assets.Add(asset.Bytes, asset.MediaType) != asset.Id) throw new InvalidDataException(L.Get("Clipboard.InvalidAsset"));
+                    ImageImportBudget.ValidateImportBatch(assets.Resources);
                     foreach (string id in objects.Document.ReferencedAssets) _ = assets.Get(id);
                     return (objects.Document, assets);
                 }, _documentLifetime.Token);
@@ -527,7 +553,7 @@ internal sealed partial class DesktopSession
             {
                 _documentBusy = false; await ImportImagesAsync(paths); return;
             }
-            byte[]? bytes = ReadClipboardImage(data);
+            byte[]? bytes = await ReadClipboardImageAsync(data, _documentLifetime.Token);
             if (bytes is not null)
             {
                 var normalized = await Task.Run(() => AssetImport.Normalize(bytes), _documentLifetime.Token);
@@ -548,11 +574,10 @@ internal sealed partial class DesktopSession
             byte[]? encoded = value as byte[];
             if (value is Stream stream)
             {
-                using var copy = new MemoryStream();
-                if (stream.CanSeek) stream.Position = 0;
-                stream.CopyTo(copy); encoded = copy.ToArray();
+                encoded = ImageImportBudget.Read(stream);
             }
             if (encoded is null) continue;
+            ImageImportBudget.RequireBytes(encoded.LongLength);
             bool gif = format is "GIF" or "image/gif";
             bool valid = gif ? encoded.AsSpan().StartsWith("GIF87a"u8) || encoded.AsSpan().StartsWith("GIF89a"u8) :
                 encoded.Length >= 12 && encoded.AsSpan(0, 4).SequenceEqual("RIFF"u8) && encoded.AsSpan(8, 4).SequenceEqual("WEBP"u8);
@@ -566,14 +591,15 @@ internal sealed partial class DesktopSession
         if (data.GetDataPresent("PNG"))
         {
             object? value = data.GetData("PNG");
-            if (value is byte[] bytes) return bytes;
-            if (value is Stream stream) { using var copy = new MemoryStream(); if (stream.CanSeek) stream.Position = 0; stream.CopyTo(copy); return copy.ToArray(); }
+            if (value is byte[] bytes) { ImageImportBudget.RequireBytes(bytes.LongLength); return bytes; }
+            if (value is Stream stream) return ImageImportBudget.Read(stream);
         }
         BitmapSource? bitmap = data.GetData(Wpf.DataFormats.Bitmap, autoConvert: true) as BitmapSource;
         if (bitmap is null && Wpf.Clipboard.ContainsImage()) bitmap = Wpf.Clipboard.GetImage();
         if (bitmap is null) return null;
+        ImageDecodeBudget.ValidateDimensions(bitmap.PixelWidth, bitmap.PixelHeight);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var output = new MemoryStream(); encoder.Save(output); return output.ToArray();
+        using var output = new MemoryStream(); encoder.Save(output); ImageImportBudget.RequireBytes(output.Length); return output.ToArray();
     }
 
     private async Task ImportImagesAsync(string[]? paths = null, bool replaceSelected = false)

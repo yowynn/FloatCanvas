@@ -32,7 +32,7 @@ internal sealed class ToolOptionsPanel : UserControl
     private readonly TextBlock noParameters = new() { Text = L.Get("ToolOptions.NoParameters"), TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     private readonly UniformGrid symbolGallery = new() { Columns = 6 };
     private readonly UniformGrid emojiGallery = new() { Columns = 6 };
-    private bool refreshing;
+    private bool refreshing, compact;
 
     public event Action? ParametersChanged;
     public event Action<ColorField>? EyedropperRequested;
@@ -40,7 +40,7 @@ internal sealed class ToolOptionsPanel : UserControl
     public ToolOptionsPanel(EditorController controller, ToolPresetLibrary library, ColorLibrary colors, ToolStateStore? stateStore = null)
     {
         this.controller = controller;
-        Width = PreferredWidth; MinWidth = 480; MaxWidth = PreferredWidth; MaxHeight = 620;
+        Width = PreferredWidth; MinWidth = 0; MaxWidth = PreferredWidth; MaxHeight = 620;
         SetResourceReference(BackgroundProperty, "CanvasSurface"); SetResourceReference(ForegroundProperty, "CanvasText");
         var body = new StackPanel { Margin = new(12) }; body.Children.Add(heading);
         var columns = new Grid();
@@ -119,6 +119,17 @@ internal sealed class ToolOptionsPanel : UserControl
         status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); body.Children.Add(status);
         Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Unloaded += (_, _) => { foreground.ClosePicker(); background.ClosePicker();  };
+        SizeChanged += (_, _) =>
+        {
+            bool next = ActualWidth < 520;
+            if (compact == next) return; compact = next;
+            columns.RowDefinitions.Clear(); columns.RowDefinitions.Add(new() { Height = GridLength.Auto }); columns.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            columns.ColumnDefinitions[1].Width = compact ? new GridLength(0) : GridLength.Auto;
+            Grid.SetColumn(recipeBorder, compact ? 0 : 1); Grid.SetRow(recipeBorder, compact ? 1 : 0);
+            recipeBorder.Margin = compact ? new(0, 12, 0, 0) : new(12, 0, 0, 0);
+            recipeBorder.BorderThickness = compact ? new(0, 1, 0, 0) : new(1, 0, 0, 0);
+            recipes.Margin = compact ? new(0, 8, 0, 0) : new(12, 0, 0, 0); LayoutParameters();
+        };
         Refresh();
     }
 
@@ -187,6 +198,15 @@ internal sealed class ToolOptionsPanel : UserControl
         {
             var visible = group.Select(key => rows[key]).Where(row => row.Visibility == Visibility.Visible).ToArray();
             if (visible.Length == 0) continue;
+            if (compact)
+            {
+                foreach (var value in visible)
+                {
+                    int index = parameterGrid.RowDefinitions.Count; parameterGrid.RowDefinitions.Add(new() { Height = GridLength.Auto });
+                    Grid.SetRow(value, index); Grid.SetColumn(value, 0); Grid.SetColumnSpan(value, 2); value.Margin = new(0, 4, 0, 4);
+                }
+                continue;
+            }
             int rowIndex = parameterGrid.RowDefinitions.Count; parameterGrid.RowDefinitions.Add(new() { Height = GridLength.Auto });
             for (int column = 0; column < visible.Length; column++)
             {
@@ -220,7 +240,7 @@ internal sealed class ToolOptionsPanel : UserControl
         catch (Exception ex) { Error(ex.Message); }
     }
 
-    private void Error(string message) { status.Text = message; status.Foreground = new SolidColorBrush(Color.FromRgb(190, 60, 55)); }
+    private void Error(string message) { status.Text = "⚠ " + message; status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); }
     private void Show(string key, bool visible) => rows[key].Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     private void SetNumber(string key, double value) => numericFields[key].Value = value;
     private void SetPicker(string key, object value) => pickers[key].SelectedItem = pickers[key].Items.Cast<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, value));

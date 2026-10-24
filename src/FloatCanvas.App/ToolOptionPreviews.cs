@@ -1,3 +1,4 @@
+using L = FloatCanvas.Localization.AppText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -22,12 +23,13 @@ internal static class ToolOptionPreviews
     internal static void SelectFont(ComboBox picker, string name)
     {
         var item = picker.Items.OfType<ComboBoxItem>().FirstOrDefault(item => StringComparer.OrdinalIgnoreCase.Equals(item.Tag, name));
-        // A project may use a font that is currently missing; keep its name visible and editable through replacement.
-        if (item is null)
-        {
-            item = new ComboBoxItem { Tag = name, Content = new TextBlock { Text = name, FontFamily = new(name) } };
-            TextSearch.SetText(item, name); picker.Items.Insert(0, item);
-        }
+        bool installed = Fonts.SystemFontFamilies.Any(font => StringComparer.OrdinalIgnoreCase.Equals(font.Source, name));
+        if (item is null) { item = new ComboBoxItem { Tag = name }; TextSearch.SetText(item, name); picker.Items.Insert(0, item); }
+        using var resolved = SkiaSharp.SKTypeface.FromFamilyName(name) ?? SkiaSharp.SKTypeface.FromFamilyName("Segoe UI");
+        string label = installed ? name : L.Format("Audit.MissingFont", name, resolved.FamilyName);
+        item.Content = new TextBlock { Text = label, FontFamily = new(installed ? name : "Segoe UI"), TextWrapping = TextWrapping.Wrap };
+        item.ToolTip = installed ? null : label + "\n" + L.Get("Audit.ReplaceFont");
+        System.Windows.Automation.AutomationProperties.SetHelpText(picker, installed ? "" : label);
         picker.SelectedItem = item;
     }
     internal static object Choice(string label, object value)

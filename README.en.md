@@ -77,7 +77,15 @@ Perspective calibration needs readjustment when the camera moves. Dense grids at
 
 ## Build from source
 
-Requires Windows x64 and .NET SDK 10.0.402, resolved according to `global.json`.
+Requires Windows x64, .NET SDK 10.0.402 (resolved according to `global.json`), and Visual Studio / Build Tools with **Desktop development with C++**, including the MSVC x64/x86 compiler and a Windows SDK. Both the native overlay and recovery launcher use this toolchain; the .NET SDK alone is insufficient.
+
+Select that workload in Visual Studio Installer, or run the Microsoft Build Tools installer you downloaded:
+
+```powershell
+./vs_BuildTools.exe --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait
+```
+
+Default tests include native input contracts without injected input. Actual game and device tests remain separate.
 
 ```powershell
 ./scripts/Build.ps1

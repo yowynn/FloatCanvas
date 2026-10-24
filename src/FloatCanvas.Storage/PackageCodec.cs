@@ -29,7 +29,7 @@ internal static class PackageCodec
     public static AssetResource[] ResolveResources(IEnumerable<string> ids, AssetLibrary assets) => ids.Distinct(StringComparer.Ordinal).Select(id =>
         assets.TryGet(id, out var resource) ? resource : throw new InvalidDataException(L.Format("Assets.MissingResource", id))).ToArray();
 
-    public static async Task SaveAsync<T>(string path, string kind, T value, AssetResource[] resources, CancellationToken ct, byte[]? previewPng = null)
+    public static async Task<ProjectFileVersion> SaveAsync<T>(string path, string kind, T value, AssetResource[] resources, CancellationToken ct, byte[]? previewPng = null, ProjectFileVersion? expectedVersion = null)
     {
         ct.ThrowIfCancellationRequested(); Validate(value);
         // Never emit a v1 envelope for the richer editable model: published v1 readers
@@ -46,35 +46,57 @@ internal static class PackageCodec
             Format = "FloatCanvas." + kind, Version = SceneDocument.CurrentVersion, Payload = payload,
             Assets = resources.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => new ManifestAsset { Id = r.Id, MediaType = r.MediaType, Length = r.Data.Length }).ToList()
         };
+        byte[] manifestBytes = SerializeJson("manifest.json", manifest);
+        byte[] payloadBytes = SerializeJson(payload, value);
+        EnsureExpandedCapacity(resources.Sum(r => (long)r.Data.Length), manifestBytes.LongLength, payloadBytes.LongLength);
         path = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.WriteThrough))
+            await using var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.WriteThrough);
+            using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
             {
-                using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+                await WriteBytesAsync(archive, "manifest.json", manifestBytes, ct).ConfigureAwait(false);
+                await WriteBytesAsync(archive, payload, payloadBytes, ct).ConfigureAwait(false);
+                foreach (var resource in resources)
                 {
-                    await WriteJsonAsync(archive, "manifest.json", manifest, ct).ConfigureAwait(false);
-                    await WriteJsonAsync(archive, payload, value, ct).ConfigureAwait(false);
-                    foreach (var resource in resources)
-                    {
-                        ct.ThrowIfCancellationRequested();
-                        var entry = archive.CreateEntry("assets/" + resource.Id, CompressionLevel.NoCompression);
-                        await using var stream = entry.Open();
-                        await stream.WriteAsync(resource.Data, ct).ConfigureAwait(false);
-                    }
-                    if (kind == "recovery" && previewPng is not null)
-                    {
-                        var entry = archive.CreateEntry(RecoveryPreview.EntryName, CompressionLevel.NoCompression);
-                        await using var stream = entry.Open();
-                        await stream.WriteAsync(previewPng, ct).ConfigureAwait(false);
-                    }
+                    ct.ThrowIfCancellationRequested();
+                    var entry = archive.CreateEntry("assets/" + resource.Id, CompressionLevel.NoCompression);
+                    await using var stream = entry.Open();
+                    await stream.WriteAsync(resource.Data, ct).ConfigureAwait(false);
                 }
-                await output.FlushAsync(ct).ConfigureAwait(false); output.Flush(flushToDisk: true);
+                if (kind == "recovery" && previewPng is not null)
+                {
+                    var entry = archive.CreateEntry(RecoveryPreview.EntryName, CompressionLevel.NoCompression);
+                    await using var stream = entry.Open();
+                    await stream.WriteAsync(previewPng, ct).ConfigureAwait(false);
+                }
             }
+            await output.FlushAsync(ct).ConfigureAwait(false); output.Flush(flushToDisk: true);
+            output.Position = 0;
+            var writtenVersion = new ProjectFileVersion(Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(output, ct).ConfigureAwait(false)));
+            await output.DisposeAsync().ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
-            File.Move(temporary, path, overwrite: true);
+            if (expectedVersion is not null && await ProjectFileVersion.ReadAsync(path, ct).ConfigureAwait(false) != expectedVersion)
+                throw new ProjectFileConflictException();
+            if (expectedVersion is not null && File.Exists(path))
+            {
+                // Preserve the replaced generation until its identity is verified. This also
+                // retains an external write racing the final comparison instead of losing it.
+                string previous = path + "." + Guid.NewGuid().ToString("N") + ".save-backup";
+                File.Replace(temporary, path, previous);
+                if (await ProjectFileVersion.ReadAsync(previous, ct).ConfigureAwait(false) != expectedVersion)
+                    throw new ProjectFileConflictException(previous);
+                File.Delete(previous);
+            }
+            else File.Move(temporary, path, overwrite: expectedVersion is null);
+            await using (var committed = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                string committedHash = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(committed, ct).ConfigureAwait(false));
+                if (committedHash == writtenVersion.Sha256) ValidatedPackageCache.Remember(committed.SafeFileHandle, kind);
+            }
+            return writtenVersion;
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
@@ -106,7 +128,7 @@ internal static class PackageCodec
             var knownEntries = manifest.Assets.Select(a => "assets/" + a.Id).Append("manifest.json").Append(payload).ToHashSet(StringComparer.Ordinal);
             if (hasPreview) knownEntries.Add(RecoveryPreview.EntryName);
             if (!knownEntries.SetEquals(archive.Entries.Select(e => e.FullName))) throw new InvalidDataException(L.Get("Project.UnexpectedArchiveContents"));
-            T value = await ReadJsonAsync<T>(RequiredEntry(archive, payload), 128 * 1024 * 1024, ct).ConfigureAwait(false);
+            T value = await ReadJsonAsync<T>(RequiredEntry(archive, payload), JsonCapacity(payload), ct).ConfigureAwait(false);
             Validate(value);
             RequirePayloadVersion(value, manifest.Version);
             if (!References(value).ToHashSet(StringComparer.Ordinal).SetEquals(manifest.Assets.Select(a => a.Id))) throw new InvalidDataException(L.Get("Project.AssetReferencesMismatch"));
@@ -123,6 +145,7 @@ internal static class PackageCodec
             // Legacy scenes gain only the format marker; defaults retain their original
             // arrow, radius, alpha and resource semantics. The deserialized graph is ours.
             UpgradeVersion(value);
+            ValidatedPackageCache.Remember(file.SafeFileHandle, kind);
             return (value, assets);
         }
         catch (JsonException ex) { throw new InvalidDataException(L.Get("Project.InvalidJson"), ex); }
@@ -141,10 +164,17 @@ internal static class PackageCodec
             if (!RecoveryPreview.IsValid(bytes)) return null;
             // Do not show a plausible thumbnail for a generation whose scene/assets
             // would actually be rejected and replaced by the previous generation.
-            await LoadAsync<WorkspaceState>(path, "recovery", ct).ConfigureAwait(false);
+            if (!ValidatedPackageCache.Contains(file.SafeFileHandle, "recovery"))
+                await LoadAsync<WorkspaceState>(path, "recovery", ct).ConfigureAwait(false);
+            if (!ValidatedPackageCache.Contains(file.SafeFileHandle, "recovery") && OperatingSystem.IsWindows()) return null;
             return bytes;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or OverflowException) { return null; }
+    }
+    internal static bool IsKnownValid(string path, string kind)
+    {
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        return ValidatedPackageCache.Contains(file.SafeFileHandle, kind);
     }
     private static ZipArchiveEntry RequiredEntry(ZipArchive archive, string name) => archive.GetEntry(name) ?? throw new InvalidDataException(L.Format("Project.MissingEntry", name));
     private static T CurrentVersionCopy<T>(T value)
@@ -188,10 +218,28 @@ internal static class PackageCodec
         WorkspaceState workspace => workspace.LiveDocument.ReferencedAssets.Concat(workspace.CaptureDocument?.ReferencedAssets ?? []).Distinct(StringComparer.Ordinal),
         _ => throw new InvalidDataException(L.Get("Project.InvalidContentType"))
     };
-    private static async Task WriteJsonAsync<T>(ZipArchive archive, string name, T value, CancellationToken ct)
+    internal static void EnsureExpandedCapacity(long resources, long manifest, long payload, long maximum = MaxExpandedBytes)
+    {
+        if (resources < 0 || manifest < 0 || payload < 0 || resources > maximum || manifest > maximum - resources || payload > maximum - resources - manifest)
+            throw new InvalidDataException(L.Get("Project.ExpandedCapacityExceeded"));
+    }
+    private static long JsonCapacity(string name, long maximumSceneBytes = SceneLimits.MaximumSceneJsonBytes) => name switch
+    {
+        "manifest.json" => 4L * 1024 * 1024,
+        "scene.json" => maximumSceneBytes,
+        // Each document is independently checked by SceneValidation. The finite envelope
+        // contains property names and CaptureOrigin; it must not consume either scene's budget.
+        "workspace.json" => checked(2 * maximumSceneBytes + 4096),
+        _ => throw new InvalidDataException(L.Get("Project.InvalidContentType"))
+    };
+    private static byte[] SerializeJson<T>(string name, T value, long maximumSceneBytes = SceneLimits.MaximumSceneJsonBytes)
     {
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
-        if (bytes.Length > (name == "manifest.json" ? 4 * 1024 * 1024 : 128 * 1024 * 1024)) throw new InvalidDataException(L.Get("Project.JsonTooLarge"));
+        if (bytes.LongLength > JsonCapacity(name, maximumSceneBytes)) throw new InvalidDataException(L.Get("Project.JsonTooLarge"));
+        return bytes;
+    }
+    private static async Task WriteBytesAsync(ZipArchive archive, string name, byte[] bytes, CancellationToken ct)
+    {
         var entry = archive.CreateEntry(name, CompressionLevel.Fastest);
         await using var stream = entry.Open();
         await stream.WriteAsync(bytes, ct).ConfigureAwait(false);

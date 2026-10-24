@@ -14,6 +14,7 @@ internal static class GitHubUpdateClientTests
     private static async Task RunAsync(Action<string, bool> check)
     {
         SemVersionOrder(check);
+        ReleaseSignatureTests.Run(check);
         await ReleaseSelection(check);
         await HttpFailures(check);
         await PackageValidation(check);
@@ -105,6 +106,10 @@ internal static class GitHubUpdateClientTests
                 check("sidecar-only package hash is supported", File.Exists(Path.Combine(result.PackageDirectory, "FloatCanvas.exe")));
             }
             await BadDownload("incorrect package hash rejected", valid, Update(valid) with { Sha256 = new string('0', 64) }, root, check);
+            await BadDownload("download without publisher signature rejected", valid, Update(valid) with { SignatureUrl = null }, root, check);
+            byte[] altered = (byte[])valid.Clone(); altered[^1] ^= 1;
+            using (var tampered = Client(request => Bytes(request.RequestUri!.AbsolutePath.EndsWith(".release.json", StringComparison.Ordinal) ? ReleaseSignatureTestData.Sign(valid) : altered)))
+                await Reject<InvalidDataException>("replaced ZIP plus matching same-source hash cannot bypass publisher signature", () => tampered.DownloadAsync(Update(altered), root, null, default), check);
             await BadDownload("truncated package rejected", valid, Update(valid) with { Size = valid.Length + 1 }, root, check);
             await BadDownload("package URL from another repository rejected", valid, Update(valid) with { PackageUrl = new Uri("https://github.com/other/FloatCanvas/releases/download/v1.0.0/FloatCanvas-1.0.0-win-x64.zip") }, root, check);
             await BadDownload("digest and sidecar must agree", valid, Update(valid) with { Sha256 = new string('0', 64), ChecksumUrl = Asset("1.0.0", ".zip.sha256") }, root, check, sidecar: true);
@@ -132,8 +137,10 @@ internal static class GitHubUpdateClientTests
                 await BadDownload("incompatible package manifest rejected " + manifest[..Math.Min(35, manifest.Length)], zip, Update(zip), root, check);
             }
             byte[] fullManifest = Archive("1.0.0", Manifest("1.0.0", files: Names));
+            byte[] validationOnly = Archive("1.0.0", Manifest("1.0.0")[..^1] + ",\"DistributionTrust\":\"UnsignedValidation\"}");
+            await BadDownload("signed metadata cannot promote unsigned validation package", validationOnly, Update(validationOnly), root, check);
             using (var client = DownloadClient(fullManifest)) check("complete optional manifest file list accepted", (await client.DownloadAsync(Update(fullManifest), root, null, default)).Files.Count == Names.Length);
-            using (var client = Client(request => request.RequestUri!.Host == "github.com" ? Redirect("https://release-assets.githubusercontent.com/github-production-release-asset/file?token=public-signed") : Bytes(valid)))
+            using (var client = Client(request => request.RequestUri!.AbsolutePath.EndsWith(".release.json", StringComparison.Ordinal) ? Bytes(ReleaseSignatureTestData.Sign(valid)) : request.RequestUri.Host == "github.com" ? Redirect("https://release-assets.githubusercontent.com/github-production-release-asset/file?token=public-signed") : Bytes(valid)))
                 check("GitHub official asset CDN redirects accepted", (await client.DownloadAsync(Update(valid), root, null, default)).Files.Count == 6);
             using (var client = Client(_ => Redirect("https://attacker.example/asset.zip")))
                 await Reject<InvalidDataException>("asset redirect to unrelated host rejected", () => client.DownloadAsync(Update(valid), root, null, default), check);
@@ -146,7 +153,7 @@ internal static class GitHubUpdateClientTests
     private static readonly string[] Names = { "PACKAGE-INFO.json", "FloatCanvas.exe", "FloatCanvas.dll", "FloatCanvas.deps.json", "FloatCanvas.runtimeconfig.json", "Docs/readme.txt" };
     private static SemVersion Version(string value) { SemVersion.TryParse(value, out var version); return version!; }
     private static Uri Asset(string version, string suffix = ".zip") => new($"https://github.com/yowynn/FloatCanvas/releases/download/v{version}/FloatCanvas-{version}-win-x64{suffix}");
-    private static AvailableUpdate Update(byte[] data) => new("1.0.0", "Notes", new Uri("https://github.com/yowynn/FloatCanvas/releases/tag/v1.0.0"), Asset("1.0.0"), data.Length, Convert.ToHexString(SHA256.HashData(data)), null);
+    private static AvailableUpdate Update(byte[] data) => new("1.0.0", "Notes", new Uri("https://github.com/yowynn/FloatCanvas/releases/tag/v1.0.0"), Asset("1.0.0"), data.Length, Convert.ToHexString(SHA256.HashData(data)), null, Asset("1.0.0", ".zip.release.json"));
     private static object Release(string version, bool draft = false, bool prerelease = false, bool hash = true, bool sidecar = true, string host = "github.com") => new
     {
         tag_name = "v" + version, draft, prerelease, html_url = $"https://github.com/yowynn/FloatCanvas/releases/tag/v{version}", body = "Release notes",
@@ -172,8 +179,8 @@ internal static class GitHubUpdateClientTests
         }
         return memory.ToArray();
     }
-    private static GitHubUpdateClient DownloadClient(byte[] data, bool sidecar = false, string? checksumFilename = null) => Client(request => request.RequestUri!.AbsolutePath.EndsWith(".sha256", StringComparison.Ordinal) && sidecar ? Response(Convert.ToHexString(SHA256.HashData(data)) + "  " + (checksumFilename ?? "FloatCanvas-1.0.0-win-x64.zip")) : Bytes(data));
-    private static GitHubUpdateClient Client(Func<HttpRequestMessage, HttpResponseMessage> responder) => new(new HttpClient(new MemoryHandler(responder)));
+    private static GitHubUpdateClient DownloadClient(byte[] data, bool sidecar = false, string? checksumFilename = null) => Client(request => request.RequestUri!.AbsolutePath.EndsWith(".release.json", StringComparison.Ordinal) ? Bytes(ReleaseSignatureTestData.Sign(data)) : request.RequestUri!.AbsolutePath.EndsWith(".sha256", StringComparison.Ordinal) && sidecar ? Response(Convert.ToHexString(SHA256.HashData(data)) + "  " + (checksumFilename ?? "FloatCanvas-1.0.0-win-x64.zip")) : Bytes(data));
+    private static GitHubUpdateClient Client(Func<HttpRequestMessage, HttpResponseMessage> responder) => new(new HttpClient(new MemoryHandler(responder)), ReleaseSignatureTestData.Trust);
     private static HttpResponseMessage Response(string value) => new(HttpStatusCode.OK) { Content = new StringContent(value, Encoding.UTF8) };
     private static HttpResponseMessage Bytes(byte[] value) => new(HttpStatusCode.OK) { Content = new ByteArrayContent(value) };
     private static HttpResponseMessage Redirect(string location) { var response = new HttpResponseMessage(HttpStatusCode.Redirect); response.Headers.Location = new Uri(location); return response; }

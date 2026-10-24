@@ -16,12 +16,19 @@ public sealed partial class OverlayHost
     public static void ProbeSystemInput() { using var probe = new SystemOverlayInput(); }
     /// <summary>Enable before constructing tool windows or entering editing. Existing document/rendering routes are retained.</summary>
     public void EnableSystemInput()
+        => EnableSystemInput(null);
+    /// <summary>Optional profile-scoped watchdog evidence; no user content or paths are written to the journal.</summary>
+    public void EnableSystemInput(string? safetyJournalPath)
     {
         CheckThread();
         if(IsEditing || _keyboardIsolation is not null) throw new InvalidOperationException("Configure system input before editing or keyboard isolation.");
         if(_systemInput is not null) return;
         _systemInput=new();
-        try {RebuildMonitors();}
+        try
+        {
+            if(safetyJournalPath is not null)_systemInput.SetSafetyJournal(safetyJournalPath);
+            RebuildMonitors();
+        }
         catch
         {
             var failed = _systemInput;

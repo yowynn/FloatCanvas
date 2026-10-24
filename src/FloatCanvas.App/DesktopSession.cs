@@ -88,8 +88,9 @@ internal sealed partial class DesktopSession : IDisposable
             ApplicationPaths.RequestedMonitorScope.HasValue ? null : _settings.MonitorDeviceName);
         if(testHost is null)
         {
-            if (protection is null) _host.EnableSystemInput();
-            else protection.TryEnable(_host.EnableSystemInput);
+            string safetyJournal = Path.Combine(ApplicationPaths.ProfileDirectory, "overlay-input-safety.log");
+            if (protection is null) _host.EnableSystemInput(safetyJournal);
+            else protection.TryEnable(() => _host.EnableSystemInput(safetyJournal));
         }
         if(_host.UsesSystemInput) {_overlayWindows=new(_host.SystemWindowOwner,()=>_host.IsEditing);AppTheme.Apply(_settings.Theme);}
         _diagnostics.Write("Input.Backend",new {SystemDelegation=_host.UsesSystemInput,OwnerWindow=_host.SystemWindowOwner.ToInt64()});
@@ -293,7 +294,8 @@ internal sealed partial class DesktopSession : IDisposable
         _welcomeShown = true;
         _welcomeManual=manuallyOpened;
         var view = new WelcomeView(_settings.Toggle, _settings.Hide, () => RunUiAction(() => SetEditing(true)), ShowUpdates,
-            () => RunUiAction(() => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(GitHubUpdateClient.ProjectUrl.AbsoluteUri) {UseShellExecute=true})));
+            () => RunUiAction(() => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(GitHubUpdateClient.ProjectUrl.AbsoluteUri) {UseShellExecute=true})),
+            () => _ = RunCommand(RestoreWorkspaceHistoryAsync), RecoveryHistory);
         _welcomeView = view; _welcomeShortcuts = view.ToggleShortcut; _welcomeHideShortcut = view.HideShortcut;
         var welcome = new Window { Title = L.Get("Welcome.Title"), Content = view, Width = WelcomeView.PreferredWidth, SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterScreen, ResizeMode = ResizeMode.NoResize, FontSize = 14 };
@@ -390,6 +392,7 @@ internal sealed partial class DesktopSession : IDisposable
     private void RequestRender()
     {
         _pixelsOnlyRender = false;
+        _pixelDirtyRegions.Clear();
         if (_disposed) return;
         if (_renderingFrame) { _renderAgain = true; return; }
         if (IsRenderPending)
@@ -404,12 +407,14 @@ internal sealed partial class DesktopSession : IDisposable
         // BeginInvoke also preserves the application's DispatcherUnhandledException reporting path.
         _renderOperation = _app.Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(RenderFrame));
     }
-    private void RequestPixelRender()
+    private void RequestPixelRender(IEnumerable<PixelBounds>? dirtyRegions = null)
     {
         // Animation and live background frames change pixels, not controls or document
         // state. Let pending input run before these continuously arriving frames.
         // A queued full edit render always takes precedence over this shortcut.
-        if (_disposed || IsRenderPending) return;
+        if (_disposed || IsRenderPending && !_pixelsOnlyRender) return;
+        _pixelDirtyRegions.AddRange(dirtyRegions ?? _host.Monitors.Select(monitor => monitor.Bounds));
+        if (IsRenderPending) return;
         _pixelsOnlyRender = true;
         _renderOperation = _app.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RenderFrame));
     }
@@ -421,6 +426,8 @@ internal sealed partial class DesktopSession : IDisposable
         try
         {
             bool pixelsOnly = _pixelsOnlyRender;
+            var dirtyRegions = pixelsOnly ? _pixelDirtyRegions.ToArray() : null;
+            _pixelDirtyRegions.Clear();
             _pixelsOnlyRender = false;
             PrepareAnimationFrame();
             if (!pixelsOnly) SyncLiveEffectsCapture();
@@ -433,7 +440,7 @@ internal sealed partial class DesktopSession : IDisposable
             _host.SetGpuWorkload(SceneRenderer.HasLiveEffects(document) ||
                 document.Background is { } background && ImageFilter(background) ||
                 document.LayerOpacity > 0 && document.Elements.Any(ImageFilter));
-            _host.Render();
+            _host.Render(dirtyRegions);
             // A native caption loop can delay control timers even while frames
             // complete. Successful UI work is progress; a blocked render is not.
             _host.NotifyInputProgress();

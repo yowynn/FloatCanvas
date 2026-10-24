@@ -15,7 +15,7 @@ internal sealed partial class DesktopSession
 
     internal sealed record DesktopFallbackState(AssetLibrary Assets, EditorSession Live, EditorSession? Capture,
         PointD CaptureOrigin, bool CaptureActive, EditorTool Tool, EditorTool LiveTool, bool Visible,
-        Dictionary<EditorSession, (string? Path, string? Fingerprint)> Files,
+        Dictionary<EditorSession, (string? Path, string? Fingerprint, long ContentVersion, FloatCanvas.Storage.ProjectFileVersion? DiskVersion)> Files,
         WorkspaceRecoveryHistory? History, string? RecoveryFingerprint, bool RecoveryWritesBlocked,
         string? FrozenCaptureWarning, string[] PendingProjects);
 
@@ -55,7 +55,7 @@ internal sealed partial class DesktopSession
         }
         return new(_assets, _live, _capture, _captureOrigin, ReferenceEquals(Active, _capture), _editor.Tool,
             _documentLiveTool, _host.IsVisible,
-            _documentFiles.ToDictionary(pair => pair.Key, pair => (pair.Value.Path, pair.Value.SavedFingerprint)),
+            _documentFiles.ToDictionary(pair => pair.Key, pair => (pair.Value.Path, pair.Value.SavedFingerprint, pair.Value.SavedContentVersion, pair.Value.DiskVersion)),
             _workspaceRecoveryHistory, _documentRecoveryFingerprint, _documentRecoveryWritesBlocked,
             _documentFrozenCaptureWarning, _projectOpenRequests.ToArray());
     }
@@ -65,7 +65,7 @@ internal sealed partial class DesktopSession
         _live = state.Live; _capture = state.Capture; _captureOrigin = state.CaptureOrigin;
         _documentLiveTool = state.LiveTool;
         foreach (var pair in state.Files)
-            _documentFiles[pair.Key] = new() { Path = pair.Value.Path, SavedFingerprint = pair.Value.Fingerprint };
+            _documentFiles[pair.Key] = new() { Path = pair.Value.Path, SavedFingerprint = pair.Value.Fingerprint, SavedContentVersion = pair.Value.ContentVersion, DiskVersion = pair.Value.DiskVersion };
         _workspaceRecoveryHistory = state.History;
         _documentRecoveryFingerprint = state.RecoveryFingerprint;
         _documentRecoveryWritesBlocked = state.RecoveryWritesBlocked;

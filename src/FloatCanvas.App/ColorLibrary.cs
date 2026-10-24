@@ -42,6 +42,15 @@ internal sealed class ColorLibrary
         }
     }
     private State state = new();
+    private readonly Stack<List<SavedColor>> undo = new();
+    private bool restoringResource;
+    internal bool CanUndoResourceChange => undo.Count > 0;
+    internal void UndoResourceChange()
+    {
+        if (!undo.TryPeek(out var previous)) return;
+        var next = Copy(); next.Swatches = [.. previous]; restoringResource = true;
+        try { Persist(next); undo.Pop(); } finally { restoringResource = false; }
+    }
     public ColorLibrary(string? path = null)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "colors.json"));
@@ -122,6 +131,13 @@ internal sealed class ColorLibrary
     private State Copy() => new() { History = [.. state.History], Pinned = [], Swatches = [.. state.Swatches] };
     private void Persist(State next)
     {
+        var previous = state.Swatches.ToList();
+        bool changed = !previous.SequenceEqual(next.Swatches);
         compatibility.Save(next,JsonOptions); state = next;
+        if (changed && !restoringResource)
+        {
+            undo.Push(previous);
+            if (undo.Count > 20) { var keep = undo.Take(20).Reverse().ToArray(); undo.Clear(); foreach (var value in keep) undo.Push(value); }
+        }
     }
 }

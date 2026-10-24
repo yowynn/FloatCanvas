@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ZipPath, [string]$ExtractionRoot, [string]$ReportPath, [switch]$StaticOnly)
+param([string]$ZipPath, [string]$ExtractionRoot, [string]$ReportPath, [switch]$StaticOnly, [switch]$IsolateHotkeys)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($ZipPath)) {
@@ -99,6 +99,12 @@ if ($StaticOnly) {
 }
 $profileDirectory = Join-Path $runDirectory 'profile'
 if (Test-Path -LiteralPath $profileDirectory) { throw 'The package smoke profile must be fresh.' }
+if ($IsolateHotkeys) {
+    # Only this fresh smoke profile is seeded; a running user instance stays untouched.
+    New-Item -ItemType Directory -Path $profileDirectory | Out-Null
+    @{ Toggle = @{ Modifiers = 7; VirtualKey = 122 }; Hide = @{ Modifiers = 7; VirtualKey = 121 } } |
+        ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $profileDirectory 'settings.json') -Encoding UTF8
+}
 $start = [Diagnostics.ProcessStartInfo]::new()
 $start.FileName = $executablePath
 $start.WorkingDirectory = $runDirectory
@@ -113,7 +119,7 @@ $start.ArgumentList.Add($profileDirectory)
 $start.Environment['PATH'] = $env:SystemRoot + '\System32;' + $env:SystemRoot
 $process = [Diagnostics.Process]::Start($start)
 try {
-    if (-not $process.WaitForExit(15000)) { $process.Kill(); throw 'Package smoke startup timed out.' }
+    if (-not $process.WaitForExit(15000)) { $process.Kill($true); throw 'Package smoke startup timed out.' }
     if ($process.ExitCode -ne 0) { throw "Package exited with code $($process.ExitCode)." }
     $appReport = Get-Content -LiteralPath (Join-Path $runDirectory 'artifacts\m1\app-smoke.json') -Raw | ConvertFrom-Json
     if (-not $appReport.Passed -or $appReport.CapturedInput) { throw 'Package did not initialize in pass-through mode.' }
@@ -135,6 +141,7 @@ try {
         LanguagePreference = $appReport.LanguagePreference; InterfaceLanguage = $appReport.InterfaceLanguage
         Monitors = $appReport.Monitors; AppLocalRuntimeFilesPresent = $false; PdbFilesPresent = $false
         DotnetOnChildPath = $false
+        IsolatedTestHotkeys = [bool]$IsolateHotkeys
         RuntimeSource = 'Existing system .NET runtime, resolved by the apphost using inherited runtime search configuration.'
         Limitation = 'Fresh ZIP extraction on this Windows 11 machine using an existing installed .NET Desktop Runtime, with no dotnet on child PATH. This does not prove missing-runtime dialog behavior, Windows 10, or a clean OS.'
     }
@@ -146,7 +153,7 @@ try {
 }
 finally {
     try {
-        if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit(5000) | Out-Null }
+        if (-not $process.HasExited) { $process.Kill($true); $process.WaitForExit(5000) | Out-Null }
     }
     finally { $process.Dispose() }
 }

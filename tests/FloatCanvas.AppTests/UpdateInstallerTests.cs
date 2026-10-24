@@ -9,7 +9,32 @@ internal static class UpdateInstallerTests
 
     internal static void Run(Action<string, bool> check)
     {
-        BasicTransaction(check); Rollback(check, false); Rollback(check, true); PreflightAndReadOnly(check); WaitingAndTampering(check); Validation(check);
+        BasicTransaction(check); Rollback(check, false); Rollback(check, true); PreflightAndReadOnly(check); WaitingAndTampering(check); Validation(check); Cancellation(check);
+    }
+
+    private static void Cancellation(Action<string, bool> check)
+    {
+        using (var f = new Fixture())
+        {
+            string jobs = Path.Combine(f.Profile, "updates", "jobs"); Directory.CreateDirectory(jobs);
+            using (var large = new FileStream(Path.Combine(f.Source, "FloatCanvas.dll"), FileMode.Create)) large.SetLength(64 * 1024 * 1024);
+            using var cancelled = new CancellationTokenSource();
+            using var watcher = new FileSystemWatcher(jobs) { IncludeSubdirectories = true, NotifyFilter = NotifyFilters.FileName, EnableRaisingEvents = true };
+            watcher.Created += (_, args) => { if (args.FullPath.Contains(Path.DirectorySeparatorChar + "package" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) cancelled.Cancel(); };
+            bool observed = false;
+            try { AppUpdateInstaller.Prepare(f.Update, f.Install, f.Profile, f.Arguments, cancelled.Token); }
+            catch (OperationCanceledException) { observed = true; }
+            check("updater observes cancellation during real package copying", observed);
+            check("updater cancelled preparation removes its unstarted job", Directory.GetDirectories(jobs).Length == 0);
+            check("updater cancelled preparation never changes installed user or owned files", f.Original.All(pair => File.ReadAllText(Path.Combine(f.Install, pair.Key)) == pair.Value) && File.ReadAllText(Path.Combine(f.Install, "user.notes")) == "user data");
+        }
+        using (var f = new Fixture())
+        {
+            string plan = f.Plan(); AppUpdateInstaller.DiscardPreparation(plan);
+            check("updater can discard a prepared but unlaunched job", !Directory.Exists(Path.GetDirectoryName(plan)));
+            plan = f.Plan(); AppUpdateInstaller.Run(plan, new() { Restart = (_, _) => { } });
+            check("updater never discards a transaction that has started", Throws(() => AppUpdateInstaller.DiscardPreparation(plan)) && File.Exists(plan));
+        }
     }
 
     private static void PreflightAndReadOnly(Action<string, bool> check)

@@ -23,6 +23,11 @@ internal static class ProjectionUnsafeHoverTests
         var state = new EditorSession(document);
         var editor = new EditorController(state) { ScreenOrigin = new(-500, 100), Tool = EditorTool.Select };
         var host = (OverlayHost)RuntimeHelpers.GetUninitializedObject(typeof(OverlayHost));
+        MonitorInfo[] monitors = [
+            new("hover-first", new(-500, 100, 240, 180), new(-500, 100, 240, 180), 96, 96, true),
+            new("hover-second", new(-260, 100, 240, 180), new(-260, 100, 240, 180), 96, 96, false)
+        ];
+        Set(host, "_monitors", monitors);
         var focus = typeof(OverlayHost).GetField("_focusTransitions", Private)!;
         focus.SetValue(host, Activator.CreateInstance(focus.FieldType));
         typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
@@ -34,6 +39,9 @@ internal static class ProjectionUnsafeHoverTests
         Set(session, "_app", app); Set(session, "_host", host); Set(session, "_editor", editor);
         Set(session, "_assets", state.Assets); Set(session, "_renderer", renderer); Set(session, "_overlayCache", cache);
         Set(session, "_canvasCalibration", calibration);
+        // GetUninitializedObject bypasses the production collection initializer.
+        var dirtyRegions = new List<PixelBounds>();
+        Set(session, "_pixelDirtyRegions", dirtyRegions);
         string before = JsonSerializer.Serialize(document);
         try
         {
@@ -41,6 +49,7 @@ internal static class ProjectionUnsafeHoverTests
             check("safe hover keeps the production editing overlay transparent", Alpha() == 0 && !Pending());
             Observe(new(120, 50));
             check("unsafe hover requests a pixel refresh and softly highlights the whole forbidden area", Pending() && Alpha(20, 50) is >= 18 and <= 28 && Alpha(120, 140) == 0);
+            check("hover without a dirty region invalidates every active output", dirtyRegions.SequenceEqual(monitors.Select(monitor => monitor.Bounds)));
             Abort(); Observe(new(130, 60));
             check("moving inside the same forbidden area does not queue redundant refreshes", !Pending() && Alpha() is >= 18 and <= 28);
             Observe(new(120, 140));
@@ -68,6 +77,17 @@ internal static class ProjectionUnsafeHoverTests
             Observe(new(120, 50)); Abort();
             Invoke(session, "ObserveProjectionHover", new OverlayPointerEvent(OverlayPointerKind.Cancel, new(-380, 150), OverlayMouseButton.None, OverlayModifiers.None));
             check("cancel clears the hint without modifying the document or undo history", Alpha() == 0 && JsonSerializer.Serialize(document) == before && state.UndoCount == 0);
+            Abort();
+            var local = new PixelBounds(-490, 110, 20, 20);
+            Invoke(session, "RequestPixelRender", (object)new[] { local });
+            check("a localized pixel refresh retains its requested region", Pending() && dirtyRegions.SequenceEqual([local]));
+            Invoke(session, "RequestPixelRender", (object?)null);
+            check("an unbounded refresh coalesced after a local refresh still includes every output", monitors.All(monitor => dirtyRegions.Contains(monitor.Bounds)));
+            Invoke(session, "RequestRender");
+            Invoke(session, "RequestPixelRender", (object)new[] { local });
+            check("a full edit promotes the pixel queue and cannot be narrowed by a later local refresh", dirtyRegions.Count == 0 &&
+                !(bool)typeof(DesktopSession).GetField("_pixelsOnlyRender", Private)!.GetValue(session)! &&
+                ((DispatcherOperation)typeof(DesktopSession).GetField("_renderOperation", Private)!.GetValue(session)!).Priority == DispatcherPriority.Render);
             NativeLeaveOrdering(host, check);
         }
         finally { Abort(); }
@@ -79,6 +99,8 @@ internal static class ProjectionUnsafeHoverTests
         {
             (typeof(DesktopSession).GetField("_renderOperation", Private)!.GetValue(session) as DispatcherOperation)?.Abort();
             Set(session, "_renderOperation", null);
+            Set(session, "_pixelsOnlyRender", false);
+            dirtyRegions.Clear();
         }
         byte Alpha(int x = 120, int y = 50)
         {

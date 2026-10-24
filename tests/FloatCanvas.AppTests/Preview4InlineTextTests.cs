@@ -85,5 +85,26 @@ internal static class Preview4InlineTextTests
             edit.Finish(true);
         }
         check("a projected selection edit remains a single committed canvas operation",projected.UndoCount==1&&!projected.IsTransactionActive);
+        var bidiSession = new EditorSession();
+        using (var edit = new InlineTextEdit(bidiSession, null, new(20, 20), style, renderer))
+        {
+            edit.Input.Text = "abc אבג xyz";
+            var line = edit.Geometry.Lines[0];
+            var junction = line.Carets.Where(stop => stop.Index == 4).MaxBy(stop => stop.X)!;
+            var point = edit.LocalToScreen.TransformPoint(new(junction.X, line.Top + line.Height / 2));
+            edit.Pointer(point, true, true);
+            check("Bidi pointer preserves clicked visual affinity at a shared logical index", edit.Input.CaretIndex == 4 && Math.Abs(edit.Caret.X - junction.X) < .01);
+            edit.Navigate(System.Windows.Input.Key.Left, false);
+            check("Bidi left arrow enters the visually adjacent RTL glyph", edit.Input.CaretIndex == 5 && edit.Caret.X < junction.X);
+            edit.Navigate(System.Windows.Input.Key.Home, false);
+            check("Bidi Home reaches the visual line start", Math.Abs(edit.Caret.X - line.Carets.Min(stop => stop.X)) < .01);
+            edit.Navigate(System.Windows.Input.Key.End, false);
+            check("Bidi End reaches the visual line end", Math.Abs(edit.Caret.X - line.Carets.Max(stop => stop.X)) < .01);
+            edit.Input.SelectAll();edit.Navigate(System.Windows.Input.Key.Right,false);
+            check("Right collapses an existing selection at its visual end", edit.Input.SelectionLength == 0 && edit.Input.CaretIndex == edit.Input.Text.Length);
+            edit.Input.SelectAll();edit.Navigate(System.Windows.Input.Key.Left,false);
+            edit.Navigate(System.Windows.Input.Key.Right,true);edit.Navigate(System.Windows.Input.Key.Right,true);
+            check("Repeated Shift Right extends from the active visual caret", edit.Input.SelectionStart == 0 && edit.Input.SelectionLength == 2);
+        }
     }
 }

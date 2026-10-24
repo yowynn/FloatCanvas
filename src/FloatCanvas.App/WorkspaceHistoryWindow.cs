@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using L = FloatCanvas.Localization.AppText;
@@ -12,36 +13,62 @@ internal sealed class WorkspaceHistoryWindow : Window
     private readonly WorkspaceRecoveryHistory history;
     private readonly CancellationTokenSource lifetime = new();
     private readonly SemaphoreSlim previewGate = new(1, 1);
-    private readonly ListBox list = new() { MinHeight = 110, MaxHeight = 420, Margin = new(0, 0, 0, 14) };
+    private readonly ListBox list = new() { MinHeight = 0, Margin = new(0, 0, 0, 12), HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    internal WorkspaceRecoveryEntry? SelectedEntry => list.SelectedItem as WorkspaceRecoveryEntry;
 
-    internal WorkspaceRecoveryEntry? SelectedEntry => (list.SelectedItem as ListBoxItem)?.Tag as WorkspaceRecoveryEntry;
-
-    internal WorkspaceHistoryWindow(WorkspaceRecoveryHistory history, IReadOnlyList<WorkspaceRecoveryEntry> entries)
+    internal WorkspaceHistoryWindow(WorkspaceRecoveryHistory history, IReadOnlyList<WorkspaceRecoveryEntry>? entries = null)
     {
         this.history = history;
-        Title = L.Get("Recovery.HistoryTitle"); Width = 620; SizeToContent = SizeToContent.Height;
-        ShowInTaskbar = false; Topmost = true; ResizeMode = ResizeMode.NoResize;
+        Title = L.Get("Recovery.HistoryTitle"); Width = 620; Height = 560; MinHeight = 220; MinWidth = 280;
+        MaxHeight = Math.Max(220, SystemParameters.WorkArea.Height); Height = Math.Min(Height, MaxHeight);
+        ShowInTaskbar = false; Topmost = true; ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Icon = AppIcon.WindowImage;
-        var panel = new StackPanel { Margin = new(18) };
-        panel.Children.Add(new TextBlock { Text = L.Get("Recovery.HistoryHint"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 12) });
+        var panel = new Grid { Margin = new(18) };
+        panel.RowDefinitions.Add(new() { Height = GridLength.Auto }); panel.RowDefinitions.Add(new()); panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var hint = new TextBlock { Text = L.Get("Recovery.HistoryHint"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 12) };
+        panel.Children.Add(hint);
         ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
-        VirtualizingPanel.SetIsVirtualizing(list, true);
-        foreach (var entry in entries) list.Items.Add(CreateItem(entry));
-        list.SelectedIndex = 0;
-        panel.Children.Add(list);
+        ScrollViewer.SetCanContentScroll(list, true); VirtualizingPanel.SetIsVirtualizing(list, true);
+        VirtualizingPanel.SetVirtualizationMode(list, VirtualizationMode.Recycling);
+        var factory = new FrameworkElementFactory(typeof(ContentControl));
+        factory.SetValue(FrameworkElement.MinHeightProperty, 106d);
+        factory.SetBinding(ContentControl.ContentProperty, new Binding { Converter = new RowConverter(this) });
+        list.ItemTemplate = new DataTemplate { VisualTree = factory };
+        Grid.SetRow(list, 1); panel.Children.Add(list);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var restore = new Button { Content = L.Get("Recovery.Restore"), IsDefault = true, MinWidth = 90,
-            Padding = new(12, 6, 12, 6), Margin = new(0, 0, 8, 0) };
+            IsEnabled = false, Padding = new(12, 6, 12, 6), Margin = new(0, 0, 8, 0) };
         restore.Click += (_, _) => DialogResult = SelectedEntry is not null;
+        list.SelectionChanged += (_, _) => restore.IsEnabled = SelectedEntry is not null;
         buttons.Children.Add(restore);
         buttons.Children.Add(new Button { Content = L.Get("Recovery.Cancel"), IsCancel = true, MinWidth = 90, Padding = new(12, 6, 12, 6) });
-        panel.Children.Add(buttons);
-        Content = panel;
+        Grid.SetRow(buttons, 2); panel.Children.Add(buttons); Content = panel;
         AppWindowChrome.ApplyDialog(this);
         Closed += (_, _) => lifetime.Cancel();
+        if (entries is not null) { list.ItemsSource = entries; list.SelectedIndex = 0; }
+        else Loaded += async (_, _) =>
+        {
+            hint.Text = L.Get("Recovery.PreviewLoading");
+            try
+            {
+                var loaded = await history.GetEntriesAsync(lifetime.Token);
+                if (lifetime.IsCancellationRequested) return;
+                list.ItemsSource = loaded; list.SelectedIndex = 0;
+                hint.Text = L.Get(loaded.Count == 0 ? "Recovery.NoHistory" : "Recovery.HistoryHint");
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { if (!lifetime.IsCancellationRequested) hint.Text = "⚠ " + ex.Message; }
+        };
     }
 
-    private ListBoxItem CreateItem(WorkspaceRecoveryEntry entry)
+    private sealed class RowConverter(WorkspaceHistoryWindow owner) : IValueConverter
+    {
+        public object? Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
+            value is WorkspaceRecoveryEntry entry ? owner.CreateItem(entry) : null;
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => Binding.DoNothing;
+    }
+
+    private Grid CreateItem(WorkspaceRecoveryEntry entry)
     {
         var row = new Grid();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new(160) });
@@ -57,20 +84,20 @@ internal sealed class WorkspaceHistoryWindow : Window
         text.Children.Add(new TextBlock { Text = entry.SavedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), FontSize = 14, FontWeight = FontWeights.SemiBold });
         text.Children.Add(new TextBlock { Text = entry.SourceFile is not null ? (entry.IsCurrent ? L.Get("Recovery.LatestWorkspace") + " · " : "") + Path.GetFileName(entry.SourceFile) : L.Get(entry.IsCurrent ? "Recovery.LatestWorkspace" : "Recovery.HistoryWorkspace"), Margin = new(0, 7, 0, 0), Opacity = .7 });
         Grid.SetColumn(text, 1); row.Children.Add(text);
-        var item = new ListBoxItem { Tag = entry, Content = row, Padding = new(10, 8, 10, 8), HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        bool requested = false;
-        item.Loaded += async (_, _) =>
+        row.Margin = new(10, 8, 10, 8);
+        CancellationTokenSource? previewLifetime = null;
+        row.Loaded += async (_, _) =>
         {
-            if (requested) return;
-            requested = true;
-            await LoadPreviewAsync(entry, image, placeholder);
+            previewLifetime?.Cancel(); previewLifetime?.Dispose();
+            previewLifetime = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            await LoadPreviewAsync(entry, image, placeholder, previewLifetime.Token);
         };
-        return item;
+        row.Unloaded += (_, _) => { previewLifetime?.Cancel(); previewLifetime?.Dispose(); previewLifetime = null; };
+        return row;
     }
 
-    private async Task LoadPreviewAsync(WorkspaceRecoveryEntry entry, Image image, TextBlock placeholder)
+    private async Task LoadPreviewAsync(WorkspaceRecoveryEntry entry, Image image, TextBlock placeholder, CancellationToken token)
     {
-        var token = lifetime.Token;
         try
         {
             await previewGate.WaitAsync(token);
@@ -79,6 +106,7 @@ internal sealed class WorkspaceHistoryWindow : Window
             finally { previewGate.Release(); }
             token.ThrowIfCancellationRequested();
             if (bytes is null) { placeholder.Text = L.Get("Recovery.NoPreview"); return; }
+            _ = FloatCanvas.Rendering.ImageDecodeBudget.ReadPixelCount(bytes);
             using var stream = new MemoryStream(bytes, writable: false);
             var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad;
             // Stored thumbnails are already bounded. A fixed decode width would greatly

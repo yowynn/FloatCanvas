@@ -77,7 +77,15 @@ Windows x64 二进制包由仓库的 [Releases](https://github.com/yowynn/FloatC
 
 ## 从源码构建
 
-需要 Windows x64 和 .NET SDK 10.0.402，补丁版本由 `global.json` 解析。
+需要 Windows x64、.NET SDK 10.0.402（补丁版本由 `global.json` 解析），以及 Visual Studio / Build Tools 的“使用 C++ 的桌面开发”工作负载，包含 MSVC x64/x86 编译器和 Windows SDK。原生覆盖层与恢复启动器使用该工具链；仅安装 .NET SDK 不能完成构建。
+
+可在 Visual Studio Installer 中勾选上述工作负载，或运行已下载的微软 Build Tools 安装器：
+
+```powershell
+./vs_BuildTools.exe --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait
+```
+
+默认测试包括不注入输入的原生输入契约检查；真实游戏与设备测试仍需单独执行。
 
 ```powershell
 ./scripts/Build.ps1

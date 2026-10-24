@@ -23,10 +23,15 @@ internal sealed partial class DesktopSession
         {
             var group = new Controls.MenuItem { Header = L.Get(key), Icon = CommandGlyphs.Create(geometry) }; menu.Items.Add(group); return group;
         }
-        void Item(Controls.MenuItem group, string label, string geometry, Action action, string shortcut = "")
+        void Item(Controls.MenuItem group, string label, string geometry, Action action, string shortcut = "", string? command = null)
         {
             var item = new Controls.MenuItem { Header = label, InputGestureText = shortcut, Icon = CommandGlyphs.Create(geometry) };
             item.Click += (_, _) => RunUiAction(action); group.Items.Add(item);
+            if (command is not null)
+            {
+                Controls.ToolTipService.SetShowOnDisabled(item, true);
+                menu.Opened += (_, _) => { item.IsEnabled = CanExecuteUiCommand(command); item.ToolTip = UiCommandDisabledHint(command); };
+            }
         }
         var file = Group("ToolbarV2.File", CommandGlyphs.File);
         Item(file, L.Get("Feedback4.Toolbar.NewBlankCanvas"), CommandGlyphs.NewCanvas, () => _ = _newCanvasButton!.ActivateAsync(), "Ctrl+N");
@@ -37,21 +42,21 @@ internal sealed partial class DesktopSession
         Item(file, L.Get("Menu.ExportTransparent"), CommandGlyphs.ExportTransparent, () => _ = RunCommand(() => ExportAsync(true)));
         Item(file, L.Get("Desktop.RecoveryHistory"), CommandGlyphs.History, () => _ = RunCommand(RestoreWorkspaceHistoryAsync));
         var edit = Group("ToolbarV2.Edit", CommandGlyphs.EditObjects);
-        Item(edit, L.Get("ToolbarV2.Undo"), CommandGlyphs.Undo, Undo, "Ctrl+Z");
-        Item(edit, L.Get("ToolbarV2.Redo"), CommandGlyphs.Redo, Redo, "Ctrl+Y");
+        Item(edit, L.Get("ToolbarV2.Undo"), CommandGlyphs.Undo, Undo, "Ctrl+Z", "undo");
+        Item(edit, L.Get("ToolbarV2.Redo"), CommandGlyphs.Redo, Redo, "Ctrl+Y", "redo");
         edit.Items.Add(new Controls.Separator());
-        Item(edit, L.Get("ToolbarV2.Copy"), CommandGlyphs.Copy, CopySelection, "Ctrl+C");
+        Item(edit, L.Get("ToolbarV2.Copy"), CommandGlyphs.Copy, CopySelection, "Ctrl+C", "copy");
         Item(edit, L.Get("ToolbarV2.Paste"), CommandGlyphs.Paste, () => _ = RunCommand(PasteAsync), "Ctrl+V");
-        Item(edit, L.Get("ToolbarV2.Duplicate"), CommandGlyphs.Duplicate, () => { _editor.Cancel(); Active.DuplicateSelection(); }, "Ctrl+D");
-        Item(edit, L.Get("Layers.Group"), CommandGlyphs.Group, () => { _editor.Cancel(); Active.GroupSelection(); }, "Ctrl+G");
-        Item(edit, L.Get("Layers.Ungroup"), CommandGlyphs.Ungroup, () => { _editor.Cancel(); Active.UngroupSelection(); }, "Ctrl+Shift+G");
-        Item(edit, L.Get("ToolbarV2.Delete"), CommandGlyphs.Delete, () => { _editor.Cancel(); Active.DeleteSelection(); }, "Delete");
+        Item(edit, L.Get("ToolbarV2.Duplicate"), CommandGlyphs.Duplicate, () => { _editor.Cancel(); Active.DuplicateSelection(); }, "Ctrl+D", "duplicate");
+        Item(edit, L.Get("Layers.Group"), CommandGlyphs.Group, () => { _editor.Cancel(); Active.GroupSelection(); }, "Ctrl+G", "group");
+        Item(edit, L.Get("Layers.Ungroup"), CommandGlyphs.Ungroup, () => { _editor.Cancel(); Active.UngroupSelection(); }, "Ctrl+Shift+G", "ungroup");
+        Item(edit, L.Get("ToolbarV2.Delete"), CommandGlyphs.Delete, () => { _editor.Cancel(); Active.DeleteSelection(); }, "Delete", "delete");
         var drawing = Group("ToolbarV2.DrawingTools", CommandGlyphs.DrawingTools);
         foreach (var tool in new[] { EditorTool.Select, EditorTool.Eraser, EditorTool.Freehand, EditorTool.Highlighter, EditorTool.Line, EditorTool.Rectangle,
             EditorTool.Ellipse, EditorTool.Text, EditorTool.Number, EditorTool.Symbol, EditorTool.Emoji }) drawing.Items.Add(ToolMenuItem(tool));
         var images = Group("ToolbarV2.ImageTools", CommandGlyphs.ImageTools);
         Item(images, L.Get("Toolbar.Image"), CommandGlyphs.Image, () => _ = RunCommand(() => ImportImagesAsync()), "I");
-        Item(images, L.Get("Menu.ReplaceImage"), CommandGlyphs.ReplaceImage, () => _ = RunCommand(() => ImportImagesAsync(null, true)));
+        Item(images, L.Get("Menu.ReplaceImage"), CommandGlyphs.ReplaceImage, () => _ = RunCommand(() => ImportImagesAsync(null, true)), command: "replace-image");
         images.Items.Add(new Controls.Separator());
         foreach (var tool in new[] { EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate }) images.Items.Add(ToolMenuItem(tool));
         var canvas = Group("ToolbarV2.Canvas", CommandGlyphs.CanvasTools);
@@ -71,7 +76,7 @@ internal sealed partial class DesktopSession
         Item(windows, L.Get("ToolbarV2.Properties"), CommandGlyphs.Properties, ToggleInspector, "Enter"); Item(windows, L.Get("ToolbarV2.Layers"), CommandGlyphs.Layers, ToggleLayers, "Ctrl+L");
         Item(windows, L.Get("ToolOptions.Title"), CommandGlyphs.ToolOptions, OpenCurrentToolOptions, "Ctrl+T");
         Item(windows, L.Get("Stamp.LibraryTitle"), CommandGlyphs.Stamp, ShowStampLibrary, "-");
-        Item(edit, L.Get("Feedback3.Toolbar.NewStamp"), CommandGlyphs.NewStamp, SaveStampSelection, "+");
+        Item(edit, L.Get("Feedback3.Toolbar.NewStamp"), CommandGlyphs.NewStamp, SaveStampSelection, "+", "save-stamp");
         menu.Items.Add(new Controls.Separator());
         var welcome = new Controls.MenuItem {Header=L.Get("Welcome.Open"),Icon=CommandGlyphs.Create(CommandGlyphs.Welcome)};
         welcome.Click+=(_,_)=>RunUiAction(()=>OpenWelcome(true)); menu.Items.Add(welcome);
@@ -83,6 +88,11 @@ internal sealed partial class DesktopSession
         var updates = new Controls.MenuItem { Header = L.Get("Updates.Title"), Icon = CommandGlyphs.Create(CommandGlyphs.Updates) };
         updates.Click += (_, _) => RunUiAction(ShowUpdates); menu.Items.Add(updates);
         var system = Group("Menu.SystemDiagnostics",CommandGlyphs.SystemDiagnostics);
+        Item(system, L.Get("Engineering.ExportDiagnostics"), CommandGlyphs.DiagnosticExport, () => DiagnosticExportWindow.ShowFor(_toolbar, UsesEnhancedOverlay));
+        var help = Group("Audit.Help", CommandGlyphs.Help);
+        Item(help, L.Get("Audit.UserGuide"), CommandGlyphs.Guide, AppHelp.OpenGuide);
+        Item(help, L.Get("Settings.Shortcuts"), CommandGlyphs.Shortcuts, AppHelp.OpenShortcuts);
+        Item(help, L.Get("Audit.ReportIssue"), CommandGlyphs.ReportIssue, AppHelp.ReportIssue);
         Item(system,L.Get("Menu.OpenInstallDirectory"),CommandGlyphs.InstallDirectory,()=>System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppContext.BaseDirectory){UseShellExecute=true}));
         Item(system,L.Get("Menu.OpenUserDataDirectory"),CommandGlyphs.UserDataDirectory,()=>{System.IO.Directory.CreateDirectory(ApplicationPaths.ProfileDirectory);System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ApplicationPaths.ProfileDirectory){UseShellExecute=true});});
         var pass = new Controls.MenuItem { Header = L.Get("ToolbarV2.PassThrough"), InputGestureText = FormatHotkey(_settings.Toggle), Icon = CommandGlyphs.Create(CommandGlyphs.PassThrough) };

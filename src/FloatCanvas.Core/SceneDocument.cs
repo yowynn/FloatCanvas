@@ -50,7 +50,7 @@ public sealed class CanvasElement
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Name { get; set; }
     public ElementKind Kind { get; set; }
-    public List<PointD> Points { get; set; } = [];
+    public PointCollection Points { get; set; } = [];
     public double Width { get; set; }
     public double Height { get; set; }
     /// <summary>Null uses the element kind's default; text and box shapes resize freely.</summary>
@@ -87,7 +87,7 @@ public sealed class CanvasElement
     public bool Locked { get; set; }
     public CanvasElement Clone(bool newId = false) => new()
     {
-        Id = newId ? Guid.NewGuid() : Id, Name = Name, Kind = Kind, Points = [.. Points], Width = Width, Height = Height,
+        Id = newId ? Guid.NewGuid() : Id, Name = Name, Kind = Kind, Points = Points.Snapshot(), Width = Width, Height = Height,
         CornerRadius = CornerRadius, Symbol = Symbol, GroupId = GroupId, ConstrainAspect = ConstrainAspect, TextFrameFixed = TextFrameFixed,
         Transform = Transform, ProjectivePlacement = ProjectivePlacement, IsBillboard = IsBillboard,
         BillboardAnchor = BillboardAnchor, BillboardHeight = BillboardHeight, Style = Style.Clone(), Text = Text, Number = Number, AssetId = AssetId,

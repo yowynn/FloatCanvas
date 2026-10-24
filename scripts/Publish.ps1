@@ -3,7 +3,8 @@ param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
     [string]$Version,
     [string]$OutputDirectory,
-    [string]$ArtifactsPath
+    [string]$ArtifactsPath,
+    [switch]$ValidationOnly
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -13,8 +14,12 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = [string]$project.Project.PropertyGroup.Version
 }
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw 'A valid release version is required.' }
+if (-not $ValidationOnly) {
+    if ($Configuration -ne 'Release') { throw 'Formal publication requires Release configuration. Use -ValidationOnly for local package validation.' }
+    & (Join-Path $PSScriptRoot 'Protect-Release.ps1') -Mode Preflight
+}
 $distRoot = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    [IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
+    [IO.Path]::GetFullPath((Join-Path $projectRoot $(if ($ValidationOnly) { 'dist-validation' } else { 'dist' })))
 } else {
     [IO.Path]::GetFullPath($OutputDirectory)
 }
@@ -49,6 +54,7 @@ $stagingPackage = Assert-DistPath (Join-Path $stagingRoot $packageName)
 $stagingZip = Assert-DistPath (Join-Path $distRoot ".publish-$runId.zip")
 $finalPackage = Assert-DistPath (Join-Path $distRoot $packageName)
 $finalZip = Assert-DistPath (Join-Path $distRoot ($packageName + '.zip'))
+if ($ValidationOnly -and (Test-Path -LiteralPath ($finalZip + '.release.json'))) { throw 'A validation package cannot replace a signed release output. Choose a separate OutputDirectory.' }
 $backupPackage = Assert-DistPath (Join-Path $distRoot ".previous-$runId")
 $backupZip = Assert-DistPath (Join-Path $distRoot ".previous-$runId.zip")
 $newPackageInstalled = $false
@@ -56,15 +62,20 @@ $newZipInstalled = $false
 $replacementCommitted = $false
 Push-Location $projectRoot
 try {
-    # Keep small RID-specific lock files in source obj folders, preserving committed dependency locks.
-    # Optional artifacts redirection moves build intermediates and project.assets.json, not these lock files.
+    & (Join-Path $PSScriptRoot 'Test-PublishDependencies.ps1') -ProjectRoot $projectRoot
+    # RID locks are reviewed alongside normal test locks; publishing cannot silently resolve a new graph.
     $publishArguments = @('publish', 'src/FloatCanvas.App/FloatCanvas.App.csproj', '-c', $Configuration,
         '-r', 'win-x64', '--self-contained', 'false', '-o', $stagingPackage,
         "-p:Version=$Version", '-p:UseAppHost=true', '-p:DebugSymbols=false', '-p:DebugType=None',
-        '-p:PublishTrimmed=false', '-p:PublishSingleFile=false', '-p:NuGetLockFilePath=obj/packages.publish.win-x64.lock.json')
+        '-p:PublishTrimmed=false', '-p:PublishSingleFile=false', '-p:NuGetLockFilePath=packages.win-x64.lock.json', '-p:RestoreLockedMode=true')
     if ($null -ne $artifactsRoot) { $publishArguments += @('--artifacts-path', $artifactsRoot) }
     & dotnet @publishArguments
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
+    # Keep startup recovery independent of the managed files being replaced.
+    Move-Item -LiteralPath (Join-Path $stagingPackage 'FloatCanvas.exe') -Destination (Join-Path $stagingPackage 'FloatCanvas.Host.exe')
+    $launcherBuild = Assert-DistPath (Join-Path $distRoot ".launcher-$runId")
+    & (Join-Path $PSScriptRoot 'Build-Launcher.ps1') -OutputDirectory $launcherBuild
+    Copy-Item -LiteralPath (Join-Path $launcherBuild 'FloatCanvas.exe') -Destination $stagingPackage
     foreach ($required in @('FloatCanvas.exe', 'FloatCanvas.dll', 'FloatCanvas.Core.dll', 'FloatCanvas.Localization.dll',
         'FloatCanvas.Rendering.dll', 'FloatCanvas.Storage.dll', 'FloatCanvas.Windows.dll', 'FloatCanvas.SystemOverlay.dll', 'SkiaSharp.dll',
         'SkiaSharp.HarfBuzz.dll', 'HarfBuzzSharp.dll', 'libSkiaSharp.dll', 'libHarfBuzzSharp.dll',
@@ -100,6 +111,7 @@ try {
         $rootGuide = [IO.File]::ReadAllText($guidePath).Replace('(../CHANGELOG.md)', '(CHANGELOG.md)')
         [IO.File]::WriteAllText((Join-Path $stagingPackage $guide), $rootGuide, [Text.UTF8Encoding]::new($false))
     }
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'Docs/Release-Trust.md') -Destination $publicDocs
     foreach ($publicFile in @('README.md', 'README.en.md', 'LICENSE', 'CHANGELOG.md')) {
         $sourceFile = Join-Path $projectRoot $publicFile
         if ($publicFile -in @('README.md', 'README.en.md')) {
@@ -127,10 +139,18 @@ try {
     }
     $manifest = [pscustomobject]@{
         Product = '浮绘 FloatCanvas'; Version = $Version; RuntimeIdentifier = 'win-x64'; SelfContained = $false
+        DistributionTrust = $(if ($ValidationOnly) { 'UnsignedValidation' } else { 'PublisherSigned' })
         Configuration = $Configuration; PublishedAt = [DateTimeOffset]::Now.ToString('o'); RequiredFrameworks = $requiredFrameworks
         Validation = $(if ($Version.Contains('-')) { 'Preview build. See User-Guide.md for platform support and feature limitations.' }
             else { 'Release build. See User-Guide.md for platform support and feature limitations.' })
     }
+    $components = @($assets.libraries.PSObject.Properties | Where-Object { $_.Value.type -eq 'package' -and $_.Name -notmatch '(?i)NativeAssets\.macOS/' } | ForEach-Object {
+        $parts = $_.Name.Split('/')
+        [ordered]@{ type = 'library'; name = $parts[0]; version = $parts[1]; purl = "pkg:nuget/$($_.Name)";
+            hashes = @(@{ alg = 'SHA-512'; content = [Convert]::ToHexString([Convert]::FromBase64String($_.Value.sha512)).ToLowerInvariant() }) }
+    })
+    [ordered]@{ bomFormat = 'CycloneDX'; specVersion = '1.6'; version = 1; components = $components } |
+        ConvertTo-Json -Depth 9 | Set-Content -LiteralPath (Join-Path $stagingPackage 'DEPENDENCIES.cdx.json') -Encoding utf8
     # NativeAssets packages ship PDBs as native runtime assets, independently of DebugSymbols.
     # Filter only this invocation's verified staging tree, never source/cache/previous packages.
     $stagingRoot = Assert-DistPath $stagingRoot
@@ -162,8 +182,10 @@ try {
         @($packageFiles | ForEach-Object { [IO.Path]::GetRelativePath($stagingPackage, $_.FullName).Replace('\', '/') }) + 'PACKAGE-INFO.json' | Sort-Object
     )
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $stagingPackage 'PACKAGE-INFO.json') -Encoding UTF8
+    if (-not $ValidationOnly) { & (Join-Path $PSScriptRoot 'Protect-Release.ps1') -Mode SignPackage -PackageDirectory $stagingPackage }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::CreateFromDirectory($stagingRoot, $stagingZip, [IO.Compression.CompressionLevel]::Optimal, $false)
+    if (-not $ValidationOnly) { & (Join-Path $PSScriptRoot 'Protect-Release.ps1') -Mode SignManifest -ZipPath $stagingZip -Version $Version }
 
     # Keep the previous complete distribution recoverable until the new folder and ZIP both exist.
     if (Test-Path -LiteralPath $finalPackage) { Move-Item -LiteralPath (Assert-DistPath $finalPackage) -Destination (Assert-DistPath $backupPackage) }
@@ -174,6 +196,7 @@ try {
     $newZipInstalled = $true
     $zipHash = (Get-FileHash -LiteralPath $finalZip -Algorithm SHA256).Hash.ToLowerInvariant()
     "$zipHash  $packageName.zip" | Set-Content -LiteralPath ($finalZip + '.sha256') -Encoding ASCII
+    if (-not $ValidationOnly) { [IO.File]::Move($stagingZip + '.release.json', $finalZip + '.release.json', $true) }
     $replacementCommitted = $true
     foreach ($backup in @($backupPackage, $backupZip)) {
         if (Test-Path -LiteralPath $backup) {
@@ -196,7 +219,7 @@ catch {
     throw
 }
 finally {
-    foreach ($temporary in @($stagingRoot, $stagingZip)) {
+    foreach ($temporary in @($stagingRoot, $stagingZip, $stagingZip + '.release.json', (Join-Path $distRoot ".launcher-$runId"))) {
         if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath (Assert-DistPath $temporary) -Recurse -Force }
     }
     Pop-Location

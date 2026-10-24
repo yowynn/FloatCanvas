@@ -14,6 +14,7 @@ internal sealed class CanvasPresetGallery : UserControl
     internal readonly PixelTilePanel OfficialTiles = new(5, 36, 4), UserTiles = new(5, 36, 4);
     private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
     private readonly ScrollViewer userScroll;
+    private readonly Button undoButton;
     private CanvasSettings current = new();
     internal string SelectedId { get; private set; } = "";
     internal event Action<CanvasPresetParameters>? Applied;
@@ -33,6 +34,8 @@ internal sealed class CanvasPresetGallery : UserControl
         DockPanel.SetDock(headings, Dock.Top); body.Children.Add(headings);
         var userArea = new Grid { MinHeight = 156 }; userArea.Children.Add(empty);
         userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        undoButton = new Button { Content = L.Get("Audit.UndoResource"), FontSize = 11, MinHeight = 28 };
+        undoButton.Click += (_, _) => Run(() => { library.UndoResourceChange(); Refresh(current); }); DockPanel.SetDock(undoButton, Dock.Bottom); body.Children.Add(undoButton);
         userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body;
         Refresh(new());
     }
@@ -41,6 +44,7 @@ internal sealed class CanvasPresetGallery : UserControl
     {
         current = settings.Clone(); var official = library.Official; var users = library.User;
         if (library.All.FirstOrDefault(p => p.Id == SelectedId) is not { } selected || !selected.Parameters.Matches(CanvasPresetParameters.From(current))) SelectedId = "";
+        undoButton.IsEnabled = library.CanUndoResourceChange;
         var focus = TileCollection.Capture(this, Tiles());
         TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)),
             (button, id) => UpdateTile(button, official.Single(p => p.Id == id)));
@@ -86,14 +90,14 @@ internal sealed class CanvasPresetGallery : UserControl
     }
     private Button Tile(CanvasPreset preset)
     {
-        var button = new Button { Tag = preset.Id, MinWidth = 0, MinHeight = 0, Padding = new(4), Margin = new(0), BorderThickness = new(1) };
+        var button = new SelectionTileButton { Tag = preset.Id, MinWidth = 0, MinHeight = 0, Padding = new(4), Margin = new(0), BorderThickness = new(1) };
         ToolTipService.SetInitialShowDelay(button, 600); button.Click += (_, _) => Apply(preset.Id); UpdateTile(button, preset); return button;
     }
     private void UpdateTile(Button button, CanvasPreset preset)
     {
         button.ToolTip = preset.Name; AutomationProperties.SetName(button, preset.Name);
         button.Content = Preview(preset.Parameters);
-        button.SetResourceReference(BorderBrushProperty, preset.Id == SelectedId ? "CanvasAccent" : "CanvasBorder");
+        ((SelectionTileButton)button).SetSelected(preset.Id == SelectedId);
     }
     private OverlayContextMenu Menu(CanvasPreset preset)
     {
