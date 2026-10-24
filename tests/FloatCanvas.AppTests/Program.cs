@@ -23,6 +23,7 @@ internal static class Program
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
             if (args.Contains("--audit-data-only")) { DataRemediationTests.Run(Assert); return 0; }
             if (args.Contains("--audit-ux-only")) { AuditUxTests.Run(Assert); return 0; }
+            if (args.Contains("--preset-history-only")) { PresetHistoryTests.Run(Assert); PresetHistoryKeyboardTests.Run(Assert); return 0; }
             if (args.Contains("--audit-ux-preview")) { AuditUxPreview.Run(); return 0; }
             if (args.Contains("--audit-engineering-only")) { EngineeringAuditTests.Run(Assert); UpdateInstallerTests.Run(Assert); UpdateCacheTests.Run(Assert); return 0; }
             if (args.Contains("--update-cache-only")) { UpdateCacheTests.Run(Assert); return 0; }
@@ -130,6 +131,10 @@ internal static class Program
             if (args.Contains("--update-window-only")) { AppUpdateWindowTests.Run(Assert); return 0; }
             if (args.Contains("--preset-isolation-only")) { PresetIsolationTests.Run(Assert); return 0; }
             if (args.Contains("--palette-layout-only")) { PaletteLayoutTests.Run(Assert); return 0; }
+            if (args.Contains("--color-popup-ownership-only")) { ColorPopupOwnershipTests.Run(Assert); return 0; }
+            if (args is ["--color-popup-ownership-preview", var colorPopupOutput, var colorPopupBackend])
+            { ColorPopupOwnershipTests.Preview(colorPopupOutput, colorPopupBackend == "overlay"); return 0; }
+            if (args.Contains("--preset-selection-appearance-only")) { PresetSelectionAppearanceTests.Run(Assert); return 0; }
             if (args.Contains("--feedback4-geometry-only")) { Feedback4GeometryTests.Run(Assert); return 0; }
             if (args.Contains("--feedback4-panels-only")) { NativeInputRoutingFixture.Run(Assert, "feedback4-panels"); return 0; }
             if (args.Contains("--feedback4-workspace-only")) { NativeInputRoutingFixture.Run(Assert, "feedback4-workspace"); return 0; }
@@ -212,6 +217,8 @@ internal static class Program
             OverlayModeTests.Run(Assert);
             ApplicationDiagnosticsTests.Run(Assert);
             AuditUxTests.Run(Assert);
+            PresetHistoryTests.Run(Assert);
+            PresetHistoryKeyboardTests.Run(Assert);
             EngineeringAuditTests.Run(Assert);
             NewCanvasButtonTests.Run(Assert);
             WelcomeSessionTests.Run(Assert);
@@ -254,6 +261,8 @@ internal static class Program
             ToolOptionsPanelTests.Run(Assert);
             Feedback4OptionsTests.Run(Assert);
             PaletteLayoutTests.Run(Assert);
+            ColorPopupOwnershipTests.Run(Assert);
+            PresetSelectionAppearanceTests.Run(Assert);
             ToolOptionsKeyboardRouteTests.Run(Assert);
             DataRemediationTests.Run(Assert);
             Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult();

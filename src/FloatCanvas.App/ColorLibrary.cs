@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
@@ -42,19 +43,13 @@ internal sealed class ColorLibrary
         }
     }
     private State state = new();
-    private readonly Stack<List<SavedColor>> undo = new();
-    private bool restoringResource;
-    internal bool CanUndoResourceChange => undo.Count > 0;
-    internal void UndoResourceChange()
-    {
-        if (!undo.TryPeek(out var previous)) return;
-        var next = Copy(); next.Swatches = [.. previous]; restoringResource = true;
-        try { Persist(next); undo.Pop(); } finally { restoringResource = false; }
-    }
+    private readonly PresetHistory<SavedColor> history;
+    internal Func<EditorSession>? HistorySession { get; set; }
     public ColorLibrary(string? path = null)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "colors.json"));
         compatibility = new(this.path);
+        history = new(this.path, color => color.Id, color => color, JsonOptions);
         if (!File.Exists(this.path)) return;
         try
         {
@@ -78,25 +73,32 @@ internal sealed class ColorLibrary
         if (string.IsNullOrWhiteSpace(name) || name.Length > 80) throw new ArgumentException(L.Get("Preset.InvalidName"));
         if (state.Swatches.Count >= 100) throw new InvalidDataException(L.Get("Color.InvalidLibrary"));
         var saved = new SavedColor("color-" + Guid.NewGuid().ToString("N"), name.Trim(), color);
-        var next = Copy(); next.Swatches.Add(saved); Persist(next); return saved;
+        var next = Copy(); next.Swatches.Add(saved); Persist(next, L.Format("PresetHistory.Create", saved.Name)); return saved;
     }
     public void Rename(string id, string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length > 80) throw new ArgumentException(L.Get("Preset.InvalidName"));
         var next = Copy(); int index = next.Swatches.FindIndex(p => p.Id == id);
-        if (index < 0) throw new KeyNotFoundException(id); next.Swatches[index] = next.Swatches[index] with { Name = name.Trim() }; Persist(next);
+        if (index < 0) throw new KeyNotFoundException(id); next.Swatches[index] = next.Swatches[index] with { Name = name.Trim() };
+        Persist(next, L.Format("PresetHistory.Rename", name.Trim()));
     }
     public void Update(string id, uint color)
     {
         var next = Copy(); int index = next.Swatches.FindIndex(p => p.Id == id);
-        if (index < 0) throw new KeyNotFoundException(id); next.Swatches[index] = next.Swatches[index] with { Value = color }; Persist(next);
+        if (index < 0) throw new KeyNotFoundException(id); next.Swatches[index] = next.Swatches[index] with { Value = color };
+        Persist(next, L.Format("PresetHistory.Update", next.Swatches[index].Name));
     }
-    public void Delete(string id) { var next = Copy(); next.Swatches.RemoveAll(p => p.Id == id); Persist(next); }
+    public void Delete(string id)
+    {
+        var saved = state.Swatches.FirstOrDefault(p => p.Id == id); if (saved is null) return;
+        var next = Copy(); next.Swatches.RemoveAll(p => p.Id == id); Persist(next, L.Format("PresetHistory.Delete", saved.Name));
+    }
     public void Move(string id, string beforeId, bool after = false)
     {
         if (id == beforeId) return;
         var next = Copy(); var moving = next.Swatches.Single(p => p.Id == id); var target = next.Swatches.Single(p => p.Id == beforeId);
-        next.Swatches.Remove(moving); next.Swatches.Insert(next.Swatches.IndexOf(target) + (after ? 1 : 0), moving); Persist(next);
+        next.Swatches.Remove(moving); next.Swatches.Insert(next.Swatches.IndexOf(target) + (after ? 1 : 0), moving);
+        Persist(next, L.Format("PresetHistory.Move", moving.Name), id);
     }
     public static IReadOnlyList<PaletteColor> Palette(ColorRole role)
     {
@@ -116,7 +118,7 @@ internal sealed class ColorLibrary
     public bool RemovePinned(uint color)
     {
         if (!Pinned.Contains(color)) return false;
-        var next = Copy(); next.Swatches.RemoveAll(p => p.Value == color); Persist(next); return true;
+        var next = Copy(); next.Swatches.RemoveAll(p => p.Value == color); Persist(next, L.Format("PresetHistory.Delete", ToHtml(color))); return true;
     }
     public static string ToHtml(uint color, bool includeAlpha = true) => "#" + (includeAlpha ? color.ToString("X8", CultureInfo.InvariantCulture) : (color & 0xFFFFFF).ToString("X6", CultureInfo.InvariantCulture));
     public static bool TryParseHtml(string? text, out uint color)
@@ -129,15 +131,18 @@ internal sealed class ColorLibrary
         return true;
     }
     private State Copy() => new() { History = [.. state.History], Pinned = [], Swatches = [.. state.Swatches] };
-    private void Persist(State next)
+    private void Persist(State next, string? label = null, string? movedId = null)
     {
-        var previous = state.Swatches.ToList();
-        bool changed = !previous.SequenceEqual(next.Swatches);
-        compatibility.Save(next,JsonOptions); state = next;
-        if (changed && !restoringResource)
+        if (state.Swatches.SequenceEqual(next.Swatches))
         {
-            undo.Push(previous);
-            if (undo.Count > 20) { var keep = undo.Take(20).Reverse().ToArray(); undo.Clear(); foreach (var value in keep) undo.Push(value); }
+            if (state.History.SequenceEqual(next.History) && state.Pinned.SequenceEqual(next.Pinned)) return;
+            history.Write(() => { compatibility.Save(next, JsonOptions); state = next; }); return;
         }
+        history.Execute(label!, state.Swatches, next.Swatches, HistorySession, () => state.Swatches, values =>
+        {
+            if (values.Count > 100) throw new InvalidDataException(L.Get("Color.InvalidLibrary"));
+            var saved = Copy(); saved.Swatches = values;
+            compatibility.Save(saved, JsonOptions); state = saved;
+        }, movedId);
     }
 }

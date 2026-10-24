@@ -28,20 +28,14 @@ internal sealed class ToolPresetLibrary
     private readonly string path;
     private readonly CompatibleConfiguration compatibility;
     private List<ToolPreset> presets = [];
-    private readonly Stack<List<ToolPreset>> undo = new();
-    private bool restoringResource;
-    internal bool CanUndoResourceChange => undo.Count > 0;
-    internal void UndoResourceChange()
-    {
-        if (!undo.TryPeek(out var previous)) return;
-        restoringResource = true; try { Persist(previous.Select(p => p.Clone()).ToList()); undo.Pop(); } finally { restoringResource = false; }
-    }
-    private void RememberResourceChange(List<ToolPreset> previous) { undo.Push(previous); if (undo.Count > 20) { var keep = undo.Take(20).Reverse().ToArray(); undo.Clear(); foreach (var value in keep) undo.Push(value); } }
+    private readonly PresetHistory<ToolPreset> history;
+    internal Func<EditorSession>? HistorySession { get; set; }
 
     public ToolPresetLibrary(string? path = null)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "tool-presets.json"));
         compatibility = new(this.path);
+        history = new(this.path, preset => preset.Id, preset => preset.Clone(), JsonOptions);
         if (!File.Exists(this.path)) return;
         try
         {
@@ -72,7 +66,8 @@ internal sealed class ToolPresetLibrary
     {
         var moving = FindUser(id); var target = FindUser(beforeId);
         if (id == beforeId || Family(moving.Parameters.Tool) != Family(target.Parameters.Tool)) return;
-        var next = presets.ToList(); next.Remove(moving); next.Insert(next.IndexOf(target) + (after ? 1 : 0), moving); Persist(next);
+        var next = presets.ToList(); next.Remove(moving); next.Insert(next.IndexOf(target) + (after ? 1 : 0), moving);
+        Persist(next, L.Format("PresetHistory.Move", moving.Name), id);
     }
 
     public ToolPreset Save(string name, ToolParameters parameters)
@@ -80,26 +75,26 @@ internal sealed class ToolPresetLibrary
         Validate(name, parameters);
         if (presets.Count >= 1000) throw new InvalidDataException(L.Get("Preset.InvalidLibrary"));
         var preset = new ToolPreset { Id = "user-" + Guid.NewGuid().ToString("N"), Name = name.Trim(), Parameters = parameters.Clone() };
-        Persist(presets.Append(preset).ToList());
+        Persist(presets.Append(preset).ToList(), L.Format("PresetHistory.Create", preset.Name));
         return preset.Clone();
     }
 
     public ToolPreset Rename(string id, string name)
     {
         var preset = FindUser(id).Clone(); Validate(name, preset.Parameters); preset.Name = name.Trim();
-        Replace(preset); return preset.Clone();
+        Replace(preset, L.Format("PresetHistory.Rename", preset.Name)); return preset.Clone();
     }
 
     public ToolPreset Update(string id, ToolParameters parameters)
     {
         var preset = FindUser(id).Clone(); Validate(preset.Name, parameters); preset.Parameters = parameters.Clone();
-        Replace(preset); return preset.Clone();
+        Replace(preset, L.Format("PresetHistory.Update", preset.Name)); return preset.Clone();
     }
 
     public bool Delete(string id)
     {
-        if (!presets.Any(p => p.Id == id)) return false;
-        Persist(presets.Where(p => p.Id != id).ToList()); return true;
+        var preset = presets.FirstOrDefault(p => p.Id == id); if (preset is null) return false;
+        Persist(presets.Where(p => p.Id != id).ToList(), L.Format("PresetHistory.Delete", preset.Name)); return true;
     }
 
     /// <summary>Apply every saved parameter; fields absent from older JSON use model defaults when loaded.</summary>
@@ -107,12 +102,14 @@ internal sealed class ToolPresetLibrary
         (All.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id)).Parameters.Clone();
 
     private ToolPreset FindUser(string id) => presets.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id);
-    private void Replace(ToolPreset preset) => Persist(presets.Select(p => p.Id == preset.Id ? preset : p).ToList());
-    private void Persist(List<ToolPreset> next)
+    private void Replace(ToolPreset preset, string label) => Persist(presets.Select(p => p.Id == preset.Id ? preset : p).ToList(), label);
+    private void Persist(List<ToolPreset> next, string label, string? movedId = null)
     {
-        var previous = presets.Select(p => p.Clone()).ToList();
-        compatibility.Save(new State { Presets = next },JsonOptions); presets = next;
-        if (!restoringResource) RememberResourceChange(previous);
+        history.Execute(label, presets, next, HistorySession, () => presets, values =>
+        {
+            if (values.Count > 1000) throw new InvalidDataException(L.Get("Preset.InvalidLibrary"));
+            compatibility.Save(new State { Presets = values }, JsonOptions); presets = values;
+        }, movedId);
     }
     private static bool ValidName(string? name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 80;
     private static void Validate(string name, ToolParameters parameters)

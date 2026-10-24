@@ -54,7 +54,7 @@ internal sealed class CanvasSettingsWindow : Window
     public event Action<string?>? ResetDisplayRequested;
     public event Action<int>? CommandKey;
 
-    public CanvasSettingsWindow(CanvasPresetLibrary? library = null)
+    public CanvasSettingsWindow(CanvasPresetLibrary? library = null, Func<EditorSession>? historySession = null)
     {
         Title = L.Get("Canvas.Title"); Width = 600; Height = 590; MinWidth = 280; MinHeight = 240;
         Topmost = true; ShowInTaskbar = false; Icon = AppIcon.WindowImage;
@@ -64,6 +64,7 @@ internal sealed class CanvasSettingsWindow : Window
             catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
             { library = CanvasPresetLibrary.OfficialOnly(); status.Text = ex.Message + " " + L.Get("CanvasPreset.ReadOnly"); }
         }
+        if (historySession is not null) library.HistorySession = historySession;
         var layout = new DockPanel { Margin = new Thickness(14, 4, 14, 14) };
         var description = new TextBlock { Text = L.Get("CanvasPreset.Description"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 12) };
         DockPanel.SetDock(description, Dock.Top); layout.Children.Add(description);

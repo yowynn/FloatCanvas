@@ -14,7 +14,6 @@ internal sealed class CanvasPresetGallery : UserControl
     internal readonly PixelTilePanel OfficialTiles = new(5, 36, 4), UserTiles = new(5, 36, 4);
     private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
     private readonly ScrollViewer userScroll;
-    private readonly Button undoButton;
     private CanvasSettings current = new();
     // Session-only selection evidence; definitions, previews and application never use these snapshots.
     private CanvasPresetParameters? selectedSnapshot, selectedDefinition;
@@ -36,8 +35,6 @@ internal sealed class CanvasPresetGallery : UserControl
         DockPanel.SetDock(headings, Dock.Top); body.Children.Add(headings);
         var userArea = new Grid { MinHeight = 156 }; userArea.Children.Add(empty);
         userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        undoButton = new Button { Content = L.Get("Audit.UndoResource"), FontSize = 11, MinHeight = 28 };
-        undoButton.Click += (_, _) => Run(() => { library.UndoResourceChange(); Refresh(current); }); DockPanel.SetDock(undoButton, Dock.Bottom); body.Children.Add(undoButton);
         userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body;
         Refresh(new());
     }
@@ -49,7 +46,6 @@ internal sealed class CanvasPresetGallery : UserControl
         if (selected is null || selectedDefinition is { } definition && (!definition.Matches(selected.Parameters) || !selected.Parameters.Matches(definition)) ||
             !(selectedSnapshot ?? selected.Parameters).Matches(actual) || selectedSnapshot is { } applied && !actual.Matches(applied))
         { SelectedId = ""; selectedSnapshot = selectedDefinition = null; }
-        undoButton.IsEnabled = library.CanUndoResourceChange;
         var focus = TileCollection.Capture(this, Tiles());
         TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)),
             (button, id) => UpdateTile(button, official.Single(p => p.Id == id)));

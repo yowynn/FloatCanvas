@@ -7,10 +7,6 @@
     "zh": "已选中",
     "en": "Selected"
   },
-  "Audit.UndoResource": {
-    "zh": "撤销预设更改",
-    "en": "Undo preset change"
-  },
   "Audit.MissingFont": {
     "zh": "{0}（未安装；替代为 {1}）",
     "en": "{0} (not installed; rendered with {1})"

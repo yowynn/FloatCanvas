@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- 修复颜色二级面板点击所属面板时未收起的问题，保留父控件首次点击、内部编辑及子对话框；颜色面板可通过标题区域拖动。
+- Fix secondary color panels staying open after a click in their parent panel, preserving the parent click, internal editing and owned dialogs. Color panels can be dragged by their title area.
+- 移除预设与印章槽选中勾号；预设参数改动以选中框角落的小圆点提示，不再遮挡图标。
+- Remove selected check marks from presets and stamp slots. Indicate modified preset parameters with a small dot at the selection-border corner instead of covering the preview.
+
+- 清理预设撤销按钮移除后的颜色弹窗留白：空错误提示不再占位，真实错误按内容展开，修正后恢复紧凑高度。
+- Remove empty footer space from color popups after preset-undo removal. Error messages expand only when needed and collapse again after correction.
+
+- 移除工具、画布和颜色面板的独立“撤销预设更改”按钮与历史栈；预设的新建、删除、覆盖、重命名和排序统一加入当前画布的撤销／重做历史，支持 Ctrl+Z、Ctrl+Y 和 Ctrl+Shift+Z。
+- Remove separate preset-undo buttons and stacks from tool, canvas and color panels. Preset creation, deletion, overwrite, rename and ordering now share the current canvas's undo/redo history through Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z.
+
 - 官方与个人工具预设统一应用完整、确定的参数；旧个人预设缺少的新增参数恢复为默认值。官方预览固定，移除首次选用时继承颜色、线宽并保存为官方基线的行为，旧官方缓存不再影响应用；各工具当前工作状态继续独立保存。
 - Apply complete, deterministic parameters for official and personal tool presets, using defaults for new parameters missing from older personal presets. Keep official previews fixed, remove first-use color and stroke-width inheritance, and ignore older official baseline caches while retaining each tool's independent working state.
 

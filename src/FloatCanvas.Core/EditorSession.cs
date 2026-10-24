@@ -5,7 +5,7 @@ namespace FloatCanvas.Core;
 /// <summary>One editable document and atomic user operations. Assets are never copied into history.</summary>
 public sealed partial class EditorSession
 {
-    private sealed record HistoryEntry(string Label, SceneDocument Before, SceneDocument After, HashSet<Guid> SelectionBefore, HashSet<Guid> SelectionAfter, long Bytes, long Sequence, string[] AssetIds, long BeforeVersion, long AfterVersion);
+    private sealed record HistoryEntry(string Label, SceneDocument? Before, SceneDocument? After, HashSet<Guid>? SelectionBefore, HashSet<Guid>? SelectionAfter, long Bytes, long Sequence, string[] AssetIds, long BeforeVersion, long AfterVersion, Action? UndoOperation = null, Action? RedoOperation = null);
     private readonly List<HistoryEntry> undo = [], redo = [];
     private SceneDocument? transactionBefore;
     private HashSet<Guid>? transactionSelection;
@@ -77,6 +77,24 @@ public sealed partial class EditorSession
         catch { Cancel(); throw; }
     }
     /// <summary>
+    /// Apply an atomic resource edit and retain its inverse in the same chronological history as
+    /// scene edits. Callbacks must leave resource state unchanged when they throw. Resource entries
+    /// do not snapshot, dirty or restore the document or its selection.
+    /// </summary>
+    public void ExecuteExternal(string label, Action apply, Action undoOperation, Action redoOperation, long estimatedBytes = 0)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+        ArgumentNullException.ThrowIfNull(apply);
+        ArgumentNullException.ThrowIfNull(undoOperation);
+        ArgumentNullException.ThrowIfNull(redoOperation);
+        if (estimatedBytes < 0) throw new ArgumentOutOfRangeException(nameof(estimatedBytes));
+        if (IsTransactionActive) throw new InvalidOperationException(L.Get("History.TransactionAlreadyActive"));
+        apply();
+        redo.Clear();
+        undo.Add(new(label, null, null, null, null, estimatedBytes, ++sequence, [], ContentVersion, ContentVersion, undoOperation, redoOperation));
+        TrimHistory(); OnChanged();
+    }
+    /// <summary>
     /// Notify after direct document mutations. Outside a transaction this also invalidates committed
     /// render caches; inside a transaction only the preview changes until commit or cancellation.
     /// Prefer Execute for user edits so changes also participate in undo and recovery.
@@ -86,15 +104,21 @@ public sealed partial class EditorSession
     {
         Cancel();
         if (!CanUndo) return false;
-        var item = undo[^1]; undo.RemoveAt(undo.Count - 1); redo.Add(item);
-        Document = item.Before.Clone(); ContentVersion = item.BeforeVersion; SetSelectionCore(item.SelectionBefore); OnChanged(contentChanged: true, preserveContentVersion: true); return true;
+        var item = undo[^1];
+        if (item.UndoOperation is not null) item.UndoOperation();
+        else { Document = item.Before!.Clone(); ContentVersion = item.BeforeVersion; SetSelectionCore(item.SelectionBefore!); }
+        undo.RemoveAt(undo.Count - 1); redo.Add(item);
+        OnChanged(contentChanged: item.UndoOperation is null, preserveContentVersion: true); return true;
     }
     public bool Redo()
     {
         Cancel();
         if (!CanRedo) return false;
-        var item = redo[^1]; redo.RemoveAt(redo.Count - 1); undo.Add(item);
-        Document = item.After.Clone(); ContentVersion = item.AfterVersion; SetSelectionCore(item.SelectionAfter); OnChanged(contentChanged: true, preserveContentVersion: true); return true;
+        var item = redo[^1];
+        if (item.RedoOperation is not null) item.RedoOperation();
+        else { Document = item.After!.Clone(); ContentVersion = item.AfterVersion; SetSelectionCore(item.SelectionAfter!); }
+        redo.RemoveAt(redo.Count - 1); undo.Add(item);
+        OnChanged(contentChanged: item.RedoOperation is null, preserveContentVersion: true); return true;
     }
     public void ReplaceDocument(SceneDocument document)
     {
@@ -189,7 +213,7 @@ public sealed partial class EditorSession
             else for (int i = 1; i < d.Elements.Count; i++) if (Selected(d.Elements[i]) && !Selected(d.Elements[i - 1])) (d.Elements[i], d.Elements[i - 1]) = (d.Elements[i - 1], d.Elements[i]);
         });
     }
-    public IEnumerable<string> ReferencedAssetsIncludingHistory() => Document.ReferencedAssets.Concat(undo.Concat(redo).SelectMany(e => e.Before.ReferencedAssets.Concat(e.After.ReferencedAssets))).Concat(transactionBefore?.ReferencedAssets ?? []).Distinct(StringComparer.Ordinal);
+    public IEnumerable<string> ReferencedAssetsIncludingHistory() => Document.ReferencedAssets.Concat(undo.Concat(redo).SelectMany(e => e.AssetIds)).Concat(transactionBefore?.ReferencedAssets ?? []).Distinct(StringComparer.Ordinal);
     private void SetSelectionCore(IEnumerable<Guid> ids) { var copy = ids.ToArray(); Selection.Clear(); Selection.UnionWith(copy); }
     private void PruneSelection() => Selection.IntersectWith(Document.Elements.Select(e => e.Id));
     private void TrimHistory()

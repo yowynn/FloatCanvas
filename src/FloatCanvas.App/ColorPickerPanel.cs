@@ -18,14 +18,14 @@ internal sealed class ColorPickerPanel : UserControl
     private readonly Border preview = new() { Height = 28, Width = 42, Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(1) };
     private readonly ColorSpectrum spectrum = new();
     private readonly Slider hue = new() { Minimum = 0, Maximum = 360, Height = 20, Margin = new Thickness(0, 4, 0, 3) };
-    private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11, Margin = new Thickness(0, 5, 0, 0) };
+    private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11, Margin = new Thickness(0, 5, 0, 0), Visibility = Visibility.Collapsed };
     private readonly PixelTilePanel history = new(10, 28), pinned = new(10, 28);
     private readonly TextBlock historyHeading = Heading("Color.History"), pinnedHeading = Heading("Color.Pinned");
     private bool syncing;
-    private readonly Button undo;
     private uint value;
     private string? revealSwatch;
     internal Func<Window?>? DialogOwner { get; set; }
+    internal FrameworkElement DragHandle { get; }
     public event Action<uint>? ColorChosen;
     public event Action<uint>? DraftChanged;
     public event Action? EyedropperRequested;
@@ -48,6 +48,7 @@ internal sealed class ColorPickerPanel : UserControl
         // Reserve scrollbar space outside the ten-column color grid, even when it appears.
         var body = new StackPanel { MinWidth = 298 + SystemParameters.VerticalScrollBarWidth, Margin = new Thickness(12) };
         var title = new TextBlock { Text = L.Get(role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
+        DragHandle = title;
         body.Children.Add(title);
         body.Children.Add(historyHeading); body.Children.Add(history);
         var savedHeader = new DockPanel(); var save = IconButton(PanelActionIcon.Add, "Color.SaveSwatch", SaveSwatch);
@@ -76,8 +77,6 @@ internal sealed class ColorPickerPanel : UserControl
         actions.Children.Add(IconButton(PanelActionIcon.Eyedropper, "Color.Eyedropper", () => EyedropperRequested?.Invoke()));
         actions.Children.Add(IconButton(PanelActionIcon.Transparent, "Color.Transparent", () => Choose(0)));
         body.Children.Add(actions);
-        undo = new Button { Content = L.Get("Audit.UndoResource"), MinHeight = 28 };
-        undo.Click += (_, _) => Run(() => { library.UndoResourceChange(); RefreshCollections(); }); body.Children.Add(undo);
         error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); body.Children.Add(error);
         AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
         Content = new ScrollViewer { Content = body, MaxHeight = 520, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -102,7 +101,6 @@ internal sealed class ColorPickerPanel : UserControl
 
     public void RefreshCollections()
     {
-        undo.IsEnabled = library.CanUndoResourceChange;
         var focus = TileCollection.Capture(this, history.Children.OfType<Button>().Concat(pinned.Children.OfType<Button>()));
         TileCollection.Synchronize(history, library.History.Select(color => color.ToString("X8")), id =>
         {
@@ -183,6 +181,7 @@ internal sealed class ColorPickerPanel : UserControl
     private void InvalidInput()
     {
         error.Text = "⚠ " + L.Get("Color.InvalidHex");
+        error.Visibility = Visibility.Visible;
         hex.SetResourceReference(BorderBrushProperty, "CanvasErrorText");
         AutomationProperties.SetHelpText(hex, error.Text);
         System.Windows.Automation.Peers.UIElementAutomationPeer.FromElement(error)?.RaiseAutomationEvent(System.Windows.Automation.Peers.AutomationEvents.LiveRegionChanged);
@@ -190,12 +189,14 @@ internal sealed class ColorPickerPanel : UserControl
     }
     private void ClearInputError()
     {
-        error.Text = ""; hex.SetResourceReference(BorderBrushProperty, "CanvasBorder"); AutomationProperties.SetHelpText(hex, "");
+        error.Text = ""; error.Visibility = Visibility.Collapsed;
+        hex.SetResourceReference(BorderBrushProperty, "CanvasBorder"); AutomationProperties.SetHelpText(hex, "");
     }
     internal void Run(Action action)
     {
         try { action(); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { error.Text = "⚠ " + ex.Message; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        { error.Text = "⚠ " + ex.Message; error.Visibility = Visibility.Visible; error.BringIntoView(); }
     }
     private System.Windows.Controls.Button IconButton(PanelActionIcon icon, string key, Action action, string? shortcut = null) =>
         ActionIconButton.Create(icon, L.Get(key), () => Run(action), shortcut);

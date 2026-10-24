@@ -80,23 +80,17 @@ internal sealed class CanvasPresetLibrary
     private readonly string path;
     private readonly CompatibleConfiguration compatibility;
     private List<CanvasPreset> presets = [];
-    private readonly Stack<List<CanvasPreset>> undo = new();
-    private bool restoringResource;
-    internal bool CanUndoResourceChange => undo.Count > 0;
-    internal void UndoResourceChange()
-    {
-        if (!undo.TryPeek(out var previous)) return;
-        restoringResource = true; try { Persist(previous.Select(p => p.Clone()).ToList()); undo.Pop(); } finally { restoringResource = false; }
-    }
-    private void RememberResourceChange(List<CanvasPreset> previous) { undo.Push(previous); if (undo.Count > 20) { var keep = undo.Take(20).Reverse().ToArray(); undo.Clear(); foreach (var value in keep) undo.Push(value); } }
+    private readonly PresetHistory<CanvasPreset> history;
+    internal Func<EditorSession>? HistorySession { get; set; }
     internal bool CanEdit { get; } = true;
     internal static CanvasPresetLibrary OfficialOnly() => new(readOnly: true);
-    private CanvasPresetLibrary(bool readOnly) { path = ""; compatibility=new(path); CanEdit = !readOnly; }
+    private CanvasPresetLibrary(bool readOnly) { path = ""; compatibility=new(path); history = new(path, preset => preset.Id, preset => preset.Clone(), JsonOptions); CanEdit = !readOnly; }
 
     internal CanvasPresetLibrary(string? path = null)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "canvas-presets.json"));
         compatibility=new(this.path);
+        history = new(this.path, preset => preset.Id, preset => preset.Clone(), JsonOptions);
         if (!File.Exists(this.path)) return;
         try
         {
@@ -130,27 +124,28 @@ internal sealed class CanvasPresetLibrary
         var parameters = CanvasPresetParameters.From(settings); Validate(name, parameters);
         if (presets.Count >= 1000) throw new InvalidDataException(L.Get("CanvasPreset.InvalidLibrary"));
         var preset = new CanvasPreset { Id = "user-" + Guid.NewGuid().ToString("N"), Name = name.Trim(), Parameters = parameters };
-        Persist(presets.Append(preset).ToList()); return preset.Clone();
+        Persist(presets.Append(preset).ToList(), L.Format("PresetHistory.Create", preset.Name)); return preset.Clone();
     }
     internal void Rename(string id, string name)
     {
-        var preset = FindUser(id).Clone(); Validate(name, preset.Parameters); preset.Name = name.Trim(); Replace(preset);
+        var preset = FindUser(id).Clone(); Validate(name, preset.Parameters); preset.Name = name.Trim(); Replace(preset, L.Format("PresetHistory.Rename", preset.Name));
     }
     internal void Update(string id, CanvasSettings settings)
     {
         var preset = FindUser(id).Clone(); var parameters = CanvasPresetParameters.From(settings);
-        Validate(preset.Name, parameters); preset.Parameters = parameters; Replace(preset);
+        Validate(preset.Name, parameters); preset.Parameters = parameters; Replace(preset, L.Format("PresetHistory.Update", preset.Name));
     }
     internal bool Delete(string id)
     {
-        if (!presets.Any(p => p.Id == id)) return false;
-        Persist(presets.Where(p => p.Id != id).ToList()); return true;
+        var preset = presets.FirstOrDefault(p => p.Id == id); if (preset is null) return false;
+        Persist(presets.Where(p => p.Id != id).ToList(), L.Format("PresetHistory.Delete", preset.Name)); return true;
     }
     internal void Move(string id, string targetId, bool after = false)
     {
         var moving = FindUser(id); var target = FindUser(targetId);
         if (moving == target) return;
-        var next = presets.ToList(); next.Remove(moving); next.Insert(next.IndexOf(target) + (after ? 1 : 0), moving); Persist(next);
+        var next = presets.ToList(); next.Remove(moving); next.Insert(next.IndexOf(target) + (after ? 1 : 0), moving);
+        Persist(next, L.Format("PresetHistory.Move", moving.Name), id);
     }
 
     internal CanvasSettings Apply(string id, CanvasSettings current, RectD referenceViewport, RectD viewport)
@@ -191,13 +186,15 @@ internal sealed class CanvasPresetLibrary
     private static CanvasPresetParameters OfficialParameters(CanvasPresetParameters parameters)
     { parameters.ResetProjection = true; return parameters; }
     private CanvasPreset FindUser(string id) => presets.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id);
-    private void Replace(CanvasPreset preset) => Persist(presets.Select(p => p.Id == preset.Id ? preset : p).ToList());
-    private void Persist(List<CanvasPreset> next)
+    private void Replace(CanvasPreset preset, string label) => Persist(presets.Select(p => p.Id == preset.Id ? preset : p).ToList(), label);
+    private void Persist(List<CanvasPreset> next, string label, string? movedId = null)
     {
         if (!CanEdit) throw new InvalidOperationException(L.Get("CanvasPreset.ReadOnly"));
-        var previous = presets.Select(p => p.Clone()).ToList();
-        compatibility.Save(new State { Presets = next },JsonOptions); presets = next;
-        if (!restoringResource) RememberResourceChange(previous);
+        history.Execute(label, presets, next, HistorySession, () => presets, values =>
+        {
+            if (values.Count > 1000) throw new InvalidDataException(L.Get("CanvasPreset.InvalidLibrary"));
+            compatibility.Save(new State { Presets = values }, JsonOptions); presets = values;
+        }, movedId);
     }
     private static bool ValidName(string? name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 80;
     private static JsonSerializerOptions CreateJsonOptions()

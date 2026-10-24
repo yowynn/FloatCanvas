@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Input;
+using System.Runtime.InteropServices;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
@@ -21,6 +22,8 @@ internal sealed class ColorField : UserControl
     private readonly PopupHandle popupDisplay;
     private readonly ColorPickerPanel picker;
     private bool pickerSessionOpen, draftCommitted, pickerSessionChanged, isMixed;
+    private bool suppressTriggerClick;
+    private int suppressedPressTime;
 
     internal bool IsMixed
     {
@@ -29,7 +32,7 @@ internal sealed class ColorField : UserControl
     }
 
     internal bool IsPickerOpen => popupDisplay.IsOpen;
-    internal DependencyObject PickerRoot => popup.Child;
+    internal DependencyObject PickerRoot => popupDisplay.Child!;
     public ColorRole Role { get; }
     public uint Value { get => (uint)GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
     public event Action<uint>? ValueChanged;
@@ -64,11 +67,14 @@ internal sealed class ColorField : UserControl
         border.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };
-        popupDisplay=new(popup);
+        popupDisplay=new(popup) { TargetPressToggles = true };
+        PopupDrag.Attach(picker.DragHandle, popupDisplay);
         PopupChildDialog.Attach(border, popupDisplay.Key);
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && TryClosePicker()) e.Handled = true; };
         border.PreviewKeyDown += (_, e) =>
         {
+            if (SessionWindowCoordinator.Find(Window.GetWindow(this))?.HistoryCommand is { } command)
+                PresetHistoryKeyboardRoute.Handle(e, Keyboard.Modifiers, command);
             if (e.Key != Key.Escape) return;
             ClosePicker(); button.Focus(); e.Handled = true;
         };
@@ -82,11 +88,30 @@ internal sealed class ColorField : UserControl
         });
         popupDisplay.OnClosed((_, _) =>
         {
+            // Desktop Popup may auto-close on the trigger's mouse-down before
+            // Button raises Click on mouse-up. That same click must not reopen it.
+            suppressTriggerClick = Mouse.LeftButton == MouseButtonState.Pressed && button.IsVisible &&
+                new Rect(new Point(), button.RenderSize).Contains(Mouse.GetPosition(button));
+            if (suppressTriggerClick) suppressedPressTime = GetMessageTime();
             CommitPickerDraft(); pickerSessionOpen = false;
             popupSession?.UnregisterPopup(popupDisplay.Key); popupSession = null;
             PickerClosed?.Invoke();
         });
-        button.Click += (_, _) => { if (popupDisplay.IsOpen) ClosePicker(); else popupDisplay.IsOpen = true; };
+        button.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (e.Timestamp != suppressedPressTime) suppressTriggerClick = false;
+        };
+        button.PreviewMouseLeftButtonUp += (_, _) => ClearTriggerSuppressionAfterInput();
+        button.LostMouseCapture += (_, _) => ClearTriggerSuppressionAfterInput();
+        button.PreviewKeyDown += (_, _) => suppressTriggerClick = false;
+        button.Click += (_, e) =>
+        {
+            // OverlayPopup's logical parent is this placement target. A nested
+            // swatch/save button must not toggle its owner's picker on bubbling.
+            if (!ReferenceEquals(e.OriginalSource, button)) return;
+            if (suppressTriggerClick) { suppressTriggerClick = false; return; }
+            if (popupDisplay.IsOpen) ClosePicker(); else popupDisplay.IsOpen = true;
+        };
         picker.ColorChosen += color =>
         {
             // An explicit choice can intentionally unify a mixed selection even
@@ -125,6 +150,14 @@ internal sealed class ColorField : UserControl
             if (current is ContextMenu menu && menu.PlacementTarget is { } target) { if (OwnsPickerInput(target)) return true; }
         }
         return false;
+    }
+    internal void RefreshPresets() { if (IsPickerOpen) picker.RefreshCollections(); }
+    private void ClearTriggerSuppressionAfterInput()
+    {
+        int press = suppressedPressTime;
+        // Button releases capture before raising its mouse-up Click.
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
+        { if (suppressedPressTime == press) suppressTriggerClick = false; });
     }
     private void CommitPickerDraft()
     {
@@ -169,4 +202,5 @@ internal sealed class ColorField : UserControl
         string name = L.Get(Role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background") + " " + (IsMixed ? L.Get("Feedback4.Inspector.Mixed") : ColorLibrary.ToHtml(Value));
         button.ToolTip = name; AutomationProperties.SetName(button, name); AutomationProperties.SetName(this, name);
     }
+    [DllImport("user32.dll")] private static extern int GetMessageTime();
 }

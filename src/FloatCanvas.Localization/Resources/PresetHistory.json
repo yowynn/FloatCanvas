@@ -1,0 +1,9 @@
+{
+  "PresetHistory.Create": { "zh": "新建预设『{0}』", "en": "Create preset '{0}'" },
+  "PresetHistory.Delete": { "zh": "删除预设『{0}』", "en": "Delete preset '{0}'" },
+  "PresetHistory.Update": { "zh": "覆盖预设『{0}』", "en": "Overwrite preset '{0}'" },
+  "PresetHistory.Rename": { "zh": "重命名预设『{0}』", "en": "Rename preset '{0}'" },
+  "PresetHistory.Move": { "zh": "调整预设『{0}』的顺序", "en": "Reorder preset '{0}'" },
+  "PresetHistory.Conflict": { "zh": "该预设已有后续修改，暂时无法撤销或重做；现有预设已保留。", "en": "This preset has a later change and cannot be undone or redone yet. Existing presets have been kept." },
+  "PresetHistory.ExternalChange": { "zh": "预设文件已被其他实例修改。本次操作未写入，请关闭并重新打开浮绘以读取最新预设。", "en": "Another instance has changed the preset file. This operation was not saved. Close and reopen FloatCanvas to load the latest presets." }
+}

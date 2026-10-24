@@ -41,7 +41,7 @@ internal sealed partial class DesktopSession
         CloseToolOptions();
         if (_canvasSettingsWindow is null)
         {
-            var window = _canvasSettingsWindow = new() { Owner = _toolbar };
+            var window = _canvasSettingsWindow = new(historySession: () => Active) { Owner = _toolbar };
             ConfigureAppWindow(window);
             _windowCoordinator?.Register(window, () => window.IsPinned, DismissCanvasSettings);
             window.CommandKey += OnKey;

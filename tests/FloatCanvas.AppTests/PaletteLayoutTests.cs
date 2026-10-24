@@ -49,11 +49,44 @@ internal static class PaletteLayoutTests
                 {
                     ProductionPanels(theme, scale, colors, controller, recipes, check);
                     PresetViewport(theme, scale, colors, controller, sparse, recipes, check);
+                    foreach (var role in new[] { ColorRole.Foreground, ColorRole.Background })
+                        ColorPopupFooter(theme, scale, role, folder, check);
                 }
             }
             check("palette layout fixtures do not create desktop windows", app.Windows.Cast<Window>().SequenceEqual(windows));
         }
         finally { Directory.Delete(folder, true); AppTheme.Apply("light"); }
+    }
+
+    private static void ColorPopupFooter(string theme, double scale, ColorRole role, string folder, Action<string, bool> check)
+    {
+        string name = $"{theme} {scale * 100:0}% {role} popup";
+        var field = new ColorField(role, new ColorLibrary(Path.Combine(folder, "empty-footer-colors.json")));
+        var root = (FrameworkElement)field.PickerRoot;
+        var picker = Field<ColorPickerPanel>(field, "picker");
+        var error = Field<TextBlock>(picker, "error");
+        var hex = Field<TextBox>(picker, "hex");
+        var body = (StackPanel)((ScrollViewer)picker.Content).Content;
+        var actions = body.Children.OfType<WrapPanel>().Single();
+        Layout(root, scale);
+        double normalHeight = root.ActualHeight;
+        check(name + " has only normal padding below its final actions", error.Visibility == Visibility.Collapsed &&
+            root.ActualHeight - Bounds(actions, root).Bottom <= body.Margin.Bottom + 2);
+
+        hex.Text = "invalid color";
+        typeof(ColorPickerPanel).GetMethod("Apply", Private)!.Invoke(picker, null);
+        Layout(root, scale);
+        check(name + " expands for a visible invalid-color error", error.Visibility == Visibility.Visible &&
+            error.ActualHeight > 0 && root.ActualHeight > normalHeight && error.Text.Length > 0);
+        hex.Text = "#123456"; Layout(root, scale);
+        check(name + " shrinks back after correcting the color", error.Visibility == Visibility.Collapsed && Near(root.ActualHeight, normalHeight));
+
+        picker.Run(() => throw new IOException("fixture write failed")); Layout(root, scale);
+        check(name + " expands for a resource-save error", error.Visibility == Visibility.Visible &&
+            error.Text.Contains("fixture write failed") && root.ActualHeight > normalHeight);
+        picker.Value = 0xFF123456; Layout(root, scale);
+        check(name + " releases error space after resynchronizing valid input", error.Visibility == Visibility.Collapsed &&
+            Near(root.ActualHeight, normalHeight) && root.ActualHeight - Bounds(actions, root).Bottom <= body.Margin.Bottom + 2);
     }
 
     private static void PixelSpacing(double scale, int columns, double size, double gap, Action<string, bool> check)

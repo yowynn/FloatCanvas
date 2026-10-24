@@ -30,6 +30,7 @@ internal sealed partial class DesktopSession : IDisposable
     private readonly UserSettings _settings;
     private readonly ToolPresetLibrary _toolPresets;
     private readonly ColorLibrary _colorLibrary;
+    private readonly Func<EditorSession> _presetHistorySession;
     private readonly StampLibrary _stampLibrary;
     private readonly AssetLibrary _assets = new();
     private readonly SceneRenderer _renderer = new();
@@ -74,12 +75,14 @@ internal sealed partial class DesktopSession : IDisposable
         if (fallbackState is not null) _assets = fallbackState.Assets;
         _settings = UserSettings.Load();
         L.Initialize(_settings.Language);
-        _toolPresets = new();
+        _presetHistorySession = () => Active;
+        _toolPresets = new() { HistorySession = _presetHistorySession };
         _toolStateStore = new();
         _toolbarToolMemory = _toolStateStore.Tools;
         _toolbarButtonMemory = _toolStateStore.Buttons;
         _toolStateStore.Changed += ScheduleToolStateSave;
         _colorLibrary = ColorLibrary.Shared;
+        _colorLibrary.HistorySession = _presetHistorySession;
         _stampLibrary = new(ApplicationPaths.ProfileDirectory);
         _overlayCache = new(_renderer);
         AppTheme.Apply(_settings.Theme);
@@ -165,7 +168,7 @@ internal sealed partial class DesktopSession : IDisposable
             _app.Dispatcher.BeginInvoke(() => ShowError(ex.Message));
         };
         _toolbar = CreateToolbarV2();
-        _windowCoordinator = new(_host, _toolbar);
+        _windowCoordinator = new(_host, _toolbar) { HistoryCommand = OnKey };
         _windowCoordinator.Register(_toolOptionsWindow, () => _toolOptionsPinned, DismissToolOptions);
         InitializeCanvasTool();
         _windowLayout.BindRoot(_toolbar);
@@ -623,8 +626,29 @@ internal sealed partial class DesktopSession : IDisposable
         catch (InvalidOperationException error) when (error.Message == L.Get("Perspective.InputOutsidePlane"))
         { UpdateStatus(error.Message); }
     }
-    private void Undo() { _inspector?.CompletePendingEdit(); _canvasGridScale?.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Undo(); SynchronizeCanvasTool(); }
-    private void Redo() { _inspector?.CompletePendingEdit(); _canvasGridScale?.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel(); Active.Redo(); SynchronizeCanvasTool(); }
+    private void Undo() => ReplayHistory(redo: false);
+    private void Redo() => ReplayHistory(redo: true);
+    private void ReplayHistory(bool redo)
+    {
+        _inspector?.CompletePendingEdit(); _canvasGridScale?.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel();
+        try
+        {
+            if (redo) Active.Redo(); else Active.Undo();
+            SynchronizeCanvasTool();
+            _toolOptionsPanel.RefreshPresets();
+            _canvasSettingsWindow?.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+            foreach (var window in new Window?[] { _toolOptionsWindow, _canvasSettingsWindow, _inspector })
+                if (window is { IsVisible: true }) RefreshColorPresets(window);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        { UpdateStatus(ex.Message); }
+    }
+    private static void RefreshColorPresets(DependencyObject root)
+    {
+        if (root is ColorField field) { field.RefreshPresets(); return; }
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            RefreshColorPresets(VisualTreeHelper.GetChild(root, i));
+    }
     private void Draw(SKSurface surface)
     {
         var canvas = surface.Canvas;
@@ -1035,6 +1059,7 @@ internal sealed partial class DesktopSession : IDisposable
         try { FlushToolState(commitDraft: true); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { UpdateStatus(ex.Message); }
         _disposed = true;
+        if (ReferenceEquals(_colorLibrary.HistorySession, _presetHistorySession)) _colorLibrary.HistorySession = null;
         EndCanvasCalibration(hidePanel: true);
         _canvasSettingsWindow?.CloseForDispose();
         _windowCoordinator?.Dispose();

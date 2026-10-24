@@ -220,6 +220,7 @@ internal sealed class ToolOptionsPanel : UserControl
     internal bool IsColorPickerOpen => foreground.IsPickerOpen || background.IsPickerOpen;
     internal bool CloseColorPicker() => foreground.TryClosePicker() || background.TryClosePicker();
     internal bool OwnsColorPickerInput(DependencyObject? source) => foreground.OwnsPickerInput(source) || background.OwnsPickerInput(source);
+    internal void RefreshPresets() => presets.Refresh();
     internal void RefreshDocumentState()
     {
         if (controller.Tool != EditorTool.Number || controller.Session.IsTransactionActive || numericFields["NextNumber"].IsKeyboardFocusWithin) return;

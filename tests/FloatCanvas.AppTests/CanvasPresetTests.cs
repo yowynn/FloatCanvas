@@ -327,7 +327,7 @@ internal static class CanvasPresetTests
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown }; AppTheme.Apply("light");
         var library = new CanvasPresetLibrary(Path.Combine(folder, "controls.json"));
-        var session = new EditorSession(); var window = new CanvasSettingsWindow(library);
+        var session = new EditorSession(); var window = new CanvasSettingsWindow(library, () => session);
         try
         {
             var gallery = Field<CanvasPresetGallery>(window, "presets");
@@ -348,10 +348,10 @@ internal static class CanvasPresetTests
             session.Undo(); window.Refresh(session.Document.Canvas, false);
             check("undo refresh restores the canvas and clears a mismatched preset selection", !session.Document.Canvas.Grid.Visible && session.Document.Canvas.BackgroundColor == 0 && gallery.SelectedId == "" && applied == 1);
             gallery.SaveNamed("Current"); string selected = gallery.SelectedId;
-            check("saving a canvas preset does not apply it or change document history", applied == 1 && session.UndoCount == 0 && gallery.UserTiles.Children.Count == 1 && selected.StartsWith("user-"));
+            check("saving a canvas preset records resource history without applying it", applied == 1 && session.UndoCount == 1 && gallery.UserTiles.Children.Count == 1 && selected.StartsWith("user-"));
             check("user canvas recipe tiles provide overwrite rename and delete actions", ((Button)gallery.UserTiles.Children[0]).ContextMenu!.Items.OfType<MenuItem>().Count() == 3);
             gallery.Delete(selected);
-            check("deleting a selected canvas recipe leaves the current canvas unchanged", gallery.UserTiles.Children.Count == 0 && gallery.SelectedId == "" && applied == 1 && session.UndoCount == 0);
+            check("deleting a selected canvas recipe records history and leaves the current canvas unchanged", gallery.UserTiles.Children.Count == 0 && gallery.SelectedId == "" && applied == 1 && session.UndoCount == 2);
             var width = Field<NumericValueField>(window, "width");
             foreach (double value in new[] { 64d, .25, double.Epsilon })
             {
@@ -376,7 +376,7 @@ internal static class CanvasPresetTests
             var savedTile = gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, perspectiveId));
             savedTile.ContextMenu!.Items.OfType<MenuItem>().First().RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check("overwriting a changed personal calibration selects the new matching snapshot", gallery.SelectedId == perspectiveId && new CanvasPresetLibrary(Path.Combine(folder, "controls.json")).User.Single(p => p.Id == perspectiveId).Parameters.Calibration!.Quad.SequenceEqual(changedQuad));
-            library.UndoResourceChange(); window.Refresh(session.Document.Canvas, false);
+            session.Undo(); window.Refresh(session.Document.Canvas, false);
             check("undoing an overwrite clears selection when the restored preset differs from the current canvas", gallery.SelectedId == "");
 
             var legacy = library.Save("Legacy default geometry", new() { Projection = new() { Enabled = true } });
@@ -388,7 +388,7 @@ internal static class CanvasPresetTests
             gallery.Apply(legacy.Id);
             library.Rename(legacy.Id, "Renamed legacy default"); window.Refresh(session.Document.Canvas, false);
             check("renaming an applied legacy preset preserves selection of its resolved geometry", gallery.SelectedId == legacy.Id);
-            library.UndoResourceChange(); window.Refresh(session.Document.Canvas, false);
+            session.Undo(); window.Refresh(session.Document.Canvas, false);
             check("undoing a preset rename preserves its resolved geometry selection", gallery.SelectedId == legacy.Id);
         }
         finally { window.CloseForDispose(); }

@@ -54,7 +54,7 @@ Click the version at the bottom of the welcome screen to open **Check for update
 | `` Ctrl+Shift+` `` | Hide canvas / Show canvas; keep the current edit/pass-through mode |
 | `Tab` | Expand/collapse the toolbar while editing; text fields, menus and dialogs keep their own key behavior |
 | `Esc` | Cancel the operation or close child/unpinned panels first; then enter pass-through |
-| `Ctrl+Z` / `Ctrl+Y` | Undo/redo |
+| `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`) | Undo/redo canvas edits and personal preset operations in order |
 | `Ctrl+S` / `Ctrl+O` | Save/open an editable project |
 
 Click the app icon on the left of the toolbar to open the main menu after a short delay, or right-click to open it immediately. Double-click the logo in either edit or pass-through mode to show/hide the canvas, and drag it to move it. Press `Tab` or use the main menu's first item, **Collapse toolbar / Expand toolbar**, to fold or unfold the toolbar; right-click still opens the menu when folded. Clicking or right-clicking the pass-through logo only enters editing and does not open the main menu. Settings and exit commands are available through the main menu and system tray. See the [user guide](Docs/User-Guide.en.md) for more.
