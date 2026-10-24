@@ -5,6 +5,41 @@ namespace FloatCanvas.Rendering;
 
 public sealed partial class SceneRenderer
 {
+    /// <summary>Tests visible rendered ink in a screen-space rectangle, using bounded raster tiles.</summary>
+    public bool IntersectsElementInk(SceneDocument document, AssetLibrary assets, CanvasElement element, RectD rectangle)
+    {
+        if (!element.Visible || element.Style.Opacity <= 0 || document.LayerOpacity <= 0) return false;
+        BeginFrame(document);
+        try { return IntersectsElementInkCore(document, assets, element, rectangle); }
+        finally { EndFrame(); }
+    }
+
+    private bool IntersectsElementInkCore(SceneDocument document, AssetLibrary assets, CanvasElement element, RectD rectangle)
+    {
+        var bounds = ProjectedBounds(document, element, includeStroke: true).Intersect(document.Viewport).Intersect(rectangle);
+        if (bounds.IsEmpty || !double.IsFinite(bounds.Width) || !double.IsFinite(bounds.Height)) return false;
+        // Live effects own their sampling region even when the desktop happens to be uniform.
+        if (ElementGeometry.IsLiveEffect(element.Kind)) return true;
+        int width = (int)Math.Clamp(Math.Ceiling(bounds.Width) + 1, 1, 256);
+        int height = (int)Math.Clamp(Math.Ceiling(bounds.Height) + 1, 1, 256);
+        using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul))
+            ?? throw new InvalidOperationException("Cannot allocate the selection sample.");
+        for (double top = Math.Floor(bounds.Top); top < bounds.Bottom; top += height)
+        for (double left = Math.Floor(bounds.Left); left < bounds.Right; left += width)
+        {
+            var canvas = surface.Canvas;
+            canvas.RestoreToCount(1); canvas.ResetMatrix(); canvas.Clear(SKColors.Transparent);
+            canvas.Save(); canvas.Translate((float)-left, (float)-top); canvas.ClipRect(ToRect(bounds));
+            DrawElement(canvas, element, assets, MappingFor(document).PlaneToScreen, document);
+            using var pixels = surface.PeekPixels();
+            var bytes = pixels.GetPixelSpan();
+            for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                if (bytes[y * pixels.RowBytes + x * 4 + 3] != 0) return true;
+        }
+        return false;
+    }
+
     /// <summary>Spatial picking with the same element transforms and plane ink as screen composition.</summary>
     public CanvasElement? PickDepth(SceneDocument document, AssetLibrary assets, PointD point, double tolerance = 4)
     {
@@ -45,8 +80,9 @@ public sealed partial class SceneRenderer
                     ? ElementGeometry.HitTestProjected(item, point, mapping.PlaneToScreen, 0)
                         ? Alpha(item.Style.Opacity) : (byte)0
                     : Sample(canvas => DrawElement(canvas, item, assets, mapping.PlaneToScreen, document));
-                // Preserve frame picking for text and geometric tolerance around strokes, while images expose their alpha holes.
-                if (!item.Locked && (item.Kind != ElementKind.Image || alpha > 0)) return item;
+                bool ink = alpha > 0 || tolerance > 0 && IntersectsElementInkCore(document, assets, item,
+                    new(point.X - tolerance, point.Y - tolerance, tolerance * 2, tolerance * 2));
+                if (!item.Locked && ink) return item;
                 if (alpha == 255) return null;
             }
             return null;

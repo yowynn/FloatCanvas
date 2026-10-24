@@ -84,6 +84,13 @@ internal sealed partial class DesktopSession
         if (_editor.Tool == EditorTool.Text || (e.Modifiers & OverlayModifiers.Control) != 0)
         { _propertiesClicks.Reset(); propertiesDoubleClick = false; }
         else propertiesDoubleClick = _propertiesClicks.Observe(e, dismissedProperties);
+        if (_editor.Tool == EditorTool.Stamp && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick &&
+            e.Button == OverlayMouseButton.Left && (e.Modifiers & OverlayModifiers.Control) == 0 &&
+            _editor.IsSelectionFrameHit(new(e.Position.X - _editor.ScreenOrigin.X, e.Position.Y - _editor.ScreenOrigin.Y), includeInterior: true))
+        {
+            _editor.PointerForCanvas(e, propertiesDoubleClick);
+            return;
+        }
         ValidateSelectedStamp();
         if (_editor.Tool == EditorTool.Stamp && _editor.BillboardMode && !_selectedStampUsesSource &&
             _selectedStampId is { } billboardStampId &&

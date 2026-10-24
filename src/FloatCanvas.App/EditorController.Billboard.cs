@@ -81,7 +81,7 @@ internal sealed partial class EditorController
         var mapping = CanvasMapping.Create(Session.Document);
         bool selectedHit = pendingBillboardInsertion is null && billboardDepth is null &&
             (e.Modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0 &&
-            (mapping.TryToPlane(pointerScreen, out var selectionPlane) || TryBillboardSelectionInput(out selectionPlane)) && IsWithinCurrentSelection(selectionPlane);
+            (mapping.TryToPlane(pointerScreen, out var selectionPlane) || TryBillboardSelectionInput(out selectionPlane)) && IsWithinCurrentSelection();
         bool existingText = Tool == EditorTool.Text && HitTestScreen(pointerScreen, 4) is { Kind: ElementKind.Text } &&
             (e.Modifiers & OverlayModifiers.Control) == 0;
         if (selectedHit || existingText) { billboardPreviewDepth = null; return false; }

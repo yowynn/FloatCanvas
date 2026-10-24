@@ -18,6 +18,11 @@ internal sealed partial class EditorController
 {
     public EditorSession Session { get; private set; }
     internal bool CanvasContentHidden { get; set; }
+    private SceneRenderer? selectionRenderer;
+    private SceneRenderer SelectionRenderer
+    {
+        get { var renderer = selectionRenderer ??= new() { CacheByteLimit = 64L * 1024 * 1024 }; renderer.AnimationTime = AnimationTime; return renderer; }
+    }
     private EditorTool tool = EditorTool.Freehand;
     public EditorTool Tool
     {
@@ -111,7 +116,7 @@ internal sealed partial class EditorController
     internal static bool UsesDefaultSize(EditorTool value) => value is
         EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol;
     internal bool ShouldShowSelection(OverlayModifiers modifiers) =>
-        !CanvasContentHidden && (InteractionTool == EditorTool.Select || IsCreationTool(InteractionTool)) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
+        !CanvasContentHidden && (InteractionTool is EditorTool.Select or EditorTool.Stamp || IsCreationTool(InteractionTool)) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
 
     /// <summary>The contiguous z-order span whose pixels can change during this pointer gesture.</summary>
     public (int First, int Last, bool BypassCache) RasterPreview
@@ -134,7 +139,7 @@ internal sealed partial class EditorController
     }
 
     public EditorController(EditorSession session) { Session = session; session.Changed += OnChanged; }
-    internal void DetachSession() => Session.Changed -= OnChanged;
+    internal void DetachSession() { Session.Changed -= OnChanged; selectionRenderer?.Dispose(); selectionRenderer = null; }
     public bool CanCropSelection => ImageToolEligibility.TryGetCropTarget(Session, out _);
     private void OnChanged(object? sender, EventArgs e)
     {
@@ -248,7 +253,7 @@ internal sealed partial class EditorController
             deselectOnClick = creating && !forceCreate && Session.Selection.Count > 0;
             var selectionPoint = p;
             bool canSelect = !screenGesture || CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out selectionPoint);
-            if (creating && !forceCreate && canSelect && IsWithinCurrentSelection(selectionPoint))
+            if (creating && !forceCreate && canSelect && IsWithinCurrentSelection())
             { start = selectionPoint; StartSelect(selectionPoint, e.Modifiers, selectedOnly: true); deselectOnClick = false; return; }
             if (deselectOnClick && Tool == EditorTool.Image)
             { Session.SetSelection([]); return; }
@@ -259,7 +264,11 @@ internal sealed partial class EditorController
                 Session.NotifyChanged(); return;
             }
             if (Tool == EditorTool.Image) { Message?.Invoke(L.Get("Editor.ImportImageHint")); return; }
-            if (Tool == EditorTool.Stamp) return;
+            if (Tool == EditorTool.Stamp)
+            {
+                if (!forceCreate && IsWithinCurrentSelection()) StartSelect(p, e.Modifiers, selectedOnly: true);
+                return;
+            }
             if (Tool == EditorTool.Crop)
             {
                 if (!ImageToolEligibility.TryGetCropTarget(Session, out effectTarget))
@@ -365,20 +374,16 @@ internal sealed partial class EditorController
         }
     }
 
-    private bool IsWithinCurrentSelection(PointD point)
+    private bool IsWithinCurrentSelection()
     {
         if (CanvasContentHidden) return false;
         if (Session.SelectionBounds() is not { } bounds || !Session.SelectedElements().Any(e => e.Visible && !e.Locked)) return false;
-        bool body = Session.SelectedElements().Any(e => e.IsBillboard) ?
-            Session.SelectedElements().Any(e => ElementHitTestScreen(e, pointerScreen, 4)) ||
-                SelectionScreenCorners is { Count: 4 } polygon && ElementGeometry.PointInPolygon(pointerScreen, polygon) : bounds.Contains(point);
-        if (body && CanvasDepthOrder.IsEnabled(Session.Document))
-            body = HitTestScreen(pointerScreen, 4) is { } visible && Session.Selection.Contains(visible.Id);
+        bool body = SelectionScreenCorners is { Count: 4 } polygon && ElementGeometry.PointInPolygon(pointerScreen, polygon);
         return body || BillboardSelectionGuide is { } guide && pointerScreen.DistanceTo(guide.Center) < 12 || SelectionScreenCorners.Any(c => c.DistanceTo(pointerScreen) < 12) ||
             SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14;
     }
 
-    internal bool IsSelectionFrameHit(PointD screen)
+    internal bool IsSelectionFrameHit(PointD screen, bool includeInterior = false)
     {
         if (CanvasContentHidden) return false;
         if (!Session.SelectedElements().Any(element => element.Visible && !element.Locked)) return false;
@@ -386,7 +391,8 @@ internal sealed partial class EditorController
             BillboardSelectionGuide is { } guide && screen.DistanceTo(guide.Center) < 12 ||
             SelectionScreenEndpoints.Any(endpoint => screen.DistanceTo(endpoint) < 12)) return true;
         var corners = SelectionScreenCorners;
-        return corners.Any(corner => corner.DistanceTo(screen) < 12) ||
+        return includeInterior && corners.Count == 4 && ElementGeometry.PointInPolygon(screen, corners) ||
+            corners.Any(corner => corner.DistanceTo(screen) < 12) ||
             corners.Count == 4 && Enumerable.Range(0, 4).Any(index =>
                 ElementGeometry.DistanceToSegment(screen, corners[index], corners[(index + 1) % 4]) <= 6);
     }
@@ -471,9 +477,8 @@ internal sealed partial class EditorController
             }
             if (SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14) gesture = "rotate";
             else if (SelectionScreenCorners.Any(c => pointerScreen.DistanceTo(c) < 12)) gesture = "resize";
-            else if (selected.Any(e => e.IsBillboard) && SelectionScreenCorners is { Count: 4 } screenCorners &&
-                ElementGeometry.PointInPolygon(pointerScreen, screenCorners) &&
-                (!CanvasDepthOrder.IsEnabled(Session.Document) || HitTestScreen(pointerScreen, 0) is { } visible && Session.Selection.Contains(visible.Id))) gesture = "move";
+            else if (SelectionScreenCorners is { Count: 4 } screenCorners &&
+                ElementGeometry.PointInPolygon(pointerScreen, screenCorners)) gesture = "move";
         }
         if (gesture == null && selectedOnly && bounds is not null)
         { selectionBounds = bounds.Value; gesture = "move"; }

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 统一点选与框选的可见像素判断，排除文字留白、图片透明区域及空心内部；已选框内部可拖动，单图层选框随旋转。印章保留已有选框；文字工具仍单击编辑、拖边框移动。
+- Unify selection around visible ink, excluding empty text, transparent image regions and hollow interiors. Move selected layers from frame interiors and rotate single-layer frames; retain Stamp selection frames and Text-tool click editing with border dragging.
+
 - 闭眼编辑时允许新增内容和调整画布，只预览当前新内容；提交后自动睁眼并选中新图层，取消保留闭眼。隐藏旧图层无法被选择或修改，插图、文字、截图和效果入口不再因闭眼被禁止。
 - Allow creation and canvas adjustment while hidden, previewing only the new content. Reveal and select after commit, or remain hidden after cancellation. Protect hidden existing layers and allow image, text, capture and effect insertion entry points.
 

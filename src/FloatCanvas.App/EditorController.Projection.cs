@@ -25,8 +25,8 @@ internal sealed partial class EditorController
                 var screenBounds = displayed.Select(e => mapping.ProjectedBounds(e)).Aggregate(RectD.Union);
                 return Corners(screenBounds);
             }
-            var plane = selected is [var image] && image.Kind == ElementKind.Image
-                ? Corners(ElementGeometry.LocalBounds(image)).Select(ElementGeometry.LocalToPlane(image).TransformPoint)
+            var plane = selected is [var single]
+                ? Corners(ElementGeometry.StrokedLocalBounds(single)).Select(ElementGeometry.LocalToPlane(single).TransformPoint)
                 : Corners(bounds);
             return ToScreenPoints(plane);
         }
@@ -87,15 +87,16 @@ internal sealed partial class EditorController
         if (CanvasContentHidden) return null;
         if (!CanvasDepthOrder.IsEnabled(Session.Document)) return Session.Document.Elements
             .LastOrDefault(element => !element.Locked && ElementHitTestScreen(element, point, tolerance));
-        using var renderer = new SceneRenderer { AnimationTime = AnimationTime };
-        return renderer.PickDepth(Session.Document, Session.Assets, point, tolerance);
+        return SelectionRenderer.PickDepth(Session.Document, Session.Assets, point, tolerance);
     }
 
     private bool ElementHitTestScreen(CanvasElement element, PointD point, double tolerance)
     {
         var mapping = CanvasMapping.Create(Session.Document);
         return (!element.IsBillboard || mapping.IsElementSafe(element)) &&
-            ElementGeometry.HitTestProjected(element, point, mapping.PlaneToScreen, tolerance);
+            ElementGeometry.HitTestProjected(element, point, mapping.PlaneToScreen, tolerance) &&
+            SelectionRenderer.IntersectsElementInk(Session.Document, Session.Assets, element,
+                new(point.X - Math.Max(.5, tolerance), point.Y - Math.Max(.5, tolerance), Math.Max(1, tolerance * 2), Math.Max(1, tolerance * 2)));
     }
 
     private void SelectScreenRectangle(RectD rectangle, bool additive)
@@ -121,7 +122,8 @@ internal sealed partial class EditorController
                 intersects = ElementGeometry.GetStyledArrowHeads(element).Any(head =>
                     ProjectedContourIntersectsRectangle(head.Points, transform, rectangle, true) ||
                     head.Style == ArrowHeadStyle.Open && ProjectedStrokeIntersectsRectangle(head.Points, transform, rectangle, false, element.Style.StrokeWidth));
-            if (intersects) selected.UnionWith(Session.SelectionUnitIds(element.Id));
+            if (intersects && SelectionRenderer.IntersectsElementInk(Session.Document, Session.Assets, element, rectangle))
+                selected.UnionWith(Session.SelectionUnitIds(element.Id));
         }
         Session.SetSelection(selected);
     }

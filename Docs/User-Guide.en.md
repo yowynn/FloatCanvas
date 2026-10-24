@@ -209,10 +209,10 @@ Tool options affect newly created elements. Use Properties to change existing el
 
 ## Draw, select and adjust
 
-- **Select:** click an element, or drag a selection box from an empty area. Shift-click to add or remove elements. Grouped elements select together; hold `Alt` while clicking to select one member.
-- **Move and resize:** drag an element to move it; drag a corner handle on its selection box to resize.
+- **Select:** click or marquee visible content; empty text space, transparent image regions and hollow shape interiors do not select. Shift-click to add or remove elements. Grouped elements select together; hold `Alt` while clicking to select one member. The Stamp tool shows existing selection frames while newly placed stamps remain unselected.
+- **Move and resize:** drag anywhere inside an existing selection frame to move it; corner and rotation handles retain their functions. With the Text tool, click text interiors to edit and drag the frame border to move; other tools use normal frame movement. Drag a corner handle to resize.
 - **Shift movement:** hold `Shift` while dragging the body to constrain movement to canvas X/Y axes through the original drag start. Pressing, releasing or pressing Shift again never resets that origin, and movement does not snap diagonally. With perspective enabled, canvas axes can differ from screen directions.
-- **Rotate:** drag the rotation handle above the selection box. Hold `Shift` to snap in 15° steps.
+- **Rotate:** drag the rotation handle above the selection box. Hold `Shift` to snap in 15° steps. A single layer's frame rotates with it; multiple layers use their combined bounding box.
 - **Line endpoints:** select one line or arrow, then drag an endpoint.
 - **Shift drawing:** in Freehand, Highlighter and freehand lassos, holding `Shift` previews a straight segment. Releasing it fixes the endpoint and resumes free drawing; repeat within one drag for multiple straight segments. Lines, arrows, double arrows, their endpoint adjustments and the next polygon-lasso edge snap to eight horizontal, vertical and 45° directions while `Shift` is held.
 - **Text:** choose the text tool and click the canvas for an inline selection frame and caret. `Shift+Enter` adds a line; `Enter` finishes and keeps the object selected; `Esc` cancels this edit. Drag to select text and use normal caret keys, clipboard shortcuts and text undo. Clicking outside the current text frame commits it and starts a new text layer; `Ctrl`-click starts a new layer even inside the frame. Changing layers, tools or windows commits the edit. With the text tool, click existing text to edit it again. Edit numbers through Properties.
