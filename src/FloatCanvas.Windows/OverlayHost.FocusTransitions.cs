@@ -52,7 +52,7 @@ public sealed partial class OverlayHost
     public bool TryFocusEditingCanvas()
     {
         CheckThread();
-        bool Available() => IsEditing && IsVisible && !_captureActive && !IsReceivingDrop && !IsOleDragOver &&
+        bool Available() => IsEditing && !_captureActive && !IsReceivingDrop && !IsOleDragOver &&
             !_startingCanvasPointer && _pressedButton == OverlayMouseButton.None && GetCapture() == 0 &&
             OwnsEditingInput() && (_keyboardIsolation is null || _keyboardIsolation.IsLeaseActive) &&
             _windows.Count != 0 && _windows.All(pair => IsWindowVisible(pair.Input.Handle) && IsWindowEnabled(pair.Input.Handle)) &&

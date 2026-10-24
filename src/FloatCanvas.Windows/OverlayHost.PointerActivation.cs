@@ -28,7 +28,7 @@ public sealed partial class OverlayHost
         if (button is not (OverlayMouseButton.Left or OverlayMouseButton.Right or OverlayMouseButton.Middle) ||
             clickCount < 1 || !double.IsFinite(point.X) || !double.IsFinite(point.Y) ||
             point.X < int.MinValue || point.X > int.MaxValue || point.Y < int.MinValue || point.Y > int.MaxValue ||
-            !IsEditing || !IsVisible || !OwnsEditingInput() ||
+            !IsEditing || !OwnsEditingInput() ||
             (_keyboardIsolation is not null && !_keyboardIsolation.IsLeaseActive) ||
             _startingCanvasPointer || _pressedButton != OverlayMouseButton.None || GetCapture() != 0 ||
             HasDisabledOwnOwner(GetForegroundWindow())) return false;
@@ -114,7 +114,7 @@ public sealed partial class OverlayHost
     }
 
     private bool IsCanvasPointerAvailable(WindowState state) =>
-        !_disposed && IsEditing && IsVisible && !_captureActive && !IsReceivingDrop && !IsOleDragOver &&
+        !_disposed && IsEditing && !_captureActive && !IsReceivingDrop && !IsOleDragOver &&
         !state.Freed && state.Handle != 0 && _windows.Any(pair => ReferenceEquals(pair.Input, state)) &&
         IsWindowVisible(state.Handle) && IsWindowEnabled(state.Handle);
 

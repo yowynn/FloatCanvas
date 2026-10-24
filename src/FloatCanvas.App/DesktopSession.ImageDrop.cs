@@ -63,7 +63,7 @@ internal sealed partial class DesktopSession
         CloseImageDrop(); RequestRender();
     }
 
-    private bool SupportsCanvasImageDrop(OleDataObject data) => !_disposed && _host.IsVisible && !DocumentOperationBusy &&
+    private bool SupportsCanvasImageDrop(OleDataObject data) => !_disposed && !DocumentOperationBusy &&
         (_host.IsEditing || _host.IsReceivingDrop) && ImageDropDataReader.Supports(data);
 
     private bool ReceiveCanvasImageDrop(OleDataObject data, OverlayPoint point)

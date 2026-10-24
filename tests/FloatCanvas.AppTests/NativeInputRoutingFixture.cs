@@ -625,7 +625,7 @@ internal static class NativeInputRoutingFixture
         {
             host.SetVisible(visible); Pump();
             check($"canvas visibility {visible} preserves active editing", host.IsVisible == visible && host.IsEditing);
-            check($"canvas visibility {visible} controls creation independently", (bool)Invoke("CanAddCanvasContent")! == visible && host.CanBeginCanvasGesture!() == visible);
+            check($"canvas visibility {visible} leaves creation available independently", (bool)Invoke("CanAddCanvasContent")! && host.CanBeginCanvasGesture!());
             Invoke("SetEditing", false, false); Pump();
             check($"leaving editing preserves canvas visibility {visible}", !host.IsEditing && host.IsVisible == visible);
             bool entered = false;

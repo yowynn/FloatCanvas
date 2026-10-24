@@ -1,4 +1,5 @@
 using FloatCanvas.Core;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
@@ -35,6 +36,7 @@ internal sealed partial class DesktopSession
                 _hiddenCanvasSession = null;
                 _editor.CanvasContentHidden = false;
                 _host.SetVisible(true);
+                UpdateStatus(L.Get("Feedback4.Canvas.Visible"));
                 return;
             }
             bool draft = Active.Document.Elements.Any(element => !_hiddenCanvasElements.Contains(element.Id));

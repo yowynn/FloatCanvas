@@ -14,6 +14,7 @@ internal static class Phase2HiddenCanvasTests
         editor.Session.Add(original); editor.Session.SelectAll();
         Invoke("ToggleCanvasVisibility");
         editor.Tool = EditorTool.Rectangle;
+        check("hidden canvas keeps its native gesture application gate open", host.CanBeginCanvasGesture!());
         var bounds = host.Monitors.Single().Bounds;
         Send(OverlayPointerKind.Down, 140, 130); Send(OverlayPointerKind.Move, 240, 200);
         check("hidden canvas permits a draft while keeping existing content hidden", !host.IsVisible &&
@@ -24,6 +25,9 @@ internal static class Phase2HiddenCanvasTests
         Send(OverlayPointerKind.Up, 240, 200);
         check("committing a new hidden-mode layer opens the eye and selects the new item", host.IsVisible &&
             !editor.Session.IsTransactionActive && editor.Session.Selection.Count == 1 && !editor.Session.Selection.Contains(original.Id));
+        check("automatic reveal also clears the stale hidden status message",
+            ((System.Windows.Controls.TextBlock)typeof(DesktopSession).GetField("_status", Private)!.GetValue(session)!).Text ==
+                FloatCanvas.Localization.AppText.Get("Feedback4.Canvas.Visible"));
         Invoke("ToggleCanvasVisibility"); editor.Tool = EditorTool.Select;
         Send(OverlayPointerKind.Down, 35, 35); Send(OverlayPointerKind.Up, 35, 35);
         check("hidden existing layers cannot be selected or moved", !host.IsVisible && editor.Session.Selection.Count == 0 &&

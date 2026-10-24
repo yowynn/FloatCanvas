@@ -101,7 +101,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.ApplyRenderPreference(_settings.PreferGpuAcceleration);
         _host.RenderBackendChanged += () => _diagnostics.Write("Rendering.Backend", new
             { Backend = _host.RenderBackend.ToString(), _host.GpuDetails, _host.LastGpuFailure });
-        _host.CanBeginCanvasGesture = () => !_disposed && _host.IsVisible && !DocumentOperationBusy && !ComponentDispatcher.IsThreadModal;
+        _host.CanBeginCanvasGesture = () => !_disposed && !DocumentOperationBusy && !ComponentDispatcher.IsThreadModal;
         var keyboardBridge = new PrivateKeyboardBridge(handle => _host.Diagnostics.Any(pair => pair.InputHandle == handle));
         if(!_host.UsesSystemInput) _host.EnableKeyboardIsolation((packet, complete) =>
         {

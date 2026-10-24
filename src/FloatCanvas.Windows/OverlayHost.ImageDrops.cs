@@ -84,7 +84,7 @@ public sealed partial class OverlayHost
         {
             nint window = pair.Input.Handle;
             var protocol = new ImageDropProtocol(
-                () => !_disposed && !_captureActive && IsVisible && (IsEditing || IsReceivingDrop) && imageDropRegistrations?.Contains(window) == true,
+                () => !_disposed && !_captureActive && (IsEditing || IsReceivingDrop) && imageDropRegistrations?.Contains(window) == true,
                 data => imageDropSupports?.Invoke(data) == true,
                 (data, point) => imageDrop?.Invoke(data, point) == true,
                 ReportImageDropError);

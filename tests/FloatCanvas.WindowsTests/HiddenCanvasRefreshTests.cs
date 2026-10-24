@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using System.Reflection;
 using FloatCanvas.Windows;
 using SkiaSharp;
 using static FloatCanvas.Windows.NativeMethods;
@@ -37,6 +38,30 @@ internal static class HiddenCanvasRefreshTests
                 check(refreshedWhileHidden, "cleared content is submitted before any retained display becomes visible");
                 check(draws == 2 && host.Diagnostics.All(row => IsWindowVisible(row.DisplayHandle)), "both displays show the current clear frame");
                 check(GetForegroundWindow() == foreground && !host.IsEditing, "refresh never activates or acquires editing input");
+                host.SetVisible(false);
+                // Probe native input availability without activating or acquiring an input lease.
+                // A visible input carrier and hidden display are a valid editing combination.
+                const BindingFlags fields = BindingFlags.Instance | BindingFlags.NonPublic;
+                var editing = typeof(OverlayHost).GetField("<IsEditing>k__BackingField", fields)!;
+                var available = typeof(OverlayHost).GetMethod("IsCanvasPointerAvailable", fields)!;
+                var pairs = ((System.Collections.IEnumerable)typeof(OverlayHost).GetField("_windows", fields)!.GetValue(host)!).Cast<object>().ToArray();
+                try
+                {
+                    editing.SetValue(host, true);
+                    foreach (var row in host.Diagnostics) ShowWindow(row.InputHandle, 8);
+                    check(pairs.All(pair => (bool)available.Invoke(host, [pair.GetType().GetProperty("Input")!.GetValue(pair)])!),
+                        "hidden displays do not block new gestures on their visible editing input carriers");
+                    editing.SetValue(host, false);
+                    check(pairs.All(pair => !(bool)available.Invoke(host, [pair.GetType().GetProperty("Input")!.GetValue(pair)])!),
+                        "pass-through still blocks canvas gesture availability with a visible carrier");
+                }
+                finally
+                {
+                    editing.SetValue(host, false);
+                    foreach (var row in host.Diagnostics) ShowWindow(row.InputHandle, 0);
+                }
+                check(GetForegroundWindow() == foreground && host.Diagnostics.All(row => !row.DisplayVisible && !row.InputVisible),
+                    "hidden input availability probe preserves foreground and cleans its own surfaces");
             }
             catch (Exception error) { failure = error; }
         });

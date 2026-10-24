@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 补齐闭眼创建的原生输入路径：隐藏内容不再阻止画布新手势、焦点返回和图片拖入，模态、输入租期及忙碌检查保留。
+- Complete hidden-canvas creation through the native input path: hidden content no longer blocks new gestures, canvas focus return or image drops, while retaining modal, input-lease and busy checks.
+
 - 保留个人预设蓝点的滚动区顶部空间，同时对齐官方／个人预设的标题到首行间距。
 - Keep room above personal presets for modification dots while matching the official and personal heading-to-tile spacing.
 
