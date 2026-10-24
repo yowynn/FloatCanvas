@@ -26,12 +26,15 @@ internal static class PresetHistoryKeyboardTests
         var picker = Field<ColorPickerPanel>(field, "picker");
         var tile = Field<PixelTilePanel>(picker, "pinned").Children.OfType<Button>().Single();
         var text = Field<TextBox>(picker, "hex");
+        // Initialize WPF's keyboard provider before installing synthetic thread-local state.
+        _ = Keyboard.PrimaryDevice; _ = Keyboard.Modifiers;
         var original = ReadKeyboard();
         try
         {
             foreach (var (key, modifiers) in new[] { (Key.Z, ModifierKeys.Control), (Key.Z, ModifierKeys.Control | ModifierKeys.Shift), (Key.Y, ModifierKeys.Control) })
             {
                 SetModifiers(original, modifiers);
+                check("color history fixture installs exact " + modifiers, Keyboard.Modifiers == modifiers);
                 int before = commands.Count; current = Args(key); tile.RaiseEvent(current);
                 check("color popup routes " + modifiers + "+" + key + " exactly once", current.Handled && commands.Count == before + 1 && commands[^1] == KeyInterop.VirtualKeyFromKey(key));
                 check("color popup consumes history key before invoking application command", handledBeforeCommand);
@@ -73,6 +76,7 @@ internal static class PresetHistoryKeyboardTests
     }
     private static void SetModifiers(byte[] original, ModifierKeys modifiers)
     {
+        PeekMessage(out _, 0, 0, 0, 0);
         var next = (byte[])original.Clone();
         foreach (int key in new[] { 0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 }) next[key] &= 0x7F;
         if ((modifiers & ModifierKeys.Control) != 0) next[0x11] = next[0xA2] = 0x80;
@@ -81,4 +85,9 @@ internal static class PresetHistoryKeyboardTests
     }
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetKeyboardState(byte[] state);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetKeyboardState(byte[] state);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Message
+    { public nint Window; public uint Id; public nuint WParam; public nint LParam; public uint Time; public int X, Y; public uint Private; }
+    [DllImport("user32.dll", EntryPoint = "PeekMessageW")] [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PeekMessage(out Message message, nint window, uint first, uint last, uint remove);
 }

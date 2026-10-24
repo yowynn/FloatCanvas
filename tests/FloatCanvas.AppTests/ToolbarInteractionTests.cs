@@ -35,8 +35,8 @@ internal static class ToolbarInteractionTests
                 typeof(ToolbarLauncher).GetMethod("Execute", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(launcher, [doubleClick]);
                 assert(language + " a completed launcher double-click requests visibility only and leaves no delayed menu", visibilityChanges == 1 && menus == 1 && drags == 0 &&
                     gestures.AdvanceTime(10000) == LauncherGestureAction.None && !gestures.HasPendingClick && !gestures.IsPointerDown);
-                assert(language + " launcher displays the adopted application resource with a delayed hint", launcher.Content is Controls.Image image &&
-                    ReferenceEquals(image.Source, AppIcon.ToolbarImage) && launcher.Focusable && Controls.ToolTipService.GetInitialShowDelay(launcher) > 0 && !string.IsNullOrWhiteSpace(launcher.ToolTip as string) && Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(launcher)==false);
+                assert(language + " editing launcher displays the application resource and delayed hint without taking focus", launcher.Content is Controls.Image image &&
+                    ReferenceEquals(image.Source, AppIcon.ToolbarImage) && !launcher.Focusable && Controls.ToolTipService.GetInitialShowDelay(launcher) > 0 && !string.IsNullOrWhiteSpace(launcher.ToolTip as string) && Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(launcher)==false);
                 foreach (string name in new[] { "Open", "Save", "SaveAs", "Copy", "Paste", "Undo", "Redo", "Duplicate", "Delete", "PassThrough" })
                     assert(language + " " + name + " menu header keeps keyboard gestures separate", !L.Get("ToolbarV2." + name).Contains("Ctrl", StringComparison.OrdinalIgnoreCase));
                 launcher.CancelPendingGestures();
