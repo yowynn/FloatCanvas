@@ -104,19 +104,28 @@ public sealed partial class OverlayHost
         var stack = protectedWindows.Concat(visibleDisplays).ToArray();
         if (stack.Length == 0 || stack.Any(row => !IsWindow(row.Handle) || !IsWindowVisible(row.Handle) ||
             GetWindowThreadProcessId(row.Handle, out uint process) == 0 || process != Environment.ProcessId)) return;
+        // Repair a lost topmost flag or an ordinary-window inversion, but retain external
+        // topmost peers ahead of the canvas. HWND_TOPMOST alone would leapfrog a snipping
+        // overlay while restoring our own tools and displays.
+        var peer = rows.LastOrDefault(row => row.Process != Environment.ProcessId && row.Topmost &&
+            visibleDisplays.Any(display => row.Rank < display.Rank &&
+                (display.Band is null || row.Band is null || display.Band == row.Band)));
         _windowOrderRepairing = true;
         try
         {
             nint batch = BeginDeferWindowPos(stack.Length);
             if (batch == 0) return;
-            // Apply bottom-to-top in one native positioning batch, without an intermediate activation.
-            foreach (var row in stack.Reverse())
+            // With a peer anchor, insert top-to-bottom after it. Otherwise retain the usual
+            // bottom-to-top topmost promotion. Both paths are one nonactivating native batch.
+            nint after = peer.Handle;
+            foreach (var row in after != 0 ? stack : stack.Reverse())
             {
                 const uint flags = 0x213; // NOSIZE | NOMOVE | NOACTIVATE | NOOWNERZORDER; no SHOWWINDOW.
-                batch = DeferWindowPos(batch, row.Handle, HwndTopmost, 0, 0, 0, 0, flags);
+                batch = DeferWindowPos(batch, row.Handle, after != 0 ? after : HwndTopmost, 0, 0, 0, 0, flags);
                 // A tool can close between enumeration and the batch. DeferWindowPos frees
                 // the batch on failure; leave input/capture and the normal error UI untouched.
                 if (batch == 0) return;
+                if (after != 0) after = row.Handle;
             }
             _ = EndDeferWindowPos(batch);
         }
@@ -125,6 +134,8 @@ public sealed partial class OverlayHost
 
     private static bool SameRepairableBand(WindowOrderRow display, WindowOrderRow above)
     {
+        // Peers such as screenshot tools may cover us; only ordinary windows are blockers.
+        if (above.Topmost) return false;
         if (display.Band is { } band && above.Band is { } other) return band == other;
         // GetWindowBand is optional. Without it, do not contest an unknown higher-band topmost UI.
         return !above.Topmost;

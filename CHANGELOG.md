@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 层级恢复不再争抢后来出现的同层置顶窗口；截图等界面可覆盖画布，丢失置顶状态时在既有置顶窗口后恢复工具与画布顺序。
+- Respect later topmost peers during overlay-order recovery, allowing screenshot UI above the canvas and restoring lost topmost state behind existing peers while preserving tool order.
+
 - 画布显示窗口退出 Windows Peek 淡出，避免 Alt+Tab 预览其他应用时画布瞬间消失；监视器重建后同样保留此规则。
 - Exclude canvas display windows from Windows Peek fading, keeping annotations visible while Alt+Tab previews another application and after monitor rebuilds.
 

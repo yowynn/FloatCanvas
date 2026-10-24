@@ -86,18 +86,15 @@ internal static class NativeWindowOrderTests
             Console.WriteLine($"WINDOW_ORDER_GEOMETRY peer={Bounds(foreign)} displays={string.Join(';', displays.Select(Bounds))}");
             check(IsTopmost(foreign) && displays.All(display => Rank(foreign) < Rank(display)),
                 "A real foreign topmost overlapping window starts ahead of both visible displays");
-            var latency = Stopwatch.StartNew();
-            bool restored = Until(() => displays.All(display => Rank(display) < Rank(foreign)), 1800);
-            Console.WriteLine($"WINDOW_ORDER_REPAIR elapsedMs={latency.Elapsed.TotalMilliseconds:F1} restored={restored}");
-            if (!restored)
-            {
-                Console.WriteLine("WINDOW_ORDER_EVENTS " + string.Join(';', nativeEvents));
-                if (typeof(OverlayHost).GetMethod("ReadWindowOrder", BindingFlags.NonPublic | BindingFlags.Static)?.Invoke(null, null) is System.Collections.IEnumerable sampled)
-                    foreach (object row in sampled)
-                        if (row.ToString()!.Contains($"Process = {peer.Id}") || row.ToString()!.Contains($"Process = {Environment.ProcessId}")) Console.WriteLine("WINDOW_ORDER_ROW " + row);
-            }
-            check(restored, "Real external topmost reorder events automatically recover both displays");
-            check(displays.All(IsTopmost), "Recovered display HWNDs retain their actual WS_EX_TOPMOST bit");
+            int beforePeer = observers.Sum(item => item.Count);
+            Pump(650);
+            check(displays.All(display => Rank(foreign) < Rank(display)) && observers.Sum(item => item.Count) == beforePeer,
+                "A later foreign topmost peer stays above the canvas without a competing positioning write");
+            // Losing our topmost bit is still a real fault. Recover it underneath the peer,
+            // never pulling the canvas or its owned tools over a newer screenshot/shell UI.
+            foreach (nint display in displays) Check(SetWindowPos(display, -2, 0, 0, 0, 0, 0x213));
+            check(Until(() => displays.All(IsTopmost), 1800), "Lost topmost flags recover while a foreign topmost peer is present");
+            check(displays.All(display => Rank(foreign) < Rank(display)), "Recovery respects the existing foreign topmost peer");
             check(Ordered(protectedHandles).SequenceEqual(protectedOrder) && protectedHandles.All(handle => displays.All(display => Rank(handle) < Rank(display))),
                 "Native batch keeps visible input, tool, popup and owned modal in their original relative order above every display");
             check(geometry.All(pair => Bounds(pair.Key) == pair.Value) && styles.All(pair => (long)GetWindowLongPtr(pair.Key, GwlExStyle) == pair.Value),
@@ -112,13 +109,11 @@ internal static class NativeWindowOrderTests
             check(observers.Sum(item => item.Count) == healthyPositions,
                 "Healthy reorder signal bursts produce no display WINDOWPOS writes or feedback loop");
             Check(SetWindowPos(foreign, HwndTopmost, 0, 0, 0, 0, 0x213));
-            bool recoveredDuringBurst = false;
             for (int i = 0; i < 80; i++)
             {
                 NotifyWinEvent(0x8004, foreign, 0, 0); Pump(3);
-                recoveredDuringBurst |= displays.All(display => Rank(display) < Rank(foreign));
             }
-            check(recoveredDuringBurst, "A continuing event burst does not postpone repair until the burst ends");
+            check(displays.All(display => Rank(foreign) < Rank(display)), "Repeated foreign peer events never contest its topmost order");
             Pump(400); int settledPositions = observers.Sum(item => item.Count); Pump(350);
             check(observers.Sum(item => item.Count) == settledPositions, "The bounded follow-up settles instead of periodically raising healthy displays");
 
@@ -153,7 +148,7 @@ internal static class NativeWindowOrderTests
             Check(SetWindowPos(foreign, HwndTopmost, 0, 0, 0, 0, 0x213)); Pump(350);
             check(displays.All(handle => !IsWindowVisible(handle)) && observers.Sum(item => item.Count) == hiddenPositions,
                 "Foreign reorder events never show or reposition an explicitly hidden display");
-            host.SetVisible(true); Until(() => displays.All(display => Rank(display) < Rank(foreign)), 1000); Pump(250);
+            host.SetVisible(true); Pump(250);
             host.ForceLegacyCleanCapture = true;
             using (var capture = host.BeginCleanCapture())
             {
@@ -165,8 +160,9 @@ internal static class NativeWindowOrderTests
                     "Capture suspension prevents recovery from exposing or repositioning capture-hidden visuals");
             }
             host.ForceLegacyCleanCapture = false;
-            check(Until(() => displays.All(display => IsWindowVisible(display) && Rank(display) < Rank(foreign)), 1000),
-                "Capture completion queues recovery after the scope restores its own visuals");
+            check(Until(() => displays.All(IsWindowVisible), 1000), "Capture completion restores its own visuals");
+            Check(SetWindowPos(foreign, HwndTopmost, 0, 0, 0, 0, 0x213)); Pump(400);
+            check(displays.All(display => Rank(foreign) < Rank(display)), "A post-capture foreign topmost peer remains above the restored canvas");
             check(errors.Count == 0 && GetFocus() == initialFocus && GetCapture() == initialCapture && GetThreadDpiAwarenessContext() == initialDpi,
                 "Recovery reports no host errors and preserves thread focus, capture and DPI context");
             nint finalForeground = GetForegroundWindow();
