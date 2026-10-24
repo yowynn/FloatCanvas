@@ -17,7 +17,7 @@ public sealed partial class OverlayHost
     /// <summary>Enable before constructing tool windows or entering editing. Existing document/rendering routes are retained.</summary>
     public void EnableSystemInput()
         => EnableSystemInput(null);
-    /// <summary>Optional profile-scoped watchdog evidence; no user content or paths are written to the journal.</summary>
+    /// <summary>The journal path is retained for compatibility. Safety controls only the explicit release chord, never process termination.</summary>
     public void EnableSystemInput(string? safetyJournalPath, bool enableSafety = true)
     {
         CheckThread();

@@ -2,17 +2,20 @@
 
 ## [Unreleased]
 
-- 设置新增“自动／增强／普通”全屏覆盖模式，默认自动；强制模式跳过能力检测和自动回退，强制增强同时关闭输入超时保护，保存后重启生效。
-- Add Automatic, Enhanced and Ordinary overlay settings. Automatic remains the default; forced modes bypass detection and fallback, and forced enhancement disables input timeout protection. Restart to apply.
+- 优化半透明笔迹、荧光笔和形状的绘制，避免每个对象都进行全屏临时图层合成；复杂填充、描边与箭头仍保持整体透明度语义。
+- Optimize translucent strokes, highlighters and shapes to avoid a full-screen temporary layer per element; preserve whole-element opacity for combined fills, outlines and arrowheads.
 
-- 全屏增强每次启动重新验证实际接口，不再因旧异常记录、诊断写入失败或未验证的系统版本号直接回退；探测超时后仍尝试实际初始化。修正持续消息下看门狗计时器饥饿导致的误杀，排除睡眠时间，并补充心跳故障诊断。
-- Recheck actual overlay capabilities on every launch instead of rejecting historical exits, unwritable diagnostics or unlisted OS builds. Attempt real initialization after an inconclusive probe, prevent timer-starvation watchdog false positives, exclude sleep time, and enrich heartbeat failure diagnostics.
+- 设置新增“自动／增强／普通”全屏覆盖模式，默认自动；强制模式跳过能力检测和自动回退，保存后重启生效。
+- Add Automatic, Enhanced and Ordinary overlay settings. Automatic remains the default; forced modes bypass detection and fallback. Restart to apply.
+
+- 全屏增强每次启动重新验证实际接口，不再因旧异常记录、诊断写入失败或未验证的系统版本号直接回退；探测超时后仍尝试实际初始化。移除界面超时、慢绘制或输入释放失败时主动结束进程的行为，由 Windows 和用户处理未响应应用；紧急快捷键仅请求正常释放输入。
+- Recheck actual overlay capabilities on every launch instead of rejecting historical exits, unwritable diagnostics or unlisted OS builds. Attempt real initialization after an inconclusive probe. Remove process self-termination for slow or unresponsive UI and input-release failures; leave unresponsive-app handling to Windows and the user, and make the emergency chord request normal input release only.
 
 - 统一编辑、保存与恢复的容量边界，避免合法操作生成无法重开的工程；检测外部文件变化，优化脏状态查询、撤销快照、历史预览和资源写入，并限制单次图片导入的内存预算。
 - Align editing, saving and recovery limits so valid edits remain reopenable; detect external file changes and reduce dirty-state, undo, preview and asset-copy costs, with bounded image imports.
 
-- 增加增强输入的独立停滞保护；共享文字塑形、按词换行与双向光标映射，捕获探测失败可退避重试，局部动图与滤镜仅刷新受影响输出。
-- Add independent stalled-input protection, shared text shaping, word wrapping and bidirectional caret mapping; retry transient capture probes and restrict animated/effect updates to affected outputs.
+- 共享文字塑形、按词换行与双向光标映射，捕获探测失败可退避重试，局部动图与滤镜仅刷新受影响输出。
+- Share text shaping, word wrapping and bidirectional caret mapping; retry transient capture probes and restrict animated/effect updates to affected outputs.
 
 - 保留鼠标为主、快捷键加速的操作方式，Tab 继续展开／收起工具条，不遍历按钮或显示额外的焦点虚框；支持高对比主题、明确错误和锁定反馈、缺失字体提示及预设撤销。历史和印章列表按视口加载，窄窗口可滚动操作，欢迎页可继续最近工作，应用内可阅读离线帮助。
 - Preserve mouse-led interaction with shortcuts for faster actions. Tab expands/collapses the toolbar without button traversal or additional dashed focus outlines. Add high-contrast styling, explicit validation/lock/font feedback and preset undo; bound history and stamp lists to the viewport, retain actions in narrow windows, expose recent work and provide offline help.

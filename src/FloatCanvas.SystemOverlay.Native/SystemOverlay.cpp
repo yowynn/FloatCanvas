@@ -14,7 +14,6 @@ namespace {
 constexpr UINT AckMessage = WM_APP + 0x461;
 constexpr UINT ChangedMessage = WM_APP + 0x462;
 constexpr UINT_PTR EntryKeysTimer = 0x4643;
-constexpr UINT_PTR SafetyTimer = 0x4644;
 // Observed WindowServer::ConfigureInputDelegationByProcess pair on build 26300.
 // The mode's individual bit meanings are not assumed here.
 constexpr UINT AcquireMode = 0x2e, ReleaseMode = 0x21;
@@ -115,15 +114,15 @@ void Unsubscribe(Host& host) {
 HRESULT Release(Host& host) {
     if(GetCurrentThreadId()!=host.thread) return RPC_E_WRONG_THREAD;
     if(host.enabling) {host.cancelBegin=true;return S_OK;}
-    if(!host.requested&&!host.subscribed&&!host.waiting) {host.safety.Disarm();KillTimer(host.window,SafetyTimer);return S_OK;}
+    if(!host.requested&&!host.subscribed&&!host.waiting) {host.safety.Disarm();return S_OK;}
     if(host.requested&&!host.local) {
         using Set=HRESULT(STDMETHODCALLTYPE*)(void*,UINT32,UINT32);
         HRESULT hr=reinterpret_cast<Set>((*reinterpret_cast<void***>(host.delegation))[6])(host.delegation,host.pid,ReleaseMode);
-        if(FAILED(hr)) {host.safety.ReleaseFailed();return host.last=hr;}
+        if(FAILED(hr)) return host.last=hr;
     }
     KillTimer(host.window,EntryKeysTimer);host.waiting=false;
     host.requested=false; host.acknowledged=false; host.local=false;
-    host.safety.Disarm();KillTimer(host.window,SafetyTimer);
+    host.safety.Disarm();
     Unsubscribe(host); ++host.generation;
     if(host.focusSaved) {
         if(!host.savedActive||GetWindowThreadProcessId(host.savedActive,nullptr)==host.thread) SetActiveWindow(host.savedActive);
@@ -134,7 +133,7 @@ HRESULT Release(Host& host) {
     return host.last=S_OK;
 }
 HRESULT Request(Host& host) {
-    if(host.safety.IsEnabled() && (!host.safety.Start(host.window)||!SetTimer(host.window,SafetyTimer,100,nullptr))) {
+    if(host.safety.IsEnabled() && !host.safety.Start(host.window)) {
         HRESULT error=HRESULT_FROM_WIN32(GetLastError());host.enabling=false;Release(host);return host.last=error;
     }
     host.safety.Arm();
@@ -189,7 +188,6 @@ LRESULT CALLBACK Procedure(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
         host->window=hwnd; SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(host));
     }
     if(!host) return DefWindowProcW(hwnd,message,wparam,lparam);
-    if(message==InputSafetyWatchdog::HeartbeatMessage||(message==WM_TIMER&&wparam==SafetyTimer)) {host->safety.Heartbeat();return 0;}
     if(message==InputSafetyWatchdog::EmergencyMessage) {
         Release(*host);
         if(host->receiver)PostMessageW(host->receiver,ChangedMessage,host->generation,FALSE);
@@ -217,6 +215,7 @@ void Destroy(Host* host) {
     if(!host) return;
     if(host->enabling) {host->destroyPending=true;host->cancelBegin=true;return;}
     Release(*host); Unsubscribe(*host);
+    host->safety.Stop();
     delete host->deferredAck;
     if(host->window) {
         MSG queued{};
@@ -262,7 +261,9 @@ EXPORT HRESULT WINAPI FcSystemReceiver(Host* host,HWND receiver) {
 }
 EXPORT HRESULT WINAPI FcSystemSafetyJournal(Host* host,const wchar_t* path) {
     if(!host||!path||GetCurrentThreadId()!=host->thread)return E_INVALIDARG;
-    return host->safety.SetJournal(path)?S_OK:HRESULT_FROM_WIN32(GetLastError());
+    // Retain the existing ABI without creating heartbeat/termination journals.
+    // The release monitor has no timeout or autonomous process-exit action.
+    return S_FALSE;
 }
 EXPORT HRESULT WINAPI FcSystemSafetyPolicy(Host* host,BOOL enabled) {
     if(!host||GetCurrentThreadId()!=host->thread)return E_INVALIDARG;

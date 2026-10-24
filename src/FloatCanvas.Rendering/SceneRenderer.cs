@@ -25,6 +25,7 @@ public sealed partial class SceneRenderer : IDisposable
     public TimeSpan AnimationTime { get; set; }
     public TimeSpan? NextAnimationDelay { get; private set; }
     public long PathBuildCount { get; private set; }
+    internal bool OptimizeElementOpacity { get; set; } = true;
     /// <summary>Grid candidates and retained lines in the most recent frame, including calibration guides.</summary>
     public int GridCandidateCount { get; private set; }
     public int GridLineCount { get; private set; }
@@ -195,12 +196,23 @@ public sealed partial class SceneRenderer : IDisposable
 
     private void DrawLocalElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets)
     {
+        double opacity = Math.Clamp(element.Style.Opacity, 0, 1);
+        // Folding opacity into one primitive keeps self-intersections as one draw. Compound
+        // objects still need a compositing unit so fill, outline and heads do not darken each other.
+        bool singleDrawOpacity = OptimizeElementOpacity && opacity < 1 && canvas.Context is null && canvas.IsClipRect &&
+            canvas.TotalMatrix.Persp0 == 0 && canvas.TotalMatrix.Persp1 == 0 && IsSingleDrawElement(element);
+        if (OptimizeElementOpacity && opacity < 1 && !singleDrawOpacity && TryDrawRasterOpacity(canvas, element, assets, opacity)) return;
+        DrawLocalElementCore(canvas, element, assets, !singleDrawOpacity, singleDrawOpacity ? opacity : 1);
+    }
+
+    private void DrawLocalElementCore(SKCanvas canvas, CanvasElement element, AssetLibrary assets, bool includeOpacity, double directOpacity = 1)
+    {
         int saved = canvas.Save();
         try
         {
             double opacity = Math.Clamp(element.Style.Opacity, 0, 1);
             // One element is a compositing unit, including arrow heads, fill+outline and number labels.
-            if (opacity < 1)
+            if (opacity < 1 && includeOpacity)
             {
                 using var alpha = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)) };
                 canvas.SaveLayer(alpha);
@@ -227,6 +239,7 @@ public sealed partial class SceneRenderer : IDisposable
                 if (shape && (fill >> 24) != 0)
                 {
                     SetPaint(fill, SKPaintStyle.Fill);
+                    if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
                     canvas.DrawPath(geometry.Path, _paint);
                 }
                 if (element.Style.StrokeWidth > 0)
@@ -235,6 +248,7 @@ public sealed partial class SceneRenderer : IDisposable
                     using var dash = CreateDash(element.Style);
                     _paint.PathEffect = dash;
                     if (element.Kind == ElementKind.Highlighter) _paint.Color = _paint.Color.WithAlpha((byte)Math.Round(_paint.Color.Alpha * .35));
+                    if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
                     if (element.Points.Count == 1 && element.Kind is ElementKind.Freehand or ElementKind.Highlighter)
                         canvas.DrawPoint((float)element.Points[0].X, (float)element.Points[0].Y, _paint);
                     else canvas.DrawPath(geometry.StrokePath, _paint);
@@ -251,6 +265,17 @@ public sealed partial class SceneRenderer : IDisposable
         }
         finally { canvas.RestoreToCount(saved); }
     }
+
+    private static bool IsSingleDrawElement(CanvasElement element)
+    {
+        if (element.Kind is ElementKind.Freehand or ElementKind.Highlighter) return true;
+        if (!ElementGeometry.IsBoxShape(element.Kind)) return false;
+        uint fill = element.Style.LinkColors ? element.Style.Stroke : element.Style.Fill;
+        return (fill >> 24) == 0 || element.Style.StrokeWidth <= 0;
+    }
+
+    private static SKColor WithElementOpacity(SKColor color, double opacity) =>
+        color.WithAlpha((byte)(color.Alpha * (Alpha(opacity) + 1) >> 8));
 
     private void SetPaint(uint color, SKPaintStyle style, double width = 1)
     {
@@ -507,6 +532,7 @@ public sealed partial class SceneRenderer : IDisposable
 
     private void TrimCaches()
     {
+        if (CachedElementOpacityBytes > Math.Max(0, Math.Min(CacheByteLimit, 64L * 1024 * 1024))) ReleaseElementOpacitySurface();
         foreach (var id in _paths.Where(p => p.Value.Used < _clock - 2).Select(p => p.Key).ToArray())
         { _paths[id].Dispose(); _paths.Remove(id); }
         foreach (var id in _effects.Where(p => p.Value.Used < _clock - 2).Select(p => p.Key).ToArray())
@@ -537,6 +563,7 @@ public sealed partial class SceneRenderer : IDisposable
         foreach (var entry in _images.Values) entry.Dispose();
         foreach (var entry in _effects.Values) entry.Dispose();
         _paths.Clear(); _images.Clear(); _effects.Clear();
+        ReleaseElementOpacitySurface();
         _paint.Dispose(); _text.Dispose();
     }
 

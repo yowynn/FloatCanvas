@@ -7,12 +7,12 @@ using System.Windows.Threading;
 using FloatCanvas.App;
 using FloatCanvas.Windows;
 
-/// <summary>Opt-in foreground gate. Reuses the owned F6 receiver and actual production host.
+/// <summary>Opt-in foreground gate: a slow owner survives and releases input normally after resuming.
+/// Reuses the owned F6 receiver and actual production host.
 /// Never included in default tests. The supervisor owns both children: up to 60s for real GUI
 /// activation, then a separate 15s input phase, with a 75s total kill-on-close job deadline.</summary>
 internal static class SystemOverlayWatchdogFixture
 {
-    private const int WatchdogExit = 0x46434957;
     private const string RunVariable = "FLOATCANVAS_WATCHDOG_GATE_DIRECTORY";
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
     private sealed record ReceiverIdentity(int Process, long StartUtcTicks, long Handle);
@@ -28,8 +28,7 @@ internal static class SystemOverlayWatchdogFixture
         Process? receiver = null, owner = null;
         var watch = Stopwatch.StartNew();
         var inputWatch = new Stopwatch();
-        string? failure = null; long stallElapsed = -1; int exit = -1;
-        bool expectedOwnerExit = false;
+        string? failure = null; long stallElapsed = -1; bool ownerSurvived = false;
         nint originalForeground = GetForegroundWindow(), receiverWindow = 0;
         using var lease = new UpdateLaunchLease();
         // The job also kills the two inherited children if the supervisor itself is killed.
@@ -76,16 +75,16 @@ internal static class SystemOverlayWatchdogFixture
             File.WriteAllText(Path.Combine(run, "stall.request"), "stall-owner-STA");
             Wait(() => ReadOwner(run)?.Stage == "stalled", "owner STA stall checkpoint", 500);
             var stalled = ReadOwner(run)!;
-            Wait(() => owner.HasExited, "native independent watchdog termination", 6200);
-            exit = owner.ExitCode; stallElapsed = Environment.TickCount64 - stalled.Tick;
-            if (exit != WatchdogExit || stallElapsed is < 4000 or > 6200) throw new InvalidOperationException("Owner did not exit through the bounded native watchdog.");
-            expectedOwnerExit = true;
-            // Do not reactivate or refocus after the kill: natural receiver routing must resume.
+            Wait(() => ReadOwner(run) is { Stage: "resumed", HasInput: false }, "owner survives slow operation and releases input", 7500);
+            stallElapsed = Environment.TickCount64 - stalled.Tick;
+            ownerSurvived = !owner.HasExited;
+            if (!ownerSurvived || stallElapsed is < 6000 or > 7500) throw new InvalidOperationException("Owner failed to survive and finish the six-second operation.");
+            // Do not reactivate or refocus: the owner's normal input release restores receiver routing.
             RequireReceiver(identity); SendReceiverF6(identity);
-            Wait(() => ReceiverCounts(run) == (2, 2), "receiver F6 down/up restored after watchdog", 800);
+            Wait(() => ReceiverCounts(run) == (2, 2), "receiver F6 down/up restored after normal release", 800);
             string journal = Path.Combine(run, "profile", "overlay-input-safety.log");
-            if (!File.Exists(journal) || !File.ReadAllText(journal).Contains("ui-heartbeat-timeout", StringComparison.Ordinal))
-                throw new InvalidOperationException("Native watchdog journal did not confirm heartbeat expiry.");
+            if (File.Exists(journal) && File.ReadAllText(journal).Contains("\"exitCode\":", StringComparison.Ordinal))
+                throw new InvalidOperationException("A slow operation must not generate a native process-termination record.");
             return 0;
         }
         catch (Exception error) { failure = error.ToString(); return 1; }
@@ -98,7 +97,7 @@ internal static class SystemOverlayWatchdogFixture
                 if (originalForeground != 0 && IsWindow(originalForeground)) SetForegroundWindow(originalForeground);
             Write(run, "result.json", new { Passed = failure is null, Failure = failure, ElapsedMilliseconds = watch.ElapsedMilliseconds,
                 InputPhaseStarted = inputWatch.IsRunning, InputPhaseMilliseconds = inputWatch.ElapsedMilliseconds,
-                WatchdogExitCode = exit, StallMilliseconds = stallElapsed, ReceiverCounts = new { ReceiverCounts(run).Down, ReceiverCounts(run).Up },
+                OwnerSurvived = ownerSurvived, StallMilliseconds = stallElapsed, ReceiverCounts = new { ReceiverCounts(run).Down, ReceiverCounts(run).Up },
                 InputProof = "Actual Windows SendInput queue routing, not hardware/RawInput/DirectInput/game acceptance", Profile = Path.Combine(run, "profile") });
             Console.WriteLine(Path.Combine(run, "result.json"));
         }
@@ -116,7 +115,7 @@ internal static class SystemOverlayWatchdogFixture
             {
                 if (watch.ElapsedMilliseconds >= 74000 || (inputWatch.IsRunning && inputWatch.ElapsedMilliseconds >= 14000) || Environment.TickCount64 > end) throw new TimeoutException(operation);
                 if (receiver is { HasExited: true }) throw new InvalidOperationException("Owned receiver exited during " + operation);
-                if (owner is { HasExited: true } && !expectedOwnerExit && operation != "native independent watchdog termination") throw new InvalidOperationException("Owned overlay exited during " + operation);
+                if (owner is { HasExited: true }) throw new InvalidOperationException("Owned overlay exited during " + operation);
                 Thread.Sleep(10);
             }
         }
@@ -134,7 +133,7 @@ internal static class SystemOverlayWatchdogFixture
         host.EnableSystemInput(Path.Combine(ApplicationPaths.ProfileDirectory, "overlay-input-safety.log"));
         using var session = new DesktopSession(app, host);
         session.Start(["--startup", "--profile", ApplicationPaths.ProfileDirectory]);
-        int received = 0; bool entered = false, acknowledged = false;
+        int received = 0; bool entered = false, acknowledged = false, stalledOnce = false;
         void State(string stage) => Write(run, "owner-state.json", new OwnerState(Environment.ProcessId, stage, host.HasEditingInput, received, (long)GetForegroundWindow(), Environment.TickCount64));
         host.KeyInput += key => { if (key.VirtualKey == 0x75) { received++; State("delegated"); } };
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
@@ -146,11 +145,14 @@ internal static class SystemOverlayWatchdogFixture
                 if (!host.TryEnterEditing(out var error)) throw new InvalidOperationException(error);
             }
             if (entered && host.HasEditingInput && !acknowledged) { acknowledged = true; State("delegated"); }
-            if (File.Exists(Path.Combine(run, "stall.request")))
+            if (!stalledOnce && File.Exists(Path.Combine(run, "stall.request")))
             {
                 RequireReceiver(identity);
                 if (!host.HasEditingInput || received != 1) throw new InvalidOperationException("Refusing to stall without acknowledged real input.");
-                State("stalled"); Thread.Sleep(Timeout.Infinite); // Deliberately stop the actual native HWND owner's STA.
+                stalledOnce = true;
+                State("stalled"); Thread.Sleep(6000); // A finite slow operation on the actual native HWND owner's STA.
+                host.ExitEditing();
+                State("resumed");
             }
         };
         State("ready"); timer.Start();

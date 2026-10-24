@@ -20,11 +20,13 @@ Choose **Settings → System → Fullscreen overlay mode**, save, and restart:
 
 | Mode | Behavior |
 | --- | --- |
-| Automatic (default) | Prefer enhancement, fall back on current detection or initialization failure, and retain runtime input protection. |
-| Enhanced | Initialize directly, without capability probes, automatic fallback or input timeout protection. Report failures directly. |
+| Automatic (default) | Prefer enhancement and fall back on current detection, initialization or recoverable runtime failures. |
+| Enhanced | Initialize directly, without capability probes or automatic fallback. Report failures directly. |
 | Ordinary | Use desktop windows without loading or checking enhancement. |
 
 Automatic rechecks current interfaces on each launch. Historical exits, unwritable diagnostics and probe timeouts do not establish lack of support; an inconclusive probe is followed by actual initialization. A recoverable runtime input-interface failure in Automatic releases input before rebuilding desktop surfaces with the same canvas, assets, file bindings and undo history. The tray also offers **Switch to ordinary desktop mode**. Ordinary retains drawing and file operations but may not cover some fullscreen applications.
+
+FloatCanvas does not terminate its own process for slow drawing, an unresponsive interface or an input-release failure. Windows and the user handle waiting for or closing an unresponsive application. In automatic enhancement, `Ctrl+Alt+Shift+F12` requests normal input release; a busy interface processes that request when it resumes, without forcibly closing FloatCanvas.
 
 To bypass enhancement, exit FloatCanvas and run `FloatCanvas.exe --desktop-mode`. This overrides the saved choice and lets you open Settings after forced enhancement fails. The legacy `--retry-fullscreen` option temporarily selects automatic detection. These options cannot be combined and do not change the saved mode or canvas data. Native crashes or hangs cannot be guaranteed to recover in place; unsaved content may be available in recovery history. Interfaces are initialized according to actual availability; validation on one system does not establish compatibility with every Windows version or fullscreen presentation path.
 
