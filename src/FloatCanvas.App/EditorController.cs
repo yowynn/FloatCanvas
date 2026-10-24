@@ -94,6 +94,7 @@ internal sealed partial class EditorController
     private CanvasElement? effectTarget;
     private long cropRevision;
     private string? gesture;
+    private Guid[]? selectionOnClick;
     private RectD selectionBounds;
     private Dictionary<Guid, Affine2D> transforms = [];
     private CanvasElement? resizeSource;
@@ -175,6 +176,7 @@ internal sealed partial class EditorController
         straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null;
         deselectOnClick = gestureMoved = false;
         shiftDeselectOnClick = false;
+        selectionOnClick = null;
         ClearBillboardDepth(); pendingBillboardInsertion = null; billboardSources.Clear(); billboardMoveDelta = null;
         IsPointerBlocked = false; strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
         Session.Cancel(); Changed?.Invoke();
@@ -363,6 +365,8 @@ internal sealed partial class EditorController
                 { Session.Cancel(); Session.SetSelection([]); }
                 else if (completed == "move" && shiftDeselectOnClick && !gestureMoved)
                 { var ids = Session.SelectionUnitIds(HitTestScreen(pointerScreen, 7)!.Id).ToArray(); Session.Cancel(); Session.SetSelection(Session.Selection.Except(ids)); }
+                else if (completed == "move" && !gestureMoved && selectionOnClick is { } clicked)
+                { Session.Commit(); Session.SetSelection(clicked); }
                 else Session.Commit();
             }
             resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
@@ -371,6 +375,7 @@ internal sealed partial class EditorController
             drawing = effectTarget = null; Marquee = imageRegion = null; EffectPreviewPolygon = null; Changed?.Invoke();
             strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
             ClearBillboardDepth(); billboardSources.Clear();
+            selectionOnClick = null;
         }
     }
 
@@ -482,6 +487,9 @@ internal sealed partial class EditorController
         }
         if (gesture == null && selectedOnly && bounds is not null)
         { selectionBounds = bounds.Value; gesture = "move"; }
+        if (gesture == "move" && !selectedOnly && modifiers == OverlayModifiers.None &&
+            HitTestScreen(pointerScreen, 7) is { } foreground && !Session.Selection.Contains(foreground.Id))
+            selectionOnClick = Session.SelectionUnitIds(foreground.Id).ToArray();
         if (gesture == null)
         {
             var hit = HitTestScreen(pointerScreen, 7);
@@ -509,6 +517,10 @@ internal sealed partial class EditorController
     private void Move(PointD p, OverlayModifiers modifiers)
     {
         gestureModifiers=modifiers;
+        // An overlapping foreground layer wins a click, while dragging from the same
+        // selected-frame body moves the current selection. Ignore click-sized jitter
+        // until the existing physical movement threshold establishes that intent.
+        if (gesture == "move" && selectionOnClick is not null && !gestureMoved) return;
         if (MoveBillboardSelection(p, modifiers)) return;
         if (HasCaptureGesture) { UpdateCapturePreview(p, modifiers); return; }
         if (gesture is "effect" or "image-crop") { UpdateImageRegion(p,modifiers); Changed?.Invoke(); return; }

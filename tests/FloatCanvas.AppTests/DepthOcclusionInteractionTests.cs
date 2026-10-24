@@ -83,5 +83,13 @@ internal static class DepthOcclusionInteractionTests
         scene.Canvas.Projection.Enabled = true; near.Kind = ElementKind.Image;
         editor.AnimationTime = TimeSpan.FromMilliseconds(150); session.SetSelection([]); Click(point);
         check("controller forwards displayed animation time into depth picking", session.Selection.SetEquals([near.Id]));
+        session.SetSelection([far.Id]);
+        var rear = session.Document.Elements.Single(element => element.Id == far.Id);
+        var anchorBefore = rear.BillboardAnchor;
+        editor.Pointer(new(OverlayPointerKind.Down, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+        editor.Pointer(new(OverlayPointerKind.Move, new(point.X + 20, point.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+        editor.Pointer(new(OverlayPointerKind.Up, new(point.X + 20, point.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+        check("dragging an overlapping selected frame moves the rear selection rather than the foreground",
+            session.Selection.SetEquals([far.Id]) && rear.BillboardAnchor != anchorBefore);
     }
 }

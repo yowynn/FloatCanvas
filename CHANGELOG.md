@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 重叠选框内部保留两种操作：单击按可见前景选取，拖动则移动当前已选图层，避免整框拖动截获深度点选。
+- Preserve visible-foreground clicks inside overlapping selection frames while dragging the same area moves the current selection.
+
 - 将画布、网格和图像效果预览移到独立线程；忙碌时合并中间输入，完成后读取最新快照，最终值保留。选择框、透视手柄与输入留在界面线程，CPU／GPU 预览资源独立管理；后台恢复记录的内容哈希和元数据写入同样移出界面线程。
 - Render canvas, grid and image-effect previews on a dedicated thread. Coalesce intermediate input and capture the latest state after each frame, including the final value. Keep selection guides, perspective handles and input on the UI thread, with independent CPU/GPU resources. Move recovery hashing and metadata writes off the UI thread as well.
 
