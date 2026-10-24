@@ -20,16 +20,19 @@ internal static class OverlayProtectionTests
         string Profile(string name) => Path.Combine(root, name);
         string Marker(string profile) => Path.Combine(profile, "overlay-backend-state.json");
         int probes = 0, initializations = 0;
-        (bool, string) Available() { probes++; return (true, "available"); }
+        OverlayBackendProtection.ProbeResult Available() { probes++; return new(true, "available"); }
         var forced = new OverlayBackendProtection(Profile("forced"), true, false, Available);
         check("desktop-only never probes or loads the uncertain ABI", !forced.TryEnable(() => initializations++) && probes == 0 && initializations == 0);
         check("explicit desktop startup does not write an enhanced-session marker", !File.Exists(Marker(Profile("forced"))));
 
-        var unavailable = new OverlayBackendProtection(Profile("unavailable"), false, false, () => (false, "unsupported"));
+        var unavailable = new OverlayBackendProtection(Profile("unavailable"), false, false, () => new(false, "unsupported"));
         check("failed isolated probe selects ordinary desktop before native initialization", !unavailable.TryEnable(() => initializations++) && initializations == 0 && unavailable.Failure == "unsupported");
-        check("failed backend is durably disabled", File.ReadAllText(Marker(Profile("unavailable"))).Contains("disabled"));
+        check("current failure is recorded for diagnostics", File.ReadAllText(Marker(Profile("unavailable"))).Contains("disabled"));
         unavailable.Complete();
         check("desktop exit does not erase the failed-backend marker", File.Exists(Marker(Profile("unavailable"))));
+        var recovered = new OverlayBackendProtection(Profile("unavailable"), false, false, Available);
+        check("a past failed probe cannot veto a currently successful probe", recovered.TryEnable(() => { }));
+        recovered.Complete();
 
         var failed = new OverlayBackendProtection(Profile("initialization"), false, false, Available);
         check("main-process initialization failure also falls back", !failed.TryEnable(() => throw new DllNotFoundException("fixture missing DLL")) && failed.IsDisabled);
@@ -49,19 +52,30 @@ internal static class OverlayProtectionTests
         interrupted.TryEnable(() => { }); // Simulate process loss by omitting Complete.
         int previousProbes = probes;
         var nextLaunch = new OverlayBackendProtection(crashed, false, false, Available);
-        check("unclean enhanced exit makes the next launch desktop-only without another probe", !nextLaunch.TryEnable(() => initializations++) && probes == previousProbes);
+        check("previous unclean exit must re-probe and retain a currently supported backend", nextLaunch.TryEnable(() => initializations++) && probes == previousProbes + 1);
+        nextLaunch.Complete();
         var retry = new OverlayBackendProtection(crashed, false, true, Available);
         check("explicit retry can revalidate a previously disabled backend", retry.TryEnable(() => { }));
         retry.Disable("runtime failure");
         retry.Complete();
         check("runtime failure remains disabled after clean desktop shutdown", File.ReadAllText(Marker(crashed)).Contains("runtime failure"));
         check("disabled backend cannot be retried inside the same session", !retry.TryEnable(() => initializations++));
+        var afterFailure = new OverlayBackendProtection(crashed, false, false, Available);
+        check("recorded runtime failure cannot disable the next supported launch", afterFailure.TryEnable(() => { }));
+        afterFailure.Complete();
+
+        var inconclusive = new OverlayBackendProtection(Profile("inconclusive"), false, false, () => new(false, "timeout", true));
+        check("inconclusive probe cannot veto successful actual initialization", inconclusive.TryEnable(() => { }) && inconclusive.Failure is null && inconclusive.Warning == "timeout");
+        inconclusive.Complete();
+        var actualFailure = new OverlayBackendProtection(Profile("inconclusive-failed-init"), false, false, () => new(false, "timeout", true));
+        check("actual initialization failure still falls back after an inconclusive probe", !actualFailure.TryEnable(() => throw new DllNotFoundException("actual missing backend")) && actualFailure.Failure == "actual missing backend");
 
         Directory.CreateDirectory(root);
         string blocked = Path.Combine(root, "not-a-directory"); File.WriteAllText(blocked, "fixture");
         previousProbes = probes;
         var unwritable = new OverlayBackendProtection(blocked, false, false, Available);
-        check("failure to persist safety state prevents loading uncertain code", !unwritable.TryEnable(() => initializations++) && probes == previousProbes);
+        check("diagnostic marker write failure cannot disable a supported backend", unwritable.TryEnable(() => initializations++) && probes == previousProbes + 1 && unwritable.Failure is null);
+        check("diagnostic write failure is reported without an unsupported notice", unwritable.Warning is not null);
 
         bool fatal = false;
         try { new OverlayBackendProtection(Profile("fatal"), false, false, Available).TryEnable(() => throw new AccessViolationException("managed test sentinel")); }
@@ -75,6 +89,9 @@ internal static class OverlayProtectionTests
             start.ArgumentList.Add(argument); return start;
         }
         check("nonzero probe process exit cannot take down its parent", !OverlayBackendProtection.ProbeProcess(Child("--overlay-probe-exit"), 3000).Available);
-        check("hung probe is terminated and selects ordinary desktop", !OverlayBackendProtection.ProbeProcess(Child("--overlay-probe-wait"), 200).Available);
+        var timedOut = OverlayBackendProtection.ProbeProcess(Child("--overlay-probe-wait"), 200);
+        check("hung child probe is terminated but support remains inconclusive", !timedOut.Available && timedOut.Inconclusive);
+        var missingProbe = Child("--overlay-probe-exit"); missingProbe.FileName = Path.Combine(root, "missing-probe.exe");
+        check("failure to launch a diagnostic child is not a capability failure", OverlayBackendProtection.ProbeProcess(missingProbe, 200).Inconclusive);
     }
 }

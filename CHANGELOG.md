@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- 设置新增“自动／增强／普通”全屏覆盖模式，默认自动；强制模式跳过能力检测和自动回退，强制增强同时关闭输入超时保护，保存后重启生效。
+- Add Automatic, Enhanced and Ordinary overlay settings. Automatic remains the default; forced modes bypass detection and fallback, and forced enhancement disables input timeout protection. Restart to apply.
+
+- 全屏增强每次启动重新验证实际接口，不再因旧异常记录、诊断写入失败或未验证的系统版本号直接回退；探测超时后仍尝试实际初始化。修正持续消息下看门狗计时器饥饿导致的误杀，排除睡眠时间，并补充心跳故障诊断。
+- Recheck actual overlay capabilities on every launch instead of rejecting historical exits, unwritable diagnostics or unlisted OS builds. Attempt real initialization after an inconclusive probe, prevent timer-starvation watchdog false positives, exclude sleep time, and enrich heartbeat failure diagnostics.
+
 - 统一编辑、保存与恢复的容量边界，避免合法操作生成无法重开的工程；检测外部文件变化，优化脏状态查询、撤销快照、历史预览和资源写入，并限制单次图片导入的内存预算。
 - Align editing, saving and recovery limits so valid edits remain reopenable; detect external file changes and reduce dirty-state, undo, preview and asset-copy costs, with bounded image imports.
 

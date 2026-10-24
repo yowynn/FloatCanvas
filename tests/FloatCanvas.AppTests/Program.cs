@@ -30,6 +30,7 @@ internal static class Program
             if (args.Contains("--configuration-compatibility-only")) { ConfigurationCompatibilityTests.Run(Assert); return 0; }
             if (args.Contains("--preset-sizing-only")) { PresetSizingCompatibilityTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-protection-only")) { OverlayProtectionTests.Run(Assert); return 0; }
+            if (args.Contains("--overlay-modes-only")) { OverlayModeTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-protection-runtime")) { OverlayProtectionRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--system-overlay-production")) return SystemOverlayProof.Production();
             if (args is ["--system-overlay-watchdog-gate"]) return SystemOverlayWatchdogFixture.Run();
@@ -207,6 +208,7 @@ internal static class Program
             RetainedBillboardInteractionTests.Run(Assert);
             GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert);
             GpuSettingsTests.Run(Assert);
+            OverlayModeTests.Run(Assert);
             ApplicationDiagnosticsTests.Run(Assert);
             AuditUxTests.Run(Assert);
             EngineeringAuditTests.Run(Assert);

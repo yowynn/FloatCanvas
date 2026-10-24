@@ -90,10 +90,12 @@ internal sealed partial class DesktopSession : IDisposable
         {
             string safetyJournal = Path.Combine(ApplicationPaths.ProfileDirectory, "overlay-input-safety.log");
             if (protection is null) _host.EnableSystemInput(safetyJournal);
-            else protection.TryEnable(() => _host.EnableSystemInput(safetyJournal));
+            else protection.TryEnable(() => _host.EnableSystemInput(
+                protection.AllowsAutomaticFallback ? safetyJournal : null, protection.AllowsAutomaticFallback));
         }
         if(_host.UsesSystemInput) {_overlayWindows=new(_host.SystemWindowOwner,()=>_host.IsEditing);AppTheme.Apply(_settings.Theme);}
-        _diagnostics.Write("Input.Backend",new {SystemDelegation=_host.UsesSystemInput,OwnerWindow=_host.SystemWindowOwner.ToInt64()});
+        _diagnostics.Write("Input.Backend",new {SystemDelegation=_host.UsesSystemInput,OwnerWindow=_host.SystemWindowOwner.ToInt64(),Mode=protection?.Mode.ToString()});
+        if(protection?.Warning is { } warning) _diagnostics.Write("Input.BackendWarning",new {Reason=warning});
         _host.ApplyRenderPreference(_settings.PreferGpuAcceleration);
         _host.RenderBackendChanged += () => _diagnostics.Write("Rendering.Backend", new
             { Backend = _host.RenderBackend.ToString(), _host.GpuDetails, _host.LastGpuFailure });
@@ -207,7 +209,7 @@ internal sealed partial class DesktopSession : IDisposable
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.OpenProject"), CommandGlyphs.Open, async (_, _) => await RunCommand(OpenProjectAsync)));
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.RecoveryHistory"), CommandGlyphs.History, async (_, _) => await RunCommand(RestoreWorkspaceHistoryAsync)));
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.HotkeySettings"), CommandGlyphs.Settings, (_, _) => RunUiAction(ShowHotkeySettings)));
-        if (_host.UsesSystemInput && protection is not null)
+        if (_host.UsesSystemInput && protection?.AllowsAutomaticFallback == true)
             menu.Items.Add(CommandGlyphs.TrayItem(L.Get("OverlaySafety.DesktopCommand"), CommandGlyphs.Windows,
                 (_, _) => RequestDesktopFallback("User selected ordinary desktop mode.")));
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.Exit"), CommandGlyphs.Exit, async (_, _) => await ExitAfterSnapshotAsync()));
@@ -882,6 +884,10 @@ internal sealed partial class DesktopSession : IDisposable
             IsEnabled = shell is not null, MinHeight = 28 };
         ToolTipService.SetShowOnDisabled(startup, true);
         startup.ToolTip = L.Get(shell is null ? "Shell.TestProfileHint" : "Shell.StartupHint");
+        var overlayMode = new ComboBox { ItemsSource = new[] { L.Get("OverlaySafety.ModeAuto"), L.Get("OverlaySafety.ModeEnhanced"), L.Get("OverlaySafety.ModeDesktop") },
+            SelectedIndex = (int)OverlayBackendModes.Parse(_settings.OverlayMode), MinHeight = 34 };
+        AppSettingsWindow.AddSetting(system, L.Get("OverlaySafety.ModeSetting"), overlayMode,
+            L.Get("OverlaySafety.ModeHint") + "\n" + L.Format("OverlaySafety.CurrentMode", L.Get(_host.UsesSystemInput ? "OverlaySafety.ModeEnhanced" : "OverlaySafety.ModeDesktop")));
         var preferGpu = AddRenderSettings(system);
         var previewUpdates = new CheckBox { IsChecked = _settings.IncludePrereleaseUpdates, MinHeight = 28 };
         AppSettingsWindow.AddSetting(system, L.Get("Updates.IncludePreviews"), previewUpdates, L.Get("Updates.PreviewHint"));
@@ -940,6 +946,7 @@ internal sealed partial class DesktopSession : IDisposable
             var oldLanguage = _settings.Language;
             var oldShortcutHints = _settings.ShowToolShortcutHints;
             var oldPreferGpu = _settings.PreferGpuAcceleration;
+            var oldOverlayMode = _settings.OverlayMode;
             try
             {
                 _host.RegisterHotkeys(toggle, hide);
@@ -955,6 +962,7 @@ internal sealed partial class DesktopSession : IDisposable
                 _settings.Language = language.SelectedIndex == 1 ? "zh-CN" : language.SelectedIndex == 2 ? "en" : "auto";
                 _settings.ShowToolShortcutHints = shortcutHints.IsChecked == true;
                 _settings.PreferGpuAcceleration = preferGpu.IsChecked == true;
+                _settings.OverlayMode = OverlayBackendModes.Serialize((OverlayBackendMode)overlayMode.SelectedIndex);
                 bool startupChanged = false, settingsSaved = false;
                 try
                 {
@@ -980,6 +988,7 @@ internal sealed partial class DesktopSession : IDisposable
                     _settings.Language = oldLanguage;
                     _settings.ShowToolShortcutHints = oldShortcutHints;
                     _settings.PreferGpuAcceleration = oldPreferGpu;
+                    _settings.OverlayMode = oldOverlayMode;
                     RefreshPassThroughLauncher();
                     try
                     {
@@ -1006,6 +1015,7 @@ internal sealed partial class DesktopSession : IDisposable
                 _ = CompleteStartupAsync();
                 if (_host.IsEditing) RaiseVisibleToolWindows();
                 UpdateStatus(oldLanguage != _settings.Language ? L.Get("Settings.LanguageSaved") :
+                    oldOverlayMode != _settings.OverlayMode ? L.Get("OverlaySafety.ModeSaved") :
                     oldPrimaryScreenOnly == _settings.PrimaryScreenOnly && oldMonitorDevice == _settings.MonitorDeviceName ? L.Get("Settings.Saved") :
                     ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.SavedScopeOverride") : L.Get("Settings.SavedScopeApplied"));
             }

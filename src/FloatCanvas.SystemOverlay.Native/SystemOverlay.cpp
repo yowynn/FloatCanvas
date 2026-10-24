@@ -134,7 +134,7 @@ HRESULT Release(Host& host) {
     return host.last=S_OK;
 }
 HRESULT Request(Host& host) {
-    if(!host.safety.Start(host.window)||!SetTimer(host.window,SafetyTimer,100,nullptr)) {
+    if(host.safety.IsEnabled() && (!host.safety.Start(host.window)||!SetTimer(host.window,SafetyTimer,100,nullptr))) {
         HRESULT error=HRESULT_FROM_WIN32(GetLastError());host.enabling=false;Release(host);return host.last=error;
     }
     host.safety.Arm();
@@ -189,7 +189,7 @@ LRESULT CALLBACK Procedure(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
         host->window=hwnd; SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(host));
     }
     if(!host) return DefWindowProcW(hwnd,message,wparam,lparam);
-    if(message==WM_TIMER&&wparam==SafetyTimer) {host->safety.Heartbeat();return 0;}
+    if(message==InputSafetyWatchdog::HeartbeatMessage||(message==WM_TIMER&&wparam==SafetyTimer)) {host->safety.Heartbeat();return 0;}
     if(message==InputSafetyWatchdog::EmergencyMessage) {
         Release(*host);
         if(host->receiver)PostMessageW(host->receiver,ChangedMessage,host->generation,FALSE);
@@ -237,11 +237,8 @@ void Destroy(Host* host) {
 EXPORT HRESULT WINAPI FcSystemCreate(int x,int y,int width,int height,Host** result,HWND* window) {
     if(!result||!window) return E_POINTER;
     *result=nullptr; *window=nullptr;
-    // Only the ABI environment actually exercised by gamebartest is enabled initially.
-    using Version=LONG(WINAPI*)(OSVERSIONINFOW*);
-    auto version=reinterpret_cast<Version>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"RtlGetVersion"));
-    OSVERSIONINFOW os{sizeof(os)};
-    if(!version||version(&os)!=0||os.dwBuildNumber!=26300) return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
+    // Test actual exports, band creation and COM initialization. An OS build
+    // number alone establishes neither support nor failure of this backend.
     auto user=GetModuleHandleW(L"user32.dll");
     auto create=reinterpret_cast<CreateBand>(GetProcAddress(user,"CreateWindowInBand"));
     auto band=reinterpret_cast<GetBand>(GetProcAddress(user,"GetWindowBand"));
@@ -266,6 +263,10 @@ EXPORT HRESULT WINAPI FcSystemReceiver(Host* host,HWND receiver) {
 EXPORT HRESULT WINAPI FcSystemSafetyJournal(Host* host,const wchar_t* path) {
     if(!host||!path||GetCurrentThreadId()!=host->thread)return E_INVALIDARG;
     return host->safety.SetJournal(path)?S_OK:HRESULT_FROM_WIN32(GetLastError());
+}
+EXPORT HRESULT WINAPI FcSystemSafetyPolicy(Host* host,BOOL enabled) {
+    if(!host||GetCurrentThreadId()!=host->thread)return E_INVALIDARG;
+    return host->safety.Configure(enabled!=FALSE)?S_OK:HRESULT_FROM_WIN32(ERROR_BUSY);
 }
 // WPF clears its managed focus on a native HWND handoff without necessarily
 // clearing TSF's document focus. Drawing HWNDs have no text store: focus an empty

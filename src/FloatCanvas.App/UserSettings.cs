@@ -26,6 +26,7 @@ internal sealed class UserSettings
     [JsonIgnore] public bool ShowPassThroughLauncher { get => ShowFloatingLogo; set => ShowFloatingLogo = value; }
     public bool IncludePrereleaseUpdates { get; set; }
     public bool PreferGpuAcceleration { get; set; } = true;
+    public string OverlayMode { get; set; } = "auto";
     private int historyVersionLimit = 60;
     public int HistoryVersionLimit { get => historyVersionLimit; set => historyVersionLimit = value is >= 1 and <= 10000 ? value : 60; }
     public int NumberStart { get; set; } = 1;

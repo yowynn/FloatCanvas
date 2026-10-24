@@ -1,6 +1,14 @@
 {
+  "OverlaySafety.ModeSetting": { "zh": "全屏覆盖模式", "en": "Fullscreen overlay mode" },
+  "OverlaySafety.ModeAuto": { "zh": "自动（默认）", "en": "Automatic (default)" },
+  "OverlaySafety.ModeEnhanced": { "zh": "增强", "en": "Enhanced" },
+  "OverlaySafety.ModeDesktop": { "zh": "普通", "en": "Ordinary" },
+  "OverlaySafety.ModeHint": { "zh": "自动优先使用增强，检测或初始化失败时回退普通。增强和普通固定使用所选模式，不做自动检测或回退；强制增强也关闭输入超时保护。保存后重启生效。", "en": "Automatic prefers enhancement and falls back when detection or initialization fails. Enhanced and Ordinary force the selected backend without automatic checks or fallback; forced enhancement also disables input timeout protection. Restart after saving to apply." },
+  "OverlaySafety.CurrentMode": { "zh": "当前正在使用：{0}", "en": "Currently using: {0}" },
+  "OverlaySafety.ModeSaved": { "zh": "已保存覆盖模式，重启浮绘后生效。", "en": "Overlay mode saved. Restart FloatCanvas to apply." },
+  "OverlaySafety.ForcedFailure": { "zh": "强制增强模式初始化失败，未自动切换为普通模式。可使用 --desktop-mode 启动，再到设置中更改模式。", "en": "Forced enhancement could not initialize. No fallback was performed. Start with --desktop-mode to change the mode in Settings." },
   "OverlaySafety.DesktopTitle": { "zh": "已使用普通桌面模式", "en": "Using ordinary desktop mode" },
-  "OverlaySafety.DesktopNotice": { "zh": "全屏增强不可用，已回退到普通桌面模式。绘画和文件功能仍可使用；部分全屏应用上方可能无法显示。", "en": "Fullscreen enhancement is unavailable. Ordinary desktop mode keeps drawing and file operations available; coverage above some fullscreen applications may be limited." },
+  "OverlaySafety.DesktopNotice": { "zh": "本次未能启用全屏增强，已使用普通桌面模式。绘画和文件功能仍可使用；下次启动会重新检查。", "en": "Fullscreen enhancement could not be enabled for this session. Desktop drawing and file operations remain available; the next launch will check again." },
   "OverlaySafety.RecoverFailed": { "zh": "无法完成自动回退。请保存画布后退出，并使用 --desktop-mode 重新启动浮绘。", "en": "Automatic fallback could not finish. Save your canvas, exit, and restart FloatCanvas with --desktop-mode." },
   "OverlaySafety.DesktopCommand": { "zh": "改用普通桌面模式", "en": "Switch to ordinary desktop mode" }
 }

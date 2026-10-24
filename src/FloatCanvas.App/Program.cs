@@ -116,7 +116,7 @@ internal static class Program
                 if(!ConfigurationStartup.Prepare(diagnostics,interactive:!args.Contains("--smoke"))){app.Shutdown(1);return;}
                 AppTheme.InitializeStartup();
                 protection = new OverlayBackendProtection(ApplicationPaths.ProfileDirectory,
-                    args.Contains("--desktop-mode"), args.Contains("--retry-fullscreen"));
+                    OverlayBackendModes.Resolve(UserSettings.Load().OverlayMode, args));
                 session = new DesktopSession(app, null, protection);
                 session.DesktopFallbackRequested += RecoverDesktop;
                 while (pendingProjects.TryDequeue(out var pending)) session.QueueProjectOpen(pending);
@@ -126,7 +126,9 @@ internal static class Program
             {
                 diagnostics.Write("App.StartupFailed", exception: ex);
                 if (!args.Contains("--smoke"))
-                    AppDialog.Show(null, L.Format("Configuration.StartupFailed",ApplicationPaths.ProfileDirectory), L.Get("App.StartupFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(null, protection?.Mode == OverlayBackendMode.Enhanced
+                        ? L.Get("OverlaySafety.ForcedFailure") + "\n\n" + ex.Message
+                        : L.Format("Configuration.StartupFailed",ApplicationPaths.ProfileDirectory), L.Get("App.StartupFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
                 else Console.Error.WriteLine(ex);
                 app.Shutdown(1);
             }

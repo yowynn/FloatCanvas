@@ -21,14 +21,14 @@ internal sealed partial class DesktopSession
 
     internal bool TryRequestDesktopFallback(Exception error)
     {
-        if (!_host.UsesSystemInput || _backendProtection is null || !OverlayBackendProtection.IsInteropFailure(error)) return false;
+        if (!_host.UsesSystemInput || _backendProtection?.AllowsAutomaticFallback != true || !OverlayBackendProtection.IsInteropFailure(error)) return false;
         RequestDesktopFallback(error.Message);
         return true;
     }
 
     private void RequestDesktopFallback(string reason)
     {
-        if (_disposed || _desktopFallbackPending || !_host.UsesSystemInput || _backendProtection is null) return;
+        if (_disposed || _desktopFallbackPending || !_host.UsesSystemInput || _backendProtection?.AllowsAutomaticFallback != true) return;
         _desktopFallbackPending = true;
         _backendProtection.Disable(reason);
         _diagnostics.Write("Input.DesktopFallbackRequested", new { Reason = reason });

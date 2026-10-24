@@ -15,7 +15,7 @@ internal static class OverlayProtectionRuntimeTests
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         new UserSettings { Toggle = new(7, 0x79), Hide = new(7, 0x7A), ShowFloatingLogo = false }.Save();
         nint foreground = GetForegroundWindow();
-        var protection = new OverlayBackendProtection(ApplicationPaths.ProfileDirectory, false, true, () => (true, "fixture"));
+        var protection = new OverlayBackendProtection(ApplicationPaths.ProfileDirectory, false, true, () => new(true, "fixture"));
         var host = HiddenHost();
         check("runtime fixture initializes the actual enhanced window backend while hidden", protection.TryEnable(host.EnableSystemInput));
         DesktopSession? old = new(app, host, protection);
@@ -69,7 +69,7 @@ internal static class OverlayProtectionRuntimeTests
 
         using var rollbackHost = HiddenHost();
         var original = rollbackHost.Diagnostics.Select(pair => (pair.DisplayHandle, pair.InputHandle)).ToArray();
-        var rollback = new OverlayBackendProtection(System.IO.Path.Combine(ApplicationPaths.ProfileDirectory, "rollback"), false, false, () => (true, "fixture"));
+        var rollback = new OverlayBackendProtection(System.IO.Path.Combine(ApplicationPaths.ProfileDirectory, "rollback"), false, false, () => new(true, "fixture"));
         typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!.SetValue(rollbackHost, true);
         void FailFirstFrame(SKSurface _) => throw new InvalidOperationException("fixture initial presentation failure");
         rollbackHost.Draw += FailFirstFrame;

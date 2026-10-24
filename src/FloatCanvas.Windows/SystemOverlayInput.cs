@@ -16,6 +16,7 @@ internal sealed class SystemOverlayInput : IDisposable
     internal SystemOverlayInput()
     {Check(FcSystemCreate(-32000,-32000,1,1,out native,out var owner));Owner=owner;}
     internal void SetSafetyJournal(string path)=>Check(FcSystemSafetyJournal(native,path));
+    internal void SetSafetyEnabled(bool enabled)=>Check(FcSystemSafetyPolicy(native,enabled));
     internal void Begin(nint foreground,nint receiver)
     {
         Target=foreground;
@@ -52,6 +53,7 @@ internal sealed class SystemOverlayInput : IDisposable
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemCreate(int x,int y,int width,int height,out nint host,out nint window);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemReceiver(nint host,nint receiver);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true,CharSet=CharSet.Unicode)] private static extern int FcSystemSafetyJournal(nint host,string path);
+    [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemSafetyPolicy(nint host,[MarshalAs(UnmanagedType.Bool)] bool enabled);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemFocusCanvas(nint host,nint canvas);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemBegin(nint host,nint foreground);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemEnd(nint host);

@@ -18,7 +18,7 @@ public sealed partial class OverlayHost
     public void EnableSystemInput()
         => EnableSystemInput(null);
     /// <summary>Optional profile-scoped watchdog evidence; no user content or paths are written to the journal.</summary>
-    public void EnableSystemInput(string? safetyJournalPath)
+    public void EnableSystemInput(string? safetyJournalPath, bool enableSafety = true)
     {
         CheckThread();
         if(IsEditing || _keyboardIsolation is not null) throw new InvalidOperationException("Configure system input before editing or keyboard isolation.");
@@ -26,6 +26,7 @@ public sealed partial class OverlayHost
         _systemInput=new();
         try
         {
+            if(!enableSafety)_systemInput.SetSafetyEnabled(false);
             if(safetyJournalPath is not null)_systemInput.SetSafetyJournal(safetyJournalPath);
             RebuildMonitors();
         }

@@ -6,41 +6,49 @@ using FloatCanvas.Windows;
 
 namespace FloatCanvas.App;
 
-/// <summary>Optional backend policy. A durable marker also protects the next launch from native crashes.</summary>
+/// <summary>Current-launch capability policy. Persisted state is diagnostic, never an availability veto.</summary>
 internal sealed class OverlayBackendProtection
 {
     private readonly string marker;
-    private readonly bool desktopOnly, retry;
-    private readonly Func<(bool Available, string Detail)> probe;
+    internal OverlayBackendMode Mode { get; }
+    internal bool AllowsAutomaticFallback => Mode == OverlayBackendMode.Auto;
+    private readonly Func<ProbeResult> probe;
     private bool attempted, enabled, disabled;
     internal string? Failure { get; private set; }
-    internal bool IsDisabled => disabled || desktopOnly;
+    internal string? Warning { get; private set; }
+    internal bool IsDisabled => disabled || Mode == OverlayBackendMode.Desktop;
     private sealed record State(string Phase, string Detail);
+    internal readonly record struct ProbeResult(bool Available, string Detail, bool Inconclusive = false);
 
     internal OverlayBackendProtection(string profile, bool desktopOnly, bool retry,
-        Func<(bool Available, string Detail)>? probe = null)
+        Func<ProbeResult>? probe = null)
+        : this(profile, desktopOnly ? OverlayBackendMode.Desktop : OverlayBackendMode.Auto, probe) { }
+
+    internal OverlayBackendProtection(string profile, OverlayBackendMode mode, Func<ProbeResult>? probe = null)
     {
         marker = Path.Combine(profile, "overlay-backend-state.json");
-        this.desktopOnly = desktopOnly; this.retry = retry;
+        Mode = mode;
+        // The legacy retry switch remains accepted; every ordinary launch now revalidates.
         this.probe = probe ?? ProbeProcess;
     }
 
     internal bool TryEnable(Action enable)
     {
-        if (desktopOnly || disabled) return false;
+        if (Mode == OverlayBackendMode.Desktop || disabled) return false;
         if (attempted) return enabled;
         attempted = true;
+        if (Mode == OverlayBackendMode.Enhanced)
+        {
+            enable(); enabled = true;
+            return true; // Forced selection neither probes nor catches an initialization failure.
+        }
         try
         {
-            if (File.Exists(marker) && !retry)
-            {
-                Disable("Previous enhanced session did not finish cleanly, or the backend was disabled.");
-                return false;
-            }
-            // This must reach disk before loading any uncertain native ABI, even in the probe.
+            // A past process exit and writable diagnostics do not establish current support.
             WriteState("active", "Probing and initializing the enhanced backend.");
             var result = probe();
-            if (!result.Available) { Disable(result.Detail); return false; }
+            if (!result.Available && !result.Inconclusive) { Disable(result.Detail); return false; }
+            if (result.Inconclusive) AddWarning(result.Detail);
             enable(); enabled = true;
             return true;
         }
@@ -53,28 +61,33 @@ internal sealed class OverlayBackendProtection
 
     internal void Disable(string detail)
     {
+        if (!AllowsAutomaticFallback) return;
         disabled = true; Failure = detail;
-        try { WriteState("disabled", detail); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { Failure += " (Safety marker: " + error.Message + ")"; }
+        WriteState("disabled", detail);
     }
 
     // Call only after the presentation and native input owner have disposed successfully.
     internal void Complete()
     {
-        if (!enabled || disabled) return;
+        if (!AllowsAutomaticFallback || !enabled || disabled) return;
         try { File.Delete(marker); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { Failure = error.Message; }
+        { AddWarning(error.Message); }
     }
 
     private void WriteState(string phase, string detail)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
-        string temporary = marker + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(new State(phase, detail)));
-        File.Move(temporary, marker, true);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
+            string temporary = marker + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new State(phase, detail)));
+            File.Move(temporary, marker, true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { AddWarning("Diagnostic state: " + error.Message); }
     }
+    private void AddWarning(string detail) => Warning = Warning is null ? detail : Warning + "\n" + detail;
 
     internal static bool Recoverable(Exception error) => error is not
         (OutOfMemoryException or StackOverflowException or AccessViolationException);
@@ -83,7 +96,7 @@ internal sealed class OverlayBackendProtection
         DllNotFoundException or EntryPointNotFoundException or BadImageFormatException or
         System.ComponentModel.Win32Exception;
 
-    private static (bool Available, string Detail) ProbeProcess()
+    private static ProbeResult ProbeProcess()
     {
         // Always run the actual apphost, including when invoked from a test assembly.
         string executable = Path.Combine(AppContext.BaseDirectory, "FloatCanvas.exe");
@@ -98,16 +111,24 @@ internal sealed class OverlayBackendProtection
         return ProbeProcess(start, 5000);
     }
 
-    internal static (bool Available, string Detail) ProbeProcess(ProcessStartInfo start, int timeoutMilliseconds)
+    internal static ProbeResult ProbeProcess(ProcessStartInfo start, int timeoutMilliseconds)
     {
-        using var process = Process.Start(start) ?? throw new IOException("Overlay probe did not start.");
-        if (!process.WaitForExit(timeoutMilliseconds))
+        try
         {
-            process.Kill(); process.WaitForExit(1000);
-            return (false, "Enhanced backend probe timed out.");
+            using var process = Process.Start(start) ?? throw new IOException("Overlay probe did not start.");
+            var output = process.StandardOutput.ReadToEndAsync();
+            var error = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(timeoutMilliseconds))
+            {
+                process.Kill(); process.WaitForExit(1000);
+                return new(false, "Enhanced backend probe timed out; trying actual initialization.", true);
+            }
+            output.GetAwaiter().GetResult();
+            return process.ExitCode == 0 ? new(true, "Available") :
+                new(false, "Enhanced backend probe failed: " + process.ExitCode + " " + error.GetAwaiter().GetResult());
         }
-        return process.ExitCode == 0 ? (true, "Available") :
-            (false, "Enhanced backend probe failed: " + process.ExitCode + " " + process.StandardError.ReadToEnd());
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        { return new(false, "Isolated probe could not run; trying actual initialization: " + error.Message, true); }
     }
 
     internal static int RunProbe()

@@ -16,9 +16,17 @@ For the packaged app, extract the Windows x64 ZIP for your version, keep all fil
 
 If a compatible runtime is missing, the launcher displays a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then run `FloatCanvas.exe` again. You can also select it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). The SDK is not required; the plain .NET Runtime, ASP.NET Core Runtime and .NET Framework do not replace the required desktop runtime.
 
-Fullscreen enhancement is optional. An isolated startup probe checks availability. Unsupported systems, enhancement initialization failures or an unclean previous enhanced session select ordinary desktop mode, retaining desktop drawing and file operations while limiting coverage above some fullscreen applications. A recoverable runtime input-interface failure releases input before rebuilding desktop surfaces with the same canvas, assets, file bindings and undo history. The tray also offers **Switch to ordinary desktop mode**.
+Choose **Settings → System → Fullscreen overlay mode**, save, and restart:
 
-To bypass enhancement explicitly, exit FloatCanvas and run `FloatCanvas.exe --desktop-mode`. Failures disable automatic retries; after fixing the environment or updating the application, exit and use `FloatCanvas.exe --retry-fullscreen` to probe again. The two options cannot be combined and do not change canvas data. Native crashes or hangs cannot be guaranteed to recover in place; the safety marker selects desktop mode on the next launch, and unsaved content may be available in recovery history. Enhancement is enabled only on a verified system build and does not promise every fullscreen presentation path.
+| Mode | Behavior |
+| --- | --- |
+| Automatic (default) | Prefer enhancement, fall back on current detection or initialization failure, and retain runtime input protection. |
+| Enhanced | Initialize directly, without capability probes, automatic fallback or input timeout protection. Report failures directly. |
+| Ordinary | Use desktop windows without loading or checking enhancement. |
+
+Automatic rechecks current interfaces on each launch. Historical exits, unwritable diagnostics and probe timeouts do not establish lack of support; an inconclusive probe is followed by actual initialization. A recoverable runtime input-interface failure in Automatic releases input before rebuilding desktop surfaces with the same canvas, assets, file bindings and undo history. The tray also offers **Switch to ordinary desktop mode**. Ordinary retains drawing and file operations but may not cover some fullscreen applications.
+
+To bypass enhancement, exit FloatCanvas and run `FloatCanvas.exe --desktop-mode`. This overrides the saved choice and lets you open Settings after forced enhancement fails. The legacy `--retry-fullscreen` option temporarily selects automatic detection. These options cannot be combined and do not change the saved mode or canvas data. Native crashes or hangs cannot be guaranteed to recover in place; unsaved content may be available in recovery history. Interfaces are initialized according to actual availability; validation on one system does not establish compatibility with every Windows version or fullscreen presentation path.
 
 1. Choose **Start drawing** on the welcome screen, or press `` Ctrl+` `` to enter edit mode.
 2. Press `` Ctrl+` `` again for pass-through. The toolbar disappears, annotations stay visible, and the application underneath receives input again.
