@@ -622,7 +622,15 @@ internal static partial class Program
         }
         finally { live.Cancel(); PauseAutomaticRecovery(session); }
     }
-    private static object Construct(Wpf.Application app) => Activator.CreateInstance(DesktopType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, [app], null)!;
+    private static object Construct(Wpf.Application app)
+    {
+        // The desktop focus/capture assertions require ordinary HWND input rather than
+        // enhanced system delegation, which has its own runtime fixtures.
+        var policyType = DesktopType.Assembly.GetType("FloatCanvas.App.OverlayBackendProtection", true)!;
+        const BindingFlags create = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var policy = Activator.CreateInstance(policyType, create, null, [Profile!, true, false, null], null)!;
+        return Activator.CreateInstance(DesktopType, create, null, [app, null, policy, null], null)!;
+    }
     private static EditorSession Active(object session) => Property<EditorSession>(session, "Active");
     private static T Field<T>(object instance, string name) => (T)DesktopType.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
     private static T Property<T>(object instance, string name) => (T)DesktopType.GetProperty(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;

@@ -97,10 +97,11 @@ internal static partial class Program
         RunDiagnosticStart = Stopwatch.GetTimestamp();
         Lower = new NativeTestWindow(); Lower.Activate();
         await WaitForOwnFixtureActivation();
-        Session = Activator.CreateInstance(DesktopType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, [app], null)!;
+        Session = ConstructOrdinarySession(app);
         await CallAsync("InitializeDocumentsAsync", true);
         if (Field<DispatcherTimer?>("_documentRecoveryTimer") is { } recoveryTimer) { recoveryTimer.Stop(); recoveryTimer.Interval = TimeSpan.FromHours(1); }
         Host = Field<OverlayHost>("_host"); Monitors = Host.Monitors;
+        Check(!Host.UsesSystemInput, "Exact-HWND desktop input checks use the ordinary backend explicitly");
         Host.KeyboardIsolationReleased += reason =>
         {
             double elapsedMilliseconds = Stopwatch.GetElapsedTime(RunDiagnosticStart).TotalMilliseconds;
@@ -122,7 +123,9 @@ internal static partial class Program
             toolRound++;
             var document = editor.Document.Clone(); document.Elements.Clear(); document.NextNumber = 1;
             editor.ReplaceDocument(document);
-            SelectTool(tool); await ActivateInput();
+            SelectTool(tool);
+            ((ElementStyle)Field<object>("_editor").GetType().GetProperty("Style")!.GetValue(Field<object>("_editor"))!).Stroke = 0xFF2383E2;
+            await ActivateInput();
             if (tool == "Number") await Click(new(first.X + 70, first.Y + 40));
             else
             {
@@ -130,7 +133,7 @@ internal static partial class Program
                     tool is "Freehand" or "Highlighter" ? first.Y + 38 + (int)Math.Round(Math.Sin(i * Math.PI * 2 / 24) * 25) : first.Y + (last.Y - first.Y) * i / 24)).ToArray();
                 await Drag(path);
             }
-            await Task.Delay(55);
+            await WaitForRenderToSettle();
             Check(editor.Document.Elements.Count == 1, tool + ": real WM pointer input created exactly one object");
             var element = editor.Document.Elements.Single(); Guid id = element.Id;
             Check(MatchesTool(element, tool), tool + ": actual controller tool retains the requested geometry and endpoint styles");
@@ -380,6 +383,15 @@ internal static partial class Program
     }
     private static void SelectTool(string name) => Call("SelectTool", Enum.Parse(ToolType, name));
     private static EditorSession Active() => (EditorSession)DesktopType.GetProperty("Active", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Session)!;
+    private static object ConstructOrdinarySession(Wpf.Application app)
+    {
+        // These checks guard injection against visible desktop InputHandle HWNDs. The enhanced
+        // backend delegates input elsewhere and is covered by separate system-overlay fixtures.
+        var policyType = DesktopType.Assembly.GetType("FloatCanvas.App.OverlayBackendProtection", true)!;
+        const BindingFlags create = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var policy = Activator.CreateInstance(policyType, create, null, [Profile!, true, false, null], null)!;
+        return Activator.CreateInstance(DesktopType, create, null, [app, null, policy, null], null)!;
+    }
     private static T Field<T>(string name) => (T)DesktopType.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Session)!;
     private static object? Call(string name, params object?[] args)
     {
