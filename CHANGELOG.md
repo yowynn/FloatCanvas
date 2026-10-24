@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 保存及另存为完成后立即刷新文件绑定气泡，无需继续操作画布。
+- Refresh the bound-file bubble immediately after Save or Save As completes.
+
 - 历史画布支持双击列表项恢复；打开历史时关闭欢迎界面，成功恢复后显示画布并进入编辑模式。
 - Restore canvas history by double-clicking an entry; close Welcome when opening history and enter editing with the restored canvas visible after success.
 

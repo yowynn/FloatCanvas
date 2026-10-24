@@ -418,6 +418,7 @@ internal sealed partial class DesktopSession
         }
         state.DiskVersion = writtenVersion;
         state.Path = path; state.SavedFingerprint = fingerprint; state.SavedContentVersion = savedContentVersion;
+        RefreshBoundFileIndicator();
         UpdateStatus(L.Get("Project.SavedPrefix") + Path.GetFileName(path)); return true;
     }
     private async Task<bool> ConfirmReplaceAsync(EditorSession session, string description)

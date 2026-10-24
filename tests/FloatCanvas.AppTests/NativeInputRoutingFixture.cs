@@ -67,8 +67,8 @@ internal static class NativeInputRoutingFixture
             bool waitForForeground = Environment.GetEnvironmentVariable("FLOATCANVAS_INPUT_WAIT_FOR_FOCUS") == "1";
             var toolbar = Field<Window>(session, "_toolbar");
             if (waitForForeground) toolbar.Title = "FloatCanvas C3 Input Check";
-            toolbar.ShowActivated = !waitForForeground && scenario != "popup-ownership"; toolbar.Show(); Pump();
-            if (scenario != "popup-ownership")
+            toolbar.ShowActivated = !waitForForeground && scenario is not ("popup-ownership" or "phase2-save"); toolbar.Show(); Pump();
+            if (scenario is not ("popup-ownership" or "phase2-save"))
             {
                 if (waitForForeground)
                 {
@@ -207,6 +207,7 @@ internal static class NativeInputRoutingFixture
             if (scenario == "aux-shortcut-runtime") AuxiliaryShortcutRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "phase2-windows") Phase2WindowTests.Run(check, session, host, toolbar,
                 action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
+            if (scenario == "phase2-save") Phase2SaveTests.Run(check, session);
             if (scenario == "launcher-tab") LauncherTabRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "feedback4-workspace") Feedback4Workspace(check, session, host, toolbar, editor);
             if (scenario == "preview4-settings") Preview4SettingsRuntimeFixture.Run(check, session, host, toolbar, action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
