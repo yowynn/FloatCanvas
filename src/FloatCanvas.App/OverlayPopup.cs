@@ -31,6 +31,7 @@ public sealed class OverlayPopup : FrameworkElement
     public double HorizontalOffset { get; set; }
     public double VerticalOffset { get; set; }
     public bool StaysOpen { get; set; } = true;
+    internal bool TargetPressToggles { get; set; }
     public bool AllowsTransparency { get; set; }
     public PopupAnimation PopupAnimation { get; set; }
     public CustomPopupPlacementCallback? CustomPopupPlacementCallback { get; set; }
@@ -44,7 +45,7 @@ public sealed class OverlayPopup : FrameworkElement
         if(IsOpen && window is null && Child is { } child)
         {
             var target=PlacementTarget??TemplatedParent as UIElement;
-            window=new OverlayPopupWindow(child,target,Placement,HorizontalOffset,VerticalOffset,()=>SetCurrentValue(IsOpenProperty,false),CustomPopupPlacementCallback,()=>!StaysOpen,IsHitTestVisible);
+            window=new OverlayPopupWindow(child,target,Placement,HorizontalOffset,VerticalOffset,()=>SetCurrentValue(IsOpenProperty,false),CustomPopupPlacementCallback,()=>!StaysOpen,IsHitTestVisible,TargetPressToggles);
             window.Show(); Opened?.Invoke(this,EventArgs.Empty);
         }
         else if(!IsOpen && window is { } old)
@@ -147,11 +148,14 @@ internal sealed class OverlayPopupWindow : IDisposable
     private readonly UIElement? target;
     private readonly OverlayWindowScope scope;
     private readonly Func<bool> closeOnOutside;
+    private readonly bool targetPressToggles;
+    private bool returnFocus=true;
     private bool disposed;
-    internal OverlayPopupWindow(UIElement child,UIElement? target,PlacementMode placement,double offsetX,double offsetY,Action close,CustomPopupPlacementCallback? custom=null,Func<bool>? closeOnOutside=null,bool hitTestVisible=true)
+    internal OverlayPopupWindow(UIElement child,UIElement? target,PlacementMode placement,double offsetX,double offsetY,Action close,CustomPopupPlacementCallback? custom=null,Func<bool>? closeOnOutside=null,bool hitTestVisible=true,bool targetPressToggles=false)
     {
         scope=OverlayWindowScope.Current??throw new InvalidOperationException("No active system overlay window owner.");
         this.close=close;this.target=target;
+        this.targetPressToggles=targetPressToggles;
         this.closeOnOutside=closeOnOutside??(()=>true);
         content=child;
         child.Measure(new Size(SystemParameters.PrimaryScreenWidth*.75,SystemParameters.PrimaryScreenHeight*.75));
@@ -190,9 +194,14 @@ internal sealed class OverlayPopupWindow : IDisposable
     {SetActiveWindow(source.Handle);SetFocus(source.Handle);element.Focus();Keyboard.Focus(element);}
     private void BeforeInput(object sender,PreProcessInputEventArgs args)
     {
+        // At PreProcessInput WPF has not assigned Source yet. Use the same
+        // device target it will use when routing the pending mouse event.
         if(closeOnOutside() && args.StagingItem.Input is MouseButtonEventArgs mouse && mouse.ButtonState==MouseButtonState.Pressed &&
-            mouse.OriginalSource is DependencyObject origin && !BelongsTo(origin,content)) close();
-        if(scope.IsTopmost(this) && args.StagingItem.Input is KeyEventArgs {Handled:false,RoutedEvent:var routed,Key:Key.Escape} key && routed==Keyboard.PreviewKeyDownEvent)
+            (mouse.OriginalSource as DependencyObject??mouse.MouseDevice.Target as DependencyObject??Mouse.Captured as DependencyObject) is { } origin &&
+            !BelongsTo(origin,content) && (!targetPressToggles || target is null || !BelongsTo(origin,target)))
+        {returnFocus=false;close();}
+        if(scope.IsTopmost(this) && !PopupChildDialog.HasRetainedDialog(content) &&
+            args.StagingItem.Input is KeyEventArgs {Handled:false,RoutedEvent:var routed,Key:Key.Escape} key && routed==Keyboard.PreviewKeyDownEvent)
         {close();key.Handled=true;}
     }
     private static bool BelongsTo(DependencyObject source,DependencyObject root)
@@ -210,7 +219,7 @@ internal sealed class OverlayPopupWindow : IDisposable
         InputManager.Current.PreProcessInput-=BeforeInput;
         scope.Remove(this);content.RemoveHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(OverlayWindowScope.ConfigureInputMethod));
         source.RootVisual=null;source.Dispose();
-        if(target is not null && PresentationSource.FromVisual(target) is HwndSource targetSource)
+        if(returnFocus && target is not null && PresentationSource.FromVisual(target) is HwndSource targetSource)
         {
             target.Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>
             {

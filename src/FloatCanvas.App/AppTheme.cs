@@ -210,6 +210,26 @@ internal static class AppTheme
               </ControlTemplate>
             </Setter.Value></Setter>
           </Style>
+          <ControlTemplate x:Key="CanvasSelectionTileButtonTemplate" TargetType="Button">
+            <Grid x:Name="TileChrome">
+              <Border x:Name="Chrome" CornerRadius="{DynamicResource CanvasButtonCornerRadius}" Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                  RecognizesAccessKey="True" ContentSource="Content"/>
+              </Border>
+              <Ellipse x:Name="ModifiedDot" Width="4" Height="4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="1"
+                       Fill="{DynamicResource CanvasAccent}" Visibility="Collapsed" IsHitTestVisible="False" UseLayoutRounding="True"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <DataTrigger Binding="{Binding IsModified, RelativeSource={RelativeSource Self}}" Value="True">
+                <Setter TargetName="ModifiedDot" Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
+              <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
+              <Trigger Property="IsDefaulted" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter TargetName="TileChrome" Property="Opacity" Value="0.45"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
           <Style x:Key="CanvasPrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{DynamicResource CanvasPrimary}"/>
             <Setter Property="Foreground" Value="{DynamicResource CanvasOnAccent}"/>

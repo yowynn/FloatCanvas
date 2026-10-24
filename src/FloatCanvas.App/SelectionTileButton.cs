@@ -10,24 +10,16 @@ namespace FloatCanvas.App;
 /// <summary>A button that applies a preset and exposes its separate selected state.</summary>
 internal sealed class SelectionTileButton : Button
 {
+    public static readonly DependencyProperty IsModifiedProperty = DependencyProperty.Register(nameof(IsModified), typeof(bool), typeof(SelectionTileButton), new PropertyMetadata(false));
+    public bool IsModified { get => (bool)GetValue(IsModifiedProperty); private set => SetValue(IsModifiedProperty, value); }
     internal bool Selected { get; private set; }
+    public SelectionTileButton() => SetResourceReference(TemplateProperty, "CanvasSelectionTileButtonTemplate");
     internal void SetSelected(bool selected, bool modified = false)
     {
         bool old = Selected; Selected = selected;
+        IsModified = selected && modified;
         AutomationProperties.SetItemStatus(this, selected ? L.Get(modified ? "Audit.SelectedModified" : "Audit.Selected") : "");
         SetResourceReference(BorderBrushProperty, selected ? "CanvasAccent" : "CanvasBorder");
-        if (Content is Grid { Tag: "selection-content" } previous) { var original = previous.Children[0]; previous.Children.RemoveAt(0); Content = original; }
-        if (selected && Content is UIElement child)
-        {
-            Content = null;
-            if (child is FrameworkElement { Parent: Panel parent }) parent.Children.Remove(child);
-            var grid = new Grid { Tag = "selection-content" }; grid.Children.Add(child);
-            var mark = new TextBlock { Text = modified ? "✓*" : "✓", FontSize = 12, FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
-                IsHitTestVisible = false };
-            mark.SetResourceReference(TextBlock.ForegroundProperty, "CanvasText");
-            grid.Children.Add(mark); Content = grid;
-        }
         if (old != selected && UIElementAutomationPeer.FromElement(this) is { } peer)
             peer.RaisePropertyChangedEvent(SelectionItemPatternIdentifiers.IsSelectedProperty, old, selected);
     }

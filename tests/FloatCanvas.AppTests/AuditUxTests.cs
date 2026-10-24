@@ -40,11 +40,12 @@ internal static class AuditUxTests
         }
         var contrast = new ResourceDictionary(); AppTheme.ApplyPalette(contrast, false, true);
         check("audit high contrast uses Windows surfaces and text", Equals(contrast["CanvasSurface"], SystemColors.WindowBrush) && Equals(contrast["CanvasText"], SystemColors.WindowTextBrush));
-        var tile = new SelectionTileButton { Content = new TextBlock { Text = "recipe" } };
+        var artwork = new TextBlock { Text = "recipe" };
+        var tile = new SelectionTileButton { Content = artwork };
         tile.SetSelected(true);
         var peer = UIElementAutomationPeer.CreatePeerForElement(tile)!;
         check("audit preset exposes selected state to automation", peer.GetPattern(PatternInterface.SelectionItem) is ISelectionItemProvider { IsSelected: true });
-        check("audit selected preset has a non-color checkmark", Visuals(tile.Content as DependencyObject).OfType<TextBlock>().Any(value => value.Text == "✓"));
+        check("audit selected preset retains its artwork without an overlaid checkmark", ReferenceEquals(tile.Content, artwork));
         tile.SetSelected(false);
         check("audit selection can be removed without losing tile artwork", tile.Content is TextBlock { Text: "recipe" });
         var name = new TextBox { Text = "   " }; var save = new Button(); var form = new StackPanel();
@@ -102,24 +103,25 @@ internal static class AuditUxTests
     }
     private static void ResourceUndo(string folder, Action<string, bool> check)
     {
-        var tools = new ToolPresetLibrary(Path.Combine(folder, "tools.json"));
+        var session = new EditorSession();
+        var tools = new ToolPresetLibrary(Path.Combine(folder, "tools.json")) { HistorySession = () => session };
         var first = tools.Save("first", new ToolParameters()); var second = tools.Save("second", new ToolParameters());
-        tools.Delete(first.Id); tools.UndoResourceChange();
+        tools.Delete(first.Id); session.Undo();
         check("audit tool deletion restores ID name order and parameters", tools.User[0].Id == first.Id && tools.User[0].Name == first.Name && tools.User[1].Id == second.Id);
-        var changed = new ToolParameters { DefaultWidth = 123 }; tools.Update(first.Id, changed); tools.UndoResourceChange();
+        var changed = new ToolParameters { DefaultWidth = 123 }; tools.Update(first.Id, changed); session.Undo();
         check("audit tool overwrite restores original parameters", tools.User[0].Parameters.DefaultWidth == first.Parameters.DefaultWidth);
-        var canvas = new CanvasPresetLibrary(Path.Combine(folder, "canvas.json"));
+        var canvas = new CanvasPresetLibrary(Path.Combine(folder, "canvas.json")) { HistorySession = () => session };
         var preset = canvas.Save("canvas", new CanvasSettings { BackgroundColor = 0xFF112233 });
-        canvas.Update(preset.Id, new CanvasSettings()); canvas.UndoResourceChange();
+        canvas.Update(preset.Id, new CanvasSettings()); session.Undo();
         check("audit canvas overwrite is recoverable", canvas.User[0].Parameters.BackgroundColor == 0xFF112233);
-        canvas.Delete(preset.Id); canvas.UndoResourceChange();
+        canvas.Delete(preset.Id); session.Undo();
         check("audit canvas deletion restores identity", canvas.User[0].Id == preset.Id);
-        var colors = new ColorLibrary(Path.Combine(folder, "colors.json"));
-        var color = colors.Save("color", 0xFF123456); colors.Update(color.Id, 0); colors.UndoResourceChange();
+        var colors = new ColorLibrary(Path.Combine(folder, "colors.json")) { HistorySession = () => session };
+        var color = colors.Save("color", 0xFF123456); colors.Update(color.Id, 0); session.Undo();
         check("audit color overwrite restores exact ARGB", colors.Swatches[0] == color);
-        colors.Delete(color.Id); colors.Save("new", 42); colors.UndoResourceChange(); colors.UndoResourceChange();
+        colors.Delete(color.Id); colors.Save("new", 42); session.Undo(); session.Undo();
         check("audit intervening color edits preserve undo order", colors.Swatches.Single() == color);
-        colors.Delete(color.Id); colors.Remember(0xFFEEDDCC); colors.UndoResourceChange();
+        colors.Delete(color.Id); colors.Remember(0xFFEEDDCC); session.Undo();
         check("audit resource undo retains unrelated recent-color history", colors.Swatches.Single() == color && colors.History[0] == 0xFFEEDDCC);
     }
     private static void Layout(string folder, Action<string, bool> check)

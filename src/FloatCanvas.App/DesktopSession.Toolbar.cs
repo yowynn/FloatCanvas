@@ -295,6 +295,8 @@ internal sealed partial class DesktopSession
         {
             button.IsEnabled = CanExecuteUiCommand(key);
             string label = L.Get(key == "undo" ? "ToolbarV2.Undo" : "ToolbarV2.Redo") + (key == "undo" ? " · Ctrl+Z" : " · Ctrl+Y");
+            string? operation = key == "undo" ? Active.UndoLabel : Active.RedoLabel;
+            if (button.IsEnabled && operation is not null) label += "\n" + operation;
             button.ToolTip = button.IsEnabled ? label : label + "\n" + UiCommandDisabledHint(key);
             Controls.ToolTipService.SetShowOnDisabled(button, true);
         }

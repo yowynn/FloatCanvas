@@ -18,7 +18,6 @@ internal sealed class ToolPresetGallery : UserControl
     internal readonly PixelTilePanel OfficialTiles = new(5, 36, 4), UserTiles = new(5, 36, 4);
     private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
     private readonly ScrollViewer userScroll;
-    private readonly Button undoButton;
     private readonly StackPanel headings;
     private readonly Grid userArea = new();
     private EditorTool? observedTool;
@@ -46,8 +45,6 @@ internal sealed class ToolPresetGallery : UserControl
         DockPanel.SetDock(save, Dock.Right); userHeader.Children.Add(save); userHeader.Children.Add(Heading("ToolOptions.User")); headings.Children.Add(userHeader);
         userArea.Children.Add(empty);
         userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        undoButton = new Button { Content = L.Get("Audit.UndoResource"), FontSize = 11, MinHeight = 28 };
-        undoButton.Click += (_, _) => Run(() => { library.UndoResourceChange(); Refresh(); }); DockPanel.SetDock(undoButton, Dock.Bottom); body.Children.Add(undoButton);
         userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body; Refresh();
     }
 
@@ -67,7 +64,6 @@ internal sealed class ToolPresetGallery : UserControl
     {
         var tool = ToolPresetLibrary.Family(controller.Tool); var official = library.OfficialFor(tool); var users = library.UserFor(tool);
         bool changed = false;
-        undoButton.IsEnabled = library.CanUndoResourceChange;
         var focus = TileCollection.Capture(this, Tiles());
         bool toolChanged = observedTool != tool; observedTool = tool;
         if (!official.Concat(users).Any(p => p.Id == SelectedId)) { selections[tool] = official.First().Id; changed = true; }
