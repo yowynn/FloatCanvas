@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 手动关闭工具配置后重置固定状态；退出编辑时记住打开的固定窗口并在下次进入时恢复，图层窗口始终按固定窗口处理。窗口层级遵循最近焦点及父子关系，标题按钮统一为帮助、固定、关闭。
+- Reset tool-options pins on manual close; restore open pinned windows on the next editing session and treat Layers as pinned. Stack windows by recent focus and ownership, with Help, Pin and Close in caption order.
+
 - 放大新画布二次确认气泡与文字，使用连续描边连接气泡和尾巴。
 - Enlarge the new-canvas confirmation hint and text, joining its body and pointer with one continuous outline.
 

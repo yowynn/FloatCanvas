@@ -178,7 +178,8 @@ internal sealed partial class DesktopSession : IDisposable
         {
             _overlayWindows?.ClosePopups();
             ClearProjectionHover();
-            EndCanvasCalibration(hidePanel: true);
+            _windowCoordinator?.SuspendEditingWindows();
+            EndCanvasCalibration();
             CancelSnapshotCapture("ExternalFocus", userInitiated: false);
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.ExternalFocus);
             // Do not gate focus release on an asynchronous document operation.
@@ -342,7 +343,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (editing && _desktopFallbackPending) return false;
         ClearProjectionHover();
-        if (!editing) EndCanvasCalibration(hidePanel: true);
+        if (!editing) { _windowCoordinator?.SuspendEditingWindows(); EndCanvasCalibration(); }
         CancelSnapshotCapture(editing ? "ExplicitEntry" : "ModeExit");
         using var destination = editing ? null : _windowCoordinator?.DirectTransfer(WindowDismissReason.ModeExit);
         _newCanvasButton?.CancelConfirmation();
@@ -386,13 +387,14 @@ internal sealed partial class DesktopSession : IDisposable
         if(!_toolbarPlaced)PlaceToolbar();
         if(_inspectorWanted && _inspector is not null){ShowAppWindow(_inspector);_inspector.Refresh();}
         if(_layersWanted && _layers is not null){ShowAppWindow(_layers);_layers.Refresh();}
+        _windowCoordinator?.ResumeEditingWindows();
     }
     private void RaiseVisibleToolWindows()
     {
-        foreach (var window in _app.Windows.Cast<Window>().OrderBy(w => ReferenceEquals(w, _toolbar) ? 0 : 1))
+        var windows = _app.Windows.Cast<Window>();
+        foreach (var window in _windowCoordinator?.OrderForRaise(windows) ?? windows)
             if (window is { IsVisible: true } && new WindowInteropHelper(window).Handle is var handle && handle != 0)
                 OverlayCoordinates.RaiseToolWindow(handle);
-        RaiseToolOptionsPopup();
     }
     private void RequestRender()
     {

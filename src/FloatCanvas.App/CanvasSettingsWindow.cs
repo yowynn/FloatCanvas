@@ -173,7 +173,7 @@ internal sealed class CanvasSettingsWindow : Window
         }
         CommitOnExit(width.Input, CommitWidth);
         width.SliderValueCommitted += () => { if (!refreshing) CommitWidth(); };
-        Closing += (_, e) => { if (disposing) return; e.Cancel = true; SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
+        Closing += (_, e) => { if (disposing) return; e.Cancel = true; ResetPin(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         ToolOptionsKeyboardRoute.Attach(this, () =>
         {
             if (TryCloseColorPicker()) return true;
@@ -253,6 +253,7 @@ internal sealed class CanvasSettingsWindow : Window
         }
     }
     private void RefreshPin() => ActionIconButton.UpdatePin(pin, IsPinned);
+    internal void ResetPin() { IsPinned = false; RefreshPin(); }
     private void RefreshGridSize(double value)
     {
         gridSize.Value = Math.Clamp(value, CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize);

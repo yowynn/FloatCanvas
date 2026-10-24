@@ -88,6 +88,7 @@ internal sealed partial class DesktopSession
         if (!IsCanvasSettingsOpen) return;
         using var intent = reason == WindowDismissReason.Close ? null : _windowCoordinator?.DirectTransfer(reason);
         _canvasSettingsWindow!.ClosePickers();
+        if (reason == WindowDismissReason.Close) _canvasSettingsWindow.ResetPin();
         SessionWindowCoordinator.Hide(_canvasSettingsWindow, reason);
     }
 

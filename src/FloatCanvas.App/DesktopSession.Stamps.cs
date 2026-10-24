@@ -245,6 +245,7 @@ internal sealed partial class DesktopSession
             _layers = new LayersWindow(() => Active, () => !DocumentOperationBusy);
             ConfigureAppWindow(_layers);
             _layers.CommandKey += OnKey;
+            _windowCoordinator?.Register(_layers, () => true);
             _layers.Dismissed += () => _layersWanted = false;
         }
         if (_layersWanted) { _layers.Refresh(); ShowAppWindow(_layers, true); }

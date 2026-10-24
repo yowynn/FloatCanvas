@@ -82,6 +82,7 @@ internal static class Program
             if (args.Contains("--shortcut-surfaces-only")) { ShortcutSurfaceRoutingTests.Run(Assert); return 0; }
             if (args.Contains("--aux-shortcuts-only")) { AuxiliaryShortcutRoutingTests.Run(Assert); return 0; }
             if (args.Contains("--aux-shortcut-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "aux-shortcut-runtime"); return 0; }
+            if (args.Contains("--phase2-windows-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-windows"); return 0; }
             if (args.Contains("--input-method-ui-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "input-method-ui"); return 0; }
             if (args.Contains("--temporary-move-controller-only")) { TemporaryMoveControllerTests.Run(Assert); return 0; }
             if (args.Contains("--selection-shortcut-regression-only")) { SelectionShortcutRegressionTests.Run(Assert); return 0; }

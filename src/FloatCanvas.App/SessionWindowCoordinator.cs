@@ -20,9 +20,12 @@ internal sealed class SessionWindowCoordinator : IDisposable
     private readonly Window toolbar;
     private readonly Dictionary<Window, Registration> windows = [];
     private readonly Dictionary<object, Action> popups = [];
+    private readonly HashSet<Window> suspendedWindows = [];
+    internal bool IsSuspendingWindows { get; private set; }
     private WindowDismissReason? destination;
     private long nextIntent, intentToken, intentSession;
     private bool disposed;
+    private long activationOrder;
 
     internal SessionWindowCoordinator(OverlayHost host, Window toolbar)
     {
@@ -71,6 +74,8 @@ internal sealed class SessionWindowCoordinator : IDisposable
         windows.Add(window, registration);
         window.Closing += OnClosing;
         window.Closed += OnClosed;
+        window.Activated += OnActivated;
+        window.GotKeyboardFocus += OnKeyboardFocus;
     }
 
     internal static void Show(Window window, bool activate = false)
@@ -168,6 +173,50 @@ internal sealed class SessionWindowCoordinator : IDisposable
         foreach (var registration in windows.Values.ToArray())
             if (registration.Window.IsVisible && registration.Pinned?.Invoke() != true)
                 registration.DismissTransient?.Invoke(reason);
+    }
+
+    internal void SuspendEditingWindows()
+    {
+        using var intent = DirectTransfer(WindowDismissReason.ModeExit);
+        IsSuspendingWindows = true;
+        try
+        {
+            foreach (var registration in windows.Values.ToArray())
+            {
+                if (!registration.Window.IsVisible || registration.Pinned is null) continue;
+                if (registration.Pinned?.Invoke() == true) suspendedWindows.Add(registration.Window);
+                else registration.DismissTransient?.Invoke(WindowDismissReason.ModeExit);
+                registration.Window.Hide();
+            }
+        }
+        finally { IsSuspendingWindows = false; }
+    }
+
+    internal void ResumeEditingWindows()
+    {
+        foreach (var window in suspendedWindows.ToArray())
+            if (windows.ContainsKey(window)) Show(window);
+        suspendedWindows.Clear();
+    }
+
+    internal IEnumerable<Window> OrderForRaise(IEnumerable<Window> candidates) => candidates
+        .OrderBy(window => windows.TryGetValue(window, out var item) ? item.ActivationOrder : 0)
+        .ThenBy(OwnerDepth);
+
+    private static int OwnerDepth(Window window)
+    {
+        int depth = 0;
+        for (var owner = window.Owner; owner is not null; owner = owner.Owner) depth++;
+        return depth;
+    }
+
+    private void OnActivated(object? sender, EventArgs args) { if (sender is Window window) RememberActivation(window); }
+    private void OnKeyboardFocus(object sender, KeyboardFocusChangedEventArgs args) { if (sender is Window window) RememberActivation(window); }
+    private void RememberActivation(Window window)
+    {
+        long order = ++activationOrder;
+        for (Window? current = window; current is not null && !ReferenceEquals(current, toolbar); current = current.Owner)
+            if (windows.TryGetValue(current, out var item)) item.ActivationOrder = order;
     }
 
     // Capture the physical destination before a Popup's close/commit detaches its visual tree.
@@ -283,7 +332,9 @@ internal sealed class SessionWindowCoordinator : IDisposable
     {
         if (sender is not Window window) return;
         windows.Remove(window);
+        suspendedWindows.Remove(window);
         window.Closing -= OnClosing; window.Closed -= OnClosed;
+        window.Activated -= OnActivated; window.GotKeyboardFocus -= OnKeyboardFocus;
         window.Resources.Remove(ResourceKey);
     }
 
@@ -293,15 +344,17 @@ internal sealed class SessionWindowCoordinator : IDisposable
         foreach (var window in windows.Keys.ToArray())
         {
             window.Closing -= OnClosing; window.Closed -= OnClosed;
+            window.Activated -= OnActivated; window.GotKeyboardFocus -= OnKeyboardFocus;
             window.Resources.Remove(ResourceKey);
         }
-        windows.Clear(); popups.Clear(); toolbar.Resources.Remove(ResourceKey);
+        windows.Clear(); popups.Clear(); suspendedWindows.Clear(); toolbar.Resources.Remove(ResourceKey);
     }
 
     private sealed class Registration
     {
         internal required Window Window;
         internal Func<bool>? Pinned;
+        internal long ActivationOrder;
         internal Action<WindowDismissReason>? DismissTransient;
     }
 

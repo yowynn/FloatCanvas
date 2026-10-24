@@ -109,6 +109,8 @@ internal sealed partial class DesktopSession
     private void DismissToolOptions(WindowDismissReason reason)
     {
         if (!IsToolOptionsOpen) return;
+        _toolOptionsPinned = false;
+        UpdateToolOptionsPin();
         using var intent = reason == WindowDismissReason.Close ? null : _windowCoordinator?.DirectTransfer(reason);
         _toolOptionsPanel.CloseColorPicker();
         SessionWindowCoordinator.Hide(_toolOptionsWindow, reason);
@@ -177,11 +179,6 @@ internal sealed partial class DesktopSession
         return workArea.Bottom-toolbar.Height-8>=popup.Height || workArea.Bottom-toolbar.Height-8>=-workArea.Top-8 ? [below,above] : [above,below];
     }
     private void RepositionToolOptions() { } // Toolbar movement/collapse never moves an already opened panel.
-    private void RaiseToolOptionsPopup()
-    {
-        if (!_disposed && IsToolOptionsOpen && new WindowInteropHelper(_toolOptionsWindow).Handle is var h && h!=0)
-            OverlayCoordinates.RaiseToolWindow(h);
-    }
     private void CheckToolOptionsFocus()
     {
         if (_host.IsInputMethodSwitchPending) return;

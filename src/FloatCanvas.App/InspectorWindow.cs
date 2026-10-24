@@ -175,7 +175,9 @@ internal sealed class InspectorWindow : Wpf.Window
         Deactivated += (_, _) => {CompleteEdit();QueueFocusCheck();};
         propertyPanel.LostKeyboardFocus += (_, _) => { if (!propertyPanel.IsKeyboardFocusWithin) CompleteEdit(); };
         Closing += (_, e) => { e.Cancel = true; CompleteEdit(); CancelScrub(); CloseColorPickers(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
-        IsVisibleChanged += (_, _) => { if (!IsVisible) { CompleteEdit(); CloseColorPickers(); IsPinned=false;UpdatePin();Dismissed?.Invoke(); } };
+        IsVisibleChanged += (_, _) => { if (!IsVisible) { CompleteEdit(); CloseColorPickers();
+            if (SessionWindowCoordinator.Find(this)?.IsSuspendingWindows == true && IsPinned) return;
+            IsPinned=false;UpdatePin();Dismissed?.Invoke(); } };
         AppInputPolicy.AttachToolbarToggle(this, () => CommandKey?.Invoke(0x09), () => this.canMutate() && !colorFields.Values.Any(field => field.IsPickerOpen));
         PreviewKeyDown += (_, e) =>
         {

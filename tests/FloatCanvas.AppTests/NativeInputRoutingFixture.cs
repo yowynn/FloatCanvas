@@ -205,6 +205,8 @@ internal static class NativeInputRoutingFixture
             if (scenario == "input-method-ui") InputMethodUiContextTests.Run(check, session, host, toolbar);
             if (scenario == "shortcut-matrix") ShortcutRoutingMatrixRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "aux-shortcut-runtime") AuxiliaryShortcutRuntimeTests.Run(check, session, host, toolbar, dispatch);
+            if (scenario == "phase2-windows") Phase2WindowTests.Run(check, session, host, toolbar,
+                action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
             if (scenario == "launcher-tab") LauncherTabRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "feedback4-workspace") Feedback4Workspace(check, session, host, toolbar, editor);
             if (scenario == "preview4-settings") Preview4SettingsRuntimeFixture.Run(check, session, host, toolbar, action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
