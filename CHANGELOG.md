@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 整框拖动保留 Alt 单独编辑组成员及 Shift 增减选择；单击组成员可恢复整组选择。
+- Retain Alt child editing and Shift selection changes with whole-frame dragging; clicking a group member can restore group selection.
+
 - 重叠选框内部保留两种操作：单击按可见前景选取，拖动则移动当前已选图层，避免整框拖动截获深度点选。
 - Preserve visible-foreground clicks inside overlapping selection frames while dragging the same area moves the current selection.
 

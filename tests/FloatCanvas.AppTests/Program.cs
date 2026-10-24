@@ -88,6 +88,7 @@ internal static class Program
             if (args.Contains("--phase2-creation-click-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-creation-click"); return 0; }
             if (args.Contains("--phase2-hidden-canvas-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-hidden"); return 0; }
             if (args.Contains("--phase2-selection-only")) { Phase2SelectionTests.Run(Assert); return 0; }
+            if (args.Contains("--workspace-controller-only")) { WorkspaceToolControllerTests.Run(Assert); return 0; }
             if (args.Contains("--phase2-color-window-only")) { Phase2ColorWindowTests.Run(Assert); return 0; }
             if (args.Contains("--phase2-render-only")) { Phase2RenderTests.Run(Assert); return 0; }
             if (args.Contains("--phase2-render-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-render"); return 0; }

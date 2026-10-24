@@ -50,6 +50,7 @@ internal static class ShortcutSurfaceRoutingTests
         {
             if (!stateSaved) return;
             SetModifiers(ModifierKeys.None);
+            check("shortcut matrix begins ordinary routes with no thread-local modifiers", Keyboard.Modifiers == ModifierKeys.None);
             var ordinary = new[]
             {
                 Key.V, Key.E, Key.B, Key.H, Key.L, Key.R, Key.O, Key.T, Key.N, Key.S, Key.J, Key.I, Key.P,

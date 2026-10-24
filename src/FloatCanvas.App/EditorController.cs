@@ -482,14 +482,22 @@ internal sealed partial class EditorController
             }
             if (SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14) gesture = "rotate";
             else if (SelectionScreenCorners.Any(c => pointerScreen.DistanceTo(c) < 12)) gesture = "resize";
-            else if (SelectionScreenCorners is { Count: 4 } screenCorners &&
+            else if ((modifiers & OverlayModifiers.Alt) == 0 && SelectionScreenCorners is { Count: 4 } screenCorners &&
                 ElementGeometry.PointInPolygon(pointerScreen, screenCorners)) gesture = "move";
         }
         if (gesture == null && selectedOnly && bounds is not null)
         { selectionBounds = bounds.Value; gesture = "move"; }
-        if (gesture == "move" && !temporaryMove && !selectedOnly && modifiers == OverlayModifiers.None &&
-            HitTestScreen(pointerScreen, 7) is { } foreground && !Session.Selection.Contains(foreground.Id))
-            selectionOnClick = Session.SelectionUnitIds(foreground.Id).ToArray();
+        if (gesture == "move" && !temporaryMove && !selectedOnly && modifiers is OverlayModifiers.None or OverlayModifiers.Shift &&
+            HitTestScreen(pointerScreen, 7) is { } foreground)
+        {
+            var unit = Session.SelectionUnitIds(foreground.Id).ToArray();
+            if (modifiers == OverlayModifiers.Shift)
+            {
+                if (unit.All(Session.Selection.Contains)) shiftDeselectOnClick = true;
+                else selectionOnClick = Session.Selection.Union(unit).ToArray();
+            }
+            else if (!unit.All(Session.Selection.Contains)) selectionOnClick = unit;
+        }
         if (gesture == null)
         {
             var hit = HitTestScreen(pointerScreen, 7);
@@ -520,7 +528,7 @@ internal sealed partial class EditorController
         // An overlapping foreground layer wins a click, while dragging from the same
         // selected-frame body moves the current selection. Ignore click-sized jitter
         // until the existing physical movement threshold establishes that intent.
-        if (gesture == "move" && selectionOnClick is not null && !gestureMoved) return;
+        if (gesture == "move" && (selectionOnClick is not null || shiftDeselectOnClick) && !gestureMoved) return;
         if (MoveBillboardSelection(p, modifiers)) return;
         if (HasCaptureGesture) { UpdateCapturePreview(p, modifiers); return; }
         if (gesture is "effect" or "image-crop") { UpdateImageRegion(p,modifiers); Changed?.Invoke(); return; }
