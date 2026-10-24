@@ -30,7 +30,9 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
         var shown = new Window { Title = title, Content = child, Owner = owner, ShowInTaskbar = false, Topmost = true,
             ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight,
             WindowStartupLocation = WindowStartupLocation.Manual, ShowActivated = owner.IsActive, Icon = AppIcon.WindowImage };
-        shown.Resources.MergedDictionaries.Add(owner.Resources);
+        // Theme resources are application-scoped. A source dictionary also contains live
+        // caption controls; sharing it reparents the owner's Pin/Help actions into this window.
+        AppTheme.EnsureDialogPalette(shown);
         window = shown;
         AppWindowChrome.Apply(shown);
         child.Measure(new Size(SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight));

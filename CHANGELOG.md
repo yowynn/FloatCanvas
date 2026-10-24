@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 颜色子窗口只使用应用主题资源，不再继承并搬走来源窗口的标题按钮或帮助内容。
+- Keep source caption buttons and help in their own window when opening a color child, using application theme resources for the child.
+
 - 整框拖动保留 Alt 单独编辑组成员及 Shift 增减选择；单击组成员可恢复整组选择。
 - Retain Alt child editing and Shift selection changes with whole-frame dragging; clicking a group member can restore group selection.
 

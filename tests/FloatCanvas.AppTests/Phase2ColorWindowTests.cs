@@ -15,6 +15,10 @@ internal static class Phase2ColorWindowTests
         {
             var owner = new Window { Title = "Phase2 color owner", Width = 500, Height = 200, ShowActivated = false, ShowInTaskbar = false };
             using var scope = enhanced ? new OverlayWindowScope(new WindowInteropHelper(owner).EnsureHandle(), () => true) : null;
+            var ownerPin = new Button { Content = "Owner pin" };
+            AppWindowChrome.SetHeaderActions(owner, ownerPin);
+            AppWindowChrome.SetHelp(owner, "Owner help", "Help belongs to the source window.");
+            AppWindowChrome.Apply(owner);
             var field = new ColorField(ColorRole.Foreground);
             var outside = new Button { Content = "Source action" };
             var body = new StackPanel(); body.Children.Add(field); body.Children.Add(outside);
@@ -25,6 +29,9 @@ internal static class Phase2ColorWindowTests
                 check("color picker uses a real owned WPF window for enhanced=" + enhanced, color is not null && color != owner && color.Owner == owner);
                 check("color window provides ordinary caption controls", color!.Template.FindName("TitleBar", color) is FrameworkElement &&
                     color.Template.FindName("Close", color) is Button && !string.IsNullOrEmpty(color.Title));
+                check("source caption actions remain in the source window", Window.GetWindow(ownerPin) == owner);
+                check("a color window does not inherit source help or header actions", !color.Resources.Contains("CanvasWindowActions") &&
+                    Equals(color.TryFindResource("CanvasWindowHelpVisibility"), Visibility.Collapsed));
                 using (var retention = PopupChildDialog.RetainFor(field.PickerRoot))
                     check("child-dialog retention keeps the regular color window open", retention is not null && field.IsPickerOpen);
                 var picker = (ColorPickerPanel)typeof(ColorField).GetField("picker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(field)!;
