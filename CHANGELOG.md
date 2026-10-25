@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 预设参数修改提示改为右上角内侧的圆角三角封角，取消越界蓝点及其滚动区留白，保持原预览和相邻槽完整。
+- Mark modified presets with an inset rounded triangle at the upper-right corner, removing the protruding dot and its scroll padding while preserving previews and adjacent tiles.
+
 - 画布工具的空闲 Esc 与普通工具一样退出编辑，不再额外切到选择工具；未完成的画布手势和非固定配置仍优先取消／关闭。
 - Let idle Escape leave editing from Canvas like other tools, without an extra switch to Select; retain cancellation of unfinished canvas gestures and dismissal of unpinned settings.
 

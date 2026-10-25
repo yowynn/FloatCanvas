@@ -4,7 +4,6 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using FloatCanvas.App;
 using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
@@ -37,28 +36,29 @@ internal static class PresetSelectionAppearanceTests
                     check(name + " leaves the original preview and dimensions intact", ReferenceEquals(tile.Content, artwork) && Near(previewBounds.Width, 24) && Near(previewBounds.Height, 24));
                     tile.SetSelected(true); Layout(root, scale);
                     var selected = Raster(root, scale);
-                    var dot = (Ellipse)tile.Template.FindName("ModifiedDot", tile);
-                    check(name + " uses selection border without a check or content wrapper", ReferenceEquals(tile.Content, artwork) && !tile.IsModified && dot.Visibility == Visibility.Collapsed &&
+                    var corner = tile.Template.FindName("ModifiedCorner", tile) as System.Windows.Shapes.Path;
+                    check(name + " provides an inset triangular modification corner", corner is not null);
+                    check(name + " uses selection border without a check or content wrapper", ReferenceEquals(tile.Content, artwork) && !tile.IsModified && corner!.Visibility == Visibility.Collapsed &&
                         AutomationProperties.GetItemStatus(tile) == L.Get("Audit.Selected") && Equals(tile.BorderBrush, app.Resources["CanvasAccent"]));
                     check(name + " selection leaves all preview pixels unchanged", SamePreview(before, selected, previewBounds, scale));
 
                     tile.SetSelected(true, modified: true); Layout(root, scale);
                     var modified = Raster(root, scale);
-                    var dotBounds = new Rect(dot.TranslatePoint(new Point(), root), dot.RenderSize);
-                    check(name + " centers a larger accent dot on the upper border outside the preview", dot.Visibility == Visibility.Visible && !dot.IsHitTestVisible &&
-                        dotBounds.Width >= 7 && dotBounds.Height >= 7 && dotBounds.Right <= root.ActualWidth + 1 &&
-                        dotBounds.Top < 0 && Math.Abs(dotBounds.Top + dotBounds.Height / 2 - 1) <= 1 &&
-                        !dotBounds.IntersectsWith(previewBounds) && Equals(dot.Fill, app.Resources["CanvasAccent"]));
+                    var cornerBounds = new Rect(corner!.TranslatePoint(new Point(), root), corner.RenderSize);
+                    check(name + " keeps the rounded triangular corner entirely inside the upper-right tile bounds", corner.Visibility == Visibility.Visible && !corner.IsHitTestVisible &&
+                        cornerBounds.Width >= 8 && cornerBounds.Height >= 8 && Near(cornerBounds.Right, root.ActualWidth) && Near(cornerBounds.Top, 0) &&
+                        new Rect(root.RenderSize).Contains(cornerBounds) && corner.Data.FillContains(new Point(8, 4)) &&
+                        !corner.Data.FillContains(new Point(2, 8)) && Equals(corner.Fill, app.Resources["CanvasAccent"]));
                     check(name + " modified chrome keeps the original preview pixels and accessible state", SamePreview(before, modified, previewBounds, scale) &&
                         AutomationProperties.GetItemStatus(tile) == L.Get("Audit.SelectedModified"));
-                    check(name + " modification dot is actually rasterized in its corner", ColorAt(modified, dotBounds.Left + dotBounds.Width / 2, dotBounds.Top + dotBounds.Height / 2, scale) == ((SolidColorBrush)dot.Fill).Color);
+                    check(name + " modification corner is actually rasterized", ColorAt(modified, cornerBounds.Right - 3, cornerBounds.Top + 3, scale) == ((SolidColorBrush)corner.Fill).Color);
                     if (output is not null && scale is 1 or 1.5 or 2 or 3)
                     {
                         Save(selected, System.IO.Path.Combine(output, theme + "-" + scale * 100 + "-selected.png"));
                         Save(modified, System.IO.Path.Combine(output, theme + "-" + scale * 100 + "-modified.png"));
                     }
                     tile.SetSelected(false, modified: true); Layout(root, scale);
-                    check(name + " clearing selection also clears the modification dot", !tile.IsModified && dot.Visibility == Visibility.Collapsed &&
+                    check(name + " clearing selection also clears the modification corner", !tile.IsModified && corner.Visibility == Visibility.Collapsed &&
                         ReferenceEquals(tile.Content, artwork) && AutomationProperties.GetItemStatus(tile) == "");
                 }
             }

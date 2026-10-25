@@ -217,12 +217,12 @@ internal static class AppTheme
                 <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                   RecognizesAccessKey="True" ContentSource="Content"/>
               </Border>
-              <Ellipse x:Name="ModifiedDot" Width="8" Height="8" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-3,0,0"
+              <Path x:Name="ModifiedCorner" Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Data="M0,0 H4 A6,6 0 0 1 10,6 V10 Z"
                        Fill="{DynamicResource CanvasAccent}" Visibility="Collapsed" IsHitTestVisible="False" UseLayoutRounding="True"/>
             </Grid>
             <ControlTemplate.Triggers>
               <DataTrigger Binding="{Binding IsModified, RelativeSource={RelativeSource Self}}" Value="True">
-                <Setter TargetName="ModifiedDot" Property="Visibility" Value="Visible"/>
+                <Setter TargetName="ModifiedCorner" Property="Visibility" Value="Visible"/>
               </DataTrigger>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
               <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>

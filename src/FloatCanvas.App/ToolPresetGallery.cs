@@ -40,12 +40,11 @@ internal sealed class ToolPresetGallery : UserControl
         officialHeader.Children.Add(Heading("ToolOptions.Official"));
         headings.Children.Add(officialHeader); headings.Children.Add(OfficialTiles);
         DockPanel.SetDock(headings, Dock.Top); body.Children.Add(headings);
-        // Three of the four gap DIPs sit inside the viewport so the modification dot is not clipped.
-        var userHeader = new DockPanel { Height = 34, Margin = new(0, 12, 0, 1) };
+        var userHeader = new DockPanel { Height = 34, Margin = new(0, 12, 0, 4) };
         var save = ActionIconButton.Create(PanelActionIcon.Add, L.Get("ToolOptions.NewPresetHint"), Save);
         DockPanel.SetDock(save, Dock.Right); userHeader.Children.Add(save); userHeader.Children.Add(Heading("ToolOptions.User")); headings.Children.Add(userHeader);
         userArea.Children.Add(empty);
-        userScroll = new ScrollViewer { Content = UserTiles, Padding = new Thickness(0, 3, 0, 0), VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body; Refresh();
     }
 
@@ -57,7 +56,7 @@ internal sealed class ToolPresetGallery : UserControl
         double gap = Math.Round(UserTiles.Gap * dpi, MidpointRounding.AwayFromZero) / dpi;
         // Four rows set the desired height. More recipes scroll rather than growing
         // the window; Arrange can still stretch the viewport beside taller options.
-        userArea.MinHeight = 4 * row + 3 * gap + 3;
+        userArea.MinHeight = 4 * row + 3 * gap;
         return base.MeasureOverride(new Size(constraint.Width, headings.DesiredSize.Height + userArea.MinHeight));
     }
 
