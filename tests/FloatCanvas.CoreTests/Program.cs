@@ -4,6 +4,10 @@ using System.Text.Json;
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
 void Near(double actual, double expected, string message) => Check(Math.Abs(actual - expected) < 1e-8, $"{message}: {actual} != {expected}");
+if (args.Contains("--preview-changes-only")) { PreviewChangeTests.Run(Check); Console.WriteLine($"PASS {checks} preview change checks"); return; }
+PreviewChangeTests.Run(Check);
+if (args.Contains("--points-only")) { PointCollectionTests.Run(Check); Console.WriteLine($"PASS {checks} point collection checks"); return; }
+PointCollectionTests.Run(Check);
 if (args.Contains("--billboard-only")) { BillboardGeometryTests.Run(Check); Console.WriteLine($"PASS {checks} billboard core checks"); return; }
 DataRemediationTests.Run(Check);
 BillboardGeometryTests.Run(Check);

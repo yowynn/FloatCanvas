@@ -407,9 +407,9 @@ internal sealed partial class DesktopSession
         System.Windows.Automation.AutomationProperties.SetName(opacity,L.Get("Feedback3.Toolbar.Opacity"));
         opacity.PreviewMouseLeftButtonDown+=(_,_)=>{if(!DocumentOperationBusy){_editor.Cancel();Active.BeginTransaction(L.Get("History.LayerOpacity"));}};
         opacity.ValueChanged+=(_,_)=>
-        {if(_syncingControls||DocumentOperationBusy)return;if(Active.IsTransactionActive){Active.Document.LayerOpacity=opacity.Value;Active.NotifyChanged();}else Active.Execute(L.Get("History.LayerOpacity"),document=>document.LayerOpacity=opacity.Value);};
-        opacity.PreviewMouseLeftButtonUp+=(_,_)=>{if(Active.IsTransactionActive)Active.Commit();};
-        opacity.LostMouseCapture+=(_,_)=>{if(Active.IsTransactionActive)Active.Commit();};return opacity;
+        {if(_syncingControls||DocumentOperationBusy)return;if(Active.IsTransactionActive){Active.Document.LayerOpacity=opacity.Value;Active.NotifySettingsChanged();}else Active.ExecuteSettings(L.Get("History.LayerOpacity"),document=>document.LayerOpacity=opacity.Value);};
+        opacity.PreviewMouseLeftButtonUp+=(_,_)=>{if(Active.IsTransactionActive)Active.CommitSettings();};
+        opacity.LostMouseCapture+=(_,_)=>{if(Active.IsTransactionActive)Active.CommitSettings();};return opacity;
     }
     private static Controls.Border Surface(UIElement child, double radius, Thickness padding)
     {

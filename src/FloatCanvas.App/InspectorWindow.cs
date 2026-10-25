@@ -399,7 +399,7 @@ internal sealed class InspectorWindow : Wpf.Window
                 formFingerprint = JsonSerializer.Serialize(selected);
                 dirtyFields.Clear();
                 SynchronizeOtherFields(selected, changedKey);
-                session.NotifyChanged();
+                session.NotifyElementsChanged(changes.Select(change => change.Item1.Id));
             }
             finally { applying = false; }
             editTimer.Stop(); editTimer.Start();
@@ -717,7 +717,7 @@ internal sealed class InspectorWindow : Wpf.Window
             target.TextFrameFixed = edited.TextFrameFixed;
             target.BillboardAnchor=edited.BillboardAnchor;target.BillboardHeight=edited.BillboardHeight;
         }
-        session.NotifyChanged();
+        session.NotifyElementsChanged(changes.Select(change => change.Item1.Id));
         refreshing = true;
         try { SetField(key, displayValue); }
         finally { refreshing = false; }

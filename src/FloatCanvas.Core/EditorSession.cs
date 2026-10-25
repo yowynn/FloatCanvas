@@ -10,7 +10,7 @@ public sealed partial class EditorSession
     private SceneDocument? transactionBefore;
     private HashSet<Guid>? transactionSelection;
     private string transactionLabel = "";
-    private long sequence, nextContentVersion, transactionContentVersion;
+    private long sequence, nextContentVersion, transactionContentVersion, transactionPreviewRevision;
     public long ContentVersion { get; private set; }
     public bool HasPendingChanges { get; private set; }
 
@@ -32,6 +32,10 @@ public sealed partial class EditorSession
     public bool IsTransactionActive => transactionBefore is not null;
     /// <summary>Changes after committed content, rollback or transaction-external content notification; selection alone does not change it.</summary>
     public long SceneRevision { get; private set; }
+    /// <summary>Every content notification, including intermediate gesture values. Selection does not advance it.</summary>
+    public long PreviewRevision { get; private set; }
+    /// <summary>Latest preview revision which can have changed elements rather than only scene settings.</summary>
+    public long PreviewElementsRevision { get; private set; }
     /// <summary>Monotonic identity for a transaction, including a transaction later cancelled.</summary>
     public long TransactionId { get; private set; }
     public string? UndoLabel => undo.LastOrDefault()?.Label;
@@ -44,26 +48,37 @@ public sealed partial class EditorSession
     public void BeginTransaction(string label)
     {
         if (IsTransactionActive) throw new InvalidOperationException(L.Get("History.TransactionAlreadyActive"));
-        transactionContentVersion = ContentVersion; HasPendingChanges = false;
+        transactionContentVersion = ContentVersion; transactionPreviewRevision = PreviewRevision; HasPendingChanges = false;
         transactionBefore = Document.Clone(); transactionSelection = [.. Selection]; transactionLabel = label; TransactionId++;
     }
-    public void Commit()
+    public void Commit() => CommitCore(settingsOnly: false);
+    /// <summary>
+    /// Commit a scene-wide settings edit without changing elements, background, groups or display layout.
+    /// A violated declaration conservatively invalidates preview nodes; undo semantics stay unchanged.
+    /// </summary>
+    public void CommitSettings() => CommitCore(settingsOnly: true);
+    private void CommitCore(bool settingsOnly)
     {
         if (transactionBefore is null) throw new InvalidOperationException(L.Get("History.NoActiveTransaction"));
         var before = transactionBefore; var selectedBefore = transactionSelection!;
         try { Document.PruneGroups(); SceneLimits.ValidateCapacity(Document); }
         catch { Cancel(); throw; }
         PruneSelection();
+        bool knownSettings = settingsOnly && PreviewElementsRevision <= transactionPreviewRevision && SettingsElementsUnchanged(before);
         if (SceneContent.Equal(before, Document))
         {
-            transactionBefore = null; transactionSelection = null; HasPendingChanges = false; OnChanged(); return;
+            transactionBefore = null; transactionSelection = null; HasPendingChanges = false;
+            // Even a net-zero gesture may have published an intermediate preview before
+            // its final unnotified mutation. Preserve history while invalidating that frame.
+            if (PreviewRevision != transactionPreviewRevision) RecordPreviewChange(elementsChanged: !knownSettings);
+            OnChanged(); return;
         }
         var after = Document.Clone();
         transactionBefore = null; transactionSelection = null; HasPendingChanges = false;
         ContentVersion = ++nextContentVersion;
         redo.Clear();
         undo.Add(new(transactionLabel, before, after, selectedBefore, [.. Selection], EstimateBytes(before) + EstimateBytes(after), ++sequence, before.ReferencedAssets.Concat(after.ReferencedAssets).Distinct(StringComparer.Ordinal).ToArray(), transactionContentVersion, ContentVersion));
-        TrimHistory(); OnChanged(contentChanged: true, preserveContentVersion: true);
+        TrimHistory(); OnChanged(contentChanged: true, preserveContentVersion: true, previewElementsChanged: !knownSettings);
     }
     public void Cancel()
     {
@@ -74,6 +89,16 @@ public sealed partial class EditorSession
     {
         BeginTransaction(label);
         try { operation(Document); Commit(); }
+        catch { Cancel(); throw; }
+    }
+    /// <summary>
+    /// Execute an atomic canvas/viewport/opacity setting edit. Elements, background, groups and
+    /// display layout must remain unchanged; unexpected object changes invalidate preview reuse.
+    /// </summary>
+    public void ExecuteSettings(string label, Action<SceneDocument> operation)
+    {
+        BeginTransaction(label);
+        try { operation(Document); CommitSettings(); }
         catch { Cancel(); throw; }
     }
     /// <summary>
@@ -100,6 +125,8 @@ public sealed partial class EditorSession
     /// Prefer Execute for user edits so changes also participate in undo and recovery.
     /// </summary>
     public void NotifyChanged() => OnChanged(contentChanged: true);
+    /// <summary>For a scene-wide setting edit which leaves every element unchanged.</summary>
+    public void NotifySettingsChanged() => OnChanged(contentChanged: true, previewElementsChanged: false);
     public bool Undo()
     {
         Cancel();
@@ -232,8 +259,10 @@ public sealed partial class EditorSession
             size += 512 + e!.Points.Count * 16L + e.Text.Length * 2L + (e.Name?.Length ?? 0) * 2L + e.Style.FontFamily.Length * 2L + (e.AssetId?.Length ?? 0) * 2L + e.Effects.Count * 96L;
         return size;
     }
-    private void OnChanged(bool contentChanged = false, bool preserveContentVersion = false)
+    private void OnChanged(bool contentChanged = false, bool preserveContentVersion = false, bool previewElementsChanged = true,
+        IReadOnlySet<Guid>? previewChangedElements = null)
     {
+        if (contentChanged) RecordPreviewChange(previewElementsChanged, previewChangedElements);
         if (contentChanged && IsTransactionActive) HasPendingChanges = true;
         if (contentChanged && !IsTransactionActive) { SceneRevision++; if (!preserveContentVersion) ContentVersion = ++nextContentVersion; }
         Changed?.Invoke(this, EventArgs.Empty);

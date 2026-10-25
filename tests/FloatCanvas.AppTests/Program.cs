@@ -102,6 +102,12 @@ internal static class Program
             if (args.Contains("--phase3-system-screenshot-only")) { Phase3SystemScreenshotTests.Run(Assert); return 0; }
             if (args.Contains("--phase3-screenclip-receiver")) { Phase3ScreenClipProbe.Receiver(); return 0; }
             if (args.Contains("--brush-preview-only")) { BrushPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--preview-animation-schedule-only")) { PreviewAnimationScheduleTests.Run(Assert); return 0; }
+            if (args.Contains("--unified-preview-performance-only")) { UnifiedPreviewPerformanceTests.Run(Assert); return 0; }
+            if (args.Contains("--unified-preview-correctness-only")) { UnifiedPreviewCorrectnessTests.Run(Assert); return 0; }
+            if (args.Contains("--unified-preview-enhanced-performance-only")) { UnifiedPreviewPerformanceTests.Run(Assert, true); return 0; }
+            if (args.Contains("--async-preview-freeze-only")) { AsyncPreviewFreezeTests.Run(Assert); return 0; }
+            if (args.Contains("--unified-preview-visual-fixture")) { UnifiedPreviewVisualFixture.Run(Assert); return 0; }
             if (args.Contains("--phase2-render-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-render"); return 0; }
             if (args.Contains("--input-method-ui-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "input-method-ui"); return 0; }
             if (args.Contains("--temporary-move-controller-only")) { TemporaryMoveControllerTests.Run(Assert); return 0; }

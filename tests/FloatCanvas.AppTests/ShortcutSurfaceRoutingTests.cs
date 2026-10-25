@@ -45,10 +45,14 @@ internal static class ShortcutSurfaceRoutingTests
         }).ToArray();
         var originalKeys = new byte[256];
         bool stateSaved = GetKeyboardState(originalKeys);
+        var fixtureModifiers = ModifierKeys.None;
         check("shortcut matrix can preserve this test thread's keyboard state", stateSaved);
         try
         {
             if (!stateSaved) return;
+            // Device initialization and native queue inspection must happen before
+            // installing a synthetic thread snapshot, not while a route is using it.
+            _ = Keyboard.PrimaryDevice; _ = Keyboard.Modifiers;
             SetModifiers(ModifierKeys.None);
             check("shortcut matrix begins ordinary routes with no thread-local modifiers", Keyboard.Modifiers == ModifierKeys.None);
             var ordinary = new[]
@@ -125,17 +129,47 @@ internal static class ShortcutSurfaceRoutingTests
         }
         finally
         {
-            if (stateSaved) check("shortcut matrix restores this test thread's keyboard state", SetKeyboardState(originalKeys));
+            if (stateSaved)
+            {
+                bool restored = SetKeyboardState(originalKeys);
+                var readBack = new byte[256];
+                check("shortcut matrix restores this test thread's keyboard state",
+                    restored && GetKeyboardState(readBack) && readBack.SequenceEqual(originalKeys));
+            }
             foreach (var window in surfaces) window.Close();
         }
         report("complete shortcut surface matrix has no missing routes or local-key interceptions (" + failures.Count + " failures)", failures.Count == 0);
 
         void SetModifiers(ModifierKeys modifiers)
         {
-            var keys = new byte[256];
+            fixtureModifiers = modifiers;
+            InstallModifiers();
+        }
+        void InstallModifiers()
+        {
+            PeekMessage(out _, 0, 0, 0, 0);
+            var keys = (byte[])originalKeys.Clone();
+            foreach (int key in new[] { 0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 }) keys[key] &= 0x7F;
+            var modifiers = fixtureModifiers;
             if ((modifiers & ModifierKeys.Control) != 0) keys[0x11] = keys[0xA2] = 0x80;
             if ((modifiers & ModifierKeys.Shift) != 0) keys[0x10] = keys[0xA0] = 0x80;
             if (!SetKeyboardState(keys)) throw new InvalidOperationException("Unable to set the fixture thread's keyboard state.");
+            var observed = Keyboard.Modifiers;
+            if (observed != modifiers)
+            {
+                var actual = new byte[256]; GetKeyboardState(actual);
+                string native = string.Join(',', new[] { 0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 }.Select(key => $"{key:X2}:{actual[key]:X2}"));
+                throw new InvalidOperationException($"Shortcut fixture modifier installation failed: expected={modifiers}, observed={observed}, native={native}.");
+            }
+        }
+        KeyEventArgs Send(UIElement target, Key key)
+        {
+            var args = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, key)
+                { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+            // Each independently raised event gets the requested snapshot after event/source
+            // construction; a prior native queue update cannot redefine the next test case.
+            InstallModifiers();
+            target.RaiseEvent(args); return args;
         }
         void ExpectRoute(int surface, UIElement source, Key key)
         {
@@ -152,11 +186,6 @@ internal static class ShortcutSurfaceRoutingTests
         }
     }
 
-    private static KeyEventArgs Send(UIElement target, Key key)
-    {
-        var args = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, key) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
-        target.RaiseEvent(args); return args;
-    }
     private sealed class DetachedSource : PresentationSource
     {
         public override System.Windows.Media.Visual? RootVisual { get; set; }
@@ -165,4 +194,9 @@ internal static class ShortcutSurfaceRoutingTests
     }
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetKeyboardState(byte[] keys);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetKeyboardState(byte[] keys);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Message
+    { public nint Window; public uint Id; public nuint WParam; public nint LParam; public uint Time; public int X, Y; public uint Private; }
+    [DllImport("user32.dll", EntryPoint = "PeekMessageW")] [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PeekMessage(out Message message, nint window, uint first, uint last, uint remove);
 }

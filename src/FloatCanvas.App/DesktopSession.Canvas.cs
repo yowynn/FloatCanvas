@@ -23,6 +23,7 @@ internal sealed partial class DesktopSession
     {
         _canvasCalibration.Changed += () =>
         {
+            if (_canvasCalibration.IsPlacing) _canvasDraftRevision++;
             _canvasSettingsWindow?.RefreshGridCounts(Active.Document.Canvas.Projection);
             RequestRender(); ScheduleRecovery();
         };
@@ -194,7 +195,7 @@ internal sealed partial class DesktopSession
         if (DocumentOperationBusy || !_host.IsEditing) return;
         _canvasGridScale.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel();
         CancelSnapshotCapture("CanvasSettingsChanged"); CancelLivePreparation();
-        Active.Execute(L.Get("Canvas.Title"), document => change(document.Canvas));
+        Active.ExecuteSettings(L.Get("Canvas.Title"), document => change(document.Canvas));
         SynchronizeFlatGridOrigin(); SynchronizeCanvasTool();
         RefreshBillboardState();
         RequestRender();

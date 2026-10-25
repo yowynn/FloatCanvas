@@ -38,6 +38,7 @@ internal static class ProjectionUnsafeHoverTests
         Set(session, "_app", app); Set(session, "_host", host); Set(session, "_editor", editor);
         Set(session, "_assets", state.Assets); Set(session, "_renderer", renderer);
         Set(session, "_canvasCalibration", calibration);
+        Set(session, "_settings", new UserSettings());
         // This fixture verifies UI adorners only. The independent preview worker publishes empty tiles.
         using var preview = new CanvasPreviewPump(app.Dispatcher, () => new()
         {
@@ -91,7 +92,8 @@ internal static class ProjectionUnsafeHoverTests
             check("an unbounded refresh coalesced after a local refresh still includes every output", monitors.All(monitor => dirtyRegions.Contains(monitor.Bounds)));
             Invoke(session, "RequestRender");
             Invoke(session, "RequestPixelRender", (object)new[] { local });
-            check("a full edit promotes the pixel queue and cannot be narrowed by a later local refresh", dirtyRegions.Count == 0 &&
+            check("an edit retains accumulated pixel invalidation and promotes the combined request", dirtyRegions.Contains(local) &&
+                monitors.All(monitor => dirtyRegions.Contains(monitor.Bounds)) &&
                 !(bool)typeof(DesktopSession).GetField("_pixelsOnlyRender", Private)!.GetValue(session)! &&
                 ((DispatcherOperation)typeof(DesktopSession).GetField("_renderOperation", Private)!.GetValue(session)!).Priority == DispatcherPriority.Render);
             NativeLeaveOrdering(host, check);

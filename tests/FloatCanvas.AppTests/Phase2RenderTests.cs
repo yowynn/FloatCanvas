@@ -124,7 +124,7 @@ internal static class Phase2RenderTests
         using var snapshot = new CanvasPreviewSnapshot { Context = context, SceneIdentity = identity,
             Document = detached, Resources = [], Outputs = [new(0, 0, 96, 64)], Revision = 1 };
         using var frame = renderer.Render(snapshot);
-        using var pixels = SKBitmap.FromImage(frame.Pixels.Tiles[0].Image);
+        using var pixels = PreviewTestPixels.Read(frame.Pixels);
         check("actual worker raster uses detached document pixels", pixels.GetPixel(15, 15) == SKColors.Red);
         using var composite = SKSurface.Create(new SKImageInfo(96, 64, SKColorType.Bgra8888, SKAlphaType.Premul));
         composite.Canvas.Clear(SKColors.Transparent); frame.Pixels.Draw(composite.Canvas);
@@ -148,7 +148,7 @@ internal static class Phase2RenderTests
             expectedSurface.Canvas.Clear(SKColors.Transparent);
             expectedRenderer.Draw(expectedSurface.Canvas, gridScene, new(), calibrationReference: true);
             using var expectedImage = expectedSurface.Snapshot(); using var expected = SKBitmap.FromImage(expectedImage);
-            using var actual = SKBitmap.FromImage(projectedFrame.Pixels.Tiles[0].Image);
+            using var actual = PreviewTestPixels.Read(projectedFrame.Pixels);
             check("perspective grid tiles match direct pixels at a negative monitor origin", actual.Bytes.SequenceEqual(expected.Bytes));
         }
 
@@ -160,7 +160,7 @@ internal static class Phase2RenderTests
             Effects = [new() { Kind = ImageEffectKind.Pixelate, Amount = 8 }] }];
         using var effect = new CanvasPreviewSnapshot { Context = context, SceneIdentity = identity,
             Document = doc.Clone(), Resources = [], Outputs = [new(0, 0, 96, 64)], Revision = 2, PreferGpu = true, Backdrop = retained };
-        using var effectFrame = renderer.Render(effect); using var effectPixels = SKBitmap.FromImage(effectFrame.Pixels.Tiles[0].Image);
+        using var effectFrame = renderer.Render(effect); using var effectPixels = PreviewTestPixels.Read(effectFrame.Pixels);
         check("retained desktop tiles outlive the source and render through the worker backend", effectPixels.GetPixel(20, 20) == SKColors.Green);
         Console.WriteLine($"PREVIEW_BACKEND {effectFrame.Backend}; device={effectFrame.GpuDetails}; fallback={effectFrame.GpuFailure}");
         // A later buffer reuse may not overwrite immutable pixels already sent to the UI.
@@ -175,7 +175,7 @@ internal static class Phase2RenderTests
                 cpuCalls++; surface.Canvas.Clear(SKColors.Red);
             });
             using var fallback = DrawFault();
-            using var fallbackPixels = SKBitmap.FromImage(fallback.Tiles[0].Image);
+            using var fallbackPixels = PreviewTestPixels.Read(fallback);
             check("worker GPU failure redraws the same frame on CPU", gpuCalls == 1 && cpuCalls == 1 &&
                 target.Backend == OverlayRenderBackend.Cpu && fallbackPixels.GetPixel(20, 20) == SKColors.Red &&
                 target.GpuFailure?.Contains("Own preview GPU fault") == true);

@@ -10,8 +10,7 @@ internal sealed class AnimatedImage : IDisposable
     private readonly SKData data;
     private readonly SKCodec codec;
     private readonly SKCodecFrameInfo[] frames;
-    private readonly long[] ends;
-    private readonly int repetitions;
+    private readonly AnimationTimeline timeline;
     private SKBitmap? decode, prior;
     private SKImage? image;
     private int priorIndex = -1;
@@ -19,7 +18,7 @@ internal sealed class AnimatedImage : IDisposable
     internal SKImage Image => image ?? throw new InvalidOperationException("Animation frame has not been selected.");
     internal long CachedBytes => (long)data.Size + (decode is null ? 0 : (long)decode.ByteCount) +
         (prior is null ? 0 : (long)prior.ByteCount) + (image is null ? 0 : (long)image.Width * image.Height * 4) +
-        frames.LongLength * 64 + ends.LongLength * sizeof(long);
+        frames.LongLength * 64 + timeline.CachedBytes;
     internal TimeSpan? NextDelay { get; private set; }
 
     internal static bool MayAnimate(ReadOnlySpan<byte> bytes) => bytes.StartsWith("GIF87a"u8) || bytes.StartsWith("GIF89a"u8) ||
@@ -49,33 +48,14 @@ internal sealed class AnimatedImage : IDisposable
     private AnimatedImage(SKData data, SKCodec codec)
     {
         this.data = data; this.codec = codec;
-        frames = codec.FrameInfo; repetitions = codec.RepetitionCount;
+        frames = codec.FrameInfo;
         if (frames.Length == 0 || frames.Length != codec.FrameCount) throw new InvalidDataException(L.Get("Images.UnsupportedOrCorrupt"));
-        ends = new long[frames.Length]; long total = 0;
-        for (int i = 0; i < frames.Length; i++)
-        {
-            // Preserve positive source durations. Zero-duration GIFs need a bounded fallback,
-            // rather than a busy loop. The App may coalesce timer wakes without changing time.
-            total = checked(total + TimeSpan.FromMilliseconds(frames[i].Duration > 0 ? frames[i].Duration : 100).Ticks);
-            ends[i] = total;
-        }
-    }
-
-    internal TimeSpan? NextDelayAt(TimeSpan time) => Locate(time).Delay;
-
-    private (int Index, TimeSpan? Delay) Locate(TimeSpan time)
-    {
-        long elapsed = Math.Max(0, time.Ticks), cycle = ends[^1];
-        bool finished = repetitions >= 0 && elapsed / cycle > repetitions;
-        long position = finished ? cycle - 1 : elapsed % cycle;
-        int index = Array.BinarySearch(ends, position);
-        index = index < 0 ? ~index : index + 1;
-        return (index, finished ? null : TimeSpan.FromTicks(ends[index] - position));
+        timeline = new(frames, codec.RepetitionCount);
     }
 
     internal bool Select(TimeSpan time)
     {
-        var (index, delay) = Locate(time); NextDelay = delay;
+        var (index, delay) = timeline.Locate(time); NextDelay = delay;
         if (index == FrameIndex) return false;
         var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
         decode ??= new SKBitmap(info); prior ??= new SKBitmap(info);

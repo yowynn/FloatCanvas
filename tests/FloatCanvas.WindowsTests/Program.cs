@@ -29,6 +29,8 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if (args.Contains("--preview-publication-performance")) { PreviewRasterPublicationTests.Performance(); return 0; }
+    if (args.Contains("--preview-publication-only")) { PreviewRasterPublicationTests.Run(Check); Console.WriteLine($"PASS {checks} preview publication checks."); return 0; }
     if (args.Contains("--dirty-output-performance")) { DirtyOutputRenderingTests.Performance(); return 0; }
     if (args.Contains("--dirty-output-only")) { DirtyOutputRenderingTests.Run(Check); Console.WriteLine($"PASS {checks} dirty output checks."); return 0; }
     RetryableCapabilityProbeTests.Run(Check);

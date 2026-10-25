@@ -75,7 +75,7 @@ internal static class BrushPreviewTests
             Console.WriteLine($"BRUSH_BLOCKED_UI stalePresents={stalePresents} points={editor.Session.Document.Elements.Single().Points.Count}");
             check("ordinary brush input does not upload unchanged old pixels while its worker is blocked", stalePresents == 0);
             release.Set(); block = false; Settle();
-            using (var pixels = SKBitmap.FromImage(preview.Frame!.Pixels.Tiles[0].Image))
+            using (var pixels = PreviewTestPixels.Read(preview.Frame!.Pixels))
                 check("coalesced brush preview contains the final queued pointer position", pixels.GetPixel(377, 1206).Blue > 150);
             Send(OverlayPointerKind.Up, 380, 1206); Settle();
 
@@ -95,7 +95,7 @@ internal static class BrushPreviewTests
                 Until(() => first >= 0 && !Pending() && !preview.Busy);
                 preview.FrameReady -= Ready;
                 latency.Add(first);
-                using (var pixels = SKBitmap.FromImage(preview.Frame!.Pixels.Tiles[0].Image))
+                using (var pixels = PreviewTestPixels.Read(preview.Frame!.Pixels))
                     check("ordinary brush keeps the final pixels under queued input " + stroke, pixels.GetPixel(377, (int)y + 6).Blue > 150);
                 Send(OverlayPointerKind.Up, 380, y + 6); Settle();
             }
@@ -109,6 +109,10 @@ internal static class BrushPreviewTests
                 Style = new() { Fill = 0xFFFF0000, StrokeWidth = 0 }
             }]);
             editor.Tool = EditorTool.Select; editor.Session.SelectAll(); Settle();
+            long beforeSelectionFrames = preview.CompletedFrames;
+            editor.Session.SetSelection([]); Settle();
+            check("selection-only changes never request content rendering", preview.CompletedFrames == beforeSelectionFrames);
+            editor.Session.SelectAll(); Settle();
             block = true; began.Reset(); release.Reset(); preview.Request();
             check("selection fixture blocks only its raster worker", began.Wait(2000));
             bool guideMoved = false; SKColor observedGuide = default;

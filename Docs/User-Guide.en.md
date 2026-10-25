@@ -92,6 +92,8 @@ Open **Main menu → Settings…** to change shortcuts or the light/dark theme. 
 
 Canvas content, perspective grids and effect previews render on a dedicated worker. Selection frames, perspective handles and controls respond on the UI thread. Busy previews skip intermediate states and capture the latest value after each frame, retaining the final value after release. Complex previews may update later while their handles follow the current input.
 
+Simple and complex canvases share this background mechanism. Completed content is retained, and updates transfer changed pixel blocks and redraw affected areas. Moving or clearing a selection frame alone does not redraw the canvas content. Animation timing and stamp hover previews are also prepared in the background.
+
 **Prefer GPU acceleration** is enabled by default, including for existing settings. Live blur, pixelation and image blur/pixelation filters trigger the worker GPU path. When selected, the GPU renders the frame's shapes, text, images and filters. Light canvases, such as ordinary annotations and small animations, use CPU caching to avoid extra readback overhead. The UI combines completed preview pixels with current guides. Turn the option off to use the CPU for all rendering. Save to apply it without restarting; unavailable or failed GPU rendering falls back to the CPU. Switching leaves canvas content intact.
 
 Settings shows the last frame's actual backend, its selection reason, the available GPU, the last draw time and GPU/CPU frame counts for this run. Idle canvases do not need continuous frames, and viewing the status does not trigger rendering. Detailed failure reasons are available in `diagnostics.log`.

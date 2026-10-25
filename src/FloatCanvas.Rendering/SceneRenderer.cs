@@ -406,73 +406,6 @@ public sealed partial class SceneRenderer : IDisposable
         _images.Add(id, entry); ImageDecodeCount++; return entry;
     }
 
-    /// <summary>Examines animation metadata, without decoding every frame or changing document state.</summary>
-    public bool HasAnimatedImages(SceneDocument document, AssetLibrary assets)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        return VisibleAnimations(document, assets).Any();
-    }
-
-    /// <summary>Dynamic image bounds in desktop coordinates, for invalidating only affected outputs.</summary>
-    public IReadOnlyList<RectD> AnimatedImageBounds(SceneDocument document, AssetLibrary assets)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        var mapping = CanvasMapping.Create(document);
-        IEnumerable<CanvasElement> elements = document.LayerOpacity > 0 ? document.Elements : [];
-        if (document.Background is { } background) elements = elements.Prepend(background);
-        var bounds = elements.Where(element => VisibleAnimation(element, document, assets) is not null)
-            .Select(element => mapping.ProjectedBounds(element, includeStroke: false).Intersect(document.Viewport))
-            .Where(bounds => !bounds.IsEmpty).ToList();
-        // A lower animated object can also change a filter whose sampling halo crosses
-        // a monitor boundary. Propagate those dependencies before pruning outputs.
-        foreach (var effect in document.Elements.Where(element => element.Visible && element.Style.Opacity > 0 && ElementGeometry.IsLiveEffect(element.Kind)))
-        {
-            var sampling = LiveEffectSamplingBounds(document, effect);
-            if (bounds.Any(bound => bound.Intersects(sampling))) bounds.Add(sampling);
-        }
-        return bounds;
-    }
-
-    /// <summary>Whole-scene metadata scheduling, independent of monitor draw order and without decoding pixels.</summary>
-    public TimeSpan? GetNextAnimationDelay(SceneDocument document, AssetLibrary assets, TimeSpan time)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        TimeSpan? next = null;
-        foreach (var playback in VisibleAnimations(document, assets))
-            if (playback.NextDelayAt(time) is { } delay && (next is null || delay < next)) next = delay;
-        return next;
-    }
-
-    private IEnumerable<AnimatedImage> VisibleAnimations(SceneDocument document, AssetLibrary assets)
-    {
-        IEnumerable<CanvasElement> images = document.LayerOpacity > 0 ? document.Elements : [];
-        if (document.Background is { } background) images = images.Prepend(background);
-        foreach (var element in images)
-            if (VisibleAnimation(element, document, assets) is { } playback)
-                yield return playback;
-    }
-
-    internal (int First, int Last) AnimatedElementRange(SceneDocument document, AssetLibrary assets)
-    {
-        int first = -1, last = -1;
-        if (document.LayerOpacity > 0)
-            for (int i = 0; i < document.Elements.Count; i++)
-                if (VisibleAnimation(document.Elements[i], document, assets) is not null)
-                { if (first < 0) first = i; last = i; }
-        return (first, last);
-    }
-
-    private AnimatedImage? VisibleAnimation(CanvasElement element, SceneDocument document, AssetLibrary assets)
-    {
-        if (element.Kind != ElementKind.Image || !element.Visible || !(element.Style.Opacity > 0) || element.AssetId is not { } id) return null;
-        var mapping = CanvasMapping.Create(document);
-        // Retained unsafe billboards are hidden. Their empty projected bounds can still
-        // intersect an origin-containing viewport, so apply the drawing guard first.
-        if (element.IsBillboard && !mapping.IsElementSafe(element)) return null;
-        return mapping.ProjectedBounds(element, includeStroke: false).Intersects(document.Viewport) &&
-            AnimatedImage.MayAnimate(assets.Get(id).Data.Span) ? GetImageEntry(id, assets).Playback : null;
-    }
-
     private SKImage GetEffectImage(SKCanvas destination, CanvasElement element, SKImage original, int sourceFrame)
     {
         bool gpu = destination.Context is not null;
@@ -562,7 +495,7 @@ public sealed partial class SceneRenderer : IDisposable
         foreach (var entry in _paths.Values) entry.Dispose();
         foreach (var entry in _images.Values) entry.Dispose();
         foreach (var entry in _effects.Values) entry.Dispose();
-        _paths.Clear(); _images.Clear(); _effects.Clear();
+        _paths.Clear(); _images.Clear(); _effects.Clear(); _animationMetadata.Clear();
         ReleaseElementOpacitySurface();
         _paint.Dispose(); _text.Dispose();
     }
@@ -594,7 +527,7 @@ public sealed partial class SceneRenderer : IDisposable
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
             _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
             _patterned == (e.Style.StrokePattern != StrokePattern.Solid) &&
-            _points.AsSpan().SequenceEqual(e.Points.AsSpan());
+            e.Points.SequenceEqual(_points);
         public void Dispose() { Path.Dispose(); patternedStroke?.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
     }
     private class ImageEntry : IDisposable

@@ -20,6 +20,7 @@ internal static class StampPreviewTests
         SynchronizationContext.SetSynchronizationContext(new Threading.DispatcherSynchronizationContext(Threading.Dispatcher.CurrentDispatcher));
         try
         {
+            WorkerRequests(check);
             string directory = Environment.GetEnvironmentVariable("FLOATCANVAS_STAMP_PREVIEW_TEST_DIR") ?? Path.Combine(Path.GetTempPath(), "FloatCanvas-StampPreview", Guid.NewGuid().ToString("N"));
             var library = new StampLibrary(Path.Combine(directory,"profile-"+Guid.NewGuid().ToString("N")));
             var saved = Task.Run(async () =>
@@ -48,7 +49,7 @@ internal static class StampPreviewTests
             }).GetAwaiter().GetResult();
             using(var playback=new StampPreviewTooltip.PreviewPlayback(animated.stamp,animated.entry))
             {
-                var first=playback.Render(TimeSpan.Zero)!;var second=playback.Render(TimeSpan.FromMilliseconds(150))!;
+                var first=playback.RenderAsync(TimeSpan.Zero).GetAwaiter().GetResult()!;var second=playback.RenderAsync(TimeSpan.FromMilliseconds(150)).GetAwaiter().GetResult()!;
                 byte[] a=new byte[first.PixelWidth*first.PixelHeight*4],b=new byte[a.Length];first.CopyPixels(a,first.PixelWidth*4,0);second.CopyPixels(b,second.PixelWidth*4,0);
                 check("large hover preview selects distinct actual GIF frames using its elapsed clock",!a.SequenceEqual(b)&&playback.NextDelay(TimeSpan.FromMilliseconds(150)) is { } next&&next>TimeSpan.Zero);
                 var thumbnail=Task.Run(()=>StampPreviewTooltip.GetThumbnailAsync(library,animated.entry)).GetAwaiter().GetResult();
@@ -143,6 +144,53 @@ internal static class StampPreviewTests
             check("preview tests show no application or tooltip windows",app.Windows.Cast<Wpf.Window>().All(window=>!window.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle==0));
         }
         finally {SynchronizationContext.SetSynchronizationContext(context);L.Initialize(language);}
+    }
+
+    private static void WorkerRequests(Action<string, bool> check)
+    {
+        var bitmap = Imaging.BitmapSource.Create(1, 1, 96, 96, Media.PixelFormats.Bgra32, null, new byte[] { 0, 0, 255, 255 }, 4);
+        bitmap.Freeze();
+        int uiThread = Environment.CurrentManagedThreadId;
+        var values = new System.Collections.Concurrent.ConcurrentQueue<int>();
+        var threads = new System.Collections.Concurrent.ConcurrentQueue<int>();
+        using var began = new SemaphoreSlim(0);
+        using var release = new ManualResetEventSlim();
+        using (var playback = new StampPreviewTooltip.PreviewPlayback(time =>
+        {
+            int value = (int)time.TotalMilliseconds;
+            values.Enqueue(value); threads.Enqueue(Environment.CurrentManagedThreadId);
+            if (value == 1) { began.Release(); if (!release.Wait(5000)) throw new TimeoutException("Stamp test worker was not released."); }
+            return bitmap;
+        }))
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var first = playback.RenderAsync(TimeSpan.FromMilliseconds(1)); watch.Stop();
+            check("stamp preview returns to UI while its actual renderer worker is blocked", watch.ElapsedMilliseconds < 100 && began.Wait(2000) && !first.IsCompleted);
+            var skipped = playback.RenderAsync(TimeSpan.FromMilliseconds(45));
+            var final = playback.RenderAsync(TimeSpan.FromMilliseconds(100));
+            check("stamp preview retains one latest pending value instead of a request backlog", skipped.IsCanceled && !final.IsCompleted);
+            release.Set();
+            _ = first.GetAwaiter().GetResult();
+            var result = final.GetAwaiter().GetResult();
+            check("stamp preview renders only the first and latest requested values on one non-UI thread",
+                values.SequenceEqual([1, 100]) && threads.Distinct().Count() == 1 && threads.All(thread => thread != uiThread) && result is { IsFrozen: true });
+        }
+
+        using var closingBegan = new ManualResetEventSlim();
+        using var closingRelease = new ManualResetEventSlim();
+        using var exited = new ManualResetEventSlim();
+        var closing = new StampPreviewTooltip.PreviewPlayback(_ =>
+        {
+            closingBegan.Set();
+            if (!closingRelease.Wait(5000)) throw new TimeoutException("Closing stamp test worker was not released.");
+            exited.Set(); return bitmap;
+        });
+        var late = closing.RenderAsync(TimeSpan.Zero);
+        check("stamp close fixture reaches its own active renderer", closingBegan.Wait(2000));
+        var shutdown = System.Diagnostics.Stopwatch.StartNew(); closing.Dispose(); shutdown.Stop();
+        check("closing a stamp preview cancels publication without waiting for a heavy frame", shutdown.ElapsedMilliseconds < 100 && late.IsCanceled);
+        closingRelease.Set();
+        check("a renderer finishing after stamp close cannot publish its late result", exited.Wait(2000) && late.IsCanceled);
     }
 
     private static void ProjectedFallbackAspect(StampLibrary library, Action<string, bool> check)

@@ -22,12 +22,22 @@ internal sealed partial class DesktopSession
     {
         var selection = session.CreateSelectionSnapshot();
         bool hasLiveEffects = SceneRenderer.HasLiveEffects(selection);
-        if(!hasLiveEffects && !_renderer.HasAnimatedImages(selection, session.Assets))return null;
         var animationTime = _renderer.AnimationTime;
         var request = BeginEffectRender(session);
         _documentBusy=true;
         try
         {
+            if (!hasLiveEffects)
+            {
+                var selectedResources = selection.ReferencedAssets.Select(session.Assets.Get).ToArray();
+                bool animated = await Task.Run(() =>
+                {
+                    using var renderer = new SceneRenderer();
+                    return renderer.HasAnimatedImages(selection, ResourceLibrary(selectedResources));
+                });
+                if (!CanFinishEffect(request)) throw new OperationCanceledException("Stamp render context is no longer current.");
+                if (!animated) return null;
+            }
             var snapshot=session.Document.Clone();
             var resources=ResourceSnapshot(snapshot).ToList();
             CapturedDesktop? screenCapture = null;

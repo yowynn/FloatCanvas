@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- 统一后台预览的局部像素发布与保留呈现，减少简单图形拖拽时的整屏复制和重复合成；纯选择框更新不再触发内容重绘，慢帧期间继续保留独立操作反馈。
+- Publish changed preview blocks and retain presented pixels through one background rendering path, reducing full-screen copies and duplicate composition during simple drags; guide-only changes no longer redraw content, while slow frames retain independent interaction feedback.
+- 预览快照复用未变对象，长笔画快照后的追加使用共享分块；动画元数据和印章悬停预览移出界面绘制路径。
+- Reuse unchanged preview nodes and shared path chunks after snapshots; move animation metadata and stamp hover rendering off the UI drawing path.
+
 - Windows 系统截图期间保留工具条覆盖画布的完整画面，并临时让出增强显示及编辑输入；截图结束后恢复实时画布，避免绘制内容压住系统截图界面。
 - Preserve tools above the canvas during Windows screen clipping, temporarily yielding enhanced presentation and editing input; restore the live canvas after clipping so it cannot cover the system capture UI.
 

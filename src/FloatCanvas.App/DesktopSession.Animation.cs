@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows.Threading;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using FloatCanvas.Windows;
 
 namespace FloatCanvas.App;
@@ -10,6 +11,8 @@ internal sealed partial class DesktopSession
     private readonly Stopwatch _animationClock = new();
     private EditorSession? _animationSession;
     private DispatcherTimer? _animationTimer;
+    private SceneAnimationSchedule? _animationSchedule;
+    private CanvasPreviewContext? _animationScheduleContext;
     private bool _pixelsOnlyRender;
     private readonly List<PixelBounds> _pixelDirtyRegions = [];
 
@@ -22,8 +25,10 @@ internal sealed partial class DesktopSession
         {
             _animationSession = Active;
             _animationClock.Reset();
+            _animationSchedule = null;
+            _animationScheduleContext = null;
         }
-        if (_host.IsVisible && _renderer.HasAnimatedImages(Active.Document, Active.Assets)) _animationClock.Start();
+        if (_host.IsVisible && CurrentAnimationSchedule() is { HasAnimations: true }) _animationClock.Start();
         else _animationClock.Stop();
         _renderer.AnimationTime = _animationClock.Elapsed;
         _editor.AnimationTime = _renderer.AnimationTime;
@@ -32,15 +37,28 @@ internal sealed partial class DesktopSession
     private void ScheduleAnimationFrame()
     {
         if (_disposed || !_host.IsVisible || _cleanCaptureDepth != 0 ||
-            !_renderer.HasAnimatedImages(Active.Document, Active.Assets)) return;
-        var drawnTime = _renderer.AnimationTime;
-        var delay = _renderer.GetNextAnimationDelay(Active.Document, Active.Assets, drawnTime);
+            CurrentAnimationSchedule() is not { HasAnimations: true } schedule) return;
         // No pending frame means finite animations have reached their last frame.
-        if (delay is null) return;
+        if (schedule.NextDelay is not { } delay) return;
         _animationTimer ??= CreateAnimationTimer();
-        var remaining = drawnTime + delay.Value - _animationClock.Elapsed;
+        // SampleTime precedes the worker render. A slow completed frame catches up
+        // against the live playback clock instead of starting a fresh delay now.
+        var remaining = schedule.SampleTime + delay - _animationClock.Elapsed;
         _animationTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(remaining.TotalMilliseconds, 16, 1000));
         _animationTimer.Start();
+    }
+
+    private SceneAnimationSchedule? CurrentAnimationSchedule() =>
+        _animationScheduleContext == CurrentPreviewContext() ? _animationSchedule : null;
+
+    private void ApplyAnimationSchedule(SceneAnimationSchedule? schedule)
+    {
+        _animationTimer?.Stop();
+        _animationSchedule = schedule;
+        _animationScheduleContext = CurrentPreviewContext();
+        if (_host.IsVisible && schedule is { HasAnimations: true }) _animationClock.Start();
+        else _animationClock.Stop();
+        ScheduleAnimationFrame();
     }
 
     private DispatcherTimer CreateAnimationTimer()
@@ -49,8 +67,8 @@ internal sealed partial class DesktopSession
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            if (!_host.IsVisible || _cleanCaptureDepth != 0) return;
-            RequestPixelRender(_renderer.AnimatedImageBounds(Active.Document, Active.Assets).Select(bounds => bounds.Inflate(1)).Select(bounds =>
+            if (!_host.IsVisible || _cleanCaptureDepth != 0 || CurrentAnimationSchedule() is not { HasAnimations: true } schedule) return;
+            RequestPixelRender(schedule.DirtyBounds.Select(bounds => bounds.Inflate(1)).Select(bounds =>
                 new PixelBounds((int)Math.Floor(bounds.Left + _editor.ScreenOrigin.X), (int)Math.Floor(bounds.Top + _editor.ScreenOrigin.Y),
                     checked((int)Math.Ceiling(bounds.Right) - (int)Math.Floor(bounds.Left)),
                     checked((int)Math.Ceiling(bounds.Bottom) - (int)Math.Floor(bounds.Top)))));

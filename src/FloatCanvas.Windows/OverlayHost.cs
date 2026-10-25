@@ -354,19 +354,42 @@ public sealed partial class OverlayHost : IDisposable
 
     /// <summary>Renders only when requested. Canvas coordinates are global desktop physical pixels.</summary>
     public void Render(IReadOnlyList<PixelBounds>? dirtyRegions = null)
+        => RenderCore(dirtyRegions, retained: false);
+
+    /// <summary>Preserves pixels outside the supplied desktop regions and submits only their union on each output.
+    /// The Draw callback must repaint all content and controls inside the current clip, including transparent erasure.</summary>
+    public void RenderRegions(IReadOnlyList<PixelBounds> dirtyRegions)
+        => RenderCore(dirtyRegions, retained: true);
+
+    /// <summary>Total area of the per-output native dirty bounds in the most recent call.</summary>
+    public long LastRenderedPixelCount { get; private set; }
+    private (long Content, long Input, long Controls) _presentationStamp;
+
+    /// <summary>Identifies the adopted content and current controls in submission diagnostics.
+    /// Updating controls alone must retain the previously adopted content sequence.</summary>
+    public void SetPresentationStamp(long contentSequence, long inputSequence, long controlsSequence)
+    {
+        CheckThread();
+        _presentationStamp = (contentSequence, inputSequence, controlsSequence);
+    }
+
+    private void RenderCore(IReadOnlyList<PixelBounds>? dirtyRegions, bool retained)
     {
         CheckThread();
         if ((!IsVisible && !IsPreviewVisible) || _rendering || _systemScreenshot is not null) return;
         _rendering = true;
         var started = Stopwatch.GetTimestamp();
         var observer = FrameSubmitted;
+        var stamp = _presentationStamp;
         List<OverlayOutputTiming>? outputs = observer is null ? null : new(_windows.Count);
         bool succeeded = false;
         var completedBackend = OverlayRenderBackend.Cpu;
+        LastRenderedPixelCount = 0;
         try
         {
             using var dpi = new ThreadDpiAwarenessScope(Capabilities);
-            var gpu = PrepareGpuRenderer();
+            // Completed worker pixels and current controls are composed into retained CPU DIBs.
+            var gpu = retained ? null : PrepareGpuRenderer();
             if (gpu is not null)
             {
                 try
@@ -391,7 +414,7 @@ public sealed partial class OverlayHost : IDisposable
             long completed = Stopwatch.GetTimestamp();
             LastRenderMilliseconds = Stopwatch.GetElapsedTime(started, completed).TotalMilliseconds;
             _rendering = false;
-            if (observer is not null) observer(new(started, completed, succeeded, outputs!.AsReadOnly()));
+            if (observer is not null) observer(new(started, completed, succeeded, outputs!.AsReadOnly(), stamp.Content, stamp.Input, stamp.Controls));
         }
 
         void RenderOutputs(GpuRenderContext? gpu)
@@ -401,20 +424,40 @@ public sealed partial class OverlayHost : IDisposable
                 if (dirtyRegions is not null && !dirtyRegions.Any(region =>
                     region.Width > 0 && region.Height > 0 && region.Left < pair.Monitor.Bounds.Right &&
                     region.Right > pair.Monitor.Bounds.Left && region.Top < pair.Monitor.Bounds.Bottom && region.Bottom > pair.Monitor.Bounds.Top)) continue;
+                var bounds = pair.Monitor.Bounds;
+                PixelBounds? dirty = null;
+                SKRectI[]? dirtyRectangles = null;
+                if (retained && pair.Buffer.HasPresented && dirtyRegions is not null)
+                {
+                    var intersections = dirtyRegions.Select(region => new PixelBounds(Math.Max(region.Left, bounds.Left), Math.Max(region.Top, bounds.Top),
+                        Math.Max(0, Math.Min(region.Right, bounds.Right) - Math.Max(region.Left, bounds.Left)),
+                        Math.Max(0, Math.Min(region.Bottom, bounds.Bottom) - Math.Max(region.Top, bounds.Top))))
+                        .Where(region => region.Width > 0 && region.Height > 0).ToArray();
+                    if (intersections.Length == 0) continue;
+                    int left = intersections.Min(region => region.Left), top = intersections.Min(region => region.Top);
+                    dirty = new(left - bounds.Left, top - bounds.Top,
+                        intersections.Max(region => region.Right) - left, intersections.Max(region => region.Bottom) - top);
+                    dirtyRectangles = intersections.Select(region => new SKRectI(region.Left - bounds.Left, region.Top - bounds.Top,
+                        region.Right - bounds.Left, region.Bottom - bounds.Top)).ToArray();
+                }
                 long outputStarted = observer is null ? 0 : Stopwatch.GetTimestamp();
                 var surface = gpu?.SurfaceFor(pair.Buffer) ?? pair.Buffer.Surface;
                 var canvas = surface.Canvas;
                 canvas.RestoreToCount(1);
                 canvas.ResetMatrix();
-                canvas.Clear(SKColors.Transparent);
                 canvas.Save();
+                using var regionClip = dirtyRectangles is { Length: > 1 } ? new SKRegion() : null;
+                if (regionClip is not null) { regionClip.SetRects(dirtyRectangles!); canvas.ClipRegion(regionClip); }
+                else if (dirty is { } clip) canvas.ClipRect(new SKRect(clip.Left, clip.Top, clip.Right, clip.Bottom));
+                canvas.Clear(SKColors.Transparent);
                 canvas.Translate(-pair.Monitor.Bounds.Left, -pair.Monitor.Bounds.Top);
                 Draw?.Invoke(surface);
                 canvas.RestoreToCount(1);
                 canvas.Flush();
                 if (gpu is not null) gpu.ReadPixels(surface, pair.Buffer);
                 long presentStarted = observer is null ? 0 : Stopwatch.GetTimestamp();
-                pair.Buffer.Present(pair.Display.Handle, pair.Monitor.Bounds);
+                pair.Buffer.Present(pair.Display.Handle, pair.Monitor.Bounds, dirty);
+                LastRenderedPixelCount += dirty is { } changed ? (long)changed.Width * changed.Height : (long)bounds.Width * bounds.Height;
                 PresentedFrameCount++;
                 if (outputs is not null)
                 {

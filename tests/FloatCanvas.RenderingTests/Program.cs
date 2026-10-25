@@ -43,7 +43,8 @@ internal static class Program
             if (args.Contains("--canvas-projection-only")) { CanvasProjectionRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} canvas projection rendering checks."); return 0; }
             if (args.Contains("--animated-overlay-cache-only")) { AnimatedOverlayCacheTests.Run(Assert); OverlaySceneCacheTests.Run(Assert); ClearedLiveOpacityTests.Run(Assert); Console.WriteLine($"PASS {_checks} animated overlay cache checks."); return 0; }
             if (args.Contains("--gpu-surface-only")) { IntermediateSurfaceRenderingTests.Run(Assert); LivePixelateRenderingTests.Run(Assert); AnimatedImageRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} intermediate surface rendering checks (raster target)."); return 0; }
-            if (args.Contains("--animation-only")) { AnimatedImageRenderingTests.Run(Assert); AssetImportLosslessTests.Run(Assert); Console.WriteLine($"PASS {_checks} animation rendering checks."); return 0; }
+            if (args.Contains("--animation-metadata-only")) { AnimationMetadataTests.Run(Assert); return 0; }
+            if (args.Contains("--animation-only")) { AnimationMetadataTests.Run(Assert); AnimatedImageRenderingTests.Run(Assert); AssetImportLosslessTests.Run(Assert); Console.WriteLine($"PASS {_checks} animation rendering checks."); return 0; }
             if (args.Contains("--arrows-only")) { ArrowHeadRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--numbers-only")) { NumberFitRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--live-effects-only")) { LivePixelateRenderingTests.Run(Assert); return 0; }
@@ -60,6 +61,7 @@ internal static class Program
             AssetImportLosslessTests.Run(Assert);
             ImageDecodeBudgetTests.Run(Assert);
             AnimatedImageRenderingTests.Run(Assert);
+            AnimationMetadataTests.Run(Assert);
             AnimatedOverlayCacheTests.Run(Assert);
             IntermediateSurfaceRenderingTests.Run(Assert);
             CacheAndCanvasState();

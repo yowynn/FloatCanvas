@@ -127,7 +127,7 @@ internal sealed class CanvasCalibrationController
         }
         session.Document.Canvas.Projection = settings;
         session.Document.Canvas.Grid.FlatCellSize = settings.GridCellSize;
-        session.NotifyChanged(); Changed?.Invoke(); return true;
+        session.NotifySettingsChanged(); Changed?.Invoke(); return true;
     }
     public void Up(bool requestResolution = true)
     {
@@ -191,7 +191,7 @@ internal sealed class CanvasCalibrationController
         dragDocument = session.Document; placementGesture = true; IsPlacing = false;
         session.Document.Canvas.Projection = projection;
         session.Document.Canvas.Grid.FlatCellSize = projection.GridCellSize;
-        session.NotifyChanged();
+        session.NotifySettingsChanged();
         // The fourth point is selected on Down. Wait for the physical Up before opening a modal.
         Up(requestResolution: false); Changed?.Invoke(); return true;
     }

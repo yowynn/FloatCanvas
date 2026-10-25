@@ -13,6 +13,7 @@ internal sealed class DibBuffer : IDisposable
     internal SKSurface Surface { get; }
     internal nint Pixels { get; private set; }
     internal SKImageInfo ImageInfo { get; }
+    internal bool HasPresented { get; private set; }
 
     internal DibBuffer(int width, int height)
     {
@@ -38,18 +39,22 @@ internal sealed class DibBuffer : IDisposable
         finally { ReleaseDC(0, screenDc); }
     }
 
-    internal unsafe void Present(nint hwnd, PixelBounds bounds)
+    internal unsafe void Present(nint hwnd, PixelBounds bounds, PixelBounds? dirtyRegion = null)
     {
         var destination = new Point(bounds.Left, bounds.Top);
         var size = new Size(bounds.Width, bounds.Height);
         var source = new Point(0, 0);
         var blend = new BlendFunction { ConstantAlpha = 255, AlphaFormat = 1 };
+        var dirty = dirtyRegion is { } region ? new Rect
+            { Left = region.Left, Top = region.Top, Right = region.Right, Bottom = region.Bottom } : default;
         var info = new LayeredInformation
         {
             Size = (uint)sizeof(LayeredInformation), Destination = &destination, Dimensions = &size,
-            SourceDc = _dc, Source = &source, Blend = &blend, Flags = 2
+            SourceDc = _dc, Source = &source, Blend = &blend, Flags = 2,
+            Dirty = dirtyRegion.HasValue ? &dirty : null
         };
         if (!UpdateLayeredWindowIndirect(hwnd, ref info)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("Overlay.DisplayUpdateFailed"));
+        HasPresented = true;
     }
 
     public void Dispose()

@@ -39,13 +39,13 @@ internal sealed class CanvasGridScaleController
         {
             if (!previewChanged) return false;
             document!.Canvas = initialCanvas!.Clone(); previewChanged = false;
-            session!.NotifyChanged(); return true;
+            session!.NotifySettingsChanged(); return true;
         }
         double size = Math.Clamp(startSize * ratio, CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize);
         if (CanvasGridGeometry.ResolveCellSize(document!.Canvas, reference) == size) return false;
         ApplyGridSize(document.Canvas, reference, size, sizeLocked);
         previewChanged = true;
-        session!.NotifyChanged(); return true;
+        session!.NotifySettingsChanged(); return true;
     }
 
     internal static void ApplyGridSize(CanvasSettings settings, RectD reference, double size, bool? locked = null)
@@ -62,7 +62,7 @@ internal sealed class CanvasGridScaleController
     {
         if (!Validate()) return;
         document = null;
-        session!.Commit(); session = null; initialCanvas = null;
+        session!.CommitSettings(); session = null; initialCanvas = null;
     }
 
     public void Cancel()

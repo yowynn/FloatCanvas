@@ -36,7 +36,7 @@ internal static class GpuRoutingFixture
             Style = new() { StrokeWidth = 0 }, Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(0, 0, 1, 1), Amount = 8 }] };
         editor.Cancel();
         Edit(() => editor.Session.Execute("GPU fixture filter", doc => { doc.Elements.Clear(); doc.Elements.Add(image); }), OverlayRenderBackend.Gpu);
-        using (var pixels = SKBitmap.FromImage(preview.Frame!.Pixels.Tiles[0].Image))
+        using (var pixels = PreviewTestPixels.Read(preview.Frame!.Pixels))
             check("worker completes a hardware GPU filter with correct pixels", !string.IsNullOrWhiteSpace(preview.Frame.GpuDetails) &&
                 pixels.GetPixel(200, 150).Red > 220 && pixels.GetPixel(200, 150).Alpha > 240);
         check("UI presentation remains a CPU copy of completed worker pixels", host.LastCompletedRenderBackend == OverlayRenderBackend.Cpu);

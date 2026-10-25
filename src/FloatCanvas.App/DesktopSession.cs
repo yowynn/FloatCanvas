@@ -139,7 +139,7 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.Cancelling += () => FinishInlineText();
         _editor.CaptureSelectionCompleted += BeginSnapshotCapture;
         _host.CaptureDiagnostic += OnCaptureDiagnostic;
-        _canvasPreview = new(_app.Dispatcher, CaptureCanvasPreview);
+        _canvasPreview = new(_app.Dispatcher, CaptureCanvasPreview, captureAsync: CaptureCanvasPreviewAsync);
         _canvasPreview.FrameReady += PresentCanvasPreview;
         _canvasPreview.Failed += error =>
         {
@@ -151,6 +151,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.SystemScreenshotFinished += RestoreScreenshotTools;
         _host.Pointer += pointer=>
         {
+            _canvasInputSequence++;
             if(_overlayWindows is not null && pointer.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
             {
                 using var transfer=_windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
@@ -408,8 +409,10 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void RequestRender()
     {
+        // Observe transitions when requested, even if A -> B -> A changes are
+        // coalesced before the next draw. An old A frame must not regain its epoch.
+        if (_canvasPreview is not null) _ = CurrentPreviewContext();
         _pixelsOnlyRender = false;
-        _pixelDirtyRegions.Clear();
         if (_disposed) return;
         if (_renderingFrame) { _renderAgain = true; return; }
         if (IsRenderPending)
@@ -429,7 +432,7 @@ internal sealed partial class DesktopSession : IDisposable
         // Animation and live background frames change pixels, not controls or document
         // state. Let pending input run before these continuously arriving frames.
         // A queued full edit render always takes precedence over this shortcut.
-        if (_disposed || IsRenderPending && !_pixelsOnlyRender) return;
+        if (_disposed) return;
         _pixelDirtyRegions.AddRange(dirtyRegions ?? _host.Monitors.Select(monitor => monitor.Bounds));
         if (IsRenderPending) return;
         _pixelsOnlyRender = true;
@@ -443,12 +446,13 @@ internal sealed partial class DesktopSession : IDisposable
         try
         {
             bool pixelsOnly = _pixelsOnlyRender;
-            var dirtyRegions = pixelsOnly ? _pixelDirtyRegions.ToArray() : null;
+            bool pixelInvalidation = _pixelDirtyRegions.Count > 0;
+            var dirtyRegions = pixelInvalidation ? _pixelDirtyRegions.ToArray() : null;
             _pixelDirtyRegions.Clear();
             _pixelsOnlyRender = false;
             PrepareAnimationFrame();
             if (!pixelsOnly) SyncLiveEffectsCapture();
-            _canvasPreview.Request();
+            RequestCanvasPreview(pixelsOnly || pixelInvalidation, dirtyRegions);
             // Heavy scene computation, GPU filtering and readback happen on the preview worker.
             // The UI only copies completed CPU tiles and draws current handles.
             _host.SetGpuWorkload(false);
@@ -582,7 +586,7 @@ internal sealed partial class DesktopSession : IDisposable
                 case 0x54: OpenCurrentToolOptions(); return;
                 case 0x21: case 0x22:
                     _editor.Cancel();
-                    Active.Execute(L.Get("History.LayerOpacity"), document => document.LayerOpacity =
+                    Active.ExecuteSettings(L.Get("History.LayerOpacity"), document => document.LayerOpacity =
                         Math.Clamp(Math.Round(document.LayerOpacity + (key == 0x21 ? .05 : -.05), 10), 0, 1));
                     return;
             }
@@ -661,7 +665,7 @@ internal sealed partial class DesktopSession : IDisposable
         var canvas = surface.Canvas;
         if (_canvasPreview.Frame is { } frame && frame.Context == CurrentPreviewContext())
             frame.Pixels.Draw(canvas);
-        else _canvasPreview.Request();
+        else RequestCanvasPreview(false, null);
         canvas.Save(); canvas.Translate((float)_editor.ScreenOrigin.X,(float)_editor.ScreenOrigin.Y);
         if (_host.IsEditing)
         {
@@ -1087,6 +1091,7 @@ internal sealed partial class DesktopSession : IDisposable
         FinishInlineText();
         _inspector?.Close(); _layers?.Close(); _stampWindow?.Close(); _toolbar.Close();
         _editor.DetachSession();
+        _presentOperation?.Abort(); _presentedPixels?.Dispose(); _presentedPixels = null;
         _canvasPreview.Dispose(); _host.Dispose(); _renderer.Dispose();
     }
 }

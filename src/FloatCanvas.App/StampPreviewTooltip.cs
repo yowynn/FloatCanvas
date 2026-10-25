@@ -67,7 +67,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
             var prepared = await LoadPlaybackAsync(library, entry, token);
             if (token.IsCancellationRequested || version != request || !IsOpen) { prepared?.Dispose(); return; }
             playback=prepared;
-            var bitmap=playback?.Render(TimeSpan.Zero);
+            var bitmap=playback is null ? null : await playback.RenderAsync(TimeSpan.Zero, token);
             if (token.IsCancellationRequested || version != request || !IsOpen) return;
             if (bitmap is null) { IsOpen = false; return; }
             preview.Source = bitmap; message.Visibility = Wpf.Visibility.Collapsed;
@@ -85,17 +85,26 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
         animation.Stop(); clock.Reset(); playback?.Dispose(); playback=null;
     }
 
-    private void AdvanceAnimation()
+    private async void AdvanceAnimation()
     {
         animation.Stop();
         if(!IsOpen || !IsCurrent(library,entry) || playback is null) {IsOpen=false;CancelLoading();return;}
+        var active = playback;
+        long version = request;
+        var token = loading?.Token ?? CancellationToken.None;
         try
         {
-            preview.Source=playback.Render(clock.Elapsed);
+            var bitmap = await active.RenderAsync(clock.Elapsed, token);
+            if (token.IsCancellationRequested || version != request || !IsOpen || !ReferenceEquals(active, playback)) return;
+            preview.Source=bitmap;
             ScheduleAnimation();
         }
+        catch (OperationCanceledException) { }
         catch(Exception ex) when(ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
-        {CancelLoading();message.Text=ex.Message;message.Visibility=Wpf.Visibility.Visible;}
+        {
+            if (version != request || !IsOpen) return;
+            CancelLoading();message.Text=ex.Message;message.Visibility=Wpf.Visibility.Visible;
+        }
     }
 
     private void ScheduleAnimation()
@@ -129,14 +138,16 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
     internal static async Task<Imaging.BitmapSource?> GetPreviewAsync(StampLibrary library, StampEntry expected, CancellationToken token = default)
     {
         using var playback=await LoadPlaybackAsync(library,expected,token).ConfigureAwait(false);
-        return playback?.Render(TimeSpan.Zero);
+        return playback is null ? null : await playback.RenderAsync(TimeSpan.Zero, token).ConfigureAwait(false);
     }
 
     internal static async Task<Imaging.BitmapSource?> GetThumbnailAsync(StampLibrary library, StampEntry expected, CancellationToken token = default)
     {
         var bytes=await library.GetThumbnailAsync(expected.Id,token).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
-        return IsCurrent(library,expected)?Decode(bytes):null;
+        if (!IsCurrent(library, expected)) return null;
+        var bitmap = await Task.Run(() => Decode(bytes), token).ConfigureAwait(false);
+        return IsCurrent(library, expected) ? bitmap : null;
     }
 
     private static async Task<PreviewPlayback?> LoadPlaybackAsync(StampLibrary library, StampEntry expected, CancellationToken token)
@@ -156,15 +167,40 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
 
     internal sealed class PreviewPlayback : IDisposable
     {
-        private readonly SceneDocument? document;
+        private readonly SceneDocument? source;
         private readonly AssetLibrary? assets;
-        private readonly SceneRenderer? renderer;
+        private readonly StampEntry? expected;
         private readonly Imaging.BitmapSource? still;
+        private readonly Func<TimeSpan, Imaging.BitmapSource?>? renderOverride;
+        private readonly object gate = new();
+        private readonly AutoResetEvent wake = new(false);
+        private Thread? worker;
+        private RenderRequest? pending, active;
+        private bool disposed;
+        private SceneAnimationSchedule? schedule;
+
+        private sealed class RenderRequest(TimeSpan time, CancellationToken token)
+        {
+            internal TimeSpan Time { get; } = time;
+            internal CancellationToken Token { get; } = token;
+            internal TaskCompletionSource<Imaging.BitmapSource?> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            internal CancellationTokenRegistration Registration;
+            internal void Cancel() { Completion.TrySetCanceled(); Registration.Dispose(); }
+        }
 
         internal PreviewPlayback(Imaging.BitmapSource? still) => this.still=still;
         internal PreviewPlayback(LoadedProject stamp,StampEntry expected)
         {
-            var document = stamp.Document.Clone();
+            source = stamp.Document;
+            assets = stamp.Assets;
+            this.expected = expected;
+        }
+        // The same worker seam permits a deterministic blocked-render/close regression.
+        internal PreviewPlayback(Func<TimeSpan, Imaging.BitmapSource?> renderOverride) => this.renderOverride = renderOverride;
+
+        private SceneDocument PrepareDocument()
+        {
+            var document = source!.Clone();
             double factor = 320 / Math.Max(document.Viewport.Width, document.Viewport.Height);
             var transform = Affine2D.Scale(factor, factor).Compose(Affine2D.Translation(-document.Viewport.X, -document.Viewport.Y));
             foreach (var element in document.Elements)
@@ -173,17 +209,100 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
                 if (element.IsBillboard) element.BillboardHeight *= factor;
             }
             if (document.Background is { } background) background.Transform = transform.Compose(background.Transform);
-            document.Viewport = new(0, 0, Math.Max(1, expected.Width * factor), Math.Max(1, expected.Height * factor));
-            this.document=document;assets=stamp.Assets;renderer=new SceneRenderer();
+            document.Viewport = new(0, 0, Math.Max(1, expected!.Width * factor), Math.Max(1, expected.Height * factor));
+            return document;
         }
-        internal Imaging.BitmapSource? Render(TimeSpan time)
+
+        internal Task<Imaging.BitmapSource?> RenderAsync(TimeSpan time, CancellationToken token = default)
         {
-            if(renderer is null)return still;
-            renderer.AnimationTime=time;
-            return Decode(renderer.ExportPng(document!,assets!,transparent:true));
+            if (token.IsCancellationRequested) return Task.FromCanceled<Imaging.BitmapSource?>(token);
+            var request = new RenderRequest(time, token);
+            request.Registration = token.Register(() => request.Completion.TrySetCanceled(token));
+            lock (gate)
+            {
+                if (disposed) { request.Cancel(); return request.Completion.Task; }
+                pending?.Cancel(); pending = request;
+                if (worker is null)
+                {
+                    worker = new(Work) { IsBackground = true, Name = "FloatCanvas stamp preview" };
+                    worker.Start();
+                }
+                wake.Set();
+            }
+            return request.Completion.Task;
         }
-        internal TimeSpan? NextDelay(TimeSpan time)=>renderer?.GetNextAnimationDelay(document!,assets!,time);
-        public void Dispose()=>renderer?.Dispose();
+
+        internal TimeSpan? NextDelay(TimeSpan time)
+        {
+            var current = Volatile.Read(ref schedule);
+            return current?.NextDelay is { } delay
+                ? TimeSpan.FromTicks(Math.Max(0, (current.SampleTime + delay - time).Ticks)) : null;
+        }
+
+        private void Work()
+        {
+            SceneRenderer? renderer = null;
+            SceneDocument? document = null;
+            try
+            {
+                while (true)
+                {
+                    wake.WaitOne();
+                    RenderRequest? request;
+                    lock (gate)
+                    {
+                        if (disposed) return;
+                        request = pending; pending = null; active = request;
+                    }
+                    if (request is null) continue;
+                    try
+                    {
+                        request.Token.ThrowIfCancellationRequested();
+                        Imaging.BitmapSource? bitmap;
+                        SceneAnimationSchedule? next = null;
+                        if (renderOverride is not null) bitmap = renderOverride(request.Time);
+                        else if (source is null) bitmap = still;
+                        else
+                        {
+                            renderer ??= new(); document ??= PrepareDocument();
+                            renderer.AnimationTime = request.Time;
+                            bitmap = Decode(renderer.ExportPng(document, assets!, transparent: true));
+                            next = renderer.CaptureAnimationSchedule(document, assets!, request.Time);
+                        }
+                        lock (gate)
+                        {
+                            if (disposed || request.Token.IsCancellationRequested) request.Completion.TrySetCanceled();
+                            else { Volatile.Write(ref schedule, next); request.Completion.TrySetResult(bitmap); }
+                        }
+                    }
+                    catch (OperationCanceledException) { request.Completion.TrySetCanceled(); }
+                    catch (Exception error) { request.Completion.TrySetException(error); }
+                    finally
+                    {
+                        request.Registration.Dispose();
+                        lock (gate) active = null;
+                    }
+                }
+            }
+            finally
+            {
+                try { renderer?.Dispose(); }
+                catch (Exception error) { Trace.TraceError("Stamp preview cleanup failed: {0}", error); }
+                lock (gate) wake.Dispose();
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (gate)
+            {
+                if (disposed) return;
+                disposed = true;
+                pending?.Cancel(); pending = null;
+                active?.Completion.TrySetCanceled();
+                if (worker is null) wake.Dispose(); else wake.Set();
+            }
+        }
     }
 
     private static Imaging.BitmapSource Decode(byte[] bytes)
