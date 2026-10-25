@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Media;
 using FloatCanvas.Windows;
 
 namespace FloatCanvas.App;
@@ -30,24 +29,23 @@ internal sealed partial class DesktopSession
             _passThroughLauncher = new();
             _passThroughLauncher.EnterEditingRequested += () => RunUiAction(() => SetEditing(true));
             _passThroughLauncher.ToggleVisibilityRequested += () => RunUiAction(ToggleCanvasVisibility);
+            _passThroughLauncher.PositionChanged += origin =>
+            {
+                _settings.ToolbarX = origin.X; _settings.ToolbarY = origin.Y;
+            };
         }
-        OverlayPoint origin;
-        DpiScale toolbarDpi;
-        if (_toolbarPlaced && PresentationSource.FromVisual(_toolbarLauncher) is not null)
-        {
-            var point = _toolbarLauncher.PointToScreen(new Point()); origin = new(point.X, point.Y);
-            toolbarDpi = VisualTreeHelper.GetDpi(_toolbarLauncher);
-        }
-        else
+        if (_settings.ToolbarX is null || _settings.ToolbarY is null)
         {
             var surface = (FrameworkElement)_toolbar.Content;
             surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             var primary = _host.PrimaryMonitor;
-            var target = _settings.ToolbarX is { } x && _settings.ToolbarY is { } y
-                ? _host.Monitors.FirstOrDefault(m => m.WorkArea.Contains(new OverlayPoint(x, y))) ?? primary : primary;
-            origin = SessionWindowLayout.ToolbarOrigin(target, surface.DesiredSize.Width, surface.DesiredSize.Height, _settings.ToolbarX, _settings.ToolbarY);
-            toolbarDpi = new DpiScale(target.DpiX / 96d, target.DpiY / 96d);
+            var initial = SessionWindowLayout.ToolbarOrigin(primary, surface.DesiredSize.Width, surface.DesiredSize.Height, null, null);
+            _settings.ToolbarX = initial.X; _settings.ToolbarY = initial.Y;
         }
-        _passThroughLauncher.ShowAt(origin, _host.IsVisible, toolbarDpi);
+        var target = _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(new OverlayPoint(_settings.ToolbarX.Value, _settings.ToolbarY.Value))) ?? _host.PrimaryMonitor;
+        var origin = SessionWindowLayout.ToolbarOrigin(target, PassThroughLauncherWindow.ArtworkSize, PassThroughLauncherWindow.ArtworkSize,
+            _settings.ToolbarX, _settings.ToolbarY);
+        _settings.ToolbarX = origin.X; _settings.ToolbarY = origin.Y;
+        _passThroughLauncher.ShowAt(origin, _host.IsVisible);
     }
 }

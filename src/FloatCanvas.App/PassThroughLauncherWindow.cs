@@ -9,13 +9,12 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>One process-only position; it follows the toolbar until the user moves it.</summary>
+/// <summary>The passive view of the session's shared launcher position.</summary>
 internal sealed class PassThroughLauncherWindow : Window
 {
-    internal const double ArtworkScale = .75;
-    internal const double ArtworkSize = ToolbarLauncher.ArtworkSize * ArtworkScale;
+    internal const double ArtworkSize = ToolbarLauncher.ArtworkSize;
     internal ToolbarLauncher Launcher { get; } = new(editing: false) { Focusable = false };
-    internal bool IsDetached { get; private set; }
+    internal event Action<OverlayPoint>? PositionChanged;
     internal event Action? EnterEditingRequested;
     internal event Action? ToggleVisibilityRequested;
 
@@ -24,7 +23,6 @@ internal sealed class PassThroughLauncherWindow : Window
         OverlayWindowScope.Prepare(this);
         Title = L.Get("Settings.PassThroughLauncher");
         Width = Height = ArtworkSize;
-        Launcher.LayoutTransform = new ScaleTransform(ArtworkScale, ArtworkScale);
         var surface = new Grid();
         surface.Children.Add(Launcher);
         Content = surface;
@@ -56,27 +54,21 @@ internal sealed class PassThroughLauncherWindow : Window
 
     private void CompleteDrag(Point before)
     {
-        if (before != new Point(Left, Top)) IsDetached = true;
-        if (IsDetached) AppWindowChrome.EnsureVisibleBounds(this);
+        if (before == new Point(Left, Top)) return;
+        AppWindowChrome.EnsureVisibleBounds(this);
+        var point = PointToScreen(new Point());
+        PositionChanged?.Invoke(new(point.X, point.Y));
     }
 
-    internal static OverlayPoint BoundPosition(OverlayPoint toolbarOrigin, DpiScale toolbarDpi, DpiScale? mascotDpi = null)
-    {
-        var targetDpi = mascotDpi ?? toolbarDpi;
-        return new(toolbarOrigin.X + ToolbarLauncher.ArtworkSize * toolbarDpi.DpiScaleX - ArtworkSize * targetDpi.DpiScaleX,
-            toolbarOrigin.Y + ToolbarLauncher.ArtworkSize * toolbarDpi.DpiScaleY - ArtworkSize * targetDpi.DpiScaleY);
-    }
-
-    internal void ShowAt(OverlayPoint toolbarOrigin, bool canvasVisible, DpiScale toolbarDpi)
+    internal void ShowAt(OverlayPoint origin, bool canvasVisible)
     {
         Launcher.SetCanvasVisible(canvasVisible);
         new WindowInteropHelper(this).EnsureHandle();
-        var position = BoundPosition(toolbarOrigin, toolbarDpi);
-        if (!IsDetached) OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(this).Handle, position);
-        else AppWindowChrome.EnsureVisibleBounds(this);
+        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(this).Handle, origin);
         if (!IsVisible) Show();
-        if (!IsDetached) OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(this).Handle,
-            BoundPosition(toolbarOrigin, toolbarDpi, VisualTreeHelper.GetDpi(this)));
+        // Showing on a different-DPI monitor can resize the native window; restore
+        // the shared physical origin after WPF has applied that monitor's DPI.
+        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(this).Handle, origin);
     }
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);

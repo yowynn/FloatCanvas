@@ -55,7 +55,6 @@ internal sealed partial class DesktopSession : IDisposable
     private readonly SessionWindowCoordinator? _windowCoordinator;
     private bool _syncingControls;
     private bool _disposed;
-    private bool _toolbarPlaced;
     private bool _inspectorWanted;
     private bool _renderingFrame, _renderAgain;
     private EditorSession Active => _editor.Session;
@@ -393,9 +392,11 @@ internal sealed partial class DesktopSession : IDisposable
     private void ShowEditingWindows()
     {
         if(!_host.IsEditing || (_host.UsesSystemInput && !_host.HasEditingInput))return;
+        // The passive mascot may have moved against the right edge. Fit the full
+        // toolbar before showing it, and keep the fitted point as the shared origin.
+        PlaceToolbar();
         SessionWindowCoordinator.Show(_toolbar);
         RefreshPassThroughLauncher();
-        if(!_toolbarPlaced)PlaceToolbar();
         if(_inspectorWanted && _inspector is not null){ShowAppWindow(_inspector);_inspector.Refresh();}
         if(_layersWanted && _layers is not null){ShowAppWindow(_layers);_layers.Refresh();}
         _windowCoordinator?.ResumeEditingWindows();
@@ -751,7 +752,6 @@ internal sealed partial class DesktopSession : IDisposable
         SynchronizeFlatGridOrigin();
         RefreshCanvasReferenceMonitors();
         _live.NotifyChanged();
-        _toolbarPlaced=false;
         if(_host.IsEditing) PlaceToolbar();
         RefreshPassThroughLauncher();
         RequestRender(); ScheduleRecovery();
@@ -760,11 +760,13 @@ internal sealed partial class DesktopSession : IDisposable
     {
         var m=_host.PrimaryMonitor;
         var target = _settings.ToolbarX is { } x && _settings.ToolbarY is { } y
-            ? _host.Monitors.FirstOrDefault(a=>a.WorkArea.Contains(new OverlayPoint(x,y))) ?? m : m;
-        // The whole transparent surface is centered, including the 100-DIP mascot. Its
-        // crown touches the physical screen top, preserving screen-centered placement.
-        var origin = SessionWindowLayout.ToolbarOrigin(target, _toolbar.ActualWidth, _toolbar.ActualHeight, _settings.ToolbarX, _settings.ToolbarY);
-        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(_toolbar).Handle,origin); _toolbarPlaced=true;
+            ? _host.Monitors.FirstOrDefault(a=>a.Bounds.Contains(new OverlayPoint(x,y))) ?? m : m;
+        var surface = (FrameworkElement)_toolbar.Content;
+        surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var origin = SessionWindowLayout.ToolbarOrigin(target, surface.DesiredSize.Width, surface.DesiredSize.Height, _settings.ToolbarX, _settings.ToolbarY);
+        var handle = new WindowInteropHelper(_toolbar).EnsureHandle();
+        OverlayCoordinates.PositionToolWindow(handle,origin);
+        _settings.ToolbarX=origin.X; _settings.ToolbarY=origin.Y;
     }
     private void SaveToolbarPosition()
     {

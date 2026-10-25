@@ -29,7 +29,7 @@ internal static class ToolbarAcceptanceTests
         Directory.CreateDirectory(output);
         string profile=Path.Combine(output,"profile-"+Guid.NewGuid().ToString("N"));
         ApplicationPaths.Configure(["--profile",profile,"--primary-screen"]);
-        new UserSettings {Theme="light",Language="zh-CN"}.Save();
+        new UserSettings {Theme="light",Language="zh-CN",ShowFloatingLogo=false}.Save();
         var app=new Wpf.Application {ShutdownMode=Wpf.ShutdownMode.OnExplicitShutdown};
         var context=SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new Threading.DispatcherSynchronizationContext(app.Dispatcher));
@@ -41,6 +41,9 @@ internal static class ToolbarAcceptanceTests
             // does not need to broaden the platform assembly's public/internal API.
             host=(OverlayHost)Activator.CreateInstance(typeof(OverlayHost),BindingFlags.Instance|BindingFlags.NonPublic,null,
                 [OverlayMonitorScope.PrimaryScreen,false],null)!;
+            // Project visible-canvas UI without showing its native HWNDs. Otherwise
+            // test document edits legitimately trigger the hidden-canvas auto-reveal policy.
+            typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!.SetValue(host,true);
             session=new DesktopSession(app,host);
             Field<System.Windows.Forms.NotifyIcon>(session,"_tray").Visible=false;
             toolbar=Field<Wpf.Window>(session,"_toolbar"); shell=(Wpf.FrameworkElement)toolbar.Content;
@@ -80,7 +83,12 @@ internal static class ToolbarAcceptanceTests
             check("production toolbar preserves two 26 DIP rows separated by two DIP",grid.RowDefinitions.Select(row=>row.Height.Value).SequenceEqual(new[]{26d,2d,26d}));
             check("production toolbar shares 30 DIP columns around tool and action separators",grid.ColumnDefinitions.Count==32 && grid.ColumnDefinitions.Select((column,index)=>(column,index)).All(pair=>pair.column.Width.IsAbsolute && pair.column.Width.Value==(pair.index is 2 or 13 or 16 or 20 or 23?10:30)));
             check("production upper row retains every action around its dedicated separators",buttons.Length==25 && buttons.Select(Controls.Grid.GetColumn).Order().SequenceEqual(Enumerable.Range(0,32).Where(column=>column is not (2 or 13 or 16 or 20 or 23 or 28 or 29))) && !buttons.Any(button=>Equals(button.Tag,"tool:Blur")));
-            check("compact 60 DIP tool body keeps its upper edge and the 100 DIP mascot anchor",Near(body.ActualHeight,60) && Near(body.TranslatePoint(new Wpf.Point(),shell).Y,39) && ToolbarLauncher.ArtworkSize==100 && Near(Field<ToolbarLauncher>(session,"_toolbarLauncher").TranslatePoint(new Wpf.Point(100,100),shell).Y,100));
+            check("compact 60 DIP tool body aligns with the shared 94 DIP mascot",Near(body.ActualHeight,60)&&Near(body.TranslatePoint(new Wpf.Point(),shell).Y,32)&&ToolbarLauncher.ArtworkSize==94);
+            var fileBubble=Field<BoundFileIndicator>(session,"_boundFileIndicator");
+            fileBubble.Refresh(@"C:\图标验收\示例画布.floatcanvas",true,true);Measure(shell);
+            check("bound-file bubble keeps four DIP clearance above the unchanged toolbar",Near(fileBubble.TranslatePoint(new Wpf.Point(0,fileBubble.ActualHeight),shell).Y+4,body.TranslatePoint(new Wpf.Point(),shell).Y));
+            Save(shell,Path.Combine(output,"production-toolbar-bound-file-light.png"),1.5);
+            fileBubble.Refresh(null,false,true);
             check("production lower row puts stamp actions under Select and Eraser",allButtons.Any(button=>Equals(button.Tag,"manage-stamps")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==0) && allButtons.Any(button=>Equals(button.Tag,"save-stamp")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==1));
             check("production lower row keeps its stamp actions and fills the remaining width with LCD",Controls.Grid.GetRow(shelf)==2 && Controls.Grid.GetColumn(shelf)==3 && Controls.Grid.GetColumnSpan(shelf)==10 && Controls.Grid.GetRow(display)==2 && Controls.Grid.GetColumn(display)==14 && Controls.Grid.GetColumnSpan(display)==18 && allButtons.Where(button=>Controls.Grid.GetRow(button)==2).Select(Controls.Grid.GetColumn).Order().SequenceEqual(new[]{0,1}));
             var billboard=allButtons.Single(button=>Equals(button.Tag,"billboard"));
@@ -170,7 +178,11 @@ internal static class ToolbarAcceptanceTests
             var cropMenus=Field<List<Controls.MenuItem>>(session,"_cropMenuItems");
             check("image crop follows import and capture and is disabled consistently without a target",Controls.Grid.GetColumn(cropButton)==Controls.Grid.GetColumn(buttons.Single(button=>Equals(button.Tag,"capture")))+1 &&
                 ReferenceEquals(tools[EditorTool.Crop],cropButton) && !cropButton.IsEnabled && cropMenus.Count>0 && cropMenus.All(item=>!item.IsEnabled));
-            var cropTarget=new CanvasElement {Kind=ElementKind.Image,Width=100,Height=80,AssetId=new string('a',64)};
+            // Crop eligibility also queues an asynchronous preview. Supply a real
+            // resource so that queued rendering never raises a missing-image dialog.
+            using var cropResource=Wpf.Application.GetResourceStream(new Uri("/FloatCanvas;component/Assets/FloatCanvas.PassThrough.png",UriKind.Relative))!.Stream;
+            using var cropBytes=new MemoryStream();cropResource.CopyTo(cropBytes);
+            var cropTarget=new CanvasElement {Kind=ElementKind.Image,Width=100,Height=80,AssetId=Field<AssetLibrary>(session,"_assets").Add(cropBytes.ToArray())};
             editor.Session.Document.Elements.Add(cropTarget);editor.Session.SetSelection([cropTarget.Id]);Invoke(session,"RefreshToolbarState");
             check("selecting one editable image enables the crop button and all menu entries",cropButton.IsEnabled && cropMenus.All(item=>item.IsEnabled));
             Invoke(session,"ActivateTool",EditorTool.Crop);
@@ -293,7 +305,9 @@ internal static class ToolbarAcceptanceTests
                 check(theme+" full production preview paints that surface in actual pixels",Math.Abs(actual.R-expected.R)<=2 && Math.Abs(actual.G-expected.G)<=2 && Math.Abs(actual.B-expected.B)<=2 && actual.A==255);
             }
             foreach(double scale in new[]{1d,1.25,1.5,2d})CheckNativeDpiLegends(check,shell,hints,tools,shelf,output,scale);
-            check("full-toolbar fixture never enters editing or shows canvas/input/tool windows",!host.IsEditing && !host.IsVisible && host.Diagnostics.All(pair=>!pair.InputVisible && !pair.DisplayVisible) && app.Windows.Cast<Wpf.Window>().All(window=>!window.IsVisible));
+            // Visibility-state previews vary the logical IsVisible flag. The native
+            // display/input visibility is the isolation guarantee for this fixture.
+            check("full-toolbar fixture never enters editing or shows canvas/input/tool windows",!host.IsEditing && host.Diagnostics.All(pair=>!pair.InputVisible && !pair.DisplayVisible) && app.Windows.Cast<Wpf.Window>().All(window=>!window.IsVisible));
         }
         finally
         {

@@ -51,7 +51,6 @@ internal static class ProjectionHoverRuntimeFixture
             var toolbar = Field<Window>(session, "_toolbar");
             toolbar.ShowActivated = false; toolbar.WindowStartupLocation = WindowStartupLocation.Manual;
             toolbar.Title = "FloatCanvas Hover Preview Toolbar";
-            Set(session, "_toolbarPlaced", true);
             var editor = Field<EditorController>(session, "_editor");
             editor.Tool = EditorTool.Rectangle;
             var document = editor.Session.Document;

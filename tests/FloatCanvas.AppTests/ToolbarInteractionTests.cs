@@ -75,13 +75,11 @@ internal static class ToolbarInteractionTests
             var artworkBounds = Bounds(launcher, surface);
             var bodyBounds = Bounds(body, surface);
             var firstToolOrigin = firstTool.TranslatePoint(new Wpf.Point(), surface);
-            var legacyAnchor = new Wpf.Vector(ToolbarLauncher.Expansion, ToolbarLauncher.Expansion);
-            assert(theme + " launcher grows from 64 to 100 DIP toward the upper-left without moving its former bottom-right anchor",
-                Near(artworkBounds.Width, 100) && Near(artworkBounds.Height, 100) &&
-                artworkBounds.BottomRight - legacyAnchor == new Wpf.Point(64, 64));
-            assert(theme + " enlarged artwork keeps the two-row toolbar thickness and first tool position",
-                Near(bodyBounds.Height, 60) && Near(firstToolOrigin.X - ToolbarLauncher.Expansion, 46 + 20 + 1) &&
-                Near(bodyBounds.Y - ToolbarLauncher.Expansion, 3) && Near(bodyBounds.Bottom - ToolbarLauncher.Expansion, 63));
+            assert(theme + " both modes use the full 94 DIP artwork canvas",Near(artworkBounds.Width,94)&&Near(artworkBounds.Height,94));
+            assert(theme + " v6 artwork keeps the 60 DIP toolbar and first tool position",
+                Near(bodyBounds.Height,60)&&Near(firstToolOrigin.X,103)&&Near(bodyBounds.Y,32));
+            assert(theme + " toolbar aligns with the crown/hair junction and lowest pillow pixels",
+                Math.Abs(bodyBounds.Top-359d/1024*94)<1.5&&Math.Abs(bodyBounds.Bottom-1016d/1024*94)<1.5);
             assert(theme + " launcher stays above the bar and its entire artwork fits inside the measured window",
                 Controls.Panel.GetZIndex(launcher) > Controls.Panel.GetZIndex(body) &&
                 new Wpf.Rect(surface.RenderSize).Contains(artworkBounds) && !surface.ClipToBounds && !launcher.ClipToBounds);
@@ -94,7 +92,8 @@ internal static class ToolbarInteractionTests
                 Layout(artwork);
                 var iconPixels = Raster(artwork, scale);
                 bool topCovered = CornerCovered(iconPixels, bodyBounds, 10, top: true);
-                assert($"{theme} {scale * 100:0}% DPI artwork masks the upper corner while the bar keeps its compact lower edge", topCovered && Near(bodyBounds.Bottom,artworkBounds.Bottom-1));
+                bool bottomCovered = CornerCovered(iconPixels, bodyBounds, 10, top: false);
+                assert($"{theme} {scale * 100:0}% DPI artwork masks both left toolbar corners",topCovered&&bottomCovered);
                 int goldAboveToolbar = 0;
                 for (int y = 0; y < (int)(bodyBounds.Top * scale); y++)
                     for (int x = 0; x < iconPixels.PixelWidth; x++)
@@ -113,9 +112,8 @@ internal static class ToolbarInteractionTests
 
             body.Visibility = Wpf.Visibility.Collapsed;
             Layout(surface);
-            assert(theme + " collapsed toolbar retains the full enlarged icon and the same bottom-right anchor",
-                Near(surface.ActualWidth, 100) && Near(surface.ActualHeight, 100) &&
-                Bounds(launcher, surface).BottomRight - legacyAnchor == new Wpf.Point(64, 64));
+            assert(theme + " collapsed toolbar retains the same icon size and origin",
+                Near(surface.ActualWidth,94)&&Near(surface.ActualHeight,94)&&Bounds(launcher,surface).TopLeft==new Wpf.Point());
             launcher.CancelPendingGestures();
         }
     }

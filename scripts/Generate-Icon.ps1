@@ -5,7 +5,10 @@
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\src\FloatCanvas.App\Assets'),
     [string]$SourcePath = (Join-Path $PSScriptRoot '..\src\FloatCanvas.App\Assets\FloatCanvas.png'),
-    [switch]$PreserveCanvas
+    [switch]$PreserveCanvas,
+    [ValidatePattern('^[A-Za-z0-9._-]+$')]
+    [string]$OutputName = 'FloatCanvas',
+    [switch]$IconOnly
 )
 
 Set-StrictMode -Version Latest
@@ -94,7 +97,7 @@ try {
         }
     }
     finally { $taskArtwork.UnlockBits($taskReadBits); $taskMaster.UnlockBits($taskWriteBits) }
-    try { $taskMaster.Save((Join-Path $OutputDirectory 'FloatCanvas.png'), [Drawing.Imaging.ImageFormat]::Png) }
+    try { if (!$IconOnly) { $taskMaster.Save((Join-Path $OutputDirectory ($OutputName + '.png')), [Drawing.Imaging.ImageFormat]::Png) } }
     finally { $taskMaster.Dispose() }
 
     foreach ($taskSize in $taskSizes) {
@@ -128,7 +131,7 @@ finally {
     $taskSourceStream.Dispose()
 }
 
-$taskIconPath = Join-Path $OutputDirectory 'FloatCanvas.ico'
+$taskIconPath = Join-Path $OutputDirectory ($OutputName + '.ico')
 $taskWriter = [IO.BinaryWriter]::new([IO.File]::Create($taskIconPath))
 try {
     $taskWriter.Write([uint16]0); $taskWriter.Write([uint16]1); $taskWriter.Write([uint16]$taskSizes.Count)
@@ -145,4 +148,4 @@ try {
 }
 finally { $taskWriter.Dispose() }
 $taskFraming = if ($PreserveCanvas) { 'full-canvas' } else { 'tightly fitted' }
-Write-Output "Generated $taskFraming FloatCanvas PNG ($taskMasterSize x $taskMasterSize) and ICO (16/24/32/48/64/128/256) from $SourcePath"
+Write-Output "Generated $taskFraming $OutputName ICO (16/24/32/48/64/128/256) from $SourcePath; PNG copied: $(!$IconOnly)"
