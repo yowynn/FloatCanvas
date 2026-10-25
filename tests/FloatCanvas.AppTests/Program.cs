@@ -29,6 +29,10 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args is ["--color-modal-receiver", var receiverOutput]) { ColorModalReceiver.Run(receiverOutput); return 0; }
+            if (args.Contains("--color-modal-input-only")) { ColorModalInputTests.Run(Assert); return 0; }
+            if (args.Contains("--color-modal-input-preview")) { ColorModalInputTests.Run(Assert, interactive: true); return 0; }
+            if (args.Contains("--color-window-stack-only")) { ColorModalInputTests.Run(Assert, externalReceiver: true); return 0; }
             if (args.Contains("--audit-data-only")) { DataRemediationTests.Run(Assert); return 0; }
             if (args.Contains("--audit-ux-only")) { AuditUxTests.Run(Assert); return 0; }
             if (args.Contains("--preset-history-only")) { PresetHistoryTests.Run(Assert); PresetHistoryKeyboardTests.Run(Assert); return 0; }

@@ -63,6 +63,7 @@ internal sealed partial class DesktopSession
             source => IsOptionsInput(source) || IsToolbarInput(source), () => DismissToolOptions(WindowDismissReason.ToolbarPress), _toolOptionsWindow, toolbar);
         Action<OverlayPointerEvent> canvasPointer = e =>
         {
+            if (_eyedropper is not null) return;
             if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
             {
                 using var intent = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
@@ -181,6 +182,7 @@ internal sealed partial class DesktopSession
     private void RepositionToolOptions() { } // Toolbar movement/collapse never moves an already opened panel.
     private void CheckToolOptionsFocus()
     {
+        if (_eyedropper is not null) return;
         if (_host.IsInputMethodSwitchPending) return;
         if (IsToolOptionsOpen && !_toolOptionsPinned && !_toolOptionsWindow.IsActive && !HasActiveOptionsDialog() &&
             !_toolOptionsPanel.IsColorPickerOpen && !IsOptionsInput(Keyboard.FocusedElement as DependencyObject) &&

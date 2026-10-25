@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls.Primitives;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -16,6 +17,7 @@ internal enum WindowDismissReason { Close, CanvasPress, ToolbarPress, ExternalFo
 internal sealed class SessionWindowCoordinator : IDisposable
 {
     private const string ResourceKey = "FloatCanvas.SessionWindowCoordinator";
+    private const string ModalResourceKey = ResourceKey + ".Modal";
     private readonly OverlayHost host;
     private readonly Window toolbar;
     private readonly Dictionary<Window, Registration> windows = [];
@@ -118,7 +120,11 @@ internal sealed class SessionWindowCoordinator : IDisposable
         var owner = window.Owner;
         // The native transition expires at the next control turn, even while ShowDialog pumps.
         using var entering = coordinator?.BeginTransition();
-        try { return window.ShowDialog(); }
+        try
+        {
+            return coordinator is not null && coordinator.host.UsesSystemInput && coordinator.host.IsEditing
+                ? coordinator.ShowOverlayModal(window) : window.ShowDialog();
+        }
         finally
         {
             if (coordinator is not null && coordinator.host.EditingSessionVersion == version)
@@ -127,6 +133,71 @@ internal sealed class SessionWindowCoordinator : IDisposable
                 coordinator.ReturnToOwner(owner);
             }
         }
+    }
+
+    internal static void SetModalResult(Window window, bool result)
+    {
+        if (window.Resources[ModalResourceKey] is OverlayModal modal)
+        {
+            modal.Result = result;
+            Close(window);
+        }
+        else window.DialogResult = result;
+    }
+
+    // ShowDialog disables every HWND on its thread. Input infrastructure must
+    // stay enabled to isolate the desktop; only WPF editing surfaces are modal.
+    private bool? ShowOverlayModal(Window window)
+    {
+        var modal = new OverlayModal();
+        var disabled = new List<HwndSource>();
+        window.Resources[ModalResourceKey] = modal;
+        void Closed(object? sender, EventArgs args) { modal.Closed = true; modal.Frame.Continue = false; }
+        void Loaded(object sender, RoutedEventArgs args)
+        {
+            if (!modal.Closed && host.HasEditingInput) host.TryFocusEditingWindow(new WindowInteropHelper(window).Handle);
+        }
+        void KeyDown(object sender, KeyEventArgs args)
+        {
+            if (args.Handled || args.Key != Key.Escape) return;
+            args.Handled = true; SetModalResult(window, false);
+        }
+        void ButtonClick(object sender, RoutedEventArgs args)
+        {
+            if (args.OriginalSource is Button { IsCancel: true }) SetModalResult(window, false);
+        }
+        var click = new RoutedEventHandler(ButtonClick);
+        window.Closed += Closed; window.Loaded += Loaded; window.KeyDown += KeyDown;
+        window.AddHandler(ButtonBase.ClickEvent, click, true);
+        ComponentDispatcher.PushModal();
+        try
+        {
+            foreach (var source in PresentationSource.CurrentSources.OfType<HwndSource>().ToArray())
+            {
+                if (source.Dispatcher != window.Dispatcher || source.RootVisual is null || ReferenceEquals(source.RootVisual, window)) continue;
+                var handle = source.Handle;
+                if (handle == 0 || !IsWindowVisible(handle) || !IsWindowEnabled(handle)) continue;
+                disabled.Add(source); EnableWindow(handle, false);
+            }
+            Show(window, activate: true);
+            if (!modal.Closed) Dispatcher.PushFrame(modal.Frame);
+            return modal.Result;
+        }
+        finally
+        {
+            window.Closed -= Closed; window.Loaded -= Loaded; window.KeyDown -= KeyDown;
+            window.RemoveHandler(ButtonBase.ClickEvent, click);
+            window.Resources.Remove(ModalResourceKey);
+            foreach (var source in disabled) if (!source.IsDisposed && IsWindow(source.Handle)) EnableWindow(source.Handle, true);
+            ComponentDispatcher.PopModal();
+        }
+    }
+
+    private sealed class OverlayModal
+    {
+        internal DispatcherFrame Frame { get; } = new();
+        internal bool? Result;
+        internal bool Closed;
     }
 
     internal static bool? ShowNativeModal(Window owner, Func<bool?> show)
@@ -374,5 +445,6 @@ internal sealed class SessionWindowCoordinator : IDisposable
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindow(nint window);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindowVisible(nint window);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindowEnabled(nint window);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool EnableWindow(nint window, bool enabled);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint handle, out uint process);
 }

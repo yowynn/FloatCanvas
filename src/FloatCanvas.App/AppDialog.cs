@@ -50,7 +50,7 @@ internal static class AppDialog
             button.SetResourceReference(Control.BackgroundProperty, "CanvasButton");
             button.SetResourceReference(Control.ForegroundProperty, "CanvasText");
             button.SetResourceReference(Control.BorderBrushProperty, "CanvasBorder");
-            button.Click += (_, _) => { result = value; window.DialogResult = true; };
+            button.Click += (_, _) => { result = value; SessionWindowCoordinator.SetModalResult(window, true); };
             row.Children.Add(button);
         }
         switch (buttons)

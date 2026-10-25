@@ -151,7 +151,7 @@ internal sealed class ColorPickerPanel : UserControl
         var menu = new OverlayContextMenu();
         void Add(string key, PanelActionIcon icon, Action action)
         {
-            var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon) }; item.Click += (_, _) => Run(action); menu.Items.Add(item);
+            var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon) }; item.Click += (_, _) => { menu.IsOpen = false; Run(action); }; menu.Items.Add(item);
         }
         Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => { if (TryRead(out uint color)) { library.Update(saved.Id, color); RefreshCollections(); } });
         Add("ToolOptions.Rename", PanelActionIcon.Rename, () =>

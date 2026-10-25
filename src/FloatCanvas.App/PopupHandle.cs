@@ -44,6 +44,7 @@ internal sealed class PopupHandle
     {get=>overlay?.CustomPopupPlacementCallback??desktop.CustomPopupPlacementCallback;set{if(overlay is not null)overlay.CustomPopupPlacementCallback=value;else desktop.CustomPopupPlacementCallback=value;}}
     internal void OnOpened(EventHandler handler){if(panel is not null)panel.Opened+=handler;else if(overlay is not null)overlay.Opened+=handler;else desktop.Opened+=handler;}
     internal void OnClosed(EventHandler handler){if(panel is not null)panel.Closed+=handler;else if(overlay is not null)overlay.Closed+=handler;else desktop.Closed+=handler;}
+    internal IDisposable? Suspend() => panel?.Suspend();
     internal static bool IsOpenFor(object popup)=>popup switch {WindowPopup window=>window.IsOpen,Popup normal=>normal.IsOpen,OverlayPopup hosted=>hosted.IsOpen,_=>false};
     internal static bool StaysOpenFor(object popup)=>popup switch {WindowPopup window=>window.StaysOpen,Popup normal=>normal.StaysOpen,OverlayPopup hosted=>hosted.StaysOpen,_=>false};
     internal static void Retain(object popup,bool value){if(popup is WindowPopup window)window.StaysOpen=value;else if(popup is Popup normal)normal.StaysOpen=value;else if(popup is OverlayPopup hosted)hosted.StaysOpen=value;}

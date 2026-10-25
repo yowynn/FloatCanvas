@@ -12,6 +12,7 @@ namespace FloatCanvas.App;
 internal sealed class WindowPopup(UIElement child, UIElement target, string title, double offset) : FrameworkElement
 {
     private Window? window, owner;
+    private int suspensionDepth;
     internal UIElement Child => child;
     internal bool StaysOpen { get; set; }
     internal bool TargetPressToggles { get; set; }
@@ -21,6 +22,24 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
     {
         get => window is not null;
         set { if (value) Open(); else if (window is { } current) SessionWindowCoordinator.Close(current); }
+    }
+
+    internal IDisposable Suspend()
+    {
+        suspensionDepth++;
+        var suspended = window;
+        suspended?.Hide();
+        return new Suspension(() =>
+        {
+            if (--suspensionDepth != 0 || suspended is null || !ReferenceEquals(window, suspended) || owner?.IsVisible != true) return;
+            SessionWindowCoordinator.Show(suspended, activate: true);
+        });
+    }
+
+    private sealed class Suspension(Action resume) : IDisposable
+    {
+        private Action? action = resume;
+        public void Dispose() { var current = action; action = null; current?.Invoke(); }
     }
 
     private void Open()
@@ -47,7 +66,7 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
         shown.Closed += OnClosed;
         shown.Deactivated += (_, _) => shown.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
-            if (ReferenceEquals(window, shown) && !StaysOpen && !shown.IsActive && !shown.IsKeyboardFocusWithin &&
+            if (ReferenceEquals(window, shown) && suspensionDepth == 0 && !StaysOpen && !shown.IsActive && !shown.IsKeyboardFocusWithin &&
                 !Application.Current.Windows.Cast<Window>().Any(candidate => candidate.IsActive && IsOwnedBy(candidate, shown)))
                 CloseOutside();
         });
@@ -70,11 +89,11 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
     }
 
     private void OwnerVisibilityChanged(object sender, DependencyPropertyChangedEventArgs args)
-    { if (owner?.IsVisible == false) IsOpen = false; }
+    { if (owner?.IsVisible == false) { if (suspensionDepth != 0) window?.Hide(); else IsOpen = false; } }
 
     private void BeforeInput(object sender, PreProcessInputEventArgs args)
     {
-        if (StaysOpen || window is null || args.StagingItem.Input is not MouseButtonEventArgs mouse || mouse.ButtonState != MouseButtonState.Pressed) return;
+        if (suspensionDepth != 0 || StaysOpen || window is null || args.StagingItem.Input is not MouseButtonEventArgs mouse || mouse.ButtonState != MouseButtonState.Pressed) return;
         var origin = mouse.OriginalSource as DependencyObject ?? mouse.MouseDevice.Target as DependencyObject ?? Mouse.Captured as DependencyObject;
         if (origin is null || BelongsTo(origin, window) || TargetPressToggles && BelongsTo(origin, target)) return;
         CloseOutside();

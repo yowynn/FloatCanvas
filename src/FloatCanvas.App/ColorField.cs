@@ -23,6 +23,7 @@ internal sealed class ColorField : UserControl
     private bool pickerSessionOpen, draftCommitted, pickerSessionChanged, isMixed;
     private bool suppressTriggerClick;
     private int suppressedPressTime;
+    private int pickerSuspensions;
 
     internal bool IsMixed
     {
@@ -125,7 +126,7 @@ internal sealed class ColorField : UserControl
             if (MayReturnFocus && button.IsVisible && button.IsEnabled) button.Focus();
         };
         picker.DraftChanged += color => { if (pickerSessionOpen) ApplyPickerValue(color); };
-        picker.EyedropperRequested += () => { ClosePicker(); EyedropperRequested?.Invoke(); };
+        picker.EyedropperRequested += () => EyedropperRequested?.Invoke();
         Unloaded += (_, _) => ClosePicker();
         if (role == ColorRole.Background) Value = 0;
         RefreshValue();
@@ -188,8 +189,26 @@ internal sealed class ColorField : UserControl
     }
     public void ClosePicker()
     {
+        if (pickerSuspensions != 0) return;
         CommitPickerDraft();
         popupDisplay.IsOpen = false;
+    }
+    internal IDisposable SuspendPicker()
+    {
+        pickerSuspensions++;
+        var retention = PopupChildDialog.RetainFor(picker);
+        var suspension = popupDisplay.Suspend();
+        return new PickerSuspension(() =>
+        {
+            pickerSuspensions--;
+            suspension?.Dispose();
+            retention?.Dispose();
+        });
+    }
+    private sealed class PickerSuspension(Action resume) : IDisposable
+    {
+        private Action? action = resume;
+        public void Dispose() { var current = action; action = null; current?.Invoke(); }
     }
     public bool TryClosePicker()
     {

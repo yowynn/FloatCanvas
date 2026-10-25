@@ -38,7 +38,7 @@ internal static class NamePrompt
             WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner };
         AppWindowChrome.ApplyDialog(window);
         AttachValidation(input, save, body);
-        save.Click += (_, _) => window.DialogResult = true;
+        save.Click += (_, _) => SessionWindowCoordinator.SetModalResult(window, true);
         window.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
         return SessionWindowCoordinator.ShowModal(window) == true ? input.Text.Trim() : null;
     }

@@ -249,6 +249,7 @@ internal sealed class OverlayPopupWindow : IDisposable
 internal sealed class OverlayContextMenu : ContextMenu
 {
     private OverlayPopupWindow? window;
+    private IDisposable? parentRetention;
     static OverlayContextMenu()
     {
         EventManager.RegisterClassHandler(typeof(FrameworkElement),ContextMenuService.ContextMenuOpeningEvent,
@@ -267,6 +268,14 @@ internal sealed class OverlayContextMenu : ContextMenu
     internal OverlayContextMenu()
     {
         SetResourceReference(StyleProperty,typeof(ContextMenu));
+        Opened += (_, _) => { if (PlacementTarget is { } target) parentRetention ??= PopupChildDialog.RetainFor(target); };
+        Closed += (_, _) =>
+        {
+            var retention = parentRetention; parentRetention = null;
+            // The popup's input-priority focus return runs before its parent is
+            // eligible for outside-focus dismissal again.
+            if (retention is not null) Dispatcher.BeginInvoke(DispatcherPriority.Input, retention.Dispose);
+        };
         AddHandler(MenuItem.ClickEvent,new RoutedEventHandler((_,e)=>
         {if(e.OriginalSource is MenuItem {HasItems:false,StaysOpenOnClick:false}) IsOpen=false;}));
     }

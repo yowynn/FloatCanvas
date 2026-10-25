@@ -140,7 +140,7 @@ internal static class SystemOverlayProof
                     closer.Stop();nint hwnd=new WindowInteropHelper(dialog.Window).Handle;
                     Record("production-modal-state",new {ExpectedForeground=foreground,Foreground=GetForegroundWindow(),host.HasEditingInput,
                         Band=GetWindowBand(hwnd,out uint band)?band:uint.MaxValue,Modal=ComponentDispatcher.IsThreadModal});
-                    dialog.Window.DialogResult=false;
+                    SessionWindowCoordinator.SetModalResult(dialog.Window,false);
                 };
                 closer.Start();try{SessionWindowCoordinator.ShowModal(dialog.Window);}finally{closer.Stop();}
             }

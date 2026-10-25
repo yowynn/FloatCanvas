@@ -551,7 +551,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var cancel = Button("Stamp.Cancel", () => { }); cancel.IsCancel = true; buttons.Children.Add(cancel); panel.Children.Add(buttons);
         var dialog = Dialog(panel, L.Get(showMode ? "Stamp.SaveSelection" : "Stamp.Rename"));
         NamePrompt.AttachValidation(name, save, panel);
-        save.Click += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) dialog.DialogResult = true; };
+        save.Click += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) SessionWindowCoordinator.SetModalResult(dialog, true); };
         dialog.Loaded += (_, _) => { name.Focus(); name.SelectAll(); };
         return SessionWindowCoordinator.ShowModal(dialog) == true ? (name.Text.Trim(), raster.IsChecked == true ? StampSaveMode.RasterMerge : StampSaveMode.EditableGroup) : null;
     }
@@ -563,7 +563,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var apply = Button("Stamp.Confirm", () => { }); buttons.Children.Add(apply);
         var cancel = Button("Stamp.Cancel", () => { }); cancel.IsCancel = true; buttons.Children.Add(cancel); panel.Children.Add(buttons);
         var dialog = Dialog(panel, L.Get("Stamp.LibraryTitle"));
-        apply.Click += (_, _) => dialog.DialogResult = true;
+        apply.Click += (_, _) => SessionWindowCoordinator.SetModalResult(dialog, true);
         return SessionWindowCoordinator.ShowModal(dialog) == true;
     }
     private Wpf.Window Dialog(object content, string title)

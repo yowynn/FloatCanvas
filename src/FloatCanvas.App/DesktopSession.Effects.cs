@@ -117,6 +117,7 @@ internal sealed partial class DesktopSession
         var cursorHandle = EyedropperCursor.Handle;
         EndEyedropper(restore: false);
         _editor.Cancel(); _eyedropper = field;
+        _eyedropperPickerSuspension = field.SuspendPicker();
         _eyedropperWindows = _app.Windows.Cast<System.Windows.Window>().Where(window => window.IsVisible && !ReferenceEquals(window, _toolbar)).ToArray();
         _eyedropperOwner = System.Windows.Window.GetWindow(field);
         using (var transition = _host.BeginInternalWindowTransition())
@@ -133,6 +134,7 @@ internal sealed partial class DesktopSession
     }
 
     private System.Windows.Window[] _eyedropperWindows = [];
+    private IDisposable? _eyedropperPickerSuspension;
     private System.Windows.Window? _eyedropperOwner;
     private System.Windows.Threading.DispatcherTimer? _eyedropperTimer;
     private OverlayPoint _eyedropperPoint;
@@ -169,12 +171,15 @@ internal sealed partial class DesktopSession
         _host.SetPointerCursor(0);
         var windows = _eyedropperWindows; _eyedropperWindows = [];
         var owner = _eyedropperOwner; _eyedropperOwner = null;
+        var pickerSuspension = _eyedropperPickerSuspension; _eyedropperPickerSuspension = null;
         if (restore && field is not null && !_disposed && _host.IsEditing && _host.IsVisible)
         {
             foreach (var window in windows) SessionWindowCoordinator.Show(window);
             if (owner is { IsVisible: true, IsEnabled: true }) SessionWindowCoordinator.Show(owner,true);
-            if (field.IsVisible) field.OpenPicker(focus: true);
+            pickerSuspension?.Dispose();
+            if (field.IsVisible && !field.IsPickerOpen) field.OpenPicker(focus: true);
         }
+        else { pickerSuspension?.Dispose(); field?.ClosePicker(); }
         RequestRender();
     }
 

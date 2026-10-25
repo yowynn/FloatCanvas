@@ -38,7 +38,7 @@ internal sealed class WorkspaceHistoryWindow : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var restore = new Button { Content = L.Get("Recovery.Restore"), IsDefault = true, MinWidth = 90,
             IsEnabled = false, Padding = new(12, 6, 12, 6), Margin = new(0, 0, 8, 0) };
-        restore.Click += (_, _) => DialogResult = SelectedEntry is not null;
+        restore.Click += (_, _) => SessionWindowCoordinator.SetModalResult(this, SelectedEntry is not null);
         list.MouseDoubleClick += (_, e) =>
         {
             if (e.ChangedButton != System.Windows.Input.MouseButton.Left || !restore.IsEnabled ||

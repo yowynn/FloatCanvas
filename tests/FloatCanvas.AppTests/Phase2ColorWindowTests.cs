@@ -34,6 +34,12 @@ internal static class Phase2ColorWindowTests
                     Equals(color.TryFindResource("CanvasWindowHelpVisibility"), Visibility.Collapsed));
                 using (var retention = PopupChildDialog.RetainFor(field.PickerRoot))
                     check("child-dialog retention keeps the regular color window open", retention is not null && field.IsPickerOpen);
+                var firstChild = PopupChildDialog.RetainFor(field.PickerRoot)!;
+                var secondChild = PopupChildDialog.RetainFor(field.PickerRoot)!;
+                firstChild.Dispose();
+                check("closing a menu before its naming child keeps the shared parent retained", PopupChildDialog.HasRetainedDialog(field.PickerRoot));
+                secondChild.Dispose();
+                check("closing the last child releases parent retention", !PopupChildDialog.HasRetainedDialog(field.PickerRoot));
                 var picker = (ColorPickerPanel)typeof(ColorField).GetField("picker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(field)!;
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
                 bool sawModal = false;

@@ -44,7 +44,7 @@ internal static class Preview4ColorRuntimeFixture
                 timer.Stop(); retained=field.IsPickerOpen;
                 modalOwned=ReferenceEquals(dialog.Owner,options)&&!IsWindowEnabled(new WindowInteropHelper(options).Handle);
                 Console.WriteLine($"IN MODAL retained={retained} owned={modalOwned} editing={host.IsEditing} options={options.IsVisible}");
-                dialog.DialogResult=false;
+                SessionWindowCoordinator.SetModalResult(dialog,false);
             };
             timer.Start();
             NamePrompt.Show(picker,"Color modal regression","Test",owner:options);Pump();
