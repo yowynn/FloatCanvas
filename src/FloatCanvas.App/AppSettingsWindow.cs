@@ -8,7 +8,7 @@ namespace FloatCanvas.App;
 /// <summary>Settings categories share one scrollable content area and a persistent action footer.</summary>
 internal sealed class AppSettingsWindow : Window
 {
-    private readonly ListBox navigation = new() { BorderThickness = new Thickness(0), Margin = new Thickness(12) };
+    private readonly ListBox navigation = new() { BorderThickness = new Thickness(0), Margin = WindowLayout.ContentMargin() };
     private readonly Grid pages = new();
     internal TextBlock Error { get; } = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center };
     internal Button SaveButton { get; } = new() { Content = L.Get("Settings.Save"), IsDefault = true, MinWidth = 90, Padding = new Thickness(18, 8, 18, 8) };
@@ -33,7 +33,7 @@ internal sealed class AppSettingsWindow : Window
             for (int i = 0; i < pages.Children.Count; i++)
                 pages.Children[i].Visibility = i == navigation.SelectedIndex ? Visibility.Visible : Visibility.Collapsed;
         };
-        var actions = new Grid { Margin = new Thickness(20, 12, 20, 12) };
+        var actions = new Grid { Margin = WindowLayout.ContentMargin() };
         actions.ColumnDefinitions.Add(new ColumnDefinition());
         actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText");
@@ -54,11 +54,11 @@ internal sealed class AppSettingsWindow : Window
 
     internal StackPanel AddSection(string title, string hint)
     {
-        var content = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
+        var content = new StackPanel();
         content.Children.Add(new TextBlock { Text = title, FontSize = 22, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         var description = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 20) };
         description.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); content.Children.Add(description);
-        pages.Children.Add(new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        pages.Children.Add(new ScrollViewer { Margin = WindowLayout.ContentMargin(20, 20), Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Visibility = Visibility.Collapsed });
         navigation.Items.Add(new ListBoxItem { Content = new TextBlock { Text = title, TextWrapping = TextWrapping.Wrap },
             HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(10, 12, 10, 12) });
@@ -75,7 +75,7 @@ internal sealed class AppSettingsWindow : Window
     internal static StackPanel AddGroup(Panel section, string title)
     {
         var group = new StackPanel();
-        group.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
+        var heading = PropertyPanelLayout.SectionTitle(title); heading.TextWrapping = TextWrapping.Wrap; heading.Margin = new(0, 0, 0, 10); group.Children.Add(heading);
         var card = new Border { Child = group, CornerRadius = new CornerRadius(8), Padding = new Thickness(16),
             BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 0, 12) };
         card.SetResourceReference(Border.BackgroundProperty, "CanvasInput");
@@ -86,10 +86,16 @@ internal sealed class AppSettingsWindow : Window
     internal static void AddSetting(Panel section, string label, FrameworkElement control, string? hint = null)
     {
         var group = AddGroup(section, label);
-        if (control is CheckBox checkbox) checkbox.Content = new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap };
-        if (control is CheckBox) group.Children.RemoveAt(0);
+        bool inline = control is NumericValueField or ComboBox or TextBox;
+        if (control is CheckBox || inline) group.Children.RemoveAt(0);
+        var caption = new PropertyLabel(label == L.Get("Settings.Language") ? L.Get("Property.Language") : label) { ToolTip = label };
         AutomationProperties.SetName(control, label);
-        group.Children.Add(control);
+        if (control is NumericValueField numeric)
+        {
+            AutomationProperties.SetName(numeric.Input, label); AutomationProperties.SetName(numeric.Slider, label);
+            numeric.SetLabel(caption);
+        }
+        group.Children.Add(control is CheckBox checkbox ? PropertyPanelLayout.BooleanRow(label, checkbox) : inline ? PropertyPanelLayout.Row(caption, control) : control);
         if (string.IsNullOrWhiteSpace(hint)) return;
         var note = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0), FontSize = 12 };
         note.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); group.Children.Add(note);

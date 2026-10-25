@@ -26,9 +26,9 @@ internal static class NamePrompt
     {
         using var popup = PopupChildDialog.RetainFor(source);
         owner ??= Window.GetWindow(source);
-        var input = new TextBox { Text = initial, MaxLength = maximum, MinHeight = 32, Margin = new(0, 10, 0, 14) };
-        var body = new StackPanel { Margin = new(18) };
-        body.Children.Add(new TextBlock { Text = title, FontSize = 14 }); body.Children.Add(input);
+        var input = new TextBox { Text = initial, MaxLength = maximum, Height = PropertyPanelLayout.ControlHeight, MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 10, 0, 14) };
+        var body = new StackPanel { Margin = WindowLayout.ContentMargin(18, 18) };
+        body.Children.Add(PropertyPanelLayout.Label(title)); body.Children.Add(input);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var cancel = new Button { Content = L.Get("Dialog.Cancel"), MinWidth = 70, IsCancel = true };
         var save = new Button { Content = L.Get("Dialog.OK"), MinWidth = 70, IsDefault = true, Margin = new(8, 0, 0, 0), IsEnabled = !string.IsNullOrWhiteSpace(initial) };

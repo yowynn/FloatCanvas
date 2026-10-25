@@ -42,7 +42,7 @@ internal static class AppHelp
     internal static void ShowText(string title, string text, Action? open = null, Window? owner = null)
     {
         owner ??= Application.Current?.Windows.Cast<Window>().FirstOrDefault(window => window.IsActive);
-        var content = new Grid { Margin = new(16) };
+        var content = new Grid { Margin = WindowLayout.ContentMargin(16, 16) };
         content.RowDefinitions.Add(new()); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var reader = new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };

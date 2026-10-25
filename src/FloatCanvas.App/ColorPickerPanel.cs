@@ -12,10 +12,10 @@ namespace FloatCanvas.App;
 internal sealed class ColorPickerPanel : UserControl
 {
     private readonly ColorLibrary library;
-    private readonly TextBox hex = new() { MinHeight = 32, MaxLength = 9, MinWidth = 130, VerticalContentAlignment = VerticalAlignment.Center };
-    private readonly Slider alpha = new() { Minimum = 0, Maximum = 100, Width = 175, VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock alphaLabel = new() { Width = 48, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-    private readonly Border preview = new() { Height = 28, Width = 42, Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(1) };
+    private readonly TextBox hex = new() { Height = PropertyPanelLayout.ControlHeight, MinHeight = PropertyPanelLayout.ControlHeight, Padding = new(8, 0, 8, 0), MaxLength = 9, MinWidth = 130, VerticalContentAlignment = VerticalAlignment.Center };
+    private readonly NumericValueField alphaField = new(0, 100) { Unit = "%" };
+    private readonly Slider alpha;
+    private readonly Border preview = new() { Height = PropertyPanelLayout.ControlHeight, Width = 42, CornerRadius = new(5), Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(1) };
     private readonly ColorSpectrum spectrum = new();
     private readonly Slider hue = new() { Minimum = 0, Maximum = 360, Height = 20, Margin = new Thickness(0, 4, 0, 3) };
     private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11, Margin = new Thickness(0, 5, 0, 0), Visibility = Visibility.Collapsed };
@@ -35,21 +35,22 @@ internal sealed class ColorPickerPanel : UserControl
         set
         {
             this.value = value; syncing = true;
-            try { hex.Text = ColorLibrary.ToHtml(value, false); alpha.Value = (value >> 24) * 100d / 255; ClearInputError(); RefreshPreview(); }
+            try { hex.Text = ColorLibrary.ToHtml(value, false); alphaField.Value = (value >> 24) * 100d / 255; ClearInputError(); RefreshPreview(); }
             finally { syncing = false; }
         }
     }
 
     public ColorPickerPanel(ColorRole role, ColorLibrary library)
     {
+        alpha = alphaField.Slider;
         this.library = library;
         SetResourceReference(BackgroundProperty, "CanvasSurface");
         SetResourceReference(ForegroundProperty, "CanvasText");
         var body = new StackPanel { Width = 300, VerticalAlignment = VerticalAlignment.Top };
         // Reserve scrollbar space outside the ten-column grid, even when it appears.
-        var collections = new StackPanel { MinWidth = 298 + SystemParameters.VerticalScrollBarWidth,
+        var collections = new StackPanel { MinWidth = 298 + WindowLayout.ScrollBarWidth,
             VerticalAlignment = VerticalAlignment.Top };
-        var columns = new Grid { Margin = new Thickness(12) };
+        var columns = new Grid();
         columns.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         columns.ColumnDefinitions.Add(new() { Width = new GridLength(24) });
         columns.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -65,7 +66,7 @@ internal sealed class ColorPickerPanel : UserControl
         var savedHeader = new DockPanel(); var save = IconButton(PanelActionIcon.Add, "Color.SaveSwatch", SaveSwatch);
         DockPanel.SetDock(save, Dock.Right); savedHeader.Children.Add(save); savedHeader.Children.Add(pinnedHeading); collections.Children.Add(savedHeader);
         collections.Children.Add(new ScrollViewer { Content = pinned, Height = 180, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
-        body.Children.Add(Heading("Color.Custom"));
+        var customLabel = PropertyPanelLayout.Label(L.Get("Color.Custom")); customLabel.Margin = new(0, 7, 0, 5); body.Children.Add(customLabel);
         body.Children.Add(spectrum);
         AutomationProperties.SetName(hue, L.Get("Color.Hue"));
         var hueColors = new GradientStopCollection
@@ -80,9 +81,11 @@ internal sealed class ColorPickerPanel : UserControl
         preview.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder"); input.Children.Add(preview);
         input.Children.Add(hex); Grid.SetColumn(hex, 1); body.Children.Add(input);
         hex.ToolTip = "#RGB / #RRGGBB / #AARRGGBB"; AutomationProperties.SetName(hex, L.Get("Color.Hex"));
-        var alphaRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 5) };
-        var alphaName = new TextBlock { Text = L.Get("Color.Alpha"), Width = 55, VerticalAlignment = VerticalAlignment.Center };
-        alphaRow.Children.Add(alphaName); alphaRow.Children.Add(alpha); alphaRow.Children.Add(alphaLabel); body.Children.Add(alphaRow);
+        var alphaName = new PropertyLabel(L.Get("Color.Alpha"));
+        var alphaRow = PropertyPanelLayout.Row(alphaName, alphaField);
+        alphaRow.Margin = new(0, 8, 0, 5); body.Children.Add(alphaRow);
+        alphaField.SetScrubAnchor(NumericPropertyKind.Opacity, L.Get("Color.Alpha"));
+        alphaField.SetLabel(alphaName); AutomationProperties.SetName(alphaField.Input, L.Get("Color.Alpha"));
         AutomationProperties.SetName(alpha, L.Get("Color.Alpha"));
         var actions = new WrapPanel();
         actions.Children.Add(IconButton(PanelActionIcon.Eyedropper, "Color.Eyedropper", () => EyedropperRequested?.Invoke()));
@@ -90,19 +93,20 @@ internal sealed class ColorPickerPanel : UserControl
         body.Children.Add(actions);
         error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); body.Children.Add(error);
         AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
-        Content = new ScrollViewer { Content = columns, MaxHeight = 520, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Content = new ScrollViewer { Margin = WindowLayout.ContentMargin(), Content = columns, MaxHeight = 520, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         hex.TextChanged += (_, _) =>
         {
             if (syncing) return;
             if (ColorLibrary.TryParseHtml(hex.Text, out var parsed) && hex.Text.Trim().TrimStart('#').Length == 8)
             {
-                syncing = true; alpha.Value = (parsed >> 24) * 100d / 255; syncing = false;
+                syncing = true; alphaField.Value = (parsed >> 24) * 100d / 255; syncing = false;
             }
             ClearInputError(); RefreshPreview();
         };
         hex.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Run(Apply); e.Handled = true; } };
         hex.LostKeyboardFocus += (_, _) => { if (!syncing && !TryRead(out _)) InvalidInput(); };
-        alpha.ValueChanged += (_, _) => { if (!syncing) RefreshPreview(); };
+        alphaField.ValueChanged += _ => { if (!syncing) { ClearInputError(); RefreshPreview(); } };
+        alphaField.InvalidInput += () => { if (!syncing) InvalidInput(); };
         hue.ValueChanged += (_, _) => { if (!syncing) spectrum.ChangeHue(hue.Value); };
         spectrum.ColorChanged += color => { if (!syncing) hex.Text = ColorLibrary.ToHtml(color, false); };
         preview.MouseLeftButtonDown += (_, e) => { spectrum.Focus(); e.Handled = true; };
@@ -169,12 +173,11 @@ internal sealed class ColorPickerPanel : UserControl
     }
     private bool TryRead(out uint color)
     {
-        if (!ColorLibrary.TryParseHtml(hex.Text, out color)) return false;
+        if (!ColorLibrary.TryParseHtml(hex.Text, out color) || !alphaField.TryGetValue(out _)) return false;
         color = (color & 0x00FFFFFF) | ((uint)Math.Clamp(Math.Round(alpha.Value * 255 / 100), 0, 255) << 24); return true;
     }
     private void RefreshPreview()
     {
-        alphaLabel.Text = Math.Round(alpha.Value).ToString(System.Globalization.CultureInfo.CurrentCulture) + "%";
         if (TryRead(out var color))
         {
             preview.Child = CreateSwatch(color);
@@ -216,7 +219,8 @@ internal sealed class ColorPickerPanel : UserControl
         var button = new ColorSwatchButton(color) { ToolTip = name + " " + ColorLibrary.ToHtml(color) };
         AutomationProperties.SetName(button, name + " " + ColorLibrary.ToHtml(color)); button.Click += (_, _) => Run(action); return button;
     }
-    private static TextBlock Heading(string key) => new() { Text = L.Get(key), FontSize = 11, Opacity = .75, Margin = new Thickness(0, 7, 0, 5) };
+    private static TextBlock Heading(string key)
+    { var label = PropertyPanelLayout.SectionTitle(L.Get(key)); label.Margin = new(0, 7, 0, 5); return label; }
     internal static Grid CreateSwatch(uint color)
     {
         var grid = new Grid { IsHitTestVisible = false };

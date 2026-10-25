@@ -24,7 +24,7 @@ internal sealed class CanvasPresetGallery : UserControl
     internal CanvasPresetGallery(CanvasPresetLibrary library)
     {
         this.library = library;
-        var body = new DockPanel { Width = 196 + SystemParameters.VerticalScrollBarWidth, LastChildFill = true };
+        var body = new DockPanel { MinWidth = 196 + WindowLayout.ScrollBarWidth, LastChildFill = true };
         var headings = new StackPanel();
         headings.Children.Add(Header("ToolOptions.Official")); headings.Children.Add(OfficialTiles);
         var userHeader = Header("ToolOptions.User"); userHeader.Margin = new(0, 12, 0, 4);
@@ -117,7 +117,7 @@ internal sealed class CanvasPresetGallery : UserControl
     private static DockPanel Header(string key)
     {
         var panel = new DockPanel { Height = 34, Margin = new(0, 0, 0, 4) };
-        panel.Children.Add(new TextBlock { Text = L.Get(key), FontSize = 12, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }); return panel;
+        panel.Children.Add(PropertyPanelLayout.SectionTitle(L.Get(key))); return panel;
     }
     private static Image Preview(CanvasPresetParameters parameters)
     {

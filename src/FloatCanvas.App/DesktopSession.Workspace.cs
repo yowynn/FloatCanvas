@@ -48,6 +48,38 @@ internal sealed partial class DesktopSession
         RecoveryHistory.EnterWorkspace(new());
         _documentRecoveryFingerprint=null;ScheduleRecovery();RequestRender();
     }
+    private bool CanRevertActiveFile() => !DocumentOperationBusy && FileState(Active).Path is not null && IsDirty(Active);
+
+    private async Task RevertActiveFileAsync()
+    {
+        if (!CanRevertActiveFile()) return;
+        EndCanvasCalibration(hidePanel: true);
+        _inspector?.CompletePendingEdit();
+        FinishInlineText();
+        _editor.Cancel();
+        var target = Active;
+        var file = FileState(target);
+        _documentBusy = true;
+        try
+        {
+            var loaded = await _projectStore.LoadAsync(file.Path!, _documentLifetime.Token);
+            ImageImportBudget.ValidateResources(loaded.Assets.Resources);
+            MergeAssets(loaded.Assets);
+            string fingerprint = Fingerprint(loaded.Document);
+            long? savedVersion = fingerprint == file.SavedFingerprint && file.SavedContentVersion >= 0 ? file.SavedContentVersion : null;
+            target.RestoreDocument(L.Get("Project.Revert"), loaded.Document, savedVersion);
+            file.SavedFingerprint = fingerprint;
+            file.SavedContentVersion = target.ContentVersion;
+            file.DiskVersion = loaded.FileVersion;
+            _documentRecoveryFingerprint = null;
+            RefreshBoundFileIndicator();
+            UpdateStatus(L.Get("Project.Reverted"));
+            RequestRender();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Project.RevertFailed") + ex.Message); }
+        finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
+    }
+
     private void LocateActiveFile()
     {
         if(FileState(Active).Path is not { } path)return;

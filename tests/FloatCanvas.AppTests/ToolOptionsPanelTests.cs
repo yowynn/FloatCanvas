@@ -81,7 +81,7 @@ internal static class ToolOptionsPanelTests
         check("independent endpoint and line style choices reach the controller", controller.Style.StartArrowHead == ArrowHeadStyle.Open &&
             controller.Style.EndArrowHead == ArrowHeadStyle.None && controller.Style.StrokePattern == StrokePattern.Dotted);
         controller.Tool = EditorTool.Rectangle; panel.Refresh(); int beforeAspect = changes;
-        var aspect = Field<Controls.CheckBox>(panel, "aspect"); aspect.IsChecked = true;
+        var aspect = Field<System.Windows.Controls.Primitives.ToggleButton>(panel, "aspect"); aspect.IsChecked = true;
         aspect.RaiseEvent(new Wpf.RoutedEventArgs(Controls.CheckBox.ClickEvent));
         check("aspect constraint takes effect immediately", controller.ConstrainAspect && changes == beforeAspect + 1);
 
@@ -96,7 +96,7 @@ internal static class ToolOptionsPanelTests
             Equals(((Controls.ComboBoxItem)pickers["StartArrowHead"].SelectedItem).Tag, ArrowHeadStyle.FilledTriangle) &&
             Equals(((Controls.ComboBoxItem)pickers["EndArrowHead"].SelectedItem).Tag, ArrowHeadStyle.Diamond) &&
             Equals(((Controls.ComboBoxItem)pickers["StrokePattern"].SelectedItem).Tag, StrokePattern.Dashed) &&
-            Field<Controls.CheckBox>(panel, "aspect").IsChecked == false);
+            Field<System.Windows.Controls.Primitives.ToggleButton>(panel, "aspect").IsChecked == false);
         check("tool parameter editing leaves document and undo history intact", JsonSerializer.Serialize(controller.Session.Document) == document &&
             controller.Session.UndoCount == 0 && !controller.Session.IsTransactionActive);
         check("numeric options retain native textbox input", numbers.Values.All(System.Windows.Input.InputMethod.GetIsInputMethodEnabled));
@@ -211,8 +211,8 @@ internal static class ToolOptionsPanelTests
         controller.Tool = EditorTool.Line; panel.Refresh();
         panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
         foreach (var pair in new[] { ("StartArrowHead", "EndArrowHead"), ("StrokePattern", "ArrowHeadSize") })
-            check(pair.Item1 + " and " + pair.Item2 + " share a row", Controls.Grid.GetRow(rows[pair.Item1]) == Controls.Grid.GetRow(rows[pair.Item2]) &&
-                Controls.Grid.GetColumn(rows[pair.Item1]) == 0 && Controls.Grid.GetColumn(rows[pair.Item2]) == 1);
+            check(pair.Item1 + " and " + pair.Item2 + " retain full-width readable controls", Controls.Grid.GetRow(rows[pair.Item1]) != Controls.Grid.GetRow(rows[pair.Item2]) &&
+                Controls.Grid.GetColumnSpan(rows[pair.Item1]) == 3 && Controls.Grid.GetColumnSpan(rows[pair.Item2]) == 3);
         var recipes = official.Children.OfType<Controls.Button>().Where(button => button.Visibility == Wpf.Visibility.Visible).ToArray();
         check("line recipes show only relevant choices in multiple columns", recipes.Length >= 4 &&
             recipes.All(button => ((string)button.Tag).Contains("line") || ((string)button.Tag).Contains("arrow")) &&

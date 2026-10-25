@@ -155,7 +155,8 @@ internal sealed partial class DesktopSession
         _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;
         _toolbarExpandedContent.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 0, Opacity = .38, Color = Colors.Black };
         var shell = _toolbarLauncher.CreateSurface(_toolbarExpandedContent);
-        _boundFileIndicator=new BoundFileIndicator(DetachActiveFile,LocateActiveFile,()=>!DocumentOperationBusy);
+        _boundFileIndicator=new BoundFileIndicator(()=>_ = RunCommand(RevertActiveFileAsync),LocateActiveFile,DetachActiveFile,
+            CanRevertActiveFile,()=>!DocumentOperationBusy);
         shell.Children.Add(_boundFileIndicator);
         shell.LayoutUpdated+=(_,_)=>
         {

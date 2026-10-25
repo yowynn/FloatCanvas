@@ -84,7 +84,7 @@
     "en": "Colors: #AARRGGBB; transparent fill: #00000000"
   },
   "Inspector.OpacityPercent": {
-    "zh": "透明度 %",
+    "zh": "不透明度 %",
     "en": "Opacity %"
   },
   "Inspector.FontSize": {
@@ -232,7 +232,7 @@
     "en": "Arrowhead size"
   },
   "Inspector.Opacity": {
-    "zh": "透明度",
+    "zh": "不透明度",
     "en": "Opacity"
   },
   "Inspector.InvalidFontFamily": {

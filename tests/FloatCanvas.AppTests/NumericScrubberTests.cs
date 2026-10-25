@@ -23,11 +23,11 @@ internal static class NumericScrubberTests
         allowed = true;
         assert("numeric scrub begins exactly once", scrubber.TryBegin(100) && !scrubber.TryBegin(120) && begins == 2);
         scrubber.Update(115); scrubber.Update(105);
-        assert("numeric scrub reports displacement from start rather than individual movement", updates.SequenceEqual([15d, 5d]));
+        assert("numeric scrub accelerates from its origin and slows when returning", Math.Abs(updates[0] - .902) < 1e-9 && Math.Abs(updates[1] - .062) < 1e-9);
         scrubber.Update(115, Input.ModifierKeys.Shift);
         scrubber.Update(116, Input.ModifierKeys.Control);
         scrubber.Update(126, Input.ModifierKeys.Shift | Input.ModifierKeys.Control);
-        assert("numeric scrub changes sensitivity continuously with Shift taking precedence", updates.TakeLast(3).SequenceEqual([6d, 16d, 17d]));
+        assert("numeric scrub changes sensitivity continuously with Shift taking precedence", updates.TakeLast(3).Zip(new[] { .128, 1.008, 1.118 }).All(pair => Math.Abs(pair.First - pair.Second) < 1e-9));
         int count = updates.Count;
         scrubber.Update(126); scrubber.Update(double.NaN); scrubber.Update(double.PositiveInfinity);
         assert("stationary and non-finite scrub positions do not preview a change", updates.Count == count);
@@ -35,7 +35,13 @@ internal static class NumericScrubberTests
         assert("numeric scrub commits once despite repeated completion", !scrubber.IsActive && finishes.SequenceEqual([true]));
 
         scrubber.TryBegin(0); scrubber.Update(-8);
-        assert("numeric scrub resets origin and accumulated displacement for each gesture", updates[^1] == -8);
+        assert("numeric scrub resets origin and accumulated displacement for each gesture", Math.Abs(updates[^1] + .272) < 1e-9);
+        int smallStart = updates.Count;
+        scrubber.Update(2);
+        assert("returning inside the click tolerance restores the start value", updates[^1] == 0);
+        scrubber.Update(3);
+        assert("jitter within the click tolerance produces no extra change", updates.Count == smallStart + 1);
+        assert("one long drag exceeds ten independent short drags", NumericScrubber.Displacement(100) > NumericScrubber.Displacement(10) * 10);
         assert("unrelated key leaves scrub active", !scrubber.HandleKey(Input.Key.Enter) && scrubber.IsActive);
         assert("Escape cancels numeric scrub once", scrubber.HandleKey(Input.Key.Escape) && !scrubber.HandleKey(Input.Key.Escape) && finishes.SequenceEqual([true, false]));
 

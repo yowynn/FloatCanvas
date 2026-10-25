@@ -8,7 +8,7 @@ internal static class DiagnosticExportWindow
 {
     internal static void ShowFor(Window? owner, bool enhanced)
     {
-        var panel = new Grid { Margin = new(16) };
+        var panel = new Grid { Margin = WindowLayout.ContentMargin(16, 16) };
         panel.RowDefinitions.Add(new() { Height = GridLength.Auto }); panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new()); panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var hint = new TextBlock { Text = L.Get("Engineering.DiagnosticHint"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) }; panel.Children.Add(hint);

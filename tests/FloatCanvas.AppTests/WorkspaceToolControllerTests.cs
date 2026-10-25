@@ -52,8 +52,8 @@ internal static class WorkspaceToolControllerTests
                 var controller = new EditorController(session) { Tool = tool, ConstrainAspect = true };
                 Gesture(controller, new(100, 100), reverse ? new(40, 80) : new(160, 120));
                 var element = session.Document.Elements.Single();
-                check($"{tool} constrained drawing keeps equal dimensions in {(reverse ? "reverse" : "forward")} drags", element.Width == 60 && element.Height == 60 &&
-                    element.Transform == Affine2D.Translation(reverse ? 40 : 100, reverse ? 40 : 100) && session.UndoCount == 1 && !session.IsTransactionActive);
+                check($"{tool} constrained drawing keeps its configured ratio in {(reverse ? "reverse" : "forward")} drags", element.Width == 60 && element.Height == 37.5 &&
+                    element.Transform == Affine2D.Translation(reverse ? 40 : 100, reverse ? 62.5 : 100) && session.UndoCount == 1 && !session.IsTransactionActive);
             }
             var unconstrained = new EditorSession();
             var free = new EditorController(unconstrained) { Tool = tool };

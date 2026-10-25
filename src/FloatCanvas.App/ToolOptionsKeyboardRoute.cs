@@ -19,6 +19,7 @@ internal static class ToolOptionsKeyboardRoute
             if (e.Handled || (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
             if (key == Key.Escape)
             {
+                if (NumericValueField.TryCancelForInput(source)) { e.Handled = true; return; }
                 if (Ancestors(source).Any(value => value is MenuBase or MenuItem || value is ComboBox { IsDropDownOpen: true } || value is Thumb { IsDragging: true })) return;
                 e.Handled = true;
                 if (!e.IsRepeat && !AppWindowChrome.TryCloseHelp(window) && !dismissOneLevel()) command(0x1B);

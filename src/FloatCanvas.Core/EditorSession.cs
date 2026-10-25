@@ -57,7 +57,7 @@ public sealed partial class EditorSession
     /// A violated declaration conservatively invalidates preview nodes; undo semantics stay unchanged.
     /// </summary>
     public void CommitSettings() => CommitCore(settingsOnly: true);
-    private void CommitCore(bool settingsOnly)
+    private void CommitCore(bool settingsOnly, long? restoredContentVersion = null, bool restoringDocument = false)
     {
         if (transactionBefore is null) throw new InvalidOperationException(L.Get("History.NoActiveTransaction"));
         var before = transactionBefore; var selectedBefore = transactionSelection!;
@@ -65,7 +65,9 @@ public sealed partial class EditorSession
         catch { Cancel(); throw; }
         PruneSelection();
         bool knownSettings = settingsOnly && PreviewElementsRevision <= transactionPreviewRevision && SettingsElementsUnchanged(before);
-        if (SceneContent.Equal(before, Document))
+        // Explicit restoration also restores save-point identity. Equal scene
+        // content can still belong to a different, unsaved history version.
+        if (!restoringDocument && SceneContent.Equal(before, Document))
         {
             transactionBefore = null; transactionSelection = null; HasPendingChanges = false;
             // Even a net-zero gesture may have published an intermediate preview before
@@ -75,7 +77,7 @@ public sealed partial class EditorSession
         }
         var after = Document.Clone();
         transactionBefore = null; transactionSelection = null; HasPendingChanges = false;
-        ContentVersion = ++nextContentVersion;
+        ContentVersion = restoredContentVersion ?? ++nextContentVersion;
         redo.Clear();
         undo.Add(new(transactionLabel, before, after, selectedBefore, [.. Selection], EstimateBytes(before) + EstimateBytes(after), ++sequence, before.ReferencedAssets.Concat(after.ReferencedAssets).Distinct(StringComparer.Ordinal).ToArray(), transactionContentVersion, ContentVersion));
         TrimHistory(); OnChanged(contentChanged: true, preserveContentVersion: true, previewElementsChanged: !knownSettings);
@@ -151,6 +153,16 @@ public sealed partial class EditorSession
     {
         ArgumentNullException.ThrowIfNull(document);
         transactionBefore = null; transactionSelection = null; Document = document; undo.Clear(); redo.Clear(); Selection.Clear(); OnChanged(contentChanged: true);
+    }
+    /// <summary>Restore a snapshot as one undoable edit. A known version must identify that exact saved content.</summary>
+    public void RestoreDocument(string label, SceneDocument document, long? knownContentVersion = null)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (knownContentVersion is { } version && (version < 0 || version > nextContentVersion))
+            throw new ArgumentOutOfRangeException(nameof(knownContentVersion));
+        BeginTransaction(label);
+        try { Document = document.Clone(); Selection.Clear(); CommitCore(settingsOnly: false, knownContentVersion, restoringDocument: true); }
+        catch { Cancel(); throw; }
     }
     public void SetSelection(IEnumerable<Guid> ids) { SetSelectionCore(ids); PruneSelection(); OnChanged(); }
     public void SelectAll() => SetSelection(Document.Elements.Where(e => e.Visible && !e.Locked).Select(e => e.Id));

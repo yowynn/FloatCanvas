@@ -78,9 +78,8 @@ internal static class PerspectiveSafetyCommandTests
             var safe = Box(100, 100); var near = Box(3650, 100);
             var state = new EditorSession(Scene(safe, near)); state.SetSelection([safe.Id, near.Id]);
             var inspector = new InspectorWindow(() => state);
-            Field<CheckBox>(inspector, "keepAspect").IsChecked = false;
-            var label = ((Grid)Field<Dictionary<string, FrameworkElement>>(inspector, "fieldContainers")[key])
-                .Children.OfType<TextBlock>().Single();
+            Field<System.Windows.Controls.Primitives.ToggleButton>(inspector, "keepAspect").IsChecked = false;
+            FrameworkElement label = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields")[key].DragAnchor;
             string before = JsonSerializer.Serialize(state.Document); var selected = state.Selection.ToHashSet();
             check(key + " safety scrub begins without native input", (bool)Invoke(inspector, "BeginScrub", key)!);
             double accepted = key == "StrokeWidth" ? 100 : 25;

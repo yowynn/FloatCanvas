@@ -19,7 +19,7 @@ internal sealed class WelcomeView : StackPanel
 
     internal WelcomeView(HotkeyBinding toggle, HotkeyBinding hide, Action start, Action? checkUpdates = null, Action? openProject = null, Action? restoreHistory = null, WorkspaceRecoveryHistory? history = null)
     {
-        Margin = new Thickness(24, 12, 24, 20);
+        Margin = WindowLayout.ContentMargin(12, 20);
         SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "CanvasText");
         Children.Add(new TextBlock { Text = L.Get("App.Name"), FontSize = 26, FontWeight = FontWeights.SemiBold });
         var tagline = new TextBlock { Text = L.Get("Welcome.Tagline"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 19) };

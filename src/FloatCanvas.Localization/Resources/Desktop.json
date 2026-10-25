@@ -178,11 +178,11 @@
     "en": "Settings"
   },
   "Toolbar.Opacity": {
-    "zh": "标注与贴图的整体透明度",
+    "zh": "标注与贴图的整体不透明度",
     "en": "Overall annotation and image opacity"
   },
   "History.LayerOpacity": {
-    "zh": "调整图层透明度",
+    "zh": "调整图层不透明度",
     "en": "Change layer opacity"
   },
   "Toolbar.Freehand": {

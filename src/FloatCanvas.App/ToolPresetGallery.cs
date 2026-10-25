@@ -34,7 +34,7 @@ internal sealed class ToolPresetGallery : UserControl
         {
             selections = stateStore.Selections;
         }
-        var body = new DockPanel { MinWidth = 196 + SystemParameters.VerticalScrollBarWidth, LastChildFill = true };
+        var body = new DockPanel { MinWidth = 196 + WindowLayout.ScrollBarWidth, LastChildFill = true };
         headings = new StackPanel();
         var officialHeader = new DockPanel { Height = 34, Margin = new(0, 0, 0, 4) };
         officialHeader.Children.Add(Heading("ToolOptions.Official"));
@@ -153,5 +153,5 @@ internal sealed class ToolPresetGallery : UserControl
         Add("ToolOptions.Delete", PanelActionIcon.Delete, () => Delete(preset), "Delete"); return menu;
     }
     private void Run(Action action) { try { action(); } catch (Exception ex) { Failed?.Invoke(ex.Message); } }
-    private static TextBlock Heading(string key) => new() { Text = L.Get(key), FontSize = 12, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+    private static TextBlock Heading(string key) => PropertyPanelLayout.SectionTitle(L.Get(key));
 }

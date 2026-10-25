@@ -52,7 +52,7 @@ internal static class OptionsFeedbackTests
         }
         var square = new EditorController(new EditorSession()) { Tool = EditorTool.Ellipse, ConstrainAspect = true, DefaultWidth = 90, DefaultHeight = 50 };
         Click(square, new(100, 100));
-        check("constrained default-size shapes use the configured width for both axes", square.Session.Document.Elements.Single() is { Width: 90, Height: 90 });
+        check("constrained default-size shapes retain both configured dimensions", square.Session.Document.Elements.Single() is { Width: 90, Height: 50 });
         var parameters = new ToolParameters { DefaultWidth = 99, DefaultHeight = 77 };
         var copy = parameters.Clone(); copy.DefaultWidth = 123;
         check("default dimensions clone independently", parameters.DefaultWidth == 99 && copy.DefaultHeight == 77);

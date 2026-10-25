@@ -12,10 +12,11 @@ internal sealed class CanvasSettingsWindow : Window
 {
     private readonly ColorField background = new(ColorRole.Background), gridColor = new(ColorRole.Foreground);
     private readonly CheckBox projection = new(), gridVisible = new(), gridSizeLock = new(), depthPriorityOcclusion = new();
-    private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true),
-        rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true), width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5);
+    private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true) { Unit = L.Get("Numeric.Unit.Column") },
+        rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true) { Unit = L.Get("Numeric.Unit.Row") },
+        width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5) { Unit = "px" };
     private readonly NumericValueField gridSize = new(CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize,
-        sliderMinimum: 1, sliderMaximum: 400, step: 1);
+        sliderMinimum: 1, sliderMaximum: 400, step: 1) { Unit = "px" };
     private readonly Grid countPair = new();
     private readonly StackPanel flatSizePanel = new();
     private readonly Button pin;
@@ -56,7 +57,9 @@ internal sealed class CanvasSettingsWindow : Window
 
     public CanvasSettingsWindow(CanvasPresetLibrary? library = null, Func<EditorSession>? historySession = null)
     {
-        Title = L.Get("Canvas.Title"); Width = 600; Height = 590; MinWidth = 280; MinHeight = 240;
+        double preferredWidth = PropertyPanelLayout.ContentWidth + WindowLayout.ContentInset * 2 + 2 + 25 + 196 + WindowLayout.ScrollBarWidth;
+        Title = L.Get("Canvas.Title"); Width = preferredWidth;
+        Height = 590; MinWidth = 280; MinHeight = 240;
         Topmost = true; ShowInTaskbar = false; Icon = AppIcon.WindowImage;
         if (library is null)
         {
@@ -65,25 +68,23 @@ internal sealed class CanvasSettingsWindow : Window
             { library = CanvasPresetLibrary.OfficialOnly(); status.Text = ex.Message + " " + L.Get("CanvasPreset.ReadOnly"); }
         }
         if (historySession is not null) library.HistorySession = historySession;
-        var layout = new DockPanel { Margin = new Thickness(14, 4, 14, 14) };
+        var layout = new DockPanel { Margin = WindowLayout.ContentMargin(4, 14) };
         var description = new TextBlock { Text = L.Get("CanvasPreset.Description"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 12) };
         DockPanel.SetDock(description, Dock.Top); layout.Children.Add(description);
         DockPanel.SetDock(status, Dock.Bottom); layout.Children.Add(status);
-        var content = new Grid(); content.ColumnDefinitions.Add(new()); content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var body = new StackPanel { Margin = new Thickness(0, 0, 4, 0) };
+        var content = new Grid(); content.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var body = new StackPanel();
         AddField(body, "Canvas.Background", background);
-        projection.Content = L.Get("Canvas.Projection"); projection.Margin = new(0, 14, 0, 8); body.Children.Add(projection);
+        body.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.Projection"), projection));
         depthPriorityOcclusion.Content = L.Get("Canvas.DepthPriorityOcclusion"); depthPriorityOcclusion.Margin = new(0, 0, 0, 8);
         depthPriorityOcclusion.ToolTip = L.Get("Canvas.DepthPriorityOcclusionHint");
         System.Windows.Automation.AutomationProperties.SetName(depthPriorityOcclusion, L.Get("Canvas.DepthPriorityOcclusion"));
-        body.Children.Add(depthPriorityOcclusion);
+        body.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.DepthPriorityOcclusion"), depthPriorityOcclusion));
         gridSizeLock.Content = L.Get("Canvas.GridSizeLock"); gridSizeLock.Margin = new(0, 0, 0, 8);
         gridSizeLock.ToolTip = L.Get("Canvas.GridSizeLockHelp"); ToolTipService.SetShowOnDisabled(gridSizeLock, true);
-        body.Children.Add(gridSizeLock);
-        countPair.ColumnDefinitions.Add(new()); countPair.ColumnDefinitions.Add(new());
-        var rowPanel = new StackPanel { Margin = new(0, 0, 8, 0) }; var columnPanel = new StackPanel();
-        AddCountField(rowPanel, "Canvas.Rows", rows, lockedRows); AddCountField(columnPanel, "Canvas.Columns", columns, lockedColumns);
-        Grid.SetColumn(columnPanel, 1); countPair.Children.Add(rowPanel); countPair.Children.Add(columnPanel); body.Children.Add(countPair);
+        body.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.GridSizeLock"), gridSizeLock));
+        var rowPanel = CountField("Canvas.Rows", "R", rows, lockedRows); var columnPanel = CountField("Canvas.Columns", "C", columns, lockedColumns);
+        countPair.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.GridCounts")), PropertyPanelLayout.Pair(rowPanel, columnPanel))); body.Children.Add(countPair);
         AddField(flatSizePanel, "Canvas.GridSize", gridSize); body.Children.Add(flatSizePanel);
         gridSize.ToolTip = L.Get("Canvas.GridSizeHelp");
         gridSizeLockHint.Text = L.Get("Canvas.GridSizeLockCountsHint"); body.Children.Add(gridSizeLockHint);
@@ -107,7 +108,7 @@ internal sealed class CanvasSettingsWindow : Window
         resetChoices.SetResourceReference(Button.BorderBrushProperty,"CanvasBorder");
         Grid.SetColumn(resetChoices,1);resetActions.Children.Add(reset);resetActions.Children.Add(resetChoices);
         perspectiveActions.Children.Add(actions);perspectiveActions.Children.Add(resetActions); body.Children.Add(perspectiveActions);
-        gridVisible.Content = L.Get("Canvas.GridVisible"); gridVisible.Margin = new(0, 10, 0, 8); body.Children.Add(gridVisible);
+        body.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.GridVisible"), gridVisible));
         AddField(body, "Canvas.GridColor", gridColor); AddField(body, "Canvas.GridWidth", width);
         foreach (var value in new[] { StrokePattern.Solid, StrokePattern.Dashed, StrokePattern.Dotted })
             pattern.Items.Add(new ComboBoxItem { Content = ToolOptionPreviews.Choice(L.Get("Canvas." + value), value), Tag = value });
@@ -121,9 +122,10 @@ internal sealed class CanvasSettingsWindow : Window
         Grid.SetColumn(presetBorder, 1); content.Children.Add(presetBorder); layout.Children.Add(content); Content = layout;
         SizeChanged += (_, _) =>
         {
-            bool compact = ActualWidth < 560;
-            actions.Width = resetActions.Width = Math.Min(PerspectiveActionsWidth, Math.Max(1, ActualWidth - 40));
+            bool compact = ActualWidth < preferredWidth - 1;
+            actions.Width = resetActions.Width = Math.Min(PerspectiveActionsWidth, Math.Max(1, ActualWidth - WindowLayout.ContentInset * 2 - 2));
             content.RowDefinitions.Clear(); content.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            content.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
             content.ColumnDefinitions[1].Width = compact ? new GridLength(0) : GridLength.Auto;
             Grid.SetColumn(presetBorder, compact ? 0 : 1); Grid.SetRow(presetBorder, compact ? 1 : 0);
             presetBorder.MaxHeight = compact ? 180 : double.PositiveInfinity;
@@ -199,8 +201,8 @@ internal sealed class CanvasSettingsWindow : Window
             perspectiveActions.Visibility = settings.Projection.Enabled ? Visibility.Visible : Visibility.Collapsed;
             flatSizePanel.Visibility = settings.Projection.Enabled ? Visibility.Collapsed : Visibility.Visible;
             RefreshGridCounts(settings.Projection);
-            if (!gridSize.IsKeyboardFocusWithin) RefreshGridSize(settings.Grid.FlatCellSize ?? settings.Projection.GridCellSize);
-            if (!width.IsKeyboardFocusWithin) RefreshWidth(settings.Grid.Width);
+            if (!gridSize.IsKeyboardFocusWithin && !gridSize.IsInteracting) RefreshGridSize(settings.Grid.FlatCellSize ?? settings.Projection.GridCellSize);
+            if (!width.IsKeyboardFocusWithin && !width.IsInteracting) RefreshWidth(settings.Grid.Width);
             calibrate.Content = L.Get(calibrating ? "Canvas.EndCalibration" : "Canvas.Calibrate");
             pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(x => Equals(x.Tag, settings.Grid.Pattern));
             presets.Refresh(settings);
@@ -224,8 +226,8 @@ internal sealed class CanvasSettingsWindow : Window
                 RefreshLockedCount(lockedColumns, settings.GridColumns);
                 RefreshLockedCount(lockedRows, settings.GridRows);
             }
-            if (locked || !columns.IsKeyboardFocusWithin) columns.Value = settings.Columns;
-            if (locked || !rows.IsKeyboardFocusWithin) rows.Value = settings.Rows;
+            if (locked || !columns.IsKeyboardFocusWithin && !columns.IsInteracting) columns.Value = settings.Columns;
+            if (locked || !rows.IsKeyboardFocusWithin && !rows.IsInteracting) rows.Value = settings.Rows;
         }
         finally { refreshing = wasRefreshing; }
     }
@@ -277,24 +279,36 @@ internal sealed class CanvasSettingsWindow : Window
         field.Text = value.ToString(value is >= .001 and < 1_000_000 ? "0.###" : "G4", System.Globalization.CultureInfo.CurrentCulture);
         field.ToolTip = L.Get("Canvas.GridSizeLockCountsHint") + "\n" + value.ToString("G17", System.Globalization.CultureInfo.CurrentCulture);
     }
-    private static void AddCountField(Panel panel, string key, NumericValueField editable, TextBox readOnly)
+    private static Grid CountField(string key, string symbol, NumericValueField editable, TextBox readOnly)
     {
         var container = new Grid(); container.Children.Add(editable); container.Children.Add(readOnly);
-        AddField(panel, key, container);
+        editable.SetScrubAnchor(NumericPropertyIcon.ForProperty(symbol), L.Get(key));
+        readOnly.Height = readOnly.MinHeight = PropertyPanelLayout.ControlHeight;
+        readOnly.Padding = new(26, 0, 26, 0); readOnly.VerticalContentAlignment = VerticalAlignment.Center;
+        var caption = new NumericPropertyIcon(NumericPropertyIcon.ForProperty(symbol)) { Margin = new(4, 0, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
+        caption.SetBinding(VisibilityProperty, new System.Windows.Data.Binding(nameof(Visibility)) { Source = readOnly }); container.Children.Add(caption);
         foreach (var target in new FrameworkElement[] { editable, editable.Input, editable.Slider, readOnly })
             System.Windows.Automation.AutomationProperties.SetName(target, L.Get(key));
+        return container;
     }
     private static void CommitOnExit(TextBox box, Action commit)
     {
         box.LostKeyboardFocus += (_, _) => commit();
         box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { commit(); e.Handled = true; } };
     }
-    private static void AddField(Panel panel, string key, FrameworkElement field)
+    private static void AddField(Panel panel, string key, FrameworkElement field, NumericValueField? numeric = null)
     {
-        var label = new TextBlock { Text = L.Get(key), Margin = new Thickness(0, 6, 0, 4) };
-        panel.Children.Add(label); field.MinHeight = 30; panel.Children.Add(field);
+        numeric ??= field as NumericValueField;
+        var label = new PropertyLabel(L.Get(key == "Canvas.Background" ? "Property.Background" : key)) { ToolTip = L.Get(key) };
+        var row = PropertyPanelLayout.Row(label, field); panel.Children.Add(row);
+        field.MinHeight = 34;
+        if (numeric is not null)
+        {
+            numeric.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), L.Get(key));
+            numeric.SetLabel(label);
+        }
         System.Windows.Automation.AutomationProperties.SetName(field, L.Get(key));
-        if (field is NumericValueField numeric)
+        if (numeric is not null)
         {
             System.Windows.Automation.AutomationProperties.SetName(numeric.Input, L.Get(key));
             System.Windows.Automation.AutomationProperties.SetName(numeric.Slider, L.Get(key));

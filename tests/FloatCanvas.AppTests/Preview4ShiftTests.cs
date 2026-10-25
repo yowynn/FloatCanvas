@@ -52,11 +52,12 @@ internal static class Preview4ShiftTests
             var modifiers=shift?OverlayModifiers.Shift:OverlayModifiers.None;
             Send(editor,OverlayPointerKind.Down,new(20,20),modifiers);Send(editor,OverlayPointerKind.Up,new(100,50),modifiers);
             var shape=editor.Session.Document.Elements.Single();
-            check($"{tool} creation keep={keep} Shift={shift} reverses the stored constraint",(shape.Width==shape.Height)==(keep^shift)&&shape.ConstrainAspect==keep);
+            double expectedRatio = keep && !shift ? 90d / 40 : !keep && shift ? 1 : 80d / 30;
+            check($"{tool} creation keep={keep} Shift={shift} reverses the stored ratio constraint", Math.Abs(shape.Width / shape.Height - expectedRatio) < 1e-9 && shape.ConstrainAspect==keep);
             editor.Session.SetSelection([]);
             Send(editor,OverlayPointerKind.Down,new(300,200),modifiers);Send(editor,OverlayPointerKind.Up,new(300,200),modifiers);
             var clicked=editor.Session.Document.Elements.Last();
-            check($"{tool} default insertion keep={keep} Shift={shift} uses the same inverse rule",clicked.Width==90&&clicked.Height==((keep^shift)?90:40));
+            check($"{tool} default insertion keep={keep} Shift={shift} uses configured dimensions",clicked.Width==90&&clicked.Height==(!keep && shift ? 90 : 40));
         }
     }
     private static bool Eight(PointD delta)=>Math.Abs(delta.X)<1e-6||Math.Abs(delta.Y)<1e-6||Math.Abs(Math.Abs(delta.X)-Math.Abs(delta.Y))<1e-6;
@@ -158,7 +159,8 @@ internal static class Preview4ShiftTests
         var editor=new EditorController(new());
         var panel=new ToolOptionsPanel(editor,new(System.IO.Path.Combine(root,"presets.json")),new(System.IO.Path.Combine(root,"colors.json")));
         var privateFields=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
-        var aspect=(System.Windows.Controls.CheckBox)typeof(ToolOptionsPanel).GetField("aspect",privateFields)!.GetValue(panel)!;
+        var aspectRows=(Dictionary<string,System.Windows.FrameworkElement>)typeof(ToolOptionsPanel).GetField("rows",privateFields)!.GetValue(panel)!;
+        var aspect=aspectRows["Aspect"];
         var empty=(System.Windows.Controls.TextBlock)typeof(ToolOptionsPanel).GetField("noParameters",privateFields)!.GetValue(panel)!;
         foreach(var tool in new[] {EditorTool.CaptureRegion,EditorTool.Crop,EditorTool.Blur,EditorTool.Pixelate})
         {

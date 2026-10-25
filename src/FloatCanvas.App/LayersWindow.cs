@@ -42,7 +42,7 @@ internal sealed class LayersWindow : Wpf.Window
         this.getSession = getSession; this.canMutate = canMutate ?? (() => true);
         Title = L.Get("Layers.Title"); Width = 320; Height = 520; MinWidth = 260; MinHeight = 260;
         Topmost = true; ShowInTaskbar = true; Icon = AppIcon.WindowImage;
-        var body = new Controls.Grid { Margin = new(12, 4, 12, 12) };
+        var body = new Controls.Grid { Margin = WindowLayout.ContentMargin(4) };
         body.RowDefinitions.Add(new() { Height = new(1, Wpf.GridUnitType.Star) });
         body.RowDefinitions.Add(new() { Height = Wpf.GridLength.Auto });
         var footer = new Controls.DockPanel { Margin = new(0, 6, 0, 0) };

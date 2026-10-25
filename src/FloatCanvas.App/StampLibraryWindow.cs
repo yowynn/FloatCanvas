@@ -15,7 +15,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     internal const int DefaultTileColumns = 5;
     private const double TileContentWidth = 112, TileContentMargin = 4, TilePadding = 3, TileBorder = 1, TileMargin = 2;
     internal const double TileFootprint = TileContentWidth + 2 * (TileContentMargin + TilePadding + TileBorder + TileMargin);
-    private const double BodyMargin = 16, ListPadding = 4, ListBorder = 1, ScrollbarWidth = 12, WindowBorder = 1;
+    private const double BodyMargin = WindowLayout.ContentInset, ListPadding = 4, ListBorder = 1, ScrollbarWidth = WindowLayout.ScrollBarWidth, WindowBorder = 1;
     internal static double WidthForColumns(int columns, double dpiScale)
     {
         double Border(double value) => Math.Round(value * dpiScale) / dpiScale;
@@ -69,7 +69,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
             if (Math.Abs(Width - initialWidth) < .01) Width = WidthForColumns(DefaultTileColumns, scale);
         };
         FontSize = 13; Topmost = true; Icon = AppIcon.WindowImage;
-        var body = new Controls.DockPanel { Margin = new Wpf.Thickness(BodyMargin) };
+        var body = new Controls.DockPanel { Margin = WindowLayout.ContentMargin(16, 16) };
         var top = new Controls.StackPanel(); Controls.DockPanel.SetDock(top, Controls.Dock.Top); body.Children.Add(top);
         var searchBox = new Controls.Grid { Width = 220, HorizontalAlignment = Wpf.HorizontalAlignment.Right, VerticalAlignment = Wpf.VerticalAlignment.Center };
         search.Template = SearchTemplate();
@@ -540,7 +540,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
 
     private (string Name, StampSaveMode Mode)? Prompt(string initialName, StampSaveMode mode, bool showMode)
     {
-        var panel = new Controls.StackPanel { Margin = new Wpf.Thickness(18) };
+        var panel = new Controls.StackPanel { Margin = WindowLayout.ContentMargin(18, 18) };
         panel.Children.Add(new Controls.TextBlock { Text = L.Get("Stamp.Name") });
         var name = new Controls.TextBox { Text = initialName, MaxLength = 120, Margin = new(0, 8, 0, 14) }; panel.Children.Add(name);
         var editable = new Controls.RadioButton { Content = L.Get("Stamp.EditableGroup"), IsChecked = mode == StampSaveMode.EditableGroup, Margin = new(0, 0, 0, 10) };
@@ -557,7 +557,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     }
     private bool Confirm(string message)
     {
-        var panel = new Controls.StackPanel { Margin = new Wpf.Thickness(18) };
+        var panel = new Controls.StackPanel { Margin = WindowLayout.ContentMargin(18, 18) };
         panel.Children.Add(new Controls.TextBlock { Text = message, TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(0, 0, 0, 16) });
         var buttons = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = Wpf.HorizontalAlignment.Right };
         var apply = Button("Stamp.Confirm", () => { }); buttons.Children.Add(apply);

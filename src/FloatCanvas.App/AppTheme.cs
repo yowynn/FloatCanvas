@@ -164,6 +164,17 @@ internal static class AppTheme
         <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
           <CornerRadius x:Key="CanvasButtonCornerRadius">6</CornerRadius>
+          <Style x:Key="CanvasNumericFrame" TargetType="Border">
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CanvasBorder}"/>
+            <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
+            <Style.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource CanvasMuted}"/></Trigger>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+            </Style.Triggers>
+          </Style>
           <Style x:Key="CanvasControlBase" TargetType="Control">
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="KeyboardNavigation.TabNavigation" Value="None"/>
@@ -188,9 +199,9 @@ internal static class AppTheme
             <Setter Property="MinHeight" Value="34"/>
             <Setter Property="MinWidth" Value="34"/>
             <Setter Property="Padding" Value="10,5"/>
-            <Setter Property="Background" Value="{DynamicResource CanvasButton}"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CanvasBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -231,6 +242,7 @@ internal static class AppTheme
             </ControlTemplate.Triggers>
           </ControlTemplate>
           <Style x:Key="CanvasPrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Background" Value="{DynamicResource CanvasPrimary}"/>
             <Setter Property="Foreground" Value="{DynamicResource CanvasOnAccent}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -265,6 +277,7 @@ internal static class AppTheme
             </Setter.Value></Setter>
           </Style>
           <Style x:Key="CanvasCaptionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Background" Value="{DynamicResource CanvasButton}"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
@@ -288,8 +301,52 @@ internal static class AppTheme
               </ControlTemplate>
             </Setter.Value></Setter>
           </Style>
+          <Style x:Key="CanvasPropertySwitch" TargetType="CheckBox" BasedOn="{StaticResource CanvasControlBase}">
+            <Setter Property="Width" Value="36"/><Setter Property="MinHeight" Value="34"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="CheckBox">
+                <Grid Background="Transparent">
+                  <Grid Height="20" VerticalAlignment="Center">
+                    <Border x:Name="Track" CornerRadius="10" Background="{DynamicResource CanvasBorder}" BorderBrush="{DynamicResource CanvasMuted}" BorderThickness="1"/>
+                    <Ellipse x:Name="Knob" Width="14" Height="14" Margin="3,0" VerticalAlignment="Center" HorizontalAlignment="Left" Fill="{DynamicResource CanvasSurface}"/>
+                    <Path x:Name="MixedMark" Visibility="Collapsed" Data="M15 10 H21" Stroke="{DynamicResource CanvasText}" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                  </Grid>
+                </Grid>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="Knob" Property="Fill" Value="{DynamicResource CanvasOnAccent}"/></Trigger>
+                  <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Knob" Property="HorizontalAlignment" Value="Center"/><Setter TargetName="MixedMark" Property="Visibility" Value="Visible"/></Trigger>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+                  <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderThickness" Value="2"/><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasAspectButton" TargetType="ToggleButton" BasedOn="{StaticResource CanvasControlBase}">
+            <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CanvasBorder}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="ToggleButton">
+                <Border x:Name="Frame" CornerRadius="5" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
+                  <Grid Width="16" Height="16">
+                    <Path x:Name="Chain" Data="M6 5 H4 A3 3 0 0 0 4 11 H6 M10 5 H12 A3 3 0 0 1 12 11 H10 M5 8 H7 M9 8 H11" Stroke="{DynamicResource CanvasMuted}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <Path x:Name="Mixed" Visibility="Collapsed" Data="M4 8 H12" Stroke="{DynamicResource CanvasAccent}" StrokeThickness="2"/>
+                  </Grid>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chain" Property="Data" Value="M6 5 H4 A3 3 0 0 0 4 11 H6 M10 5 H12 A3 3 0 0 1 12 11 H10 M5 8 H11"/><Setter TargetName="Chain" Property="Stroke" Value="{DynamicResource CanvasOnAccent}"/><Setter TargetName="Frame" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+                  <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Chain" Property="Visibility" Value="Collapsed"/><Setter TargetName="Mixed" Property="Visibility" Value="Visible"/></Trigger>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+                  <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Frame" Property="BorderThickness" Value="2"/></Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
           <Style TargetType="CheckBox" BasedOn="{StaticResource CanvasControlBase}">
-            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="MinHeight" Value="34"/>
             <Setter Property="Padding" Value="8,3,0,3"/>
             <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource CanvasBorder}"/>
@@ -307,8 +364,8 @@ internal static class AppTheme
                   <ContentPresenter Grid.Column="1" Margin="{TemplateBinding Padding}" RecognizesAccessKey="True" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                 </Grid>
                 <ControlTemplate.Triggers>
-                  <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/></Trigger>
-                  <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Mixed" Property="Visibility" Value="Visible"/></Trigger>
+                  <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/><Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Check" Property="Stroke" Value="{DynamicResource CanvasOnAccent}"/></Trigger>
+                  <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Mixed" Property="Visibility" Value="Visible"/><Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Mixed" Property="Background" Value="{DynamicResource CanvasOnAccent}"/></Trigger>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
@@ -398,9 +455,25 @@ internal static class AppTheme
               </ControlTemplate>
             </Setter.Value></Setter>
           </Style>
+          <Style x:Key="CanvasNumericSlider" TargetType="Slider" BasedOn="{StaticResource CanvasControlBase}">
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Slider">
+                <Grid Background="Transparent">
+                  <Border x:Name="Rail" Height="3" Background="{DynamicResource CanvasBorder}" CornerRadius="2" VerticalAlignment="Center" Margin="4,0"/>
+                  <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                         Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+                    <Track.DecreaseRepeatButton><RepeatButton Focusable="False" IsTabStop="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border x:Name="Fill" Height="3" Margin="4,0,-4,0" VerticalAlignment="Center" Background="{DynamicResource CanvasAccent}" CornerRadius="2"/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb Width="8" Height="8"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{DynamicResource CanvasAccent}" CornerRadius="4"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}"/></Track.IncreaseRepeatButton>
+                  </Track>
+                </Grid>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
           <Style TargetType="TextBox" BasedOn="{StaticResource CanvasControlBase}">
             <Setter Property="MinHeight" Value="34"/>
-            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Padding" Value="8,0"/>
             <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource CanvasBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -420,7 +493,7 @@ internal static class AppTheme
                 </ControlTemplate.Triggers>
               </ControlTemplate>
             </Setter.Value></Setter>
-            <Style.Triggers><Trigger Property="AcceptsReturn" Value="True"><Setter Property="VerticalContentAlignment" Value="Top"/></Trigger></Style.Triggers>
+            <Style.Triggers><Trigger Property="AcceptsReturn" Value="True"><Setter Property="VerticalContentAlignment" Value="Top"/><Setter Property="Padding" Value="8,5"/></Trigger></Style.Triggers>
           </Style>
           <Style TargetType="ListBox" BasedOn="{StaticResource CanvasControlBase}">
             <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
@@ -513,7 +586,8 @@ internal static class AppTheme
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator"><Border Height="1" Margin="8,5" Background="{DynamicResource CanvasBorder}"/></ControlTemplate></Setter.Value></Setter>
           </Style>
           <Style TargetType="ComboBoxItem" BasedOn="{StaticResource CanvasControlBase}">
-            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="MinHeight" Value="30"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Template"><Setter.Value>
@@ -523,7 +597,7 @@ internal static class AppTheme
                 </Border>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
-                  <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource CanvasAccent}"/></Trigger>
+                  <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
@@ -547,10 +621,10 @@ internal static class AppTheme
                   <ToggleButton x:Name="DropDownToggle" Focusable="False" ClickMode="Press" Background="Transparent"
                                 IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
                     <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
-                      <Border Background="{TemplateBinding Background}"><Path Data="M 0 0 L 4 4 L 8 0" StrokeThickness="1.3" Stroke="{DynamicResource CanvasMuted}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,11,0"/></Border>
+                      <Border Background="{TemplateBinding Background}" CornerRadius="6"><Border Width="26" HorizontalAlignment="Right"><Path Data="M 0 0 L 4 4 L 8 0" StrokeThickness="1.3" Stroke="{DynamicResource CanvasMuted}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></Border>
                     </ControlTemplate></ToggleButton.Template>
                   </ToggleButton>
-                  <ContentPresenter x:Name="Selection" Margin="8,5,30,5" IsHitTestVisible="False" VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                  <ContentPresenter x:Name="Selection" Margin="8,0,30,0" IsHitTestVisible="False" VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                     Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"/>
                   <TextBox x:Name="PART_EditableTextBox" Visibility="Hidden" Margin="2,2,26,2" Background="Transparent" BorderThickness="0" MinHeight="0"
                            IsReadOnly="{TemplateBinding IsReadOnly}" VerticalContentAlignment="Center"/>

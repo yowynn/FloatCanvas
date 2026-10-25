@@ -54,7 +54,7 @@ internal static class DepthOcclusionUiRuntimeTests
                         option.ActualHeight > 10 && option.ActualWidth > 150 && optionY > projection.TranslatePoint(new Point(), root).Y &&
                         optionY < gridLock.TranslatePoint(new Point(), root).Y && optionY + option.ActualHeight < Height);
                     check(locale + " " + theme + " Canvas depth option has its localized accessible name",
-                        Equals(option.Content, L.Get("Canvas.DepthPriorityOcclusion")) &&
+                        System.Windows.Automation.AutomationProperties.GetName(option) == L.Get("Canvas.DepthPriorityOcclusion") &&
                         System.Windows.Automation.AutomationProperties.GetName(option) == L.Get("Canvas.DepthPriorityOcclusion"));
                     option.IsChecked = true; option.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout(root);
                     check(locale + " " + theme + " routed native Canvas depth option commits one undo step", session.Document.Canvas.DepthPriorityOcclusion && session.UndoCount == 1);

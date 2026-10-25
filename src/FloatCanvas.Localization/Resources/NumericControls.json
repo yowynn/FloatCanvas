@@ -1,0 +1,19 @@
+{
+  "Numeric.Unit.Step": { "zh": "步", "en": "step" },
+  "Numeric.Unit.Column": { "zh": "列", "en": "col" },
+  "Numeric.Unit.Row": { "zh": "行", "en": "row" },
+  "Numeric.Unit.Version": { "zh": "版", "en": "ver" },
+  "Property.AspectLocked": { "zh": "已锁定，宽高同步调整", "en": "Locked; width and height change together" },
+  "Property.AspectUnlocked": { "zh": "已解锁，宽高独立调整", "en": "Unlocked; width and height change independently" },
+  "Property.AspectMixed": { "zh": "所选图层状态不同，点击统一锁定", "en": "Mixed selection; click to lock all" },
+  "Property.NumberStart": { "zh": "起始序号", "en": "Start number" },
+  "Property.NumberStep": { "zh": "递增步长", "en": "Increment" },
+  "Property.NextNumber": { "zh": "下一序号", "en": "Next number" },
+  "Property.BorderWidth": { "zh": "边框宽度", "en": "Border width" },
+  "Property.Background": { "zh": "背景", "en": "Background" },
+  "Property.Language": { "zh": "语言", "en": "Language" },
+  "Property.Size": { "zh": "大小", "en": "Size" },
+  "Property.Position": { "zh": "位置", "en": "Position" },
+  "Property.GridCounts": { "zh": "网格数量", "en": "Grid counts" },
+  "Numeric.Value": { "zh": "数值", "en": "Value" }
+}

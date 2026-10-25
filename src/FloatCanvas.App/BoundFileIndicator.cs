@@ -15,7 +15,7 @@ internal sealed class BoundFileIndicator : Grid
         TextTrimming=TextTrimming.CharacterEllipsis, VerticalAlignment=VerticalAlignment.Center, MaxWidth=300 };
     private readonly Border unsaved;
     private string? shownPath;
-    internal BoundFileIndicator(Action detach,Action locate,Func<bool> canDetach)
+    internal BoundFileIndicator(Action revert,Action locate,Action detach,Func<bool> canRevert,Func<bool> canDetach)
     {
         HorizontalAlignment=HorizontalAlignment.Left;VerticalAlignment=VerticalAlignment.Top;
         Margin=new Thickness(94,5,10,0);Height=28;Visibility=Visibility.Collapsed;
@@ -37,11 +37,12 @@ internal sealed class BoundFileIndicator : Grid
         label.SetResourceReference(TextBlock.ForegroundProperty,"CanvasText");Children.Add(body);
         Effect=new System.Windows.Media.Effects.DropShadowEffect {BlurRadius=5,ShadowDepth=1,Opacity=.12};
         var menu=new OverlayContextMenu();
+        var restore=new MenuItem {Header=L.Get("Project.Revert"),Icon=ActionIconButton.Glyph(PanelActionIcon.Refresh)};
         var unbind=new MenuItem {Header=L.Get("Project.Detach"),Icon=ActionIconButton.Glyph(PanelActionIcon.Unpin)};
         var reveal=new MenuItem {Header=L.Get("Project.Locate"),Icon=ActionIconButton.Glyph(PanelActionIcon.Source)};
-        unbind.Click+=(_,_)=>detach();reveal.Click+=(_,_)=>locate();
-        menu.Items.Add(unbind);menu.Items.Add(reveal);
-        menu.Opened+=(_,_)=>unbind.IsEnabled=canDetach();ContextMenu=menu;
+        restore.Click+=(_,_)=>revert();unbind.Click+=(_,_)=>detach();reveal.Click+=(_,_)=>locate();
+        menu.Items.Add(restore);menu.Items.Add(reveal);menu.Items.Add(new Separator());menu.Items.Add(unbind);
+        menu.Opened+=(_,_)=>{restore.IsEnabled=canRevert();unbind.IsEnabled=canDetach();};ContextMenu=menu;
     }
     internal void AlignTextLeft(double x)
     {

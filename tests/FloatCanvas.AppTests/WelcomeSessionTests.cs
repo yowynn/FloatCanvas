@@ -83,7 +83,8 @@ internal static class WelcomeSessionTests
                 var ordinary = new Controls.Button {Content="Save",Width=100,Height=36};
                 ordinary.Measure(new(100,36)); ordinary.Arrange(new(0,0,100,36)); ordinary.ApplyTemplate();
                 var ordinaryChrome = (Controls.Border)ordinary.Template.FindName("Chrome",ordinary);
-                check(language + theme + " ordinary buttons have visible no-stroke surfaces", ((Media.SolidColorBrush)ordinaryChrome.Background).Color != Color(app,"CanvasSurface") && ordinary.BorderThickness == new Wpf.Thickness(0));
+                check(language + theme + " ordinary buttons share input surfaces and subtle borders", ((Media.SolidColorBrush)ordinaryChrome.Background).Color == Color(app,"CanvasInput") &&
+                    ordinary.BorderThickness == new Wpf.Thickness(1) && ((Media.SolidColorBrush)ordinaryChrome.BorderBrush).Color == Color(app,"CanvasBorder"));
                 var pixels = new Imaging.RenderTargetBitmap(430,(int)Math.Ceiling(host.ActualHeight),96,96,Media.PixelFormats.Pbgra32); pixels.Render(host);
                 check(language + theme + " welcome content fits its measured compact surface", host.ActualHeight > 220 && host.ActualHeight < 450 && view.ActualWidth > 350);
                 check(language + theme + " welcome omits the redundant startup paragraph", !Descendants(view).OfType<Controls.TextBlock>().Any(text => text.Text == L.Get("Acceptance2.Welcome.Description")) &&

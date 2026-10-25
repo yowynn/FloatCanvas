@@ -30,7 +30,7 @@ internal static class AppDialog
         MessageBoxButton buttons = MessageBoxButton.OK, MessageBoxImage image = MessageBoxImage.None, string? yesKey = null, string? noKey = null)
     {
         if (owner is not null) new System.Windows.Interop.WindowInteropHelper(owner).EnsureHandle();
-        var panel = new DockPanel { Margin = new Thickness(20), LastChildFill = true };
+        var panel = new DockPanel { Margin = WindowLayout.ContentMargin(20, 20), LastChildFill = true };
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(0, 18, 0, 0) };
         DockPanel.SetDock(row, Dock.Bottom); panel.Children.Add(row);

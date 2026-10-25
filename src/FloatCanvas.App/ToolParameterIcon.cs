@@ -77,8 +77,8 @@ internal static class ToolParameterIcon
                 element.Points=[new(0,26),new(32,0)];break;
             case EditorTool.Rectangle:case EditorTool.RoundedRectangle:
                 element.Kind=ElementKind.Rectangle;element.CornerRadius=parameters.CornerRadius is { } corner?Math.Clamp(corner/3,0,10):parameters.Tool==EditorTool.RoundedRectangle?6:0;
-                if(parameters.ConstrainAspect){element.Height=32;element.Transform=Affine2D.Translation(8,8);}break;
-            case EditorTool.Ellipse:element.Kind=ElementKind.Ellipse;if(parameters.ConstrainAspect){element.Height=32;element.Transform=Affine2D.Translation(8,8);}break;
+                break;
+            case EditorTool.Ellipse:element.Kind=ElementKind.Ellipse;break;
             case EditorTool.Symbol:case EditorTool.Triangle:
                 element.Kind=ElementKind.Symbol;element.Symbol=parameters.Tool==EditorTool.Triangle?SymbolKind.Triangle:parameters.Symbol;element.Width=32;element.Height=32;element.Transform=Affine2D.Translation(8,8);break;
             case EditorTool.Text:
@@ -91,6 +91,12 @@ internal static class ToolParameterIcon
                 element.Kind=ElementKind.Freehand;element.Points=[new(1,23),new(30,4)];style.StrokeWidth=Math.Clamp(parameters.Style.StrokeWidth,8,14);break;
             default:
                 element.Kind=ElementKind.Freehand;element.Points=[new(0,25),new(7,5),new(17,21),new(29,3),new(32,15)];break;
+        }
+        if(parameters.ConstrainAspect && parameters.Tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Symbol or EditorTool.Triangle)
+        {
+            double scale=32/Math.Max(parameters.DefaultWidth,parameters.DefaultHeight);
+            element.Width=parameters.DefaultWidth*scale;element.Height=parameters.DefaultHeight*scale;
+            element.Transform=Affine2D.Translation((48-element.Width)/2,(48-element.Height)/2);
         }
         element.Transform=Affine2D.Scale(2,2).Compose(element.Transform);
         using var renderer=new SceneRenderer();

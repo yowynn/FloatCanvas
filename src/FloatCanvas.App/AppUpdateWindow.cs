@@ -84,7 +84,7 @@ internal sealed class AppUpdateWindow : Window
 
     private FrameworkElement CreateContent()
     {
-        var body = new Grid { Margin = new(20, 6, 20, 18) };
+        var body = new Grid { Margin = WindowLayout.ContentMargin(6, 18) };
         for (int i = 0; i < 10; i++) body.RowDefinitions.Add(new() { Height = i == 5 ? new(1, GridUnitType.Star) : GridLength.Auto });
         var versions = new Grid { Margin = new(0, 0, 0, 17) };
         versions.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
@@ -97,7 +97,7 @@ internal sealed class AppUpdateWindow : Window
         LatestVersionText.FontSize = 19; LatestVersionText.FontWeight = FontWeights.SemiBold; LatestVersionText.Margin = new(0, 3, 0, 0);
         latest.Children.Add(LatestVersionText); Grid.SetColumn(latest, 1); versions.Children.Add(current); versions.Children.Add(latest);
         Add(versions, 0); Add(StatusText, 1); Add(DetailText, 2);
-        Add(PreviewUpdates, 3);
+        Add(PropertyPanelLayout.BooleanRow(L.Get("Updates.IncludePreviews"), PreviewUpdates), 3);
         Add(new TextBlock { Text = L.Get("Updates.ReleaseNotes"), FontWeight = FontWeights.SemiBold, Margin = new(0, 14, 0, 0) }, 4);
         Add(NotesText, 5); Add(DownloadProgress, 6);
         if (!canInstall)

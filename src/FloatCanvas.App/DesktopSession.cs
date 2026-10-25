@@ -963,8 +963,9 @@ internal sealed partial class DesktopSession : IDisposable
                 _host.Scope == OverlayMonitorScope.PrimaryScreen ? L.Get("Settings.PrimaryOnly") :
                 L.Format("Settings.NumberedScreen", _host.AvailableMonitors.ToList().FindIndex(m => m.DeviceName == _host.PrimaryMonitor.DeviceName) + 1)) +
             (ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.ScopeOverrideHint") : L.Get("Settings.ScopeImmediateHint")));
-        var historyLimit = new TextBox { Text = _settings.HistoryVersionLimit.ToString(), MinHeight = 34, Padding = new Thickness(8) };
-        AppSettingsWindow.AddSetting(canvas, L.Get("History.Limit"), historyLimit, L.Get("History.LimitHint"));
+        var historyField = new NumericValueField(1, 10000, sliderMaximum: 500, integerOnly: true) { Value = _settings.HistoryVersionLimit, Unit = L.Get("Numeric.Unit.Version") };
+        var historyLimit = historyField.Input;
+        AppSettingsWindow.AddSetting(canvas, L.Get("History.Limit"), historyField, L.Get("History.LimitHint"));
         window.SaveButton.Click += (_, _) =>
         {
             if (!int.TryParse(historyLimit.Text, out int maximumHistory) || maximumHistory is < 1 or > 10000)

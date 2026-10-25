@@ -42,6 +42,7 @@ internal sealed class ColorField : UserControl
     {
         if (!Enum.IsDefined(role)) throw new ArgumentOutOfRangeException(nameof(role));
         Role = role; this.library = library ?? ColorLibrary.Shared;
+        Height = MinHeight = button.Height = button.MinHeight = PropertyPanelLayout.ControlHeight;
         var row = new Grid(); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var face = new Grid(); face.Children.Add(swatch); face.Children.Add(label); button.Content = face;
         swatch.SizeChanged += (_, _) =>
@@ -54,7 +55,7 @@ internal sealed class ColorField : UserControl
         button.Padding = new(0); button.BorderThickness = new(1); button.SetResourceReference(BorderBrushProperty, "CanvasBorder");
         button.MinWidth = 66; button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.VerticalContentAlignment = VerticalAlignment.Stretch;
         row.Children.Add(button);
-        var palette = new PixelTilePanel(5, 17) { Margin = new(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; Grid.SetColumn(palette, 1); row.Children.Add(palette);
+        var palette = new PixelTilePanel(5, (PropertyPanelLayout.ControlHeight - 2) / 2) { Margin = new(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; Grid.SetColumn(palette, 1); row.Children.Add(palette);
         foreach (var color in ColorLibrary.Palette(role))
         {
             var tile = new ColorSwatchButton(color.Value) { ToolTip = color.Name };
@@ -70,12 +71,16 @@ internal sealed class ColorField : UserControl
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };
         popupDisplay=new(popup, L.Get(role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background")) { TargetPressToggles = true };
         PopupChildDialog.Attach(border, popupDisplay.Key);
-        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && TryClosePicker()) e.Handled = true; };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape && (NumericValueField.TryCancelForInput(e.OriginalSource as DependencyObject) || TryClosePicker())) e.Handled = true;
+        };
         border.PreviewKeyDown += (_, e) =>
         {
             if (SessionWindowCoordinator.Find(Window.GetWindow(this))?.HistoryCommand is { } command)
                 PresetHistoryKeyboardRoute.Handle(e, Keyboard.Modifiers, command);
             if (e.Key != Key.Escape) return;
+            if (NumericValueField.TryCancelForInput(e.OriginalSource as DependencyObject)) { e.Handled = true; return; }
             ClosePicker(); button.Focus(); e.Handled = true;
         };
         SessionWindowCoordinator? popupSession = null;

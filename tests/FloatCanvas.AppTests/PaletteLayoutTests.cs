@@ -73,7 +73,7 @@ internal static class PaletteLayoutTests
         Layout(root, scale);
         double normalHeight = root.ActualHeight;
         check(name + " has only normal padding below its final actions", error.Visibility == Visibility.Collapsed &&
-            root.ActualHeight - Bounds(actions, root).Bottom <= columns.Margin.Bottom + 2);
+            root.ActualHeight - Bounds(actions, root).Bottom <= WindowLayout.ContentInset + 2);
 
         hex.Text = "invalid color";
         typeof(ColorPickerPanel).GetMethod("Apply", Private)!.Invoke(picker, null);
@@ -88,7 +88,7 @@ internal static class PaletteLayoutTests
             error.Text.Contains("fixture write failed") && root.ActualHeight > normalHeight);
         picker.Value = 0xFF123456; Layout(root, scale);
         check(name + " releases error space after resynchronizing valid input", error.Visibility == Visibility.Collapsed &&
-            Near(root.ActualHeight, normalHeight) && root.ActualHeight - Bounds(actions, root).Bottom <= columns.Margin.Bottom + 2);
+            Near(root.ActualHeight, normalHeight) && root.ActualHeight - Bounds(actions, root).Bottom <= WindowLayout.ContentInset + 2);
     }
 
     private static void PixelSpacing(double scale, int columns, double size, double gap, Action<string, bool> check)

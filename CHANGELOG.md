@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+- 统一数值编辑的框内图标加速拖动、直接输入和底部范围滑轨，显示实际单位；自动值和混合多选也可直接起拖。取消恢复原值，整次手势合并撤销，颜色面板中的 Esc 先取消数值拖动，再关闭面板。
+- Unify numeric editing with accelerated embedded-icon scrubbing, direct input and a common-range rail, including units and automatic or mixed values. Cancellation restores the original values and each gesture commits once; Escape cancels a numeric color edit before dismissing its panel.
+
+- 属性与工具配置采用 440 DIP 参数区、96 DIP 标签列、12 DIP 属性字号和 13 DIP 半粗体栏目名。数值、颜色、单行文本和下拉框统一为 34 DIP 高；布尔属性统一右对齐拨动开关，Alpha 统一称为“不透明度”，标识统一为线条图标。修复开关裁切和轨道边距，移除下拉箭头竖线、冗余颜色提示及首栏顶线。
+- Standardize 440-DIP parameter areas, 96-DIP label columns, 12-DIP property labels and 13-DIP semibold headings. Numeric, color, single-line text and dropdown editors share a 34-DIP height. Right-align boolean switches, use consistent opacity terminology and monoline icons, and fix clipped switches and uneven rails. Remove dropdown dividers, redundant color hints and the first section's top rule.
+
+- 位置和大小使用等宽 X/Y/W/H 组合输入，中间保留固定 36 DIP 空隙，大小行放置持久化比例锁链，输入与拖动实时联动，非正方形预设按配置比例创建。少量溢出标签悬停滚动，窄窗口自动调整排布。
+- Group Position and Size into equal-width X/Y/W/H fields with a fixed 36-DIP gap and a persistent aspect chain. Typing and dragging update linked dimensions live, and shape creation retains configured preset ratios. Overflowing labels scroll on hover and narrow windows adapt their layout.
+
+- 所有普通窗口、对话框及带标题弹出面板的左右内容边距统一为 12 DIP；清理重复滚动条预留，统一内容区与底部操作区边界，并同步素材库的高 DPI 列宽计算。
+- Use 12-DIP horizontal content insets across ordinary windows, dialogs and titled panels. Remove duplicate scrollbar reservations, align content and footer edges, and update DPI-aware stamp-library sizing.
+
+- 关联文件菜单新增“还原改动”，无改动时置灰，支持 Ctrl+Z/Ctrl+Y，并保留内容相同时的保存点身份。菜单按还原、打开文件所在位置、分隔线、取消文件关联排列。
+- Add Revert changes to the bound-file menu, disabled when saved, with Ctrl+Z/Ctrl+Y and correct save-point identity even when restored content is unchanged. Order it before Open file location, a separator and Detach file.
+
 - 统一后台预览的局部像素发布与保留呈现，减少简单图形拖拽时的整屏复制和重复合成；纯选择框更新不再触发内容重绘，慢帧期间继续保留独立操作反馈。
 - Publish changed preview blocks and retain presented pixels through one background rendering path, reducing full-screen copies and duplicate composition during simple drags; guide-only changes no longer redraw content, while slow frames retain independent interaction feedback.
 - 预览快照复用未变对象，长笔画快照后的追加使用共享分块；动画元数据和印章悬停预览移出界面绘制路径。

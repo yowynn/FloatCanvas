@@ -23,7 +23,7 @@ internal sealed class WorkspaceHistoryWindow : Window
         MaxHeight = Math.Max(220, SystemParameters.WorkArea.Height); Height = Math.Min(Height, MaxHeight);
         ShowInTaskbar = false; Topmost = true; ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Icon = AppIcon.WindowImage;
-        var panel = new Grid { Margin = new(18) };
+        var panel = new Grid { Margin = WindowLayout.ContentMargin(18, 18) };
         panel.RowDefinitions.Add(new() { Height = GridLength.Auto }); panel.RowDefinitions.Add(new()); panel.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var hint = new TextBlock { Text = L.Get("Recovery.HistoryHint"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 12) };
         panel.Children.Add(hint);

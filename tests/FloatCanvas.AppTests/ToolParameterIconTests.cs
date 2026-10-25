@@ -34,8 +34,13 @@ internal static class ToolParameterIconTests
         check("solid dashed and dotted presets have distinct rendered strokes",plain!=dashed&&dashed!=Hash(Bitmap(line)));
         var rectangle=new ToolParameters {Tool=EditorTool.Rectangle};string squareCorners=Hash(Bitmap(rectangle));rectangle.CornerRadius=24;
         check("rounded corner presets change their image geometry",squareCorners!=Hash(Bitmap(rectangle)));
-        rectangle.ConstrainAspect=true;
-        check("square constraints remain visible in the geometry preview",squareCorners!=Hash(Bitmap(rectangle)));
+        foreach(var tool in new[]{EditorTool.Rectangle,EditorTool.RoundedRectangle,EditorTool.Ellipse})
+        foreach(double ratio in new[]{.5,1,2})
+        {
+            var sample=new ToolParameters {Tool=tool,ConstrainAspect=true,DefaultWidth=100*ratio,DefaultHeight=100,Style=new() {StrokeWidth=0,Fill=0xFF123456}};
+            var bounds=InkBounds(Bitmap(sample));
+            check(tool+" locked preset preview preserves configured ratio "+ratio,Math.Abs((double)bounds.Width/bounds.Height-ratio)<.06);
+        }
         var highlighter=new ToolParameters {Tool=EditorTool.Highlighter,Style=new ElementStyle {Stroke=0x8053C7D3,Opacity=.5,StrokeWidth=24}};
         check("highlighter preview describes its selected alpha and opacity",MaxAlpha(Bitmap(highlighter)) is > 30 and < 110);
         var symbols=new ToolParameters {Tool=EditorTool.Symbol,Symbol=SymbolKind.Heart};string heart=Hash(Bitmap(symbols));symbols.Symbol=SymbolKind.Hexagon;

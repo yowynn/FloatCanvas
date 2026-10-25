@@ -801,7 +801,8 @@ internal static class NativeInputRoutingFixture
             Round2StampRuntimeFixture.Render((FrameworkElement)toolbar.Content,Path.Combine(output,"toolbar-bound-file-"+FloatCanvas.Localization.AppText.CurrentLanguage+"-"+Field<UserSettings>(session,"_settings").Theme+".png"));
         }
         var detach=bubble.ContextMenu.Items.OfType<MenuItem>().Single(item=>Equals(item.Header,FloatCanvas.Localization.AppText.Get("Project.Detach")));
-        check("filename context menu includes detach and locate with icons",bubble.ContextMenu.Items.Count==2&&bubble.ContextMenu.Items.OfType<MenuItem>().All(item=>item.Icon is FrameworkElement));
+        check("filename context menu includes revert, locate and detach with icons and a separator",bubble.ContextMenu.Items.Count==4&&
+            bubble.ContextMenu.Items[2] is Separator&&bubble.ContextMenu.Items.OfType<MenuItem>().All(item=>item.Icon is FrameworkElement));
         detach.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Pump();
         check("detaching preserves content and undo while hiding the binding bubble",BoundPath(rebound) is null&&rebound.Document.Elements.Count==2&&rebound.UndoCount==beforeDetachUndo+1&&bubble.Visibility==Visibility.Collapsed);
         check("detaching leaves the saved file unchanged and retains unbound content for history",Await(new ProjectStore().LoadAsync(projectPath)).Document.Elements.Count==1&&(bool)Invoke("NeedsNewCanvasConfirmation")!);

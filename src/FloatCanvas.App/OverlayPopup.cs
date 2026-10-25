@@ -202,7 +202,11 @@ internal sealed class OverlayPopupWindow : IDisposable
         {returnFocus=false;close();}
         if(scope.IsTopmost(this) && !PopupChildDialog.HasRetainedDialog(content) &&
             args.StagingItem.Input is KeyEventArgs {Handled:false,RoutedEvent:var routed,Key:Key.Escape} key && routed==Keyboard.PreviewKeyDownEvent)
-        {close();key.Handled=true;}
+        {
+            var keyOrigin = key.OriginalSource as DependencyObject ?? key.KeyboardDevice.Target as DependencyObject ?? Mouse.Captured as DependencyObject;
+            if (keyOrigin is null || !BelongsTo(keyOrigin, content) || !NumericValueField.TryCancelForInput(keyOrigin)) close();
+            key.Handled=true;
+        }
     }
     private static bool BelongsTo(DependencyObject source,DependencyObject root)
     {

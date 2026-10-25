@@ -405,7 +405,9 @@ internal sealed partial class EditorController
     private void ApplyDefaultSize(CanvasElement element, PointD center, OverlayModifiers modifiers)
     {
         double width = DefaultWidth, height = DefaultHeight;
-        if (ConstrainBox(modifiers)) height = width;
+        // Locked dimensions already describe the intended ratio. Shift on an
+        // unlocked tool retains the quick square/circle insertion shortcut.
+        if (!ConstrainAspect && (modifiers & OverlayModifiers.Shift) != 0) height = width;
         element.Width = width; element.Height = height; element.Points.Clear();
         element.Transform = Affine2D.Translation(center.X - width / 2, center.Y - height / 2);
     }
@@ -578,7 +580,7 @@ internal sealed partial class EditorController
                 drawing.Points = [new(0, 0), (modifiers&OverlayModifiers.Shift)!=0?EightDirectionEnd(start,p)-start:local];
             else
             {
-                if (ConstrainBox(modifiers))p=SquareEnd(start,p);
+                if (ConstrainBox(modifiers)) p = ConstrainAspect && UsesDefaultSize(Tool) ? DefaultRatioEnd(start, p) : SquareEnd(start, p);
                 var rect = RectD.FromPoints(start, p);
                 drawing.Width = Math.Max(1, rect.Width); drawing.Height = Math.Max(1, rect.Height);
                 drawing.Transform = Affine2D.Translation(rect.X, rect.Y); drawing.Points.Clear();

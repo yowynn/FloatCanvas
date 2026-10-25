@@ -36,10 +36,10 @@ internal static class InspectorScrubTests
         var window = new InspectorWindow(() => guarded, () => allowed);
         var fields = (Dictionary<string, Controls.TextBox>)Field(window, "fields");
         var containers = (Dictionary<string, System.Windows.FrameworkElement>)Field(window, "fieldContainers");
-        var caption = ((Controls.Grid)containers["X"]).Children.OfType<Controls.TextBlock>().Single();
+        var caption = ((Dictionary<string, NumericValueField>)Field(window, "numericFields"))["X"].DragAnchor;
         var colors = (Dictionary<string, ColorField>)Field(window, "colorFields");
         var colorButton = (Controls.Button)Field(colors["Stroke"], "button");
-        assert("focusable numeric labels and property buttons are not text editors", caption.Focusable && colorButton.Focusable &&
+        assert("focusable numeric anchors and property buttons are not text editors", caption.Focusable && colorButton.Focusable &&
             !InspectorWindow.OwnsLocalEditingKeys(caption) && !InspectorWindow.OwnsLocalEditingKeys(colorButton));
         assert("numeric text fields remain text inputs for draft and IME protection", InspectorWindow.OwnsLocalEditingKeys(fields["X"]));
 

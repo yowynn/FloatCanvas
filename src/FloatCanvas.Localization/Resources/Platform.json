@@ -16,7 +16,7 @@
     "en": "The number of elements exceeds the limit."
   },
   "Scene.InvalidLayerOpacity": {
-    "zh": "图层透明度无效。",
+    "zh": "图层不透明度无效。",
     "en": "The layer opacity is invalid."
   },
   "Scene.InvalidNumberCounter": {

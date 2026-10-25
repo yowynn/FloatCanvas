@@ -38,6 +38,7 @@ internal static class EditorShortcutPolicy
         if (!control && key == 0x1B)
             return !ancestors.Any(value => value is ComboBox { IsDropDownOpen: true } or Thumb { IsDragging: true });
         if (localInput || ancestors.Any(IsLocalInput)) return false;
+        if (!control && ancestors.Any(value => value is NumericValueField)) return false;
         if (!control && key == 0x08) return false; // Polygon capture handles this on the native canvas only.
         if (preserveListNavigation && key is >= 0x25 and <= 0x28) return false;
         if (!control && key is 0x0D or 0x2E && ancestors.Any(value => value is ToolPresetGallery or CanvasPresetGallery)) return false;

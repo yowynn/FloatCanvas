@@ -15,14 +15,16 @@ namespace FloatCanvas.App;
 /// <summary>Tool state and reusable recipes. Editing parameters never edits the current selection.</summary>
 internal sealed class ToolOptionsPanel : UserControl
 {
-    internal const double PreferredWidth = 560;
+    internal static double PreferredWidth => PropertyPanelLayout.ContentWidth + PropertyPanelLayout.Padding * 4 + 1 + 196 + WindowLayout.ScrollBarWidth;
     private readonly EditorController controller;
     private readonly Dictionary<string, TextBox> numbers = [];
     private readonly Dictionary<string, NumericValueField> numericFields = [];
     private readonly Dictionary<string, ComboBox> pickers = [];
     private readonly Dictionary<string, FrameworkElement> rows = [];
+    private readonly Dictionary<string, TextBlock> captions = [];
     private readonly ColorField foreground, background;
-    private readonly CheckBox aspect = new() { Content = L.Get("Inspector.KeepAspect"), MinHeight = 30 };
+    private readonly AspectRatioButton aspect = new();
+    private readonly CheckBox aspectSwitch = new();
     private readonly CheckBox linkColors = new() { Content = L.Get("Color.LinkColors"), MinHeight = 30 };
     private readonly ComboBox fontFamily = ToolOptionPreviews.FontPicker();
     private readonly Grid parameterGrid = new();
@@ -42,11 +44,12 @@ internal sealed class ToolOptionsPanel : UserControl
         this.controller = controller;
         Width = PreferredWidth; MinWidth = 0; MaxWidth = PreferredWidth; MaxHeight = 620;
         SetResourceReference(BackgroundProperty, "CanvasSurface"); SetResourceReference(ForegroundProperty, "CanvasText");
-        var body = new StackPanel { Margin = new(12) }; body.Children.Add(heading);
+        var body = new StackPanel(); body.Children.Add(heading);
         var columns = new Grid();
         columns.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         columns.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        parameterGrid.ColumnDefinitions.Add(new()); parameterGrid.ColumnDefinitions.Add(new());
+        parameterGrid.ColumnDefinitions.Add(new()); parameterGrid.ColumnDefinitions.Add(new() { Width = new(PropertyPanelLayout.PairGap) }); parameterGrid.ColumnDefinitions.Add(new());
+        parameterGrid.SizeChanged += (_, e) => { if (e.WidthChanged) LayoutParameters(); };
         var parameters = new StackPanel(); parameters.Children.Add(noParameters); parameters.Children.Add(parameterGrid);
         columns.Children.Add(parameters);
         var recipes = new Grid { Margin = new(12, 0, 0, 0) };
@@ -63,13 +66,13 @@ internal sealed class ToolOptionsPanel : UserControl
         foreground.EyedropperRequested += () => EyedropperRequested?.Invoke(foreground);
         background.EyedropperRequested += () => EyedropperRequested?.Invoke(background);
         Number(parameterGrid, "StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, 1024, (p, v) => p.Style.StrokeWidth = v);
-        Number(parameterGrid, "Opacity", L.Get("Inspector.OpacityPercent"), 0, 100, (p, v) => p.Style.Opacity = v / 100);
+        Number(parameterGrid, "Opacity", L.Get("Inspector.Opacity"), 0, 100, (p, v) => p.Style.Opacity = v / 100);
         Number(parameterGrid, "FontSize", L.Get("Inspector.FontSize"), 1, 4096, (p, v) => p.Style.FontSize = v);
         Number(parameterGrid, "NumberStart", L.Get("ToolOptions.NumberStart"), 1, 999999, (p, v) => p.NumberStart = (int)v);
         Number(parameterGrid, "NumberStep", L.Get("ToolOptions.NumberStep"), 1, 999999, (p, v) => p.NumberStep = (int)v);
         Number(parameterGrid, "NextNumber", L.Get("ToolOptions.NextNumber"), 1, int.MaxValue, (_, _) => { });
-        Number(parameterGrid, "DefaultWidth", L.Get("ToolOptions.DefaultWidth"), 1, 1000000, (p, v) => p.DefaultWidth = v);
-        Number(parameterGrid, "DefaultHeight", L.Get("ToolOptions.DefaultHeight"), 1, 1000000, (p, v) => p.DefaultHeight = v);
+        Number(parameterGrid, "DefaultWidth", L.Get("Inspector.Width"), 1, 1000000, (p, v) => p.DefaultWidth = v);
+        Number(parameterGrid, "DefaultHeight", L.Get("Inspector.Height"), 1, 1000000, (p, v) => p.DefaultHeight = v);
         AddRow(parameterGrid, "FontFamily", L.Get("Inspector.FontFamily"), fontFamily);
         Picker(parameterGrid, "TextAlignment", L.Get("Inspector.TextAlignment"),
             [(L.Get("Inspector.AlignLeft"), FloatCanvas.Core.TextAlignment.Left), (L.Get("Inspector.AlignCenter"), FloatCanvas.Core.TextAlignment.Center),
@@ -94,9 +97,14 @@ internal sealed class ToolOptionsPanel : UserControl
             Enum.GetValues<CaptureSource>().Select(value => (L.Get("Snapshot.Source." + value), (object)value)).ToArray(),
             (p, value) => p.CaptureSource = (CaptureSource)value);
         Number(parameterGrid, "CaptureBorderWidth", L.Get("Snapshot.BorderWidth"), 0, 1024, (p, value) => p.CaptureBorderWidth = value);
-        rows.Add("Aspect", aspect); parameterGrid.Children.Add(aspect);
+        var size = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Size")), PropertyPanelLayout.Pair(rows["DefaultWidth"], rows["DefaultHeight"], aspect));
+        rows.Add("Size", size); parameterGrid.Children.Add(size);
+        var aspectRow = PropertyPanelLayout.BooleanRow(L.Get("Inspector.KeepAspect"), aspectSwitch);
+        rows.Add("Aspect", aspectRow); parameterGrid.Children.Add(aspectRow);
         aspect.Click += (_, _) => Change(p => p.ConstrainAspect = aspect.IsChecked == true);
-        rows.Add("LinkColors", linkColors); parameterGrid.Children.Add(linkColors);
+        aspectSwitch.Click += (_, _) => Change(p => p.ConstrainAspect = aspectSwitch.IsChecked == true);
+        var linkRow = PropertyPanelLayout.BooleanRow(L.Get("Color.LinkColors"), linkColors);
+        rows.Add("LinkColors", linkRow); parameterGrid.Children.Add(linkRow);
         linkColors.Click += (_, _) => { Change(p => p.Style.LinkColors = linkColors.IsChecked == true); Refresh(); };
         foreach (var symbol in Enum.GetValues<SymbolKind>())
         {
@@ -117,13 +125,14 @@ internal sealed class ToolOptionsPanel : UserControl
         }
         AddRow(parameterGrid, "Emoji", L.Get("ToolOptions.Emoji"), emojiGallery);
         status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); body.Children.Add(status);
-        Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        Unloaded += (_, _) => { foreground.ClosePicker(); background.ClosePicker();  };
+        Content = new ScrollViewer { Margin = WindowLayout.ContentMargin(), Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Unloaded += (_, _) => { foreach (var field in numericFields.Values) field.CancelGesture(); foreground.ClosePicker(); background.ClosePicker(); };
         SizeChanged += (_, _) =>
         {
-            bool next = ActualWidth < 520;
+            bool next = ActualWidth < PreferredWidth - 1;
             if (compact == next) return; compact = next;
             columns.RowDefinitions.Clear(); columns.RowDefinitions.Add(new() { Height = GridLength.Auto }); columns.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            columns.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
             columns.ColumnDefinitions[1].Width = compact ? new GridLength(0) : GridLength.Auto;
             Grid.SetColumn(recipeBorder, compact ? 0 : 1); Grid.SetRow(recipeBorder, compact ? 1 : 0);
             recipeBorder.Margin = compact ? new(0, 12, 0, 0) : new(12, 0, 0, 0);
@@ -136,9 +145,13 @@ internal sealed class ToolOptionsPanel : UserControl
     public void Refresh()
     {
         if (refreshing) return;
+        // A numeric preview is already reflected in its field. The toolbar echoes
+        // ParametersChanged synchronously; rebuilding here cancels our own capture.
+        if (publishingNumericTool == controller.Tool && numericFields.Values.Any(field => field.IsInteracting)) return;
         refreshing = true;
         try
         {
+            foreach (var field in numericFields.Values) field.CancelGesture();
             status.Text = "";
             var p = controller.Parameters; var tool = p.Tool;
             heading.Text = L.Get("ToolDescription." + ToolPresetLibrary.Family(tool));
@@ -159,28 +172,28 @@ internal sealed class ToolOptionsPanel : UserControl
             Show("DefaultWidth", shape); Show("DefaultHeight", shape);
             Show("StartArrowHead", line); Show("EndArrowHead", line); Show("ArrowHeadSize", line); Show("StrokePattern", stroke);
             Show("CornerRadius", tool is EditorTool.Rectangle or EditorTool.RoundedRectangle);
-            Show("Aspect",shape||boxRegion);
+            Show("Size", shape); Show("Aspect", !shape && boxRegion);
             Show("EffectStrength", tool is EditorTool.Blur or EditorTool.Pixelate);
             Show("TextAlignment", tool == EditorTool.Text);
             Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji);
             Show("CaptureShape", capture); Show("CaptureSource", capture); Show("CaptureBorderWidth", capture);
             noParameters.Visibility = paint || text || boxRegion || tool == EditorTool.Image ? Visibility.Collapsed : Visibility.Visible;
             foreground.Value = capture ? p.CaptureBorderColor : p.Style.Stroke; background.Value = p.Style.Fill; aspect.IsChecked = p.ConstrainAspect; ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
-            linkColors.IsChecked = p.Style.LinkColors;
-            ((TextBlock)((StackPanel)rows["Foreground"]).Children[0]).Text = L.Get(capture ? "Snapshot.BorderColor" : tool == EditorTool.Number ? "Color.NumberShape" : shape ? p.Style.LinkColors ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
-            ((TextBlock)((StackPanel)rows["Background"]).Children[0]).Text = L.Get(tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
+            aspectSwitch.IsChecked = p.ConstrainAspect; linkColors.IsChecked = p.Style.LinkColors;
+            captions["Foreground"].Text = L.Get(capture ? "Snapshot.BorderColor" : tool == EditorTool.Number ? "Color.NumberShape" : shape ? p.Style.LinkColors ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
+            captions["Background"].Text = L.Get(tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
             SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);
             SetNumber("StrokeWidth", tool == EditorTool.Highlighter ? Math.Max(16, p.Style.StrokeWidth) : p.Style.StrokeWidth); SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
             SetNumber("EffectStrength", p.EffectStrength); SetNumber("CornerRadius", p.CornerRadius ?? 0); SetNumber("ArrowHeadSize", p.Style.ArrowHeadSize);
             SetNumber("DefaultWidth", p.DefaultWidth); SetNumber("DefaultHeight", p.DefaultHeight);
             SetNumber("NumberStart", p.NumberStart); SetNumber("NumberStep", p.NumberStep); SetNumber("NextNumber", controller.Session.Document.NextNumber);
-            if (tool == EditorTool.RoundedRectangle && p.CornerRadius is null) numbers["CornerRadius"].Text = "—";
+            if (tool == EditorTool.RoundedRectangle && p.CornerRadius is null) numericFields["CornerRadius"].ShowPlaceholder("—");
             SetPicker("StartArrowHead", p.Style.StartArrowHead ?? (tool == EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("EndArrowHead", p.Style.EndArrowHead ?? (tool is EditorTool.Arrow or EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("StrokePattern", p.Style.StrokePattern);
             SetPicker("TextAlignment", p.Style.TextAlignment);
             HighlightGallery(symbolGallery, p.Symbol); HighlightGallery(emojiGallery, p.Emoji);
-            ((TextBlock)((StackPanel)rows["FontSize"]).Children[0]).Text = L.Get(tool is EditorTool.Emoji or EditorTool.Number ? "ToolOptions.Size" : "Inspector.FontSize");
+            captions["FontSize"].Text = L.Get(tool is EditorTool.Emoji or EditorTool.Number ? "ToolOptions.Size" : "Inspector.FontSize");
             presets.Refresh();
             LayoutParameters();
         }
@@ -191,29 +204,19 @@ internal sealed class ToolOptionsPanel : UserControl
     private void LayoutParameters()
     {
         parameterGrid.RowDefinitions.Clear();
-        string[][] groups = [ ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["Foreground"], ["CaptureBorderWidth"], ["Background"], ["StrokeWidth", "Opacity"],
-            ["DefaultWidth", "DefaultHeight"], ["FontSize", "TextAlignment"], ["FontFamily"], ["NumberStart", "NumberStep"], ["NextNumber"], ["StartArrowHead", "EndArrowHead"],
-            ["StrokePattern", "ArrowHeadSize"], ["CornerRadius", "Aspect"], ["EffectStrength"], ["Symbols"], ["Emoji"] ];
+        string[][] groups = [ ["Size"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["Foreground"], ["Background"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
+            ["FontFamily"], ["FontSize"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
+            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Emoji"] ];
         foreach (var group in groups)
         {
             var visible = group.Select(key => rows[key]).Where(row => row.Visibility == Visibility.Visible).ToArray();
             if (visible.Length == 0) continue;
-            if (compact)
-            {
-                foreach (var value in visible)
-                {
-                    int index = parameterGrid.RowDefinitions.Count; parameterGrid.RowDefinitions.Add(new() { Height = GridLength.Auto });
-                    Grid.SetRow(value, index); Grid.SetColumn(value, 0); Grid.SetColumnSpan(value, 2); value.Margin = new(0, 4, 0, 4);
-                }
-                continue;
-            }
             int rowIndex = parameterGrid.RowDefinitions.Count; parameterGrid.RowDefinitions.Add(new() { Height = GridLength.Auto });
             for (int column = 0; column < visible.Length; column++)
             {
                 var row = visible[column]; Grid.SetRow(row, rowIndex); Grid.SetColumn(row, column);
-                Grid.SetColumnSpan(row, visible.Length == 1 ? 2 : 1);
-                row.Margin = new Thickness(0, 4, visible.Length == 2 && column == 0 ? 10 : 0, 4);
-                if (row == aspect) row.VerticalAlignment = VerticalAlignment.Bottom;
+                Grid.SetColumnSpan(row, 3);
+                row.Margin = new Thickness(0, 4, 0, 4);
             }
         }
     }
@@ -227,7 +230,9 @@ internal sealed class ToolOptionsPanel : UserControl
         SetNumber("NextNumber", controller.Session.Document.NextNumber);
     }
 
-    private void Change(Action<ToolParameters> update)
+    private EditorTool? publishingNumericTool;
+
+    private void Change(Action<ToolParameters> update, bool numericPreview = false)
     {
         if (refreshing) return;
         try
@@ -235,8 +240,18 @@ internal sealed class ToolOptionsPanel : UserControl
             var next = controller.Parameters; update(next);
             if (!next.IsValid()) { Error(L.Get("ToolOptions.InvalidNumber")); return; }
             controller.ApplyParameters(next); status.Text = "";
+            // The active field owns its draft. Refresh only the paired value so a
+            // live ratio update cannot tear down capture or move the text caret.
+            if (next.ConstrainAspect)
+            {
+                if (!numericFields["DefaultWidth"].IsInteracting && !numericFields["DefaultWidth"].Input.IsKeyboardFocusWithin) SetNumber("DefaultWidth", next.DefaultWidth);
+                if (!numericFields["DefaultHeight"].IsInteracting && !numericFields["DefaultHeight"].Input.IsKeyboardFocusWithin) SetNumber("DefaultHeight", next.DefaultHeight);
+            }
             HighlightGallery(symbolGallery, next.Symbol); HighlightGallery(emojiGallery, next.Emoji);
-            ParametersChanged?.Invoke();
+            var previous = publishingNumericTool;
+            if (numericPreview) publishingNumericTool = next.Tool;
+            try { ParametersChanged?.Invoke(); }
+            finally { publishingNumericTool = previous; }
         }
         catch (Exception ex) { Error(ex.Message); }
     }
@@ -258,31 +273,83 @@ internal sealed class ToolOptionsPanel : UserControl
     }
     private void AddRow(Panel body, string key, string label, FrameworkElement control)
     {
-        var row = new StackPanel { Margin = new(0, 4, 0, 4) };
-        row.Children.Add(new TextBlock { Text = label, FontSize = 12, Margin = new(0, 0, 0, 3) }); row.Children.Add(control);
+        string shortKey = key switch { "NumberStart" => "Property.NumberStart", "NumberStep" => "Property.NumberStep", "NextNumber" => "Property.NextNumber", "CaptureBorderWidth" => "Property.BorderWidth", _ => "" };
+        var caption = new PropertyLabel(shortKey.Length == 0 ? label : L.Get(shortKey)) { ToolTip = label };
+        captions.Add(key, caption);
+        if (control is NumericValueField anchored)
+            anchored.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), label);
+        if (key is "DefaultWidth" or "DefaultHeight")
+        {
+            rows.Add(key, control); AutomationProperties.SetName(control, label);
+            var dimension = (NumericValueField)control; AutomationProperties.SetName(dimension.Input, label); AutomationProperties.SetName(dimension.Slider, label);
+            return;
+        }
+        Panel row;
+        if (control is not UniformGrid)
+        {
+            row = PropertyPanelLayout.Row(caption, control);
+            if (control is NumericValueField number) number.SetLabel(caption);
+        }
+        else { var stack = new StackPanel(); stack.Children.Add(caption); stack.Children.Add(control); row = stack; }
+        row.Margin = new(0, 4, 0, 4);
         AutomationProperties.SetName(control, label); rows.Add(key, row); body.Children.Add(row);
         if (control is NumericValueField numeric) { AutomationProperties.SetName(numeric.Input, label); AutomationProperties.SetName(numeric.Slider, label); }
     }
     private void Number(Panel body, string key, string label, double min, double max, Action<ToolParameters, double> set)
     {
         double sliderMax = key switch { "StrokeWidth" => 64, "FontSize" => 512, "NumberStart" or "NumberStep" or "NextNumber" => 100, "DefaultWidth" or "DefaultHeight" => 600, "CornerRadius" => 100, "ArrowHeadSize" => 100, "EffectStrength" => 100, _ => max };
-        var field = new NumericValueField(min, max, sliderMaximum: Math.Min(max, sliderMax), step: key == "EffectStrength" ? .1 : 1);
+        var field = new NumericValueField(min, max, sliderMaximum: Math.Min(max, sliderMax), step: key is "EffectStrength" or "StrokeWidth" or "CaptureBorderWidth" ? .1 : 1,
+            integerOnly: key is "NumberStart" or "NumberStep" or "NextNumber")
+        { Unit = key switch { "Opacity" => "%", "NumberStart" or "NextNumber" => "#", "NumberStep" => L.Get("Numeric.Unit.Step"), _ => "px" } };
         if (key is "NumberStart" or "NumberStep" or "NextNumber") field.Slider.IsSnapToTickEnabled = true;
         var box = field.Input; numbers.Add(key, box); numericFields.Add(key, field); AddRow(body, key, label, field);
-        box.LostKeyboardFocus += (_, _) => { if (!refreshing) Refresh(); };
-        if (key == "StrokeWidth") ((StackPanel)rows[key]).Children.Add(ToolOptionPreviews.StrokeWidth(field));
+        box.LostKeyboardFocus += (_, _) => { if (!refreshing && !numericFields.Values.Any(number => number.IsInteracting)) Refresh(); };
+        EditorSession? counterSession = null; long counterTransaction = 0;
+        ToolParameters? original = null;
+        field.CanBeginGesture = () => key != "NextNumber" || !controller.Session.IsTransactionActive;
+        field.GestureStarted += () =>
+        {
+            original = controller.Parameters;
+            if (key != "NextNumber") return;
+            counterSession = controller.Session; counterSession.BeginTransaction(L.Get("History.NumberCounter")); counterTransaction = counterSession.TransactionId;
+        };
+        field.GestureCompleted += commit =>
+        {
+            if (counterSession is { } session && session.IsTransactionActive && session.TransactionId == counterTransaction)
+            { if (commit && ReferenceEquals(session, controller.Session)) session.Commit(); else session.Cancel(); }
+            counterSession = null;
+            if (!commit && key != "NextNumber" && original is { } previous && controller.Tool == previous.Tool)
+            { controller.ApplyParameters(previous); ParametersChanged?.Invoke(); }
+            original = null;
+            if (!refreshing) Refresh();
+        };
         field.ValueChanged += value =>
         {
             if (refreshing) return;
             if (key is "NumberStart" or "NumberStep" or "NextNumber" && value != Math.Truncate(value)) { Error(L.Get("ToolOptions.InvalidNumber")); return; }
             if (key == "NextNumber")
             {
-                controller.Session.Execute(L.Get("History.NumberCounter"), document => document.NextNumber = (int)value);
+                if (field.IsInteracting)
+                {
+                    if (!ReferenceEquals(counterSession, controller.Session) || !controller.Session.IsTransactionActive || controller.Session.TransactionId != counterTransaction) return;
+                    controller.Session.Document.NextNumber = (int)value; controller.Session.NotifyChanged();
+                }
+                else controller.Session.Execute(L.Get("History.NumberCounter"), document => document.NextNumber = (int)value);
                 status.Text = "";
                 ParametersChanged?.Invoke(); return;
             }
             if (key == "StrokeWidth" && controller.Tool == EditorTool.Highlighter && value < 16) { Error(L.Get("ToolOptions.InvalidNumber")); return; }
-            Change(p => set(p, value));
+            Change(p =>
+            {
+                if (p.ConstrainAspect && key is "DefaultWidth" or "DefaultHeight")
+                {
+                    // Reject invalid paired sizes atomically through IsValid;
+                    // silently clamping only one dimension would break the ratio.
+                    double factor = value / (key == "DefaultWidth" ? p.DefaultWidth : p.DefaultHeight);
+                    p.DefaultWidth *= factor; p.DefaultHeight *= factor;
+                }
+                set(p, value);
+            }, field.IsInteracting);
         };
         field.InvalidInput += () => { if (!refreshing) Error(L.Get("ToolOptions.InvalidNumber")); };
     }

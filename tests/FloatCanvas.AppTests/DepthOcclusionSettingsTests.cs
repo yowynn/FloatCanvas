@@ -37,7 +37,7 @@ internal static class DepthOcclusionSettingsTests
         Click(true);
         check("hidden flat-canvas option cannot activate depth occlusion", !session.Document.Canvas.DepthPriorityOcclusion && session.UndoCount == 0 && option.IsChecked == false);
         session.Document.Canvas.Projection.Enabled = true; window.Refresh(session.Document.Canvas, false);
-        check("perspective canvas exposes localized depth option in Canvas settings", option.Visibility == Wpf.Visibility.Visible && Equals(option.Content, L.Get("Canvas.DepthPriorityOcclusion")) && option.IsChecked == false);
+        check("perspective canvas exposes localized depth option in Canvas settings", option.Visibility == Wpf.Visibility.Visible && Wpf.Automation.AutomationProperties.GetName(option) == L.Get("Canvas.DepthPriorityOcclusion") && ((Controls.Grid)option.Parent).Children.OfType<Controls.TextBlock>().Any(label => label.Text == L.Get("Canvas.DepthPriorityOcclusion")) && option.IsChecked == false);
         var savedFingerprint = Fingerprint(); long beforeRevision = session.SceneRevision; int notifications = 0;
         editor.Changed += () => notifications++;
         Click(true);

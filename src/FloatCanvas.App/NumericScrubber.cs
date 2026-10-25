@@ -12,7 +12,7 @@ internal sealed class NumericScrubber
     private readonly Action<bool> finish;
     private Window? owner;
     private double previousX;
-    private double totalDelta;
+    private double distance;
 
     internal bool IsActive { get; private set; }
 
@@ -38,7 +38,7 @@ internal sealed class NumericScrubber
         if (IsActive || !double.IsFinite(pointerX)) return false;
         if (!begin()) return false;
         previousX = pointerX;
-        totalDelta = 0;
+        distance = 0;
         IsActive = true;
         owner = Window.GetWindow(label);
         if (owner is not null) owner.Deactivated += OnWindowDeactivated;
@@ -51,10 +51,21 @@ internal sealed class NumericScrubber
         double scale = (modifiers & ModifierKeys.Shift) != 0 ? 0.1 : (modifiers & ModifierKeys.Control) != 0 ? 10 : 1;
         double delta = (pointerX - previousX) * scale;
         previousX = pointerX;
-        if (delta == 0 || !double.IsFinite(totalDelta + delta)) return;
-        totalDelta += delta;
-        try { update(totalDelta); }
+        if (delta == 0 || !double.IsFinite(distance + delta)) return;
+        double previous = Displacement(distance);
+        distance += delta;
+        double next = Displacement(distance);
+        if (next == previous) return;
+        try { update(next); }
         catch { End(false); }
+    }
+
+    // Distance is measured in WPF DIP, independently of display scaling. Each
+    // press starts in the fine region; returning to the origin restores zero.
+    internal static double Displacement(double distance)
+    {
+        double d = Math.Max(0, Math.Abs(distance) - 4);
+        return Math.Sign(distance) * (.06 * d + .002 * d * d);
     }
 
     internal void End(bool commit)

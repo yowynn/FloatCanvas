@@ -16,12 +16,24 @@
     "en": "Click four corners in any order. Esc cancels."
   },
   "Project.Detach": {
-    "zh": "取消文件绑定",
+    "zh": "取消文件关联",
     "en": "Detach file"
   },
   "Project.Locate": {
-    "zh": "打开文件位置",
+    "zh": "打开文件所在位置",
     "en": "Open file location"
+  },
+  "Project.Revert": {
+    "zh": "还原改动",
+    "en": "Revert changes"
+  },
+  "Project.Reverted": {
+    "zh": "已还原到上次保存的状态，可按 Ctrl+Z 撤销。",
+    "en": "Restored the last saved state. Press Ctrl+Z to undo."
+  },
+  "Project.RevertFailed": {
+    "zh": "还原改动失败：",
+    "en": "Could not revert changes: "
   },
   "Project.Unsaved": {
     "zh": "未保存",

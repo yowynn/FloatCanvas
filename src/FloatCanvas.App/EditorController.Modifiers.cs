@@ -38,6 +38,12 @@ internal sealed partial class EditorController
     }
 
     private bool ConstrainBox(OverlayModifiers modifiers)=>ConstrainAspect^((modifiers&OverlayModifiers.Shift)!=0);
+    private PointD DefaultRatioEnd(PointD anchor, PointD point)
+    {
+        var delta = point - anchor;
+        double scale = Math.Max(Math.Max(Math.Abs(delta.X) / DefaultWidth, Math.Abs(delta.Y) / DefaultHeight), 1 / Math.Min(DefaultWidth, DefaultHeight));
+        return anchor + new PointD(Math.CopySign(DefaultWidth * scale, delta.X), Math.CopySign(DefaultHeight * scale, delta.Y));
+    }
     private static PointD SquareEnd(PointD anchor,PointD point)
     {
         var delta=point-anchor;double side=Math.Max(Math.Abs(delta.X),Math.Abs(delta.Y));

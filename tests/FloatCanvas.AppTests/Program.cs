@@ -18,8 +18,16 @@ internal static class Program
         if (args is ["--overlay-probe-wait"]) { Thread.Sleep(10000); return 0; }
         try
         {
+            if (args.Contains("--panel-review-only")) { PanelReviewRegressionTests.Run(Assert, args.SkipWhile(a => a != "--panel-review-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--window-spacing-only")) { WindowSpacingTests.Run(Assert); return 0; }
+            if (args.Contains("--property-visuals-only")) { PropertyVisualTests.Run(Assert); return 0; }
+            if (args.Contains("--numeric-controls-only")) { NumericControlTests.Run(Assert, args.SkipWhile(a => a != "--numeric-controls-only").Skip(1).FirstOrDefault()); return 0; }
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
+            if (args is ["--numeric-pointer-preview", var pointerOutput]) { NumericPointerFixture.Preview(pointerOutput); return 0; }
+            if (args is ["--numeric-pointer-system-preview", var systemPointerOutput]) { NumericPointerFixture.Preview(systemPointerOutput, true); return 0; }
+            if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
+            if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
             if (args.Contains("--audit-data-only")) { DataRemediationTests.Run(Assert); return 0; }
             if (args.Contains("--audit-ux-only")) { AuditUxTests.Run(Assert); return 0; }
@@ -219,6 +227,8 @@ internal static class Program
             Preview4InlineTextTests.Run(Assert);
             TextToolTransformTests.Run(Assert);
             Preview4PropertiesTests.Run(Assert);
+            PropertyVisualTests.Run(Assert);
+            WindowSpacingTests.Run(Assert);
             TemporaryMoveControllerTests.Run(Assert);
             PropertiesClickSequenceTests.Run(Assert);
             ShortcutSurfaceRoutingTests.Run(Assert);
@@ -304,6 +314,8 @@ internal static class Program
             WindowChromeTests.Run(Assert);
             WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult();
             WorkspacePreviewTests.RunAsync(Assert).GetAwaiter().GetResult();
+            NumericControlTests.Run(Assert);
+            PanelReviewRegressionTests.Run(Assert);
             ThemeTests.Run((name, condition) => Assert(name, condition));
             MonitorScopeSettingsTests.Run((name, condition) => Assert(name, condition));
             Console.WriteLine($"PASS {checks} controller/session/render/inspector checks. No native windows shown or input injected."); return 0;

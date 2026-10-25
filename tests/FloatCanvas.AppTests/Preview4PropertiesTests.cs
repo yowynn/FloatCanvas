@@ -17,10 +17,10 @@ internal static class Preview4PropertiesTests
         var text=new CanvasElement {Kind=ElementKind.Text,Text="Resize text",Width=200,Height=60,Style=new() {FontSize=24},Transform=Affine2D.Translation(100,100)};
         var session=new EditorSession(new SceneDocument {Elements=[text]});session.SetSelection([text.Id]);
         var inspector=new InspectorWindow(()=>session);
-        var aspect=Field<CheckBox>(inspector,"keepAspect");
+        var aspect=Field<System.Windows.Controls.Primitives.ToggleButton>(inspector,"keepAspect");
         check("text layers default to unconstrained frame resizing",aspect.IsChecked==false);
         aspect.IsChecked=true;aspect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));inspector.CompletePendingEdit();inspector.Refresh();
-        check("the aspect checkbox writes the layer preference and retains it after refresh",text.ConstrainAspect==true&&aspect.IsChecked==true);
+        check("the aspect chain writes the layer preference and retains it after refresh",text.ConstrainAspect==true&&aspect.IsChecked==true);
         check("the layer preference survives clone and JSON persistence",text.Clone().ConstrainAspect==true&&JsonSerializer.Deserialize<CanvasElement>(JsonSerializer.Serialize(text))!.ConstrainAspect==true);
         check("one undo restores the default aspect preference",session.Undo()&&session.Document.Elements.Single().ConstrainAspect is null);
         inspector.Refresh();check("text refresh after undo returns to the unconstrained default",aspect.IsChecked==false);

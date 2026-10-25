@@ -25,14 +25,14 @@ internal static class Preview4CanvasTests
                 result.Projection.Quad.SequenceEqual(initial.Quad) && result.Projection.Matrix == Projective2D.Identity);
         }
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        AppTheme.Apply("light");
         var window = new CanvasSettingsWindow(library);
         try
         {
             var rows = Field<NumericValueField>(window, "rows");
             var columns = Field<NumericValueField>(window, "columns");
             check("rows and columns share a paired horizontal layout with rows on the left", rows.Parent is Grid rowSlot && columns.Parent is Grid columnSlot &&
-                rowSlot.Parent is StackPanel rowPanel && columnSlot.Parent is StackPanel columnPanel &&
-                rowPanel.Parent is Grid pair && ReferenceEquals(pair, columnPanel.Parent) && Grid.GetColumn(rowPanel) == 0 && Grid.GetColumn(columnPanel) == 1);
+                rowSlot.Parent is Grid pair && ReferenceEquals(pair, columnSlot.Parent) && Grid.GetColumn(rowSlot) == 0 && Grid.GetColumn(columnSlot) == 2 && pair.ColumnDefinitions[1].Width.Value == PropertyPanelLayout.PairGap);
             check("automatic row and column counts occupy their corresponding paired slots", ReferenceEquals(rows.Parent, Field<TextBox>(window, "lockedRows").Parent) &&
                 ReferenceEquals(columns.Parent, Field<TextBox>(window, "lockedColumns").Parent) && !ReferenceEquals(rows.Parent, columns.Parent));
             var actions = Field<FrameworkElement>(window, "perspectiveActions");

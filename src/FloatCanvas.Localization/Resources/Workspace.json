@@ -186,7 +186,7 @@
   "ToolbarV2.ToolOptions": {"zh":"工具参数","en":"Tool options"},
   "ToolbarV2.Layers": {"zh":"图层","en":"Layers"},
   "ToolbarV2.Properties": {"zh":"属性","en":"Properties"},
-  "ToolbarV2.LayerOpacity": {"zh":"标注整体透明度","en":"Annotation opacity"},
+  "ToolbarV2.LayerOpacity": {"zh":"标注整体不透明度","en":"Annotation opacity"},
   "Effect.RegionFrozen": {"zh":"已冻结选区并添加效果；可以继续移动和编辑。","en":"Region frozen with effect; move and edit it as an image."},
   "Color.SampleHint": {"zh":"单击画布取色，Esc 取消。","en":"Click the canvas to sample a color; Esc cancels."},
   "Color.Sampled": {"zh":"已应用取样颜色。","en":"Sampled color applied."},
