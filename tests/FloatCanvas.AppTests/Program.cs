@@ -84,6 +84,7 @@ internal static class Program
             if (args.Contains("--aux-shortcuts-only")) { AuxiliaryShortcutRoutingTests.Run(Assert); return 0; }
             if (args.Contains("--aux-shortcut-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "aux-shortcut-runtime"); return 0; }
             if (args.Contains("--phase2-windows-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-windows"); return 0; }
+            if (args.Contains("--phase3-canvas-escape-only")) { NativeInputRoutingFixture.Run(Assert, "phase3-canvas-escape"); return 0; }
             if (args.Contains("--phase2-save-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-save"); return 0; }
             if (args.Contains("--phase2-focus-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-focus"); return 0; }
             if (args.Contains("--phase2-creation-click-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-creation-click"); return 0; }

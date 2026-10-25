@@ -535,17 +535,16 @@ internal sealed partial class DesktopSession : IDisposable
         }
         if(_inlineText is not null&&key is 0x1B or 0x0D)
         {FinishInlineText(key==0x0D,selectEdited:key==0x0D);return;}
-        if (key == 0x1B && _editor.Tool == EditorTool.Canvas)
+        if (key == 0x1B && _editor.Tool == EditorTool.Canvas &&
+            (_canvasCalibration.IsDragging || _canvasGridScale.IsDragging || _canvasCalibration.IsPlacing ||
+                IsCanvasSettingsOpen && !_canvasSettingsWindow!.IsPinned))
         {
             if (_canvasCalibration.IsDragging) _canvasCalibration.CancelDrag();
             else if (_canvasGridScale.IsDragging) _canvasGridScale.Cancel();
             else if (_canvasCalibration.IsPlacing) { _canvasCalibration.End(); SynchronizeCanvasTool(); }
-            else if (IsCanvasSettingsOpen && !_canvasSettingsWindow!.IsPinned) DismissCanvasSettings();
-            else ActivateTool(EditorTool.Select);
+            else DismissCanvasSettings();
             RequestRender(); return;
         }
-        if (key == 0x1B && _canvasCalibration.IsActive)
-        { _canvasCalibration.Escape(); RequestRender(); return; }
         if (key == 0x1B && _snapshotCaptureRequest is not null) { CancelSnapshotCapture("Escape"); return; }
         if (_newCanvasButton is { IsConfirming: true } clear)
         {

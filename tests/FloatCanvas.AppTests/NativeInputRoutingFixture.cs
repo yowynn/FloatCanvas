@@ -67,8 +67,9 @@ internal static class NativeInputRoutingFixture
             bool waitForForeground = Environment.GetEnvironmentVariable("FLOATCANVAS_INPUT_WAIT_FOR_FOCUS") == "1";
             var toolbar = Field<Window>(session, "_toolbar");
             if (waitForForeground) toolbar.Title = "FloatCanvas C3 Input Check";
-            toolbar.ShowActivated = !waitForForeground && scenario is not ("popup-ownership" or "phase2-save" or "phase2-focus" or "phase2-creation-click" or "phase2-hidden" or "phase2-render"); toolbar.Show(); Pump();
-            if (scenario is not ("popup-ownership" or "phase2-save" or "phase2-focus" or "phase2-creation-click" or "phase2-hidden" or "phase2-render"))
+            toolbar.ShowActivated = !waitForForeground && scenario is not ("popup-ownership" or "phase2-save" or "phase2-focus" or "phase2-creation-click" or "phase2-hidden" or "phase2-render" or "phase3-canvas-escape");
+            if (scenario != "phase3-canvas-escape") toolbar.Show(); Pump();
+            if (scenario is not ("popup-ownership" or "phase2-save" or "phase2-focus" or "phase2-creation-click" or "phase2-hidden" or "phase2-render" or "phase3-canvas-escape"))
             {
                 if (waitForForeground)
                 {
@@ -207,6 +208,7 @@ internal static class NativeInputRoutingFixture
             if (scenario == "aux-shortcut-runtime") AuxiliaryShortcutRuntimeTests.Run(check, session, host, toolbar, dispatch);
             if (scenario == "phase2-windows") Phase2WindowTests.Run(check, session, host, toolbar,
                 action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
+            if (scenario == "phase3-canvas-escape") Phase3CanvasEscapeTests.Run(check, session, host);
             if (scenario == "phase2-save") Phase2SaveTests.Run(check, session);
             if (scenario == "phase2-focus") Phase2FocusTests.Run(check, session, toolbar);
             if (scenario == "phase2-creation-click") Phase2CreationClickTests.Run(check, session, host);

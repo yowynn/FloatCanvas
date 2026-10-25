@@ -255,6 +255,8 @@ If a display change leaves annotations wholly off screen, use **Main menu → Ca
 
 ### Canvas tool, grid and perspective
 
+Canvas uses the ordinary `Esc` sequence: cancel an unfinished drag or four-point placement, dismiss unpinned settings, then enter pass-through when idle while retaining the selected Canvas tool.
+
 Click **Canvas** on the toolbar or press `C` to select it. It is exclusive with the drawing tools; a blue border marks the current tool. Its rectangle/trapezoid icon indicates perspective off/on. Select Canvas again to open or close its options. Initial placement, reopening and the top-right pin follow the other tool-options panels. Closing the panel leaves the Canvas tool selected. While entering text, `C` types a letter; `Ctrl+C` still copies.
 
 Selecting Canvas keeps the reference grid visible independently of **Show grid**. Without perspective, the origin is the **primary-screen center**, including when the drawing scope covers all screens. Drag from empty canvas space away from the origin to enlarge the squares, or toward it to shrink them. Each drag is one undo step; `Esc` cancels it. Starting on an existing object does not begin grid sizing.

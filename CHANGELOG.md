@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 画布工具的空闲 Esc 与普通工具一样退出编辑，不再额外切到选择工具；未完成的画布手势和非固定配置仍优先取消／关闭。
+- Let idle Escape leave editing from Canvas like other tools, without an extra switch to Select; retain cancellation of unfinished canvas gestures and dismissal of unpinned settings.
+
 - 补齐闭眼创建的原生输入路径：隐藏内容不再阻止画布新手势、焦点返回和图片拖入，模态、输入租期及忙碌检查保留。
 - Complete hidden-canvas creation through the native input path: hidden content no longer blocks new gestures, canvas focus return or image drops, while retaining modal, input-lease and busy checks.
 
