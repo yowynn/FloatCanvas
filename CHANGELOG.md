@@ -11,6 +11,9 @@
 - 画布工具的空闲 Esc 与普通工具一样退出编辑，不再额外切到选择工具；未完成的画布手势和非固定配置仍优先取消／关闭。
 - Let idle Escape leave editing from Canvas like other tools, without an extra switch to Select; retain cancellation of unfinished canvas gestures and dismissal of unpinned settings.
 
+- 修复后台预览导致普通画笔落笔延迟：完成的新帧按渲染优先级呈现，普通笔画等待期间不再重复上传旧帧；选择框、校准手柄等界面反馈仍可独立更新。
+- Fix brush-start delays with background previews: present completed frames at render priority and avoid uploading unchanged old frames while ordinary strokes wait, retaining independent selection-guide and calibration-handle feedback.
+
 - 补齐闭眼创建的原生输入路径：隐藏内容不再阻止画布新手势、焦点返回和图片拖入，模态、输入租期及忙碌检查保留。
 - Complete hidden-canvas creation through the native input path: hidden content no longer blocks new gestures, canvas focus return or image drops, while retaining modal, input-lease and busy checks.
 

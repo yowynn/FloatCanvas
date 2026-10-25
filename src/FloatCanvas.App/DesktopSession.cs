@@ -452,7 +452,7 @@ internal sealed partial class DesktopSession : IDisposable
             // Heavy scene computation, GPU filtering and readback happen on the preview worker.
             // The UI only copies completed CPU tiles and draws current handles.
             _host.SetGpuWorkload(false);
-            _host.Render(dirtyRegions);
+            PresentCanvasControls(dirtyRegions);
             // A native caption loop can delay control timers even while frames
             // complete. Successful UI work is progress; a blocked render is not.
             _host.NotifyInputProgress();
@@ -688,6 +688,8 @@ internal sealed partial class DesktopSession : IDisposable
         canvas.Restore();
         if (_host.IsEditing) DrawEyedropperPreview(canvas);
         if (_host.IsReceivingDrop) DrawImageDropHint(canvas);
+        _presentedCanvasContext = CurrentPreviewContext();
+        _canvasControlsWereVisible = CanvasControlsVisible();
     }
     private void ToggleInspector()
     {

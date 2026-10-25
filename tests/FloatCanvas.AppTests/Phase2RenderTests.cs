@@ -11,6 +11,7 @@ internal static class Phase2RenderTests
 {
     internal static void Run(Action<string, bool> check)
     {
+        CompletedFramePreemptsInput(check);
         var dispatcher = Dispatcher.CurrentDispatcher;
         var context = new CanvasPreviewContext(new object(), new object(), new(0, 0), false, false, false);
         var source = new SceneDocument { Viewport = new(0, 0, 96, 64), LayerOpacity = .01 };
@@ -84,6 +85,32 @@ internal static class Phase2RenderTests
             check("a failed preview does not lose the final pending input", failures == 1 && failing.Frame!.RenderMilliseconds == 100);
         }
         RasterSnapshots(check, context);
+    }
+
+    private static void CompletedFramePreemptsInput(Action<string, bool> check)
+    {
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        int uiThread = Environment.CurrentManagedThreadId;
+        using var queued = new ManualResetEventSlim();
+        var context = new CanvasPreviewContext(new object(), new object(), new(0, 0), false, false, false);
+        using var pump = new CanvasPreviewPump(dispatcher, () => new()
+        {
+            Context = context, SceneIdentity = context.Session, Document = new(), Resources = [], Outputs = []
+        }, snapshot => new(snapshot.Context, new([]), OverlayRenderBackend.Cpu, false, null, null, 0));
+        DispatcherHookEventHandler posted = (_, _) =>
+        { if (Environment.CurrentManagedThreadId != uiThread) queued.Set(); };
+        dispatcher.Hooks.OperationPosted += posted;
+        try
+        {
+            pump.Request();
+            check("completed preview is queued while the UI is processing input", queued.Wait(2000));
+            bool inputProcessed = false, presentedBeforeInput = false;
+            dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+            { presentedBeforeInput = pump.CompletedFrames == 1; inputProcessed = true; });
+            Until(() => inputProcessed);
+            check("a completed preview is presented before another queued pointer input", presentedBeforeInput);
+        }
+        finally { dispatcher.Hooks.OperationPosted -= posted; }
     }
 
     private static void RasterSnapshots(Action<string, bool> check, CanvasPreviewContext context)

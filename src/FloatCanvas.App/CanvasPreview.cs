@@ -170,7 +170,9 @@ internal sealed class CanvasPreviewPump : IDisposable
                     if (disposed || dispatcher.HasShutdownStarted) { frame?.Dispose(); return; }
                 var completed = frame;
                 DispatcherOperation operation;
-                try { operation = dispatcher.InvokeAsync(() => Complete(completed, error), DispatcherPriority.Background); }
+                // Finished pixels are render work. Input-priority pointer traffic must not
+                // starve their presentation or the capture of the newest pending value.
+                try { operation = dispatcher.InvokeAsync(() => Complete(completed, error), DispatcherPriority.Render); }
                 catch (InvalidOperationException) when (dispatcher.HasShutdownStarted) { completed?.Dispose(); return; }
                 // A shutdown can cancel a callback after it was queued. Its result still owns pixels.
                 _ = operation.Task.ContinueWith(task => { if (task.IsCanceled) completed?.Dispose(); },
