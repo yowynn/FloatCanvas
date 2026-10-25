@@ -93,6 +93,8 @@ internal static class Program
             if (args.Contains("--workspace-controller-only")) { WorkspaceToolControllerTests.Run(Assert); return 0; }
             if (args.Contains("--phase2-color-window-only")) { Phase2ColorWindowTests.Run(Assert); return 0; }
             if (args.Contains("--phase2-render-only")) { Phase2RenderTests.Run(Assert); return 0; }
+            if (args.Contains("--phase3-preview-investigation")) { Phase3PreviewInvestigation.Run(Assert); return 0; }
+            if (args.Contains("--phase3-preview-routing-investigation")) { Phase3PreviewRuntimeInvestigation.Run(Assert); return 0; }
             if (args.Contains("--phase2-render-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "phase2-render"); return 0; }
             if (args.Contains("--input-method-ui-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "input-method-ui"); return 0; }
             if (args.Contains("--temporary-move-controller-only")) { TemporaryMoveControllerTests.Run(Assert); return 0; }
