@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Windows 系统截图期间保留工具条覆盖画布的完整画面，并临时让出增强显示及编辑输入；截图结束后恢复实时画布，避免绘制内容压住系统截图界面。
+- Preserve tools above the canvas during Windows screen clipping, temporarily yielding enhanced presentation and editing input; restore the live canvas after clipping so it cannot cover the system capture UI.
+
 - 预设参数修改提示改为右上角内侧的圆角三角封角，取消越界蓝点及其滚动区留白，保持原预览和相邻槽完整。
 - Mark modified presets with an inset rounded triangle at the upper-right corner, removing the protruding dot and its scroll padding while preserving previews and adjacent tiles.
 
@@ -10,9 +13,6 @@
 
 - 补齐闭眼创建的原生输入路径：隐藏内容不再阻止画布新手势、焦点返回和图片拖入，模态、输入租期及忙碌检查保留。
 - Complete hidden-canvas creation through the native input path: hidden content no longer blocks new gestures, canvas focus return or image drops, while retaining modal, input-lease and busy checks.
-
-- 保留个人预设蓝点的滚动区顶部空间，同时对齐官方／个人预设的标题到首行间距。
-- Keep room above personal presets for modification dots while matching the official and personal heading-to-tile spacing.
 
 - 颜色窗口改为左右布局：左侧调色，右侧显示最近使用和我的色板，每排保持十个；移除标题下方的额外描边，标题栏只保留关闭按钮。
 - Arrange color adjustments on the left and recent/personal swatches on the right, retaining ten swatches per row. Remove the extra line below the caption and keep only Close in the color caption.

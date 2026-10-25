@@ -213,6 +213,7 @@ public sealed partial class OverlayHost : IDisposable
         CheckThread();
         CancelPendingCapture();
         if (_captureActive) { failure = L.Get("Capture.AlreadyInProgress"); return false; }
+        if (TryBeginSystemScreenshot()) { failure = L.Get("Capture.AlreadyInProgress"); return false; }
         return TryEnterEditingCore(out failure);
     }
 
@@ -319,6 +320,7 @@ public sealed partial class OverlayHost : IDisposable
     {
         IsVisible = visible;
         IsPreviewVisible = false;
+        if (_systemScreenshot is not null) return;
         // A hidden canvas may have been cleared, replaced or undone. Submit the
         // current scene before showing retained layered-window pixels again.
         if (visible) Render();
@@ -340,6 +342,7 @@ public sealed partial class OverlayHost : IDisposable
         CheckThread();
         if (IsPreviewVisible == visible) return;
         IsPreviewVisible = visible;
+        if (_systemScreenshot is not null) return;
         if (IsVisible) return;
         if (visible) Render();
         foreach (var pair in _windows)
@@ -353,7 +356,7 @@ public sealed partial class OverlayHost : IDisposable
     public void Render(IReadOnlyList<PixelBounds>? dirtyRegions = null)
     {
         CheckThread();
-        if ((!IsVisible && !IsPreviewVisible) || _rendering) return;
+        if ((!IsVisible && !IsPreviewVisible) || _rendering || _systemScreenshot is not null) return;
         _rendering = true;
         var started = Stopwatch.GetTimestamp();
         var observer = FrameSubmitted;
@@ -429,6 +432,7 @@ public sealed partial class OverlayHost : IDisposable
         if (_disposed) return;
         CheckThread();
         StopWindowOrderMonitoring();
+        EndSystemScreenshot(restore: false);
         CancelPendingCapture();
         EndDropReceptionCore();
         _focusTransitions.EndSession();
@@ -494,6 +498,7 @@ public sealed partial class OverlayHost : IDisposable
 
     private void RebuildMonitorsCore()
     {
+        EndSystemScreenshot(restore: false);
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         var available = OverlayMonitorSelection.Select(_monitorProvider(), OverlayMonitorScope.AllScreens);
         var monitors = OverlayMonitorSelection.Select(available, Scope, SelectedMonitorDevice);
@@ -558,6 +563,7 @@ public sealed partial class OverlayHost : IDisposable
         // A failed attempt leaves the old visible/input windows and editing lease intact.
         _availableMonitors = available;
         foreach (var pair in previousWindows) DestroyMonitorPair(pair);
+        TryBeginSystemScreenshot();
         if (IsEditing && _nativeDialogDepth==0 && !preserveToolFocus && !ActivateInputAtCursor()) EndEditingAfterFocusLoss();
     }
 
@@ -633,6 +639,12 @@ public sealed partial class OverlayHost : IDisposable
         // Our native modal owns the input handoff. A changed foreground here does
         // not cancel the user's editing intent; explicit ExitEditing still does.
         if(_nativeDialogDepth!=0)return;
+        TryBeginSystemScreenshot(releaseInput: false);
+        CompleteEditingFocusLoss();
+    }
+
+    private void CompleteEditingFocusLoss()
+    {
         ExitEditing(restorePreviousForeground: false);
         ForegroundLossVersion++;
         EditingFocusLost?.Invoke();
@@ -709,6 +721,7 @@ public sealed partial class OverlayHost : IDisposable
         }
         if (state.Kind == WindowKind.Control)
         {
+            if (HandleSystemScreenshotMessage(message, wParam)) return 0;
             if (HandleWindowOrderMessage(message, wParam)) return 0;
             if (HandleKeyboardControlMessage(message, wParam)) return 0;
             if (message == WmValidateEditingFocus)
@@ -827,12 +840,12 @@ public sealed partial class OverlayHost : IDisposable
         return DefWindowProcW(state.Handle, message, wParam, lParam);
     }
 
-    private WindowState CreateNativeWindow(WindowKind kind, MonitorInfo? monitor, PixelBounds bounds, uint extendedStyle)
+    private WindowState CreateNativeWindow(WindowKind kind, MonitorInfo? monitor, PixelBounds bounds, uint extendedStyle, bool ordinaryDesktop = false)
     {
         var state = new WindowState(this, kind, monitor);
         var reference = GCHandle.Alloc(state);
         var title=kind == WindowKind.Control ? "FloatCanvas Control" : $"FloatCanvas {kind}";
-        var hwnd = _systemInput is not null && kind!=WindowKind.Control
+        var hwnd = _systemInput is not null && kind!=WindowKind.Control && !ordinaryDesktop
             ?SystemOverlayInput.CreateWindow(extendedStyle,ClassName,title,WsPopup,bounds.Left,bounds.Top,bounds.Width,bounds.Height,GCHandle.ToIntPtr(reference))
             :CreateWindowExW(extendedStyle,ClassName,title,WsPopup,bounds.Left,bounds.Top,bounds.Width,bounds.Height,0,0,GetModuleHandleW(null),GCHandle.ToIntPtr(reference));
         if (hwnd == 0)

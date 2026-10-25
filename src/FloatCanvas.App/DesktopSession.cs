@@ -147,6 +147,8 @@ internal sealed partial class DesktopSession : IDisposable
             ShowError(error.Message);
         };
         _host.Draw += Draw;
+        _host.CaptureToolVisuals = CaptureScreenshotTools;
+        _host.SystemScreenshotFinished += RestoreScreenshotTools;
         _host.Pointer += pointer=>
         {
             if(_overlayWindows is not null && pointer.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)

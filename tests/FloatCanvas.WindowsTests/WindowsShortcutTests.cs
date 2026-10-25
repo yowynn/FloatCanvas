@@ -39,6 +39,14 @@ internal static class WindowsShortcutTests
         check(Key(held, 0x58) && !Key(held, 0x5B) && Key(held, 0x58, true) && held.IsActive,
             "A key swallowed before Windows retains its swallowed release rather than leaking a global keyup");
         var desktop = New();
+        foreach (uint win in new uint[] { 0x5B, 0x5C })
+        {
+            var capture = New();
+            check(!Key(capture, win) && !Key(capture, 0xA0) && !Key(capture, 0x53) &&
+                !Key(capture, 0x53, true) && !Key(capture, 0xA0, true) && !Key(capture, win, true) &&
+                capture.IsActive && !capture.TryDequeue(out _),
+                "Win+Shift+S passes every edge to Windows without private screenshot commands: " + win);
+        }
         check(!Key(desktop, 0x5B) && !Key(desktop, 0x44) && desktop.IsActive,
             "A fresh Win+D chord is passed to the Shell without prematurely ending on Win down");
         desktop.End(KeyboardLeaseEndReason.ForegroundLost, 120);

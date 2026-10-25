@@ -28,6 +28,8 @@ Automatic rechecks current interfaces on each launch. Historical exits, unwritab
 
 FloatCanvas does not terminate its own process for slow drawing, an unresponsive interface or an input-release failure. Windows and the user handle waiting for or closing an unresponsive application. In automatic enhancement, `Ctrl+Alt+Shift+F12` requests normal input release; a busy interface processes that request when it resumes, without forcibly closing FloatCanvas.
 
+Opening Windows screen clipping leaves editing while preserving the picture of tools above the canvas. The system capture interface can cover annotations, and FloatCanvas releases editing input during capture. The live canvas returns afterward; click the floating launcher or use the editing shortcut to edit again.
+
 To bypass enhancement, exit FloatCanvas and run `FloatCanvas.exe --desktop-mode`. This overrides the saved choice and lets you open Settings after forced enhancement fails. The legacy `--retry-fullscreen` option temporarily selects automatic detection. These options cannot be combined and do not change the saved mode or canvas data. Native crashes or hangs cannot be guaranteed to recover in place; unsaved content may be available in recovery history. Interfaces are initialized according to actual availability; validation on one system does not establish compatibility with every Windows version or fullscreen presentation path.
 
 1. Choose **Start drawing** on the welcome screen, or press `` Ctrl+` `` to enter edit mode.

@@ -52,7 +52,7 @@ public sealed partial class OverlayHost
 
     private void RequestWindowOrderCheck()
     {
-        if (_windowOrderStopping || _disposed || !IsVisible) return;
+        if (_windowOrderStopping || _disposed || !IsVisible && _systemInput is null) return;
         _windowOrderFollowup = true;
         if (_windowOrderPosted) return;
         _windowOrderPosted = PostMessageW(ControlHandle, WindowOrderMessage, 0, 0);
@@ -64,14 +64,14 @@ public sealed partial class OverlayHost
         {
             _windowOrderPosted = false;
             if (!_windowOrderStopping && !_disposed && !_captureActive && !_windowOrderRebuilding &&
-                IsVisible && !_windowOrderTimerArmed)
+                (IsVisible || _systemInput is not null) && !_windowOrderTimerArmed)
                 _windowOrderTimerArmed = SetTimer(ControlHandle, WindowOrderTimer, 50, 0) != 0;
             return true;
         }
         if (message != 0x113 || wParam != WindowOrderTimer) return false;
         KillTimer(ControlHandle, WindowOrderTimer);
         _windowOrderTimerArmed = false;
-        if (_windowOrderStopping || _disposed || _captureActive || _windowOrderRebuilding || !IsVisible) return true;
+        if (_windowOrderStopping || _disposed || _captureActive || _windowOrderRebuilding) return true;
         RepairWindowOrder();
         // A foreground/show notification may precede the final Shell/owner transition.
         // This is one bounded follow-up per signal batch, never a periodic topmost heartbeat.
@@ -85,7 +85,9 @@ public sealed partial class OverlayHost
 
     private void RepairWindowOrder()
     {
-        if (_windowOrderRepairing || _captureActive || _windowOrderRebuilding || !IsVisible) return;
+        if (_windowOrderRepairing || _captureActive || _windowOrderRebuilding) return;
+        if (TryBeginSystemScreenshot()) return;
+        if (!IsVisible) return;
         using var dpi = new ThreadDpiAwarenessScope(Capabilities);
         var rows = ReadWindowOrder();
         if (rows is null) return; // A partial chain cannot establish the actual ordering.
