@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- 修复使用增强输入进入编辑时因残留按键状态而无限等待的问题：仍检测到按键按下超过 2 秒时取消本次进入，显示具体按键及重试提示，保留当前工程与撤销记录；等待释放和输入接管确认分别计时。
+- Fix indefinite enhanced-input editing-entry waits caused by residual pressed-key state. Cancel an entry that still detects held keys after two seconds, show the blocking keys and retry instructions, and preserve the current project and undo history. Key release and input acknowledgement use separate time budgets.
+- 普通模式进入编辑时，历史按键记录不再覆盖当前按键快照；已放行按键的重复和释放仍完整放行，避免旧状态粘连及吞掉全局松键。
+- On ordinary-mode entry, historical key observations no longer override the current keyboard snapshot. Preserve the complete repeat/release stream of passed keys to avoid stale local state and swallowed global releases.
+
 - 修复半透明工程在透视中心平移和四角调整时的长时间迟滞；中心移动保留原投影与格长，透视笔迹保留完整边缘覆盖，局部缓冲、合成区域和笔迹几何复用减少重复绘制成本。
 - Fix long stalls when translating or adjusting translucent perspective canvases. Preserve the original projection and grid spacing during translation, retain complete stroke coverage, and reuse bounded opacity buffers, ink regions and stroke geometry.
 

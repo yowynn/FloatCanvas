@@ -53,6 +53,8 @@ Open pinned panels return on the next editing session. Manually closing tool opt
 
 When entering editing from another application, FloatCanvas waits for held keyboard keys and mouse buttons to be released before requesting input and showing the toolbar, avoiding residual pressed states in the application underneath. If the floating logo is enabled, it stays visible while waiting and hides when the toolbar appears.
 
+With enhanced input, if keys are still reported as pressed after two seconds, that entry is cancelled while the current project and undo history are preserved. A tray notification and the floating logo's tooltip list the blocking keys. Press and release those keys, then click the logo or use the editing shortcut to retry. The hint clears after editing starts successfully. FloatCanvas does not synthesize releases to other applications or change the overlay mode for this condition.
+
 Text is edited directly on the canvas. Changing windows, layers or tools, or entering pass-through, commits it to the canvas. `Esc` cancels the current text edit.
 
 | Shortcut | Action |

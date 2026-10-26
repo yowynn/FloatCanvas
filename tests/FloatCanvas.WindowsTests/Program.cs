@@ -33,6 +33,10 @@ try
     if (args.Contains("--preview-publication-only")) { PreviewRasterPublicationTests.Run(Check); Console.WriteLine($"PASS {checks} preview publication checks."); return 0; }
     if (args.Contains("--dirty-output-performance")) { DirtyOutputRenderingTests.Performance(); return 0; }
     if (args.Contains("--dirty-output-only")) { DirtyOutputRenderingTests.Run(Check); Console.WriteLine($"PASS {checks} dirty output checks."); return 0; }
+    KeyboardPassedStateTests.Run(Check);
+    if (args.Contains("--keyboard-passed-state-only")) { Console.WriteLine($"PASS {checks} passed keyboard state checks."); return 0; }
+    SystemInputEntryTimingTests.Run(Check);
+    if (args.Contains("--system-input-entry-timing-only")) { Console.WriteLine($"PASS {checks} system input entry timing checks."); return 0; }
     RetryableCapabilityProbeTests.Run(Check);
     if (args.Contains("--capture-retry-only")) { Console.WriteLine($"PASS {checks} capture retry checks."); return 0; }
     if (args.Contains("--hidden-canvas-refresh-only"))

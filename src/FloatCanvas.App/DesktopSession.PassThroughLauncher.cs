@@ -1,11 +1,59 @@
 using System.Windows;
 using FloatCanvas.Windows;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
 internal sealed partial class DesktopSession
 {
     private PassThroughLauncherWindow? _passThroughLauncher;
+    private string? _systemInputEntryHint;
+
+    private void ShowSystemInputEntryBlocked(IReadOnlyList<uint> keys)
+    {
+        // The native pending request has already been cancelled. Hide editing UI
+        // without switching documents or taking focus from the external window.
+        _overlayWindows?.ClosePopups();
+        _windowCoordinator?.SuspendEditingWindows();
+        ClearProjectionHover(); EndCanvasCalibration();
+        CancelSnapshotCapture("EntryBlocked", userInitiated: false);
+        CloseImageDrop(); _editor.Cancel(); EndEyedropper(restore: false);
+        _toolbar.Hide(); _inspector?.Hide(); _layers?.Hide(); _stampWindow?.Hide(); CloseToolOptions();
+
+        string names = FormatSystemInputEntryBlockers(keys);
+        _systemInputEntryHint = names.Length == 0 ? L.Get("Input.EntryRecovery.Unknown") : L.Format("Input.EntryRecovery.Blocked", names);
+        _diagnostics.Write("Input.EntryBlocked", new { BlockerCount = keys.Distinct().Count() });
+        UpdateStatus(_systemInputEntryHint);
+        RefreshPassThroughLauncher(); RequestRender();
+        _tray.ShowBalloonTip(6000, L.Get("Input.EntryRecovery.Title"), _systemInputEntryHint, System.Windows.Forms.ToolTipIcon.Info);
+    }
+
+    private void ClearSystemInputEntryHint()
+    {
+        _systemInputEntryHint = null;
+        _passThroughLauncher?.SetEntryHint(null);
+    }
+
+    internal static string FormatSystemInputEntryBlockers(IReadOnlyList<uint> keys)
+    {
+        uint Normalize(uint key) => key switch
+        {
+            0xA0 or 0xA1 => 0x10, 0xA2 or 0xA3 => 0x11, 0xA4 or 0xA5 => 0x12,
+            0x5C => 0x5B, _ => key
+        };
+        string Name(uint key) => key switch
+        {
+            0x01 => L.Get("Input.EntryRecovery.MouseLeft"), 0x02 => L.Get("Input.EntryRecovery.MouseRight"),
+            0x04 => L.Get("Input.EntryRecovery.MouseMiddle"), 0x05 => L.Get("Input.EntryRecovery.MouseX1"),
+            0x06 => L.Get("Input.EntryRecovery.MouseX2"), 0x10 => L.Get("Input.EntryRecovery.Shift"),
+            0x11 => L.Get("Input.EntryRecovery.Control"), 0x12 => L.Get("Input.EntryRecovery.Alt"),
+            0x5B => L.Get("Input.EntryRecovery.Windows"), _ => HotkeyDisplay.KeyName(key)
+        };
+        var names = keys.Select(Normalize).Distinct().Select(Name).ToArray();
+        var shown = names.Take(8);
+        if (names.Length > 8) shown = shown.Append(L.Format("Input.EntryRecovery.More", names.Length - 8));
+        return string.Join(L.Get("Input.EntryRecovery.Separator"), shown);
+    }
 
     private void ToggleFloatingLogo()
     {
@@ -46,6 +94,7 @@ internal sealed partial class DesktopSession
         var origin = SessionWindowLayout.ToolbarOrigin(target, PassThroughLauncherWindow.ArtworkSize, PassThroughLauncherWindow.ArtworkSize,
             _settings.ToolbarX, _settings.ToolbarY);
         _settings.ToolbarX = origin.X; _settings.ToolbarY = origin.Y;
+        _passThroughLauncher.SetEntryHint(_systemInputEntryHint);
         _passThroughLauncher.ShowAt(origin, _host.IsVisible);
     }
 }

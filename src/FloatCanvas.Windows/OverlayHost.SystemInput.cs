@@ -7,11 +7,13 @@ public sealed partial class OverlayHost
 {
     private SystemOverlayInput? _systemInput;
     private const nuint SystemInputTimer=0x4648;
-    private long _systemInputDeadline;
+    private readonly SystemInputEntryTiming _systemInputTiming=new();
     private bool _systemInputReady;
     public bool UsesSystemInput=>_systemInput is not null;
     public nint SystemWindowOwner=>_systemInput?.Owner??0;
     public event Action? SystemInputUnavailable;
+    /// <summary>A bounded key-release wait expired. The pending request is cancelled before this notification.</summary>
+    public event Action<IReadOnlyList<uint>>? SystemInputEntryBlocked;
     /// <summary>Use in an isolated startup probe. Never requests input or displays a window.</summary>
     public static void ProbeSystemInput() { using var probe = new SystemOverlayInput(); }
     /// <summary>Enable before constructing tool windows or entering editing. Existing document/rendering routes are retained.</summary>
@@ -78,10 +80,26 @@ public sealed partial class OverlayHost
         GetCursorPos(out var cursor);
         var active=_windows.FirstOrDefault(pair=>pair.Monitor.Bounds.Contains(new(cursor.X,cursor.Y)))??_windows.First();
         _systemInputReady=false;
+        _systemInputTiming.Begin();
         _systemInput!.Begin(foreground,active.Input.Handle);
-        if(_disposed || !IsEditing)return;
-        _systemInputDeadline=Environment.TickCount64+2000;
+        if(_disposed || !IsEditing || _systemInputReady)return;
         if(SetTimer(ControlHandle,SystemInputTimer,100,0)==0)throw new System.ComponentModel.Win32Exception();
+    }
+    private void CheckSystemInputEntry()
+    {
+        if(!IsEditing || _systemInput is not { } system)return;
+        if(system.EntryKeysTimedOut){CancelBlockedSystemInputEntry();return;}
+        if(system.Acknowledged){SystemInputReady();return;}
+        if(_systemInputTiming.TimedOut(system.WaitingForEntryKeys,Environment.TickCount64))
+        {EndEditingAfterFocusLoss();SystemInputUnavailable?.Invoke();}
+    }
+    private void CancelBlockedSystemInputEntry()
+    {
+        if(!IsEditing || _systemInput is not { } system)return;
+        var blockers=system.EntryBlockers;
+        // Key state is not a backend failure and must not change the active document or foreground.
+        ExitEditing(restorePreviousForeground:false);
+        SystemInputEntryBlocked?.Invoke(blockers);
     }
     private void SystemInputReady()
     {

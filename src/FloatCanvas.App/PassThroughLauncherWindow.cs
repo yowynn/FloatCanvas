@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -28,7 +29,7 @@ internal sealed class PassThroughLauncherWindow : Window
         Content = surface;
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
         ResizeMode = ResizeMode.NoResize; ShowInTaskbar = false; ShowActivated = false; Focusable = false; Topmost = true;
-        Launcher.ToolTip = L.Get("Settings.PassThroughLauncherHint");
+        SetEntryHint(null);
         Launcher.MenuRequested += () => EnterEditingRequested?.Invoke();
         Launcher.ToggleVisibilityRequested += () => ToggleVisibilityRequested?.Invoke();
         Launcher.DragRequested += () =>
@@ -69,6 +70,14 @@ internal sealed class PassThroughLauncherWindow : Window
         // Showing on a different-DPI monitor can resize the native window; restore
         // the shared physical origin after WPF has applied that monitor's DPI.
         OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(this).Handle, origin);
+    }
+
+    internal void SetEntryHint(string? message)
+    {
+        string hint = message ?? L.Get("Settings.PassThroughLauncherHint");
+        Launcher.ToolTip = hint;
+        AutomationProperties.SetHelpText(Launcher, hint);
+        AutomationProperties.SetHelpText(this, hint);
     }
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);

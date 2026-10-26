@@ -46,6 +46,7 @@ internal static class Program
             if (args.Contains("--overlay-protection-only")) { OverlayProtectionTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-modes-only")) { OverlayModeTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-protection-runtime")) { OverlayProtectionRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--system-input-entry-recovery-only")) { SystemInputEntryRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--system-overlay-production")) return SystemOverlayProof.Production();
             if (args is ["--system-overlay-watchdog-gate"]) return SystemOverlayWatchdogFixture.Run();
             if (args is ["--system-overlay-watchdog-owner", var watchdogRun]) return SystemOverlayWatchdogFixture.Owner(watchdogRun);

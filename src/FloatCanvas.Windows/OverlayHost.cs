@@ -734,16 +734,15 @@ public sealed partial class OverlayHost : IDisposable
         if(_nativeDialogDepth!=0 && (message==0x8462 || message==0x113 && wParam==SystemInputTimer))return 0;
         if(message==0x8462 && _systemInput is { } system && system.IsCurrentChange(wParam))
         {
-            if(IsEditing && !system.Acknowledged)
+            if(IsEditing && system.EntryKeysTimedOut)CancelBlockedSystemInputEntry();
+            else if(IsEditing && !system.Acknowledged)
             {bool interrupted=system.OwnsInput;EndEditingAfterFocusLoss();if(interrupted)SystemInputUnavailable?.Invoke();}
             else if(IsEditing) SystemInputReady();
             return 0;
         }
         if(message==0x113 && wParam==SystemInputTimer)
         {
-            if(IsEditing && _systemInput is {WaitingForEntryKeys:true})_systemInputDeadline=Environment.TickCount64+2000;
-            if(IsEditing && _systemInput is {Acknowledged:false} && Environment.TickCount64>=_systemInputDeadline)
-            {EndEditingAfterFocusLoss();SystemInputUnavailable?.Invoke();}
+            CheckSystemInputEntry();
             return 0;
         }
         if (state.Kind == WindowKind.Input && message == WmMouseMove) ObservePointerMessage(state, message, wParam, lParam);

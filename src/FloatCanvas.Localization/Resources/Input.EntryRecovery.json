@@ -1,0 +1,16 @@
+{
+  "Input.EntryRecovery.Title": { "zh": "暂未进入编辑模式", "en": "Editing has not started" },
+  "Input.EntryRecovery.Blocked": { "zh": "系统输入状态仍显示以下按键按下：{0}。请按下并释放这些键，然后点击悬浮图标或按编辑快捷键重试。", "en": "The system input state still reports these keys as pressed: {0}. Press and release them, then click the floating icon or use the editing shortcut to retry." },
+  "Input.EntryRecovery.Unknown": { "zh": "等待按键释放已超时，本次未进入编辑。请释放键盘和鼠标按键，然后点击悬浮图标或按编辑快捷键重试。", "en": "Waiting for keys to be released timed out. Editing did not start. Release keyboard and mouse buttons, then click the floating icon or use the editing shortcut to retry." },
+  "Input.EntryRecovery.Separator": { "zh": "、", "en": ", " },
+  "Input.EntryRecovery.More": { "zh": "另有 {0} 个按键", "en": "{0} more keys" },
+  "Input.EntryRecovery.MouseLeft": { "zh": "鼠标左键", "en": "Left mouse button" },
+  "Input.EntryRecovery.MouseRight": { "zh": "鼠标右键", "en": "Right mouse button" },
+  "Input.EntryRecovery.MouseMiddle": { "zh": "鼠标中键", "en": "Middle mouse button" },
+  "Input.EntryRecovery.MouseX1": { "zh": "鼠标侧键 1", "en": "Mouse button 4" },
+  "Input.EntryRecovery.MouseX2": { "zh": "鼠标侧键 2", "en": "Mouse button 5" },
+  "Input.EntryRecovery.Control": { "zh": "Ctrl", "en": "Ctrl" },
+  "Input.EntryRecovery.Shift": { "zh": "Shift", "en": "Shift" },
+  "Input.EntryRecovery.Alt": { "zh": "Alt", "en": "Alt" },
+  "Input.EntryRecovery.Windows": { "zh": "Win", "en": "Win" }
+}

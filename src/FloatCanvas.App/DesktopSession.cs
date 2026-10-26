@@ -182,7 +182,7 @@ internal sealed partial class DesktopSession : IDisposable
         InitializeCanvasTool();
         _windowLayout.BindRoot(_toolbar);
         RefreshHotkeyHints(_passThroughButton, null, _settings.Toggle, _settings.Hide);
-        _host.InputActivated += ()=>{if(_host.UsesSystemInput)ShowEditingWindows();RaiseVisibleToolWindows();};
+        _host.InputActivated += ()=>{ClearSystemInputEntryHint();if(_host.UsesSystemInput)ShowEditingWindows();RaiseVisibleToolWindows();};
         _host.EditingFocusLost += () =>
         {
             _overlayWindows?.ClosePopups();
@@ -211,10 +211,11 @@ internal sealed partial class DesktopSession : IDisposable
         };
         _host.SystemInputUnavailable+=()=>
         {
-            if (_backendProtection is not null) { RequestDesktopFallback("System input acquisition was interrupted or timed out."); return; }
+            if (_backendProtection?.AllowsAutomaticFallback == true) { RequestDesktopFallback("System input acquisition was interrupted or timed out."); return; }
             var message=L.Get("Desktop.InputInterrupted");UpdateStatus(message);
             _tray.ShowBalloonTip(4000,L.Get("Desktop.InputReleasedTitle"),message,Forms.ToolTipIcon.Info);
         };
+        _host.SystemInputEntryBlocked += ShowSystemInputEntryBlocked;
         var menu = new Forms.ContextMenuStrip { MinimumSize = new System.Drawing.Size(340, 0) };
         menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.ToggleEditing"), CommandGlyphs.EditObjects, (_, _) =>
             _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, ToggleEditing)));

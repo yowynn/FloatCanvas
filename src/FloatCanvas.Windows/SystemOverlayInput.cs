@@ -12,6 +12,25 @@ internal sealed class SystemOverlayInput : IDisposable
     internal bool Requested=>Status.Requested!=0;
     internal bool Acknowledged=>Status.Acknowledged!=0;
     internal bool WaitingForEntryKeys=>Status.Waiting!=0;
+    internal bool EntryKeysTimedOut
+    {
+        get
+        {
+            if(Status.HResult!=unchecked((int)0x800705B4))return false;
+            int result=FcSystemGetEntryBlockers(native,new byte[32],32);Check(result);
+            return result==0;
+        }
+    }
+    internal IReadOnlyList<uint> EntryBlockers
+    {
+        get
+        {
+            var mask=new byte[32];Check(FcSystemGetEntryBlockers(native,mask,(uint)mask.Length));
+            var keys=new List<uint>();
+            for(uint key=1;key<256;key++)if((mask[key/8]&(1<<(int)(key%8)))!=0)keys.Add(key);
+            return keys;
+        }
+    }
     private InputStatus Status { get {Check(FcSystemGetStatus(native,out var status));return status;} }
     internal SystemOverlayInput()
     {Check(FcSystemCreate(-32000,-32000,1,1,out native,out var owner));Owner=owner;}
@@ -58,6 +77,7 @@ internal sealed class SystemOverlayInput : IDisposable
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemBegin(nint host,nint foreground);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemEnd(nint host);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemGetStatus(nint host,out InputStatus status);
+    [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemGetEntryBlockers(nint host,[Out] byte[] blockers,uint length);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern void FcSystemDestroy(nint host);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true,CharSet=CharSet.Unicode,SetLastError=true)]
     private static extern nint FcSystemCreateHostedWindow(uint extended,string name,string title,uint style,int x,int y,int width,int height,nint parameter);

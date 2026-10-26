@@ -14,6 +14,7 @@ namespace {
 constexpr UINT AckMessage = WM_APP + 0x461;
 constexpr UINT ChangedMessage = WM_APP + 0x462;
 constexpr UINT_PTR EntryKeysTimer = 0x4643;
+constexpr ULONGLONG EntryKeysTimeoutMs = 2000;
 // Observed WindowServer::ConfigureInputDelegationByProcess pair on build 26300.
 // The mode's individual bit meanings are not assumed here.
 constexpr UINT AcquireMode = 0x2e, ReleaseMode = 0x21;
@@ -67,6 +68,9 @@ struct Host {
     Ack* deferredAck{};
     HMODULE textServices{};
     ITfDocumentMgr* canvasDocument{};
+    ULONGLONG entryDeadline{};
+    BYTE entryBlockers[32]{};
+    bool entryTimedOut{};
 };
 void Destroy(Host* host);
 HRESULT Factory(const wchar_t* name,REFIID iid,void** result) {
@@ -120,7 +124,7 @@ HRESULT Release(Host& host) {
         HRESULT hr=reinterpret_cast<Set>((*reinterpret_cast<void***>(host.delegation))[6])(host.delegation,host.pid,ReleaseMode);
         if(FAILED(hr)) return host.last=hr;
     }
-    KillTimer(host.window,EntryKeysTimer);host.waiting=false;
+    KillTimer(host.window,EntryKeysTimer);host.waiting=false;host.entryDeadline=0;
     host.requested=false; host.acknowledged=false; host.local=false;
     host.safety.Disarm();
     Unsubscribe(host); ++host.generation;
@@ -154,12 +158,17 @@ HRESULT Request(Host& host) {
     if(host.destroyPending)Destroy(&host);
     return hr;
 }
-bool PhysicalKeysDown() {
+bool PhysicalKeysDown(BYTE* blockers=nullptr) {
     // Async queries can return zero across integrity levels. After the entry
     // message has returned, also retain any down state in this thread's queue.
     // Wait for the whole chord and mouse buttons without synthesizing releases.
-    for(int key=1;key<256;++key) if(GetAsyncKeyState(key)<0||GetKeyState(key)<0)return true;
-    return false;
+    if(blockers)ZeroMemory(blockers,32);
+    bool held=false;
+    for(int key=1;key<256;++key) if(GetAsyncKeyState(key)<0||GetKeyState(key)<0) {
+        held=true;
+        if(blockers)blockers[key/8]|=static_cast<BYTE>(1u<<(key%8));
+    }
+    return held;
 }
 HRESULT FocusAndRequest(Host& host) {
     if(!host.enabling) {host.enabling=true;host.cancelBegin=false;}
@@ -177,8 +186,13 @@ HRESULT ContinueEntry(Host& host,HWND foreground,bool keysDown) {
         if(host.receiver)PostMessageW(host.receiver,ChangedMessage,host.generation,FALSE);
         return host.last;
     }
-    if(keysDown)return E_PENDING;
-    KillTimer(host.window,EntryKeysTimer);host.waiting=false;
+    if(keysDown) {
+        if(!host.entryDeadline||GetTickCount64()<host.entryDeadline)return E_PENDING;
+        Release(host);host.last=HRESULT_FROM_WIN32(ERROR_TIMEOUT);host.entryTimedOut=true;
+        if(host.receiver)PostMessageW(host.receiver,ChangedMessage,host.generation,FALSE);
+        return host.last;
+    }
+    KillTimer(host.window,EntryKeysTimer);host.waiting=false;host.entryDeadline=0;
     return FocusAndRequest(host);
 }
 LRESULT CALLBACK Procedure(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
@@ -194,7 +208,8 @@ LRESULT CALLBACK Procedure(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
         return 0;
     }
     if(message==WM_TIMER&&wparam==EntryKeysTimer) {
-        ContinueEntry(*host,GetForegroundWindow(),PhysicalKeysDown());return 0;
+        if(host->waiting)ContinueEntry(*host,GetForegroundWindow(),PhysicalKeysDown(host->entryBlockers));
+        return 0;
     }
     if(message==AckMessage) {
         auto ack=reinterpret_cast<Ack*>(lparam);
@@ -295,6 +310,7 @@ static HRESULT Begin(Host* host,HWND target,HWND foreground) {
     DWORD pid{}; GetWindowThreadProcessId(target,&pid);
     if(!pid||target!=foreground) return E_INVALIDARG;
     host->target=target; host->pid=pid; ++host->generation;
+    host->entryDeadline=0;host->entryTimedOut=false;ZeroMemory(host->entryBlockers,sizeof(host->entryBlockers));
     // A tray menu makes its own NotifyIcon window foreground. Input is already
     // ours in that case: use ordinary local focus, never delegate to ourselves.
     if(pid==GetCurrentProcessId()) {
@@ -321,7 +337,7 @@ static HRESULT Begin(Host* host,HWND target,HWND foreground) {
     // Always return through the message pump before the first external acquire.
     if(!host->cancelBegin) {
         host->enabling=false;delete host->deferredAck;host->deferredAck=nullptr;
-        host->waiting=true;host->last=E_PENDING;
+        host->waiting=true;host->last=E_PENDING;host->entryDeadline=GetTickCount64()+EntryKeysTimeoutMs;
         if(SetTimer(host->window,EntryKeysTimer,10,nullptr))return S_OK;
         HRESULT error=HRESULT_FROM_WIN32(GetLastError());Release(*host);return host->last=error;
     }
@@ -335,6 +351,11 @@ EXPORT HRESULT WINAPI FcSystemGetStatus(Host* host,FcSystemStatus* status) {
     if(!host||!status) return E_POINTER;
     if(GetCurrentThreadId()!=host->thread) return RPC_E_WRONG_THREAD;
     *status={host->generation,host->pid,host->waiting||host->requested||host->enabling,host->acknowledged,host->waiting,host->last}; return S_OK;
+}
+EXPORT HRESULT WINAPI FcSystemGetEntryBlockers(Host* host,BYTE* blockers,UINT length) {
+    if(!host||!blockers||length!=sizeof(host->entryBlockers))return E_INVALIDARG;
+    if(GetCurrentThreadId()!=host->thread)return RPC_E_WRONG_THREAD;
+    CopyMemory(blockers,host->entryBlockers,sizeof(host->entryBlockers));return host->entryTimedOut?S_OK:S_FALSE;
 }
 EXPORT void WINAPI FcSystemDestroy(Host* host) { if(host&&GetCurrentThreadId()==host->thread) Destroy(host); }
 EXPORT HWND WINAPI FcSystemCreateHostedWindow(DWORD extended,const wchar_t* name,const wchar_t* title,

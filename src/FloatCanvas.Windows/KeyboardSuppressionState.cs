@@ -14,7 +14,7 @@ internal sealed class KeyboardSuppressionState
     private readonly byte[] local = new byte[256];
     private readonly bool[] physical = new bool[256], inherited = new bool[256], suppressed = new bool[256];
     private readonly bool[] visibilityCommand = new bool[256];
-    private readonly bool[] globalKnown = new bool[256], globalDown = new bool[256];
+    private readonly bool[] passedDownOwnership = new bool[256];
     private readonly bool[] claimedDown = new bool[256];
     private readonly long[] tails = new long[256];
     private readonly uint[] scans = new uint[256], flags = new uint[256];
@@ -65,10 +65,13 @@ internal sealed class KeyboardSuppressionState
         ExpireTails(now);
         for (int i = 1; i < 255; i++)
         {
-            // A just-passed LL down may not yet be visible through GetAsyncKeyState.
-            // Our observed passed stream wins over that still-pending native snapshot.
-            if (globalKnown[i]) local[i] = (byte)((local[i] & 0x7F) | (globalDown[i] ? 0x80 : 0));
-            inherited[i] = physical[i] = (local[i] & 0x80) != 0;
+            // The current async snapshot owns local state. A passed down may still be
+            // pending anywhere in the hook chain, so only its stream ownership survives
+            // until an observed up; it must not force a stale local modifier down.
+            // A missed historical up conservatively passes the next complete stream,
+            // rather than risking swallowing an outstanding global release.
+            physical[i] = (local[i] & 0x80) != 0;
+            inherited[i] = physical[i] || passedDownOwnership[i];
             if (tails[i] != 0) { inherited[i] = false; physical[i] = true; local[i] &= 0x7F; }
         }
         NormalizeModifiers();
@@ -227,7 +230,7 @@ internal sealed class KeyboardSuppressionState
         local[0x11] = (byte)((local[0x11] & 0x7F) | ((local[0xA2] | local[0xA3]) & 0x80));
         local[0x12] = (byte)((local[0x12] & 0x7F) | ((local[0xA4] | local[0xA5]) & 0x80));
     }
-    private void TrackPassed(int key, bool up) { globalKnown[key] = true; globalDown[key] = !up; }
+    private void TrackPassed(int key, bool up) { passedDownOwnership[key] = !up; }
     internal bool TryGetInputMethodSwitch(long expectedLease, long now, out nint origin)
     {
         origin = inputMethodOrigin;
