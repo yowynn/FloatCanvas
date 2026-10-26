@@ -40,8 +40,55 @@ internal static class CanvasCalibrationTests
         check("edge drag moves both endpoints", moved[0].DistanceTo(initial[0] + new PointD(0, 6)) < 1e-8 && moved[1].DistanceTo(initial[1] + new PointD(0, 6)) < 1e-8 && moved[2] == initial[2]);
         controller.End();
         RunCenterHandle(check);
+        RunTranslationInvariant(check);
         RunBoundaryDragging(check);
         CanvasGridLockCalibrationTests.Run(check);
+    }
+
+    private static void RunTranslationInvariant(Action<string, bool> check)
+    {
+        foreach (bool perspective in new[] { false, true })
+        {
+            var document = new SceneDocument { Viewport = new(0, 0, 3840, 2160) };
+            var projection = CanvasCalibration.CreateInitial(document.Viewport);
+            projection.Enabled = true;
+            if (perspective)
+            {
+                var quad = projection.Quad.ToArray(); quad[0] += new PointD(140, 90); quad[1] += new PointD(-110, 90);
+                CanvasCalibration.TryCalibrate(projection, quad, document.Viewport, out projection, out _);
+            }
+            projection.LockedGridCellSize = 37.25;
+            document.Canvas.Projection = projection;
+            var before = projection.Clone();
+            var session = new EditorSession(document);
+            var controller = new CanvasCalibrationController(); controller.Begin(session);
+            var center = CanvasGridGeometry.ReferenceCenter(projection);
+            check($"translation {perspective}: center starts", controller.Down(center));
+            foreach (var delta in new[] { new PointD(5.25, 2.5), new(5.25, -576), new(5.25, -512), new(-27.125, 16.75) })
+            {
+                controller.Move(center + delta);
+                var expected = Projective2D.FromAffine(Affine2D.Translation(delta.X, delta.Y)).Compose(before.Matrix);
+                var actual = session.Document.Canvas.Projection;
+                check($"translation {perspective} {delta}: composes the start matrix exactly", actual.Matrix == expected);
+                check($"translation {perspective} {delta}: retains plane/grid calibration", actual.Origin == before.Origin && actual.CellSize == before.CellSize && actual.LockedGridCellSize == before.LockedGridCellSize);
+                check($"translation {perspective} {delta}: moves all corners from the start", actual.Quad.SequenceEqual(before.Quad.Select(p => p + delta)));
+            }
+            var last = session.Document.Canvas.Projection.Clone();
+            controller.Move(new(double.NaN, double.PositiveInfinity));
+            check($"translation {perspective}: nonfinite input preserves last matrix", controller.IsDragConstrained && session.Document.Canvas.Projection.Matrix == last.Matrix);
+            controller.Move(new(1e300, -1e300));
+            check($"translation {perspective}: collapsed extreme corners preserve last matrix", controller.IsDragConstrained && session.Document.Canvas.Projection.Matrix == last.Matrix);
+            controller.Move(center + new PointD(-27.125, 16.75));
+            check($"translation {perspective}: returning to finite input clears constraint", !controller.IsDragConstrained);
+            var final = session.Document.Canvas.Projection.Clone(); controller.Up();
+            check($"translation {perspective}: one undo", session.UndoCount == 1 && !session.IsTransactionActive);
+            session.Undo(); check($"translation {perspective}: exact undo", session.Document.Canvas.Projection.Matrix == before.Matrix);
+            session.Redo(); check($"translation {perspective}: exact redo", session.Document.Canvas.Projection.Matrix == final.Matrix);
+            center = CanvasGridGeometry.ReferenceCenter(session.Document.Canvas.Projection);
+            controller.Down(center); controller.Move(center + new PointD(.25, -.75)); controller.CancelDrag();
+            check($"translation {perspective}: exact cancel", session.Document.Canvas.Projection.Matrix == final.Matrix && session.UndoCount == 1);
+            controller.End();
+        }
     }
 
     private static void RunCenterHandle(Action<string, bool> check)

@@ -32,7 +32,7 @@ internal static class ElementOpacityRenderingTests
             check($"reused compound opacity scratch clears prior pixels frame {frame}", Compare(shared, frame % 3, retained) == 0);
         }
         shared.Elements[0].ProjectivePlacement = new(1, .05, 0, -.03, 1, 0, .0003, .0002, 1);
-        check("perspective opacity retains the reference layer path", Compare(shared) == 0);
+        check("perspective compound opacity keeps reference pixels", Compare(shared) == 0);
         shared.Elements[0].ProjectivePlacement = null;
         retained.CacheByteLimit = 1;
         check("opacity scratch respects a reduced cache limit and keeps reference pixels", Compare(shared, 0, retained) == 0);

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 修复半透明工程在透视中心平移和四角调整时的长时间迟滞；中心移动保留原投影与格长，透视笔迹保留完整边缘覆盖，局部缓冲、合成区域和笔迹几何复用减少重复绘制成本。
+- Fix long stalls when translating or adjusting translucent perspective canvases. Preserve the original projection and grid spacing during translation, retain complete stroke coverage, and reuse bounded opacity buffers, ink regions and stroke geometry.
+
 - 统一数值编辑的框内图标加速拖动、直接输入和底部范围滑轨，显示实际单位；自动值和混合多选也可直接起拖。取消恢复原值，整次手势合并撤销，颜色面板中的 Esc 先取消数值拖动，再关闭面板。
 - Unify numeric editing with accelerated embedded-icon scrubbing, direct input and a common-range rail, including units and automatic or mixed values. Cancellation restores the original values and each gesture commits once; Escape cancels a numeric color edit before dismissing its panel.
 

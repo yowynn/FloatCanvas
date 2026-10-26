@@ -16,6 +16,7 @@ public sealed partial class SceneRenderer : IDisposable
     private readonly SKPaint _paint = new() { IsAntialias = true, StrokeCap = SKStrokeCap.Round, StrokeJoin = SKStrokeJoin.Round };
     private long _clock;
     private bool _disposed;
+    private bool _referenceOpacityAtHorizon;
     private static readonly SKSamplingOptions Linear = new(SKFilterMode.Linear);
     private static readonly SKSamplingOptions Nearest = new(SKFilterMode.Nearest);
     public long CacheByteLimit { get; set; } = 256L * 1024 * 1024;
@@ -94,10 +95,14 @@ public sealed partial class SceneRenderer : IDisposable
         if (space == SceneRenderSpace.PlaneContent && document.Elements.Any(e => e.Visible && ElementGeometry.IsLiveEffect(e.Kind)))
             throw new InvalidOperationException("Live desktop filters require screen composition before being placed back on the plane.");
         _drawingDocument = document; _renderSpace = space; _mapping = CanvasMapping.Create(document);
+        var viewport = document.Viewport;
+        _referenceOpacityAtHorizon = space == SceneRenderSpace.ScreenComposite &&
+            (!_mapping.IsScreenSafe(new(viewport.Left, viewport.Top)) || !_mapping.IsScreenSafe(new(viewport.Right, viewport.Top)) ||
+             !_mapping.IsScreenSafe(new(viewport.Right, viewport.Bottom)) || !_mapping.IsScreenSafe(new(viewport.Left, viewport.Bottom)));
     }
     internal void EndFrame()
     {
-        ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); _drawingDocument = null; _mapping = null;
+        ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); _drawingDocument = null; _mapping = null; _referenceOpacityAtHorizon = false;
     }
     internal void DrawBackground(SKCanvas canvas, SceneDocument document, AssetLibrary assets,
         bool includeBackground = true, bool includeCanvasBackground = true, bool sampling = false)
@@ -162,12 +167,15 @@ public sealed partial class SceneRenderer : IDisposable
         return data.ToArray();
     }
 
-    private void DrawElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets, Projective2D planeToTarget, SceneDocument? document)
+    private void DrawElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets, Projective2D planeToTarget, SceneDocument? document, bool knownHardClip = false)
     {
         if (element.Style.Opacity <= 0) return;
         int saved = canvas.Save();
         try
         {
+            // Our safe-domain clips are hard polygons. Keep that provenance rather than
+            // treating an arbitrary caller-supplied path/AA clip as interchangeable.
+            bool opacityClipSafe = canvas.IsClipRect || knownHardClip;
             var transform = BillboardGeometry.ElementToTarget(element, planeToTarget);
             if (_renderSpace == SceneRenderSpace.ScreenComposite && document is not null)
             {
@@ -179,7 +187,7 @@ public sealed partial class SceneRenderer : IDisposable
                 else
                 {
                     if (!ClipSafePlane(canvas, document)) return;
-                    var localBounds = ElementGeometry.StrokedLocalBounds(element);
+                    var localBounds = DrawLocalBounds(element);
                     if (!transform.TryTransformBounds(localBounds, out _))
                     {
                         DrawClippedSource(canvas, element, assets, transform, mapping);
@@ -189,19 +197,26 @@ public sealed partial class SceneRenderer : IDisposable
             }
             var matrix = ToMatrix(transform);
             canvas.Concat(in matrix);
-            DrawLocalElement(canvas, element, assets);
+            DrawLocalElement(canvas, element, assets, opacityClipSafe);
         }
         finally { canvas.RestoreToCount(saved); }
     }
 
-    private void DrawLocalElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets)
+    private void DrawLocalElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets, bool knownHardClip = false)
     {
         double opacity = Math.Clamp(element.Style.Opacity, 0, 1);
         // Folding opacity into one primitive keeps self-intersections as one draw. Compound
         // objects still need a compositing unit so fill, outline and heads do not darken each other.
-        bool singleDrawOpacity = OptimizeElementOpacity && opacity < 1 && canvas.Context is null && canvas.IsClipRect &&
-            canvas.TotalMatrix.Persp0 == 0 && canvas.TotalMatrix.Persp1 == 0 && IsSingleDrawElement(element);
-        if (OptimizeElementOpacity && opacity < 1 && !singleDrawOpacity && TryDrawRasterOpacity(canvas, element, assets, opacity)) return;
+        var matrix = canvas.TotalMatrix;
+        bool affine = matrix.Persp0 == 0 && matrix.Persp1 == 0 && matrix.Persp2 == 1;
+        bool clipSafe = canvas.IsClipRect || knownHardClip;
+        // At a visible safety boundary, repeated small coverage-rounding differences
+        // can accumulate across many strokes. Keep single primitives on the exact
+        // reference path there; compound objects retain their exact bounded layer.
+        bool optimizeOpacity = OptimizeElementOpacity && !(_referenceOpacityAtHorizon && IsSingleDrawElement(element));
+        bool singleDrawOpacity = optimizeOpacity && opacity < 1 && canvas.Context is null && clipSafe &&
+            IsSingleDrawElement(element) && (affine || element.Kind is not (ElementKind.Freehand or ElementKind.Highlighter) && SupportsProjectiveOpacity(canvas, element));
+        if (optimizeOpacity && opacity < 1 && !singleDrawOpacity && TryDrawRasterOpacity(canvas, element, assets, opacity, clipSafe)) return;
         DrawLocalElementCore(canvas, element, assets, !singleDrawOpacity, singleDrawOpacity ? opacity : 1);
     }
 
@@ -248,9 +263,18 @@ public sealed partial class SceneRenderer : IDisposable
                     using var dash = CreateDash(element.Style);
                     _paint.PathEffect = dash;
                     if (element.Kind == ElementKind.Highlighter) _paint.Color = _paint.Color.WithAlpha((byte)Math.Round(_paint.Color.Alpha * .35));
+                    var strokeMatrix = canvas.TotalMatrix;
+                    var opacityStroke = !includeOpacity && directOpacity == 1 && canvas.Context is null &&
+                        element.Kind is ElementKind.Freehand or ElementKind.Highlighter && element.Style.StrokePattern == StrokePattern.Solid &&
+                        (strokeMatrix.Persp0 != 0 || strokeMatrix.Persp1 != 0) && element.Points.Count > 1
+                        ? geometry.OpacityStroke(_paint, strokeMatrix) : null;
                     if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
                     if (element.Points.Count == 1 && element.Kind is ElementKind.Freehand or ElementKind.Highlighter)
                         canvas.DrawPoint((float)element.Points[0].X, (float)element.Points[0].Y, _paint);
+                    else if (opacityStroke is not null)
+                    {
+                        _paint.Style = SKPaintStyle.Fill; canvas.DrawPath(opacityStroke, _paint); _paint.Style = SKPaintStyle.Stroke;
+                    }
                     else canvas.DrawPath(geometry.StrokePath, _paint);
                     _paint.PathEffect = null;
                     if (ElementGeometry.IsLine(element.Kind))
@@ -341,6 +365,9 @@ public sealed partial class SceneRenderer : IDisposable
         PathBuildCount++;
         return entry;
     }
+
+    private RectD DrawLocalBounds(CanvasElement element) => element.Kind is ElementKind.Freehand or ElementKind.Highlighter
+        ? GetPath(element).StrokedBounds : ElementGeometry.StrokedLocalBounds(element);
 
     private static void AddHead(SKPathBuilder builder, IReadOnlyList<PointD> points, bool closed)
     {
@@ -517,18 +544,34 @@ public sealed partial class SceneRenderer : IDisposable
         private readonly SymbolKind _symbol = element.Symbol;
         private readonly double _arrowHeadSize = element.Style.ArrowHeadSize;
         private readonly bool _patterned = element.Style.StrokePattern != StrokePattern.Solid;
-        private readonly PointD[] _points = element.Points.ToArray();
+        private readonly PointCollection _points = element.Points.Snapshot();
         public SKPath Path { get; } = path;
         public SKPath StrokePath => patternedStroke ?? Path;
+        public RectD StrokedBounds { get; } = ElementGeometry.StrokedLocalBounds(element);
         public SKPath FilledHeads { get; } = filledHeads;
         public SKPath OpenHeads { get; } = openHeads;
         public long Used { get; set; } = used;
+        private SKPath? _opacityStroke;
+        private float _opacityStrokeScale;
+        public SKPath? OpacityStroke(SKPaint paint, SKMatrix matrix)
+        {
+            // Cache only when Skia's stroke-expansion resolution (the maximum
+            // linear-column length) is unchanged. PathEntry owns geometry/width invalidation.
+            float scale = (float)Math.Max(Math.Sqrt((double)matrix.ScaleX * matrix.ScaleX + (double)matrix.SkewY * matrix.SkewY),
+                Math.Sqrt((double)matrix.SkewX * matrix.SkewX + (double)matrix.ScaleY * matrix.ScaleY));
+            if (!float.IsFinite(scale) || scale <= 0) return null;
+            if (_opacityStroke is null || scale != _opacityStrokeScale)
+            {
+                _opacityStroke?.Dispose(); _opacityStroke = paint.GetFillPath(StrokePath, matrix); _opacityStrokeScale = scale;
+            }
+            return _opacityStroke;
+        }
         public bool Matches(CanvasElement e) => _kind == e.Kind && _width == e.Width && _height == e.Height && _strokeWidth == e.Style.StrokeWidth &&
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
             _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
             _patterned == (e.Style.StrokePattern != StrokePattern.Solid) &&
-            e.Points.SequenceEqual(_points);
-        public void Dispose() { Path.Dispose(); patternedStroke?.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
+            e.Points.ContentEquals(_points);
+        public void Dispose() { _opacityStroke?.Dispose(); Path.Dispose(); patternedStroke?.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
     }
     private class ImageEntry : IDisposable
     {

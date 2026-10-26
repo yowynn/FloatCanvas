@@ -178,13 +178,14 @@ public sealed partial class SceneRenderer
 
     private void DrawDepthElement(SKCanvas canvas, SceneDocument document, AssetLibrary assets, DepthEvent entry)
     {
+        bool knownHardClip = canvas.IsClipRect;
         int saved = canvas.Save();
         try
         {
             if (!ClipDepthEvent(canvas, entry.Clip)) return;
             var element = document.Elements[entry.Index];
             if (ElementGeometry.IsLiveEffect(element.Kind)) DrawLivePixelate(canvas, document.Elements, entry.Index, assets);
-            else DrawElement(canvas, element, assets, TransformFor(document), document);
+            else DrawElement(canvas, element, assets, TransformFor(document), document, knownHardClip);
         }
         finally { canvas.RestoreToCount(saved); }
     }

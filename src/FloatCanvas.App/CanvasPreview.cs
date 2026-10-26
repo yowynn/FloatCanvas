@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
@@ -90,7 +91,7 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                 {
                     canvas.Translate((float)snapshot.Context.Origin.X, (float)snapshot.Context.Origin.Y);
                     if (snapshot.Context.Calibration)
-                        renderer.Draw(canvas, document, assets, calibrationReference: true, includeGrid: !snapshot.Context.Placing);
+                        renderer.DrawCalibrationOnClearedRasterTarget(surface, document, assets, !snapshot.Context.Placing);
                     else cache.DrawOnClearedRasterTarget(surface, document, assets, snapshot.Revision, snapshot.Transaction,
                         snapshot.First, snapshot.Last, snapshot.BypassCache, snapshot.SceneIdentity);
                     if (snapshot.PlacementScene is { } placement && snapshot.PlacementClip is { Count: 4 } quad)
@@ -221,6 +222,7 @@ internal sealed class CanvasPreviewPump : IDisposable
     private void Work()
     {
         CanvasPreviewRenderer? renderer = null;
+        bool interactivePolicy = false;
         try
         {
             while (true)
@@ -234,8 +236,14 @@ internal sealed class CanvasPreviewPump : IDisposable
                 }
                 if (snapshot is null) continue;
                 CanvasPreviewFrame? frame = null; Exception? error = null;
+                bool interactive = snapshot.Context.Calibration && !snapshot.Context.Hidden;
                 try
                 {
+                    if (interactive != interactivePolicy)
+                    {
+                        SetInteractiveExecutionSpeed(interactive);
+                        interactivePolicy = interactive;
+                    }
                     frame = renderOverride is null ? (renderer ??= new CanvasPreviewRenderer()).Render(snapshot) : renderOverride(snapshot);
                 }
                 catch (Exception failure) { error = failure; }
@@ -255,11 +263,31 @@ internal sealed class CanvasPreviewPump : IDisposable
         }
         finally
         {
+            if (interactivePolicy) SetInteractiveExecutionSpeed(false);
             try { renderer?.Dispose(); }
             catch (Exception error) { Trace.TraceError("Preview cleanup failed: {0}", error); }
             lock (gate) { stopped = true; wake.Dispose(); }
         }
     }
+
+    // Calibration contributes to the current interaction even though this is a
+    // background thread. Ask Windows for performance while drawing, then restore
+    // its default heuristics. This neither raises priority nor pins a processor.
+    private static void SetInteractiveExecutionSpeed(bool interactive)
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 16299)) return;
+        var policy = new ThreadPowerThrottling { Version = 1, ControlMask = interactive ? 1u : 0u };
+        _ = SetThreadInformation(GetCurrentThread(), 3, ref policy, (uint)Marshal.SizeOf<ThreadPowerThrottling>());
+        // Older systems may reject the optional information class; rendering is unchanged.
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ThreadPowerThrottling { internal uint Version, ControlMask, StateMask; }
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentThread();
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetThreadInformation(IntPtr thread, int informationClass, ref ThreadPowerThrottling policy, uint size);
 
     private void Complete(CanvasPreviewFrame? frame, Exception? error)
     {

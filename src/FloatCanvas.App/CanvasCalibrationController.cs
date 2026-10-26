@@ -12,6 +12,7 @@ internal sealed class CanvasCalibrationController
     private SceneDocument? dragDocument;
     private PointD start;
     private PointD[] initial = [];
+    private CanvasProjectionSettings? initialProjection;
     private int corner = -1, edge = -1;
     private long transactionId;
     private readonly List<PointD> placed=[];
@@ -64,7 +65,8 @@ internal sealed class CanvasCalibrationController
             }
             if (edge < 0 && !Inside(point, quad)) return false;
         }
-        start = point; initial = [.. quad]; dragDocument = session.Document; IsDragConstrained = false;
+        start = point; initial = [.. quad]; initialProjection = session.Document.Canvas.Projection.Clone();
+        dragDocument = session.Document; IsDragConstrained = false;
         session.BeginTransaction(L.Get("Canvas.CalibrationHistory")); transactionId = session.TransactionId;
         Changed?.Invoke(); return true;
     }
@@ -102,10 +104,27 @@ internal sealed class CanvasCalibrationController
         else for (int i = 0; i < 4; i++) candidate[i] += delta;
         var current = session!.Document.Canvas.Projection;
         bool wasConstrained = IsDragConstrained;
-        IsDragConstrained = !CanvasCalibration.TryCalibrate(current, candidate, session.Document.Viewport, out var settings, out var error);
+        bool translating = corner < 0 && edge < 0;
+        CanvasProjectionSettings settings;
+        string? error;
+        if (translating)
+        {
+            settings = initialProjection!.Clone(); settings.Quad = [.. candidate];
+            settings.Matrix = Projective2D.FromAffine(Affine2D.Translation(delta.X, delta.Y)).Compose(initialProjection.Matrix);
+            bool valid = candidate.All(p => double.IsFinite(p.X) && double.IsFinite(p.Y)) && CanvasCalibration.IsValidProjection(settings.Matrix);
+            for (int i = 0; valid && i < 4; i++)
+            {
+                var a = candidate[(i + 1) % 4] - candidate[i]; var b = candidate[(i + 2) % 4] - candidate[(i + 1) % 4];
+                double cross = a.X * b.Y - a.Y * b.X;
+                valid = double.IsFinite(cross) && cross >= 16;
+            }
+            IsDragConstrained = !valid; error = valid ? null : "Canvas.UnstableProjection";
+        }
+        else IsDragConstrained = !CanvasCalibration.TryCalibrate(current, candidate, session.Document.Viewport, out settings, out error);
         if (IsDragConstrained)
         {
             if (!wasConstrained) Error?.Invoke(error!);
+            if (translating) { if (!wasConstrained) Changed?.Invoke(); return false; }
             // Keep following coarse pointer samples up to the safe boundary instead of dropping the entire move.
             // Keep the four-point geometry valid; the viewport may contain the horizon.
             var previous = current.Quad;
@@ -163,7 +182,7 @@ internal sealed class CanvasCalibrationController
     }
     private void CommitDrag()
     {
-        dragDocument = null; IsDragConstrained = false; IsAwaitingResolution = false; resolutionRequested = false; AffectedLayerIds = [];
+        dragDocument = null; initialProjection = null; IsDragConstrained = false; IsAwaitingResolution = false; resolutionRequested = false; AffectedLayerIds = [];
         if (placementGesture) { IsPlacing = false; placed.Clear(); hover = null; placementGesture = false; }
         session!.Commit(); Changed?.Invoke();
     }
@@ -171,7 +190,7 @@ internal sealed class CanvasCalibrationController
     {
         if (dragDocument is null) return;
         bool owns = session is not null && ReferenceEquals(session.Document, dragDocument) && session.IsTransactionActive && session.TransactionId == transactionId;
-        dragDocument = null; IsDragConstrained = false; IsAwaitingResolution = false; resolutionRequested = false; AffectedLayerIds = [];
+        dragDocument = null; initialProjection = null; IsDragConstrained = false; IsAwaitingResolution = false; resolutionRequested = false; AffectedLayerIds = [];
         if (placementGesture) { IsPlacing = true; placementGesture = false; hover = null; }
         if (owns) session!.Cancel();
         Changed?.Invoke();
@@ -199,7 +218,7 @@ internal sealed class CanvasCalibrationController
     {
         if (dragDocument is null) return false;
         if (session is not null && ReferenceEquals(session.Document, dragDocument) && session.IsTransactionActive && session.TransactionId == transactionId) return true;
-        dragDocument = null; IsDragConstrained = false; IsAwaitingResolution = false; resolutionRequested = false; AffectedLayerIds = []; placementGesture = false;
+        dragDocument = null; initialProjection = null; IsDragConstrained = false; IsAwaitingResolution = false; resolutionRequested = false; AffectedLayerIds = []; placementGesture = false;
         Changed?.Invoke(); return false;
     }
     private static double SegmentDistance(PointD p, PointD a, PointD b)

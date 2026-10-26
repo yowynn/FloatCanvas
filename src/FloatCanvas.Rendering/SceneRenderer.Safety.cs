@@ -33,6 +33,7 @@ public sealed partial class SceneRenderer
     private bool ClipSafePlane(SKCanvas canvas, SceneDocument document)
     {
         if (_renderSpace == SceneRenderSpace.PlaneContent) return true;
+        if (ReferenceEquals(document, _drawingDocument) && _mapping is not null && !_referenceOpacityAtHorizon) return true;
         var mapping = MappingFor(document);
         var bounds = document.Viewport;
         if (mapping.IsScreenSafe(new(bounds.Left, bounds.Top)) && mapping.IsScreenSafe(new(bounds.Right, bounds.Top)) &&
