@@ -21,6 +21,7 @@ internal static class OverlayTransientControls
     private static void TextMenu(object sender,ContextMenuEventArgs args)
     {
         if(OverlayWindowScope.Current is null || sender is not FrameworkElement element || element.ContextMenu is not null)return;
+        if (Window.GetWindow(element) is { } owner && OverlayWindowScope.IsRegularWindow(owner)) return;
         var menu=new OverlayContextMenu {PlacementTarget=element,Placement=System.Windows.Controls.Primitives.PlacementMode.MousePoint};
         foreach(var command in new RoutedUICommand[]{ApplicationCommands.Undo,ApplicationCommands.Cut,ApplicationCommands.Copy,ApplicationCommands.Paste,ApplicationCommands.SelectAll})
             menu.Items.Add(new MenuItem {Header=command.Text,Command=command,CommandTarget=element});
@@ -29,6 +30,7 @@ internal static class OverlayTransientControls
     private static void Hint(object sender,ToolTipEventArgs args)
     {
         if(OverlayWindowScope.Current is null || sender is not FrameworkElement {ToolTip: { } value} element)return;
+        if (Window.GetWindow(element) is { } owner && OverlayWindowScope.IsRegularWindow(owner)) return;
         args.Handled=true;hint?.Close();
         var toolTip=value as ToolTip??new ToolTip {Content=value};
         var timer=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(ToolTipService.GetShowDuration(element))};

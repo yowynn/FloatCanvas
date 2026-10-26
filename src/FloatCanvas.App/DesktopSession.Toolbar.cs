@@ -177,9 +177,31 @@ internal sealed partial class DesktopSession
             UseLayoutRounding = true, SnapsToDevicePixels = true };
         OverlayWindowScope.Prepare(window);
         _toolbarMenu = CreateLauncherMenu();
+        _toolbarMenu.TargetPressToggles = true;
+        // A WPF menu captures the mouse. Inspect coordinates before outside-click
+        // dismissal so the launcher press cannot become a second delayed open.
+        void LauncherMenuInput(object sender, PreProcessInputEventArgs args)
+        {
+            if (!_toolbarMenu.IsOpen || args.StagingItem.Input is not MouseButtonEventArgs { ButtonState: MouseButtonState.Pressed } mouse) return;
+            var point = mouse.GetPosition(_toolbarLauncher);
+            if (!new Rect(_toolbarLauncher.RenderSize).Contains(point)) return;
+            if (mouse.ChangedButton == MouseButton.Left)
+            {
+                _toolbarLauncher.DismissMenuPress(point);
+                mouse.Handled = true;
+            }
+            else if (mouse.ChangedButton == MouseButton.Right) mouse.Handled = true;
+        }
+        _toolbarMenu.Opened += (_, _) => InputManager.Current.PreProcessInput += LauncherMenuInput;
+        _toolbarMenu.Closed += (_, _) => InputManager.Current.PreProcessInput -= LauncherMenuInput;
         _toolbarMenu.PlacementTarget = _toolbarLauncher;
         _toolbarMenu.Placement = Primitives.PlacementMode.Custom;
         _toolbarMenu.CustomPopupPlacementCallback = LauncherMenuPlacements;
+        _toolbarLauncher.CloseOpenMenu = () =>
+        {
+            if (!_toolbarMenu.IsOpen) return false;
+            _toolbarMenu.IsOpen = false; return true;
+        };
         _toolbarMenu.Opened += (_, _) => window.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (_toolbarMenu.IsOpen) _toolbarMenu.Items.OfType<Controls.MenuItem>().FirstOrDefault()?.Focus();

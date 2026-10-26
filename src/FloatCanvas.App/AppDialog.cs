@@ -19,8 +19,9 @@ internal static class AppDialog
             // The primary process already logged that original exception. Keep its
             // message visible without depending on WPF resources or custom chrome.
             System.Diagnostics.Debug.WriteLine(ex);
-            nint handle = owner is null ? 0 : new System.Windows.Interop.WindowInteropHelper(owner).Handle;
-            return (MessageBoxResult)MessageBoxNative(handle, message, title, NativeFallbackFlags(handle, buttons, image));
+            bool editing = SessionWindowCoordinator.IsEditingWindow(owner);
+            nint handle = owner is null || (!editing && !OverlayWindowScope.IsRegularWindow(owner)) ? 0 : new System.Windows.Interop.WindowInteropHelper(owner).Handle;
+            return (MessageBoxResult)MessageBoxNative(handle, message, WindowTitles.Format(title, !editing), NativeFallbackFlags(handle, buttons, image, editing));
         }
         SessionWindowCoordinator.ShowModal(dialog.Window);
         return dialog.Result();
@@ -39,6 +40,7 @@ internal static class AppDialog
         var window = new Window { Title = title, Content = panel, Owner = owner, Topmost = true, ShowInTaskbar = false,
             Icon = AppIcon.WindowImage, Width = 460, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize,
             WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner };
+        if (!SessionWindowCoordinator.IsEditingWindow(owner)) OverlayWindowScope.UseRegularWindow(window);
         AppTheme.EnsureDialogPalette(window);
         AppWindowChrome.ApplyDialog(window);
         body.SetResourceReference(TextBlock.ForegroundProperty, "CanvasText");
@@ -68,8 +70,8 @@ internal static class AppDialog
         return (window, () => result);
     }
 
-    internal static uint NativeFallbackFlags(nint owner, MessageBoxButton buttons, MessageBoxImage image) =>
-        (uint)buttons | (uint)image | 0x00040000U | (owner == 0 ? 0x00002000U : 0U); // TOPMOST, TASKMODAL without an owner.
+    internal static uint NativeFallbackFlags(nint owner, MessageBoxButton buttons, MessageBoxImage image, bool editing = false) =>
+        (uint)buttons | (uint)image | (editing ? 0x00040000U : 0U) | (owner == 0 ? 0x00002000U : 0U);
 
     [DllImport("user32.dll", EntryPoint = "MessageBoxW", CharSet = CharSet.Unicode)]
     private static extern int MessageBoxNative(nint owner, string message, string title, uint flags);

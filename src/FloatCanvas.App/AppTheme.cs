@@ -14,6 +14,11 @@ internal static class AppTheme
     private static bool observingSystemColors;
     private static ResourceDictionary? styles;
     private static ResourceDictionary? overlayStyles;
+    internal static void UseRegularControls(Window window)
+    {
+        styles ??= (ResourceDictionary)XamlReader.Parse(StyleMarkup);
+        if (!window.Resources.MergedDictionaries.Contains(styles)) window.Resources.MergedDictionaries.Add(styles);
+    }
 
     // The primary process calls this before constructing DesktopSession: its field
     // initializers can fail before the session applies the saved theme itself.

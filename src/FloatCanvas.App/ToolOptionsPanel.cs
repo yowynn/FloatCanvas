@@ -42,6 +42,7 @@ internal sealed class ToolOptionsPanel : UserControl
     public ToolOptionsPanel(EditorController controller, ToolPresetLibrary library, ColorLibrary colors, ToolStateStore? stateStore = null)
     {
         this.controller = controller;
+        PropertyPanelLayout.Scope(this);
         Width = PreferredWidth; MinWidth = 0; MaxWidth = PreferredWidth; MaxHeight = 620;
         SetResourceReference(BackgroundProperty, "CanvasSurface"); SetResourceReference(ForegroundProperty, "CanvasText");
         var body = new StackPanel(); body.Children.Add(heading);

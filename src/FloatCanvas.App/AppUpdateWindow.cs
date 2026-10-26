@@ -22,6 +22,7 @@ internal sealed class AppUpdateWindow : Window
     private readonly Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate;
     private readonly bool canInstall;
     private readonly Action<bool>? savePreviewPreference;
+    private readonly Action<Uri> openLink;
     private bool restoringPreviewPreference;
     private CancellationTokenSource? operation;
     private AvailableUpdate? available;
@@ -29,14 +30,14 @@ internal sealed class AppUpdateWindow : Window
     internal TextBlock StatusText { get; } = new() { TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold };
     internal TextBlock DetailText { get; } = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 5, 0, 0) };
     internal TextBlock LatestVersionText { get; } = new() { Text = "—", HorizontalAlignment = HorizontalAlignment.Right };
-    internal TextBox NotesText { get; } = new()
+    internal MarkdownView NotesText { get; } = new()
     {
-        IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        Padding = new(10), MinHeight = 90, Margin = new(0, 6, 0, 0)
+        MinHeight = 90, Margin = new(0, 6, 0, 0)
     };
     internal Button CheckButton { get; } = new() { MinHeight = 34, Padding = new(12, 6, 12, 6) };
+    internal Button ChangelogButton { get; } = new() { MinHeight = 28, Padding = new(8, 3, 8, 3), FontSize = 12 };
     internal Button InstallButton { get; } = new() { MinHeight = 34, Padding = new(16, 6, 16, 6), IsEnabled = false };
     internal Button CancelButton { get; } = new() { MinHeight = 34, Padding = new(12, 6, 12, 6), Visibility = Visibility.Collapsed };
     internal ProgressBar DownloadProgress { get; } = new() { Height = 5, Minimum = 0, Maximum = 100, Margin = new(0, 14, 0, 0), Visibility = Visibility.Collapsed };
@@ -47,19 +48,22 @@ internal sealed class AppUpdateWindow : Window
     internal AppUpdateWindow(string currentVersion, GitHubUpdateClient client,
         Func<PreparedUpdate, Task> applyUpdate, bool canInstall, string? cacheDirectory = null, bool autoCheck = true,
         bool includePrereleases = false, Action<bool>? savePreviewPreference = null,
-        Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate = null)
+        Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate = null, Action<Uri>? openLink = null)
     {
         this.currentVersion = currentVersion; this.client = client; this.applyUpdate = applyUpdate; this.canInstall = canInstall;
         this.prepareAndApplyUpdate = prepareAndApplyUpdate;
         this.savePreviewPreference = savePreviewPreference;
+        this.openLink = openLink ?? (uri => { _ = Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); });
         PreviewUpdates.IsChecked = includePrereleases;
         PreviewUpdates.Content = L.Get("Updates.IncludePreviews"); PreviewUpdates.ToolTip = L.Get("Updates.PreviewHint");
         AutomationProperties.SetName(PreviewUpdates, L.Get("Updates.IncludePreviews"));
         PreviewUpdates.Checked += OnPreviewPreferenceChanged; PreviewUpdates.Unchecked += OnPreviewPreferenceChanged;
         this.cacheDirectory = cacheDirectory ?? Path.Combine(ApplicationPaths.ProfileDirectory, "updates", "downloads");
         Title = L.Get("Updates.Title"); Width = 500; Height = 510; MinWidth = 410; MinHeight = 390; MaxHeight = 650;
-        Topmost = true; ShowInTaskbar = false; Icon = AppIcon.WindowImage; ResizeMode = ResizeMode.CanResize;
+        ShowInTaskbar = true; Icon = AppIcon.WindowImage; ResizeMode = ResizeMode.CanResize;
+        OverlayWindowScope.UseRegularWindow(this);
         CheckButton.Content = L.Get("Updates.CheckAgain"); InstallButton.Content = L.Get("Updates.Install");
+        ChangelogButton.Content = L.Get("Updates.MoreLogs");
         InstallButton.SetResourceReference(StyleProperty, "CanvasPrimaryButton");
         DetailText.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
         NotesText.Text = L.Get("Updates.NoNotes");
@@ -70,7 +74,8 @@ internal sealed class AppUpdateWindow : Window
         CheckButton.Click += (_, _) => _ = CheckAsync();
         InstallButton.Click += (_, _) => _ = DownloadUpdateAsync();
         CancelButton.Click += (_, _) => operation?.Cancel();
-        RepositoryLink.RequestNavigate += (_, e) => { OpenRepository(); e.Handled = true; };
+        RepositoryLink.RequestNavigate += (_, e) => { OpenProjectLink(GitHubUpdateClient.ProjectUrl); e.Handled = true; };
+        ChangelogButton.Click += (_, _) => OpenProjectLink(GitHubUpdateClient.ChangelogUrl);
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;
@@ -98,7 +103,10 @@ internal sealed class AppUpdateWindow : Window
         latest.Children.Add(LatestVersionText); Grid.SetColumn(latest, 1); versions.Children.Add(current); versions.Children.Add(latest);
         Add(versions, 0); Add(StatusText, 1); Add(DetailText, 2);
         Add(PropertyPanelLayout.BooleanRow(L.Get("Updates.IncludePreviews"), PreviewUpdates), 3);
-        Add(new TextBlock { Text = L.Get("Updates.ReleaseNotes"), FontWeight = FontWeights.SemiBold, Margin = new(0, 14, 0, 0) }, 4);
+        var notesHeading = new Grid { Margin = new(0, 14, 0, 0) };
+        notesHeading.ColumnDefinitions.Add(new()); notesHeading.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        notesHeading.Children.Add(new TextBlock { Text = L.Get("Updates.ReleaseNotes"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        Grid.SetColumn(ChangelogButton, 1); notesHeading.Children.Add(ChangelogButton); Add(notesHeading, 4);
         Add(NotesText, 5); Add(DownloadProgress, 6);
         if (!canInstall)
         {
@@ -215,9 +223,9 @@ internal sealed class AppUpdateWindow : Window
         if (!applying) operation?.Cancel();
     }
 
-    private void OpenRepository()
+    private void OpenProjectLink(Uri uri)
     {
-        try { _ = Process.Start(new ProcessStartInfo(GitHubUpdateClient.ProjectUrl.AbsoluteUri) { UseShellExecute = true }); }
+        try { openLink(uri); }
         catch (Exception ex) { if (!closed) ShowFailure("Updates.OpenLinkFailed", ex); }
     }
 

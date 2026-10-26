@@ -28,11 +28,10 @@ internal sealed partial class DesktopSession
                 catch { _settings.IncludePrereleaseUpdates = previous; throw; }
             }, prepareAndApplyUpdate: ApplyUpdateAsync);
         _updatesWindow = window;
-        ConfigureAppWindow(window, true);
-        window.Owner = _welcomeWindow ?? _toolbar;
-        window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ConfigureAppWindow(window, true, regular: true);
+        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         window.Closed += (_, _) => { client.Dispose(); if (ReferenceEquals(_updatesWindow, window)) _updatesWindow = null; };
-        SessionWindowCoordinator.ShowModal(window);
+        ShowAppWindow(window, true);
     }
 
     private async Task ApplyUpdateAsync(PreparedUpdate update)

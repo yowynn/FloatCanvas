@@ -13,6 +13,14 @@ internal static class KeyboardPassedStateTests
             state.Process(key, 0, up ? 0x80u : 0, (uint)now, up, up ? 0x101u : 0x100u,
                 42, own, true, now);
 
+        var recording = New(); Begin(recording); recording.CommandsSuspended = true;
+        Key(recording, 0xA2, own: true, now: 210);
+        Key(recording, HotkeyBinding.DefaultToggle.VirtualKey, own: true, now: 220);
+        check(recording.IsActive && recording.LastEndReason is null, "Recording the current toggle binding cannot end the editing lease");
+        var packets = new List<KeyboardInputPacket>();
+        while (recording.TryDequeue(out var packet)) { packets.Add(packet!); recording.Complete(packet!.Sequence); }
+        check(packets.Count == 2 && packets.All(packet => packet.Kind == KeyboardInputPacketKind.Key), "Recording forwards the current toggle chord as ordinary local key packets");
+
         foreach (uint key in new uint[] { 0xA2, 0x32 })
         {
             var stale = New();

@@ -21,14 +21,22 @@ internal static class PropertyPanelLayout
     internal const double Padding = WindowLayout.ContentInset;
     internal static double WindowWidth => ContentWidth + Padding * 2 + 2;
 
+    private static readonly DependencyProperty LabelMaximumProperty = DependencyProperty.RegisterAttached("LabelMaximum", typeof(double), typeof(PropertyPanelLayout), new FrameworkPropertyMetadata(LabelWidth, FrameworkPropertyMetadataOptions.Inherits));
+    internal static void Scope(FrameworkElement panel, double maximum = LabelWidth)
+    {
+        Grid.SetIsSharedSizeScope(panel, true);
+        panel.SetValue(LabelMaximumProperty, maximum);
+    }
+
     internal static Grid Row(TextBlock label, FrameworkElement control)
     {
         var row = new Grid { Margin = new(0, 4, 0, 4) };
         if (control is ComboBox or ColorField or NumericValueField || control is TextBox { AcceptsReturn: false })
             control.Height = control.MinHeight = ControlHeight;
-        row.ColumnDefinitions.Add(new() { Width = new(LabelWidth + LabelGap) });
+        row.ColumnDefinitions.Add(new() { Width = GridLength.Auto, SharedSizeGroup = "PropertyLabels" });
         row.ColumnDefinitions.Add(new());
-        label.Width = LabelWidth; label.Margin = new(0, 0, LabelGap, 0);
+        label.Width = double.NaN; label.Margin = new(0, 0, LabelGap, 0);
+        label.SetBinding(FrameworkElement.MaxWidthProperty, new Binding { Path = new PropertyPath(LabelMaximumProperty), Source = row });
         label.FontSize = LabelFontSize; label.FontFamily = LabelFontFamily; label.FontWeight = FontWeights.Normal;
         label.VerticalAlignment = VerticalAlignment.Center;
         row.Children.Add(label); Grid.SetColumn(control, 1); row.Children.Add(control);

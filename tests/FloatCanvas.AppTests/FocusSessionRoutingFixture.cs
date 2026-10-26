@@ -380,7 +380,7 @@ internal static class FocusSessionRoutingFixture
         var receiverInput = new TextBox { Text = watchdogGate ? "Click here, release all keys/buttons, then wait about 8 seconds." : "Independent test receiver", IsReadOnly = true, Margin = new Thickness(20) };
         var window = new Window { Title = watchdogGate ? "FloatCanvas Watchdog Receiver - click to start" : "FloatCanvas owned external foreground fixture", Width = watchdogGate ? 500 : 280, Height = 110,
             Left = 650, Top = 500, Content = receiverInput,
-            ShowActivated = false, ShowInTaskbar = watchdogGate, Topmost = true };
+            ShowActivated = false, ShowInTaskbar = watchdogGate, Topmost = !args.Contains("--focus-helper-ordinary") };
         int f6Down = 0, f6Up = 0;
         void InputResult()
         {

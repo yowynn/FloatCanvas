@@ -306,12 +306,12 @@
     "en": "Use a shortcut with Ctrl, Alt, or Shift."
   },
   "Settings.ToggleHotkey": {
-    "zh": "编辑 / 穿透：点击后按下组合键",
-    "en": "Edit / Pass through: click, then press a shortcut"
+    "zh": "编辑 / 穿透",
+    "en": "Edit / pass-through"
   },
   "Settings.HideHotkey": {
-    "zh": "隐藏 / 恢复：点击后按下组合键",
-    "en": "Hide / Restore: click, then press a shortcut"
+    "zh": "隐藏 / 显示",
+    "en": "Hide / show"
   },
   "Settings.Theme": {
     "zh": "主题",

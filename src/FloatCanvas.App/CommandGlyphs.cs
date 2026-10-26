@@ -11,6 +11,7 @@ namespace FloatCanvas.App;
 /// <summary>Command artwork shared by menus and their matching toolbar actions. No fallback glyph.</summary>
 internal static class CommandGlyphs
 {
+    internal const string HideFloatingLogo = "M1,1 L15,15 M2,8 Q8,1 14,8 Q8,15 2,8 M6,6 L10,10";
     internal const string File = "M3,1 H10 L14,5 V15 H3 Z M10,1 V5 H14 M6,8 H11 M6,11 H10";
     internal const string EditObjects = "M1,1 H4 V4 H1 Z M12,1 H15 V4 H12 Z M1,12 H4 V15 H1 Z M12,12 H15 V15 H12 Z M4,2.5 H12 M2.5,4 V12 M13.5,4 V12 M4,13.5 H12 M6,6 H10 V10 H6 Z";
     internal const string DrawingTools = "M8,1 C3,1 1,4 1,8 C1,12 4,15 8,15 H10 C12,15 12,12 10,12 H9 C7,12 8,9 11,9 H13 C17,8 14,1 8,1 Z M5,4 H5.1 M10,4 H10.1 M4,8 H4.1";

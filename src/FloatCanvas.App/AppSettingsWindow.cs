@@ -13,9 +13,10 @@ internal sealed class AppSettingsWindow : Window
     internal TextBlock Error { get; } = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center };
     internal Button SaveButton { get; } = new() { Content = L.Get("Settings.Save"), IsDefault = true, MinWidth = 90, Padding = new Thickness(18, 8, 18, 8) };
 
-    internal AppSettingsWindow()
+    internal AppSettingsWindow(bool regular = false)
     {
         Title = L.Get("Settings.Title"); Width = 785; Height = 650; FontSize = 14;
+        if (regular) OverlayWindowScope.UseRegularWindow(this);
         ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ScrollViewer.SetHorizontalScrollBarVisibility(navigation, ScrollBarVisibility.Disabled);
         ScrollViewer.SetVerticalScrollBarVisibility(navigation, ScrollBarVisibility.Auto);
@@ -55,6 +56,7 @@ internal sealed class AppSettingsWindow : Window
     internal StackPanel AddSection(string title, string hint)
     {
         var content = new StackPanel();
+        PropertyPanelLayout.Scope(content, 132);
         content.Children.Add(new TextBlock { Text = title, FontSize = 22, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         var description = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 20) };
         description.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); content.Children.Add(description);

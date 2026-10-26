@@ -75,8 +75,8 @@ internal static class GpuRoutingFixture
         Window OpenSettings()
         {
             Invoke(session, "ShowHotkeySettings");
-            Wait(() => Application.Current.Windows.Cast<Window>().Any(window => window.Title == L.Get("Settings.Title") && window.IsVisible));
-            return Application.Current.Windows.Cast<Window>().Single(window => window.Title == L.Get("Settings.Title") && window.IsVisible);
+            Wait(() => Application.Current.Windows.Cast<Window>().Any(window => window is AppSettingsWindow && window.IsVisible));
+            return Application.Current.Windows.Cast<Window>().Single(window => window is AppSettingsWindow && window.IsVisible);
         }
         void SaveSettings(Window window)
         {

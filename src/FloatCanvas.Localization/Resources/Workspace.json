@@ -3,6 +3,8 @@
   "History.UngroupElements": { "zh": "取消组合", "en": "Ungroup elements" },
   "History.InsertPreset": { "zh": "插入印章", "en": "Insert stamp" },
   "Window.Close": { "zh": "关闭", "en": "Close" },
+  "Window.RegularTitle": { "zh": "{0}·{1}", "en": "{0} · {1}" },
+  "Window.Notice": { "zh": "提示", "en": "Notice" },
   "Window.Minimize": { "zh": "最小化", "en": "Minimize" },
   "Window.Maximize": { "zh": "最大化", "en": "Maximize" },
   "Window.Restore": { "zh": "还原", "en": "Restore" },

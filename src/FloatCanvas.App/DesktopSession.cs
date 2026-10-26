@@ -185,6 +185,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.InputActivated += ()=>{ClearSystemInputEntryHint();if(_host.UsesSystemInput)ShowEditingWindows();RaiseVisibleToolWindows();};
         _host.EditingFocusLost += () =>
         {
+            CloseEditingDialogs();
             _overlayWindows?.ClosePopups();
             ClearProjectionHover();
             _windowCoordinator?.SuspendEditingWindows();
@@ -301,9 +302,11 @@ internal sealed partial class DesktopSession : IDisposable
     private void ShowWelcome() => OpenWelcome(false);
     private void OpenWelcome(bool manuallyOpened)
     {
+        if (!manuallyOpened && _host.IsEditing) return;
+        if (_host.IsEditing) SetEditingCore(false, preserveImageDrop: false, restorePreviousForeground: false);
         if (_welcomeWindow is { } existing)
         {
-            if (manuallyOpened) { _welcomeManual=true; ShowAppWindow(existing,true); }
+            if (manuallyOpened) { _welcomeManual=true; ShowWelcomeWindow(existing, true); }
             return;
         }
         if (!manuallyOpened && (_welcomeShown || _host.IsEditing)) return;
@@ -317,10 +320,10 @@ internal sealed partial class DesktopSession : IDisposable
             WindowStartupLocation = WindowStartupLocation.CenterScreen, ResizeMode = ResizeMode.NoResize, FontSize = 14 };
         _welcomeWindow = welcome;
         welcome.Closed += (_, _) => { _welcomeWindow = null; _welcomeView = null; _welcomeShortcuts = null; _welcomeHideShortcut = null; };
-        ConfigureAppWindow(welcome, true);
+        ConfigureAppWindow(welcome, true, regular: true);
         // The first-run surface is a normal discoverable entry while the toolbar is hidden.
         welcome.ShowInTaskbar = true;
-        welcome.Show();
+        ShowWelcomeWindow(welcome, manuallyOpened);
     }
 
     private sealed record ToolOption(EditorTool Tool, string Key)
@@ -350,16 +353,19 @@ internal sealed partial class DesktopSession : IDisposable
         return button;
     }
     private bool SetEditing(bool editing, bool preserveImageDrop = false)
+        => SetEditingCore(editing, preserveImageDrop, restorePreviousForeground: true);
+
+    private bool SetEditingCore(bool editing, bool preserveImageDrop, bool restorePreviousForeground)
     {
         if (editing && _desktopFallbackPending) return false;
         ClearProjectionHover();
-        if (!editing) { _windowCoordinator?.SuspendEditingWindows(); EndCanvasCalibration(); }
+        if (!editing) { CloseEditingDialogs(); _windowCoordinator?.SuspendEditingWindows(); EndCanvasCalibration(); }
         CancelSnapshotCapture(editing ? "ExplicitEntry" : "ModeExit");
         using var destination = editing ? null : _windowCoordinator?.DirectTransfer(WindowDismissReason.ModeExit);
         _newCanvasButton?.CancelConfirmation();
         // Close the startup window before acquiring the input lease so native close
         // focus restoration cannot interrupt a newly acquired editing session.
-        if (editing && !_welcomeManual) _welcomeWindow?.Close();
+        if (editing) CloseRegularWindows();
         if (!preserveImageDrop) CloseImageDrop();
         bool wasEditing = _host.IsEditing;
         _inspector?.CompletePendingEdit();
@@ -377,7 +383,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (_backendProtection is not null) RequestDesktopFallback(failure ?? "Input acquisition failed.");
             return false;
         }
-        if (!editing) {_overlayWindows?.ClosePopups();_host.ExitEditing();}
+        if (!editing) {_overlayWindows?.ClosePopups();_host.ExitEditing(restorePreviousForeground);}
         if (editing)
         {
             ShowEditingWindows();
@@ -535,6 +541,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnKey(int key)
     {
+        if (ComponentDispatcher.IsThreadModal) return;
         if (!EditorShortcutPolicy.IsCommand(key, OverlayHost.CurrentModifiers)) return;
         if (key == 0x09)
         {
@@ -866,7 +873,7 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.Cancel();
         var toggle = _settings.Toggle;
         var hide = _settings.Hide;
-        var window = new AppSettingsWindow
+        var window = new AppSettingsWindow(regular: !_host.IsEditing)
         {
             MaxHeight = Math.Max(240, _host.PrimaryMonitor.WorkArea.Height * 96 / _host.PrimaryMonitor.DpiY - 24),
             MaxWidth = Math.Max(360, _host.PrimaryMonitor.WorkArea.Width * 96 / _host.PrimaryMonitor.DpiX - 24)
@@ -880,12 +887,16 @@ internal sealed partial class DesktopSession : IDisposable
         var error = window.Error;
         System.Windows.Controls.TextBox Recorder(string label, HotkeyBinding initial, Action<HotkeyBinding> change)
         {
-            var box = new System.Windows.Controls.TextBox { Text = FormatHotkey(initial), IsReadOnly = true, Padding = new Thickness(8), MinHeight = 34 };
-            box.PreviewKeyDown += (_, e) =>
+            var box = new System.Windows.Controls.TextBox { Text = FormatHotkey(initial), IsReadOnly = true, Padding = new Thickness(8, 0, 8, 0), MinHeight = 34, VerticalContentAlignment = VerticalAlignment.Center };
+            // WM_HOTKEY consumes registered combinations before WPF sees them.
+            box.GotKeyboardFocus += (_, _) => _host.SuspendApplicationHotkeys(true);
+            box.LostKeyboardFocus += (_, _) => { if (!_host.IsEditing) _host.SuspendApplicationHotkeys(false); };
+            box.AddHandler(System.Windows.Input.Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler((_, e) =>
             {
                 var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
                 if (key is System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl or System.Windows.Input.Key.LeftAlt
-                    or System.Windows.Input.Key.RightAlt or System.Windows.Input.Key.LeftShift or System.Windows.Input.Key.RightShift) return;
+                    or System.Windows.Input.Key.RightAlt or System.Windows.Input.Key.LeftShift or System.Windows.Input.Key.RightShift)
+                { e.Handled = true; return; }
                 var modifiers = OverlayHost.CurrentModifiers;
                 if (modifiers == OverlayModifiers.None) { error.Text = L.Get("Settings.ModifiersRequired"); e.Handled = true; return; }
                 var binding = new HotkeyBinding((uint)modifiers, (uint)System.Windows.Input.KeyInterop.VirtualKeyFromKey(key));
@@ -895,7 +906,7 @@ internal sealed partial class DesktopSession : IDisposable
                 box.Text = FormatHotkey(binding);
                 error.Text = "";
                 e.Handled = true;
-            };
+            }), handledEventsToo: true);
             AppSettingsWindow.AddSetting(shortcuts, label, box);
             return box;
         }
@@ -921,18 +932,16 @@ internal sealed partial class DesktopSession : IDisposable
             IsEnabled = shell is not null, MinHeight = 28 };
         ToolTipService.SetShowOnDisabled(startup, true);
         startup.ToolTip = L.Get(shell is null ? "Shell.TestProfileHint" : "Shell.StartupHint");
+        AppSettingsWindow.AddSetting(system, L.Get("Shell.StartWithWindows"), startup);
         var overlayMode = new ComboBox { ItemsSource = new[] { L.Get("OverlaySafety.ModeAuto"), L.Get("OverlaySafety.ModeEnhanced"), L.Get("OverlaySafety.ModeDesktop") },
             SelectedIndex = (int)OverlayBackendModes.Parse(_settings.OverlayMode), MinHeight = 34 };
         AppSettingsWindow.AddSetting(system, L.Get("OverlaySafety.ModeSetting"), overlayMode,
             L.Get("OverlaySafety.ModeHint") + "\n" + L.Format("OverlaySafety.CurrentMode", L.Get(_host.UsesSystemInput ? "OverlaySafety.ModeEnhanced" : "OverlaySafety.ModeDesktop")));
         var preferGpu = AddRenderSettings(system);
-        var previewUpdates = new CheckBox { IsChecked = _settings.IncludePrereleaseUpdates, MinHeight = 28 };
-        AppSettingsWindow.AddSetting(system, L.Get("Updates.IncludePreviews"), previewUpdates, L.Get("Updates.PreviewHint"));
-        AppSettingsWindow.AddSetting(system, L.Get("Shell.StartWithWindows"), startup, L.Get(shell is null ? "Shell.TestProfileHint" : "Shell.StartupHint"));
         var registrationStatus = new TextBlock { TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 0), Visibility = Visibility.Collapsed };
         System.Windows.Automation.AutomationProperties.SetName(registrationStatus, L.Get("Shell.RegisterProjectType"));
-        var registerFiles = Button(L.Get("Shell.RegisterProjectType"), () =>
+        var registerFiles = Button(L.Get("Shell.AssociateProjectFiles"), () =>
         {
             try
             {
@@ -962,16 +971,18 @@ internal sealed partial class DesktopSession : IDisposable
         _host.MonitorsChanged += RefreshScreenScope;
         window.Closed += (_, _) => _host.MonitorsChanged -= RefreshScreenScope;
         AppSettingsWindow.AddSetting(canvas, L.Get("Settings.Scope"), screenScope,
-            L.Format("Settings.CurrentScope", _host.Scope == OverlayMonitorScope.AllScreens ? L.Get("Settings.AllScreens") :
-                _host.Scope == OverlayMonitorScope.PrimaryScreen ? L.Get("Settings.PrimaryOnly") :
-                L.Format("Settings.NumberedScreen", _host.AvailableMonitors.ToList().FindIndex(m => m.DeviceName == _host.PrimaryMonitor.DeviceName) + 1)) +
-            (ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.ScopeOverrideHint") : L.Get("Settings.ScopeImmediateHint")));
-        var historyField = new NumericValueField(1, 10000, sliderMaximum: 500, integerOnly: true) { Value = _settings.HistoryVersionLimit, Unit = L.Get("Numeric.Unit.Version") };
+            ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.ScopeOverrideHint") : null);
+        var historyField = new NumericValueField(0, 1000, sliderMaximum: 200, integerOnly: true) { Value = _settings.HistoryVersionLimit, Unit = L.Get("Numeric.Unit.Version") };
         var historyLimit = historyField.Input;
         AppSettingsWindow.AddSetting(canvas, L.Get("History.Limit"), historyField, L.Get("History.LimitHint"));
-        window.SaveButton.Click += (_, _) =>
+        bool RestartRequired() => L.NormalizePreference(_settings.Language) != (language.SelectedIndex == 1 ? "zh-CN" : language.SelectedIndex == 2 ? "en" : "auto") ||
+            OverlayBackendModes.Parse(_settings.OverlayMode) != (OverlayBackendMode)overlayMode.SelectedIndex;
+        void RefreshSaveLabel() => window.SaveButton.Content = L.Get(RestartRequired() ? "Settings.SaveRestart" : "Settings.Save");
+        language.SelectionChanged += (_, _) => RefreshSaveLabel();
+        overlayMode.SelectionChanged += (_, _) => RefreshSaveLabel();
+        window.SaveButton.Click += async (_, _) =>
         {
-            if (!int.TryParse(historyLimit.Text, out int maximumHistory) || maximumHistory is < 1 or > 10000)
+            if (!int.TryParse(historyLimit.Text, out int maximumHistory) || maximumHistory is < 0 or > 1000)
             { error.Text = L.Get("History.InvalidLimit"); window.SelectSection(canvas); historyLimit.Focus(); return; }
             var oldHistoryLimit = _settings.HistoryVersionLimit;
             var oldPassThroughLauncher = _settings.ShowPassThroughLauncher;
@@ -985,12 +996,12 @@ internal sealed partial class DesktopSession : IDisposable
             var oldShortcutHints = _settings.ShowToolShortcutHints;
             var oldPreferGpu = _settings.PreferGpuAcceleration;
             var oldOverlayMode = _settings.OverlayMode;
+            bool restart = RestartRequired();
             try
             {
                 _host.RegisterHotkeys(toggle, hide);
                 _settings.HistoryVersionLimit = maximumHistory;
                 _settings.ShowPassThroughLauncher = passThroughLauncher.IsChecked == true;
-                _settings.IncludePrereleaseUpdates = previewUpdates.IsChecked == true;
                 _settings.Toggle = toggle;
                 _settings.Hide = hide;
                 _settings.Theme = theme.SelectedIndex == 1 ? "light" : theme.SelectedIndex == 2 ? "dark" : "system";
@@ -1056,11 +1067,16 @@ internal sealed partial class DesktopSession : IDisposable
                     oldOverlayMode != _settings.OverlayMode ? L.Get("OverlaySafety.ModeSaved") :
                     oldPrimaryScreenOnly == _settings.PrimaryScreenOnly && oldMonitorDevice == _settings.MonitorDeviceName ? L.Get("Settings.Saved") :
                     ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.SavedScopeOverride") : L.Get("Settings.SavedScopeApplied"));
+                if (restart) await RestartApplicationAsync();
             }
-            catch (Exception ex) { error.Text = ex.Message; }
+            catch (Exception ex) { if (window.IsVisible) error.Text = ex.Message; else ShowError(ex.Message); }
         };
-        ConfigureAppWindow(window, true);
-        ShowAppWindow(window, true);
+        window.Closed += (_, _) =>
+        {
+            try { _host.SuspendApplicationHotkeys(false); }
+            catch (Exception ex) { UpdateStatus(ex.Message); }
+        };
+        ShowSessionDialog(window);
     }
 
     internal void ApplyMonitorScopeSetting() => _host.SetMonitorScope(ApplicationPaths.RequestedMonitorScope ??
@@ -1069,6 +1085,7 @@ internal sealed partial class DesktopSession : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        CloseEditingDialogs(); CloseRegularWindows();
         EndEyedropper(restore: false);
         try { FlushToolState(commitDraft: true); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { UpdateStatus(ex.Message); }

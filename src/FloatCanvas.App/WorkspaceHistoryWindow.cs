@@ -16,12 +16,13 @@ internal sealed class WorkspaceHistoryWindow : Window
     private readonly ListBox list = new() { MinHeight = 0, Margin = new(0, 0, 0, 12), HorizontalContentAlignment = HorizontalAlignment.Stretch };
     internal WorkspaceRecoveryEntry? SelectedEntry => list.SelectedItem as WorkspaceRecoveryEntry;
 
-    internal WorkspaceHistoryWindow(WorkspaceRecoveryHistory history, IReadOnlyList<WorkspaceRecoveryEntry>? entries = null)
+    internal WorkspaceHistoryWindow(WorkspaceRecoveryHistory history, IReadOnlyList<WorkspaceRecoveryEntry>? entries = null, bool regular = false)
     {
         this.history = history;
         Title = L.Get("Recovery.HistoryTitle"); Width = 620; Height = 560; MinHeight = 220; MinWidth = 280;
         MaxHeight = Math.Max(220, SystemParameters.WorkArea.Height); Height = Math.Min(Height, MaxHeight);
         ShowInTaskbar = false; Topmost = true; ResizeMode = ResizeMode.CanResize;
+        if (regular) OverlayWindowScope.UseRegularWindow(this);
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Icon = AppIcon.WindowImage;
         var panel = new Grid { Margin = WindowLayout.ContentMargin(18, 18) };
         panel.RowDefinitions.Add(new() { Height = GridLength.Auto }); panel.RowDefinitions.Add(new()); panel.RowDefinitions.Add(new() { Height = GridLength.Auto });

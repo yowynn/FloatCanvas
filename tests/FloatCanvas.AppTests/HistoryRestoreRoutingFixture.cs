@@ -49,7 +49,7 @@ internal static class HistoryRestoreRoutingFixture
             bool observed = false; DateTime visualDeadline = DateTime.UtcNow.AddSeconds(150);
             heldTimer.Tick += (_, _) =>
             {
-                var chooser = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w.Title == L.Get("Recovery.HistoryTitle"));
+                var chooser = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w is WorkspaceHistoryWindow);
                 if (chooser is null) return;
                 attachWindows();
                 if (!observed)
@@ -100,7 +100,7 @@ internal static class HistoryRestoreRoutingFixture
                 if (DateTime.UtcNow >= deadline) throw new TimeoutException("Production history dialog sequence did not complete.");
                 if (stage == 0)
                 {
-                    var chooser = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w.Title == L.Get("Recovery.HistoryTitle"));
+                    var chooser = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w is WorkspaceHistoryWindow);
                     if (chooser is null) return;
                     snapshot("history-chooser-opened");
                     check("history restore opens the actual populated production chooser", Descendants(chooser).OfType<ListBox>().Single().Items.Count > 0 && host.IsEditing == entryEditing && host.IsKeyboardIsolationActive == entryEditing);
@@ -118,7 +118,7 @@ internal static class HistoryRestoreRoutingFixture
                 }
                 if (stage == 1)
                 {
-                    var confirmation = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w.Title == L.Get("App.Name") &&
+                    var confirmation = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w.Title == WindowTitles.Format(L.Get("App.Name"), !host.IsEditing) &&
                         Descendants(w).OfType<Button>().Any(button => Equals(button.Content, L.Get("History.KeepLeave"))));
                     if (confirmation is null) return;
                     snapshot("history-unsaved-confirmation-opened");

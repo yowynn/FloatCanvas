@@ -11,9 +11,10 @@ internal static class StartupDialogTests
     internal static void Run(Action<string, bool> check)
     {
         uint native = AppDialog.NativeFallbackFlags(0, Wpf.MessageBoxButton.OKCancel, Wpf.MessageBoxImage.Error);
-        check("native startup fallback is topmost and task-modal when no owner exists", (native & 0x00042000U) == 0x00042000U);
+        check("native startup fallback is ordinary and task-modal when no owner exists", (native & 0x00042000U) == 0x00002000U);
         check("native startup fallback retains requested buttons and error icon", (native & 0xFFU) == 0x11U);
-        check("native owned fallback is topmost without disabling unrelated thread windows", AppDialog.NativeFallbackFlags((nint)1, Wpf.MessageBoxButton.YesNo, Wpf.MessageBoxImage.Warning) == 0x00040034U);
+        check("native ordinary owned fallback does not become topmost", AppDialog.NativeFallbackFlags((nint)1, Wpf.MessageBoxButton.YesNo, Wpf.MessageBoxImage.Warning) == 0x00000034U);
+        check("native editing fallback retains the editing overlay priority", AppDialog.NativeFallbackFlags((nint)1, Wpf.MessageBoxButton.YesNo, Wpf.MessageBoxImage.Warning, editing: true) == 0x00040034U);
         if (Wpf.Application.Current is null)
         {
             var early = AppDialog.Create(null, "Readable argument failure", "Startup").Window;

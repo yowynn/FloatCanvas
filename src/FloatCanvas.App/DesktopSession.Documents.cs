@@ -285,7 +285,9 @@ internal sealed partial class DesktopSession
 
     private WorkspaceRecoveryEntry? ChooseRecoveryWorkspace()
     {
-        var dialog = new WorkspaceHistoryWindow(RecoveryHistory) { Owner = _toolbar };
+        bool regular = !_host.IsEditing;
+        var dialog = new WorkspaceHistoryWindow(RecoveryHistory, regular: regular) { Owner = regular ? _welcomeWindow : _toolbar };
+        ConfigureAppWindow(dialog, true, regular);
         return SessionWindowCoordinator.ShowModal(dialog) == true ? dialog.SelectedEntry : null;
     }
     private async Task RequestExitAsync()
@@ -353,7 +355,7 @@ internal sealed partial class DesktopSession
         {
             if (projectPath is null)
             {
-                var dialog = new Microsoft.Win32.OpenFileDialog { Title = L.Get("Project.OpenTitle"), Filter = L.Get("Project.Filter"), CheckFileExists = true };
+                var dialog = new Microsoft.Win32.OpenFileDialog { Title = WindowTitles.Format(L.Get("Project.OpenTitle"), !_host.IsEditing), Filter = L.Get("Project.Filter"), CheckFileExists = true };
                 if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return;
                 projectPath = dialog.FileName;
             }
@@ -417,7 +419,7 @@ internal sealed partial class DesktopSession
         {
             var dialog = new Microsoft.Win32.SaveFileDialog
             {
-                Title = L.Get("Project.SaveTitle"), Filter = L.Get("Project.Filter"), DefaultExt = ".floatcanvas", AddExtension = true,
+                Title = WindowTitles.Format(L.Get("Project.SaveTitle"), !_host.IsEditing), Filter = L.Get("Project.Filter"), DefaultExt = ".floatcanvas", AddExtension = true,
                 FileName = path is null ? L.Get("Project.FilePrefix") + DateTime.Now.ToString("yyyyMMdd-HHmmss") : Path.GetFileName(path)
             };
             if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return false;
@@ -455,7 +457,7 @@ internal sealed partial class DesktopSession
         {
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
-            Title = transparent ? L.Get("Export.TransparentTitle") : L.Get("Export.CompositeTitle"),
+            Title = WindowTitles.Format(L.Get(transparent ? "Export.TransparentTitle" : "Export.CompositeTitle"), !_host.IsEditing),
             Filter = transparent ? L.Get("Export.PngFilter") : L.Get("Export.ImageFilter"),
             DefaultExt = ".png", AddExtension = true, FileName = L.Get("Project.FilePrefix") + DateTime.Now.ToString("yyyyMMdd-HHmmss")
         };
@@ -637,7 +639,7 @@ internal sealed partial class DesktopSession
         {
         if (paths is null)
         {
-            var dialog = new Microsoft.Win32.OpenFileDialog { Title = replaceSelected ? L.Get("Image.ReplaceTitle") : L.Get("Image.ImportTitle"), Filter = L.Get("Image.Filter"), Multiselect = !replaceSelected };
+            var dialog = new Microsoft.Win32.OpenFileDialog { Title = WindowTitles.Format(L.Get(replaceSelected ? "Image.ReplaceTitle" : "Image.ImportTitle"), !_host.IsEditing), Filter = L.Get("Image.Filter"), Multiselect = !replaceSelected };
             if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return; paths = dialog.FileNames;
         }
         if (paths.Length == 0) return;

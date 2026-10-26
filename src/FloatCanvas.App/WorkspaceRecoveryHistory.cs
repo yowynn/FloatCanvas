@@ -48,6 +48,7 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     public async Task ArchiveAsync(WorkspaceState workspace, AssetLibrary assets, byte[]? preview,
         string? sourceFile, bool force = false, CancellationToken ct = default)
     {
+        if (MaximumVersions <= 0) return;
         if (!(force ? HasValue(workspace) : HasNewVersion(workspace))) return;
         string fingerprint = ContentFingerprint(workspace);
         if (GetEntries().Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath)?.Fingerprint == fingerprint)) return;
@@ -70,7 +71,7 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     {
         string parent = Path.GetFullPath(Path.Combine(store.DirectoryPath, "history"));
         PublicationCleanup.SweepPending(parent);
-        foreach (var entry in GetEntries().Where(e => !e.IsCurrent).Skip(Math.Clamp(MaximumVersions, 1, 10000)))
+        foreach (var entry in GetEntries().Where(e => !e.IsCurrent).Skip(Math.Clamp(MaximumVersions, 0, 1000)))
         {
             string target = Path.GetFullPath(entry.DirectoryPath);
             if (!string.Equals(Path.GetDirectoryName(target), parent, StringComparison.OrdinalIgnoreCase) ||
@@ -158,7 +159,7 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
             archiveBeforeWrite = false;
             return;
         }
-        if (sources.Length > 0 && info is { Eligible: true } && !GetEntries().Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath)?.Fingerprint == info.Fingerprint))
+        if (MaximumVersions > 0 && sources.Length > 0 && info is { Eligible: true } && !GetEntries().Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath)?.Fingerprint == info.Fingerprint))
         {
             string history = Path.Combine(store.DirectoryPath, "history");
             Directory.CreateDirectory(history);

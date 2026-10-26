@@ -36,6 +36,7 @@ internal static class NamePrompt
         var window = new Window { Title = title, Owner = owner, Content = body, Width = 340, SizeToContent = SizeToContent.Height,
             ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Topmost = true, Icon = AppIcon.WindowImage,
             WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner };
+        if (!SessionWindowCoordinator.IsEditingWindow(owner)) OverlayWindowScope.UseRegularWindow(window);
         AppWindowChrome.ApplyDialog(window);
         AttachValidation(input, save, body);
         save.Click += (_, _) => SessionWindowCoordinator.SetModalResult(window, true);

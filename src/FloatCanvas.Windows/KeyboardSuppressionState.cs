@@ -20,6 +20,7 @@ internal sealed class KeyboardSuppressionState
     private readonly uint[] scans = new uint[256], flags = new uint[256];
     private readonly nint[] targets = new nint[256];
     private HotkeyBinding toggle, hide;
+    internal bool CommandsSuspended { get; set; }
     private long sequence, lease, inFlight;
     private KeyboardInputPacket? inFlightPacket;
     private bool notificationPending;
@@ -160,13 +161,13 @@ internal sealed class KeyboardSuppressionState
                 balance:true, message:message));
             return true;
         }
-        if (!up && !repeat && Matches(hide, vk))
+        if (!CommandsSuspended && !up && !repeat && Matches(hide, vk))
         {
             visibilityCommand[key] = true;
             queue.Enqueue(Packet(KeyboardInputPacketKind.Hide, 0, 0, 0, 0, false, false, 0));
             return true;
         }
-        if (!up && !repeat && Matches(toggle, vk))
+        if (!CommandsSuspended && !up && !repeat && Matches(toggle, vk))
         {
             End(KeyboardLeaseEndReason.Toggle, now, KeyboardInputPacketKind.Toggle);
             return true;

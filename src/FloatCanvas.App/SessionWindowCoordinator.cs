@@ -51,6 +51,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
     }
 
     internal static void TrackOwned(Window window) => Find(window)?.Register(window);
+    internal static bool IsEditingWindow(Window? window) => Find(window)?.host.IsEditing ?? OverlayWindowScope.Current?.IsInputActive == true;
 
     // Native caption movement runs a Win32 modal loop rather than WPF input staging.
     // Renew only when this UI thread actually handles a move/size message.
@@ -82,6 +83,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     internal static void Show(Window window, bool activate = false)
     {
+        WindowTitles.Apply(window);
         OverlayWindowScope.Prepare(window);
         var coordinator = Find(window);
         using var transfer = coordinator?.BeginTransition();
@@ -90,6 +92,33 @@ internal sealed class SessionWindowCoordinator : IDisposable
         if (activate && coordinator is not null && coordinator.host.UsesSystemInput && coordinator.host.IsEditing)
             coordinator.host.TryFocusEditingWindow(new WindowInteropHelper(window).Handle);
         else if(activate) window.Activate();
+    }
+
+    internal static nint CurrentForeground => GetForegroundWindow();
+
+    // Enhanced input can belong to this app while another process remains the
+    // Win32 foreground. Only a direct user request may transfer it to a normal
+    // window, and only while that request's source foreground is still current.
+    internal static bool ActivateRegularWindowForUserAction(Window window, nint expectedForeground)
+    {
+        if (!window.IsVisible || !OverlayWindowScope.IsRegularWindow(window)) return false;
+        nint handle = new WindowInteropHelper(window).Handle;
+        if (GetForegroundWindow() == handle) return true;
+        if (GetForegroundWindow() != expectedForeground) return false;
+        window.Activate();
+        if (GetForegroundWindow() == handle) return true;
+        uint thread = GetCurrentThreadId(), foregroundThread = GetWindowThreadProcessId(expectedForeground, out _);
+        if (foregroundThread == 0 || foregroundThread == thread) return false;
+        bool attached = AttachThreadInput(thread, foregroundThread, true);
+        if (!attached) return false;
+        try
+        {
+            if (GetForegroundWindow() != expectedForeground) return false;
+            SetForegroundWindow(handle);
+            if (GetForegroundWindow() != handle) return false;
+            SetFocus(handle); return true;
+        }
+        finally { AttachThreadInput(thread, foregroundThread, false); }
     }
 
     internal static void Hide(Window window, WindowDismissReason reason = WindowDismissReason.Close)
@@ -114,6 +143,8 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     internal static bool? ShowModal(Window window)
     {
+        OverlayWindowScope.Prepare(window);
+        WindowTitles.Apply(window);
         var coordinator = Find(window);
         coordinator?.Register(window);
         long version = coordinator?.host.EditingSessionVersion ?? 0;
@@ -439,6 +470,10 @@ internal sealed class SessionWindowCoordinator : IDisposable
     [DllImport("user32.dll")] private static extern nint WindowFromPhysicalPoint(PixelPoint point);
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint handle, uint flags);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
+    [DllImport("user32.dll")] private static extern nint SetFocus(nint window);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint first, uint second, bool attach);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern nint GetFocus();
     [DllImport("user32.dll")] private static extern nint GetCapture();
     [DllImport("user32.dll")] private static extern nint GetWindow(nint window, uint command);

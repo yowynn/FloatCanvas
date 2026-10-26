@@ -10,6 +10,18 @@ internal static class ShellIntegrationTests
         check("shell parses an Explorer positional project with spaces and Unicode", ProjectLaunchRequest.Parse([path]) == Path.GetFullPath(path));
         check("shell parses explicit open alongside isolated profile", ProjectLaunchRequest.Parse(["--profile", "own", "--open", path, "--primary-screen"]) == Path.GetFullPath(path));
         check("startup-only invocation carries no project", ProjectLaunchRequest.Parse(["--startup"]) is null);
+        string defaultProfile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FloatCanvas");
+        check("settings and update restarts keep Windows integration available for the daily profile",
+            ProjectLaunchRequest.AllowsRegistration(["--profile", defaultProfile, "--recover"]));
+        check("daily profile aliases keep Windows integration available",
+            ProjectLaunchRequest.AllowsRegistration(["--profile", Path.Combine(defaultProfile, ".") + Path.DirectorySeparatorChar, "--recover"]));
+        check("daily profile path matching follows Windows case rules",
+            ProjectLaunchRequest.AllowsRegistration(["--profile", defaultProfile.ToUpperInvariant(), "--recover"]));
+        check("a neighboring or incomplete restart profile stays isolated",
+            !ProjectLaunchRequest.AllowsRegistration(["--profile", defaultProfile + "-test", "--recover"]) &&
+            !ProjectLaunchRequest.AllowsRegistration(["--profile"]));
+        check("smoke remains isolated even when it names the daily profile",
+            !ProjectLaunchRequest.AllowsRegistration(["--smoke", "--profile", defaultProfile]));
         check("isolated and smoke launches cannot register shell integration", !ProjectLaunchRequest.AllowsRegistration(["--profile", "own"]) && !ProjectLaunchRequest.AllowsRegistration(["--smoke"]));
         check("ordinary launches register project type", ProjectLaunchRequest.AllowsRegistration([]));
         foreach (var args in new[] { new[] { "--open" }, new[] { path, path }, new[] { "bad.png" }, new[] { "--unknown" }, new[] { "line\n.floatcanvas" } })

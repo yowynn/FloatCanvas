@@ -19,7 +19,7 @@ internal sealed class PropertyLabel : TextBlock
 
     internal PropertyLabel(string text)
     {
-        Text = text; FontSize = PropertyPanelLayout.LabelFontSize; FontFamily = PropertyPanelLayout.LabelFontFamily; FontWeight = FontWeights.Normal; Width = PropertyPanelLayout.LabelWidth;
+        Text = text; FontSize = PropertyPanelLayout.LabelFontSize; FontFamily = PropertyPanelLayout.LabelFontFamily; FontWeight = FontWeights.Normal;
         TextWrapping = TextWrapping.NoWrap; TextTrimming = TextTrimming.CharacterEllipsis; ClipToBounds = true;
         ToolTip = text;
         System.Windows.Automation.AutomationProperties.SetName(this, text);

@@ -80,15 +80,13 @@ internal sealed class WelcomeView : StackPanel
 
     private static TextBlock ShortcutText()
     {
-        var text = new TextBlock { FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
-        text.SetResourceReference(TextBlock.ForegroundProperty, "CanvasCodeText"); return text;
+        return CodeAppearance.Text();
     }
 
     private void AddShortcut(string titleKey, string descriptionKey, TextBlock shortcut)
     {
         var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 5) };
-        var code = new Border { Child = shortcut, Padding = new Thickness(6, 2, 6, 2), CornerRadius = new CornerRadius(4), Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        code.SetResourceReference(Border.BackgroundProperty, "CanvasCodeSurface");
+        var code = CodeAppearance.Frame(shortcut); code.Margin = new Thickness(10, 0, 0, 0);
         DockPanel.SetDock(code, Dock.Right); row.Children.Add(code);
         row.Children.Add(new TextBlock { Text = L.Get(titleKey), TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
         Children.Add(row);

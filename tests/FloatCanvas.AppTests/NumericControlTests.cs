@@ -182,12 +182,14 @@ internal static class NumericControlTests
         var chain = aspect.TranslatePoint(new(), panel).X;
         check(name + " chain has its own gap between dimensions", right - left >= PropertyPanelLayout.PairGap - .01 && chain >= left && chain + aspect.ActualWidth <= right);
         check(name + " unrelated corner and stroke properties use distinct full rows", Controls.Grid.GetRow(rows["CornerRadius"]) != Controls.Grid.GetRow(rows["StrokeWidth"]) && rows["CornerRadius"].ActualWidth == grid.ActualWidth);
-        check(name + " numeric, color and dropdown values share a fixed label column", new[] { "StrokeWidth", "CornerRadius", "Foreground", "StrokePattern" }.All(key => ((Controls.Grid)rows[key]).ColumnDefinitions[0].ActualWidth == PropertyPanelLayout.LabelWidth + PropertyPanelLayout.LabelGap));
+        var labelWidths = new[] { "StrokeWidth", "CornerRadius", "Foreground", "StrokePattern" }.Select(key => ((Controls.Grid)rows[key]).ColumnDefinitions[0].ActualWidth).ToArray();
+        check(name + " numeric, color and dropdown values share the panel label column within its cap", labelWidths.All(width => Math.Abs(width - labelWidths[0]) < .01 && width <= PropertyPanelLayout.LabelWidth + PropertyPanelLayout.LabelGap));
         check(name + " common rectangle labels fit without scrolling", new[] { "StrokeWidth", "CornerRadius", "StrokePattern" }.All(key => captions[key] is PropertyLabel label && label.OverflowWidth < 1) && ((Controls.Grid)rows["Size"]).Children.OfType<PropertyLabel>().Single().OverflowWidth < 1);
         var inspectorRows = Field<Dictionary<string, Wpf.FrameworkElement>>(inspector, "fieldContainers");
         var inspectorNumbers = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields");
         double Edge(string key, bool end = false) => inspectorNumbers[key].TranslatePoint(new(end ? inspectorNumbers[key].ActualWidth : 0, 0), properties).X;
-        check(name + " position and size have identical input widths and aligned edges", new[] { "X", "Y", "W", "H" }.All(key => Math.Abs(inspectorNumbers[key].ActualWidth - inspectorNumbers["W"].ActualWidth) < .01) && Math.Abs(Edge("X") - Edge("W")) < .01 && Math.Abs(Edge("Y") - Edge("H")) < .01);
+        double pixel = 1 / Media.VisualTreeHelper.GetDpi(properties).DpiScaleX;
+        check(name + " position and size have equal input widths within pixel rounding and aligned edges", new[] { "X", "Y", "W", "H" }.All(key => Math.Abs(inspectorNumbers[key].ActualWidth - inspectorNumbers["W"].ActualWidth) <= pixel + .01) && Math.Abs(Edge("X") - Edge("W")) < .01 && Math.Abs(Edge("Y") - Edge("H")) < .01);
         check(name + " empty XY gap equals the WH chain gap", Math.Abs(Edge("Y") - Edge("X", true) - PropertyPanelLayout.PairGap) < .01 && Math.Abs(Edge("H") - Edge("W", true) - PropertyPanelLayout.PairGap) < .01);
         var toggle = Field<Controls.CheckBox>(panel, "linkColors");
         var toggleRow = (Controls.Grid)rows["LinkColors"];

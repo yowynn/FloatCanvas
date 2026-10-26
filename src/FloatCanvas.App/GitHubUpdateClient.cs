@@ -23,6 +23,7 @@ internal sealed record PreparedUpdate(string PackageDirectory, string Version, I
 internal sealed class GitHubUpdateClient : IDisposable
 {
     internal static readonly Uri ProjectUrl = new("https://github.com/yowynn/FloatCanvas");
+    internal static readonly Uri ChangelogUrl = new("https://github.com/yowynn/FloatCanvas/blob/main/CHANGELOG.md");
     private const long MaxPackageBytes = 128L * 1024 * 1024, MaxExpandedBytes = 512L * 1024 * 1024;
     private const int MaxMetadataBytes = 4 * 1024 * 1024, MaxEntries = 5000;
     private readonly HttpClient client;

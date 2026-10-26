@@ -2,8 +2,8 @@
   "Settings.Rendering": { "zh": "绘制性能", "en": "Rendering" },
   "Settings.PreferGpuAcceleration": { "zh": "优先使用 GPU 加速", "en": "Prefer GPU acceleration" },
   "Settings.GpuAccelerationHint": {
-    "zh": "优先使用 GPU 处理滤镜，保存后生效。",
-    "en": "Prefer GPU acceleration for filters. Applies on save."
+    "zh": "复杂画布优先用 GPU 绘制，保存后生效。",
+    "en": "Prefer GPU rendering for complex canvases. Applies on save."
   },
   "Settings.RenderBackend": { "zh": "最近一帧实际后端：{0}", "en": "Last frame rendered with: {0}" },
   "Settings.RenderBackendPending": { "zh": "尚无已完成的画布帧", "en": "No completed canvas frame yet" },

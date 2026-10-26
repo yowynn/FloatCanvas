@@ -23,7 +23,7 @@ public sealed class LauncherGestureState
     private Click press;
     private bool isSecondClick;
 
-    private readonly record struct Click(double X, double Y, long DownTimeMs);
+    private readonly record struct Click(double X, double Y, long DownTimeMs, bool SuppressMenu);
 
     // Distances and pointer coordinates must use the same coordinate system.
     // Double-click width/height are the full system rectangle centered on the first down.
@@ -50,14 +50,14 @@ public sealed class LauncherGestureState
     public long? PendingClickDeadlineMs => !IsPointerDown && HasPendingClick
         ? pendingClicks[0].DownTimeMs + doubleClickTimeMs : null;
 
-    public LauncherGestureAction PointerDown(double x, double y, long nowMs)
+    public LauncherGestureAction PointerDown(double x, double y, long nowMs, bool suppressMenu = false)
     {
         if (IsPointerDown) return LauncherGestureAction.None;
         isSecondClick = HasPendingClick && IsDoubleClick(pendingClicks[^1], x, y, nowMs);
         LauncherGestureAction action = LauncherGestureAction.None;
         if (isSecondClick) pendingClicks.RemoveAt(pendingClicks.Count - 1);
         else action = AdvanceTime(nowMs);
-        press = new(x, y, nowMs);
+        press = new(x, y, nowMs, suppressMenu);
         IsPointerDown = true;
         return action;
     }
@@ -90,8 +90,9 @@ public sealed class LauncherGestureState
     public LauncherGestureAction AdvanceTime(long nowMs)
     {
         if (PendingClickDeadlineMs is not long deadline || nowMs < deadline) return LauncherGestureAction.None;
+        bool suppressMenu = pendingClicks[0].SuppressMenu;
         pendingClicks.RemoveAt(0);
-        return LauncherGestureAction.OpenMenu;
+        return suppressMenu ? LauncherGestureAction.None : LauncherGestureAction.OpenMenu;
     }
 
     public LauncherGestureAction Cancel()

@@ -56,7 +56,7 @@ internal static class Preview4SettingsRuntimeFixture
         activate(() => WaitFor(() => host.IsEditing, System.Windows.Forms.SystemInformation.DoubleClickTime + 1000));
         check("the real delayed timer enters drawing and hides the passive mascot", host.IsEditing && toolbar.IsVisible && !mascot.IsVisible && !gestures.HasPendingClick);
         Invoke(session, "SetEditing", false, false); Pump();
-        activate(() => Invoke(mascot.Launcher, "OnPreviewMouseRightButtonUp", new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Right) { RoutedEvent = UIElement.PreviewMouseRightButtonUpEvent }));
+        activate(() => Invoke(mascot.Launcher, "OnPreviewMouseRightButtonDown", new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Right) { RoutedEvent = UIElement.PreviewMouseRightButtonDownEvent }));
         check("right-click enters drawing immediately", host.IsEditing && toolbar.IsVisible && !mascot.IsVisible);
         Invoke(session, "SetEditing", false, false); Pump();
         var before = new Point(mascot.Left, mascot.Top);

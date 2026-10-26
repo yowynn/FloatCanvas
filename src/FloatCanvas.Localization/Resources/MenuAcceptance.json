@@ -1,0 +1,11 @@
+{
+  "Feedback.Copy": {"zh":"复制信息","en":"Copy information"},
+  "Menu.ShowFloatingLogo": {"zh":"显示悬浮图标","en":"Show floating icon"},
+  "Menu.HideFloatingLogo": {"zh":"隐藏悬浮图标","en":"Hide floating icon"},
+  "Settings.SaveRestart": {"zh":"保存并重启应用","en":"Save and restart"},
+  "Feedback.Steps": {"zh":"如何报告","en":"How to report"},
+  "Feedback.System": {"zh":"系统信息","en":"System information"},
+  "Feedback.Environment": {"zh":"环境与诊断","en":"Environment & diagnostics"},
+  "Feedback.Copied": {"zh":"信息已复制，可粘贴到问题描述中。","en":"Information copied. Paste it into the issue description."},
+  "Feedback.Instructions": {"zh":"## 提交问题\n1. 写明你想完成什么，以及实际发生了什么。\n2. 列出复现步骤，附上截图或录屏。\n3. 粘贴已复制的系统与环境信息。\n\n需要日志时，勾选“包含日志”并导出诊断 ZIP，检查后附到问题中。","en":"## Report an issue\n1. Describe what you expected and what happened.\n2. List steps to reproduce, with a screenshot or recording.\n3. Paste the copied system and environment information.\n\nFor logs, select Include logs and export a diagnostic ZIP. Review it before attaching it to the issue."}
+}

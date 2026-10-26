@@ -70,7 +70,7 @@ internal static class ShellRuntimeFixture
             await WaitForStartupAsync(startupProfile, quiet, toggle);
             CheckProfile(check, startupProfile);
             var visible = VisibleWindows(quiet.Id);
-            check("quiet startup keeps welcome and toolbar hidden", !visible.Any(window => window.Title == L.Get("Welcome.Title") || window.Title == L.Get("Toolbar.Title")));
+            check("quiet startup keeps welcome and toolbar hidden", !visible.Any(window => window.Title == WindowTitles.Format(L.Get("Welcome.Title"), true) || window.Title == WindowTitles.Format(L.Get("Toolbar.Title"), false)));
             check("quiet startup does not enable canvas input", !visible.Any(window => window.Title == "FloatCanvas Input"));
             rows.Add(new { Stage = "quiet-startup", Pid = quiet.Id, VisibleWindows = visible });
         }

@@ -29,6 +29,7 @@ public sealed partial class OverlayHost : IDisposable
     private IReadOnlyList<MonitorInfo> _monitors = [];
     private IReadOnlyList<MonitorInfo> _availableMonitors = [];
     private HotkeyBinding? _toggleHotkey, _hideHotkey;
+    private bool _applicationHotkeysSuspended, _nativeHotkeysRegistered;
     private nint _previousForeground;
     private OverlayMouseButton _pressedButton;
     private bool _releasingCapture, _refreshPosted, _disposed, _rendering;
@@ -168,7 +169,7 @@ public sealed partial class OverlayHost : IDisposable
             KeyboardInputIsolation.ValidateHotkey(hide);
         }
         if (toggle == hide) throw new ArgumentException(L.Get("Hotkeys.BindingsMustDiffer"));
-        if (_toggleHotkey == toggle && _hideHotkey == hide) return;
+        if (_nativeHotkeysRegistered && _toggleHotkey == toggle && _hideHotkey == hide) return;
         var previousToggle = _toggleHotkey;
         var previousHide = _hideHotkey;
         UnregisterHotKey(ControlHandle, ToggleHotkeyId);
@@ -185,6 +186,8 @@ public sealed partial class OverlayHost : IDisposable
                 previousToggle.Value.Modifiers | 0x4000, previousToggle.Value.VirtualKey);
             var restoredHide = previousHide is null || RegisterHotKey(ControlHandle, HideHotkeyId,
                 previousHide.Value.Modifiers | 0x4000, previousHide.Value.VirtualKey);
+            _nativeHotkeysRegistered = restoredToggle && restoredHide;
+            if (_applicationHotkeysSuspended) UnregisterApplicationHotkeys();
             if (!restoredToggle || !restoredHide)
             {
                 _toggleHotkey = restoredToggle ? previousToggle : null;
@@ -196,6 +199,24 @@ public sealed partial class OverlayHost : IDisposable
         _toggleHotkey = toggle;
         _hideHotkey = hide;
         _keyboardIsolation?.UpdateHotkeys(toggle, hide);
+        _nativeHotkeysRegistered = true;
+        if (_applicationHotkeysSuspended) UnregisterApplicationHotkeys();
+    }
+
+    private void UnregisterApplicationHotkeys()
+    {
+        UnregisterHotKey(ControlHandle, ToggleHotkeyId); UnregisterHotKey(ControlHandle, HideHotkeyId);
+        _nativeHotkeysRegistered = false;
+    }
+
+    public void SuspendApplicationHotkeys(bool suspended)
+    {
+        CheckThread();
+        if (_applicationHotkeysSuspended == suspended) return;
+        _applicationHotkeysSuspended = suspended;
+        _keyboardIsolation?.SuspendCommands(suspended);
+        if (suspended) UnregisterApplicationHotkeys();
+        else if (_toggleHotkey is { } toggle && _hideHotkey is { } hide) RegisterHotkeys(toggle, hide);
     }
 
     public void SetEditing(bool editing)
@@ -780,6 +801,7 @@ public sealed partial class OverlayHost : IDisposable
             }
             if (message == WmHotkey)
             {
+                if (_applicationHotkeysSuspended) return 0;
                 if (_captureActive)
                 {
                     if ((int)wParam == ToggleHotkeyId) CancelPendingCapture();

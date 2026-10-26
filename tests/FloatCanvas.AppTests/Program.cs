@@ -145,6 +145,10 @@ internal static class Program
             if (args.Contains("--stamp-shelf-native-geometry-only")) { StampLibraryUiTests.RunNativeGeometry(Assert); return 0; }
             if (args.Contains("--shell-integration-only")) { ShellIntegrationTests.Run(Assert); return 0; }
             if (args.Contains("--shell-runtime-only")) { ShellRuntimeFixture.Run(Assert); return 0; }
+            if (args.Contains("--menu-acceptance-only")) { MenuAcceptanceTests.Run(Assert); return 0; }
+            if (args.Contains("--avatar-menu-only")) { AvatarMenuGestureTests.Run(Assert); LauncherGestureStateTests.Run(Assert); return 0; }
+            if (args.Contains("--welcome-focus-only")) { WelcomeForegroundTests.Run(Assert, false); return 0; }
+            if (args.Contains("--welcome-focus-enhanced-only")) { WelcomeForegroundTests.Run(Assert, true); return 0; }
             if (args.Contains("--launcher-menu-only")) { LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert); return 0; }
             if (args.Contains("--launcher-tab-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "launcher-tab"); return 0; }
             if (args.Contains("--canvas-projection-preview")) { CanvasProjectionRuntimeFixture.Run(Assert, true); return 0; }
@@ -169,6 +173,7 @@ internal static class Program
             if (args.Contains("--updates-recovery-only")) { UpdateRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--update-installer-only")) { UpdateInstallerTests.Run(Assert); return 0; }
             if (args.Contains("--update-window-only")) { AppUpdateWindowTests.Run(Assert); return 0; }
+            if (args.Contains("--window-titles-only")) { WindowTitleTests.Run(Assert); return 0; }
             if (args.Contains("--preset-isolation-only")) { PresetIsolationTests.Run(Assert); return 0; }
             if (args.Contains("--palette-layout-only")) { PaletteLayoutTests.Run(Assert); return 0; }
             if (args.Contains("--color-popup-ownership-only")) { ColorPopupOwnershipTests.Run(Assert); return 0; }
@@ -233,6 +238,9 @@ internal static class Program
             Preview4InlineTextTests.Run(Assert);
             TextToolTransformTests.Run(Assert);
             Preview4PropertiesTests.Run(Assert);
+            MenuAcceptanceTests.Run(Assert);
+            WindowTitleTests.Run(Assert);
+            AvatarMenuGestureTests.Run(Assert);
             PropertyVisualTests.Run(Assert);
             WindowSpacingTests.Run(Assert);
             TemporaryMoveControllerTests.Run(Assert);

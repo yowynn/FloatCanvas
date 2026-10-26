@@ -9,6 +9,13 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length >= 2 && args[0] == "--wait-for-exit")
+        {
+            if (!int.TryParse(args[1], out int processId) || processId == Environment.ProcessId) return;
+            try { using var parent = System.Diagnostics.Process.GetProcessById(processId); if (!parent.WaitForExit(30000)) return; }
+            catch (ArgumentException) { }
+            args = args[2..];
+        }
         if (args is ["--unregister-integration"] or ["--register-integration"])
         {
             try

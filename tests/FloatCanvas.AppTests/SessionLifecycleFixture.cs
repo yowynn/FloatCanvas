@@ -36,7 +36,7 @@ internal static class SessionLifecycleFixture
             check("one real startup window opens before editing", welcome.IsVisible && !host!.IsEditing && welcome.Content is WelcomeView);
             welcome.Close(); Pump(); Invoke("ShowWelcome"); Pump();
             check("closing the welcome window never recreates it during the session", NullableField(session!, "_welcomeWindow") is null &&
-                !app.Windows.Cast<Window>().Any(window => window.Title == L.Get("Welcome.Title")));
+                !app.Windows.Cast<Window>().Any(window => window.Title == WindowTitles.Format(L.Get("Welcome.Title"), true)));
 
             toolbar.Show(); Pump(); Invoke("PlaceToolbar"); Pump();
             var point = toolbar.PointToScreen(new Point()); var monitor = host!.PrimaryMonitor;

@@ -104,7 +104,7 @@ GPU drawing does not mean the entire application runs only on the GPU. Image and
 
 Toggle shortcuts use Ctrl/Alt/Shift combinations. Win and system navigation combinations remain available to Windows. Pressing Win alone no longer immediately leaves editing; use `Win+Space` to switch input methods in controls and filename fields. Opening Start or actually switching to another application still releases input. `Ctrl+Alt+Esc` is reserved for emergency input release. An unresponsive editing UI or interrupted input ownership returns to pass-through; earlier drawing keys are not replayed into the application underneath.
 
-Choose **Open welcome page** from the toolbar menu or system tray to reopen it. A manually opened welcome page stays open when entering drawing mode; opening the startup welcome this way also keeps the existing window. Click its version to check for updates, or its credits to open the GitHub project.
+Choose **Help → Open welcome page** from the main menu or use the system tray to reopen it. From editing, this first leaves edit mode and then brings Welcome to the foreground. Entering edit mode closes Welcome. Click its version to check for updates, or its credits to open the GitHub project.
 
 ## Settings and the floating logo
 
@@ -115,6 +115,8 @@ Settings are grouped into **General**, **Canvas & history**, **Shortcuts**, and 
 The pass-through logo is 75% of the editing logo's size and carries a **Pass-through** indicator, so the modes remain distinguishable when the editing toolbar is collapsed. The indicator describes the current state and is not a button; open/closed eyes only indicate whether the canvas is visible/hidden.
 
 Drag the logo to move it. Its position is kept during this run. Small pointer movements still count as a click or double-click.
+
+In edit mode, pressing the right mouse button on the avatar opens the main menu immediately. When the menu is open, a left press closes it while remaining eligible for a double-click to toggle canvas visibility or a drag to move the toolbar. A single menu-dismissal click cannot reopen the menu later.
 
 ## Check and install updates
 
@@ -528,6 +530,6 @@ The gray page-plus toolbar button starts a new canvas with the current settings 
 
 History compares content with the version present when you entered a canvas, then archives on switching, starting a new canvas or exiting. Temporary work is kept automatically; edited projects remain eligible after saving. Opening without edits, blank canvases (including changes only to canvas settings) and duplicate content add no versions. Restoring creates an unnamed copy, retains the original history timestamp and position, and never automatically overwrites the source project. Further edits can create a new version at the top of history. Background recovery also persists empty states separately.
 
-Maximum saved history versions defaults to 60 and accepts integers from 1 to 10000. Saving settings or adding history removes the oldest excess versions. The current canvas and recovery quarantine are excluded. Save a project file for long-term retention.
+History limit defaults to 60 and accepts integers from 0 to 1000; the slider covers 0–200. Zero disables archived history versions. Saving settings or adding history removes the oldest excess versions. Current workspace recovery and recovery quarantine are excluded. Save a project file for long-term retention.
 
 Stamp tooltips preserve the preview image aspect. Stamps with projected live effects use a captured thumbnail, which can differ from nominal plane-space dimensions; the preview stays undistorted and reports separate horizontal and vertical scales when needed.

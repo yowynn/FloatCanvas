@@ -599,6 +599,13 @@ internal sealed class InspectorWindow : Wpf.Window
             numeric.SetLabel(caption);
             numericFields.Add(key, numeric);
             numeric.Margin = new(0); numeric.VerticalAlignment = Wpf.VerticalAlignment.Center;
+            if (second is null)
+            {
+                cell.Children.Clear();
+                var row = PropertyPanelLayout.Row(caption, numeric);
+                fieldContainers[key] = row;
+                return row;
+            }
             Controls.Grid.SetColumn(numeric, 1); cell.Children.Add(numeric);
             return cell;
         }

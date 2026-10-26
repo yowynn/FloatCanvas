@@ -28,7 +28,7 @@ internal sealed class UserSettings
     public bool PreferGpuAcceleration { get; set; } = true;
     public string OverlayMode { get; set; } = "auto";
     private int historyVersionLimit = 60;
-    public int HistoryVersionLimit { get => historyVersionLimit; set => historyVersionLimit = value is >= 1 and <= 10000 ? value : 60; }
+    public int HistoryVersionLimit { get => historyVersionLimit; set => historyVersionLimit = value >= 0 ? Math.Min(value, 1000) : 60; }
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
     private static string FilePath => Path.Combine(ApplicationPaths.ProfileDirectory, "settings.json");

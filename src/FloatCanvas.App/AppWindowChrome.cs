@@ -33,6 +33,9 @@ internal static class AppWindowChrome
 
     private static void ApplyCore(Window window)
     {
+        WindowTitles.Apply(window);
+        PropertyPanelLayout.Scope(window);
+        if (window.Content is FrameworkElement propertyRoot) PropertyPanelLayout.Scope(propertyRoot);
         OverlayWindowScope.Prepare(window);
         SessionWindowLayout.TrackOwned(window);
         SessionWindowCoordinator.TrackOwned(window);

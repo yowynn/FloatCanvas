@@ -204,6 +204,7 @@ public sealed class KeyboardInputIsolation : IDisposable
         if (toggle == hide) throw new ArgumentException(L.Get("Hotkeys.DuplicateBindings"));
         lock (gate) state.UpdateHotkeys(toggle, hide);
     }
+    internal void SuspendCommands(bool suspended) { lock (gate) state.CommandsSuspended = suspended; }
     /// <summary>Call regularly from the UI dispatcher, including while static and in modal loops.</summary>
     public void Heartbeat() => Volatile.Write(ref lastHeartbeat, Environment.TickCount64);
 

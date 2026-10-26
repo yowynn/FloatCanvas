@@ -56,6 +56,14 @@ public sealed class OverlayPopup : FrameworkElement
 /// <summary>Thread-scoped ownership for all interactive overlay windows and popups.</summary>
 internal sealed class OverlayWindowScope : IDisposable
 {
+    private static readonly DependencyProperty RegularWindowProperty = DependencyProperty.RegisterAttached("RegularWindow", typeof(bool), typeof(OverlayWindowScope), new PropertyMetadata(false));
+    internal static void UseRegularWindow(Window window)
+    {
+        window.SetValue(RegularWindowProperty, true);
+        if(window.Owner is { } owner && !IsRegularWindow(owner) && SessionWindowCoordinator.Find(owner) is not null) window.Owner=null;
+        window.Topmost=false; window.ShowActivated=true; WindowTitles.Apply(window); AppTheme.UseRegularControls(window);
+    }
+    internal static bool IsRegularWindow(Window window) => (bool)window.GetValue(RegularWindowProperty);
     private static readonly DependencyProperty PreparedProperty=DependencyProperty.RegisterAttached("Prepared",typeof(bool),typeof(OverlayWindowScope),new PropertyMetadata(false));
     [ThreadStatic] internal static OverlayWindowScope? Current;
     internal nint Owner { get; }
@@ -66,6 +74,8 @@ internal sealed class OverlayWindowScope : IDisposable
     { if(Current is not null) throw new InvalidOperationException("An overlay session already owns this thread."); Owner=owner;this.inputActive=inputActive??(()=>true);Current=this;OverlayTransientControls.Initialize(); }
     internal static void Prepare(Window window)
     {
+        if (window.Owner is { } owner && IsRegularWindow(owner)) UseRegularWindow(window);
+        if (IsRegularWindow(window)) { UseRegularWindow(window); return; }
         if(Current is not { } scope) return;
         window.ShowActivated=!scope.IsInputActive;
         var interop=new WindowInteropHelper(window);
@@ -248,6 +258,7 @@ internal sealed class OverlayPopupWindow : IDisposable
 
 internal sealed class OverlayContextMenu : ContextMenu
 {
+    internal bool TargetPressToggles { get; set; }
     private OverlayPopupWindow? window;
     private IDisposable? parentRetention;
     static OverlayContextMenu()
@@ -262,6 +273,14 @@ internal sealed class OverlayContextMenu : ContextMenu
                     if(source is FrameworkElement {ContextMenu:OverlayContextMenu menu} element)
                     {e.Handled=true;menu.PlacementTarget=element;menu.IsOpen=true;return;}
             }));
+        EventManager.RegisterClassHandler(typeof(MenuItem),MenuItem.ClickEvent,new RoutedEventHandler((sender,e)=>
+        {
+            if(!ReferenceEquals(sender,e.OriginalSource) || sender is not MenuItem {HasItems:false,StaysOpenOnClick:false} item)return;
+            // Close the hosted root before the command can enter a modal loop.
+            // A handler on the root only runs after the item's Click handler returns.
+            for(ItemsControl? owner=ItemsControl.ItemsControlFromItemContainer(item);owner is not null;owner=ItemsControl.ItemsControlFromItemContainer(owner))
+                if(owner is OverlayContextMenu menu){menu.IsOpen=false;return;}
+        }),true);
     }
     internal static void SetOpen(ContextMenu menu,bool open)
     {if(menu is OverlayContextMenu hosted)hosted.IsOpen=open;else menu.IsOpen=open;}
@@ -276,8 +295,6 @@ internal sealed class OverlayContextMenu : ContextMenu
             // eligible for outside-focus dismissal again.
             if (retention is not null) Dispatcher.BeginInvoke(DispatcherPriority.Input, retention.Dispose);
         };
-        AddHandler(MenuItem.ClickEvent,new RoutedEventHandler((_,e)=>
-        {if(e.OriginalSource is MenuItem {HasItems:false,StaysOpenOnClick:false}) IsOpen=false;}));
     }
     public new bool IsOpen
     {
@@ -287,7 +304,7 @@ internal sealed class OverlayContextMenu : ContextMenu
             if(OverlayWindowScope.Current is null){base.IsOpen=value;return;}
             if(value && window is null)
             {
-                window=new OverlayPopupWindow(this,PlacementTarget,Placement,HorizontalOffset,VerticalOffset,()=>IsOpen=false,CustomPopupPlacementCallback);
+                window=new OverlayPopupWindow(this,PlacementTarget,Placement,HorizontalOffset,VerticalOffset,()=>IsOpen=false,CustomPopupPlacementCallback,targetPressToggles:TargetPressToggles);
                 window.Show();RaiseEvent(new RoutedEventArgs(OpenedEvent,this));
                 if(Items.OfType<MenuItem>().FirstOrDefault(item=>item.IsEnabled) is { } first) window.Focus(first);
             }

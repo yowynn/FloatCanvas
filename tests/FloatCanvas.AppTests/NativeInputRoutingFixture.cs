@@ -45,6 +45,7 @@ internal static class NativeInputRoutingFixture
             var monitor = primary with { Bounds = tile };
             Func<IReadOnlyList<MonitorInfo>> provider = () => [monitor];
             host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), PrivateInstance, null, [OverlayMonitorScope.PrimaryScreen, provider, false], null)!;
+            if (scenarioOverride == "preview4-menu" && Environment.GetEnvironmentVariable("FLOATCANVAS_MENU_TEST_BACKEND") == "enhanced") host.EnableSystemInput();
             handles = host.Diagnostics.SelectMany(pair => new[] { pair.InputHandle, pair.DisplayHandle }).Append(host.ControlHandle).ToArray();
             session = new DesktopSession(app, host);
             InputManager.Current.PostProcessInput += afterPointerFocus;
@@ -578,7 +579,7 @@ internal static class NativeInputRoutingFixture
         typeof(OverlayHost).GetField("_toggleHotkey", PrivateInstance)!.SetValue(host, (HotkeyBinding?)settings.Toggle);
         typeof(OverlayHost).GetField("_hideHotkey", PrivateInstance)!.SetValue(host, (HotkeyBinding?)settings.Hide);
         Invoke("ShowHotkeySettings"); Pump();
-        var settingsWindow = app.Windows.Cast<Window>().Single(window => window.Title == FloatCanvas.Localization.AppText.Get("Settings.Title"));
+        var settingsWindow = app.Windows.Cast<Window>().Single(window => window is AppSettingsWindow);
         SettingsWindowFixture.Descendants(settingsWindow).OfType<ComboBox>().Single(box => System.Windows.Automation.AutomationProperties.GetName(box) == FloatCanvas.Localization.AppText.Get("Settings.Theme")).SelectedIndex = 2;
         ((AppSettingsWindow)settingsWindow).SaveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
         check("saving a new theme closes settings and retains the toolbar in editing", !settingsWindow.IsVisible && toolbar.IsVisible && host.IsEditing && UserSettings.Load().Theme == "dark");

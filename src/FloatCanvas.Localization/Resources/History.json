@@ -1,15 +1,15 @@
 {
   "History.Limit": {
-    "zh": "保存的历史版本上限",
-    "en": "Maximum saved history versions"
+    "zh": "历史版本上限",
+    "en": "History limit"
   },
   "History.LimitHint": {
-    "zh": "默认 60，范围 1–10000。超出上限时删除最旧历史。",
-    "en": "Default 60; range 1–10000. Excess history is removed oldest first."
+    "zh": "默认 60，范围 0–1000。0 不保留历史版本；超出上限时删除最旧历史。",
+    "en": "Default 60; range 0–1000. Zero disables history. Excess history is removed oldest first."
   },
   "History.InvalidLimit": {
-    "zh": "请输入 1 到 10000 之间的整数。",
-    "en": "Enter an integer from 1 to 10000."
+    "zh": "请输入 0 到 1000 之间的整数。",
+    "en": "Enter an integer from 0 to 1000."
   },
   "History.NewQuestion": {
     "zh": "创建新画布？当前有效内容将保留到历史。",

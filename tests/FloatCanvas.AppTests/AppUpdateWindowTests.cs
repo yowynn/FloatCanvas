@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -28,20 +29,25 @@ internal static class AppUpdateWindowTests
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(app.Dispatcher));
         try
         {
+            RegularWindowDuringOverlayScope(output, check);
             foreach (string language in new[] { "zh-CN", "en" })
             foreach (string theme in new[] { "light", "dark" })
             {
                 L.Initialize(language); AppTheme.Apply(theme);
                 using var http = new HttpClient(new FakeHandler((_, _) => Task.FromResult(JsonResponse(ReleaseMetadata))));
                 using var client = new GitHubUpdateClient(http);
-                var window = new AppUpdateWindow("0.2.0-preview.1", client, _ => Task.CompletedTask, true, Path.Combine(output, "cache"), autoCheck: false);
+                var links = new List<Uri>();
+                var window = new AppUpdateWindow("0.2.0-preview.1", client, _ => Task.CompletedTask, true, Path.Combine(output, "cache"), autoCheck: false, openLink: links.Add);
                 try
                 {
                     Await(window.CheckAsync());
                     string context = language + " " + theme;
                     check(context + " update check enables installing and shows latest version", window.InstallButton.IsEnabled && window.LatestVersionText.Text == "v0.3.0" && window.StatusText.Text == L.Get("Updates.Available"));
-                    check(context + " release notes remain literal read-only text", window.NotesText.IsReadOnly && window.NotesText.Text == Notes && !window.NotesText.IsReadOnlyCaretVisible);
+                    check(context + " release notes use a selectable formatted document", window.NotesText.Text == Notes && window.NotesText.Document.Blocks.Count > 0);
                     check(context + " repository link is always available and points to this project", window.RepositoryLink.NavigateUri?.AbsoluteUri == "https://github.com/yowynn/FloatCanvas");
+                    window.ChangelogButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    check(context + " full changelog action opens the GitHub changelog file", links.Single().AbsoluteUri == "https://github.com/yowynn/FloatCanvas/blob/main/CHANGELOG.md" && Equals(window.ChangelogButton.Content, L.Get("Updates.MoreLogs")));
+                    check(context + " update title identifies an ordinary application window", window.Title == WindowTitles.Format(L.Get("Updates.Title"), true) && !window.Topmost && window.ShowInTaskbar);
                     check(context + " update panel uses shared floating chrome without native min/max controls", window.Template is not null && window.WindowStyle == WindowStyle.None && window.ResizeMode == ResizeMode.CanResize);
                     var body = (FrameworkElement)window.Content;
                     window.Content = null;
@@ -50,6 +56,7 @@ internal static class AppUpdateWindowTests
                     host.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "CanvasText");
                     host.Measure(new(498, 450)); host.Arrange(new(0, 0, 498, 450)); host.UpdateLayout();
                     check(context + " controls fit the compact update surface", window.NotesText.ActualHeight >= 90 && window.InstallButton.ActualWidth > 70 && window.CheckButton.ActualWidth > 70 && body.ActualWidth < 498);
+                    check(context + " changelog action is visible beside the notes heading", window.ChangelogButton.ActualWidth > 70 && window.ChangelogButton.TranslatePoint(new Point(), body).Y < window.NotesText.TranslatePoint(new Point(), body).Y);
                     var pixels = new RenderTargetBitmap(498, 450, 96, 96, PixelFormats.Pbgra32); pixels.Render(host);
                     var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(pixels));
                     using (var file = File.Create(Path.Combine(output, "updates-" + language + "-" + theme + ".png"))) encoder.Save(file);
@@ -70,6 +77,23 @@ internal static class AppUpdateWindowTests
             foreach (var window in app.Windows.Cast<Window>().Where(w => !initialWindows.Contains(w)).ToArray()) window.Close();
             L.Initialize(priorLanguage); AppTheme.Apply("light"); SynchronizationContext.SetSynchronizationContext(priorContext);
         }
+    }
+
+    private static void RegularWindowDuringOverlayScope(string output, Action<string, bool> check)
+    {
+        using var owner = new HwndSource(new HwndSourceParameters("FloatCanvas.UpdateWindowPolicy")
+        { Width = 10, Height = 10, PositionX = -10000, PositionY = -10000, WindowStyle = unchecked((int)0x80000000) });
+        using var scope = new OverlayWindowScope(owner.Handle, () => false);
+        using var http = new HttpClient(new FakeHandler((_, _) => Task.FromResult(JsonResponse("[]"))));
+        using var client = new GitHubUpdateClient(http);
+        var window = new AppUpdateWindow("0.2.1", client, _ => Task.CompletedTask, true, output, autoCheck: false);
+        try
+        {
+            Console.WriteLine($"UPDATE_WINDOW_POLICY topmost={window.Topmost} taskbar={window.ShowInTaskbar} transparent={window.AllowsTransparency} regular={OverlayWindowScope.IsRegularWindow(window)} nativeOwner={new WindowInteropHelper(window).Owner}");
+            check("updates are ordinary taskbar windows even while an overlay scope exists", !window.Topmost && window.ShowInTaskbar && OverlayWindowScope.IsRegularWindow(window));
+            check("update construction does not inherit overlay ownership or input policy", !window.AllowsTransparency && window.ShowActivated && new WindowInteropHelper(window).Owner == 0);
+        }
+        finally { window.Close(); }
     }
 
     private static void PreviewChannelAndCurrentNotes(string output, Action<string, bool> check)
@@ -131,6 +155,7 @@ internal static class AppUpdateWindowTests
         {
             Await(none.CheckAsync());
             check("no newer release leaves update disabled and check available", !none.InstallButton.IsEnabled && none.CheckButton.IsEnabled && none.StatusText.Text == L.Get("Updates.UpToDate"));
+            check("full changelog stays available without a newer release", none.ChangelogButton.IsEnabled && none.ChangelogButton.Visibility == Visibility.Visible);
             check("repository stays available when no newer release exists", none.RepositoryLink.Parent is not null);
         }
         finally { none.Close(); }
@@ -141,6 +166,7 @@ internal static class AppUpdateWindowTests
         {
             Await(failure.CheckAsync());
             check("HTTP error is shown without escaping the update task", failure.StatusText.Text == L.Get("Updates.CheckFailed") && failure.DetailText.Text.Contains("503") && !failure.InstallButton.IsEnabled && failure.CheckButton.IsEnabled);
+            check("full changelog stays available when checking fails", failure.ChangelogButton.IsEnabled && failure.ChangelogButton.Visibility == Visibility.Visible);
             check("repository stays available when checking fails", failure.RepositoryLink.Parent is not null);
         }
         finally { failure.Close(); }

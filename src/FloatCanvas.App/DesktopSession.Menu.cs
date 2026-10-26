@@ -17,6 +17,8 @@ internal sealed partial class DesktopSession
         _toolbarExpansionMenuItem.Click += (_, _) => RunUiAction(ToggleToolbarExpanded);
         RefreshToolbarExpansionMenuItem();
         menu.Items.Add(_toolbarExpansionMenuItem);
+        var pass = new Controls.MenuItem { Header = L.Get("ToolbarV2.PassThrough"), InputGestureText = FormatHotkey(_settings.Toggle), Icon = CommandGlyphs.Create(CommandGlyphs.PassThrough) };
+        pass.Click += (_, _) => RunUiAction(() => SetEditing(false)); menu.Items.Add(pass);
         menu.Items.Add(new Controls.Separator());
         menu.Opened += (_, _) => RefreshToolbarExpansionMenuItem();
         Controls.MenuItem Group(string key, string geometry)
@@ -78,25 +80,28 @@ internal sealed partial class DesktopSession
         Item(windows, L.Get("Stamp.LibraryTitle"), CommandGlyphs.Stamp, ShowStampLibrary, "-");
         Item(edit, L.Get("Feedback3.Toolbar.NewStamp"), CommandGlyphs.NewStamp, SaveStampSelection, "+", "save-stamp");
         menu.Items.Add(new Controls.Separator());
-        var welcome = new Controls.MenuItem {Header=L.Get("Welcome.Open"),Icon=CommandGlyphs.Create(CommandGlyphs.Welcome)};
-        welcome.Click+=(_,_)=>RunUiAction(()=>OpenWelcome(true)); menu.Items.Add(welcome);
-        var floatingLogo = new Controls.MenuItem {Header=L.Get("Settings.PassThroughLauncher"),Icon=CommandGlyphs.Create(CommandGlyphs.FloatingLogo),IsCheckable=true};
+        var floatingLogo = new Controls.MenuItem();
         floatingLogo.Click+=(_,_)=>RunUiAction(ToggleFloatingLogo); menu.Items.Add(floatingLogo);
-        menu.Opened+=(_,_)=>floatingLogo.IsChecked=_settings.ShowPassThroughLauncher;
+        void RefreshLogo()
+        {
+            floatingLogo.Header = L.Get(_settings.ShowPassThroughLauncher ? "Menu.HideFloatingLogo" : "Menu.ShowFloatingLogo");
+            floatingLogo.Icon = CommandGlyphs.Create(_settings.ShowPassThroughLauncher ? CommandGlyphs.HideFloatingLogo : CommandGlyphs.FloatingLogo);
+        }
+        RefreshLogo(); menu.Opened += (_, _) => RefreshLogo();
         var settings = new Controls.MenuItem { Header = L.Get("Menu.Settings"), InputGestureText = "Ctrl+,", Icon = CommandGlyphs.Create(CommandGlyphs.Settings) };
         settings.Click += (_, _) => RunUiAction(ShowHotkeySettings); menu.Items.Add(settings);
+        var help = Group("Audit.Help", CommandGlyphs.Help);
+        Item(help, L.Get("Welcome.Open"), CommandGlyphs.Welcome, () => OpenWelcome(true));
+        Item(help, L.Get("Audit.UserGuide"), CommandGlyphs.Guide, () => ShowHelp(false));
+        Item(help, L.Get("Settings.Shortcuts"), CommandGlyphs.Shortcuts, () => ShowHelp(true));
+        help.Items.Add(new Controls.Separator());
+        Item(help,L.Get("Menu.OpenInstallDirectory"),CommandGlyphs.InstallDirectory,()=>System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppContext.BaseDirectory){UseShellExecute=true}));
+        Item(help,L.Get("Menu.OpenUserDataDirectory"),CommandGlyphs.UserDataDirectory,()=>{System.IO.Directory.CreateDirectory(ApplicationPaths.ProfileDirectory);System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ApplicationPaths.ProfileDirectory){UseShellExecute=true});});
+        help.Items.Add(new Controls.Separator());
+        Item(help, L.Get("Audit.ReportIssue"), CommandGlyphs.ReportIssue, ShowReportIssue);
         var updates = new Controls.MenuItem { Header = L.Get("Updates.Title"), Icon = CommandGlyphs.Create(CommandGlyphs.Updates) };
         updates.Click += (_, _) => RunUiAction(ShowUpdates); menu.Items.Add(updates);
-        var system = Group("Menu.SystemDiagnostics",CommandGlyphs.SystemDiagnostics);
-        Item(system, L.Get("Engineering.ExportDiagnostics"), CommandGlyphs.DiagnosticExport, () => DiagnosticExportWindow.ShowFor(_toolbar, UsesEnhancedOverlay));
-        var help = Group("Audit.Help", CommandGlyphs.Help);
-        Item(help, L.Get("Audit.UserGuide"), CommandGlyphs.Guide, AppHelp.OpenGuide);
-        Item(help, L.Get("Settings.Shortcuts"), CommandGlyphs.Shortcuts, AppHelp.OpenShortcuts);
-        Item(help, L.Get("Audit.ReportIssue"), CommandGlyphs.ReportIssue, AppHelp.ReportIssue);
-        Item(system,L.Get("Menu.OpenInstallDirectory"),CommandGlyphs.InstallDirectory,()=>System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppContext.BaseDirectory){UseShellExecute=true}));
-        Item(system,L.Get("Menu.OpenUserDataDirectory"),CommandGlyphs.UserDataDirectory,()=>{System.IO.Directory.CreateDirectory(ApplicationPaths.ProfileDirectory);System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ApplicationPaths.ProfileDirectory){UseShellExecute=true});});
-        var pass = new Controls.MenuItem { Header = L.Get("ToolbarV2.PassThrough"), InputGestureText = FormatHotkey(_settings.Toggle), Icon = CommandGlyphs.Create(CommandGlyphs.PassThrough) };
-        pass.Click += (_, _) => RunUiAction(() => SetEditing(false)); menu.Items.Add(pass);
+        menu.Items.Add(new Controls.Separator());
         var exit = new Controls.MenuItem { Header = L.Get("Desktop.Exit"), Icon = CommandGlyphs.Create(CommandGlyphs.Exit) };
         exit.Click += (_, _) => _ = ExitAfterSnapshotAsync(); menu.Items.Add(exit);
         return menu;

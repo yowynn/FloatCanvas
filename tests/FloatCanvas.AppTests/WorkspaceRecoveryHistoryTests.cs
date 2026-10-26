@@ -142,11 +142,17 @@ internal static class WorkspaceRecoveryHistoryTests
         await store.SaveAsync(new WorkspaceState(), assets); history.EnterWorkspace(new()); history.WriteCurrentInfo(new(), null);
         check("empty recovery persists without becoming a visible history entry", (await store.LoadAsync())!.State.LiveDocument.Elements.Count == 0 && history.GetEntries().All(e => !e.IsCurrent));
         check("missing settings default to sixty versions", System.Text.Json.JsonSerializer.Deserialize<UserSettings>("{}")!.HistoryVersionLimit == 60);
-        check("invalid persisted limits normalize to sixty", System.Text.Json.JsonSerializer.Deserialize<UserSettings>("{\"HistoryVersionLimit\":0}")!.HistoryVersionLimit == 60);
-        foreach (int limit in new[] { 1, 60, 10000 })
+        check("zero persisted history limit is retained", System.Text.Json.JsonSerializer.Deserialize<UserSettings>("{\"HistoryVersionLimit\":0}")!.HistoryVersionLimit == 0);
+        foreach (int limit in new[] { 0, 1, 60, 1000 })
             check($"valid history limit {limit} is retained", new UserSettings { HistoryVersionLimit = limit }.HistoryVersionLimit == limit);
-        foreach (int limit in new[] { -1, 10001, int.MaxValue })
+        foreach (int limit in new[] { -1, int.MinValue })
             check($"invalid history limit {limit} falls back to sixty", new UserSettings { HistoryVersionLimit = limit }.HistoryVersionLimit == 60);
+        check("legacy history limits above the new cap normalize to one thousand", System.Text.Json.JsonSerializer.Deserialize<UserSettings>("{\"HistoryVersionLimit\":10000}")!.HistoryVersionLimit == 1000);
+        history.MaximumVersions = 0; history.Trim();
+        check("zero history limit clears archives and preserves current recovery", history.GetEntries().All(entry => entry.IsCurrent) && File.Exists(store.CurrentPath) && await store.LoadAsync() is not null);
+        var noHistory = new WorkspaceState(); noHistory.LiveDocument.Elements.Add(new() { Kind = ElementKind.Text, Text = "disabled history" });
+        await history.ArchiveAsync(noHistory, assets, null, null, force: true);
+        check("zero history limit creates no new archived version", history.GetEntries().All(entry => entry.IsCurrent));
         string brokenDirectory = Path.Combine(directory, "corrupt-recovery");
         Directory.CreateDirectory(brokenDirectory);
         var brokenStore = new RecoveryStore(brokenDirectory);

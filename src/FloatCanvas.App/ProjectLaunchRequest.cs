@@ -41,5 +41,12 @@ internal static class ProjectLaunchRequest
         return Path.GetFullPath(path);
     }
 
-    internal static bool AllowsRegistration(string[] args) => !args.Contains("--profile") && !args.Contains("--smoke");
+    internal static bool AllowsRegistration(string[] args)
+    {
+        if (args.Contains("--smoke")) return false;
+        int profile = Array.IndexOf(args, "--profile");
+        // Both restart paths explicitly retain the profile; that alone does not make it isolated.
+        return profile < 0 || (profile + 1 < args.Length && !string.IsNullOrWhiteSpace(args[profile + 1]) &&
+            string.Equals(ApplicationPaths.CanonicalDirectory(args[profile + 1]), ApplicationPaths.DefaultProfileDirectory, StringComparison.OrdinalIgnoreCase));
+    }
 }

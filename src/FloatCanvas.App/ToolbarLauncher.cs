@@ -21,6 +21,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
     public event Action? MenuRequested;
     public event Action? ToggleVisibilityRequested;
     public event Action? DragRequested;
+    internal Func<bool>? CloseOpenMenu { get; set; }
 
     public ToolbarLauncher(bool editing = true)
     {
@@ -69,6 +70,12 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
         if (IsMouseCaptured) ReleaseMouseCapture();
     }
 
+    internal void DismissMenuPress(Point position)
+    {
+        CloseOpenMenu?.Invoke();
+        BeginLeftPress(position, suppressMenu: true);
+    }
+
     internal void SetCanvasVisible(bool visible)
     {
         if(Content is Image artwork)artwork.Source=AppIcon.LauncherImage(visible, editing);
@@ -76,11 +83,17 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
 
     protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
     {
+        bool closedMenu = CloseOpenMenu?.Invoke() == true;
+        BeginLeftPress(e.GetPosition(this), closedMenu);
+        e.Handled = true;
+    }
+    private void BeginLeftPress(Point position, bool suppressMenu)
+    {
         if (!gestures.HasPendingClick && !gestures.IsPointerDown) ResetMetrics();
         if (!editing) Focus();
-        var point = PointToScreen(e.GetPosition(this));
-        Execute(gestures.PointerDown(point.X, point.Y, Environment.TickCount64));
-        CaptureMouse(); ArmTimer(); e.Handled = true;
+        var point = PointToScreen(position);
+        Execute(gestures.PointerDown(point.X, point.Y, Environment.TickCount64, suppressMenu));
+        CaptureMouse(); ArmTimer();
     }
     protected override void OnPreviewMouseLeftButtonUp(MouseButtonEventArgs e)
     {
@@ -96,10 +109,11 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
         Execute(gestures.PointerMove(point.X, point.Y, Environment.TickCount64));
         ArmTimer(); e.Handled = true;
     }
-    protected override void OnPreviewMouseRightButtonUp(MouseButtonEventArgs e)
+    protected override void OnPreviewMouseRightButtonDown(MouseButtonEventArgs e)
     {
         OpenMenuImmediately(); e.Handled = true;
     }
+    protected override void OnPreviewMouseRightButtonUp(MouseButtonEventArgs e) => e.Handled = true;
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         if (!editing && e.Key is Key.Enter or Key.Space || e.Key == Key.Apps || e.Key == Key.F10 && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
@@ -112,7 +126,10 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
     protected override void OnClick() { base.OnClick(); OpenMenuImmediately(); }
     protected override void OnLostMouseCapture(MouseEventArgs e)
     {
-        if (gestures.IsPointerDown || gestures.IsDragging) { gestures.Cancel(); clickTimer.Stop(); }
+        // Lost capture bubbles from the dismissed menu through its placement
+        // target. That old menu capture must not cancel the new launcher press.
+        if (ReferenceEquals(e.OriginalSource, this) && !IsMouseCaptured && (gestures.IsPointerDown || gestures.IsDragging))
+        { gestures.Cancel(); clickTimer.Stop(); }
         base.OnLostMouseCapture(e);
     }
     private void OpenMenuImmediately() { CancelPendingGestures(); MenuRequested?.Invoke(); }

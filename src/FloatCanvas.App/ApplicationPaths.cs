@@ -6,7 +6,8 @@ namespace FloatCanvas.App;
 
 internal static class ApplicationPaths
 {
-    public static string ProfileDirectory { get; private set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FloatCanvas");
+    internal static string DefaultProfileDirectory { get; } = CanonicalDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FloatCanvas"));
+    public static string ProfileDirectory { get; private set; } = DefaultProfileDirectory;
     public static OverlayMonitorScope? RequestedMonitorScope { get; private set; }
     internal static string LauncherPath => string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.Host.exe", StringComparison.OrdinalIgnoreCase)
         ? Path.Combine(AppContext.BaseDirectory, "FloatCanvas.exe")

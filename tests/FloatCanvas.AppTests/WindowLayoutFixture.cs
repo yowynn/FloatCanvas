@@ -50,7 +50,7 @@ internal static class WindowLayoutFixture
             app.Resources[typeof(Wpf.Window)] = nonActivating;
 
             Invoke(session, "ShowWelcome");
-            var welcome = app.Windows.Cast<Wpf.Window>().Single(window => window.Title == L.Get("Welcome.Title"));
+            var welcome = app.Windows.Cast<Wpf.Window>().Single(window => window.Title == WindowTitles.Format(L.Get("Welcome.Title"), true));
             shown.Add(welcome);
             CheckFirstShow("welcome", welcome, 430);
             assert("welcome remains owned by the initialized but hidden toolbar", ReferenceEquals(welcome.Owner, toolbar) &&
