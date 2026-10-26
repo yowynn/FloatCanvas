@@ -37,6 +37,8 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
             VisualTree = hitSurface
         };
         Content = new Image { Source = AppIcon.LauncherImage(true, editing), Width = ArtworkSize, Height = ArtworkSize, Stretch = Stretch.Uniform, IsHitTestVisible = false };
+        // Preserve edge coverage when reducing the 1024px source to launcher size.
+        RenderOptions.SetBitmapScalingMode((Image)Content, BitmapScalingMode.HighQuality);
         ToolTip = L.Get("ToolbarV2.LauncherHint");
         ToolTipService.SetShowsToolTipOnKeyboardFocus(this, false);
         ToolTipService.SetInitialShowDelay(this, 650); ToolTipService.SetShowDuration(this, 12000);

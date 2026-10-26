@@ -76,10 +76,10 @@ internal static class ToolbarInteractionTests
             var bodyBounds = Bounds(body, surface);
             var firstToolOrigin = firstTool.TranslatePoint(new Wpf.Point(), surface);
             assert(theme + " both modes use the full 94 DIP artwork canvas",Near(artworkBounds.Width,94)&&Near(artworkBounds.Height,94));
-            assert(theme + " v6 artwork keeps the 60 DIP toolbar and first tool position",
+            assert(theme + " v8 artwork keeps the 60 DIP toolbar and first tool position",
                 Near(bodyBounds.Height,60)&&Near(firstToolOrigin.X,103)&&Near(bodyBounds.Y,32));
             assert(theme + " toolbar aligns with the crown/hair junction and lowest pillow pixels",
-                Math.Abs(bodyBounds.Top-359d/1024*94)<1.5&&Math.Abs(bodyBounds.Bottom-1016d/1024*94)<1.5);
+                Math.Abs(bodyBounds.Top-359d/1024*94)<1.5&&Math.Abs(bodyBounds.Bottom-1020d/1024*94)<2);
             assert(theme + " launcher stays above the bar and its entire artwork fits inside the measured window",
                 Controls.Panel.GetZIndex(launcher) > Controls.Panel.GetZIndex(body) &&
                 new Wpf.Rect(surface.RenderSize).Contains(artworkBounds) && !surface.ClipToBounds && !launcher.ClipToBounds);

@@ -11,16 +11,16 @@ internal static class AppIconTests
     {
         (string File,string Hash,Imaging.BitmapSource Image)[] masters =
         [
-            ("FloatCanvas.png","F1DB8D56B205E09E085F1DE380C742D94CB358157A25D61CC624C81DB837F1EF",AppIcon.ToolbarImage),
-            ("FloatCanvas.Hidden.png","89DEB4F1CB7570C946C02AF21CC7DD4AF35164C0C1865B6F295C23B55D9FB1D8",AppIcon.HiddenToolbarImage),
-            ("FloatCanvas.PassThrough.png","05B37BDF79F12C54410A1535F9B25C7423EFFBB1CBA8B91E6F67C3CA9E05E957",AppIcon.PassThroughToolbarImage),
-            ("FloatCanvas.PassThrough.Hidden.png","F61CDA30165343F8F760573D01C7D9D5737B0A3DB3EF6BD014DAF8D6ECCCDBE3",AppIcon.HiddenPassThroughToolbarImage)
+            ("FloatCanvas.png","84BDDB3E890BDB5A13F47261CAD5AD76FB7FFCC2B6726F070D85BFDC1F592778",AppIcon.ToolbarImage),
+            ("FloatCanvas.Hidden.png","0C987FF44B2F3F7A9A0F4604E55562E4DBAFB492F7C36065CBDFF9FA3538E544",AppIcon.HiddenToolbarImage),
+            ("FloatCanvas.PassThrough.png","FAE380141E603EE310B548203786FA1180961E3F43AEDE68BA7B0DCE54E55202",AppIcon.PassThroughToolbarImage),
+            ("FloatCanvas.PassThrough.Hidden.png","CEEC1518A1FE6B23F10948E9971ADD16F6D6C1B7FF18762165FC6773AE296B16",AppIcon.HiddenPassThroughToolbarImage)
         ];
         foreach(var (file,hash,image) in masters)
         {
             using var source=Resource(file);
-            assert(file+" is the approved v6 source without re-encoding or cropping",Convert.ToHexString(SHA256.HashData(source))==hash);
-            assert(file+" keeps its frozen 1024 RGBA canvas and transparent margin",image is {PixelWidth:1024,PixelHeight:1024,IsFrozen:true}&&image.Format.BitsPerPixel==32&&Bounds(image)==(6,6,1012,1011));
+            assert(file+" is the approved v8 source without re-encoding or cropping",Convert.ToHexString(SHA256.HashData(source))==hash);
+            assert(file+" keeps its frozen 1024 RGBA canvas and transparent margin",image is {PixelWidth:1024,PixelHeight:1024,IsFrozen:true}&&image.Format.BitsPerPixel==32&&Bounds(image)==(2,2,1021,1019));
         }
         var eyes=Mask((322,430,482,571),(566,514,713,657));
         foreach(bool editing in new[]{true,false})
@@ -28,6 +28,7 @@ internal static class AppIconTests
             var diff=Differences(AppIcon.LauncherImage(true,editing),AppIcon.LauncherImage(false,editing),eyes);
             assert($"mode {editing} visibility changes only eyes and keeps every alpha byte",diff.Changed>0&&diff.Outside==0&&diff.Alpha==0);
             VerifyRendering(assert,eyes,editing);
+            VerifyDownsampling(assert,editing);
         }
         foreach(bool visible in new[]{true,false})
         {
@@ -72,6 +73,41 @@ internal static class AppIconTests
                 surface.Measure(new Wpf.Size(size,size));surface.Arrange(new Wpf.Rect(0,0,size,size));surface.UpdateLayout();int pixels=(int)Math.Round(dpi*size/96);
                 var bitmap=new Imaging.RenderTargetBitmap(pixels,pixels,dpi,dpi,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(surface);return bitmap;
             }
+        }
+    }
+    private static void VerifyDownsampling(Action<string,bool> assert,bool editing)
+    {
+        var launcher=new ToolbarLauncher(editing);
+        foreach(bool visible in new[]{true,false})foreach(double scale in new[]{1d,1.25,1.5,2d})
+        {
+            launcher.SetCanvasVisible(visible);
+            var source=(Imaging.BitmapSource)((System.Windows.Controls.Image)launcher.Content).Source;
+            var premultiplied=new Imaging.FormatConvertedBitmap(source,System.Windows.Media.PixelFormats.Pbgra32,null,0);
+            var original=new byte[source.PixelWidth*source.PixelHeight*4];premultiplied.CopyPixels(original,source.PixelWidth*4,0);
+            double extent=ToolbarLauncher.ArtworkSize*scale,step=source.PixelWidth/extent;int size=(int)Math.Ceiling(extent);
+            launcher.Measure(new Wpf.Size(ToolbarLauncher.ArtworkSize,ToolbarLauncher.ArtworkSize));
+            launcher.Arrange(new Wpf.Rect(0,0,ToolbarLauncher.ArtworkSize,ToolbarLauncher.ArtworkSize));launcher.UpdateLayout();
+            var rendered=new Imaging.RenderTargetBitmap(size,size,96*scale,96*scale,System.Windows.Media.PixelFormats.Pbgra32);rendered.Render(launcher);
+            var actual=new byte[size*size*4];rendered.CopyPixels(actual,size*4,0);
+            double error=0;int channels=0;
+            // Integrate source pixel coverage independently. Linear point sampling loses
+            // edge coverage when this 1024px artwork is reduced to a small launcher.
+            // Only the pillow's antialiased contour contributes to this signal.
+            for(int y=(int)(size*.80);y<size;y++)for(int x=0;x<size;x++)
+            {
+                double x0=x*step,x1=(x+1)*step,y0=y*step,y1=(y+1)*step;double[] expected=new double[4];
+                for(int yy=(int)y0;yy<Math.Ceiling(y1)&&yy<source.PixelHeight;yy++)
+                    for(int xx=(int)x0;xx<Math.Ceiling(x1)&&xx<source.PixelWidth;xx++)
+                    {
+                        double weight=(Math.Min(xx+1,x1)-Math.Max(xx,x0))*(Math.Min(yy+1,y1)-Math.Max(yy,y0));
+                        for(int c=0;c<4;c++)expected[c]+=original[(yy*source.PixelWidth+xx)*4+c]*weight;
+                    }
+                for(int c=0;c<4;c++)expected[c]=Math.Round(expected[c]/(step*step));
+                if(expected[3]<=5||expected[3]>=250)continue;
+                for(int c=0;c<4;c++){error+=Math.Abs(actual[(y*size+x)*4+c]-expected[c]);channels++;}
+            }
+            double meanError=error/Math.Max(channels,1);
+            assert($"mode {editing}/visible {visible}/{scale*100:0}% pillow contour preserves area coverage ({meanError:F2})",channels>0&&meanError<14);
         }
     }
     private static System.IO.Stream Resource(string file)=>Wpf.Application.GetResourceStream(new Uri("/FloatCanvas;component/Assets/"+file,UriKind.Relative))!.Stream;
