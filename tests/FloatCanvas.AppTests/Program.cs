@@ -38,6 +38,7 @@ internal static class Program
             if (args.Contains("--audit-data-only")) { DataRemediationTests.Run(Assert); return 0; }
             if (args.Contains("--audit-ux-only")) { AuditUxTests.Run(Assert); return 0; }
             if (args.Contains("--preset-history-only")) { PresetHistoryTests.Run(Assert); PresetHistoryKeyboardTests.Run(Assert); return 0; }
+            if (args.Contains("--preset-fallback-only")) { PresetFallbackTests.Run(Assert); return 0; }
             if (args.Contains("--text-double-click-only")) { TextDoubleClick(); return 0; }
             if (args.Contains("--audit-ux-preview")) { AuditUxPreview.Run(); return 0; }
             if (args.Contains("--audit-engineering-only")) { EngineeringAuditTests.Run(Assert); UpdateInstallerTests.Run(Assert); UpdateCacheTests.Run(Assert); return 0; }
@@ -334,6 +335,7 @@ internal static class Program
             ToolbarInteractionTests.Run(Assert);
             CompletePresetContractTests.Run(Assert);
             ToolPresetAndColorTests.Run(Assert);
+            PresetFallbackTests.Run(Assert);
             PresetSizingCompatibilityTests.Run(Assert);
             ConfigurationCompatibilityTests.Run(Assert);
             ToolStateStoreTests.Run(Assert);

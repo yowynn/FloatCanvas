@@ -87,8 +87,14 @@ internal static class Feedback4OptionsTests
         controller.Tool = EditorTool.Rectangle; gallery.PrepareForShow(); check(locale + " changing back remembers that tools selected recipe", gallery.SelectedId == "official.rounded-rectangle");
         library.Move(second.Id, rectangle.Id); gallery.PrepareForShow();
         check(locale + " reordering persists without applying or selecting", new ToolPresetLibrary(Path.Combine(folder, locale + "-gallery.json")).UserFor(EditorTool.Rectangle).First().Id == second.Id && gallery.SelectedId == "official.rounded-rectangle");
-        gallery.Apply(rectangle.Id); gallery.PrepareForShow(); gallery.Delete(rectangle); gallery.PrepareForShow();
-        check(locale + " deleting a selected personal recipe applies the first official", gallery.SelectedId == library.OfficialFor(controller.Tool).First().Id && library.User.All(p => p.Id != rectangle.Id));
+        gallery.Apply(rectangle.Id); gallery.PrepareForShow();
+        controller.Style.Stroke = 0xFF39A45B;
+        string workingBeforeDelete = System.Text.Json.JsonSerializer.Serialize(controller.Parameters);
+        int applicationsBeforeDelete = changes;
+        gallery.Delete(rectangle); gallery.PrepareForShow();
+        check(locale + " deleting a selected personal recipe relinks the first official without applying its parameters",
+            gallery.SelectedId == library.OfficialFor(controller.Tool).First().Id && library.User.All(p => p.Id != rectangle.Id) &&
+            System.Text.Json.JsonSerializer.Serialize(controller.Parameters) == workingBeforeDelete && changes == applicationsBeforeDelete);
         check(locale + " personal context menus only manage recipes", gallery.UserTiles.Children.OfType<Button>().Single().ContextMenu.Items.OfType<MenuItem>().Count() == 3);
     }
     internal static void Parameters(string folder, string locale, Action<string, bool> check)

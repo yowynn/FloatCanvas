@@ -198,10 +198,13 @@ internal static class ToolWorkingStateTests
                 session!.Dispose(); session = null; host = null; PumpFor(TimeSpan.FromMilliseconds(10));
             }
 
-            void Activate(EditorTool tool) => Invoke("ActivateTool", tool);
-            void Change(Action<ToolParameters> update) => typeof(ToolOptionsPanel).GetMethod("Change", Private)!.Invoke(panel, [update]);
-            void ClickToolbar(EditorTool tool) => Field<Dictionary<EditorTool, Button>>(session!, "_toolbarToolButtons")[tool]
-                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            void Activate(EditorTool tool) { Invoke("ActivateTool", tool); gallery.PrepareForShow(); }
+            void Change(Action<ToolParameters> update) => typeof(ToolOptionsPanel).GetMethod("Change", Private)!.Invoke(panel, [update, false]);
+            void ClickToolbar(EditorTool tool)
+            {
+                Field<Dictionary<EditorTool, Button>>(session!, "_toolbarToolButtons")[tool].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                gallery.PrepareForShow();
+            }
             static bool SameParameters(ToolParameters first, ToolParameters second) => JsonSerializer.Serialize(first) == JsonSerializer.Serialize(second);
         }
         finally
@@ -225,6 +228,9 @@ internal static class ToolWorkingStateTests
             Field<System.Windows.Forms.NotifyIcon>(session, "_tray").Visible = false;
             var isolation = typeof(OverlayHost).GetField("_keyboardIsolation", Private)!;
             (isolation.GetValue(host) as IDisposable)?.Dispose(); isolation.SetValue(host, null);
+            // Preset IDs are reconciled when presented. Prepare only that gallery;
+            // the fixture keeps its windows and unrelated property rows hidden.
+            Field<ToolPresetGallery>(Field<ToolOptionsPanel>(session, "_toolOptionsPanel"), "presets").PrepareForShow();
         }
         object? Invoke(string name, params object[] args) => typeof(DesktopSession).GetMethod(name, Private)!.Invoke(session, args);
     }

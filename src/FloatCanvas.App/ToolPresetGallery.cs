@@ -126,8 +126,12 @@ internal sealed class ToolPresetGallery : UserControl
     internal void Delete(ToolPreset preset) => Run(() =>
     {
         bool selected = SelectedId == preset.Id; library.Delete(preset.Id);
-        if (selected) { selections[ToolPresetLibrary.Family(controller.Tool)] = library.OfficialFor(controller.Tool).First().Id; Apply(SelectedId); }
-        else Refresh();
+        if (selected)
+        {
+            selections[ToolPresetLibrary.Family(controller.Tool)] = library.OfficialFor(controller.Tool).First().Id;
+            stateStore?.MarkChanged();
+        }
+        Refresh(revealSelection: selected);
     });
     private Button Tile(ToolPreset preset)
     {
