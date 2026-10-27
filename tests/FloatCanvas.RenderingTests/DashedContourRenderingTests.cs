@@ -48,7 +48,7 @@ internal static class DashedContourRenderingTests
         byte[] returnedSolid = renderer.ExportPng(document, new(), true);
         check("switching from patterned to solid restores identical native curve pixels", originalSolid.AsSpan().SequenceEqual(returnedSolid));
         using var solidBitmap = SKBitmap.Decode(returnedSolid);
-        check("solid rounded outline retains smooth native curve and hollow center", solidBitmap.GetPixel(97, 18).Alpha > 220 &&
+        check("solid rounded outline retains smooth native curve and hollow center", solidBitmap.GetPixel(97, 22).Alpha > 220 &&
             solidBitmap.GetPixel(20, 20).Alpha == 0 && solidBitmap.GetPixel(170, 110).Alpha == 0);
         rectangle.Style.Fill = 0xFF4466CC;
         using var filledBitmap = SKBitmap.Decode(renderer.ExportPng(document, new(), true));
@@ -67,6 +67,8 @@ internal static class DashedContourRenderingTests
         check($"wide rounded dashes remain selectable without increasing default tolerance ({wideMisses} misses)", wideMisses == 0);
 
         rectangle.Height = 120;
+        // Keep the collapsed edge inside a real gap on the inward centerline.
+        rectangle.Style.StrokeWidth = 16;
         using var capsule = SKBitmap.Decode(renderer.ExportPng(document, new(), true));
         check("a collapsed straight edge on a capsule does not invent ink in a dash gap", capsule.GetPixel(319, 79).Alpha == 0 &&
             !ElementGeometry.HitTest(rectangle, new(319.5, 79.5), 0));

@@ -67,5 +67,5 @@ internal static class ImageToolEligibilityTests
     }
     private static CanvasElement Image(double x) => new() { Kind = ElementKind.Image, Width = 100, Height = 80, AssetId = new string('a', 64), Transform = Affine2D.Translation(x, 20) };
     private static void Send(EditorController editor, OverlayPointerKind kind, double x, double y) =>
-        editor.Pointer(new(kind, new(x, y), OverlayMouseButton.Left, OverlayModifiers.None));
+        editor.Pointer(new(kind, new(x, y), OverlayMouseButton.Left, OverlayModifiers.Control));
 }

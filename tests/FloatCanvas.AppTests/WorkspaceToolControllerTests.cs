@@ -130,19 +130,19 @@ internal static class WorkspaceToolControllerTests
                 var requests = new List<(RectD Region, ImageEffectKind Kind, double Amount, uint Color, bool TransactionActive)>();
                 controller.DesktopEffectRequested += (region, kind, amount, color) => requests.Add((region, kind, amount, color, session.IsTransactionActive));
                 string before = JsonSerializer.Serialize(session.Document);
-                Send(controller, OverlayPointerKind.Down, new(-100, 190));
-                Send(controller, OverlayPointerKind.Move, new(-170, 140));
+                Send(controller, OverlayPointerKind.Down, new(-100, 190), OverlayModifiers.Control);
+                Send(controller, OverlayPointerKind.Move, new(-170, 140), OverlayModifiers.Control);
                 check($"{tool} previews a general canvas region with {imageCount} selected images", controller.Marquee == new RectD(30, 20, 70, 50) && !session.IsTransactionActive);
-                Send(controller, OverlayPointerKind.Up, new(-170, 140));
+                Send(controller, OverlayPointerKind.Up, new(-170, 140), OverlayModifiers.Control);
                 check($"{tool} dispatches normalized document bounds, strength and color with {imageCount} selected images", requests is [{ Region: var region, Kind: var kind, Amount: 23, Color: 0xAA123456, TransactionActive: false }] &&
                     region == new RectD(30, 20, 70, 50) && kind.ToString() == tool.ToString());
                 check($"{tool} leaves document history and gesture state clean before asynchronous desktop processing with {imageCount} selected images", session.UndoCount == 0 && !session.IsTransactionActive &&
                     controller.Marquee is null && controller.EffectPreviewPolygon is null && JsonSerializer.Serialize(session.Document) == before && session.Selection.Count == imageCount);
-                Gesture(controller, new(40, 40), new(41, 41));
+                Gesture(controller, new(40, 40), new(41, 41), OverlayModifiers.Control);
                 check($"{tool} ignores too-small general regions with {imageCount} selected images", requests.Count == 1 && !session.IsTransactionActive && controller.Marquee is null);
-                Send(controller, OverlayPointerKind.Down, new(100, 100));
-                Send(controller, OverlayPointerKind.Move, new(150, 150)); controller.Cancel();
-                Send(controller, OverlayPointerKind.Up, new(150, 150));
+                Send(controller, OverlayPointerKind.Down, new(100, 100), OverlayModifiers.Control);
+                Send(controller, OverlayPointerKind.Move, new(150, 150), OverlayModifiers.Control); controller.Cancel();
+                Send(controller, OverlayPointerKind.Up, new(150, 150), OverlayModifiers.Control);
                 check($"{tool} cancels a general region without dispatching or leaving capture state with {imageCount} selected images", requests.Count == 1 && controller.Marquee is null && !session.IsTransactionActive);
             }
             var locked = new CanvasElement { Kind = ElementKind.Image, Width = 120, Height = 100, Locked = true, AssetId = new string('c', 64) };
@@ -152,7 +152,7 @@ internal static class WorkspaceToolControllerTests
             lockedController.DesktopEffectRequested += (_, _, _, _) => emitted++;
             lockedController.Message += messages.Add;
             string lockedBefore = JsonSerializer.Serialize(lockedSession.Document);
-            Gesture(lockedController, new(20, 20), new(80, 70));
+            Gesture(lockedController, new(20, 20), new(80, 70), OverlayModifiers.Control);
             check(tool + " targets the live desktop region independently of a selected locked image",
                 emitted == 1 && messages.Count == 0 &&
                 JsonSerializer.Serialize(lockedSession.Document) == lockedBefore && lockedSession.UndoCount == 0 && !lockedSession.IsTransactionActive);

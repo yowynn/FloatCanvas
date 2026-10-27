@@ -108,7 +108,7 @@ internal static class ImageToolTargetTests
     {
         foreach (var (kind, point) in new[] { (OverlayPointerKind.Down, new OverlayPoint(60, 60)),
             (OverlayPointerKind.Move, new OverlayPoint(90, 90)), (OverlayPointerKind.Up, new OverlayPoint(90, 90)) })
-            controller.Pointer(new(kind, point, OverlayMouseButton.Left, OverlayModifiers.None));
+            controller.Pointer(new(kind, point, OverlayMouseButton.Left, OverlayModifiers.Control));
     }
 
     private static bool ChangedImageOnly(EditorSession session, EditorTool tool)

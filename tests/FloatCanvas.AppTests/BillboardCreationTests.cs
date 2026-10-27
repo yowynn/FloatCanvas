@@ -48,11 +48,22 @@ internal static class BillboardCreationTests
             var screen=mapping.ElementToScreen(element);
             check(tool+" keeps drawn path endpoints in screen space",screen.TransformPoint(element.Points[0]).DistanceTo(new(100,100))<1e-6&&screen.TransformPoint(element.Points[^1]).DistanceTo(new(200,180))<1e-6);
         }
+        bool line = tool is EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow;
+        if(line)
+            check(tool+" billboard drawing does not automatically select its preview",session.Selection.Count==0&&!editor.ShouldShowSelection(OverlayModifiers.None));
         double expectedStroke=tool==EditorTool.Highlighter?16:5;
         check(tool+" keeps its logical tool stroke without inverse-depth compensation",element.Style.StrokeWidth==expectedStroke);
         Send(editor,OverlayPointerKind.Up,new(200,180));
         check(tool+" finishes one creation and retires its depth guide",session.Document.Elements.Count==1&&session.Document.Elements[0].IsBillboard&&session.UndoCount==1&&!session.IsTransactionActive&&editor.VisibleBillboardDepthLine is null);
-        check(tool+" creation undo and redo preserve billboard metadata",session.Undo()&&session.Document.Elements.Count==0&&session.Redo()&&session.Document.Elements.Single().IsBillboard&&session.Document.Elements.Single().BillboardAnchor==element.BillboardAnchor&&Near(session.Document.Elements.Single().BillboardHeight,element.BillboardHeight));
+        if(line)
+            check(tool+" billboard completion leaves its new line unselected",session.Selection.Count==0&&!editor.ShouldShowSelection(OverlayModifiers.None));
+        bool undone=session.Undo();
+        bool emptyAfterUndo=session.Document.Elements.Count==0;
+        bool unselectedAfterUndo=session.Selection.Count==0;
+        bool redone=session.Redo();
+        check(tool+" creation undo and redo preserve billboard metadata",undone&&emptyAfterUndo&&redone&&session.Document.Elements.Single().IsBillboard&&session.Document.Elements.Single().BillboardAnchor==element.BillboardAnchor&&Near(session.Document.Elements.Single().BillboardHeight,element.BillboardHeight));
+        if(line)
+            check(tool+" billboard undo and redo do not restore automatic line selection",undone&&unselectedAfterUndo&&redone&&session.Selection.Count==0&&!editor.ShouldShowSelection(OverlayModifiers.None));
     }
     private static void SignedCreation(Action<string,bool> check)
     {
@@ -93,10 +104,10 @@ internal static class BillboardCreationTests
             session.Document.Elements.Add(image);session.SetSelection([image.Id]);var editor=new EditorController(session){Tool=tool,BillboardMode=true};
             var mapping=CanvasMapping.Create(session.Document);var screen=mapping.ElementToScreen(image);var center=Center(image,mapping);var anchor=image.BillboardAnchor;
             var start=screen.TransformPoint(new(20,15));var end=screen.TransformPoint(new(80,45));
-            Send(editor,OverlayPointerKind.Down,start);Send(editor,OverlayPointerKind.Move,end);
+            Send(editor,OverlayPointerKind.Down,start,OverlayModifiers.Control);Send(editor,OverlayPointerKind.Move,end,OverlayModifiers.Control);
             var expected=new[]{new PointD(20,15),new(80,15),new(80,45),new(20,45)}.Select(screen.TransformPoint).ToArray();
-            check(tool+" existing billboard image edits skip depth selection and preview the screen-facing local region",editor.ActiveBillboardDepthLine is null&&editor.EffectScreenPreview.Count==4&&editor.EffectScreenPreview.Zip(expected).All(pair=>pair.First.DistanceTo(pair.Second)<1e-6));
-            Send(editor,OverlayPointerKind.Up,end);
+            check(tool+" Ctrl bypasses the existing billboard selection and previews the screen-facing local region",editor.ActiveBillboardDepthLine is null&&editor.EffectScreenPreview.Count==4&&editor.EffectScreenPreview.Zip(expected).All(pair=>pair.First.DistanceTo(pair.Second)<1e-6));
+            Send(editor,OverlayPointerKind.Up,end,OverlayModifiers.Control);
             if(tool==EditorTool.Crop)
                 check("billboard crop stores normalized source region while preserving anchor and displayed center",image.ImageCrop is {} crop&&Near(crop,new RectD(.2,.25,.6,.5))&&Near(image.Width,60)&&Near(image.Height,30)&&image.BillboardAnchor==anchor&&image.BillboardHeight==60&&Center(image,mapping).DistanceTo(center)<1e-6);
             else

@@ -26,6 +26,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
     private PreviewPlayback? playback;
     private readonly Stopwatch clock = new();
     private readonly DispatcherTimer animation = new(DispatcherPriority.Background);
+    private bool IsPreviewOpen => OverlayTransientControls.IsHintOpen(this);
 
     internal static StampPreviewTooltip Create(StampLibrary library, StampEntry entry, string shortcut) => new(library, entry, shortcut);
 
@@ -58,25 +59,25 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
     {
         CancelLoading();
         UpdateScale(Media.VisualTreeHelper.GetDpi(this));
-        if (!IsCurrent(library, entry)) { IsOpen = false; return; }
+        if (!IsCurrent(library, entry)) { OverlayTransientControls.CloseHint(this); return; }
         long version = ++request;
         loading = new CancellationTokenSource(); var token = loading.Token;
         message.Text = L.Get("Stamp.Loading"); message.Visibility = Wpf.Visibility.Visible;
         try
         {
             var prepared = await LoadPlaybackAsync(library, entry, token);
-            if (token.IsCancellationRequested || version != request || !IsOpen) { prepared?.Dispose(); return; }
+            if (token.IsCancellationRequested || version != request || !IsPreviewOpen) { prepared?.Dispose(); return; }
             playback=prepared;
             var bitmap=playback is null ? null : await playback.RenderAsync(TimeSpan.Zero, token);
-            if (token.IsCancellationRequested || version != request || !IsOpen) return;
-            if (bitmap is null) { IsOpen = false; return; }
+            if (token.IsCancellationRequested || version != request || !IsPreviewOpen) return;
+            if (bitmap is null) { OverlayTransientControls.CloseHint(this); return; }
             preview.Source = bitmap; message.Visibility = Wpf.Visibility.Collapsed;
             UpdateScale(Media.VisualTreeHelper.GetDpi(this));
             clock.Restart(); ScheduleAnimation();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
-        { if (!token.IsCancellationRequested && version == request && IsOpen) message.Text = ex.Message; }
+        { if (!token.IsCancellationRequested && version == request && IsPreviewOpen) message.Text = ex.Message; }
     }
 
     private void CancelLoading()
@@ -88,21 +89,21 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
     private async void AdvanceAnimation()
     {
         animation.Stop();
-        if(!IsOpen || !IsCurrent(library,entry) || playback is null) {IsOpen=false;CancelLoading();return;}
+        if(!IsPreviewOpen || !IsCurrent(library,entry) || playback is null) {OverlayTransientControls.CloseHint(this);CancelLoading();return;}
         var active = playback;
         long version = request;
         var token = loading?.Token ?? CancellationToken.None;
         try
         {
             var bitmap = await active.RenderAsync(clock.Elapsed, token);
-            if (token.IsCancellationRequested || version != request || !IsOpen || !ReferenceEquals(active, playback)) return;
+            if (token.IsCancellationRequested || version != request || !IsPreviewOpen || !ReferenceEquals(active, playback)) return;
             preview.Source=bitmap;
             ScheduleAnimation();
         }
         catch (OperationCanceledException) { }
         catch(Exception ex) when(ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
         {
-            if (version != request || !IsOpen) return;
+            if (version != request || !IsPreviewOpen) return;
             CancelLoading();message.Text=ex.Message;message.Visibility=Wpf.Visibility.Visible;
         }
     }

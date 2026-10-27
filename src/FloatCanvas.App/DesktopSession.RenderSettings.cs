@@ -38,6 +38,7 @@ internal sealed partial class DesktopSession
         {
             if (_disposed || backend.Dispatcher.HasShutdownStarted) { refresh.Stop(); return; }
             if (!backend.Dispatcher.CheckAccess()) { _ = backend.Dispatcher.InvokeAsync(RefreshBackend); return; }
+            if (!preferGpu.IsVisible) return;
             var frame = _canvasPreview.Frame;
             bool hasFrame = frame is not null;
             backend.Text = hasFrame ? L.Format("Settings.RenderBackend", frame!.Backend == OverlayRenderBackend.Gpu ? "GPU" : "CPU") :
@@ -50,9 +51,9 @@ internal sealed partial class DesktopSession
             reason.Text = L.Get(reasonKey);
             string? details = frame?.GpuDetails;
             device.Visibility = string.IsNullOrWhiteSpace(details) ? Visibility.Collapsed : Visibility.Visible;
-            if (details is not null)
+            if (device.Visibility == Visibility.Visible)
             {
-                string[] parts = details.Split('/');
+                string[] parts = details!.Split('/');
                 device.Text = L.Format("Settings.RenderDevice", parts.Length > 1 ? parts[1].Trim() : details);
                 device.ToolTip = details;
             }
@@ -60,18 +61,17 @@ internal sealed partial class DesktopSession
             if (hasFrame) timing.Text = L.Format("Settings.RenderTiming", frame!.RenderMilliseconds, _canvasPreview.GpuFrames, _canvasPreview.CpuFrames);
         }
         refresh.Tick += (_, _) => RefreshBackend();
-        RefreshBackend();
-        preferGpu.Loaded += (_, _) =>
+        void ObserveVisibility()
         {
-            if (observing) return;
-            observing = true; PreviewBackendChanged += RefreshBackend;
-            RefreshBackend(); refresh.Start();
-        };
-        preferGpu.Unloaded += (_, _) =>
-        {
-            if (!observing) return;
-            observing = false; refresh.Stop(); PreviewBackendChanged -= RefreshBackend;
-        };
+            bool visible = preferGpu.IsLoaded && preferGpu.IsVisible;
+            if (observing == visible) return;
+            observing = visible;
+            if (visible) { PreviewBackendChanged += RefreshBackend; RefreshBackend(); refresh.Start(); }
+            else { refresh.Stop(); PreviewBackendChanged -= RefreshBackend; }
+        }
+        preferGpu.Loaded += (_, _) => ObserveVisibility();
+        preferGpu.Unloaded += (_, _) => { refresh.Stop(); if (observing) PreviewBackendChanged -= RefreshBackend; observing = false; };
+        preferGpu.IsVisibleChanged += (_, _) => ObserveVisibility();
         return preferGpu;
     }
 }

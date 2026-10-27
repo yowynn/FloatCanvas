@@ -18,9 +18,11 @@ internal static class AuxiliaryShortcutRoutingTests
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
         var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+        canvas.PrepareForShow();
         var state = new EditorSession();
         var library = new StampLibrary(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "FloatCanvas-AuxiliaryShortcut-" + Guid.NewGuid().ToString("N")));
         var stamps = new StampLibraryWindow(library, () => state, _ => throw new InvalidOperationException("An absent fixture stamp must never be used."));
+        stamps.PrepareForShow();
         var settings = new AppSettingsWindow();
         var dialog = AppDialog.Create(null, "Detached shortcut fixture", "Fixture").Window;
         var windows = new Window[] { canvas, stamps, settings, dialog };
@@ -89,9 +91,11 @@ internal static class AuxiliaryShortcutRoutingTests
             check("StampLibrary local Ctrl+F selects its existing search draft without a canvas command", find.Handled && search.SelectionLength == search.Text.Length && stampCommands.Count == before);
             search.Clear();
             var searchNewStamp = Send(search, Key.N);
+            stamps.PrepareForShow();
             check("Stamp search Ctrl+N retains the library save-selection command", searchNewStamp.Handled && stampCommands.Count == before && Field<TextBlock>(stamps, "status").Text == L.Get("Stamp.NoSelection"));
 
             var newStamp = Send(stampList, Key.N);
+            stamps.PrepareForShow();
             check("StampLibrary Ctrl+N uses its local save-selection action instead of creating a canvas", newStamp.Handled && stampCommands.Count == before && Field<TextBlock>(stamps, "status").Text == L.Get("Stamp.NoSelection"));
             SetModifiers(ModifierKeys.None);
             Set(stamps, "selected", null);

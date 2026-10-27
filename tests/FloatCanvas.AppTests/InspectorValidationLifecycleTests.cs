@@ -25,7 +25,7 @@ internal static class InspectorValidationLifecycleTests
             check(theme + " invalid inspector value has meaningful text in the theme error color", IsError(status) && status.Text == "⚠ " + L.Format("Inspector.NumberRange", L.Get("Inspector.Width"), .01, 10000000) &&
                 status.Foreground is SolidColorBrush actual && status.TryFindResource("CanvasErrorText") is SolidColorBrush expected && actual.Color == expected.Color &&
                 !session.IsTransactionActive && session.Document.Elements[0].Width == 100);
-            window.Refresh();
+            window.PrepareForShow();
             check(theme + " refreshing invalid inspector clears its warning without retaining error styling", !IsError(status) &&
                 status.Foreground is SolidColorBrush normal && status.TryFindResource(SystemColors.GrayTextBrushKey) is SolidColorBrush muted && normal.Color == muted.Color && fields["W"].Text == "100");
             window.Close();
@@ -41,9 +41,10 @@ internal static class InspectorValidationLifecycleTests
             {
                 var panel=Field<StackPanel>(window,"propertyPanel");
                 panel.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice,Environment.TickCount,fields["W"],null) {RoutedEvent=Keyboard.LostKeyboardFocusEvent});
+                window.PrepareForShow();
             }
-            else if(boundary=="refresh")window.Refresh();
-            else session.SetSelection([session.Document.Elements[1].Id]);
+            else if(boundary=="refresh")window.PrepareForShow();
+            else { session.SetSelection([session.Document.Elements[1].Id]); window.PrepareForShow(); }
             check(boundary+" clears obsolete property errors and restores the current value",!IsError(status)&&fields["W"].Text==(boundary=="selection"?"80":"100"));
             check(boundary+" never creates history or changes either layer",session.UndoCount==undo&&!session.IsTransactionActive&&session.Document.Elements[0].Width==100&&session.Document.Elements[1].Width==80);
             check(boundary+" regression remains detached",new WindowInteropHelper(window).Handle==0&&!window.IsVisible);
@@ -52,9 +53,9 @@ internal static class InspectorValidationLifecycleTests
         {
             var (session,window,fields)=Fixture();bool allowed=false;
             typeof(InspectorWindow).GetField("canMutate",Private)!.SetValue(window,(Func<bool>)(()=>allowed));
-            fields["W"].Text="125";window.CompletePendingEdit();window.Refresh();
+            fields["W"].Text="125";window.CompletePendingEdit();window.PrepareForShow();
             check("a busy document still retains its draft and meaningful error",fields["W"].Text=="125"&&IsError(Field<TextBlock>(window,"status"))&&Field<TextBlock>(window,"status").Text=="⚠ "+L.Get("Inspector.BusyDraftRetained")&&session.Document.Elements[0].Width==100);
-            allowed=true;window.Refresh();
+            allowed=true;window.PrepareForShow();
             check("unblocking a busy document does not silently discard its retained draft",fields["W"].Text=="125"&&session.Document.Elements[0].Width==100);
             typeof(InspectorWindow).GetMethod("Apply",Private)!.Invoke(window,null);
             check("a retained busy draft applies once mutation resumes",session.Document.Elements[0].Width==125&&!IsError(Field<TextBlock>(window,"status")));
@@ -65,10 +66,10 @@ internal static class InspectorValidationLifecycleTests
             var (session,window,fields)=Fixture();var foreground=GetForegroundWindow();nint handle=0;
             try
             {
-                window.ShowActivated=false;window.ShowInTaskbar=false;window.Left=window.Top=-20000;window.Width=400;window.Height=300;
+                window.ShowActivated=false;window.ShowInTaskbar=false;window.Opacity=0;window.Left=window.Top=-20000;window.Width=400;window.Height=300;
                 window.Show();handle=new WindowInteropHelper(window).Handle;
                 fields["W"].Text="-";check("window lifecycle begins with an actual visible invalid inspector",IsError(Field<TextBlock>(window,"status"))&&window.IsVisible&&handle!=0);
-                window.Hide();window.Refresh();window.Show();
+                window.Hide();window.PrepareForShow();window.Show();
                 check("hiding and reopening the same inspector drops the old validation error",!IsError(Field<TextBlock>(window,"status"))&&fields["W"].Text=="100"&&!session.IsTransactionActive);
                 check("offscreen inspector lifecycle never takes the foreground",GetForegroundWindow()==foreground);
             }
@@ -77,13 +78,16 @@ internal static class InspectorValidationLifecycleTests
         }
         var canvas=new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
         canvas.Refresh(new() {Projection=new() {Enabled=true}},false);
+        canvas.PrepareForShow();
         int canvasEdits=0;canvas.GridCountsChanged+=(_,_)=>canvasEdits++;canvas.GridWidthChanged+=_=>canvasEdits++;
         var columns=Field<NumericValueField>(canvas,"columns");string originalColumns=columns.Input.Text;columns.Input.Text="invalid";
         typeof(CanvasSettingsWindow).GetMethod("CommitCounts",Private)!.Invoke(canvas,null);
-        check("Canvas settings invalid counts already restore their current value without stale errors",columns.Input.Text==originalColumns&&canvasEdits==0);
+        canvas.Refresh(canvas.DisplayedSettings!,false);canvas.PrepareForShow();
+        check("preparing hidden Canvas settings restores invalid counts without edits",columns.Input.Text==originalColumns&&canvasEdits==0);
         var width=Field<NumericValueField>(canvas,"width");string originalWidth=width.Input.Text;width.Input.Text="65";
         width.Input.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice,Environment.TickCount,width.Input,null) {RoutedEvent=Keyboard.LostKeyboardFocusEvent});
-        check("Canvas settings invalid width already restores on field exit without edits",width.Input.Text==originalWidth&&canvasEdits==0&&new WindowInteropHelper(canvas).Handle==0);
+        canvas.Refresh(canvas.DisplayedSettings!,false);canvas.PrepareForShow();
+        check("preparing hidden Canvas settings restores invalid width without edits",width.Input.Text==originalWidth&&canvasEdits==0&&new WindowInteropHelper(canvas).Handle==0);
         canvas.CloseForDispose();
         report("Inspector validation lifecycle has no failures ("+failures.Count+")",failures.Count==0);
     }
@@ -92,7 +96,7 @@ internal static class InspectorValidationLifecycleTests
         var first=new CanvasElement {Kind=ElementKind.Rectangle,Width=100,Height=60};
         var second=new CanvasElement {Kind=ElementKind.Rectangle,Width=80,Height=40};
         var session=new EditorSession(new() {Elements=[first,second]});session.SetSelection([first.Id]);
-        var window=new InspectorWindow(()=>session);return(session,window,Field<Dictionary<string,TextBox>>(window,"fields"));
+        var window=new InspectorWindow(()=>session); window.PrepareForShow();return(session,window,Field<Dictionary<string,TextBox>>(window,"fields"));
     }
     private static bool IsError(TextBlock status)=>status.Text.StartsWith("⚠ ",StringComparison.Ordinal)&&!string.IsNullOrWhiteSpace(status.Text[2..]);
     private static T Field<T>(object target,string name)=>(T)target.GetType().GetField(name,Private)!.GetValue(target)!;

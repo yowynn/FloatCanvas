@@ -19,10 +19,11 @@ internal static class ToolOptionsKeyboardRoute
             if (e.Handled || (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
             if (key == Key.Escape)
             {
+                if (FontPickerControl.TryCancelForInput(source)) { e.Handled = true; return; }
                 if (NumericValueField.TryCancelForInput(source)) { e.Handled = true; return; }
                 if (Ancestors(source).Any(value => value is MenuBase or MenuItem || value is ComboBox { IsDropDownOpen: true } || value is Thumb { IsDragging: true })) return;
                 e.Handled = true;
-                if (!e.IsRepeat && !AppWindowChrome.TryCloseHelp(window) && !dismissOneLevel()) command(0x1B);
+                if (!AppInputPolicy.IsRepeat(e) && !AppWindowChrome.TryCloseHelp(window) && !dismissOneLevel()) command(0x1B);
                 return;
             }
             if (colorPickerOpen()) return;
@@ -31,7 +32,7 @@ internal static class ToolOptionsKeyboardRoute
             // Commands may enter a nested modal loop before returning. Consume the
             // originating key before the dialog receives keyboard focus.
             e.Handled = true;
-            if (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(virtualKey, (FloatCanvas.Windows.OverlayModifiers)Keyboard.Modifiers)) command(virtualKey);
+            if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(virtualKey, (FloatCanvas.Windows.OverlayModifiers)Keyboard.Modifiers)) command(virtualKey);
         };
     }
     internal static bool ShouldRoute(int key, ModifierKeys modifiers, DependencyObject? source)

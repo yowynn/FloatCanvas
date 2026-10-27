@@ -6,35 +6,40 @@ using SkiaSharp;
 using Wpf = System.Windows;
 using Controls = System.Windows.Controls;
 
-/// <summary>Real inspector handlers exercised on detached controls; never calls Show or creates an HWND.</summary>
+/// <summary>Detached property edit seams plus nonactivating native visibility and notification checks.</summary>
 internal static class InspectorTests
 {
     public static void Run(Action<string, bool> assert)
     {
         _ = Wpf.Application.Current ?? new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
+        InspectorVisibilityLifecycleTests.Run(assert);
         bool allowed = true;
         var session = new EditorSession(new() { Viewport = new(0, 0, 300, 400) });
         var text = new CanvasElement { Kind = ElementKind.Text, Text = "浮绘", Width = 100, Height = 27,
             Transform = Affine2D.Translation(20, 20), Style = new() { FontSize = 20 } };
         session.Add(text);
-        var inspector = new InspectorWindow(() => session, () => allowed);
+        var inspector = new InspectorWindow(() => session, () => allowed); inspector.PrepareForShow();
         var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
         var layerWindow = new LayersWindow(() => session, () => allowed);
+        layerWindow.PrepareForShow();
         var layers = (Controls.ListBox)Field(layerWindow, "layers");
         const string draft = "浮绘\n编辑\n多行\n修改";
-        allowed = false;
-        fields["Text"].Text = draft;
         int undoBefore = session.UndoCount;
-        allowed = false;
-        Invoke(inspector, "Apply");
-        assert("busy inspector refuses property mutation and retains draft", session.Document.Elements[0].Text == "浮绘" && fields["Text"].Text == draft && session.UndoCount == undoBefore);
-        Invoke(layerWindow, "SetLayerFlag", text.Id, true, false);
-        Invoke(layerWindow, "SetLayerFlag", text.Id, false, true);
-        assert("busy inspector refuses visibility and lock mutation", session.Document.Elements[0].Visible && !session.Document.Elements[0].Locked && session.UndoCount == undoBefore);
-        layers.SelectedItems.Clear();
-        assert("busy inspector rejects and restores layer selection", session.Selection.SetEquals([text.Id]) && layers.SelectedItems.Count == 1 && fields["Text"].Text == draft);
-        inspector.Refresh();
+        using (var layerSurface = new LayersTestSurface(layerWindow))
+        {
+            assert("busy layer guards exercise a visible offscreen native window", layerWindow.IsVisible && layerSurface.Handle != 0);
+            allowed = false;
+            fields["Text"].Text = draft;
+            Invoke(inspector, "Apply");
+            assert("busy inspector refuses property mutation and retains draft", session.Document.Elements[0].Text == "浮绘" && fields["Text"].Text == draft && session.UndoCount == undoBefore);
+            Invoke(layerWindow, "SetLayerFlag", text.Id, true, false);
+            Invoke(layerWindow, "SetLayerFlag", text.Id, false, true);
+            assert("busy inspector refuses visibility and lock mutation", session.Document.Elements[0].Visible && !session.Document.Elements[0].Locked && session.UndoCount == undoBefore);
+            layers.SelectedItems.Clear();
+            assert("busy inspector rejects and restores layer selection", session.Selection.SetEquals([text.Id]) && layers.SelectedItems.Count == 1 && fields["Text"].Text == draft);
+        }
+        inspector.PrepareForShow();
         assert("busy refresh preserves unsaved input", fields["Text"].Text == draft);
         allowed = true;
         Invoke(inspector, "Apply");
@@ -53,7 +58,7 @@ internal static class InspectorTests
         }
         session.Undo();
         assert("single undo restores text and local height together", session.Document.Elements[0].Text == "浮绘" && session.Document.Elements[0].Height == 27);
-        session.Redo(); inspector.Refresh();
+        session.Redo(); inspector.PrepareForShow();
         fields["FontSize"].Text = "40"; int beforeFont = session.UndoCount;
         Invoke(inspector, "Apply"); applied = session.Document.Elements[0];
         assert("font size edit remeasures wrapped text in same transaction", applied.Style.FontSize == 40 && applied.Height == renderer.MeasureText(applied.Text, applied.Style, applied.Width).Height && session.UndoCount == beforeFont + 1);
@@ -76,13 +81,37 @@ internal static class InspectorTests
         BillboardInspectorTests.Run(assert);
     }
 
+    private sealed class LayersTestSurface : IDisposable
+    {
+        private readonly LayersWindow window;
+        internal nint Handle { get; }
+        internal LayersTestSurface(LayersWindow window)
+        {
+            this.window = window;
+            window.ShowActivated = false; window.ShowInTaskbar = false; window.Opacity = 0; window.Topmost = false;
+            window.Left = window.Top = -20000; window.Show();
+            Handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            Pump(); window.Left = window.Top = -20000;
+        }
+        public void Dispose()
+        {
+            window.Hide(); System.Windows.Interop.HwndSource.FromHwnd(Handle)?.Dispose(); Pump();
+        }
+        private static void Pump()
+        {
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, () => frame.Continue = false);
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+        }
+    }
+
     private static void LocalSizeEditing(Action<string, bool> assert)
     {
         foreach (double angle in new[] { 30d, 45d })
         {
             var session = new EditorSession();
             var original = new CanvasElement { Kind = ElementKind.Rectangle, Width = 100, Height = 60, Transform = Affine2D.Translation(80, 90).Compose(Affine2D.Rotation(angle)) };
-            session.Add(original); var inspector = new InspectorWindow(() => session);
+            session.Add(original); var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
             var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
             assert($"{angle} degree inspector displays local-axis size without stroke", double.Parse(fields["W"].Text) == 100 && double.Parse(fields["H"].Text) == 60);
             var center = original.Transform.TransformPoint(new(50, 30)); int before = session.UndoCount;
@@ -95,12 +124,12 @@ internal static class InspectorTests
         }
         var pathSession = new EditorSession();
         var path = new CanvasElement { Kind = ElementKind.Freehand, Points = [new(-50, -20), new(0, 40), new(50, 10)], Transform = Affine2D.Translation(100, 80).Compose(Affine2D.Rotation(45)) };
-        pathSession.Add(path); var pathInspector = new InspectorWindow(() => pathSession);
+        pathSession.Add(path); var pathInspector = new InspectorWindow(() => pathSession); pathInspector.PrepareForShow();
         var pathFields = (Dictionary<string, Controls.TextBox>)Field(pathInspector, "fields");
         pathFields["W"].Text = "180"; Invoke(pathInspector, "Apply"); var edited = pathSession.Document.Elements[0];
         assert("negative local path bounds resize preserves points and local center", edited.Points.SequenceEqual(path.Points) && edited.Transform.TransformPoint(new(0, 10)).DistanceTo(path.Transform.TransformPoint(new(0, 10))) < 1e-8 && Math.Abs(Math.Sqrt(edited.Transform.M11 * edited.Transform.M11 + edited.Transform.M21 * edited.Transform.M21) - 1.8) < 1e-8);
         var lineSession = new EditorSession(); lineSession.Add(new() { Kind = ElementKind.Line, Points = [new(0, 0), new(100, 0)], Style = new() { StrokeWidth = 12 } });
-        var lineInspector = new InspectorWindow(() => lineSession); var lineFields = (Dictionary<string, Controls.TextBox>)Field(lineInspector, "fields");
+        var lineInspector = new InspectorWindow(() => lineSession); lineInspector.PrepareForShow(); var lineFields = (Dictionary<string, Controls.TextBox>)Field(lineInspector, "fields");
         assert("horizontal line geometric height excludes visible stroke", lineFields["H"].Text == "0");
         int undo = lineSession.UndoCount; lineFields["H"].Text = "50"; Invoke(lineInspector, "Apply");
         assert("zero local size rejects resize and preserves property draft", lineSession.UndoCount == undo && lineFields["H"].Text == "50" && ((Controls.TextBlock)Field(lineInspector, "status")).Text.Contains("端点"));
@@ -108,7 +137,7 @@ internal static class InspectorTests
 
     private static void CommandRouting(Action<string, bool> assert)
     {
-        bool allowed = true; var inspector = new InspectorWindow(() => new EditorSession(), () => allowed);
+        bool allowed = true; var inspector = new InspectorWindow(() => new EditorSession(), () => allowed); inspector.PrepareForShow();
         var keys = new List<int>(); inspector.CommandKey += keys.Add;
         bool Route(int key, bool ctrl, bool text) => (bool)inspector.GetType().GetMethod("RouteCommandKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(inspector, [key, ctrl, text])!;
         foreach (int key in new[] { 0x5A, 0x59, 0x41, 0x43, 0x56, 0x44 }) assert("layer context forwards Ctrl command " + key, Route(key, true, false) && keys[^1] == key);
@@ -128,7 +157,7 @@ internal static class InspectorTests
         foreach (var style in Enum.GetValues<ArrowHeadStyle>())
         {
             var session = new EditorSession(); session.Add(new() { Kind = ElementKind.Arrow, Points = [new(0, 0), new(120, 40)] });
-            var inspector = new InspectorWindow(() => session);
+            var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
             var containers = (Dictionary<string, Wpf.FrameworkElement>)Field(inspector, "fieldContainers");
             var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
             var picker = (Controls.ComboBox)Field(inspector, "arrowStyle");
@@ -142,7 +171,7 @@ internal static class InspectorTests
         }
         foreach (var kind in new[] { ElementKind.Rectangle, ElementKind.Image, ElementKind.Text, ElementKind.Line })
         {
-            var session = new EditorSession(); session.Add(new() { Kind = kind, Width = 100, Height = 60 }); var inspector = new InspectorWindow(() => session);
+            var session = new EditorSession(); session.Add(new() { Kind = kind, Width = 100, Height = 60 }); var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
             var containers = (Dictionary<string, Wpf.FrameworkElement>)Field(inspector, "fieldContainers");
             assert(kind + " hides legacy arrow-style control", containers["ArrowHeadStyle"].Visibility == Wpf.Visibility.Collapsed);
             assert(kind + " shows arrow size only for line families", containers["ArrowHeadSize"].Visibility == (kind == ElementKind.Line ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed));
@@ -167,11 +196,11 @@ internal static class InspectorTests
     private static void ContextualFields(Action<string, bool> assert)
     {
         var session = new EditorSession();
-        var inspector = new InspectorWindow(() => session);
+        var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
         var containers = (Dictionary<string, Wpf.FrameworkElement>)Field(inspector, "fieldContainers");
         foreach (var kind in new[] { ElementKind.Image, ElementKind.Rectangle, ElementKind.Text, ElementKind.Number })
         {
-            session.Add(new() { Kind = kind, Width = 100, Height = 50, Text = "浮绘" }); inspector.Refresh();
+            session.Add(new() { Kind = kind, Width = 100, Height = 50, Text = "浮绘" }); inspector.PrepareForShow();
             bool Visible(string key) => containers[key].Visibility == Wpf.Visibility.Visible;
             assert(kind + " keeps common geometry and opacity fields", new[] { "X", "Y", "W", "H", "Angle", "Opacity" }.All(Visible));
             if (kind == ElementKind.Image)
@@ -190,7 +219,7 @@ internal static class InspectorTests
     {
         var session = new EditorSession();
         session.Add(new() { Kind = ElementKind.Arrow, Points = [new(0, 0), new(120, 40)] });
-        var inspector = new InspectorWindow(() => session);
+        var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
         var layout = (Controls.Grid)inspector.Content;
         var scroll = LogicalDescendants(layout).OfType<Controls.ScrollViewer>().Single();
         assert("live inspector has no apply or reload actions", !LogicalDescendants(layout).OfType<Controls.Button>().Any(button => new[] { FloatCanvas.Localization.AppText.Get("Inspector.Apply"), FloatCanvas.Localization.AppText.Get("Inspector.ReloadSelection") }.Contains(System.Windows.Automation.AutomationProperties.GetName(button))));

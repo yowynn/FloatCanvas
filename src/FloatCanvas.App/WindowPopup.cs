@@ -93,7 +93,7 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
 
     private void BeforeInput(object sender, PreProcessInputEventArgs args)
     {
-        if (suspensionDepth != 0 || StaysOpen || window is null || args.StagingItem.Input is not MouseButtonEventArgs mouse || mouse.ButtonState != MouseButtonState.Pressed) return;
+        if (suspensionDepth != 0 || PopupChildDialog.StaysOpenForOutsidePress(this,StaysOpen) || window is null || args.StagingItem.Input is not MouseButtonEventArgs mouse || mouse.ButtonState != MouseButtonState.Pressed) return;
         var origin = mouse.OriginalSource as DependencyObject ?? mouse.MouseDevice.Target as DependencyObject ?? Mouse.Captured as DependencyObject;
         if (origin is null || BelongsTo(origin, window) || TargetPressToggles && BelongsTo(origin, target)) return;
         CloseOutside();

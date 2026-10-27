@@ -12,7 +12,7 @@ using Input = System.Windows.Input;
 using Threading = System.Windows.Threading;
 using L = FloatCanvas.Localization.AppText;
 
-/// <summary>Production library actions on detached WPF controls and an isolated real stamp catalog.</summary>
+/// <summary>Production library actions in an invisible nonactivating host and an isolated real catalog.</summary>
 internal static class StampLibraryUiTests
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -127,6 +127,7 @@ internal static class StampLibraryUiTests
         Controls.MenuItem Menu(Guid id, string key) => Tile(id).ContextMenu.Items.OfType<Controls.MenuItem>().Single(item => Equals(item.Tag, key));
         try
         {
+            ShowFixture(window);
             var root = (Wpf.FrameworkElement)window.Content; root.Measure(new Wpf.Size(window.Width - 2, 580)); root.Arrange(new Wpf.Rect(0, 0, window.Width - 2, 580)); root.UpdateLayout();
             check(locale + " management actions share compact icon buttons and delayed accessible tooltips", buttons.Count == 6 && buttons.Values.All(button =>
                 button.Content is Controls.Viewbox && button.Width == 30 && button.Height == 30 && Controls.ToolTipService.GetInitialShowDelay(button) == 650 &&
@@ -188,8 +189,10 @@ internal static class StampLibraryUiTests
 
             list.SelectedItem = Entry(merged);
             Invoke(window, "UseSelectedSource"); check(locale + " merged-source icon retains its exact stamp callback", sources.SequenceEqual([merged]));
+            ShowFixture(window);
             bool handled = (bool)Invoke(window, "HandleShortcut", Input.Key.Enter, Input.ModifierKeys.None, list)!;
             check(locale + " Enter uses the selected stamp through the normal action path", handled && uses.SequenceEqual([merged]));
+            ShowFixture(window);
             foreach (var input in new Wpf.DependencyObject[] { search })
                 foreach (var key in new[] { Input.Key.Enter, Input.Key.F2, Input.Key.Delete })
                     check(locale + " " + input.GetType().Name + " owns its " + key + " key without invoking stamp management", !(bool)Invoke(window, "HandleShortcut", key, Input.ModifierKeys.None, input)! && uses.Count == 1 && library.Items.Count == 51);
@@ -217,7 +220,8 @@ internal static class StampLibraryUiTests
             PumpUntil(() => Realized(list).All(item => Thumbnail(item).Source is not null));
             CompactLayout(window, locale, check);
             Render(window, output, locale);
-            check(locale + " stamp management checks open no native library or popup window", !window.IsVisible && new Wpf.Interop.WindowInteropHelper(window).Handle == 0);
+            GetWindowThreadProcessId(GetForegroundWindow(), out uint foreground);
+            check(locale + " stamp management fixture remains invisible and nonactivating", window.Opacity == 0 && !window.ShowActivated && foreground != Environment.ProcessId);
         }
         finally { window.Close(); Pump(); }
         check(locale + " closing the library cancels thumbnail work and detaches its live state", Field<bool>(window, "closed") && !window.IsVisible);
@@ -240,7 +244,7 @@ internal static class StampLibraryUiTests
             var first = tiles[0].TranslatePoint(new Wpf.Point(), viewport);
             var row = tiles.Where(tile => Math.Abs(tile.TranslatePoint(new Wpf.Point(), viewport).Y - first.Y) < 1).ToArray();
             double rightEdge = row[^1].TranslatePoint(new Wpf.Point(row[^1].ActualWidth + row[^1].Margin.Right, 0), viewport).X;
-            check(locale + " default width derives from five complete tile footprints plus DPI-rounded list and window edges", window.Width == StampLibraryWindow.WidthForColumns(StampLibraryWindow.DefaultTileColumns, scale) &&
+            check(locale + " default width derives from five complete tile footprints plus DPI-rounded list and window edges", Math.Abs(window.Width - StampLibraryWindow.WidthForColumns(StampLibraryWindow.DefaultTileColumns, scale)) < 1e-7 &&
                 row.Length == StampLibraryWindow.DefaultTileColumns && rightEdge <= viewport.ActualWidth + .1 && viewport.ActualWidth - rightEdge < 2 / scale);
             scroll.ScrollToEnd(); background.UpdateLayout();
             tiles = Realized(list).ToArray();
@@ -284,11 +288,13 @@ internal static class StampLibraryUiTests
         {
             AppTheme.Apply(theme); Pump();
             var preview = new StampLibraryWindow(Field<StampLibrary>(window, "library"), Field<Func<EditorSession>>(window, "getSession"), _ => { }, useSource: _ => { });
+            ShowFixture(preview);
             var previewSearch = Field<Controls.TextBox>(preview, "search"); previewSearch.Text = Field<Controls.TextBox>(window, "search").Text;
+            preview.Refresh(); Pump();
             var previewList = Field<Controls.ListBox>(preview, "grid");
-            previewList.SelectedItem = previewList.Items.OfType<Controls.ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, Field<Guid?>(window, "selected")));
+            previewList.SelectedItem = previewList.Items.OfType<StampEntry>().FirstOrDefault(item => item.Id == Field<Guid?>(window, "selected"));
             Invoke(preview, "SelectSlot", 5);
-            PumpUntil(() => previewList.Items.OfType<Controls.ListBoxItem>().All(item => Thumbnail(item).Source is not null));
+            PumpUntil(() => Realized(previewList).Any() && Realized(previewList).All(item => Thumbnail(item).Source is not null));
             var content = (Wpf.FrameworkElement)preview.Content; preview.Content = null;
             double scale = Wpf.Media.VisualTreeHelper.GetDpi(preview).DpiScaleX, chromeEdges = 2 * Math.Round(scale) / scale;
             double width = preview.Width - chromeEdges, height = preview.Height - AppWindowChrome.CaptionHeight - chromeEdges;
@@ -314,7 +320,7 @@ internal static class StampLibraryUiTests
                     Search = Bounds(previewSearch), List = Bounds(previewList),
                     Slots = Field<Dictionary<int, Controls.Button>>(preview, "slotButtons").Select(pair => new { Digit = (pair.Key + 1) % 10, Bounds = Bounds(pair.Value) }),
                     SlotClearButtons = Field<Dictionary<int, Controls.Button>>(preview, "slotClearButtons").Where(pair => pair.Value.Visibility == Wpf.Visibility.Visible).Select(pair => new { Digit = (pair.Key + 1) % 10, Bounds = Bounds(pair.Value) }),
-                    Tiles = previewList.Items.OfType<Controls.ListBoxItem>().Take(4).Select(item => new { Id = (Guid)item.Tag, Name = Wpf.Automation.AutomationProperties.GetName(item), Bounds = Bounds(item) })
+                    Tiles = Realized(previewList).Take(4).Select(item => new { Id = (Guid)item.Tag, Name = Wpf.Automation.AutomationProperties.GetName(item), Bounds = Bounds(item) })
                 }, new JsonSerializerOptions { WriteIndented = true }));
                 double narrowWidth = preview.MinWidth - chromeEdges;
                 background.Width = narrowWidth; background.Measure(new Wpf.Size(narrowWidth, height)); background.Arrange(new Wpf.Rect(0, 0, narrowWidth, height)); background.UpdateLayout(); Pump();
@@ -347,7 +353,25 @@ internal static class StampLibraryUiTests
         while (!done() && watch.Elapsed < TimeSpan.FromSeconds(5)) { Pump(); Thread.Sleep(1); }
         if (!done()) throw new TimeoutException("The isolated stamp library operation did not finish.");
     }
+    private static void ShowFixture(Wpf.Window window)
+    {
+        window.ShowActivated = false; window.ShowInTaskbar = false; window.Topmost = false; window.Opacity = 0;
+        window.WindowStartupLocation = Wpf.WindowStartupLocation.Manual; window.Left = window.Top = -10000;
+        if (new Wpf.Interop.WindowInteropHelper(window).Handle == 0)
+            window.SourceInitialized += (_, _) =>
+            {
+                nint handle = new Wpf.Interop.WindowInteropHelper(window).Handle;
+                SetWindowLongPtrW(handle, -20, GetWindowLongPtrW(handle, -20) | 0x08000000);
+            };
+        window.Show(); Pump();
+        GetWindowThreadProcessId(GetForegroundWindow(), out uint foreground);
+        if (foreground == Environment.ProcessId) throw new InvalidOperationException("Stamp fixture unexpectedly owns foreground.");
+    }
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] private static extern bool GetWindowRect(nint handle, out NativeRect rect);
     [DllImport("user32.dll")] private static extern bool GetClientRect(nint handle, out NativeRect rect);
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint handle, out uint process);
+    [DllImport("user32.dll")] private static extern nint GetWindowLongPtrW(nint handle, int index);
+    [DllImport("user32.dll")] private static extern nint SetWindowLongPtrW(nint handle, int index, nint value);
 }

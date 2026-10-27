@@ -10,6 +10,8 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--inner-stroke-only")) { InnerStrokeRenderingTests.Run(Assert); return 0; }
+            if (args.Contains("--inner-stroke-evidence")) { InnerStrokeRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--inner-stroke-evidence") + 1]); InnerStrokeRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--perspective-opacity-only")) { PerspectiveOpacityRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} perspective opacity checks."); return 0; }
             if (args.Contains("--perspective-opacity-correctness-only")) { PerspectiveOpacityRenderingTests.Run(Assert, false); Console.WriteLine($"PASS {_checks} perspective opacity checks."); return 0; }
             if (args.Contains("--element-opacity-only")) { ElementOpacityRenderingTests.Run(Assert); ElementOpacityRenderingTests.Performance(Assert); PerspectiveOpacityRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} element opacity checks."); return 0; }
@@ -52,6 +54,7 @@ internal static class Program
             if (args.Contains("--live-effects-only")) { LivePixelateRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--capture-selection-only")) { CaptureSelectionRenderingTests.Run(Assert); return 0; }
             ShapesAndCoordinates();
+            InnerStrokeRenderingTests.Run(Assert);
             AlphaAndBackground();
             ElementOpacityRenderingTests.Run(Assert);
             ElementOpacityRenderingTests.Performance(Assert);

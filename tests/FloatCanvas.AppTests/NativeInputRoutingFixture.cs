@@ -18,7 +18,8 @@ using FloatCanvas.Windows;
 
 /// <summary>Own bounded native input and real WPF editors, through the production private keyboard bridge.
 /// Default scenarios use no SendInput/desktop cursor changes. The explicit ctrl-native-selection
-/// scenarios additionally exercise guarded physical input. No default hotkeys or user-profile writes.</summary>
+/// scenarios, avatar-right-release and root-menu-layer additionally exercise guarded physical input.
+/// The root-menu scenario uses the primary work area to verify actual screen-edge placement. No default hotkeys or user-profile writes.</summary>
 internal static class NativeInputRoutingFixture
 {
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -42,10 +43,11 @@ internal static class NativeInputRoutingFixture
         {
             var primary = ((IReadOnlyList<MonitorInfo>)typeof(OverlayHost).GetMethod("EnumerateMonitors", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!).First(m => m.IsPrimary);
             var tile = new PixelBounds(primary.WorkArea.Left + 30, primary.WorkArea.Top + 30, 640, 360);
+            if(scenarioOverride=="root-menu-layer")tile=primary.WorkArea;
             var monitor = primary with { Bounds = tile };
             Func<IReadOnlyList<MonitorInfo>> provider = () => [monitor];
             host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), PrivateInstance, null, [OverlayMonitorScope.PrimaryScreen, provider, false], null)!;
-            if (scenarioOverride == "preview4-menu" && Environment.GetEnvironmentVariable("FLOATCANVAS_MENU_TEST_BACKEND") == "enhanced") host.EnableSystemInput();
+            if (scenarioOverride is "preview4-menu" or "popup-window-acceptance" or "avatar-right-release" or "root-menu-layer" && Environment.GetEnvironmentVariable("FLOATCANVAS_MENU_TEST_BACKEND") == "enhanced") host.EnableSystemInput();
             handles = host.Diagnostics.SelectMany(pair => new[] { pair.InputHandle, pair.DisplayHandle }).Append(host.ControlHandle).ToArray();
             session = new DesktopSession(app, host);
             InputManager.Current.PostProcessInput += afterPointerFocus;
@@ -97,7 +99,7 @@ internal static class NativeInputRoutingFixture
                 ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, () => entered = (bool)Invoke("SetEditing", true, false)!); Pump();
                 permissionGate?.Close(); permissionGate = null; Pump();
                 Console.WriteLine($"ENTRY result={entered} editing={host.IsEditing} visible={host.IsVisible} foreground={GetForegroundWindow():X} toolbar={new WindowInteropHelper(toolbar).Handle:X} input={host.Diagnostics.Single().InputHandle:X}");
-                check("native input fixture enters only its own bounded edit surface", entered && host.IsEditing && host.IsVisible && host.Diagnostics.All(pair => pair.Bounds.Width == 640 && pair.Bounds.Height == 360));
+                check("native input fixture enters only its configured edit surface", entered && host.IsEditing && host.IsVisible && host.Diagnostics.All(pair => pair.Bounds == tile));
             }
             if (scenario is "all" or "ctrl")
             {
@@ -219,6 +221,9 @@ internal static class NativeInputRoutingFixture
             if (scenario == "feedback4-workspace") Feedback4Workspace(check, session, host, toolbar, editor);
             if (scenario == "preview4-settings") Preview4SettingsRuntimeFixture.Run(check, session, host, toolbar, action => ActivateFixtureWindow(new WindowInteropHelper(toolbar).Handle, action));
             if (scenario == "preview4-menu") Preview4MenuRuntimeFixture.Run(check, session, host, toolbar);
+            if (scenario == "avatar-right-release") AvatarRightReleaseTests.Run(check,session,host,toolbar);
+            if (scenario == "root-menu-layer") RootMenuLayerRuntimeTests.Run(check,session,host,toolbar);
+            if (scenario == "popup-window-acceptance") PopupInteractionAcceptanceTests.RunSession(check, session, host, toolbar);
             if (scenario == "round2-stamps") Round2StampRuntimeFixture.Run(check,session,toolbar,editor);
             if (scenario == "move-into-view") MoveIntoViewRuntimeFixture.Run(check, session, host);
             if (scenario is "all" or "options")

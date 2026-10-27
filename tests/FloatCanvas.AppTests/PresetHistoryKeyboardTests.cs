@@ -24,6 +24,7 @@ internal static class PresetHistoryKeyboardTests
         var root = (FrameworkElement)field.PickerRoot;
         root.Measure(new Size(420, 700)); root.Arrange(new Rect(0, 0, 420, 700)); root.UpdateLayout();
         var picker = Field<ColorPickerPanel>(field, "picker");
+        field.PrepareForShow(); picker.PrepareForShow();
         var tile = Field<PixelTilePanel>(picker, "pinned").Children.OfType<Button>().Single();
         var text = Field<TextBox>(picker, "hex");
         // Initialize WPF's keyboard provider before installing synthetic thread-local state.

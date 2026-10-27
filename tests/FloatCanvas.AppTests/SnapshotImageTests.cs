@@ -52,6 +52,39 @@ internal static class SnapshotImageTests
             var target = new EditorSession(ProjectedDocument());
             var image = SnapshotImageCommand.Insert(target, raster);
             check(shape + " capture preserves its encoded pixels during insertion", target.Assets.Get(image.AssetId!).Data.Span.SequenceEqual(raster.PngBytes));
+            var selectedImage = new EditorController(target) { Tool = EditorTool.Select };
+            var frame = selectedImage.SelectionScreenCorners.Select(mapping.ScreenToPlane.TransformPoint).ToArray();
+            check(shape + " screenshot selection frame is rectangular on the canvas plane", frame.Length == 4 &&
+                Math.Abs(frame[0].Y - frame[1].Y) < 1e-7 && Math.Abs(frame[1].X - frame[2].X) < 1e-7 &&
+                Math.Abs(frame[2].Y - frame[3].Y) < 1e-7 && Math.Abs(frame[3].X - frame[0].X) < 1e-7);
+            var planeBounds = RectD.FromPoints(frame[0], frame[2]);
+            check(shape + " screenshot frame contains all inverse-projected pixel corners", EditorController.Corners(ElementGeometry.LocalBounds(image))
+                .Select(ElementGeometry.LocalToPlane(image).TransformPoint).All(point =>
+                    point.X >= planeBounds.Left - 1e-7 && point.X <= planeBounds.Right + 1e-7 &&
+                    point.Y >= planeBounds.Top - 1e-7 && point.Y <= planeBounds.Bottom + 1e-7));
+            void Drag(PointD from, PointD to)
+            {
+                foreach (var (kind, point) in new[] { (OverlayPointerKind.Down, from), (OverlayPointerKind.Move, to), (OverlayPointerKind.Up, to) })
+                    selectedImage.Pointer(new(kind, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None, 0));
+            }
+            var center = planeBounds.Center;
+            Drag(mapping.ToScreen(frame[2]), mapping.ToScreen(center + (frame[2] - center) * 1.25));
+            var expectedScale = Affine2D.Around(center, Affine2D.Scale(1.25, 1.25));
+            check(shape + " screenshot resizes from its projected plane-frame corner", target.UndoCount == 2 &&
+                target.Document.Elements.Single().Transform.TransformPoint(center).DistanceTo(center) < 1e-7 &&
+                target.Document.Elements.Single().Transform.TransformPoint(frame[2]).DistanceTo(expectedScale.TransformPoint(frame[2])) < 1e-7 &&
+                target.Assets.Get(image.AssetId!).Data.Span.SequenceEqual(raster.PngBytes));
+            check(shape + " screenshot plane-frame resize undoes in one step", target.Undo() && target.Document.Elements.Single().Transform == image.Transform);
+            var rotationStart = selectedImage.SelectionScreenRotationHandle!.Value;
+            var rotationPoint = mapping.ScreenToPlane.TransformPoint(rotationStart);
+            Drag(rotationStart, mapping.ToScreen(center + Affine2D.Rotation(20).TransformPoint(rotationPoint - center)));
+            var rotated = target.Document.Elements.Single().Transform;
+            var expectedRotation = Affine2D.Around(center, Affine2D.Rotation(20));
+            check(shape + " screenshot rotates from the new frame handle without altering its pixels", target.UndoCount == 2 &&
+                rotated.TransformPoint(center).DistanceTo(center) < 1e-7 &&
+                rotated.TransformPoint(center + new PointD(1, 0)).DistanceTo(expectedRotation.TransformPoint(center + new PointD(1, 0))) < 1e-7 &&
+                target.Assets.Get(image.AssetId!).Data.Span.SequenceEqual(raster.PngBytes));
+            check(shape + " screenshot plane-frame rotation undoes in one step", target.Undo() && target.Document.Elements.Single().Transform == image.Transform);
             target.Document.Canvas.Projection.Enabled = false;
             using var renderer = new SceneRenderer();
             using var pixels = SKBitmap.Decode(renderer.ExportPng(target.Document, target.Assets, transparent: true));

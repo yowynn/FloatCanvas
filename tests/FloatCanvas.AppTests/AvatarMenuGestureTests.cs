@@ -2,6 +2,8 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;
+using System.Runtime.InteropServices;
 using FloatCanvas.App;
 
 internal static class AvatarMenuGestureTests
@@ -11,17 +13,30 @@ internal static class AvatarMenuGestureTests
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
+        nint foreground=GetForegroundWindow();
+        var desktop=System.Windows.Forms.SystemInformation.VirtualScreen;
         var launcher = new ToolbarLauncher();
         using var source = new HwndSource(new HwndSourceParameters("FloatCanvas.AvatarGestureTests")
-        { Width = 94, Height = 94, PositionX = -10000, PositionY = -10000, WindowStyle = unchecked((int)0x80000000) });
+        { Width = 94, Height = 94, PositionX = desktop.Left-10000, PositionY = desktop.Top-10000,
+            WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle=0x08000080 });
         source.RootVisual = launcher;
-        launcher.Measure(new Size(94, 94)); launcher.Arrange(new Rect(0, 0, 94, 94));
+        launcher.Measure(new Size(94, 94)); launcher.Arrange(new Rect(0, 0, 94, 94));launcher.UpdateLayout();
+        // CaptureMouse synchronously reports native input. Complete this source's
+        // Loaded/input initialization before driving its protected press handler;
+        // a hidden HWND with pending initialization can correctly lose capture
+        // and cancel the gesture being asserted here.
+        var frame=new DispatcherFrame();
+        source.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,()=>frame.Continue=false);
+        Dispatcher.PushFrame(frame);
+        check("avatar gesture fixture uses an initialized nonactivating offscreen HWND",IsWindowVisible(source.Handle)&&launcher.IsLoaded&&GetForegroundWindow()==foreground);
         bool menuOpen = true; int closes = 0, opens = 0;
         launcher.CloseOpenMenu = () => { if (!menuOpen) return false; menuOpen = false; closes++; return true; };
         launcher.MenuRequested += () => opens++;
         var down = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent };
         typeof(ToolbarLauncher).GetMethod("OnPreviewMouseLeftButtonDown", Private)!.Invoke(launcher, [down]);
         var gestures = (LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!;
+        Console.WriteLine($"AVATAR_PRESS closes={closes} menu={menuOpen} pointerDown={gestures.IsPointerDown} opens={opens} captured={Mouse.Captured?.GetType().Name ?? "none"} nativeCapture={GetCapture()==source.Handle} nativeVisible={IsWindowVisible(source.Handle)}");
+        check("avatar gesture fixture captures only its own offscreen input surface",ReferenceEquals(Mouse.Captured,launcher)&&GetCapture()==source.Handle);
         check("closing an open menu retains the same press as a double-click or drag candidate", closes == 1 && !menuOpen && gestures.IsPointerDown && opens == 0);
         launcher.CancelPendingGestures();
 
@@ -56,7 +71,14 @@ internal static class AvatarMenuGestureTests
         typeof(ToolbarLauncher).GetMethod("OnLostMouseCapture", Private)!.Invoke(launcher, [lostOwnCapture]);
         check("losing the launcher's own capture still cancels an interrupted press", !((LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!).IsPointerDown);
         launcher.CancelPendingGestures();
+        nint handle=source.Handle;source.Dispose();
+        check("avatar gesture fixture releases capture and destroys its offscreen HWND",GetCapture()!=handle&&!IsWindow(handle));
+        check("avatar gesture fixture preserves the user's foreground window",GetForegroundWindow()==foreground);
     }
 
     private static LauncherGestureState NewState() => new(650, 7, 11, 12, 20);
+    [DllImport("user32.dll")] private static extern nint GetCapture();
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint handle);
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool IsWindow(nint handle);
 }

@@ -82,7 +82,7 @@ internal static class EmojiTests
         check("emoji creation centers its configured size at the document click", element.Kind == ElementKind.Text && element.Text == "🤔" && element.Style.FontSize == 18 &&
             element.Width == 18 && element.Height == 18 && element.Transform == Affine2D.Translation(41, 51));
         check("emoji creation remains one undoable object", session.UndoCount == 1 && session.Undo() && session.Document.Elements.Count == 0 && session.Redo());
-        var inspector = new InspectorWindow(() => session);
+        var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
         var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
         fields["W"].Text = "36";
         Invoke(inspector, "Apply"); element = session.Document.Elements.Single(); metrics = EmojiGlyphs.Measure("🤔", 36);

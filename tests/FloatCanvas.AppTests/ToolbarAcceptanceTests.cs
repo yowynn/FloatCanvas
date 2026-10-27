@@ -15,8 +15,9 @@ using Threading = System.Windows.Threading;
 using L = FloatCanvas.Localization.AppText;
 
 /// <summary>
-/// Full production CreateToolbarV2 content, rendered detached and in a hidden native DPI host.
-/// It never registers hotkeys, enters editing, shows a window, or injects input.
+/// Full production CreateToolbarV2 content, rendered detached and in isolated native hosts.
+/// Thumbnail work uses an invisible offscreen, nonactivating surface. The fixture never
+/// registers hotkeys, enters editing, shows application windows, or injects input.
 /// </summary>
 internal static class ToolbarAcceptanceTests
 {
@@ -77,7 +78,20 @@ internal static class ToolbarAcceptanceTests
             StampLibrary.Place(saved.loaded,target,new PointD(200,200));
             check("placing a stamp preserves prior objects and commits one insertion",target.Document.Elements.Count==2 && target.UndoCount==before+1);
             check("placing a stamp leaves no selected transform frame",target.Selection.Count==0);
-            shelf.Refresh(); Invoke(session,"RefreshToolbarState"); PumpToIdle(app.Dispatcher); Measure(shell);
+            shelf.Refresh(); Invoke(session,"RefreshToolbarState"); PrepareShelfPreview(shell,shelf); Measure(shell);
+            check("visible offscreen shelf loads every populated slot image",((Controls.StackPanel)shelf.Content).Children.OfType<Controls.Button>()
+                .Take(3).All(button=>((Controls.Grid)button.Content).Children.OfType<Controls.Image>().Single().Source is Imaging.BitmapSource {IsFrozen:true}));
+
+            var optionsPanel=Field<ToolOptionsPanel>(session,"_toolOptionsPanel");
+            var optionsWindow=Field<Wpf.Window>(session,"_toolOptionsWindow");
+            var optionsHeading=Field<Controls.TextBlock>(optionsPanel,"heading");
+            var previousParameters=editor.Parameters;
+            string hiddenHeading=optionsHeading.Text;
+            editor.Tool=EditorTool.Highlighter;Invoke(session,"RefreshToolbarState");
+            check("switching tools leaves hidden options controls untouched",!optionsWindow.IsVisible&&optionsHeading.Text==hiddenHeading);
+            optionsPanel.PrepareForShow();
+            check("explicit options synchronization reads the latest tool state",optionsHeading.Text==L.Get("ToolDescription.Highlighter"));
+            editor.ApplyParameters(previousParameters);Invoke(session,"RefreshToolbarState");optionsPanel.PrepareForShow();
 
             CheckEqualRowInsets(check,body,grid,display,"production toolbar",1);
             check("production toolbar preserves two 26 DIP rows separated by two DIP",grid.RowDefinitions.Select(row=>row.Height.Value).SequenceEqual(new[]{26d,2d,26d}));
@@ -97,9 +111,27 @@ internal static class ToolbarAcceptanceTests
             editor.Session.Document.Canvas.Projection=CanvasCalibration.CreateInitial(new(0,0,1200,800),10,8);
             editor.Session.Document.Canvas.Projection.Enabled=true;Invoke(session,"RefreshToolbarState");Measure(shell);
             var canvasAction=buttons.Single(button=>Equals(button.Tag,"canvas"));
+            var canvasSample=Descendants(canvasAction).OfType<CanvasParameterIcon>().Single();
+            var projection=editor.Session.Document.Canvas.Projection;
+            projection.Columns++;projection.Rows++;Invoke(session,"RefreshToolbarState");
+            check("canvas preview retains its fixed four-by-four sample while calibration dimensions change",ReferenceEquals(canvasSample,Descendants(canvasAction).OfType<CanvasParameterIcon>().Single()));
+            projection.Columns--;projection.Rows--;
+            var canvasGrid=editor.Session.Document.Canvas.Grid;uint savedGridColor=canvasGrid.Color;
+            canvasGrid.Color=0xFFB27428;Invoke(session,"RefreshToolbarState");Measure(shell);
+            check("canvas preview immediately refreshes when its displayed grid parameters change",!ReferenceEquals(canvasSample,Descendants(canvasAction).OfType<CanvasParameterIcon>().Single()));
+            canvasGrid.Color=savedGridColor;Invoke(session,"RefreshToolbarState");Measure(shell);
             CheckCanvasPresentation(check,session,editor,toolbar,shell,canvasAction,billboard,
                 buttons.Single(button=>Equals(button.Tag,"import")),buttons.Single(button=>Equals(button.Tag,"capture")),output);
-            check("enabled perspective gives the idle Canvas its amber fill border and artwork",billboard.IsEnabled&&tools[EditorTool.Canvas]==canvasAction&&canvasAction.Background==app.Resources["CanvasHiddenSurface"]&&canvasAction.BorderBrush==app.Resources["CanvasHiddenBorder"]&&Descendants(canvasAction).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasHiddenText"]);
+            check("enabled perspective keeps idle Canvas on ordinary tool chrome with a live canvas sample",billboard.IsEnabled&&tools[EditorTool.Canvas]==canvasAction&&canvasAction.Background==app.Resources["CanvasSurface"]&&canvasAction.BorderBrush==Media.Brushes.Transparent&&Descendants(canvasAction).OfType<CanvasParameterIcon>().Count()==1);
+            foreach(var tool in new[]{EditorTool.Select,EditorTool.Eraser})
+            {
+                var preview=ToolParameterIcon.Create(new ToolPresetLibrary(Path.Combine(profile,"preview-recipes.json")).OfficialFor(tool).First().Parameters);
+                check(tool+" toolbar artwork uses the same preview as its official preset",Descendants(tools[tool]).OfType<Shapes.Path>().Single().Data.ToString()==Descendants(preview).OfType<Shapes.Path>().Single().Data.ToString());
+            }
+            var moreMenu=Field<Controls.ContextMenu>(session,"_moreToolsMenu");
+            Invoke(session,"RefreshMoreToolPreviews");
+            check("more menu uses live neutral tool previews for both blur and pixelate",moreMenu.Items.OfType<Controls.MenuItem>().All(item=>item.Icon is Wpf.DependencyObject icon&&Descendants(icon).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasText"]));
+            CheckMorePreviewLifecycle(check,session,editor,(OverlayContextMenu)moreMenu,shell.Dispatcher);
             var parametersBefore=System.Text.Json.JsonSerializer.Serialize(editor.Parameters);
             billboard.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
             Measure(shell);
@@ -114,8 +146,7 @@ internal static class ToolbarAcceptanceTests
             check("placement toolbar menu and adjacent icons share the standard stroke weight",
                 Descendants(billboard).OfType<Shapes.Path>().Single().StrokeThickness==1.5&&
                 Descendants((Wpf.DependencyObject)modeMenu.Icon).OfType<Shapes.Path>().Single().StrokeThickness==1.5&&
-                Descendants(import).OfType<Shapes.Path>().Single().StrokeThickness==1.5&&
-                Descendants(canvasAction).OfType<Shapes.Path>().Single().StrokeThickness==1.5);
+                Descendants(import).OfType<Shapes.Path>().Single().StrokeThickness==1.5);
             var plane=Media.PathGeometry.CreateFromGeometry(Media.Geometry.Parse(CommandGlyphs.Surface));
             var placementPen=new Media.Pen(Media.Brushes.Black,1.5) {StartLineCap=Media.PenLineCap.Round,EndLineCap=Media.PenLineCap.Round,LineJoin=Media.PenLineJoin.Round};
             check("placement artwork fits the icon canvas including strokes",new Wpf.Rect(0,0,16,16).Contains(plane.GetRenderBounds(placementPen))&&
@@ -131,18 +162,34 @@ internal static class ToolbarAcceptanceTests
             check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==28&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
             check("trailing actions follow canvas and placement, images, inspector/layers, then independent new and clear controls",buttons.Where(button=>Controls.Grid.GetColumn(button)>=14).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"canvas","billboard","import","capture","crop","properties","layers","undo","redo","new-canvas","clear","visibility","done"}));
             var more=buttons.Single(button=>Equals(button.Tag,"more"));
-            string MoreGlyph() => Descendants(more).OfType<Shapes.Path>().FirstOrDefault()?.Data.ToString() ??
-                ((Media.DrawingGroup)((Media.DrawingImage)Descendants(more).OfType<Controls.Image>().Single().Source).Drawing)
-                    .Children.OfType<Media.GeometryDrawing>().Last().Geometry.ToString();
+            string MoreGlyph() => Fingerprint(Raster((Wpf.FrameworkElement)Glyph(more),1));
             string idleMoreGlyph = MoreGlyph();
             editor.Tool = EditorTool.Blur; Invoke(session,"RefreshToolbarState"); Measure(shell);
             string blurMoreGlyph = MoreGlyph();
-            check("More displays the selected blur tool artwork", blurMoreGlyph != idleMoreGlyph);
+            check("More replaces its idle dots with the selected blur preview", blurMoreGlyph != idleMoreGlyph);
             editor.Tool = EditorTool.Pixelate; Invoke(session,"RefreshToolbarState"); Measure(shell);
             check("More distinguishes mosaic from blur", MoreGlyph() != idleMoreGlyph && MoreGlyph() != blurMoreGlyph);
             editor.Tool = EditorTool.Freehand; Invoke(session,"RefreshToolbarState"); Measure(shell);
-            check("More restores three dots when another toolbar tool is selected", MoreGlyph() == idleMoreGlyph);
-            check("More is enabled and discloses its menu and tool options commands",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M\n"+L.Get("ToolOptions.Title")+" · Ctrl+T");
+            check("More restores its idle dots while another tool is selected", MoreGlyph() == idleMoreGlyph);
+            check("idle More identifies its menu shortcut without unrelated options instructions",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M");
+            var tooltipParameters=editor.Parameters;
+            editor.Tool=EditorTool.Freehand;Invoke(session,"RefreshToolbarState");
+            string canvasTooltip=L.Get("Canvas.Title")+" · C";
+            check("unselected canvas tooltip contains only its name and shortcut",Equals(tools[EditorTool.Canvas].ToolTip,canvasTooltip));
+            editor.Tool=EditorTool.Canvas;Invoke(session,"RefreshToolbarState");
+            check("selected canvas adds one panel instruction line",Equals(tools[EditorTool.Canvas].ToolTip,canvasTooltip+"\n"+L.Format("Toolbar.ToolOptionsWithKeyHint","C")));
+            check("switching away removes the previous tool's extra instruction",Equals(tools[EditorTool.Freehand].ToolTip,L.Get("Preset.Freehand")+" · B"));
+            editor.Tool=EditorTool.Blur;Invoke(session,"RefreshToolbarState");
+            string moreTooltip=L.Get("Feedback4.Toolbar.More")+" · M\n"+L.Get("Toolbar.ToolOptionsHint");
+            check("selected blur exposes options without claiming M opens its panel",Equals(more.ToolTip,moreTooltip));
+            editor.Tool=EditorTool.Pixelate;Invoke(session,"RefreshToolbarState");
+            check("selected mosaic shares More's precise options instruction",Equals(more.ToolTip,moreTooltip));
+            editor.Tool=EditorTool.CaptureRegion;Invoke(session,"RefreshToolbarState");
+            check("selected capture has exactly its name and panel instruction",Equals(tools[EditorTool.CaptureRegion].ToolTip,L.Get("Acceptance2.Toolbar.Capture")+" · P\n"+L.Format("Toolbar.ToolOptionsWithKeyHint","P")));
+            editor.Tool=EditorTool.Select;Invoke(session,"RefreshToolbarState");
+            check("selected Select explains selection instead of an unsupported options shortcut",Equals(tools[EditorTool.Select].ToolTip,L.Get("ToolbarV2.Select")+" · V\n"+L.Get("Toolbar.SelectionHint")));
+            check("unselected capture drops the former always-visible description",Equals(tools[EditorTool.CaptureRegion].ToolTip,L.Get("Acceptance2.Toolbar.Capture")+" · P"));
+            editor.ApplyParameters(tooltipParameters);Invoke(session,"RefreshToolbarState");
             check("main keyboard minus and plus are independent stamp commands",ToolShortcutCatalog.StampLibraryKey==0xBD&&ToolShortcutCatalog.NewStampKey==0xBB&&ToolShortcutCatalog.IsReserved(0xBD)&&ToolShortcutCatalog.IsReserved(0xBB)&&!ToolShortcutCatalog.IsReserved(0x6B)&&!ToolShortcutCatalog.IsReserved(0x6D));
             check("toolbar controls retain keyboard input without focus frames or focus-only tooltips",allButtons.All(button=>button.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(button)==false)&&opacity.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(opacity)==false&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(Field<ToolbarLauncher>(session,"_toolbarLauncher"))==false);
             var clearAction=buttons.Single(button=>Equals(button.Tag,"clear"));
@@ -155,6 +202,7 @@ internal static class ToolbarAcceptanceTests
                 double slotCenter=slotButtons[index].TranslatePoint(new Wpf.Point(slotButtons[index].ActualWidth/2,0),grid).X;
                 check("production column "+(index+1)+" has one shared upper/lower center",Near(topCenter,slotCenter));
             }
+            Measure(shell);
             foreach(var button in buttons)
             {
                 string name=button.Tag?.ToString() ?? "button";
@@ -174,7 +222,7 @@ internal static class ToolbarAcceptanceTests
             var imageMenu=more.ContextMenu;
             check("More owns only general canvas blur and mosaic",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is not null && imageMenu.Items.OfType<Controls.MenuItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{L.Get("Tool.Blur"),L.Get("Tool.Pixelate")}));
             var cropButton=buttons.Single(button=>Equals(button.Tag,"crop"));
-            check("disabled crop retains a hover tooltip and the tool options shortcut",Controls.ToolTipService.GetShowOnDisabled(cropButton) && cropButton.ToolTip?.ToString()==L.Get("Tool.Crop")+"\n"+L.Get("ToolOptions.Title")+" · Ctrl+T");
+            check("disabled unselected crop retains only its tool name",Controls.ToolTipService.GetShowOnDisabled(cropButton) && Equals(cropButton.ToolTip,L.Get("Tool.Crop")));
             var cropMenus=Field<List<Controls.MenuItem>>(session,"_cropMenuItems");
             check("image crop follows import and capture and is disabled consistently without a target",Controls.Grid.GetColumn(cropButton)==Controls.Grid.GetColumn(buttons.Single(button=>Equals(button.Tag,"capture")))+1 &&
                 ReferenceEquals(tools[EditorTool.Crop],cropButton) && !cropButton.IsEnabled && cropMenus.Count>0 && cropMenus.All(item=>!item.IsEnabled));
@@ -187,6 +235,7 @@ internal static class ToolbarAcceptanceTests
             check("selecting one editable image enables the crop button and all menu entries",cropButton.IsEnabled && cropMenus.All(item=>item.IsEnabled));
             Invoke(session,"ActivateTool",EditorTool.Crop);
             check("the dedicated crop action activates its own tool family",editor.Tool==EditorTool.Crop);
+            check("selected crop adds its available panel shortcut",Equals(cropButton.ToolTip,L.Get("Tool.Crop")+"\n"+L.Get("Toolbar.ToolOptionsHint")));
             cropTarget.Locked=true;editor.Session.NotifyChanged();Invoke(session,"RefreshToolbarState");
             check("locking the selected image disables all crop entries and exits the crop tool",!cropButton.IsEnabled && cropMenus.All(item=>!item.IsEnabled) && editor.Tool==EditorTool.Select);
             Invoke(session,"ActivateTool",EditorTool.Crop);
@@ -231,9 +280,10 @@ internal static class ToolbarAcceptanceTests
                 check("lower "+hint.Text+" legend is centered on its left frame edge and bottom-aligned",Near(origin.X+hint.ActualWidth/2,left)&&Near(origin.Y+hint.ActualHeight,26));
             }
             var settings=Field<UserSettings>(session,"_settings");settings.ShowToolShortcutHints=false;Invoke(session,"RefreshToolShortcutHints");
-            shelf.Refresh();Measure(shell);
+            shelf.Refresh();shelf.PrepareForShow();Measure(shell);
             check("hiding shortcut legends also hides lower digits after a shelf rebuild",hints.All(hint=>hint.Visibility==Wpf.Visibility.Collapsed)&&((Controls.StackPanel)shelf.Content).Children.OfType<Controls.Button>().All(button=>((Controls.Grid)button.Content).Children.OfType<Controls.TextBlock>().Single().Visibility==Wpf.Visibility.Collapsed)&&tools[EditorTool.Number]!=tools[EditorTool.Text]);
             settings.ShowToolShortcutHints=true;Invoke(session,"RefreshToolShortcutHints");
+            shelf.PrepareForShow();
             check("restoring shortcut legends also restores every current slot digit",((Controls.StackPanel)shelf.Content).Children.OfType<Controls.Button>().All(button=>((Controls.Grid)button.Content).Children.OfType<Controls.TextBlock>().Single().Visibility==Wpf.Visibility.Visible));
             check("unselected tools have no idle outline",tools.Where(pair=>pair.Key!=EditorTool.Freehand).All(pair=>pair.Value.BorderBrush is Media.SolidColorBrush brush&&brush.Color.A==0));
             Invoke(session,"SaveStampSelection");
@@ -257,7 +307,7 @@ internal static class ToolbarAcceptanceTests
             check("selected library launcher replaces its glyph with a static image",Glyph(manage) is Controls.Image {Source:Imaging.BitmapSource {IsFrozen:true}});
             foreach(string theme in new[]{"light","dark"})
             {
-                toolbar.Content=shell;AppTheme.Apply(theme);PumpToIdle(app.Dispatcher);toolbar.Content=null;Measure(shell);
+                toolbar.Content=shell;AppTheme.Apply(theme);PumpToIdle(app.Dispatcher);toolbar.Content=null;PrepareShelfPreview(shell,shelf);Measure(shell);
                 check(theme+" active library launcher uses the same transparent preview and blue frame as a stamp slot",((Media.SolidColorBrush)manage.Background).Color.A==0 && ((Media.SolidColorBrush)manage.BorderBrush).Color==((Media.SolidColorBrush)app.Resources["CanvasAccent"]).Color && Glyph(manage) is Controls.Image {Width:20,Height:20});
                 check(theme+" active library launcher retains the common action-button hover and press template",ReferenceEquals(manage.Template,saveStamp.Template));
                 Save(shell,Path.Combine(output,"stamp-library-active-"+theme+".png"),1.5);
@@ -269,7 +319,7 @@ internal static class ToolbarAcceptanceTests
 
             parameters=editor.Parameters;parameters.Tool=EditorTool.Symbol;parameters.Symbol=SymbolKind.Heart;parameters.Style.Stroke=0xFF2383E2;parameters.Emoji="😀";
             editor.ApplyParameters(parameters);Invoke(session,"RefreshToolbarState");Invoke(session,"UpdateStatus","示例 · 心形 / 自定义印章");
-            shelf.Refresh();PumpToIdle(app.Dispatcher);
+            shelf.Refresh();shelf.PrepareForShow();PumpToIdle(app.Dispatcher);
             foreach(string theme in new[]{"light","dark"})
             {
                 // Application resource changes traverse registered Window trees. Keep
@@ -277,7 +327,7 @@ internal static class ToolbarAcceptanceTests
                 // only for rendering without ever showing its native window.
                 toolbar.Content=shell;
                 AppTheme.Apply(theme);PumpToIdle(app.Dispatcher);
-                toolbar.Content=null;Measure(shell);
+                toolbar.Content=null;PrepareShelfPreview(shell,shelf);Measure(shell);
                 var expected=((Media.SolidColorBrush)app.Resources["CanvasSurface"]).Color;
                 check(theme+" idle library launcher follows the normal button background after theme changes",((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)saveStamp.Background).Color && ((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)app.Resources["CanvasButton"]).Color);
                 check(theme+" production body resolves the actual current theme surface",((Media.SolidColorBrush)body.Background).Color==expected);
@@ -321,6 +371,70 @@ internal static class ToolbarAcceptanceTests
     }
 
     private static bool Near(double a,double b)=>Math.Abs(a-b)<.05;
+    private static void CheckMorePreviewLifecycle(Action<string,bool> check,DesktopSession session,EditorController editor,OverlayContextMenu menu,Threading.Dispatcher dispatcher)
+    {
+        var previous=editor.Parameters;
+        var target=menu.PlacementTarget;
+        double opacity=menu.Opacity;
+        var entries=menu.Items.OfType<Controls.MenuItem>().ToArray();
+        var closedIcons=entries.Select(item=>item.Icon).ToArray();
+        var anchor=new Controls.Button {Width=30,Height=26};
+        var root=new Controls.Border {Opacity=0,Child=anchor};
+        using var source=new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("FloatCanvas hidden More previews")
+        {Width=40,Height=36,PositionX=-20000,PositionY=-20000,WindowStyle=unchecked((int)0x80000000),ExtendedWindowStyle=0x080000A0}) {RootVisual=root};
+        try
+        {
+            var next=previous.Clone();next.Tool=EditorTool.Blur;next.EffectStrength=5;
+            editor.ApplyParameters(next);Invoke(session,"RefreshToolbarState");
+            check("closed More menu retains its existing preview controls while tool parameters change",!menu.IsOpen&&entries.Select(item=>item.Icon).SequenceEqual(closedIcons));
+            ShowWindow(source.Handle,4);PumpToIdle(dispatcher);
+            menu.PlacementTarget=anchor;menu.Opacity=0;
+            Invoke(session,"RefreshMoreToolPreviews");menu.IsOpen=true;
+            var openedIcons=entries.Select(item=>item.Icon).ToArray();
+            var blurIcon=(Wpf.FrameworkElement)entries.Single(item=>Equals(item.Tag,EditorTool.Blur)).Icon;
+            Measure(blurIcon);string openedBlur=Fingerprint(Raster(blurIcon,1));
+            check("opening More prepares the latest previews after hidden parameter changes",menu.IsOpen&&openedIcons.Zip(closedIcons).All(pair=>!ReferenceEquals(pair.First,pair.Second)));
+            next=editor.Parameters;next.EffectStrength=31;editor.ApplyParameters(next);Invoke(session,"RefreshToolbarState");
+            blurIcon=(Wpf.FrameworkElement)entries.Single(item=>Equals(item.Tag,EditorTool.Blur)).Icon;
+            Measure(blurIcon);string changedBlur=Fingerprint(Raster(blurIcon,1));
+            check("open More menu synchronizes changed previews",menu.IsOpen&&entries.Select(item=>item.Icon).Zip(openedIcons).All(pair=>!ReferenceEquals(pair.First,pair.Second))&&changedBlur!=openedBlur);
+            menu.IsOpen=false;
+            var closedAgain=entries.Select(item=>item.Icon).ToArray();
+            next=editor.Parameters;next.EffectStrength=12;editor.ApplyParameters(next);Invoke(session,"RefreshToolbarState");
+            check("closing More suspends preview rebuilding again",!menu.IsOpen&&entries.Select(item=>item.Icon).SequenceEqual(closedAgain));
+        }
+        finally
+        {
+            menu.IsOpen=false;menu.PlacementTarget=target;menu.Opacity=opacity;
+            root.Child=null;source.RootVisual=null;
+            editor.ApplyParameters(previous);Invoke(session,"RefreshToolbarState");PumpToIdle(dispatcher);
+        }
+    }
+    private static void PrepareShelfPreview(Wpf.FrameworkElement shell,StampShelfControl shelf)
+    {
+        var parent=(Controls.Panel)shelf.Parent;
+        int index=parent.Children.IndexOf(shelf);
+        parent.Children.Remove(shelf);
+        var root=new Controls.Border {Opacity=0,Child=shelf};
+        using var source=new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("FloatCanvas toolbar shelf preview")
+        {
+            Width=1600,Height=180,PositionX=-20000,PositionY=-20000,
+            WindowStyle=unchecked((int)0x80000000),ExtendedWindowStyle=0x080000A0
+        }) {RootVisual=root};
+        try
+        {
+            ShowWindow(source.Handle,4);PumpToIdle(shell.Dispatcher);
+            if(!shelf.IsVisible||!shelf.IsLoaded)throw new InvalidOperationException("Shelf preview did not become visible and loaded.");
+            shelf.PrepareForShow();
+            bool Ready()=>((Controls.StackPanel)shelf.Content).Children.OfType<Controls.Button>()
+                .Where(button=>button.ContextMenu is not null)
+                .All(button=>((Controls.Grid)button.Content).Children.OfType<Controls.Image>().Single().Source is Imaging.BitmapSource);
+            var deadline=DateTime.UtcNow.AddSeconds(3);
+            while(!Ready()&&DateTime.UtcNow<deadline) {PumpToIdle(shell.Dispatcher);Thread.Sleep(5);}
+            if(!Ready())throw new InvalidOperationException("Visible shelf thumbnails did not load.");
+        }
+        finally {root.Child=null;source.RootVisual=null;parent.Children.Insert(index,shelf);PumpToIdle(shell.Dispatcher);}
+    }
     private static void CheckCanvasPresentation(Action<string,bool> check,DesktopSession session,EditorController editor,
         Wpf.Window toolbar,Wpf.FrameworkElement shell,Controls.Button canvas,Controls.Button placement,
         Controls.Button import,Controls.Button capture,string output)
@@ -339,13 +453,13 @@ internal static class ToolbarAcceptanceTests
                 {
                     editor.Session.Document.Canvas.Projection.Enabled=perspective;editor.Tool=selected?EditorTool.Canvas:EditorTool.Freehand;
                     Invoke(session,"RefreshToolbarState");Measure(shell);
-                    var path=Descendants(canvas).OfType<Shapes.Path>().Single();
+                    var preview=Descendants(canvas).OfType<CanvasParameterIcon>().Single();
                     string state=$"{theme} {(perspective?"perspective":"flat")} {(selected?"selected":"idle")}";
                     bool Same(Media.Brush actual,string resource)=>actual is Media.SolidColorBrush brush&&brush.Color==((Media.SolidColorBrush)app.Resources[resource]).Color;
-                    findings.Add((state+" retains the expected canvas fill and glyph color",
-                        Same(canvas.Background,perspective?"CanvasHiddenSurface":selected?"CanvasHover":"CanvasSurface")&&Same(path.Stroke,perspective?"CanvasHiddenText":"CanvasText")));
-                    findings.Add((state+" gives selection priority over the perspective border",selected?Same(canvas.BorderBrush,"CanvasAccent"):
-                        perspective?Same(canvas.BorderBrush,"CanvasHiddenBorder"):canvas.BorderBrush is Media.SolidColorBrush idle&&idle.Color.A==0));
+                    findings.Add((state+" uses ordinary tool fill and a live canvas preview",
+                        Same(canvas.Background,selected?"CanvasHover":"CanvasSurface")&&preview.Width==16&&preview.Height==16));
+                    findings.Add((state+" highlights only the selected tool frame",selected?Same(canvas.BorderBrush,"CanvasAccent"):
+                        canvas.BorderBrush is Media.SolidColorBrush idle&&idle.Color.A==0));
                     var hint=Descendants(canvas).OfType<Controls.TextBlock>().Single(value=>value.Text=="C");
                     var origin=hint.TranslatePoint(new Wpf.Point(),canvas);
                     findings.Add((state+" anchors C on the upper right frame",Near(origin.X+hint.ActualWidth/2,canvas.ActualWidth)&&Near(origin.Y,0)));
@@ -370,14 +484,22 @@ internal static class ToolbarAcceptanceTests
             }
             foreach(var button in new[]{canvas,placement,import,capture})
             {
-                var path=Descendants(button).OfType<Shapes.Path>().SingleOrDefault();
+                if(ReferenceEquals(button,canvas))
+                {
+                    var sample=Descendants(button).OfType<CanvasParameterIcon>().SingleOrDefault();
+                    findings.Add(("canvas uses the bounded shared canvas preview",sample is {ActualWidth:16,ActualHeight:16}));
+                    continue;
+                }
+                // Capture has a selection outline plus a separate captured-content cue.
+                var path=Descendants(button).OfType<Shapes.Path>().FirstOrDefault();
                 if(path is null){findings.Add((button.Tag+" retains the shared command glyph canvas",false));continue;}
                 var transform=path.TransformToAncestor(button);
                 var delta=transform.Transform(new Wpf.Point(1,0))-transform.Transform(new Wpf.Point());
                 var pen=new Media.Pen(path.Stroke,path.StrokeThickness) {StartLineCap=path.StrokeStartLineCap,EndLineCap=path.StrokeEndLineCap,LineJoin=path.StrokeLineJoin};
                 var bounds=transform.TransformBounds(path.RenderedGeometry.GetRenderBounds(pen));
                 Console.WriteLine($"CANVAS GLYPH {button.Tag}: stroke={delta.Length*path.StrokeThickness:F2} bounds={bounds}");
-                findings.Add((button.Tag+" uses the common 1.5 DIP rendered stroke",Near(delta.Length*path.StrokeThickness,1.5)));
+                double expectedStroke=ReferenceEquals(button,capture)?1.5*16/18:1.5;
+                findings.Add((button.Tag+" uses its shared artwork's scaled stroke",Near(delta.Length*path.StrokeThickness,expectedStroke)));
                 findings.Add((button.Tag+" has a bounded matching visual size",bounds.Width is >=13 and <=16&&bounds.Height is >=12 and <=16));
             }
         }
@@ -611,5 +733,6 @@ internal static class ToolbarAcceptanceTests
     {byte[] pixel=new byte[4];bitmap.CopyPixels(new Wpf.Int32Rect(x,y,1,1),pixel,4,0);return Media.Color.FromArgb(pixel[3],pixel[2],pixel[1],pixel[0]);}
     [DllImport("user32.dll")][return:MarshalAs(UnmanagedType.Bool)]private static extern bool IsWindow(nint window);
     [DllImport("user32.dll")][return:MarshalAs(UnmanagedType.Bool)]private static extern bool IsWindowVisible(nint window);
+    [DllImport("user32.dll")]private static extern bool ShowWindow(nint window,int command);
     [DllImport("user32.dll")]private static extern nint SetThreadDpiAwarenessContext(nint context);
 }

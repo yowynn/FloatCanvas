@@ -47,6 +47,7 @@ internal sealed partial class DesktopSession
             _windowCoordinator?.Register(window, () => window.IsPinned, DismissCanvasSettings);
             window.CommandKey += OnKey;
             window.BackgroundChanged += color => ChangeCanvas(c => c.BackgroundColor = color);
+            window.EyedropperRequested += BeginEyedropper;
             window.ProjectionChanged += SetCanvasProjection;
             window.DepthPriorityOcclusionChanged += enabled =>
             {
@@ -79,9 +80,8 @@ internal sealed partial class DesktopSession
         }
         RefreshCanvasReferenceMonitors();
         _canvasSettingsWindow.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
-        ShowAppWindow(_canvasSettingsWindow, true);
-        _canvasSettingsWindow.UpdateLayout();
-        if (!alreadyOpen) PositionToolOptions(_canvasSettingsWindow, _canvasStateButton);
+        _canvasSettingsWindow.PrepareForShow();
+        ShowAnchoredToolWindow(_canvasSettingsWindow, alreadyOpen, () => PositionToolOptions(_canvasSettingsWindow, _canvasStateButton));
     }
 
     private void DismissCanvasSettings(WindowDismissReason reason = WindowDismissReason.Close)

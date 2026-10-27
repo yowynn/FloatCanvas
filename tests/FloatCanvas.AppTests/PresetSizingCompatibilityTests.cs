@@ -23,10 +23,10 @@ internal static class PresetSizingCompatibilityTests
         Click(editor, 400, 200); var emoji = session.Document.Elements.Last();
         check("equal number and emoji sizes have equal geometric selection frames", ElementGeometry.LocalBounds(number) == ElementGeometry.LocalBounds(emoji));
         check("emoji instances preserve aspect by default", ElementGeometry.PreservesAspect(emoji));
-        var panel = new ToolOptionsPanel(editor, library, new ColorLibrary(Path.Combine(ApplicationPaths.ProfileDirectory, "sizing-colors.json")));
+        var panel = new ToolOptionsPanel(editor, library, new ColorLibrary(Path.Combine(ApplicationPaths.ProfileDirectory, "sizing-colors.json"))); panel.PrepareForShow();
         var rows = Field<Dictionary<string, System.Windows.FrameworkElement>>(panel, "rows");
         check("emoji tools hide aspect options", rows["Aspect"].Visibility == System.Windows.Visibility.Collapsed);
-        editor.Tool = EditorTool.Number; panel.Refresh();
+        editor.Tool = EditorTool.Number; panel.PrepareForShow();
         var captions = Field<Dictionary<string, Controls.TextBlock>>(panel, "captions");
         check("number tools label their size and color roles", captions["FontSize"].Text == FloatCanvas.Localization.AppText.Get("ToolOptions.Size") && captions["Foreground"].Text == FloatCanvas.Localization.AppText.Get("Color.NumberShape"));
         check("number tools hide aspect options", rows["Aspect"].Visibility == System.Windows.Visibility.Collapsed);
@@ -50,8 +50,9 @@ internal static class PresetSizingCompatibilityTests
     private static void LinkedColors(EditorController editor, ToolPresetLibrary library, Action<string,bool> check)
     {
         editor.Tool = EditorTool.Rectangle; editor.Style.Stroke = 0xFF2383E2; editor.Style.Fill = 0;
-        var panel = new ToolOptionsPanel(editor, library, new ColorLibrary(Path.Combine(ApplicationPaths.ProfileDirectory,"linked-colors.json")));
+        var panel = new ToolOptionsPanel(editor, library, new ColorLibrary(Path.Combine(ApplicationPaths.ProfileDirectory,"linked-colors.json"))); panel.PrepareForShow();
         var linked = Field<Controls.CheckBox>(panel, "linkColors"); linked.IsChecked = true; linked.RaiseEvent(new(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        panel.PrepareForShow();
         var rows = Field<Dictionary<string,System.Windows.FrameworkElement>>(panel,"rows");
         check("linked tool colors expose one foreground color and preserve the saved background", editor.Style.LinkColors && editor.Style.Fill == 0 && rows["Background"].Visibility == System.Windows.Visibility.Collapsed);
         var saved = library.Save("Linked shape", editor.Parameters);
@@ -60,7 +61,7 @@ internal static class PresetSizingCompatibilityTests
         var scene = new SceneDocument { Viewport=new(-4,-4,48,48),Elements=[shape] };
         using var renderer = new SceneRenderer(); using var bitmap = SKBitmap.Decode(renderer.ExportPng(scene,new(),true));
         check("linked shape fill renders and hit-tests with the foreground despite transparent saved fill", bitmap.GetPixel(24,24)==new SKColor(0xFF2383E2) && ElementGeometry.HitTest(shape,new(20,20),0));
-        var session = new EditorSession(scene); session.SetSelection([shape.Id]); var inspector = new InspectorWindow(()=>session);
+        var session = new EditorSession(scene); session.SetSelection([shape.Id]); var inspector = new InspectorWindow(()=>session); inspector.PrepareForShow();
         var containers = Field<Dictionary<string,System.Windows.FrameworkElement>>(inspector,"fieldContainers");
         check("linked layer inspector exposes one color and its link checkbox", containers["Fill"].Visibility==System.Windows.Visibility.Collapsed && containers["LinkColors"].Visibility==System.Windows.Visibility.Visible);
         string path=Path.Combine(ApplicationPaths.ProfileDirectory,"linked-project.floatcanvas"); var store=new ProjectStore();

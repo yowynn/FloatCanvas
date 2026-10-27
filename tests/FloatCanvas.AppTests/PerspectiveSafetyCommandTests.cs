@@ -76,8 +76,15 @@ internal static class PerspectiveSafetyCommandTests
         foreach (string key in new[] { "Y", "H", "StrokeWidth" })
         {
             var safe = Box(100, 100); var near = Box(3650, 100);
+            if (key == "StrokeWidth")
+            {
+                // Open strokes still expand outwards, so a thick stroke can cross
+                // the safety boundary. Closed shapes now keep their original size.
+                safe = new() { Kind=ElementKind.Line, Points=[new(0,0),new(100,0)], Transform=Affine2D.Translation(100,100), Style=new() { StrokeWidth=0 } };
+                near = new() { Kind=ElementKind.Line, Points=[new(0,0),new(100,0)], Transform=Affine2D.Translation(100,3749), Style=new() { StrokeWidth=0 } };
+            }
             var state = new EditorSession(Scene(safe, near)); state.SetSelection([safe.Id, near.Id]);
-            var inspector = new InspectorWindow(() => state);
+            var inspector = new InspectorWindow(() => state); inspector.PrepareForShow();
             Field<System.Windows.Controls.Primitives.ToggleButton>(inspector, "keepAspect").IsChecked = false;
             FrameworkElement label = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields")[key].DragAnchor;
             string before = JsonSerializer.Serialize(state.Document); var selected = state.Selection.ToHashSet();
@@ -108,6 +115,9 @@ internal static class PerspectiveSafetyCommandTests
             check(key + " scrub regression never creates or shows an HWND", !inspector.IsVisible && new WindowInteropHelper(inspector).Handle == 0);
             inspector.Close();
         }
+        var closed = Box(3650,100); var closedScene=Scene(closed);var mapping=CanvasMapping.Create(closedScene);
+        var originalBounds=ElementGeometry.StrokedLocalBounds(closed);closed.Style.StrokeWidth=1200;
+        check("thicker inside strokes keep a closed shape's original safe bounds",ElementGeometry.StrokedLocalBounds(closed)==originalBounds && mapping.IsElementSafe(closed));
     }
 
     private static void KeyboardCommands(Action<string, bool> check)

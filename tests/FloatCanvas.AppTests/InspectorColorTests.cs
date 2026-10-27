@@ -30,6 +30,7 @@ internal static class InspectorColorTests
                     Style = new() { Stroke = 0xFF123456, Fill = 0x408090A0 } });
                 Guid originalId = session.Document.Elements.Single().Id;
                 var inspector = new InspectorWindow(() => session, () => allowed, library);
+                using var surface = new InspectorTestSurface(inspector);
                 var colors = Field<Dictionary<string, ColorField>>(inspector, "colorFields");
                 var fields = Field<Dictionary<string, Controls.TextBox>>(inspector, "fields");
                 check(language + " properties use two shared color fields without raw paint inputs", colors.Count == 2 &&
@@ -54,7 +55,7 @@ internal static class InspectorColorTests
                 allowed = false; colors["Stroke"].SetUserValue(0xFFABCDEF);
                 check(language + " busy color choice cannot mutate the document", JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo);
                 allowed = true; session.SetSelection([]);
-                check(language + " changing selection clears unavailable property inputs", fields["X"].Text == "" && session.Selection.Count == 0);
+                check(language + " changing selection collapses unavailable property inputs", Field<Controls.StackPanel>(inspector, "propertyPanel").Visibility == Wpf.Visibility.Collapsed && session.Selection.Count == 0);
                 session.SetSelection([originalId]);
                 int beforeReload = session.UndoCount;
                 ColorField? requested = null; inspector.EyedropperRequested += field => requested = field;
@@ -73,7 +74,7 @@ internal static class InspectorColorTests
                     colors["Fill"].Value == 0x7F102030 && session.Document.Elements.Single().Style.Fill == 0x7F102030);
                 check(language + " closed picker does not consume a parent's next Escape", !colors["Fill"].TryClosePicker());
                 Invoke(inspector, "Apply");
-                check(language + " inspector color checks show no native window", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 && !inspector.IsVisible);
+                check(language + " inspector color checks use a visible offscreen native surface", new System.Windows.Interop.WindowInteropHelper(inspector).Handle != 0 && inspector.IsVisible && inspector.Left < -10000 && !inspector.ShowActivated);
             }
         }
         finally

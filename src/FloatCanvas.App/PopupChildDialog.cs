@@ -15,7 +15,10 @@ internal static class PopupChildDialog
     internal static bool HasRetainedDialog(DependencyObject source) => source.GetValue(OwnerProperty) is DependencyObject popup &&
         popup.GetValue(RetainedDialogProperty) is RetainedChildren { Count: > 0 };
 
-    internal static IDisposable? RetainFor(DependencyObject source)
+    internal static bool StaysOpenForOutsidePress(DependencyObject popup, bool current) =>
+        popup.GetValue(RetainedDialogProperty) is RetainedChildren { ModalCount: 0 } children ? children.OriginalStaysOpen : current;
+
+    internal static IDisposable? RetainFor(DependencyObject source, bool transientMenu = false)
     {
         var popup=source.GetValue(OwnerProperty);
         if(popup is null || !PopupHandle.IsOpenFor(popup)) return null;
@@ -23,9 +26,11 @@ internal static class PopupChildDialog
         var children = owner.GetValue(RetainedDialogProperty) as RetainedChildren;
         if (children is null) { children = new(PopupHandle.StaysOpenFor(popup)); owner.SetValue(RetainedDialogProperty, children); }
         children.Count++;
+        if(!transientMenu)children.ModalCount++;
         PopupHandle.Retain(popup,true);
         return new Retention(()=>
         {
+            if(!transientMenu)children.ModalCount--;
             if (--children.Count != 0) return;
             PopupHandle.Retain(popup,children.OriginalStaysOpen);
             owner.ClearValue(RetainedDialogProperty);
@@ -35,6 +40,7 @@ internal static class PopupChildDialog
     {
         internal bool OriginalStaysOpen { get; } = originalStaysOpen;
         internal int Count;
+        internal int ModalCount;
     }
     private sealed class Retention(Action release) : IDisposable
     {

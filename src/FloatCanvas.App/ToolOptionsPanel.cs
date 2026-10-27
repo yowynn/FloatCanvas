@@ -28,13 +28,16 @@ internal sealed class ToolOptionsPanel : UserControl
     private readonly CheckBox linkColors = new() { Content = L.Get("Color.LinkColors"), MinHeight = 30 };
     private readonly ComboBox fontFamily = ToolOptionPreviews.FontPicker();
     private readonly Grid parameterGrid = new();
+    private readonly PropertyChangeRegion linkedColorsRegion;
     private readonly ToolPresetGallery presets;
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 6, 0, 0) };
     private readonly TextBlock heading = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) };
     private readonly TextBlock noParameters = new() { Text = L.Get("ToolOptions.NoParameters"), TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     private readonly UniformGrid symbolGallery = new() { Columns = 6 };
     private readonly UniformGrid emojiGallery = new() { Columns = 6 };
-    private bool refreshing, compact;
+    private bool refreshing, refreshPending = true;
+    private EditorTool? fontContextTool;
+    private EditorSession? fontContextSession;
 
     public event Action? ParametersChanged;
     public event Action<ColorField>? EyedropperRequested;
@@ -43,7 +46,7 @@ internal sealed class ToolOptionsPanel : UserControl
     {
         this.controller = controller;
         PropertyPanelLayout.Scope(this);
-        Width = PreferredWidth; MinWidth = 0; MaxWidth = PreferredWidth; MaxHeight = 620;
+        Width = PreferredWidth; MinWidth = PropertyPanelLayout.TwoColumnMinimumWidth - 2; MaxHeight = 620;
         SetResourceReference(BackgroundProperty, "CanvasSurface"); SetResourceReference(ForegroundProperty, "CanvasText");
         var body = new StackPanel(); body.Children.Add(heading);
         var columns = new Grid();
@@ -62,6 +65,10 @@ internal sealed class ToolOptionsPanel : UserControl
         presets.Failed += Error; recipes.Children.Add(presets);
         foreground = new(ColorRole.Foreground, colors); background = new(ColorRole.Background, colors);
         AddRow(parameterGrid, "Foreground", L.Get("Color.Foreground"), foreground); AddRow(parameterGrid, "Background", L.Get("Color.Background"), background);
+        var colorRows = new StackPanel();
+        foreach (string key in new[] { "Foreground", "Background" })
+        { parameterGrid.Children.Remove(rows[key]); colorRows.Children.Add(rows[key]); }
+        linkedColorsRegion = new(colorRows); rows.Add("Colors", linkedColorsRegion); parameterGrid.Children.Add(linkedColorsRegion);
         foreground.ValueChanged += value => Change(p => { if (p.Tool == EditorTool.CaptureRegion) p.CaptureBorderColor = value; else p.Style.Stroke = value; });
         background.ValueChanged += value => Change(p => p.Style.Fill = value);
         foreground.EyedropperRequested += () => EyedropperRequested?.Invoke(foreground);
@@ -78,10 +85,9 @@ internal sealed class ToolOptionsPanel : UserControl
         Picker(parameterGrid, "TextAlignment", L.Get("Inspector.TextAlignment"),
             [(L.Get("Inspector.AlignLeft"), FloatCanvas.Core.TextAlignment.Left), (L.Get("Inspector.AlignCenter"), FloatCanvas.Core.TextAlignment.Center),
              (L.Get("Inspector.AlignRight"), FloatCanvas.Core.TextAlignment.Right)], (p, v) => p.Style.TextAlignment = (FloatCanvas.Core.TextAlignment)v);
-        fontFamily.SelectionChanged += (_, _) =>
+        ((FontPickerControl)fontFamily).FontCommitted += name =>
         {
-            if (!refreshing && fontFamily.SelectedItem is ComboBoxItem item && item.Tag is string name)
-                Change(p => p.Style.FontFamily = name);
+            if (!refreshing) Change(p => p.Style.FontFamily = name);
         };
         Picker(parameterGrid, "StartArrowHead", L.Get("Inspector.StartArrow"), ArrowOptions(), (p, v) => p.Style.StartArrowHead = (ArrowHeadStyle)v);
         Picker(parameterGrid, "EndArrowHead", L.Get("Inspector.EndArrow"), ArrowOptions(), (p, v) => p.Style.EndArrowHead = (ArrowHeadStyle)v);
@@ -106,7 +112,7 @@ internal sealed class ToolOptionsPanel : UserControl
         aspectSwitch.Click += (_, _) => Change(p => p.ConstrainAspect = aspectSwitch.IsChecked == true);
         var linkRow = PropertyPanelLayout.BooleanRow(L.Get("Color.LinkColors"), linkColors);
         rows.Add("LinkColors", linkRow); parameterGrid.Children.Add(linkRow);
-        linkColors.Click += (_, _) => { Change(p => p.Style.LinkColors = linkColors.IsChecked == true); Refresh(); };
+        linkColors.Click += (_, _) => linkedColorsRegion.Change(() => { Change(p => p.Style.LinkColors = linkColors.IsChecked == true); Refresh(); });
         foreach (var symbol in Enum.GetValues<SymbolKind>())
         {
             var points = SymbolGeometry.Outline(symbol, 16, 16);
@@ -126,24 +132,24 @@ internal sealed class ToolOptionsPanel : UserControl
         }
         AddRow(parameterGrid, "Emoji", L.Get("ToolOptions.Emoji"), emojiGallery);
         status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); body.Children.Add(status);
-        Content = new ScrollViewer { Margin = WindowLayout.ContentMargin(), Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        Unloaded += (_, _) => { foreach (var field in numericFields.Values) field.CancelGesture(); foreground.ClosePicker(); background.ClosePicker(); };
-        SizeChanged += (_, _) =>
-        {
-            bool next = ActualWidth < PreferredWidth - 1;
-            if (compact == next) return; compact = next;
-            columns.RowDefinitions.Clear(); columns.RowDefinitions.Add(new() { Height = GridLength.Auto }); columns.RowDefinitions.Add(new() { Height = GridLength.Auto });
-            columns.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
-            columns.ColumnDefinitions[1].Width = compact ? new GridLength(0) : GridLength.Auto;
-            Grid.SetColumn(recipeBorder, compact ? 0 : 1); Grid.SetRow(recipeBorder, compact ? 1 : 0);
-            recipeBorder.Margin = compact ? new(0, 12, 0, 0) : new(12, 0, 0, 0);
-            recipeBorder.BorderThickness = compact ? new(0, 1, 0, 0) : new(1, 0, 0, 0);
-            recipes.Margin = compact ? new(0, 8, 0, 0) : new(12, 0, 0, 0); LayoutParameters();
-        };
+        Content = PropertyChangeRegion.ReserveHighlightSpace(new ScrollViewer { Margin = WindowLayout.ContentMargin(), Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        void Conceal()
+        { refreshPending=true;foreach(var field in numericFields.Values)field.CancelGesture();foreground.ClosePicker();background.ClosePicker(); }
+        Unloaded += (_, _) => Conceal();
+        IsVisibleChanged += (_, _) => { if(IsVisible) {if(refreshPending)RefreshNow();} else Conceal(); };
         Refresh();
     }
 
     public void Refresh()
+    {
+        refreshPending=true;
+        if(IsVisible)RefreshNow();
+    }
+
+    internal void PrepareForShow()
+    { refreshPending=true;RefreshNow(); }
+
+    private void RefreshNow()
     {
         if (refreshing) return;
         // A numeric preview is already reflected in its field. The toolbar echoes
@@ -155,6 +161,12 @@ internal sealed class ToolOptionsPanel : UserControl
             foreach (var field in numericFields.Values) field.CancelGesture();
             status.Text = "";
             var p = controller.Parameters; var tool = p.Tool;
+            if (fontContextTool != tool || !ReferenceEquals(fontContextSession, controller.Session))
+            {
+                linkedColorsRegion.Reset();
+                ((FontPickerControl)fontFamily).ResetModelContext();
+                fontContextTool = tool; fontContextSession = controller.Session;
+            }
             heading.Text = L.Get("ToolDescription." + ToolPresetLibrary.Family(tool));
             bool line = tool is EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow;
             bool shape = tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol;
@@ -165,6 +177,7 @@ internal sealed class ToolOptionsPanel : UserControl
             bool boxRegion=tool is EditorTool.Crop or EditorTool.Blur or EditorTool.Pixelate||capture&&p.CaptureShape is CaptureShape.Rectangle or CaptureShape.Ellipse;
             paint |= capture;
             Show("Foreground", paint); Show("Background", shape && !p.Style.LinkColors || tool == EditorTool.Number); Show("LinkColors", shape);
+            Show("Colors", paint);
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
             background.Visibility = shape && !p.Style.LinkColors || tool == EditorTool.Number ? Visibility.Visible : Visibility.Collapsed;
             Show("StrokeWidth", stroke); Show("Opacity", tool is EditorTool.Emoji or EditorTool.Image);
@@ -179,10 +192,14 @@ internal sealed class ToolOptionsPanel : UserControl
             Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji);
             Show("CaptureShape", capture); Show("CaptureSource", capture); Show("CaptureBorderWidth", capture);
             noParameters.Visibility = paint || text || boxRegion || tool == EditorTool.Image ? Visibility.Collapsed : Visibility.Visible;
-            foreground.Value = capture ? p.CaptureBorderColor : p.Style.Stroke; background.Value = p.Style.Fill; aspect.IsChecked = p.ConstrainAspect; ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
-            aspectSwitch.IsChecked = p.ConstrainAspect; linkColors.IsChecked = p.Style.LinkColors;
-            captions["Foreground"].Text = L.Get(capture ? "Snapshot.BorderColor" : tool == EditorTool.Number ? "Color.NumberShape" : shape ? p.Style.LinkColors ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
-            captions["Background"].Text = L.Get(tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
+            if (IsApplicable("Foreground")) {foreground.Value = capture ? p.CaptureBorderColor : p.Style.Stroke;foreground.PrepareForShow();}
+            if (IsApplicable("Background")) {background.Value = p.Style.Fill;background.PrepareForShow();}
+            if (IsApplicable("Size")) aspect.IsChecked = p.ConstrainAspect;
+            if (IsApplicable("FontFamily")) ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
+            if (IsApplicable("Aspect")) aspectSwitch.IsChecked = p.ConstrainAspect;
+            if (IsApplicable("LinkColors")) linkColors.IsChecked = p.Style.LinkColors;
+            if (IsApplicable("Foreground")) captions["Foreground"].Text = L.Get(capture ? "Snapshot.BorderColor" : tool == EditorTool.Number ? "Color.NumberShape" : shape ? p.Style.LinkColors ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
+            if (IsApplicable("Background")) captions["Background"].Text = L.Get(tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
             SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);
             SetNumber("StrokeWidth", tool == EditorTool.Highlighter ? Math.Max(16, p.Style.StrokeWidth) : p.Style.StrokeWidth); SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
             SetNumber("EffectStrength", p.EffectStrength); SetNumber("CornerRadius", p.CornerRadius ?? 0); SetNumber("ArrowHeadSize", p.Style.ArrowHeadSize);
@@ -193,10 +210,12 @@ internal sealed class ToolOptionsPanel : UserControl
             SetPicker("EndArrowHead", p.Style.EndArrowHead ?? (tool is EditorTool.Arrow or EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("StrokePattern", p.Style.StrokePattern);
             SetPicker("TextAlignment", p.Style.TextAlignment);
-            HighlightGallery(symbolGallery, p.Symbol); HighlightGallery(emojiGallery, p.Emoji);
-            captions["FontSize"].Text = L.Get(tool is EditorTool.Emoji or EditorTool.Number ? "ToolOptions.Size" : "Inspector.FontSize");
-            presets.Refresh();
+            if (IsApplicable("Symbols")) HighlightGallery(symbolGallery, p.Symbol);
+            if (IsApplicable("Emoji")) HighlightGallery(emojiGallery, p.Emoji);
+            if (IsApplicable("FontSize")) captions["FontSize"].Text = L.Get(tool is EditorTool.Emoji or EditorTool.Number ? "ToolOptions.Size" : "Inspector.FontSize");
+            presets.PrepareForShow();
             LayoutParameters();
+            refreshPending=false;
         }
         finally { refreshing = false; }
     }
@@ -205,7 +224,7 @@ internal sealed class ToolOptionsPanel : UserControl
     private void LayoutParameters()
     {
         parameterGrid.RowDefinitions.Clear();
-        string[][] groups = [ ["Size"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["Foreground"], ["Background"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
+        string[][] groups = [ ["Size"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
             ["FontFamily"], ["FontSize"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
             ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Emoji"] ];
         foreach (var group in groups)
@@ -217,16 +236,18 @@ internal sealed class ToolOptionsPanel : UserControl
             {
                 var row = visible[column]; Grid.SetRow(row, rowIndex); Grid.SetColumn(row, column);
                 Grid.SetColumnSpan(row, 3);
-                row.Margin = new Thickness(0, 4, 0, 4);
+                if (row is not PropertyChangeRegion) row.Margin = new Thickness(0, 4, 0, 4);
             }
         }
     }
     internal bool IsColorPickerOpen => foreground.IsPickerOpen || background.IsPickerOpen;
     internal bool CloseColorPicker() => foreground.TryClosePicker() || background.TryClosePicker();
     internal bool OwnsColorPickerInput(DependencyObject? source) => foreground.OwnsPickerInput(source) || background.OwnsPickerInput(source);
-    internal void RefreshPresets() => presets.Refresh();
+    internal void RefreshPresets()
+    { if(IsVisible)presets.Refresh();else refreshPending=true; }
     internal void RefreshDocumentState()
     {
+        if(!IsVisible){refreshPending=true;return;}
         if (controller.Tool != EditorTool.Number || controller.Session.IsTransactionActive || numericFields["NextNumber"].IsKeyboardFocusWithin) return;
         SetNumber("NextNumber", controller.Session.Document.NextNumber);
     }
@@ -248,7 +269,8 @@ internal sealed class ToolOptionsPanel : UserControl
                 if (!numericFields["DefaultWidth"].IsInteracting && !numericFields["DefaultWidth"].Input.IsKeyboardFocusWithin) SetNumber("DefaultWidth", next.DefaultWidth);
                 if (!numericFields["DefaultHeight"].IsInteracting && !numericFields["DefaultHeight"].Input.IsKeyboardFocusWithin) SetNumber("DefaultHeight", next.DefaultHeight);
             }
-            HighlightGallery(symbolGallery, next.Symbol); HighlightGallery(emojiGallery, next.Emoji);
+            if (IsVisible && IsApplicable("Symbols")) HighlightGallery(symbolGallery, next.Symbol);
+            if (IsVisible && IsApplicable("Emoji")) HighlightGallery(emojiGallery, next.Emoji);
             var previous = publishingNumericTool;
             if (numericPreview) publishingNumericTool = next.Tool;
             try { ParametersChanged?.Invoke(); }
@@ -259,8 +281,11 @@ internal sealed class ToolOptionsPanel : UserControl
 
     private void Error(string message) { status.Text = "⚠ " + message; status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); }
     private void Show(string key, bool visible) => rows[key].Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-    private void SetNumber(string key, double value) => numericFields[key].Value = value;
-    private void SetPicker(string key, object value) => pickers[key].SelectedItem = pickers[key].Items.Cast<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, value));
+    private bool IsApplicable(string key) => rows[key].Visibility == Visibility.Visible;
+    private void SetNumber(string key, double value)
+    { if ((refreshing||IsVisible) && IsApplicable(key)) numericFields[key].Value = value; }
+    private void SetPicker(string key, object value)
+    { if ((refreshing||IsVisible) && IsApplicable(key)) pickers[key].SelectedItem = pickers[key].Items.Cast<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, value)); }
     private static void HighlightGallery(Panel gallery, object value)
     {
         foreach (var button in gallery.Children.OfType<Button>())
@@ -356,7 +381,7 @@ internal sealed class ToolOptionsPanel : UserControl
     }
     private void Picker(Panel body, string key, string label, (string Name, object Value)[] options, Action<ToolParameters, object> set)
     {
-        var picker = new ComboBox { MinHeight = 32 };
+        var picker = new OverlayComboBox { MinHeight = 32 };
         foreach (var option in options) picker.Items.Add(new ComboBoxItem { Content = ToolOptionPreviews.Choice(option.Name, option.Value), Tag = option.Value });
         pickers.Add(key, picker); AddRow(body, key, label, picker);
         picker.SelectionChanged += (_, _) => { if (!refreshing && picker.SelectedItem is ComboBoxItem item) Change(p => set(p, item.Tag)); };

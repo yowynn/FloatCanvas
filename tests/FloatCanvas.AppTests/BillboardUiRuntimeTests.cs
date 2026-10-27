@@ -30,6 +30,9 @@ internal static class BillboardUiRuntimeTests
         {
             host=(OverlayHost)Activator.CreateInstance(typeof(OverlayHost),Private,null,[OverlayMonitorScope.PrimaryScreen,false],null)!;
             desktop=new DesktopSession(app,host);Field<System.Windows.Forms.NotifyIcon>(desktop,"_tray").Visible=false;
+            // This fixture edits controls in hidden HWNDs. Keep document edits from
+            // exercising the independent hidden-canvas auto-reveal behavior.
+            typeof(DesktopSession).GetField("_updatingHiddenCanvas",Private)!.SetValue(desktop,true);
             overlayHandles=host.Diagnostics.SelectMany(pair=>new[]{pair.InputHandle,pair.DisplayHandle}).Append(host.ControlHandle).ToArray();
             toolbar=Field<Window>(desktop,"_toolbar");toolbarContent=(FrameworkElement)toolbar.Content;toolbar.Content=null;
             var editor=Field<EditorController>(desktop,"_editor");var session=editor.Session;
@@ -37,7 +40,8 @@ internal static class BillboardUiRuntimeTests
             projection.Enabled=true;projection.Matrix=new(1,0,0,0,1,0,0,.0005,1);
             projection.Quad=projection.Quad.Select(projection.Matrix.TransformPoint).ToList();session.Document.Canvas.Projection=projection;
             session.Add(new(){Kind=ElementKind.Rectangle,Width=100,Height=60,Transform=Affine2D.Translation(200,220),Style=new(){StrokeWidth=5,Fill=0x40E03E3E}});
-            inspector=new InspectorWindow(()=>session);inspectorContent=(FrameworkElement)inspector.Content;inspector.Content=null;
+            session.SetSelection([session.Document.Elements.Single().Id]);
+            inspector=new InspectorWindow(()=>session); inspector.PrepareForShow();inspectorContent=(FrameworkElement)inspector.Content;inspector.Content=null;
             var toolbarRoot=new Border {Child=toolbarContent};var inspectorRoot=new Border {Width=340,Height=700,Child=inspectorContent};
             inspectorRoot.SetValue(System.Windows.Documents.TextElement.FontFamilyProperty,inspector.FontFamily);
             inspectorRoot.SetValue(System.Windows.Documents.TextElement.FontSizeProperty,inspector.FontSize);
@@ -55,13 +59,14 @@ internal static class BillboardUiRuntimeTests
                 var surfaceArtwork=Descendants(toggle).OfType<System.Windows.Shapes.Path>().Single().Data.ToString();
                 toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Pump();Layout(toolbarRoot);
                 check("native-hosted toolbar changes its actual placement artwork and highlights billboard mode",editor.BillboardMode&&toggle.IsEnabled&&toggle.Background==app.Resources["CanvasHiddenSurface"]&&Descendants(toggle).OfType<System.Windows.Shapes.Path>().Single().Data.ToString()!=surfaceArtwork);
-                var placement=Field<ComboBox>(inspector,"placement");placement.SelectedIndex=1;inspector.CompletePendingEdit();Pump();Layout(inspectorRoot);
+                session.SetSelection([session.Document.Elements.Single().Id]); inspector.PrepareForShow();
+                var placement=Field<ComboBox>(inspector,"placement");placement.SelectedIndex=1;inspector.CompletePendingEdit();inspector.PrepareForShow();Pump();Layout(inspectorRoot);
                 var fields=Field<Dictionary<string,TextBox>>(inspector,"fields");var element=session.Document.Elements.Single();
-                fields["BillboardHeight"].Text="45";inspector.CompletePendingEdit();
-                fields["Angle"].Text="30";inspector.CompletePendingEdit();
+                fields["BillboardHeight"].Text="45";inspector.CompletePendingEdit();inspector.PrepareForShow();
+                fields["Angle"].Text="30";inspector.CompletePendingEdit();inspector.PrepareForShow();
                 var mapping=CanvasMapping.Create(session.Document);var anchor=element.BillboardAnchor;
                 var center=mapping.ElementToScreen(element).TransformPoint(ElementGeometry.LocalBounds(element).Center);
-                fields["W"].Text="200";inspector.CompletePendingEdit();Pump();Layout(inspectorRoot);
+                fields["W"].Text="200";inspector.CompletePendingEdit();inspector.PrepareForShow();Pump();Layout(inspectorRoot);
                 check("native Inspector edits preserve the fixed billboard center and ground anchor during logical resize",element.IsBillboard&&element.Width==200&&element.Height==60&&element.BillboardHeight==45&&element.BillboardAnchor==anchor&&mapping.ElementToScreen(element).TransformPoint(ElementGeometry.LocalBounds(element).Center).DistanceTo(center)<1e-8&&element.Style.StrokeWidth==5);
                 check("native Inspector own-angle edit stays independent of ground placement",Math.Abs(Math.Atan2(element.Transform.M21,element.Transform.M11)*180/Math.PI-30)<1e-8);
                 foreach(string theme in new[]{"light","dark"})
@@ -70,7 +75,8 @@ internal static class BillboardUiRuntimeTests
                     // A detached hidden root does not receive Window resource invalidations.
                     // Recreate the production Inspector at this theme, as a fresh user window would be created.
                     inspectorRoot.Child=null;inspector.Content=inspectorContent;inspector.Close();
-                    inspector=new InspectorWindow(()=>session);inspectorContent=(FrameworkElement)inspector.Content;inspector.Content=null;
+                    session.SetSelection([element.Id]);
+                    inspector=new InspectorWindow(()=>session); inspector.PrepareForShow();inspectorContent=(FrameworkElement)inspector.Content;inspector.Content=null;
                     inspectorRoot.Child=inspectorContent;
                     inspectorRoot.Background=(Brush)app.Resources["CanvasSurface"];
                     inspectorRoot.SetValue(System.Windows.Documents.TextElement.ForegroundProperty,app.Resources["CanvasText"]);
@@ -84,7 +90,7 @@ internal static class BillboardUiRuntimeTests
                     check(theme+" native toolbar restores its distinct surface artwork and ordinary background",!editor.BillboardMode&&Descendants(toggle).OfType<System.Windows.Shapes.Path>().Single().Data.ToString()==surfaceArtwork&&toggle.Background==app.Resources["CanvasButton"]);
                     toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Pump();Layout(toolbarRoot);
                 }
-                session.Document.Canvas.Projection.Enabled=false;session.NotifyChanged();Invoke(desktop,"RefreshToolbarState");inspector.Refresh();Pump();
+                session.Document.Canvas.Projection.Enabled=false;session.NotifyChanged();Invoke(desktop,"RefreshToolbarState");inspector.PrepareForShow();Pump();
                 var containers=Field<Dictionary<string,FrameworkElement>>(inspector,"fieldContainers");
                 check("native controls restore the surface artwork on perspective shutdown while retaining layer metadata",!editor.BillboardMode&&!toggle.IsEnabled&&Descendants(toggle).OfType<System.Windows.Shapes.Path>().Single().Data.ToString()==surfaceArtwork&&containers["Placement"].Visibility==Visibility.Collapsed&&element.IsBillboard&&element.BillboardHeight==45&&element.BillboardAnchor==anchor);
                 check("native billboard UI evidence never exposes a fixture or canvas window",!host.IsEditing&&!host.IsVisible&&app.Windows.Cast<Window>().All(window=>!window.IsVisible)&&!IsWindowVisible(toolbarHandle)&&!IsWindowVisible(inspectorHandle));

@@ -51,6 +51,8 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private readonly Controls.TextBlock emptyText = new() { TextWrapping = Wpf.TextWrapping.Wrap, Margin = new(8) };
     private readonly Controls.Button emptyAction = new() { MinWidth = 100, Margin = new(8) };
     private bool busy, closed;
+    private bool preparing, refreshPending = true;
+    private string pendingStatus = "";
     private Wpf.Window? dialogOwner;
     public event Action<int>? CommandKey;
 
@@ -115,7 +117,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
             if (OwnsShortcut(key, modifiers, source))
             {
                 e.Handled = true;
-                if (!e.IsRepeat) HandleShortcut(key, modifiers, source);
+                if (!AppInputPolicy.IsRepeat(e)) HandleShortcut(key, modifiers, source);
                 return;
             }
             // Ctrl+N belongs to this library even while search owns editing keys.
@@ -124,13 +126,17 @@ internal sealed class StampLibraryWindow : Wpf.Window
             bool localInput = IsTextInput(source) || IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject);
             if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: true, localInput: localInput)) return;
             e.Handled = true;
-            if (!closed && !busy && this.canMutate() && (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers))) CommandKey?.Invoke(command);
+            if (!closed && !busy && this.canMutate() && (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers))) CommandKey?.Invoke(command);
         };
         searchDelay.Tick += (_, _) => { searchDelay.Stop(); Refresh(); };
-        search.TextChanged += (_, _) => { searchDelay.Stop(); searchDelay.Start(); };
+        search.TextChanged += (_, _) => { searchDelay.Stop(); refreshPending = true; if (IsVisible) searchDelay.Start(); };
         library.Changed += OnLibraryChanged;
         Closed += (_, _) => { closed = true; searchDelay.Stop(); CloseTileMenus(); thumbnails.Cancel(); thumbnails.Dispose(); library.Changed -= OnLibraryChanged; };
-        Refresh();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible) { refreshPending = true; PrepareForShow(); }
+            else { searchDelay.Stop(); CloseTileMenus(); thumbnails.Cancel(); refreshPending = true; }
+        };
     }
 
     private sealed class StampListBox : Controls.ListBox
@@ -169,19 +175,34 @@ internal sealed class StampLibraryWindow : Wpf.Window
 
     public void Refresh()
     {
+        refreshPending = true;
+        if (IsVisible) PrepareForShow();
+    }
+
+    internal void PrepareForShow()
+    {
         if (closed) return;
-        thumbnails.Cancel(); thumbnails.Dispose(); thumbnails = new();
-        var token = thumbnails.Token;
-        var items = library.Items.Where(item => item.Name.Contains(search.Text.Trim(), StringComparison.CurrentCultureIgnoreCase)).ToArray();
-        emptyText.Text = L.Get(library.Items.Count == 0 ? "Audit.EmptyStamps" : "Audit.NoStampMatches");
-        emptyText.Visibility = emptyAction.Visibility = items.Length == 0 ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-        emptyAction.Content = L.Get(search.Text.Length > 0 ? "Audit.ClearSearch" : "Audit.SelectObjects");
-        Guid? keep = selected;
-        RefreshSlots(token);
-        CloseTileMenus();
-        grid.ItemsSource = items;
-        grid.SelectedItem = items.FirstOrDefault(item => item.Id == keep);
-        RefreshActions();
+        if (preparing || !refreshPending) return;
+        preparing = true; refreshPending = false;
+        try
+        {
+            thumbnails.Cancel(); thumbnails.Dispose(); thumbnails = new();
+            var token = thumbnails.Token;
+            var items = library.Items.Where(item => item.Name.Contains(search.Text.Trim(), StringComparison.CurrentCultureIgnoreCase)).ToArray();
+            emptyText.Visibility = emptyAction.Visibility = items.Length == 0 ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+            if (items.Length == 0)
+            {
+                emptyText.Text = L.Get(library.Items.Count == 0 ? "Audit.EmptyStamps" : "Audit.NoStampMatches");
+                emptyAction.Content = L.Get(search.Text.Length > 0 ? "Audit.ClearSearch" : "Audit.SelectObjects");
+            }
+            Guid? keep = selected;
+            RefreshSlots(token);
+            CloseTileMenus();
+            grid.ItemsSource = items;
+            grid.SelectedItem = items.FirstOrDefault(item => item.Id == keep);
+            SetBusyControls(); ShowStatus(pendingStatus);
+        }
+        finally { preparing = false; }
     }
 
     private void PrepareTile(Controls.ListBoxItem item, StampEntry entry)
@@ -283,6 +304,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
 
     private void RefreshSlotSelection()
     {
+        if (!IsVisible && !preparing) { refreshPending = true; return; }
         foreach (var (index, frame) in slotFrames)
         {
             frame.SetResourceReference(Controls.Border.BorderBrushProperty, selectedSlot == index ? "CanvasAccent" : "CanvasBorder");
@@ -303,6 +325,23 @@ internal sealed class StampLibraryWindow : Wpf.Window
 
     private async void LoadThumbnail(StampEntry entry, Controls.Image image, Wpf.FrameworkElement tile, CancellationToken token, Controls.TextBlock? placeholder = null)
     {
+        if (!IsVisible || token.IsCancellationRequested) return;
+        if (!tile.IsVisible)
+        {
+            // Cached results can complete before a newly prepared tile or slot
+            // inherits visibility. Resume once its own image joins the visible tree.
+            // The image belongs to this content generation; recycled tiles cancel
+            // its token and release that image instead of retaining old handlers.
+            void Visible(object sender, Wpf.DependencyPropertyChangedEventArgs args)
+            {
+                if (!image.IsVisible) return;
+                image.IsVisibleChanged -= Visible;
+                if (!closed && !token.IsCancellationRequested && IsVisible && tile.IsVisible)
+                    LoadThumbnail(entry, image, tile, token, placeholder);
+            }
+            image.IsVisibleChanged += Visible;
+            return;
+        }
         try
         {
             var key = (entry.Id, entry.Revision);
@@ -330,13 +369,19 @@ internal sealed class StampLibraryWindow : Wpf.Window
                 }
                 finally { thumbnailGate.Release(); }
             }
-            token.ThrowIfCancellationRequested(); image.Source = bitmap; image.Visibility = Wpf.Visibility.Visible;
+            token.ThrowIfCancellationRequested();
+            if (!IsVisible || !tile.IsVisible)
+            {
+                if (IsVisible) LoadThumbnail(entry, image, tile, token, placeholder);
+                return;
+            }
+            image.Source = bitmap; image.Visibility = Wpf.Visibility.Visible;
             if (placeholder is not null) placeholder.Visibility = Wpf.Visibility.Collapsed;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
         {
-            if (!token.IsCancellationRequested)
+            if (!token.IsCancellationRequested && IsVisible && tile.IsVisible)
             {
                 tile.ToolTip = L.Get("Audit.ThumbnailFailed") + "\n" + ex.Message;
                 if (placeholder is not null) placeholder.Text = "⚠ " + L.Get("Audit.ThumbnailFailed");
@@ -353,7 +398,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private void OnLibraryChanged()
     {
         if (Dispatcher.CheckAccess()) Refresh();
-        else Dispatcher.BeginInvoke(Refresh);
+        else if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(Refresh);
     }
     private void UseSelected()
     {
@@ -368,12 +413,16 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private void RefreshActions()
     {
         if (closed) return;
+        if (!IsVisible && !preparing) { refreshPending = true; return; }
         bool ready = !busy && canMutate(), hasItem = library.Items.Any(item => item.Id == selected);
         foreach (var (key, button) in commandButtons)
-            button.IsEnabled = ready && (key == "Stamp.SaveSelection" ? getSession().Selection.Count > 0 && !getSession().IsTransactionActive : hasItem);
-        sourceButton.IsEnabled = ready && useSource is not null && library.Items.Any(item => item.Id == selected && item.Mode == StampSaveMode.RasterMerge);
+            if (button.Visibility == Wpf.Visibility.Visible)
+                button.IsEnabled = ready && (key == "Stamp.SaveSelection" ? getSession().Selection.Count > 0 && !getSession().IsTransactionActive : hasItem);
+        if (sourceButton.Visibility == Wpf.Visibility.Visible)
+            sourceButton.IsEnabled = ready && useSource is not null && library.Items.Any(item => item.Id == selected && item.Mode == StampSaveMode.RasterMerge);
         foreach (var (index, button) in slotButtons) button.IsEnabled = ready;
-        foreach (var (index, button) in slotClearButtons) button.IsEnabled = ready && library.Pins[index] is not null;
+        foreach (var (index, button) in slotClearButtons)
+            if (button.Visibility == Wpf.Visibility.Visible) button.IsEnabled = ready && library.Pins[index] is not null;
     }
     internal async Task SaveSelectionFromToolbarAsync(Wpf.Window owner)
     {
@@ -428,12 +477,17 @@ internal sealed class StampLibraryWindow : Wpf.Window
     private void SetBusyControls()
     {
         if (closed) return;
+        if (!IsVisible && !preparing) { refreshPending = true; return; }
         actions.IsEnabled = grid.IsEnabled = search.IsEnabled = slotShelf.IsEnabled = !busy;
         RefreshActions();
     }
 
     private void ShowStatus(string text)
-    { status.Text = text; status.Visibility = string.IsNullOrEmpty(text) ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible; }
+    {
+        pendingStatus = text;
+        if (!IsVisible && !preparing) return;
+        status.Text = text; status.Visibility = string.IsNullOrEmpty(text) ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
+    }
 
     private Controls.Button ActionButton(string key, PanelActionIcon icon, Action action, string? shortcut = null)
     {

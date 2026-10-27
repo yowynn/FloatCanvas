@@ -43,7 +43,7 @@ internal sealed partial class DesktopSession
     private bool? _mascotCanvasVisible;
     private bool? _mascotEditing;
     private Controls.Button? _canvasStateButton;
-    private bool? _canvasPerspectiveShown;
+    private (uint Background, bool Perspective, bool GridVisible, uint GridColor, double GridWidth, StrokePattern GridPattern)? _canvasPreviewFingerprint;
     private Controls.Button? _billboardButton;
     private readonly Dictionary<string, Controls.Button> _commandStateButtons = [];
 
@@ -66,7 +66,6 @@ internal sealed partial class DesktopSession
             // A toolbar revisit restores its family's working state. Remembered
             // legacy aliases must not act like an explicit recipe selection.
             var button = ToolbarIcon(label, CommandGlyphs.Tool(tool), () => ActivateTool(ToolFamily(ButtonFamily(_editor.Tool) == tool ? _editor.Tool : _toolbarButtonMemory.GetValueOrDefault(tool, tool))), shortcut);
-            if (tool != EditorTool.Select) button.ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
             if(shortcut.Length>0)AddShortcutHint(button,shortcut,tool);
             button.Tag = "tool:" + tool; _toolbarToolButtons[tool] = button; Cell(button, toolColumn++);
         }
@@ -84,7 +83,6 @@ internal sealed partial class DesktopSession
         Tool(EditorTool.Symbol, L.Get("Tool.Symbol"));
         Tool(EditorTool.Emoji, L.Get("Tool.Emoji"));
         var more=ToolbarIcon(L.Get("Feedback4.Toolbar.More"),"M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8",OpenMoreTools,"M");
-        more.ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
         AddShortcutHint(more,"M",EditorTool.Blur);more.Tag="more";Cell(more,toolColumn++);
         _moreToolsMenu=new OverlayContextMenu {PlacementTarget=more,Placement=Primitives.PlacementMode.Bottom};
         foreach(var tool in new[]{EditorTool.Blur,EditorTool.Pixelate})_moreToolsMenu.Items.Add(ToolMenuItem(tool));
@@ -98,7 +96,6 @@ internal sealed partial class DesktopSession
         Action("canvas", L.Get("Canvas.Title"), CommandGlyphs.Canvas, () => ActivateTool(EditorTool.Canvas), ToolShortcutCatalog.Hint(EditorTool.Canvas));
         _canvasStateButton = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.Canvas] = _canvasStateButton;
-        _canvasStateButton.ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
         AddShortcutHint(_canvasStateButton, ToolShortcutCatalog.Hint(EditorTool.Canvas), EditorTool.Canvas);
         RefreshCanvasStateGlyph();
         _billboardButton=ToolbarIcon(L.Get("Billboard.Toggle"),CommandGlyphs.Placement(_editor.BillboardMode),ToggleBillboardMode);
@@ -112,10 +109,8 @@ internal sealed partial class DesktopSession
         var captureButton = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.CaptureRegion] = captureButton;
         AddShortcutHint(captureButton, "P", EditorTool.CaptureRegion);
-        captureButton.ToolTip = L.Get("Acceptance2.Toolbar.Capture") + " · P\n" + L.Get("Acceptance2.Toolbar.CaptureHint") + "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
         Action("crop", L.Get("Tool.Crop"), "M4,1 L4,11 Q4,12 5,12 L15,12 M1,4 L11,4 Q12,4 12,5 L12,15", () => ActivateTool(EditorTool.Crop));
         _toolbarToolButtons[EditorTool.Crop] = content.Children.OfType<Controls.Button>().Last();
-        _toolbarToolButtons[EditorTool.Crop].ToolTip += "\n" + L.Get("ToolOptions.Title") + " · Ctrl+T";
         _toolbarToolButtons[EditorTool.Crop].IsEnabled = _editor.CanCropSelection;
         Controls.ToolTipService.SetShowOnDisabled(_toolbarToolButtons[EditorTool.Crop], true);
         Cell(Separator(), toolColumn++);
@@ -202,10 +197,6 @@ internal sealed partial class DesktopSession
             if (!_toolbarMenu.IsOpen) return false;
             _toolbarMenu.IsOpen = false; return true;
         };
-        _toolbarMenu.Opened += (_, _) => window.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
-        {
-            if (_toolbarMenu.IsOpen) _toolbarMenu.Items.OfType<Controls.MenuItem>().FirstOrDefault()?.Focus();
-        });
         _toolbarLauncher.MenuRequested += () => { if (!_toolOptionsPinned) CloseToolOptions(); _toolbarMenu.IsOpen = true; };
         _toolbarLauncher.ToggleVisibilityRequested += () => RunUiAction(ToggleCanvasVisibility);
         _toolbarLauncher.DragRequested += () =>
@@ -232,7 +223,7 @@ internal sealed partial class DesktopSession
             var key = KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key);
             if (!EditorShortcutPolicy.ShouldRoute(key, Keyboard.Modifiers, e.OriginalSource as DependencyObject)) return;
             e.Handled = true;
-            if (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(key, (OverlayModifiers)Keyboard.Modifiers)) OnKey(key);
+            if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(key, (OverlayModifiers)Keyboard.Modifiers)) OnKey(key);
         };
         window.Closing += (_, e) => { if (!_disposed) { e.Cancel = true; RunUiAction(() => SetEditing(false)); } };
         return window;
@@ -253,6 +244,7 @@ internal sealed partial class DesktopSession
     {
         if(DocumentOperationBusy || !_host.IsEditing || !_toolbar.IsVisible)return;
         if(!_toolOptionsPinned)CloseToolOptions();
+        RefreshMoreToolPreviews();
         _moreToolsMenu.PlacementTarget=_settings.ToolbarExpanded?_toolbarToolButtons[EditorTool.Blur]:_toolbarLauncher;
         _moreToolsMenu.IsOpen=!_moreToolsMenu.IsOpen;
     }
@@ -300,10 +292,13 @@ internal sealed partial class DesktopSession
     private void RefreshCanvasStateGlyph()
     {
         if (_canvasStateButton is null) return;
-        bool enabled = Active.Document.Canvas.Projection.Enabled;
-        if (_canvasPerspectiveShown == enabled) return;
-        _canvasPerspectiveShown = enabled;
-        var content = CommandGlyphs.Create(enabled ? CommandGlyphs.Canvas : CommandGlyphs.CanvasFlat);
+        var canvas = Active.Document.Canvas;
+        var fingerprint = (canvas.BackgroundColor, canvas.Projection.Enabled, canvas.Grid.Visible, canvas.Grid.Color, canvas.Grid.Width, canvas.Grid.Pattern);
+        if (_canvasPreviewFingerprint == fingerprint) return;
+        _canvasPreviewFingerprint = fingerprint;
+        var parameters = new CanvasPresetParameters { BackgroundColor = canvas.BackgroundColor, ProjectionEnabled = canvas.Projection.Enabled,
+            GridVisible = canvas.Grid.Visible, GridColor = canvas.Grid.Color, GridWidth = canvas.Grid.Width, GridPattern = canvas.Grid.Pattern };
+        var content = new CanvasParameterIcon(parameters, 16);
         if (_toolbarGlyphHosts.TryGetValue(EditorTool.Canvas, out var presenter)) presenter.Content = content;
         else _canvasStateButton.Content = content;
     }
@@ -332,10 +327,9 @@ internal sealed partial class DesktopSession
         {
             if (tool == EditorTool.Crop) button.IsEnabled = _editor.CanCropSelection;
             bool selected = ButtonFamily(_editor.Tool) == tool;
-            bool perspective = tool == EditorTool.Canvas && Active.Document.Canvas.Projection.Enabled;
-            if (tool == EditorTool.Canvas) ActionIconButton.UpdateToggleAppearance(button,perspective);
-            if(selected)button.SetResourceReference(Controls.Control.BorderBrushProperty,"CanvasAccent");else if(!perspective)button.BorderBrush=Brushes.Transparent;
-            if(!perspective)button.SetResourceReference(Controls.Control.BackgroundProperty, selected ? "CanvasHover" : "CanvasSurface");
+            RefreshToolTooltip(tool, button, selected);
+            if(selected)button.SetResourceReference(Controls.Control.BorderBrushProperty,"CanvasAccent");else button.BorderBrush=Brushes.Transparent;
+            button.SetResourceReference(Controls.Control.BackgroundProperty, selected ? "CanvasHover" : "CanvasSurface");
             System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? L.Get("ToolbarV2.Selected") : "");
         }
         foreach (var item in _cropMenuItems) item.IsEnabled = _editor.CanCropSelection;
@@ -348,20 +342,19 @@ internal sealed partial class DesktopSession
         {
             if (parameters.Tool != EditorTool.Canvas) _toolbarToolMemory[ToolFamily(parameters.Tool)] = parameters;
             _toolbarParameterFingerprint = fingerprint;
-            if (parameters.Tool != EditorTool.Canvas) _toolOptionsPanel?.Refresh();
+            if (parameters.Tool != EditorTool.Canvas && IsToolOptionsOpen) _toolOptionsPanel.Refresh();
             foreach(var(tool,presenter)in _toolbarGlyphHosts)
             {
-                if(tool is EditorTool.Select or EditorTool.Eraser or EditorTool.Canvas or EditorTool.CaptureRegion)continue;
-                if (tool == EditorTool.Blur)
+                if(tool == EditorTool.Canvas)continue;
+                if(tool == EditorTool.Blur && ButtonFamily(_editor.Tool)!=EditorTool.Blur)
                 {
-                    presenter.Content = parameters.Tool is EditorTool.Blur or EditorTool.Pixelate
-                        ? ToolParameterIcon.Create(parameters)
-                        : CommandGlyphs.Create("M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8");
+                    presenter.Content=CommandGlyphs.Create("M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8");
                     continue;
                 }
-                var own=_toolbarToolMemory.TryGetValue(ToolFamily(tool),out var saved)?saved:new ToolParameters {Tool=tool};
+                var own=ToolbarPreviewParameters(tool == EditorTool.Blur ? _toolbarButtonMemory.GetValueOrDefault(EditorTool.Blur, EditorTool.Blur) : tool);
                 presenter.Content=ToolParameterIcon.Create(own);
             }
+            if (_moreToolsMenu.IsOpen) RefreshMoreToolPreviews();
             _toolStateStore?.MarkChanged();
         }
         if (IsToolOptionsOpen && _toolbarObservedTool != _editor.Tool) AnchorToolOptions();
@@ -371,6 +364,32 @@ internal sealed partial class DesktopSession
         if (_toolbarActiveStamp != slotStamp) { _toolbarActiveStamp = slotStamp; _stampShelf.SetActive(slotStamp); }
         RefreshLibraryStamp(activeStamp is not null && !_selectedStampFromSlot ? _stampLibrary.Items.FirstOrDefault(entry=>entry.Id==activeStamp) : null);
         if (!_host.IsEditing || !_toolbar.IsVisible) CloseToolOptions();
+    }
+
+    private ToolParameters ToolbarPreviewParameters(EditorTool tool) =>
+        _toolbarToolMemory.TryGetValue(ToolFamily(tool), out var saved) ? saved :
+        _toolPresets.OfficialFor(tool).First().Parameters;
+
+    private static void RefreshToolTooltip(EditorTool tool, Controls.Button button, bool selected)
+    {
+        string name = System.Windows.Automation.AutomationProperties.GetName(button);
+        string shortcut = System.Windows.Automation.AutomationProperties.GetAcceleratorKey(button);
+        string text = shortcut.Length == 0 ? name : name + " · " + shortcut;
+        if (selected)
+        {
+            // M opens the More menu, whereas ordinary tool keys revisit their panel.
+            string hint = tool == EditorTool.Select ? L.Get("Toolbar.SelectionHint") : shortcut.Length > 0 && tool != EditorTool.Blur
+                ? L.Format("Toolbar.ToolOptionsWithKeyHint", shortcut)
+                : L.Get("Toolbar.ToolOptionsHint");
+            text += "\n" + hint;
+        }
+        if (!Equals(button.ToolTip, text)) button.ToolTip = text;
+    }
+
+    private void RefreshMoreToolPreviews()
+    {
+        foreach (var item in _moreToolsMenu.Items.OfType<Controls.MenuItem>())
+            if (item.Tag is EditorTool tool) item.Icon = ToolParameterIcon.Create(ToolbarPreviewParameters(tool));
     }
 
     private void RefreshCanvasVisibilityButton()

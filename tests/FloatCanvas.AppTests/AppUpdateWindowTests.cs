@@ -123,6 +123,7 @@ internal static class AppUpdateWindowTests
         {
             int before = requests;
             failing.PreviewUpdates.IsChecked = true;
+            failing.PrepareForShow();
             check("failed preview preference save restores the switch without starting a check", failing.PreviewUpdates.IsChecked == false && !failing.IsBusy && requests == before && failing.StatusText.Text == L.Get("Updates.PreferenceFailed"));
         }
         finally { failing.Close(); }
@@ -205,7 +206,7 @@ internal static class AppUpdateWindowTests
         }));
         using var closeClient = new GitHubUpdateClient(closeHttp);
         var closing = new AppUpdateWindow("0.2.0-preview.1", closeClient, _ => Task.CompletedTask, true, output);
-        closing.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+        _ = closing.CheckAsync(); closing.PrepareForShow();
         var status = closing.StatusText.Text;
         closing.Close(); PumpUntil(() => !closing.IsBusy);
         check("closing a checking panel cancels HTTP and suppresses later UI changes", cancelled && closing.StatusText.Text == status && !closing.IsBusy);
@@ -228,6 +229,7 @@ internal static class AppUpdateWindowTests
         {
             Await(window.CheckAsync());
             Task task = window.DownloadUpdateAsync();
+            window.PrepareForShow();
             check("download takes over the panel actions with visible progress", downloads == 1 && window.IsBusy && !window.InstallButton.IsEnabled && !window.CheckButton.IsEnabled && window.CancelButton.Visibility == Visibility.Visible && window.DownloadProgress.Visibility == Visibility.Visible);
             Await(window.DownloadUpdateAsync());
             check("repeated update actions do not start a second download", downloads == 1);
@@ -317,6 +319,9 @@ internal static class AppUpdateWindowTests
         timer.Tick += (_, _) => { if (completed() || watch.Elapsed > TimeSpan.FromSeconds(12)) frame.Continue = false; };
         timer.Start(); Dispatcher.PushFrame(frame); timer.Stop();
         if (!completed()) throw new TimeoutException("The detached update UI fixture did not complete.");
+        // Display assertions explicitly synchronize detached views; runtime callbacks
+        // keep hidden update windows unchanged until their next display boundary.
+        foreach (var window in Application.Current.Windows.OfType<AppUpdateWindow>().ToArray()) window.PrepareForShow();
     }
     private sealed class FakeHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {

@@ -37,6 +37,11 @@ public sealed class OverlayPopup : FrameworkElement
     public CustomPopupPlacementCallback? CustomPopupPlacementCallback { get; set; }
     public event EventHandler? Opened,Closed;
     private OverlayPopupWindow? window;
+    internal void Close(bool returnFocus = true)
+    {
+        if (window is { } current) current.Close(returnFocus);
+        else SetCurrentValue(IsOpenProperty, false);
+    }
     protected override IEnumerator LogicalChildren => Child is null?Array.Empty<object>().GetEnumerator():new object[]{Child}.GetEnumerator();
     protected override Size MeasureOverride(Size availableSize)=>default;
     protected override DependencyObject GetUIParentCore()=>base.GetUIParentCore()??PlacementTarget!;
@@ -45,7 +50,7 @@ public sealed class OverlayPopup : FrameworkElement
         if(IsOpen && window is null && Child is { } child)
         {
             var target=PlacementTarget??TemplatedParent as UIElement;
-            window=new OverlayPopupWindow(child,target,Placement,HorizontalOffset,VerticalOffset,()=>SetCurrentValue(IsOpenProperty,false),CustomPopupPlacementCallback,()=>!StaysOpen,IsHitTestVisible,TargetPressToggles);
+            window=new OverlayPopupWindow(child,target,Placement,HorizontalOffset,VerticalOffset,()=>SetCurrentValue(IsOpenProperty,false),CustomPopupPlacementCallback,()=>!PopupChildDialog.StaysOpenForOutsidePress(this,StaysOpen),IsHitTestVisible,TargetPressToggles);
             window.Show(); Opened?.Invoke(this,EventArgs.Empty);
         }
         else if(!IsOpen && window is { } old)
@@ -70,10 +75,16 @@ internal sealed class OverlayWindowScope : IDisposable
     private readonly Func<bool> inputActive;
     internal bool IsInputActive=>inputActive();
     private readonly List<OverlayPopupWindow> windows=[];
-    internal OverlayWindowScope(nint owner,Func<bool>? inputActive=null)
-    { if(Current is not null) throw new InvalidOperationException("An overlay session already owns this thread."); Owner=owner;this.inputActive=inputActive??(()=>true);Current=this;OverlayTransientControls.Initialize(); }
+    internal OverlayWindowScope(nint owner,Func<bool>? inputActive=null,bool installAsCurrent=true)
+    {
+        if(installAsCurrent && Current is not null) throw new InvalidOperationException("An overlay session already owns this thread.");
+        Owner=owner;this.inputActive=inputActive??(()=>true);
+        if(installAsCurrent){Current=this;OverlayTransientControls.Initialize();}
+    }
     internal static void Prepare(Window window)
     {
+        WindowFocusLifecycle.Attach(window);
+        AppInputPolicy.AttachKeyboardSource(window);
         if (window.Owner is { } owner && IsRegularWindow(owner)) UseRegularWindow(window);
         if (IsRegularWindow(window)) { UseRegularWindow(window); return; }
         if(Current is not { } scope) return;
@@ -135,7 +146,7 @@ internal sealed class OverlayWindowScope : IDisposable
     }
     internal void Add(OverlayPopupWindow window)=>windows.Add(window);
     internal void Remove(OverlayPopupWindow window)=>windows.Remove(window);
-    internal bool IsTopmost(OverlayPopupWindow window)=>windows.LastOrDefault()==window;
+    internal bool IsTopmost(OverlayPopupWindow window)=>windows.LastOrDefault(candidate=>candidate.IsInteractive)==window;
     internal void ClosePopups(){foreach(var window in windows.ToArray()) window.Close();}
     public void Dispose()
     {ClosePopups();if(Current==this) Current=null;}
@@ -152,6 +163,8 @@ internal sealed class OverlayWindowScope : IDisposable
 
 internal sealed class OverlayPopupWindow : IDisposable
 {
+    [ThreadStatic] private static List<OverlayPopupWindow>? openWindows;
+    internal static Size MeasurementLimit => new(SystemParameters.PrimaryScreenWidth*.75,SystemParameters.PrimaryScreenHeight*.75);
     private readonly HwndSource source;
     private readonly UIElement content;
     private readonly Action close;
@@ -159,17 +172,23 @@ internal sealed class OverlayPopupWindow : IDisposable
     private readonly OverlayWindowScope scope;
     private readonly Func<bool> closeOnOutside;
     private readonly bool targetPressToggles;
+    internal bool IsInteractive { get; }
     private bool returnFocus=true;
     private bool disposed;
-    internal OverlayPopupWindow(UIElement child,UIElement? target,PlacementMode placement,double offsetX,double offsetY,Action close,CustomPopupPlacementCallback? custom=null,Func<bool>? closeOnOutside=null,bool hitTestVisible=true,bool targetPressToggles=false)
+    internal OverlayPopupWindow(UIElement child,UIElement? target,PlacementMode placement,double offsetX,double offsetY,Action close,CustomPopupPlacementCallback? custom=null,Func<bool>? closeOnOutside=null,bool hitTestVisible=true,bool targetPressToggles=false,OverlayWindowScope? ownerScope=null,bool returnFocus=true,Size? measuredSize=null)
     {
-        scope=OverlayWindowScope.Current??throw new InvalidOperationException("No active system overlay window owner.");
+        scope=ownerScope??OverlayWindowScope.Current??throw new InvalidOperationException("No active system overlay window owner.");
         this.close=close;this.target=target;
+        this.returnFocus=returnFocus;
         this.targetPressToggles=targetPressToggles;
+        IsInteractive=hitTestVisible;
         this.closeOnOutside=closeOnOutside??(()=>true);
         content=child;
-        child.Measure(new Size(SystemParameters.PrimaryScreenWidth*.75,SystemParameters.PrimaryScreenHeight*.75));
-        var size=child.DesiredSize;
+        if (child is FrameworkElement root) AppTheme.UsePopupPalette(root);
+        // A caller handling delayed hints can measure first, validate its anchor
+        // after layout callbacks, then avoid measuring again during creation.
+        if(measuredSize is null)child.Measure(MeasurementLimit);
+        var size=measuredSize??child.DesiredSize;
         Point position=target?.PointToScreen(new Point())??CursorPosition();
         double scale=target is Visual visual?VisualTreeHelper.GetDpi(visual).DpiScaleX:1;
         if(placement==PlacementMode.Bottom && target is FrameworkElement element) position.Y+=element.ActualHeight*scale;
@@ -194,16 +213,42 @@ internal sealed class OverlayPopupWindow : IDisposable
         child.AddHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(OverlayWindowScope.ConfigureInputMethod),true);
         source.SizeToContent=SizeToContent.WidthAndHeight;
         source.AddHook(NoActivate);
+        AppInputPolicy.AttachKeyboardSource(source);
         if(!hitTestVisible)source.AddHook((nint hwnd,int message,nint wparam,nint lparam,ref bool handled)=>
             {if(message==0x84){handled=true;return -1;}return 0;});
         scope.Add(this);
+        (openWindows??=[]).Add(this);
         InputManager.Current.PreProcessInput+=BeforeInput;
     }
-    internal void Show()=>ShowWindow(source.Handle,4);
+    internal void Show(){ShowWindow(source.Handle,4);RaiseOpenPopups();}
+    internal static void RaiseOpenPopups()
+    {
+        // Popup HWNDs are not Application.Windows. Keep their creation order
+        // above the first-level panels without promoting their toolbar owner.
+        foreach(var popup in openWindows?.ToArray()??[])
+            if(!popup.disposed && IsWindowVisible(popup.source.Handle))
+            {
+                RaiseWindow(popup.source.Handle);
+                if(popup.content is OverlayContextMenu menu)menu.RaiseNativeSubmenus();
+            }
+    }
+    internal static void RaiseWindow(nint handle)
+    {
+        if(IsWindowVisible(handle)&&!SetWindowPos(handle,-1,0,0,0,0,0x213))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    }
     internal void Focus(UIElement element)
     {SetActiveWindow(source.Handle);SetFocus(source.Handle);element.Focus();Keyboard.Focus(element);}
     private void BeforeInput(object sender,PreProcessInputEventArgs args)
     {
+        if(!IsInteractive)
+        {
+            // Hover hints disappear with the gesture but never consume it or
+            // hide an interactive popup from the Escape dismissal order.
+            if(args.StagingItem.Input is KeyEventArgs {Key:Key.Escape,RoutedEvent:var hintKey} && hintKey==Keyboard.PreviewKeyDownEvent ||
+                args.StagingItem.Input is MouseButtonEventArgs {ButtonState:MouseButtonState.Pressed})close();
+            return;
+        }
         // At PreProcessInput WPF has not assigned Source yet. Use the same
         // device target it will use when routing the pending mouse event.
         if(closeOnOutside() && args.StagingItem.Input is MouseButtonEventArgs mouse && mouse.ButtonState==MouseButtonState.Pressed &&
@@ -218,7 +263,7 @@ internal sealed class OverlayPopupWindow : IDisposable
             key.Handled=true;
         }
     }
-    private static bool BelongsTo(DependencyObject source,DependencyObject root)
+    internal static bool BelongsTo(DependencyObject source,DependencyObject root)
     {
         for(var current=source;current is not null;current=current switch
             {ContextMenu menu=>menu.PlacementTarget,OverlayPopup popup=>popup.PlacementTarget??popup.TemplatedParent,
@@ -226,10 +271,11 @@ internal sealed class OverlayPopupWindow : IDisposable
             if(ReferenceEquals(current,root)) return true;
         return false;
     }
-    internal void Close()=>close();
+    internal void Close(bool returnFocus=true){this.returnFocus&=returnFocus;close();}
     public void Dispose()
     {
         if(disposed) return;disposed=true;
+        openWindows?.Remove(this);
         InputManager.Current.PreProcessInput-=BeforeInput;
         scope.Remove(this);content.RemoveHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(OverlayWindowScope.ConfigureInputMethod));
         source.RootVisual=null;source.Dispose();
@@ -240,6 +286,10 @@ internal sealed class OverlayPopupWindow : IDisposable
                 if(OverlayWindowScope.Current!=scope || !scope.IsInputActive || !target.IsVisible || targetSource.IsDisposed) return;
                 nint focused=GetFocus();
                 if(focused!=0 && focused!=targetSource.Handle && focused!=scope.Owner) return;
+                  // Native focus alone cannot distinguish two controls in the same
+                  // HWND. Preserve a destination chosen while this popup was closing.
+                  if(Keyboard.FocusedElement is DependencyObject focusedElement &&
+                      !BelongsTo(focusedElement,target) && !BelongsTo(focusedElement,content)) return;
                 SetActiveWindow(GetAncestor(targetSource.Handle,2));SetFocus(targetSource.Handle);target.Focus();Keyboard.Focus(target);
             });
         }
@@ -254,19 +304,41 @@ internal sealed class OverlayPopupWindow : IDisposable
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint hwnd,uint flags);
     [DllImport("user32.dll")] private static extern nint GetFocus();
     [DllImport("user32.dll")] private static extern bool ShowWindow(nint hwnd,int command);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
+    [DllImport("user32.dll",SetLastError=true)] private static extern bool SetWindowPos(nint hwnd,nint after,int x,int y,int width,int height,uint flags);
 }
 
 internal sealed class OverlayContextMenu : ContextMenu
 {
+    internal void RaiseNativeSubmenus()
+    {
+        void Raise(MenuItem item)
+        {
+            if(!item.IsSubmenuOpen)return;
+            if(item.Template?.FindName("PART_Popup",item) is Popup {IsOpen:true,Child:{ } child} && PresentationSource.FromVisual(child) is HwndSource source)
+                OverlayPopupWindow.RaiseWindow(source.Handle);
+            foreach(var nested in item.Items.OfType<MenuItem>())Raise(nested);
+        }
+        foreach(var item in Items.OfType<MenuItem>())Raise(item);
+    }
+    [ThreadStatic] private static HashSet<OverlayContextMenu>? openMenus;
+    internal static bool OwnsKeyboardFocus=>openMenus?.Any(menu=>menu.IsKeyboardFocusWithin)==true;
+    internal static void CloseAll(){foreach(var menu in openMenus?.ToArray()??[])menu.window?.Close(returnFocus:false);}
     internal bool TargetPressToggles { get; set; }
     private OverlayPopupWindow? window;
+    private OverlayWindowScope? ordinaryScope;
+    private bool ignoreOpeningRightRelease;
+    private Window? sourceWindow;
     private IDisposable? parentRetention;
+    private WinEventProcedure? foregroundProcedure;
+    private nint foregroundHook;
     static OverlayContextMenu()
     {
+        OverlayTransientControls.Initialize();
         EventManager.RegisterClassHandler(typeof(FrameworkElement),ContextMenuService.ContextMenuOpeningEvent,
             new ContextMenuEventHandler((sender,e)=>
             {
-                if(e.Handled || OverlayWindowScope.Current is null || sender is not FrameworkElement root ||
+                if(e.Handled || sender is not FrameworkElement root ||
                     !ReferenceEquals(PresentationSource.FromVisual(root)?.RootVisual,root))return;
                 for(DependencyObject? source=e.OriginalSource as DependencyObject;source is not null;
                     source=LogicalTreeHelper.GetParent(source)??(source is Visual?VisualTreeHelper.GetParent(source):null))
@@ -287,29 +359,95 @@ internal sealed class OverlayContextMenu : ContextMenu
     internal OverlayContextMenu()
     {
         SetResourceReference(StyleProperty,typeof(ContextMenu));
-        Opened += (_, _) => { if (PlacementTarget is { } target) parentRetention ??= PopupChildDialog.RetainFor(target); };
+        // Outside presses belong to their real target; closing the menu must not
+        // require a capture-only click before that target can react.
+        StaysOpen=true;
+        Opened += (_, _) =>
+        {
+            (openMenus??=[]).Add(this);
+            sourceWindow=PlacementTarget is { } placement?Window.GetWindow(placement):null;
+            if(sourceWindow is not null)sourceWindow.IsVisibleChanged+=SourceVisibilityChanged;
+            if (PlacementTarget is { } target) parentRetention ??= PopupChildDialog.RetainFor(target,transientMenu:true);
+            WatchForeground();
+        };
         Closed += (_, _) =>
         {
+            openMenus?.Remove(this);
+            if(foregroundHook!=0){UnhookWinEvent(foregroundHook);foregroundHook=0;}
+            foregroundProcedure=null;
+            if(sourceWindow is not null)sourceWindow.IsVisibleChanged-=SourceVisibilityChanged;
+            sourceWindow=null;
             var retention = parentRetention; parentRetention = null;
             // The popup's input-priority focus return runs before its parent is
             // eligible for outside-focus dismissal again.
             if (retention is not null) Dispatcher.BeginInvoke(DispatcherPriority.Input, retention.Dispose);
         };
     }
+    protected override void OnPreviewMouseRightButtonDown(MouseButtonEventArgs e)
+    {
+        ignoreOpeningRightRelease=false;
+        base.OnPreviewMouseRightButtonDown(e);
+    }
+    protected override void OnPreviewMouseRightButtonUp(MouseButtonEventArgs e)
+    {
+        // Screen-edge placement can put an item under the opening press. Its
+        // release belongs to the launcher, not to that newly displayed item.
+        if(ignoreOpeningRightRelease){ignoreOpeningRightRelease=false;e.Handled=true;return;}
+        base.OnPreviewMouseRightButtonUp(e);
+    }
+    private void WatchForeground()
+    {
+        if(window is not { } opened || foregroundHook!=0)return;
+        var origin=PlacementTarget is { } target?PresentationSource.FromVisual(target) as HwndSource:null;
+        nint initial=GetForegroundWindow();uint openedAt=unchecked((uint)Environment.TickCount);
+        foregroundProcedure=(_,_,hwnd,_,_,_,eventTime)=>
+        {
+            if(hwnd==0 || !ReferenceEquals(window,opened) || Dispatcher.HasShutdownStarted || unchecked((int)(eventTime-openedAt))<0 ||
+                hwnd==origin?.Handle || hwnd==initial && unchecked((int)(eventTime-openedAt))<=0)return;
+            var source=HwndSource.FromHwnd(hwnd);
+            if(source is {IsDisposed:false} && source.Dispatcher.CheckAccess() && source.RootVisual is DependencyObject root && ContainsMenu(root))return;
+            Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>
+            {
+                if(ReferenceEquals(window,opened))opened?.Close(returnFocus:false);
+            });
+        };
+        foregroundHook=SetWinEventHook(3,3,0,foregroundProcedure,0,0,0);
+    }
+    private bool ContainsMenu(DependencyObject root)
+    {
+        if(OverlayPopupWindow.BelongsTo(root,this))return true;
+        if(root is Window)return false;
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++)
+            if(ContainsMenu(VisualTreeHelper.GetChild(root,i)))return true;
+        return false;
+    }
+    private delegate void WinEventProcedure(nint hook,uint eventId,nint hwnd,int objectId,int childId,uint threadId,uint eventTime);
+    [DllImport("user32.dll")] private static extern nint SetWinEventHook(uint first,uint last,nint module,WinEventProcedure procedure,uint process,uint thread,uint flags);
+    [DllImport("user32.dll")] private static extern bool UnhookWinEvent(nint hook);
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    private void SourceVisibilityChanged(object sender,DependencyPropertyChangedEventArgs args)
+    {if(sourceWindow?.IsVisible==false)IsOpen=false;}
     public new bool IsOpen
     {
-        get=>OverlayWindowScope.Current is null?base.IsOpen:window is not null;
+        get=>window is not null;
         set
         {
-            if(OverlayWindowScope.Current is null){base.IsOpen=value;return;}
             if(value && window is null)
             {
-                window=new OverlayPopupWindow(this,PlacementTarget,Placement,HorizontalOffset,VerticalOffset,()=>IsOpen=false,CustomPopupPlacementCallback,targetPressToggles:TargetPressToggles);
+                ignoreOpeningRightRelease=Mouse.RightButton==MouseButtonState.Pressed;
+                var scope=OverlayWindowScope.Current;
+                if(scope is null || PlacementTarget is { } target && Window.GetWindow(target) is { } owner && OverlayWindowScope.IsRegularWindow(owner))
+                {
+                    var source=PlacementTarget is { } anchor?PresentationSource.FromVisual(anchor) as HwndSource:null;
+                    scope=ordinaryScope=new OverlayWindowScope(source?.Handle??0,()=>false,installAsCurrent:false);
+                }
+                window=new OverlayPopupWindow(this,PlacementTarget,Placement,HorizontalOffset,VerticalOffset,()=>IsOpen=false,CustomPopupPlacementCallback,targetPressToggles:TargetPressToggles,ownerScope:scope);
                 window.Show();RaiseEvent(new RoutedEventArgs(OpenedEvent,this));
                 if(Items.OfType<MenuItem>().FirstOrDefault(item=>item.IsEnabled) is { } first) window.Focus(first);
+                if(Mouse.Captured is DependencyObject captured && OverlayPopupWindow.BelongsTo(captured,this))Mouse.Capture(null);
             }
             else if(!value && window is { } old)
-            {window=null;foreach(var item in Items.OfType<MenuItem>()) CloseSubmenus(item);old.Dispose();RaiseEvent(new RoutedEventArgs(ClosedEvent,this));}
+            {window=null;foreach(var item in Items.OfType<MenuItem>()) CloseSubmenus(item);old.Dispose();ordinaryScope?.Dispose();ordinaryScope=null;RaiseEvent(new RoutedEventArgs(ClosedEvent,this));}
         }
     }
     private static void CloseSubmenus(MenuItem item)

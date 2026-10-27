@@ -25,17 +25,22 @@ internal sealed class InspectorWindow : Wpf.Window
     private readonly Controls.TextBlock selectionLabel = new() { TextWrapping = Wpf.TextWrapping.Wrap, FontWeight = Wpf.FontWeights.SemiBold };
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, MinHeight = 28, FontSize = 11 };
     private readonly Controls.Border textSection;
+    private readonly Controls.StackPanel linkedColorsGroup = new();
+    private readonly PropertyChangeRegion linkedColorsRegion;
     private readonly AspectRatioButton keepAspect = new();
     private readonly PropertySwitch linkColors = new();
     private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
-    private readonly Controls.ComboBox alignment = new() { MinHeight = 34 };
-    private readonly Controls.ComboBox arrowStyle = new() { MinHeight = 34 };
-    private readonly Controls.ComboBox startArrow = new() { MinHeight = 34 };
-    private readonly Controls.ComboBox endArrow = new() { MinHeight = 34 };
-    private readonly Controls.ComboBox strokePattern = new() { MinHeight = 34 };
-    private readonly Controls.ComboBox placement = new() { MinHeight = 34 };
+    private readonly Controls.ComboBox alignment = new OverlayComboBox() { MinHeight = 34 };
+    private readonly Controls.ComboBox arrowStyle = new OverlayComboBox() { MinHeight = 34 };
+    private readonly Controls.ComboBox startArrow = new OverlayComboBox() { MinHeight = 34 };
+    private readonly Controls.ComboBox endArrow = new OverlayComboBox() { MinHeight = 34 };
+    private readonly Controls.ComboBox strokePattern = new OverlayComboBox() { MinHeight = 34 };
+    private readonly Controls.ComboBox placement = new OverlayComboBox() { MinHeight = 34 };
     private readonly List<NumericScrubber> scrubbers = [];
     private EditorSession? formSession;
+    private EditorSession? observedSession;
+    private int preparingForShow;
+    private bool pendingSelectionReload;
     private Guid[] formSelection = [];
     private EditorSession? editSession;
     private long editTransaction;
@@ -74,8 +79,8 @@ internal sealed class InspectorWindow : Wpf.Window
         layout.RowDefinitions.Add(new() { Height = Wpf.GridLength.Auto });
         Content = layout;
         var body = new Controls.StackPanel();
-        var scroll = new Controls.ScrollViewer { Margin = WindowLayout.ContentMargin(4, 8), Content = body, VerticalScrollBarVisibility = Controls.ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = Controls.ScrollBarVisibility.Disabled };
+        var scroll = PropertyChangeRegion.ReserveHighlightSpace(new Controls.ScrollViewer { Margin = WindowLayout.ContentMargin(4, 8), Content = body, VerticalScrollBarVisibility = Controls.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Controls.ScrollBarVisibility.Disabled });
         layout.Children.Add(scroll);
         selectionLabel.FontSize = 12;
         selectionLabel.Margin = new(0, 2, 0, 8);
@@ -115,10 +120,12 @@ internal sealed class InspectorWindow : Wpf.Window
         colors.Children.Add(strokeColor);
         var fillColor = CreateColorField("Fill", L.Get("Inspector.Fill"), ColorRole.Background, colorLibrary);
         colors.Children.Add(fillColor);
-        propertyPanel.Children.Add(colors);
         var linkRow = PropertyPanelLayout.BooleanRow(L.Get("Color.LinkColors"), linkColors);
-        propertyPanel.Children.Add(linkRow); fieldContainers.Add("LinkColors", linkRow);
-        linkColors.Click += (_, _) => ChangeField("LinkColors");
+        fieldContainers.Add("LinkColors", linkRow);
+        linkedColorsRegion = new(colors);
+        linkedColorsGroup.Children.Add(linkRow); linkedColorsGroup.Children.Add(linkedColorsRegion);
+        propertyPanel.Children.Add(linkedColorsGroup);
+        linkColors.Click += (_, _) => linkedColorsRegion.Change(() => ChangeField("LinkColors"));
         propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.Opacity"), null, null));
         textSection = SectionHeading("Inspector.TextSection",first:true);
         propertyPanel.Children.Add(textSection);
@@ -126,7 +133,7 @@ internal sealed class InspectorWindow : Wpf.Window
         propertyPanel.Children.Add(FieldPair("Number", L.Get("Editor.ElementKind.Number"), null, null));
         var fontRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Inspector.FontFamily")), fontPicker);
         var fontValue = Field("FontFamily", L.Get("Inspector.FontFamilyName"));
-        fontPicker.SelectionChanged += (_, _) => { if (!refreshing && fontPicker.SelectedItem is Controls.ComboBoxItem item && item.Tag is string name) fontValue.Text = name; };
+        ((FontPickerControl)fontPicker).FontCommitted += name => { if (!refreshing) fontValue.Text = name; };
         fontValue.TextChanged += (_, _) => { if (!string.IsNullOrWhiteSpace(fontValue.Text)) ToolOptionPreviews.SelectFont(fontPicker, fontValue.Text); };
         Automation.AutomationProperties.SetName(fontPicker, L.Get("Inspector.FontFamily"));
         fieldContainers.Add("FontFamily", fontRow); propertyPanel.Children.Add(fontRow);
@@ -174,7 +181,7 @@ internal sealed class InspectorWindow : Wpf.Window
         Deactivated += (_, _) => {CancelNumericGestures();CompleteEdit();QueueFocusCheck();};
         propertyPanel.LostKeyboardFocus += (_, _) => { if (!propertyPanel.IsKeyboardFocusWithin) CompleteEdit(); };
         Closing += (_, e) => { e.Cancel = true; CancelNumericGestures(); CompleteEdit(); CancelScrub(); CloseColorPickers(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
-        IsVisibleChanged += (_, _) => { if (!IsVisible) { CancelNumericGestures(); CompleteEdit(); CloseColorPickers();
+        IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); else { ObserveSession(null); CancelNumericGestures(); CompleteEdit(); CloseColorPickers();
             if (SessionWindowCoordinator.Find(this)?.IsSuspendingWindows == true && IsPinned) return;
             IsPinned=false;UpdatePin();Dismissed?.Invoke(); } };
         AppInputPolicy.AttachToolbarToggle(this, () => CommandKey?.Invoke(0x09), () => this.canMutate() && !colorFields.Values.Any(field => field.IsPickerOpen));
@@ -184,15 +191,15 @@ internal sealed class InspectorWindow : Wpf.Window
             var modifiers = Input.Keyboard.Modifiers;
             var source = e.OriginalSource as Wpf.DependencyObject;
             if (e.Handled || (modifiers & (Input.ModifierKeys.Alt | Input.ModifierKeys.Windows)) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
-            if (key == Input.Key.Escape) { e.Handled = true; if (!e.IsRepeat && !AppWindowChrome.TryCloseHelp(this)) HandleEscape(); return; }
-            if (key == Input.Key.Enter && (modifiers & Input.ModifierKeys.Control) != 0) { e.Handled = true; if (!e.IsRepeat) Apply(); return; }
+            if (key == Input.Key.Escape) { e.Handled = true; if (!AppInputPolicy.IsRepeat(e) && !FontPickerControl.TryCancelForInput(source) && !AppWindowChrome.TryCloseHelp(this)) HandleEscape(); return; }
+            if (key == Input.Key.Enter && (modifiers & Input.ModifierKeys.Control) != 0) { e.Handled = true; if (!AppInputPolicy.IsRepeat(e)) Apply(); return; }
             bool textInput = OwnsLocalEditingKeys(Input.Keyboard.FocusedElement as Wpf.DependencyObject) ||
                 OwnsLocalEditingKeys(e.OriginalSource as Wpf.DependencyObject);
             int command = Input.KeyInterop.VirtualKeyFromKey(key);
             bool control = (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0;
             if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, localInput: textInput)) return;
             e.Handled = true;
-            if (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, control, textInput);
+            if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, control, textInput);
         };
         AppWindowChrome.Apply(this); Icon = AppIcon.WindowImage;
         pin=ActionIconButton.Create(PanelActionIcon.Pin,L.Get("ToolbarV2.PinOptions"),()=>{IsPinned=!IsPinned;UpdatePin();});
@@ -202,7 +209,6 @@ internal sealed class InspectorWindow : Wpf.Window
         foreach(var color in colorFields.Values)color.PickerClosed+=QueueFocusCheck;
         foreach(var picker in new[] {fontPicker,alignment,arrowStyle,startArrow,endArrow,strokePattern,placement})picker.DropDownClosed+=(_,_)=>QueueFocusCheck();
         refreshing = false;
-        Refresh();
     }
 
     internal void Dismiss(WindowDismissReason reason=WindowDismissReason.Close)
@@ -232,8 +238,23 @@ internal sealed class InspectorWindow : Wpf.Window
     /// <summary>Selection notifications replace the form; in-progress valid edits stay visible.</summary>
     public void Refresh()
     {
+        if (!IsVisible) return;
+        RefreshSelection();
+    }
+
+    internal void PrepareForShow()
+    {
+        if (editSession is not null) CompleteEdit();
+        preparingForShow++;
+        try { RefreshSelection(); }
+        finally { preparingForShow--; }
+    }
+
+    private void RefreshSelection()
+    {
         if (applying || scrubSession is not null) return;
         var session = getSession();
+        if (IsVisible) ObserveSession(session);
         if (!ReferenceEquals(session, formSession) || !session.Selection.SetEquals(formSelection))
         {
             var requestedSelection = session.Selection.ToArray();
@@ -249,23 +270,31 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private void OnSessionChanged(object? sender, EventArgs e) => Refresh();
 
+    private void ObserveSession(EditorSession? session)
+    {
+        if (ReferenceEquals(observedSession, session)) return;
+        if (observedSession is not null) observedSession.Changed -= OnSessionChanged;
+        observedSession = session;
+        if (observedSession is not null) observedSession.Changed += OnSessionChanged;
+    }
+
     private void LoadSelection(bool discardDraft)
     {
+        if (!IsVisible && preparingForShow == 0) { pendingSelectionReload = true; return; }
         var session = getSession();
+        if (IsVisible) ObserveSession(session);
         var selected = session.SelectedElements().ToArray();
         var element = selected.FirstOrDefault();
         var fingerprint = JsonSerializer.Serialize(selected);
-        if (!discardDraft && ReferenceEquals(formSession, session) && fingerprint == formFingerprint && formProjectionEnabled==session.Document.Canvas.Projection.Enabled &&
+        if (!discardDraft && !pendingSelectionReload && ReferenceEquals(formSession, session) && fingerprint == formFingerprint && formProjectionEnabled==session.Document.Canvas.Projection.Enabled &&
             (!invalidDraft || (IsVisible && propertyPanel.IsKeyboardFocusWithin) || !canMutate())) return;
         refreshing = true;
         try
         {
-            if (!ReferenceEquals(formSession, session))
-            {
-                if (formSession is not null) formSession.Changed -= OnSessionChanged;
-                session.Changed += OnSessionChanged;
-            }
+            if (!ReferenceEquals(formSession, session) || !session.Selection.SetEquals(formSelection))
+                ((FontPickerControl)fontPicker).ResetModelContext();
             formSession = session; formSelection = selected.Select(e => e.Id).ToArray();
+            pendingSelectionReload = false;
             formFingerprint = fingerprint;
             formProjectionEnabled=session.Document.Canvas.Projection.Enabled;
             dirtyFields.Clear();
@@ -276,46 +305,48 @@ internal sealed class InspectorWindow : Wpf.Window
                 : L.Format("Inspector.ElementSelection", ElementName(element), element.Locked ? L.Get("Inspector.LockedSuffix") : "", !element.Visible ? L.Get("Inspector.HiddenSuffix") : "");
             selectionLabel.Visibility = selected.Length == 1 ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
             AppWindowChrome.SetHeaderDetail(this, selected.Length > 1 ? L.Get("Feedback4.Inspector.MultipleHeader") : selected.Length == 1 ? selectionLabel.Text : "");
-            foreach (var box in fields.Values) box.Text = "";
-            colorFields["Stroke"].Value = element is null ? ColorLibrary.ForegroundRed : (uint)PropertyValue(element, "Stroke")!;
-            colorFields["Fill"].Value = element is null ? 0 : (uint)PropertyValue(element, "Fill")!;
-            linkColors.IsThreeState = selected.Select(e => e.Style.LinkColors).Distinct().Count() > 1;
-            linkColors.IsChecked = linkColors.IsThreeState ? null : element?.Style.LinkColors == true;
-            foreach (var color in colorFields.Values) color.IsMixed = false;
+            foreach (var (key, box) in fields) if (IsFieldVisible(key)) box.Text = "";
+            foreach (var (key, color) in colorFields)
+                if (IsFieldVisible(key)) { color.Value = (uint)PropertyValue(element!, key)!; color.IsMixed = false; color.PrepareForShow(); }
+            if (IsFieldVisible("LinkColors"))
+            {
+                linkColors.IsThreeState = selected.Select(e => e.Style.LinkColors).Distinct().Count() > 1;
+                linkColors.IsChecked = linkColors.IsThreeState ? null : element?.Style.LinkColors == true;
+            }
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = ElementGeometry.Bounds(element);
             var size = GeometricSize(element);
             SetField("X", element.IsBillboard?element.BillboardAnchor.X:bounds.Left); SetField("Y", element.IsBillboard?element.BillboardAnchor.Y:bounds.Top); SetField("W", size.X); SetField("H", size.Y);
             SetField("BillboardHeight",element.BillboardHeight);
-            placement.SelectedIndex=selected.Select(e=>e.IsBillboard).Distinct().Count()>1?-1:element.IsBillboard?1:0;
+            if (IsFieldVisible("Placement")) placement.SelectedIndex=selected.Select(e=>e.IsBillboard).Distinct().Count()>1?-1:element.IsBillboard?1:0;
             SetField("Angle", ElementAngle(element)); SetField("StrokeWidth", element.Style.StrokeWidth);
-            arrowStyle.SelectedIndex = (int)element.Style.ArrowHeadStyle; SetField("ArrowHeadSize", element.Style.ArrowHeadSize);
-            startArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element, reverse: true);
-            endArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element);
-            strokePattern.SelectedIndex = (int)element.Style.StrokePattern;
+            if (IsFieldVisible("ArrowHeadStyle")) arrowStyle.SelectedIndex = (int)element.Style.ArrowHeadStyle;
+            SetField("ArrowHeadSize", element.Style.ArrowHeadSize);
+            if (IsFieldVisible("StartArrowHead")) startArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element, reverse: true);
+            if (IsFieldVisible("EndArrowHead")) endArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element);
+            if (IsFieldVisible("StrokePattern")) strokePattern.SelectedIndex = (int)element.Style.StrokePattern;
             SetField("CornerRadius", ElementGeometry.CornerRadius(element));
             SetField("Opacity", element.Style.Opacity * 100); SetField("FontSize", element.Style.FontSize);
-            fields["Text"].Text = element.Text;
-            fields["Text"].IsEnabled = element.Kind == ElementKind.Text;
-            fields["Number"].Text = element.Number.ToString(CultureInfo.InvariantCulture);
-            fields["Number"].IsEnabled = element.Kind == ElementKind.Number;
-            fields["FontSize"].IsEnabled = element.Kind is ElementKind.Text or ElementKind.Number;
-            fields["FontFamily"].Text = element.Style.FontFamily;
-            fields["FontFamily"].IsEnabled = fontPicker.IsEnabled = element.Kind is ElementKind.Text or ElementKind.Number;
-            alignment.IsEnabled = element.Kind == ElementKind.Text;
-            alignment.SelectedIndex = (int)element.Style.TextAlignment;
-            keepAspect.IsThreeState=selected.Select(ElementGeometry.PreservesAspect).Distinct().Count()>1;
-            keepAspect.IsChecked=keepAspect.IsThreeState?null:ElementGeometry.PreservesAspect(element);
+            if (IsFieldVisible("Text")) { fields["Text"].Text = element.Text; fields["Text"].IsEnabled = true; }
+            if (IsFieldVisible("Number")) { fields["Number"].Text = element.Number.ToString(CultureInfo.InvariantCulture); fields["Number"].IsEnabled = true; }
+            if (IsFieldVisible("FontSize")) fields["FontSize"].IsEnabled = true;
+            if (IsFieldVisible("FontFamily")) { fields["FontFamily"].Text = element.Style.FontFamily; fields["FontFamily"].IsEnabled = fontPicker.IsEnabled = true; }
+            if (IsFieldVisible("TextAlignment")) { alignment.IsEnabled = true; alignment.SelectedIndex = (int)element.Style.TextAlignment; }
+            if (IsFieldVisible("ConstrainAspect"))
+            {
+                keepAspect.IsThreeState=selected.Select(ElementGeometry.PreservesAspect).Distinct().Count()>1;
+                keepAspect.IsChecked=keepAspect.IsThreeState?null:ElementGeometry.PreservesAspect(element);
+            }
 
             if (selected.Length > 1)
             {
                 foreach (var key in fields.Keys)
-                    if (selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) SetMixedField(key, PropertyValue(element, key));
-                if (selected.Skip(1).Any(other => other.Style.FontFamily != element.Style.FontFamily)) fontPicker.SelectedIndex = -1;
+                    if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) SetMixedField(key, PropertyValue(element, key));
+                if (IsFieldVisible("FontFamily") && selected.Skip(1).Any(other => other.Style.FontFamily != element.Style.FontFamily)) ToolOptionPreviews.ClearFontSelection(fontPicker);
                 foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("TextAlignment", alignment) })
-                    if (selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) picker.SelectedIndex = -1;
+                    if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) picker.SelectedIndex = -1;
                 foreach (var (key, color) in colorFields)
-                    color.IsMixed = selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)));
+                    if (IsFieldVisible(key)) { color.IsMixed = selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key))); color.PrepareForShow(); }
             }
             SetStatus(selected.Any(item => item.Locked) ? L.Format("Audit.LockedSelection", selected.Count(item => item.Locked)) : L.Get("Feedback4.Inspector.LiveHint"), false);
         }
@@ -412,6 +443,7 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private void SynchronizeOtherFields(CanvasElement[] selected, string changedKey)
     {
+        if (!IsVisible && preparingForShow == 0) { pendingSelectionReload = true; return; }
         refreshing = true;
         try
         {
@@ -419,9 +451,16 @@ internal sealed class InspectorWindow : Wpf.Window
             {keepAspect.IsThreeState=false;keepAspect.IsChecked=selected.All(ElementGeometry.PreservesAspect);}
             if(changedKey=="Placement")SetPropertyVisibility(selected);
             if(changedKey=="LinkColors")SetPropertyVisibility(selected);
+            foreach (var (key, color) in colorFields)
+                if (key != changedKey && IsFieldVisible(key))
+                {
+                    color.Value = (uint)PropertyValue(selected[0], key)!;
+                    color.IsMixed = selected.Skip(1).Any(element => !Equals(PropertyValue(element, key), PropertyValue(selected[0], key)));
+                    color.PrepareForShow();
+                }
             foreach (var (key, box) in fields)
             {
-                if (key == changedKey) continue;
+                if (key == changedKey || !IsFieldVisible(key)) continue;
                 var value = PropertyValue(selected[0], key);
                 if (selected.Skip(1).Any(e => !Equals(PropertyValue(e, key), value))) { SetMixedField(key, value); continue; }
                 if (value is double number) box.Text = (key == "Opacity" ? number * 100 : number).ToString("0.###", CultureInfo.CurrentCulture);
@@ -818,6 +857,7 @@ internal sealed class InspectorWindow : Wpf.Window
         textSection.Visibility = editable && selected.All(e => Supports(e, "FontSize")) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
             container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        linkedColorsGroup.Visibility = new[] { "Stroke", "Fill", "LinkColors" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         bool number = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Number);
         bool shape = selected.Length > 0 && selected.All(e => ElementGeometry.IsBoxShape(e.Kind));
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["Stroke"]).Children[0]).Text = L.Get(number ? "Color.NumberShape" : shape ? selected.All(e => e.Style.LinkColors) ? "Color.Unified" : "Color.Outline" : "Inspector.Stroke");
@@ -851,9 +891,13 @@ internal sealed class InspectorWindow : Wpf.Window
         return box;
     }
 
-    private void SetField(string key, double value) => fields[key].Text = value.ToString("0.###", CultureInfo.CurrentCulture);
+    private bool IsFieldVisible(string key) => propertyPanel.Visibility == Wpf.Visibility.Visible &&
+        fieldContainers.TryGetValue(key, out var container) && container.Visibility == Wpf.Visibility.Visible;
+    private void SetField(string key, double value)
+    { if (IsFieldVisible(key)) fields[key].Text = value.ToString("0.###", CultureInfo.CurrentCulture); }
     private void SetMixedField(string key, object? representative)
     {
+        if (!IsFieldVisible(key)) return;
         if (numericFields.TryGetValue(key, out var numeric))
         {
             double value = Convert.ToDouble(representative, CultureInfo.InvariantCulture);
@@ -880,6 +924,7 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private void HandleEscape()
     {
+        if (fontPicker is FontPickerControl fonts && fonts.CancelDraft()) return;
         if (CancelNumericGestures()) return;
         if (scrubSession is not null) { CancelScrub(); return; }
         CompleteEdit();

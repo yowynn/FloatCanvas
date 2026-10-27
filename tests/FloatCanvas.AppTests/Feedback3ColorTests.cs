@@ -20,6 +20,7 @@ internal static class Feedback3ColorTests
         {
             AppTheme.Apply(theme);
             var picker = new ColorPickerPanel(ColorRole.Foreground, library);
+            picker.PrepareForShow();
             var host = new Wpf.Window { Content = picker, Width = 400, Height = 800 };
             picker.SetResourceReference(Controls.Control.BackgroundProperty, "CanvasSurface");
             picker.Measure(new Wpf.Size(400, 1000));
@@ -46,18 +47,21 @@ internal static class Feedback3ColorTests
             host.Content = null; host.Close();
         }
         var draft = new ColorPickerPanel(ColorRole.Foreground, library) { Value = 0x80336699 };
+        draft.PrepareForShow();
         var spectrum = Field<ColorSpectrum>(draft, "spectrum");
         var hue = Field<Controls.Slider>(draft, "hue");
         var alpha = Field<Controls.Slider>(draft, "alpha");
         var hex = Field<Controls.TextBox>(draft, "hex");
         double originalAlpha = alpha.Value;
         hue.Value = 120;
+        draft.PrepareForShow();
         check("inline hue changes the color draft while preserving alpha and original semantic color", draft.Value == 0x80336699 && alpha.Value == originalAlpha &&
             ColorLibrary.TryParseHtml(hex.Text, out uint greenDraft) && ((greenDraft >> 8) & 255) > ((greenDraft >> 16) & 255));
         uint chosen = 0; draft.ColorChosen += color => chosen = color;
         typeof(ColorPickerPanel).GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(draft, null);
         check("inline color selection applies its hue and exact original alpha", (chosen >> 24) == 128 && ((chosen >> 8) & 255) > ((chosen >> 16) & 255));
         hue.Value = 360;
+        draft.PrepareForShow();
         check("hue strip retains the red endpoint instead of jumping across the panel", hue.Value == 360 && spectrum.Hue == 360);
         check("spectrum covers the primary color corners", ColorSpectrum.ToColor(0, 1, 1) == 0xFFFF0000 && ColorSpectrum.ToColor(120, 1, 1) == 0xFF00FF00 &&
             ColorSpectrum.ToColor(240, 1, 1) == 0xFF0000FF && ColorSpectrum.ToColor(0, 0, 1) == 0xFFFFFFFF && ColorSpectrum.ToColor(0, 1, 0) == 0xFF000000);

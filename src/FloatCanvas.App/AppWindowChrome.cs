@@ -212,12 +212,12 @@ internal static class AppWindowChrome
                   <TextBlock Text="{TemplateBinding Title}" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                  <Button x:Name="Help" Style="{DynamicResource CanvasCaptionButton}" Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0" Margin="1,0" BorderThickness="0" shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                  <Button x:Name="Help" Style="{DynamicResource CanvasCaptionButton}" Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0" Margin="3,0" BorderThickness="0" shell:WindowChrome.IsHitTestVisibleInChrome="True"
                           Visibility="{DynamicResource CanvasWindowHelpVisibility}" ToolTip="{DynamicResource CanvasWindowHelpTitle}" AutomationProperties.Name="{DynamicResource CanvasWindowHelpTitle}">
                     <Path Width="16" Height="16" Data="M 8,1 A 7,7 0 1 1 8,15 A 7,7 0 1 1 8,1 M 6,5.5 C 6,3.5 10,3.5 10,5.5 C 10,7 8,7 8,9 M 8,11.5 L 8,11.6" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                   </Button>
                   <ContentPresenter Content="{DynamicResource CanvasWindowActions}" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
-                  <Button x:Name="Close" Style="{DynamicResource CanvasCloseCaptionButton}" Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0" Margin="1,0" BorderThickness="0" shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                  <Button x:Name="Close" Style="{DynamicResource CanvasCloseCaptionButton}" Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0" Margin="3,0" BorderThickness="0" shell:WindowChrome.IsHitTestVisibleInChrome="True"
                           Command="{x:Static SystemCommands.CloseWindowCommand}" CommandTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}" ToolTip="{DynamicResource CanvasWindowClose}" AutomationProperties.Name="{DynamicResource CanvasWindowClose}" AutomationProperties.AccessKey="Alt+F4">
                     <Path Width="16" Height="16" Data="M 3,3 L 13,13 M 13,3 L 3,13" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                   </Button>

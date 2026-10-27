@@ -52,22 +52,28 @@ internal static class Preview4MenuTests
                 string profile = Path.Combine(root, locale + "-" + theme);
                 var tools = new ToolPresetLibrary(Path.Combine(profile, "tools.json")); tools.Save("Personal pen", editor.Parameters);
                 var toolGallery = new ToolPresetGallery(editor, tools);
+                toolGallery.PrepareForShow();
                 Audit("tool recipe", toolGallery.UserTiles.Children.OfType<Button>().Single().ContextMenu);
                 var canvases = new CanvasPresetLibrary(Path.Combine(profile, "canvases.json")); canvases.Save("Personal canvas", new());
                 var canvasGallery = new CanvasPresetGallery(canvases);
+                canvasGallery.PrepareForShow();
                 Audit("canvas recipe", canvasGallery.UserTiles.Children.OfType<Button>().Single().ContextMenu);
                 var colors = new ColorLibrary(Path.Combine(profile, "colors.json")); colors.Save("Saved blue", 0xFF2383E2);
                 var picker = new ColorPickerPanel(ColorRole.Foreground, colors);
+                picker.PrepareForShow();
                 Audit("swatch", Field<PixelTilePanel>(picker, "pinned").Children.OfType<Button>().Single().ContextMenu);
                 var layer = new CanvasElement { Kind = ElementKind.Rectangle, Width = 20, Height = 20 }; editor.Session.Add(layer);
                 var layers = new LayersWindow(() => editor.Session);
+                layers.PrepareForShow();
                 var canvasWindow = new CanvasSettingsWindow(canvases);
                 var stamps = new StampLibraryWindow(library, () => editor.Session, _ => { }, useSource: _ => { });
                 try
                 {
                     Audit("layer", (ContextMenu)Invoke(layers, "CreateContextMenu", layer.Id)!);
+                    canvasWindow.Refresh(new() { Projection = new() { Enabled = true } }, false);
                     canvasWindow.SetReferenceMonitors([new("fixture primary", new(0, 0, 100, 100), new(0, 0, 100, 100), 96, 96, true),
                         new("fixture secondary", new(100, 0, 100, 100), new(100, 0, 100, 100), 96, 96, false)], null);
+                    canvasWindow.PrepareForShow();
                     check($"{locale} {theme} multi-screen reset lists both active displays", Field<ContextMenu>(canvasWindow, "resetMenu").Items.Count == 2 &&
                         Field<FrameworkElement>(canvasWindow, "resetChoices") is { Visibility: Visibility.Visible, IsEnabled: true });
                     Guid stamp = library.Items.Single().Id;
@@ -78,6 +84,7 @@ internal static class Preview4MenuTests
                     Task.Run(() => library.PinAsync(0, stamp)).GetAwaiter().GetResult();
                     Audit("pinned stamp", (ContextMenu)Invoke(stamps, "TileContextMenu", stamp)!);
                     var shelf = new StampShelfControl(library, _ => { });
+                    shelf.PrepareForShow();
                     Audit("shelf", Field<StackPanel>(shelf, "slots").Children.OfType<Button>().First().ContextMenu);
                 }
                 finally { stamps.Close(); layers.Close(); canvasWindow.CloseForDispose(); }

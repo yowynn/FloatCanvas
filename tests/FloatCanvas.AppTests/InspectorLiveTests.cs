@@ -15,6 +15,7 @@ internal static class InspectorLiveTests
         var second = session.Selection.Single();
         session.SetSelection([first]);
         var window = new InspectorWindow(() => session);
+        using var surface = new InspectorTestSurface(window);
         var fields = Field<Dictionary<string, Controls.TextBox>>(window, "fields");
         var containers = Field<Dictionary<string, Wpf.FrameworkElement>>(window, "fieldContainers");
         int undo = session.UndoCount;
@@ -52,6 +53,7 @@ internal static class InspectorLiveTests
         var mixedColors = session.Document.Elements.Select(e => e.Style.Stroke).ToArray();
         var mixedPicker = Field<ColorPickerPanel>(colors["Stroke"], "picker");
         mixedPicker.Value = colors["Stroke"].Value;
+        mixedPicker.PrepareForShow();
         typeof(ColorField).GetField("pickerSessionOpen", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(colors["Stroke"], true);
         typeof(ColorField).GetField("draftCommitted", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(colors["Stroke"], false);
         colors["Stroke"].ClosePicker();
@@ -88,7 +90,7 @@ internal static class InspectorLiveTests
         Invoke(commandSession, "RunUiAction", (Action)(() => { uiSeesEdit = !session.IsTransactionActive && Math.Abs(ElementGeometry.Bounds(session.Document.Elements.Single(e => e.Id == second), includeStroke: false).Width - 255) < 1e-8; }));
         check("UI command wrapper commits live properties before mutation", uiSeesEdit);
         session.SetSelection([]);
-        check("empty selection clears the property list automatically", fields.Values.All(box => box.Text == "") && Field<Controls.StackPanel>(window, "propertyPanel").Visibility == Wpf.Visibility.Collapsed);
+        check("empty selection collapses the property list without synchronizing hidden fields", containers.Values.All(container => container.Visibility == Wpf.Visibility.Collapsed) && Field<Controls.StackPanel>(window, "propertyPanel").Visibility == Wpf.Visibility.Collapsed);
     }
 
     private static void PumpIdle()

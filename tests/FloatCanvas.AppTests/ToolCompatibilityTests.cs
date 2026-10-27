@@ -43,8 +43,8 @@ internal static class ToolCompatibilityTests
         string originalFile = File.ReadAllText(path), originalParameters = JsonSerializer.Serialize(legacy);
         var library = new ToolPresetLibrary(path);
         var session = new EditorSession(); var controller = new EditorController(session) { Tool = EditorTool.Symbol, Symbol = SymbolKind.Star };
-        var panel = new ToolOptionsPanel(controller, library, new ColorLibrary(Path.Combine(root, "colors.json")));
-        Field<ToolPresetGallery>(panel, "presets").Apply("user-legacy-triangle");
+        var panel = new ToolOptionsPanel(controller, library, new ColorLibrary(Path.Combine(root, "colors.json"))); panel.PrepareForShow();
+        Field<ToolPresetGallery>(panel, "presets").Apply("user-legacy-triangle"); panel.PrepareForShow();
         check("a legacy user triangle preset activates the unified symbol triangle", controller.Tool == EditorTool.Symbol &&
             controller.Symbol == SymbolKind.Triangle && controller.Style.Stroke == 0x80112233 && controller.Style.Fill == 0x40445566 && controller.Style.StrokeWidth == 7);
         check("legacy triangle activation exposes the working symbol gallery", Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows")["Symbols"].Visibility == Wpf.Visibility.Visible);
@@ -81,7 +81,7 @@ internal static class ToolCompatibilityTests
         var oldDocument = new SceneDocument { Elements = [oldElement] };
         string originalDocument = JsonSerializer.Serialize(oldDocument);
         var oldSession = new EditorSession(oldDocument); oldSession.SetSelection([oldElement.Id]);
-        var inspector = new InspectorWindow(() => oldSession, colorLibrary: new ColorLibrary(Path.Combine(root, "old-colors.json")));
+        var inspector = new InspectorWindow(() => oldSession, colorLibrary: new ColorLibrary(Path.Combine(root, "old-colors.json"))); inspector.PrepareForShow();
         Field<Dictionary<string, Controls.TextBox>>(inspector, "fields")["Angle"].Text = "30";
         Invoke(inspector, "Apply"); var edited = oldSession.Document.Elements.Single();
         check("existing project triangles keep their original geometry and remain editable", edited.Kind == ElementKind.Triangle && edited.Width == 120 && edited.Height == 60 &&
@@ -101,8 +101,8 @@ internal static class ToolCompatibilityTests
         var untouched = new CanvasElement { Kind = ElementKind.Rectangle, Width = 50, Height = 50, Transform = Affine2D.Translation(300, 300) };
         session.Add(untouched); string original = JsonSerializer.Serialize(session.Document.Elements.Single());
         var controller = new EditorController(session) { Tool = EditorTool.Emoji, ScreenOrigin = new(-300, 100) };
-        var panel = new ToolOptionsPanel(controller, library, new ColorLibrary(Path.Combine(root, "emoji-colors.json")));
-        Field<ToolPresetGallery>(panel, "presets").Apply(preset.Id);
+        var panel = new ToolOptionsPanel(controller, library, new ColorLibrary(Path.Combine(root, "emoji-colors.json"))); panel.PrepareForShow();
+        Field<ToolPresetGallery>(panel, "presets").Apply(preset.Id); panel.PrepareForShow();
         var numbers = Field<Dictionary<string, Controls.TextBox>>(panel, "numbers");
         check("emoji presets reload the explicit size into the active tool and parameter field", controller.Tool == EditorTool.Emoji &&
             controller.Style.FontSize == 18 && numbers["FontSize"].Text == "18" && controller.Emoji == "👩‍🎨");
@@ -118,7 +118,7 @@ internal static class ToolCompatibilityTests
         check("editing the emoji size field changes subsequent objects without resizing earlier ones", controller.Style.FontSize == 12 &&
             session.Document.Elements.Last().Style.FontSize == 12 && session.Document.Elements.Last().Width == 12 && session.Document.Elements[^2].Style.FontSize == 18);
         session.SetSelection([element.Id]);
-        var inspector = new InspectorWindow(() => session, colorLibrary: new ColorLibrary(Path.Combine(root, "emoji-inspector-colors.json")));
+        var inspector = new InspectorWindow(() => session, colorLibrary: new ColorLibrary(Path.Combine(root, "emoji-inspector-colors.json"))); inspector.PrepareForShow();
         var fields = Field<Dictionary<string, Controls.TextBox>>(inspector, "fields");
         check("inserted emoji retains its exact frame size for later property editing", fields["W"].Text == "18" && fields["FontFamily"].Text == "Segoe UI Emoji");
         fields["W"].Text = "36"; before = session.UndoCount; Invoke(inspector, "Apply");

@@ -24,6 +24,7 @@ internal sealed class ColorField : UserControl
     private bool suppressTriggerClick;
     private int suppressedPressTime;
     private int pickerSuspensions;
+    private bool valueDirty = true;
 
     internal bool IsMixed
     {
@@ -116,7 +117,7 @@ internal sealed class ColorField : UserControl
             // swatch/save button must not toggle its owner's picker on bubbling.
             if (!ReferenceEquals(e.OriginalSource, button)) return;
             if (suppressTriggerClick) { suppressTriggerClick = false; return; }
-            if (popupDisplay.IsOpen) ClosePicker(); else popupDisplay.IsOpen = true;
+            if (popupDisplay.IsOpen) ClosePicker(); else OpenPicker();
         };
         picker.ColorChosen += color =>
         {
@@ -128,6 +129,12 @@ internal sealed class ColorField : UserControl
         picker.DraftChanged += color => { if (pickerSessionOpen) ApplyPickerValue(color); };
         picker.EyedropperRequested += () => EyedropperRequested?.Invoke();
         Unloaded += (_, _) => ClosePicker();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible) PrepareForShow();
+            else ClosePicker();
+        };
+        Loaded += (_, _) => { if (IsVisible) PrepareForShow(); };
         if (role == ColorRole.Background) Value = 0;
         RefreshValue();
     }
@@ -183,6 +190,8 @@ internal sealed class ColorField : UserControl
     }
     internal void OpenPicker(bool focus = false)
     {
+        if (!IsVisible) return;
+        picker.Value = Value; picker.RefreshCollections(); picker.PrepareForShow();
         popupDisplay.IsOpen = true;
         if (focus) Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
         { if (popupDisplay.IsOpen) picker.MoveFocus(new TraversalRequest(FocusNavigationDirection.First)); });
@@ -218,6 +227,13 @@ internal sealed class ColorField : UserControl
     private bool MayReturnFocus => SessionWindowCoordinator.Find(Window.GetWindow(this))?.IsDirectTransfer != true;
     private void RefreshValue()
     {
+        valueDirty = true;
+        if (IsVisible) PrepareForShow();
+    }
+    internal void PrepareForShow()
+    {
+        if (!valueDirty) return;
+        valueDirty = false;
         swatch.Children.Clear(); swatch.Children.Add(ColorPickerPanel.CreateSwatch(Value));
         double alpha = (Value >> 24) / 255d;
         double luminance = alpha * (.2126 * ((Value >> 16) & 255) + .7152 * ((Value >> 8) & 255) + .0722 * (Value & 255)) + (1 - alpha) * 220;

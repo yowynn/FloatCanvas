@@ -30,7 +30,8 @@ internal static class CanvasGridLockCalibrationTests
         try
         {
             panel.Refresh(document.Canvas, true);
-            controller.Changed += () => panel.RefreshGridCounts(session.Document.Canvas.Projection);
+            panel.PrepareForShow();
+            controller.Changed += () => { panel.RefreshGridCounts(session.Document.Canvas.Projection); panel.PrepareForShow(); };
             controller.Begin(session);
             var edge = (quad[0] + quad[1]) * .5;
             check("locked top edge can begin a normal calibration gesture", controller.Down(edge));
@@ -60,7 +61,7 @@ internal static class CanvasGridLockCalibrationTests
             controller.Up();
             var changedQuad = session.Document.Canvas.Projection.Quad.ToArray();
             check("locked calibration commits as one undo step", session.UndoCount == 1 && !session.IsTransactionActive);
-            session.Undo(); panel.RefreshGridCounts(session.Document.Canvas.Projection);
+            session.Undo(); panel.RefreshGridCounts(session.Document.Canvas.Projection); panel.PrepareForShow();
             check("undo restores original grid counts and retains the lock", session.Document.Canvas.Projection.Quad.SequenceEqual(quad) &&
                 session.Document.Canvas.Projection.LockedGridCellSize == projection.LockedGridCellSize && columns.Text == "8");
             session.Redo();

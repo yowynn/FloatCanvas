@@ -18,6 +18,8 @@ internal sealed class StampShelfControl : Controls.UserControl
     private long revision;
     private bool subscribed;
     private bool showShortcutHints = true;
+    private bool dirty = true;
+    private CancellationTokenSource thumbnails = new();
     private static readonly Wpf.Controls.ControlTemplate SlotTemplate = (Wpf.Controls.ControlTemplate)XamlReader.Parse("""
         <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="Button">
           <Grid Background="Transparent"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
@@ -28,20 +30,29 @@ internal sealed class StampShelfControl : Controls.UserControl
     {
         this.library = library; this.selectStamp = selectStamp;
         Content = slots;
-        Loaded += (_, _) => { if (!subscribed) { library.Changed += OnChanged; subscribed = true; } Refresh(); };
-        Unloaded += (_, _) => { library.Changed -= OnChanged; subscribed = false; revision++; };
-        Refresh();
+        Loaded += (_, _) => ObserveVisibility();
+        Unloaded += (_, _) => StopObserving();
+        IsVisibleChanged += (_, _) => ObserveVisibility();
     }
     public void SetActive(Guid? id) { if (active == id) return; active = id; Refresh(); }
     public void SetShortcutHintsVisible(bool visible)
     {
         showShortcutHints = visible;
+        if (!IsVisible) { dirty = true; return; }
         foreach (var hint in slots.Children.OfType<Controls.Button>().Select(button => button.Content).OfType<Controls.Grid>()
             .SelectMany(content => content.Children.OfType<Controls.TextBlock>()))
             hint.Visibility = visible ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
     }
     public void Refresh()
     {
+        dirty = true;
+        if (IsVisible) PrepareForShow();
+    }
+    internal void PrepareForShow()
+    {
+        if (!dirty) return;
+        dirty = false;
+        thumbnails.Cancel(); thumbnails.Dispose(); thumbnails = new();
         long version = ++revision;
         slots.Children.Clear();
         for (int index = 0; index < 10; index++)
@@ -79,7 +90,7 @@ internal sealed class StampShelfControl : Controls.UserControl
                     var actions=EntryMenuFactory(id,slotIndex);actions.PlacementTarget=button;
                     button.ContextMenu=actions;OverlayContextMenu.SetOpen(actions,true);
                 };
-                LoadThumbnail(entry, image, button, version);
+                LoadThumbnail(entry, image, button, version, thumbnails.Token);
             }
             slots.Children.Add(button);
         }
@@ -88,18 +99,31 @@ internal sealed class StampShelfControl : Controls.UserControl
     {
         if (Dispatcher.CheckAccess()) Refresh(); else Dispatcher.BeginInvoke(Refresh);
     }
-    private async void LoadThumbnail(StampEntry entry, Controls.Image image, Controls.Button button, long version)
+    private void ObserveVisibility()
     {
+        if (!IsLoaded || !IsVisible) { StopObserving(); return; }
+        if (!subscribed) { library.Changed += OnChanged; subscribed = true; }
+        dirty = true; PrepareForShow();
+    }
+    private void StopObserving()
+    {
+        if (subscribed) library.Changed -= OnChanged;
+        subscribed = false; dirty = true; revision++; thumbnails.Cancel();
+    }
+    private async void LoadThumbnail(StampEntry entry, Controls.Image image, Controls.Button button, long version, CancellationToken token)
+    {
+        if (!IsVisible) return;
         try
         {
-            byte[] bytes = await library.GetThumbnailAsync(entry.Id);
-            if (version != revision || !StampPreviewTooltip.IsCurrent(library, entry)) return;
+            byte[] bytes = await library.GetThumbnailAsync(entry.Id, token);
+            if (token.IsCancellationRequested || !IsVisible || version != revision || !StampPreviewTooltip.IsCurrent(library, entry)) return;
             _ = FloatCanvas.Rendering.ImageDecodeBudget.ReadPixelCount(bytes);
             using var stream = new MemoryStream(bytes);
             var bitmap = new Imaging.BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = Imaging.BitmapCacheOption.OnLoad; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze();
             image.Source = bitmap;
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or NotSupportedException or InvalidOperationException or KeyNotFoundException)
-        { if (version == revision) button.ToolTip = ex.Message; }
+        { if (!token.IsCancellationRequested && IsVisible && version == revision) button.ToolTip = ex.Message; }
     }
 }

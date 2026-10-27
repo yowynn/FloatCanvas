@@ -102,10 +102,24 @@ internal static class WorkspacePreviewTests
         var placeholder = new TextBlock { Text = FloatCanvas.Localization.AppText.Get("Recovery.PreviewLoading") };
         try
         {
+            // Preview publication now belongs to visible rows. Exercise the real
+            // loader in a nonactivating offscreen window with attached targets.
+            var originalContent = (UIElement)window.Content;
+            window.Content = null;
+            var root = new DockPanel();
+            var preview = new Grid { Width = 160, Height = 90 };
+            preview.Children.Add(image); preview.Children.Add(placeholder);
+            DockPanel.SetDock(preview, Dock.Bottom); root.Children.Add(preview); root.Children.Add(originalContent);
+            window.Content = root;
+            window.ShowActivated = false; window.ShowInTaskbar = false; window.Topmost = false; window.Opacity = 0;
+            window.WindowStartupLocation = WindowStartupLocation.Manual; window.Left = window.Top = -20000;
+            window.Show(); AwaitUi(window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task);
+            window.Left = window.Top = -20000;
+            assert("history preview fixture uses a visible offscreen native window and attached row targets", window.IsVisible && image.IsVisible && placeholder.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle != 0);
             var loader = typeof(WorkspaceHistoryWindow).GetMethod("LoadPreviewAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
             AwaitUi((Task)loader.Invoke(window, [brokenEntry, image, placeholder, CancellationToken.None])!);
             assert("corrupt history generations are contained by the actual window preview loader", placeholder.Text == FloatCanvas.Localization.AppText.Get("Recovery.NoPreview") && image.Source is null);
-            assert("failed preview leaves hidden history window usable and selection intact", !window.IsVisible && window.IsEnabled && ReferenceEquals(window.SelectedEntry, brokenEntry));
+            assert("failed preview leaves visible history window usable and selection intact", window.IsVisible && window.IsEnabled && ReferenceEquals(window.SelectedEntry, brokenEntry));
             var validStore = new RecoveryStore(Path.Combine(directory, "valid"));
             var state = new WorkspaceState { LiveDocument = new() { Viewport = new(0, 0, 200, 100), Elements = [Rectangle(20, 20, 60, 40, SKColors.Red)] } };
             var assets = new AssetLibrary();
@@ -135,7 +149,7 @@ internal static class WorkspacePreviewTests
             window.Close();
             SynchronizationContext.SetSynchronizationContext(originalContext);
         }
-        assert("detached history failure fixture leaves no additional windows", app.Windows.Cast<Window>().SequenceEqual(originalWindows));
+        assert("offscreen history failure fixture leaves no additional windows", app.Windows.Cast<Window>().SequenceEqual(originalWindows));
     }
 
     private static void AwaitUi(Task task)
@@ -147,7 +161,7 @@ internal static class WorkspacePreviewTests
             var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(5) };
             timer.Tick += (_, _) => { if (task.IsCompleted || watch.Elapsed > TimeSpan.FromSeconds(10)) frame.Continue = false; };
             timer.Start(); Dispatcher.PushFrame(frame); timer.Stop();
-            if (!task.IsCompleted) throw new TimeoutException("Detached history preview loader did not complete.");
+            if (!task.IsCompleted) throw new TimeoutException("Offscreen history preview loader did not complete.");
         }
         task.GetAwaiter().GetResult();
     }

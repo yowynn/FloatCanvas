@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
@@ -29,6 +30,7 @@ internal static class NumericControlTests
             AspectRatios(root, check);
             OverflowLabels(check);
             var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+            canvas.PrepareForShow();
             var canvasWidth = Field<NumericValueField>(canvas, "width");
             Measure(canvasWidth, 120, 34); canvasWidth.BeginGesture(); canvasWidth.UpdateRail(60);
             double previewWidth = canvasWidth.Value; canvas.Refresh(new(), false);
@@ -98,6 +100,7 @@ internal static class NumericControlTests
     {
         var session = new EditorSession(); session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60 });
         var inspector = new InspectorWindow(() => session);
+        inspector.PrepareForShow();
         var fields = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields");
         var field = fields["Opacity"]; Measure(field, 110, 34);
         string before = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
@@ -105,7 +108,7 @@ internal static class NumericControlTests
         check("inspector rail previews in a single pending transaction", session.IsTransactionActive && session.UndoCount == undo && JsonSerializer.Serialize(session.Document) != before);
         field.EndGesture(true);
         check("inspector rail releases as one undo step", !session.IsTransactionActive && session.UndoCount == undo + 1 && session.Undo() && JsonSerializer.Serialize(session.Document) == before);
-        inspector.Refresh(); field.BeginGesture(); field.UpdateRail(20); field.CancelGesture();
+        inspector.Refresh(); inspector.PrepareForShow(); field.BeginGesture(); field.UpdateRail(20); field.CancelGesture();
         check("inspector cancel restores model and undo history", !session.IsTransactionActive && session.UndoCount == undo && JsonSerializer.Serialize(session.Document) == before);
         field.BeginGesture(); field.UpdateRail(30); inspector.CompletePendingEdit();
         check("leaving inspector cancels unfinished numeric gestures", !field.IsInteracting && !session.IsTransactionActive && JsonSerializer.Serialize(session.Document) == before);
@@ -114,9 +117,12 @@ internal static class NumericControlTests
         check("generic inspector label drag uses the same undo boundary", session.UndoCount == undo + 1 && session.Undo() && JsonSerializer.Serialize(session.Document) == before);
         var first = session.Document.Elements[0].Id;
         var other = new CanvasElement { Kind = ElementKind.Rectangle, Width = 60, Height = 40 }; session.Add(other);
-        session.SetSelection([first]); inspector.Refresh(); before = JsonSerializer.Serialize(session.Document);
-        field.BeginGesture(); field.UpdateRail(20); session.SetSelection([other.Id]);
-        check("selection change cancels preview while preserving the newly selected layer", !field.IsInteracting && !session.IsTransactionActive && session.Selection.SetEquals([other.Id]) && JsonSerializer.Serialize(session.Document) == before);
+        session.SetSelection([first]); inspector.Refresh(); inspector.PrepareForShow(); before = JsonSerializer.Serialize(session.Document);
+        field.BeginGesture(); field.UpdateRail(20);
+        // The real pointer/command transfer completes the editor before choosing
+        // another layer. A detached hidden panel does not observe the session.
+        inspector.CompletePendingEdit(); session.SetSelection([other.Id]); inspector.PrepareForShow();
+        check("selection transfer cancels preview and prepares the newly selected layer", !field.IsInteracting && !session.IsTransactionActive && session.Selection.SetEquals([other.Id]) && JsonSerializer.Serialize(session.Document) == before);
         check("inspector numeric checks remain detached", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 && !inspector.IsVisible);
     }
 
@@ -131,13 +137,13 @@ internal static class NumericControlTests
         check("next number rail does not generate history for each preview", session.IsTransactionActive && session.UndoCount == undo);
         counter.EndGesture(true);
         check("next number range gesture is one reversible edit", session.UndoCount == undo + 1 && session.Undo() && session.Document.NextNumber == original);
-        panel.Refresh(); counter.BeginGesture(); counter.UpdateRail(70); counter.CancelGesture();
+        panel.Refresh(); panel.PrepareForShow(); counter.BeginGesture(); counter.UpdateRail(70); counter.CancelGesture();
         check("next number cancellation restores counter and history", session.Document.NextNumber == original && session.UndoCount == undo && !session.IsTransactionActive);
-        controller.Tool = EditorTool.Rectangle; panel.Refresh();
+        controller.Tool = EditorTool.Rectangle; panel.Refresh(); panel.PrepareForShow();
         var width = fields["DefaultWidth"]; Measure(width, 120, 34); double originalWidth = controller.Parameters.DefaultWidth;
         width.BeginGesture(); width.UpdateRail(60); width.CancelGesture();
         check("tool numeric cancellation restores parameters without document history", controller.Parameters.DefaultWidth == originalWidth && session.UndoCount == undo);
-        width.BeginGesture(); width.UpdateRail(70); panel.Refresh();
+        width.BeginGesture(); width.UpdateRail(70); panel.Refresh(); panel.PrepareForShow();
         check("tool refresh cancels active gestures without stale preview state", !width.IsInteracting && controller.Parameters.DefaultWidth == originalWidth);
         width.BeginGesture();
         fields["StrokeWidth"].Input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, 0, fields["StrokeWidth"].Input, fields["DefaultWidth"].Input)
@@ -145,8 +151,9 @@ internal static class NumericControlTests
         check("focus leaving another numeric input does not cancel the new gesture", width.IsInteracting);
         width.CancelGesture();
         // DesktopSession refreshes the options panel synchronously when a tool
-        // parameter changes. A detached panel without this subscriber misses the bug.
-        panel.ParametersChanged += panel.Refresh;
+        // parameter changes. Prepare explicitly simulates that visible-state
+        // synchronization for this detached fixture.
+        panel.ParametersChanged += panel.PrepareForShow;
         width.BeginGesture(); width.UpdateRail(50); width.UpdateRail(80);
         check("tool rail survives the runtime parameter-refresh feedback loop", width.IsInteracting && width.Value == controller.Parameters.DefaultWidth && width.Value != originalWidth);
         width.EndGesture(true);
@@ -162,6 +169,7 @@ internal static class NumericControlTests
     {
         var session = new EditorSession(); session.Add(new() { Kind = ElementKind.Rectangle, Width = 320, Height = 180 });
         var inspector = new InspectorWindow(() => session);
+        inspector.PrepareForShow();
         var properties = Field<Controls.StackPanel>(inspector, "propertyPanel");
         Measure((Wpf.FrameworkElement)inspector.Content, inspector.Width - 2, 650);
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Rectangle };
@@ -170,7 +178,7 @@ internal static class NumericControlTests
         check(name + $" property and tool columns share the same default usable width ({properties.ActualWidth:0.##}/{grid.ActualWidth:0.##})", Math.Abs(properties.ActualWidth - PropertyPanelLayout.ContentWidth) < 1 && Math.Abs(grid.ActualWidth - properties.ActualWidth) < 1);
         var rows = Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows");
         var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
-        canvas.Refresh(new(), false); Measure((Wpf.FrameworkElement)canvas.Content, canvas.Width - 2, 540);
+        canvas.Refresh(new(), false); canvas.PrepareForShow(); Measure((Wpf.FrameworkElement)canvas.Content, canvas.Width - 2, 540);
         var canvasWidth = Field<NumericValueField>(canvas, "width");
         var canvasBody = (Wpf.FrameworkElement)((Wpf.FrameworkElement)canvasWidth.Parent).Parent;
         check(name + " canvas parameter column uses the shared width", Math.Abs(canvasBody.ActualWidth - properties.ActualWidth) < 1);
@@ -223,10 +231,11 @@ internal static class NumericControlTests
             Measure((Wpf.FrameworkElement)settings.Content, settings.Width - 2, 590);
             Render((Wpf.FrameworkElement)settings.Content, Path.Combine(output, name + "-settings-component.png"), 144);
             var colors = new ColorPickerPanel(ColorRole.Foreground, new ColorLibrary(Path.Combine(root, "colors-preview.json"))) { Value = 0xC0EF4444 };
+            colors.PrepareForShow();
             Measure(colors, 660, 500); Render(colors, Path.Combine(output, name + "-colors.png"), 144);
         }
         panel.Width = 320; Measure(panel, 320, 620);
-        check(name + " compact layout stacks related dimensions without crushing controls", Controls.Grid.GetRow(rows["DefaultWidth"]) < Controls.Grid.GetRow(rows["DefaultHeight"]) && fields["DefaultWidth"].ActualWidth >= 100);
+        check(name + " tool minimum keeps related dimensions usable without stacking its columns", panel.ActualWidth >= PropertyPanelLayout.TwoColumnMinimumWidth - 2 && Controls.Grid.GetRow(rows["DefaultWidth"]) == Controls.Grid.GetRow(rows["DefaultHeight"]) && fields["DefaultWidth"].ActualWidth >= 100);
         var narrow = new NumericValueField(0, 100) { Value = 42, Unit = "px" }; Measure(narrow, 72, 34);
         check(name + " numeric control fits a 72 DIP slot", narrow.Input.ActualWidth <= 72 && narrow.Slider.ActualWidth >= 50 && narrow.ActualHeight == 34);
         canvas.CloseForDispose();
@@ -236,6 +245,8 @@ internal static class NumericControlTests
     {
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Rectangle, DefaultWidth = 160, DefaultHeight = 100 };
         var panel = Panel(root, controller); panel.ParametersChanged += panel.Refresh;
+        using var visibleToolPanel = new VisiblePanelHost(panel);
+        check("live tool ratio fixture is visible without foreground activation", panel.IsVisible && !visibleToolPanel.OwnsForeground);
         var numbers = Field<Dictionary<string, NumericValueField>>(panel, "numericFields");
         var chain = Field<AspectRatioButton>(panel, "aspect");
         chain.IsChecked = true; chain.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
@@ -261,17 +272,21 @@ internal static class NumericControlTests
 
         var session = new EditorSession(); session.Add(new() { Kind = ElementKind.Rectangle, Width = 160, Height = 100 });
         var inspector = new InspectorWindow(() => session);
+        inspector.PrepareForShow();
+        using var visibleInspector = new VisibleWindowHost(inspector);
+        check("live inspector ratio fixture is visible without foreground activation", inspector.IsVisible && !visibleInspector.OwnsForeground);
         var fields = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields");
         var lockButton = Field<AspectRatioButton>(inspector, "keepAspect");
         lockButton.IsChecked = true; lockButton.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent)); inspector.CompletePendingEdit();
         check("inspector chain writes the serializable layer property", JsonSerializer.Deserialize<CanvasElement>(JsonSerializer.Serialize(session.Document.Elements[0]))!.ConstrainAspect == true);
         check("inspector chain toggle is undoable", session.Undo() && session.Document.Elements[0].ConstrainAspect is null);
-        session.Redo(); inspector.Refresh(); int undo = session.UndoCount;
+        session.Redo(); inspector.Refresh(); inspector.PrepareForShow(); int undo = session.UndoCount;
         fields["W"].Input.Text = "320";
         check("inspector typed width synchronizes height immediately", fields["H"].Value == 200 && session.Document.Elements[0].Height == 200);
         inspector.CompletePendingEdit();
         check("linked inspector resize is one undo step", session.UndoCount == undo + 1 && session.Undo() && session.Document.Elements[0].Width == 160 && session.Document.Elements[0].Height == 100);
         inspector.Refresh();
+        inspector.PrepareForShow();
         Invoke(inspector, "BeginScrub", "W"); Invoke(inspector, "UpdateScrub", "W", 32d);
         check("inspector name drag updates the companion field before release", fields["W"].Value == 192 && fields["H"].Value == 120);
         Invoke(inspector, "FinishScrub", false);
@@ -287,7 +302,7 @@ internal static class NumericControlTests
         int anchorUndo = session.UndoCount; anchor.TryBegin(0); anchor.Update(50); anchor.Update(90); anchor.End(true);
         check("inspector embedded anchor changes geometry in one undo step", session.Document.Elements[0].Width > 200 && session.UndoCount == anchorUndo + 1);
         check("inspector embedded anchor undo restores width", session.Undo() && session.Document.Elements[0].Width == 200);
-        inspector.Refresh(); anchor.TryBegin(0); anchor.Update(90); anchor.End(false);
+        inspector.Refresh(); inspector.PrepareForShow(); anchor.TryBegin(0); anchor.Update(90); anchor.End(false);
         check("inspector embedded anchor cancellation restores geometry", session.Document.Elements[0].Width == 200 && !session.IsTransactionActive);
     }
 
@@ -304,7 +319,54 @@ internal static class NumericControlTests
 
     private static object? Invoke(object target, string method, params object[] args) => target.GetType().GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(target, args);
 
-    private static ToolOptionsPanel Panel(string root, EditorController controller) => new(controller, new ToolPresetLibrary(Path.Combine(root, "presets.json")), new ColorLibrary(Path.Combine(root, "colors.json")));
+    private static ToolOptionsPanel Panel(string root, EditorController controller)
+    {
+        var panel = new ToolOptionsPanel(controller, new ToolPresetLibrary(Path.Combine(root, "presets.json")), new ColorLibrary(Path.Combine(root, "colors.json")));
+        panel.PrepareForShow(); return panel;
+    }
+    private sealed class VisiblePanelHost : IDisposable
+    {
+        private readonly System.Windows.Interop.HwndSource source;
+        internal VisiblePanelHost(Wpf.FrameworkElement panel)
+        {
+            panel.Opacity = 0; panel.IsHitTestVisible = false;
+            source = new(new System.Windows.Interop.HwndSourceParameters("FloatCanvas.NumericToolRatio")
+            { PositionX = -10000, PositionY = -10000, Width = 820, Height = 650, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x080000A0 });
+            source.RootVisual = panel; ShowWindow(source.Handle, 4);
+            Measure(panel, ToolOptionsPanel.PreferredWidth, 620);
+        }
+        internal bool OwnsForeground { get { GetWindowThreadProcessId(GetForegroundWindow(), out uint process); return process == Environment.ProcessId; } }
+        public void Dispose() { source.RootVisual = null; source.Dispose(); }
+    }
+    private sealed class VisibleWindowHost : IDisposable
+    {
+        private readonly Wpf.Window window;
+        internal VisibleWindowHost(Wpf.Window window)
+        {
+            this.window = window;
+            window.ShowActivated = false; window.Opacity = 0; window.IsHitTestVisible = false;
+            window.WindowStartupLocation = Wpf.WindowStartupLocation.Manual; window.Left = window.Top = -10000;
+            window.SourceInitialized += (_, _) =>
+            {
+                nint handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                SetWindowLongPtrW(handle, -20, GetWindowLongPtrW(handle, -20) | 0x080000A0);
+            };
+            window.Show(); window.UpdateLayout();
+        }
+        internal bool OwnsForeground { get { GetWindowThreadProcessId(GetForegroundWindow(), out uint process); return process == Environment.ProcessId; } }
+        public void Dispose()
+        {
+            System.ComponentModel.CancelEventHandler permitClose = (_, args) => args.Cancel = false;
+            window.Closing += permitClose;
+            try { window.Close(); }
+            finally { window.Closing -= permitClose; }
+        }
+    }
+    [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
+    [DllImport("user32.dll")] private static extern nint GetWindowLongPtrW(nint window, int index);
+    [DllImport("user32.dll")] private static extern nint SetWindowLongPtrW(nint window, int index, nint value);
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
     private static void Measure(Wpf.FrameworkElement element, double width, double height)
     { element.Measure(new(width, height)); element.Arrange(new(0, 0, width, height)); element.UpdateLayout(); }

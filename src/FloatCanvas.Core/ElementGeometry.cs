@@ -1,6 +1,6 @@
 namespace FloatCanvas.Core;
 
-public static class ElementGeometry
+public static partial class ElementGeometry
 {
     public static Projective2D LocalToPlane(CanvasElement element) => element.IsBillboard
         ? BillboardGeometry.LocalPlacement(element, element.BillboardAnchor, 1)
@@ -19,7 +19,7 @@ public static class ElementGeometry
     public static RectD StrokedLocalBounds(CanvasElement element, bool includeStroke = true)
     {
         var bounds = LocalBounds(element);
-        double stroke = includeStroke && element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !IsLiveEffect(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
+        double stroke = includeStroke && element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !IsLiveEffect(element.Kind) && !IsBoxShape(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
         if (IsLine(element.Kind))
         {
             foreach (var point in GetArrowHeads(element).SelectMany(head => head))
@@ -71,7 +71,9 @@ public static class ElementGeometry
             if (element.Style.StrokeWidth <= 0) return false;
             if (element.Points.Count == 1) return StrokeSegmentHit(transform, worldPoint, local, element.Points[0], element.Points[0], strokeRadius, tolerance);
             var shaft = IsLine(element.Kind) ? LineShaftPoints(element) : element.Points;
-            if (StrokePathHit(element, transform, shaft, false, worldPoint, local, strokeRadius, tolerance)) return true;
+            if (element.Style.StrokePattern == StrokePattern.Solid
+                ? StrokePathHit(transform, shaft, false, worldPoint, local, strokeRadius, tolerance)
+                : PatternHit(element, transform, worldPoint, local, tolerance)) return true;
             if (IsLine(element.Kind) && element.Points.Count >= 2)
             {
                 foreach (var head in GetStyledArrowHeads(element))
@@ -93,7 +95,17 @@ public static class ElementGeometry
             return ProjectedContourHit(transform, outline, worldPoint, tolerance);
         }
         if (((element.Style.LinkColors ? element.Style.Stroke : element.Style.Fill) >> 24) != 0 && (PointInPolygon(local, outline) || ProjectedContourHit(transform, outline, worldPoint, tolerance))) return true;
-        return element.Style.StrokeWidth > 0 && StrokePathHit(element, transform, outline, true, worldPoint, local, strokeRadius, tolerance);
+        bool inside = PointInPolygon(local, outline);
+        if (!inside)
+            for (int i = 0; i < outline.Count; i++)
+                if (DistanceToSegment(local, outline[i], outline[(i + 1) % outline.Count]) <= 1e-9) { inside = true; break; }
+        // Closed outlines own a full stroke-width band inside their contour.
+        // Outside tolerance is measured against that contour, not an expanded center stroke.
+        if (!inside && !ProjectedContourHit(transform, outline, worldPoint, tolerance)) return false;
+        if ((element.Style.Stroke >> 24) == 0 || element.Style.StrokeWidth <= 0) return false;
+        if (element.Style.StrokePattern != StrokePattern.Solid) return PatternHit(element, transform, worldPoint, local, tolerance);
+        return StrokePathHit(transform, outline, true, worldPoint, local, element.Style.StrokeWidth, tolerance) ||
+             InsideMiterHit(element, transform, outline, worldPoint, local, tolerance);
     }
     public static IReadOnlyList<PointD> Outline(CanvasElement element)
     {
@@ -147,56 +159,41 @@ public static class ElementGeometry
         }
         return false;
     }
-    private static bool StrokePathHit(CanvasElement element, Projective2D transform, IReadOnlyList<PointD> points, bool closed,
+    private static bool StrokePathHit(Projective2D transform, IReadOnlyList<PointD> points, bool closed,
         PointD worldPoint, PointD localPoint, double radius, double tolerance)
     {
-        double offset = 0, width = Math.Max(.1, element.Style.StrokeWidth);
-        double ink = element.Style.StrokePattern == StrokePattern.Dotted ? width * .001 : width * 4;
-        double gap = element.Style.StrokePattern == StrokePattern.Dotted ? width * 2.5 : width * 3;
         int segments = closed ? points.Count : points.Count - 1;
         for (int i = 0; i < segments; i++)
+            if (StrokeSegmentHit(transform, worldPoint, localPoint, points[i], points[(i + 1) % points.Count], radius, tolerance)) return true;
+        return false;
+    }
+    private static bool InsideMiterHit(CanvasElement element, Projective2D transform, IReadOnlyList<PointD> points,
+        PointD target, PointD local, double tolerance)
+    {
+        if (element.Kind != ElementKind.Symbol || element.Symbol is SymbolKind.Triangle or SymbolKind.Diamond or SymbolKind.Pentagon or SymbolKind.Hexagon) return false;
+        double radius = element.Style.StrokeWidth;
+        double area = 0;
+        for (int i = 0; i < points.Count; i++)
         {
-            var a = points[i]; var b = points[(i + 1) % points.Count]; double length = a.DistanceTo(b);
-            if (length < 1e-12)
-            {
-                // Adjacent arcs can share a tangent point when a straight side collapses.
-                // A zero-length segment must not turn a patterned gap into a solid dot.
-                if ((element.Style.StrokePattern == StrokePattern.Solid || offset % (ink + gap) <= ink) &&
-                    StrokeSegmentHit(transform, worldPoint, localPoint, a, b, radius, tolerance)) return true;
-            }
-            else if (element.Style.StrokePattern == StrokePattern.Solid)
-            {
-                if (StrokeSegmentHit(transform, worldPoint, localPoint, a, b, radius, tolerance)) return true;
-            }
-            else
-            {
-                double cycle = ink + gap;
-                // First reject the whole stroke, then visit only dash periods beside the target.
-                // The inverse image of the screen tolerance rectangle bounds all possible hits.
-                if (!StrokeSegmentHit(transform, worldPoint, localPoint, a, b, radius, tolerance)) { offset += length; continue; }
-                var direction = (b - a) * (1 / length);
-                double along = (localPoint.X - a.X) * direction.X + (localPoint.Y - a.Y) * direction.Y;
-                double minimum = along - radius, maximum = along + radius;
-                if (tolerance > 0 && transform.TryInverse(out var inverse))
-                {
-                    foreach (var corner in new[] { new PointD(-tolerance, -tolerance), new PointD(tolerance, -tolerance), new PointD(tolerance, tolerance), new PointD(-tolerance, tolerance) })
-                        if (inverse.TryTransformPoint(worldPoint + corner, out var local))
-                        {
-                            double projection = (local.X - a.X) * direction.X + (local.Y - a.Y) * direction.Y;
-                            minimum = Math.Min(minimum, projection - radius); maximum = Math.Max(maximum, projection + radius);
-                        }
-                }
-                minimum = Math.Max(0, minimum); maximum = Math.Min(length, maximum);
-                double phase = -offset % cycle;
-                double initial = phase + Math.Floor((minimum - ink - phase) / cycle) * cycle;
-                for (double start = initial; start <= maximum; start += cycle)
-                {
-                    double first = Math.Max(0, start), last = Math.Min(length, start + ink);
-                    if (last < first) continue;
-                    if (StrokeSegmentHit(transform, worldPoint, localPoint, a + direction * first, a + direction * last, radius, tolerance)) return true;
-                }
-            }
-            offset += length;
+            var a = points[i]; var b = points[(i + 1) % points.Count];
+            area += a.X * b.Y - b.X * a.Y;
+        }
+        for (int i = 0; i < points.Count; i++)
+        {
+            var previous = points[(i + points.Count - 1) % points.Count]; var vertex = points[i]; var next = points[(i + 1) % points.Count];
+            double a = previous.DistanceTo(vertex), b = vertex.DistanceTo(next);
+            if (a <= 1e-9 || b <= 1e-9) continue;
+            var first = (vertex - previous) * (1 / a); var last = (next - vertex) * (1 / b);
+            if ((first.X * last.Y - first.Y * last.X) * area >= 0) continue;
+            double denominator = 1 + first.X * last.X + first.Y * last.Y;
+            if (denominator <= 1e-9) continue;
+            var n1 = new PointD(-first.Y, first.X); var n2 = new PointD(-last.Y, last.X);
+            var miter = (n1 + n2) * (radius / denominator);
+            // Skia's default miter limit is four stroke radii; sharper joins bevel.
+            if (miter.X * miter.X + miter.Y * miter.Y > radius * radius * 16 + 1e-9) continue;
+            int side = area >= 0 ? 1 : -1;
+            PointD[] triangle = [vertex + n1 * (radius * side), vertex + miter * side, vertex + n2 * (radius * side)];
+            if (PointInPolygon(local, triangle) || ProjectedContourHit(transform, triangle, target, tolerance)) return true;
         }
         return false;
     }

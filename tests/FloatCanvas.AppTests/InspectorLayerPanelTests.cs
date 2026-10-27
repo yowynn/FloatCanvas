@@ -22,8 +22,9 @@ internal static class InspectorLayerPanelTests
                 var session = new EditorSession();
                 session.Add(new() { Kind = ElementKind.Text, Text = "Original", Width = 120, Height = 40 });
                 Guid selected = session.Document.Elements.Single().Id;
-                var inspector = new InspectorWindow(() => session);
+                var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
                 var layerWindow = new LayersWindow(() => session);
+                layerWindow.PrepareForShow();
                 var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
                 var layers = (Controls.ListBox)Field(layerWindow, "layers");
                 fields["Text"].Text = "Unsubmitted\n保留草稿";
@@ -45,9 +46,9 @@ internal static class InspectorLayerPanelTests
                     layerWindow.Resources["CanvasWindowHelpText"] is string text && text == L.Get("Layers.HelpWithRename") &&
                     !Descendants((Wpf.DependencyObject)layerWindow.Content).OfType<Controls.Button>().Any() && layerWindow.Icon is not null);
                 inspector.CompletePendingEdit();
-                layers.SelectedItems.Clear(); inspector.Refresh();
-                check(language + " independent layer selection reloads the empty property list", fields["Text"].Text == "" && session.Selection.Count == 0 && session.Document.Elements.Single().Text == "Unsubmitted\n保留草稿");
-                session.SetSelection([selected]); inspector.Refresh(); layerWindow.Refresh();
+                layers.SelectedItems.Clear(); inspector.PrepareForShow();
+                check(language + " independent layer selection collapses the empty property list", ((Controls.StackPanel)Field(inspector, "propertyPanel")).Visibility == Wpf.Visibility.Collapsed && session.Selection.Count == 0 && session.Document.Elements.Single().Text == "Unsubmitted\n保留草稿");
+                session.SetSelection([selected]); inspector.PrepareForShow(); layerWindow.PrepareForShow();
                 check(language + " layer refresh changes no document content or history", JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo + 1 &&
                     fields["Text"].Text == "Unsubmitted\n保留草稿");
                 check(language + " split panel tests create no native windows", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 &&

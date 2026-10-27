@@ -27,6 +27,13 @@ internal sealed class AppUpdateWindow : Window
     private CancellationTokenSource? operation;
     private AvailableUpdate? available;
     private bool closed, applying;
+    private readonly Dictionary<string, Action> pendingDisplay = [];
+    private string cancelCaption = "";
+    private bool autoCheckPending;
+    private volatile bool displayVisible;
+    private sealed record PendingProgress(CancellationTokenSource Source, UpdateProgress Progress);
+    private PendingProgress? latestProgress;
+    private int progressQueued;
     internal TextBlock StatusText { get; } = new() { TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold };
     internal TextBlock DetailText { get; } = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 5, 0, 0) };
     internal TextBlock LatestVersionText { get; } = new() { Text = "—", HorizontalAlignment = HorizontalAlignment.Right };
@@ -83,8 +90,17 @@ internal sealed class AppUpdateWindow : Window
             e.Handled = true;
         };
         Closing += OnClosing;
-        Closed += (_, _) => { closed = true; if (!applying) operation?.Cancel(); };
+        Closed += (_, _) => { closed = true; pendingDisplay.Clear(); if (!applying) operation?.Cancel(); };
+        autoCheckPending = autoCheck;
         if (autoCheck) Loaded += OnFirstLoaded;
+        IsVisibleChanged += (_, _) =>
+        {
+            displayVisible = IsVisible;
+            if (!IsVisible) return;
+            PrepareForShow();
+            ApplyLatestProgress();
+            if (IsLoaded && autoCheckPending) OnFirstLoaded(this, new RoutedEventArgs());
+        };
     }
 
     private FrameworkElement CreateContent()
@@ -135,6 +151,8 @@ internal sealed class AppUpdateWindow : Window
 
     private void OnFirstLoaded(object sender, RoutedEventArgs e)
     {
+        if (!IsVisible || !autoCheckPending) return;
+        autoCheckPending = false;
         Loaded -= OnFirstLoaded;
         _ = CheckAsync();
     }
@@ -143,19 +161,21 @@ internal sealed class AppUpdateWindow : Window
     {
         if (closed || IsBusy) return;
         using var cancellation = BeginOperation(false);
-        available = null; LatestVersionText.Text = "—"; NotesText.Text = L.Get("Updates.NoNotes");
-        StatusText.Text = L.Get("Updates.Checking"); DetailText.Text = "";
+        available = null; UpdateDisplay("version", () => LatestVersionText.Text = "—");
+        UpdateDisplay("notes", () => NotesText.Text = L.Get("Updates.NoNotes"));
+        SetStatus(L.Get("Updates.Checking")); SetDetail("");
         try
         {
             var result = await client.CheckAsync(currentVersion, cancellation.Token, PreviewUpdates.IsChecked == true);
             if (closed) return;
             available = result.Update;
-            StatusText.Text = L.Get(available is null ? "Updates.UpToDate" : "Updates.Available");
-            LatestVersionText.Text = "v" + (available?.Version ?? currentVersion);
+            SetStatus(L.Get(available is null ? "Updates.UpToDate" : "Updates.Available"));
+            string version = "v" + (available?.Version ?? currentVersion);
+            UpdateDisplay("version", () => LatestVersionText.Text = version);
             string? notes = available?.Notes ?? result.CurrentNotes;
-            NotesText.Text = string.IsNullOrWhiteSpace(notes) ? L.Get("Updates.NoNotes") : notes;
+            UpdateDisplay("notes", () => NotesText.Text = string.IsNullOrWhiteSpace(notes) ? L.Get("Updates.NoNotes") : notes);
         }
-        catch (OperationCanceledException) { if (!closed) StatusText.Text = L.Get("Updates.Cancelled"); }
+        catch (OperationCanceledException) { if (!closed) SetStatus(L.Get("Updates.Cancelled")); }
         catch (Exception ex) { if (!closed) ShowFailure("Updates.CheckFailed", ex); }
         finally { EndOperation(cancellation); }
     }
@@ -180,28 +200,28 @@ internal sealed class AppUpdateWindow : Window
         if (closed || IsBusy || !canInstall || available is null) return;
         var update = available;
         using var cancellation = BeginOperation(true);
-        StatusText.Text = L.Get("Updates.Downloading"); DetailText.Text = "";
+        SetStatus(L.Get("Updates.Downloading")); SetDetail("");
         try
         {
             var progress = new DownloadProgressReporter(this, cancellation);
             var prepared = await client.DownloadAsync(update, cacheDirectory, progress, cancellation.Token);
             if (closed || cancellation.IsCancellationRequested) return;
-            StatusText.Text = L.Get("Engineering.UpdatesPreparing");
-            void Commit() { cancellation.Token.ThrowIfCancellationRequested(); applying = true; CancelButton.IsEnabled = false; StatusText.Text = L.Get("Updates.Restarting"); }
+            SetStatus(L.Get("Engineering.UpdatesPreparing"));
+            void Commit() { cancellation.Token.ThrowIfCancellationRequested(); applying = true; UpdateDisplay("controls", PaintOperationControls); SetStatus(L.Get("Updates.Restarting")); }
             if (prepareAndApplyUpdate is not null) await prepareAndApplyUpdate(prepared, cancellation.Token, Commit);
             else { Commit(); await applyUpdate(prepared); }
         }
-        catch (OperationCanceledException) { if (!closed) StatusText.Text = L.Get("Updates.Cancelled"); }
+        catch (OperationCanceledException) { if (!closed) SetStatus(L.Get("Updates.Cancelled")); }
         catch (Exception ex) { if (!closed) ShowFailure(applying ? "Updates.InstallFailed" : "Updates.DownloadFailed", ex); }
         finally { applying = false; EndOperation(cancellation); }
     }
 
     private CancellationTokenSource BeginOperation(bool downloading)
     {
-        operation = new CancellationTokenSource(); CheckButton.IsEnabled = false; InstallButton.IsEnabled = false; PreviewUpdates.IsEnabled = false;
-        CancelButton.Content = L.Get(downloading ? "Updates.Cancel" : "Updates.CancelCheck");
-        CancelButton.IsEnabled = true; CancelButton.Visibility = Visibility.Visible;
-        DownloadProgress.Value = 0; DownloadProgress.IsIndeterminate = true; DownloadProgress.Visibility = Visibility.Visible;
+        operation = new CancellationTokenSource();
+        cancelCaption = L.Get(downloading ? "Updates.Cancel" : "Updates.CancelCheck");
+        UpdateDisplay("controls", PaintOperationControls);
+        UpdateDisplay("progress", () => { if (IsBusy) { DownloadProgress.Value = 0; DownloadProgress.IsIndeterminate = true; } });
         return operation;
     }
 
@@ -210,12 +230,49 @@ internal sealed class AppUpdateWindow : Window
         if (!ReferenceEquals(operation, source)) return;
         operation = null;
         if (closed) return;
-        CheckButton.IsEnabled = true; InstallButton.IsEnabled = canInstall && available is not null;
-        PreviewUpdates.IsEnabled = true;
-        CancelButton.Visibility = Visibility.Collapsed; DownloadProgress.Visibility = Visibility.Collapsed;
+        UpdateDisplay("controls", PaintOperationControls);
     }
 
-    private void ShowFailure(string key, Exception error) { StatusText.Text = L.Get(key); DetailText.Text = error.Message; }
+    private void PaintOperationControls()
+    {
+        bool busy = IsBusy;
+        CheckButton.IsEnabled = !busy; InstallButton.IsEnabled = !busy && canInstall && available is not null;
+        PreviewUpdates.IsEnabled = !busy;
+        CancelButton.Visibility = DownloadProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        if (busy) { CancelButton.Content = cancelCaption; CancelButton.IsEnabled = !applying; }
+    }
+
+    private void UpdateDisplay(string key, Action update)
+    {
+        if (closed) return;
+        pendingDisplay[key] = update;
+        if (IsVisible) PrepareForShow();
+    }
+
+    internal void PrepareForShow()
+    {
+        if (closed) return;
+        var updates = pendingDisplay.Values.ToArray(); pendingDisplay.Clear();
+        foreach (var update in updates) update();
+    }
+
+    private void SetStatus(string message) => UpdateDisplay("status", () => StatusText.Text = message);
+    private void SetDetail(string message) => UpdateDisplay("detail", () => DetailText.Text = message);
+    private void ShowFailure(string key, Exception error) { SetStatus(L.Get(key)); SetDetail(error.Message); }
+
+    private void ApplyLatestProgress()
+    {
+        var pending = Volatile.Read(ref latestProgress);
+        if (!IsVisible || closed || pending is null || !ReferenceEquals(operation, pending.Source) || pending.Source.IsCancellationRequested) return;
+        var value = pending.Progress;
+        UpdateDisplay("progress", () =>
+        {
+            if (!IsBusy) return;
+            DownloadProgress.IsIndeterminate = value.TotalBytes <= 0;
+            if (value.TotalBytes > 0) DownloadProgress.Value = Math.Clamp(value.ReceivedBytes * 100d / value.TotalBytes, 0, 100);
+        });
+        if (value.TotalBytes > 0) SetStatus(L.Format("Updates.DownloadProgress", (int)Math.Clamp(value.ReceivedBytes * 100d / value.TotalBytes, 0, 100)));
+    }
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
@@ -234,14 +291,12 @@ internal sealed class AppUpdateWindow : Window
         public void Report(UpdateProgress value)
         {
             if (owner.Dispatcher.HasShutdownStarted) return;
+            Volatile.Write(ref owner.latestProgress, new(source, value));
+            if (!owner.displayVisible || Interlocked.Exchange(ref owner.progressQueued, 1) != 0) return;
             _ = owner.Dispatcher.BeginInvoke(() =>
             {
-                if (owner.closed || !ReferenceEquals(owner.operation, source) || source.IsCancellationRequested) return;
-                owner.DownloadProgress.IsIndeterminate = value.TotalBytes <= 0;
-                if (value.TotalBytes <= 0) return;
-                double percent = Math.Clamp(value.ReceivedBytes * 100d / value.TotalBytes, 0, 100);
-                owner.DownloadProgress.Value = percent;
-                owner.StatusText.Text = L.Format("Updates.DownloadProgress", (int)percent);
+                Interlocked.Exchange(ref owner.progressQueued, 0);
+                owner.ApplyLatestProgress();
             });
         }
     }

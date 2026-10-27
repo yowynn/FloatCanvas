@@ -29,6 +29,7 @@ internal static class CanvasSettingsControlTests
             window.GridCountsChanged += (_, _) => countEdits++;
             window.GridWidthChanged += _ => widthEdits++;
             window.Refresh(new() { Projection = new() { Enabled = true } }, false);
+            window.PrepareForShow();
             check("canvas numeric refresh creates no semantic edits", countEdits == 0 && widthEdits == 0);
             columns.Input.Text = "9.5";
             check("fractional cell count draft is rejected without edits", !columns.TryGetValue(out _) && countEdits == 0);
@@ -64,12 +65,14 @@ internal static class CanvasSettingsControlTests
         window.GridCountsChanged += (_, _) => countEdits++;
         var settings = new CanvasSettings { Projection = new() { Enabled = true, Columns = 8, Rows = 6, CellSize = 100 } };
         window.Refresh(settings, false);
+        window.PrepareForShow();
         check("grid size lock defaults off with original integer controls visible", toggle.IsChecked == false && toggle.IsEnabled &&
             columns.Visibility == Visibility.Visible && rows.Visibility == Visibility.Visible && lockedColumns.Visibility == Visibility.Collapsed);
         toggle.IsChecked = true; toggle.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         check("grid size lock uses its own single semantic event", lockEdits == 1 && requestedLock == true && countEdits == 0);
         settings.Projection.LockedGridCellSize = 100; settings.Projection.CellSize = 105.1234;
         window.Refresh(settings, true);
+        window.PrepareForShow();
         check("locked count controls are read-only and preserve fractional coverage", lockedColumns.IsReadOnly && lockedRows.IsReadOnly &&
             lockedColumns.Text == 8.41.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture) &&
             lockedRows.Text == 6.307.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture) &&
@@ -80,20 +83,24 @@ internal static class CanvasSettingsControlTests
         check("locked count controls cannot feed displayed or hidden drafts into calibration", countEdits == 0 && settings.Projection.Columns == 8 && settings.Projection.Rows == 6);
         settings.Projection.CellSize = 10_000;
         window.RefreshGridCounts(settings.Projection);
+        window.PrepareForShow();
         check("in-gesture refresh updates computed coverage beyond editable integer limits", lockedColumns.Text == "800" && lockedRows.Text == "600" && countEdits == 0 && lockEdits == 1);
         settings.Projection.CellSize = .0001;
         window.RefreshGridCounts(settings.Projection);
+        window.PrepareForShow();
         check("tiny locked coverage remains positive instead of rounding to zero", double.Parse(lockedColumns.Text, System.Globalization.CultureInfo.CurrentCulture) > 0 &&
             double.Parse(lockedRows.Text, System.Globalization.CultureInfo.CurrentCulture) > 0);
         settings.Projection.Enabled = false;
         window.Refresh(settings, false);
-        check("turning perspective off retains dormant lock state while displaying only flat grid size", toggle.IsChecked == true && !toggle.IsEnabled &&
+        window.PrepareForShow();
+        check("turning perspective off retains dormant lock state while displaying only flat grid size", toggle.IsChecked == true &&
             toggle.Visibility == Visibility.Collapsed && Field<Grid>(window, "countPair").Visibility == Visibility.Collapsed &&
             Field<StackPanel>(window, "flatSizePanel").Visibility == Visibility.Visible && countEdits == 0);
         toggle.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         check("disabled perspective cannot emit a grid lock edit", lockEdits == 1);
         settings.Projection.Enabled = true; settings.Projection.CellSize = 105.1234; settings.Projection.LockedGridCellSize = null;
         window.Refresh(settings, false);
+        window.PrepareForShow();
         check("unlocking restores the original reference counts and integer sliders", toggle.IsChecked == false && columns.Value == 8 && rows.Value == 6 &&
             columns.Visibility == Visibility.Visible && lockedColumns.Visibility == Visibility.Collapsed && countEdits == 0);
         columns.Slider.Value = 9;
@@ -148,6 +155,7 @@ internal static class CanvasSettingsControlTests
             new("main", new(0,0,3840,2160),new(0,0,3840,2052),144,144,true),
             new("pad",new(307,2160,2160,1440),new(307,2160,2160,1380),120,120,false)];
         window.SetReferenceMonitors(monitors,"pad");
+        window.PrepareForShow();
         var menu = Field<ContextMenu>(window,"resetMenu");
         check("reset lists every active monitor and enables the display dropdown", menu.Items.Count == 2 &&
             Field<Button>(window, "resetChoices").Visibility == Visibility.Visible && Field<Button>(window, "resetChoices").IsEnabled);
@@ -169,6 +177,7 @@ internal static class CanvasSettingsControlTests
         MonitorInfo[] left = [new("left",new(-1920,-200,1920,1080),new(-1920,-200,1920,1040),96,96,true)];
         check("reset converts negative screen coordinates once into document coordinates", DesktopSession.ResolveCanvasReferenceBounds(left,null,default,new(-2000,-500),new(0,0,6000,4000)) == new RectD(80,300,1920,1080));
         window.SetReferenceMonitors([monitors[1]],"pad");
+        window.PrepareForShow();
         check("a sole active display disables reset choices while retaining reset itself", menu.Items.Count == 1 && !Field<Button>(window, "resetChoices").IsEnabled && Field<Button>(window, "reset").IsEnabled);
     }
 }

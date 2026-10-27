@@ -16,6 +16,7 @@ internal sealed class WelcomeView : StackPanel
     internal Button StartButton { get; }
     internal Button VersionButton { get; }
     internal Button ProjectButton { get; }
+    private (HotkeyBinding Toggle, HotkeyBinding Hide)? pendingShortcuts;
 
     internal WelcomeView(HotkeyBinding toggle, HotkeyBinding hide, Action start, Action? checkUpdates = null, Action? openProject = null, Action? restoreHistory = null, WorkspaceRecoveryHistory? history = null)
     {
@@ -35,17 +36,29 @@ internal sealed class WelcomeView : StackPanel
             recoveryHint.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); Children.Add(recoveryHint);
             var resume = new Button { Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
             resume.Click += (_, _) => restoreHistory(); Children.Add(resume);
-            Loaded += async (_, _) =>
+            CancellationTokenSource? recoveryRequest = null;
+            async void LoadRecovery()
             {
+                if (!IsVisible || recoveryRequest is not null) return;
+                var request = recoveryRequest = new CancellationTokenSource();
                 try
                 {
-                    var entries = await history.GetEntriesAsync();
+                    var entries = await history.GetEntriesAsync(request.Token);
+                    if (request.IsCancellationRequested || !IsVisible || !ReferenceEquals(recoveryRequest, request)) return;
                     if (entries.FirstOrDefault() is { } latest)
                     { resume.Content = L.Format("Audit.RecentHistory", latest.SavedAtUtc.ToLocalTime().ToString("g")); resume.Visibility = Visibility.Visible; }
-                    else recoveryHint.Text = L.Get("Audit.WelcomeRestoreEmpty");
+                    else { resume.Visibility = Visibility.Collapsed; recoveryHint.Text = L.Get("Audit.WelcomeRestoreEmpty"); }
                 }
-                catch (Exception) { resume.Content = L.Get("Recovery.HistoryTitle"); resume.Visibility = Visibility.Visible; }
+                catch (OperationCanceledException) { }
+                catch (Exception) { if (!request.IsCancellationRequested && IsVisible) { resume.Content = L.Get("Recovery.HistoryTitle"); resume.Visibility = Visibility.Visible; } }
+            }
+            Loaded += (_, _) => LoadRecovery();
+            IsVisibleChanged += (_, _) =>
+            {
+                if (IsVisible && IsLoaded) LoadRecovery();
+                else if (!IsVisible) { recoveryRequest?.Cancel(); recoveryRequest?.Dispose(); recoveryRequest = null; }
             };
+            Unloaded += (_, _) => { recoveryRequest?.Cancel(); recoveryRequest?.Dispose(); recoveryRequest = null; };
         }
         Refresh(toggle, hide);
         var footer = new Grid { Margin = new Thickness(0, 16, 0, 0) };
@@ -70,10 +83,20 @@ internal sealed class WelcomeView : StackPanel
         System.Windows.Automation.AutomationProperties.SetName(ProjectButton,L.Get("Welcome.ProjectHome"));
         ProjectButton.Click+=(_,_)=>openProject?.Invoke();
         footer.Children.Add(ProjectButton); Children.Add(footer);
+        IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); };
     }
 
     internal void Refresh(HotkeyBinding toggle, HotkeyBinding hide)
     {
+        pendingShortcuts = (toggle, hide);
+        if (IsVisible) PrepareForShow();
+    }
+
+    internal void PrepareForShow()
+    {
+        if (pendingShortcuts is not { } shortcuts) return;
+        pendingShortcuts = null;
+        var (toggle, hide) = shortcuts;
         ToggleShortcut.Text = HotkeyDisplay.Format(toggle); HideShortcut.Text = HotkeyDisplay.Format(hide);
         StartButton.Content = L.Format("Acceptance2.Welcome.Start", ToggleShortcut.Text);
     }

@@ -54,19 +54,32 @@ internal sealed class WorkspaceHistoryWindow : Window
         AppWindowChrome.ApplyDialog(this);
         Closed += (_, _) => lifetime.Cancel();
         if (entries is not null) { list.ItemsSource = entries; list.SelectedIndex = 0; }
-        else Loaded += async (_, _) =>
+        else
         {
-            hint.Text = L.Get("Recovery.PreviewLoading");
-            try
+            CancellationTokenSource? entriesLifetime = null;
+            async void LoadEntries()
             {
-                var loaded = await history.GetEntriesAsync(lifetime.Token);
-                if (lifetime.IsCancellationRequested) return;
-                list.ItemsSource = loaded; list.SelectedIndex = 0;
-                hint.Text = L.Get(loaded.Count == 0 ? "Recovery.NoHistory" : "Recovery.HistoryHint");
+                if (!IsVisible || lifetime.IsCancellationRequested || entriesLifetime is { IsCancellationRequested: false }) return;
+                entriesLifetime?.Cancel(); entriesLifetime?.Dispose();
+                var request = entriesLifetime = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                hint.Text = L.Get("Recovery.PreviewLoading");
+                try
+                {
+                    var loaded = await history.GetEntriesAsync(request.Token);
+                    if (request.IsCancellationRequested || !IsVisible || !ReferenceEquals(entriesLifetime, request)) return;
+                    list.ItemsSource = loaded; list.SelectedIndex = 0;
+                    hint.Text = L.Get(loaded.Count == 0 ? "Recovery.NoHistory" : "Recovery.HistoryHint");
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { if (!request.IsCancellationRequested && IsVisible) hint.Text = "⚠ " + ex.Message; }
             }
-            catch (OperationCanceledException) { }
-            catch (Exception ex) { if (!lifetime.IsCancellationRequested) hint.Text = "⚠ " + ex.Message; }
-        };
+            Loaded += (_, _) => LoadEntries();
+            IsVisibleChanged += (_, _) =>
+            {
+                if (IsVisible && IsLoaded) LoadEntries();
+                else if (!IsVisible) { entriesLifetime?.Cancel(); entriesLifetime?.Dispose(); entriesLifetime = null; }
+            };
+        }
     }
 
     private sealed class RowConverter(WorkspaceHistoryWindow owner) : IValueConverter
@@ -94,13 +107,16 @@ internal sealed class WorkspaceHistoryWindow : Window
         Grid.SetColumn(text, 1); row.Children.Add(text);
         row.Margin = new(10, 8, 10, 8);
         CancellationTokenSource? previewLifetime = null;
-        row.Loaded += async (_, _) =>
+        async void StartPreview()
         {
-            previewLifetime?.Cancel(); previewLifetime?.Dispose();
+            if (!row.IsVisible || !IsVisible || lifetime.IsCancellationRequested || previewLifetime is not null) return;
             previewLifetime = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             await LoadPreviewAsync(entry, image, placeholder, previewLifetime.Token);
-        };
-        row.Unloaded += (_, _) => { previewLifetime?.Cancel(); previewLifetime?.Dispose(); previewLifetime = null; };
+        }
+        void StopPreview() { previewLifetime?.Cancel(); previewLifetime?.Dispose(); previewLifetime = null; }
+        row.Loaded += (_, _) => StartPreview();
+        row.IsVisibleChanged += (_, _) => { if (row.IsVisible && row.IsLoaded) StartPreview(); else if (!row.IsVisible) StopPreview(); };
+        row.Unloaded += (_, _) => StopPreview();
         return row;
     }
 
@@ -113,6 +129,7 @@ internal sealed class WorkspaceHistoryWindow : Window
             try { bytes = await history.LoadPreviewAsync(entry, token); }
             finally { previewGate.Release(); }
             token.ThrowIfCancellationRequested();
+            if (!IsVisible || !image.IsVisible) return;
             if (bytes is null) { placeholder.Text = L.Get("Recovery.NoPreview"); return; }
             _ = FloatCanvas.Rendering.ImageDecodeBudget.ReadPixelCount(bytes);
             using var stream = new MemoryStream(bytes, writable: false);
@@ -126,7 +143,7 @@ internal sealed class WorkspaceHistoryWindow : Window
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or
             FormatException or NotSupportedException or InvalidOperationException or ArgumentException or OverflowException or KeyNotFoundException)
         {
-            if (!token.IsCancellationRequested) placeholder.Text = L.Get("Recovery.NoPreview");
+            if (!token.IsCancellationRequested && IsVisible && placeholder.IsVisible) placeholder.Text = L.Get("Recovery.NoPreview");
         }
     }
 }

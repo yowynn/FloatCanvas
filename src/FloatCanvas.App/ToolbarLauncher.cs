@@ -120,7 +120,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
     {
         if (!editing && e.Key is Key.Enter or Key.Space || e.Key == Key.Apps || e.Key == Key.F10 && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
         {
-            if (!e.IsRepeat) OpenMenuImmediately();
+            if (!AppInputPolicy.IsRepeat(e)) OpenMenuImmediately();
             e.Handled = true; return;
         }
         base.OnPreviewKeyDown(e);

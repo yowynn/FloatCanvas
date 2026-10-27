@@ -40,8 +40,8 @@ internal static class PerspectiveInputTests
 
         var beforeCrop = ElementGeometry.LocalToPlane(image);
         controller.Tool = EditorTool.Crop;
-        Pointer(controller, OverlayPointerKind.Down, new(330, 260));
-        Pointer(controller, OverlayPointerKind.Up, new(380, 295));
+        Pointer(controller, OverlayPointerKind.Down, new(330, 260), OverlayModifiers.Control);
+        Pointer(controller, OverlayPointerKind.Up, new(380, 295), OverlayModifiers.Control);
         image = session.Document.Elements.Single(e => e.Kind == ElementKind.Image);
         check("projective image crop composes local translation on the correct side", Math.Abs(image.Width - 50) < 1e-7 && Math.Abs(image.Height - 35) < 1e-7 &&
             ElementGeometry.LocalToPlane(image).TransformPoint(default).DistanceTo(beforeCrop.TransformPoint(new(10, 10))) < 1e-7);
@@ -49,9 +49,10 @@ internal static class PerspectiveInputTests
             ElementGeometry.LocalToPlane(session.Document.Elements.Last()) == beforeCrop);
 
         image = session.Document.Elements.Last(); session.SetSelection([image.Id]); controller.Tool = EditorTool.Select;
-        check("selection handles remain 28 screen pixels from the projected frame", controller.SelectionScreenRotationAnchor is { } anchor &&
+        var planeImageBounds = ElementGeometry.Bounds(image);
+        check("snapshot selection uses plane bounds with rotation handles 28 screen pixels from the projected frame", controller.SelectionScreenRotationAnchor is { } anchor &&
             controller.SelectionScreenRotationHandle is { } handle && Math.Abs(anchor.DistanceTo(handle) - 28) < 1e-7 &&
-            controller.SelectionScreenCorners[0].DistanceTo(new(320, 250)) < 1e-7);
+            controller.SelectionScreenCorners[0].DistanceTo(mapping.ToScreen(new(planeImageBounds.Left, planeImageBounds.Top))) < 1e-7);
         var copied = ObjectClipboardCommand.CreateSnapshot(session);
         var rasterCopy = ObjectClipboardCommand.CreateRasterSnapshot(session, copied);
         check("editable copy retains projective placement without copying canvas calibration", copied.Elements.Single().ProjectivePlacement == image.ProjectivePlacement &&
@@ -167,7 +168,8 @@ internal static class PerspectiveInputTests
             }
 
             Marquee("marquee includes only the wide line's painted edge", new(150, 140, 50, 30), line);
-            Marquee("marquee includes the outside of a closed shape stroke", new(515, 330, 40, 20), rectangle);
+            Marquee("marquee includes the full inward band of a closed shape stroke", new(465, 330, 60, 20), rectangle);
+            Marquee("marquee excludes the former outside band of a closed shape stroke", new(515, 330, 40, 20));
             Marquee("marquee includes the painted edge of a single-point stroke", new(510, 140, 20, 30), dot);
             Marquee("marquee rejects empty corners outside a round stroke cap", new(45, 45, 12, 12));
             Marquee("marquee rejects space beyond a wide stroke", new(150, 160, 50, 25));

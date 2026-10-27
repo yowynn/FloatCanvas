@@ -1,5 +1,6 @@
 using System.IO;
 using System.Threading;
+using System.Runtime.InteropServices;
 using FloatCanvas.App;
 using FloatCanvas.Core;
 using Wpf = System.Windows;
@@ -75,6 +76,9 @@ internal static class StampPreviewTests
             {
                 AppTheme.Apply(theme);
                 var shelf = new StampShelfControl(library,clicks.Add);
+                shelf.PrepareForShow();
+                using var surface = new ShelfTestSurface(shelf);
+                check(theme+" asynchronous shelf thumbnails use a visible offscreen native host", shelf.IsVisible && shelf.IsLoaded && surface.Handle != 0);
                 var row = (Controls.StackPanel)shelf.Content;
                 row.SetResourceReference(Controls.Panel.BackgroundProperty,"CanvasSurface");
                 row.Measure(new Wpf.Size(300,26)); row.Arrange(new Wpf.Rect(0,0,300,26)); row.UpdateLayout();
@@ -259,5 +263,30 @@ internal static class StampPreviewTests
         timer.Tick += (_,_)=>{if(completed() || watch.Elapsed>TimeSpan.FromSeconds(5))frame.Continue=false;};
         timer.Start();try{Threading.Dispatcher.PushFrame(frame);}finally{timer.Stop();}
         if(!completed())throw new TimeoutException("The actual slot thumbnail did not finish loading.");
+    }
+
+    private sealed class ShelfTestSurface : IDisposable
+    {
+        private readonly System.Windows.Interop.HwndSource source;
+        internal nint Handle => source.Handle;
+        internal ShelfTestSurface(StampShelfControl shelf)
+        {
+            source = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("FloatCanvas.StampPreviewShelf")
+            {
+                Width = 300, Height = 26, PositionX = -20000, PositionY = -20000,
+                WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x080000A0
+            }) { RootVisual = new Controls.Border { Opacity = 0, Child = shelf } };
+            ShowWindow(source.Handle, 4);
+            var frame = new Threading.DispatcherFrame();
+            Threading.Dispatcher.CurrentDispatcher.BeginInvoke(Threading.DispatcherPriority.ApplicationIdle, () => frame.Continue = false);
+            Threading.Dispatcher.PushFrame(frame);
+        }
+        public void Dispose()
+        {
+            if (source.RootVisual is Controls.Border border) border.Child = null;
+            source.RootVisual = null;
+            source.Dispose();
+        }
+        [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);
     }
 }

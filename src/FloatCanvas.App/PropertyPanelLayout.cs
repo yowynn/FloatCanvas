@@ -10,6 +10,8 @@ namespace FloatCanvas.App;
 internal static class PropertyPanelLayout
 {
     internal const double ContentWidth = 440;
+    internal const double TwoColumnMinimumWidth = 640;
+    internal const double TwoColumnMinimumHeight = 420;
     internal const double LabelWidth = 96;
     internal const double LabelFontSize = 12;
     internal const double SectionFontSize = 13;

@@ -14,9 +14,11 @@ internal static class ActionIconButton
     internal static void UpdatePin(Button button,bool pinned)
     {
         button.Width=button.Height=28;button.MinWidth=button.MinHeight=0;
-        button.Padding=new Thickness(0);button.Margin=new Thickness(1,0,1,0);
+        button.Padding=new Thickness(0);button.Margin=new Thickness(3,0,3,0);
         button.SetResourceReference(FrameworkElement.StyleProperty,"CanvasCaptionButton");
         UpdateToggleAppearance(button,pinned);
+        button.RenderTransformOrigin=new Point(.5,.5);
+        button.RenderTransform=new ScaleTransform(pinned?1.08:1,pinned?1.08:1);
         if(button.Content is FrameworkElement glyph)
         {glyph.RenderTransformOrigin=new Point(.5,.5);glyph.RenderTransform=new RotateTransform(pinned?-35:0);}
         string label=FloatCanvas.Localization.AppText.Get(pinned?"ToolbarV2.UnpinOptions":"ToolbarV2.PinOptions");
@@ -28,7 +30,7 @@ internal static class ActionIconButton
         button.SetResourceReference(Control.ForegroundProperty,active?"CanvasHiddenText":"CanvasText");
         if(active)button.SetResourceReference(Control.BorderBrushProperty,"CanvasHiddenBorder");
         else button.BorderBrush=Brushes.Transparent;
-        button.BorderThickness=new Thickness(1);
+        button.BorderThickness=new Thickness(active?1:0);
         SetGlyphColor(button.Content,active?"CanvasHiddenText":"CanvasText");
     }
     private static void SetGlyphColor(object? content,string resource)

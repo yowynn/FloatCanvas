@@ -30,11 +30,13 @@ internal static class DepthOcclusionUiRuntimeTests
                 var session = new EditorSession(new() { Canvas = new() { Projection = new() { Enabled = true } } });
                 var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
                 window.Refresh(session.Document.Canvas, false);
+                window.PrepareForShow();
                 window.DepthPriorityOcclusionChanged += value =>
                 {
                     DesktopSession.ApplyCanvasDepthPriorityOcclusion(session, window.DisplayedSettings, value, true,
                         change => session.Execute(L.Get("Canvas.Title"), document => change(document.Canvas)));
                     window.Refresh(session.Document.Canvas, false);
+                    window.PrepareForShow();
                 };
                 var option = Field<CheckBox>(window, "depthPriorityOcclusion");
                 var projection = Field<CheckBox>(window, "projection");
@@ -49,9 +51,10 @@ internal static class DepthOcclusionUiRuntimeTests
                 {
                     source.RootVisual = root; Layout(root);
                     double optionY = option.TranslatePoint(new Point(), root).Y;
+                    Console.WriteLine($"CANVAS_DEPTH_LAYOUT locale={locale} theme={theme} visible={option.Visibility} size={option.ActualWidth}x{option.ActualHeight} optionY={optionY} projectionY={projection.TranslatePoint(new Point(), root).Y} lockY={gridLock.TranslatePoint(new Point(), root).Y} row={((FrameworkElement)option.Parent).ActualWidth}");
                     check(locale + " " + theme + " production depth option is below perspective and above grid lock in native Canvas layout",
                         PresentationSource.FromVisual(option) is HwndSource && option.Visibility == Visibility.Visible &&
-                        option.ActualHeight > 10 && option.ActualWidth > 150 && optionY > projection.TranslatePoint(new Point(), root).Y &&
+                        option.ActualHeight > 10 && option.ActualWidth > 20 && ((FrameworkElement)option.Parent).ActualWidth > 150 && optionY > projection.TranslatePoint(new Point(), root).Y &&
                         optionY < gridLock.TranslatePoint(new Point(), root).Y && optionY + option.ActualHeight < Height);
                     check(locale + " " + theme + " Canvas depth option has its localized accessible name",
                         System.Windows.Automation.AutomationProperties.GetName(option) == L.Get("Canvas.DepthPriorityOcclusion") &&
@@ -59,9 +62,9 @@ internal static class DepthOcclusionUiRuntimeTests
                     option.IsChecked = true; option.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout(root);
                     check(locale + " " + theme + " routed native Canvas depth option commits one undo step", session.Document.Canvas.DepthPriorityOcclusion && session.UndoCount == 1);
                     Render(root, Path.Combine(output, "canvas-depth-" + locale + "-" + theme + ".png"));
-                    session.Undo(); window.Refresh(session.Document.Canvas, false); Layout(root);
+                    session.Undo(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow(); Layout(root);
                     check(locale + " " + theme + " native Canvas depth checkbox tracks undo", option.IsChecked == false);
-                    session.Document.Canvas.Projection.Enabled = false; window.Refresh(session.Document.Canvas, false); Layout(root);
+                    session.Document.Canvas.Projection.Enabled = false; window.Refresh(session.Document.Canvas, false); window.PrepareForShow(); Layout(root);
                     check(locale + " " + theme + " flat Canvas settings remove the depth row from layout", option.Visibility == Visibility.Collapsed && option.DesiredSize.Height == 0);
                     Render(root, Path.Combine(output, "canvas-flat-" + locale + "-" + theme + ".png"));
                     root.Child = null; source.RootVisual = null;

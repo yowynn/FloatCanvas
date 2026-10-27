@@ -43,7 +43,7 @@ internal static class PanelReviewRegressionTests
         try
         {
             var controller = new EditorController(new EditorSession()) { Tool = EditorTool.RoundedRectangle };
-            var tools = new ToolOptionsPanel(controller, new ToolPresetLibrary(Path.Combine(folder, "tools.json")), new ColorLibrary(Path.Combine(folder, "colors.json")));
+            var tools = new ToolOptionsPanel(controller, new ToolPresetLibrary(Path.Combine(folder, "tools.json")), new ColorLibrary(Path.Combine(folder, "colors.json"))); tools.PrepareForShow();
             var radius = Field<Dictionary<string, NumericValueField>>(tools, "numericFields")["CornerRadius"];
             Measure(radius, 180, 34);
             check("automatic corner radius has an explicit placeholder", controller.Parameters.CornerRadius is null && radius.Input.Text == "—");
@@ -51,6 +51,7 @@ internal static class PanelReviewRegressionTests
             radius.UpdateRail(radius.Slider.ActualWidth / 2);
             check("automatic corner rail publishes an explicit value", controller.Parameters.CornerRadius > 0);
             radius.CancelGesture();
+            tools.PrepareForShow();
             check("cancelling automatic corner rail restores its automatic state", controller.Parameters.CornerRadius is null && radius.Input.Text == "—");
             check("automatic corner radius can start its icon gesture", radius.AnchorScrubber!.TryBegin(0));
             radius.AnchorScrubber.Update(60); radius.AnchorScrubber.End(true);
@@ -59,17 +60,18 @@ internal static class PanelReviewRegressionTests
             var session = new EditorSession();
             session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 50, Style = new() { Opacity = .5 } });
             session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 50, Style = new() { Opacity = .8 } });
-            session.SelectAll(); var inspector = new InspectorWindow(() => session);
+            session.SelectAll(); var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
             var opacity = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields")["Opacity"];
             Measure(opacity, 180, 34);
             check("mixed opacity can start its rail without typing first", opacity.Input.Text == "" && opacity.BeginGesture());
             opacity.UpdateRail(opacity.Slider.ActualWidth * .75); opacity.CancelGesture();
+            inspector.PrepareForShow();
             check("mixed opacity rail cancellation restores individual values", session.Document.Elements.Select(e => e.Style.Opacity).SequenceEqual(new[] { .5, .8 }) && opacity.Input.Text == "");
             int undo = session.UndoCount;
             check("mixed opacity can start another rail gesture", opacity.BeginGesture());
             opacity.UpdateRail(opacity.Slider.ActualWidth / 2); opacity.EndGesture(true);
             check("clicking the representative mixed value still unifies the selection once", session.Document.Elements.All(e => e.Style.Opacity == .5) && session.UndoCount == undo + 1);
-            session.Undo(); inspector.Refresh();
+            session.Undo(); inspector.PrepareForShow();
             check("mixed opacity icon can start without typing first", opacity.AnchorScrubber!.TryBegin(0));
             opacity.AnchorScrubber.Update(60); opacity.AnchorScrubber.End(false);
             check("mixed opacity icon cancellation restores individual values", session.Document.Elements.Select(e => e.Style.Opacity).SequenceEqual(new[] { .5, .8 }));
@@ -86,7 +88,7 @@ internal static class PanelReviewRegressionTests
         try
         {
             var color = new ColorField(ColorRole.Foreground, new ColorLibrary(Path.Combine(folder, "colors.json")));
-            var picker = Field<ColorPickerPanel>(color, "picker"); var root = (FrameworkElement)color.PickerRoot;
+            color.PrepareForShow(); var picker = Field<ColorPickerPanel>(color, "picker"); picker.PrepareForShow(); var root = (FrameworkElement)color.PickerRoot;
             Measure(root, 660, 500);
             var opacity = Field<NumericValueField>(picker, "alphaField"); opacity.Value = 50;
             check("color opacity starts an embedded rail gesture", opacity.BeginGesture());

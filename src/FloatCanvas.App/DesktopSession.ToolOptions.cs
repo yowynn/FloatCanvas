@@ -21,7 +21,8 @@ internal sealed partial class DesktopSession
         _toolOptionsPanel = new(_editor, _toolPresets, _colorLibrary, _toolStateStore);
         _toolOptionsFrame = new Border { Child = _toolOptionsPanel };
         _toolOptionsWindow = new Window { Content = _toolOptionsFrame, Width = ToolOptionsPanel.PreferredWidth + 2,
-            SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize,
+            MinWidth = PropertyPanelLayout.TwoColumnMinimumWidth, MinHeight = PropertyPanelLayout.TwoColumnMinimumHeight,
+            SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.CanResize,
             ShowInTaskbar = false, Topmost = true, Icon = AppIcon.WindowImage };
         AppWindowChrome.Apply(_toolOptionsWindow);
         _windowLayout.Track(_toolOptionsWindow);
@@ -95,14 +96,12 @@ internal sealed partial class DesktopSession
     {
         if (_editor.Tool == EditorTool.Canvas) { OpenCanvasSettings(); return; }
         bool alreadyOpen = IsToolOptionsOpen;
-        _toolOptionsPanel.Refresh();
+        _toolOptionsPanel.PrepareForShow();
         _toolOptionsWindow.Title = ToolName(_editor.Tool);
         new WindowInteropHelper(_toolbar).EnsureHandle();
         _toolOptionsWindow.Owner ??= _toolbar;
         ConstrainToolOptions();
-        ShowAppWindow(_toolOptionsWindow, true);
-        _toolOptionsWindow.UpdateLayout();
-        if (!alreadyOpen) PositionToolOptions();
+        ShowAnchoredToolWindow(_toolOptionsWindow, alreadyOpen, PositionToolOptions);
     }
 
     private void CloseToolOptions() => DismissToolOptions(WindowDismissReason.Close);
@@ -136,12 +135,43 @@ internal sealed partial class DesktopSession
         double scale = monitor.DpiY / 96d;
         _toolOptionsPanel.MaxHeight = Math.Clamp(monitor.WorkArea.Height / scale - 64, 100, 740);
         double available = monitor.WorkArea.Width * 96d / monitor.DpiX - 24;
-        _toolOptionsPanel.Width = Math.Min(ToolOptionsPanel.PreferredWidth, Math.Max(280, available - 2));
-        _toolOptionsPanel.MinWidth = Math.Min(480, _toolOptionsPanel.Width);
-        _toolOptionsWindow.Width = _toolOptionsPanel.Width + 2;
+        _toolOptionsPanel.Width = double.NaN;
+        _toolOptionsWindow.Width = Math.Clamp(_toolOptionsWindow.Width, _toolOptionsWindow.MinWidth, Math.Max(_toolOptionsWindow.MinWidth, available));
     }
 
     private void PositionToolOptions() => PositionToolOptions(_toolOptionsWindow);
+
+    private void ShowAnchoredToolWindow(Window window, bool alreadyOpen, Action position)
+    {
+        if(!alreadyOpen)
+        {
+            // A hidden window still participates in layout. Finish its native
+            // size and anchor before the first visible HWND frame is presented.
+            window.WindowStartupLocation=WindowStartupLocation.Manual;
+            window.Hide();
+            new WindowInteropHelper(window).EnsureHandle();
+            window.ApplyTemplate();
+            MeasureToolWindowContent(window); position();
+            // Moving to the anchor can change DPI and trigger another measure.
+            MeasureToolWindowContent(window); position();
+        }
+        ShowAppWindow(window,true);
+        window.UpdateLayout();
+    }
+
+    private static Size MeasureToolWindowContent(Window window)
+    {
+        // Window's measure/arrange state belongs to HwndSource. Measuring it by
+        // hand with an unbounded height replaces the native client constraint;
+        // later openings then feed content DesiredSize back into responsive layout.
+        var root=VisualTreeHelper.GetChildrenCount(window)>0?VisualTreeHelper.GetChild(window,0) as FrameworkElement:null;
+        root?.Measure(new Size(double.IsFinite(window.Width)?window.Width:window.MaxWidth,window.MaxHeight));
+        bool autoWidth=window.SizeToContent is SizeToContent.Width or SizeToContent.WidthAndHeight;
+        bool autoHeight=window.SizeToContent is SizeToContent.Height or SizeToContent.WidthAndHeight;
+        double width=!autoWidth&&double.IsFinite(window.Width)?Math.Clamp(window.Width,window.MinWidth,window.MaxWidth):root?.DesiredSize.Width??window.ActualWidth;
+        double height=!autoHeight&&double.IsFinite(window.Height)?Math.Clamp(window.Height,window.MinHeight,window.MaxHeight):root?.DesiredSize.Height??window.ActualHeight;
+        return new(width,height);
+    }
 
     private void PositionToolOptions(Window target, FrameworkElement? selectedButton = null)
     {
@@ -151,7 +181,8 @@ internal sealed partial class DesktopSession
         var monitor = _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(point)) ?? _host.PrimaryMonitor;
         double sx=monitor.DpiX/96d, sy=monitor.DpiY/96d;
         var work = monitor.WorkArea;
-        double width=target.ActualWidth*sx, height=target.ActualHeight*sy;
+        var size=MeasureToolWindowContent(target);
+        double width=size.Width*sx, height=size.Height*sy;
         double x, y;
         if (_settings.ToolbarExpanded)
         {

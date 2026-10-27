@@ -174,7 +174,14 @@ internal sealed partial class DesktopSession
         var pickerSuspension = _eyedropperPickerSuspension; _eyedropperPickerSuspension = null;
         if (restore && field is not null && !_disposed && _host.IsEditing && _host.IsVisible)
         {
-            foreach (var window in windows) SessionWindowCoordinator.Show(window);
+            foreach (var window in windows)
+            {
+                if (ReferenceEquals(window, _toolOptionsWindow)) _toolOptionsPanel.PrepareForShow();
+                else if(window is InspectorWindow inspector)inspector.PrepareForShow();
+                else if(window is CanvasSettingsWindow canvas)canvas.PrepareForShow();
+                else if(window is LayersWindow layers)layers.PrepareForShow();
+                SessionWindowCoordinator.Show(window);
+            }
             if (owner is { IsVisible: true, IsEnabled: true }) SessionWindowCoordinator.Show(owner,true);
             pickerSuspension?.Dispose();
             if (field.IsVisible && !field.IsPickerOpen) field.OpenPicker(focus: true);

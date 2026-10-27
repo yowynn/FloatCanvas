@@ -126,7 +126,24 @@ internal static class DataRemediationTests
             File.WriteAllText(Path.Combine(directory, "history-info.json"), JsonSerializer.Serialize(new { Fingerprint = index.ToString(), SourceFile = (string?)null, Eligible = true, PackageTicks = package.LastWriteTimeUtc.Ticks, PackageLength = package.Length }));
         }
         var clock = System.Diagnostics.Stopwatch.StartNew(); var entries = await history.GetEntriesAsync();
-        check($"1000 modern history entries load on a worker ({clock.ElapsedMilliseconds} ms)", entries.Count == 1000);
+        Console.WriteLine($"HISTORY_SCALE root={parent} actual={entries.Count} expected=1000 elapsedMs={clock.ElapsedMilliseconds}");
+        if (entries.Count != 1000)
+        {
+            var returned = entries.Select(entry => entry.DirectoryPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var readInfo = typeof(WorkspaceRecoveryHistory).GetMethod("EntryInfo", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            foreach (string missing in Directory.EnumerateDirectories(parent).Where(path => !returned.Contains(path)))
+            {
+                try
+                {
+                    var package = new FileInfo(Path.Combine(missing,"workspace.floatcanvas"));
+                    string metadata = File.ReadAllText(Path.Combine(missing,"history-info.json"));
+                    object? info = readInfo.Invoke(history, [missing,CancellationToken.None]);
+                    Console.WriteLine($"HISTORY_SCALE_MISSING directory={missing} ticks={package.LastWriteTimeUtc.Ticks} length={package.Length} metadata={metadata} reread={info}");
+                }
+                catch(Exception error) { Console.WriteLine($"HISTORY_SCALE_MISSING_ERROR directory={missing} error={error}"); }
+            }
+        }
+        check($"1000 modern history entries load on a worker ({clock.ElapsedMilliseconds} ms; count={entries.Count})", entries.Count == 1000);
         foreach (var entry in entries) File.Delete(Path.Combine(entry.DirectoryPath, "history-info.json"));
         clock.Restart(); var legacyEntries = await history.GetEntriesAsync();
         check($"1000 legacy history packages load off the dispatcher and deduplicate ({clock.ElapsedMilliseconds} ms)", legacyEntries.Count == 1);

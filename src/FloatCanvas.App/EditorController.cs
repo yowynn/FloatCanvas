@@ -117,7 +117,7 @@ internal sealed partial class EditorController
     internal static bool UsesDefaultSize(EditorTool value) => value is
         EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol;
     internal bool ShouldShowSelection(OverlayModifiers modifiers) =>
-        !CanvasContentHidden && (InteractionTool is EditorTool.Select or EditorTool.Stamp || IsCreationTool(InteractionTool)) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
+        !CanvasContentHidden && InteractionTool is not (EditorTool.Eraser or EditorTool.Canvas) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
 
     /// <summary>The contiguous z-order span whose pixels can change during this pointer gesture.</summary>
     public (int First, int Last, bool BypassCache) RasterPreview
@@ -244,19 +244,25 @@ internal sealed partial class EditorController
             gestureModifiers=e.Modifiers;
             bool creating = IsCreationTool(Tool);
             bool forceCreate = (e.Modifiers & OverlayModifiers.Control) != 0;
+            if (Tool == EditorTool.Text && e.Kind == OverlayPointerKind.DoubleClick && !forceCreate &&
+                HitTestScreen(pointerScreen, 4) is { Kind: ElementKind.Text } existingText)
+            { EditText?.Invoke(existingText, p); return; }
+            deselectOnClick = creating && !forceCreate && Session.Selection.Count > 0;
+            var selectionPoint = p;
+            bool canSelect = !screenGesture || CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out selectionPoint) ||
+                TryBillboardSelectionInput(out selectionPoint);
+            if (ShouldShowSelection(e.Modifiers) && canSelect && IsSelectionFrameHit(pointerScreen, includeInterior: true))
+            {
+                start = selectionPoint;
+                StartSelect(selectionPoint, e.Modifiers, selectedOnly: Tool != EditorTool.Select);
+                deselectOnClick = false; return;
+            }
             if(Tool==EditorTool.Text)
             {
-                if (!forceCreate && IsSelectionFrameHit(pointerScreen))
-                { StartSelect(p, e.Modifiers, selectedOnly: true); return; }
                 var text=forceCreate?null:HitTestScreen(pointerScreen,4);
                 EditText?.Invoke(text?.Kind==ElementKind.Text?text:null,p);
                 return;
             }
-            deselectOnClick = creating && !forceCreate && Session.Selection.Count > 0;
-            var selectionPoint = p;
-            bool canSelect = !screenGesture || CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out selectionPoint);
-            if (creating && !forceCreate && canSelect && IsWithinCurrentSelection())
-            { start = selectionPoint; StartSelect(selectionPoint, e.Modifiers, selectedOnly: true); deselectOnClick = false; return; }
             if (deselectOnClick && Tool == EditorTool.Image)
             { Session.SetSelection([]); return; }
             if (Tool is EditorTool.Number or EditorTool.Emoji)
@@ -266,11 +272,7 @@ internal sealed partial class EditorController
                 Session.NotifyChanged(); return;
             }
             if (Tool == EditorTool.Image) { Message?.Invoke(L.Get("Editor.ImportImageHint")); return; }
-            if (Tool == EditorTool.Stamp)
-            {
-                if (!forceCreate && IsWithinCurrentSelection()) StartSelect(p, e.Modifiers, selectedOnly: true);
-                return;
-            }
+            if (Tool == EditorTool.Stamp) return;
             if (Tool == EditorTool.Crop)
             {
                 if (!ImageToolEligibility.TryGetCropTarget(Session, out effectTarget))
@@ -310,7 +312,8 @@ internal sealed partial class EditorController
             if (!IsDrawingSafe()) { Cancel(); RejectPointer(true); return; }
             Session.Document.Elements.Add(drawing);
             Session.Selection.Clear();
-            if (Tool is not (EditorTool.Freehand or EditorTool.Highlighter)) Session.Selection.Add(drawing.Id);
+            if (Tool is not (EditorTool.Freehand or EditorTool.Highlighter) && !ElementGeometry.IsLine(drawing.Kind))
+                Session.Selection.Add(drawing.Id);
             Session.NotifyChanged();
         }
         else if (e.Kind == OverlayPointerKind.Move && gesture != null)
@@ -377,15 +380,6 @@ internal sealed partial class EditorController
             ClearBillboardDepth(); billboardSources.Clear();
             selectionOnClick = null;
         }
-    }
-
-    private bool IsWithinCurrentSelection()
-    {
-        if (CanvasContentHidden) return false;
-        if (Session.SelectionBounds() is not { } bounds || !Session.SelectedElements().Any(e => e.Visible && !e.Locked)) return false;
-        bool body = SelectionScreenCorners is { Count: 4 } polygon && ElementGeometry.PointInPolygon(pointerScreen, polygon);
-        return body || BillboardSelectionGuide is { } guide && pointerScreen.DistanceTo(guide.Center) < 12 || SelectionScreenCorners.Any(c => c.DistanceTo(pointerScreen) < 12) ||
-            SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14;
     }
 
     internal bool IsSelectionFrameHit(PointD screen, bool includeInterior = false)

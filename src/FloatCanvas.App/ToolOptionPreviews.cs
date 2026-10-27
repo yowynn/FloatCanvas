@@ -10,18 +10,20 @@ internal static class ToolOptionPreviews
 {
     internal static ComboBox FontPicker()
     {
-        var picker = new ComboBox { MinHeight = 32, IsTextSearchEnabled = true, MaxDropDownHeight = 300 };
-        VirtualizingPanel.SetIsVirtualizing(picker, true);
-        foreach (var font in Fonts.SystemFontFamilies.OrderBy(font => font.Source, StringComparer.CurrentCultureIgnoreCase))
-        {
-            string name = font.Source;
-            var sample = new TextBlock { Text = name, FontFamily = font, FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis };
-            var item = new ComboBoxItem { Tag = name, Content = sample }; TextSearch.SetText(item, name); picker.Items.Add(item);
-        }
-        return picker;
+        return new FontPickerControl();
     }
+    internal static bool IsFontSelectionRefresh(ComboBox picker) => picker is FontPickerControl { IsSelectionRefresh: true };
+    internal static string? SelectedFontName(ComboBox picker) => picker.SelectedItem switch
+    {
+        FontPickerControl.FontChoice font => font.Name,
+        ComboBoxItem { Tag: string name } => name,
+        _ => null
+    };
+    internal static void ClearFontSelection(ComboBox picker)
+    { if (picker is FontPickerControl fonts) fonts.ClearFontSelection(); else picker.SelectedIndex = -1; }
     internal static void SelectFont(ComboBox picker, string name)
     {
+        if (picker is FontPickerControl fonts) { fonts.SelectFont(name); return; }
         var item = picker.Items.OfType<ComboBoxItem>().FirstOrDefault(item => StringComparer.OrdinalIgnoreCase.Equals(item.Tag, name));
         bool installed = Fonts.SystemFontFamilies.Any(font => StringComparer.OrdinalIgnoreCase.Equals(font.Source, name));
         if (item is null) { item = new ComboBoxItem { Tag = name }; TextSearch.SetText(item, name); picker.Items.Insert(0, item); }

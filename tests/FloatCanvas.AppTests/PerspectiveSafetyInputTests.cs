@@ -197,7 +197,7 @@ internal static class PerspectiveSafetyInputTests
         editor.Tool = EditorTool.Crop;
         var matrix = CanvasMapping.Create(session.Document).ElementToScreen(item);
         var from = matrix.TransformPoint(new(10, 20)); var to = matrix.TransformPoint(new(100, 60));
-        Send(editor, OverlayPointerKind.Down, from); Send(editor, OverlayPointerKind.Up, to);
+        Send(editor, OverlayPointerKind.Down, from, create: true); Send(editor, OverlayPointerKind.Up, to, create: true);
         check("billboard crop input above the ground horizon uses its own screen mapping", item.ImageCrop is { } crop &&
             Math.Abs(crop.X - 10d / 120) < 1e-6 && Math.Abs(crop.Y - 20d / 360) < 1e-6 &&
             item.Width == 90 && item.Height == 40 && !editor.IsPointerBlocked);

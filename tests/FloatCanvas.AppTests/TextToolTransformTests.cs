@@ -21,11 +21,18 @@ internal static class TextToolTransformTests
             var point = area switch { "corner" => editor.SelectionScreenCorners[2], "border" => new(190, 100),
                 "rotation" => editor.SelectionScreenRotationHandle!.Value, _ => new PointD(190, 125) };
             Send(editor, OverlayPointerKind.Down, point);
-            check("Text tool " + area + " chooses editing only for the interior", area == "interior" ? edits == 1 && !state.IsTransactionActive : edits == 0 && state.IsTransactionActive);
+            check("Text tool " + area + " prioritizes the selected frame instead of editing", edits == 0 && state.IsTransactionActive);
             Send(editor, OverlayPointerKind.Move, point + new PointD(35, 20)); Send(editor, OverlayPointerKind.Up, point + new PointD(35, 20));
-            if (area != "interior")
-                check("Text tool " + area + " transforms the selected text in one undo step", state.UndoCount == 1 && state.Document.Elements.Count == 1 && state.Selection.SetEquals([text.Id]) && state.Undo() && state.Document.Elements.Single().Transform == Affine2D.Translation(100, 100));
+            check("Text tool " + area + " transforms the selected text in one undo step", state.UndoCount == 1 && state.Document.Elements.Count == 1 && state.Selection.SetEquals([text.Id]) && state.Undo() && state.Document.Elements.Single().Transform == Affine2D.Translation(100, 100));
         }
+        var doubleClicked = Text(); var doubleState = new EditorSession(new() { Elements = [doubleClicked] }); doubleState.SetSelection([doubleClicked.Id]);
+        var doubleEditor = new EditorController(doubleState) { Tool = EditorTool.Text };
+        CanvasElement? edited = null; int doubleEdits = 0;
+        doubleEditor.EditText += (existing, _) => { edited = existing; doubleEdits++; };
+        Send(doubleEditor, OverlayPointerKind.Down, new(190, 125)); Send(doubleEditor, OverlayPointerKind.Up, new(190, 125));
+        Send(doubleEditor, OverlayPointerKind.DoubleClick, new(190, 125));
+        check("a completed first click still permits double-click editing of selected text", doubleEdits == 1 && ReferenceEquals(edited, doubleClicked) &&
+            !doubleState.IsTransactionActive && doubleState.UndoCount == 0 && doubleState.Document.Elements.Count == 1 && doubleState.Selection.SetEquals([doubleClicked.Id]));
         foreach (string placement in new[] { "rotated", "projected", "billboard" })
         {
             var text = Text(); var document = new SceneDocument { Viewport = new(0, 0, 1000, 800), Elements = [text] };

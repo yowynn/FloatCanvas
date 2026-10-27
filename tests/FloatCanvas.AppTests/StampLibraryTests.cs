@@ -67,7 +67,7 @@ internal static class StampLibraryTests
         var wideEntry = await wideLibrary.SaveSelectionAsync(wideSession, "Very wide preset", StampSaveMode.RasterMerge);
         var wideStamp = await wideLibrary.LoadStampAsync(wideEntry.Id);
         using (var bitmap = SKBitmap.Decode(wideStamp.Assets.Get(wideStamp.Document.Elements[0].AssetId!).Data.ToArray()))
-            assert("oversized raster presets respect the 4096px allocation limit without shrinking placement size", bitmap.Width == 4096 && bitmap.Height <= 4096 && wideStamp.Document.Elements[0].Width > 40_000);
+            assert("oversized raster presets respect the 4096px allocation limit without shrinking placement size", bitmap.Width == 4096 && bitmap.Height <= 4096 && wideStamp.Document.Elements[0].Width == 40_000 && wideStamp.Document.Elements[0].Height == 1_000);
 
         await library.PinAsync(0, vector.Id); await library.PinAsync(9, raster.Id);
         await library.RenameAsync(vector.Id, "Renamed vector");

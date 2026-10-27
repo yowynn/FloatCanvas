@@ -154,6 +154,7 @@ internal sealed partial class DesktopSession
 
     private void DismissPanelsForCanvasPress()
     {
+        OverlayContextMenu.CloseAll();
         _toolOptionsPanel?.CloseColorPicker();
         _canvasSettingsWindow?.ClosePickers();
         _windowCoordinator?.DismissTransient(WindowDismissReason.CanvasPress);
@@ -259,7 +260,7 @@ internal sealed partial class DesktopSession
             _windowCoordinator?.Register(_layers, () => true);
             _layers.Dismissed += () => _layersWanted = false;
         }
-        if (_layersWanted) { _layers.Refresh(); ShowAppWindow(_layers, true); }
+        if (_layersWanted) { _layers.PrepareForShow(); ShowAppWindow(_layers, true); }
         else SessionWindowCoordinator.Hide(_layers);
     }
 }

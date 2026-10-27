@@ -59,9 +59,16 @@ internal static class PropertiesClickSequenceTests
         check("explicit untimed controller fixtures retain double-click semantics", sequence.Observe(new(OverlayPointerKind.DoubleClick, new(150, 150), OverlayMouseButton.Left, OverlayModifiers.None)));
 
         editor.Tool = EditorTool.Text;
-        int textEdits = 0; editor.EditText += (_, _) => textEdits++;
+        int textEdits = 0; CanvasElement? editedText = null;
+        editor.EditText += (existing, _) => { textEdits++; editedText = existing; };
         editor.PointerForCanvas(Event(OverlayPointerKind.DoubleClick, 6000), false);
-        check("property permission does not remove the original Text double-click action", textEdits == 1);
+        check("Text tool honors the selected non-text frame instead of starting a text edit", textEdits == 0 && session.IsTransactionActive && session.Document.Elements.Count == 1);
+        editor.PointerForCanvas(Event(OverlayPointerKind.Up, 6020), false);
+        var text = new CanvasElement { Kind = ElementKind.Text, Text = "Edit this text", Width = 180, Height = 50,
+            Transform = Affine2D.Translation(400, 300) };
+        session.Document.Elements.Add(text); session.SetSelection([text.Id]);
+        editor.PointerForCanvas(Event(OverlayPointerKind.DoubleClick, 6100, new(450, 325)), false);
+        check("property permission does not remove a real Text double-click edit", textEdits == 1 && ReferenceEquals(editedText, text) && !session.IsTransactionActive && requested == 2);
 
         void Complete(uint time)
         { sequence.Observe(Event(OverlayPointerKind.Down, time)); sequence.Observe(Event(OverlayPointerKind.Up, unchecked(time + 10))); }

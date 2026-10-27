@@ -83,7 +83,7 @@ internal static class OptionsFeedbackTests
         Feedback4OptionsTests.Galleries(path, locale + "-options", check);
         Feedback4OptionsTests.Parameters(path, locale + "-options", check);
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Rectangle };
-        var panel = new ToolOptionsPanel(controller, new ToolPresetLibrary(Path.Combine(path, locale + "-preview-presets.json")), new ColorLibrary(Path.Combine(path, locale + "-preview-colors.json")));
+        var panel = new ToolOptionsPanel(controller, new ToolPresetLibrary(Path.Combine(path, locale + "-preview-presets.json")), new ColorLibrary(Path.Combine(path, locale + "-preview-colors.json"))); panel.PrepareForShow();
         RenderPreviews(panel, controller, locale);
     }
 
@@ -110,7 +110,7 @@ internal static class OptionsFeedbackTests
             Pump();
             foreach (var tool in new[] { EditorTool.Rectangle, EditorTool.Line })
             {
-                controller.Tool = tool; panel.Refresh(); panel.Measure(new Wpf.Size(520, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
+                controller.Tool = tool; panel.PrepareForShow(); panel.Measure(new Wpf.Size(520, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
                 Pump(); panel.UpdateLayout();
                 var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(780, (int)Math.Ceiling(panel.ActualHeight * 1.5), 144, 144, System.Windows.Media.PixelFormats.Pbgra32);
                 bitmap.Render(panel); var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));

@@ -37,6 +37,7 @@ internal static class PropertyVisualTests
         var second = new CanvasElement { Kind = ElementKind.Rectangle, Width = 100, Height = 50 };
         session.Add(first); session.Add(second); session.SetSelection([first.Id, second.Id]);
         var inspector = new InspectorWindow(() => session);
+        inspector.PrepareForShow();
         T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
         var toggle = Field<PropertySwitch>(inspector, "linkColors");
         check("mixed inspector color links use the common switch", toggle.IsChecked is null && ReferenceEquals(toggle.Style, Application.Current.Resources["CanvasPropertySwitch"]));
@@ -49,6 +50,7 @@ internal static class PropertyVisualTests
         check("first visible inspector section has no top divider", properties.Children.OfType<Border>().First(e => e.Visibility == Visibility.Visible).BorderThickness.Top == 0);
         check("every inspector geometry scrubber belongs to an embedded anchor", Field<List<NumericScrubber>>(inspector, "scrubbers").All(scrub => numbers.Values.Any(number => ReferenceEquals(Field<FrameworkElement>(scrub, "label"), number.DragAnchor))));
         var picker = new ColorPickerPanel(ColorRole.Foreground, new ColorLibrary(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "FloatCanvas-visual-" + Guid.NewGuid().ToString("N"), "colors.json")));
+        picker.PrepareForShow();
         picker.Measure(new(660, 500)); picker.Arrange(new(0, 0, 660, 500)); picker.UpdateLayout();
         check("color hex and opacity editors share a 34 DIP height", Field<TextBox>(picker, "hex").ActualHeight == PropertyPanelLayout.ControlHeight && Field<NumericValueField>(picker, "alphaField").ActualHeight == PropertyPanelLayout.ControlHeight);
         check("color and inspector opacity use the identical icon", ((NumericPropertyIcon)numbers["Opacity"].DragAnchor.Child).Kind == NumericPropertyKind.Opacity && ((NumericPropertyIcon)Field<NumericValueField>(picker, "alphaField").DragAnchor.Child).Kind == NumericPropertyKind.Opacity);

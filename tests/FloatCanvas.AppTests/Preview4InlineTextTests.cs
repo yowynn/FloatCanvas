@@ -8,23 +8,43 @@ internal static class Preview4InlineTextTests
 {
     internal static void Run(Action<string,bool> check)
     {
-        var text=new CanvasElement {Kind=ElementKind.Text,Text="Edit here",Width=180,Height=50,Transform=Affine2D.Translation(100,100)};
-        var session=new EditorSession(new SceneDocument {Elements=[text]});session.SetSelection([text.Id]);
-        var controller=new EditorController(session) {Tool=EditorTool.Text};
-        CanvasElement? requested=null;int requests=0;
-        controller.EditText+=(existing,_)=>{requested=existing;requests++;};
-        controller.Pointer(new(OverlayPointerKind.Down,new(130,120),OverlayMouseButton.Left,OverlayModifiers.None));
-        check("the text tool starts editing the selected text at its canvas position instead of moving it",requests==1&&ReferenceEquals(requested,text)&&!session.IsTransactionActive);
-        controller.Pointer(new(OverlayPointerKind.Up,new(130,120),OverlayMouseButton.Left,OverlayModifiers.None));
-        controller.Pointer(new(OverlayPointerKind.Down,new(130,120),OverlayMouseButton.Left,OverlayModifiers.Control));
-        check("Ctrl click inside existing text requests a new text layer",requests==2&&requested is null);
         _=Application.Current??new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};
         AppTheme.Apply("light");
         using var renderer=new SceneRenderer();
+        var text=new CanvasElement {Kind=ElementKind.Text,Text="Edit here",Width=180,Height=50,Transform=Affine2D.Translation(100,100)};
+        var session=new EditorSession(new SceneDocument {Elements=[text]});session.SetSelection([text.Id]);
+        var controller=new EditorController(session) {Tool=EditorTool.Text};
+        CanvasElement? requested=null;PointD? requestedPoint=null;int requests=0;
+        controller.EditText+=(existing,point)=>{requested=existing;requestedPoint=point;requests++;};
+        controller.Pointer(new(OverlayPointerKind.Down,new(130,120),OverlayMouseButton.Left,OverlayModifiers.None));
+        check("the text tool starts a selected-frame movement before inline editing",requests==0&&session.IsTransactionActive);
+        controller.Pointer(new(OverlayPointerKind.Move,new(155,135),OverlayMouseButton.Left,OverlayModifiers.None));
+        controller.Pointer(new(OverlayPointerKind.Up,new(155,135),OverlayMouseButton.Left,OverlayModifiers.None));
+        check("selected text body drag moves the old text once without reopening its editor",requests==0&&text.Transform==Affine2D.Translation(125,115)&&
+            session.Selection.SetEquals([text.Id])&&session.UndoCount==1&&!session.IsTransactionActive);
+        using var rendered=SkiaSharp.SKBitmap.Decode(renderer.ExportPng(session.Document,session.Assets,true))
+            ??throw new InvalidOperationException("Cannot render the inline double-click fixture.");
+        var bounds=ElementGeometry.Bounds(text);PointD? ink=null;double nearest=double.MaxValue;
+        for(int y=Math.Max(0,(int)Math.Floor(bounds.Top));y<Math.Min(rendered.Height,(int)Math.Ceiling(bounds.Bottom));y++)
+        for(int x=Math.Max(0,(int)Math.Floor(bounds.Left));x<Math.Min(rendered.Width,(int)Math.Ceiling(bounds.Right));x++)
+        {
+            if(rendered.GetPixel(x,y).Alpha==0)continue;
+            var point=new PointD(x+.5,y+.5);double distance=point.DistanceTo(bounds.Center);
+            if(distance<nearest){nearest=distance;ink=point;}
+        }
+        check("inline editing double-click targets actual rendered glyph ink",ink.HasValue);
+        if(ink is not{} hit)throw new InvalidOperationException("The inline editing fixture contains no glyph ink.");
+        controller.Pointer(new(OverlayPointerKind.DoubleClick,new(hit.X,hit.Y),OverlayMouseButton.Left,OverlayModifiers.None));
+        check("double-clicked glyph opens the existing text at its canvas position",requests==1&&ReferenceEquals(requested,text)&&
+            requestedPoint is{} editPoint&&editPoint.DistanceTo(hit)<1e-8&&text.Transform==Affine2D.Translation(125,115)&&session.UndoCount==1&&!session.IsTransactionActive);
+        controller.Pointer(new(OverlayPointerKind.Up,new(hit.X,hit.Y),OverlayMouseButton.Left,OverlayModifiers.None));
+        controller.Pointer(new(OverlayPointerKind.Down,new(hit.X,hit.Y),OverlayMouseButton.Left,OverlayModifiers.Control));
+        check("Ctrl click inside existing text requests a new text layer",requests==2&&requested is null);
+        controller.Pointer(new(OverlayPointerKind.Up,new(hit.X,hit.Y),OverlayMouseButton.Left,OverlayModifiers.Control));
         var fresh=new EditorSession();
         using(var edit=new InlineTextEdit(fresh,null,new(123,89),new() {FontSize=28},renderer))
         {
-            check("a new inline draft immediately has its own selected layer and transaction",fresh.Document.Elements.Count==1&&fresh.IsTransactionActive&&fresh.Selection.SetEquals([edit.Target.Id]));
+            check("a new inline draft immediately has its own selected layer and transaction",fresh.Document.Elements.Count==1&&fresh.IsTransactionActive&&fresh.Selection.SetEquals([edit.Target.Id])&&edit.Target.Transform==Affine2D.Translation(123,89));
             edit.Input.Text="中文 inline 👩‍🎨\r\nSecond line";
             check("typing previews the actual canvas text while retaining one uncommitted operation",edit.Target.Text=="中文 inline 👩‍🎨\nSecond line"&&fresh.UndoCount==0&&edit.Target.Height>28);
             var geometry=edit.Geometry;

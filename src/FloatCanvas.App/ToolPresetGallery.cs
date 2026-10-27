@@ -22,6 +22,7 @@ internal sealed class ToolPresetGallery : UserControl
     private readonly Grid userArea = new();
     private EditorTool? observedTool;
     private bool selectedModified;
+    private bool refreshPending = true, revealPending;
     internal string SelectedId => selections.GetValueOrDefault(ToolPresetLibrary.Family(controller.Tool)) ?? "";
     internal event Action? Applied;
     internal event Action<string>? Failed;
@@ -45,7 +46,8 @@ internal sealed class ToolPresetGallery : UserControl
         DockPanel.SetDock(save, Dock.Right); userHeader.Children.Add(save); userHeader.Children.Add(Heading("ToolOptions.User")); headings.Children.Add(userHeader);
         userArea.Children.Add(empty);
         userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body; Refresh();
+        userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body;
+        IsVisibleChanged+=(_,_)=>{if(IsVisible&&refreshPending)PrepareForShow();else if(!IsVisible)refreshPending=true;};
     }
 
     protected override Size MeasureOverride(Size constraint)
@@ -62,6 +64,13 @@ internal sealed class ToolPresetGallery : UserControl
 
     internal void Refresh(bool revealSelection = false)
     {
+        refreshPending=true;revealPending|=revealSelection;
+        if(IsVisible)PrepareForShow();
+    }
+
+    internal void PrepareForShow()
+    {
+        bool revealSelection=revealPending;revealPending=false;refreshPending=false;
         var tool = ToolPresetLibrary.Family(controller.Tool); var official = library.OfficialFor(tool); var users = library.UserFor(tool);
         bool changed = false;
         var focus = TileCollection.Capture(this, Tiles());
@@ -78,7 +87,7 @@ internal sealed class ToolPresetGallery : UserControl
             button.PreviewKeyDown += (_, e) =>
             {
                 if (Keyboard.Modifiers != ModifierKeys.None || e.Key is not (Key.F2 or Key.Delete)) return;
-                e.Handled = true; if (e.IsRepeat) return;
+                e.Handled = true; if (AppInputPolicy.IsRepeat(e)) return;
                 if (e.Key == Key.F2 && library.User.FirstOrDefault(item => item.Id == id) is { } current) Rename(current);
                 else if (e.Key == Key.Delete) Delete(preset);
             };

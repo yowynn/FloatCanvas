@@ -86,7 +86,7 @@ internal static class PaletteLayoutTests
         picker.Run(() => throw new IOException("fixture write failed")); Layout(root, scale);
         check(name + " expands for a resource-save error", error.Visibility == Visibility.Visible &&
             error.Text.Contains("fixture write failed") && root.ActualHeight > normalHeight);
-        picker.Value = 0xFF123456; Layout(root, scale);
+        picker.Value = 0xFF123456; picker.PrepareForShow(); Layout(root, scale);
         check(name + " releases error space after resynchronizing valid input", error.Visibility == Visibility.Collapsed &&
             Near(root.ActualHeight, normalHeight) && root.ActualHeight - Bounds(actions, root).Bottom <= WindowLayout.ContentInset + 2);
     }
@@ -153,7 +153,7 @@ internal static class PaletteLayoutTests
         CheckSwatches(history.Children.OfType<Button>().Concat(pinned.Children.OfType<Button>()), name + " secondary palette", scale, check);
         var focused = pinned.Children.OfType<Button>().First(); picker.RefreshCollections();
         check(name + " palette refresh preserves the existing interactive tile", ReferenceEquals(focused, pinned.Children.OfType<Button>().First()));
-        var options = new ToolOptionsPanel(controller, recipes, colors); Layout(options, scale);
+        var options = new ToolOptionsPanel(controller, recipes, colors); options.PrepareForShow(); Layout(options, scale);
         var gallery = Field<ToolPresetGallery>(options, "presets");
         check(name + " official presets occupy one five-tile row", Rows(gallery.OfficialTiles).SequenceEqual([5]));
         check(name + " personal presets retain five columns with a vertical scrollbar", Rows(gallery.UserTiles).Take(4).SequenceEqual([5, 5, 5, 5]) && Scroll(gallery.UserTiles).ComputedVerticalScrollBarVisibility == Visibility.Visible && FirstRowFits(gallery.UserTiles));
@@ -163,10 +163,10 @@ internal static class PaletteLayoutTests
     {
         string name = $"{theme} {scale * 100:0}%";
         controller.Tool = EditorTool.Freehand;
-        var sparsePanel = new ToolOptionsPanel(controller, sparse, colors); Layout(sparsePanel, scale);
+        var sparsePanel = new ToolOptionsPanel(controller, sparse, colors); sparsePanel.PrepareForShow(); Layout(sparsePanel, scale);
         var sparseGallery = Field<ToolPresetGallery>(sparsePanel, "presets");
         var sparseScroll = Field<ScrollViewer>(sparseGallery, "userScroll");
-        var densePanel = new ToolOptionsPanel(controller, dense, colors); Layout(densePanel, scale);
+        var densePanel = new ToolOptionsPanel(controller, dense, colors); densePanel.PrepareForShow(); Layout(densePanel, scale);
         var denseGallery = Field<ToolPresetGallery>(densePanel, "presets");
         var denseScroll = Field<ScrollViewer>(denseGallery, "userScroll");
         var tiles = denseGallery.UserTiles.Children.OfType<Button>().ToArray();
@@ -175,7 +175,7 @@ internal static class PaletteLayoutTests
             denseScroll.ViewportHeight + .51 / scale >= fourthRowBottom);
         check(name + " a large preset library does not determine the panel height", Math.Abs(sparsePanel.ActualHeight - densePanel.ActualHeight) * scale <= 1);
         double compactHeight = densePanel.ActualHeight, compactViewport = denseScroll.ViewportHeight;
-        controller.Tool = EditorTool.Number; densePanel.Refresh(); Layout(densePanel, scale);
+        controller.Tool = EditorTool.Number; densePanel.PrepareForShow(); Layout(densePanel, scale);
         var border = Ancestors(denseGallery).OfType<Border>().First();
         check(name + " additional tool properties grow the personal-preset viewport into the available height", densePanel.ActualHeight > compactHeight + 10 &&
             denseScroll.ViewportHeight > compactViewport + 10 && Near(denseGallery.ActualHeight, border.ActualHeight));
@@ -228,6 +228,8 @@ internal static class PaletteLayoutTests
     { yield return root; for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) foreach (var child in Visuals(VisualTreeHelper.GetChild(root, i))) yield return child; }
     private static void Layout(FrameworkElement root, double scale)
     {
+        if(root is ColorField field)field.PrepareForShow();
+        else if(root is ColorPickerPanel picker)picker.PrepareForShow();
         // Materialize templates before changing the detached root DPI. Otherwise
         // pre-created ContentControl children can retain their default DPI cache.
         root.Measure(new Size(1600, 1600)); root.Arrange(new Rect(0, 0, root.DesiredSize.Width, root.DesiredSize.Height)); root.UpdateLayout();

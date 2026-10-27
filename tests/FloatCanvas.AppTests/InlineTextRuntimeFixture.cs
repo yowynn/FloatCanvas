@@ -68,7 +68,7 @@ internal static class InlineTextRuntimeFixture
             Click(350,180);edit=Get<InlineTextEdit>(session,"_inlineText");edit.Input.Text="second";
             Click(450,250);
             check("a canvas click outside the active text commits it and starts a distinct new layer",editor.Session.Document.Elements.Count==3&&editor.Session.UndoCount==2&&Get<InlineTextEdit>(session,"_inlineText").Target.Text=="");
-            edit=Get<InlineTextEdit>(session,"_inlineText");edit.Input.Text="third";
+            edit=Get<InlineTextEdit>(session,"_inlineText");edit.Input.Text="third";var thirdId=edit.Target.Id;
             var pointerRoute=Get<Action<OverlayPointerEvent>>(host,"Pointer");
             var inside=new OverlayPoint(bounds.Left+453,bounds.Top+253);
             pointerRoute(new(OverlayPointerKind.Down,inside,OverlayMouseButton.Left,OverlayModifiers.Control));
@@ -76,7 +76,9 @@ internal static class InlineTextRuntimeFixture
             check("production Ctrl-pointer route inside current text starts another layer",editor.Session.Document.Elements.Count==4&&editor.Session.UndoCount==3);
             Key(0x1B,false);Key(0x1B,true);
             check("native Escape cancels only the new draft and retains previous committed text",editor.Session.Document.Elements.Count==3&&Get<InlineTextEdit?>(session,"_inlineText") is null);
-            Click(454,254);edit=Get<InlineTextEdit>(session,"_inlineText");edit.Input.Text="third edited";
+            Click(454,254,doubleClick:true);edit=Get<InlineTextEdit>(session,"_inlineText");
+            check("native double click reopens the existing text without inserting another layer",edit.Target.Id==thirdId&&editor.Session.Document.Elements.Count==3);
+            edit.Input.Text="third edited";
             Invoke("ActivateTool",EditorTool.Rectangle);Pump();
             check("switching tools commits inline text before the drawing controller cancels its old gesture",Get<InlineTextEdit?>(session,"_inlineText") is null&&editor.Session.Document.Elements.Any(e=>e.Text=="third edited")&&!editor.Session.IsTransactionActive);
             editor.Tool=EditorTool.Text;Click(120,285);
@@ -104,9 +106,9 @@ internal static class InlineTextRuntimeFixture
             return;
 
             object? Invoke(string name,params object[] args)=>typeof(DesktopSession).GetMethod(name,Private)!.Invoke(session,args);
-            void Click(int x,int y,bool control=false)
+            void Click(int x,int y,bool control=false,bool doubleClick=false)
             {
-                SendMessage(input,0x201,control?9u:1u,Pack(x,y));Pump();
+                SendMessage(input,doubleClick?0x203u:0x201u,control?9u:1u,Pack(x,y));Pump();
                 SendMessage(input,0x202,control?8u:0u,Pack(x,y));Pump();
             }
             void Key(uint key,bool up,bool shift=false,bool control=false,OverlayPoint? position=null)

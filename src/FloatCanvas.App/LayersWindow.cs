@@ -57,7 +57,7 @@ internal sealed class LayersWindow : Wpf.Window
         layers.SelectionChanged += (_, _) => SelectRows();
         Closing += (_, e) => { e.Cancel = true; CommitRename(); CancelDrag(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         Deactivated += (_, _) => { if (SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending != true) { CommitRename(); CancelDrag(); } };
-        IsVisibleChanged += (_, _) => { if (!IsVisible) { CommitRename(); CancelDrag(); } };
+        IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); else { CommitRename(); CancelDrag(); } };
         AppInputPolicy.AttachToolbarToggle(this, () => CommandKey?.Invoke(0x09), () => !IsRenaming && this.canMutate());
         PreviewKeyDown += (_, e) =>
         {
@@ -72,16 +72,16 @@ internal sealed class LayersWindow : Wpf.Window
                 if (!renameComposing && EditorShortcutPolicy.IsProjectCommand(projectKey, (FloatCanvas.Windows.OverlayModifiers)modifiers))
                 {
                     e.Handled = true;
-                    if (!e.IsRepeat && this.canMutate()) { CommitRename(); CommandKey?.Invoke(projectKey); }
+                    if (!AppInputPolicy.IsRepeat(e) && this.canMutate()) { CommitRename(); CommandKey?.Invoke(projectKey); }
                 }
                 return;
             }
             if (key == Input.Key.F2 && modifiers == Input.ModifierKeys.None && layers.SelectedItems.Count == 1)
-            { e.Handled = true; if (!e.IsRepeat) BeginRename((Guid)((Controls.ListBoxItem)layers.SelectedItem).Tag); return; }
+            { e.Handled = true; if (!AppInputPolicy.IsRepeat(e)) BeginRename((Guid)((Controls.ListBoxItem)layers.SelectedItem).Tag); return; }
             if (key == Input.Key.Escape)
             {
                 e.Handled = true;
-                if (!e.IsRepeat && !AppWindowChrome.TryCloseHelp(this)) { if (dragIds is not null) CancelDrag(); else { SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); } }
+                if (!AppInputPolicy.IsRepeat(e) && !AppWindowChrome.TryCloseHelp(this)) { if (dragIds is not null) CancelDrag(); else { SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); } }
                 return;
             }
             bool ctrl = (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0;
@@ -89,18 +89,24 @@ internal sealed class LayersWindow : Wpf.Window
             if (ctrl && key == Input.Key.G && !localInput)
             {
                 e.Handled = true;
-                if (!e.IsRepeat) RunLayerCommand(s => { if ((modifiers & Input.ModifierKeys.Shift) != 0) s.UngroupSelection(); else s.GroupSelection(); });
+                if (!AppInputPolicy.IsRepeat(e)) RunLayerCommand(s => { if ((modifiers & Input.ModifierKeys.Shift) != 0) s.UngroupSelection(); else s.GroupSelection(); });
                 return;
             }
             int command = Input.KeyInterop.VirtualKeyFromKey(key);
             if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: true, localInput: localInput)) return;
             e.Handled = true;
-            if (!e.IsRepeat || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, ctrl);
+            if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, ctrl);
         };
         Refresh();
     }
 
     public void Refresh()
+    {
+        if (!IsVisible) return;
+        PrepareForShow();
+    }
+
+    internal void PrepareForShow()
     {
         if (!canMutate() || dragIds is not null) return;
         var session = getSession(); if (session.IsTransactionActive) return;
@@ -123,8 +129,11 @@ internal sealed class LayersWindow : Wpf.Window
             foreach (var element in ordered)
             {
                 var row = rows[element.Id]; string name = InspectorWindow.ElementName(element);
-                row.Label.Text = element.GroupId is not null ? "▦  " + name : name;
-                row.Label.ToolTip = name + "\n" + L.Get("Layers.RenameHint");
+                if (row.Label.Visibility == Wpf.Visibility.Visible)
+                {
+                    row.Label.Text = element.GroupId is not null ? "▦  " + name : name;
+                    row.Label.ToolTip = name + "\n" + L.Get("Layers.RenameHint");
+                }
                 row.Item.IsSelected = session.Selection.Contains(element.Id);
                 if (row.PaintedVisible != element.Visible) { row.Visible.Content = IconPath(element.Visible ? Eye : EyeOff); row.PaintedVisible = element.Visible; }
                 if (row.PaintedLocked != element.Locked) { row.Locked.Content = IconPath(element.Locked ? Lock : Unlock); row.PaintedLocked = element.Locked; }
@@ -224,7 +233,22 @@ internal sealed class LayersWindow : Wpf.Window
         if (refreshing) return;
         var session = getSession();
         if (!canMutate() || session.IsTransactionActive || !ReferenceEquals(session, displayedSession))
-        { status.Text = L.Get("Inspector.BusySelectionRetained"); RefreshRows(session); return; }
+        {
+            if (IsVisible && displayedSession is not null)
+            {
+                status.Text = L.Get("Inspector.BusySelectionRetained");
+                // A rejected user selection still needs its visible selection restored.
+                // Do not refresh property rows or bypass their mutation guard.
+                refreshing = true;
+                try
+                {
+                    foreach (var item in layers.Items.Cast<Controls.ListBoxItem>())
+                        item.IsSelected = displayedSession.Selection.Contains((Guid)item.Tag);
+                }
+                finally { refreshing = false; }
+            }
+            return;
+        }
         session.SetSelection(layers.SelectedItems.Cast<Controls.ListBoxItem>().Select(i => (Guid)i.Tag));
         Refresh();
     }
@@ -243,7 +267,7 @@ internal sealed class LayersWindow : Wpf.Window
             });
         }
         catch (Exception ex) { status.Text = ex.Message; }
-        RefreshRows(getSession());
+        Refresh();
     }
 
     private void RunLayerCommand(Action<EditorSession> operation)
@@ -360,7 +384,7 @@ internal sealed class LayersWindow : Wpf.Window
         // Composition-confirming Enter/Esc belongs to the IME, not to the layer command.
         if (!IsRenaming || renameComposing) return false;
         if (key == Input.Key.Enter) { CommitRename(); return true; }
-        if (key == Input.Key.Escape) { CancelRename(); return true; }
+        if (key == Input.Key.Escape) { CancelRename(); Refresh(); return true; }
         return false;
     }
 

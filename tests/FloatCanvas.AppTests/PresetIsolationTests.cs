@@ -55,16 +55,16 @@ internal static class PresetIsolationTests
         library.Save("Persistence sentinel", new ToolParameters());
         string fileBefore = Hash(File.ReadAllBytes(path));
         string definitionsBefore = JsonSerializer.Serialize(library.Official);
-        var gallery = new ToolPresetGallery(controller, library);
+        var gallery = new ToolPresetGallery(controller, library); gallery.Applied+=gallery.PrepareForShow; gallery.PrepareForShow();
         var session = Desktop(controller, library);
         string penBaseline = JsonSerializer.Serialize(library.Official.Single(p => p.Id == "official.freehand").Parameters);
         string penPreview = PreviewHashes(gallery)["official.freehand"];
         controller.Style.Stroke = EditedPen; controller.Style.StrokePattern = StrokePattern.Dotted;
         controller.Style.StrokeWidth = 13; controller.Style.Fill = 0xAA331144;
-        gallery.Refresh();
+        gallery.PrepareForShow();
         check(target + " editing the pen preserves its fixed official definition and preview", penBaseline == JsonSerializer.Serialize(library.Official.Single(p => p.Id == "official.freehand").Parameters) && penPreview == PreviewHashes(gallery)["official.freehand"]);
 
-        Activate(session, target); gallery.Refresh();
+        Activate(session, target); gallery.PrepareForShow();
         check(target + " first visit uses its independent default color and solid line", controller.Style.Stroke == DefaultStroke && controller.Style.StrokePattern == StrokePattern.Solid);
         check(target + " first visit does not inherit the previous tools width or fill", controller.Style.Fill == (target == EditorTool.Number ? 0xFFFFFFFF : new ToolParameters().Style.Fill) &&
             Math.Abs(controller.Style.StrokeWidth - (target == EditorTool.Highlighter ? 24 : new ToolParameters().Style.StrokeWidth)) < .001);
@@ -72,13 +72,13 @@ internal static class PresetIsolationTests
         var previews = PreviewHashes(gallery);
         string baselineBefore = JsonSerializer.Serialize(library.Official.Single(p => p.Id == gallery.SelectedId).Parameters);
         controller.Style.Stroke = EditedTarget; controller.Style.StrokePattern = StrokePattern.Dashed; controller.Style.StrokeWidth = 9;
-        gallery.Refresh();
+        gallery.PrepareForShow();
         check(target + " parameter editing preserves every official thumbnail including unselected recipes", previews.OrderBy(pair => pair.Key).SequenceEqual(PreviewHashes(gallery).OrderBy(pair => pair.Key)));
         check(target + " temporary editing does not rewrite its official definition", baselineBefore == JsonSerializer.Serialize(library.Official.Single(p => p.Id == gallery.SelectedId).Parameters));
 
-        Activate(session, EditorTool.Freehand); gallery.Refresh();
+        Activate(session, EditorTool.Freehand); gallery.PrepareForShow();
         check(target + " switching back restores the edited pen state", controller.Style.Stroke == EditedPen && controller.Style.StrokePattern == StrokePattern.Dotted && controller.Style.StrokeWidth == 13);
-        Activate(session, target); gallery.Refresh();
+        Activate(session, target); gallery.PrepareForShow();
         check(target + " revisiting restores working state while an explicit arrow alias restores its factory preset", controller.Style.Stroke == (target == EditorTool.Arrow ? DefaultStroke : EditedTarget) &&
             controller.Style.StrokeWidth == (target == EditorTool.Arrow ? 4 : 9) && controller.Style.StrokePattern == (target == EditorTool.Arrow ? StrokePattern.Solid : StrokePattern.Dashed));
         check(target + " tool switching does not write user recipes or official definitions", fileBefore == Hash(File.ReadAllBytes(path)) && definitionsBefore == JsonSerializer.Serialize(library.Official));
@@ -88,20 +88,20 @@ internal static class PresetIsolationTests
     {
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Rectangle };
         var library = new ToolPresetLibrary(Path.Combine(folder, "explicit.json"));
-        var gallery = new ToolPresetGallery(controller, library);
+        var gallery = new ToolPresetGallery(controller, library); gallery.Applied+=gallery.PrepareForShow; gallery.PrepareForShow();
         controller.Style.Stroke = 0xBE456789; controller.Style.Fill = 0x77123456; controller.Style.StrokeWidth = 11;
         controller.Style.StrokePattern = StrokePattern.Dotted;
-        gallery.Apply("official.rounded-rectangle");
+        gallery.Apply("official.rounded-rectangle"); gallery.PrepareForShow();
         check("explicit first use of another official preset restores its fixed colors and width", controller.Style.Stroke == DefaultStroke && controller.Style.Fill == 0 && controller.Style.StrokeWidth == 4 && controller.CornerRadius == 12);
-        controller.Style.Stroke = 0xFF000000; controller.Style.StrokeWidth = 21; gallery.Refresh();
-        gallery.Apply("official.rounded-rectangle");
+        controller.Style.Stroke = 0xFF000000; controller.Style.StrokeWidth = 21; gallery.PrepareForShow();
+        gallery.Apply("official.rounded-rectangle"); gallery.PrepareForShow();
         check("clicking an explicitly applied official preset restores the same factory parameters", controller.Style.Stroke == DefaultStroke && controller.Style.StrokeWidth == 4 && controller.CornerRadius == 12);
     }
 
     private static void HeadingLayout(ToolPresetLibrary library, ColorLibrary colors, string theme, double scale, Action<string, bool> check)
     {
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Line };
-        var panel = new ToolOptionsPanel(controller, library, colors); Layout(panel, scale);
+        var panel = new ToolOptionsPanel(controller, library, colors); panel.PrepareForShow(); Layout(panel, scale);
         var gallery = Field<ToolPresetGallery>(panel, "presets");
         var headings = Visuals(gallery).OfType<TextBlock>().Where(text => text.Text == L.Get("ToolOptions.Official") || text.Text == L.Get("ToolOptions.User")).ToArray();
         var officialHeading = headings.Single(text => text.Text == L.Get("ToolOptions.Official"));
@@ -115,9 +115,9 @@ internal static class PresetIsolationTests
         var scroll = Field<ScrollViewer>(gallery, "userScroll");
         double fourthBottom = gallery.UserTiles.Children.OfType<FrameworkElement>().ElementAt(19).TranslatePoint(new Point(0, 36), gallery.UserTiles).Y;
         check(name + " retain the minimum four-row personal viewport and scrolling", scroll.ViewportHeight + .51 / scale >= fourthBottom && scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible);
-        controller.Tool = EditorTool.Freehand; panel.Refresh(); Layout(panel, scale);
+        controller.Tool = EditorTool.Freehand; panel.PrepareForShow(); Layout(panel, scale);
         double oldHeight = scroll.ViewportHeight;
-        controller.Tool = EditorTool.Number; panel.Refresh(); Layout(panel, scale);
+        controller.Tool = EditorTool.Number; panel.PrepareForShow(); Layout(panel, scale);
         check(name + " let the personal viewport expand beside taller tool properties", scroll.ViewportHeight > oldHeight + 10);
     }
 

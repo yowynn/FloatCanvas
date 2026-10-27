@@ -27,8 +27,8 @@ internal static class ShortcutSurfaceRoutingTests
         var first = new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 30 };
         var second = new CanvasElement { Kind = ElementKind.Ellipse, Width = 30, Height = 20 };
         state.Add(first); state.Add(second); state.SetSelection([first.Id, second.Id]);
-        var inspector = new InspectorWindow(() => state);
-        var layers = new LayersWindow(() => state);
+        var inspector = new InspectorWindow(() => state); inspector.PrepareForShow();
+        var layers = new LayersWindow(() => state); layers.PrepareForShow();
         var options = new Window { Content = new Grid() };
         var surfaces = new[] { inspector, layers, options };
         var names = new[] { "Inspector", "Layers", "ToolOptions" };

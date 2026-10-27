@@ -14,6 +14,11 @@ internal static class LayerRenameTests
 {
     public static void Run(Action<string, bool> check)
     {
+        if (Wpf.Application.Current is null)
+        {
+            _ = new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
+            AppTheme.Apply("light");
+        }
         Core(check);
         string language = L.Preference;
         try { foreach (string locale in new[] { "zh-CN", "en" }) { L.Initialize(locale); Panel(check); } }
@@ -62,20 +67,25 @@ internal static class LayerRenameTests
         var b = new CanvasElement { Kind = ElementKind.Ellipse, Width = 40, Height = 40 };
         session.Add(a); session.Add(b); session.SetSelection([a.Id]);
         var window = new LayersWindow(() => session, () => allowed);
+        window.PrepareForShow();
         var list = (Controls.ListBox)Field(window, "layers");
         Controls.ListBoxItem Item(Guid id) => list.Items.Cast<Controls.ListBoxItem>().Single(i => (Guid)i.Tag == id);
         Controls.TextBlock Label(Guid id) => ((Controls.Grid)Item(id).Content).Children.OfType<Controls.TextBlock>().Single();
         Controls.TextBox Editor(Guid id) => ((Controls.Grid)Item(id).Content).Children.OfType<Controls.TextBox>().Single();
-        void ClickName(Guid id) => Label(id).RaiseEvent(new Input.MouseButtonEventArgs(Input.Mouse.PrimaryDevice, Environment.TickCount, Input.MouseButton.Left)
-        { RoutedEvent = Input.Mouse.PreviewMouseDownEvent });
+        void ClickName(Guid id)
+        {
+            window.PrepareForShow();
+            Label(id).RaiseEvent(new Input.MouseButtonEventArgs(Input.Mouse.PrimaryDevice, Environment.TickCount, Input.MouseButton.Left)
+            { RoutedEvent = Input.Mouse.PreviewMouseDownEvent });
+        }
         ClickName(b.Id);
         check(locale + " first click on an unselected name does not enter rename", !window.IsRenaming);
-        session.SetSelection([a.Id]); window.Refresh(); ClickName(a.Id);
+        session.SetSelection([a.Id]); window.PrepareForShow(); ClickName(a.Id);
         check(locale + " clicking an already selected name opens its inline editor", window.IsRenaming && Editor(a.Id).Visibility == Wpf.Visibility.Visible && Label(a.Id).Visibility == Wpf.Visibility.Collapsed);
         int before = session.UndoCount;
         Invoke(window, "HandleRenameKey", Input.Key.Enter);
         check(locale + " accepting an untouched default name is a no-op", !window.IsRenaming && session.Document.Elements.Single(e => e.Id == a.Id).Name is null && session.UndoCount == before);
-        ClickName(a.Id); Editor(a.Id).Text = "保留中文 draft"; window.Refresh();
+        ClickName(a.Id); Editor(a.Id).Text = "保留中文 draft"; window.PrepareForShow();
         check(locale + " periodic refresh preserves the uncommitted draft", window.IsRenaming && Editor(a.Id).Text == "保留中文 draft");
         int routed = 0; window.CommandKey += _ => routed++;
         bool route = (bool)Invoke(window, "RouteCommandKey", 0x2E, false)!;
@@ -96,7 +106,7 @@ internal static class LayerRenameTests
         allowed = false; ClickName(a.Id);
         check(locale + " mutation guard blocks starting a rename", !window.IsRenaming);
         allowed = true; ClickName(a.Id); Editor(a.Id).Text = "stale";
-        session = new EditorSession(new() { Elements = [new() { Kind = ElementKind.Rectangle, Width = 40, Height = 40 }] }); window.Refresh();
+        session = new EditorSession(new() { Elements = [new() { Kind = ElementKind.Rectangle, Width = 40, Height = 40 }] }); window.PrepareForShow();
         check(locale + " changing documents discards a stale rename without editing the replacement", !window.IsRenaming && session.Document.Elements.Single().Name is null);
         check(locale + " rename handler tests create no native windows", new System.Windows.Interop.WindowInteropHelper(window).Handle == 0 && !window.IsVisible);
     }
@@ -137,5 +147,10 @@ internal static class LayerRenameTests
 
     private static object Field(object target, string name) => target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
     private static void SetField(object target, string name, object value) => target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
-    private static object? Invoke(object target, string name, params object[] args) => target.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(target, args);
+    private static object? Invoke(object target, string name, params object[] args)
+    {
+        var result = target.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(target, args);
+        if (target is LayersWindow window) window.PrepareForShow();
+        return result;
+    }
 }

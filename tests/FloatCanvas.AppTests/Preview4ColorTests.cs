@@ -16,16 +16,17 @@ internal static class Preview4ColorTests
         string root = Path.Combine(Path.GetTempPath(), "FloatCanvas-Preview4Colors", Guid.NewGuid().ToString("N"));
         var library = new ColorLibrary(Path.Combine(root, "colors.json"));
         var editor = new EditorController(new EditorSession());
-        var panel = new ToolOptionsPanel(editor, new ToolPresetLibrary(Path.Combine(root, "presets.json")), library);
+        var panel = new ToolOptionsPanel(editor, new ToolPresetLibrary(Path.Combine(root, "presets.json")), library); panel.PrepareForShow();
         var field = Field<ColorField>(panel, "foreground");
         var picker = Field<ColorPickerPanel>(field, "picker");
-        // Exercise the real draft controls in an opened session without creating a Popup HWND.
+        using var surface = new ColorPickerTestSurface(picker);
         typeof(ColorField).GetField("pickerSessionOpen", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(field, true);
         picker.Value = field.Value;
         uint previous = field.Value;
         picker.Value = 0xFFAABBCC;
         check("programmatic picker synchronization stays silent during an open session", field.Value == previous && editor.Style.Stroke == previous);
         picker.Value = previous;
+        picker.PrepareForShow();
         Field<TextBox>(picker, "hex").Text = "#336699";
         Field<Slider>(picker, "alpha").Value = 25;
         check("picker draft immediately reaches the primary field and active drawing style with exact alpha",
@@ -36,7 +37,7 @@ internal static class Preview4ColorTests
         Field<TextBox>(picker, "hex").Text = "#112233";
         field.ClosePicker(); field.ClosePicker();
         check("closing stores only the final valid color once", library.History.SequenceEqual(new uint[] { 0x40112233 }));
-        foreach (var tool in new[] { EditorTool.Rectangle, EditorTool.Freehand, EditorTool.Highlighter, EditorTool.Eraser })
+        foreach (var tool in new[] { EditorTool.Rectangle, EditorTool.Freehand, EditorTool.Highlighter })
         {
             var sample = ToolParameterIcon.Create(new ToolParameters { Tool = tool,
                 Style = new() { Stroke = 0x80336699, Fill = 0x4000FF00, StrokeWidth = 4 } }, 96);

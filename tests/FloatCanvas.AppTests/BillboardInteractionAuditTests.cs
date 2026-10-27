@@ -12,16 +12,60 @@ using SkiaSharp;
 internal static class BillboardInteractionAuditTests
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-    private static void Send(EditorController editor, OverlayPointerKind kind, PointD point) => editor.Pointer(new(kind,
-        new(point.X + editor.ScreenOrigin.X, point.Y + editor.ScreenOrigin.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+    private static void Send(EditorController editor, OverlayPointerKind kind, PointD point, OverlayModifiers modifiers = OverlayModifiers.None) => editor.Pointer(new(kind,
+        new(point.X + editor.ScreenOrigin.X, point.Y + editor.ScreenOrigin.Y), OverlayMouseButton.Left, modifiers));
 
     internal static void Run(Action<string, bool> check)
     {
         Endpoint(check);
+        SelectionFramePriority(check);
         CenteredEditing(check);
         GroupDepthGuards(check);
         DesktopEffectGesture(check);
         DesktopEffects(check);
+    }
+
+    private static void SelectionFramePriority(Action<string, bool> check)
+    {
+        foreach (var tool in new[] { EditorTool.CaptureRegion, EditorTool.Blur })
+        foreach (bool endpoint in new[] { false, true })
+        {
+            var scene = new SceneDocument { Viewport = new(0, 0, 600, 450) };
+            var projection = CanvasCalibration.CreateInitial(scene.Viewport);
+            projection.Enabled = true; projection.Matrix = new(1, 0, 0, 0, 1, 0, 0, .005, 1);
+            scene.Canvas.Projection = projection;
+            var element = endpoint
+                ? new CanvasElement { Kind = ElementKind.Line, Points = [new(0, 0), new(100, 100), new(50, 0)],
+                    IsBillboard = true, BillboardAnchor = new(300, 100), BillboardHeight = -260, Style = new() { StrokeWidth = 1 } }
+                : new CanvasElement { Kind = ElementKind.Ellipse, Width = 300, Height = 200,
+                    IsBillboard = true, BillboardAnchor = new(300, 100), BillboardHeight = -380, Style = new() { StrokeWidth = 1 } };
+            scene.Elements.Add(element);
+            var session = new EditorSession(scene); session.SetSelection([element.Id]);
+            var editor = new EditorController(session) { Tool = tool, BillboardMode = true };
+            var mapping = CanvasMapping.Create(scene); var localToScreen = mapping.ElementToScreen(element);
+            var opposite = endpoint ? localToScreen.TransformPoint(element.Points[0]) : default;
+            var corners = editor.SelectionScreenCorners;
+            var from = endpoint ? localToScreen.TransformPoint(element.Points[^1]) + new PointD(0, -10)
+                : corners[0] + (corners[1] - corners[0]) * .25 + new PointD(0, -4);
+            var delta = new PointD(30, 5); var target = from + delta;
+            var grab = localToScreen.Inverse().TransformPoint(from);
+            string label = tool + (endpoint ? " billboard endpoint halo" : " billboard frame edge");
+            check(label + " is outside object ink and cannot be inverted onto the ground plane", scene.Viewport.Contains(from) &&
+                !mapping.TryToPlane(from, out _) && !ElementGeometry.HitTestProjected(element, from, mapping.PlaneToScreen, 7) &&
+                editor.IsSelectionFrameHit(from, includeInterior: true));
+            Send(editor, OverlayPointerKind.Down, from);
+            check(label + " starts selection interaction before capture or depth placement", session.IsTransactionActive &&
+                session.Selection.SetEquals([element.Id]) && editor.CapturePreview is null && editor.EffectScreenPreview.Count == 0 &&
+                editor.ActiveBillboardDepthLine is null && !editor.IsPointerBlocked);
+            Send(editor, OverlayPointerKind.Move, target); Send(editor, OverlayPointerKind.Up, target);
+            var after = CanvasMapping.Create(session.Document).ElementToScreen(element);
+            bool adjusted = endpoint ? after.TransformPoint(element.Points[^1]).DistanceTo(target) < 1e-6 &&
+                after.TransformPoint(element.Points[0]).DistanceTo(opposite) < 1e-6 :
+                after.TransformPoint(grab).DistanceTo(target) < 1e-6;
+            check(label + " adjusts only the selected billboard and keeps the active tool", adjusted && editor.Tool == tool &&
+                session.Document.Elements.Count == 1 && session.Selection.SetEquals([element.Id]) && session.UndoCount == 1 &&
+                !session.IsTransactionActive && editor.CapturePreview is null && element.Effects.Count == 0);
+        }
     }
 
     private static void GroupDepthGuards(Action<string, bool> check)
@@ -147,7 +191,7 @@ internal static class BillboardInteractionAuditTests
         editor = new EditorController(session) { Tool = EditorTool.Crop };
         var mapping = CanvasMapping.Create(session.Document); center = mapping.ElementToScreen(image).TransformPoint(new(100, 50));
         var cropStart = mapping.ElementToScreen(image).TransformPoint(new(20, 10)); var cropEnd = mapping.ElementToScreen(image).TransformPoint(new(100, 60));
-        Send(editor, OverlayPointerKind.Down, cropStart); Send(editor, OverlayPointerKind.Move, cropEnd); Send(editor, OverlayPointerKind.Up, cropEnd);
+        Send(editor, OverlayPointerKind.Down, cropStart, OverlayModifiers.Control); Send(editor, OverlayPointerKind.Move, cropEnd, OverlayModifiers.Control); Send(editor, OverlayPointerKind.Up, cropEnd, OverlayModifiers.Control);
         check("billboard crop keeps center and ground anchor while retaining normalized source coordinates", image.BillboardAnchor == anchor &&
             mapping.ElementToScreen(image).TransformPoint(ElementGeometry.LocalBounds(image).Center).DistanceTo(center) < 1e-6 &&
             image.ImageCrop is { } crop && Math.Abs(crop.X - .1) < 1e-6 && Math.Abs(crop.Y - .1) < 1e-6 && Math.Abs(crop.Width - .4) < 1e-6 && Math.Abs(crop.Height - .5) < 1e-6);

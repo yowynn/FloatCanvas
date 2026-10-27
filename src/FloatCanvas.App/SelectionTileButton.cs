@@ -13,7 +13,11 @@ internal sealed class SelectionTileButton : Button
     public static readonly DependencyProperty IsModifiedProperty = DependencyProperty.Register(nameof(IsModified), typeof(bool), typeof(SelectionTileButton), new PropertyMetadata(false));
     public bool IsModified { get => (bool)GetValue(IsModifiedProperty); private set => SetValue(IsModifiedProperty, value); }
     internal bool Selected { get; private set; }
-    public SelectionTileButton() => SetResourceReference(TemplateProperty, "CanvasSelectionTileButtonTemplate");
+    public SelectionTileButton()
+    {
+        SetResourceReference(StyleProperty, typeof(Button));
+        SetResourceReference(TemplateProperty, "CanvasSelectionTileButtonTemplate");
+    }
     internal void SetSelected(bool selected, bool modified = false)
     {
         bool old = Selected; Selected = selected;

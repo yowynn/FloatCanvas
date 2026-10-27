@@ -42,45 +42,47 @@ internal static class ToolOptionsPanelTests
         var numbers = Field<Dictionary<string, Controls.TextBox>>(panel, "numbers");
         var pickers = Field<Dictionary<string, Controls.ComboBox>>(panel, "pickers");
         var status = Field<Controls.TextBlock>(panel, "status");
-        controller.Tool = EditorTool.Freehand; panel.Refresh();
+        controller.Tool = EditorTool.Freehand; panel.PrepareForShow();
         string validWidth = numbers["StrokeWidth"].Text;
         numbers["StrokeWidth"].Text = "-1";
         numbers["StrokeWidth"].Text = validWidth;
         check("correcting an invalid draft back to the effective value clears the error", string.IsNullOrEmpty(status.Text));
         numbers["StrokeWidth"].Text = "-1";
-        controller.Tool = EditorTool.Text; panel.Refresh();
+        controller.Tool = EditorTool.Text; panel.PrepareForShow();
         check("changing or reopening a tool clears stale validation feedback", string.IsNullOrEmpty(status.Text));
         int changes = 0; panel.ParametersChanged += () => changes++;
         string document = JsonSerializer.Serialize(controller.Session.Document);
 
         void Number(EditorTool tool, string key, string value, Func<bool> applied)
         {
-            controller.Tool = tool; panel.Refresh(); int before = changes;
+            controller.Tool = tool; panel.PrepareForShow(); int before = changes;
             numbers[key].Text = value;
             check(key + " text immediately changes the effective parameter once", applied() && changes == before + 1);
         }
         Number(EditorTool.Line, "StrokeWidth", "7.5", () => controller.Style.StrokeWidth == 7.5);
-        Number(EditorTool.Rectangle, "Opacity", "65", () => controller.Style.Opacity == .65);
+        Number(EditorTool.Image, "Opacity", "65", () => controller.Style.Opacity == .65);
         Number(EditorTool.Text, "FontSize", "36", () => controller.Style.FontSize == 36);
         Number(EditorTool.Blur, "EffectStrength", "24", () => controller.EffectStrength == 24);
         Number(EditorTool.Rectangle, "CornerRadius", "9", () => controller.CornerRadius == 9);
 
-        foreach (var (key, invalid) in new[] { ("StrokeWidth", "-1"), ("Opacity", "101"), ("FontSize", "0"), ("EffectStrength", "NaN"), ("CornerRadius", "-1") })
+        foreach (var (tool, key, invalid) in new[] { (EditorTool.Line, "StrokeWidth", "-1"), (EditorTool.Image, "Opacity", "101"),
+            (EditorTool.Text, "FontSize", "0"), (EditorTool.Blur, "EffectStrength", "NaN"), (EditorTool.Rectangle, "CornerRadius", "-1") })
         {
+            controller.Tool = tool; panel.PrepareForShow();
             string before = Snapshot(controller); int count = changes; numbers[key].Text = invalid;
             check(key + " invalid draft keeps previous parameters and reports an error", Snapshot(controller) == before && changes == count &&
                 numbers[key].Text == invalid && !string.IsNullOrWhiteSpace(status.Text));
-            panel.Refresh();
+            panel.PrepareForShow();
             check(key + " refresh silently restores the effective value", changes == count && numbers[key].Text != invalid);
         }
 
-        controller.Tool = EditorTool.Line; controller.Style.StartArrowHead = controller.Style.EndArrowHead = ArrowHeadStyle.FilledTriangle; panel.Refresh();
+        controller.Tool = EditorTool.Line; controller.Style.StartArrowHead = controller.Style.EndArrowHead = ArrowHeadStyle.FilledTriangle; panel.PrepareForShow();
         Select(pickers["StartArrowHead"], ArrowHeadStyle.Open);
         Select(pickers["EndArrowHead"], ArrowHeadStyle.None);
         Select(pickers["StrokePattern"], StrokePattern.Dotted);
         check("independent endpoint and line style choices reach the controller", controller.Style.StartArrowHead == ArrowHeadStyle.Open &&
             controller.Style.EndArrowHead == ArrowHeadStyle.None && controller.Style.StrokePattern == StrokePattern.Dotted);
-        controller.Tool = EditorTool.Rectangle; panel.Refresh(); int beforeAspect = changes;
+        controller.Tool = EditorTool.Rectangle; panel.PrepareForShow(); int beforeAspect = changes;
         var aspect = Field<System.Windows.Controls.Primitives.ToggleButton>(panel, "aspect"); aspect.IsChecked = true;
         aspect.RaiseEvent(new Wpf.RoutedEventArgs(Controls.CheckBox.ClickEvent));
         check("aspect constraint takes effect immediately", controller.ConstrainAspect && changes == beforeAspect + 1);
@@ -88,15 +90,25 @@ internal static class ToolOptionsPanelTests
         var external = controller.Parameters; external.Style.StrokeWidth = 11; external.Style.Opacity = .42; external.Style.FontSize = 44;
         external.Style.StartArrowHead = ArrowHeadStyle.FilledTriangle; external.Style.EndArrowHead = ArrowHeadStyle.Diamond;
         external.Style.StrokePattern = StrokePattern.Dashed; external.CornerRadius = 17; external.EffectStrength = 31; external.ConstrainAspect = false;
-        controller.ApplyParameters(external); int beforeRefresh = changes; string effective = Snapshot(controller);
-        panel.Refresh(); panel.Refresh();
-        check("external state synchronizes all controls without parameter events", changes == beforeRefresh && Snapshot(controller) == effective &&
-            numbers["StrokeWidth"].Text == "11" && numbers["Opacity"].Text == "42" && numbers["FontSize"].Text == "44" &&
-            numbers["CornerRadius"].Text == "17" && numbers["EffectStrength"].Text == "31" &&
+        External(EditorTool.Line, () => numbers["StrokeWidth"].Text == "11" &&
             Equals(((Controls.ComboBoxItem)pickers["StartArrowHead"].SelectedItem).Tag, ArrowHeadStyle.FilledTriangle) &&
             Equals(((Controls.ComboBoxItem)pickers["EndArrowHead"].SelectedItem).Tag, ArrowHeadStyle.Diamond) &&
-            Equals(((Controls.ComboBoxItem)pickers["StrokePattern"].SelectedItem).Tag, StrokePattern.Dashed) &&
+            Equals(((Controls.ComboBoxItem)pickers["StrokePattern"].SelectedItem).Tag, StrokePattern.Dashed));
+        External(EditorTool.Image, () => numbers["Opacity"].Text == "42");
+        External(EditorTool.Text, () => numbers["FontSize"].Text == "44" &&
+            ToolOptionPreviews.SelectedFontName(Field<Controls.ComboBox>(panel, "fontFamily")) == external.Style.FontFamily);
+        External(EditorTool.Rectangle, () => numbers["StrokeWidth"].Text == "11" && numbers["CornerRadius"].Text == "17" &&
             Field<System.Windows.Controls.Primitives.ToggleButton>(panel, "aspect").IsChecked == false);
+        External(EditorTool.Blur, () => numbers["EffectStrength"].Text == "31");
+
+        void External(EditorTool tool, Func<bool> synchronized)
+        {
+            external.Tool = tool; controller.ApplyParameters(external);
+            int beforeRefresh = changes; string effective = Snapshot(controller);
+            panel.PrepareForShow(); panel.PrepareForShow();
+            check(tool + " external state synchronizes its visible controls without parameter events", changes == beforeRefresh &&
+                Snapshot(controller) == effective && synchronized());
+        }
         check("tool parameter editing leaves document and undo history intact", JsonSerializer.Serialize(controller.Session.Document) == document &&
             controller.Session.UndoCount == 0 && !controller.Session.IsTransactionActive);
         check("numeric options retain native textbox input", numbers.Values.All(System.Windows.Input.InputMethod.GetIsInputMethodEnabled));
@@ -121,43 +133,43 @@ internal static class ToolOptionsPanelTests
         foreach (var field in new[] { foreground, background })
             Click(Descendants(Field<ColorPickerPanel>(field, "picker")).OfType<Controls.Button>().Single(button => Wpf.Automation.AutomationProperties.GetName(button) == L.Get("Color.Eyedropper")));
         check("eyedropper forwarding retains the requesting color role", requests.SequenceEqual(new[] { foreground, background }) && changes == 2);
-        controller.Style.Stroke = 0x55123456; controller.Style.Fill = 0x12345678; panel.Refresh();
+        controller.Style.Stroke = 0x55123456; controller.Style.Fill = 0x12345678; panel.PrepareForShow();
         check("external color refresh retains exact alpha and stays silent", foreground.Value == 0x55123456 && background.Value == 0x12345678 && changes == 2);
 
         foreach (var tool in new[] { EditorTool.Line, EditorTool.Arrow, EditorTool.DoubleArrow })
         {
-            controller.Tool = tool; panel.Refresh();
+            controller.Tool = tool; panel.PrepareForShow();
             check(tool + " exposes foreground line pattern and both endpoints", Shown(rows, "Foreground", "StrokePattern", "StartArrowHead", "EndArrowHead") &&
                 foreground.Visibility == Wpf.Visibility.Visible && !Shown(rows, "Background") && background.Visibility == Wpf.Visibility.Collapsed);
         }
         foreach (var tool in new[] { EditorTool.Rectangle, EditorTool.RoundedRectangle, EditorTool.Ellipse, EditorTool.Triangle, EditorTool.Symbol })
         {
-            controller.Tool = tool; panel.Refresh();
+            controller.Tool = tool; panel.PrepareForShow();
             check(tool + " exposes shape colors and pattern without line endpoints", Shown(rows, "Foreground", "Background", "StrokePattern") &&
                 foreground.Visibility == Wpf.Visibility.Visible && background.Visibility == Wpf.Visibility.Visible &&
                 !Shown(rows, "StartArrowHead") && !Shown(rows, "EndArrowHead"));
         }
-        controller.Tool = EditorTool.Number; panel.Refresh();
+        controller.Tool = EditorTool.Number; panel.PrepareForShow();
         check("number exposes foreground background and text size", Shown(rows, "Foreground", "Background", "FontSize"));
-        controller.Tool = EditorTool.Text; panel.Refresh();
+        controller.Tool = EditorTool.Text; panel.PrepareForShow();
         check("text exposes font controls without fill or endpoints", Shown(rows, "Foreground", "FontSize", "FontFamily") &&
             !Shown(rows, "Background") && !Shown(rows, "StartArrowHead") && !Shown(rows, "EndArrowHead"));
         foreach (var tool in new[] { EditorTool.Blur, EditorTool.Pixelate })
         {
-            controller.Tool = tool; panel.Refresh();
+            controller.Tool = tool; panel.PrepareForShow();
             check(tool + " exposes effect strength without drawing colors", Shown(rows, "EffectStrength") && !Shown(rows, "Foreground") && !Shown(rows, "Background"));
         }
-        controller.Tool = EditorTool.Select; panel.Refresh();
+        controller.Tool = EditorTool.Select; panel.PrepareForShow();
         check("selection hides drawing color and endpoint options", !Shown(rows, "Foreground") && !Shown(rows, "Background") &&
             !Shown(rows, "StartArrowHead") && !Shown(rows, "EndArrowHead"));
 
-        controller.Tool = EditorTool.Symbol; panel.Refresh();
+        controller.Tool = EditorTool.Symbol; panel.PrepareForShow();
         var symbols = Field<System.Windows.Controls.Primitives.UniformGrid>(panel, "symbolGallery").Children.OfType<Controls.Button>().ToArray();
         check("symbol gallery contains all nine editable geometric symbols", Shown(rows, "Symbols") && symbols.Length == 9 &&
             symbols.Select(button => button.Tag).OfType<SymbolKind>().Order().SequenceEqual(Enum.GetValues<SymbolKind>().Order()));
         int before = changes; Click(symbols.Single(button => Equals(button.Tag, SymbolKind.SpeechBubble)));
         check("symbol gallery choice changes the active symbol once", controller.Symbol == SymbolKind.SpeechBubble && changes == before + 1);
-        controller.Tool = EditorTool.Emoji; panel.Refresh();
+        controller.Tool = EditorTool.Emoji; panel.PrepareForShow();
         var emoji = Field<System.Windows.Controls.Primitives.UniformGrid>(panel, "emojiGallery").Children.OfType<Controls.Button>().ToArray();
         check("emoji gallery provides a distinct ready-to-use collection", Shown(rows, "Emoji") && !Shown(rows, "Symbols") &&
             !Shown(rows, "Foreground") && !Shown(rows, "Background") && emoji.Length is >= 24 and <= 40 &&
@@ -203,12 +215,12 @@ internal static class ToolOptionsPanelTests
         var official = Field<ToolPresetGallery>(panel, "presets").OfficialTiles;
         foreach (var tool in new[] { EditorTool.Line, EditorTool.Rectangle, EditorTool.Text, EditorTool.Number, EditorTool.Symbol, EditorTool.Emoji, EditorTool.Blur })
         {
-            controller.Tool = tool; panel.Refresh();
+            controller.Tool = tool; panel.PrepareForShow();
             panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
             check(tool + " options use a wide bounded panel without unnecessary folding", panel.ActualWidth == ToolOptionsPanel.PreferredWidth && panel.ActualHeight <= 620 &&
                 rows.Values.Where(row => row.Visibility == Wpf.Visibility.Visible).All(row => row.ActualWidth > 0));
         }
-        controller.Tool = EditorTool.Line; panel.Refresh();
+        controller.Tool = EditorTool.Line; panel.PrepareForShow();
         panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
         foreach (var pair in new[] { ("StartArrowHead", "EndArrowHead"), ("StrokePattern", "ArrowHeadSize") })
             check(pair.Item1 + " and " + pair.Item2 + " retain full-width readable controls", Controls.Grid.GetRow(rows[pair.Item1]) != Controls.Grid.GetRow(rows[pair.Item2]) &&
@@ -225,8 +237,12 @@ internal static class ToolOptionsPanelTests
         check("options retain the gap while clamping at the left work area edge", left[0].Point.X == 0 && left[0].Point.Y == 108);
     }
 
-    private static ToolOptionsPanel Panel(EditorController controller, string root, string name) => new(controller,
-        new ToolPresetLibrary(Path.Combine(root, name + "-presets.json")), new ColorLibrary(Path.Combine(root, name + "-colors.json")));
+    private static ToolOptionsPanel Panel(EditorController controller, string root, string name)
+    {
+        var panel=new ToolOptionsPanel(controller,new ToolPresetLibrary(Path.Combine(root,name+"-presets.json")),new ColorLibrary(Path.Combine(root,name+"-colors.json")));
+        // Detached interaction tests explicitly synchronize the form as its visible host would.
+        panel.ParametersChanged+=panel.PrepareForShow;panel.PrepareForShow();return panel;
+    }
     private static string Snapshot(EditorController controller) => JsonSerializer.Serialize(controller.Parameters);
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
     private static void Invoke(object target, string method, params object[] arguments) => target.GetType().GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(target, arguments);

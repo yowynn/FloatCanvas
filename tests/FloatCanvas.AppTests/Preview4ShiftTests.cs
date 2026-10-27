@@ -115,7 +115,7 @@ internal static class Preview4ShiftTests
             var session=new EditorSession(new SceneDocument {Kind=DocumentKind.FrozenCapture});
             var image=new CanvasElement {Kind=ElementKind.Image,Width=200,Height=140};session.Document.Elements.Add(image);session.SetSelection([image.Id]);
             var editor=new EditorController(session) {Tool=tool,ConstrainAspect=keep};
-            var modifiers=shift?OverlayModifiers.Shift:OverlayModifiers.None;
+            var modifiers=OverlayModifiers.Control|(shift?OverlayModifiers.Shift:OverlayModifiers.None);
             Send(editor,OverlayPointerKind.Down,new(20,20),modifiers);Send(editor,OverlayPointerKind.Move,new(100,60),modifiers);
             var bounds=editor.Marquee!.Value;
             check($"{tool} image region keep={keep} Shift={shift} reverses the rectangular constraint",(Math.Abs(bounds.Width-bounds.Height)<1e-6)==(keep^shift));editor.Cancel();
@@ -131,7 +131,7 @@ internal static class Preview4ShiftTests
         var limited=new EditorSession(new SceneDocument {Kind=DocumentKind.FrozenCapture});
         var target=new CanvasElement {Kind=ElementKind.Image,Width=200,Height=140};limited.Document.Elements.Add(target);limited.SetSelection([target.Id]);
         var crop=new EditorController(limited) {Tool=EditorTool.Crop};
-        Send(crop,OverlayPointerKind.Down,new(180,120),OverlayModifiers.Shift);Send(crop,OverlayPointerKind.Move,new(300,200),OverlayModifiers.Shift);
+        Send(crop,OverlayPointerKind.Down,new(180,120),OverlayModifiers.Control|OverlayModifiers.Shift);Send(crop,OverlayPointerKind.Move,new(300,200),OverlayModifiers.Control|OverlayModifiers.Shift);
         check("constrained image regions retain their ratio at the image boundary",crop.Marquee==new RectD(180,120,20,20));crop.Cancel();
     }
     private static void ProjectedStroke(Action<string,bool> check)
@@ -157,7 +157,7 @@ internal static class Preview4ShiftTests
         AppTheme.Apply("light");
         string root=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"FloatCanvas-ShiftOptions",Guid.NewGuid().ToString("N"));
         var editor=new EditorController(new());
-        var panel=new ToolOptionsPanel(editor,new(System.IO.Path.Combine(root,"presets.json")),new(System.IO.Path.Combine(root,"colors.json")));
+        var panel=new ToolOptionsPanel(editor,new(System.IO.Path.Combine(root,"presets.json")),new(System.IO.Path.Combine(root,"colors.json"))); panel.PrepareForShow();
         var privateFields=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
         var aspectRows=(Dictionary<string,System.Windows.FrameworkElement>)typeof(ToolOptionsPanel).GetField("rows",privateFields)!.GetValue(panel)!;
         var aspect=aspectRows["Aspect"];
@@ -166,10 +166,10 @@ internal static class Preview4ShiftTests
         {
             if(tool==EditorTool.Crop)
             {var image=new CanvasElement {Kind=ElementKind.Image,Width=100,Height=100};editor.Session.Document.Elements.Add(image);editor.Session.SetSelection([image.Id]);}
-            editor.Tool=tool;panel.Refresh();
+            editor.Tool=tool;panel.PrepareForShow();
             check(tool+" exposes its rectangular-region aspect setting",aspect.Visibility==System.Windows.Visibility.Visible&&empty.Visibility==System.Windows.Visibility.Collapsed);
         }
-        editor.Tool=EditorTool.CaptureRegion;editor.CaptureShape=CaptureShape.FreehandLasso;panel.Refresh();
+        editor.Tool=EditorTool.CaptureRegion;editor.CaptureShape=CaptureShape.FreehandLasso;panel.PrepareForShow();
         check("freehand capture hides the rectangular aspect setting",aspect.Visibility==System.Windows.Visibility.Collapsed);
     }
     private static void InputOrdering(Action<string,bool> check)

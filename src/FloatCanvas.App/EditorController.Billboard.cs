@@ -80,8 +80,8 @@ internal sealed partial class EditorController
         if (!BillboardMode || gesture is not null || !(IsBillboardCreationTool || pendingBillboardInsertion is not null)) return false;
         var mapping = CanvasMapping.Create(Session.Document);
         bool selectedHit = pendingBillboardInsertion is null && billboardDepth is null &&
-            (e.Modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0 &&
-            (mapping.TryToPlane(pointerScreen, out var selectionPlane) || TryBillboardSelectionInput(out selectionPlane)) && IsWithinCurrentSelection();
+            ShouldShowSelection(e.Modifiers) && IsSelectionFrameHit(pointerScreen, includeInterior: true) &&
+            (mapping.TryToPlane(pointerScreen, out var selectionPlane) || TryBillboardSelectionInput(out selectionPlane));
         bool existingText = Tool == EditorTool.Text && HitTestScreen(pointerScreen, 4) is { Kind: ElementKind.Text } &&
             (e.Modifiers & OverlayModifiers.Control) == 0;
         if (selectedHit || existingText) { billboardPreviewDepth = null; return false; }
@@ -163,6 +163,9 @@ internal sealed partial class EditorController
         {
             var source = billboardSources.Values.FirstOrDefault(e => ElementGeometry.HitTestProjected(e, startScreen, canvas.PlaneToScreen, 4) ||
                 ElementGeometry.PointInPolygon(startScreen, Corners(ElementGeometry.LocalBounds(e)).Select(canvas.ElementToScreen(e).TransformPoint).ToArray()));
+            // A selected frame can be grabbed just outside the object's ink or bounds.
+            // Its original billboard still supplies the screen-to-anchor mapping.
+            if (source is null && selected.All(e => e.IsBillboard)) source = billboardSources.Values.First();
             if (source is not null && canvas.ElementToScreen(source).TryInverse(out var inverse) &&
                 inverse.TryTransformPoint(startScreen, out var grab) && BillboardGeometry.TryMoveAnchor(source, canvas, grab, pointerScreen, out var moved))
                 billboardMoveDelta = ConstrainMove(moved - source.BillboardAnchor, modifiers);

@@ -37,6 +37,7 @@ internal static class Round2CanvasTests
         try
         {
             window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}},false);
+            window.PrepareForShow();
             window.Measure(new(600,590));window.Arrange(new(0,0,600,590));window.UpdateLayout();
             var calibrate=Field<Button>(window,"calibrate");var reset=Field<Button>(window,"reset");var four=Field<Button>(window,"fourPoints");var arrow=Field<Button>(window,"resetChoices");
             check("adjust and reset occupy separate fixed-width rows",calibrate.Parent is Grid first&&reset.Parent is Grid second&&!ReferenceEquals(first,second)&&first.Width==CanvasSettingsWindow.PerspectiveActionsWidth&&second.Width==first.Width);

@@ -20,19 +20,29 @@ internal static class AuditUxTests
         AppTheme.Apply("light");
         var button = new Button { Style = (Style)app.FindResource(typeof(Button)) };
         var window = new Window { Content = button };
-        int toggles = 0;
-        var args = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab)
-            { RoutedEvent = Keyboard.PreviewKeyDownEvent };
-        button.RaiseEvent(args);
-        check("audit Tab does not traverse controls without an editor command route", args.Handled && toggles == 0);
-        check("audit controls retain the application's disabled Tab traversal", KeyboardNavigation.GetTabNavigation(button) == KeyboardNavigationMode.None);
         var slider = new Slider { Style = (Style)app.FindResource(typeof(Slider)) };
-        check("audit buttons and sliders add no keyboard focus frames", button.FocusVisualStyle is null && slider.FocusVisualStyle is null);
-        AppInputPolicy.AttachToolbarToggle(window, () => toggles++);
-        var toolbarTab = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
-        button.RaiseEvent(toolbarTab);
-        check("audit ordinary editor controls retain the Tab collapse command", toolbarTab.Handled && toggles == 1);
-        window.Close();
+        int toggles = 0;
+        _ = Keyboard.Modifiers;
+        byte[] originalKeyboardState=ThreadModifierScope.Read();
+        try
+        {
+            using(new ThreadModifierScope(ModifierKeys.None))
+            {
+                check("audit Tab fixture establishes no modifiers after WPF initialization",Keyboard.Modifiers==ModifierKeys.None);
+                var args = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab)
+                    { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                button.RaiseEvent(args);
+                check("audit Tab does not traverse controls without an editor command route", args.Handled && toggles == 0);
+                check("audit controls retain the application's disabled Tab traversal", KeyboardNavigation.GetTabNavigation(button) == KeyboardNavigationMode.None);
+                check("audit buttons and sliders add no keyboard focus frames", button.FocusVisualStyle is null && slider.FocusVisualStyle is null);
+                AppInputPolicy.AttachToolbarToggle(window, () => toggles++);
+                var toolbarTab = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                button.RaiseEvent(toolbarTab);
+                check("audit ordinary editor controls retain the Tab collapse command", toolbarTab.Handled && toggles == 1);
+            }
+            check("audit Tab fixture restores its exact thread keyboard snapshot",originalKeyboardState.SequenceEqual(ThreadModifierScope.Read()));
+        }
+        finally { window.Close(); }
         foreach (bool dark in new[] { false, true })
         {
             var palette = new ResourceDictionary(); AppTheme.ApplyPalette(palette, dark, false);
@@ -54,7 +64,7 @@ internal static class AuditUxTests
         name.Text = "valid";
         check("audit valid names can be saved", save.IsEnabled);
         var font = ToolOptionPreviews.FontPicker(); ToolOptionPreviews.SelectFont(font, "FloatCanvas Missing Font 12345");
-        check("audit missing font retains original source name", ((ComboBoxItem)font.SelectedItem).Tag is "FloatCanvas Missing Font 12345");
+        check("audit missing font retains original source name", ToolOptionPreviews.SelectedFontName(font) == "FloatCanvas Missing Font 12345");
         check("audit missing font announces replacement", System.Windows.Automation.AutomationProperties.GetHelpText(font).Contains("FloatCanvas Missing Font 12345"));
         var text = new TextBlock(); var display = new ToolbarStatusDisplay(text);
         for (int i = 0; i < 25; i++) { text.Text = "message " + i; display.Refresh(); }
@@ -94,9 +104,9 @@ internal static class AuditUxTests
         active.Undo(); check("audit redo state follows editor history", Can("redo"));
         active.Document.Elements.ForEach(element => element.Locked = true); active.SetSelection(active.Document.Elements.Select(element => element.Id));
         check("audit locked selection disables destructive object actions", !Can("delete") && !Can("duplicate") && !Can("group"));
-        var inspector = new InspectorWindow(() => active); inspector.Refresh();
+        var inspector = new InspectorWindow(() => active); inspector.PrepareForShow();
         check("audit locked inspector explains its unavailable fields", Field<TextBlock>(inspector, "status").Text.Contains("2") && Field<StackPanel>(inspector, "propertyPanel").Visibility == Visibility.Collapsed);
-        active.Document.Elements[0].Locked = false; inspector.Refresh();
+        active.Document.Elements[0].Locked = false; inspector.PrepareForShow();
         check("audit mixed lock inspector explains the locked member", Field<TextBlock>(inspector, "status").Text == FloatCanvas.Localization.AppText.Format("Audit.LockedSelection", 1));
         inspector.Close();
         editor.ReplaceSession(new EditorSession(), new PointD()); check("audit switching to a blank document clears command eligibility", !Can("undo") && !Can("redo") && !Can("group"));
@@ -127,7 +137,7 @@ internal static class AuditUxTests
     private static void Layout(string folder, Action<string, bool> check)
     {
         var editor = new EditorController(new EditorSession());
-        var options = new ToolOptionsPanel(editor, new ToolPresetLibrary(Path.Combine(folder, "layout-tools.json")), new ColorLibrary(Path.Combine(folder, "layout-colors.json")));
+        var options = new ToolOptionsPanel(editor, new ToolPresetLibrary(Path.Combine(folder, "layout-tools.json")), new ColorLibrary(Path.Combine(folder, "layout-colors.json"))); options.PrepareForShow();
         foreach (double width in new[] { 320d, 480, 560 })
         {
             options.Width = width; options.Measure(new Size(width, 600)); options.Arrange(new Rect(0, 0, width, 600)); options.UpdateLayout();
@@ -169,8 +179,17 @@ internal static class AuditUxTests
                 Task.Run(() => library.LoadAsync()).GetAwaiter().GetResult();
                 long memory = GC.GetTotalMemory(true); var timer = Stopwatch.StartNew();
                 var window = new StampLibraryWindow(library, () => new EditorSession(), _ => { });
-                var content = (FrameworkElement)window.Content; window.Content = null;
+                var content = (FrameworkElement)window.Content;
+                window.Content = null;
                 var root = new Border { Child = content, Width = window.Width - 2, Height = 580, UseLayoutRounding = true };
+                window.Content=root;window.WindowStartupLocation=WindowStartupLocation.Manual;window.Left=-10000;window.Top=-10000;
+                window.Opacity=0;window.ShowActivated=false;window.ShowInTaskbar=false;window.Height=620;
+                window.SourceInitialized+=(_,_)=>
+                {
+                    nint handle=new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                    SetWindowLongPtrW(handle,-20,GetWindowLongPtrW(handle,-20)|0x08000000);
+                };
+                window.PrepareForShow();window.Show();
                 root.Measure(new Size(root.Width, root.Height)); root.Arrange(new Rect(0, 0, root.Width, root.Height)); root.UpdateLayout(); double first = timer.Elapsed.TotalMilliseconds;
                 var list = Field<ListBox>(window, "grid");
                 check("audit stamp viewport is bounded for " + count, list.Items.Count == count && Visuals(list).OfType<ListBoxItem>().Count() is > 0 and <= 40);
@@ -199,7 +218,7 @@ internal static class AuditUxTests
                 }
                 check("audit debounced search finishes with only visible containers " + count, list.Items.Count == count && Visuals(list).OfType<ListBoxItem>().Count() is > 0 and <= 40 && searchSamples.All(value => value < 3000));
                 samples.Sort(); searchSamples.Sort(); results.Add(new { Count = count, FirstViewportMs = first, RefreshP95Ms = samples[(int)Math.Ceiling(samples.Count * .95) - 1], SearchP95IncludingDebounceMs = searchSamples[(int)Math.Ceiling(searchSamples.Count * .95) - 1], SampledManagedPeakDelta = peakManaged - memory, ManagedBytesDelta = GC.GetTotalMemory(false) - memory, CatalogCount = list.Items.Count, RealizedCount = Visuals(list).OfType<ListBoxItem>().Count() });
-                root.Child = null; window.Content = content;
+                root.Child = null;
                 window.Close();
             }
             Console.WriteLine("AUDIT UX STAMP BUDGET " + JsonSerializer.Serialize(results));
@@ -207,6 +226,8 @@ internal static class AuditUxTests
         finally { SynchronizationContext.SetSynchronizationContext(context); }
     }
     private static T Field<T>(object value, string name) => (T)value.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(value)!;
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern nint GetWindowLongPtrW(nint window, int index);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern nint SetWindowLongPtrW(nint window, int index, nint value);
     private static IEnumerable<DependencyObject> Visuals(DependencyObject? value)
     {
         if (value is null) yield break; yield return value;

@@ -18,6 +18,7 @@ internal static class Program
         if (args is ["--overlay-probe-wait"]) { Thread.Sleep(10000); return 0; }
         try
         {
+            if (args.Contains("--isolated-ui-desktop")) return IsolatedUiDesktop.Run(args);
             if (args.Contains("--panel-review-only")) { PanelReviewRegressionTests.Run(Assert, args.SkipWhile(a => a != "--panel-review-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-spacing-only")) { WindowSpacingTests.Run(Assert); return 0; }
             if (args.Contains("--property-visuals-only")) { PropertyVisualTests.Run(Assert); return 0; }
@@ -29,6 +30,7 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--property-changes-only")) { PropertyChangeRegionTests.Run(Assert, args.SkipWhile(a => a != "--property-changes-only").Skip(1).FirstOrDefault()); return 0; }
             if (args is ["--color-modal-receiver", var receiverOutput]) { ColorModalReceiver.Run(receiverOutput); return 0; }
             if (args.Contains("--color-modal-input-only")) { ColorModalInputTests.Run(Assert); return 0; }
             if (args.Contains("--color-modal-input-preview")) { ColorModalInputTests.Run(Assert, interactive: true); return 0; }
@@ -89,6 +91,10 @@ internal static class Program
             if (args.Contains("--move-into-view-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "move-into-view"); return 0; }
             if (args.Contains("--round2-stamps-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "round2-stamps"); return 0; }
             if (args.Contains("--preview4-menu-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "preview4-menu"); return 0; }
+            if (args.Contains("--avatar-right-release-only")) { NativeInputRoutingFixture.Run(Assert, "avatar-right-release"); return 0; }
+            if (args.Contains("--root-menu-layer-only")) { NativeInputRoutingFixture.Run(Assert, "root-menu-layer"); return 0; }
+            if (args.Contains("--canvas-layout-regression-only")) { CanvasLayoutRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-hidden-refresh-only")) { CanvasHiddenRefreshTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-settings-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "preview4-settings"); return 0; }
             if (args.Contains("--preview4-properties-only")) { Preview4PropertiesTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-commands-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "canvas-commands"); return 0; }
@@ -174,6 +180,23 @@ internal static class Program
             if (args.Contains("--update-installer-only")) { UpdateInstallerTests.Run(Assert); return 0; }
             if (args.Contains("--update-window-only")) { AppUpdateWindowTests.Run(Assert); return 0; }
             if (args.Contains("--window-titles-only")) { WindowTitleTests.Run(Assert); return 0; }
+            if (args.Contains("--panel-acceptance-only")) { PanelAcceptanceTests.Run(Assert); return 0; }
+            if (args.Contains("--font-interaction-only")) { FontInteractionAcceptanceTests.Run(Assert); return 0; }
+            if (args.Contains("--font-editing-only")) { FontEditingStateTests.Run(Assert); return 0; }
+            if (args.Contains("--font-inspector-only")) { FontInspectorCommitTests.Run(Assert); return 0; }
+            if (args.Contains("--window-focus-only")) { WindowFocusLifecycleTests.Run(Assert); return 0; }
+            if (args.Contains("--font-layout-only")) { FontLayoutRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--popup-scrollbar-only")) { PopupScrollbarRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--menu-escape-only")) { MenuEscapeLifecycleTests.Run(Assert); return 0; }
+            if (args.Contains("--hidden-tool-properties-only")) { HiddenToolPropertiesTests.Run(Assert); return 0; }
+            if (args.Contains("--tool-panel-hidden-only")) { ToolPanelVisibilityTests.Run(Assert); return 0; }
+            if (args.Contains("--hidden-secondary-panels-only")) { HiddenSecondaryPanelsTests.Run(Assert); return 0; }
+            if (args.Contains("--popup-acceptance-only")) { PopupInteractionAcceptanceTests.Run(Assert); return 0; }
+            if (args.Contains("--popup-window-acceptance-only")) { NativeInputRoutingFixture.Run(Assert,"popup-window-acceptance"); return 0; }
+            if (args.Contains("--theme-acceptance-only")) { ThemeAcceptanceTests.Run(Assert); return 0; }
+            if (args.Contains("--theme-menu-only")) { ThemeMenuRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--menu-layer-only")) { MenuLayerAndPanelSizeTests.Run(Assert,false); return 0; }
+            if (args.Contains("--panel-minimum-only")) { MenuLayerAndPanelSizeTests.Run(Assert,true); return 0; }
             if (args.Contains("--preset-isolation-only")) { PresetIsolationTests.Run(Assert); return 0; }
             if (args.Contains("--palette-layout-only")) { PaletteLayoutTests.Run(Assert); return 0; }
             if (args.Contains("--color-popup-ownership-only")) { ColorPopupOwnershipTests.Run(Assert); return 0; }
@@ -193,6 +216,8 @@ internal static class Program
             if (args.Contains("--lcd-only")) { LcdPaletteTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-library-ui-only")) { StampLibraryUiTests.Run(Assert); return 0; }
             if (args.Contains("--inspector-only")) { InspectorTests.Run(Assert); return 0; }
+            if (args.Contains("--inspector-hidden-only")) { InspectorVisibilityLifecycleTests.Run(Assert); return 0; }
+            if (args.Contains("--inspector-behavior-only")) { InspectorScrubTests.Run(Assert); InspectorLiveTests.Run(Assert); InspectorColorTests.Run(Assert); BillboardInspectorTests.Run(Assert); return 0; }
             if (args.Contains("--inspector-validation-only")) { InspectorValidationLifecycleTests.Run(Assert,windowLifecycle:true); return 0; }
             if (args.Contains("--inspector3-only")) { InspectorFeedbackTests.Run(Assert); return 0; }
             if (args.Contains("--tool-icons-only")) { ToolParameterIconTests.Run(Assert); return 0; }
@@ -242,6 +267,7 @@ internal static class Program
             WindowTitleTests.Run(Assert);
             AvatarMenuGestureTests.Run(Assert);
             PropertyVisualTests.Run(Assert);
+            PropertyChangeRegionTests.Run(Assert);
             WindowSpacingTests.Run(Assert);
             TemporaryMoveControllerTests.Run(Assert);
             PropertiesClickSequenceTests.Run(Assert);
@@ -332,7 +358,7 @@ internal static class Program
             PanelReviewRegressionTests.Run(Assert);
             ThemeTests.Run((name, condition) => Assert(name, condition));
             MonitorScopeSettingsTests.Run((name, condition) => Assert(name, condition));
-            Console.WriteLine($"PASS {checks} controller/session/render/inspector checks. No native windows shown or input injected."); return 0;
+            Console.WriteLine($"PASS {checks} controller/session/render/inspector checks. Native test hosts remain offscreen; no desktop input injected."); return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
@@ -348,7 +374,8 @@ internal static class Program
             Assert(tool + " creates correct element", tool == EditorTool.Triangle
                 ? created.Kind == ElementKind.Symbol && created.Symbol == SymbolKind.Triangle : created.Kind.ToString() == tool.ToString());
             Assert(tool + " commits one undo step with the tool-specific selection policy", session.UndoCount == 1 && !session.IsTransactionActive &&
-                (tool is EditorTool.Freehand or EditorTool.Highlighter ? session.Selection.Count == 0 : session.Selection.Contains(created.Id)));
+                (tool is EditorTool.Freehand or EditorTool.Highlighter or EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow
+                    ? session.Selection.Count == 0 : session.Selection.Contains(created.Id)));
             using var renderer = new SceneRenderer(); using var bitmap = Decode(renderer.ExportPng(session.Document, session.Assets, true));
             Assert(tool + " produces actual PNG pixels", CountPixels(bitmap) > 40);
             Assert(tool + " undo/redo preserves editable object", session.Undo() && session.Document.Elements.Count == 0 && session.Redo() && session.Document.Elements.Single().Kind == created.Kind);
@@ -480,10 +507,10 @@ internal static class Program
         session.Add(image); var controller = new EditorController(session) { Tool = EditorTool.Blur };
         controller.Style.Stroke = 0xFF112233;
         PointD a = image.Transform.TransformPoint(new(20, 10)), b = image.Transform.TransformPoint(new(70, 50));
-        Down(controller, a); Move(controller, b);
+        Down(controller, a, OverlayModifiers.Control); Move(controller, b, OverlayModifiers.Control);
         var preview = controller.EffectPreviewPolygon!;
         Assert("rotated effect preview uses actual image-local corners", preview.Count == 4 && preview[0].DistanceTo(a) < 1e-8 && preview[2].DistanceTo(b) < 1e-8 && Math.Abs(preview[1].Y - preview[0].Y) > 10);
-        Up(controller, b);
+        Up(controller, b, OverlayModifiers.Control);
         var effect = session.Document.Elements.Single().Effects.Single();
         Assert("rotated cropped image effect maps to original normalized coordinates", Near(effect.Bounds.X, .35) && Near(effect.Bounds.Y, .275) && Near(effect.Bounds.Width, .25) && Near(effect.Bounds.Height, .3));
         // Existing saved solid-cover effects remain readable/renderable; new gestures use blur.
@@ -496,7 +523,7 @@ internal static class Program
             Assert("legacy saved solid effect still rasterizes its stored color on transformed target", pixel.Red == 17 && pixel.Green == 34 && pixel.Blue == 51);
         }
         controller.Tool = EditorTool.Crop; int undo = session.UndoCount;
-        Gesture(controller, a, b);
+        Gesture(controller, a, b, OverlayModifiers.Control);
         var cropped = session.Document.Elements.Single();
         Assert("image crop commits once and reduces local frame", cropped.Width == 50 && Near(cropped.Height, 40) && session.UndoCount == undo + 1);
         Assert("crop retains transformed source pixels at original world positions", cropped.Transform.TransformPoint(new(0, 0)).DistanceTo(a) < 1e-8 && cropped.Transform.TransformPoint(new(50, 40)).DistanceTo(b) < 1e-8);
@@ -507,24 +534,24 @@ internal static class Program
         session.Undo(); Assert("image crop undo restores prior frame and existing effect", session.Document.Elements.Single().Width == 100 && session.Document.Elements.Single().Effects.Count == 1);
         foreach (var tool in new[] { EditorTool.Blur, EditorTool.Pixelate })
         {
-            controller.Tool = tool; Gesture(controller, a, b);
+            controller.Tool = tool; Gesture(controller, a, b, OverlayModifiers.Control);
             Assert(tool + " binds effect to selected image", session.Document.Elements.Single().Effects.Last().Kind.ToString() == tool.ToString());
         }
-        controller.Tool = EditorTool.Blur; Down(controller, a); Move(controller, b); controller.Cancel();
+        controller.Tool = EditorTool.Blur; Down(controller, a, OverlayModifiers.Control); Move(controller, b, OverlayModifiers.Control); controller.Cancel();
         Assert("cancel effect leaves saved effects unchanged", session.Document.Elements.Single().Effects.Count == 3 && controller.EffectPreviewPolygon is null);
-        controller.Tool = EditorTool.Crop; Gesture(controller, a, b);
+        controller.Tool = EditorTool.Crop; Gesture(controller, a, b, OverlayModifiers.Control);
         var firstCrop = session.Document.Elements.Single();
         var nextA = firstCrop.Transform.TransformPoint(new(10, 10)); var nextB = firstCrop.Transform.TransformPoint(new(40, 30));
-        Gesture(controller, nextA, nextB);
+        Gesture(controller, nextA, nextB, OverlayModifiers.Control);
         var secondCrop = session.Document.Elements.Single();
         Assert("repeated crop composes source coordinates without re-encoding original", secondCrop.ImageCrop is { } repeated && Near(repeated.X, .4) && Near(repeated.Y, .35) && Near(repeated.Width, .15) && Near(repeated.Height, .15) && secondCrop.AssetId == image.AssetId && session.Assets.Count == 1);
         Assert("repeated rotated crop still preserves world position", secondCrop.Transform.TransformPoint(new(0, 0)).DistanceTo(nextA) < 1e-7 && Near(secondCrop.Width, 30) && Near(secondCrop.Height, 20));
         controller.Tool = EditorTool.Blur;
-        Down(controller, nextA); Move(controller, nextB); controller.Tool = EditorTool.Select; Up(controller, nextB);
+        Down(controller, nextA, OverlayModifiers.Control); Move(controller, nextB, OverlayModifiers.Control); controller.Tool = EditorTool.Select; Up(controller, nextB, OverlayModifiers.Control);
         Assert("switching effect tool cancels its pending region", secondCrop.Effects.Count == 3 && controller.EffectPreviewPolygon is null && !session.IsTransactionActive);
         var singular = Session(); singular.Document.Kind = DocumentKind.FrozenCapture; singular.Add(new() { Kind = ElementKind.Image, Width = 100, Height = 80, Transform = Affine2D.Scale(0, 1) });
         var invalidController = new EditorController(singular) { Tool = EditorTool.Blur }; int errors = 0; invalidController.Message += _ => errors++;
-        Gesture(invalidController, new(0, 0), new(50, 50));
+        Gesture(invalidController, new(0, 0), new(50, 50), OverlayModifiers.Control);
         Assert("singular image transforms rejected before effect gesture", errors == 1 && singular.Document.Elements[0].Effects.Count == 0 && invalidController.Marquee is null);
     }
 

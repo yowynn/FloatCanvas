@@ -42,7 +42,7 @@ internal static class Feedback4OptionsTests
         byte[] originalCache = File.ReadAllBytes(cachePath);
         var loaded = new ToolStateStore(cachePath);
         var controller = new EditorController(new EditorSession()); controller.ApplyParameters(custom);
-        var gallery = new ToolPresetGallery(controller, library, loaded);
+        var gallery = new ToolPresetGallery(controller, library, loaded); gallery.Applied+=gallery.PrepareForShow; gallery.PrepareForShow();
         foreach (var button in gallery.OfficialTiles.Children.OfType<Button>())
         {
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -63,7 +63,7 @@ internal static class Feedback4OptionsTests
         var rectangle = library.Save("Rectangle", controller.Parameters); controller.Tool = EditorTool.Freehand;
         var pen = library.Save("Pen", controller.Parameters); controller.Tool = EditorTool.Rectangle;
         var second = library.Save("Rectangle 2", controller.Parameters);
-        var gallery = new ToolPresetGallery(controller, library); int changes = 0; gallery.Applied += () => changes++;
+        var gallery = new ToolPresetGallery(controller, library); gallery.Applied+=gallery.PrepareForShow; gallery.PrepareForShow(); int changes = 0; gallery.Applied += () => changes++;
         gallery.Measure(new Size(250, 1000)); gallery.Arrange(new Rect(0, 0, 250, gallery.DesiredSize.Height)); gallery.UpdateLayout();
         check(locale + " every drawing tool has official defaults", Enum.GetValues<EditorTool>().Where(tool => tool is not (EditorTool.Redact or EditorTool.Canvas)).All(tool => library.OfficialFor(tool).Count > 0));
         check(locale + " Canvas uses its dedicated canvas settings rather than drawing recipes", library.OfficialFor(EditorTool.Canvas).Count == 0);
@@ -73,43 +73,46 @@ internal static class Feedback4OptionsTests
         check(locale + " a first official preset starts selected", gallery.SelectedId == library.OfficialFor(controller.Tool).First().Id);
         gallery.UserTiles.Children.OfType<Button>().First().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(locale + " one click applies and selects a personal preset", gallery.SelectedId == rectangle.Id && controller.Style.StrokeWidth == 7 && changes == 1);
-        controller.Style.StrokeWidth = 18; gallery.Refresh();
+        controller.Style.StrokeWidth = 18; gallery.PrepareForShow();
         check(locale + " editing keeps the chosen recipe selected", gallery.SelectedId == rectangle.Id);
         check(locale + " modified selected recipe exposes its distinct accessible state", System.Windows.Automation.AutomationProperties.GetItemStatus(gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, rectangle.Id))) == L.Get("Audit.SelectedModified"));
-        gallery.Apply(rectangle.Id);
+        gallery.Apply(rectangle.Id); gallery.PrepareForShow();
         check(locale + " clicking the same personal recipe restores saved parameters", controller.Style.StrokeWidth == 7 && changes == 2);
         controller.Style.Stroke = 0xBE456789; controller.Style.StrokeWidth = 11;
-        gallery.Apply("official.rounded-rectangle");
+        gallery.Apply("official.rounded-rectangle"); gallery.PrepareForShow();
         check(locale + " first official application restores factory colors and width", controller.Style.Stroke == ColorLibrary.ForegroundRed && controller.Style.StrokeWidth == 4 && controller.CornerRadius == 12);
-        controller.Style.StrokeWidth = 21; controller.Style.Stroke = 0xFF000000; gallery.Refresh(); gallery.Apply("official.rounded-rectangle");
+        controller.Style.StrokeWidth = 21; controller.Style.Stroke = 0xFF000000; gallery.PrepareForShow(); gallery.Apply("official.rounded-rectangle"); gallery.PrepareForShow();
         check(locale + " clicking the same official restores its fixed factory parameters", controller.Style.Stroke == ColorLibrary.ForegroundRed && controller.Style.StrokeWidth == 4 && controller.CornerRadius == 12);
-        controller.Tool = EditorTool.Freehand; gallery.Refresh(); check(locale + " changing tools filters personal recipes", gallery.UserTiles.Children.OfType<Button>().Single().Tag.Equals(pen.Id));
-        controller.Tool = EditorTool.Rectangle; gallery.Refresh(); check(locale + " changing back remembers that tools selected recipe", gallery.SelectedId == "official.rounded-rectangle");
-        library.Move(second.Id, rectangle.Id); gallery.Refresh();
+        controller.Tool = EditorTool.Freehand; gallery.PrepareForShow(); check(locale + " changing tools filters personal recipes", gallery.UserTiles.Children.OfType<Button>().Single().Tag.Equals(pen.Id));
+        controller.Tool = EditorTool.Rectangle; gallery.PrepareForShow(); check(locale + " changing back remembers that tools selected recipe", gallery.SelectedId == "official.rounded-rectangle");
+        library.Move(second.Id, rectangle.Id); gallery.PrepareForShow();
         check(locale + " reordering persists without applying or selecting", new ToolPresetLibrary(Path.Combine(folder, locale + "-gallery.json")).UserFor(EditorTool.Rectangle).First().Id == second.Id && gallery.SelectedId == "official.rounded-rectangle");
-        gallery.Apply(rectangle.Id); gallery.Delete(rectangle);
+        gallery.Apply(rectangle.Id); gallery.PrepareForShow(); gallery.Delete(rectangle); gallery.PrepareForShow();
         check(locale + " deleting a selected personal recipe applies the first official", gallery.SelectedId == library.OfficialFor(controller.Tool).First().Id && library.User.All(p => p.Id != rectangle.Id));
         check(locale + " personal context menus only manage recipes", gallery.UserTiles.Children.OfType<Button>().Single().ContextMenu.Items.OfType<MenuItem>().Count() == 3);
     }
     internal static void Parameters(string folder, string locale, Action<string, bool> check)
     {
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Line };
-        var panel = new ToolOptionsPanel(controller, new(Path.Combine(folder, locale + "-panel.json")), new(Path.Combine(folder, locale + "-panel-colors.json")));
+        var panel = new ToolOptionsPanel(controller, new(Path.Combine(folder, locale + "-panel.json")), new(Path.Combine(folder, locale + "-panel-colors.json"))); panel.PrepareForShow();
         var rows = Field<Dictionary<string, FrameworkElement>>(panel, "rows"); var fields = Field<Dictionary<string, NumericValueField>>(panel, "numericFields");
         check(locale + " lines have no default length or height", rows["DefaultWidth"].Visibility == Visibility.Collapsed && rows["DefaultHeight"].Visibility == Visibility.Collapsed);
         check(locale + " pure color tools do not duplicate color opacity", rows["Opacity"].Visibility == Visibility.Collapsed);
         var pickers = Field<Dictionary<string, ComboBox>>(panel, "pickers");
         check(locale + " line pattern and arrow choices include diagrams", new[] { "StrokePattern", "StartArrowHead", "EndArrowHead" }.All(key => pickers[key].Items.OfType<ComboBoxItem>().All(item => item.Content is StackPanel)));
-        controller.Tool = EditorTool.Symbol; panel.Refresh(); fields["DefaultWidth"].Input.Text = "234"; fields["DefaultHeight"].Input.Text = "123";
+        controller.Tool = EditorTool.Symbol; panel.PrepareForShow(); fields["DefaultWidth"].Input.Text = "234"; fields["DefaultHeight"].Input.Text = "123";
         check(locale + " symbols have editable independent default dimensions", controller.DefaultWidth == 234 && controller.DefaultHeight == 123 && rows["DefaultWidth"].Visibility == Visibility.Visible);
-        controller.Tool = EditorTool.Number; panel.Refresh(); fields["NumberStart"].Input.Text = "8"; fields["NumberStep"].Input.Text = "3";
+        controller.Tool = EditorTool.Number; panel.PrepareForShow(); fields["NumberStart"].Input.Text = "8"; fields["NumberStep"].Input.Text = "3";
         fields["NextNumber"].Input.Text = "42";
         check(locale + " number rules are tool state while next number is document state", controller.NumberStart == 8 && controller.NumberStep == 3 && controller.Session.Document.NextNumber == 42 && controller.Session.UndoCount == 1 && !JsonSerializer.Serialize(controller.Parameters).Contains("NextNumber"));
         check(locale + " document number counter is undoable", controller.Session.Undo() && controller.Session.Document.NextNumber == 1);
-        panel.RefreshDocumentState(); check(locale + " current counter refreshes independently from tool parameters", fields["NextNumber"].Value == 1);
+        double hiddenCounter=fields["NextNumber"].Value;panel.RefreshDocumentState();
+        check(locale + " hidden counter controls retain their value until prepared",fields["NextNumber"].Value==hiddenCounter);
+        panel.PrepareForShow();check(locale + " current counter refreshes independently from tool parameters", fields["NextNumber"].Value == 1);
         var fonts = Field<ComboBox>(panel, "fontFamily");
-        check(locale + " text font picker reads system fonts with visual samples", fonts.Items.Count > 10 && fonts.Items.OfType<ComboBoxItem>().All(item => item.Content is TextBlock text && text.FontFamily is not null));
-        controller.Tool = EditorTool.Emoji; panel.Refresh();
+        check(locale + " text font picker reads system fonts with visual samples", fonts.Items.Count > 10 &&
+            fonts.Items.Cast<object>().All(item => item is FontPickerControl.FontChoice { Family: not null }));
+        controller.Tool = EditorTool.Emoji; panel.PrepareForShow();
         check(locale + " emoji size uses a size label and a generous slider range", Field<Dictionary<string,TextBlock>>(panel, "captions")["FontSize"].Text == L.Get("ToolOptions.Size") && fields["FontSize"].Slider.Maximum == 512);
         fields["FontSize"].Input.Text = "32"; check(locale + " precise emoji size input remains editable", controller.Style.FontSize == 32);
         check(locale + " naming is not an inline parameter", !rows.ContainsKey("PresetName"));
@@ -131,7 +134,7 @@ internal static class Feedback4OptionsTests
                 System.Windows.Threading.Dispatcher.PushFrame(frame);
                 foreach (var tool in new[] { EditorTool.Line, EditorTool.Rectangle, EditorTool.Number })
                 {
-                    controller.Tool = tool; panel.Refresh(); panel.Measure(new Size(ToolOptionsPanel.PreferredWidth, 620)); panel.Arrange(new Rect(0, 0, ToolOptionsPanel.PreferredWidth, panel.DesiredSize.Height)); panel.UpdateLayout();
+                    controller.Tool = tool; panel.PrepareForShow(); panel.Measure(new Size(ToolOptionsPanel.PreferredWidth, 620)); panel.Arrange(new Rect(0, 0, ToolOptionsPanel.PreferredWidth, panel.DesiredSize.Height)); panel.UpdateLayout();
                     var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(panel.ActualWidth * 1.5), (int)Math.Ceiling(panel.ActualHeight * 1.5), 144, 144, System.Windows.Media.PixelFormats.Pbgra32);
                     bitmap.Render(panel); var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
                     using var file = File.Create(Path.Combine(output, $"options4-{locale}-{theme}-{tool}.png")); encoder.Save(file);
@@ -144,6 +147,7 @@ internal static class Feedback4OptionsTests
     {
         string path = Path.Combine(folder, locale + "-colors.json"); var library = new ColorLibrary(path);
         var field = new ColorField(ColorRole.Foreground, library) { Value = 0xFF2383E2 }; int changed = 0; field.ValueChanged += _ => changed++;
+        field.PrepareForShow();
         field.Measure(new Size(300, 100)); field.Arrange(new Rect(field.DesiredSize)); field.UpdateLayout();
         var row = (Grid)field.Content; var palette = row.Children.OfType<Panel>().Single();
         check(locale + " primary color field exposes ten swatches in two rows", palette.Children.Count == 10 &&
@@ -156,6 +160,7 @@ internal static class Feedback4OptionsTests
         library.Move(second.Id, first.Id); library.Rename(first.Id, "Renamed"); library.Update(second.Id, 0xFF112233);
         var loaded = new ColorLibrary(path);
         check(locale + " named swatches persist colors names IDs and order", loaded.Swatches.Select(s => s.Id).SequenceEqual(new[] { second.Id, first.Id }) && loaded.Swatches[0].Value == 0xFF112233 && loaded.Swatches[1].Name == "Renamed");
+        using var surface = new ColorPickerTestSurface(picker);
         picker.Value = 0x80336699; Field<Slider>(picker, "alpha").Value = 25;
         uint committed = 0; int commits = 0; picker.CommitDraft(value => { committed = value; commits++; });
         check(locale + " close commits one exact draft including opacity", commits == 1 && committed == 0x40336699);

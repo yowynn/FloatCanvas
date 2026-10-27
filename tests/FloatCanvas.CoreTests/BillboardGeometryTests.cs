@@ -28,7 +28,9 @@ internal static class BillboardGeometryTests
         check(!ElementGeometry.HitTestProjected(element, new(125, 100), mapping.PlaneToScreen, 0), "screen-facing hittest excludes outside");
         element.Style.Fill = 0;
         check(ElementGeometry.HitTestProjected(element, new(20.5, 100), mapping.PlaneToScreen, 0), "logical stroke 5 renders 1.25 physical pixels");
-        check(!ElementGeometry.HitTestProjected(element, new(21, 100), mapping.PlaneToScreen, 0), "hit does not use unscaled preset stroke");
+        check(ElementGeometry.HitTestProjected(element, new(21, 100), mapping.PlaneToScreen, 0), "inside stroke retains the full 1.25 physical pixels inward");
+        check(!ElementGeometry.HitTestProjected(element, new(21.5, 100), mapping.PlaneToScreen, 0) &&
+            !ElementGeometry.HitTestProjected(element, new(19.5, 100), mapping.PlaneToScreen, 0), "inside hit uses scaled width without extending outside the shape");
         element.Style.Fill = 0xFF00FF00;
         var original = element.Clone(); var grab = new PointD(350, 250); var pointer = mapping.ElementToScreen(element).TransformPoint(grab);
         check(BillboardGeometry.TryMoveAnchor(element, mapping, grab, pointer, out var unmoved), "grab inverse at pointer down");

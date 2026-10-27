@@ -35,6 +35,7 @@ internal sealed partial class DesktopSession : IDisposable
     private readonly AssetLibrary _assets = new();
     private readonly SceneRenderer _renderer = new();
     private readonly CanvasPreviewPump _canvasPreview;
+    private readonly IDisposable? _escapeTrace;
     private readonly EditorController _editor;
     private DispatcherOperation? _renderOperation;
     private EditorSession _live;
@@ -242,7 +243,32 @@ internal sealed partial class DesktopSession : IDisposable
             ((Forms.ToolStripMenuItem)menu.Items[2]).ShortcutKeyDisplayString = "Ctrl+O";
             menu.Items.OfType<Forms.ToolStripMenuItem>().Single(item => item.Text == L.Get("Desktop.HotkeySettings")).ShortcutKeyDisplayString = "Ctrl+,";
         };
+        _escapeTrace = EscapeInputTrace.Start(_diagnostics, CaptureEscapeState);
     }
+
+    private object CaptureEscapeState() => new
+    {
+        Editing = _host.IsEditing,
+        CanvasVisible = _host.IsVisible,
+        Enhanced = _host.UsesSystemInput,
+        EditingInput = _host.HasEditingInput,
+        Tool = _editor.Tool.ToString(),
+        ToolbarVisible = _toolbar.IsVisible,
+        ToolbarExpanded = _settings.ToolbarExpanded,
+        MainMenuOpen = _toolbarMenu.IsOpen,
+        MoreMenuOpen = _moreToolsMenu.IsOpen,
+        ToolOptionsOpen = IsToolOptionsOpen,
+        ToolOptionsPinned = _toolOptionsPinned,
+        ToolColorOpen = _toolOptionsPanel.IsColorPickerOpen,
+        CanvasSettingsOpen = IsCanvasSettingsOpen,
+        Transaction = Active.IsTransactionActive,
+        Marquee = _editor.Marquee is not null,
+        NewCanvasConfirmation = _newCanvasButton?.IsConfirming == true,
+        SnapshotPending = _snapshotCaptureRequest is not null,
+        InlineText = _inlineText is not null,
+        Eyedropper = _eyedropper is not null,
+        DocumentBusy = DocumentOperationBusy
+    };
 
     public async void Start(string[] args)
     {
@@ -404,8 +430,8 @@ internal sealed partial class DesktopSession : IDisposable
         PlaceToolbar();
         SessionWindowCoordinator.Show(_toolbar);
         RefreshPassThroughLauncher();
-        if(_inspectorWanted && _inspector is not null){ShowAppWindow(_inspector);_inspector.Refresh();}
-        if(_layersWanted && _layers is not null){ShowAppWindow(_layers);_layers.Refresh();}
+        if(_inspectorWanted && _inspector is not null){_inspector.PrepareForShow();ShowAppWindow(_inspector);}
+        if(_layersWanted && _layers is not null){_layers.PrepareForShow();ShowAppWindow(_layers);}
         _windowCoordinator?.ResumeEditingWindows();
     }
     private void RaiseVisibleToolWindows()
@@ -414,6 +440,7 @@ internal sealed partial class DesktopSession : IDisposable
         foreach (var window in _windowCoordinator?.OrderForRaise(windows) ?? windows)
             if (window is { IsVisible: true } && new WindowInteropHelper(window).Handle is var handle && handle != 0)
                 OverlayCoordinates.RaiseToolWindow(handle);
+        OverlayPopupWindow.RaiseOpenPopups();
     }
     private void RequestRender()
     {
@@ -479,8 +506,9 @@ internal sealed partial class DesktopSession : IDisposable
             finally { _syncingControls = false; }
             if (!Active.IsTransactionActive)
             {
-                _inspector?.Refresh(); _layers?.Refresh();
-                _canvasSettingsWindow?.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+                if(_inspector is {IsVisible:true})_inspector.Refresh();
+                if(_layers is {IsVisible:true})_layers.Refresh();
+                if(_canvasSettingsWindow is {IsVisible:true})_canvasSettingsWindow.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
                 if (IsToolOptionsOpen) _toolOptionsPanel.RefreshDocumentState();
             }
         }
@@ -514,7 +542,9 @@ internal sealed partial class DesktopSession : IDisposable
         if (_newCanvasButton is { IsConfirming: true } clear && !Ancestors(source).Contains(clear)) clear.CancelConfirmation();
         // WPF menus own their focus/capture lifetime until the mouse release invokes
         // the item. Moving native focus into that Popup can cancel the pending click.
-        if (!ShouldSynchronizePointerFocus(source)) return;
+        // The press can open a root menu before PostProcessInput runs. Its
+        // original toolbar source must not take focus back from that new menu.
+        if (!ShouldSynchronizePointerFocus(source) || OverlayContextMenu.OwnsKeyboardFocus) return;
         // A native canvas drag owns its whole gesture, even when it crosses a panel.
         nint capture = _host.CaptureHandle;
         if (capture != 0 && _host.Diagnostics.Any(pair => pair.InputHandle == capture)) return;
@@ -705,6 +735,9 @@ internal sealed partial class DesktopSession : IDisposable
         _canvasControlsWereVisible = CanvasControlsVisible();
     }
     private void ToggleInspector()
+        => ToggleInspectorAt(null);
+
+    private void ToggleInspectorAt(PointD? near)
     {
         _editor.Cancel(); _inspectorWanted = !_inspectorWanted;
         if (_inspector == null)
@@ -721,15 +754,20 @@ internal sealed partial class DesktopSession : IDisposable
             var monitor = _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(new(_toolbar.PointToScreen(new(0, 0)).X, _toolbar.PointToScreen(new(0, 0)).Y))) ?? _host.PrimaryMonitor;
             if (_inspector.WindowState == WindowState.Normal)
                 _inspector.Height = Math.Min(_inspector.Height, Math.Max(_inspector.MinHeight, monitor.WorkArea.Height * 96 / monitor.DpiY - 24));
-            _inspector.Refresh(); ShowAppWindow(_inspector, true);
+            _inspector.PrepareForShow();
+            if (near is { } point) ShowAnchoredToolWindow(_inspector, false, () => PositionInspectorNear(point));
+            else ShowAppWindow(_inspector, true);
         }
         else _inspector.Dismiss();
     }
     private void ShowInspectorNear(PointD point)
     {
         if(_inspector?.IsVisible==true)return;
-        ToggleInspector();
-        if(_inspector?.IsVisible!=true)return;
+        ToggleInspectorAt(point);
+    }
+    private void PositionInspectorNear(PointD point)
+    {
+        if(_inspector is null)return;
         _inspector.UpdateLayout();
         var screen=point+_editor.ScreenOrigin;
         var monitor=_host.Monitors.FirstOrDefault(item=>item.Bounds.Contains(new(screen.X,screen.Y)))??_host.PrimaryMonitor;
@@ -912,7 +950,7 @@ internal sealed partial class DesktopSession : IDisposable
         }
         Recorder(L.Get("Settings.ToggleHotkey"), toggle, value => toggle = value);
         Recorder(L.Get("Settings.HideHotkey"), hide, value => hide = value);
-        var theme = new ComboBox { ItemsSource = new[] { L.Get("Settings.SystemTheme"), L.Get("Settings.LightTheme"), L.Get("Settings.DarkTheme") }, MinHeight = 34,
+        var theme = new OverlayComboBox { ItemsSource = new[] { L.Get("Settings.SystemTheme"), L.Get("Settings.LightTheme"), L.Get("Settings.DarkTheme") }, MinHeight = 34,
             SelectedIndex = _settings.Theme == "light" ? 1 : _settings.Theme == "dark" ? 2 : 0 };
         AppSettingsWindow.AddSetting(general, L.Get("Settings.Theme"), theme);
         var shortcutHints = new CheckBox { Content = L.Get("Feedback3.Toolbar.ShowShortcutHints"),
@@ -933,7 +971,7 @@ internal sealed partial class DesktopSession : IDisposable
         ToolTipService.SetShowOnDisabled(startup, true);
         startup.ToolTip = L.Get(shell is null ? "Shell.TestProfileHint" : "Shell.StartupHint");
         AppSettingsWindow.AddSetting(system, L.Get("Shell.StartWithWindows"), startup);
-        var overlayMode = new ComboBox { ItemsSource = new[] { L.Get("OverlaySafety.ModeAuto"), L.Get("OverlaySafety.ModeEnhanced"), L.Get("OverlaySafety.ModeDesktop") },
+        var overlayMode = new OverlayComboBox { ItemsSource = new[] { L.Get("OverlaySafety.ModeAuto"), L.Get("OverlaySafety.ModeEnhanced"), L.Get("OverlaySafety.ModeDesktop") },
             SelectedIndex = (int)OverlayBackendModes.Parse(_settings.OverlayMode), MinHeight = 34 };
         AppSettingsWindow.AddSetting(system, L.Get("OverlaySafety.ModeSetting"), overlayMode,
             L.Get("OverlaySafety.ModeHint") + "\n" + L.Format("OverlaySafety.CurrentMode", L.Get(_host.UsesSystemInput ? "OverlaySafety.ModeEnhanced" : "OverlaySafety.ModeDesktop")));
@@ -961,10 +999,10 @@ internal sealed partial class DesktopSession : IDisposable
         if (shell is null) registerFiles.ToolTip = L.Get("Shell.TestProfileHint");
         var fileRegistration = AppSettingsWindow.AddGroup(system, L.Get("Shell.RegisterProjectType"));
         fileRegistration.Children.Add(registerFiles); fileRegistration.Children.Add(registrationStatus);
-        var language = new ComboBox { ItemsSource = new[] { L.Get("Settings.AutomaticLanguage"), L.Get("Settings.ChineseLanguage"), L.Get("Settings.EnglishLanguage") },
+        var language = new OverlayComboBox { ItemsSource = new[] { L.Get("Settings.AutomaticLanguage"), L.Get("Settings.ChineseLanguage"), L.Get("Settings.EnglishLanguage") },
             MinHeight = 34, SelectedIndex = L.NormalizePreference(_settings.Language) == "zh-CN" ? 1 : L.NormalizePreference(_settings.Language) == "en" ? 2 : 0 };
         AppSettingsWindow.AddSetting(general, L.Get("Settings.Language"), language, L.Get("Settings.LanguageRestartHint"));
-        var screenScope = new ComboBox { MinHeight = 34 };
+        var screenScope = new OverlayComboBox { MinHeight = 34 };
         var pendingScope = new MonitorScopeSelection(screenScope, MonitorScopeControl.Saved(_settings));
         pendingScope.Refresh(_host.AvailableMonitors);
         void RefreshScreenScope() => pendingScope.Refresh(_host.AvailableMonitors);
@@ -1085,6 +1123,7 @@ internal sealed partial class DesktopSession : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        _escapeTrace?.Dispose();
         CloseEditingDialogs(); CloseRegularWindows();
         EndEyedropper(restore: false);
         try { FlushToolState(commitDraft: true); }

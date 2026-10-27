@@ -58,6 +58,7 @@ internal static class Round2UiTests
         {
             var session=new EditorSession(new());
             var inspector=new InspectorWindow(()=>session);
+            inspector.PrepareForShow();
             try
             {
                 inspector.ApplyTemplate();

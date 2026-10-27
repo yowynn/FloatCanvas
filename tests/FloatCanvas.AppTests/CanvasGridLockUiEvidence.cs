@@ -37,16 +37,16 @@ internal static class CanvasGridLockUiEvidence
                     { Width = 600, Height = 590, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x08000080 });
                     handle = source.Handle; source.RootVisual = root;
                     var settings = new CanvasSettings { Projection = new() { Enabled = true, Columns = 8, Rows = 6, CellSize = 105.1234, LockedGridCellSize = 100 } };
-                    window.Refresh(settings, true); Layout(root);
+                    window.Refresh(settings, true); window.PrepareForShow(); Layout(root);
                     check(language + " " + theme + " settings host remains native and hidden", IsWindow(handle) && !IsWindowVisible(handle) && !window.IsVisible && PresentationSource.FromVisual(content) is HwndSource);
                     var toggle = Field<CheckBox>(window, "gridSizeLock"); var count = Field<TextBox>(window, "lockedColumns");
                     check(language + " " + theme + " grid lock label and fractional count fit default settings width", toggle.ActualWidth > 200 && count.ActualWidth > 80 &&
                         toggle.DesiredSize.Width <= toggle.ActualWidth + 1 && count.ActualHeight >= 30 && count.IsReadOnly);
                     Render(root, Path.Combine(output, "settings-locked-" + language + "-" + theme + ".png"));
-                    settings.Projection.LockedGridCellSize = null; window.Refresh(settings, true); Layout(root);
+                    settings.Projection.LockedGridCellSize = null; window.Refresh(settings, true); window.PrepareForShow(); Layout(root);
                     Render(root, Path.Combine(output, "settings-unlocked-" + language + "-" + theme + ".png"));
                     settings.Projection.Enabled = false; settings.Grid.FlatCellSize = 73.1;
-                    window.Refresh(settings, false); Layout(root);
+                    window.Refresh(settings, false); window.PrepareForShow(); Layout(root);
                     var flatPanel = Field<StackPanel>(window, "flatSizePanel");
                     var size = Field<NumericValueField>(window, "gridSize");
                     var sizeBounds = size.Input.TransformToAncestor(root).TransformBounds(new Rect(size.Input.RenderSize));

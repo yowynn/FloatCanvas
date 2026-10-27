@@ -42,7 +42,7 @@ internal sealed partial class EditorController
             {
                 source = null;
                 var selected = Session.SelectedElements().Where(e => e.IsBillboard && e.Visible && !e.Locked).ToArray();
-                if (selected.Length > 0 && IsWithinCurrentSelection()) source = selected[0];
+                if (selected.Length > 0 && IsSelectionFrameHit(pointerScreen, includeInterior: true)) source = selected[0];
             }
         }
         plane = source?.BillboardAnchor ?? default;

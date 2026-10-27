@@ -64,11 +64,11 @@ internal static class CompletePresetContractTests
         var library = new ToolPresetLibrary(Path.Combine(folder, "gallery.json"));
         var state = new ToolStateStore(statePath);
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Line };
-        var gallery = new ToolPresetGallery(controller, library, state);
-        gallery.Apply("official.line"); controller.Style.Stroke = 0xFF252525; controller.Style.StrokeWidth = 17; gallery.Refresh();
+        var gallery = new ToolPresetGallery(controller, library, state); gallery.Applied+=gallery.PrepareForShow; gallery.PrepareForShow();
+        gallery.Apply("official.line"); gallery.PrepareForShow(); controller.Style.Stroke = 0xFF252525; controller.Style.StrokeWidth = 17; gallery.PrepareForShow();
         foreach (var preset in library.OfficialFor(EditorTool.Line).Skip(1))
         {
-            gallery.Apply(preset.Id);
+            gallery.Apply(preset.Id); gallery.PrepareForShow();
             check(preset.Id + " restores factory color and width on first click after editing another line preset", controller.Style.Stroke == ColorLibrary.ForegroundRed && controller.Style.StrokeWidth == 4);
         }
         foreach (var preset in library.OfficialFor(EditorTool.Line))
@@ -84,7 +84,7 @@ internal static class CompletePresetContractTests
         gallery = new ToolPresetGallery(controller, library, state);
         foreach (var preset in library.OfficialFor(EditorTool.Line))
         {
-            gallery.Apply(preset.Id);
+            gallery.Apply(preset.Id); gallery.PrepareForShow();
             var expected = new EditorController(new EditorSession()); expected.ApplyParameters(preset.Parameters);
             check(preset.Id + " ignores inherited official cache values after reconstruction", Snapshot(controller.Parameters) == Snapshot(expected.Parameters));
         }

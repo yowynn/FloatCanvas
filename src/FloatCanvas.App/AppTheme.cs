@@ -14,6 +14,19 @@ internal static class AppTheme
     private static bool observingSystemColors;
     private static ResourceDictionary? styles;
     private static ResourceDictionary? overlayStyles;
+    private static ResourceDictionary? palette;
+    internal static void UsePopupPalette(FrameworkElement root)
+    {
+        root.Dispatcher.VerifyAccess();
+        if (palette is null)
+        {
+            palette = new ResourceDictionary();
+            ApplyPalette(palette, UsesDarkMode(currentMode));
+        }
+        // A detached HwndSource root needs to own the palette too. Sharing only
+        // colors preserves its regular/overlay control styles and resource order.
+        if (!root.Resources.MergedDictionaries.Contains(palette)) root.Resources.MergedDictionaries.Insert(0, palette);
+    }
     internal static void UseRegularControls(Window window)
     {
         styles ??= (ResourceDictionary)XamlReader.Parse(StyleMarkup);
@@ -50,9 +63,14 @@ internal static class AppTheme
                     app.Dispatcher.BeginInvoke(() => Apply(currentMode));
             };
         }
-        bool dark = mode?.ToLowerInvariant() switch { "dark" => true, "light" => false, _ => SystemUsesDarkTheme() };
+        bool dark = UsesDarkMode(mode);
         var resources = app.Resources;
-        ApplyPalette(resources, dark);
+        palette ??= new ResourceDictionary();
+        ApplyPalette(palette, dark);
+        // ApplyPalette remains usable for an independent dialog fallback. Remove
+        // any old local fallback entries before restoring the shared app palette.
+        foreach (var key in palette.Keys) resources.Remove(key);
+        if (!resources.MergedDictionaries.Contains(palette)) resources.MergedDictionaries.Insert(0, palette);
         ResourceDictionary selected;
         if(OverlayWindowScope.Current is not null)
         {
@@ -152,8 +170,14 @@ internal static class AppTheme
     private static void SetBrush(ResourceDictionary resources, string key, string color)
     {
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
-        brush.Freeze(); resources[key] = brush;
+        brush.Freeze();
+        // Replacing the entry invalidates dynamic resources on every palette owner,
+        // including the actual roots of hosted menus and their submenu windows.
+        resources[key] = brush;
     }
+
+    private static bool UsesDarkMode(string? mode) => mode?.ToLowerInvariant() switch
+        { "dark" => true, "light" => false, _ => SystemUsesDarkTheme() };
 
     private static bool SystemUsesDarkTheme()
     {
@@ -166,7 +190,7 @@ internal static class AppTheme
     }
 
     private const string StyleMarkup = """
-        <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:sys="clr-namespace:System;assembly=System.Runtime"
                             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
           <CornerRadius x:Key="CanvasButtonCornerRadius">6</CornerRadius>
           <Style x:Key="CanvasNumericFrame" TargetType="Border">
@@ -383,7 +407,6 @@ internal static class AppTheme
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></Setter.Value></Setter>
           </Style>
           <Style x:Key="CanvasScrollThumb" TargetType="Thumb">
-            <Setter Property="MinHeight" Value="20"/>
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Thumb">
                 <Border x:Name="Thumb" Background="{DynamicResource CanvasMuted}" Opacity="0.6" CornerRadius="4" Margin="3"/>
@@ -395,6 +418,10 @@ internal static class AppTheme
             </Setter.Value></Setter>
           </Style>
           <Style TargetType="ScrollBar">
+            <Style.Resources>
+              <sys:Double x:Key="{x:Static SystemParameters.VerticalScrollBarButtonHeightKey}">40</sys:Double>
+              <sys:Double x:Key="{x:Static SystemParameters.HorizontalScrollBarButtonWidthKey}">40</sys:Double>
+            </Style.Resources>
             <Setter Property="Width" Value="12"/><Setter Property="MinWidth" Value="12"/>
             <Setter Property="Background" Value="Transparent"/><Setter Property="Focusable" Value="False"/>
             <Setter Property="Template"><Setter.Value>
@@ -411,7 +438,6 @@ internal static class AppTheme
                 <ControlTemplate.Triggers>
                   <Trigger Property="Orientation" Value="Horizontal">
                     <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
-                    <Setter TargetName="ScrollThumb" Property="MinWidth" Value="20"/><Setter TargetName="ScrollThumb" Property="MinHeight" Value="0"/>
                     <Setter TargetName="Decrease" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}"/><Setter TargetName="Increase" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}"/>
                   </Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
@@ -634,7 +660,7 @@ internal static class AppTheme
                   <TextBox x:Name="PART_EditableTextBox" Visibility="Hidden" Margin="2,2,26,2" Background="Transparent" BorderThickness="0" MinHeight="0"
                            IsReadOnly="{TemplateBinding IsReadOnly}" VerticalContentAlignment="Center"/>
                   <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
-                         IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="None">
+                         IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" PopupAnimation="None">
                     <Border Background="{DynamicResource CanvasInput}" BorderBrush="{DynamicResource CanvasBorder}" BorderThickness="1" CornerRadius="6" Padding="4"
                             MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
                       <ScrollViewer CanContentScroll="True" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
@@ -647,7 +673,7 @@ internal static class AppTheme
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasMuted}"/></Trigger>
                   <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsDropDownOpen" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
-                  <Trigger Property="IsEditable" Value="True"><Setter TargetName="Selection" Property="Visibility" Value="Hidden"/><Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/></Trigger>
+                  <Trigger Property="IsEditable" Value="True"><Setter TargetName="Selection" Property="Visibility" Value="Collapsed"/><Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/><Setter TargetName="DropDownToggle" Property="Width" Value="26"/><Setter TargetName="DropDownToggle" Property="HorizontalAlignment" Value="Right"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/><Setter TargetName="Selection" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>

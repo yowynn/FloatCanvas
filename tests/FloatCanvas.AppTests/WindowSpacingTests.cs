@@ -25,6 +25,7 @@ internal static class WindowSpacingTests
                 var session = new EditorSession(); session.Add(new() { Kind = ElementKind.Rectangle, Width = 160, Height = 100 });
                 var controller = new EditorController(session) { Tool = EditorTool.Rectangle };
                 var tools = new ToolOptionsPanel(controller, new ToolPresetLibrary(Path.Combine(folder, "tools.json")), new ColorLibrary(Path.Combine(folder, "colors.json")));
+                tools.PrepareForShow();
                 foreach (double height in new[] { 620d, 220 })
                 {
                     Measure(tools, ToolOptionsPanel.PreferredWidth, height);
@@ -42,14 +43,16 @@ internal static class WindowSpacingTests
                 Edges(prefix + " compact tool viewport", tools, (FrameworkElement)tools.Content, check);
 
                 var inspector = new InspectorWindow(() => session);
+                inspector.PrepareForShow();
                 var inspectorRoot = (FrameworkElement)inspector.Content;
                 Measure(inspectorRoot, inspector.Width - 2, 650);
                 var inspectorScroll = Descendants<ScrollViewer>(inspectorRoot).First();
                 Edges(prefix + " inspector viewport", inspectorRoot, inspectorScroll, check);
                 var properties = Field<StackPanel>(inspector, "propertyPanel");
-                check(prefix + " inspector content fills the viewport", Math.Abs(properties.ActualWidth - inspectorScroll.ViewportWidth) < .1);
+                check(prefix + " inspector content fills its inset viewport", Math.Abs(properties.ActualWidth - (inspectorScroll.ViewportWidth - 2 * PropertyChangeRegion.HighlightInset)) < .1);
 
                 var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()); canvas.Refresh(new(), false);
+                canvas.PrepareForShow();
                 var canvasRoot = (FrameworkElement)canvas.Content;
                 canvas.Content = null;
                 var canvasHost = new Border { Child = canvasRoot };
@@ -67,6 +70,7 @@ internal static class WindowSpacingTests
                 check(prefix + " settings save aligns to the right content edge", Math.Abs(settingsRoot.ActualWidth - settings.SaveButton.TranslatePoint(new(settings.SaveButton.ActualWidth, 0), settingsRoot).X - WindowLayout.ContentInset) < .1);
 
                 var color = new ColorPickerPanel(ColorRole.Foreground, new ColorLibrary(Path.Combine(folder, "colors.json")));
+                color.PrepareForShow();
                 color.Measure(new(double.PositiveInfinity, 520));
                 Measure(color, color.DesiredSize.Width, 500);
                 Edges(prefix + " color viewport", color, (FrameworkElement)color.Content, check);
@@ -79,6 +83,12 @@ internal static class WindowSpacingTests
     {
         double left = child.TranslatePoint(new(), host).X;
         double right = host.ActualWidth - child.TranslatePoint(new(child.ActualWidth, 0), host).X;
+        if (child is ScrollViewer { Content: FrameworkElement content } scroll && Descendants<PropertyChangeRegion>(content).Any())
+        {
+            left = content.TranslatePoint(new(), host).X;
+            right = host.ActualWidth - content.TranslatePoint(new(content.ActualWidth, 0), host).X
+                - (scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible ? WindowLayout.ScrollBarWidth : 0);
+        }
         check(name + $" has 12 DIP edges ({left:0.##}/{right:0.##})", Math.Abs(left - 12) < .1 && Math.Abs(right - 12) < .1);
     }
     private static void Measure(FrameworkElement element, double width, double height)

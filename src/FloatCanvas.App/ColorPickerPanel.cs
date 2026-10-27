@@ -22,6 +22,7 @@ internal sealed class ColorPickerPanel : UserControl
     private readonly PixelTilePanel history = new(10, 28), pinned = new(10, 28);
     private readonly TextBlock historyHeading = Heading("Color.History"), pinnedHeading = Heading("Color.Pinned");
     private bool syncing;
+    private bool valueDirty = true, collectionsDirty = true, previewDirty, preparing;
     private uint value;
     private string? revealSwatch;
     internal Func<Window?>? DialogOwner { get; set; }
@@ -34,9 +35,8 @@ internal sealed class ColorPickerPanel : UserControl
         get => value;
         set
         {
-            this.value = value; syncing = true;
-            try { hex.Text = ColorLibrary.ToHtml(value, false); alphaField.Value = (value >> 24) * 100d / 255; ClearInputError(); RefreshPreview(); }
-            finally { syncing = false; }
+            this.value = value; valueDirty = true;
+            if (IsVisible || preparing) SynchronizeValue();
         }
     }
 
@@ -112,10 +112,41 @@ internal sealed class ColorPickerPanel : UserControl
         preview.MouseLeftButtonDown += (_, e) => { spectrum.Focus(); e.Handled = true; };
         Value = role == ColorRole.Background ? 0u : ColorLibrary.ForegroundRed;
         RefreshCollections();
+        IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); };
+        Loaded += (_, _) => { if (IsVisible) PrepareForShow(); };
+    }
+
+    internal void PrepareForShow()
+    {
+        if (preparing) return;
+        preparing = true;
+        try
+        {
+            if (valueDirty) SynchronizeValue();
+            else if (previewDirty)
+            {
+                bool wasSyncing = syncing; syncing = true;
+                try { RefreshPreview(); }
+                finally { syncing = wasSyncing; }
+            }
+            if (collectionsDirty) RefreshCollections();
+        }
+        finally { preparing = false; }
+    }
+
+    private void SynchronizeValue()
+    {
+        valueDirty = false;
+        bool wasSyncing = syncing; syncing = true;
+        try { hex.Text = ColorLibrary.ToHtml(value, false); alphaField.Value = (value >> 24) * 100d / 255; ClearInputError(); RefreshPreview(); }
+        finally { syncing = wasSyncing; }
     }
 
     public void RefreshCollections()
     {
+        collectionsDirty = true;
+        if (!IsVisible && !preparing) return;
+        collectionsDirty = false;
         var focus = TileCollection.Capture(this, history.Children.OfType<Button>().Concat(pinned.Children.OfType<Button>()));
         TileCollection.Synchronize(history, library.History.Select(color => color.ToString("X8")), id =>
         {
@@ -163,7 +194,11 @@ internal sealed class ColorPickerPanel : UserControl
     }
     private void Apply() { if (TryRead(out uint color)) ColorChosen?.Invoke(color); else InvalidInput(); }
     private void Choose(uint color) { Value = color; DraftChanged?.Invoke(color); }
-    internal bool TryGetDraft(out uint color) => TryRead(out color);
+    internal bool TryGetDraft(out uint color)
+    {
+        if (valueDirty) { color = value; return true; }
+        return TryRead(out color);
+    }
     internal void CommitDraft(Action<uint> commit) => Run(() => { if (TryRead(out uint color)) commit(color); });
     private void SaveSwatch()
     {
@@ -178,6 +213,9 @@ internal sealed class ColorPickerPanel : UserControl
     }
     private void RefreshPreview()
     {
+        previewDirty = true;
+        if (!IsVisible && !preparing) return;
+        previewDirty = false;
         if (TryRead(out var color))
         {
             preview.Child = CreateSwatch(color);

@@ -15,6 +15,7 @@ internal sealed class CanvasPresetGallery : UserControl
     private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
     private readonly ScrollViewer userScroll;
     private CanvasSettings current = new();
+    private bool refreshPending;
     // Session-only selection evidence; definitions, previews and application never use these snapshots.
     private CanvasPresetParameters? selectedSnapshot, selectedDefinition;
     internal string SelectedId { get; private set; } = "";
@@ -36,12 +37,20 @@ internal sealed class CanvasPresetGallery : UserControl
         var userArea = new Grid { MinHeight = 156 }; userArea.Children.Add(empty);
         userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body;
+        IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); };
         Refresh(new());
     }
 
     internal void Refresh(CanvasSettings settings)
     {
-        current = settings.Clone(); var official = library.Official; var users = library.User;
+        current = settings.Clone(); refreshPending = true;
+        if (IsVisible) PrepareForShow();
+    }
+    internal void PrepareForShow()
+    {
+        if (!refreshPending) return;
+        refreshPending = false;
+        var official = library.Official; var users = library.User;
         var selected = library.All.FirstOrDefault(p => p.Id == SelectedId); var actual = CanvasPresetParameters.From(current);
         if (selected is null || selectedDefinition is { } definition && (!definition.Matches(selected.Parameters) || !selected.Parameters.Matches(definition)) ||
             !(selectedSnapshot ?? selected.Parameters).Matches(actual) || selectedSnapshot is { } applied && !actual.Matches(applied))
@@ -56,7 +65,7 @@ internal sealed class CanvasPresetGallery : UserControl
             button.PreviewKeyDown += (_, e) =>
             {
                 if (Keyboard.Modifiers != ModifierKeys.None || e.Key is not (Key.F2 or Key.Delete)) return;
-                e.Handled = true; if (e.IsRepeat) return;
+                e.Handled = true; if (AppInputPolicy.IsRepeat(e)) return;
                 if (e.Key == Key.F2 && library.User.FirstOrDefault(item => item.Id == id) is { } latest) Rename(latest);
                 else if (e.Key == Key.Delete) Delete(id);
             };
@@ -71,13 +80,14 @@ internal sealed class CanvasPresetGallery : UserControl
     {
         var preset = library.All.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id);
         SelectedId = id; selectedSnapshot = selectedDefinition = null;
-        foreach (var button in Tiles()) button.SetResourceReference(BorderBrushProperty, Equals(button.Tag, id) ? "CanvasAccent" : "CanvasBorder");
+        if (IsVisible) foreach (var button in Tiles()) button.SetResourceReference(BorderBrushProperty, Equals(button.Tag, id) ? "CanvasAccent" : "CanvasBorder");
+        else refreshPending = true;
         Applied?.Invoke(preset.Parameters.Clone());
         if (SelectedId == id) { selectedSnapshot = CanvasPresetParameters.From(current); selectedDefinition = preset.Parameters.Clone(); }
     });
     internal void SaveNamed(string name)
     {
-        var saved = library.Save(name, current); SelectedId = saved.Id; selectedSnapshot = selectedDefinition = saved.Parameters.Clone(); Refresh(current); RevealSelection();
+        var saved = library.Save(name, current); SelectedId = saved.Id; selectedSnapshot = selectedDefinition = saved.Parameters.Clone(); Refresh(current); if (IsVisible) RevealSelection();
     }
     internal void Delete(string id) => Run(() => { library.Delete(id); if (SelectedId == id) { SelectedId = ""; selectedSnapshot = selectedDefinition = null; } Refresh(current); });
     private void Save()
@@ -119,26 +129,5 @@ internal sealed class CanvasPresetGallery : UserControl
         var panel = new DockPanel { Height = 34, Margin = new(0, 0, 0, 4) };
         panel.Children.Add(PropertyPanelLayout.SectionTitle(L.Get(key))); return panel;
     }
-    private static Image Preview(CanvasPresetParameters parameters)
-    {
-        var drawing = new DrawingGroup();
-        using (var context = drawing.Open())
-        {
-            for (int y = 0; y < 24; y += 6)
-                for (int x = 0; x < 24; x += 6)
-                    context.DrawRectangle((x + y) % 12 == 0 ? Brushes.White : Brushes.LightGray, null, new Rect(x, y, 6, 6));
-            var background = new SolidColorBrush(ToColor(parameters.BackgroundColor));
-            context.DrawRectangle(background, null, new Rect(0, 0, 24, 24));
-            if (parameters.GridVisible)
-            {
-                var pen = new Pen(new SolidColorBrush(ToColor(parameters.GridColor)), Math.Min(2, parameters.GridWidth))
-                { DashStyle = parameters.GridPattern switch { StrokePattern.Dashed => DashStyles.Dash, StrokePattern.Dotted => DashStyles.Dot, _ => DashStyles.Solid } };
-                for (int i = 6; i < 24; i += 6)
-                { context.DrawLine(pen, new(i, 0), new(i, 24)); context.DrawLine(pen, new(0, i), new(24, i)); }
-            }
-            context.DrawRectangle(null, new Pen(Brushes.Gray, .75), new Rect(.5, .5, 23, 23));
-        }
-        drawing.Freeze(); var image = new DrawingImage(drawing); image.Freeze(); return new() { Source = image, Width = 24, Height = 24 };
-    }
-    private static Color ToColor(uint color) => Color.FromArgb((byte)(color >> 24), (byte)(color >> 16), (byte)(color >> 8), (byte)color);
+    private static FrameworkElement Preview(CanvasPresetParameters parameters) => new CanvasParameterIcon(parameters);
 }

@@ -20,7 +20,7 @@ internal static class InspectorFeedbackTests
             var session = new EditorSession();
             var element = new CanvasElement { Kind = ElementKind.Rectangle, Width = 100, Height = 60 };
             session.Add(element);
-            var inspector = new InspectorWindow(() => session, colorLibrary: library);
+            var inspector = new InspectorWindow(() => session, colorLibrary: library); inspector.PrepareForShow();
             var numeric = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields");
             var fields = Field<Dictionary<string, Controls.TextBox>>(inspector, "fields");
             check(language + " property numeric fields have both precise inputs and sliders", new[] { "X", "Y", "W", "H", "Angle", "StrokeWidth", "Opacity", "CornerRadius", "FontSize", "ArrowHeadSize" }.All(key =>

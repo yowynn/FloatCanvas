@@ -251,17 +251,10 @@ public sealed partial class SceneRenderer : IDisposable
                 var geometry = GetPath(element);
                 bool shape = element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
                 uint fill = element.Style.LinkColors ? element.Style.Stroke : element.Style.Fill;
-                if (shape && (fill >> 24) != 0)
-                {
-                    SetPaint(fill, SKPaintStyle.Fill);
-                    if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
-                    canvas.DrawPath(geometry.Path, _paint);
-                }
-                if (element.Style.StrokeWidth > 0)
+                if (shape) DrawInsideShape(canvas, element, geometry, fill, directOpacity);
+                else if (element.Style.StrokeWidth > 0)
                 {
                     SetPaint(element.Style.Stroke, SKPaintStyle.Stroke, element.Style.StrokeWidth);
-                    using var dash = CreateDash(element.Style);
-                    _paint.PathEffect = dash;
                     if (element.Kind == ElementKind.Highlighter) _paint.Color = _paint.Color.WithAlpha((byte)Math.Round(_paint.Color.Alpha * .35));
                     var strokeMatrix = canvas.TotalMatrix;
                     var opacityStroke = !includeOpacity && directOpacity == 1 && canvas.Context is null &&
@@ -275,7 +268,11 @@ public sealed partial class SceneRenderer : IDisposable
                     {
                         _paint.Style = SKPaintStyle.Fill; canvas.DrawPath(opacityStroke, _paint); _paint.Style = SKPaintStyle.Stroke;
                     }
-                    else canvas.DrawPath(geometry.StrokePath, _paint);
+                    else if (element.Style.StrokePattern != StrokePattern.Solid)
+                    {
+                        _paint.Style = SKPaintStyle.Fill; canvas.DrawPath(geometry.PatternStroke, _paint); _paint.Style = SKPaintStyle.Stroke;
+                    }
+                    else canvas.DrawPath(geometry.Path, _paint);
                     _paint.PathEffect = null;
                     if (ElementGeometry.IsLine(element.Kind))
                     {
@@ -288,6 +285,36 @@ public sealed partial class SceneRenderer : IDisposable
             }
         }
         finally { canvas.RestoreToCount(saved); }
+    }
+
+    private void DrawInsideShape(SKCanvas canvas, CanvasElement element, PathEntry geometry, uint fill, double directOpacity)
+    {
+        bool filled = (fill >> 24) != 0;
+        bool stroked = element.Style.StrokeWidth > 0 && (element.Style.Stroke >> 24) != 0;
+        // Replace fill with stroke on an isolated element layer, including the
+        // antialiased transition. SourceOver would stack translucent colors there.
+        int layer = filled && stroked ? canvas.SaveLayer(ToRect(geometry.StrokedBounds), null) : -1;
+        try
+        {
+            if (filled)
+            {
+                SetPaint(fill, SKPaintStyle.Fill);
+                if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
+                canvas.DrawPath(geometry.Path, _paint);
+            }
+            if (stroked)
+            {
+                if (layer >= 0) _paint.BlendMode = SKBlendMode.Src;
+                SetPaint(element.Style.Stroke, SKPaintStyle.Fill);
+                if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
+                canvas.DrawPath(geometry.InnerStroke, _paint);
+            }
+        }
+        finally
+        {
+            _paint.BlendMode = SKBlendMode.SrcOver;
+            if (layer >= 0) canvas.RestoreToCount(layer);
+        }
     }
 
     private static bool IsSingleDrawElement(CanvasElement element)
@@ -309,6 +336,8 @@ public sealed partial class SceneRenderer : IDisposable
         _paint.PathEffect = null;
     }
 
+    // Grid families retain their native path effects; element patterns use the
+    // shared solid-band masks below so drawing and picking agree.
     private static SKPathEffect? CreateDash(ElementStyle style)
     {
         float width = (float)Math.Max(.1, style.StrokeWidth);
@@ -351,16 +380,7 @@ public sealed partial class SceneRenderer : IDisposable
                         AddHead(head.Style == ArrowHeadStyle.Open ? openHeads : filledHeads, head.Points, head.Style != ArrowHeadStyle.Open);
                 break;
         }
-        SKPath? patternedStroke = null;
-        if (element.Style.StrokePattern != StrokePattern.Solid && element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse)
-        {
-            // Native curved paths have different contour origins and curve lengths.
-            // Patterned strokes share hit geometry; fills retain the exact native curve.
-            using var strokeBuilder = new SKPathBuilder();
-            AddHead(strokeBuilder, ElementGeometry.Outline(element), true);
-            patternedStroke = strokeBuilder.Detach();
-        }
-        var entry = new PathEntry(element, builder.Detach(), patternedStroke, filledHeads.Detach(), openHeads.Detach(), _clock);
+        var entry = new PathEntry(element, builder.Detach(), filledHeads.Detach(), openHeads.Detach(), _clock);
         _paths[element.Id] = entry;
         PathBuildCount++;
         return entry;
@@ -534,7 +554,7 @@ public sealed partial class SceneRenderer : IDisposable
     private static SKMatrix ToMatrix(Projective2D t) => new((float)t.M11, (float)t.M12, (float)t.M13,
         (float)t.M21, (float)t.M22, (float)t.M23, (float)t.M31, (float)t.M32, (float)t.M33);
 
-    private sealed class PathEntry(CanvasElement element, SKPath path, SKPath? patternedStroke, SKPath filledHeads, SKPath openHeads, long used) : IDisposable
+    private sealed class PathEntry(CanvasElement element, SKPath path, SKPath filledHeads, SKPath openHeads, long used) : IDisposable
     {
         private readonly ElementKind _kind = element.Kind;
         private readonly double _width = element.Width, _height = element.Height, _strokeWidth = element.Style.StrokeWidth;
@@ -543,15 +563,49 @@ public sealed partial class SceneRenderer : IDisposable
         private readonly double? _cornerRadius = element.CornerRadius;
         private readonly SymbolKind _symbol = element.Symbol;
         private readonly double _arrowHeadSize = element.Style.ArrowHeadSize;
-        private readonly bool _patterned = element.Style.StrokePattern != StrokePattern.Solid;
+        private readonly StrokePattern _strokePattern = element.Style.StrokePattern;
         private readonly PointCollection _points = element.Points.Snapshot();
         public SKPath Path { get; } = path;
-        public SKPath StrokePath => patternedStroke ?? Path;
         public RectD StrokedBounds { get; } = ElementGeometry.StrokedLocalBounds(element);
         public SKPath FilledHeads { get; } = filledHeads;
         public SKPath OpenHeads { get; } = openHeads;
         public long Used { get; set; } = used;
         private SKPath? _opacityStroke;
+        private SKPath? _innerStroke;
+        private SKPath? _patternStroke;
+        private readonly StrokePatternGeometry? _patternGeometry = element.Style.StrokePattern == StrokePattern.Solid ? null : ElementGeometry.StrokePatternGeometry(element);
+        public SKPath PatternStroke => _patternStroke ??= BuildStroke(false);
+        public SKPath InnerStroke
+        {
+            get
+            {
+                if (_innerStroke is not null) return _innerStroke;
+                return _innerStroke = BuildStroke(true);
+            }
+        }
+        private SKPath BuildStroke(bool inside)
+        {
+            using var paint = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)_strokeWidth * (inside ? 2 : 1),
+                StrokeJoin = inside ? SKStrokeJoin.Miter : SKStrokeJoin.Round, StrokeMiter = 4, StrokeCap = SKStrokeCap.Round };
+            using var expanded = inside ? paint.GetFillPath(Path, 16) : paint.GetFillPath(Path);
+            using var solid = inside ? Path.Op(expanded, SKPathOp.Intersect) : new SKPath(expanded);
+            if (solid is null) throw new InvalidOperationException("Cannot construct a solid stroke band.");
+            if (_patternGeometry is null) return new(solid);
+            using var builder = new SKPathBuilder();
+            foreach (var polygon in _patternGeometry.DashPolygons)
+            {
+                double area = 0;
+                for (int i = 0; i < polygon.Count; i++) { var a = polygon[i]; var b = polygon[(i + 1) % polygon.Count]; area += a.X*b.Y-b.X*a.Y; }
+                AddHead(builder, area >= 0 ? polygon : polygon.Reverse().ToArray(), true);
+            }
+            foreach (var point in _patternGeometry.Dots)
+                builder.AddCircle((float)point.X, (float)point.Y, (float)_patternGeometry.Radius);
+            using var mask = builder.Detach();
+            // Dots are already fitted as complete circles. Only dash masks are cut
+            // against S, retaining S's original corners, joins and endpoint caps.
+            return _strokePattern == StrokePattern.Dotted ? new(mask) : solid.Op(mask, SKPathOp.Intersect) ??
+                throw new InvalidOperationException("Cannot cut dash gaps from a solid stroke band.");
+        }
         private float _opacityStrokeScale;
         public SKPath? OpacityStroke(SKPaint paint, SKMatrix matrix)
         {
@@ -562,16 +616,16 @@ public sealed partial class SceneRenderer : IDisposable
             if (!float.IsFinite(scale) || scale <= 0) return null;
             if (_opacityStroke is null || scale != _opacityStrokeScale)
             {
-                _opacityStroke?.Dispose(); _opacityStroke = paint.GetFillPath(StrokePath, matrix); _opacityStrokeScale = scale;
+                _opacityStroke?.Dispose(); _opacityStroke = paint.GetFillPath(Path, matrix); _opacityStrokeScale = scale;
             }
             return _opacityStroke;
         }
         public bool Matches(CanvasElement e) => _kind == e.Kind && _width == e.Width && _height == e.Height && _strokeWidth == e.Style.StrokeWidth &&
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
             _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
-            _patterned == (e.Style.StrokePattern != StrokePattern.Solid) &&
+            _strokePattern == e.Style.StrokePattern &&
             e.Points.ContentEquals(_points);
-        public void Dispose() { _opacityStroke?.Dispose(); Path.Dispose(); patternedStroke?.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
+        public void Dispose() { _opacityStroke?.Dispose(); _innerStroke?.Dispose(); _patternStroke?.Dispose(); Path.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
     }
     private class ImageEntry : IDisposable
     {

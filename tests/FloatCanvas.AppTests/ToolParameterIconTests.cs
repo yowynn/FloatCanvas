@@ -11,6 +11,8 @@ internal static class ToolParameterIconTests
 {
     internal static void Run(Action<string,bool> check)
     {
+        _ = Wpf.Application.Current ?? new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
+        AppTheme.Apply("light");
         check("new and older profiles display shortcut legends by default",new UserSettings().ShowToolShortcutHints&&JsonSerializer.Deserialize<UserSettings>("{}")!.ShowToolShortcutHints);
         var settings=new UserSettings {ShowToolShortcutHints=false};
         check("shortcut legend visibility is a persistent preference",!JsonSerializer.Deserialize<UserSettings>(JsonSerializer.Serialize(settings))!.ShowToolShortcutHints);
@@ -58,7 +60,7 @@ internal static class ToolParameterIconTests
         var readableDashed=Rasterize(ToolParameterIcon.Create(new ToolParameters {Tool=EditorTool.Line,Style=new ElementStyle {StrokePattern=StrokePattern.Dashed}}),16);
         check("solid and dashed line samples retain visible ink and distinct pixels at toolbar size",InkCount(readableLine)>=16&&InkCount(readableDashed)>=10&&Hash(readableLine)!=Hash(readableDashed));
         foreach(var tool in new[]{EditorTool.Eraser,EditorTool.Blur,EditorTool.Pixelate})
-            check(tool+" presets retain a distinct bounded control-tool illustration",ToolParameterIcon.Create(new ToolParameters {Tool=tool},32) is Controls.Image {Width:32,Height:32,Source:Media.DrawingImage});
+            check(tool+" presets retain a distinct bounded live control-tool illustration",ToolParameterIcon.Create(new ToolParameters {Tool=tool},32) is Controls.Viewbox {Width:32,Height:32});
         var examples=new List<(string Label,ToolParameters Parameters)>();
         foreach(string label in new[]{"Line","Arrow","Double","Dashed","Dotted"})
         {
@@ -92,11 +94,65 @@ internal static class ToolParameterIconTests
             toolbar.Measure(new Wpf.Size(640,40));toolbar.Arrange(new Wpf.Rect(0,0,640,40));toolbar.UpdateLayout();
             var toolbarPixels=new Imaging.RenderTargetBitmap(640,40,96,96,Media.PixelFormats.Pbgra32);toolbarPixels.Render(toolbar);
             var toolbarEncoder=new Imaging.PngBitmapEncoder();toolbarEncoder.Frames.Add(Imaging.BitmapFrame.Create(toolbarPixels));using var toolbarStream=File.Create(Path.Combine(previewDirectory,"toolbar-icons-at-16-dip.png"));toolbarEncoder.Save(toolbarStream);
+            WriteEffectCapturePreview(previewDirectory);
         }
+    }
+    private static void WriteEffectCapturePreview(string directory)
+    {
+        var examples=new List<(string Label,ToolParameters Parameters)>
+        {
+            ("模糊",new() {Tool=EditorTool.Blur}),
+            ("马赛克",new() {Tool=EditorTool.Pixelate}),
+            ("矩形截图",new() {Tool=EditorTool.CaptureRegion}),
+            ("圆形截图",new() {Tool=EditorTool.CaptureRegion,CaptureShape=CaptureShape.Ellipse}),
+            ("套索截图",new() {Tool=EditorTool.CaptureRegion,CaptureShape=CaptureShape.FreehandLasso}),
+            ("多边形截图",new() {Tool=EditorTool.CaptureRegion,CaptureShape=CaptureShape.PolygonLasso}),
+            ("矩形绘图",new() {Tool=EditorTool.Rectangle,Style=new() {Stroke=0xFF6688CC}}),
+            ("圆形绘图",new() {Tool=EditorTool.Ellipse,Style=new() {Stroke=0xFF6688CC}})
+        };
+        var sheet=new Controls.StackPanel();
+        foreach(string theme in new[]{"light","dark"})
+        {
+            AppTheme.Apply(theme);
+            var section=new Controls.StackPanel {Background=(Media.Brush)Wpf.Application.Current.Resources["CanvasSurface"]};
+            var title=new Controls.TextBlock {Text=(theme=="light"?"浅色":"深色")+" · 实际 16 DIP / 32 DIP / 48 DIP",FontSize=12,Margin=new(12,10,0,6),Foreground=(Media.Brush)Wpf.Application.Current.Resources["CanvasText"]};
+            section.Children.Add(title);
+            var row=new Controls.StackPanel {Orientation=Controls.Orientation.Horizontal};
+            foreach(var example in examples)
+            {
+                var column=new Controls.StackPanel {Width=96};
+                column.Children.Add(new Controls.TextBlock {Text=example.Label,FontSize=11,TextAlignment=Wpf.TextAlignment.Center,Foreground=(Media.Brush)Wpf.Application.Current.Resources["CanvasText"],Margin=new(0,0,0,8)});
+                foreach(int size in new[]{16,32,48})
+                {
+                    // Render each theme now so changing the shared palette cannot recolor earlier rows.
+                    var pixels=Rasterize(ToolParameterIcon.Create(example.Parameters,size),size);
+                    byte[] bytes=new byte[size*size*4];pixels.CopyPixels(bytes,size*4,0);
+                    var snapshot=Imaging.BitmapSource.Create(size,size,96,96,Media.PixelFormats.Pbgra32,null,bytes,size*4);snapshot.Freeze();
+                    if(size==48)
+                    {
+                        var sampleEncoder=new Imaging.PngBitmapEncoder();sampleEncoder.Frames.Add(Imaging.BitmapFrame.Create(snapshot));
+                        using var sampleStream=File.Create(Path.Combine(directory,theme+"-"+example.Label+".png"));sampleEncoder.Save(sampleStream);
+                    }
+                    column.Children.Add(new Controls.Image {Source=snapshot,Width=size,Height=size,Margin=new(0,0,0,8)});
+                }
+                row.Children.Add(column);
+            }
+            section.Children.Add(row);sheet.Children.Add(section);
+        }
+        var image=RasterizePreview(sheet,768,360);
+        var encoder=new Imaging.PngBitmapEncoder();encoder.Frames.Add(Imaging.BitmapFrame.Create(image));
+        using var stream=File.Create(Path.Combine(directory,"effect-capture-icons.png"));encoder.Save(stream);
+        AppTheme.Apply("light");
+    }
+    private static Imaging.BitmapSource RasterizePreview(Wpf.UIElement element,int width,int height)
+    {
+        element.Measure(new Wpf.Size(width,height));element.Arrange(new Wpf.Rect(0,0,width,height));element.UpdateLayout();
+        var pixels=new Imaging.RenderTargetBitmap(width,height,96,96,Media.PixelFormats.Pbgra32);pixels.Render(element);return pixels;
     }
     private static Imaging.BitmapSource Bitmap(ToolParameters parameters)=>(Imaging.BitmapSource)((Controls.Image)ToolParameterIcon.Create(parameters)).Source;
     private static Imaging.BitmapSource Rasterize(Wpf.UIElement image,int size)
     {
+        if(image is Wpf.FrameworkElement element)AppTheme.UsePopupPalette(element);
         image.Measure(new Wpf.Size(size,size));image.Arrange(new Wpf.Rect(0,0,size,size));image.UpdateLayout();
         var pixels=new Imaging.RenderTargetBitmap(size,size,96,96,Media.PixelFormats.Pbgra32);pixels.Render(image);return pixels;
     }

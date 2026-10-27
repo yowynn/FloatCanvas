@@ -120,14 +120,14 @@ internal static class Feedback4GeometryTests
     {
         _ = System.Windows.Application.Current ?? new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
         var session = new EditorSession(); session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60, CornerRadius = 12 });
-        var inspector = new InspectorWindow(() => session);
+        var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
         var fields = (Dictionary<string, System.Windows.Controls.TextBox>)typeof(InspectorWindow).GetField("fields", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inspector)!;
         fields["W"].Text = "240";
         typeof(InspectorWindow).GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(inspector, null);
         var shape = session.Document.Elements.Single();
         check("numeric shape width editing rebuilds geometry while preserving line and corner sizes", shape.Width == 240 && shape.Height == 60 && shape.Transform.M11 == 1 && shape.Style.StrokeWidth == 4 && shape.CornerRadius == 12);
         session.ReplaceDocument(new() { Elements = [new() { Kind = ElementKind.Number, Width = 40, Height = 40, Style = new() { FontSize = 24 } }] });
-        session.SelectAll(); inspector.Refresh(); fields["W"].Text = "64";
+        session.SelectAll(); inspector.PrepareForShow(); fields["W"].Text = "64";
         typeof(InspectorWindow).GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(inspector, null);
         var number = session.Document.Elements.Single();
         var bounds = ElementGeometry.Bounds(number);

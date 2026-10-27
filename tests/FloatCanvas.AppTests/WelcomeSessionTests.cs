@@ -5,13 +5,14 @@ using FloatCanvas.Core;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using System.Windows.Threading;
+using System.Runtime.InteropServices;
 using Wpf = System.Windows;
 using Controls = System.Windows.Controls;
 using Media = System.Windows.Media;
 using Imaging = System.Windows.Media.Imaging;
 using L = FloatCanvas.Localization.AppText;
 
-/// <summary>Focused startup content, persistent-preference boundaries and geometry checks. No HWNDs or hooks.</summary>
+/// <summary>Startup content and isolated nonactivating history loading; no hooks or input.</summary>
 internal static class WelcomeSessionTests
 {
     internal static void Run(Action<string, bool> check)
@@ -65,6 +66,7 @@ internal static class WelcomeSessionTests
                 L.Initialize(language); AppTheme.Apply(theme);
                 int updateRequests = 0;
                 var view = new WelcomeView(HotkeyBinding.DefaultToggle, HotkeyBinding.DefaultHide, () => {}, () => updateRequests++);
+                view.PrepareForShow();
                 var host = new Controls.Border {Width=430, Child=view};
                 host.SetResourceReference(Controls.Border.BackgroundProperty,"CanvasSurface");
                 host.Measure(new Wpf.Size(430,double.PositiveInfinity)); host.Arrange(new Wpf.Rect(0,0,430,host.DesiredSize.Height)); host.UpdateLayout();
@@ -96,17 +98,22 @@ internal static class WelcomeSessionTests
                     using var stream = File.Create(Path.Combine(output,$"welcome-{language}-{theme}.png")); png.Save(stream);
                 }
                 view.Refresh(new(6,0x47),new(6,0x48));
+                view.PrepareForShow();
                 check(language + theme + " settings refresh both hints and start action", view.ToggleShortcut.Text == "Ctrl+Shift+G" && view.HideShortcut.Text == "Ctrl+Shift+H" && view.StartButton.Content?.ToString()?.Contains("Ctrl+Shift+G") == true);
                 foreach (bool hasHistory in new[] { false, true })
                 {
                     int restoreRequests = 0;
                     var history = new WorkspaceRecoveryHistory(hasHistory ? storedRecovery : new RecoveryStore(Path.Combine(historyRoot, "empty")));
                     var recoveryView = new WelcomeView(HotkeyBinding.DefaultToggle, HotkeyBinding.DefaultHide, () => { }, restoreHistory: () => restoreRequests++, history: history);
+                    recoveryView.PrepareForShow();
                     var hint = recoveryView.Children.OfType<Controls.TextBlock>().Single(text => text.Text == L.Get("Audit.WelcomeRestoreHint"));
                     var resume = recoveryView.Children.OfType<Controls.Button>().Single(button => button != recoveryView.StartButton);
-                    Dispatcher.CurrentDispatcher.BeginInvoke(() => recoveryView.RaiseEvent(new Wpf.RoutedEventArgs(Wpf.FrameworkElement.LoadedEvent)));
+                    var recoveryHost = new Controls.Border { Width = 430, Child = recoveryView, Opacity = 0 };
+                    using var native = new Wpf.Interop.HwndSource(new Wpf.Interop.HwndSourceParameters("FloatCanvas.WelcomeRecovery")
+                    { PositionX = -10000, PositionY = -10000, Width = 430, Height = 500, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x080000A0 })
+                    { RootVisual = recoveryHost, SizeToContent = Wpf.SizeToContent.WidthAndHeight };
+                    ShowWindow(native.Handle, 4);
                     PumpUntil(() => hasHistory ? resume.Visibility == Wpf.Visibility.Visible : hint.Text == L.Get("Audit.WelcomeRestoreEmpty"));
-                    var recoveryHost = new Controls.Border { Width = 430, Child = recoveryView };
                     recoveryHost.Measure(new(430, double.PositiveInfinity)); recoveryHost.Arrange(new(0, 0, 430, recoveryHost.DesiredSize.Height)); recoveryHost.UpdateLayout();
                     check(language + theme + hasHistory + " recovery adds one focused hint without repeating startup text", recoveryView.Children.OfType<Controls.TextBlock>().Count(text => text.Text == hint.Text) == 1 &&
                         !Descendants(recoveryView).OfType<Controls.TextBlock>().Any(text => text.Text == L.Get("Acceptance2.Welcome.Description")) && restoreRequests == 0);
@@ -118,6 +125,8 @@ internal static class WelcomeSessionTests
                         check(language + theme + " history resumes only after the user's explicit click", restoreRequests == 1);
                     }
                     else check(language + theme + " empty history explains how to open a saved project without a dead resume button", hint.Text == L.Get("Audit.WelcomeRestoreEmpty") && resume.Visibility == Wpf.Visibility.Collapsed);
+                    GetWindowThreadProcessId(GetForegroundWindow(), out uint foreground);
+                    check(language + theme + hasHistory + " welcome history fixture never activates itself", foreground != Environment.ProcessId);
                 }
             }
             check("welcome checks create no visible or native windows", app.Windows.Cast<Wpf.Window>().All(window=>!window.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle == 0));
@@ -135,6 +144,9 @@ internal static class WelcomeSessionTests
     }
 
     private static Media.Color Color(Wpf.Application app,string key) => ((Media.SolidColorBrush)app.Resources[key]).Color;
+    [DllImport("user32.dll")] private static extern bool ShowWindow(nint handle, int command);
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint handle, out uint process);
     private static IEnumerable<Wpf.DependencyObject> Descendants(Wpf.DependencyObject root)
     {
         for (int i=0;i<Media.VisualTreeHelper.GetChildrenCount(root);i++)
