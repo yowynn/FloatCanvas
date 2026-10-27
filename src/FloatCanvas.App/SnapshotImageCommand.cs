@@ -8,7 +8,8 @@ namespace FloatCanvas.App;
 internal static class SnapshotImageCommand
 {
     internal static CaptureRasterResult Render(SceneDocument committedScene, IEnumerable<AssetResource> resources,
-        CaptureSelection selection, CapturedDesktop? desktop, IReadOnlyList<RectD> displays, TimeSpan animationTime = default)
+        CaptureSelection selection, CapturedDesktop? desktop, IReadOnlyList<RectD> displays, TimeSpan animationTime = default,
+        PointD screenOrigin = default)
     {
         var scene = committedScene.Clone();
         // The new Image receives canvas opacity in the ordinary render pass, exactly once.
@@ -18,7 +19,7 @@ internal static class SnapshotImageCommand
         bool background = selection.Source != CaptureSource.CanvasOnly;
         if (background && desktop is null) throw new InvalidOperationException("Desktop pixels are required for this capture source.");
         using var backdrop = desktop is null ? null : DesktopBackdrop.FromEncoded(
-            new(desktop.Bounds.Left, desktop.Bounds.Top, desktop.Bounds.Width, desktop.Bounds.Height), desktop.PngBytes);
+            new(desktop.Bounds.Left - screenOrigin.X, desktop.Bounds.Top - screenOrigin.Y, desktop.Bounds.Width, desktop.Bounds.Height), desktop.PngBytes);
         // A snapshot samples the fresh desktop, never the previously frozen capture.
         scene.Background = null;
         if (selection.Source == CaptureSource.Background)

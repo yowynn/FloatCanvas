@@ -74,7 +74,7 @@ internal static class Preview4MenuTests
                     canvasWindow.SetReferenceMonitors([new("fixture primary", new(0, 0, 100, 100), new(0, 0, 100, 100), 96, 96, true),
                         new("fixture secondary", new(100, 0, 100, 100), new(100, 0, 100, 100), 96, 96, false)], null);
                     canvasWindow.PrepareForShow();
-                    check($"{locale} {theme} multi-screen reset lists both active displays", Field<ContextMenu>(canvasWindow, "resetMenu").Items.Count == 2 &&
+                    check($"{locale} {theme} multi-screen reset lists the default plus both active displays", Field<ContextMenu>(canvasWindow, "resetMenu").Items.Count == 3 &&
                         Field<FrameworkElement>(canvasWindow, "resetChoices") is { Visibility: Visibility.Visible, IsEnabled: true });
                     Guid stamp = library.Items.Single().Id;
                     Task.Run(() => library.PinAsync(0, null)).GetAwaiter().GetResult();

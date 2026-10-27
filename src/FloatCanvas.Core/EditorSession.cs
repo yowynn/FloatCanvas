@@ -129,6 +129,8 @@ public sealed partial class EditorSession
     public void NotifyChanged() => OnChanged(contentChanged: true);
     /// <summary>For a scene-wide setting edit which leaves every element unchanged.</summary>
     public void NotifySettingsChanged() => OnChanged(contentChanged: true, previewElementsChanged: false);
+    /// <summary>Refresh output layout metadata without treating a screen change as a new user edit.</summary>
+    public void NotifyDisplayLayoutChanged() => OnChanged(contentChanged: true, preserveContentVersion: true, previewElementsChanged: false);
     public bool Undo()
     {
         Cancel();

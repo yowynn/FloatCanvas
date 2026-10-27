@@ -44,6 +44,11 @@ internal sealed partial class DesktopSession
         {
             var window = _canvasSettingsWindow = new(historySession: () => Active) { Owner = _toolbar };
             ConfigureAppWindow(window);
+            window.ResetDisplaySelected += device =>
+            {
+                try { RememberCanvasReferenceDisplay(_settings, device); }
+                finally { RefreshCanvasReferenceMonitors(); }
+            };
             _windowCoordinator?.Register(window, () => window.IsPinned, DismissCanvasSettings);
             window.CommandKey += OnKey;
             window.BackgroundChanged += color => ChangeCanvas(c => c.BackgroundColor = color);
@@ -297,10 +302,9 @@ internal sealed partial class DesktopSession
     internal static CanvasProjectionSettings CreateResetCanvasProjection(CanvasSettings settings, RectD reference)
     {
         var old = settings.Projection;
-        double size = settings.Grid.FlatCellSize ?? CanvasGridGeometry.ResolveCellSize(settings, reference);
-        var reset = CanvasGridGeometry.CreateFlatReference(reference, old.Columns, old.Rows, size);
+        var reset = CanvasCalibration.CreateInitial(reference, old.Columns, old.Rows);
         reset.Enabled = old.Enabled;
-        if (old.LockedGridCellSize.HasValue) reset.LockedGridCellSize = size;
+        if (old.LockedGridCellSize.HasValue) reset.LockedGridCellSize = reset.CellSize;
         return reset;
     }
 

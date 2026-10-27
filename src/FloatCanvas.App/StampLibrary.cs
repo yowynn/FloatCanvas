@@ -12,7 +12,7 @@ namespace FloatCanvas.App;
 
 internal enum StampSaveMode { EditableGroup, RasterMerge }
 internal sealed record StampRenderContext(SceneDocument Document, AssetLibrary Assets, TimeSpan AnimationTime = default,
-    CapturedDesktop? ScreenCapture = null);
+    CapturedDesktop? ScreenCapture = null, PointD ScreenOrigin = default);
 internal sealed record StampEntry(Guid Id, string Name, StampSaveMode Mode, double Width, double Height, DateTime UpdatedAtUtc, Guid Revision);
 
 /// <summary>Immutable, self-contained stamp revisions published by one atomic catalog replacement.</summary>
@@ -132,7 +132,7 @@ internal sealed class StampLibrary(string profileDirectory)
                 using var renderer = new SceneRenderer { AnimationTime = renderContext?.AnimationTime ?? TimeSpan.Zero };
                 if (screenSource is not null)
                 {
-                    using var screenBackdrop = StampBackdrop(renderContext?.ScreenCapture, default, 1);
+                    using var screenBackdrop = StampBackdrop(renderContext?.ScreenCapture, renderContext?.ScreenOrigin ?? default, 1);
                     renderer.ScreenBackdrop = screenBackdrop; renderer.LiveEffectContext = context;
                     byte[] screenPixels = renderer.ExportPng(screenSource, renderContext?.Assets ?? sourceAssets, transparent: true);
                     return (preview: Thumbnail(screenPixels), merged: mode == StampSaveMode.RasterMerge ? screenPixels : null,
@@ -141,7 +141,8 @@ internal sealed class StampLibrary(string profileDirectory)
                 byte[] Render(double scale)
                 {
                     renderer.LiveEffectContext=context is null ? null : Scaled(context,scale);
-                    using var backdrop = StampBackdrop(renderContext?.ScreenCapture, new(originalBounds.X, originalBounds.Y), scale);
+                    using var backdrop = StampBackdrop(renderContext?.ScreenCapture,
+                        new PointD(originalBounds.X, originalBounds.Y) + (renderContext?.ScreenOrigin ?? default), scale);
                     renderer.ScreenBackdrop = backdrop;
                     return renderer.ExportPng(Scaled(source,scale),renderContext?.Assets ?? sourceAssets,transparent:true,
                         live ? SceneRenderSpace.ScreenComposite : SceneRenderSpace.PlaneContent);

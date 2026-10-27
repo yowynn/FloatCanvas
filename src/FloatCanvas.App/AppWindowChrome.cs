@@ -141,12 +141,18 @@ internal static class AppWindowChrome
     {
         nint handle = new WindowInteropHelper(window).Handle;
         if (handle == 0 || !window.IsVisible || !GetWindowRect(handle, out var rect)) return;
-        var monitor = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
-        if (!GetMonitorInfo(MonitorFromWindow(handle, 2), ref monitor)) return;
-        int width = Math.Min(rect.Right - rect.Left, monitor.Work.Right - monitor.Work.Left);
-        int height = Math.Min(rect.Bottom - rect.Top, monitor.Work.Bottom - monitor.Work.Top);
-        int left = Math.Clamp(rect.Left, monitor.Work.Left, monitor.Work.Right - width);
-        int top = Math.Clamp(rect.Top, monitor.Work.Top, monitor.Work.Bottom - height);
+        FloatCanvas.Windows.PixelBounds work;
+        if (SessionWindowLayout.EditingWorkArea(window, new(rect.Left, rect.Top)) is { } active) work = active;
+        else
+        {
+            var monitor = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+            if (!GetMonitorInfo(MonitorFromWindow(handle, 2), ref monitor)) return;
+            work = new(monitor.Work.Left, monitor.Work.Top, monitor.Work.Right - monitor.Work.Left, monitor.Work.Bottom - monitor.Work.Top);
+        }
+        int width = Math.Min(rect.Right - rect.Left, work.Width);
+        int height = Math.Min(rect.Bottom - rect.Top, work.Height);
+        int left = Math.Clamp(rect.Left, work.Left, work.Right - width);
+        int top = Math.Clamp(rect.Top, work.Top, work.Bottom - height);
         if (left != rect.Left || top != rect.Top || width != rect.Right - rect.Left || height != rect.Bottom - rect.Top)
             _ = SetWindowPos(handle, 0, left, top, width, height, 0x0014); // NOZORDER | NOACTIVATE
     }

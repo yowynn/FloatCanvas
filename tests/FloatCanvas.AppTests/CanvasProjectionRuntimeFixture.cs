@@ -98,13 +98,23 @@ internal static class CanvasProjectionRuntimeFixture
             check("toolbar returns to perspective glyph without changing its command", Glyph() == perspectiveGlyph);
             var reset = Get<System.Windows.Controls.Button>(panel,"reset");
             var resetReference = new RectD(bounds.Left - editor.ScreenOrigin.X, bounds.Top - editor.ScreenOrigin.Y, bounds.Width, bounds.Height);
-            var expectedReset = DesktopSession.CreateResetCanvasProjection(editor.Session.Document.Canvas, resetReference);
+            var beforeReset = editor.Session.Document.Canvas.Clone();
+            int resetUndo = editor.Session.UndoCount;
+            var expectedReset = CanvasCalibration.CreateInitial(resetReference, beforeReset.Projection.Columns, beforeReset.Projection.Rows);
             reset.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
-            check("actual primary reset preserves the current exact flat size and uses the sole active screen center",
+            check("actual primary reset fits the sole active screen while retaining its count pair and center",
                 editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(expectedReset.Quad) &&
                 editor.Session.Document.Canvas.Projection.CellSize == expectedReset.CellSize &&
+                editor.Session.Document.Canvas.Grid.FlatCellSize == expectedReset.CellSize &&
+                editor.Session.Document.Canvas.Projection.Columns == beforeReset.Projection.Columns &&
+                editor.Session.Document.Canvas.Projection.Rows == beforeReset.Projection.Rows &&
+                editor.Session.Document.Canvas.Projection.Matrix == Projective2D.Identity && editor.Session.UndoCount == resetUndo + 1 &&
                 CanvasGridGeometry.ReferenceCenter(editor.Session.Document.Canvas.Projection).DistanceTo(resetReference.Center) < 1e-10);
             editor.Session.Undo();
+            check("actual primary reset restores the prior projection and spacing with one undo",
+                editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(beforeReset.Projection.Quad) &&
+                editor.Session.Document.Canvas.Projection.CellSize == beforeReset.Projection.CellSize &&
+                editor.Session.Document.Canvas.Grid.FlatCellSize == beforeReset.Grid.FlatCellSize && editor.Session.UndoCount == resetUndo);
             moved = editor.Session.Document.Canvas.Projection.Quad.ToArray();
             Invoke("BeginCanvasCalibration");
             Invoke("SetCanvasGridCounts", 12, 7);

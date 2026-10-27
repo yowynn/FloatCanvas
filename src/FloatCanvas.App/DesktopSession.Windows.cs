@@ -60,7 +60,7 @@ internal sealed partial class DesktopSession
             window.Owner ??= _toolbar;
         }
         if (ReferenceEquals(window, _welcomeWindow)) _windowLayout.BindRoot(window);
-        else _windowLayout.Track(window);
+        else _windowLayout.TrackEditing(window, () => _host.Monitors);
         _windowCoordinator?.Register(window);
         if (dialog) AppWindowChrome.ApplyDialog(window); else AppWindowChrome.Apply(window);
         void ScheduleRaise()

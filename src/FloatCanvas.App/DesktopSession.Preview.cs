@@ -183,7 +183,9 @@ internal sealed partial class DesktopSession
         if (_canvasPreview.Frame?.Context == CurrentPreviewContext())
         {
             ApplyAnimationSchedule(frame.Animation);
-            QueueCanvasPresentation(frame.Pixels.DamageComparedTo(_presentedPixels));
+            QueueCanvasPresentation(_presentedCanvasContext == frame.Context
+                ? frame.Pixels.DamageComparedTo(_presentedPixels)
+                : _host.Monitors.Select(monitor => monitor.Bounds));
         }
         PreviewBackendChanged?.Invoke();
     }

@@ -76,7 +76,7 @@ internal static class CanvasHiddenRefreshTests
                     findings.Add(($"{backend} canvas reopening applies only the newest queued state", background.Value == latest.BackgroundColor && gridColor.Value == latest.Grid.Color &&
                         columns.Value == 33 && rows.Value == 17 && width.Value == latest.Grid.Width && Equals((pattern.SelectedItem as ComboBoxItem)?.Tag, latest.Grid.Pattern)));
                     findings.Add(($"{backend} canvas reopening synchronizes presets once", presetRefreshes == 1));
-                    findings.Add(($"{backend} canvas reopening applies queued display choices", Field<ContextMenu>(window, "resetMenu").Items.Count == 2 && Field<Button>(window, "resetChoices").Visibility == Visibility.Visible));
+                    findings.Add(($"{backend} canvas reopening applies queued display choices", Field<ContextMenu>(window, "resetMenu").Items.Count == 3 && Field<Button>(window, "resetChoices").Visibility == Visibility.Visible));
                 }
                 finally { descriptor.RemoveValueChanged(firstPreset, changed); }
 

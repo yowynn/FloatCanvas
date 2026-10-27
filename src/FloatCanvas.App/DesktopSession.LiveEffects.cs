@@ -105,9 +105,10 @@ internal sealed partial class DesktopSession
         var samplingRegions=Active.Document.Elements.Where(e=>e.Visible && e.Style.Opacity>0 && ElementGeometry.IsLiveEffect(e.Kind))
             .Select(e=>SceneRenderer.LiveEffectSamplingBounds(Active.Document,e).Intersect(Active.Document.Viewport))
             .Concat(_liveEffectPreparation is { } preparation ? [preparation.Bounds] : []);
-        var regions=samplingRegions.Where(b=>!b.IsEmpty).Select(b=>new PixelBounds((int)Math.Floor(b.Left),(int)Math.Floor(b.Top),
-                checked((int)Math.Ceiling(b.Right)-(int)Math.Floor(b.Left)),
-                checked((int)Math.Ceiling(b.Bottom)-(int)Math.Floor(b.Top)))).ToArray();
+        var origin = _editor.ScreenOrigin;
+        var regions=samplingRegions.Where(b=>!b.IsEmpty).Select(b=>new PixelBounds((int)Math.Floor(b.Left + origin.X),(int)Math.Floor(b.Top + origin.Y),
+                checked((int)Math.Ceiling(b.Right + origin.X)-(int)Math.Floor(b.Left + origin.X)),
+                checked((int)Math.Ceiling(b.Bottom + origin.Y)-(int)Math.Floor(b.Top + origin.Y)))).ToArray();
         long version=_liveDesktopCapture.UpdateTargets(_host.Monitors,regions,_liveCleanBoundary);
         if(version!=_liveTargetVersion)
         {
@@ -134,7 +135,7 @@ internal sealed partial class DesktopSession
                     {
                         output.Bitmap.SetImmutable();
                         var b=output.Bounds;
-                        tiles.Add(new(new RectD(b.Left,b.Top,b.Width,b.Height),SKImage.FromBitmap(output.Bitmap)));
+                        tiles.Add(new(new RectD(b.Left - _editor.ScreenOrigin.X,b.Top - _editor.ScreenOrigin.Y,b.Width,b.Height),SKImage.FromBitmap(output.Bitmap)));
                     }
                     var next=new DesktopBackdrop(tiles);
                     _renderer.LiveBackdrop=next; _desktopBackdrop?.Dispose(); _desktopBackdrop=next;

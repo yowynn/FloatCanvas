@@ -155,7 +155,7 @@ internal sealed partial class DesktopSession
                 DisplayLayout = previous.DisplayLayout.Select(m => m.Clone()).ToList(), NextNumber = first }, _assets);
             _capture = null; _captureOrigin = default; _documentFrozenCaptureWarning = null;
             _documentFiles.Clear();
-            _editor.ReplaceSession(_live, new(0,0)); _editor.Tool = tool;
+            _editor.ReplaceSession(_live, _liveOrigin); _editor.Tool = tool;
             _documentRecoveryFingerprint = null;
             RecoveryHistory.WorkspaceRestored();
             RecoveryHistory.EnterWorkspace(SnapshotWorkspace());

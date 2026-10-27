@@ -106,7 +106,8 @@ internal sealed partial class DesktopSession
                     }
                 }
             }
-            _editor.ReplaceSession(_live, new(0, 0));
+            SynchronizeLiveDisplayLayout();
+            _editor.ReplaceSession(_live, _liveOrigin);
             if (EnsureCaptureVisible()) ScheduleRecovery();
             if (!restoredWorkspace)
             {
@@ -260,7 +261,8 @@ internal sealed partial class DesktopSession
             _capture = restored.State.CaptureDocument is { } capture ? new(capture, _assets) : null;
             _captureOrigin = restored.State.CaptureOrigin;
             _documentFrozenCaptureWarning = null;
-            _editor.ReplaceSession(_live, new(0, 0));
+            SynchronizeLiveDisplayLayout();
+            _editor.ReplaceSession(_live, _liveOrigin);
             SwitchToolState(_documentLiveTool);
             RecoveryHistory.WorkspaceRestored();
             RecoveryHistory.EnterWorkspace(SnapshotWorkspace());
@@ -385,7 +387,8 @@ internal sealed partial class DesktopSession
                 if (!ReferenceEquals(previous, _live) && !await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return;
                 await FlushRecoveryAsync(); await ArchiveWorkspaceAsync();
                 _documentFiles.Remove(_live);
-                _live = session; _editor.ReplaceSession(session, new(0, 0)); SwitchToolState(_documentLiveTool);
+                _live = session; SynchronizeLiveDisplayLayout();
+                _editor.ReplaceSession(session, _liveOrigin); SwitchToolState(_documentLiveTool);
                 OnMonitorsChanged();
             }
             _documentFiles[session] = new() { Path = projectPath, SavedFingerprint = Fingerprint(session.Document), SavedContentVersion = session.ContentVersion, DiskVersion = loaded.FileVersion };
@@ -464,6 +467,7 @@ internal sealed partial class DesktopSession
         if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return;
         var snapshot = session.Document.Clone(); var resources = ResourceSnapshot(snapshot).ToList();
         var animationTime = _renderer.AnimationTime;
+        var screenOrigin = _editor.ScreenOrigin;
             string? captureWarning = snapshot.Kind == DocumentKind.FrozenCapture ? _documentFrozenCaptureWarning : null;
             CapturedDesktop? screenCapture = null;
             if ((!transparent || SceneRenderer.HasLiveEffects(snapshot)) && snapshot.Kind == DocumentKind.LiveOverlay)
@@ -475,7 +479,7 @@ internal sealed partial class DesktopSession
             bool jpeg = !transparent && Path.GetExtension(dialog.FileName).ToLowerInvariant() is ".jpg" or ".jpeg";
             byte[] result = await Task.Run(() =>
             {
-                using var backdrop = CreateScreenBackdrop(screenCapture);
+                using var backdrop = CreateScreenBackdrop(screenCapture, screenOrigin);
                 var assets = ResourceLibrary(resources); using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
                 return jpeg ? renderer.ExportJpeg(snapshot, assets) : renderer.ExportPng(snapshot, assets, transparent);
             }, _documentLifetime.Token);
@@ -504,6 +508,7 @@ internal sealed partial class DesktopSession
         var effectContext = objects && SceneRenderer.HasLiveEffects(snapshot) ? session.Document.Clone() : null;
         var rasterResources = effectContext is null ? resources.ToList() : ResourceSnapshot(effectContext).ToList();
         var animationTime = _renderer.AnimationTime;
+        var screenOrigin = _editor.ScreenOrigin;
         _documentBusy = true;
         try
         {
@@ -518,7 +523,7 @@ internal sealed partial class DesktopSession
             }
             var encoded = await Task.Run(() =>
             {
-                using var backdrop = CreateScreenBackdrop(screenCapture);
+                using var backdrop = CreateScreenBackdrop(screenCapture, screenOrigin);
                 var assets = ResourceLibrary(rasterResources); using var renderer = new SceneRenderer { LiveEffectContext = effectContext, AnimationTime = animationTime, ScreenBackdrop = backdrop };
                 byte[] png = renderer.ExportPng(snapshot, assets, objects);
                 string? internalObjects = objects ? JsonSerializer.Serialize(new ClipboardObjects
@@ -681,7 +686,7 @@ internal sealed partial class DesktopSession
     private void ReturnToLive()
     {
         if (ReferenceEquals(Active, _live)) return;
-        _editor.Cancel(); _editor.ReplaceSession(_live, new(0, 0)); SwitchToolState(_documentLiveTool);
+        _editor.Cancel(); SynchronizeLiveDisplayLayout(); _editor.ReplaceSession(_live, _liveOrigin); SwitchToolState(_documentLiveTool);
         ScheduleRecovery(); RequestRender(); UpdateStatus(L.Get("Capture.ReturnedLive"));
     }
     private async Task<CapturedDesktop> CaptureCleanDesktopAsync()
@@ -734,8 +739,8 @@ internal sealed partial class DesktopSession
         return mapping.TryToPlane(visible.Center, out var center)
             ? new(center.X - 320, center.Y - 240, 640, 480) : Active.Document.Viewport;
     }
-    private static DesktopBackdrop? CreateScreenBackdrop(CapturedDesktop? capture) => capture is null ? null :
-        DesktopBackdrop.FromEncoded(new(capture.Bounds.Left, capture.Bounds.Top, capture.Bounds.Width, capture.Bounds.Height), capture.PngBytes);
+    private static DesktopBackdrop? CreateScreenBackdrop(CapturedDesktop? capture, PointD origin = default) => capture is null ? null :
+        DesktopBackdrop.FromEncoded(new(capture.Bounds.Left - origin.X, capture.Bounds.Top - origin.Y, capture.Bounds.Width, capture.Bounds.Height), capture.PngBytes);
     private PointD CenteredOrigin(RectD viewport)
     {
         return CaptureViewportPlacement.CenterOrigin(viewport, CurrentMonitor().Bounds);

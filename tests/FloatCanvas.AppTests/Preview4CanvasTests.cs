@@ -47,7 +47,7 @@ internal static class Preview4CanvasTests
             window.SetReferenceMonitors([main,pad], "pad");
             window.PrepareForShow();
             var menu = Field<ContextMenu>(window,"resetMenu");
-            check("reset lists active displays and retains the selected secondary screen", menu.Items.Count == 2 &&
+            check("reset lists the default and active displays while retaining the selected secondary screen", menu.Items.Count == 3 &&
                 Field<Button>(window,"resetChoices").Visibility == Visibility.Visible && Field<Button>(window,"resetChoices").IsEnabled &&
                 Equals(Field<Button>(window,"reset").Content, L.Format("Canvas.ResetOnNumberedDisplay", 2)));
             string? requestedDevice = "unrequested";
@@ -60,12 +60,14 @@ internal static class Preview4CanvasTests
                 !Field<Button>(window,"resetChoices").IsEnabled && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
             window.SetReferenceMonitors([main,pad], "missing");
             window.PrepareForShow();
-            check("missing display choices fall back to primary while retaining the active display menu", menu.Items.Count == 2 &&
+            check("missing display choices fall back to primary while retaining the active display menu", menu.Items.Count == 3 &&
                 Field<Button>(window,"resetChoices").IsEnabled && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
             var resetSettings = new CanvasSettings { Projection = custom.Clone(), Grid = new() { FlatCellSize = 73.1, FlatOrigin = viewport.Center } };
             var reset = DesktopSession.CreateResetCanvasProjection(resetSettings, viewport);
-            check("primary reset preserves the exact flat spacing and count pair at the primary center", reset.Enabled &&
-                reset.Columns == custom.Columns && reset.Rows == custom.Rows && reset.CellSize == 73.1 &&
+            var fittedReset = CanvasCalibration.CreateInitial(viewport, custom.Columns, custom.Rows);
+            check("primary reset fits the target screen while preserving the count pair and primary center", reset.Enabled &&
+                reset.Columns == custom.Columns && reset.Rows == custom.Rows && reset.CellSize == fittedReset.CellSize &&
+                reset.Quad.SequenceEqual(fittedReset.Quad) && resetSettings.Grid.FlatCellSize == 73.1 &&
                 reset.Matrix == Projective2D.Identity && CanvasGridGeometry.ReferenceCenter(reset).DistanceTo(viewport.Center) < 1e-10);
         }
         finally { window.CloseForDispose(); }

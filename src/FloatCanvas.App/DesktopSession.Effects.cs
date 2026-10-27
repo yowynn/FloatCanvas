@@ -8,12 +8,12 @@ namespace FloatCanvas.App;
 
 internal sealed partial class DesktopSession
 {
-    private sealed record EffectRenderRequest(EditorSession Target, SceneDocument Document, long Revision, WindowSessionRequest Window);
+    private sealed record EffectRenderRequest(EditorSession Target, SceneDocument Document, long Revision, WindowSessionRequest Window, PointD ScreenOrigin);
     private EffectRenderRequest BeginEffectRender(EditorSession target) =>
-        new(target, target.Document, target.SceneRevision, new(_host.EditingSessionVersion, _host.IsEditing, target.Document));
+        new(target, target.Document, target.SceneRevision, new(_host.EditingSessionVersion, _host.IsEditing, target.Document), _editor.ScreenOrigin);
     private bool CanFinishEffect(EffectRenderRequest request) => !_disposed && !_documentStopped && !_documentExitRequested &&
         !_documentLifetime.IsCancellationRequested && ReferenceEquals(request.Target, Active) &&
-        ReferenceEquals(request.Document, request.Target.Document) && request.Revision == request.Target.SceneRevision &&
+        ReferenceEquals(request.Document, request.Target.Document) && request.Revision == request.Target.SceneRevision && request.ScreenOrigin == _editor.ScreenOrigin &&
         !request.Target.IsTransactionActive && request.Window.IsCurrent(_host.EditingSessionVersion, _host.IsEditing, Active.Document) &&
         (!request.Window.Editing || (_windowCoordinator?.CanContinue(request.Window, Active.Document) == true &&
             (!_host.IsKeyboardIsolationEnabled || _host.IsKeyboardIsolationActive)));
@@ -47,7 +47,7 @@ internal sealed partial class DesktopSession
                 if (!CanFinishEffect(request)) throw new OperationCanceledException("Stamp render context is no longer current.");
                 screenCapture = captured;
             }
-            return new(snapshot,ResourceLibrary(resources), animationTime, screenCapture);
+            return new(snapshot,ResourceLibrary(resources), animationTime, screenCapture, request.ScreenOrigin);
         }
         finally {_documentBusy=false;RequestRender();}
     }
@@ -96,7 +96,7 @@ internal sealed partial class DesktopSession
                 projectedRegion, EditorController.Corners(region).Select(regionToScreen.TransformPoint).ToArray(), 0, 0);
             var raster = await Task.Run(() =>
             {
-                using var backdrop = CreateScreenBackdrop(capture);
+                using var backdrop = CreateScreenBackdrop(capture, request.ScreenOrigin);
                 using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
                 return renderer.ExportSelectionPng(snapshot, ResourceLibrary(resources), selection, includeBackground: true);
             }, _documentLifetime.Token);

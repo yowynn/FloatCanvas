@@ -18,12 +18,13 @@ internal sealed partial class DesktopSession
     private LiveEffectPreparation? _liveEffectPreparation;
     private EditorSession? _liveBackdropSession;
     private RectD _liveBackdropViewport;
+    private PointD _liveBackdropOrigin;
     private MonitorInfo[] _liveBackdropMonitors = [];
     private LiveDesktopCapture? _liveBackdropSource;
     private long _liveBackdropTargetVersion;
 
     private bool IsLiveBackdropCompatible() => _desktopBackdrop is not null &&
-        ReferenceEquals(_liveBackdropSession, Active) && _liveBackdropViewport == Active.Document.Viewport &&
+        ReferenceEquals(_liveBackdropSession, Active) && _liveBackdropViewport == Active.Document.Viewport && _liveBackdropOrigin == _editor.ScreenOrigin &&
         _liveBackdropMonitors.SequenceEqual(_host.Monitors);
 
     private bool IsLivePreparationCurrent(LiveEffectPreparation pending) =>
@@ -43,6 +44,7 @@ internal sealed partial class DesktopSession
         // Raw desktop pixels do not depend on those annotation snapshots.
         _liveBackdropSession = Active;
         _liveBackdropViewport = Active.Document.Viewport;
+        _liveBackdropOrigin = _editor.ScreenOrigin;
         _liveBackdropMonitors = _host.Monitors.ToArray();
         _liveBackdropSource = source; _liveBackdropTargetVersion = targetVersion;
     }
@@ -52,7 +54,7 @@ internal sealed partial class DesktopSession
         if (!IsLiveBackdropCompatible() || _liveDesktopCapture is not { } source || source.Completion.IsCompleted ||
             !ReferenceEquals(source, _liveBackdropSource) || _liveBackdropTargetVersion != _liveTargetVersion ||
             source.TargetVersion != _liveTargetVersion || source.LastError is not null) return false;
-        var required = _host.Monitors.Select(m => bounds.Intersect(new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height)))
+        var required = _host.Monitors.Select(m => bounds.Intersect(new(m.Bounds.Left - _editor.ScreenOrigin.X, m.Bounds.Top - _editor.ScreenOrigin.Y, m.Bounds.Width, m.Bounds.Height)))
             .Where(region => !region.IsEmpty).ToArray();
         return required.Length > 0 && required.All(region => _desktopBackdrop!.Tiles.Any(tile =>
             tile.Bounds.Left <= region.Left && tile.Bounds.Top <= region.Top &&

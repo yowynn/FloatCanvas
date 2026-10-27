@@ -88,6 +88,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         var coordinator = Find(window);
         using var transfer = coordinator?.BeginTransition();
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        SessionWindowLayout.PrepareForShow(window);
         window.Show();
         if (activate && coordinator is not null && coordinator.host.UsesSystemInput && coordinator.host.IsEditing)
             coordinator.host.TryFocusEditingWindow(new WindowInteropHelper(window).Handle);
@@ -153,6 +154,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         using var entering = coordinator?.BeginTransition();
         try
         {
+            SessionWindowLayout.PrepareForShow(window);
             return coordinator is not null && coordinator.host.UsesSystemInput && coordinator.host.IsEditing
                 ? coordinator.ShowOverlayModal(window) : window.ShowDialog();
         }

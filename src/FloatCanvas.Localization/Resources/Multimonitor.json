@@ -12,8 +12,12 @@
     "en": "Settings saved."
   },
   "Canvas.ResetOnDisplay": {
-    "zh": "重置透视",
+    "zh": "重置透视画布",
     "en": "Reset perspective"
+  },
+  "Canvas.PrimaryDisplay": {
+    "zh": "主屏幕",
+    "en": "Primary display"
   },
   "Canvas.ReferenceDisplayHint": {
     "zh": "以当前格长和横纵数量，在所选屏幕中心重置透视；多个活动屏幕时可用下拉菜单选择。",

@@ -120,18 +120,21 @@ internal static class CanvasToolInteractionTests
             dormant.Projection.Matrix == dormantMatrix && JsonSerializer.Serialize(dormant.Projection.Quad) == dormantGeometry &&
             dormantCounts == (dormant.Projection.Columns, dormant.Projection.Rows));
         var restoredFlat = DesktopSession.CreateResetCanvasProjection(dormant, reference);
-        check("reset uses the saved flat spacing even while the dormant perspective's plane cell size differs",
-            dormantPlaneCell != 73.1 && restoredFlat.CellSize == 73.1 && restoredFlat.Enabled &&
+        var fittedReset = CanvasCalibration.CreateInitial(reference, dormantCounts.Columns, dormantCounts.Rows);
+        check("reset fits its target reference without mutating the independent saved flat spacing",
+            dormantPlaneCell != 73.1 && dormant.Grid.FlatCellSize == 73.1 && restoredFlat.CellSize == fittedReset.CellSize && restoredFlat.Enabled &&
+            restoredFlat.Quad.SequenceEqual(fittedReset.Quad) &&
             restoredFlat.Matrix == Projective2D.Identity && CanvasGridGeometry.ReferenceCenter(restoredFlat).DistanceTo(dormant.Grid.FlatOrigin!.Value) < 1e-10 &&
             dormantCounts == (restoredFlat.Columns, restoredFlat.Rows));
         var flatDocument = new SceneDocument { Viewport = reference, Canvas = dormant.Clone() };
         flatDocument.Canvas.Projection.Enabled = false;
+        flatDocument.Canvas.Grid.FlatCellSize = restoredFlat.CellSize;
         var resetDocument = flatDocument.Clone(); resetDocument.Canvas.Projection = restoredFlat;
         var flatMapping = CanvasMapping.Create(flatDocument); var resetMapping = CanvasMapping.Create(resetDocument);
-        check("flat and reset perspective lattices coincide at the origin and neighboring cells for an independent stored flat size",
+        check("flat and reset perspective lattices coincide after applying the reset's newly fitted spacing",
             flatMapping.GridOrigin.DistanceTo(resetMapping.GridOrigin) < 1e-10 && flatMapping.GridCellSize == resetMapping.GridCellSize &&
-            flatMapping.ToScreen(flatMapping.GridOrigin + new PointD(73.1, 73.1)).DistanceTo(
-                resetMapping.ToScreen(resetMapping.GridOrigin + new PointD(73.1, 73.1))) < 1e-10);
+            flatMapping.ToScreen(flatMapping.GridOrigin + new PointD(restoredFlat.CellSize, restoredFlat.CellSize)).DistanceTo(
+                resetMapping.ToScreen(resetMapping.GridOrigin + new PointD(restoredFlat.CellSize, restoredFlat.CellSize))) < 1e-10);
     }
 
     private static EditorSession Scene(RectD reference)

@@ -9,10 +9,42 @@ using FloatCanvas.Windows;
 
 internal static class CanvasSettingsControlTests
 {
+    private static void ResetFitsChosenScreen(Action<string, bool> check)
+    {
+        MonitorInfo[] monitors = [new("large", new(0, 0, 3840, 2160), new(0, 0, 3840, 2100), 144, 144, true),
+            new("small", new(3840, 300, 1280, 720), new(3840, 300, 1280, 680), 96, 96, false)];
+        foreach (var origin in new[] { new PointD(), new PointD(1600, -500) })
+        foreach (bool locked in new[] { false, true })
+        foreach (string device in new[] { "small", "large" })
+        {
+            var target = monitors.Single(monitor => monitor.DeviceName == device).Bounds;
+            var source = monitors.Single(monitor => monitor.DeviceName != device).Bounds;
+            var projection = CanvasCalibration.CreateInitial(new(source.Left - origin.X, source.Top - origin.Y, source.Width, source.Height), 8, 6);
+            projection.Enabled = true;
+            if (locked) projection.LockedGridCellSize = projection.CellSize;
+            var settings = new CanvasSettings { Projection = projection, Grid = new() { FlatCellSize = projection.CellSize } };
+            var viewport = new RectD(-origin.X, -origin.Y, 5120, 2160);
+            var reference = DesktopSession.ResolveCanvasReferenceBounds(monitors, device, default, origin, viewport);
+            var reset = DesktopSession.CreateResetCanvasProjection(settings, reference);
+            var physical = reset.Quad.Select(point => point + origin).ToArray();
+            check("actual perspective reset fits its chosen monitor instead of inheriting another screen's size; target=" + device + "; locked=" + locked + "; origin=" + origin,
+                physical.All(point => point.X >= target.Left && point.X <= target.Right && point.Y >= target.Top && point.Y <= target.Bottom));
+            var expectedSize = device == "small" ? new PointD(576, 432) : new PointD(1728, 1296);
+            check("reset scales both down and back up according to the selected monitor",
+                Math.Abs(physical.Max(point => point.X) - physical.Min(point => point.X) - expectedSize.X) < 1e-7 &&
+                Math.Abs(physical.Max(point => point.Y) - physical.Min(point => point.Y) - expectedSize.Y) < 1e-7);
+            check("target-sized reset keeps its grid counts, enabled state and lock choice", reset.Enabled && reset.Columns == 8 && reset.Rows == 6 &&
+                reset.LockedGridCellSize.HasValue == locked && (!locked || reset.LockedGridCellSize == reset.CellSize));
+            var center = physical.Aggregate(new PointD(), (sum, point) => sum + point) * .25;
+            check("target-sized reset centers within the selected physical monitor", center.DistanceTo(new(target.Left + target.Width / 2d, target.Top + target.Height / 2d)) < 1e-7);
+        }
+    }
+
     internal static void Run(Action<string, bool> check)
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
+        ResetFitsChosenScreen(check);
         var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
         try
         {
@@ -157,18 +189,62 @@ internal static class CanvasSettingsControlTests
         window.SetReferenceMonitors(monitors,"pad");
         window.PrepareForShow();
         var menu = Field<ContextMenu>(window,"resetMenu");
-        check("reset lists every active monitor and enables the display dropdown", menu.Items.Count == 2 &&
+        check("reset lists the default primary target separately from every active monitor", menu.Items.Count == 3 &&
             Field<Button>(window, "resetChoices").Visibility == Visibility.Visible && Field<Button>(window, "resetChoices").IsEnabled);
         check("target-display dropdown was retired", typeof(CanvasSettingsWindow).GetField("referenceMonitor", BindingFlags.Instance|BindingFlags.NonPublic) is null);
-        int requests = 0; string? selected = null;
+        int requests = 0, choices = 0; string? selected = null, preference = "pad";
         void Choose(string? device) { requests++; selected = device; }
+        Action<string?> remember = device => { choices++; preference = device; };
+        var selectedEvent = typeof(CanvasSettingsWindow).GetEvent("ResetDisplaySelected");
+        check("reset target selection has a separate preference-only notification", selectedEvent is not null);
+        selectedEvent?.AddEventHandler(window, remember);
         window.ResetDisplayRequested += Choose;
         try
         {
             Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check("main reset action uses the selected display", requests == 1 && selected == "pad");
+            var defaultItem = menu.Items.OfType<MenuItem>().Single(item => item.Tag is null);
+            check("the default reset choice is named independently of numbered monitors", Equals(defaultItem.Header,
+                FloatCanvas.Localization.AppText.Get("Canvas.PrimaryDisplay")));
+            defaultItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            check("choosing the primary default changes only its target and unnumbered caption", requests == 1 && choices == 1 && preference is null &&
+                Equals(Field<Button>(window,"reset").Content, FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")) && defaultItem.IsChecked &&
+                menu.Items.OfType<MenuItem>().Count(item => item.IsChecked) == 1);
+            defaultItem.IsChecked = false;
+            defaultItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            check("reselecting the active reset target keeps one check without resetting or resaving", requests == 1 && choices == 1 &&
+                defaultItem.IsChecked && menu.Items.OfType<MenuItem>().Count(item => item.IsChecked) == 1);
+            Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check("the unnumbered reset action invokes the default only after the main button is clicked", requests == 2 && selected is null);
+            var primaryItem = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "main"));
+            primaryItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            check("the explicit primary monitor remains a numbered choice separate from the default", requests == 2 && choices == 2 && preference == "main" &&
+                primaryItem.IsChecked && !defaultItem.IsChecked && Equals(Field<Button>(window,"reset").Content,
+                    FloatCanvas.Localization.AppText.Format("Canvas.ResetOnNumberedDisplay", 1)));
+            var padItem = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "pad"));
+            padItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            check("choosing a secondary monitor does not execute a reset", requests == 2 && choices == 3 && preference == "pad" && padItem.IsChecked &&
+                menu.Items.OfType<MenuItem>().Count(item => item.IsChecked) == 1 && Equals(Field<Button>(window,"reset").Content,
+                    FloatCanvas.Localization.AppText.Format("Canvas.ResetOnNumberedDisplay", 2)));
+            Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check("a later main-button click executes the chosen secondary target once", requests == 3 && selected == "pad");
+            window.SetReferenceMonitors([monitors[1], monitors[0]], preference);
+            window.PrepareForShow();
+            check("topology reordering retains the device choice and updates its numbered caption without resetting", requests == 3 && choices == 3 &&
+                menu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "pad")).IsChecked && Equals(Field<Button>(window,"reset").Content,
+                    FloatCanvas.Localization.AppText.Format("Canvas.ResetOnNumberedDisplay", 1)));
+            window.SetReferenceMonitors(monitors, null);
+            window.PrepareForShow();
+            check("an unnumbered primary default remains the default across monitor reordering", requests == 3 && choices == 3 &&
+                menu.Items.OfType<MenuItem>().Single(item => item.Tag is null).IsChecked && Equals(Field<Button>(window,"reset").Content,
+                    FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")));
+            window.SetReferenceMonitors(monitors, "missing");
+            window.PrepareForShow();
+            check("an unavailable reset device falls back to the distinct default without executing", requests == 3 &&
+                menu.Items.OfType<MenuItem>().Single(item => item.Tag is null).IsChecked && Equals(Field<Button>(window,"reset").Content,
+                    FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")));
         }
-        finally { window.ResetDisplayRequested -= Choose; }
+        finally { window.ResetDisplayRequested -= Choose; selectedEvent?.RemoveEventHandler(window, remember); }
         var bounds = DesktopSession.ResolveCanvasReferenceBounds(monitors,"pad",default,default,new(0,0,3840,3600));
         check("explicit reset uses physical secondary bounds", bounds == new RectD(307,2160,2160,1440));
         var initial = CanvasCalibration.CreateInitial(bounds);
@@ -178,6 +254,8 @@ internal static class CanvasSettingsControlTests
         check("reset converts negative screen coordinates once into document coordinates", DesktopSession.ResolveCanvasReferenceBounds(left,null,default,new(-2000,-500),new(0,0,6000,4000)) == new RectD(80,300,1920,1080));
         window.SetReferenceMonitors([monitors[1]],"pad");
         window.PrepareForShow();
-        check("a sole active display disables reset choices while retaining reset itself", menu.Items.Count == 1 && !Field<Button>(window, "resetChoices").IsEnabled && Field<Button>(window, "reset").IsEnabled);
+        check("a sole active display uses an unnumbered reset button with no dropdown", menu.Items.Count == 1 &&
+            Field<Button>(window, "resetChoices").Visibility == Visibility.Collapsed && !Field<Button>(window, "resetChoices").IsEnabled &&
+            Field<Button>(window, "reset").IsEnabled && Equals(Field<Button>(window,"reset").Content, FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")));
     }
 }

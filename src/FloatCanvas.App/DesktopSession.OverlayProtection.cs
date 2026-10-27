@@ -17,7 +17,7 @@ internal sealed partial class DesktopSession
         PointD CaptureOrigin, bool CaptureActive, EditorTool Tool, EditorTool LiveTool, bool Visible,
         Dictionary<EditorSession, (string? Path, string? Fingerprint, long ContentVersion, FloatCanvas.Storage.ProjectFileVersion? DiskVersion)> Files,
         WorkspaceRecoveryHistory? History, string? RecoveryFingerprint, bool RecoveryWritesBlocked,
-        string? FrozenCaptureWarning, string[] PendingProjects);
+        string? FrozenCaptureWarning, string[] PendingProjects, PointD LiveOrigin = default);
 
     internal bool TryRequestDesktopFallback(Exception error)
     {
@@ -57,12 +57,12 @@ internal sealed partial class DesktopSession
             _documentLiveTool, _host.IsVisible,
             _documentFiles.ToDictionary(pair => pair.Key, pair => (pair.Value.Path, pair.Value.SavedFingerprint, pair.Value.SavedContentVersion, pair.Value.DiskVersion)),
             _workspaceRecoveryHistory, _documentRecoveryFingerprint, _documentRecoveryWritesBlocked,
-            _documentFrozenCaptureWarning, _projectOpenRequests.ToArray());
+            _documentFrozenCaptureWarning, _projectOpenRequests.ToArray(), _liveOrigin);
     }
 
     private void RestoreFallbackWorkspace(DesktopFallbackState state)
     {
-        _live = state.Live; _capture = state.Capture; _captureOrigin = state.CaptureOrigin;
+        _live = state.Live; _capture = state.Capture; _captureOrigin = state.CaptureOrigin; _liveOrigin = state.LiveOrigin;
         _documentLiveTool = state.LiveTool;
         foreach (var pair in state.Files)
             _documentFiles[pair.Key] = new() { Path = pair.Value.Path, SavedFingerprint = pair.Value.Fingerprint, SavedContentVersion = pair.Value.ContentVersion, DiskVersion = pair.Value.DiskVersion };
@@ -71,7 +71,7 @@ internal sealed partial class DesktopSession
         _documentRecoveryWritesBlocked = state.RecoveryWritesBlocked;
         _documentFrozenCaptureWarning = state.FrozenCaptureWarning;
         var active = state.CaptureActive && _capture is not null ? _capture : _live;
-        _editor.ReplaceSession(active, ReferenceEquals(active, _capture) ? _captureOrigin : new(0, 0));
+        _editor.ReplaceSession(active, ReferenceEquals(active, _capture) ? _captureOrigin : _liveOrigin);
         SwitchToolState(state.Tool);
         if (!state.Visible) _host.SetVisible(false);
         foreach (var project in state.PendingProjects) QueueProjectOpen(project);

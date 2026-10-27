@@ -93,6 +93,9 @@ internal static class Program
             if (args.Contains("--preview4-menu-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "preview4-menu"); return 0; }
             if (args.Contains("--avatar-right-release-only")) { NativeInputRoutingFixture.Run(Assert, "avatar-right-release"); return 0; }
             if (args.Contains("--root-menu-layer-only")) { NativeInputRoutingFixture.Run(Assert, "root-menu-layer"); return 0; }
+            if (args.Contains("--monitor-presentation-only")) { MonitorPresentationRecoveryTests.Run(Assert); return 0; }
+            if (args.Contains("--monitor-canvas-origin-only")) { MonitorCanvasOriginTests.Run(Assert); return 0; }
+            if (args.Contains("--monitor-window-placement-only")) { MonitorWindowPlacementTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-layout-regression-only")) { CanvasLayoutRegressionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-hidden-refresh-only")) { CanvasHiddenRefreshTests.Run(Assert); return 0; }
             if (args.Contains("--preview4-settings-runtime-only")) { NativeInputRoutingFixture.Run(Assert, "preview4-settings"); return 0; }

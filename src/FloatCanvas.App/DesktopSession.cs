@@ -39,6 +39,7 @@ internal sealed partial class DesktopSession : IDisposable
     private readonly EditorController _editor;
     private DispatcherOperation? _renderOperation;
     private EditorSession _live;
+    private PointD _liveOrigin;
     private EditorSession? _capture;
     private PointD _captureOrigin;
     private InspectorWindow? _inspector;
@@ -444,6 +445,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void RequestRender()
     {
+        SynchronizeLiveDisplayLayout();
         // Observe transitions when requested, even if A -> B -> A changes are
         // coalesced before the next draw. An old A frame must not regain its epoch.
         if (_canvasPreview is not null) _ = CurrentPreviewContext();
@@ -702,9 +704,17 @@ internal sealed partial class DesktopSession : IDisposable
     private void Draw(SKSurface surface)
     {
         var canvas = surface.Canvas;
-        if (_canvasPreview.Frame is { } frame && frame.Context == CurrentPreviewContext())
-            frame.Pixels.Draw(canvas);
-        else RequestCanvasPreview(false, null);
+        var context = CurrentPreviewContext();
+        bool current = _canvasPreview.Frame is { } frame && frame.Context == context;
+        if (current)
+            _canvasPreview.Frame!.Pixels.Draw(canvas);
+        else
+        {
+            // A rebuilt HWND was cleared without current content. Old retained
+            // pixels cannot be a damage baseline for this new display surface.
+            _presentedPixels?.Dispose(); _presentedPixels = null;
+            RequestCanvasPreview(false, null);
+        }
         canvas.Save(); canvas.Translate((float)_editor.ScreenOrigin.X,(float)_editor.ScreenOrigin.Y);
         if (_host.IsEditing)
         {
@@ -731,7 +741,7 @@ internal sealed partial class DesktopSession : IDisposable
         canvas.Restore();
         if (_host.IsEditing) DrawEyedropperPreview(canvas);
         if (_host.IsReceivingDrop) DrawImageDropHint(canvas);
-        _presentedCanvasContext = CurrentPreviewContext();
+        _presentedCanvasContext = current ? context : null;
         _canvasControlsWereVisible = CanvasControlsVisible();
     }
     private void ToggleInspector()
@@ -785,22 +795,41 @@ internal sealed partial class DesktopSession : IDisposable
         StopLiveEffectsCapture();
         CloseImageDrop();
         _editor.Cancel();
-        var bounds = _host.Monitors.Select(m=>new RectD(m.Bounds.Left,m.Bounds.Top,m.Bounds.Width,m.Bounds.Height)).Aggregate(RectD.Union);
-        _live.Document.Viewport=bounds;
+        SynchronizeLiveDisplayLayout();
         if (_live.Document.Canvas.Projection.Enabled && !CanvasCalibration.IsValidProjection(_live.Document.Canvas.Projection.Matrix))
         {
             _live.Document.Canvas.Projection.Enabled = false;
             UpdateStatus(L.Get("Canvas.UnstableProjection"));
         }
-        _live.Document.DisplayLayout = _host.Monitors.Select(m => new DisplayLayoutHint { DeviceName = m.DeviceName,
-            Bounds = new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height), DpiX = m.DpiX, DpiY = m.DpiY }).ToList();
         EnsureCaptureVisible();
         SynchronizeFlatGridOrigin();
         RefreshCanvasReferenceMonitors();
-        _live.NotifyChanged();
+        _live.NotifyDisplayLayoutChanged();
         if(_host.IsEditing) PlaceToolbar();
         RefreshPassThroughLauncher();
         RequestRender(); ScheduleRecovery();
+    }
+    private SceneDocument? _liveLayoutDocument;
+    private object? _liveLayoutMonitors;
+    private void SynchronizeLiveDisplayLayout()
+    {
+        if (_live is null || _host is null || _host.Monitors.Count == 0) return;
+        var document = _live.Document;
+        if (ReferenceEquals(_liveLayoutDocument, document) && ReferenceEquals(_liveLayoutMonitors, _host.Monitors))
+        {
+            if (ReferenceEquals(_editor?.Session, _live)) _editor.ScreenOrigin = _liveOrigin;
+            return;
+        }
+        var reference = _host.PrimaryMonitor.Bounds;
+        var savedCenter = document.DisplayLayout.FirstOrDefault()?.Bounds.Center ?? document.Viewport.Center;
+        _liveOrigin = new PointD(reference.Left + reference.Width / 2d, reference.Top + reference.Height / 2d) - savedCenter;
+        RectD Local(MonitorInfo monitor) => new(monitor.Bounds.Left - _liveOrigin.X, monitor.Bounds.Top - _liveOrigin.Y,
+            monitor.Bounds.Width, monitor.Bounds.Height);
+        document.Viewport = _host.Monitors.Select(Local).Aggregate(RectD.Union);
+        document.DisplayLayout = _host.Monitors.Select(m => new DisplayLayoutHint { DeviceName = m.DeviceName,
+            Bounds = Local(m), DpiX = m.DpiX, DpiY = m.DpiY }).ToList();
+        if (ReferenceEquals(_editor?.Session, _live)) _editor.ScreenOrigin = _liveOrigin;
+        _liveLayoutDocument = document; _liveLayoutMonitors = _host.Monitors;
     }
     private void PlaceToolbar()
     {

@@ -59,6 +59,7 @@ internal sealed class CanvasSettingsWindow : Window
     public event Action? CalibrationToggled, Dismissed;
     public event Action? FourPointsRequested;
     public event Action<CanvasPresetParameters>? PresetApplied;
+    public event Action<string?>? ResetDisplaySelected;
     public event Action<string?>? ResetDisplayRequested;
     public event Action<int>? CommandKey;
 
@@ -293,22 +294,36 @@ internal sealed class CanvasSettingsWindow : Window
         resetChoices.Visibility = monitors.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         resetChoices.IsEnabled = monitors.Count > 1;
         reset.Resources["CanvasButtonCornerRadius"] = monitors.Count > 1 ? new CornerRadius(6,0,0,6) : new CornerRadius(6);
-        selectedResetDevice = monitors.Any(m => m.DeviceName == selectedDevice) ? selectedDevice : null;
-        resetMenu.Items.Clear(); reset.Content = L.Get("Canvas.ResetOnDisplay");
-        for (int i = 0; i < monitors.Count; i++)
+        selectedResetDevice = monitors.Count > 1 && monitors.Any(m => m.DeviceName == selectedDevice) ? selectedDevice : null;
+        resetMenu.Items.Clear();
+        var primary = new MenuItem { Header = L.Get("Canvas.PrimaryDisplay"), IsCheckable = true };
+        primary.Click += (_, _) => SelectResetDisplay(null);
+        resetMenu.Items.Add(primary);
+        for (int i = 0; monitors.Count > 1 && i < monitors.Count; i++)
         {
             var monitor = monitors[i]; int number = i + 1;
             var item = new MenuItem { Header = L.Format("Settings.NumberedScreen", number), Tag = monitor.DeviceName,
-                IsCheckable = true, IsChecked = monitor.DeviceName == selectedResetDevice || selectedResetDevice is null && i == 0 };
-            item.Click += (_, _) =>
-            {
-                selectedResetDevice = monitor.DeviceName;
-                reset.Content = L.Format("Canvas.ResetOnNumberedDisplay", number);
-                ResetDisplayRequested?.Invoke(selectedResetDevice);
-            };
+                IsCheckable = true };
+            item.Click += (_, _) => SelectResetDisplay(monitor.DeviceName);
             resetMenu.Items.Add(item);
-            if (monitor.DeviceName == selectedResetDevice) reset.Content = L.Format("Canvas.ResetOnNumberedDisplay", number);
         }
+        RefreshResetSelection();
+    }
+    private void SelectResetDisplay(string? device)
+    {
+        bool changed = selectedResetDevice != device;
+        selectedResetDevice = referenceDevice = device;
+        RefreshResetSelection();
+        if (changed) ResetDisplaySelected?.Invoke(device);
+    }
+    private void RefreshResetSelection()
+    {
+        reset.Content = L.Get("Canvas.ResetOnDisplay");
+        for (int i = 0; i < referenceMonitors.Count; i++)
+            if (referenceMonitors[i].DeviceName == selectedResetDevice)
+                reset.Content = L.Format("Canvas.ResetOnNumberedDisplay", i + 1);
+        foreach (var choice in resetMenu.Items.OfType<MenuItem>())
+            choice.IsChecked = Equals(choice.Tag, selectedResetDevice);
     }
     private void RefreshPin() => ActionIconButton.UpdatePin(pin, IsPinned);
     internal void ResetPin() { IsPinned = false; RefreshPin(); }
