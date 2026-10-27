@@ -71,9 +71,9 @@ internal static class InspectorScrubTests
 
         var endpoints = new EditorSession(); endpoints.Add(new() { Kind = ElementKind.Line, Points = [new(0, 0), new(100, 30)] });
         var lineInspector = new InspectorWindow(() => endpoints); lineInspector.PrepareForShow();
-        ((Controls.ComboBox)Field(lineInspector, "startArrow")).SelectedIndex = (int)ArrowHeadStyle.Diamond;
-        ((Controls.ComboBox)Field(lineInspector, "endArrow")).SelectedIndex = (int)ArrowHeadStyle.Open;
-        ((Controls.ComboBox)Field(lineInspector, "strokePattern")).SelectedIndex = (int)StrokePattern.Dashed;
+        ((SegmentedChoice)Field(lineInspector, "startArrow")).SelectedIndex = (int)ArrowHeadStyle.Diamond;
+        ((SegmentedChoice)Field(lineInspector, "endArrow")).SelectedIndex = (int)ArrowHeadStyle.Open;
+        ((SegmentedChoice)Field(lineInspector, "strokePattern")).SelectedIndex = (int)StrokePattern.Dashed;
         ((Dictionary<string, Controls.TextBox>)Field(lineInspector, "fields"))["ArrowHeadSize"].Text = "24";
         history = endpoints.UndoCount; Invoke(lineInspector, "Apply");
         var edited = endpoints.Document.Elements.Single();

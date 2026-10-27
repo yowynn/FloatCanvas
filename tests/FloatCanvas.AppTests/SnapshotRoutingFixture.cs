@@ -43,7 +43,7 @@ internal static class SnapshotRoutingFixture
         captureButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Field<ToolOptionsPanel>(session, "_toolOptionsPanel").Refresh();
         var options = Field<Window>(session, "_toolOptionsWindow");
-        var pickers = Field<Dictionary<string, ComboBox>>(Field<ToolOptionsPanel>(session, "_toolOptionsPanel"), "pickers");
+        var pickers = Field<Dictionary<string, SegmentedChoice>>(Field<ToolOptionsPanel>(session, "_toolOptionsPanel"), "pickers");
         check("snapshot production options expose all four selection shapes and three sources", options.IsVisible &&
             pickers["CaptureShape"].Items.Count == 4 && pickers["CaptureSource"].Items.Count == 3 && editor.Tool == EditorTool.CaptureRegion);
         Pump(50);
@@ -348,9 +348,9 @@ internal static class SnapshotRoutingFixture
             }
             void Select(string key, object value)
             {
-                var picker = pickers[key]; picker.Focus(); picker.IsDropDownOpen = true; Pump(30);
-                picker.SelectedItem = picker.Items.Cast<ComboBoxItem>().Single(item => Equals(item.Tag, value));
-                picker.IsDropDownOpen = false; Pump(30);
+                var picker = pickers[key]; Pump(30);
+                picker.SelectedItem = picker.Items.Cast<RadioButton>().Single(item => Equals(item.Tag, value));
+                Pump(30);
             }
         }
         void Seed()

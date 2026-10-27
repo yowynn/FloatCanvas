@@ -211,7 +211,7 @@ internal static class SettingsWindowFixture
                         check("history input accepts values above the rail up to one thousand", historyNumber.TryGetValue(out double manualLimit) && manualLimit == 1000);
                         historyNumber.Input.Text = "60";
                         check("both shortcut recorders display their current bindings", recorders.Select(box => box.Text).SequenceEqual(new[] { HotkeyDisplay.Format(UserSettings.Load().Toggle), HotkeyDisplay.Format(UserSettings.Load().Hide) }));
-                        var language = controls.OfType<ComboBox>().Single(box => AutomationProperties.GetName(box) == L.Get("Settings.Language"));
+                        var language = controls.OfType<SegmentedChoice>().Single(box => AutomationProperties.GetName(box) == L.Get("Settings.Language"));
                         int originalLanguage = language.SelectedIndex; language.SelectedIndex = originalLanguage == 1 ? 2 : 1;
                         check("restart-required settings change the save action", Equals(layout.SaveButton.Content, L.Get("Settings.SaveRestart")));
                         language.SelectedIndex = originalLanguage;

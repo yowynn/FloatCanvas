@@ -60,7 +60,7 @@ internal static class BillboardUiRuntimeTests
                 toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Pump();Layout(toolbarRoot);
                 check("native-hosted toolbar changes its actual placement artwork and highlights billboard mode",editor.BillboardMode&&toggle.IsEnabled&&toggle.Background==app.Resources["CanvasHiddenSurface"]&&Descendants(toggle).OfType<System.Windows.Shapes.Path>().Single().Data.ToString()!=surfaceArtwork);
                 session.SetSelection([session.Document.Elements.Single().Id]); inspector.PrepareForShow();
-                var placement=Field<ComboBox>(inspector,"placement");placement.SelectedIndex=1;inspector.CompletePendingEdit();inspector.PrepareForShow();Pump();Layout(inspectorRoot);
+                var placement=Field<SegmentedChoice>(inspector,"placement");placement.SelectedIndex=1;inspector.CompletePendingEdit();inspector.PrepareForShow();Pump();Layout(inspectorRoot);
                 var fields=Field<Dictionary<string,TextBox>>(inspector,"fields");var element=session.Document.Elements.Single();
                 fields["BillboardHeight"].Text="45";inspector.CompletePendingEdit();inspector.PrepareForShow();
                 fields["Angle"].Text="30";inspector.CompletePendingEdit();inspector.PrepareForShow();

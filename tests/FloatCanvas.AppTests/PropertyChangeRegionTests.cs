@@ -39,7 +39,7 @@ internal static class PropertyChangeRegionTests
         try
         {
             Show(window);
-            var projection = Field<CheckBox>(window, "projection");
+            var projection = Field<SegmentedChoice>(window, "projection");
             var flat = Field<StackPanel>(window, "flatSizePanel");
             var actions = Field<StackPanel>(window, "perspectiveActions");
             check(theme + " canvas opens without a permanent dependency cue", region.CueStrength == 0 && counts.CueStrength == 0);
@@ -96,7 +96,7 @@ internal static class PropertyChangeRegionTests
             if (owner is ToolOptionsPanel tools) tools.PrepareForShow();
             window.UpdateLayout();
             var region = Field<PropertyChangeRegion>(owner, "linkedColorsRegion");
-            var toggle = Field<CheckBox>(owner, "linkColors");
+            var toggle = Field<SegmentedChoice>(owner, "linkColors");
             var rows = Field<Dictionary<string, FrameworkElement>>(owner, inspector ? "fieldContainers" : "rows");
             var fill = rows[inspector ? "Fill" : "Background"];
             uint savedFill = inspector ? shape.Style.Fill : controller.Style.Fill;
@@ -177,6 +177,7 @@ internal static class PropertyChangeRegionTests
     }
 
     private static void Toggle(CheckBox toggle) { toggle.IsChecked = toggle.IsChecked != true; toggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); }
+    private static void Toggle(SegmentedChoice choice) => choice.SelectedValue = choice.SelectedValue is not true;
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
     private static void Pump(int milliseconds)
     {

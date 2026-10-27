@@ -50,7 +50,7 @@ internal static class AuxiliaryShortcutRoutingTests
             ExpectRoute("CanvasSettings", canvasSource, Key.G, canvasCommands);
 
             var counts = Field<NumericValueField>(canvas, "columns");
-            foreach (var control in new Control[] { counts.Input, counts.Slider, Field<ComboBox>(canvas, "pattern") })
+            foreach (var control in new FrameworkElement[] { counts.Input, counts.Slider, Field<SegmentedChoice>(canvas, "pattern") })
             {
                 SetModifiers(ModifierKeys.None);
                 foreach (var key in new[] { Key.B, Key.D4, Key.Enter, Key.Delete, Key.Right })

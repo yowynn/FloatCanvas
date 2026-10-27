@@ -104,8 +104,8 @@ internal static class Feedback4OptionsTests
         var rows = Field<Dictionary<string, FrameworkElement>>(panel, "rows"); var fields = Field<Dictionary<string, NumericValueField>>(panel, "numericFields");
         check(locale + " lines have no default length or height", rows["DefaultWidth"].Visibility == Visibility.Collapsed && rows["DefaultHeight"].Visibility == Visibility.Collapsed);
         check(locale + " pure color tools do not duplicate color opacity", rows["Opacity"].Visibility == Visibility.Collapsed);
-        var pickers = Field<Dictionary<string, ComboBox>>(panel, "pickers");
-        check(locale + " line pattern and arrow choices include diagrams", new[] { "StrokePattern", "StartArrowHead", "EndArrowHead" }.All(key => pickers[key].Items.OfType<ComboBoxItem>().All(item => item.Content is StackPanel)));
+        var pickers = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers");
+        check(locale + " line pattern and arrow choices include diagrams", new[] { "StrokePattern", "StartArrowHead", "EndArrowHead" }.All(key => pickers[key].Items.OfType<RadioButton>().All(item => item.Content is StackPanel)));
         controller.Tool = EditorTool.Symbol; panel.PrepareForShow(); fields["DefaultWidth"].Input.Text = "234"; fields["DefaultHeight"].Input.Text = "123";
         check(locale + " symbols have editable independent default dimensions", controller.DefaultWidth == 234 && controller.DefaultHeight == 123 && rows["DefaultWidth"].Visibility == Visibility.Visible);
         controller.Tool = EditorTool.Number; panel.PrepareForShow(); fields["NumberStart"].Input.Text = "8"; fields["NumberStep"].Input.Text = "3";

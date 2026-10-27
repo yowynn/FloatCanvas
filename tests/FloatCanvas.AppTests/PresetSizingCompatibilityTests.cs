@@ -51,7 +51,7 @@ internal static class PresetSizingCompatibilityTests
     {
         editor.Tool = EditorTool.Rectangle; editor.Style.Stroke = 0xFF2383E2; editor.Style.Fill = 0;
         var panel = new ToolOptionsPanel(editor, library, new ColorLibrary(Path.Combine(ApplicationPaths.ProfileDirectory,"linked-colors.json"))); panel.PrepareForShow();
-        var linked = Field<Controls.CheckBox>(panel, "linkColors"); linked.IsChecked = true; linked.RaiseEvent(new(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        var linked = Field<SegmentedChoice>(panel, "linkColors"); linked.SelectedValue = true;
         panel.PrepareForShow();
         var rows = Field<Dictionary<string,System.Windows.FrameworkElement>>(panel,"rows");
         check("linked tool colors expose one foreground color and preserve the saved background", editor.Style.LinkColors && editor.Style.Fill == 0 && rows["Background"].Visibility == System.Windows.Visibility.Collapsed);

@@ -29,7 +29,7 @@ internal static class HiddenToolPropertiesTests
             var panel = new ToolOptionsPanel(editor, new(Path.Combine(folder, "presets.json")), new(Path.Combine(folder, "colors.json"))); panel.PrepareForShow();
             var rows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
             var numbers = Field<Dictionary<string, NumericValueField>>(panel, "numericFields");
-            var pickers = Field<Dictionary<string, ComboBox>>(panel, "pickers");
+            var pickers = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers");
             var font = Field<ComboBox>(panel, "fontFamily");
             var foreground = Field<ColorField>(panel, "foreground");
             var background = Field<ColorField>(panel, "background");
@@ -83,7 +83,7 @@ internal static class HiddenToolPropertiesTests
                 Observe(label + " leaves the hidden background color unchanged", rows["Background"].Visibility == Visibility.Collapsed && background.Value == oldBackground);
                 Observe(label + " leaves hidden symbol and emoji galleries unchanged", oldSymbols.SequenceEqual(symbols.Children.OfType<Button>().Select(button => button.BorderBrush)) && oldEmoji.SequenceEqual(emoji.Children.OfType<Button>().Select(button => button.BorderBrush)));
                 Observe(label + " synchronizes its visible stroke width, pattern and foreground", numbers["StrokeWidth"].Value == editor.Style.StrokeWidth &&
-                    pickers["StrokePattern"].SelectedItem is ComboBoxItem { Tag: StrokePattern.Dashed } && foreground.Value == editor.Style.Stroke);
+                    pickers["StrokePattern"].SelectedItem is RadioButton { Tag: StrokePattern.Dashed } && foreground.Value == editor.Style.Stroke);
 
                 var beforeSymbols = symbols.Children.OfType<Button>().Select(button => button.BorderBrush).ToArray();
                 var beforeEmoji = emoji.Children.OfType<Button>().Select(button => button.BorderBrush).ToArray();
@@ -94,14 +94,14 @@ internal static class HiddenToolPropertiesTests
 
             Apply(EditorTool.Text, _ => { }); Refresh();
             Observe("returning to text synchronizes the latest previously hidden font and alignment", ToolOptionPreviews.SelectedFontName(font) == "Consolas" && numbers["FontSize"].Value == 78 &&
-                pickers["TextAlignment"].SelectedItem is ComboBoxItem { Tag: FloatCanvas.Core.TextAlignment.Right });
+                pickers["TextAlignment"].SelectedItem is RadioButton { Tag: FloatCanvas.Core.TextAlignment.Right });
             Apply(EditorTool.Number, _ => { }); Refresh();
             Observe("returning to number synchronizes the latest counter state", numbers["NumberStart"].Value == 24 && numbers["NumberStep"].Value == 10 && numbers["NextNumber"].Value == 58);
             Apply(EditorTool.Symbol, _ => { }); Refresh();
             Observe("returning to shape synchronizes the latest dimensions", numbers["DefaultWidth"].Value == 334 && numbers["DefaultHeight"].Value == 223);
             Apply(EditorTool.CaptureRegion, _ => { }); Refresh();
-            Observe("entering capture synchronizes its previously hidden shape source and border", pickers["CaptureShape"].SelectedItem is ComboBoxItem { Tag: CaptureShape.Ellipse } &&
-                pickers["CaptureSource"].SelectedItem is ComboBoxItem { Tag: CaptureSource.CanvasOnly } && numbers["CaptureBorderWidth"].Value == 14 && foreground.Value == 0xFF789ABC);
+            Observe("entering capture synchronizes its previously hidden shape source and border", pickers["CaptureShape"].SelectedItem is RadioButton { Tag: CaptureShape.Ellipse } &&
+                pickers["CaptureSource"].SelectedItem is RadioButton { Tag: CaptureSource.CanvasOnly } && numbers["CaptureBorderWidth"].Value == 14 && foreground.Value == 0xFF789ABC);
             Apply(EditorTool.Image, _ => { }); Refresh();
             Observe("entering image synchronizes its previously hidden opacity", numbers["Opacity"].Value == 40);
             Observe("attribute synchronization never edits scene contents or history", editor.Session.Document.Elements.Count == 0 && editor.Session.UndoCount == 0 && !editor.Session.IsTransactionActive);

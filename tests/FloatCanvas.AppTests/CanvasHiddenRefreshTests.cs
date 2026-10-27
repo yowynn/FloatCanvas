@@ -41,7 +41,7 @@ internal static class CanvasHiddenRefreshTests
                 var columns = Field<NumericValueField>(window, "columns"); var rows = Field<NumericValueField>(window, "rows");
                 var size = Field<NumericValueField>(window, "gridSize"); var width = Field<NumericValueField>(window, "width");
                 var lockedColumns = Field<TextBox>(window, "lockedColumns"); var lockedRows = Field<TextBox>(window, "lockedRows");
-                var pattern = Field<ComboBox>(window, "pattern");
+                var pattern = Field<SegmentedChoice>(window, "pattern");
                 var gallery = Field<CanvasPresetGallery>(window, "presets");
                 var firstPreset = gallery.OfficialTiles.Children.OfType<Button>().First();
                 var main = new MonitorInfo("main", new(0,0,1920,1080), new(0,0,1920,1040), 96,96,true);
@@ -74,7 +74,7 @@ internal static class CanvasHiddenRefreshTests
                         ReferenceEquals(previewBefore, firstPreset.Content) && Field<ContextMenu>(window, "resetMenu").Items.Count == 1));
                     window.Show(); Pump();
                     findings.Add(($"{backend} canvas reopening applies only the newest queued state", background.Value == latest.BackgroundColor && gridColor.Value == latest.Grid.Color &&
-                        columns.Value == 33 && rows.Value == 17 && width.Value == latest.Grid.Width && Equals((pattern.SelectedItem as ComboBoxItem)?.Tag, latest.Grid.Pattern)));
+                        columns.Value == 33 && rows.Value == 17 && width.Value == latest.Grid.Width && Equals((pattern.SelectedItem as RadioButton)?.Tag, latest.Grid.Pattern)));
                     findings.Add(($"{backend} canvas reopening synchronizes presets once", presetRefreshes == 1));
                     findings.Add(($"{backend} canvas reopening applies queued display choices", Field<ContextMenu>(window, "resetMenu").Items.Count == 3 && Field<Button>(window, "resetChoices").Visibility == Visibility.Visible));
                 }
@@ -110,12 +110,12 @@ internal static class CanvasHiddenRefreshTests
                 findings.Add(($"{backend} actually hidden grid rows skip value and selection refresh", gridColor.Value == previousColor && width.Value == previousWidth && ReferenceEquals(pattern.SelectedItem, previousPattern)));
                 colorRow.Visibility = widthRow.Visibility = patternRow.Visibility = Visibility.Visible;
                 window.Refresh(perspective); Pump();
-                findings.Add(($"{backend} revealed grid rows receive the latest pending values", gridColor.Value == 0xFFABCDEF && width.Value == 17 && Equals((pattern.SelectedItem as ComboBoxItem)?.Tag, StrokePattern.Dashed)));
+                findings.Add(($"{backend} revealed grid rows receive the latest pending values", gridColor.Value == 0xFFABCDEF && width.Value == 17 && Equals((pattern.SelectedItem as RadioButton)?.Tag, StrokePattern.Dashed)));
                 findings.Add(($"{backend} canvas refresh never activates a fixture window", !FixtureOwnsForeground()));
 
                 string Snapshot() => JsonSerializer.Serialize(new { Background = background.Value, GridColor = gridColor.Value, Columns = columns.Input.Text, Rows = rows.Input.Text,
-                    Size = size.Input.Text, Width = width.Input.Text, Projection = Field<CheckBox>(window, "projection").IsChecked,
-                    Grid = Field<CheckBox>(window, "gridVisible").IsChecked, Pattern = (pattern.SelectedItem as ComboBoxItem)?.Tag,
+                    Size = size.Input.Text, Width = width.Input.Text, Projection = Field<SegmentedChoice>(window, "projection").SelectedValue,
+                    Grid = Field<CheckBox>(window, "gridVisible").IsChecked, Pattern = (pattern.SelectedItem as RadioButton)?.Tag,
                     LockedColumns = lockedColumns.Text, LockedRows = lockedRows.Text, Reset = Field<Button>(window, "reset").Content });
             }
             finally { window.CloseForDispose(); Pump(); }

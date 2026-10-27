@@ -17,7 +17,7 @@ internal static class BillboardInspectorTests
         {
             var fields=Field<Dictionary<string,TextBox>>(inspector,"fields");
             var containers=Field<Dictionary<string,FrameworkElement>>(inspector,"fieldContainers");
-            var picker=Field<ComboBox>(inspector,"placement");
+            var picker=Field<SegmentedChoice>(inspector,"placement");
             check("perspective inspector exposes surface placement without an elevation field",picker.SelectedIndex==0&&containers["Placement"].Visibility==Visibility.Visible&&containers["BillboardHeight"].Visibility==Visibility.Collapsed);
             int before=session.UndoCount;picker.SelectedIndex=1;inspector.CompletePendingEdit();inspector.PrepareForShow();
             var e=session.Document.Elements.Single();var anchor=e.BillboardAnchor;

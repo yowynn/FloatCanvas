@@ -40,7 +40,7 @@ internal static class ToolOptionsPanelTests
         var controller = new EditorController(new EditorSession());
         var panel = Panel(controller, root, "parameters");
         var numbers = Field<Dictionary<string, Controls.TextBox>>(panel, "numbers");
-        var pickers = Field<Dictionary<string, Controls.ComboBox>>(panel, "pickers");
+        var pickers = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers");
         var status = Field<Controls.TextBlock>(panel, "status");
         controller.Tool = EditorTool.Freehand; panel.PrepareForShow();
         string validWidth = numbers["StrokeWidth"].Text;
@@ -91,9 +91,9 @@ internal static class ToolOptionsPanelTests
         external.Style.StartArrowHead = ArrowHeadStyle.FilledTriangle; external.Style.EndArrowHead = ArrowHeadStyle.Diamond;
         external.Style.StrokePattern = StrokePattern.Dashed; external.CornerRadius = 17; external.EffectStrength = 31; external.ConstrainAspect = false;
         External(EditorTool.Line, () => numbers["StrokeWidth"].Text == "11" &&
-            Equals(((Controls.ComboBoxItem)pickers["StartArrowHead"].SelectedItem).Tag, ArrowHeadStyle.FilledTriangle) &&
-            Equals(((Controls.ComboBoxItem)pickers["EndArrowHead"].SelectedItem).Tag, ArrowHeadStyle.Diamond) &&
-            Equals(((Controls.ComboBoxItem)pickers["StrokePattern"].SelectedItem).Tag, StrokePattern.Dashed));
+            Equals(pickers["StartArrowHead"].SelectedValue, ArrowHeadStyle.FilledTriangle) &&
+            Equals(pickers["EndArrowHead"].SelectedValue, ArrowHeadStyle.Diamond) &&
+            Equals(pickers["StrokePattern"].SelectedValue, StrokePattern.Dashed));
         External(EditorTool.Image, () => numbers["Opacity"].Text == "42");
         External(EditorTool.Text, () => numbers["FontSize"].Text == "44" &&
             ToolOptionPreviews.SelectedFontName(Field<Controls.ComboBox>(panel, "fontFamily")) == external.Style.FontFamily);
@@ -183,14 +183,14 @@ internal static class ToolOptionsPanelTests
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.CaptureRegion };
         var panel = Panel(controller, root, "snapshot");
         var rows = Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows");
-        var pickers = Field<Dictionary<string, Controls.ComboBox>>(panel, "pickers");
+        var pickers = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers");
         var numbers = Field<Dictionary<string, Controls.TextBox>>(panel, "numbers");
         var foreground = Field<ColorField>(panel, "foreground");
         check("snapshot exposes source shape and optional border together", Shown(rows, "CaptureShape", "CaptureSource", "CaptureBorderWidth", "Foreground") &&
             !Shown(rows, "Background") && !Shown(rows, "StrokeWidth") && !Shown(rows, "Opacity"));
         check("snapshot choices contain all four shapes and all three sources", pickers["CaptureShape"].Items.Count == 4 && pickers["CaptureSource"].Items.Count == 3);
-        pickers["CaptureShape"].SelectedItem = pickers["CaptureShape"].Items.OfType<Controls.ComboBoxItem>().Single(item => Equals(item.Tag, CaptureShape.PolygonLasso));
-        pickers["CaptureSource"].SelectedItem = pickers["CaptureSource"].Items.OfType<Controls.ComboBoxItem>().Single(item => Equals(item.Tag, CaptureSource.CanvasOnly));
+        pickers["CaptureShape"].SelectedItem = pickers["CaptureShape"].Items.OfType<Controls.RadioButton>().Single(item => Equals(item.Tag, CaptureShape.PolygonLasso));
+        pickers["CaptureSource"].SelectedItem = pickers["CaptureSource"].Items.OfType<Controls.RadioButton>().Single(item => Equals(item.Tag, CaptureSource.CanvasOnly));
         numbers["CaptureBorderWidth"].Text = "6";
         foreground.SetUserValue(0xFFBB2233);
         check("snapshot controls update only capture parameters without editing drawing style", controller.CaptureShape == CaptureShape.PolygonLasso &&
@@ -247,7 +247,7 @@ internal static class ToolOptionsPanelTests
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
     private static void Invoke(object target, string method, params object[] arguments) => target.GetType().GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(target, arguments);
     private static void Click(Controls.Button button) => button.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
-    private static void Select(Controls.ComboBox picker, object value) => picker.SelectedItem = picker.Items.OfType<Controls.ComboBoxItem>().Single(item => Equals(item.Tag, value));
+    private static void Select(SegmentedChoice picker, object value) => picker.SelectedItem = picker.Items.OfType<Controls.RadioButton>().Single(item => Equals(item.Tag, value));
     private static bool Shown(Dictionary<string, Wpf.FrameworkElement> rows, params string[] keys) => keys.All(key => rows[key].Visibility == Wpf.Visibility.Visible);
     private static IEnumerable<Wpf.DependencyObject> Descendants(Wpf.DependencyObject root)
     {

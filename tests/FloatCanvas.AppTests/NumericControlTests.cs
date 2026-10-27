@@ -199,14 +199,14 @@ internal static class NumericControlTests
         double pixel = 1 / Media.VisualTreeHelper.GetDpi(properties).DpiScaleX;
         check(name + " position and size have equal input widths within pixel rounding and aligned edges", new[] { "X", "Y", "W", "H" }.All(key => Math.Abs(inspectorNumbers[key].ActualWidth - inspectorNumbers["W"].ActualWidth) <= pixel + .01) && Math.Abs(Edge("X") - Edge("W")) < .01 && Math.Abs(Edge("Y") - Edge("H")) < .01);
         check(name + " empty XY gap equals the WH chain gap", Math.Abs(Edge("Y") - Edge("X", true) - PropertyPanelLayout.PairGap) < .01 && Math.Abs(Edge("H") - Edge("W", true) - PropertyPanelLayout.PairGap) < .01);
-        var toggle = Field<Controls.CheckBox>(panel, "linkColors");
+        var toggle = Field<SegmentedChoice>(panel, "linkColors");
         var toggleRow = (Controls.Grid)rows["LinkColors"];
-        check(name + " boolean names can cross the label column while the switch stays at the right edge", toggleRow.Children.OfType<Controls.TextBlock>().Single().ActualWidth > PropertyPanelLayout.LabelWidth && Math.Abs(toggle.TranslatePoint(new(toggle.ActualWidth, 0), grid).X - grid.ActualWidth) < .01);
+        check(name + " named color styles fill the value column with two exclusive options", toggle.Items.Count == 2 && toggle.Items.Count(option => option.IsChecked == true) == 1 && toggleRow.Children.OfType<Controls.TextBlock>().Single().ActualWidth <= PropertyPanelLayout.LabelWidth && Math.Abs(toggle.TranslatePoint(new(toggle.ActualWidth, 0), grid).X - grid.ActualWidth) < .01);
         var groupLabel = ((Controls.Grid)rows["Size"]).Children.OfType<Controls.TextBlock>().Single();
         var switchLabel = toggleRow.Children.OfType<Controls.TextBlock>().Single();
         check(name + " grouped and boolean property labels share typography", groupLabel.FontSize == PropertyPanelLayout.LabelFontSize && switchLabel.FontSize == groupLabel.FontSize && switchLabel.FontFamily.Equals(groupLabel.FontFamily) && switchLabel.FontWeight == groupLabel.FontWeight);
         var fieldHeight = rows["DefaultWidth"].ActualHeight;
-        check(name + " numeric color dropdown and switch rows share the standard height (" + string.Join(", ", new[] { "StrokeWidth", "Foreground", "StrokePattern", "Size", "LinkColors" }.Select(key => key + "=" + rows[key].ActualHeight)) + ")", new[] { "StrokeWidth", "Foreground", "StrokePattern", "Size", "LinkColors" }.All(key => Math.Abs(rows[key].ActualHeight - PropertyPanelLayout.ControlHeight) < .01) && fieldHeight == PropertyPanelLayout.ControlHeight);
+        check(name + " numeric color and segmented rows share the standard height (" + string.Join(", ", new[] { "StrokeWidth", "Foreground", "StrokePattern", "Size", "LinkColors" }.Select(key => key + "=" + rows[key].ActualHeight)) + ")", new[] { "StrokeWidth", "Foreground", "StrokePattern", "Size", "LinkColors" }.All(key => Math.Abs(rows[key].ActualHeight - PropertyPanelLayout.ControlHeight) < .01) && fieldHeight == PropertyPanelLayout.ControlHeight);
         check(name + " rectangle does not leak hidden text or arrow rows", new[] { "FontFamily", "FontSize", "TextAlignment", "Number", "ArrowHeadStyle", "StartArrowHead" }.All(key => inspectorRows[key].Visibility == Wpf.Visibility.Collapsed));
         var fields = Field<Dictionary<string, NumericValueField>>(panel, "numericFields");
         check(name + " numeric fields carry their actual unit", fields["DefaultWidth"].Unit == "px" && fields["Opacity"].Unit == "%" && fields["NextNumber"].Unit == "#" && fields["NumberStep"].Unit == L.Get("Numeric.Unit.Step"));
@@ -225,8 +225,8 @@ internal static class NumericControlTests
             Render((Wpf.FrameworkElement)canvas.Content, Path.Combine(output, name + "-canvas.png"), 144);
             var settings = new AppSettingsWindow();
             var general = settings.AddSection(L.Get("Settings.General"), L.Get("Settings.GeneralHint"));
-            AppSettingsWindow.AddSetting(general, L.Get("Settings.Theme"), new Controls.ComboBox { ItemsSource = new[] { L.Get("Settings.SystemTheme"), L.Get("Settings.LightTheme"), L.Get("Settings.DarkTheme") }, SelectedIndex = 1, MinHeight = 34 });
-            AppSettingsWindow.AddSetting(general, L.Get("Settings.Language"), new Controls.ComboBox { ItemsSource = new[] { "简体中文", "English" }, SelectedIndex = name.StartsWith("en") ? 1 : 0, MinHeight = 34 }, L.Get("Settings.LanguageRestartHint"));
+            AppSettingsWindow.AddSetting(general, L.Get("Settings.Theme"), SegmentedChoicePreviews.Appearance("light"));
+            AppSettingsWindow.AddSetting(general, L.Get("Settings.Language"), SegmentedChoicePreviews.Language(name.StartsWith("en") ? "en" : "zh-CN"), L.Get("Settings.LanguageRestartHint"));
             AppSettingsWindow.AddSetting(general, L.Get("Feedback3.Toolbar.ShowShortcutHints"), new Controls.CheckBox { IsChecked = true });
             Measure((Wpf.FrameworkElement)settings.Content, settings.Width - 2, 590);
             Render((Wpf.FrameworkElement)settings.Content, Path.Combine(output, name + "-settings-component.png"), 144);

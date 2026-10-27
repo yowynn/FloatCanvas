@@ -79,8 +79,8 @@ internal static class InspectorVisibilityLifecycleTests
             }
             current.Add(new() { Kind = ElementKind.Rectangle, Width = 90, Height = 60,
                 Style = new() { Stroke = 0xFF112233, Fill = 0xFF778899, LinkColors = true } }); Pump();
-            var link = Field<PropertySwitch>(inspector, "linkColors");
-            link.IsChecked = false; link.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            var link = Field<SegmentedChoice>(inspector, "linkColors");
+            link.SelectedValue = false;
             results.Add(("revealing a dependent paint row synchronizes its latest model value", containers["Fill"].Visibility == Visibility.Visible && colors["Fill"].Value == 0xFF778899));
             inspector.CompletePendingEdit();
             inspector.Hide(); Pump();

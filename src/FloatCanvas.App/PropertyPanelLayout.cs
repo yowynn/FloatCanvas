@@ -43,6 +43,18 @@ internal static class PropertyPanelLayout
         label.VerticalAlignment = VerticalAlignment.Center;
         row.Children.Add(label); Grid.SetColumn(control, 1); row.Children.Add(control);
         control.VerticalAlignment = VerticalAlignment.Center;
+        if (control is SegmentedChoice choice)
+        {
+            row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            row.SizeChanged += (_, _) =>
+            {
+                bool stacked = row.ActualWidth < LabelWidth + LabelGap + choice.PreferredWidth;
+                Grid.SetColumnSpan(label, stacked ? 2 : 1);
+                Grid.SetRow(control, stacked ? 1 : 0); Grid.SetColumn(control, stacked ? 0 : 1); Grid.SetColumnSpan(control, stacked ? 2 : 1);
+                label.Margin = stacked ? new(0, 0, 0, 4) : new(0, 0, LabelGap, 0);
+                label.SetCurrentValue(FrameworkElement.MaxWidthProperty, stacked ? row.ActualWidth : (double)row.GetValue(LabelMaximumProperty));
+            };
+        }
         return row;
     }
 

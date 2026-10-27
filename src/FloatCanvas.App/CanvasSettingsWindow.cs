@@ -12,7 +12,8 @@ namespace FloatCanvas.App;
 internal sealed class CanvasSettingsWindow : Window
 {
     private readonly ColorField background = new(ColorRole.Background), gridColor = new(ColorRole.Foreground);
-    private readonly CheckBox projection = new(), gridVisible = new(), gridSizeLock = new(), depthPriorityOcclusion = new();
+    private readonly SegmentedChoice projection = SegmentedChoicePreviews.CanvasMode();
+    private readonly CheckBox gridVisible = new(), gridSizeLock = new(), depthPriorityOcclusion = new();
     private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true) { Unit = L.Get("Numeric.Unit.Column") },
         rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true) { Unit = L.Get("Numeric.Unit.Row") },
         width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5) { Unit = "px" };
@@ -29,7 +30,7 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly Button reset = new();
     internal const double PerspectiveActionsWidth = PropertyPanelLayout.ContentWidth;
     private readonly Button fourPoints = new() { MinHeight = 32, Padding = new(10, 4, 10, 4), Content = L.Get("Canvas.FourPoints") };
-    private readonly ComboBox pattern = new OverlayComboBox();
+    private readonly SegmentedChoice pattern = new();
     private readonly StackPanel perspectiveActions = new() { Margin = new(0, 8, 0, 8) };
     private readonly OverlayContextMenu resetMenu = new();
     private readonly Button resetChoices = new() { Content = "▾", Width = 26, MinHeight = 32, Padding = new(2) };
@@ -86,7 +87,8 @@ internal sealed class CanvasSettingsWindow : Window
         var content = new Grid(); content.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var body = new StackPanel();
         AddField(body, "Canvas.Background", background);
-        body.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.Projection"), projection));
+        AddField(body, "Canvas.Mode", projection);
+        System.Windows.Automation.AutomationProperties.SetName(projection, L.Get("Canvas.Mode"));
         var projectionBody = new StackPanel();
         depthPriorityOcclusion.Content = L.Get("Canvas.DepthPriorityOcclusion"); depthPriorityOcclusion.Margin = new(0, 0, 0, 8);
         depthPriorityOcclusion.ToolTip = L.Get("Canvas.DepthPriorityOcclusionHint");
@@ -134,7 +136,8 @@ internal sealed class CanvasSettingsWindow : Window
         gridBody.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.GridVisible"), gridVisible));
         AddField(gridBody, "Canvas.GridColor", gridColor); AddField(gridBody, "Canvas.GridWidth", width);
         foreach (var value in new[] { StrokePattern.Solid, StrokePattern.Dashed, StrokePattern.Dotted })
-            pattern.Items.Add(new ComboBoxItem { Content = ToolOptionPreviews.Choice(L.Get("Canvas." + value), value), Tag = value });
+            SegmentedChoicePreviews.Add(pattern, L.Get("Canvas." + value), value);
+        System.Windows.Automation.AutomationProperties.SetName(pattern, L.Get("Canvas.GridPattern"));
         AddField(gridBody, "Canvas.GridPattern", pattern);
         body.Children.Add(gridBody);
         AddField(body, "Canvas.GuideOpacity", guideOpacity);
@@ -162,10 +165,11 @@ internal sealed class CanvasSettingsWindow : Window
         background.EyedropperRequested += () => EyedropperRequested?.Invoke(background);
         gridColor.EyedropperRequested += () => EyedropperRequested?.Invoke(gridColor);
         gridColor.ValueChanged += value => { if (!refreshing) GridColorChanged?.Invoke(value); };
-        projection.Click += (_, _) =>
+        projection.SelectionChanged += (_, _) =>
         {
+            if (refreshing || projection.SelectedValue is not bool enabled) return;
             gridCountsRegion.Reset();
-            projectionOptions.Change(() => { if (!refreshing) ProjectionChanged?.Invoke(projection.IsChecked == true); });
+            projectionOptions.Change(() => ProjectionChanged?.Invoke(enabled));
         };
         depthPriorityOcclusion.Click += (_, _) =>
         {
@@ -180,7 +184,7 @@ internal sealed class CanvasSettingsWindow : Window
         gridVisible.Click += (_, _) => { if (!refreshing) GridVisibilityChanged?.Invoke(gridVisible.IsChecked == true); };
         reset.Click += (_, _) => ResetDisplayRequested?.Invoke(selectedResetDevice);
         fourPoints.Click+=(_,_)=>FourPointsRequested?.Invoke();
-        pattern.SelectionChanged += (_, _) => { if (!refreshing && pattern.SelectedItem is ComboBoxItem { Tag: StrokePattern value }) GridPatternChanged?.Invoke(value); };
+        pattern.SelectionChanged += (_, _) => { if (!refreshing && pattern.SelectedValue is StrokePattern value) GridPatternChanged?.Invoke(value); };
         CommitOnExit(columns.Input, CommitCounts); CommitOnExit(rows.Input, CommitCounts);
         columns.SliderValueCommitted += () => { if (!refreshing) CommitCounts(); };
         rows.SliderValueCommitted += () => { if (!refreshing) CommitCounts(); };
@@ -247,12 +251,12 @@ internal sealed class CanvasSettingsWindow : Window
         {
             if (CanRefresh(background)) { background.Value = current.BackgroundColor; background.PrepareForShow(); }
             if (CanRefresh(gridColor)) { gridColor.Value = current.Grid.Color; gridColor.PrepareForShow(); }
-            if (CanRefresh(projection)) projection.IsChecked = current.Projection.Enabled;
+            if (CanRefresh(projection)) projection.SelectedValue = current.Projection.Enabled;
             if (CanRefresh(gridVisible)) gridVisible.IsChecked = current.Grid.Visible;
             RefreshProjectionControls();
             if (CanRefresh(gridSize) && !gridSize.IsKeyboardFocusWithin && !gridSize.IsInteracting) RefreshGridSize(current.Grid.FlatCellSize ?? current.Projection.GridCellSize);
             if (CanRefresh(width) && !width.IsKeyboardFocusWithin && !width.IsInteracting) RefreshWidth(current.Grid.Width);
-            if (CanRefresh(pattern)) pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(x => Equals(x.Tag, current.Grid.Pattern));
+            if (CanRefresh(pattern)) pattern.SelectedValue = current.Grid.Pattern;
             presets.Refresh(current);
         }
         finally { refreshing = wasRefreshing; }

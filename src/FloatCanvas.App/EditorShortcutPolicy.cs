@@ -47,7 +47,7 @@ internal static class EditorShortcutPolicy
 
     internal static bool OwnsLocalEditingKeys(DependencyObject? source) => Ancestors(source).Any(IsLocalInput);
     internal static bool OwnsMenu(DependencyObject? source) => Ancestors(source).Any(value => value is MenuItem or MenuBase);
-    private static bool IsLocalInput(DependencyObject value) => value is TextBoxBase or PasswordBox or ComboBox or Slider or Thumb;
+    private static bool IsLocalInput(DependencyObject value) => value is TextBoxBase or PasswordBox or ComboBox or SegmentedChoice or Slider or Thumb;
     private static IEnumerable<DependencyObject> Ancestors(DependencyObject? source)
     {
         while (source is not null)

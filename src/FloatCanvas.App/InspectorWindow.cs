@@ -28,14 +28,10 @@ internal sealed class InspectorWindow : Wpf.Window
     private readonly Controls.StackPanel linkedColorsGroup = new();
     private readonly PropertyChangeRegion linkedColorsRegion;
     private readonly AspectRatioButton keepAspect = new();
-    private readonly PropertySwitch linkColors = new();
+    private readonly SegmentedChoice linkColors = SegmentedChoicePreviews.ColorStyle();
+    private (ElementKind Kind, SymbolKind Symbol)? colorStyleContext;
     private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
-    private readonly Controls.ComboBox alignment = new OverlayComboBox() { MinHeight = 34 };
-    private readonly Controls.ComboBox arrowStyle = new OverlayComboBox() { MinHeight = 34 };
-    private readonly Controls.ComboBox startArrow = new OverlayComboBox() { MinHeight = 34 };
-    private readonly Controls.ComboBox endArrow = new OverlayComboBox() { MinHeight = 34 };
-    private readonly Controls.ComboBox strokePattern = new OverlayComboBox() { MinHeight = 34 };
-    private readonly Controls.ComboBox placement = new OverlayComboBox() { MinHeight = 34 };
+    private readonly SegmentedChoice alignment = new(), arrowStyle = new(), startArrow = new(), endArrow = new(), strokePattern = new(), placement = new();
     private readonly List<NumericScrubber> scrubbers = [];
     private EditorSession? formSession;
     private EditorSession? observedSession;
@@ -96,7 +92,7 @@ internal sealed class InspectorWindow : Wpf.Window
         propertyPanel.Children.Add(FieldPair("StrokeWidth", L.Get("Inspector.StrokeWidth"), null, null));
         propertyPanel.Children.Add(FieldPair("CornerRadius", L.Get("Inspector.CornerRadius"), null, null));
         foreach (var (label, value) in new[] { (L.Get("Inspector.ArrowFilledTriangle"), ArrowHeadStyle.FilledTriangle), (L.Get("Inspector.ArrowOpen"), ArrowHeadStyle.Open), (L.Get("Inspector.ArrowDiamond"), ArrowHeadStyle.Diamond), (L.Get("Inspector.ArrowNone"), ArrowHeadStyle.None) })
-            arrowStyle.Items.Add(new Controls.ComboBoxItem { Content = ToolOptionPreviews.Choice(label, value) });
+            SegmentedChoicePreviews.Add(arrowStyle, label, value);
         Automation.AutomationProperties.SetName(arrowStyle, L.Get("Inspector.ArrowStyle"));
         arrowStyle.SelectionChanged += (_, _) =>
         {
@@ -120,12 +116,13 @@ internal sealed class InspectorWindow : Wpf.Window
         colors.Children.Add(strokeColor);
         var fillColor = CreateColorField("Fill", L.Get("Inspector.Fill"), ColorRole.Background, colorLibrary);
         colors.Children.Add(fillColor);
-        var linkRow = PropertyPanelLayout.BooleanRow(L.Get("Color.LinkColors"), linkColors);
+        var linkRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Color.Style")), linkColors);
+        Automation.AutomationProperties.SetName(linkColors, L.Get("Color.Style"));
         fieldContainers.Add("LinkColors", linkRow);
         linkedColorsRegion = new(colors);
         linkedColorsGroup.Children.Add(linkRow); linkedColorsGroup.Children.Add(linkedColorsRegion);
         propertyPanel.Children.Add(linkedColorsGroup);
-        linkColors.Click += (_, _) => linkedColorsRegion.Change(() => ChangeField("LinkColors"));
+        linkColors.SelectionChanged += (_, _) => { if (!refreshing && linkColors.SelectedValue is bool) linkedColorsRegion.Change(() => ChangeField("LinkColors")); };
         propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.Opacity"), null, null));
         textSection = SectionHeading("Inspector.TextSection",first:true);
         propertyPanel.Children.Add(textSection);
@@ -137,7 +134,8 @@ internal sealed class InspectorWindow : Wpf.Window
         fontValue.TextChanged += (_, _) => { if (!string.IsNullOrWhiteSpace(fontValue.Text)) ToolOptionPreviews.SelectFont(fontPicker, fontValue.Text); };
         Automation.AutomationProperties.SetName(fontPicker, L.Get("Inspector.FontFamily"));
         fieldContainers.Add("FontFamily", fontRow); propertyPanel.Children.Add(fontRow);
-        foreach (var label in new[] { L.Get("Inspector.AlignLeft"), L.Get("Inspector.AlignCenter"), L.Get("Inspector.AlignRight") }) alignment.Items.Add(label);
+        foreach (var value in Enum.GetValues<FloatCanvas.Core.TextAlignment>())
+            SegmentedChoicePreviews.Add(alignment, L.Get(value switch { FloatCanvas.Core.TextAlignment.Left => "Inspector.AlignLeft", FloatCanvas.Core.TextAlignment.Center => "Inspector.AlignCenter", _ => "Inspector.AlignRight" }), value);
         Automation.AutomationProperties.SetName(alignment, L.Get("Inspector.TextAlignment"));
         alignment.SelectionChanged += (_, _) =>
         {
@@ -163,7 +161,8 @@ internal sealed class InspectorWindow : Wpf.Window
             propertyPanel.Children.Insert(textIndex++,row);
         var placementSection=new Controls.StackPanel();
         placementSection.Children.Add(SectionHeading("Billboard.Placement"));
-        placement.Items.Add(L.Get("Billboard.Surface"));placement.Items.Add(L.Get("Billboard.Name"));
+        placement.Add(L.Get("Billboard.Surface"), false, SegmentedChoicePreviews.Icon("surface"));
+        placement.Add(L.Get("Billboard.Name"), true, SegmentedChoicePreviews.Icon("billboard"));
         Automation.AutomationProperties.SetName(placement,L.Get("Billboard.Placement"));
         placement.SelectionChanged+=(_,_)=>{if(!refreshing)ChangeField("Placement");};
         placementSection.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Billboard.Placement")), placement));fieldContainers.Add("Placement",placementSection);
@@ -207,7 +206,7 @@ internal sealed class InspectorWindow : Wpf.Window
         System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(pin,true);
         AppWindowChrome.SetHeaderActions(this,pin);UpdatePin();
         foreach(var color in colorFields.Values)color.PickerClosed+=QueueFocusCheck;
-        foreach(var picker in new[] {fontPicker,alignment,arrowStyle,startArrow,endArrow,strokePattern,placement})picker.DropDownClosed+=(_,_)=>QueueFocusCheck();
+        fontPicker.DropDownClosed+=(_,_)=>QueueFocusCheck();
         refreshing = false;
     }
 
@@ -225,7 +224,7 @@ internal sealed class InspectorWindow : Wpf.Window
     {
         if(SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending==true)return;
         if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||colorFields.Values.Any(color=>color.IsPickerOpen)||
-            new[] {fontPicker,alignment,arrowStyle,startArrow,endArrow,strokePattern,placement}.Any(picker=>picker.IsDropDownOpen))return;
+            fontPicker.IsDropDownOpen)return;
         if(Wpf.Application.Current.Windows.Cast<Wpf.Window>().Any(window=>window.IsActive&&IsChildWindow(window)))return;
         Dismiss(WindowDismissReason.ExternalFocus);
     });
@@ -310,8 +309,13 @@ internal sealed class InspectorWindow : Wpf.Window
                 if (IsFieldVisible(key)) { color.Value = (uint)PropertyValue(element!, key)!; color.IsMixed = false; color.PrepareForShow(); }
             if (IsFieldVisible("LinkColors"))
             {
-                linkColors.IsThreeState = selected.Select(e => e.Style.LinkColors).Distinct().Count() > 1;
-                linkColors.IsChecked = linkColors.IsThreeState ? null : element?.Style.LinkColors == true;
+                if (element is not null)
+                {
+                    var context = (element.Kind, element.Symbol);
+                    if (colorStyleContext != context)
+                    { SegmentedChoicePreviews.UpdateColorStyle(linkColors, element.Kind, element.Symbol); colorStyleContext = context; }
+                }
+                linkColors.SelectedValue = selected.Select(e => e.Style.LinkColors).Distinct().Count() > 1 ? null : element?.Style.LinkColors;
             }
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = ElementGeometry.Bounds(element);
@@ -481,7 +485,7 @@ internal sealed class InspectorWindow : Wpf.Window
         }
         if(dirtyFields.Contains("BillboardHeight"))edited.BillboardHeight=Number("BillboardHeight",L.Get("Billboard.Height"),-10000000,10000000);
         if(dirtyFields.Contains("ConstrainAspect"))edited.ConstrainAspect=keepAspect.IsChecked==true;
-        if(dirtyFields.Contains("LinkColors"))edited.Style.LinkColors=linkColors.IsChecked==true;
+        if(dirtyFields.Contains("LinkColors"))edited.Style.LinkColors=linkColors.SelectedValue is true;
         if (source.Kind == ElementKind.Number && !source.NumberUsesForeground && dirtyFields.Overlaps(["Stroke", "Fill"]))
         {
             edited.Style.Stroke = (uint)PropertyValue(source, "Stroke")!;
@@ -650,12 +654,12 @@ internal sealed class InspectorWindow : Wpf.Window
         }
     }
 
-    private void AddPicker(string key, string label, Controls.ComboBox picker, string[] options)
+    private void AddPicker(string key, string label, SegmentedChoice picker, string[] options)
     {
         for (int index = 0; index < options.Length; index++)
         {
             object value = key == "StrokePattern" ? (StrokePattern)index : (ArrowHeadStyle)index;
-            picker.Items.Add(new Controls.ComboBoxItem { Content = ToolOptionPreviews.Choice(options[index], value) });
+            SegmentedChoicePreviews.Add(picker, options[index], value);
         }
         Automation.AutomationProperties.SetName(picker, label);
         picker.SelectionChanged += (_, _) =>
@@ -929,10 +933,6 @@ internal sealed class InspectorWindow : Wpf.Window
         if (scrubSession is not null) { CancelScrub(); return; }
         CompleteEdit();
         foreach (var field in colorFields.Values) if (field.TryClosePicker()) return;
-        if (alignment.IsDropDownOpen) { alignment.IsDropDownOpen = false; return; }
-        if (arrowStyle.IsDropDownOpen) { arrowStyle.IsDropDownOpen = false; return; }
-        foreach (var picker in new[] { startArrow, endArrow, strokePattern, placement })
-            if (picker.IsDropDownOpen) { picker.IsDropDownOpen = false; return; }
         SessionWindowCoordinator.Hide(this); Dismissed?.Invoke();
     }
     private bool CancelNumericGestures()

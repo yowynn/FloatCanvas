@@ -88,7 +88,7 @@ internal sealed class AppSettingsWindow : Window
     internal static void AddSetting(Panel section, string label, FrameworkElement control, string? hint = null)
     {
         var group = AddGroup(section, label);
-        bool inline = control is NumericValueField or ComboBox or TextBox;
+        bool inline = control is NumericValueField or ComboBox or TextBox or SegmentedChoice;
         if (control is CheckBox || inline) group.Children.RemoveAt(0);
         var caption = new PropertyLabel(label == L.Get("Settings.Language") ? L.Get("Property.Language") : label) { ToolTip = label };
         AutomationProperties.SetName(control, label);

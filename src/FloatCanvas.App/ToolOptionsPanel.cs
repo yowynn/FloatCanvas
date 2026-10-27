@@ -19,13 +19,14 @@ internal sealed class ToolOptionsPanel : UserControl
     private readonly EditorController controller;
     private readonly Dictionary<string, TextBox> numbers = [];
     private readonly Dictionary<string, NumericValueField> numericFields = [];
-    private readonly Dictionary<string, ComboBox> pickers = [];
+    private readonly Dictionary<string, SegmentedChoice> pickers = [];
     private readonly Dictionary<string, FrameworkElement> rows = [];
     private readonly Dictionary<string, TextBlock> captions = [];
     private readonly ColorField foreground, background;
     private readonly AspectRatioButton aspect = new();
     private readonly CheckBox aspectSwitch = new();
-    private readonly CheckBox linkColors = new() { Content = L.Get("Color.LinkColors"), MinHeight = 30 };
+    private readonly SegmentedChoice linkColors = SegmentedChoicePreviews.ColorStyle();
+    private (EditorTool Tool, SymbolKind Symbol)? colorStyleContext;
     private readonly ComboBox fontFamily = ToolOptionPreviews.FontPicker();
     private readonly Grid parameterGrid = new();
     private readonly PropertyChangeRegion linkedColorsRegion;
@@ -110,9 +111,14 @@ internal sealed class ToolOptionsPanel : UserControl
         rows.Add("Aspect", aspectRow); parameterGrid.Children.Add(aspectRow);
         aspect.Click += (_, _) => Change(p => p.ConstrainAspect = aspect.IsChecked == true);
         aspectSwitch.Click += (_, _) => Change(p => p.ConstrainAspect = aspectSwitch.IsChecked == true);
-        var linkRow = PropertyPanelLayout.BooleanRow(L.Get("Color.LinkColors"), linkColors);
+        var linkRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Color.Style")), linkColors);
+        AutomationProperties.SetName(linkColors, L.Get("Color.Style"));
         rows.Add("LinkColors", linkRow); parameterGrid.Children.Add(linkRow);
-        linkColors.Click += (_, _) => linkedColorsRegion.Change(() => { Change(p => p.Style.LinkColors = linkColors.IsChecked == true); Refresh(); });
+        linkColors.SelectionChanged += (_, _) =>
+        {
+            if (refreshing || linkColors.SelectedValue is not bool linked) return;
+            linkedColorsRegion.Change(() => { Change(p => p.Style.LinkColors = linked); Refresh(); });
+        };
         foreach (var symbol in Enum.GetValues<SymbolKind>())
         {
             var points = SymbolGeometry.Outline(symbol, 16, 16);
@@ -197,7 +203,12 @@ internal sealed class ToolOptionsPanel : UserControl
             if (IsApplicable("Size")) aspect.IsChecked = p.ConstrainAspect;
             if (IsApplicable("FontFamily")) ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
             if (IsApplicable("Aspect")) aspectSwitch.IsChecked = p.ConstrainAspect;
-            if (IsApplicable("LinkColors")) linkColors.IsChecked = p.Style.LinkColors;
+            if (IsApplicable("LinkColors"))
+            {
+                var context = (tool, p.Symbol);
+                if (colorStyleContext != context) { SegmentedChoicePreviews.UpdateColorStyle(linkColors, tool, p.Symbol); colorStyleContext = context; }
+                linkColors.SelectedValue = p.Style.LinkColors;
+            }
             if (IsApplicable("Foreground")) captions["Foreground"].Text = L.Get(capture ? "Snapshot.BorderColor" : tool == EditorTool.Number ? "Color.NumberShape" : shape ? p.Style.LinkColors ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
             if (IsApplicable("Background")) captions["Background"].Text = L.Get(tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
             SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);
@@ -285,7 +296,7 @@ internal sealed class ToolOptionsPanel : UserControl
     private void SetNumber(string key, double value)
     { if ((refreshing||IsVisible) && IsApplicable(key)) numericFields[key].Value = value; }
     private void SetPicker(string key, object value)
-    { if ((refreshing||IsVisible) && IsApplicable(key)) pickers[key].SelectedItem = pickers[key].Items.Cast<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, value)); }
+    { if ((refreshing||IsVisible) && IsApplicable(key)) pickers[key].SelectedValue = value; }
     private static void HighlightGallery(Panel gallery, object value)
     {
         foreach (var button in gallery.Children.OfType<Button>())
@@ -381,10 +392,11 @@ internal sealed class ToolOptionsPanel : UserControl
     }
     private void Picker(Panel body, string key, string label, (string Name, object Value)[] options, Action<ToolParameters, object> set)
     {
-        var picker = new OverlayComboBox { MinHeight = 32 };
-        foreach (var option in options) picker.Items.Add(new ComboBoxItem { Content = ToolOptionPreviews.Choice(option.Name, option.Value), Tag = option.Value });
+        var picker = new SegmentedChoice();
+        foreach (var option in options) SegmentedChoicePreviews.Add(picker, option.Name, option.Value);
+        AutomationProperties.SetName(picker, label);
         pickers.Add(key, picker); AddRow(body, key, label, picker);
-        picker.SelectionChanged += (_, _) => { if (!refreshing && picker.SelectedItem is ComboBoxItem item) Change(p => set(p, item.Tag)); };
+        picker.SelectionChanged += (_, _) => { if (!refreshing && picker.SelectedValue is { } value) Change(p => set(p, value)); };
     }
 
     private static (string, object)[] ArrowOptions() =>

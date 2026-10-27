@@ -39,11 +39,10 @@ internal static class PropertyVisualTests
         var inspector = new InspectorWindow(() => session);
         inspector.PrepareForShow();
         T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
-        var toggle = Field<PropertySwitch>(inspector, "linkColors");
-        check("mixed inspector color links use the common switch", toggle.IsChecked is null && ReferenceEquals(toggle.Style, Application.Current.Resources["CanvasPropertySwitch"]));
-        typeof(PropertySwitch).GetMethod("OnToggle", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(toggle, null);
-        toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); inspector.CompletePendingEdit();
-        check("mixed switch action chooses on for every selected layer and is undoable", session.SelectedElements().All(e => e.Style.LinkColors)
+        var toggle = Field<SegmentedChoice>(inspector, "linkColors");
+        check("mixed inspector color styles leave both native radio options unselected", toggle.SelectedIndex == -1 && toggle.Items.All(option => option.IsChecked != true));
+        toggle.SelectedValue = true; inspector.CompletePendingEdit();
+        check("mixed color-style selection applies unified colors to every layer and is undoable", session.SelectedElements().All(e => e.Style.LinkColors)
             && session.Undo() && session.SelectedElements().Select(e => e.Style.LinkColors).Distinct().Count() == 2);
         var numbers = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields");
         var properties = Field<StackPanel>(inspector, "propertyPanel");

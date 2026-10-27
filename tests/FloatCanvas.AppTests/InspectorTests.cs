@@ -160,7 +160,7 @@ internal static class InspectorTests
             var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
             var containers = (Dictionary<string, Wpf.FrameworkElement>)Field(inspector, "fieldContainers");
             var fields = (Dictionary<string, Controls.TextBox>)Field(inspector, "fields");
-            var picker = (Controls.ComboBox)Field(inspector, "arrowStyle");
+            var picker = (SegmentedChoice)Field(inspector, "arrowStyle");
             assert(style + " arrow properties are visible", containers["ArrowHeadStyle"].Visibility == Wpf.Visibility.Visible && containers["ArrowHeadSize"].Visibility == Wpf.Visibility.Visible);
             int undo = session.UndoCount; picker.SelectedIndex = (int)style; fields["ArrowHeadSize"].Text = "24"; Invoke(inspector, "Apply");
             assert(style + " arrow style and size apply atomically", session.Document.Elements[0].Style.ArrowHeadStyle == style && session.Document.Elements[0].Style.ArrowHeadSize == 24 && session.UndoCount == undo + 1);

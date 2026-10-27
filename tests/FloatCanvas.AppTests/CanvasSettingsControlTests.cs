@@ -53,7 +53,7 @@ internal static class CanvasSettingsControlTests
             var width = Field<NumericValueField>(window, "width");
             check("canvas grid uses foreground palette while background retains background palette",
                 Field<ColorField>(window, "gridColor").Role == ColorRole.Foreground && Field<ColorField>(window, "background").Role == ColorRole.Background);
-            check("canvas line patterns reuse icon and text previews", Field<ComboBox>(window, "pattern").Items.Cast<ComboBoxItem>().All(item =>
+            check("canvas line patterns reuse icon and text previews", Field<SegmentedChoice>(window, "pattern").Items.Cast<RadioButton>().All(item =>
                 item.Content is StackPanel panel && panel.Children[0] is Image && panel.Children[1] is TextBlock));
             check("canvas count sliders retain integer range and snap to whole cells", new[] { columns, rows }.All(field =>
                 field.Slider.Minimum == 1 && field.Slider.Maximum == 256 && field.Slider.TickFrequency == 1 && field.Slider.IsSnapToTickEnabled));

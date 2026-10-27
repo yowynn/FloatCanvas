@@ -982,8 +982,7 @@ internal sealed partial class DesktopSession : IDisposable
         }
         Recorder(L.Get("Settings.ToggleHotkey"), toggle, value => toggle = value);
         Recorder(L.Get("Settings.HideHotkey"), hide, value => hide = value);
-        var theme = new OverlayComboBox { ItemsSource = new[] { L.Get("Settings.SystemTheme"), L.Get("Settings.LightTheme"), L.Get("Settings.DarkTheme") }, MinHeight = 34,
-            SelectedIndex = _settings.Theme == "light" ? 1 : _settings.Theme == "dark" ? 2 : 0 };
+        var theme = SegmentedChoicePreviews.Appearance(_settings.Theme);
         AppSettingsWindow.AddSetting(general, L.Get("Settings.Theme"), theme);
         var shortcutHints = new CheckBox { Content = L.Get("Feedback3.Toolbar.ShowShortcutHints"),
             IsChecked = _settings.ShowToolShortcutHints, MinHeight = 28 };
@@ -1003,8 +1002,7 @@ internal sealed partial class DesktopSession : IDisposable
         ToolTipService.SetShowOnDisabled(startup, true);
         startup.ToolTip = L.Get(shell is null ? "Shell.TestProfileHint" : "Shell.StartupHint");
         AppSettingsWindow.AddSetting(system, L.Get("Shell.StartWithWindows"), startup);
-        var overlayMode = new OverlayComboBox { ItemsSource = new[] { L.Get("OverlaySafety.ModeAuto"), L.Get("OverlaySafety.ModeEnhanced"), L.Get("OverlaySafety.ModeDesktop") },
-            SelectedIndex = (int)OverlayBackendModes.Parse(_settings.OverlayMode), MinHeight = 34 };
+        var overlayMode = SegmentedChoicePreviews.OverlayMode(OverlayBackendModes.Parse(_settings.OverlayMode));
         AppSettingsWindow.AddSetting(system, L.Get("OverlaySafety.ModeSetting"), overlayMode,
             L.Get("OverlaySafety.ModeHint") + "\n" + L.Format("OverlaySafety.CurrentMode", L.Get(_host.UsesSystemInput ? "OverlaySafety.ModeEnhanced" : "OverlaySafety.ModeDesktop")));
         var preferGpu = AddRenderSettings(system);
@@ -1031,8 +1029,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (shell is null) registerFiles.ToolTip = L.Get("Shell.TestProfileHint");
         var fileRegistration = AppSettingsWindow.AddGroup(system, L.Get("Shell.RegisterProjectType"));
         fileRegistration.Children.Add(registerFiles); fileRegistration.Children.Add(registrationStatus);
-        var language = new OverlayComboBox { ItemsSource = new[] { L.Get("Settings.AutomaticLanguage"), L.Get("Settings.ChineseLanguage"), L.Get("Settings.EnglishLanguage") },
-            MinHeight = 34, SelectedIndex = L.NormalizePreference(_settings.Language) == "zh-CN" ? 1 : L.NormalizePreference(_settings.Language) == "en" ? 2 : 0 };
+        var language = SegmentedChoicePreviews.Language(_settings.Language);
         AppSettingsWindow.AddSetting(general, L.Get("Settings.Language"), language, L.Get("Settings.LanguageRestartHint"));
         var screenScope = new OverlayComboBox { MinHeight = 34 };
         var pendingScope = new MonitorScopeSelection(screenScope, MonitorScopeControl.Saved(_settings));

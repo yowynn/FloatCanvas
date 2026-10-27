@@ -73,7 +73,7 @@ internal static class PanelAcceptanceTests
             var container = (FrameworkElement)action.Parent;
             Console.WriteLine($"PANEL_ACTION_WIDTH initial={initial} container={container.ActualWidth}");
             Observe("canvas actions initially fill their parameter container", Math.Abs(initial - container.ActualWidth) < 2);
-            var projection = Field<CheckBox>(canvas, "projection");
+            var projection = Field<SegmentedChoice>(canvas, "projection");
             var projectionRow = (Grid)projection.Parent;
             var group = Field<PropertyChangeRegion>(canvas, "projectionOptions");
             var projectionBody = (StackPanel)group.Child;

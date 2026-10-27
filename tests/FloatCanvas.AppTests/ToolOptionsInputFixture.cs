@@ -105,15 +105,12 @@ internal static class ToolOptionsInputFixture
             check("first internal textbox press reaches the control without dismissing options", popup.IsVisible && innerDown == 1);
             check("production input ownership recognizes the numeric field after routing", (bool)Invoke("IsOptionsInput", box)!);
 
-            var combo = Get<Dictionary<string, ComboBox>>(panel, "pickers")["StrokePattern"];
-            combo.IsDropDownOpen = true; Pump();
-            var comboPopup = (Popup)combo.Template.FindName("PART_Popup", combo)!;
-            check("combobox dropdown surface belongs to its originating options control", (bool)Invoke("IsOptionsInput", comboPopup.Child)!);
-            var selectedItem = combo.Items.OfType<ComboBoxItem>().Single(item => Equals(item.Tag, editor.Style.StrokePattern));
-            check("combobox popup items are owned by the options through their item container", (bool)Invoke("IsOptionsInput", selectedItem)!);
+            var combo = Get<Dictionary<string, SegmentedChoice>>(panel, "pickers")["StrokePattern"];
+            var selectedItem = combo.Items.Single(item => Equals(item.Tag, editor.Style.StrokePattern));
+            check("segmented choices belong to their originating options control", (bool)Invoke("IsOptionsInput", combo)!);
+            check("segmented radio options share the same options input scope", (bool)Invoke("IsOptionsInput", selectedItem)!);
             Drive(selectedItem);
-            check("combobox item press does not dismiss its parent options popup", popup.IsVisible);
-            combo.IsDropDownOpen = false;
+            check("segmented option press does not dismiss its parent options popup", popup.IsVisible);
 
             var foreground = Get<ColorField>(panel, "foreground");
             Get<Button>(foreground, "button").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();

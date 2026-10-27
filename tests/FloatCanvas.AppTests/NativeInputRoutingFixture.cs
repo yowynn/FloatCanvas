@@ -284,19 +284,19 @@ internal static class NativeInputRoutingFixture
                 if (scenario is not ("popup-ownership" or "color-controls"))
                 {
                     if (editor.Session.Document.Elements.Count == 0) editor.Session.Add(new CanvasElement { Kind = ElementKind.Rectangle, Width = 80, Height = 60, Transform = Affine2D.Translation(100, 100) });
-                    var combo = Field<Dictionary<string, ComboBox>>(panel, "pickers")["StrokePattern"];
-                    // The standard dropdown is opened through its public state here. Physical
-                    // pointer hit testing is outside this private-keyboard routing fixture.
-                    Click(combo); combo.Focus(); combo.IsDropDownOpen = true; Pump();
+                    var combo = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers")["StrokePattern"];
+                    // Inline radio options retain the production input scope without a popup.
+                    var activeOption = combo.SelectedItem!;
+                    Click(activeOption); activeOption.Focus(); Pump();
                     var focused = Keyboard.FocusedElement as DependencyObject;
                     nint focusSource = focused is null ? 0 : ((HwndSource?)PresentationSource.FromDependencyObject(focused))?.Handle ?? 0;
                     nint parentSource = ((HwndSource?)PresentationSource.FromVisual(combo))?.Handle ?? 0;
-                    Console.WriteLine($"COMBO programmatically opened standard dropdown, native keyboard routing native={GetFocus():X} logical={focusSource:X} focused={focused?.GetType().Name} parent={popup.IsVisible} opened={combo.IsDropDownOpen}");
-                    check("the programmatically opened standard dropdown retains its own input scope", combo.IsDropDownOpen && popup.IsVisible && focusSource != 0 &&
+                    Console.WriteLine($"SEGMENT native keyboard routing native={GetFocus():X} logical={focusSource:X} focused={focused?.GetType().Name} parent={popup.IsVisible}");
+                    check("the inline single-choice group retains its own input scope", popup.IsVisible && focusSource != 0 &&
                         (bool)Invoke("IsOptionsInput", focused!)! && (GetFocus() == focusSource || GetFocus() == parentSource));
                     int originalIndex = combo.SelectedIndex; var transforms = editor.Session.Document.Elements.Select(e => e.Transform).ToArray();
                     Key(0x28, false); Key(0x28, true); Key(0x0D, false); Key(0x0D, true);
-                    check("the programmatically opened dropdown consumes native navigation and commit", combo.SelectedIndex != originalIndex && !combo.IsDropDownOpen && popup.IsVisible && editor.Tool == EditorTool.Rectangle && editor.Session.Document.Elements.Select(e => e.Transform).SequenceEqual(transforms));
+                    check("the inline single-choice group consumes native navigation and commit", combo.SelectedIndex != originalIndex && popup.IsVisible && editor.Tool == EditorTool.Rectangle && editor.Session.Document.Elements.Select(e => e.Transform).SequenceEqual(transforms));
                 }
                 if (scenario != "color-controls")
                 {
@@ -585,7 +585,7 @@ internal static class NativeInputRoutingFixture
         typeof(OverlayHost).GetField("_hideHotkey", PrivateInstance)!.SetValue(host, (HotkeyBinding?)settings.Hide);
         Invoke("ShowHotkeySettings"); Pump();
         var settingsWindow = app.Windows.Cast<Window>().Single(window => window is AppSettingsWindow);
-        SettingsWindowFixture.Descendants(settingsWindow).OfType<ComboBox>().Single(box => System.Windows.Automation.AutomationProperties.GetName(box) == FloatCanvas.Localization.AppText.Get("Settings.Theme")).SelectedIndex = 2;
+        SettingsWindowFixture.Descendants(settingsWindow).OfType<SegmentedChoice>().Single(box => System.Windows.Automation.AutomationProperties.GetName(box) == FloatCanvas.Localization.AppText.Get("Settings.Theme")).SelectedIndex = 2;
         ((AppSettingsWindow)settingsWindow).SaveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
         check("saving a new theme closes settings and retains the toolbar in editing", !settingsWindow.IsVisible && toolbar.IsVisible && host.IsEditing && UserSettings.Load().Theme == "dark");
         check("panel regression keeps native overlay surfaces bounded to the fixture", host.Diagnostics.All(pair => pair.Bounds.Width == 640 && pair.Bounds.Height == 360));

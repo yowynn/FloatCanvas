@@ -30,6 +30,7 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--segmented-choices-only")) { SegmentedChoiceTests.Run(Assert, args.SkipWhile(a => a != "--segmented-choices-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--property-changes-only")) { PropertyChangeRegionTests.Run(Assert, args.SkipWhile(a => a != "--property-changes-only").Skip(1).FirstOrDefault()); return 0; }
             if (args is ["--color-modal-receiver", var receiverOutput]) { ColorModalReceiver.Run(receiverOutput); return 0; }
             if (args.Contains("--color-modal-input-only")) { ColorModalInputTests.Run(Assert); return 0; }
@@ -275,6 +276,7 @@ internal static class Program
             WindowTitleTests.Run(Assert);
             AvatarMenuGestureTests.Run(Assert);
             PropertyVisualTests.Run(Assert);
+            SegmentedChoiceTests.Run(Assert);
             PropertyChangeRegionTests.Run(Assert);
             WindowSpacingTests.Run(Assert);
             TemporaryMoveControllerTests.Run(Assert);
