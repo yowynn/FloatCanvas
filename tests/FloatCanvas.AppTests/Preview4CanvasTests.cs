@@ -36,10 +36,10 @@ internal static class Preview4CanvasTests
             check("automatic row and column counts occupy their corresponding paired slots", ReferenceEquals(rows.Parent, Field<TextBox>(window, "lockedRows").Parent) &&
                 ReferenceEquals(columns.Parent, Field<TextBox>(window, "lockedColumns").Parent) && !ReferenceEquals(rows.Parent, columns.Parent));
             var actions = Field<FrameworkElement>(window, "perspectiveActions");
-            window.Refresh(new(), false);
+            window.Refresh(new());
             window.PrepareForShow();
             check("disabled perspective hides adjust and reset actions", actions.Visibility == Visibility.Collapsed);
-            window.Refresh(new() { Projection = custom }, false);
+            window.Refresh(new() { Projection = custom });
             window.PrepareForShow();
             check("enabled perspective shows adjust and reset actions", actions.Visibility == Visibility.Visible);
             MonitorInfo main = new("main", new(0,0,1920,1080), new(0,0,1920,1040),96,96,true);

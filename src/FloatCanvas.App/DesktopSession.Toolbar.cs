@@ -252,7 +252,7 @@ internal sealed partial class DesktopSession
     private void ActivateTool(EditorTool tool)
     {
         if (DocumentOperationBusy) return;
-        if (tool != _editor.Tool) EndCanvasCalibration();
+        if (tool != _editor.Tool) EndCanvasCalibration(hidePanel: true);
         if (tool == EditorTool.Crop && !_editor.CanCropSelection) return;
         if (tool == EditorTool.CaptureRegion && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
         var family = ToolFamily(tool); var currentFamily = ToolFamily(_editor.Tool);

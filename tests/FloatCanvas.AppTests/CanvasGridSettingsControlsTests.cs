@@ -26,10 +26,10 @@ internal static class CanvasGridSettingsControlsTests
             window.GridSizeLockChanged += _ => lockEdits++;
             window.GridSizeChanged += value =>
             {
-                edits.Add(value); current.Grid.FlatCellSize = value; window.Refresh(current, false); window.PrepareForShow();
+                edits.Add(value); current.Grid.FlatCellSize = value; window.Refresh(current); window.PrepareForShow();
             };
             window.PinChanged += () => pinEdits++;
-            window.Refresh(current, false);
+            window.Refresh(current);
             window.PrepareForShow();
             check("flat canvas options expose one size field and hide perspective counts and lock", flat.Visibility == Visibility.Visible &&
                 counts.Visibility == Visibility.Collapsed && Field<CheckBox>(window, "gridSizeLock").Visibility == Visibility.Collapsed);
@@ -52,18 +52,18 @@ internal static class CanvasGridSettingsControlsTests
             }
             for (int iteration = 0; iteration < 100; iteration++)
             {
-                current.Projection.Enabled = true; window.Refresh(current, false); window.PrepareForShow();
-                current.Projection.Enabled = false; window.Refresh(current, false); window.PrepareForShow();
+                current.Projection.Enabled = true; window.Refresh(current); window.PrepareForShow();
+                current.Projection.Enabled = false; window.Refresh(current); window.PrepareForShow();
             }
             check("mode refresh roundtrips do not feed display values into either grid setting", edits.Count == 1 && countEdits == 0 && lockEdits == 0 &&
                 size.TryGetValue(out double restored) && restored == changed && current.Projection.Columns == 8 && current.Projection.Rows == 6);
-            current.Projection.Enabled = true; window.Refresh(current, false);
+            current.Projection.Enabled = true; window.Refresh(current);
             window.PrepareForShow();
             check("perspective canvas options restore count fields and hide the flat size editor", counts.Visibility == Visibility.Visible && flat.Visibility == Visibility.Collapsed &&
                 Field<CheckBox>(window, "gridSizeLock").Visibility == Visibility.Visible && columns.Value == 8 && rows.Value == 6);
             size.Slider.Value = 92; size.Input.Text = "93.75"; SendEnter(size.Input);
             check("hidden flat size edits cannot escape while perspective is enabled", edits.Count == 1 && current.Grid.FlatCellSize == changed);
-            current.Projection.Enabled = false; current.Grid.FlatCellSize = .125; window.Refresh(current, false); window.PrepareForShow(); SendEnter(size.Input);
+            current.Projection.Enabled = false; current.Grid.FlatCellSize = .125; window.Refresh(current); window.PrepareForShow(); SendEnter(size.Input);
             check("opening or leaving a legacy sub-unit size preserves the saved value without silently clamping", current.Grid.FlatCellSize == .125 && edits.Count == 1 &&
                 size.Input.Text == .125.ToString("G", CultureInfo.CurrentCulture));
             check("canvas configuration starts with an unpinned tool-options policy", !window.IsPinned && pinEdits == 0);

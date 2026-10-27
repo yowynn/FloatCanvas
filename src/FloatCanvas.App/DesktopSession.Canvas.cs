@@ -17,6 +17,10 @@ internal sealed partial class DesktopSession
     private bool _canvasSafetyPromptOpen;
     private bool _synchronizingCanvasTool;
     private SceneDocument? _canvasOriginDocument;
+    private double _canvasGuideOpacity = 1;
+    private Window[] _canvasPlacementWindows = [];
+    private EditorSession? _canvasPlacementSession;
+    private long _canvasPlacementEditingVersion;
     private bool IsCanvasSettingsOpen => _canvasSettingsWindow?.IsVisible == true;
 
     private void InitializeCanvasTool()
@@ -58,17 +62,14 @@ internal sealed partial class DesktopSession
             {
                 ApplyCanvasDepthPriorityOcclusion(Active, window.DisplayedSettings, enabled,
                     !DocumentOperationBusy && _host.IsEditing, ChangeCanvas);
-                window.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+                window.Refresh(Active.Document.Canvas);
             };
             window.GridCountsChanged += SetCanvasGridCounts;
             window.GridSizeChanged += SetCanvasGridSize;
             window.GridSizeLockChanged += SetCanvasGridSizeLock;
-            window.CalibrationToggled += () =>
-            {
-                if (_canvasCalibration.IsActive) ActivateTool(EditorTool.Select); else BeginCanvasCalibration();
-            };
             window.ResetDisplayRequested += ResetCanvasProjectionOnDisplay;
             window.FourPointsRequested += BeginCanvasFourPoints;
+            window.GuideOpacityChanged += opacity => { _canvasGuideOpacity = opacity; RequestRender(); };
             window.GridVisibilityChanged += visible => ChangeCanvas(c =>
             {
                 EnsureCanvasReference(c); c.Grid.Visible = visible;
@@ -84,7 +85,8 @@ internal sealed partial class DesktopSession
             window.Closed += (_, _) => route.Dispose();
         }
         RefreshCanvasReferenceMonitors();
-        _canvasSettingsWindow.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+        _canvasSettingsWindow.Refresh(Active.Document.Canvas);
+        _canvasSettingsWindow.RefreshGuideOpacity(_canvasGuideOpacity);
         _canvasSettingsWindow.PrepareForShow();
         ShowAnchoredToolWindow(_canvasSettingsWindow, alreadyOpen, () => PositionToolOptions(_canvasSettingsWindow, _canvasStateButton));
     }
@@ -111,11 +113,11 @@ internal sealed partial class DesktopSession
 
     private void QueueCanvasSettingsFocusCheck()
     {
-        if (_disposed || !_host.IsEditing) return;
+        if (_disposed || !_host.IsEditing || _canvasPlacementSession is not null) return;
         long version = _host.EditingSessionVersion;
         _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
-            if (_disposed || !_host.IsEditing || _host.EditingSessionVersion != version || _host.IsInputMethodSwitchPending ||
+            if (_disposed || !_host.IsEditing || _canvasPlacementSession is not null || _host.EditingSessionVersion != version || _host.IsInputMethodSwitchPending ||
                 _canvasSettingsWindow is not { IsVisible: true, IsPinned: false, IsActive: false } settings) return;
             if (!settings.IsColorPickerOpen && !IsCanvasSettingsInput(Keyboard.FocusedElement as DependencyObject) &&
                 !IsCanvasSettingsInput(Mouse.DirectlyOver as DependencyObject) && !_toolbar.IsActive &&
@@ -245,7 +247,7 @@ internal sealed partial class DesktopSession
         catch (Exception ex) when (ex is ArgumentException or System.IO.IOException or System.IO.InvalidDataException)
         {
             UpdateStatus(ex.Message);
-            _canvasSettingsWindow?.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+            _canvasSettingsWindow?.Refresh(Active.Document.Canvas);
             return;
         }
         EndCanvasCalibration();
@@ -308,23 +310,14 @@ internal sealed partial class DesktopSession
         return reset;
     }
 
-    private void BeginCanvasCalibration()
-    {
-        if (DocumentOperationBusy || !_host.IsEditing) return;
-        _editor.Cancel(); CloseImageDrop(); CancelSnapshotCapture("CanvasCalibration"); CancelLivePreparation();
-        SetCanvasProjection(true);
-        if (!Active.Document.Canvas.Projection.Enabled) return;
-        if (_editor.Tool != EditorTool.Canvas) SwitchToolState(EditorTool.Canvas);
-        SynchronizeCanvasTool();
-        UpdateStatus(L.Get("Canvas.MultiMonitorHelp"));
-        RequestRender();
-    }
-
-    private void EndCanvasCalibration(bool hidePanel = false)
+    private void EndCanvasCalibration(bool hidePanel = false, bool restoreWindows = true)
     {
         _canvasGridScale?.Cancel();
         _calibrationSession = null;
         if (_canvasCalibration.IsActive) _canvasCalibration.End();
+        if (!restoreWindows && !_disposed && _canvasPlacementSession is not null)
+            _windowCoordinator?.RememberPinnedForResume(_canvasPlacementWindows);
+        RestoreCanvasPlacementWindows(restoreWindows, restoreToolWindows: !hidePanel);
         if (hidePanel) DismissCanvasSettings();
     }
 
@@ -333,9 +326,45 @@ internal sealed partial class DesktopSession
         if(DocumentOperationBusy||!_host.IsEditing)return;
         _editor.Cancel();CloseImageDrop();CancelSnapshotCapture("CanvasFourPoints");CancelLivePreparation();
         if (_editor.Tool != EditorTool.Canvas) SwitchToolState(EditorTool.Canvas);
+        if (_canvasPlacementSession is null)
+        {
+            _canvasPlacementSession = Active;
+            _canvasPlacementEditingVersion = _host.EditingSessionVersion;
+            _canvasPlacementWindows = _app.Windows.Cast<Window>().Where(window => window.IsVisible && !ReferenceEquals(window, _toolbar)).ToArray();
+            _windowCoordinator?.HideTemporarily(_canvasPlacementWindows);
+        }
         _calibrationSession=Active;
         _canvasCalibration.BeginPlacement(Active);
         UpdateStatus(L.Get("Canvas.FourPointsHint"));RequestRender();
+    }
+
+    private void CancelCanvasFourPoints()
+    {
+        _canvasCalibration.End();
+        RestoreCanvasPlacementWindows();
+        SynchronizeCanvasTool();
+    }
+
+    private void RestoreCanvasPlacementWindows(bool restore = true, bool restoreToolWindows = true)
+    {
+        var windows = _canvasPlacementWindows;
+        var expected = _canvasPlacementSession;
+        long version = _canvasPlacementEditingVersion;
+        _canvasPlacementWindows = []; _canvasPlacementSession = null;
+        if (!restore || expected is null || _disposed || !_host.IsEditing ||
+            _host.EditingSessionVersion != version || !ReferenceEquals(expected, Active)) return;
+        using var transition = _host.BeginInternalWindowTransition();
+        foreach (var window in windows)
+        {
+            // A window can be closed, or its document replaced, while the canvas owns input.
+            if (!_app.Windows.Cast<Window>().Contains(window)) continue;
+            if (!restoreToolWindows && (ReferenceEquals(window, _canvasSettingsWindow) || ReferenceEquals(window, _toolOptionsWindow))) continue;
+            if (ReferenceEquals(window, _toolOptionsWindow)) _toolOptionsPanel.PrepareForShow();
+            else if (window is InspectorWindow inspector) inspector.PrepareForShow();
+            else if (window is CanvasSettingsWindow canvas) canvas.PrepareForShow();
+            else if (window is LayersWindow layers) layers.PrepareForShow();
+            SessionWindowCoordinator.Show(window);
+        }
     }
 
     private void ValidateCanvasCalibrationSession()
@@ -406,7 +435,11 @@ internal sealed partial class DesktopSession
         else if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left) _canvasCalibration.Down(point);
         else if (e.Kind == OverlayPointerKind.Move) _canvasCalibration.Move(point, e.Modifiers);
         else if (e.Kind == OverlayPointerKind.Up && e.Button == OverlayMouseButton.Left)
-        { _canvasCalibration.Move(point, e.Modifiers); _canvasCalibration.Up(); }
+        {
+            _canvasCalibration.Move(point, e.Modifiers); _canvasCalibration.Up();
+            if (!_canvasCalibration.IsPlacing && !_canvasCalibration.IsDragging && !_canvasCalibration.IsAwaitingResolution)
+                RestoreCanvasPlacementWindows();
+        }
         return true;
     }
 
@@ -433,7 +466,13 @@ internal sealed partial class DesktopSession
                 // A dialog/focus failure must never implicitly apply a destructive resolution.
                 _canvasCalibration.CancelDrag(); UpdateStatus(ex.Message);
             }
-            finally { _canvasSafetyPromptOpen = false; RequestRender(); ScheduleRecovery(); }
+            finally
+            {
+                _canvasSafetyPromptOpen = false;
+                if (!_canvasCalibration.IsPlacing && !_canvasCalibration.IsDragging && !_canvasCalibration.IsAwaitingResolution)
+                    RestoreCanvasPlacementWindows();
+                RequestRender(); ScheduleRecovery();
+            }
         }));
     }
 

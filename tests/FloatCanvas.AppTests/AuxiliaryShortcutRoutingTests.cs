@@ -39,7 +39,7 @@ internal static class AuxiliaryShortcutRoutingTests
             check("StampLibrary exposes its production fallback command route", stampRoute);
             if (!canvasRoute || !stampRoute) return;
 
-            var canvasSource = Field<Button>(canvas, "calibrate");
+            var canvasSource = Field<Button>(canvas, "fourPoints");
             foreach (var key in new[] { Key.B, Key.D1, Key.D0, Key.Enter, Key.Delete, Key.Right })
                 ExpectRoute("CanvasSettings", canvasSource, key, canvasCommands);
             SetModifiers(ModifierKeys.Control);

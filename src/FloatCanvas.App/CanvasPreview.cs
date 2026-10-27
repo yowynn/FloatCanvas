@@ -10,7 +10,14 @@ namespace FloatCanvas.App;
 
 // Contexts contain identity tokens only; the worker never reads live editor or window objects.
 internal sealed record CanvasPreviewContext(object Session, object Monitors, PointD Origin,
-    bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0);
+    bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1)
+{
+    // Editing guides may lag one worker frame; never discard the matching base
+    // scene while they update. Epoch still rejects a completed A→B→A transition.
+    internal bool HasSameContent(CanvasPreviewContext other) => Equals(Session, other.Session) && Equals(Monitors, other.Monitors) &&
+        Origin == other.Origin && Hidden == other.Hidden && Equals(DocumentEpoch, other.DocumentEpoch) &&
+        Equals(VisibilityEpoch, other.VisibilityEpoch) && Epoch == other.Epoch;
+}
 
 internal sealed class CanvasPreviewSnapshot : IDisposable
 {
@@ -90,18 +97,17 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                 try
                 {
                     canvas.Translate((float)snapshot.Context.Origin.X, (float)snapshot.Context.Origin.Y);
-                    if (snapshot.Context.Calibration)
-                        renderer.DrawCalibrationOnClearedRasterTarget(surface, document, assets, !snapshot.Context.Placing);
-                    else cache.DrawOnClearedRasterTarget(surface, document, assets, snapshot.Revision, snapshot.Transaction,
+                    cache.DrawOnClearedRasterTarget(surface, document, assets, snapshot.Revision, snapshot.Transaction,
                         snapshot.First, snapshot.Last, snapshot.BypassCache, snapshot.SceneIdentity);
+                    if (snapshot.Context.Calibration && !snapshot.Context.Placing)
+                        renderer.DrawCalibrationGuides(canvas, document, snapshot.Context.GuideOpacity);
                     if (snapshot.PlacementScene is { } placement && snapshot.PlacementClip is { Count: 4 } quad)
                     {
                         using var builder = new SKPathBuilder();
                         builder.MoveTo((float)quad[0].X, (float)quad[0].Y);
                         foreach (var point in quad.Skip(1)) builder.LineTo((float)point.X, (float)point.Y);
                         builder.Close(); using var clip = builder.Detach(); canvas.ClipPath(clip);
-                        renderer.Draw(canvas, placement, assets, includeBackground: false,
-                            includeCanvasBackground: false, calibrationReference: true);
+                        renderer.DrawCalibrationGuides(canvas, placement, snapshot.Context.GuideOpacity);
                     }
                 }
                 finally { canvas.RestoreToCount(saved); }

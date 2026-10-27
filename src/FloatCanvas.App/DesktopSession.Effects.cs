@@ -114,14 +114,21 @@ internal sealed partial class DesktopSession
 
     private void BeginEyedropper(ColorField field)
     {
+        if (_eyedropper is not null) return;
         var cursorHandle = EyedropperCursor.Handle;
         EndEyedropper(restore: false);
         _editor.Cancel(); _eyedropper = field;
-        _eyedropperPickerSuspension = field.SuspendPicker();
-        _eyedropperWindows = _app.Windows.Cast<System.Windows.Window>().Where(window => window.IsVisible && !ReferenceEquals(window, _toolbar)).ToArray();
+        _eyedropperSession = Active; _eyedropperEditingVersion = _host.EditingSessionVersion;
+        // Color panels are owned windows. Suspend them before hiding their source
+        // surfaces, otherwise their owner-visibility handler closes them permanently.
+        var visibleWindows = _app.Windows.Cast<System.Windows.Window>().Where(window => window.IsVisible).ToArray();
+        var openPickers = visibleWindows
+            .SelectMany(OpenColorPickers).Append(field).Where(picker => picker.IsPickerOpen).Distinct()
+            .OrderBy(picker => ReferenceEquals(picker, field)).ToArray();
+        _eyedropperPickerSuspensions = openPickers.Select(picker => picker.SuspendPicker()).ToArray();
+        _eyedropperWindows = visibleWindows.Where(window => window.IsVisible && !ReferenceEquals(window, _toolbar)).ToArray();
         _eyedropperOwner = System.Windows.Window.GetWindow(field);
-        using (var transition = _host.BeginInternalWindowTransition())
-            foreach (var window in _eyedropperWindows) SessionWindowCoordinator.Hide(window);
+        _windowCoordinator?.HideTemporarily(_eyedropperWindows);
         _host.SetPointerCursor(cursorHandle);
         var cursor = System.Windows.Forms.Cursor.Position;
         _eyedropperPoint = new(cursor.X,cursor.Y);
@@ -134,12 +141,21 @@ internal sealed partial class DesktopSession
     }
 
     private System.Windows.Window[] _eyedropperWindows = [];
-    private IDisposable? _eyedropperPickerSuspension;
+    private ColorField.PickerSuspension[] _eyedropperPickerSuspensions = [];
+    private EditorSession? _eyedropperSession;
+    private long _eyedropperEditingVersion;
     private System.Windows.Window? _eyedropperOwner;
     private System.Windows.Threading.DispatcherTimer? _eyedropperTimer;
     private OverlayPoint _eyedropperPoint;
     private uint? _eyedropperPreview;
     private bool _eyedropperPicked;
+
+    private static IEnumerable<ColorField> OpenColorPickers(System.Windows.DependencyObject root)
+    {
+        if (root is ColorField { IsPickerOpen: true } field) yield return field;
+        foreach (var child in System.Windows.LogicalTreeHelper.GetChildren(root).OfType<System.Windows.DependencyObject>())
+            foreach (var picker in OpenColorPickers(child)) yield return picker;
+    }
 
     private bool HandleEyedropperPointer(OverlayPointerEvent pointer)
     {
@@ -171,22 +187,29 @@ internal sealed partial class DesktopSession
         _host.SetPointerCursor(0);
         var windows = _eyedropperWindows; _eyedropperWindows = [];
         var owner = _eyedropperOwner; _eyedropperOwner = null;
-        var pickerSuspension = _eyedropperPickerSuspension; _eyedropperPickerSuspension = null;
-        if (restore && field is not null && !_disposed && _host.IsEditing && _host.IsVisible)
+        var pickerSuspensions = _eyedropperPickerSuspensions; _eyedropperPickerSuspensions = [];
+        var expected = _eyedropperSession; _eyedropperSession = null;
+        bool canRestore = restore && field is not null && !_disposed && _host.IsEditing && _host.IsVisible &&
+            _host.EditingSessionVersion == _eyedropperEditingVersion && ReferenceEquals(expected, Active);
+        using var transition = _host.BeginInternalWindowTransition();
+        try
         {
-            foreach (var window in windows)
+            if (canRestore)
             {
-                if (ReferenceEquals(window, _toolOptionsWindow)) _toolOptionsPanel.PrepareForShow();
-                else if(window is InspectorWindow inspector)inspector.PrepareForShow();
-                else if(window is CanvasSettingsWindow canvas)canvas.PrepareForShow();
-                else if(window is LayersWindow layers)layers.PrepareForShow();
-                SessionWindowCoordinator.Show(window);
+                foreach (var window in windows)
+                {
+                    if (!_app.Windows.Cast<System.Windows.Window>().Contains(window)) continue;
+                    if (ReferenceEquals(window, _toolOptionsWindow)) _toolOptionsPanel.PrepareForShow();
+                    else if(window is InspectorWindow inspector)inspector.PrepareForShow();
+                    else if(window is CanvasSettingsWindow canvas)canvas.PrepareForShow();
+                    else if(window is LayersWindow layers)layers.PrepareForShow();
+                    SessionWindowCoordinator.Show(window);
+                }
+                if (owner is { IsVisible: true, IsEnabled: true }) SessionWindowCoordinator.Show(owner,true);
             }
-            if (owner is { IsVisible: true, IsEnabled: true }) SessionWindowCoordinator.Show(owner,true);
-            pickerSuspension?.Dispose();
-            if (field.IsVisible && !field.IsPickerOpen) field.OpenPicker(focus: true);
+            else if (!_disposed) _windowCoordinator?.RememberPinnedForResume(windows);
         }
-        else { pickerSuspension?.Dispose(); field?.ClosePicker(); }
+        finally { foreach (var suspension in pickerSuspensions) suspension.Complete(canRestore); }
         RequestRender();
     }
 

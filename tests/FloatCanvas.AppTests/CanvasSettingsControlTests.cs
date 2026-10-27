@@ -60,7 +60,7 @@ internal static class CanvasSettingsControlTests
             int countEdits = 0, widthEdits = 0;
             window.GridCountsChanged += (_, _) => countEdits++;
             window.GridWidthChanged += _ => widthEdits++;
-            window.Refresh(new() { Projection = new() { Enabled = true } }, false);
+            window.Refresh(new() { Projection = new() { Enabled = true } });
             window.PrepareForShow();
             check("canvas numeric refresh creates no semantic edits", countEdits == 0 && widthEdits == 0);
             columns.Input.Text = "9.5";
@@ -96,14 +96,14 @@ internal static class CanvasSettingsControlTests
         window.GridSizeLockChanged += value => { lockEdits++; requestedLock = value; };
         window.GridCountsChanged += (_, _) => countEdits++;
         var settings = new CanvasSettings { Projection = new() { Enabled = true, Columns = 8, Rows = 6, CellSize = 100 } };
-        window.Refresh(settings, false);
+        window.Refresh(settings);
         window.PrepareForShow();
         check("grid size lock defaults off with original integer controls visible", toggle.IsChecked == false && toggle.IsEnabled &&
             columns.Visibility == Visibility.Visible && rows.Visibility == Visibility.Visible && lockedColumns.Visibility == Visibility.Collapsed);
         toggle.IsChecked = true; toggle.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         check("grid size lock uses its own single semantic event", lockEdits == 1 && requestedLock == true && countEdits == 0);
         settings.Projection.LockedGridCellSize = 100; settings.Projection.CellSize = 105.1234;
-        window.Refresh(settings, true);
+        window.Refresh(settings);
         window.PrepareForShow();
         check("locked count controls are read-only and preserve fractional coverage", lockedColumns.IsReadOnly && lockedRows.IsReadOnly &&
             lockedColumns.Text == 8.41.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture) &&
@@ -123,7 +123,7 @@ internal static class CanvasSettingsControlTests
         check("tiny locked coverage remains positive instead of rounding to zero", double.Parse(lockedColumns.Text, System.Globalization.CultureInfo.CurrentCulture) > 0 &&
             double.Parse(lockedRows.Text, System.Globalization.CultureInfo.CurrentCulture) > 0);
         settings.Projection.Enabled = false;
-        window.Refresh(settings, false);
+        window.Refresh(settings);
         window.PrepareForShow();
         check("turning perspective off retains dormant lock state while displaying only flat grid size", toggle.IsChecked == true &&
             toggle.Visibility == Visibility.Collapsed && Field<Grid>(window, "countPair").Visibility == Visibility.Collapsed &&
@@ -131,7 +131,7 @@ internal static class CanvasSettingsControlTests
         toggle.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         check("disabled perspective cannot emit a grid lock edit", lockEdits == 1);
         settings.Projection.Enabled = true; settings.Projection.CellSize = 105.1234; settings.Projection.LockedGridCellSize = null;
-        window.Refresh(settings, false);
+        window.Refresh(settings);
         window.PrepareForShow();
         check("unlocking restores the original reference counts and integer sliders", toggle.IsChecked == false && columns.Value == 8 && rows.Value == 6 &&
             columns.Visibility == Visibility.Visible && lockedColumns.Visibility == Visibility.Collapsed && countEdits == 0);

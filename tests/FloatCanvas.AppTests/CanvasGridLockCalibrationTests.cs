@@ -29,7 +29,7 @@ internal static class CanvasGridLockCalibrationTests
         var columns = (TextBox)typeof(CanvasSettingsWindow).GetField("lockedColumns", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(panel)!;
         try
         {
-            panel.Refresh(document.Canvas, true);
+            panel.Refresh(document.Canvas);
             panel.PrepareForShow();
             controller.Changed += () => { panel.RefreshGridCounts(session.Document.Canvas.Projection); panel.PrepareForShow(); };
             controller.Begin(session);

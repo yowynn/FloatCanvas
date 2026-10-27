@@ -77,16 +77,16 @@ internal static class InspectorValidationLifecycleTests
             check("offscreen inspector lifecycle destroys its own native source",handle!=0&&!IsWindow(handle));
         }
         var canvas=new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
-        canvas.Refresh(new() {Projection=new() {Enabled=true}},false);
+        canvas.Refresh(new() {Projection=new() {Enabled=true}});
         canvas.PrepareForShow();
         int canvasEdits=0;canvas.GridCountsChanged+=(_,_)=>canvasEdits++;canvas.GridWidthChanged+=_=>canvasEdits++;
         var columns=Field<NumericValueField>(canvas,"columns");string originalColumns=columns.Input.Text;columns.Input.Text="invalid";
         typeof(CanvasSettingsWindow).GetMethod("CommitCounts",Private)!.Invoke(canvas,null);
-        canvas.Refresh(canvas.DisplayedSettings!,false);canvas.PrepareForShow();
+        canvas.Refresh(canvas.DisplayedSettings!);canvas.PrepareForShow();
         check("preparing hidden Canvas settings restores invalid counts without edits",columns.Input.Text==originalColumns&&canvasEdits==0);
         var width=Field<NumericValueField>(canvas,"width");string originalWidth=width.Input.Text;width.Input.Text="65";
         width.Input.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice,Environment.TickCount,width.Input,null) {RoutedEvent=Keyboard.LostKeyboardFocusEvent});
-        canvas.Refresh(canvas.DisplayedSettings!,false);canvas.PrepareForShow();
+        canvas.Refresh(canvas.DisplayedSettings!);canvas.PrepareForShow();
         check("preparing hidden Canvas settings restores invalid width without edits",width.Input.Text==originalWidth&&canvasEdits==0&&new WindowInteropHelper(canvas).Handle==0);
         canvas.CloseForDispose();
         report("Inspector validation lifecycle has no failures ("+failures.Count+")",failures.Count==0);

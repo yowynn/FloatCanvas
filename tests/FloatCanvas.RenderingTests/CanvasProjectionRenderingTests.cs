@@ -37,10 +37,10 @@ internal static class CanvasProjectionRenderingTests
         scene.Canvas.BackgroundColor = 0xFF112233; scene.LayerOpacity = .25;
         using (var opaque = SKBitmap.Decode(renderer.ExportPng(scene, assets)))
         using (var transparent = Pixels(renderer, scene, assets))
-            check("canvas color is independent of layer opacity and explicit transparent export removes it", opaque.GetPixel(5, 5) == new SKColor(0xFF112233) && transparent.GetPixel(5, 5).Alpha == 0);
+            check("canvas color follows global opacity and explicit transparent export removes it", opaque.GetPixel(5, 5).Alpha == 64 && transparent.GetPixel(5, 5).Alpha == 0);
         var capture = renderer.ExportSelectionPng(scene, assets, new CaptureSelection(CaptureShape.Rectangle, CaptureSource.CanvasOnly, new(0, 0, 30, 20), [], 0, 0), false);
         using (var pixels = SKBitmap.Decode(capture.PngBytes))
-            check("canvas-only capture retains the user's canvas color", pixels.GetPixel(5, 5) == new SKColor(0xFF112233));
+            check("canvas-only capture retains the canvas color at its global opacity", pixels.GetPixel(5, 5).Alpha == 64);
         scene.Canvas.BackgroundColor = 0; scene.LayerOpacity = .6;
         scene.Canvas.Grid.Visible = true; scene.Canvas.Grid.Color = 0xFF00FF00; scene.Canvas.Grid.Width = 2;
         scene.Elements = [Box(30, 40, 70, 60, 0x90FF0000)];
@@ -174,7 +174,7 @@ internal static class CanvasProjectionRenderingTests
             check("visible configured grid further subdues reference opacity", MaximumGuideAlpha(subdued) + 10 < standaloneAlpha);
         scene.Canvas.Grid.Width = 3;
         using (var configured = Draw(true))
-            check("configured grid draws above calibration reference", Enumerable.Range(Math.Max(0, x - 2), 5).Any(px => { var p = configured.GetPixel(px, 3); return p.Red > 200 && p.Green < 30; }));
+            check("configured grid remains visible beneath the thin calibration reference", Enumerable.Range(Math.Max(0, x - 2), 5).Any(px => { var p = configured.GetPixel(px, 3); return p.Red > 200 && p.Green < 30; }));
         scene.Canvas.Grid.Visible = false;
         scene.Canvas.Projection = CanvasCalibration.CreateInitial(scene.Viewport, 256, 256);
         scene.Canvas.Projection.Enabled = true;

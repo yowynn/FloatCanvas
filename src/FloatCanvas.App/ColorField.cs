@@ -202,22 +202,24 @@ internal sealed class ColorField : UserControl
         CommitPickerDraft();
         popupDisplay.IsOpen = false;
     }
-    internal IDisposable SuspendPicker()
+    internal PickerSuspension SuspendPicker()
     {
         pickerSuspensions++;
         var retention = PopupChildDialog.RetainFor(picker);
         var suspension = popupDisplay.Suspend();
-        return new PickerSuspension(() =>
+        return new PickerSuspension(restore =>
         {
             pickerSuspensions--;
+            if (!restore) popupDisplay.IsOpen = false;
             suspension?.Dispose();
             retention?.Dispose();
         });
     }
-    private sealed class PickerSuspension(Action resume) : IDisposable
+    internal sealed class PickerSuspension(Action<bool> release) : IDisposable
     {
-        private Action? action = resume;
-        public void Dispose() { var current = action; action = null; current?.Invoke(); }
+        private Action<bool>? action = release;
+        internal void Complete(bool restore) { var current = action; action = null; current?.Invoke(restore); }
+        public void Dispose() => Complete(restore: true);
     }
     public bool TryClosePicker()
     {

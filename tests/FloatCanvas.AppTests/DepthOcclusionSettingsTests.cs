@@ -20,13 +20,13 @@ internal static class DepthOcclusionSettingsTests
         var session = new EditorSession();
         var editor = new EditorController(session);
         var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
-        window.Refresh(session.Document.Canvas, false);
+        window.Refresh(session.Document.Canvas);
         window.PrepareForShow();
         window.DepthPriorityOcclusionChanged += value =>
         {
             DesktopSession.ApplyCanvasDepthPriorityOcclusion(session, window.DisplayedSettings, value, allowed,
                 change => session.Execute(L.Get("Canvas.Title"), document => change(document.Canvas)));
-            window.Refresh(session.Document.Canvas, false);
+            window.Refresh(session.Document.Canvas);
             window.PrepareForShow();
         };
         var layers = new LayersWindow(() => session);
@@ -38,7 +38,7 @@ internal static class DepthOcclusionSettingsTests
         check("depth occlusion defaults off and its option is hidden on a flat canvas", !session.Document.Canvas.DepthPriorityOcclusion && option.Visibility == Wpf.Visibility.Collapsed);
         Click(true);
         check("hidden flat-canvas option cannot activate depth occlusion", !session.Document.Canvas.DepthPriorityOcclusion && session.UndoCount == 0 && option.IsChecked == false);
-        session.Document.Canvas.Projection.Enabled = true; window.Refresh(session.Document.Canvas, false);
+        session.Document.Canvas.Projection.Enabled = true; window.Refresh(session.Document.Canvas);
         window.PrepareForShow();
         check("perspective canvas exposes localized depth option in Canvas settings", option.Visibility == Wpf.Visibility.Visible && Wpf.Automation.AutomationProperties.GetName(option) == L.Get("Canvas.DepthPriorityOcclusion") && ((Controls.Grid)option.Parent).Children.OfType<Controls.TextBlock>().Any(label => label.Text == L.Get("Canvas.DepthPriorityOcclusion")) && option.IsChecked == false);
         var savedFingerprint = Fingerprint(); long beforeRevision = session.SceneRevision; int notifications = 0;
@@ -54,15 +54,15 @@ internal static class DepthOcclusionSettingsTests
             session.Document.Viewport, session.Document.Viewport).DepthPriorityOcclusion);
         Click(true);
         check("unchanged depth option creates no history entry", session.UndoCount == 1 && session.SceneRevision == beforeRevision + 1);
-        session.Undo(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+        session.Undo(); window.Refresh(session.Document.Canvas); window.PrepareForShow();
         check("depth option undo restores checkbox and saved fingerprint", !session.Document.Canvas.DepthPriorityOcclusion && option.IsChecked == false && Fingerprint() == savedFingerprint);
-        session.Redo(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+        session.Redo(); window.Refresh(session.Document.Canvas); window.PrepareForShow();
         check("depth option redo restores checkbox and committed setting", session.Document.Canvas.DepthPriorityOcclusion && option.IsChecked == true);
         editor.BillboardMode = true; editor.BillboardMode = false;
         check("switching insertion placement mode does not change depth option", session.Document.Canvas.DepthPriorityOcclusion);
-        session.Execute("disable perspective", d => d.Canvas.Projection.Enabled = false); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+        session.Execute("disable perspective", d => d.Canvas.Projection.Enabled = false); window.Refresh(session.Document.Canvas); window.PrepareForShow();
         check("disabling perspective hides depth option and preserves its stored value", option.Visibility == Wpf.Visibility.Collapsed && session.Document.Canvas.DepthPriorityOcclusion);
-        session.Undo(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+        session.Undo(); window.Refresh(session.Document.Canvas); window.PrepareForShow();
         check("restoring perspective restores depth option with its previous choice", option.Visibility == Wpf.Visibility.Visible && option.IsChecked == true);
         int undoBefore = session.UndoCount; long revision = session.SceneRevision;
         allowed = false; Click(false);

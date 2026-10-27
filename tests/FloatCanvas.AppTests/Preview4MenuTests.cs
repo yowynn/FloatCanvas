@@ -70,7 +70,7 @@ internal static class Preview4MenuTests
                 try
                 {
                     Audit("layer", (ContextMenu)Invoke(layers, "CreateContextMenu", layer.Id)!);
-                    canvasWindow.Refresh(new() { Projection = new() { Enabled = true } }, false);
+                    canvasWindow.Refresh(new() { Projection = new() { Enabled = true } });
                     canvasWindow.SetReferenceMonitors([new("fixture primary", new(0, 0, 100, 100), new(0, 0, 100, 100), 96, 96, true),
                         new("fixture secondary", new(100, 0, 100, 100), new(100, 0, 100, 100), 96, 96, false)], null);
                     canvasWindow.PrepareForShow();

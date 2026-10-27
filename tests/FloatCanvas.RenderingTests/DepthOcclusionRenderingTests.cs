@@ -33,13 +33,13 @@ internal static class DepthOcclusionRenderingTests
             check("crossing plane order is spatial regardless of layer sequence", pixels.GetPixel(80, 40) == SKColors.Lime && pixels.GetPixel(80, 80) == SKColors.Red);
         scene.Elements = [board]; scene.Canvas.BackgroundColor = 0xFF00FF00;
         using (var pixels = Pixels(renderer, scene, assets, false))
-            check("opaque canvas color participates at plane depth", pixels.GetPixel(80, 40) == SKColors.Lime && pixels.GetPixel(80, 80) == SKColors.Red);
+            check("opaque canvas color remains beneath billboards at every plane depth", pixels.GetPixel(80, 40) == SKColors.Red && pixels.GetPixel(80, 80) == SKColors.Red && pixels.GetPixel(5, 5) == SKColors.Lime);
         using (var pixels = Pixels(renderer, scene, assets)) check("transparent export excludes canvas color as before", pixels.GetPixel(80, 40) == SKColors.Red && pixels.GetPixel(5, 5).Alpha == 0);
         scene.Canvas.BackgroundColor = 0x8000FF00;
         using (var pixels = Pixels(renderer, scene, assets, false))
         {
             var mixed = pixels.GetPixel(80, 40);
-            check("translucent canvas color mixes with farther billboard", mixed.Alpha == 255 && mixed.Green is >= 127 and <= 129 && mixed.Red is >= 126 and <= 128);
+            check("translucent canvas color remains beneath an opaque farther billboard", mixed == SKColors.Red && pixels.GetPixel(5, 5).Alpha == 128);
         }
         scene.Canvas.BackgroundColor = 0; scene.Background = Plane(scene, 0xFF00FF00);
         using (var pixels = Pixels(renderer, scene, assets, false)) check("document photograph remains behind billboards rather than becoming a plane occluder", pixels.GetPixel(80, 40) == SKColors.Red);
@@ -48,11 +48,11 @@ internal static class DepthOcclusionRenderingTests
         using (var pixels = Pixels(renderer, scene, assets, false))
         {
             var bare = pixels.GetPixel(5, 5); var nearBoard = pixels.GetPixel(80, 80);
-            check("global opacity preserves translucent canvas color alpha", bare.Alpha is >= 127 and <= 129 && bare.Green == 255);
-            check("global annotation opacity is applied once over plane base", nearBoard.Alpha is >= 190 and <= 193 && nearBoard.Red > nearBoard.Green);
+            check("global opacity multiplies translucent canvas color alpha", bare.Alpha == 64 && bare.Green == 255);
+            check("global canvas opacity is applied once after composing the base and billboard", nearBoard.Alpha == 128 && nearBoard.Red == 255 && nearBoard.Green == 0);
         }
         scene.LayerOpacity = 0;
-        using (var pixels = Pixels(renderer, scene, assets, false)) check("zero annotation opacity retains canvas background", pixels.GetPixel(80, 80).Alpha is >= 127 and <= 129 && pixels.GetPixel(80, 80).Green == 255);
+        using (var pixels = Pixels(renderer, scene, assets, false)) check("zero global opacity hides canvas background and billboards together", pixels.GetPixel(80, 80).Alpha == 0 && pixels.GetPixel(5, 5).Alpha == 0);
         scene.LayerOpacity = 1; scene.Canvas.BackgroundColor = 0; scene.Canvas.Grid = new() { Visible = true, Width = 6, Color = 0xFF00FF00 };
         mapping = CanvasMapping.Create(scene);
         double cell = mapping.GridCellSize;
@@ -70,8 +70,8 @@ internal static class DepthOcclusionRenderingTests
                 At(gridOnly, coveredBehind).Green > 240 && At(gridOnly, coveredFront).Green > 240 && At(gridOnly, gapBehind).Alpha == 0);
         board.Visible = true;
         using (var pixels = Pixels(renderer, scene, assets))
-            check("grid strokes occlude behind-plane billboard only at their covered pixels",
-                At(pixels, coveredBehind).Green > 240 && At(pixels, coveredFront) == SKColors.Red && At(pixels, gapBehind) == SKColors.Red);
+            check("configured grid strokes remain beneath all billboard pixels regardless of depth",
+                At(pixels, coveredBehind) == SKColors.Red && At(pixels, coveredFront) == SKColors.Red && At(pixels, gapBehind) == SKColors.Red);
 
         scene = Scene(); board = Billboard(scene, 60, 0x80FF0000); plane = Plane(scene, 0x8000FF00); scene.Elements = [plane, board];
         scene.LayerOpacity = .5;

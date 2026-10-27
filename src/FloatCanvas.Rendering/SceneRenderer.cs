@@ -53,8 +53,11 @@ public sealed partial class SceneRenderer : IDisposable
                 if (includeGrid && calibrationReference) DrawGridCore(canvas, document, true);
                 return;
             }
-            DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground);
             double opacity = Math.Clamp(document.LayerOpacity, 0, 1);
+            // A captured photograph keeps its existing background semantics. Otherwise
+            // canvas color, grid and objects form one lowest-to-highest opacity group.
+            bool photograph = includeBackground && document.Background is { Visible: true };
+            DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground && photograph, canvasOpacity: opacity);
             if (opacity > 0)
             {
                 // Apply layer opacity once after compositing, so overlapping strokes do not become darker.
@@ -63,24 +66,16 @@ public sealed partial class SceneRenderer : IDisposable
                     using var opacityPaint = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)) };
                     canvas.SaveLayer(ToRect(document.Viewport), opacityPaint);
                 }
-                if (includeGrid && !calibrationReference) DrawGrid(canvas, document);
+                if (!photograph) DrawPlaneColor(canvas, document, includeCanvasBackground);
+                if (includeGrid) DrawGrid(canvas, document);
                 DrawElements(canvas, document.Elements, assets, 0, document.Elements.Count);
                 if (opacity < 1) canvas.Restore();
             }
             if (includeGrid && calibrationReference && space == SceneRenderSpace.ScreenComposite)
             {
-                // Editing guides stay visible over photographs and independent of annotation opacity.
+                // Only thin editing guides appear above content; the configured grid
+                // has already been composed beneath every object in the ordinary path.
                 DrawGridCore(canvas, document, true);
-                if (opacity > 0)
-                {
-                    if (opacity < 1)
-                    {
-                        using var gridOpacity = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)) };
-                        canvas.SaveLayer(ToRect(document.Viewport), gridOpacity);
-                    }
-                    DrawGrid(canvas, document);
-                    if (opacity < 1) canvas.Restore();
-                }
             }
         }
         finally { canvas.RestoreToCount(saved); EndFrame(); }
@@ -105,13 +100,13 @@ public sealed partial class SceneRenderer : IDisposable
         ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); _drawingDocument = null; _mapping = null; _referenceOpacityAtHorizon = false;
     }
     internal void DrawBackground(SKCanvas canvas, SceneDocument document, AssetLibrary assets,
-        bool includeBackground = true, bool includeCanvasBackground = true, bool sampling = false)
+        bool includeBackground = true, bool includeCanvasBackground = true, bool sampling = false, double canvasOpacity = 1)
     {
         if (_renderSpace == SceneRenderSpace.ScreenComposite)
         {
             if (includeBackground) (ScreenBackdrop ?? (sampling && document.Background is null ? LiveBackdrop : null))?.Draw(canvas);
             if (includeCanvasBackground && (document.Canvas.BackgroundColor >> 24) != 0)
-                DrawPlaneColor(canvas, document, true);
+                DrawPlaneColor(canvas, document, true, canvasOpacity);
         }
         if (includeBackground && document.Background is { Visible: true } background)
             DrawElement(canvas, background, assets, TransformFor(document), document);

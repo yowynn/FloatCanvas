@@ -25,9 +25,10 @@ public sealed partial class SceneRenderer
     private void DrawDepthScene(SKCanvas canvas, SceneDocument document, AssetLibrary assets,
         bool includeBackground, bool includeCanvasBackground, bool includeGrid)
     {
-        DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground: false);
         double opacity = Math.Clamp(document.LayerOpacity, 0, 1);
-        if (!(opacity > 0)) { DrawPlaneColor(canvas, document, includeCanvasBackground); return; }
+        bool photograph = includeBackground && document.Background is { Visible: true };
+        DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground && photograph, canvasOpacity: opacity);
+        if (!(opacity > 0)) return;
         var source = LiveEffectContext is { } context && CanvasDepthOrder.IsEnabled(context) ? context : document;
         var mapping = ReferenceEquals(source, document) ? _mapping! : CanvasMapping.Create(source);
         var viewport = source.Viewport.Normalize();
@@ -53,6 +54,16 @@ public sealed partial class SceneRenderer
         var selected = selectedBuffer?.Surface;
         if (selected is not null) { selected.Canvas.Clear(SKColors.Transparent); selected.Canvas.Translate(-(float)viewport.X, -(float)viewport.Y); }
         var chosen = selected is null ? null : document.Elements.Select(e => e.Id).ToHashSet();
+        // Canvas color and the configured grid are one base beneath every depth
+        // event. They must never occlude a farther billboard or split into strips.
+        DrawPlaneColor(working.Canvas, source, (selected is not null || includeCanvasBackground) &&
+            !(includeBackground && source.Background is { Visible: true }));
+        if (includeGrid) DrawGrid(working.Canvas, source);
+        if (selected is not null)
+        {
+            DrawPlaneColor(selected.Canvas, document, includeCanvasBackground && !photograph);
+            if (includeGrid) DrawGrid(selected.Canvas, document);
+        }
         // Ordinary plane ink is independent of the depth bands. Rasterize it once and use disjoint
         // clips of that one image, rather than rerasterizing every path/text/image for every billboard.
         // A planar live filter must retain the finite event sequence because its lower source changes.
@@ -60,7 +71,7 @@ public sealed partial class SceneRenderer
             !source.Elements.Any(e => e.Visible && e.Style.Opacity > 0 && !e.IsBillboard && ElementGeometry.IsLiveEffect(e.Kind))
             ? RentDepthSurface(canvas, info, "Cannot allocate the shared plane composition surface.") : null;
         using var plane = planeBuffer is null ? null : BuildDepthPlane(planeBuffer.Surface, source, assets,
-            imageBounds, includeCanvasBackground, includeGrid);
+            imageBounds);
         try
         {
             foreach (var entry in DepthEvents(source, mapping))
@@ -68,8 +79,6 @@ public sealed partial class SceneRenderer
                 if (entry.Index < 0)
                 {
                     if (plane is not null) DrawDepthPlaneImage(working.Canvas, plane, imageBounds, entry.Clip);
-                    else DrawEventBase(working.Canvas, source, entry.Clip, selected is not null || includeCanvasBackground, includeGrid);
-                    if (selected is not null) DrawEventBase(selected.Canvas, document, entry.Clip, includeCanvasBackground, includeGrid);
                     continue;
                 }
                 var element = source.Elements[entry.Index];
@@ -99,16 +108,8 @@ public sealed partial class SceneRenderer
             if (opacity >= 1) canvas.DrawImage(image, ToRect(imageBounds), Nearest);
             else
             {
-                // Linear interpolation of the raw depth scene and the annotation-free plane color.
-                // This applies annotation opacity once while keeping even a translucent canvas color unchanged.
-                int saved = canvas.SaveLayer();
-                try
-                {
-                    DrawPlaneColor(canvas, document, includeCanvasBackground, 1 - opacity);
-                    using var alpha = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)), BlendMode = SKBlendMode.Plus };
-                    canvas.DrawImage(image, ToRect(imageBounds), Nearest, alpha);
-                }
-                finally { canvas.RestoreToCount(saved); }
+                using var alpha = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)) };
+                canvas.DrawImage(image, ToRect(imageBounds), Nearest, alpha);
             }
         }
         finally { _depthSamplePainter = null; ClearLiveEffectImages(); }
@@ -131,12 +132,10 @@ public sealed partial class SceneRenderer
     }
 
     private SKImage BuildDepthPlane(SKSurface surface, SceneDocument document, AssetLibrary assets,
-        RectD bounds, bool background, bool grid)
+        RectD bounds)
     {
         surface.Canvas.Clear(SKColors.Transparent); surface.Canvas.Translate(-(float)bounds.X, -(float)bounds.Y);
         surface.Canvas.ClipRect(ToRect(document.Viewport));
-        DrawPlaneColor(surface.Canvas, document, background);
-        if (grid) DrawGrid(surface.Canvas, document);
         var transform = TransformFor(document);
         foreach (var element in document.Elements)
             if (!element.IsBillboard && element.Visible && element.Style.Opacity > 0) DrawElement(surface.Canvas, element, assets, transform, document);
@@ -150,9 +149,9 @@ public sealed partial class SceneRenderer
         finally { canvas.RestoreToCount(saved); }
     }
 
-    private void DrawPlaneColor(SKCanvas canvas, SceneDocument document, bool include, double opacity = 1)
+    internal void DrawPlaneColor(SKCanvas canvas, SceneDocument document, bool include, double opacity = 1)
     {
-        if (!include || (document.Canvas.BackgroundColor >> 24) == 0) return;
+        if (!include || _renderSpace == SceneRenderSpace.PlaneContent || (document.Canvas.BackgroundColor >> 24) == 0) return;
         int saved = canvas.Save();
         try
         {
@@ -160,18 +159,6 @@ public sealed partial class SceneRenderer
             var color = new SKColor(document.Canvas.BackgroundColor);
             using var paint = new SKPaint { Color = color.WithAlpha((byte)Math.Round(color.Alpha * opacity)) };
             canvas.DrawRect(ToRect(document.Viewport), paint);
-        }
-        finally { canvas.RestoreToCount(saved); }
-    }
-
-    private void DrawEventBase(SKCanvas canvas, SceneDocument document, IReadOnlyList<PointD>? polygon, bool background, bool grid)
-    {
-        int saved = canvas.Save();
-        try
-        {
-            if (!ClipDepthEvent(canvas, polygon)) return;
-            DrawPlaneColor(canvas, document, background);
-            if (grid) DrawGrid(canvas, document);
         }
         finally { canvas.RestoreToCount(saved); }
     }

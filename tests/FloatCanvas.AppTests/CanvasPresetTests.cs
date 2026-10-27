@@ -337,16 +337,16 @@ internal static class CanvasPresetTests
             window.PresetApplied += parameters =>
             {
                 applied++; var settings = CanvasPresetLibrary.Apply(parameters, session.Document.Canvas, new(0, 0, 1920, 1080), session.Document.Viewport);
-                session.Execute("Canvas preset", document => document.Canvas = settings); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+                session.Execute("Canvas preset", document => document.Canvas = settings); window.Refresh(session.Document.Canvas); window.PrepareForShow();
             };
-            window.Refresh(new(), false);
+            window.Refresh(new());
             window.PrepareForShow();
             check("canvas panel uses separate official and user recipe sections", gallery.OfficialTiles.Children.Count == 5 && gallery.UserTiles.Children.Count == 0 && window.Width > 500);
             check("official canvas recipe tiles expose no edit context menu", gallery.OfficialTiles.Children.Cast<Button>().All(button => button.ContextMenu is null));
             gallery.Apply("official.canvas-graph");
             check("one canvas preset updates the canvas in one undo entry without property events", applied == 1 && session.UndoCount == 1 && session.Document.Canvas.Grid.Visible && propertyEdits == 0);
             check("the applied canvas recipe is visibly selected", gallery.SelectedId == "official.canvas-graph");
-            session.Undo(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+            session.Undo(); window.Refresh(session.Document.Canvas); window.PrepareForShow();
             check("undo refresh restores the canvas and clears a mismatched preset selection", !session.Document.Canvas.Grid.Visible && session.Document.Canvas.BackgroundColor == 0 && gallery.SelectedId == "" && applied == 1);
             gallery.SaveNamed("Current"); window.PrepareForShow(); string selected = gallery.SelectedId;
             check("saving a canvas preset records resource history without applying it", applied == 1 && session.UndoCount == 1 && gallery.UserTiles.Children.Count == 1 && selected.StartsWith("user-"));
@@ -357,7 +357,7 @@ internal static class CanvasPresetTests
             var width = Field<NumericValueField>(window, "width");
             foreach (double value in new[] { 64d, .25, double.Epsilon })
             {
-                window.Refresh(new() { Grid = new() { Width = value } }, false);
+                window.Refresh(new() { Grid = new() { Width = value } });
                 window.PrepareForShow();
                 check("canvas width restores legal stored value " + value, width.TryGetValue(out double actual) && actual == value && width.Slider.Minimum == 1 && width.Slider.Maximum == 20 && propertyEdits == 0);
             }
@@ -365,34 +365,34 @@ internal static class CanvasPresetTests
             check("canvas panel content lays out both property and preset columns", Field<ColorField>(window, "background").ActualWidth > 100 && gallery.ActualWidth >= 196);
             var projection = CanvasCalibration.CreateInitial(session.Document.Viewport); var quad = projection.Quad.ToArray(); quad[0] += new PointD(10, 10);
             CanvasCalibration.TryCalibrate(projection, quad, session.Document.Viewport, out projection, out _);
-            session.Document.Canvas.Projection = projection; window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+            session.Document.Canvas.Projection = projection; window.Refresh(session.Document.Canvas); window.PrepareForShow();
             gallery.SaveNamed("Perspective selection"); window.PrepareForShow(); string perspectiveId = gallery.SelectedId;
             var changedQuad = quad.ToArray(); changedQuad[1] += new PointD(-5, 5);
             CanvasCalibration.TryCalibrate(projection, changedQuad, session.Document.Viewport, out var changedProjection, out _);
-            session.Document.Canvas.Projection = changedProjection; window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+            session.Document.Canvas.Projection = changedProjection; window.Refresh(session.Document.Canvas); window.PrepareForShow();
             check("changing only four-corner geometry clears a saved personal preset highlight", gallery.SelectedId == "");
             gallery.Apply("official.canvas-graph");
             check("official canvas recipes stay selected after resetting the plane", gallery.SelectedId == "official.canvas-graph" && session.Document.Canvas.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(session.Document.Viewport).Quad));
             gallery.Apply(perspectiveId);
             check("reapplying a personal canvas recipe restores its calibration and highlight", gallery.SelectedId == perspectiveId && session.Document.Canvas.Projection.Quad.SequenceEqual(quad));
-            session.Document.Canvas.Projection = changedProjection.Clone(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+            session.Document.Canvas.Projection = changedProjection.Clone(); window.Refresh(session.Document.Canvas); window.PrepareForShow();
             var savedTile = gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, perspectiveId));
             savedTile.ContextMenu!.Items.OfType<MenuItem>().First().RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             window.PrepareForShow();
             check("overwriting a changed personal calibration selects the new matching snapshot", gallery.SelectedId == perspectiveId && new CanvasPresetLibrary(Path.Combine(folder, "controls.json")).User.Single(p => p.Id == perspectiveId).Parameters.Calibration!.Quad.SequenceEqual(changedQuad));
-            session.Undo(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+            session.Undo(); window.Refresh(session.Document.Canvas); window.PrepareForShow();
             check("undoing an overwrite clears selection when the restored preset differs from the current canvas", gallery.SelectedId == "");
 
             var legacy = library.Save("Legacy default geometry", new() { Projection = new() { Enabled = true } });
             gallery.Apply(legacy.Id);
             check("applying a preset without saved calibration keeps its resolved default geometry selected", gallery.SelectedId == legacy.Id);
             var alternate = CanvasCalibration.CreateInitial(new(0, 0, 1280, 720)); alternate.Enabled = true;
-            session.Document.Canvas.Projection = alternate; window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+            session.Document.Canvas.Projection = alternate; window.Refresh(session.Document.Canvas); window.PrepareForShow();
             check("changing geometry after applying a legacy preset clears its selection despite omitted calibration and size", gallery.SelectedId == "");
             gallery.Apply(legacy.Id);
-            library.Rename(legacy.Id, "Renamed legacy default"); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+            library.Rename(legacy.Id, "Renamed legacy default"); window.Refresh(session.Document.Canvas); window.PrepareForShow();
             check("renaming an applied legacy preset preserves selection of its resolved geometry", gallery.SelectedId == legacy.Id);
-            session.Undo(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow();
+            session.Undo(); window.Refresh(session.Document.Canvas); window.PrepareForShow();
             check("undoing a preset rename preserves its resolved geometry selection", gallery.SelectedId == legacy.Id);
         }
         finally { window.CloseForDispose(); }

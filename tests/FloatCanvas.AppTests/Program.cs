@@ -69,6 +69,10 @@ internal static class Program
             if (args.Contains("--projection-hover-runtime-preview")) { ProjectionHoverRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--projection-hover-only")) { ProjectionUnsafeHoverTests.Run(Assert); RetainedBillboardInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-tool-only")) { CanvasToolInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-guide-ui-only")) { CanvasGuideUiTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-tool-rendering-only")) { CanvasToolRenderingTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-anchor-capture-only")) { CanvasAnchorCaptureTests.Run(Assert); return 0; }
+            if (args.Contains("--eyedropper-window-restore-only")) { EyedropperWindowRestoreTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-safety-dialog-runtime-only")) { CanvasSafetyDialogRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-safety-dialog-preview")) { CanvasSafetyDialogRuntimeTests.RunPreview(Assert); return 0; }
             if (args.Contains("--canvas-safety-resolution-only")) { CanvasSafetyResolutionTests.Run(Assert); return 0; }
@@ -292,6 +296,8 @@ internal static class Program
             PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert);
             ProjectionUnsafeHoverTests.Run(Assert);
             CanvasToolInteractionTests.Run(Assert);
+            CanvasGuideUiTests.Run(Assert);
+            CanvasToolRenderingTests.Run(Assert);
             RetainedBillboardInteractionTests.Run(Assert);
             GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert);
             GpuSettingsTests.Run(Assert);

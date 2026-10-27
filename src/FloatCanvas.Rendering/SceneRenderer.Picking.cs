@@ -59,11 +59,6 @@ public sealed partial class SceneRenderer
                 using var pixels = surface.PeekPixels();
                 return pixels.GetPixelColor(0, 0).Alpha;
             }
-            byte planeAlpha = Sample(canvas =>
-            {
-                DrawPlaneColor(canvas, document, true);
-                DrawGrid(canvas, document);
-            });
             foreach (int index in CanvasDepthOrder.BackToFrontAt(document, mapping, point).Reverse())
             {
                 var item = document.Elements[index];
@@ -72,8 +67,6 @@ public sealed partial class SceneRenderer
                 if (item.IsBillboard && !mapping.IsElementSafe(item)) continue;
                 double depth = planeDepth;
                 if (item.IsBillboard && !CanvasDepthOrder.TryAnchorDepth(mapping, item.BillboardAnchor, out depth)) continue;
-                // Base color and grid lie behind all elements at the plane depth, but in front of farther billboards.
-                if (planeSafe && depth > planeDepth && planeAlpha == 255) return null;
                 bool hit = ElementGeometry.HitTestProjected(item, point, mapping.PlaneToScreen, tolerance);
                 if (!hit) continue;
                 byte alpha = ElementGeometry.IsLiveEffect(item.Kind)

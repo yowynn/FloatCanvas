@@ -45,7 +45,7 @@ internal static class CanvasProjectionRuntimeFixture
             check("second Canvas activation opens settings through the production tool command", panel.IsVisible && panel.Owner == toolbar && editor.Tool == EditorTool.Canvas);
             ((Action<uint>)panel.GetType().GetField("BackgroundChanged", Private)!.GetValue(panel)!)(0x80123456);
             check("panel background event retains alpha in the active document", editor.Session.Document.Canvas.BackgroundColor == 0x80123456);
-            Invoke("BeginCanvasCalibration");
+            SelectPerspectiveCanvas();
             var calibration = Get<CanvasCalibrationController>(session, "_canvasCalibration");
             Pump();
             if(Environment.GetEnvironmentVariable("FLOATCANVAS_ROUND2_PREVIEW_DIR") is { } panelOutput)
@@ -116,7 +116,7 @@ internal static class CanvasProjectionRuntimeFixture
                 editor.Session.Document.Canvas.Projection.CellSize == beforeReset.Projection.CellSize &&
                 editor.Session.Document.Canvas.Grid.FlatCellSize == beforeReset.Grid.FlatCellSize && editor.Session.UndoCount == resetUndo);
             moved = editor.Session.Document.Canvas.Projection.Quad.ToArray();
-            Invoke("BeginCanvasCalibration");
+            SelectPerspectiveCanvas();
             Invoke("SetCanvasGridCounts", 12, 7);
             check("grid count changes preserve all calibrated screen corners", editor.Session.Document.Canvas.Projection.Columns == 12 && editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(moved));
             undo = editor.Session.UndoCount;
@@ -151,13 +151,13 @@ internal static class CanvasProjectionRuntimeFixture
             Pointer(OverlayPointerKind.Down,placement[clickOrder[3]]);Pointer(OverlayPointerKind.Up,placement[clickOrder[3]]);
             check("production fourth click commits the ordered perspective in one undo",!calibration.IsPlacing&&editor.Session.UndoCount==undo+1&&editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(placement));
             editor.Session.Undo();check("production four-point undo restores previous corners",editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(beforePlacement.Quad));
-            Invoke("BeginCanvasCalibration"); moved = editor.Session.Document.Canvas.Projection.Quad.ToArray();
+            SelectPerspectiveCanvas(); moved = editor.Session.Document.Canvas.Projection.Quad.ToArray();
             Pointer(OverlayPointerKind.Down, moved[0]); Pointer(OverlayPointerKind.Move, moved[0] + new PointD(7, 3));
             if (preview)
             {
                 Invoke("OnKey", 0x1B);
                 editor.Session.Document.Canvas.Grid.Visible = true;
-                Invoke("BeginCanvasCalibration"); Invoke("OpenCanvasSettings"); Pump();
+                SelectPerspectiveCanvas(); Invoke("OpenCanvasSettings"); Pump();
                 Console.WriteLine("PREVIEW_READY: isolated production canvas settings and grid, 120 seconds"); Console.Out.Flush();
                 var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(120) };
                 timer.Tick += (_, _) => frame.Continue = false;
@@ -167,6 +167,11 @@ internal static class CanvasProjectionRuntimeFixture
             check("hide cancels calibration and hides its real settings window", !calibration.IsActive && !calibration.IsDragging && !panel.IsVisible && !host.IsVisible && editor.Session.Document.Canvas.Projection.Quad.SequenceEqual(moved));
             Console.WriteLine($"PROFILE {profile}; bounded native HWND host; production pointer event route; no physical input injection or multimonitor claim.");
 
+            void SelectPerspectiveCanvas()
+            {
+                if (editor.Tool != EditorTool.Canvas) Invoke("ActivateTool", EditorTool.Canvas);
+                Invoke("SetCanvasProjection", true);
+            }
             object? Invoke(string name, params object[] args) => typeof(DesktopSession).GetMethod(name, Private)!.Invoke(session, args);
             void Pointer(OverlayPointerKind kind, PointD p, OverlayModifiers modifiers = OverlayModifiers.None)
             {

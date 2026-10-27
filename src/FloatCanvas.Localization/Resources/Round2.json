@@ -8,12 +8,12 @@
     "en": "Project homepage"
   },
   "Canvas.FourPoints": {
-    "zh": "四点定位",
-    "en": "Place four corners"
+    "zh": "四点定位画布",
+    "en": "Position canvas with four points"
   },
   "Canvas.FourPointsHint": {
-    "zh": "依次点击四个角点，Esc 取消。",
-    "en": "Click four corners in any order. Esc cancels."
+    "zh": "临时隐藏工具条以外的窗口，依次点击四个角点。完成或按 Esc 取消后恢复窗口。",
+    "en": "Temporarily hide windows except the toolbar, then click four corners in any order. Windows return after completion or Esc cancellation."
   },
   "Project.Detach": {
     "zh": "取消文件关联",

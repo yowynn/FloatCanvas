@@ -24,8 +24,8 @@
     "en": "Depth-priority occlusion"
   },
   "Canvas.DepthPriorityOcclusionHint": {
-    "zh": "实验性：按立牌锚点深度决定遮挡；同深度时按图层顺序。画布底色、网格和贴面参与遮挡。",
-    "en": "Experimental: order occlusion by billboard anchor depth, using layer order at equal depth. Canvas color, grid and surface layers participate."
+    "zh": "实验性：按立牌锚点深度决定遮挡；同深度时按图层顺序。贴面参与遮挡，画布底色和网格始终位于所有图层下方。",
+    "en": "Experimental: order occlusion by billboard anchor depth, using layer order at equal depth. Surface layers participate; canvas color and grid remain beneath all layers."
   },
   "Canvas.Rows": {
     "zh": "网格纵向数量",
@@ -55,14 +55,6 @@
     "zh": "锁定后，调整四点保留每格代表的画布长度，行列数自动变化，可含小数。网格原点仍跟随中央移动手柄。勾选时画面保持原样；图层和锚点不因切换而移动。关闭透视或重置保留锁定选择；应用画布预设会解除锁定。",
     "en": "When locked, adjusting the four points preserves each cell's canvas length. Counts update automatically and may include fractions. The grid origin still follows the central move handle. Enabling the lock keeps the view unchanged without moving layers or anchors. Turning perspective off or resetting retains the lock; applying a canvas preset clears it."
   },
-  "Canvas.Calibrate": {
-    "zh": "调整透视画布",
-    "en": "Adjust perspective canvas"
-  },
-  "Canvas.EndCalibration": {
-    "zh": "完成画布调整",
-    "en": "Finish adjustment"
-  },
   "Canvas.Reset": {
     "zh": "重置校准",
     "en": "Reset calibration"
@@ -70,6 +62,14 @@
   "Canvas.GridVisible": {
     "zh": "显示网格",
     "en": "Show grid"
+  },
+  "Canvas.GuideOpacity": {
+    "zh": "参考网格透明度",
+    "en": "Reference opacity"
+  },
+  "Canvas.GuideOpacityHint": {
+    "zh": "仅调整画布工具的参考网格，0% 隐藏。显示实体网格时会进一步减淡。只在本次运行中保留，重启后恢复 100%，不写入画布或预设。",
+    "en": "Adjust only the Canvas tool's reference grid; 0% hides it. Show grid dims it further. Kept for this run only and reset to 100% after restart, without changing the canvas or presets."
   },
   "Canvas.GridColor": {
     "zh": "网格颜色",
@@ -104,8 +104,8 @@
     "en": "Canvas settings"
   },
   "Canvas.HelpText": {
-    "zh": "按 C 选择画布工具，再次点击画布按钮打开设置。非透视时以主屏中心为原点，在空白处向外拖动放大网格、向内拖动缩小；透视时以中央移动手柄为网格原点，拖动角点、边缘或中央手柄调整，也可四点定位。Ctrl 暂停吸附，Shift 约束方向。Esc 取消当前拖动；空闲时切回选择工具。单纯切换透视保留原参数；主动修改非透视格长会建立新的平面参考。",
-    "en": "Press C to select the Canvas tool; click its button again to open settings. In flat mode, the origin is the primary-screen center: drag empty space outward to enlarge cells or inward to shrink them. In perspective mode, the origin follows the central move handle; drag corners, edges or the center, or place four points. Ctrl bypasses snapping; Shift constrains direction. Esc cancels a drag or returns to Select when idle. Toggling perspective retains its parameters; editing flat cell size creates a new flat reference."
+    "zh": "按 C 选择画布工具，再次点击画布按钮打开设置。非透视时以参考屏中心为原点，在空白处向外拖动放大网格、向内拖动缩小；透视时拖动角点、边缘或中央手柄调整。“四点定位画布”会临时隐藏其他窗口，完成或取消后恢复。参考网格透明度仅在本次运行中保留，0% 隐藏参考线。Ctrl 暂停吸附，Shift 约束方向。Esc 取消当前拖动；空闲时切回选择工具。切换透视保留原参数；主动修改非透视格长会建立新的平面参考。",
+    "en": "Press C to select Canvas; select it again to open settings. In flat mode, drag empty space outward from the reference-screen center to enlarge cells or inward to shrink them. In perspective mode, drag corners, edges or the center. Position canvas with four points temporarily hides other windows and restores them after completion or cancellation. Reference opacity lasts for this run only; 0% hides reference lines. Ctrl bypasses snapping; Shift constrains direction. Esc cancels a drag or returns to Select when idle. Toggling perspective retains its parameters; editing flat cell size creates a new flat reference."
   },
   "Canvas.InvalidGrid": {
     "zh": "列数和行数须为 1 至 256 的整数。",

@@ -296,6 +296,27 @@ internal sealed class SessionWindowCoordinator : IDisposable
         finally { IsSuspendingWindows = false; }
     }
 
+    internal void HideTemporarily(IEnumerable<Window> targets)
+    {
+        using var intent = DirectTransfer(WindowDismissReason.CanvasPress);
+        using var transition = BeginTransition();
+        bool previous = IsSuspendingWindows;
+        IsSuspendingWindows = true;
+        try
+        {
+            foreach (var window in targets)
+                if (window.IsVisible) Hide(window, WindowDismissReason.CanvasPress);
+        }
+        finally { IsSuspendingWindows = previous; }
+    }
+
+    internal void RememberPinnedForResume(IEnumerable<Window> targets)
+    {
+        foreach (var window in targets)
+            if (windows.TryGetValue(window, out var registration) && registration.Pinned?.Invoke() == true)
+                suspendedWindows.Add(window);
+    }
+
     internal void ResumeEditingWindows()
     {
         foreach (var window in suspendedWindows.ToArray())

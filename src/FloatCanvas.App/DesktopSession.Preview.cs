@@ -26,9 +26,11 @@ internal sealed partial class DesktopSession
     {
         var context = new CanvasPreviewContext(Active, _host.Monitors, _editor.ScreenOrigin,
             !_host.IsVisible, _host.IsEditing && (_editor.Tool == EditorTool.Canvas || _canvasCalibration.IsActive),
-            _canvasCalibration.IsPlacing, Active.Document, _host.IsVisible ? null : _hiddenCanvasElements);
+            _canvasCalibration.IsPlacing, Active.Document, _host.IsVisible ? null : _hiddenCanvasElements, GuideOpacity: _canvasGuideOpacity);
         if (_currentCanvasContext is { } current && current with { Epoch = 0 } == context) return current;
-        return _currentCanvasContext = context with { Epoch = ++_canvasContextEpoch };
+        long epoch = _currentCanvasContext is { } prior && prior.HasSameContent(context with { Epoch = prior.Epoch })
+            ? prior.Epoch : ++_canvasContextEpoch;
+        return _currentCanvasContext = context with { Epoch = epoch };
     }
 
     private void RequestCanvasPreview(bool pixelsOnly, IReadOnlyList<PixelBounds>? pixelDamage)
@@ -105,7 +107,7 @@ internal sealed partial class DesktopSession
         if (_disposed) return;
         var context = CurrentPreviewContext();
         var frame = _canvasPreview.Frame;
-        bool current = frame is not null && frame.Context == context;
+        bool current = frame is not null && frame.Context.HasSameContent(context);
         if (_presentedCanvasContext != context) _presentationDirty.AddRange(_host.Monitors.Select(monitor => monitor.Bounds));
         if (current) _presentationDirty.AddRange(frame!.Pixels.DamageComparedTo(_presentedPixels));
         var damage = _presentationDirty.ToArray(); _presentationDirty.Clear();

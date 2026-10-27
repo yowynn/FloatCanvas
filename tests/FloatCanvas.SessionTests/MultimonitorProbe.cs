@@ -154,7 +154,12 @@ internal static partial class Program
             Check(live.Document.Canvas.Projection.Quad.Count == 4 && live.Document.Canvas.Projection.Quad.Zip(expected.Quad).All(p => p.First.DistanceTo(p.Second) < .001),
                 "Production Reset centers all four calibration corners within the selected physical Pad");
             MultimonitorStages.Add(new { Phase = "PadReferenceReset", Pad = pad, Quad = live.Document.Canvas.Projection.Quad.ToArray(), Center = QuadCenter(live.Document.Canvas.Projection.Quad) });
-            Call(session, "BeginCanvasCalibration");
+            var canvasEditor = Field<object>(session, "_editor");
+            var toolProperty = canvasEditor.GetType().GetProperty("Tool")!;
+            var canvasTool = Enum.Parse(toolProperty.PropertyType, "Canvas");
+            if (!Equals(toolProperty.GetValue(canvasEditor), canvasTool))
+                Call(session, "ActivateTool", canvasTool);
+            Call(session, "SetCanvasProjection", true);
             Check((bool)Field<object>(session, "_canvasCalibration").GetType().GetProperty("IsActive")!.GetValue(Field<object>(session, "_canvasCalibration"))!, "Production calibration begins on the Pad frame");
             var initial = live.Document.Canvas.Projection.Quad.ToArray();
             var start = QuadCenter(initial);
@@ -172,7 +177,7 @@ internal static partial class Program
             Check(live.Redo() && live.Document.Canvas.Projection.Quad.Zip(moved).All(p => p.First.DistanceTo(p.Second) < .001), "Cross-screen translation can redo exactly to its primary placement");
             Check(host.IsEditing && host.IsKeyboardIsolationActive && isolation.CurrentLeaseId == lease && host.EditingSessionVersion == epoch,
                 "Scope changes and cross-screen calibration keep the original editing epoch and keyboard lease");
-            Call(session, "EndCanvasCalibration", true);
+            Call(session, "ActivateTool", Enum.Parse(toolProperty.PropertyType, "Select"));
             Call(session, "SetEditing", false);
             Check(!host.IsEditing && !host.IsKeyboardIsolationActive && host.CaptureHandle == 0, "Production exit releases the own editing lease and pointer capture");
 

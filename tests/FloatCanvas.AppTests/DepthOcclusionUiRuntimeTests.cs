@@ -29,13 +29,13 @@ internal static class DepthOcclusionUiRuntimeTests
                 L.Initialize(locale); AppTheme.Apply(theme);
                 var session = new EditorSession(new() { Canvas = new() { Projection = new() { Enabled = true } } });
                 var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
-                window.Refresh(session.Document.Canvas, false);
+                window.Refresh(session.Document.Canvas);
                 window.PrepareForShow();
                 window.DepthPriorityOcclusionChanged += value =>
                 {
                     DesktopSession.ApplyCanvasDepthPriorityOcclusion(session, window.DisplayedSettings, value, true,
                         change => session.Execute(L.Get("Canvas.Title"), document => change(document.Canvas)));
-                    window.Refresh(session.Document.Canvas, false);
+                    window.Refresh(session.Document.Canvas);
                     window.PrepareForShow();
                 };
                 var option = Field<CheckBox>(window, "depthPriorityOcclusion");
@@ -62,9 +62,9 @@ internal static class DepthOcclusionUiRuntimeTests
                     option.IsChecked = true; option.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout(root);
                     check(locale + " " + theme + " routed native Canvas depth option commits one undo step", session.Document.Canvas.DepthPriorityOcclusion && session.UndoCount == 1);
                     Render(root, Path.Combine(output, "canvas-depth-" + locale + "-" + theme + ".png"));
-                    session.Undo(); window.Refresh(session.Document.Canvas, false); window.PrepareForShow(); Layout(root);
+                    session.Undo(); window.Refresh(session.Document.Canvas); window.PrepareForShow(); Layout(root);
                     check(locale + " " + theme + " native Canvas depth checkbox tracks undo", option.IsChecked == false);
-                    session.Document.Canvas.Projection.Enabled = false; window.Refresh(session.Document.Canvas, false); window.PrepareForShow(); Layout(root);
+                    session.Document.Canvas.Projection.Enabled = false; window.Refresh(session.Document.Canvas); window.PrepareForShow(); Layout(root);
                     check(locale + " " + theme + " flat Canvas settings remove the depth row from layout", option.Visibility == Visibility.Collapsed && option.DesiredSize.Height == 0);
                     Render(root, Path.Combine(output, "canvas-flat-" + locale + "-" + theme + ".png"));
                     root.Child = null; source.RootVisual = null;

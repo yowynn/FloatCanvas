@@ -36,16 +36,16 @@ internal static class Round2CanvasTests
         var window=new CanvasSettingsWindow();
         try
         {
-            window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}},false);
+            window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}});
             window.PrepareForShow();
             window.Measure(new(600,590));window.Arrange(new(0,0,600,590));window.UpdateLayout();
-            var calibrate=Field<Button>(window,"calibrate");var reset=Field<Button>(window,"reset");var four=Field<Button>(window,"fourPoints");var arrow=Field<Button>(window,"resetChoices");
-            check("adjust and reset occupy separate fixed-width rows",calibrate.Parent is Grid first&&reset.Parent is Grid second&&!ReferenceEquals(first,second)&&first.Width==CanvasSettingsWindow.PerspectiveActionsWidth&&second.Width==first.Width);
-            check("four-point button shares adjust row",ReferenceEquals(four.Parent,calibrate.Parent));
+            var reset=Field<Button>(window,"reset");var four=Field<Button>(window,"fourPoints");var arrow=Field<Button>(window,"resetChoices");
+            check("four-point placement and reset occupy separate fixed-width rows",four.Parent is Grid first&&reset.Parent is Grid second&&!ReferenceEquals(first,second)&&first.Width==CanvasSettingsWindow.PerspectiveActionsWidth&&second.Width==first.Width);
+            check("four-point placement is the full-width primary action without a legacy finish button",((Grid)four.Parent).Children.Count==1&&Grid.GetColumn(four)==0&&double.IsNaN(four.Width)&&four.HorizontalAlignment==HorizontalAlignment.Stretch&&typeof(CanvasSettingsWindow).GetField("calibrate",BindingFlags.Instance|BindingFlags.NonPublic) is null);
             check("reset action and arrow are contiguous halves",reset.Margin==new Thickness(0)&&arrow.Margin==new Thickness(0)&&ReferenceEquals(reset.Parent,arrow.Parent));
             int requests=0;window.FourPointsRequested+=()=>requests++;four.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check("four-point button invokes its dedicated action",requests==1);
-            var actionRow=(Grid)calibrate.Parent;var resetRow=(Grid)reset.Parent;
+            var actionRow=(Grid)four.Parent;var resetRow=(Grid)reset.Parent;
             window.Measure(new(900,590));window.Arrange(new(0,0,900,590));window.UpdateLayout();
             check("widening canvas settings keeps both action rows fixed",actionRow.Width==CanvasSettingsWindow.PerspectiveActionsWidth&&resetRow.Width==actionRow.Width);
         }finally{window.CloseForDispose();}

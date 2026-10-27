@@ -33,7 +33,7 @@ internal static class NumericControlTests
             canvas.PrepareForShow();
             var canvasWidth = Field<NumericValueField>(canvas, "width");
             Measure(canvasWidth, 120, 34); canvasWidth.BeginGesture(); canvasWidth.UpdateRail(60);
-            double previewWidth = canvasWidth.Value; canvas.Refresh(new(), false);
+            double previewWidth = canvasWidth.Value; canvas.Refresh(new());
             check("canvas repaint preserves the active label or rail preview", canvasWidth.IsInteracting && canvasWidth.Value == previewWidth);
             canvasWidth.EndGesture(true); canvas.CloseForDispose();
             foreach (string language in new[] { "zh-CN", "en" })
@@ -178,7 +178,7 @@ internal static class NumericControlTests
         check(name + $" property and tool columns share the same default usable width ({properties.ActualWidth:0.##}/{grid.ActualWidth:0.##})", Math.Abs(properties.ActualWidth - PropertyPanelLayout.ContentWidth) < 1 && Math.Abs(grid.ActualWidth - properties.ActualWidth) < 1);
         var rows = Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows");
         var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
-        canvas.Refresh(new(), false); canvas.PrepareForShow(); Measure((Wpf.FrameworkElement)canvas.Content, canvas.Width - 2, 540);
+        canvas.Refresh(new()); canvas.PrepareForShow(); Measure((Wpf.FrameworkElement)canvas.Content, canvas.Width - 2, 540);
         var canvasWidth = Field<NumericValueField>(canvas, "width");
         var canvasBody = (Wpf.FrameworkElement)((Wpf.FrameworkElement)canvasWidth.Parent).Parent;
         check(name + " canvas parameter column uses the shared width", Math.Abs(canvasBody.ActualWidth - properties.ActualWidth) < 1);

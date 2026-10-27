@@ -62,13 +62,13 @@ internal static class PanelAcceptanceTests
             var close = (Button)canvas.Template.FindName("Close", canvas);
             var headerPin = Field<Button>(canvas, "pin");
             Observe("idle pin and close share the same caption size and spacing", headerPin.Width == close.Width && headerPin.Height == close.Height && headerPin.Margin == close.Margin);
-            var settings = new CanvasSettings(); settings.Projection.Enabled = true; canvas.Refresh(settings, false);
+            var settings = new CanvasSettings(); settings.Projection.Enabled = true; canvas.Refresh(settings);
             canvas.SetReferenceMonitors([new MonitorInfo("main", new(0,0,1920,1080), new(0,0,1920,1040),96,96,true)], null);
             canvas.PrepareForShow();
             Observe("single-monitor reset becomes a plain button without a dropdown region", Field<Button>(canvas,"resetChoices").Visibility == Visibility.Collapsed);
             var content = (FrameworkElement)canvas.Content;
             content.Measure(new(canvas.Width - 2, 700)); content.Arrange(new(0,0,canvas.Width - 2,700)); content.UpdateLayout();
-            var action = (FrameworkElement)Field<Button>(canvas,"calibrate").Parent;
+            var action = (FrameworkElement)Field<Button>(canvas,"fourPoints").Parent;
             double initial = action.ActualWidth;
             var container = (FrameworkElement)action.Parent;
             Console.WriteLine($"PANEL_ACTION_WIDTH initial={initial} container={container.ActualWidth}");

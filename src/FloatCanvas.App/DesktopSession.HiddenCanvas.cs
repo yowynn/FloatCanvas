@@ -51,7 +51,7 @@ internal sealed partial class DesktopSession
         var source = Active.Document;
         var canvas = source.Canvas.Clone();
         canvas.BackgroundColor = 0;
-        if (_editor.Tool != EditorTool.Canvas) canvas.Grid.Visible = false;
+        canvas.Grid.Visible = false;
         return new() { Kind = source.Kind, Viewport = source.Viewport, LayerOpacity = source.LayerOpacity, Canvas = canvas,
             Elements = source.Elements.Where(element => !_hiddenCanvasElements.Contains(element.Id)).ToList(), Groups = source.Groups };
     }

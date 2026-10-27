@@ -15,7 +15,7 @@ internal sealed partial class DesktopSession
         // without switching documents or taking focus from the external window.
         _overlayWindows?.ClosePopups();
         _windowCoordinator?.SuspendEditingWindows();
-        ClearProjectionHover(); EndCanvasCalibration();
+        ClearProjectionHover(); EndCanvasCalibration(restoreWindows: false);
         CancelSnapshotCapture("EntryBlocked", userInitiated: false);
         CloseImageDrop(); _editor.Cancel(); EndEyedropper(restore: false);
         _toolbar.Hide(); _inspector?.Hide(); _layers?.Hide(); _stampWindow?.Hide(); CloseToolOptions();

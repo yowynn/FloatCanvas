@@ -33,7 +33,7 @@ internal static class CanvasLayoutRegressionTests
             using var scope=layered?new OverlayWindowScope(owner.Handle,()=>true):null;
             var window=new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()) {ShowActivated=false,Opacity=0,IsHitTestVisible=false};
             var layout=new SessionWindowLayout();layout.Track(window);
-            window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}},false);
+            window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}});
             double preferred=window.Width;
             try
             {
@@ -44,9 +44,9 @@ internal static class CanvasLayoutRegressionTests
                 {
                     window.Width=width;Pump();Snapshot("width-"+width+"-"+premeasure);
                 }
-                window.Refresh(new CanvasSettings {Projection=new(){Enabled=false}},false);Pump();Snapshot("flat-"+premeasure);
+                window.Refresh(new CanvasSettings {Projection=new(){Enabled=false}});Pump();Snapshot("flat-"+premeasure);
                 Reopen();Snapshot("flat-reopened-"+premeasure);
-                window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}},false);Pump();Snapshot("perspective-"+premeasure);
+                window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}});Pump();Snapshot("perspective-"+premeasure);
                 Reopen();Snapshot("perspective-reopened-"+premeasure);
                 for(int repeat=0;repeat<3;repeat++){Reopen();Snapshot("repeat-"+repeat+"-"+premeasure);}
                 foreach(double dpi in new[]{1d,1.25,1.5,2})
@@ -74,10 +74,10 @@ internal static class CanvasLayoutRegressionTests
                     name="layered-"+layered+"-"+name;
                     var presets=(CanvasPresetGallery)typeof(CanvasSettingsWindow).GetField("presets",Private)!.GetValue(window)!;
                     var parent=(Border)((ScrollViewer)presets.Parent).Parent;var grid=(Grid)parent.Parent;
-                    var calibrate=(Button)typeof(CanvasSettingsWindow).GetField("calibrate",Private)!.GetValue(window)!;
+                    var fourPoints=(Button)typeof(CanvasSettingsWindow).GetField("fourPoints",Private)!.GetValue(window)!;
                     var slot=System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(parent);
                     var bounds=window.IsVisible?presets.TransformToAncestor(window).TransformBounds(new Rect(presets.RenderSize)):Rect.Empty;
-                    Console.WriteLine($"CANVAS_LAYOUT name={name} requested={window.Width} actual={window.ActualWidth} desired={window.DesiredSize} gallery={presets.ActualWidth}x{presets.ActualHeight} row={Grid.GetRow(parent)} col={Grid.GetColumn(parent)} grid={grid.ActualWidth}x{grid.ActualHeight} columns={string.Join(',',grid.ColumnDefinitions.Select(c=>c.ActualWidth))} rows={string.Join(',',grid.RowDefinitions.Select(r=>r.ActualHeight))} slot={slot} bounds={bounds} actions={((Grid)calibrate.Parent).ActualWidth}");
+                    Console.WriteLine($"CANVAS_LAYOUT name={name} requested={window.Width} actual={window.ActualWidth} desired={window.DesiredSize} gallery={presets.ActualWidth}x{presets.ActualHeight} row={Grid.GetRow(parent)} col={Grid.GetColumn(parent)} grid={grid.ActualWidth}x{grid.ActualHeight} columns={string.Join(',',grid.ColumnDefinitions.Select(c=>c.ActualWidth))} rows={string.Join(',',grid.RowDefinitions.Select(r=>r.ActualHeight))} slot={slot} bounds={bounds} actions={((Grid)fourPoints.Parent).ActualWidth}");
                     if(window.IsVisible)
                     {
                         var visibleBounds=parent.TransformToAncestor(window).TransformBounds(new Rect(parent.RenderSize));

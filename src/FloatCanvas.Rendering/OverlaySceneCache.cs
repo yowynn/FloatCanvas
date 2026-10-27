@@ -115,7 +115,8 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         clock++;
         if (!tiles.TryGetValue(tile, out var entry))
         {
-            bool prefix = grid.Visible || HasVisible(document.Elements, 0, dynamic ? dynamicFirst : document.Elements.Count);
+            bool prefix = grid.Visible || (document.Canvas.BackgroundColor >> 24) != 0 ||
+                HasVisible(document.Elements, 0, dynamic ? dynamicFirst : document.Elements.Count);
             bool suffix = dynamic && HasVisible(document.Elements, dynamicLast + 1, document.Elements.Count);
             long required = checked((long)tile.Bounds.Width * tile.Bounds.Height * 4 * ((prefix ? 1 : 0) + (suffix ? 1 : 0)));
             if (required > byteLimit) { Invalidate(); renderer.Draw(canvas, document, assets); return false; }
@@ -146,8 +147,9 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         {
             var viewport = document.Viewport;
             canvas.ClipRect(new((float)viewport.Left, (float)viewport.Top, (float)viewport.Right, (float)viewport.Bottom));
-            renderer.DrawBackground(canvas, document, assets);
             double opacity = Math.Clamp(document.LayerOpacity, 0, 1);
+            renderer.DrawBackground(canvas, document, assets,
+                includeCanvasBackground: document.Background is { Visible: true }, canvasOpacity: opacity);
             if (!(opacity > 0)) return false;
             if (opacity < 1 && !inPlaceOpacity)
             {
@@ -173,7 +175,11 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         // resolves fractional geometry against this clip differently from clipping a flattened image.
         var viewport = document.Viewport;
         surface.Canvas.ClipRect(new((float)viewport.Left, (float)viewport.Top, (float)viewport.Right, (float)viewport.Bottom));
-        if (includeGrid) renderer.DrawGrid(surface.Canvas, document);
+        if (includeGrid)
+        {
+            if (document.Background is not { Visible: true }) renderer.DrawPlaneColor(surface.Canvas, document, true);
+            renderer.DrawGrid(surface.Canvas, document);
+        }
         renderer.DrawElements(surface.Canvas, document.Elements, assets, first, end);
         BuildCount++; return surface.Snapshot();
     }

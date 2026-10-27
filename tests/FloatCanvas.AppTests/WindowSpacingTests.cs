@@ -51,7 +51,7 @@ internal static class WindowSpacingTests
                 var properties = Field<StackPanel>(inspector, "propertyPanel");
                 check(prefix + " inspector content fills its inset viewport", Math.Abs(properties.ActualWidth - (inspectorScroll.ViewportWidth - 2 * PropertyChangeRegion.HighlightInset)) < .1);
 
-                var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()); canvas.Refresh(new(), false);
+                var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()); canvas.Refresh(new());
                 canvas.PrepareForShow();
                 var canvasRoot = (FrameworkElement)canvas.Content;
                 canvas.Content = null;

@@ -31,9 +31,9 @@ internal static class PropertyChangeRegionTests
     {
         var settings = new CanvasSettings();
         var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
-        window.ProjectionChanged += enabled => { settings.Projection.Enabled = enabled; window.Refresh(settings, false); };
-        window.GridVisibilityChanged += visible => { settings.Grid.Visible = visible; window.Refresh(settings, false); };
-        window.GridSizeLockChanged += locked => { settings.Projection.LockedGridCellSize = locked ? settings.Projection.CellSize : null; window.Refresh(settings, false); };
+        window.ProjectionChanged += enabled => { settings.Projection.Enabled = enabled; window.Refresh(settings); };
+        window.GridVisibilityChanged += visible => { settings.Grid.Visible = visible; window.Refresh(settings); };
+        window.GridSizeLockChanged += locked => { settings.Projection.LockedGridCellSize = locked ? settings.Projection.CellSize : null; window.Refresh(settings); };
         var region = Field<PropertyChangeRegion>(window, "projectionOptions");
         var counts = Field<PropertyChangeRegion>(window, "gridCountsRegion");
         try
@@ -51,7 +51,7 @@ internal static class PropertyChangeRegionTests
             Save(window, Path.Combine(output, theme + "-perspective.png"));
             Pump(1100);
             check(theme + " perspective cue clears and restores automatic height", region.CueStrength == 0 && double.IsNaN(region.Height));
-            window.Refresh(settings, false); Pump(25);
+            window.Refresh(settings); Pump(25);
             check(theme + " regular canvas refresh does not replay the cue", region.CueStrength == 0);
 
             var gridColor = Field<ColorField>(window, "gridColor");
@@ -64,7 +64,7 @@ internal static class PropertyChangeRegionTests
             check(theme + " rapid perspective toggles settle at the latest layout", settings.Projection.Enabled && actions.IsVisible && !flat.IsVisible && double.IsNaN(region.Height) && Math.Abs(region.ActualHeight - region.Child.DesiredSize.Height) < 1);
             window.Hide(); Pump(20);
             check(theme + " hiding cancels both transient regions", region.CueStrength == 0 && counts.CueStrength == 0 && double.IsNaN(region.Height));
-            settings.Projection.Enabled = false; window.Refresh(settings, false); window.Show(); Pump(50);
+            settings.Projection.Enabled = false; window.Refresh(settings); window.Show(); Pump(50);
             check(theme + " reopening synchronizes without a cue", flat.IsVisible && !actions.IsVisible && region.CueStrength == 0);
         }
         finally { window.CloseForDispose(); }

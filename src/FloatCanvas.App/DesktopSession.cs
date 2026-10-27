@@ -191,7 +191,7 @@ internal sealed partial class DesktopSession : IDisposable
             _overlayWindows?.ClosePopups();
             ClearProjectionHover();
             _windowCoordinator?.SuspendEditingWindows();
-            EndCanvasCalibration();
+            EndCanvasCalibration(restoreWindows: false);
             CancelSnapshotCapture("ExternalFocus", userInitiated: false);
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.ExternalFocus);
             // Do not gate focus release on an asynchronous document operation.
@@ -386,7 +386,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (editing && _desktopFallbackPending) return false;
         ClearProjectionHover();
-        if (!editing) { CloseEditingDialogs(); _windowCoordinator?.SuspendEditingWindows(); EndCanvasCalibration(); }
+        if (!editing) { CloseEditingDialogs(); _windowCoordinator?.SuspendEditingWindows(); EndCanvasCalibration(restoreWindows: false); }
         CancelSnapshotCapture(editing ? "ExplicitEntry" : "ModeExit");
         using var destination = editing ? null : _windowCoordinator?.DirectTransfer(WindowDismissReason.ModeExit);
         _newCanvasButton?.CancelConfirmation();
@@ -431,6 +431,9 @@ internal sealed partial class DesktopSession : IDisposable
         PlaceToolbar();
         SessionWindowCoordinator.Show(_toolbar);
         RefreshPassThroughLauncher();
+        // Native canvas activation can occur on every placement/sample press. Keep
+        // the captured windows concealed until that complete interaction restores them.
+        if (_canvasPlacementSession is not null || _eyedropper is not null) return;
         if(_inspectorWanted && _inspector is not null){_inspector.PrepareForShow();ShowAppWindow(_inspector);}
         if(_layersWanted && _layers is not null){_layers.PrepareForShow();ShowAppWindow(_layers);}
         _windowCoordinator?.ResumeEditingWindows();
@@ -510,7 +513,7 @@ internal sealed partial class DesktopSession : IDisposable
             {
                 if(_inspector is {IsVisible:true})_inspector.Refresh();
                 if(_layers is {IsVisible:true})_layers.Refresh();
-                if(_canvasSettingsWindow is {IsVisible:true})_canvasSettingsWindow.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+                if(_canvasSettingsWindow is {IsVisible:true})_canvasSettingsWindow.Refresh(Active.Document.Canvas);
                 if (IsToolOptionsOpen) _toolOptionsPanel.RefreshDocumentState();
             }
         }
@@ -588,7 +591,7 @@ internal sealed partial class DesktopSession : IDisposable
         {
             if (_canvasCalibration.IsDragging) _canvasCalibration.CancelDrag();
             else if (_canvasGridScale.IsDragging) _canvasGridScale.Cancel();
-            else if (_canvasCalibration.IsPlacing) { _canvasCalibration.End(); SynchronizeCanvasTool(); }
+            else if (_canvasCalibration.IsPlacing) CancelCanvasFourPoints();
             else DismissCanvasSettings();
             RequestRender(); return;
         }
@@ -688,7 +691,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (redo) Active.Redo(); else Active.Undo();
             SynchronizeCanvasTool();
             _toolOptionsPanel.RefreshPresets();
-            _canvasSettingsWindow?.Refresh(Active.Document.Canvas, _canvasCalibration.IsActive);
+            _canvasSettingsWindow?.Refresh(Active.Document.Canvas);
             foreach (var window in new Window?[] { _toolOptionsWindow, _canvasSettingsWindow, _inspector })
                 if (window is { IsVisible: true }) RefreshColorPresets(window);
         }
@@ -705,7 +708,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         var canvas = surface.Canvas;
         var context = CurrentPreviewContext();
-        bool current = _canvasPreview.Frame is { } frame && frame.Context == context;
+        bool current = _canvasPreview.Frame is { } frame && frame.Context.HasSameContent(context);
         if (current)
             _canvasPreview.Frame!.Pixels.Draw(canvas);
         else

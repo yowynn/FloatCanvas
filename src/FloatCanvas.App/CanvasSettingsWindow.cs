@@ -18,6 +18,7 @@ internal sealed class CanvasSettingsWindow : Window
         width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5) { Unit = "px" };
     private readonly NumericValueField gridSize = new(CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize,
         sliderMinimum: 1, sliderMaximum: 400, step: 1) { Unit = "px" };
+    private readonly NumericValueField guideOpacity = new(0, 100, integerOnly: true) { Unit = "%" };
     private readonly Grid countPair = new();
     private readonly StackPanel flatSizePanel = new();
     private readonly PropertyChangeRegion projectionOptions, gridCountsRegion;
@@ -25,9 +26,9 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly TextBox lockedColumns = new() { IsReadOnly = true, MinHeight = 30 },
         lockedRows = new() { IsReadOnly = true, MinHeight = 30 };
     private readonly TextBlock gridSizeLockHint = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 8) };
-    private readonly Button calibrate = new(), reset = new();
+    private readonly Button reset = new();
     internal const double PerspectiveActionsWidth = PropertyPanelLayout.ContentWidth;
-    private readonly Button fourPoints = new() {Width=34,MinWidth=0,MinHeight=32,Padding=new(7),ToolTip=L.Get("Canvas.FourPoints")};
+    private readonly Button fourPoints = new() { MinHeight = 32, Padding = new(10, 4, 10, 4), Content = L.Get("Canvas.FourPoints") };
     private readonly ComboBox pattern = new OverlayComboBox();
     private readonly StackPanel perspectiveActions = new() { Margin = new(0, 8, 0, 8) };
     private readonly OverlayContextMenu resetMenu = new();
@@ -36,7 +37,8 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly CanvasPresetGallery presets;
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 10, 0, 0) };
     private bool refreshing, disposing;
-    private bool refreshPending, preparingForShow, calibrating, referenceMonitorsPending;
+    private bool refreshPending, preparingForShow, referenceMonitorsPending, guideOpacityPending = true;
+    private double currentGuideOpacity = 1;
     private CanvasSettings current = new();
     private CanvasSettings? pendingDisplayedSettings;
     private IReadOnlyList<MonitorInfo> referenceMonitors = [];
@@ -49,6 +51,7 @@ internal sealed class CanvasSettingsWindow : Window
     public event Action<int, int>? GridCountsChanged;
     public event Action<double>? GridWidthChanged;
     public event Action<double>? GridSizeChanged;
+    public event Action<double>? GuideOpacityChanged;
     public bool IsPinned { get; private set; }
     public event Action? PinChanged;
     public bool IsColorPickerOpen => background.IsPickerOpen || gridColor.IsPickerOpen;
@@ -56,7 +59,7 @@ internal sealed class CanvasSettingsWindow : Window
     public bool OwnsColorPickerInput(DependencyObject? source) => background.OwnsPickerInput(source) || gridColor.OwnsPickerInput(source);
     public void ClosePickers() { background.ClosePicker(); gridColor.ClosePicker(); }
     public event Action<StrokePattern>? GridPatternChanged;
-    public event Action? CalibrationToggled, Dismissed;
+    public event Action? Dismissed;
     public event Action? FourPointsRequested;
     public event Action<CanvasPresetParameters>? PresetApplied;
     public event Action<string?>? ResetDisplaySelected;
@@ -101,25 +104,30 @@ internal sealed class CanvasSettingsWindow : Window
         gridCountsRegion = new(countBody); projectionBody.Children.Add(gridCountsRegion);
         var actions = new Grid {Width=PerspectiveActionsWidth,HorizontalAlignment=HorizontalAlignment.Center};
         actions.SetBinding(MaxWidthProperty, new System.Windows.Data.Binding(nameof(ActualWidth)) { Source = perspectiveActions });
-        actions.ColumnDefinitions.Add(new());actions.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
-        calibrate.MinHeight = reset.MinHeight = 32; calibrate.Padding = reset.Padding = new(10, 4, 10, 4);
-        calibrate.Margin = new(0, 0, 6, 0); reset.Content = L.Get("Canvas.ResetOnDisplay");
+        actions.ColumnDefinitions.Add(new());
+        reset.MinHeight = 32; reset.Padding = new(10, 4, 10, 4);
+        reset.Content = L.Get("Canvas.ResetOnDisplay");
         reset.ToolTip = resetChoices.ToolTip = L.Get("Canvas.ReferenceDisplayHint");
         resetChoices.ContextMenu = resetMenu; resetMenu.PlacementTarget = resetChoices;
         resetMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         System.Windows.Automation.AutomationProperties.SetName(resetChoices, L.Get("Canvas.ResetChoices"));
         resetChoices.Click += (_, _) => resetMenu.IsOpen = true;
-        fourPoints.Content=CommandGlyphs.Create(CommandGlyphs.Canvas);
+        fourPoints.ToolTip = L.Get("Canvas.FourPointsHint");
         System.Windows.Automation.AutomationProperties.SetName(fourPoints,L.Get("Canvas.FourPoints"));
-        Grid.SetColumn(fourPoints,1);actions.Children.Add(calibrate); actions.Children.Add(fourPoints);
+        actions.Children.Add(fourPoints);
         var resetActions=new Grid {Width=PerspectiveActionsWidth,HorizontalAlignment=HorizontalAlignment.Center,Margin=new(0,6,0,0)};
         resetActions.SetBinding(MaxWidthProperty, new System.Windows.Data.Binding(nameof(ActualWidth)) { Source = perspectiveActions });
         resetActions.ColumnDefinitions.Add(new());resetActions.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
         reset.Resources["CanvasButtonCornerRadius"]=new CornerRadius(6,0,0,6);
+        reset.BorderThickness = new(0);
         resetChoices.Resources["CanvasButtonCornerRadius"]=new CornerRadius(0,6,6,0);
         resetChoices.Width=34;resetChoices.MinWidth=0;resetChoices.BorderThickness=new(1,0,0,0);
         resetChoices.SetResourceReference(Button.BorderBrushProperty,"CanvasBorder");
         Grid.SetColumn(resetChoices,1);resetActions.Children.Add(reset);resetActions.Children.Add(resetChoices);
+        var resetOutline = new Border { Background = null, BorderThickness = new(1), CornerRadius = new(6),
+            IsHitTestVisible = false, SnapsToDevicePixels = true };
+        resetOutline.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
+        Grid.SetColumnSpan(resetOutline, 2); resetActions.Children.Add(resetOutline);
         perspectiveActions.Children.Add(actions);perspectiveActions.Children.Add(resetActions); projectionBody.Children.Add(perspectiveActions);
         projectionOptions = new(projectionBody); body.Children.Add(projectionOptions);
         var gridBody = new StackPanel();
@@ -129,6 +137,8 @@ internal sealed class CanvasSettingsWindow : Window
             pattern.Items.Add(new ComboBoxItem { Content = ToolOptionPreviews.Choice(L.Get("Canvas." + value), value), Tag = value });
         AddField(gridBody, "Canvas.GridPattern", pattern);
         body.Children.Add(gridBody);
+        AddField(body, "Canvas.GuideOpacity", guideOpacity);
+        guideOpacity.ToolTip = L.Get("Canvas.GuideOpacityHint");
         content.Children.Add(PropertyChangeRegion.ReserveHighlightSpace(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }));
         presets = new CanvasPresetGallery(library);
         presets.Applied += parameters => PresetApplied?.Invoke(parameters);
@@ -168,7 +178,7 @@ internal sealed class CanvasSettingsWindow : Window
             gridCountsRegion.Change(() => { if (!refreshing && current.Projection.Enabled) GridSizeLockChanged?.Invoke(gridSizeLock.IsChecked == true); });
         };
         gridVisible.Click += (_, _) => { if (!refreshing) GridVisibilityChanged?.Invoke(gridVisible.IsChecked == true); };
-        calibrate.Click += (_, _) => CalibrationToggled?.Invoke(); reset.Click += (_, _) => ResetDisplayRequested?.Invoke(selectedResetDevice);
+        reset.Click += (_, _) => ResetDisplayRequested?.Invoke(selectedResetDevice);
         fourPoints.Click+=(_,_)=>FourPointsRequested?.Invoke();
         pattern.SelectionChanged += (_, _) => { if (!refreshing && pattern.SelectedItem is ComboBoxItem { Tag: StrokePattern value }) GridPatternChanged?.Invoke(value); };
         CommitOnExit(columns.Input, CommitCounts); CommitOnExit(rows.Input, CommitCounts);
@@ -192,6 +202,8 @@ internal sealed class CanvasSettingsWindow : Window
         }
         CommitOnExit(width.Input, CommitWidth);
         width.SliderValueCommitted += () => { if (!refreshing) CommitWidth(); };
+        CommitOnExit(guideOpacity.Input, CommitGuideOpacity);
+        guideOpacity.SliderValueCommitted += CommitGuideOpacity;
         Closing += (_, e) => { if (disposing) return; e.Cancel = true; ResetPin(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         ToolOptionsKeyboardRoute.Attach(this, () =>
         {
@@ -203,14 +215,15 @@ internal sealed class CanvasSettingsWindow : Window
             if (columns.Input.IsKeyboardFocusWithin || rows.Input.IsKeyboardFocusWithin) CommitCounts();
             else if (gridSize.Input.IsKeyboardFocusWithin) CommitGridSize();
             else if (width.Input.IsKeyboardFocusWithin) CommitWidth();
+            else if (guideOpacity.Input.IsKeyboardFocusWithin) CommitGuideOpacity();
             CommandKey?.Invoke(key);
         });
         IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); };
-        Refresh(new(), false);
+        Refresh(new());
     }
-    public void Refresh(CanvasSettings settings, bool calibrating)
+    public void Refresh(CanvasSettings settings)
     {
-        current = settings.Clone(); pendingDisplayedSettings = settings; this.calibrating = calibrating; refreshPending = true;
+        current = settings.Clone(); pendingDisplayedSettings = settings; refreshPending = true;
         if (IsVisible) PrepareForShow();
         else presets.Refresh(current);
     }
@@ -220,6 +233,7 @@ internal sealed class CanvasSettingsWindow : Window
         try
         {
             if (refreshPending) RefreshControls();
+            if (guideOpacityPending && CanRefresh(guideOpacity)) RefreshGuideOpacityControl();
             if (referenceMonitorsPending && CanRefresh(reset)) RefreshReferenceMonitors();
             if (CanRefresh(presets)) presets.PrepareForShow();
         }
@@ -238,7 +252,6 @@ internal sealed class CanvasSettingsWindow : Window
             RefreshProjectionControls();
             if (CanRefresh(gridSize) && !gridSize.IsKeyboardFocusWithin && !gridSize.IsInteracting) RefreshGridSize(current.Grid.FlatCellSize ?? current.Projection.GridCellSize);
             if (CanRefresh(width) && !width.IsKeyboardFocusWithin && !width.IsInteracting) RefreshWidth(current.Grid.Width);
-            if (CanRefresh(calibrate)) calibrate.Content = L.Get(calibrating ? "Canvas.EndCalibration" : "Canvas.Calibrate");
             if (CanRefresh(pattern)) pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(x => Equals(x.Tag, current.Grid.Pattern));
             presets.Refresh(current);
         }
@@ -254,6 +267,26 @@ internal sealed class CanvasSettingsWindow : Window
         bool wasRefreshing = refreshing; refreshing = true;
         try { RefreshProjectionControls(); }
         finally { refreshing = wasRefreshing; }
+    }
+    internal void RefreshGuideOpacity(double opacity)
+    {
+        currentGuideOpacity = Math.Clamp(opacity, 0, 1); guideOpacityPending = true;
+        if (IsVisible && CanRefresh(guideOpacity)) RefreshGuideOpacityControl();
+    }
+    private void RefreshGuideOpacityControl()
+    {
+        if (guideOpacity.IsKeyboardFocusWithin || guideOpacity.IsInteracting) return;
+        bool wasRefreshing = refreshing; refreshing = true;
+        try { guideOpacity.Value = currentGuideOpacity * 100; guideOpacityPending = false; }
+        finally { refreshing = wasRefreshing; }
+    }
+    private void CommitGuideOpacity()
+    {
+        if (refreshing) return;
+        if (!guideOpacity.TryGetValue(out double percent)) { guideOpacity.Value = currentGuideOpacity * 100; return; }
+        double opacity = percent / 100;
+        if (opacity == currentGuideOpacity) return;
+        currentGuideOpacity = opacity; GuideOpacityChanged?.Invoke(opacity);
     }
     private void RefreshProjectionControls()
     {

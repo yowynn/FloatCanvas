@@ -48,7 +48,7 @@ internal static class CanvasHiddenRefreshTests
                 var second = new MonitorInfo("second", new(1920,0,1280,720), new(1920,0,1280,680), 96,96,false);
                 var initial = new CanvasSettings { BackgroundColor = 0xFF112233, Projection = new() { Enabled = true, Columns = 8, Rows = 6 },
                     Grid = new() { Visible = true, Color = 0xFF345678, Width = 2, FlatCellSize = 48 } };
-                window.Refresh(initial, false); window.SetReferenceMonitors([main], null); Pump();
+                window.Refresh(initial); window.SetReferenceMonitors([main], null); Pump();
                 window.Hide(); Pump();
                 string before = Snapshot(); object? previewBefore = firstPreset.Content;
                 int presetRefreshes = 0;
@@ -63,7 +63,7 @@ internal static class CanvasHiddenRefreshTests
                         latest = new CanvasSettings { BackgroundColor = 0xFF223300u + (uint)index,
                             DepthPriorityOcclusion = true, Projection = new() { Enabled = true, Columns = 20 + index, Rows = 10 + index, CellSize = 2 + index },
                             Grid = new() { Visible = true, Color = 0xFF445500u + (uint)index, Width = 3 + index, FlatCellSize = 100 + index, Pattern = StrokePattern.Dotted } };
-                        window.Refresh(latest, index % 2 == 0);
+                        window.Refresh(latest);
                     }
                     var countUpdate = latest.Projection.Clone(); countUpdate.Columns = 33; countUpdate.Rows = 17;
                     window.RefreshGridCounts(countUpdate);
@@ -84,7 +84,7 @@ internal static class CanvasHiddenRefreshTests
                 flat.Projection.LockedGridCellSize = 100; flat.Grid.FlatCellSize = 73.75; flat.Grid.Visible = false; flat.Grid.Width = 9;
                 double oldColumns = columns.Value, oldRows = rows.Value;
                 string oldLockedColumns = lockedColumns.Text, oldLockedRows = lockedRows.Text;
-                window.Refresh(flat, false); Pump();
+                window.Refresh(flat); Pump();
                 findings.Add(($"{backend} flat canvas refresh does not touch hidden perspective inputs", !columns.IsVisible && !rows.IsVisible &&
                     columns.Value == oldColumns && rows.Value == oldRows && lockedColumns.Text == oldLockedColumns && lockedRows.Text == oldLockedRows));
                 findings.Add(($"{backend} flat canvas refresh synchronizes its visible size field", size.IsVisible && size.Value == 73.75));
@@ -92,7 +92,7 @@ internal static class CanvasHiddenRefreshTests
 
                 var perspective = flat.Clone(); perspective.Projection.Enabled = true; perspective.Projection.Columns = 7; perspective.Projection.Rows = 9;
                 perspective.Projection.CellSize = 200; perspective.Grid.FlatCellSize = 999;
-                window.Refresh(perspective, false); Pump();
+                window.Refresh(perspective); Pump();
                 findings.Add(($"{backend} perspective refresh leaves the hidden flat size field untouched", !size.IsVisible && size.Value == 73.75));
                 findings.Add(($"{backend} locked counts update readouts without updating hidden editable counts", lockedColumns.IsVisible && lockedRows.IsVisible &&
                     !columns.IsVisible && !rows.IsVisible && columns.Value == oldColumns && rows.Value == oldRows &&
@@ -106,10 +106,10 @@ internal static class CanvasHiddenRefreshTests
                 colorRow.Visibility = widthRow.Visibility = patternRow.Visibility = Visibility.Collapsed;
                 uint previousColor = gridColor.Value; double previousWidth = width.Value; object? previousPattern = pattern.SelectedItem;
                 perspective.Grid.Color = 0xFFABCDEF; perspective.Grid.Width = 17; perspective.Grid.Pattern = StrokePattern.Dashed;
-                window.Refresh(perspective, false); Pump();
+                window.Refresh(perspective); Pump();
                 findings.Add(($"{backend} actually hidden grid rows skip value and selection refresh", gridColor.Value == previousColor && width.Value == previousWidth && ReferenceEquals(pattern.SelectedItem, previousPattern)));
                 colorRow.Visibility = widthRow.Visibility = patternRow.Visibility = Visibility.Visible;
-                window.Refresh(perspective, false); Pump();
+                window.Refresh(perspective); Pump();
                 findings.Add(($"{backend} revealed grid rows receive the latest pending values", gridColor.Value == 0xFFABCDEF && width.Value == 17 && Equals((pattern.SelectedItem as ComboBoxItem)?.Tag, StrokePattern.Dashed)));
                 findings.Add(($"{backend} canvas refresh never activates a fixture window", !FixtureOwnsForeground()));
 
