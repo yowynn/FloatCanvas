@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 增强覆盖层向 Windows 系统截图和 ShareX 全屏截图／编辑界面自动交接，避免实时画布继续覆盖冻结截图和其中的工具条影像；不自动接管其他软件。自身工具、弹窗与输入窗口落到画布下方时独立恢复顺序，不依赖截图识别。
+- Yield enhanced presentation automatically to Windows screen clipping and ShareX fullscreen capture/editor surfaces, preventing the live canvas from covering frozen screenshots and their toolbar pixels. Other programs do not trigger automatic handoff. Independently recover own tools, popups and input windows above the canvas when their order is inverted.
+
 - 修复使用增强输入进入编辑时因残留按键状态而无限等待的问题：仍检测到按键按下超过 2 秒时取消本次进入，显示具体按键及重试提示，保留当前工程与撤销记录；等待释放和输入接管确认分别计时。
 - Fix indefinite enhanced-input editing-entry waits caused by residual pressed-key state. Cancel an entry that still detects held keys after two seconds, show the blocking keys and retry instructions, and preserve the current project and undo history. Key release and input acknowledgement use separate time budgets.
 - 普通模式进入编辑时，历史按键记录不再覆盖当前按键快照；已放行按键的重复和释放仍完整放行，避免旧状态粘连及吞掉全局松键。

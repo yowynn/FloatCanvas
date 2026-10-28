@@ -143,6 +143,18 @@ internal static class NativeWindowOrderTests
             }
             check(Ordered(protectedHandles).SequenceEqual(protectedOrder), "Fault injection recovery also preserves the protected input/tool/modal order");
 
+            // Inject only an internal ordering fault; no screenshot identity or lost
+            // display topmost flag is involved. A live tool must stay above the canvas.
+            Check(SetWindowPos(foreign, HwndTopmost, 0, 0, 0, 0, 0x213)); Pump(250);
+            Check(SetWindowPos(tool, displays[^1], 0, 0, 0, 0, 0x213));
+            check(displays.All(IsTopmost) && Rank(tool) > Rank(displays[^1]),
+                "The fixture injects a live own tool below a still-topmost canvas");
+            var invertedProtectedOrder = Ordered(protectedHandles);
+            check(Until(() => protectedHandles.All(handle => displays.All(display => Rank(handle) < Rank(display))), 1500),
+                "Own tool/canvas inversions recover independently of screenshot detection or external blockers");
+            check(Ordered(protectedHandles).SequenceEqual(invertedProtectedOrder) && displays.All(display => Rank(foreign) < Rank(display)),
+                "Internal recovery preserves UI relative order and leaves a foreign topmost peer ahead");
+
             host.EndDropReception(); host.SetVisible(false); Pump(250);
             int hiddenPositions = observers.Sum(item => item.Count);
             Check(SetWindowPos(foreign, HwndTopmost, 0, 0, 0, 0, 0x213)); Pump(350);

@@ -19,6 +19,7 @@ internal static class Program
         try
         {
             if (args.Contains("--isolated-ui-desktop")) return IsolatedUiDesktop.Run(args);
+            if (args is ["--screenshot-peer", var peerMode]) { ScreenshotPeerFixture.Run(peerMode); return 0; }
             if (args.Contains("--panel-review-only")) { PanelReviewRegressionTests.Run(Assert, args.SkipWhile(a => a != "--panel-review-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-spacing-only")) { WindowSpacingTests.Run(Assert); return 0; }
             if (args.Contains("--property-visuals-only")) { PropertyVisualTests.Run(Assert); return 0; }
@@ -132,6 +133,7 @@ internal static class Program
             if (args.Contains("--phase3-screenclip-observe")) { Phase3ScreenClipProbe.Observe(); return 0; }
             if (args.Contains("--phase3-band-transfer-probe")) { Phase3ScreenClipProbe.BandTransfer(); return 0; }
             if (args.Contains("--phase3-system-screenshot-only")) { Phase3SystemScreenshotTests.Run(Assert); return 0; }
+            if (args.Contains("--third-party-screenshot-only")) { Phase3SystemScreenshotTests.Run(Assert, captureProcess: "ShareX"); return 0; }
             if (args.Contains("--phase3-screenclip-receiver")) { Phase3ScreenClipProbe.Receiver(); return 0; }
             if (args.Contains("--brush-preview-only")) { BrushPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--preview-animation-schedule-only")) { PreviewAnimationScheduleTests.Run(Assert); return 0; }

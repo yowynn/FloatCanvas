@@ -15,8 +15,9 @@ using SkiaSharp;
 internal static class Phase3SystemScreenshotTests
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-    internal static void Run(Action<string, bool> check)
+    internal static void Run(Action<string, bool> check, string? captureProcess = null)
     {
+        bool externalCapture = captureProcess is not null;
         string root = Environment.GetEnvironmentVariable("FLOATCANVAS_PHASE3_ARTIFACTS") ?? Path.Combine(Path.GetTempPath(), "FloatCanvas-phase3-screenclip");
         string profile = Path.Combine(root, "offscreen-profile-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile); ApplicationPaths.Configure(["--profile", profile]);
@@ -37,6 +38,7 @@ internal static class Phase3SystemScreenshotTests
         var editor = Field<EditorController>(session, "_editor");
         string before = JsonSerializer.Serialize(editor.Session.Document);
         Window? tool = null, retained = null;
+        ScreenshotPeerFixture? external = null;
         try
         {
             tool = Tool(Brushes.LimeGreen, 100, 50);
@@ -46,9 +48,30 @@ internal static class Phase3SystemScreenshotTests
             host.Render();
             var originals = host.Diagnostics.Select(d => d.DisplayHandle).ToArray();
             check("screenshot fixture starts with a real enhanced display", GetWindowBand(originals[0], out uint originalBand) && originalBand == 16);
+            if (externalCapture)
+            {
+                foreach (string mode in new[] { "small", "bordered", "notopmost", "transparent", "main" })
+                {
+                    using var rejected = ScreenshotPeerFixture.Start(mode);
+                    Invoke("RepairWindowOrder");
+                    check($"ShareX {mode} window does not interrupt the enhanced canvas", !host.IsSystemScreenshotActive && originals.All(IsWindowVisible));
+                }
+                using (var unrelated = ScreenshotPeerFixture.Start("region", "UnlistedCapture"))
+                {
+                    Invoke("RepairWindowOrder");
+                    check("an unlisted fullscreen capture-like window does not trigger automatic handoff", !host.IsSystemScreenshotActive && originals.All(IsWindowVisible));
+                }
+            }
             // Arm the session policy without acquiring any real input lease.
             typeof(OverlayHost).GetField("<IsEditing>k__BackingField", Private)!.SetValue(host, true);
-            Invoke("StartSystemScreenshot", peer.Handle, true);
+            if (externalCapture)
+            {
+                external = ScreenshotPeerFixture.Start("region", captureProcess!);
+                Invoke("RepairWindowOrder");
+                check($"{captureProcess} region UI triggers production handoff and hides the enhanced canvas", host.IsSystemScreenshotActive && originals.All(handle => !IsWindowVisible(handle)));
+            }
+            else Invoke("StartSystemScreenshot", peer.Handle, true);
+            nint peerHandle = external?.Handle ?? peer.Handle;
             check("system screenshot releases editing even when global foreground did not switch", host.IsSystemScreenshotActive && !host.IsEditing);
             Field<UserSettings>(session, "_settings").ShowPassThroughLauncher = true;
             typeof(DesktopSession).GetMethod("RefreshPassThroughLauncher", Private)!.Invoke(session, null);
@@ -69,17 +92,33 @@ internal static class Phase3SystemScreenshotTests
             check("live enhanced displays and tools cannot cover system screenshot UI", originals.All(handle => !IsWindowVisible(handle)) &&
                 !IsWindowVisible(new WindowInteropHelper(tool).Handle) && !IsWindowVisible(new WindowInteropHelper(retained).Handle));
             check("native hiding preserves logical window state for the real focus-loss policy", tool.IsVisible && retained.IsVisible && !host.IsEditing);
-            SetWindowPos(peer.Handle, -1, 0, 0, 0, 0, 0x53);
-            check("a later ordinary topmost screenshot peer can cover the snapshot", Above(peer.Handle, mirror));
+            SetWindowPos(peerHandle, -1, 0, 0, 0, 0, 0x53);
+            check("a later ordinary topmost screenshot peer can cover the snapshot", Above(peerHandle, mirror));
+            if (externalCapture)
+            {
+                Invoke("HandleSystemScreenshotMessage", 0x113u, (nuint)0x464D);
+                check($"{captureProcess} region UI keeps the handoff active across timer ticks", host.IsSystemScreenshotActive && Above(peerHandle, mirror));
+            }
             rendered = SKColors.Red; host.Render();
             using (var image = surface.Snapshot())
             using (var pixels = SKBitmap.FromImage(image)) check("new live rendering does not alter the frozen screenshot presentation", pixels.GetPixel(20, 20) == SKColors.Blue);
             tool.Hide();
-            Invoke("EndSystemScreenshot", true);
+            if (externalCapture)
+            {
+                external!.Dispose(); external = null;
+                Invoke("HandleSystemScreenshotMessage", 0x113u, (nuint)0x464D);
+            }
+            else Invoke("EndSystemScreenshot", true);
             check("ending the presentation destroys its temporary HWND and restores enhanced display", !IsWindow(mirror) && originals.All(IsWindowVisible));
             check("tools closed by focus loss stay closed while retained visuals recover", !tool.IsVisible && !IsWindowVisible(new WindowInteropHelper(tool).Handle) &&
                 retained.IsVisible && IsWindowVisible(new WindowInteropHelper(retained).Handle));
             check("screenshot presentation leaves the document and input ownership unchanged", before == JsonSerializer.Serialize(editor.Session.Document) && !host.IsEditing && !host.HasEditingInput);
+            if (externalCapture)
+                foreach (string mode in new[] { "localized", "fullscreen-editor" })
+                {
+                    using var recognized = ScreenshotPeerFixture.Start(mode, captureProcess!);
+                    check($"{captureProcess} {mode} uses the same caption-independent capture policy", (bool)typeof(OverlayHost).GetMethod("IsSystemScreenshotWindow", Private)!.Invoke(host, [recognized.Handle])!);
+                }
             var captureTools = host.CaptureToolVisuals;
             host.CaptureToolVisuals = () => throw new InvalidOperationException("own screenshot allocation failure");
             typeof(OverlayHost).GetField("<IsEditing>k__BackingField", Private)!.SetValue(host, true);
@@ -95,7 +134,7 @@ internal static class Phase3SystemScreenshotTests
                 retained.IsVisible && IsWindowVisible(new WindowInteropHelper(retained).Handle));
             Pump(); check("offscreen screenshot regression never takes foreground", ownForeground == 0);
         }
-        finally { tool?.Close(); retained?.Close(); UnhookWinEvent(hook); GC.KeepAlive(foreground); }
+        finally { external?.Dispose(); tool?.Close(); retained?.Close(); UnhookWinEvent(hook); GC.KeepAlive(foreground); }
 
         Window Tool(Brush background, int x, int y)
         {

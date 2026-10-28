@@ -70,14 +70,23 @@ public sealed partial class OverlayHost
             !GetWindowRect(window, out var rect) || !_monitors.Any(m => rect.Left <= m.Bounds.Left && rect.Top <= m.Bounds.Top &&
                 rect.Right >= m.Bounds.Right && rect.Bottom >= m.Bounds.Bottom)) return false;
         var name = new StringBuilder(128); GetClassNameW(window, name, name.Capacity);
-        if (name.ToString() is not ("SnipOverlayRootWindow" or "XamlWindow" or "ScreenClippingWindow")) return false;
-        // Normal Snipping Tool editor windows must not initiate this presentation.
-        if (((long)GetWindowLongPtr(window, GwlExStyle) & ExTopmost) == 0) return false;
+        string windowClass = name.ToString();
+        bool systemClass = windowClass is "SnipOverlayRootWindow" or "XamlWindow" or "ScreenClippingWindow";
+        bool formsClass = windowClass.StartsWith("WindowsForms10.Window.", StringComparison.Ordinal);
+        if (!systemClass && !formsClass) return false;
+        long extended = (long)GetWindowLongPtr(window, GwlExStyle);
+        if ((extended & ExTopmost) == 0) return false;
         try
         {
             using var candidate = Process.GetProcessById((int)process);
-            if (candidate.ProcessName is not ("SnippingTool" or "ScreenClippingHost")) return false;
-            if (name.ToString() != "XamlWindow") return true;
+            // Only the two validated capture products opt into automatic handoff.
+            // ShareX fullscreen capture/editor surfaces share this WinForms shape;
+            // ordinary settings, main windows and transparent HUDs do not qualify.
+            if (string.Equals(candidate.ProcessName, "ShareX", StringComparison.OrdinalIgnoreCase))
+                return formsClass && IsWindowVisible(window) && ((long)GetWindowLongPtr(window, -16) & 0x00C40000) == 0 &&
+                    (extended & (ExTransparent | 0x00040000)) == 0; // CAPTION | THICKFRAME; APPWINDOW
+            if (!systemClass || candidate.ProcessName is not ("SnippingTool" or "ScreenClippingHost")) return false;
+            if (windowClass != "XamlWindow") return true;
             // The editor is also XamlWindow. Require the capture host's root,
             // including its hidden pre-show state, rather than mistaking a pinned
             // maximized editor for an active screenshot.
