@@ -2,6 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace FloatCanvas.Core;
 
+public enum CanvasPinLocation { TopLeft, Top, TopRight, Left, Center, Right, BottomLeft, Bottom, BottomRight }
+
 public sealed class CanvasSettings
 {
     public uint BackgroundColor { get; set; }
@@ -21,10 +23,23 @@ public sealed class CanvasProjectionSettings
     public PointD Origin { get; set; }
     /// <summary>Persisted plane units per square cell; loading never recalibrates this value.</summary>
     public double CellSize { get; set; } = 1;
-    /// <summary>Fixed display-grid spacing in plane units; null follows calibration's reference cell size.</summary>
+    /// <summary>Fixed logical grid spacing while corners change; null follows the calibrated cell size.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? LockedGridCellSize { get; set; }
+    public CanvasPinLocation PinLocation { get; set; } = CanvasPinLocation.BottomLeft;
+    /// <summary>Unwarped reference captured at reset, never inferred from subsequent calibration results.</summary>
+    public RectD? ReferenceBounds { get; set; }
+    public PointD? PinPlanePoint { get; set; }
     [JsonIgnore]
-    public double GridCellSize => LockedGridCellSize is { } size && double.IsFinite(size) && size > 0 ? size : CellSize;
+    public PointD PinPoint => ReferenceBounds is { } bounds
+        ? bounds.Center + new PointD((PinGridPoint.X - Columns / 2.0) * ReferenceCellSize, (PinGridPoint.Y - Rows / 2.0) * ReferenceCellSize)
+        : PinPlanePoint ?? Origin + PinGridPoint * CellSize;
+    [JsonIgnore]
+    public double ReferenceCellSize => ReferenceBounds is { } bounds ? Math.Max(bounds.Width / Columns, bounds.Height / Rows) : CellSize;
+    [JsonIgnore]
+    public PointD PinGridPoint => new((int)PinLocation % 3 * Columns / 2.0, (int)PinLocation / 3 * Rows / 2.0);
+    [JsonIgnore]
+    public double GridCellSize => LockedGridCellSize ?? CellSize;
     [JsonIgnore]
     public double GridColumns => Columns * (CellSize / GridCellSize);
     [JsonIgnore]
@@ -32,11 +47,11 @@ public sealed class CanvasProjectionSettings
     /// <summary>Screen corners in top-left, top-right, bottom-right, bottom-left order. Empty means not yet initialized.</summary>
     public List<PointD> Quad { get; set; } = [];
     public Projective2D Matrix { get; set; } = Projective2D.Identity;
-    public int AlgorithmVersion { get; set; } = 1;
+    public int AlgorithmVersion { get; set; } = CanvasCalibration.AlgorithmVersion;
     public CanvasProjectionSettings Clone() => new()
     {
         Enabled = Enabled, Columns = Columns, Rows = Rows, Origin = Origin, CellSize = CellSize, LockedGridCellSize = LockedGridCellSize,
-        Quad = [.. Quad], Matrix = Matrix, AlgorithmVersion = AlgorithmVersion
+        Quad = [.. Quad], Matrix = Matrix, AlgorithmVersion = AlgorithmVersion, PinLocation = PinLocation, PinPlanePoint = PinPlanePoint, ReferenceBounds = ReferenceBounds
     };
 }
 
@@ -50,6 +65,7 @@ public sealed class CanvasGridSettings
     public double? FlatCellSize { get; set; }
     /// <summary>Primary-screen center in document screen coordinates. Null uses the document viewport center.</summary>
     public PointD? FlatOrigin { get; set; }
+    public PointD FlatTranslation { get; set; }
     public CanvasGridSettings Clone() => (CanvasGridSettings)MemberwiseClone();
 }
 
@@ -57,7 +73,7 @@ public sealed class CanvasGridSettings
 public static class CanvasCalibration
 {
     public const int MaximumGridCount = 256;
-    public const int AlgorithmVersion = 1;
+    public const int AlgorithmVersion = 2;
     public static bool TryOrderCorners(IReadOnlyList<PointD> points,out PointD[] quad)
     {
         quad=[];
@@ -74,15 +90,17 @@ public static class CanvasCalibration
         if (columns is < 1 or > MaximumGridCount || rows is < 1 or > MaximumGridCount) throw new ArgumentOutOfRangeException(nameof(columns));
         double size = Math.Min(viewport.Width * .6 / columns, viewport.Height * .6 / rows);
         if (!double.IsFinite(size) || size <= 0) throw new ArgumentOutOfRangeException(nameof(viewport));
-        var origin = new PointD(viewport.Center.X - columns * size / 2, viewport.Center.Y - rows * size / 2);
-        return new() { Columns = columns, Rows = rows, Origin = origin, CellSize = size,
-            Quad = [origin, origin + new PointD(columns * size, 0), origin + new PointD(columns * size, rows * size), origin + new PointD(0, rows * size)] };
+        var origin = viewport.Center - new PointD(columns * size / 2, rows * size / 2);
+        var bounds = new RectD(origin.X, origin.Y, columns * size, rows * size);
+        return new() { Columns = columns, Rows = rows, Origin = origin, CellSize = size, AlgorithmVersion = AlgorithmVersion,
+            ReferenceBounds = bounds, PinPlanePoint = origin + new PointD(0, rows * size),
+            Quad = [new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)] };
     }
     public static bool TryCalibrate(CanvasProjectionSettings current, IReadOnlyList<PointD> quad, RectD viewport,
         out CanvasProjectionSettings settings, out string? error)
     {
         settings = current.Clone(); error = null;
-        if (current.Columns is < 1 or > MaximumGridCount || current.Rows is < 1 or > MaximumGridCount)
+        if (!Enum.IsDefined(current.PinLocation) || current.Columns is < 1 or > MaximumGridCount || current.Rows is < 1 or > MaximumGridCount)
         { error = "Canvas.InvalidGrid"; return false; }
         if (!TryGridToScreen(current.Columns, current.Rows, quad, out var gridToScreen))
         { error = "Canvas.InvalidQuad"; return false; }
@@ -92,27 +110,59 @@ public static class CanvasCalibration
         if (minimum <= 0) { error = "Canvas.InvalidQuad"; return false; }
         gridToScreen = gridToScreen.ScaleHomogeneous(1 / minimum);
         double spread = depths.Max() / minimum - 1;
-        double affineSize = gridToScreen.Jacobian(new(current.Columns / 2.0, current.Rows / 2.0)).MaximumScale;
+        var pinGrid = current.PinGridPoint;
+        double affineSize = gridToScreen.Jacobian(pinGrid).MaximumScale;
         double cellSize = affineSize;
         if (spread > .005)
         {
             double length = Math.Sqrt(gridToScreen.M31 * gridToScreen.M31 + gridToScreen.M32 * gridToScreen.M32);
             var tangent = new PointD(-gridToScreen.M32 / length, gridToScreen.M31 / length);
-            int nearest = Array.IndexOf(depths, minimum);
-            double perspectiveSize = gridToScreen.Jacobian(corners[nearest]).TransformPoint(tangent).DistanceTo(default);
+            double perspectiveSize = gridToScreen.Jacobian(pinGrid).TransformPoint(tangent).DistanceTo(default);
             double blend = Math.Clamp((spread - .005) / .015, 0, 1);
             blend = blend * blend * (3 - 2 * blend);
             cellSize = affineSize + (perspectiveSize - affineSize) * blend;
         }
         if (!double.IsFinite(cellSize) || cellSize < .01 || cellSize > 1_000_000)
         { error = "Canvas.UnstableProjection"; return false; }
-        var origin = current.Quad.Count == 0 ? CreateInitial(viewport, current.Columns, current.Rows).Origin : current.Origin;
+        var reference = current.Clone();
+        reference.ReferenceBounds ??= current.Quad.Count == 0 ? CreateInitial(viewport).ReferenceBounds :
+            new RectD(current.Origin.X, current.Origin.Y, current.Columns * current.CellSize, current.Rows * current.CellSize);
+        var pinPoint = reference.PinPoint;
+        var origin = pinPoint - pinGrid * cellSize;
         var planeToGrid = Projective2D.FromAffine(Affine2D.Scale(1 / cellSize, 1 / cellSize).Compose(Affine2D.Translation(-origin.X, -origin.Y)));
         var matrix = gridToScreen.Compose(planeToGrid);
         if (!IsValidProjection(matrix)) { error = "Canvas.UnstableProjection"; return false; }
-        settings = new() { Enabled = true, Columns = current.Columns, Rows = current.Rows, Origin = origin, CellSize = cellSize, LockedGridCellSize = current.LockedGridCellSize,
+        settings = new() { Enabled = true, Columns = current.Columns, Rows = current.Rows, Origin = origin, CellSize = cellSize,
+            LockedGridCellSize = current.LockedGridCellSize,
+            PinLocation = current.PinLocation, PinPlanePoint = pinPoint, ReferenceBounds = reference.ReferenceBounds,
             Quad = [.. quad], Matrix = matrix, AlgorithmVersion = AlgorithmVersion };
         return true;
+    }
+    public static bool TryChangePin(CanvasProjectionSettings current, CanvasPinLocation location, RectD viewport,
+        out CanvasProjectionSettings settings, out string? error)
+    {
+        settings = current.Clone(); error = "Canvas.InvalidQuad";
+        if (!Enum.IsDefined(location) || current.Quad.Count != 4) return false;
+        settings.PinLocation = location;
+        return TryCalibrate(settings, current.Quad, viewport, out settings, out error);
+    }
+    /// <summary>Adopt a saved reference without recalibrating or changing its content projection.</summary>
+    public static void UpgradeLegacy(CanvasProjectionSettings settings)
+    {
+        if (settings.Quad.Count == 4)
+        {
+            settings.ReferenceBounds ??= new(settings.Origin.X, settings.Origin.Y, settings.Columns * settings.CellSize, settings.Rows * settings.CellSize);
+            settings.PinPlanePoint = settings.PinPoint;
+        }
+        settings.AlgorithmVersion = AlgorithmVersion;
+    }
+    public static void SetEnabled(CanvasSettings settings, bool enabled)
+    {
+        var projection = settings.Projection;
+        var point = projection.PinPoint;
+        settings.Grid.FlatTranslation = projection.Matrix.TransformPoint(point) - point;
+        settings.Grid.FlatCellSize = projection.LockedGridCellSize ?? projection.ReferenceCellSize;
+        projection.Enabled = enabled;
     }
     public static bool IsValidProjection(Projective2D matrix) => matrix.IsFinite && matrix.TryInverse(out _);
     /// <summary>Legacy diagnostic: whether the entire viewport and its guard avoid the horizon.</summary>
@@ -196,13 +246,13 @@ public sealed class CanvasMapping
         if (settings.Quad.Count == 0)
         {
             reference = CanvasCalibration.CreateInitial(viewport, settings.Columns, settings.Rows);
-            reference.LockedGridCellSize = settings.LockedGridCellSize;
         }
-        PlaneToScreen = settings.Enabled ? reference.Matrix : Projective2D.Identity;
+        PlaneToScreen = settings.Enabled ? reference.Matrix : Projective2D.FromAffine(
+            Affine2D.Translation(document.Canvas.Grid.FlatTranslation.X, document.Canvas.Grid.FlatTranslation.Y));
         ScreenToPlane = PlaneToScreen.Inverse();
         GridCellSize = CanvasGridGeometry.ResolveCellSize(document.Canvas, viewport);
-        GridOrigin = settings.Enabled ? CanvasGridGeometry.ReferencePlaneCenter(reference) :
-            document.Canvas.Grid.FlatOrigin ?? viewport.Center;
+        GridOrigin = settings.Enabled ? reference.PinPoint :
+            (document.Canvas.Grid.FlatOrigin ?? viewport.Center) - document.Canvas.Grid.FlatTranslation;
         Safety = new(PlaneToScreen);
         SafeScreenPolygon = Safety.ClipScreen(viewport);
         VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();

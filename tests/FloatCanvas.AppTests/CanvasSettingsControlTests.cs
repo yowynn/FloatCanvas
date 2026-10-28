@@ -34,7 +34,7 @@ internal static class CanvasSettingsControlTests
                 Math.Abs(physical.Max(point => point.X) - physical.Min(point => point.X) - expectedSize.X) < 1e-7 &&
                 Math.Abs(physical.Max(point => point.Y) - physical.Min(point => point.Y) - expectedSize.Y) < 1e-7);
             check("target-sized reset keeps its grid counts, enabled state and lock choice", reset.Enabled && reset.Columns == 8 && reset.Rows == 6 &&
-                reset.LockedGridCellSize.HasValue == locked && (!locked || reset.LockedGridCellSize == reset.CellSize));
+                reset.LockedGridCellSize.HasValue == locked && reset.PinLocation == projection.PinLocation);
             var center = physical.Aggregate(new PointD(), (sum, point) => sum + point) * .25;
             check("target-sized reset centers within the selected physical monitor", center.DistanceTo(new(target.Left + target.Width / 2d, target.Top + target.Height / 2d)) < 1e-7);
         }
@@ -76,69 +76,51 @@ internal static class CanvasSettingsControlTests
             var continuous = new NumericValueField(0, 100);
             continuous.Slider.Value = 8.125;
             check("integer canvas fields do not change shared continuous sliders", continuous.Value == 8.125 && !continuous.Slider.IsSnapToTickEnabled);
-            GridSizeLock(window, check);
+            PinSelection(window, check);
             MonitorSelection(window, check);
             ReferencePreference(window, check);
             CanvasGridSettingsControlsTests.Run(check);
         }
         finally { window.CloseForDispose(); }
-        if (Environment.GetEnvironmentVariable("FLOATCANVAS_GRID_LOCK_UI_OUTPUT") is { Length: > 0 } output)
-            CanvasGridLockUiEvidence.Run(output, check);
+        if (Environment.GetEnvironmentVariable("FLOATCANVAS_PIN_UI_OUTPUT") is { Length: > 0 } output)
+            CanvasPinUiEvidence.Run(output, check);
     }
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
 
-    private static void GridSizeLock(CanvasSettingsWindow window, Action<string, bool> check)
+    private static void PinSelection(CanvasSettingsWindow window, Action<string, bool> check)
     {
-        var toggle = Field<CheckBox>(window, "gridSizeLock");
-        var columns = Field<NumericValueField>(window, "columns"); var rows = Field<NumericValueField>(window, "rows");
-        var lockedColumns = Field<TextBox>(window, "lockedColumns"); var lockedRows = Field<TextBox>(window, "lockedRows");
-        int lockEdits = 0, countEdits = 0; bool? requestedLock = null;
-        window.GridSizeLockChanged += value => { lockEdits++; requestedLock = value; };
-        window.GridCountsChanged += (_, _) => countEdits++;
-        var settings = new CanvasSettings { Projection = new() { Enabled = true, Columns = 8, Rows = 6, CellSize = 100 } };
-        window.Refresh(settings);
-        window.PrepareForShow();
-        check("grid size lock defaults off with original integer controls visible", toggle.IsChecked == false && toggle.IsEnabled &&
-            columns.Visibility == Visibility.Visible && rows.Visibility == Visibility.Visible && lockedColumns.Visibility == Visibility.Collapsed);
-        toggle.IsChecked = true; toggle.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-        check("grid size lock uses its own single semantic event", lockEdits == 1 && requestedLock == true && countEdits == 0);
-        settings.Projection.LockedGridCellSize = 100; settings.Projection.CellSize = 105.1234;
-        window.Refresh(settings);
-        window.PrepareForShow();
-        check("locked count controls are read-only and preserve fractional coverage", lockedColumns.IsReadOnly && lockedRows.IsReadOnly &&
-            lockedColumns.Text == 8.41.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture) &&
-            lockedRows.Text == 6.307.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture) &&
-            columns.Visibility == Visibility.Collapsed && rows.Visibility == Visibility.Collapsed && lockedColumns.Visibility == Visibility.Visible);
-        columns.Input.Text = "27";
-        typeof(CanvasSettingsWindow).GetMethod("CommitCounts", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
-        columns.Slider.Value = 29;
-        check("locked count controls cannot feed displayed or hidden drafts into calibration", countEdits == 0 && settings.Projection.Columns == 8 && settings.Projection.Rows == 6);
-        settings.Projection.CellSize = 10_000;
-        window.RefreshGridCounts(settings.Projection);
-        window.PrepareForShow();
-        check("in-gesture refresh updates computed coverage beyond editable integer limits", lockedColumns.Text == "800" && lockedRows.Text == "600" && countEdits == 0 && lockEdits == 1);
-        settings.Projection.CellSize = .0001;
-        window.RefreshGridCounts(settings.Projection);
-        window.PrepareForShow();
-        check("tiny locked coverage remains positive instead of rounding to zero", double.Parse(lockedColumns.Text, System.Globalization.CultureInfo.CurrentCulture) > 0 &&
-            double.Parse(lockedRows.Text, System.Globalization.CultureInfo.CurrentCulture) > 0);
-        settings.Projection.Enabled = false;
-        window.Refresh(settings);
-        window.PrepareForShow();
-        check("turning perspective off retains dormant lock state while displaying only flat grid size", toggle.IsChecked == true &&
-            toggle.Visibility == Visibility.Collapsed && Field<Grid>(window, "countPair").Visibility == Visibility.Collapsed &&
-            Field<StackPanel>(window, "flatSizePanel").Visibility == Visibility.Visible && countEdits == 0);
-        toggle.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-        check("disabled perspective cannot emit a grid lock edit", lockEdits == 1);
-        settings.Projection.Enabled = true; settings.Projection.CellSize = 105.1234; settings.Projection.LockedGridCellSize = null;
-        window.Refresh(settings);
-        window.PrepareForShow();
-        check("unlocking restores the original reference counts and integer sliders", toggle.IsChecked == false && columns.Value == 8 && rows.Value == 6 &&
-            columns.Visibility == Visibility.Visible && lockedColumns.Visibility == Visibility.Collapsed && countEdits == 0);
-        columns.Slider.Value = 9;
-        check("unlocked integer count editing still commits once", countEdits == 1);
-        toggle.IsChecked = false; toggle.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-        check("unlock requests remain distinct from count changes", lockEdits == 2 && requestedLock == false && countEdits == 1);
+        var selector = Field<CanvasPinSelector>(window, "pinSelector");
+        var points = Field<System.Windows.Controls.Primitives.ToggleButton[]>(selector, "points");
+        int edits = 0; CanvasPinLocation? requested = null;
+        window.PinLocationChanged += value => { edits++; requested = value; };
+        var settings = new CanvasSettings { Projection = new() { Enabled = true, Columns = 9, Rows = 9 } };
+        window.Refresh(settings); window.PrepareForShow();
+        check("pin defaults to bottom left with nine direct choices", selector.SelectedValue == CanvasPinLocation.BottomLeft && points.Length == 9);
+        points[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check("pin selection emits one semantic event", edits == 1 && requested == CanvasPinLocation.TopLeft);
+        points[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check("selecting current pin is a no-op", edits == 1 && points[0].IsChecked == true);
+        settings.Projection.PinLocation = CanvasPinLocation.Center;
+        window.Refresh(settings); window.PrepareForShow();
+        check("center with odd counts explains half cells", Field<TextBlock>(window, "pinHint").Visibility == Visibility.Visible);
+        settings.Projection.Rows = settings.Projection.Columns = 8;
+        window.Refresh(settings); window.PrepareForShow();
+        check("even center counts have no half-cell hint", Field<TextBlock>(window, "pinHint").Visibility == Visibility.Collapsed);
+        var gridLock = Field<CheckBox>(window, "gridSizeLock"); int lockEdits = 0;
+        window.GridSizeLockChanged += value => { lockEdits++; settings.Projection.LockedGridCellSize = value ? 73.1 : null; window.Refresh(settings); window.PrepareForShow(); };
+        settings.Projection.CellSize = 100;
+        gridLock.IsChecked = true; gridLock.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check("locking is independent of the nine-point selector", lockEdits == 1 && selector.SelectedValue == CanvasPinLocation.Center &&
+            Field<FrameworkElement>(window, "pinRow").Visibility == Visibility.Visible);
+        var automatic = Field<TextBox>(window, "lockedColumns");
+        check("locked coverage is selectable and read-only with complete precision on hover", automatic.IsReadOnly && automatic.Visibility == Visibility.Visible &&
+            automatic.Text == settings.Projection.GridColumns.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture) &&
+            automatic.ToolTip!.ToString()!.Contains(settings.Projection.GridColumns.ToString("G17", System.Globalization.CultureInfo.CurrentCulture)));
+        gridLock.IsChecked = false; gridLock.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check("unlocking restores editable integer counts", lockEdits == 2 && Field<NumericValueField>(window, "columns").Visibility == Visibility.Visible);
+        settings.Projection.Enabled = false; window.Refresh(settings); window.PrepareForShow();
+        check("flat mode hides whole pin row and retains selection", Field<FrameworkElement>(window, "pinRow").Visibility == Visibility.Collapsed && selector.SelectedValue == CanvasPinLocation.Center);
+        settings.Projection.Enabled = true; window.Refresh(settings); window.PrepareForShow();
     }
 
     private static void ReferencePreference(CanvasSettingsWindow window, Action<string, bool> check)

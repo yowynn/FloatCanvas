@@ -36,7 +36,7 @@ internal static class Phase2HiddenCanvasTests
         Send(OverlayPointerKind.Down, 300, 220); Send(OverlayPointerKind.Move, 350, 260); Send(OverlayPointerKind.Cancel, 350, 260);
         check("cancelling a hidden draft keeps the eye closed and removes only the draft", !host.IsVisible && !host.IsPreviewVisible && editor.Session.Document.Elements.Count == 2);
         var grid = new CanvasGridScaleController();
-        check("hidden old pixels do not block canvas grid adjustment", grid.Down(editor.Session, new(35, 35), editor.Session.Document.Viewport, hitExistingContent: false));
+        check("hidden old pixels do not block canvas grid adjustment", grid.Down(editor.Session, new(35, 35), editor.Session.Document.Viewport));
         grid.Cancel();
         check("hidden canvas allows insertion entry points without opening the eye early", (bool)Invoke("CanAddCanvasContent")! && !host.IsVisible);
         editor.Session.Add(new CanvasElement { Kind = ElementKind.Ellipse, Width = 20, Height = 20 });

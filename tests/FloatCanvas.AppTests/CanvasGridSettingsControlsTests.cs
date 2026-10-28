@@ -23,7 +23,7 @@ internal static class CanvasGridSettingsControlsTests
             var rows = Field<NumericValueField>(window, "rows");
             var edits = new List<double>(); int countEdits = 0, lockEdits = 0, pinEdits = 0;
             window.GridCountsChanged += (_, _) => countEdits++;
-            window.GridSizeLockChanged += _ => lockEdits++;
+            window.PinLocationChanged += _ => lockEdits++;
             window.GridSizeChanged += value =>
             {
                 edits.Add(value); current.Grid.FlatCellSize = value; window.Refresh(current); window.PrepareForShow();
@@ -32,7 +32,7 @@ internal static class CanvasGridSettingsControlsTests
             window.Refresh(current);
             window.PrepareForShow();
             check("flat canvas options expose one size field and hide perspective counts and lock", flat.Visibility == Visibility.Visible &&
-                counts.Visibility == Visibility.Collapsed && Field<CheckBox>(window, "gridSizeLock").Visibility == Visibility.Collapsed);
+                counts.Visibility == Visibility.Collapsed && Field<FrameworkElement>(window, "pinRow").Visibility == Visibility.Collapsed);
             check("flat size text preserves complete stored double precision", size.Input.Text == precise.ToString("G", CultureInfo.CurrentCulture) &&
                 size.TryGetValue(out double actual) && actual == precise && size.Value == precise);
             check("flat size uses a continuous common-range slider without integer snapping", size.Slider.Minimum == 1 && size.Slider.Maximum == 400 && !size.Slider.IsSnapToTickEnabled);
@@ -60,7 +60,7 @@ internal static class CanvasGridSettingsControlsTests
             current.Projection.Enabled = true; window.Refresh(current);
             window.PrepareForShow();
             check("perspective canvas options restore count fields and hide the flat size editor", counts.Visibility == Visibility.Visible && flat.Visibility == Visibility.Collapsed &&
-                Field<CheckBox>(window, "gridSizeLock").Visibility == Visibility.Visible && columns.Value == 8 && rows.Value == 6);
+                Field<FrameworkElement>(window, "pinRow").Visibility == Visibility.Visible && columns.Value == 8 && rows.Value == 6);
             size.Slider.Value = 92; size.Input.Text = "93.75"; SendEnter(size.Input);
             check("hidden flat size edits cannot escape while perspective is enabled", edits.Count == 1 && current.Grid.FlatCellSize == changed);
             current.Projection.Enabled = false; current.Grid.FlatCellSize = .125; window.Refresh(current); window.PrepareForShow(); SendEnter(size.Input);

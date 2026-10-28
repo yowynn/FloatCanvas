@@ -31,10 +31,9 @@ internal static class Preview4CanvasTests
         {
             var rows = Field<NumericValueField>(window, "rows");
             var columns = Field<NumericValueField>(window, "columns");
-            check("rows and columns share a paired horizontal layout with rows on the left", rows.Parent is Grid rowSlot && columns.Parent is Grid columnSlot &&
-                rowSlot.Parent is Grid pair && ReferenceEquals(pair, columnSlot.Parent) && Grid.GetColumn(rowSlot) == 0 && Grid.GetColumn(columnSlot) == 2 && pair.ColumnDefinitions[1].Width.Value == PropertyPanelLayout.PairGap);
-            check("automatic row and column counts occupy their corresponding paired slots", ReferenceEquals(rows.Parent, Field<TextBox>(window, "lockedRows").Parent) &&
-                ReferenceEquals(columns.Parent, Field<TextBox>(window, "lockedColumns").Parent) && !ReferenceEquals(rows.Parent, columns.Parent));
+            check("columns and rows share a paired horizontal layout with columns on the left", rows.Parent is Grid rowSlot && columns.Parent is Grid columnSlot &&
+                rowSlot.Parent is Grid pair && ReferenceEquals(pair, columnSlot.Parent) && Grid.GetColumn(columnSlot) == 0 && Grid.GetColumn(rowSlot) == 2 && pair.ColumnDefinitions[1].Width.Value == PropertyPanelLayout.PairGap);
+            check("counts are editable without legacy lock readouts", !ReferenceEquals(rows.Parent, columns.Parent));
             var actions = Field<FrameworkElement>(window, "perspectiveActions");
             window.Refresh(new());
             window.PrepareForShow();

@@ -33,7 +33,7 @@ internal static class PropertyChangeRegionTests
         var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
         window.ProjectionChanged += enabled => { settings.Projection.Enabled = enabled; window.Refresh(settings); };
         window.GridVisibilityChanged += visible => { settings.Grid.Visible = visible; window.Refresh(settings); };
-        window.GridSizeLockChanged += locked => { settings.Projection.LockedGridCellSize = locked ? settings.Projection.CellSize : null; window.Refresh(settings); };
+        window.PinLocationChanged += location => { settings.Projection.PinLocation = location; window.Refresh(settings); };
         var region = Field<PropertyChangeRegion>(window, "projectionOptions");
         var counts = Field<PropertyChangeRegion>(window, "gridCountsRegion");
         try
@@ -58,8 +58,7 @@ internal static class PropertyChangeRegionTests
             var gridRow = (FrameworkElement)gridColor.Parent;
             Toggle(Field<CheckBox>(window, "gridVisible")); Pump(40);
             check(theme + " grid toggle keeps its fixed fields visible and ungrouped", gridRow.IsVisible && AncestorRegion(gridRow) is null && region.CueStrength == 0 && counts.CueStrength == 0);
-            Toggle(Field<CheckBox>(window, "gridSizeLock")); Pump(65);
-            check(theme + " grid lock cues only the changing counts region", counts.CueStrength > 0 && region.CueStrength == 0 && Field<TextBox>(window, "lockedColumns").IsVisible);
+            check(theme + " pin selector is directly available beside perspective options", Field<FrameworkElement>(window, "pinRow").IsVisible);
             Toggle(projection); Pump(20); Toggle(projection); Pump(300);
             check(theme + " rapid perspective toggles settle at the latest layout", settings.Projection.Enabled && actions.IsVisible && !flat.IsVisible && double.IsNaN(region.Height) && Math.Abs(region.ActualHeight - region.Child.DesiredSize.Height) < 1);
             window.Hide(); Pump(20);

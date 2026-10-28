@@ -50,7 +50,7 @@ internal static class CanvasProjectionStorageTests
         await Mutate("null grid rejected", n => n["Canvas"]!["Grid"] = null);
         await Mutate("zero columns rejected", n => n["Canvas"]!["Projection"]!["Columns"] = 0);
         await Mutate("zero cell size rejected", n => n["Canvas"]!["Projection"]!["CellSize"] = 0);
-        await Mutate("future calibration algorithm rejected", n => n["Canvas"]!["Projection"]!["AlgorithmVersion"] = 2);
+        await Mutate("future calibration algorithm rejected", n => n["Canvas"]!["Projection"]!["AlgorithmVersion"] = CanvasCalibration.AlgorithmVersion + 1);
         await Mutate("metadata matrix disagreement rejected", n => n["Canvas"]!["Projection"]!["Matrix"]!["M13"] = 999);
         await Mutate("invalid grid pattern rejected", n => n["Canvas"]!["Grid"]!["Pattern"] = 99);
         await Mutate("singular placement rejected", n => { var p = n["Elements"]![0]!["ProjectivePlacement"]!; p["M11"] = 0; p["M12"] = 0; p["M13"] = 0; });
@@ -96,6 +96,6 @@ internal static class CanvasProjectionStorageTests
         var horizonRecovered = (await horizonRecovery.LoadAsync())!.State.LiveDocument;
         check(horizonRecovered.Canvas.Projection.Enabled && JsonSerializer.Serialize(horizonRecovered) == JsonSerializer.Serialize(retainedScene),
             "recovery preserves enabled perspective when a changed display contains the horizon");
-        await CanvasGridLockStorageTests.RunAsync(check);
+        await CanvasPinStorageTests.RunAsync(check);
     }
 }

@@ -25,6 +25,10 @@ internal static class NewCanvasSettingsTests
             using var fixture = new Fixture(app);
             var settings = Field<UserSettings>(fixture.Session, "_settings");
             var reference = (RectD)fixture.Invoke("CanvasReferenceViewport")!;
+            fixture.Live.Document.Canvas.Grid.FlatOrigin = new(-111, -222);
+            fixture.Invoke("SynchronizeFlatGridOrigin");
+            check("flat-grid screen reference is the current primary center rather than a saved movable point",
+                fixture.Live.Document.Canvas.Grid.FlatOrigin == reference.Center);
             var changed = CanvasPresetLibrary.Apply(new CanvasPresetParameters
             { BackgroundColor = 0xFF123456, ProjectionEnabled = true, GridVisible = true, GridColor = 0xFF3155AA,
                 GridWidth = 3.5, Columns = 12, Rows = 9, DepthPriorityOcclusion = true }, new(), reference, fixture.Live.Document.Viewport);

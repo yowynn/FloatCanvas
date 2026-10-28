@@ -25,6 +25,7 @@ internal sealed class CanvasPresetParameters
     public double? FlatCellSize { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CanvasProjectionSettings? Calibration { get; set; }
+    public PointD FlatTranslation { get; set; }
     internal bool IsValid => Columns is >= 1 and <= CanvasCalibration.MaximumGridCount &&
         Rows is >= 1 and <= CanvasCalibration.MaximumGridCount && double.IsFinite(GridWidth) && GridWidth is > 0 and <= 64 && Enum.IsDefined(GridPattern) &&
         (FlatCellSize is null || double.IsFinite(FlatCellSize.Value) && FlatCellSize is >= CanvasGridGeometry.MinimumCellSize and <= CanvasGridGeometry.MaximumCellSize) && ValidCalibration();
@@ -33,21 +34,21 @@ internal sealed class CanvasPresetParameters
         var copy = (CanvasPresetParameters)MemberwiseClone(); copy.Calibration = Calibration?.Clone(); return copy;
     }
     internal bool Matches(CanvasPresetParameters other) => BackgroundColor == other.BackgroundColor && DepthPriorityOcclusion == other.DepthPriorityOcclusion && ProjectionEnabled == other.ProjectionEnabled &&
-        Columns == other.Columns && Rows == other.Rows && GridVisible == other.GridVisible && GridColor == other.GridColor &&
+        FlatTranslation == other.FlatTranslation && Columns == other.Columns && Rows == other.Rows && GridVisible == other.GridVisible && GridColor == other.GridColor &&
         GridWidth == other.GridWidth && GridPattern == other.GridPattern && (FlatCellSize is null || FlatCellSize == other.FlatCellSize) && (Calibration is null || other.Calibration is { } c &&
             Calibration.Enabled == c.Enabled && Calibration.Columns == c.Columns && Calibration.Rows == c.Rows &&
             Calibration.Origin == c.Origin && Calibration.CellSize == c.CellSize && Calibration.Matrix == c.Matrix &&
-            Calibration.AlgorithmVersion == c.AlgorithmVersion && Calibration.Quad.SequenceEqual(c.Quad));
+            Calibration.PinLocation == c.PinLocation && Calibration.ReferenceBounds == c.ReferenceBounds && Calibration.AlgorithmVersion == c.AlgorithmVersion && Calibration.Quad.SequenceEqual(c.Quad));
     internal static CanvasPresetParameters From(CanvasSettings settings) => new()
     {
         BackgroundColor = settings.BackgroundColor, DepthPriorityOcclusion = settings.DepthPriorityOcclusion, ProjectionEnabled = settings.Projection.Enabled,
         Columns = settings.Projection.Columns, Rows = settings.Projection.Rows, GridVisible = settings.Grid.Visible,
         GridColor = settings.Grid.Color, GridWidth = settings.Grid.Width, GridPattern = settings.Grid.Pattern,
-        // Presets omit the adjustment lock, so an enabled preset saves its unlocked spacing.
+        // Capture logical spacing, pin and ordinary-mode placement together.
         FlatCellSize = settings.Projection.Enabled && settings.Projection.Quad.Count == 4
             ? settings.Projection.CellSize
             : settings.Grid.FlatCellSize ?? (settings.Projection.Quad.Count == 4 ? settings.Projection.GridCellSize : null),
-        Calibration = settings.Projection.Quad.Count == 0 ? null : settings.Projection.Clone()
+        Calibration = settings.Projection.Quad.Count == 0 ? null : settings.Projection.Clone(), FlatTranslation = settings.Grid.FlatTranslation
     };
     private bool ValidCalibration()
     {
@@ -165,6 +166,7 @@ internal sealed class CanvasPresetLibrary
         if (parameters.ProjectionEnabled && !CanvasCalibration.IsValidProjection(projection.Matrix))
             throw new InvalidDataException(L.Get("Canvas.UnstableProjection"));
         // Applying a recipe establishes a fresh calibration reference, like Reset.
+        CanvasCalibration.UpgradeLegacy(projection);
         projection.LockedGridCellSize = null;
         projection.Enabled = parameters.ProjectionEnabled;
         var result = new CanvasSettings
@@ -172,7 +174,7 @@ internal sealed class CanvasPresetLibrary
             BackgroundColor = parameters.BackgroundColor, DepthPriorityOcclusion = parameters.DepthPriorityOcclusion, Projection = projection,
             Grid = new() { Visible = parameters.GridVisible, Color = parameters.GridColor, Width = parameters.GridWidth, Pattern = parameters.GridPattern,
                 FlatCellSize = projection.Enabled ? projection.GridCellSize : parameters.FlatCellSize ?? projection.GridCellSize,
-                FlatOrigin = current.Grid.FlatOrigin ?? referenceViewport.Center }
+                FlatOrigin = current.Grid.FlatOrigin ?? referenceViewport.Center, FlatTranslation = parameters.FlatTranslation }
         };
         SceneValidation.Validate(new SceneDocument { Canvas = result, Viewport = viewport });
         return result;
@@ -211,7 +213,7 @@ internal sealed class CanvasPresetLibrary
                     // Keep existing version-two preset files readable by older applications.
                     property.IsRequired = false; property.ShouldSerialize = (_, _) => false;
                 }
-                else property.IsRequired = true;
+                else property.IsRequired = property.Name is not (nameof(CanvasProjectionSettings.PinLocation) or nameof(CanvasProjectionSettings.PinPlanePoint) or nameof(CanvasProjectionSettings.ReferenceBounds));
             }
         });
         return new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, TypeInfoResolver = resolver };

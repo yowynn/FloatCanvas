@@ -66,6 +66,7 @@ internal sealed partial class DesktopSession
             };
             window.GridCountsChanged += SetCanvasGridCounts;
             window.GridSizeChanged += SetCanvasGridSize;
+            window.PinLocationChanged += SetCanvasPinLocation;
             window.GridSizeLockChanged += SetCanvasGridSizeLock;
             window.ResetDisplayRequested += ResetCanvasProjectionOnDisplay;
             window.FourPointsRequested += BeginCanvasFourPoints;
@@ -194,7 +195,7 @@ internal sealed partial class DesktopSession
         double size = CanvasGridGeometry.ResolveCellSize(settings, CanvasReferenceViewport());
         settings.Projection = CanvasGridGeometry.CreateFlatReference(CanvasReferenceViewport(), old.Columns, old.Rows, size);
         settings.Projection.Enabled = old.Enabled;
-        settings.Projection.LockedGridCellSize = old.LockedGridCellSize;
+
     }
 
     private void ChangeCanvas(Action<CanvasSettings> change)
@@ -224,7 +225,7 @@ internal sealed partial class DesktopSession
             EnsureCanvasReference(settings);
             if (enabled && !CanvasCalibration.IsValidProjection(settings.Projection.Matrix))
             { UpdateStatus(L.Get("Canvas.UnstableProjection")); return; }
-            settings.Projection.Enabled = enabled;
+            CanvasCalibration.SetEnabled(settings, enabled);
         });
     }
 
@@ -262,7 +263,7 @@ internal sealed partial class DesktopSession
 
     private void SetCanvasGridCounts(int columns, int rows)
     {
-        if (!Active.Document.Canvas.Projection.Enabled || Active.Document.Canvas.Projection.LockedGridCellSize is not null) return;
+        if (!Active.Document.Canvas.Projection.Enabled || Active.Document.Canvas.Projection.LockedGridCellSize.HasValue) return;
         ChangeCanvas(settings =>
         {
             var original = settings.Projection;
@@ -273,16 +274,28 @@ internal sealed partial class DesktopSession
                 settings.Grid.FlatCellSize = settings.Projection.GridCellSize;
                 return;
             }
-            var draft = original.Clone(); draft.Columns = columns; draft.Rows = rows;
+            var draft = original.Clone(); draft.PinPlanePoint = original.PinPoint; draft.Columns = columns; draft.Rows = rows;
             if (CanvasCalibration.TryCalibrate(draft, original.Quad, Active.Document.Viewport, out var calibrated, out var error))
             { calibrated.Enabled = original.Enabled; settings.Projection = calibrated; settings.Grid.FlatCellSize = calibrated.GridCellSize; }
             else UpdateStatus(L.Get(error!));
         });
     }
 
+    private void SetCanvasPinLocation(CanvasPinLocation location)
+    {
+        if (!Active.Document.Canvas.Projection.Enabled || Active.Document.Canvas.Projection.PinLocation == location) return;
+        ChangeCanvas(settings =>
+        {
+            EnsureCanvasReference(settings);
+            if (CanvasCalibration.TryChangePin(settings.Projection, location, Active.Document.Viewport, out var next, out var error))
+                settings.Projection = next;
+            else UpdateStatus(L.Get(error!));
+        });
+    }
+
     private void SetCanvasGridSizeLock(bool locked)
     {
-        if (locked == (Active.Document.Canvas.Projection.LockedGridCellSize is not null)) return;
+        if (!Active.Document.Canvas.Projection.Enabled || locked == Active.Document.Canvas.Projection.LockedGridCellSize.HasValue) return;
         ChangeCanvas(settings =>
         {
             EnsureCanvasReference(settings);
@@ -297,6 +310,7 @@ internal sealed partial class DesktopSession
         {
             settings.Projection = CreateResetCanvasProjection(settings, reference ?? CanvasReferenceViewport());
             settings.Grid.FlatCellSize = settings.Projection.GridCellSize;
+            settings.Grid.FlatTranslation = default;
         }); }
         catch (ArgumentOutOfRangeException) { UpdateStatus(L.Get("Canvas.InvalidGrid")); }
     }
@@ -305,8 +319,11 @@ internal sealed partial class DesktopSession
     {
         var old = settings.Projection;
         var reset = CanvasCalibration.CreateInitial(reference, old.Columns, old.Rows);
+        reset.PinLocation = old.PinLocation;
+        reset.PinPlanePoint = reset.PinPoint;
+        if (old.LockedGridCellSize is { } lockedSize)
+            reset.LockedGridCellSize = reset.CellSize * (lockedSize / old.CellSize);
         reset.Enabled = old.Enabled;
-        if (old.LockedGridCellSize.HasValue) reset.LockedGridCellSize = reset.CellSize;
         return reset;
     }
 
@@ -420,7 +437,7 @@ internal sealed partial class DesktopSession
         var point = new PointD(e.Position.X - _editor.ScreenOrigin.X, e.Position.Y - _editor.ScreenOrigin.Y);
         if (e.Kind == OverlayPointerKind.Cancel) _canvasGridScale.Cancel();
         else if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
-            _canvasGridScale.Down(Active, point, PrimaryCanvasReferenceViewport(), hitExistingContent: _host.IsVisible);
+            _canvasGridScale.Down(Active, point, PrimaryCanvasReferenceViewport());
         else if (e.Kind == OverlayPointerKind.Move) _canvasGridScale.Move(point);
         else if (e.Kind == OverlayPointerKind.Up && e.Button == OverlayMouseButton.Left)
         { _canvasGridScale.Move(point); _canvasGridScale.Up(); }
@@ -510,7 +527,8 @@ internal sealed partial class DesktopSession
             canvas.DrawLine(x + sign * 10, y, x + sign * 6, y - 4, line); canvas.DrawLine(x + sign * 10, y, x + sign * 6, y + 4, line);
             canvas.DrawLine(x, y + sign * 10, x - 4, y + sign * 6, line); canvas.DrawLine(x, y + sign * 10, x + 4, y + sign * 6, line);
         }
-        DrawCanvasOriginMarker(canvas, center, Active.Document.Viewport, settings.LockedGridCellSize is not null);
+        DrawCanvasOriginMarker(canvas, settings.Matrix.TransformPoint(default), Active.Document.Viewport, false);
+        DrawCanvasOriginMarker(canvas, settings.Matrix.TransformPoint(settings.PinPoint), Active.Document.Viewport, true);
     }
 
     private void DrawCanvasSafetyBoundary(SKCanvas canvas)
@@ -532,14 +550,21 @@ internal sealed partial class DesktopSession
         }
     }
 
-    internal static void DrawCanvasOriginMarker(SKCanvas canvas, PointD origin, RectD viewport, bool locked)
+    internal static void DrawCanvasOriginMarker(SKCanvas canvas, PointD origin, RectD viewport, bool isPin)
     {
-        var color = locked ? new SKColor(210, 139, 63) : new SKColor(35, 131, 226);
+        if (!viewport.Contains(origin)) return;
+        var color = isPin ? new SKColor(35, 131, 226) : new SKColor(40, 150, 100);
         using var paint = new SKPaint { Color = color, IsAntialias = true };
-        canvas.DrawCircle((float)origin.X, (float)origin.Y, 3, paint);
+        if (isPin) canvas.DrawCircle((float)origin.X, (float)origin.Y, 4, paint);
+        else
+        {
+            paint.StrokeWidth = 2;
+            canvas.DrawLine((float)origin.X - 6, (float)origin.Y, (float)origin.X + 6, (float)origin.Y, paint);
+            canvas.DrawLine((float)origin.X, (float)origin.Y - 6, (float)origin.X, (float)origin.Y + 6, paint);
+        }
         using var typeface = SKTypeface.FromFamilyName(L.CurrentLanguage == "zh-CN" ? "Microsoft YaHei UI" : "Segoe UI");
         using var font = new SKFont(typeface, 12);
-        string label = L.Get("Canvas.OriginMarker");
+        string label = L.Get(isPin ? "Canvas.Pin" : "Canvas.OriginMarker");
         float width = font.MeasureText(label) + 12, height = 22;
         float x = (float)Math.Clamp(origin.X + 13, viewport.Left + 2, Math.Max(viewport.Left + 2, viewport.Right - width - 2));
         float y = (float)Math.Clamp(origin.Y + 13, viewport.Top + 2, Math.Max(viewport.Top + 2, viewport.Bottom - height - 2));
@@ -565,7 +590,7 @@ internal sealed partial class DesktopSession
             {
                 // The grid is rendered from a detached snapshot on the preview worker.
                 // Only the current contour, anchors and origin remain in this UI draw.
-                previewOrigin=CanvasGridGeometry.ReferenceCenter(preview);
+                previewOrigin=preview.Matrix.TransformPoint(preview.PinPoint);
                 line.StrokeWidth=2;line.Color=new(35,131,226);
             }
         }
@@ -574,7 +599,7 @@ internal sealed partial class DesktopSession
         foreach(var point in points)
         {canvas.DrawCircle((float)point.X,(float)point.Y,5,fill);canvas.DrawCircle((float)point.X,(float)point.Y,5,line);}
         if(previewOrigin is { } origin)
-            DrawCanvasOriginMarker(canvas,origin,Active.Document.Viewport,Active.Document.Canvas.Projection.LockedGridCellSize is not null);
+            DrawCanvasOriginMarker(canvas,origin,Active.Document.Viewport,true);
     }
 
     private static void DrawScreenPolygon(SKCanvas canvas, IReadOnlyList<PointD> points, SKPaint paint)

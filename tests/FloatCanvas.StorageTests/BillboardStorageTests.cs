@@ -23,6 +23,7 @@ internal static class BillboardStorageTests
                 Transform = Affine2D.Translation(10, 20) }
         ] };
         var store = new ProjectStore(); string path = Path.Combine(root, "billboard.floatcanvas");
+        CanvasCalibration.UpgradeLegacy(scene.Canvas.Projection);
         string before = JsonSerializer.Serialize(scene);
         await store.SaveAsync(path, scene, assets);
         var loaded = await store.LoadAsync(path);

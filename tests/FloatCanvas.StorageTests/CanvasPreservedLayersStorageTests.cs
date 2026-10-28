@@ -12,7 +12,7 @@ internal static class CanvasPreservedLayersStorageTests
         var group = new CanvasGroup { Name = "Preserved mixed group" };
         var child = new CanvasGroup { Name = "Hidden locked billboards", ParentId = group.Id };
         var document = new SceneDocument { Viewport = new(0, -400, 1000, 1000), Groups = [group, child],
-            Canvas = new() { Projection = new() { Enabled = true, Matrix = matrix, Columns = 100, Rows = 100, CellSize = 1,
+            Canvas = new() { Projection = new() { Enabled = true, Matrix = matrix, Columns = 100, Rows = 100, CellSize = 1, PinPlanePoint = new(0, 100), ReferenceBounds = new(0, 0, 100, 100),
                 Quad = new PointD[] { new(0, 0), new(100, 0), new(100, 100), new(0, 100) }.Select(matrix.TransformPoint).ToList() } } };
         document.Elements.Add(new() { Kind = ElementKind.Rectangle, Width = 120, Height = 100,
             GroupId = group.Id, Transform = Affine2D.Translation(100, 4000), Style = new() { StrokeWidth = 0, Fill = 0xFF112233 } });

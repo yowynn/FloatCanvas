@@ -71,6 +71,7 @@ internal static class Program
             if (args.Contains("--projection-hover-runtime-preview")) { ProjectionHoverRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--projection-hover-only")) { ProjectionUnsafeHoverTests.Run(Assert); RetainedBillboardInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-tool-only")) { CanvasToolInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-pin-only")) { CanvasPinCalibrationTests.Run(Assert); CanvasSettingsControlTests.Run(Assert); return 0; }
             if (args.Contains("--new-canvas-settings-only")) { NewCanvasSettingsTests.Run(Assert); return 0; }
             if (args.Contains("--signed-number-only")) { SignedNumberTests.Run(Assert); return 0; }
             if (args.Contains("--image-outside-stroke-only")) { ImageOutsideStrokeTests.Run(Assert); return 0; }

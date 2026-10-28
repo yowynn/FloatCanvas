@@ -35,25 +35,25 @@
     "zh": "网格大小",
     "en": "Grid size"
   },
-  "Canvas.GridSizeHelp": {
-    "zh": "格子的边长，使用与矩形宽高相同的画布单位。选中画布工具后，在空白处拖动也可调整；远离主屏中心放大，靠近缩小。",
-    "en": "Cell side length, in the same canvas units as rectangle width and height. With the Canvas tool selected, drag empty space away from the primary-screen center to enlarge it, or toward the center to shrink it."
-  },
   "Canvas.GridSizeLock": {
     "zh": "调整时锁定网格大小",
-    "en": "Lock grid size while adjusting"
+    "en": "Keep grid size while adjusting"
+  },
+  "Canvas.GridSizeLockHelp": {
+    "zh": "固定逻辑格长和钉点处的网格相位。调整四角时，图层保持与原格线对齐，框内覆盖格数自动变化；屏幕上的格子仍可随透视缩短。",
+    "en": "Keep logical cell spacing and the grid phase at the pin. Corner adjustments retain layer-to-grid alignment and automatically change coverage; perspective can still shorten cells on screen."
+  },
+  "Canvas.GridSizeLockCountsHint": {
+    "zh": "当前覆盖格数自动计算，可能含部分格；悬停可查看完整精度。取消锁定后恢复整数行列输入。重置按当前覆盖数重建正方形网格。",
+    "en": "Coverage is calculated automatically and may include partial cells; hover for full precision. Unlock to edit integer counts. Reset rebuilds square cells for the current coverage."
+  },
+  "Canvas.GridSizeHelp": {
+    "zh": "格子的边长，使用与矩形宽高相同的画布单位。非透视画布工具可从任意位置起拖，包括图层像素；远离主屏中心放大，靠近缩小。网格交点始终固定在主屏中心。",
+    "en": "Cell side length, in the same canvas units as rectangle width and height. In flat Canvas mode, start dragging anywhere, including over layers. Move away from the primary-screen center to enlarge cells, or toward it to shrink them; that center remains a grid intersection."
   },
   "Canvas.OriginMarker": {
     "zh": "原点",
     "en": "Origin"
-  },
-  "Canvas.GridSizeLockCountsHint": {
-    "zh": "格数自动显示四点框内覆盖的范围，包含不完整的格子。",
-    "en": "Counts show the coverage inside the four-point frame, including partial cells."
-  },
-  "Canvas.GridSizeLockHelp": {
-    "zh": "锁定后，调整四点保留每格代表的画布长度，行列数自动变化，可含小数。网格原点仍跟随中央移动手柄。勾选时画面保持原样；图层和锚点不因切换而移动。关闭透视或重置保留锁定选择；应用画布预设会解除锁定。",
-    "en": "When locked, adjusting the four points preserves each cell's canvas length. Counts update automatically and may include fractions. The grid origin still follows the central move handle. Enabling the lock keeps the view unchanged without moving layers or anchors. Turning perspective off or resetting retains the lock; applying a canvas preset clears it."
   },
   "Canvas.Reset": {
     "zh": "重置校准",
@@ -104,8 +104,8 @@
     "en": "Canvas settings"
   },
   "Canvas.HelpText": {
-    "zh": "按 C 选择画布工具，再次点击画布按钮打开设置。非透视时以参考屏中心为原点，在空白处向外拖动放大网格、向内拖动缩小；透视时拖动角点、边缘或中央手柄调整。“四点定位画布”会临时隐藏其他窗口，完成或取消后恢复。参考网格透明度仅在本次运行中保留，0% 隐藏参考线。Ctrl 暂停吸附，Shift 约束方向。Esc 取消当前拖动；空闲时切回选择工具。切换透视保留原参数；主动修改非透视格长会建立新的平面参考。",
-    "en": "Press C to select Canvas; select it again to open settings. In flat mode, drag empty space outward from the reference-screen center to enlarge cells or inward to shrink them. In perspective mode, drag corners, edges or the center. Position canvas with four points temporarily hides other windows and restores them after completion or cancellation. Reference opacity lasts for this run only; 0% hides reference lines. Ctrl bypasses snapping; Shift constrains direction. Esc cancels a drag or returns to Select when idle. Toggling perspective retains its parameters; editing flat cell size creates a new flat reference."
+    "zh": "按 C 选择画布工具，再次点击画布按钮打开设置。非透视时可调整网格格长，从任意位置拖动，向外放大网格、向内缩小，网格固定围绕主屏中心部署；透视时拖动角点、边缘或中央手柄调整。“四点定位画布”会临时隐藏其他窗口，完成或取消后恢复。参考网格透明度仅在本次运行中保留，0% 隐藏参考线。Ctrl 暂停吸附，Shift 约束方向。Esc 取消当前拖动；空闲时切回选择工具。切换透视以钉点对齐，保留校准参数；主动修改非透视格长会建立新的平面参考。",
+    "en": "Press C to select Canvas; select it again to open settings. In flat mode, drag anywhere to enlarge or shrink cells around the fixed primary-screen grid center. In perspective mode, drag corners, edges or the center. Position canvas with four points temporarily hides other windows and restores them after completion or cancellation. Reference opacity lasts for this run only; 0% hides reference lines. Ctrl bypasses snapping; Shift constrains direction. Esc cancels a drag or returns to Select when idle. Toggling perspective retains its parameters; editing flat cell size creates a new flat reference."
   },
   "Canvas.InvalidGrid": {
     "zh": "列数和行数须为 1 至 256 的整数。",
@@ -158,5 +158,53 @@
   "Canvas.RelocateFailed": {
     "zh": "无法在保持图层尺寸和组合关系的前提下找到安全位置。可以取消本次调整、删除这些图层，或慎用原样保留。",
     "en": "No safe position was found while preserving layer size and group relationships. Cancel this adjustment, delete these layers, or keep them unchanged with caution."
+  },
+  "Canvas.Pin": {
+    "zh": "钉点",
+    "en": "Pin"
+  },
+  "Canvas.PinHelp": {
+    "zh": "从固定默认参照确定钉点，再映射到当前四边形。默认状态切换钉点不移动图层；相同四角、行列数和钉点得到相同显示，不累积调整过程。图层数值保持，视觉可发生形变。",
+    "en": "The pin is derived from the fixed default reference and mapped into the current quad. Switching pins in the default state leaves layers unchanged. Identical corners, counts and pin give the same view regardless of edit history; layer values stay unchanged."
+  },
+  "Canvas.PinHalfCells": {
+    "zh": "当前钉点仍是网格交点；奇数方向的框边会有半格。匹配完整格范围可选择角点。",
+    "en": "The pin stays on a grid intersection. Odd counts leave half cells at these frame edges; choose a corner to fit complete cells."
+  },
+  "Canvas.Pin.TopLeft": {
+    "zh": "左上角",
+    "en": "Top left"
+  },
+  "Canvas.Pin.Top": {
+    "zh": "上边中点",
+    "en": "Top center"
+  },
+  "Canvas.Pin.TopRight": {
+    "zh": "右上角",
+    "en": "Top right"
+  },
+  "Canvas.Pin.Left": {
+    "zh": "左边中点",
+    "en": "Middle left"
+  },
+  "Canvas.Pin.Center": {
+    "zh": "中心",
+    "en": "Center"
+  },
+  "Canvas.Pin.Right": {
+    "zh": "右边中点",
+    "en": "Middle right"
+  },
+  "Canvas.Pin.BottomLeft": {
+    "zh": "左下角",
+    "en": "Bottom left"
+  },
+  "Canvas.Pin.Bottom": {
+    "zh": "下边中点",
+    "en": "Bottom center"
+  },
+  "Canvas.Pin.BottomRight": {
+    "zh": "右下角",
+    "en": "Bottom right"
   }
 }

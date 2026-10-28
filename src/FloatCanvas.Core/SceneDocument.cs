@@ -110,7 +110,7 @@ public sealed class DisplayLayoutHint
 
 public sealed partial class SceneDocument
 {
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
     public int Version { get; set; } = CurrentVersion;
     public DocumentKind Kind { get; set; }
     public List<CanvasElement> Elements { get; set; } = [];

@@ -12,7 +12,7 @@ using FloatCanvas.Windows;
 using L = FloatCanvas.Localization.AppText;
 
 /// <summary>Opt-in production settings renders hosted in hidden native sources, without showing a user window.</summary>
-internal static class CanvasGridLockUiEvidence
+internal static class CanvasPinUiEvidence
 {
     internal static void Run(string output, Action<string, bool> check)
     {
@@ -35,19 +35,28 @@ internal static class CanvasGridLockUiEvidence
                 nint handle;
                 try
                 {
-                    using var source = new HwndSource(new HwndSourceParameters("FloatCanvas grid lock settings fixture")
+                    using var source = new HwndSource(new HwndSourceParameters("FloatCanvas pin settings fixture")
                     { Width = (int)Math.Ceiling(root.Width), Height = (int)Math.Ceiling(root.Height), WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x08000080 });
                     handle = source.Handle; source.RootVisual = root;
-                    var settings = new CanvasSettings { Projection = new() { Enabled = true, Columns = 8, Rows = 6, CellSize = 105.1234, LockedGridCellSize = 100 } };
+                    var settings = new CanvasSettings { Projection = new() { Enabled = true, Columns = 9, Rows = 9, CellSize = 100 } };
                     window.Refresh(settings); window.PrepareForShow(); Layout(root);
                     check(language + " " + theme + " settings host remains native and hidden", IsWindow(handle) && !IsWindowVisible(handle) && !window.IsVisible && PresentationSource.FromVisual(content) is HwndSource);
-                    var toggle = Field<CheckBox>(window, "gridSizeLock"); var count = Field<TextBox>(window, "lockedColumns");
-                    var label = (FrameworkElement)System.Windows.Automation.AutomationProperties.GetLabeledBy(toggle);
-                    check(language + " " + theme + " grid lock label and fractional count fit default settings width", label.ActualWidth > 200 && count.ActualWidth > 80 &&
-                        label.DesiredSize.Width <= label.ActualWidth + 1 && toggle.ActualWidth >= 30 && count.ActualHeight >= 30 && count.IsReadOnly);
+                    var selector = Field<CanvasPinSelector>(window, "pinSelector");
+                    var points = Field<System.Windows.Controls.Primitives.ToggleButton[]>(selector, "points");
+                    check(language + " " + theme + " spatial pin selector fits", selector.ActualHeight >= 96 && points.Length == 9 && points.All(p => p.ActualWidth >= 28));
+                    check(language + " " + theme + " columns precede rows horizontally", Field<NumericValueField>(window, "columns").TransformToAncestor(root).Transform(new Point()).X <
+                        Field<NumericValueField>(window, "rows").TransformToAncestor(root).Transform(new Point()).X);
+                    Render(root, Path.Combine(output, "settings-pin-" + language + "-" + theme + ".png"));
+                    settings.Projection.PinLocation = CanvasPinLocation.Center; window.Refresh(settings); window.PrepareForShow(); Layout(root);
+                    Render(root, Path.Combine(output, "settings-center-" + language + "-" + theme + ".png"));
+                    settings.Projection.LockedGridCellSize = 73.1; window.Refresh(settings); window.PrepareForShow(); Layout(root);
+                    var automatic = Field<TextBox>(window, "lockedColumns");
+                    check(language + " " + theme + " locked coverage and pin remain visible together", automatic.IsReadOnly &&
+                        automatic.ActualHeight >= PropertyPanelLayout.ControlHeight && selector.ActualHeight >= 96 &&
+                        Field<FrameworkElement>(window, "gridSizeLockRow").Visibility == Visibility.Visible);
+                    check(language + " " + theme + " automatic columns also precede rows", automatic.TransformToAncestor(root).Transform(new Point()).X <
+                        Field<TextBox>(window, "lockedRows").TransformToAncestor(root).Transform(new Point()).X);
                     Render(root, Path.Combine(output, "settings-locked-" + language + "-" + theme + ".png"));
-                    settings.Projection.LockedGridCellSize = null; window.Refresh(settings); window.PrepareForShow(); Layout(root);
-                    Render(root, Path.Combine(output, "settings-unlocked-" + language + "-" + theme + ".png"));
                     settings.Projection.Enabled = false; settings.Grid.FlatCellSize = 73.1;
                     window.Refresh(settings); window.PrepareForShow(); Layout(root);
                     var flatPanel = Field<StackPanel>(window, "flatSizePanel");
@@ -58,7 +67,7 @@ internal static class CanvasGridLockUiEvidence
                         size.ActualHeight >= PropertyPanelLayout.ControlHeight && size.Input.ActualHeight >= size.Input.FontSize &&
                         sizeBounds.Left >= 0 && sizeBounds.Right <= root.ActualWidth && sizeBounds.Top >= 0 && sizeBounds.Bottom <= root.ActualHeight);
                     check(language + " " + theme + " flat settings omit calibration counts and the adjustment lock", Field<Grid>(window, "countPair").Visibility == Visibility.Collapsed &&
-                        toggle.Visibility == Visibility.Collapsed && Field<TextBox>(window, "lockedColumns").Visibility == Visibility.Collapsed);
+                        Field<FrameworkElement>(window, "pinRow").Visibility == Visibility.Collapsed);
                     Render(root, Path.Combine(output, "settings-flat-" + language + "-" + theme + ".png"));
                     source.RootVisual = null; root.Child = null;
                 }

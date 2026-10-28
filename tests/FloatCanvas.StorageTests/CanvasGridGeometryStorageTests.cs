@@ -14,7 +14,6 @@ internal static class CanvasGridGeometryStorageTests
         var initial = CanvasCalibration.CreateInitial(viewport, 7, 5);
         check(CanvasCalibration.TryCalibrate(initial, [new(-100, -100), new(100, -100), new(200, 200), new(-200, 200)], viewport,
             out var calibrated, out _), "centered grid storage fixture calibrates");
-        calibrated.LockedGridCellSize = 85.125;
         var scene = new SceneDocument { Viewport = viewport, Canvas = new() { Projection = calibrated,
             Grid = new() { Visible = true, FlatCellSize = 73.125, FlatOrigin = new(960, 540) }, DepthPriorityOcclusion = true },
             Elements = [new() { Kind = ElementKind.Rectangle, Width = 50, Height = 30, Transform = Affine2D.Translation(-100, 200) }] };
@@ -27,7 +26,7 @@ internal static class CanvasGridGeometryStorageTests
         using (var archive = ZipFile.OpenRead(path))
         {
             var manifest = await ReadAsync(archive, "manifest.json"); var payload = await ReadAsync(archive, "scene.json");
-            check(manifest["Version"]!.GetValue<int>() == 7 && payload["Version"]!.GetValue<int>() == 7,
+            check(manifest["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion && payload["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion,
                 "v7 envelope protects exact flat grid semantics from published older readers");
             var grid = payload["Canvas"]!["Grid"]!.AsObject();
             check(grid.ContainsKey("FlatCellSize") && grid.ContainsKey("FlatOrigin"), "new package explicitly persists independent flat grid metadata");
@@ -51,7 +50,7 @@ internal static class CanvasGridGeometryStorageTests
                     {
                         var canvas = json["Canvas"]!;
                         canvas["Grid"]!.AsObject().Remove("FlatCellSize"); canvas["Grid"]!.AsObject().Remove("FlatOrigin");
-                        if (version < 6) canvas["Projection"]!.AsObject().Remove("LockedGridCellSize");
+                        if (version < 6) canvas["Projection"]!.AsObject().Remove("LockedGridCellSize"); else canvas["Projection"]!["LockedGridCellSize"] = null;
                         if (version < 5) canvas.AsObject().Remove("DepthPriorityOcclusion");
                         if (version < 3) json.Remove("Canvas");
                     }
@@ -59,7 +58,7 @@ internal static class CanvasGridGeometryStorageTests
                 }
             byte[] before = await File.ReadAllBytesAsync(legacy);
             var migrated = (await store.LoadAsync(legacy)).Document;
-            check(migrated.Version == 7 && migrated.Canvas.Grid.FlatCellSize is null && migrated.Canvas.Grid.FlatOrigin is null &&
+            check(migrated.Version == SceneDocument.CurrentVersion && migrated.Canvas.Grid.FlatCellSize is null && migrated.Canvas.Grid.FlatOrigin is null &&
                 (await File.ReadAllBytesAsync(legacy)).AsSpan().SequenceEqual(before), $"v{version} loads through read-only flat-grid fallback without rewriting its file");
             if (version >= 3)
                 check(migrated.Canvas.Projection.Matrix == calibrated.Matrix && migrated.Canvas.Projection.Origin == calibrated.Origin &&

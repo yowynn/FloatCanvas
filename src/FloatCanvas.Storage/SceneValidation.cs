@@ -9,7 +9,7 @@ public static class SceneValidation
     public static void Validate(SceneDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (document.Version is not (1 or 2 or 3 or 4 or 5 or 6 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+        if (document.Version is not (1 or 2 or 3 or 4 or 5 or 6 or 7 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
         Require(Enum.IsDefined(document.Kind), L.Get("Scene.InvalidDocumentKind"));
         Require(document.Elements is not null && document.DisplayLayout is not null && document.Groups is not null, L.Get("Scene.MissingCollections"));
         SceneLimits.ValidateCapacity(document);
@@ -102,7 +102,11 @@ public static class SceneValidation
         Require(projection.Columns is >= 1 and <= CanvasCalibration.MaximumGridCount && projection.Rows is >= 1 and <= CanvasCalibration.MaximumGridCount,
             L.Get("Scene.InvalidCanvas"));
         Require(Point(projection.Origin) && projection.CellSize is >= .01 and <= 1_000_000 && double.IsFinite(projection.CellSize) &&
-            projection.AlgorithmVersion == CanvasCalibration.AlgorithmVersion && projection.Matrix.IsFinite && projection.Matrix.TryInverse(out _), L.Get("Scene.InvalidCanvas"));
+            projection.AlgorithmVersion is 1 or CanvasCalibration.AlgorithmVersion && projection.Matrix.IsFinite && projection.Matrix.TryInverse(out _), L.Get("Scene.InvalidCanvas"));
+        Require(Enum.IsDefined(projection.PinLocation) && (projection.PinPlanePoint is null || Point(projection.PinPlanePoint.Value)) &&
+            Point(canvas.Grid.FlatTranslation), L.Get("Scene.InvalidCanvas"));
+        Require(projection.ReferenceBounds is null || Rect(projection.ReferenceBounds.Value) && !projection.ReferenceBounds.Value.IsEmpty,
+            L.Get("Scene.InvalidCanvas"));
         Require(projection.LockedGridCellSize is null || projection.LockedGridCellSize is >= .01 and <= 1_000_000 && double.IsFinite(projection.LockedGridCellSize.Value), L.Get("Scene.InvalidCanvas"));
         Require(projection.Quad is not null && projection.Quad.Count is 0 or 4 && projection.Quad.All(Point), L.Get("Scene.InvalidCanvas"));
         Require(canvas.Grid.Width is > 0 and <= 64 && double.IsFinite(canvas.Grid.Width) && Enum.IsDefined(canvas.Grid.Pattern), L.Get("Scene.InvalidCanvas"));

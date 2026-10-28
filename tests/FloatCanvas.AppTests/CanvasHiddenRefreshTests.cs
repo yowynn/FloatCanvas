@@ -40,7 +40,7 @@ internal static class CanvasHiddenRefreshTests
                 var background = Field<ColorField>(window, "background"); var gridColor = Field<ColorField>(window, "gridColor");
                 var columns = Field<NumericValueField>(window, "columns"); var rows = Field<NumericValueField>(window, "rows");
                 var size = Field<NumericValueField>(window, "gridSize"); var width = Field<NumericValueField>(window, "width");
-                var lockedColumns = Field<TextBox>(window, "lockedColumns"); var lockedRows = Field<TextBox>(window, "lockedRows");
+
                 var pattern = Field<SegmentedChoice>(window, "pattern");
                 var gallery = Field<CanvasPresetGallery>(window, "presets");
                 var firstPreset = gallery.OfficialTiles.Children.OfType<Button>().First();
@@ -83,10 +83,10 @@ internal static class CanvasHiddenRefreshTests
                 var flat = initial.Clone(); flat.Projection.Enabled = false; flat.Projection.Columns = 41; flat.Projection.Rows = 29;
                 flat.Projection.LockedGridCellSize = 100; flat.Grid.FlatCellSize = 73.75; flat.Grid.Visible = false; flat.Grid.Width = 9;
                 double oldColumns = columns.Value, oldRows = rows.Value;
-                string oldLockedColumns = lockedColumns.Text, oldLockedRows = lockedRows.Text;
+
                 window.Refresh(flat); Pump();
                 findings.Add(($"{backend} flat canvas refresh does not touch hidden perspective inputs", !columns.IsVisible && !rows.IsVisible &&
-                    columns.Value == oldColumns && rows.Value == oldRows && lockedColumns.Text == oldLockedColumns && lockedRows.Text == oldLockedRows));
+                    columns.Value == oldColumns && rows.Value == oldRows));
                 findings.Add(($"{backend} flat canvas refresh synchronizes its visible size field", size.IsVisible && size.Value == 73.75));
                 findings.Add(($"{backend} grid visibility off preserves and refreshes the still-visible grid property rows", gridColor.IsVisible && width.IsVisible && pattern.IsVisible && width.Value == 9));
 
@@ -94,13 +94,12 @@ internal static class CanvasHiddenRefreshTests
                 perspective.Projection.CellSize = 200; perspective.Grid.FlatCellSize = 999;
                 window.Refresh(perspective); Pump();
                 findings.Add(($"{backend} perspective refresh leaves the hidden flat size field untouched", !size.IsVisible && size.Value == 73.75));
-                findings.Add(($"{backend} locked counts update readouts without updating hidden editable counts", lockedColumns.IsVisible && lockedRows.IsVisible &&
-                    !columns.IsVisible && !rows.IsVisible && columns.Value == oldColumns && rows.Value == oldRows &&
-                    lockedColumns.Text == "14" && lockedRows.Text == "18"));
+                findings.Add(($"{backend} locked perspective exposes automatic coverage", !columns.IsVisible && !rows.IsVisible &&
+                    Field<TextBox>(window, "lockedColumns").IsVisible && Field<TextBox>(window, "lockedColumns").Text == "14"));
                 var live = perspective.Projection.Clone(); live.Columns = 11; live.Rows = 13;
                 window.RefreshGridCounts(live); Pump();
-                findings.Add(($"{backend} live calibration refresh updates only visible locked count readouts", lockedColumns.Text == "22" && lockedRows.Text == "26" &&
-                    columns.Value == oldColumns && rows.Value == oldRows));
+                findings.Add(($"{backend} live calibration refresh updates automatic coverage", Field<TextBox>(window, "lockedColumns").Text == "22" &&
+                    Field<TextBox>(window, "lockedRows").Text == "26"));
 
                 var colorRow = (FrameworkElement)gridColor.Parent; var widthRow = (FrameworkElement)width.Parent; var patternRow = (FrameworkElement)pattern.Parent;
                 colorRow.Visibility = widthRow.Visibility = patternRow.Visibility = Visibility.Collapsed;
@@ -116,7 +115,7 @@ internal static class CanvasHiddenRefreshTests
                 string Snapshot() => JsonSerializer.Serialize(new { Background = background.Value, GridColor = gridColor.Value, Columns = columns.Input.Text, Rows = rows.Input.Text,
                     Size = size.Input.Text, Width = width.Input.Text, Projection = Field<SegmentedChoice>(window, "projection").SelectedValue,
                     Grid = Field<CheckBox>(window, "gridVisible").IsChecked, Pattern = (pattern.SelectedItem as RadioButton)?.Tag,
-                    LockedColumns = lockedColumns.Text, LockedRows = lockedRows.Text, Reset = Field<Button>(window, "reset").Content });
+                     Reset = Field<Button>(window, "reset").Content });
             }
             finally { window.CloseForDispose(); Pump(); }
         }

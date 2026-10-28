@@ -12,7 +12,7 @@ public static class CanvasGridGeometry
         if (!settings.Projection.Enabled && settings.Grid.FlatCellSize is { } size) return size;
         if (settings.Projection.Quad.Count != 0) return settings.Projection.GridCellSize;
         var initial = CanvasCalibration.CreateInitial(fallbackViewport, settings.Projection.Columns, settings.Projection.Rows);
-        return settings.Projection.LockedGridCellSize ?? initial.CellSize;
+        return initial.CellSize;
     }
 
     public static PointD ReferencePlaneCenter(CanvasProjectionSettings projection) =>
@@ -41,7 +41,9 @@ public static class CanvasGridGeometry
         var origin = reference.Center - new PointD(columns * exactCellSize / 2, rows * exactCellSize / 2);
         return new()
         {
-            Columns = columns, Rows = rows, Origin = origin, CellSize = exactCellSize,
+            Columns = columns, Rows = rows, Origin = origin, CellSize = exactCellSize, AlgorithmVersion = CanvasCalibration.AlgorithmVersion,
+            ReferenceBounds = new(origin.X, origin.Y, columns * exactCellSize, rows * exactCellSize),
+            PinPlanePoint = origin + new PointD(0, rows * exactCellSize),
             Quad = [origin, origin + new PointD(columns * exactCellSize, 0),
                 origin + new PointD(columns * exactCellSize, rows * exactCellSize), origin + new PointD(0, rows * exactCellSize)]
         };

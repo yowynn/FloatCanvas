@@ -207,7 +207,7 @@ internal static class CanvasPresetTests
         var legacy = new CanvasPresetLibrary(legacyPath);
         check("reading a version-one canvas library performs no migration write", File.ReadAllText(legacyPath) == legacyBytes && legacy.User.All(p => p.Parameters.Calibration is null));
         var legacyApplied = legacy.Apply(saved.Id, current, viewport, viewport);
-        check("legacy recipes without calibration restore default reference geometry", legacyApplied.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(viewport, current.Projection.Columns, current.Projection.Rows).Quad) && legacyApplied.Projection.Matrix == Projective2D.Identity);
+        check("legacy recipes without calibration restore default reference geometry", legacyApplied.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(viewport, current.Projection.Columns, current.Projection.Rows).Quad) && legacyApplied.Projection.Matrix == CanvasCalibration.CreateInitial(viewport, current.Projection.Columns, current.Projection.Rows).Matrix);
         legacy.Save("New perspective", current);
         var migrated = new CanvasPresetLibrary(legacyPath);
         check("an explicit edit writes version three while retaining all legacy recipes and their portable semantics", File.ReadAllText(legacyPath).Contains("\"Version\": 3") && migrated.User.Count == legacy.User.Count && migrated.User.Single(p => p.Id == saved.Id).Parameters.Calibration is null && migrated.User.Last().Parameters.Calibration is not null);
@@ -289,7 +289,7 @@ internal static class CanvasPresetTests
         resetOn.Enabled = true; appliedOn.Projection = resetOn;
         var resetFromOn = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOn });
         check("an unlocked on-mode preset retains matching flat and reset perspective grids", offFromOn.GridCellSize == resetFromOn.GridCellSize &&
-            offFromOn.GridOrigin == resetFromOn.GridOrigin && resetFromOn.PlaneToScreen == Projective2D.Identity);
+            resetFromOn.GridOrigin == resetOn.PinPoint && resetFromOn.PlaneToScreen == Projective2D.Identity);
 
         var recipe = new CanvasPresetParameters { ProjectionEnabled = false, GridVisible = true, Columns = 8, Rows = 6, FlatCellSize = 73.1 };
         var plain = CanvasPresetLibrary.Apply(recipe, new() { Grid = new() { FlatOrigin = reference.Center } }, reference, reference);
@@ -300,8 +300,8 @@ internal static class CanvasPresetTests
         var plainReset = CanvasGridGeometry.CreateFlatReference(reference, plain.Projection.Columns, plain.Projection.Rows, plain.Grid.FlatCellSize!.Value);
         plainReset.Enabled = true; plain.Projection = plainReset;
         var afterReset = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = plain });
-        check("a portable flat-size recipe is unchanged by enabling and immediately resetting perspective", beforeReset.GridCellSize == afterReset.GridCellSize &&
-            beforeReset.GridOrigin == afterReset.GridOrigin && afterReset.PlaneToScreen == beforeReset.PlaneToScreen);
+        check("a portable recipe preserves content and spacing while flat and perspective retain their own grid phases", beforeReset.GridCellSize == afterReset.GridCellSize &&
+            beforeReset.GridOrigin == reference.Center && afterReset.GridOrigin == plainReset.PinPoint && afterReset.PlaneToScreen == beforeReset.PlaneToScreen);
 
         var offSnapshot = locked.Clone(); offSnapshot.Projection.Enabled = false; offSnapshot.Grid.FlatCellSize = 81.2345678901234;
         var savedOff = library.Save("Flat with dormant perspective", offSnapshot);
@@ -320,7 +320,7 @@ internal static class CanvasPresetTests
         offReset.Enabled = true; appliedOff.Projection = offReset;
         var offResetMapping = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOff });
         check("resetting an off-mode snapshot uses its saved flat size rather than the dormant projection scale", offResetMapping.GridCellSize == offMapping.GridCellSize &&
-            offResetMapping.GridOrigin == offMapping.GridOrigin && offResetMapping.PlaneToScreen == Projective2D.Identity);
+            offResetMapping.GridOrigin == offReset.PinPoint && offResetMapping.PlaneToScreen == Projective2D.Identity);
     }
 
     private static void Controls(string folder, Action<string, bool> check)

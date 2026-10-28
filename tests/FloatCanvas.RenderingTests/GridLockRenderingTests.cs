@@ -32,15 +32,15 @@ internal static class GridLockRenderingTests
             var mapping = CanvasMapping.Create(scene);
             var projectedAnchor = mapping.ToScreen(anchor);
             var foot = mapping.ElementToScreen(board).TransformPoint(new(board.Width / 2, board.Height));
-            var handle = CanvasGridGeometry.ReferenceCenter(next);
-            check($"{gesture} keeps the locked grid centered on its current handle with fixed plane spacing",
+            var handle = mapping.ToScreen(next.PinPoint);
+            check($"{gesture} keeps the locked grid phase at its pin with fixed plane spacing",
                 mapping.ToScreen(mapping.GridOrigin).DistanceTo(handle) < 1e-7 && Math.Abs(mapping.GridCellSize - projection.CellSize) < 1e-7);
             check($"{gesture} keeps the original logical billboard anchor and its rendered foot coincident", foot.DistanceTo(projectedAnchor) < 1e-7 && board.BillboardAnchor == anchor);
             check($"{gesture} actually changes calibration scale without changing the original object", Math.Abs(next.CellSize - projection.CellSize) > .01 && JsonSerializer.Serialize(board) == boardJson);
 
             // Sample both grid families away from the billboard, including fractional
             // positions along each line, so a single accidental crossing cannot pass.
-            var samples = new[] { new PointD(-1.37, -1), new PointD(-1, -1.37), new PointD(1.37, 1), new PointD(1, 1.37) }
+            var samples = new[] { new PointD(1.37, -1), new PointD(1, -1.37), new PointD(2.37, -2), new PointD(2, -2.37) }
                 .Select(p => mapping.ToScreen(mapping.GridOrigin + p * mapping.GridCellSize)).ToArray();
             board.Visible = false;
             using (var grid = Pixels(renderer, scene, assets))
@@ -65,6 +65,9 @@ internal static class GridLockRenderingTests
                 next.Matrix == matrixBeforeUnlock && next.CellSize == cellBeforeUnlock && JsonSerializer.Serialize(board) == boardJson);
         }
         CacheAndDepth(renderer, assets, check);
+        scene = Scene(); scene.Canvas.Projection.LockedGridCellSize = .01;
+        using var dense = Pixels(renderer, scene, assets);
+        check("dense automatic coverage keeps grid enumeration bounded", renderer.GridCandidateCount <= 8200);
     }
 
     private static void CacheAndDepth(SceneRenderer renderer, AssetLibrary assets, Action<string, bool> check)
@@ -94,7 +97,7 @@ internal static class GridLockRenderingTests
         scene.Elements = [Board(previous.Origin + new PointD(4 * previous.CellSize, 4 * previous.CellSize))];
         scene.Canvas.DepthPriorityOcclusion = true;
         var mapping = CanvasMapping.Create(scene);
-        var samples = new[] { new PointD(-1.37, -1), new PointD(-1, -1.37), new PointD(1.37, 1), new PointD(1, 1.37) }
+        var samples = new[] { new PointD(1.37, -1), new PointD(1, -1.37), new PointD(2.37, -2), new PointD(2, -2.37) }
             .Select(p => mapping.ToScreen(mapping.GridOrigin + p * mapping.GridCellSize)).ToArray();
         using (var depth = Pixels(renderer, scene, assets))
             check("depth plane composition retains locked grid positions outside billboard occlusion", samples.All(p => Near(depth, p, color => color.Green > 140 && color.Alpha > 40)));

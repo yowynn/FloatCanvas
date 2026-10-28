@@ -40,8 +40,8 @@ internal static class Program
                 Console.WriteLine($"Depth composition diagnostics completed with {failures} failed checks."); return failures == 0 ? 0 : 1;
             }
             if (args.Contains("--depth-performance-only")) { DepthCompositionPerformanceTests.Run(Assert); Console.WriteLine($"PASS {_checks} depth composition performance checks."); return 0; }
-            if (args.Contains("--grid-lock-evidence")) { GridLockRenderingTests.Run(Assert); GridLockRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--grid-lock-evidence") + 1]); Console.WriteLine($"PASS {_checks} grid lock rendering checks and evidence."); return 0; }
-            if (args.Contains("--grid-lock-only")) { GridLockRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} grid lock rendering checks."); return 0; }
+            if (args.Contains("--grid-lock-evidence")) { CanvasPinRenderingTests.Run(Assert); CanvasPinRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--grid-lock-evidence") + 1]); Console.WriteLine($"PASS {_checks} grid lock rendering checks and evidence."); return 0; }
+            if (args.Contains("--grid-lock-only")) { CanvasPinRenderingTests.Run(Assert); GridLockRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} grid lock rendering checks."); return 0; }
             if (args.Contains("--depth-occlusion-only")) { DepthOcclusionRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} depth occlusion rendering checks."); return 0; }
             if (args.Contains("--depth-occlusion-evidence")) { DepthOcclusionRenderingTests.Run(Assert); DepthOcclusionRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--depth-occlusion-evidence") + 1]); Console.WriteLine($"PASS {_checks} depth occlusion rendering checks and evidence."); return 0; }
             if (args.Contains("--billboard-evidence"))
@@ -94,7 +94,8 @@ internal static class Program
             DottedGridRenderingTests.Run(Assert);
             FlatGridResetRenderingTests.Run(Assert);
             RetainedBillboardAnimationTests.Run(Assert);
-            GridLockRenderingTests.Run(Assert);
+        CanvasPinRenderingTests.Run(Assert);
+        GridLockRenderingTests.Run(Assert);
             BillboardRenderingTests.Run(Assert);
             DepthOcclusionRenderingTests.Run(Assert);
             DepthCompositionPerformanceTests.Run(Assert);

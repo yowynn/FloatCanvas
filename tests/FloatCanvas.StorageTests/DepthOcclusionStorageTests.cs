@@ -16,7 +16,7 @@ internal static class DepthOcclusionStorageTests
             Elements = [new() { Kind = ElementKind.Rectangle, Width = 30, Height = 40, IsBillboard = true,
                 BillboardAnchor = new(120, 100), BillboardHeight = -12, Style = new() { StrokeWidth = 5 } }] };
         var assets = new AssetLibrary(); var store = new ProjectStore();
-        string path = Path.Combine(root, "depth.floatcanvas"); string original = JsonSerializer.Serialize(scene);
+        string path = Path.Combine(root, "depth.floatcanvas"); CanvasCalibration.UpgradeLegacy(scene.Canvas.Projection); string original = JsonSerializer.Serialize(scene);
         await store.SaveAsync(path, scene, assets);
         var loaded = (await store.LoadAsync(path)).Document;
         check(loaded.Canvas.DepthPriorityOcclusion && JsonSerializer.Serialize(loaded) == original,

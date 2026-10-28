@@ -85,9 +85,15 @@ public sealed partial class SceneRenderer
             // inside the calibration frame disappear through a global candidate stride.
             var projection = document.Canvas.Projection;
             double coverage = vertical ? projection.GridColumns : projection.GridRows;
-            int fineCount = (int)Math.Min(256, Math.Ceiling(coverage / 2));
-            for (int i = -fineCount; i <= fineCount; i++)
-                if (anchor + i * cell >= minimum && anchor + i * cell <= maximum) candidates.Add(i);
+            double startCell = ((vertical ? projection.Origin.X : projection.Origin.Y) - anchor) / cell;
+            double fineStride = 1;
+            while (coverage / fineStride > 2046) fineStride *= 2;
+            double fineStart = Math.Floor(startCell / fineStride), fineEnd = Math.Ceiling((startCell + coverage) / fineStride);
+            for (int i = 0; i <= Math.Min(2048, fineEnd - fineStart); i++)
+            {
+                double candidate = (fineStart + i) * fineStride;
+                if (anchor + candidate * cell >= minimum && anchor + candidate * cell <= maximum) candidates.Add(candidate);
+            }
             PointD? previousStart = null;
             PointD previousEnd = default;
             foreach (double candidate in candidates)

@@ -70,7 +70,7 @@ internal static class CanvasToolInteractionTests
         var shape = new CanvasElement { Kind = ElementKind.Rectangle, Width = 80, Height = 80, Locked = true,
             Transform = Affine2D.Translation(start.X - 40, start.Y - 40), Style = new ElementStyle { Fill = 0xffffffff } };
         session.Document.Elements.Add(shape);
-        check("a visible locked object is not blank space for flat-grid dragging", !controller.Down(session, start, reference));
+        check("a visible locked object permits canvas grid dragging", controller.Down(session, start, reference)); controller.Cancel();
         shape.Visible = false;
         check("hidden layers do not block a blank-space grid drag", controller.Down(session, start, reference)); controller.Cancel();
         session.BeginTransaction("unrelated");
@@ -124,17 +124,29 @@ internal static class CanvasToolInteractionTests
         check("reset fits its target reference without mutating the independent saved flat spacing",
             dormantPlaneCell != 73.1 && dormant.Grid.FlatCellSize == 73.1 && restoredFlat.CellSize == fittedReset.CellSize && restoredFlat.Enabled &&
             restoredFlat.Quad.SequenceEqual(fittedReset.Quad) &&
-            restoredFlat.Matrix == Projective2D.Identity && CanvasGridGeometry.ReferenceCenter(restoredFlat).DistanceTo(dormant.Grid.FlatOrigin!.Value) < 1e-10 &&
+            restoredFlat.ReferenceBounds == fittedReset.ReferenceBounds && restoredFlat.Matrix == Projective2D.Identity &&
+            CanvasGridGeometry.ReferenceCenter(restoredFlat).DistanceTo(dormant.Grid.FlatOrigin!.Value) < 1e-10 &&
             dormantCounts == (restoredFlat.Columns, restoredFlat.Rows));
         var flatDocument = new SceneDocument { Viewport = reference, Canvas = dormant.Clone() };
         flatDocument.Canvas.Projection.Enabled = false;
         flatDocument.Canvas.Grid.FlatCellSize = restoredFlat.CellSize;
         var resetDocument = flatDocument.Clone(); resetDocument.Canvas.Projection = restoredFlat;
         var flatMapping = CanvasMapping.Create(flatDocument); var resetMapping = CanvasMapping.Create(resetDocument);
-        check("flat and reset perspective lattices coincide after applying the reset's newly fitted spacing",
-            flatMapping.GridOrigin.DistanceTo(resetMapping.GridOrigin) < 1e-10 && flatMapping.GridCellSize == resetMapping.GridCellSize &&
-            flatMapping.ToScreen(flatMapping.GridOrigin + new PointD(restoredFlat.CellSize, restoredFlat.CellSize)).DistanceTo(
-                resetMapping.ToScreen(resetMapping.GridOrigin + new PointD(restoredFlat.CellSize, restoredFlat.CellSize))) < 1e-10);
+        check("reset keeps square logical spacing while projecting its selected pin to the reset frame",
+            flatMapping.GridCellSize == resetMapping.GridCellSize &&
+            resetMapping.ToScreen(restoredFlat.PinPoint).DistanceTo(restoredFlat.Quad[3]) < 1e-10);
+        session = Scene(reference);
+        session.Document.Canvas.Grid.FlatTranslation = new(123, -57);
+        var flatBefore = JsonSerializer.Serialize(session.Document);
+        check("translated flat placement permits scaling", controller.Down(session, start, reference));
+        for (int i = 1; i <= 30; i++)
+        {
+            controller.Move(start + new PointD(i * 5, 0));
+            var mapping = CanvasMapping.Create(session.Document);
+            check("every scale sample keeps the screen center on a grid intersection", mapping.ToScreen(mapping.GridOrigin).DistanceTo(center) < 1e-8);
+        }
+        controller.Up();
+        check("centered flat scaling remains one reversible gesture", session.Undo() && JsonSerializer.Serialize(session.Document) == flatBefore && session.Redo());
     }
 
     private static EditorSession Scene(RectD reference)

@@ -11,22 +11,18 @@ internal sealed class CanvasGridScaleController
     private long transaction;
     private RectD reference;
     private double startRadius, startSize;
-    private bool sizeLocked;
     private CanvasSettings? initialCanvas;
     private bool previewChanged;
     public bool IsDragging => document is not null;
 
-    public bool Down(EditorSession value, PointD point, RectD referenceViewport, bool hitExistingContent = true)
+    public bool Down(EditorSession value, PointD point, RectD referenceViewport)
     {
         if (IsDragging || value.IsTransactionActive || value.Document.Canvas.Projection.Enabled ||
-            !double.IsFinite(point.X) || !double.IsFinite(point.Y) || !value.Document.Viewport.Contains(point) ||
-            hitExistingContent && value.Document.LayerOpacity > 0 && value.Document.Elements.Any(element =>
-                element.Style.Opacity > 0 && ElementGeometry.HitTest(element, point))) return false;
+            !double.IsFinite(point.X) || !double.IsFinite(point.Y) || !value.Document.Viewport.Contains(point)) return false;
         session = value; document = value.Document; reference = referenceViewport;
         initialCanvas = document.Canvas.Clone(); previewChanged = false;
         startSize = CanvasGridGeometry.ResolveCellSize(document.Canvas, reference);
         startRadius = point.DistanceTo(reference.Center);
-        sizeLocked = document.Canvas.Projection.LockedGridCellSize.HasValue;
         session.BeginTransaction(L.Get("Canvas.Title")); transaction = session.TransactionId;
         return true;
     }
@@ -43,16 +39,22 @@ internal sealed class CanvasGridScaleController
         }
         double size = Math.Clamp(startSize * ratio, CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize);
         if (CanvasGridGeometry.ResolveCellSize(document!.Canvas, reference) == size) return false;
-        ApplyGridSize(document.Canvas, reference, size, sizeLocked);
+        ApplyGridSize(document.Canvas, reference, size);
         previewChanged = true;
         session!.NotifySettingsChanged(); return true;
     }
 
-    internal static void ApplyGridSize(CanvasSettings settings, RectD reference, double size, bool? locked = null)
+    internal static void ApplyGridSize(CanvasSettings settings, RectD reference, double size)
     {
         var counts = CanvasGridGeometry.CountsForCellSize(reference, size);
-        var projection = CanvasGridGeometry.CreateFlatReference(reference, counts.Columns, counts.Rows, size);
-        if (locked ?? settings.Projection.LockedGridCellSize.HasValue) projection.LockedGridCellSize = size;
+        var offset = settings.Grid.FlatTranslation;
+        var planeReference = new RectD(reference.X - offset.X, reference.Y - offset.Y, reference.Width, reference.Height);
+        var projection = CanvasGridGeometry.CreateFlatReference(planeReference, counts.Columns, counts.Rows, size);
+        projection.PinLocation = settings.Projection.PinLocation;
+        if (settings.Projection.LockedGridCellSize.HasValue) projection.LockedGridCellSize = size;
+        projection.PinPlanePoint = projection.PinPoint;
+        projection.Matrix = Projective2D.FromAffine(Affine2D.Translation(offset.X, offset.Y));
+        projection.Quad = projection.Quad.Select(p => p + offset).ToList();
         settings.Projection = projection;
         settings.Grid.FlatCellSize = size;
         settings.Grid.FlatOrigin = reference.Center;

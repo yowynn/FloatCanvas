@@ -31,7 +31,7 @@ internal static class Phase3CanvasEscapeTests
         string original = JsonSerializer.Serialize(editor.Session.Document);
         var viewport = editor.Session.Document.Viewport;
         var point = viewport.Center + new PointD(100, 0);
-        check("flat Canvas drag starts before Escape", scale.Down(editor.Session, point, viewport, hitExistingContent: false));
+        check("flat Canvas drag starts before Escape", scale.Down(editor.Session, point, viewport));
         scale.Move(point + new PointD(50, 0));
         Invoke("OnKey", 0x1B);
         check("Escape first cancels an unfinished grid drag while retaining Canvas editing", host.IsEditing && editor.Tool == EditorTool.Canvas &&

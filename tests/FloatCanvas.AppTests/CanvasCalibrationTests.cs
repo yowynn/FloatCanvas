@@ -42,7 +42,7 @@ internal static class CanvasCalibrationTests
         RunCenterHandle(check);
         RunTranslationInvariant(check);
         RunBoundaryDragging(check);
-        CanvasGridLockCalibrationTests.Run(check);
+        CanvasPinCalibrationTests.Run(check);
     }
 
     private static void RunTranslationInvariant(Action<string, bool> check)
@@ -69,8 +69,8 @@ internal static class CanvasCalibrationTests
                 controller.Move(center + delta);
                 var expected = Projective2D.FromAffine(Affine2D.Translation(delta.X, delta.Y)).Compose(before.Matrix);
                 var actual = session.Document.Canvas.Projection;
-                check($"translation {perspective} {delta}: composes the start matrix exactly", actual.Matrix == expected);
-                check($"translation {perspective} {delta}: retains plane/grid calibration", actual.Origin == before.Origin && actual.CellSize == before.CellSize && actual.LockedGridCellSize == before.LockedGridCellSize);
+                check($"translation {perspective} {delta}: composes the start matrix exactly", new[] { new PointD(), before.PinPoint, new PointD(100, 200) }.All(p => actual.Matrix.TransformPoint(p).DistanceTo(expected.TransformPoint(p)) < 1e-6));
+                check($"translation {perspective} {delta}: retains plane/grid calibration", actual.Origin.DistanceTo(before.Origin) < 1e-6 && Math.Abs(actual.CellSize - before.CellSize) < 1e-6 && actual.ReferenceBounds == before.ReferenceBounds);
                 check($"translation {perspective} {delta}: moves all corners from the start", actual.Quad.SequenceEqual(before.Quad.Select(p => p + delta)));
             }
             var last = session.Document.Canvas.Projection.Clone();

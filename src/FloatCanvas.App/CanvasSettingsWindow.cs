@@ -13,7 +13,7 @@ internal sealed class CanvasSettingsWindow : Window
 {
     private readonly ColorField background = new(ColorRole.Background), gridColor = new(ColorRole.Foreground);
     private readonly SegmentedChoice projection = SegmentedChoicePreviews.CanvasMode();
-    private readonly CheckBox gridVisible = new(), gridSizeLock = new(), depthPriorityOcclusion = new();
+    private readonly CheckBox gridVisible = new(), depthPriorityOcclusion = new(), gridSizeLock = new();
     private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true) { Unit = L.Get("Numeric.Unit.Column") },
         rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true) { Unit = L.Get("Numeric.Unit.Row") },
         width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5) { Unit = "px" };
@@ -24,9 +24,12 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly StackPanel flatSizePanel = new();
     private readonly PropertyChangeRegion projectionOptions, gridCountsRegion;
     private readonly Button pin;
-    private readonly TextBox lockedColumns = new() { IsReadOnly = true, MinHeight = 30 },
-        lockedRows = new() { IsReadOnly = true, MinHeight = 30 };
+    private readonly CanvasPinSelector pinSelector = new();
+    private readonly FrameworkElement pinRow;
+    private readonly FrameworkElement gridSizeLockRow;
+    private readonly TextBox lockedColumns = new() { IsReadOnly = true }, lockedRows = new() { IsReadOnly = true };
     private readonly TextBlock gridSizeLockHint = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 8) };
+    private readonly TextBlock pinHint = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 8) };
     private readonly Button reset = new();
     internal const double PerspectiveActionsWidth = PropertyPanelLayout.ContentWidth;
     private readonly Button fourPoints = new() { MinHeight = 32, Padding = new(10, 4, 10, 4), Content = L.Get("Canvas.FourPoints") };
@@ -47,8 +50,10 @@ internal sealed class CanvasSettingsWindow : Window
     internal CanvasSettings? DisplayedSettings { get; private set; }
     public event Action<uint>? BackgroundChanged, GridColorChanged;
     public event Action<ColorField>? EyedropperRequested;
-    public event Action<bool>? ProjectionChanged, GridVisibilityChanged, GridSizeLockChanged;
+    public event Action<bool>? ProjectionChanged, GridVisibilityChanged;
     public event Action<bool>? DepthPriorityOcclusionChanged;
+    public event Action<CanvasPinLocation>? PinLocationChanged;
+    public event Action<bool>? GridSizeLockChanged;
     public event Action<int, int>? GridCountsChanged;
     public event Action<double>? GridWidthChanged;
     public event Action<double>? GridSizeChanged;
@@ -94,14 +99,19 @@ internal sealed class CanvasSettingsWindow : Window
         depthPriorityOcclusion.ToolTip = L.Get("Canvas.DepthPriorityOcclusionHint");
         System.Windows.Automation.AutomationProperties.SetName(depthPriorityOcclusion, L.Get("Canvas.DepthPriorityOcclusion"));
         projectionBody.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.DepthPriorityOcclusion"), depthPriorityOcclusion));
-        gridSizeLock.Content = L.Get("Canvas.GridSizeLock"); gridSizeLock.Margin = new(0, 0, 0, 8);
-        gridSizeLock.ToolTip = L.Get("Canvas.GridSizeLockHelp"); ToolTipService.SetShowOnDisabled(gridSizeLock, true);
-        projectionBody.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.GridSizeLock"), gridSizeLock));
-        var rowPanel = CountField("Canvas.Rows", "R", rows, lockedRows); var columnPanel = CountField("Canvas.Columns", "C", columns, lockedColumns);
+        pinRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Canvas.Pin")), pinSelector);
+        projectionBody.Children.Add(pinRow);
+        pinSelector.ToolTip = L.Get("Canvas.PinHelp");
+        gridSizeLock.ToolTip = L.Get("Canvas.GridSizeLockHelp");
+        System.Windows.Automation.AutomationProperties.SetName(gridSizeLock, L.Get("Canvas.GridSizeLock"));
+        gridSizeLockRow = PropertyPanelLayout.BooleanRow(L.Get("Canvas.GridSizeLock"), gridSizeLock);
+        projectionBody.Children.Add(gridSizeLockRow);
+        var columnPanel = CountField("Canvas.Columns", "C", columns, lockedColumns); var rowPanel = CountField("Canvas.Rows", "R", rows, lockedRows);
         var countBody = new StackPanel();
-        countPair.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.GridCounts")), PropertyPanelLayout.Pair(rowPanel, columnPanel))); countBody.Children.Add(countPair);
+        countPair.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.GridCounts")), PropertyPanelLayout.Pair(columnPanel, rowPanel))); countBody.Children.Add(countPair);
         AddField(flatSizePanel, "Canvas.GridSize", gridSize); countBody.Children.Add(flatSizePanel);
         gridSize.ToolTip = L.Get("Canvas.GridSizeHelp");
+        countBody.Children.Add(pinHint);
         gridSizeLockHint.Text = L.Get("Canvas.GridSizeLockCountsHint"); countBody.Children.Add(gridSizeLockHint);
         gridCountsRegion = new(countBody); projectionBody.Children.Add(gridCountsRegion);
         var actions = new Grid {Width=PerspectiveActionsWidth,HorizontalAlignment=HorizontalAlignment.Center};
@@ -153,7 +163,7 @@ internal sealed class CanvasSettingsWindow : Window
         {
             actions.Width = resetActions.Width = Math.Min(PerspectiveActionsWidth, Math.Max(1, ActualWidth - WindowLayout.ContentInset * 2 - 2));
         };
-        AppWindowChrome.Apply(this); AppWindowChrome.SetHelp(this, L.Get("Canvas.Help"), L.Get("Canvas.HelpText") + "\n\n" + L.Get("Canvas.GridSizeLockHelp") + "\n\n" + L.Get("Canvas.MultiMonitorHelp") + "\n\n" + L.Get("CanvasPreset.Scope"));
+        AppWindowChrome.Apply(this); AppWindowChrome.SetHelp(this, L.Get("Canvas.Help"), L.Get("Canvas.HelpText") + "\n\n" + L.Get("Canvas.PinHelp") + "\n\n" + L.Get("Canvas.MultiMonitorHelp") + "\n\n" + L.Get("CanvasPreset.Scope"));
         pin = ActionIconButton.Create(PanelActionIcon.Pin, L.Get("ToolbarV2.PinOptions"), () =>
         {
             IsPinned = !IsPinned; RefreshPin(); PinChanged?.Invoke();
@@ -176,10 +186,13 @@ internal sealed class CanvasSettingsWindow : Window
             if (!refreshing && current.Projection.Enabled) DepthPriorityOcclusionChanged?.Invoke(depthPriorityOcclusion.IsChecked == true);
             depthPriorityOcclusion.IsChecked = DisplayedSettings?.DepthPriorityOcclusion ?? false;
         };
+        pinSelector.SelectionChanged += value =>
+        {
+            if (!refreshing && current.Projection.Enabled) PinLocationChanged?.Invoke(value);
+        };
         gridSizeLock.Click += (_, _) =>
         {
-            projectionOptions.Reset();
-            gridCountsRegion.Change(() => { if (!refreshing && current.Projection.Enabled) GridSizeLockChanged?.Invoke(gridSizeLock.IsChecked == true); });
+            if (!refreshing && current.Projection.Enabled) GridSizeLockChanged?.Invoke(gridSizeLock.IsChecked == true);
         };
         gridVisible.Click += (_, _) => { if (!refreshing) GridVisibilityChanged?.Invoke(gridVisible.IsChecked == true); };
         reset.Click += (_, _) => ResetDisplayRequested?.Invoke(selectedResetDevice);
@@ -297,14 +310,18 @@ internal sealed class CanvasSettingsWindow : Window
         var settings = current.Projection;
         bool locked = settings.LockedGridCellSize.HasValue;
         depthPriorityOcclusion.Visibility = settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
-        countPair.Visibility = gridSizeLock.Visibility = perspectiveActions.Visibility = settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
+        countPair.Visibility = pinRow.Visibility = gridSizeLockRow.Visibility = perspectiveActions.Visibility = settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
         flatSizePanel.Visibility = settings.Enabled ? Visibility.Collapsed : Visibility.Visible;
-        columns.Visibility = rows.Visibility = settings.Enabled && !locked ? Visibility.Visible : Visibility.Collapsed;
+        columns.Visibility = rows.Visibility = !locked ? Visibility.Visible : Visibility.Collapsed;
         lockedColumns.Visibility = lockedRows.Visibility = gridSizeLockHint.Visibility = locked && settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
         if (CanRefresh(depthPriorityOcclusion)) depthPriorityOcclusion.IsChecked = current.DepthPriorityOcclusion;
-        if (CanRefresh(gridSizeLock)) { gridSizeLock.IsChecked = locked; gridSizeLock.IsEnabled = settings.Enabled; }
+        if (CanRefresh(gridSizeLock)) gridSizeLock.IsChecked = locked;
         if (CanRefresh(lockedColumns)) RefreshLockedCount(lockedColumns, settings.GridColumns);
         if (CanRefresh(lockedRows)) RefreshLockedCount(lockedRows, settings.GridRows);
+        pinSelector.SelectedValue = settings.PinLocation;
+        var p = settings.PinGridPoint;
+        pinHint.Text = L.Get("Canvas.PinHalfCells");
+        pinHint.Visibility = settings.Enabled && !locked && (p.X % 1 != 0 || p.Y % 1 != 0) ? Visibility.Visible : Visibility.Collapsed;
         if (CanRefresh(columns) && !columns.IsKeyboardFocusWithin && !columns.IsInteracting) columns.Value = settings.Columns;
         if (CanRefresh(rows) && !rows.IsKeyboardFocusWithin && !rows.IsInteracting) rows.Value = settings.Rows;
     }
@@ -383,7 +400,6 @@ internal sealed class CanvasSettingsWindow : Window
     }
     private static void RefreshLockedCount(TextBox field, double value)
     {
-        // Computed coverage is not an editable calibration count and has no 1..256 bound.
         field.Text = value.ToString(value is >= .001 and < 1_000_000 ? "0.###" : "G4", System.Globalization.CultureInfo.CurrentCulture);
         field.ToolTip = L.Get("Canvas.GridSizeLockCountsHint") + "\n" + value.ToString("G17", System.Globalization.CultureInfo.CurrentCulture);
     }

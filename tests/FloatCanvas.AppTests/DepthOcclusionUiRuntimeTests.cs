@@ -40,7 +40,7 @@ internal static class DepthOcclusionUiRuntimeTests
                 };
                 var option = Field<CheckBox>(window, "depthPriorityOcclusion");
                 var projection = Field<SegmentedChoice>(window, "projection");
-                var gridLock = Field<CheckBox>(window, "gridSizeLock");
+                var gridLock = Field<FrameworkElement>(window, "pinRow");
                 var content = (FrameworkElement)window.Content; window.Content = null;
                 var root = new Border { Width = Width, Height = Height, Child = content, Background = (Brush)app.Resources["CanvasSurface"] };
                 root.SetValue(System.Windows.Documents.TextElement.ForegroundProperty, app.Resources["CanvasText"]);

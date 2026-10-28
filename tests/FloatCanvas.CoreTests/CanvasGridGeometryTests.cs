@@ -24,7 +24,7 @@ internal static class CanvasGridGeometryTests
             "reset uses exact cell size without quantizing it back through integer counts or locking");
         reset.Enabled = true; scene.Canvas.Projection = reset;
         var perspective = CanvasMapping.Create(scene);
-        check(perspective.GridCellSize == flat.GridCellSize && perspective.GridOrigin == flat.GridOrigin && perspective.PlaneToScreen == flat.PlaneToScreen,
+        check(perspective.GridCellSize == flat.GridCellSize && perspective.GridOrigin == reset.PinPoint && perspective.PlaneToScreen == flat.PlaneToScreen,
             "turning perspective on and resetting produces the same lattice as the flat grid");
         foreach (double size in new[] { 1.0, 73.125, 1_000_000.0 })
         {
@@ -47,12 +47,12 @@ internal static class CanvasGridGeometryTests
         scene.Canvas.Projection = calibrated;
         var mapping = CanvasMapping.Create(scene);
         var cornerPlane = calibrated.Origin;
-        Near((cornerPlane.X - mapping.GridOrigin.X) / mapping.GridCellSize, -calibrated.Columns / 2d,
+        Near((cornerPlane.X - mapping.GridOrigin.X) / mapping.GridCellSize, 0,
             "even-count left edge stays on its original grid line after perspective deformation");
-        Near((cornerPlane.Y - mapping.GridOrigin.Y) / mapping.GridCellSize, -calibrated.Rows / 2d,
+        Near((cornerPlane.Y - mapping.GridOrigin.Y) / mapping.GridCellSize, -calibrated.Rows,
             "even-count top edge stays on its original grid line after perspective deformation");
         var handle = CanvasGridGeometry.ReferenceCenter(calibrated);
-        Near(mapping.ToScreen(mapping.GridOrigin).DistanceTo(handle), 0, "perspective grid origin lands at the projective center handle");
+        Near(mapping.ToScreen(mapping.GridOrigin).DistanceTo(calibrated.Quad[3]), 0, "perspective grid pin lands at bottom-left corner");
         var planeCenter = calibrated.Origin + new PointD(calibrated.Columns * calibrated.CellSize / 2, calibrated.Rows * calibrated.CellSize / 2);
         var arithmeticCenter = new PointD(calibrated.Quad.Average(p => p.X), calibrated.Quad.Average(p => p.Y));
         check(mapping.ToScreen(planeCenter).DistanceTo(arithmeticCenter) > 10, "fixture distinguishes the corrected projective center from the arithmetic screen center");

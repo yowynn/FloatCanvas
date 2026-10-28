@@ -120,7 +120,7 @@ internal static class PackageCodec
             }
             var manifest = await ReadJsonAsync<Manifest>(RequiredEntry(archive, "manifest.json"), 4 * 1024 * 1024, ct).ConfigureAwait(false);
             if (manifest.Format != "FloatCanvas." + kind) throw new InvalidDataException(L.Get("Project.UnexpectedFormat"));
-            if (manifest.Version is not (1 or 2 or 3 or 4 or 5 or 6 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
+            if (manifest.Version is not (1 or 2 or 3 or 4 or 5 or 6 or 7 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Project.UnsupportedVersion", manifest.Version));
             string payload = kind == "project" ? "scene.json" : "workspace.json";
             if (manifest.Payload != payload || manifest.Assets is null || manifest.Assets.Count > 4096) throw new InvalidDataException(L.Get("Project.InvalidManifest"));
             if (manifest.Assets.Any(a => a is null || !IsAssetId(a.Id) || string.IsNullOrWhiteSpace(a.MediaType) || a.MediaType.Length > 128 || a.Length <= 0 || a.Length > MaxAssetBytes) || manifest.Assets.Select(a => a.Id).Distinct(StringComparer.Ordinal).Count() != manifest.Assets.Count)
@@ -201,7 +201,11 @@ internal static class PackageCodec
     }
     private static void UpgradeVersion<T>(T value)
     {
-        foreach (var document in Documents(value)) document.Version = SceneDocument.CurrentVersion;
+        foreach (var document in Documents(value))
+        {
+            document.Version = SceneDocument.CurrentVersion;
+            CanvasCalibration.UpgradeLegacy(document.Canvas.Projection);
+        }
     }
     private static void Validate<T>(T value)
     {
@@ -270,7 +274,17 @@ internal static class PackageCodec
             if (version >= 5) RequireProperties(canvas, "DepthPriorityOcclusion");
             var projection = canvas.GetProperty("Projection");
             RequireProperties(projection, "Enabled", "Columns", "Rows", "Origin", "CellSize", "Quad", "Matrix", "AlgorithmVersion");
-            if (version >= 6) RequireProperties(projection, "LockedGridCellSize");
+            if (version is 6 or 7) RequireProperties(projection, "LockedGridCellSize");
+            if (version >= 8)
+            {
+                RequireProperties(projection, "PinLocation", "PinPlanePoint", "ReferenceBounds");
+                if (projection.GetProperty("ReferenceBounds").ValueKind != JsonValueKind.Null)
+                    RequireProperties(projection.GetProperty("ReferenceBounds"), "X", "Y", "Width", "Height");
+                if (projection.GetProperty("PinPlanePoint").ValueKind != JsonValueKind.Null)
+                    RequireProperties(projection.GetProperty("PinPlanePoint"), "X", "Y");
+                RequireProperties(canvas.GetProperty("Grid"), "FlatTranslation");
+                RequireProperties(canvas.GetProperty("Grid").GetProperty("FlatTranslation"), "X", "Y");
+            }
             RequireMatrixProperties(projection.GetProperty("Matrix"));
             RequireProperties(projection.GetProperty("Origin"), "X", "Y");
             RequireProperties(canvas.GetProperty("Grid"), "Visible", "Color", "Width", "Pattern");

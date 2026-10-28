@@ -18,25 +18,29 @@ internal static class FlatGridResetRenderingTests
             var mapping = CanvasMapping.Create(reset);
             check($"{label} reset is an identity projection with the primary-screen grid origin and exact spacing",
                 reset.Canvas.Projection.Matrix == Projective2D.Identity &&
-                mapping.GridOrigin.DistanceTo(flat.Canvas.Grid.FlatOrigin!.Value) < 1e-8 &&
+                mapping.GridOrigin == reset.Canvas.Projection.PinPoint && CanvasMapping.Create(flat).GridOrigin == fixture.Reference.Center &&
                 mapping.GridCellSize == fixture.CellSize);
             check($"{label} reset keeps the original layer content and its screen bounds",
                 JsonSerializer.Serialize(flat.Elements) == JsonSerializer.Serialize(reset.Elements) &&
                 SceneRenderer.ProjectedBounds(flat, flat.Elements[0], true) == SceneRenderer.ProjectedBounds(reset, reset.Elements[0], true));
-            using (var ordinaryFlat = Pixels(renderer, flat, assets))
-            using (var ordinaryReset = Pixels(renderer, reset, assets))
+            var contentFlat = flat.Clone(); contentFlat.Canvas.Grid.Visible = false;
+            var contentReset = reset.Clone(); contentReset.Canvas.Grid.Visible = false;
+            using (var ordinaryFlat = Pixels(renderer, contentFlat, assets))
+            using (var ordinaryReset = Pixels(renderer, contentReset, assets))
             {
                 check($"{label} flat and freshly reset perspective have byte-identical ordinary RGBA pixels", Same(ordinaryFlat, ordinaryReset));
                 check($"{label} flat and freshly reset perspective have byte-identical PNG output",
-                    renderer.ExportPng(flat, assets, true).SequenceEqual(renderer.ExportPng(reset, assets, true)));
+                    renderer.ExportPng(contentFlat, assets, true).SequenceEqual(renderer.ExportPng(contentReset, assets, true)));
             }
             using (var referenceFlat = Pixels(renderer, flat, assets, reference: true))
             using (var referenceReset = Pixels(renderer, reset, assets, reference: true))
-                check($"{label} flat and freshly reset perspective have byte-identical reference-grid pixels", Same(referenceFlat, referenceReset));
+                check($"{label} reference grids retain their independent flat-center and perspective-pin phases",
+                    CanvasMapping.Create(flat).ToScreen(CanvasMapping.Create(flat).GridOrigin) == fixture.Reference.Center && mapping.GridOrigin == reset.Canvas.Projection.PinPoint);
 
             flat.Canvas.DepthPriorityOcclusion = true;
             flat.Elements.Add(Board(flat.Viewport.Center));
             reset = Reset(flat, fixture.Reference);
+            flat.Canvas.Grid.Visible = reset.Canvas.Grid.Visible = false;
             using var depthFlat = Pixels(renderer, flat, assets);
             using var depthReset = Pixels(renderer, reset, assets);
             check($"{label} depth composition after reset matches the flat grid and original layers exactly", Same(depthFlat, depthReset));
@@ -49,6 +53,7 @@ internal static class FlatGridResetRenderingTests
     {
         var fixture = new Fixture("decimal repeated toggle", new(-1000, -350, 1920, 1080), new(-210, 50, 360, 240), 73.1);
         var scene = Reset(Scene(fixture, pattern), fixture.Reference);
+        using var expectedPerspective = Pixels(renderer, scene, assets);
         scene.Canvas.Projection.Enabled = false;
         string before = JsonSerializer.Serialize(scene);
         using var expected = Pixels(renderer, scene, assets);
@@ -56,7 +61,7 @@ internal static class FlatGridResetRenderingTests
         for (int i = 0; i < 100; i++)
         {
             scene.Canvas.Projection.Enabled = true;
-            using (var perspective = Pixels(renderer, scene, assets)) pixelsStable &= Same(expected, perspective);
+            using (var perspective = Pixels(renderer, scene, assets)) pixelsStable &= Same(expectedPerspective, perspective);
             valuesStable &= CanvasMapping.Create(scene).GridCellSize == fixture.CellSize;
             scene.Canvas.Projection.Enabled = false;
             using (var flat = Pixels(renderer, scene, assets)) pixelsStable &= Same(expected, flat);

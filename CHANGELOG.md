@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- 修复非透视网格随缩放格数变化而弹动的问题：网格独立固定在主屏中心交点；画布工具可在任意位置起拖，包括图层像素上。
+- Keep the flat grid anchored to the primary-display center while scaling, independently of the perspective pin and layer placement. Allow Canvas grid-size drags to start over layer pixels.
+
+- 透视画布新增九宫格钉点，默认左下角；固定参照下从最终参数重新求解。保留“调整时锁定网格大小”，固定逻辑格长和相位、自动显示精确覆盖数。重置恢复普通画布的1:1显示，按当前数量重建正方形网格；数量按列在前、行在后显示。支持角落奇数完整格及v1～v7迁移至v8。
+- Add a nine-point perspective pin, defaulting to bottom left, and solve final parameters from a fixed reference. Retain grid-size locking with fixed logical spacing and phase and exact automatic coverage. Reset restores an unwarped 1:1 view and rebuilds square cells for the current counts. Show columns before rows; support complete odd grids at corners and v1–v7 migration to v8.
+
 - 增强覆盖层向 Windows 系统截图和 ShareX 全屏截图／编辑界面自动交接，避免实时画布继续覆盖冻结截图和其中的工具条影像；不自动接管其他软件。自身工具、弹窗与输入窗口落到画布下方时独立恢复顺序，不依赖截图识别。
 - Yield enhanced presentation automatically to Windows screen clipping and ShareX fullscreen capture/editor surfaces, preventing the live canvas from covering frozen screenshots and their toolbar pixels. Other programs do not trigger automatic handoff. Independently recover own tools, popups and input windows above the canvas when their order is inverted.
 
