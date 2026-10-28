@@ -31,6 +31,8 @@ internal sealed partial class DesktopSession
                 _editor.CanvasContentHidden = true;
                 Active.SetSelection([]);
             }
+            // A linked next-number update changes saved metadata, not hidden pixels.
+            if (_editor.IsUpdatingNumberStart) _hiddenCanvasVersion = Active.ContentVersion;
             if (!Active.IsTransactionActive && Active.ContentVersion != _hiddenCanvasVersion)
             {
                 _hiddenCanvasSession = null;

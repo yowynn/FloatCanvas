@@ -181,6 +181,7 @@ internal static class Program
             if (args.Contains("--focus-session-only")) { FocusSessionRoutingFixture.Run(Assert); return 0; }
             if (args.Contains("--capture-selection-only")) { CaptureSelectionTests.Run(Assert); return 0; }
             if (args.Contains("--image-tools-only")) { ImageToolEligibilityTests.Run(Assert); ImageToolTargetTests.Run(Assert); WorkspaceToolControllerTests.Run(Assert); ImageEffectsAndCrop(); DocumentRegions(); return 0; }
+            if (args.Contains("--image-import-only")) { EncodedPngImportTests.Run(Assert); ImageDropTests.Run(Assert); return 0; }
             if (args.Contains("--image-drop-reader-only")) { ImageDropDataReaderTests.Run(Assert); return 0; }
             if (args.Contains("--gpu-settings-only")) { GpuSettingsTests.Run(Assert); LocalizationTests.Run(Assert); return 0; }
             if (args.Contains("--animation-integration-only")) { AnimatedImageIntegrationTests.Run(Assert); return 0; }
@@ -268,10 +269,18 @@ internal static class Program
             if (args.Contains("--tool-options-input-only")) { ToolOptionsInputFixture.Run(Assert); return 0; }
             if (args.Contains("--tool-options-only")) { ToolOptionsPanelTests.Run(Assert); return 0; }
             if (args.Contains("--tool-compatibility-only")) { ToolCompatibilityTests.Run(Assert); return 0; }
+            if (args.Contains("--official-preset-design-only")) { OfficialPresetDesignTests.Run(Assert, args.SkipWhile(a => a != "--official-preset-design-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--symbol-style-presets-only")) { SymbolStylePresetTests.Run(Assert); return 0; }
+            if (args.Contains("--capture-aspect-policy-only")) { CaptureAspectPolicyTests.Run(Assert, args.SkipWhile(a => a != "--capture-aspect-policy-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--number-start-link-only")) { NumberStartLinkTests.Run(Assert); return 0; }
             if (args.Contains("--complete-presets-only")) { CompletePresetContractTests.Run(Assert); return 0; }
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            OfficialPresetDesignTests.Run(Assert);
+            SymbolStylePresetTests.Run(Assert);
+            CaptureAspectPolicyTests.Run(Assert);
+            NumberStartLinkTests.Run(Assert);
             DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert);
             Round2CanvasTests.Run(Assert);
             foreach(string group in new[]{"colors","welcome","pins","logo","text"})Round2UiTests.Run(Assert,group);

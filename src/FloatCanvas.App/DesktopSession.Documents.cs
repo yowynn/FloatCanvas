@@ -551,6 +551,7 @@ internal sealed partial class DesktopSession
         if (!CanAddCanvasContent()) return;
         if (DocumentOperationBusy) return;
         _editor.Cancel(); var target = Active;
+        double imageOpacity = ImageInsertionOpacity();
         var projection = CanvasMapping.Create(target.Document).PlaneToScreen;
         _documentBusy = true;
         try
@@ -589,7 +590,7 @@ internal sealed partial class DesktopSession
             {
                 var normalized = await Task.Run(() => AssetImport.Normalize(bytes), _documentLifetime.Token);
                 if (ReferenceEquals(Active, target) && CanvasMapping.Create(target.Document).PlaneToScreen == projection && CanAddCanvasContent())
-                { if (!InsertImages(target, [normalized], false)) SwitchToolState(EditorTool.Select); }
+                { if (!InsertImages(target, [normalized], false, imageOpacity)) SwitchToolState(EditorTool.Select); }
             }
             else UpdateStatus(L.Get("Clipboard.Empty"));
         }
@@ -638,6 +639,7 @@ internal sealed partial class DesktopSession
         if (!CanAddCanvasContent()) return;
         if (DocumentOperationBusy) return;
         _editor.Cancel(); var target = Active;
+        double imageOpacity = ImageInsertionOpacity();
         var projection = CanvasMapping.Create(target.Document).PlaneToScreen;
         _documentBusy = true;
         try
@@ -655,13 +657,18 @@ internal sealed partial class DesktopSession
             if (!CanAddCanvasContent()) return;
             if (!ReferenceEquals(Active, target) || CanvasMapping.Create(target.Document).PlaneToScreen != projection || replaceSelected && !target.Selection.SetEquals(selectedIds))
             { UpdateStatus(L.Get("Image.ImportChanged")); return; }
-            if (!InsertImages(target, normalized, replaceSelected)) SwitchToolState(EditorTool.Select);
+            if (!InsertImages(target, normalized, replaceSelected, imageOpacity)) SwitchToolState(EditorTool.Select);
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Image.ImportFailed") + ex.Message); }
         finally { _documentBusy = false; PruneDocumentResources(); ScheduleRecovery(); }
     }
-    private bool InsertImages(EditorSession target, IReadOnlyList<NormalizedImage> images, bool replace)
+    // Importing while another tool is active still uses the Image tool's own working state.
+    private double ImageInsertionOpacity() => _editor.Tool == EditorTool.Image ? _editor.Style.Opacity :
+        ToolbarPreviewParameters(EditorTool.Image).Style.Opacity;
+
+    private bool InsertImages(EditorSession target, IReadOnlyList<NormalizedImage> images, bool replace, double? opacity = null)
     {
+        double imageOpacity = opacity ?? ImageInsertionOpacity();
         var document = target.Document;
         long revision = target.SceneRevision;
         var projection = CanvasMapping.Create(document).PlaneToScreen;
@@ -670,7 +677,7 @@ internal sealed partial class DesktopSession
             if (_disposed || _documentStopped || !CanAddCanvasContent() || !ReferenceEquals(Active, target) ||
                 !ReferenceEquals(target.Document, document) || target.SceneRevision != revision ||
                 CanvasMapping.Create(document).PlaneToScreen != projection) return;
-            ImageImportCommand.InsertBillboard(target, images, document.Viewport, depth, screenCenter);
+            ImageImportCommand.InsertBillboard(target, images, document.Viewport, depth, screenCenter, imageOpacity);
             SwitchToolState(EditorTool.Select);
             ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("Image.Imported", images.Count));
         }))
@@ -678,7 +685,7 @@ internal sealed partial class DesktopSession
             RequestRender();
             return true;
         }
-        ImageImportCommand.Insert(target, images, VisibleDocumentArea(), replace);
+        ImageImportCommand.Insert(target, images, VisibleDocumentArea(), replace, opacity: imageOpacity);
         UpdateStatus(replace ? L.Get("Image.Replaced") : L.Format("Image.Imported", images.Count));
         return false;
     }

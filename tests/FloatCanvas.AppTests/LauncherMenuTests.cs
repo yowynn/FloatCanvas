@@ -50,6 +50,12 @@ internal static class LauncherMenuTests
                     EditorTool.Line, EditorTool.Rectangle, EditorTool.Ellipse, EditorTool.Text, EditorTool.Number,
                     EditorTool.Symbol, EditorTool.Emoji, EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate, EditorTool.CaptureRegion, EditorTool.Canvas }));
             var canvasTool = entries.Single(item => Equals(item.Tag, EditorTool.Canvas));
+            var lineTool = entries.Single(item => Equals(item.Tag, EditorTool.Line));
+            var circleTool = entries.Single(item => Equals(item.Tag, EditorTool.Ellipse));
+            check(label + " main menu shares the renamed tools and their unchanged shortcuts", Equals(lineTool.Header, language == "en" ? "Line" : "直线") &&
+                Equals(circleTool.Header, language == "en" ? "Circle" : "圆形") && lineTool.InputGestureText == "L" && circleTool.InputGestureText == "O" &&
+                ToolShortcutCatalog.TryGetTool(0x4C, out var line) && line == EditorTool.Line &&
+                ToolShortcutCatalog.TryGetTool(0x4F, out var circle) && circle == EditorTool.Ellipse);
             check(label + " Canvas is one ordinary tool command with its reserved C shortcut", Equals(canvasTool.Header, L.Get("Canvas.Title")) &&
                 canvasTool.InputGestureText == "C" && ToolShortcutCatalog.TryGetTool(0x43, out var canvas) && canvas == EditorTool.Canvas);
             check(label + " legacy screenshot draft commands are absent", !entries.Any(item =>

@@ -24,7 +24,7 @@ internal sealed partial class EditorController
             {
                 if (!mapping.TryToPlane(start, out var planeStart) || !mapping.TryToPlane(point, out var planeEnd))
                 { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
-                if (ConstrainBox(modifiers)) planeEnd = SquareEnd(planeStart, planeEnd);
+                if ((modifiers & OverlayModifiers.Shift) != 0) planeEnd = SquareEnd(planeStart, planeEnd);
                 var box = RectD.FromPoints(planeStart, planeEnd);
                 if (!mapping.PlaneToScreen.TryTransformBounds(box, out _))
                 { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
@@ -41,7 +41,7 @@ internal sealed partial class EditorController
             }
             else
             {
-                if (ConstrainBox(modifiers)) point=SquareEnd(start,point);
+                if ((modifiers & OverlayModifiers.Shift) != 0) point=SquareEnd(start,point);
                 bounds = RectD.FromPoints(start, point);
             }
         }

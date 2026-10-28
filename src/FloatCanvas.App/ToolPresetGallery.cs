@@ -115,7 +115,7 @@ internal sealed class ToolPresetGallery : UserControl
     }
     private void Save()
     {
-        string? name = NamePrompt.Show(this, L.Get("ToolOptions.Name"), L.Get("Tool." + controller.Tool));
+        string? name = NamePrompt.Show(this, L.Get("ToolOptions.Name"), ToolDisplayName.PresetName(controller.Tool));
         if (name is not null) Run(() => SaveNamed(name));
     }
     private void Rename(ToolPreset preset)

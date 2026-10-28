@@ -30,7 +30,9 @@ internal static class ToolPresetAndColorTests
         var controller = new EditorController(new EditorSession());
         check("new tool parameters start with palette red and transparent fill", initial.Style.Stroke == 0xFFE03E3E && initial.Style.Fill == 0);
         check("new editor controllers start with palette red and transparent fill", controller.Style.Stroke == 0xFFE03E3E && controller.Style.Fill == 0);
-        check("official recipes default to palette red with white number labels and otherwise transparent fill", library.Official.Count > 0 && library.Official.All(p => p.Parameters.Style.Stroke == 0xFFE03E3E && p.Parameters.Style.Fill == (p.Parameters.Tool == EditorTool.Number ? 0xFFFFFFFF : 0)));
+        check("the first official recipe in each tool family uses palette red with white number labels and otherwise transparent fill", library.Official.Count > 0 && library.Official
+            .GroupBy(p => ToolPresetLibrary.Family(p.Parameters.Tool)).Select(group => group.First())
+            .All(p => p.Parameters.Style.Stroke == ColorLibrary.ForegroundRed && p.Parameters.Style.Fill == (p.Parameters.Tool == EditorTool.Number ? 0xFFFFFFFF : 0)));
         var current = new ToolParameters
         {
             Tool = EditorTool.Rectangle, CornerRadius = 27, Symbol = SymbolKind.Heart, ConstrainAspect = true, EffectStrength = 42,

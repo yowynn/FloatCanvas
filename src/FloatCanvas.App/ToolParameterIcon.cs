@@ -32,7 +32,12 @@ internal static class ToolParameterIcon
             EditorTool.Stamp=>"M2,7 L14,7 L14,15 L2,15 Z M5,7 L5,1 L11,1 L11,7",
             _=>null
         };
-        if(control is not null)return ControlIcon(control,size);
+        if(control is not null)
+        {
+            var icon=ControlIcon(control,size);
+            if(parameters.Tool==EditorTool.Image)icon.Opacity=parameters.Style.Opacity;
+            return icon;
+        }
         string key=JsonSerializer.Serialize(parameters);
         BitmapSource source;
         lock(Gate)

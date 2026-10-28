@@ -12,14 +12,16 @@ internal sealed class ImageDropRequest : IDisposable
     private bool disposed;
     internal EditorSession Target { get; }
     internal RectD Placement { get; }
+    internal double Opacity { get; }
     internal PointD? DropCenter { get; private set; }
     internal CancellationToken Token { get; }
     internal bool Completed { get; private set; }
     internal bool IsImporting { get; set; }
 
-    internal ImageDropRequest(EditorSession target, RectD placement, CancellationToken lifetime)
+    internal ImageDropRequest(EditorSession target, RectD placement, CancellationToken lifetime, double opacity = 1)
     {
-        Target = target; document = target.Document; Placement = placement;
+        if (!double.IsFinite(opacity) || opacity is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(opacity));
+        Target = target; document = target.Document; Placement = placement; Opacity = opacity;
         planeToScreen = CanvasMapping.Create(document).PlaneToScreen;
         cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); Token = cancellation.Token;
     }
@@ -42,7 +44,7 @@ internal sealed class ImageDropRequest : IDisposable
     internal bool TryCommit(ImageDropRequest? current, EditorSession live, EditorSession? capture, IReadOnlyList<NormalizedImage> images)
     {
         if (Completed || images.Count == 0 || !IsCurrent(current, live, capture)) return false;
-        ImageImportCommand.Insert(Target, images, Placement, dropCenter: DropCenter);
+        ImageImportCommand.Insert(Target, images, Placement, dropCenter: DropCenter, opacity: Opacity);
         Completed = true;
         return true;
     }

@@ -226,8 +226,8 @@
     "en": "Rounded rectangle"
   },
   "Tool.Ellipse": {
-    "zh": "椭圆  O",
-    "en": "Ellipse  O"
+    "zh": "圆形  O",
+    "en": "Circle  O"
   },
   "Tool.Triangle": {
     "zh": "三角形",

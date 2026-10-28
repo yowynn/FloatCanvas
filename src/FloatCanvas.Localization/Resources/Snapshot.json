@@ -1,7 +1,7 @@
 {
   "Snapshot.Shape": { "zh": "圈选方式", "en": "Selection shape" },
   "Snapshot.Shape.Rectangle": { "zh": "矩形", "en": "Rectangle" },
-  "Snapshot.Shape.Ellipse": { "zh": "椭圆", "en": "Ellipse" },
+  "Snapshot.Shape.Ellipse": { "zh": "圆形", "en": "Circle" },
   "Snapshot.Shape.FreehandLasso": { "zh": "自由套索", "en": "Freehand lasso" },
   "Snapshot.Shape.PolygonLasso": { "zh": "多边形套索", "en": "Polygon lasso" },
   "Snapshot.Source": { "zh": "截取内容", "en": "Capture content" },

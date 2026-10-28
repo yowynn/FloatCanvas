@@ -15,6 +15,7 @@ internal static class EncodedPngImportTests
 
     internal static void Run(Action<string, bool> check)
     {
+        ImagePresetOpacityTests.Run(check);
         byte[] original = Convert.FromBase64String(Png);
         var readPng = typeof(DesktopSession).GetMethod("ReadClipboardPng", BindingFlags.Static | BindingFlags.NonPublic)!;
         foreach (bool asStream in new[] { false, true })

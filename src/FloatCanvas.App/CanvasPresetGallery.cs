@@ -92,7 +92,7 @@ internal sealed class CanvasPresetGallery : UserControl
     internal void Delete(string id) => Run(() => { library.Delete(id); if (SelectedId == id) { SelectedId = ""; selectedSnapshot = selectedDefinition = null; } Refresh(current); });
     private void Save()
     {
-        string? name = NamePrompt.Show(this, L.Get("CanvasPreset.Name"), L.Get("CanvasPreset.DefaultName"));
+        string? name = NamePrompt.Show(this, L.Get("CanvasPreset.Name"), ToolDisplayName.PresetName(EditorTool.Canvas));
         if (name is not null) Run(() => SaveNamed(name));
     }
     private void Rename(CanvasPreset preset)

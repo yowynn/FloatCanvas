@@ -111,11 +111,11 @@ internal sealed class CanvasPresetLibrary
 
     internal IReadOnlyList<CanvasPreset> Official =>
     [
-        OfficialPreset("transparent", new()),
-        OfficialPreset("whiteboard", new() { BackgroundColor = 0xFFFFFFFF, GridColor = 0x7047618A }),
-        OfficialPreset("blackboard", new() { BackgroundColor = 0xFF20242C }),
+        OfficialPreset("transparent", new() { GridColor = ColorLibrary.ForegroundRed }),
+        OfficialPreset("whiteboard", new() { BackgroundColor = 0xFFFFFFFF, GridColor = ColorLibrary.ForegroundRed }),
+        OfficialPreset("blackboard", new() { BackgroundColor = 0xFF20242C, GridColor = ColorLibrary.ForegroundRed }),
         OfficialPreset("graph", new() { BackgroundColor = 0xFFF4F8FF, GridVisible = true, GridColor = 0x705A84C8 }),
-        OfficialPreset("dots", new() { GridVisible = true, GridColor = 0xA0FFFFFF, GridPattern = StrokePattern.Dotted })
+        OfficialPreset("dots", new() { GridVisible = true, GridColor = ColorLibrary.ForegroundRed, GridPattern = StrokePattern.Dotted })
     ];
     internal IReadOnlyList<CanvasPreset> User => presets.Select(p => p.Clone()).ToArray();
     internal IReadOnlyList<CanvasPreset> All => Official.Concat(User).ToArray();

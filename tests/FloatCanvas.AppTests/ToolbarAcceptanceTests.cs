@@ -158,6 +158,10 @@ internal static class ToolbarAcceptanceTests
             Invoke(session,"ActivateTool",EditorTool.Freehand);Measure(shell);
             check("returning to Freehand restores its saved style and releases the Canvas frame",editor.Tool==EditorTool.Freehand&&tools[EditorTool.Freehand].BorderBrush==app.Resources["CanvasAccent"]&&canvasAction.BorderBrush==Media.Brushes.Transparent);
             check("upper twelve tool order matches the requested Select Eraser then ten drawing entries",buttons.Where(button=>Controls.Grid.GetColumn(button)<13).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"tool:Select","tool:Eraser","tool:Freehand","tool:Highlighter","tool:Line","tool:Rectangle","tool:Ellipse","tool:Text","tool:Number","tool:Symbol","tool:Emoji","more"}));
+            check("line and circle toolbar buttons expose their renamed labels and unchanged shortcut hints",System.Windows.Automation.AutomationProperties.GetName(tools[EditorTool.Line])=="直线"&&
+                System.Windows.Automation.AutomationProperties.GetName(tools[EditorTool.Ellipse])=="圆形"&&
+                System.Windows.Automation.AutomationProperties.GetAcceleratorKey(tools[EditorTool.Line])=="L"&&
+                System.Windows.Automation.AutomationProperties.GetAcceleratorKey(tools[EditorTool.Ellipse])=="O");
             var opacity=Field<Controls.Slider>(session,"_opacitySlider");
             check("opacity occupies exactly two tool columns and added actions remain directly available",Controls.Grid.GetColumn(opacity)==28&&Controls.Grid.GetColumnSpan(opacity)==2&&opacity.Width+opacity.Margin.Left+opacity.Margin.Right==60&&buttons.Any(button=>Equals(button.Tag,"clear"))&&buttons.Any(button=>Equals(button.Tag,"visibility")));
             check("trailing actions follow canvas and placement, images, inspector/layers, then independent new and clear controls",buttons.Where(button=>Controls.Grid.GetColumn(button)>=14).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"canvas","billboard","import","capture","crop","properties","layers","undo","redo","new-canvas","clear","visibility","done"}));

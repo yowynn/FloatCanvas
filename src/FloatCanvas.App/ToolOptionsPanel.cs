@@ -180,7 +180,7 @@ internal sealed class ToolOptionsPanel : UserControl
             bool text = tool is EditorTool.Text or EditorTool.Number or EditorTool.Emoji;
             bool paint = stroke || tool is EditorTool.Text or EditorTool.Number;
             bool capture = tool == EditorTool.CaptureRegion;
-            bool boxRegion=tool is EditorTool.Crop or EditorTool.Blur or EditorTool.Pixelate||capture&&p.CaptureShape is CaptureShape.Rectangle or CaptureShape.Ellipse;
+            bool boxRegion=tool is EditorTool.Crop or EditorTool.Blur or EditorTool.Pixelate;
             paint |= capture;
             Show("Foreground", paint); Show("Background", shape && !p.Style.LinkColors || tool == EditorTool.Number); Show("LinkColors", shape);
             Show("Colors", paint);
@@ -265,14 +265,14 @@ internal sealed class ToolOptionsPanel : UserControl
 
     private EditorTool? publishingNumericTool;
 
-    private void Change(Action<ToolParameters> update, bool numericPreview = false)
+    private void Change(Action<ToolParameters> update, bool numericPreview = false, bool? followNumberStart = null)
     {
         if (refreshing) return;
         try
         {
             var next = controller.Parameters; update(next);
             if (!next.IsValid()) { Error(L.Get("ToolOptions.InvalidNumber")); return; }
-            controller.ApplyParameters(next); status.Text = "";
+            controller.ApplyParameters(next, followNumberStart); status.Text = "";
             // The active field owns its draft. Refresh only the paired value so a
             // live ratio update cannot tear down capture or move the text caret.
             if (next.ConstrainAspect)
@@ -344,10 +344,18 @@ internal sealed class ToolOptionsPanel : UserControl
         box.LostKeyboardFocus += (_, _) => { if (!refreshing && !numericFields.Values.Any(number => number.IsInteracting)) Refresh(); };
         EditorSession? counterSession = null; long counterTransaction = 0;
         ToolParameters? original = null;
+        bool? followNumberStart = null;
+        EditorSession? numberStartSession = null;
+        SceneDocument? numberStartDocument = null;
         field.CanBeginGesture = () => key != "NextNumber" || !controller.Session.IsTransactionActive;
         field.GestureStarted += () =>
         {
             original = controller.Parameters;
+            if (key == "NumberStart")
+            {
+                numberStartSession = controller.Session; numberStartDocument = controller.Session.Document;
+                followNumberStart = numberStartDocument.NextNumber == original.NumberStart;
+            }
             if (key != "NextNumber") return;
             counterSession = controller.Session; counterSession.BeginTransaction(L.Get("History.NumberCounter")); counterTransaction = counterSession.TransactionId;
         };
@@ -356,14 +364,21 @@ internal sealed class ToolOptionsPanel : UserControl
             if (counterSession is { } session && session.IsTransactionActive && session.TransactionId == counterTransaction)
             { if (commit && ReferenceEquals(session, controller.Session)) session.Commit(); else session.Cancel(); }
             counterSession = null;
-            if (!commit && key != "NextNumber" && original is { } previous && controller.Tool == previous.Tool)
-            { controller.ApplyParameters(previous); ParametersChanged?.Invoke(); }
+            if (!commit && key != "NextNumber" && original is { } previous && controller.Tool == previous.Tool &&
+                (key != "NumberStart" || ReferenceEquals(numberStartSession, controller.Session) && ReferenceEquals(numberStartDocument, controller.Session.Document)))
+            { controller.ApplyParameters(previous, followNumberStart); ParametersChanged?.Invoke(); }
             original = null;
+            followNumberStart = null;
+            numberStartSession = null;
+            numberStartDocument = null;
             if (!refreshing) Refresh();
         };
         field.ValueChanged += value =>
         {
             if (refreshing) return;
+            if (key == "NumberStart" && field.IsInteracting &&
+                (controller.Tool != EditorTool.Number || !ReferenceEquals(numberStartSession, controller.Session) ||
+                    !ReferenceEquals(numberStartDocument, controller.Session.Document))) return;
             if (key is "NumberStart" or "NumberStep" or "NextNumber" && value != Math.Truncate(value)) { Error(L.Get("ToolOptions.InvalidNumber")); return; }
             if (key == "NextNumber")
             {
@@ -387,7 +402,7 @@ internal sealed class ToolOptionsPanel : UserControl
                     p.DefaultWidth *= factor; p.DefaultHeight *= factor;
                 }
                 set(p, value);
-            }, field.IsInteracting);
+            }, field.IsInteracting, field.IsInteracting ? followNumberStart : null);
         };
         field.InvalidInput += () => { if (!refreshing) Error(L.Get("ToolOptions.InvalidNumber")); };
     }

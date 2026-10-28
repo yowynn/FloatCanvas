@@ -46,8 +46,9 @@ internal static class Feedback4OptionsTests
         foreach (var button in gallery.OfficialTiles.Children.OfType<Button>())
         {
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var factory = library.Apply((string)button.Tag);
             check(locale + " clicking cached " + button.Tag + " restores complete factory geometry and style",
-                controller.DefaultWidth == 72 && controller.DefaultHeight == 72 && controller.Style.Stroke == ColorLibrary.ForegroundRed && controller.Style.StrokeWidth == 4);
+                JsonSerializer.Serialize(controller.Parameters) == JsonSerializer.Serialize(factory));
         }
         gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, personal.Id)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(locale + " clicking a personal symbol keeps its saved independent dimensions", controller.DefaultWidth == 234 && controller.DefaultHeight == 123);
@@ -111,10 +112,10 @@ internal static class Feedback4OptionsTests
         controller.Tool = EditorTool.Number; panel.PrepareForShow(); fields["NumberStart"].Input.Text = "8"; fields["NumberStep"].Input.Text = "3";
         fields["NextNumber"].Input.Text = "42";
         check(locale + " number rules are tool state while next number is document state", controller.NumberStart == 8 && controller.NumberStep == 3 && controller.Session.Document.NextNumber == 42 && controller.Session.UndoCount == 1 && !JsonSerializer.Serialize(controller.Parameters).Contains("NextNumber"));
-        check(locale + " document number counter is undoable", controller.Session.Undo() && controller.Session.Document.NextNumber == 1);
+        check(locale + " document number counter is undoable", controller.Session.Undo() && controller.Session.Document.NextNumber == 8);
         double hiddenCounter=fields["NextNumber"].Value;panel.RefreshDocumentState();
         check(locale + " hidden counter controls retain their value until prepared",fields["NextNumber"].Value==hiddenCounter);
-        panel.PrepareForShow();check(locale + " current counter refreshes independently from tool parameters", fields["NextNumber"].Value == 1);
+        panel.PrepareForShow();check(locale + " current counter refreshes independently from tool parameters", fields["NextNumber"].Value == 8);
         var fonts = Field<ComboBox>(panel, "fontFamily");
         check(locale + " text font picker reads system fonts with visual samples", fonts.Items.Count > 10 &&
             fonts.Items.Cast<object>().All(item => item is FontPickerControl.FontChoice { Family: not null }));

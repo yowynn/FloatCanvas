@@ -34,8 +34,9 @@ internal static class ImageImportCommand
         return (IReadOnlyList<NormalizedImage>)images;
     }, token);
 
-    internal static void Insert(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD placement, bool replace = false, PointD? dropCenter = null)
+    internal static void Insert(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD placement, bool replace = false, PointD? dropCenter = null, double opacity = 1)
     {
+        ValidateOpacity(opacity);
         var elements = new List<CanvasElement>();
         if (!replace)
         {
@@ -46,7 +47,7 @@ internal static class ImageImportCommand
                 double scale = Math.Min(1, Math.Min(placement.Width * .8 / image.Width, placement.Height * .8 / image.Height));
                 double width = image.Width * scale, height = image.Height * scale;
                 var center = dropCenter ?? placement.Center;
-                var element = new CanvasElement { Kind = ElementKind.Image, Width = width, Height = height,
+                var element = new CanvasElement { Kind = ElementKind.Image, Width = width, Height = height, Style = new() { Opacity = opacity },
                     Transform = Affine2D.Translation(center.X - width / 2 + index * 20, center.Y - height / 2 + index * 20) };
                 if (!mapping.IsElementSafe(element)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
                 elements.Add(element); index++;
@@ -71,8 +72,9 @@ internal static class ImageImportCommand
 
     /// <summary>Fresh image pixels remain encoded; screen placement is converted to shared logical units once.</summary>
     internal static void InsertBillboard(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD screenPlacement,
-        BillboardDepthLine depth, PointD screenCenter)
+        BillboardDepthLine depth, PointD screenCenter, double opacity = 1)
     {
+        ValidateOpacity(opacity);
         var mapping = CanvasMapping.Create(target.Document);
         var elements = new List<CanvasElement>();
         int index = 0;
@@ -82,8 +84,10 @@ internal static class ImageImportCommand
             double screenWidth = image.Width * fit, screenHeight = image.Height * fit;
             var bounds = new RectD(screenCenter.X - screenWidth / 2 + index * 20,
                 screenCenter.Y - screenHeight / 2 + index * 20, screenWidth, screenHeight);
-            elements.Add(SnapshotImageCommand.CreateBillboardElement(target.Assets,
-                new(image.PngBytes, bounds, true), mapping, depth));
+            var element = SnapshotImageCommand.CreateBillboardElement(target.Assets,
+                new(image.PngBytes, bounds, true), mapping, depth);
+            element.Style.Opacity = opacity;
+            elements.Add(element);
             index++;
         }
         target.Execute(L.Get("Image.ImportTitle"), document =>
@@ -91,5 +95,10 @@ internal static class ImageImportCommand
             target.Selection.Clear();
             foreach (var element in elements) { document.Elements.Add(element); target.Selection.Add(element.Id); }
         });
+    }
+
+    private static void ValidateOpacity(double opacity)
+    {
+        if (!double.IsFinite(opacity) || opacity is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(opacity));
     }
 }

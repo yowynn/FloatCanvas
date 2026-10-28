@@ -17,7 +17,7 @@ internal static class OfficialSymbolPresetTests
         };
         string original = JsonSerializer.Serialize(current);
         var official = library.OfficialFor(EditorTool.Symbol);
-        check("official symbol recipes cover every symbol kind exactly once", official.Select(p => p.Parameters.Symbol).Order().SequenceEqual(Enum.GetValues<SymbolKind>().Order()));
+        check("official symbol recipes focus on five reusable styles with a shared standard shape", official.Count == 5 && official.All(p => p.Parameters.Symbol == SymbolKind.Triangle));
         foreach (var preset in official)
         {
             var applied = library.Apply(preset.Id);

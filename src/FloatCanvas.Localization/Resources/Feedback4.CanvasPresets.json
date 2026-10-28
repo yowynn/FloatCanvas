@@ -15,10 +15,6 @@
     "zh": "画布预设名称",
     "en": "Canvas preset name"
   },
-  "CanvasPreset.DefaultName": {
-    "zh": "自定义画布",
-    "en": "Custom canvas"
-  },
   "CanvasPreset.InvalidLibrary": {
     "zh": "画布预设库无效。",
     "en": "The canvas preset library is invalid."

@@ -46,17 +46,32 @@ internal sealed partial class EditorController
     public string Emoji { get; set; } = "😀";
     public double DefaultWidth { get; set; } = 160;
     public double DefaultHeight { get; set; } = 100;
-    public int NumberStart { get; set; } = 1;
+    private int numberStart = 1, numberSequenceStart = 1;
+    internal bool IsUpdatingNumberStart { get; private set; }
+    public int NumberStart
+    {
+        get => numberStart;
+        set => SetNumberStart(value, Session.Document.NextNumber == numberSequenceStart);
+    }
+    private void SetNumberStart(int value, bool followStart)
+    {
+        numberStart = numberSequenceStart = value;
+        if (!followStart || Session.Document.NextNumber == value) return;
+        Session.Document.NextNumber = value;
+        IsUpdatingNumberStart = true;
+        try { Session.NotifySettingsChanged(); }
+        finally { IsUpdatingNumberStart = false; }
+    }
     public int NumberStep { get; set; } = 1;
     public CaptureShape CaptureShape { get; set; } = CaptureShape.Rectangle;
     public CaptureSource CaptureSource { get; set; } = CaptureSource.Background;
     public double CaptureBorderWidth { get; set; }
     public uint CaptureBorderColor { get; set; } = ColorLibrary.ForegroundRed;
     public ToolParameters Parameters => new() { Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius,
-        Symbol = Symbol, ConstrainAspect = ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
+        Symbol = Symbol, ConstrainAspect = Tool != EditorTool.CaptureRegion && ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
         NumberStart = NumberStart, NumberStep = NumberStep, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
         CaptureBorderWidth = CaptureBorderWidth, CaptureBorderColor = CaptureBorderColor };
-    public void ApplyParameters(ToolParameters parameters)
+    public void ApplyParameters(ToolParameters parameters, bool? followNumberStart = null)
     {
         if (!parameters.IsValid()) throw new ArgumentException(nameof(parameters));
         // Old presets retain their serialized enum; only future drawing uses the unified symbol tool.
@@ -67,11 +82,17 @@ internal sealed partial class EditorController
         if(parameters.Tool==EditorTool.Number && parameters.NumberColorRolesVersion==0)
         { Style.Stroke=(Style.Fill>>24)==0?Style.Stroke:Style.Fill;Style.Fill=0xFFFFFFFF; }
         Symbol = parameters.Tool == EditorTool.Triangle ? SymbolKind.Triangle : parameters.Symbol;
-        ConstrainAspect = parameters.ConstrainAspect; EffectStrength = parameters.EffectStrength;
+        // Legacy capture recipes may carry an aspect lock; capture creation only follows held Shift.
+        ConstrainAspect = parameters.Tool != EditorTool.CaptureRegion && parameters.ConstrainAspect; EffectStrength = parameters.EffectStrength;
         Emoji = parameters.Emoji; DefaultWidth = parameters.DefaultWidth; DefaultHeight = parameters.DefaultHeight;
         CaptureShape = parameters.CaptureShape; CaptureSource = parameters.CaptureSource;
         CaptureBorderWidth = parameters.CaptureBorderWidth; CaptureBorderColor = parameters.CaptureBorderColor;
-        NumberStart = parameters.NumberStart; NumberStep = parameters.NumberStep;
+        // Other tool snapshots carry hidden sequence fields too; they must not
+        // replace the number tool's actual start or move this canvas's counter.
+        if (parameters.Tool == EditorTool.Number)
+            SetNumberStart(parameters.NumberStart, followNumberStart ?? Session.Document.NextNumber == numberSequenceStart);
+        else numberStart = parameters.NumberStart;
+        NumberStep = parameters.NumberStep;
         Changed?.Invoke();
     }
     public PointD ScreenOrigin { get; set; }

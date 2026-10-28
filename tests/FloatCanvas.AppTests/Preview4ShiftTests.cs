@@ -90,7 +90,7 @@ internal static class Preview4ShiftTests
             CaptureSelection? result=null;editor.CaptureSelectionCompleted+=value=>result=value;
             var modifiers=shift?OverlayModifiers.Shift:OverlayModifiers.None;
             Send(editor,OverlayPointerKind.Down,new(20,20),modifiers);Send(editor,OverlayPointerKind.Up,new(100,60),modifiers);
-            check($"{shape} capture keep={keep} Shift={shift} reverses the aspect preference",result is not null&&(Math.Abs(result.Bounds.Width-result.Bounds.Height)<1e-6)==(keep^shift));
+            check($"{shape} capture keep={keep} Shift={shift} follows only the held Shift constraint",result is not null&&(Math.Abs(result.Bounds.Width-result.Bounds.Height)<1e-6)==shift);
         }
         var lasso=new EditorController(new()) {Tool=EditorTool.CaptureRegion,CaptureShape=CaptureShape.FreehandLasso};
         CaptureSelection? finished=null;lasso.CaptureSelectionCompleted+=value=>finished=value;
@@ -167,7 +167,7 @@ internal static class Preview4ShiftTests
             if(tool==EditorTool.Crop)
             {var image=new CanvasElement {Kind=ElementKind.Image,Width=100,Height=100};editor.Session.Document.Elements.Add(image);editor.Session.SetSelection([image.Id]);}
             editor.Tool=tool;panel.PrepareForShow();
-            check(tool+" exposes its rectangular-region aspect setting",aspect.Visibility==System.Windows.Visibility.Visible&&empty.Visibility==System.Windows.Visibility.Collapsed);
+            check(tool+" exposes only its supported rectangular-region settings",aspect.Visibility==(tool==EditorTool.CaptureRegion?System.Windows.Visibility.Collapsed:System.Windows.Visibility.Visible)&&empty.Visibility==System.Windows.Visibility.Collapsed);
         }
         editor.Tool=EditorTool.CaptureRegion;editor.CaptureShape=CaptureShape.FreehandLasso;panel.PrepareForShow();
         check("freehand capture hides the rectangular aspect setting",aspect.Visibility==System.Windows.Visibility.Collapsed);

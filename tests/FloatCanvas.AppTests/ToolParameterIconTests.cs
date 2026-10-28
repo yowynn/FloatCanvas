@@ -61,6 +61,9 @@ internal static class ToolParameterIconTests
         check("solid and dashed line samples retain visible ink and distinct pixels at toolbar size",InkCount(readableLine)>=16&&InkCount(readableDashed)>=10&&Hash(readableLine)!=Hash(readableDashed));
         foreach(var tool in new[]{EditorTool.Eraser,EditorTool.Blur,EditorTool.Pixelate})
             check(tool+" presets retain a distinct bounded live control-tool illustration",ToolParameterIcon.Create(new ToolParameters {Tool=tool},32) is Controls.Viewbox {Width:32,Height:32});
+        var imageOpacities=new[]{1d,.5,.25}.Select(opacity=>Rasterize(ToolParameterIcon.Create(new ToolParameters {Tool=EditorTool.Image,Style=new() {Opacity=opacity}},32),32)).ToArray();
+        check("image preset icons preview distinct full half and quarter opacity",imageOpacities.Select(Hash).Distinct().Count()==3&&
+            MaxAlpha(imageOpacities[0])>200&&MaxAlpha(imageOpacities[1]) is >0 and <=129&&MaxAlpha(imageOpacities[2]) is >0 and <=65);
         var examples=new List<(string Label,ToolParameters Parameters)>();
         foreach(string label in new[]{"Line","Arrow","Double","Dashed","Dotted"})
         {

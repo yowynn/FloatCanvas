@@ -12,7 +12,15 @@ internal static class Phase2HiddenCanvasTests
         host.SetVisible(true);
         var original = new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 30, Transform = Affine2D.Translation(30, 30) };
         editor.Session.Add(original); editor.Session.SelectAll();
+        editor.NumberStart = 100; editor.Session.Document.NextNumber = 100;
         Invoke("ToggleCanvasVisibility");
+        editor.Tool = EditorTool.Number;
+        long beforeNumberStart = editor.Session.ContentVersion;
+        var panel = (ToolOptionsPanel)typeof(DesktopSession).GetField("_toolOptionsPanel", Private)!.GetValue(session)!;
+        var presets = (ToolPresetGallery)typeof(ToolOptionsPanel).GetField("presets", Private)!.GetValue(panel)!;
+        presets.Apply("official.number");
+        check("applying a number preset updates the linked counter without revealing hidden canvas pixels", editor.Session.Document.NextNumber == 1 &&
+            editor.Session.ContentVersion > beforeNumberStart && !host.IsVisible && !host.IsPreviewVisible && !editor.IsUpdatingNumberStart);
         editor.Tool = EditorTool.Rectangle;
         check("hidden canvas keeps its native gesture application gate open", host.CanBeginCanvasGesture!());
         var bounds = host.Monitors.Single().Bounds;

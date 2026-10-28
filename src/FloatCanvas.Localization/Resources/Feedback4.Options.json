@@ -13,7 +13,7 @@
   "ToolDescription.Highlighter": {"zh":"用半透明笔迹突出内容；按住 Shift 拉直当前段，松开继续曲线。","en":"Highlight with translucent strokes; hold Shift for a straight segment, then release to resume the curve."},
   "ToolDescription.Line": {"zh":"拖动绘制直线，分别设置两个端点；Shift 约束为水平、垂直或 45°。","en":"Drag a line and style its endpoints independently; Shift constrains it to horizontal, vertical or 45°."},
   "ToolDescription.Rectangle": {"zh":"绘制矩形，或单击插入默认尺寸。","en":"Draw a rectangle, or click to insert its default size."},
-  "ToolDescription.Ellipse": {"zh":"绘制椭圆，或单击插入默认尺寸。","en":"Draw an ellipse, or click to insert its default size."},
+  "ToolDescription.Ellipse": {"zh":"绘制圆或椭圆，或单击插入默认尺寸。","en":"Draw a circle or ellipse, or click to insert its default size."},
   "ToolDescription.Symbol": {"zh":"选择图案，单击插入或拖动确定尺寸。","en":"Choose a symbol, then click to insert or drag its size."},
   "ToolDescription.Text": {"zh":"点击画布原位输入，点击已有文字继续编辑；Shift+Enter 换行，Enter 提交。","en":"Click the canvas to type inline or click existing text to edit; Shift+Enter adds a line and Enter commits."},
   "ToolDescription.Number": {"zh":"连续插入序号；当前序号随画布保存。","en":"Insert sequential numbers; the current counter belongs to the canvas."},
@@ -22,7 +22,7 @@
   "ToolDescription.Crop": {"zh":"选中一张可编辑图片，拖动设置其裁剪范围。","en":"Select one editable image, then drag its crop area."},
   "ToolDescription.Blur": {"zh":"在实时画布上拖出动态模糊区域，随下层画面更新。","en":"Drag a live blur region that follows changes underneath."},
   "ToolDescription.Pixelate": {"zh":"拖动设置需要马赛克的区域。","en":"Drag to mark a pixelated region."},
-  "ToolDescription.CaptureRegion": {"zh":"圈选后原位插入静像。Shift 反转矩形／椭圆比例、拉直自由套索当前段、约束多边形八方向。多边形点回起点、Enter 或双击完成；Backspace 撤点，Esc 取消。","en":"Select a region to insert a snapshot. Shift inverts rectangle/ellipse aspect, straightens the current freehand segment or snaps polygon edges to eight directions. Finish a polygon at its start, with Enter or double-click; Backspace removes a vertex, Esc cancels."},
+  "ToolDescription.CaptureRegion": {"zh":"圈选后原位插入静像。矩形／圆形默认自由比例，按住 Shift 临时约束为 1:1、拉直自由套索当前段、约束多边形八方向。多边形点回起点、Enter 或双击完成；Backspace 撤点，Esc 取消。","en":"Select a region to insert a snapshot. Rectangle and circle selections resize freely. Hold Shift to constrain them to 1:1, straighten the current freehand segment or snap polygon edges to eight directions. Finish a polygon at its start, with Enter or double-click; Backspace removes a vertex, Esc cancels."},
   "ToolDescription.Emoji": {"zh":"选择表情，单击连续插入。","en":"Choose an emoji, then click to insert copies."},
   "ToolDescription.Stamp": {"zh":"选择已保存的印章并放置到画布。","en":"Choose a saved stamp and place it on the canvas."}
 }

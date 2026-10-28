@@ -74,7 +74,7 @@ internal static class SegmentedChoicePreviews
         string? key = value switch
         {
             ArrowHeadStyle.FilledTriangle => "Choice.Filled", ArrowHeadStyle.Open => "Choice.Open", ArrowHeadStyle.Diamond => "Choice.Diamond", ArrowHeadStyle.None => "Choice.None",
-            CaptureShape.Rectangle => "Choice.Rectangle", CaptureShape.Ellipse => "Choice.Ellipse", CaptureShape.FreehandLasso => "Choice.Lasso", CaptureShape.PolygonLasso => "Choice.Polygon",
+            CaptureShape.Rectangle => "Choice.Rectangle", CaptureShape.Ellipse => "Snapshot.Shape.Ellipse", CaptureShape.FreehandLasso => "Choice.Lasso", CaptureShape.PolygonLasso => "Choice.Polygon",
             CaptureSource.Background => "Choice.Background", CaptureSource.BackgroundAndCanvas => "Choice.Combined", CaptureSource.CanvasOnly => "Choice.Canvas",
             FloatCanvas.Core.TextAlignment.Left => "Choice.Left", FloatCanvas.Core.TextAlignment.Center => "Choice.Center", FloatCanvas.Core.TextAlignment.Right => "Choice.Right",
             _ => null

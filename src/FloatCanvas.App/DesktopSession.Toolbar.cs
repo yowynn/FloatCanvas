@@ -414,9 +414,7 @@ internal sealed partial class DesktopSession
     private static EditorTool ToolFamily(EditorTool tool) => ToolPresetLibrary.Family(tool);
     private static EditorTool ButtonFamily(EditorTool tool) => ToolFamily(tool) switch { EditorTool.Pixelate => EditorTool.Blur,
         EditorTool.Triangle => EditorTool.Symbol, var family => family };
-    private static string ToolName(EditorTool tool) => L.Get(tool switch { EditorTool.Select => "ToolbarV2.Select", EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow => "ToolbarV2.Lines",
-        EditorTool.Rectangle or EditorTool.RoundedRectangle => "ToolbarV2.Rectangles", EditorTool.Ellipse => "ToolbarV2.Ellipses", EditorTool.Symbol => "Tool.Symbol",
-        EditorTool.Emoji => "Tool.Emoji", EditorTool.Stamp => "Tool.Stamp", EditorTool.Image => "Toolbar.Image", EditorTool.Crop => "Tool.Crop", EditorTool.CaptureRegion => "Tool.CaptureRegion", EditorTool.Canvas => "Canvas.Title", _ => "Preset." + tool });
+    private static string ToolName(EditorTool tool) => ToolDisplayName.Get(tool);
     private Controls.Button ToolbarIcon(string label, string geometry, Action action, string shortcut = "")
     {
         var button = ToolButton(label, geometry, action);

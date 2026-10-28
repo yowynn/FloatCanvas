@@ -34,7 +34,7 @@ internal sealed partial class DesktopSession
         if (!CanAddCanvasContent()) return;
         CloseImageDrop(); _editor.Cancel();
         _imageDropOrigin = _editor.ScreenOrigin;
-        _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token);
+        _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token, ImageInsertionOpacity());
         _toolbar.Hide(); _inspector?.Hide(); FinishInlineText();
         // The source owns the mouse and its OLE loop until Drop returns. Showing a
         // target must not activate a window or acquire the ordinary keyboard lease.
@@ -75,7 +75,7 @@ internal sealed partial class DesktopSession
         if (request is null)
         {
             _imageDropOrigin = _editor.ScreenOrigin;
-            request = _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token);
+            request = _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token, ImageInsertionOpacity());
         }
         if (!request.IsCurrent(_imageDropRequest, _live, _capture) ||
             !request.TrySetDropPoint(new(point.X, point.Y), _imageDropOrigin)) return false;
@@ -116,7 +116,7 @@ internal sealed partial class DesktopSession
             {
                 if (_disposed || _documentStopped || images.Count == 0 ||
                     !request.TryCompleteDeferred(_imageDropRequest, _live, _capture)) return;
-                if (!InsertImages(request.Target, images, false)) SwitchToolState(EditorTool.Select);
+                if (!InsertImages(request.Target, images, false, request.Opacity)) SwitchToolState(EditorTool.Select);
                 return;
             }
             if (_disposed || _documentStopped || !request.TryCommit(_imageDropRequest, _live, _capture, images)) return;

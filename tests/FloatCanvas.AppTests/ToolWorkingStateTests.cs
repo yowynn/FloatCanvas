@@ -60,7 +60,10 @@ internal static class ToolWorkingStateTests
             check("temporary rectangle edits leave the stored user definition unchanged", File.ReadAllText(Path.Combine(profile, "tool-presets.json")) == recipesOnDisk);
 
             Activate(EditorTool.Number);
+            long beforeNumberStart = editor.Session.ContentVersion;
             Change(p => { p.NumberStart = 103; p.NumberStep = 7; p.Style.FontSize = 32; p.DefaultWidth = 177; p.DefaultHeight = 99; p.Style.Stroke = 0xFF9F6B53; });
+            check("a linked number start updates document state without revealing a hidden fixture canvas", editor.Session.Document.NextNumber == 103 &&
+                editor.Session.ContentVersion > beforeNumberStart && !editor.IsUpdatingNumberStart && !host!.IsVisible && !host.IsPreviewVisible);
             check("real number options update the independent tool snapshot", state.Tools[EditorTool.Number] is { NumberStart: 103, NumberStep: 7 } && state.Tools[EditorTool.Number].Style.FontSize == 32);
             var rememberedLine = state.Tools[EditorTool.Line].Clone();
             Activate(EditorTool.Line); gallery.Apply("official.dashed-line");
@@ -199,7 +202,7 @@ internal static class ToolWorkingStateTests
             }
 
             void Activate(EditorTool tool) { Invoke("ActivateTool", tool); gallery.PrepareForShow(); }
-            void Change(Action<ToolParameters> update) => typeof(ToolOptionsPanel).GetMethod("Change", Private)!.Invoke(panel, [update, false]);
+            void Change(Action<ToolParameters> update) => typeof(ToolOptionsPanel).GetMethod("Change", Private)!.Invoke(panel, [update, false, null]);
             void ClickToolbar(EditorTool tool)
             {
                 Field<Dictionary<EditorTool, Button>>(session!, "_toolbarToolButtons")[tool].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

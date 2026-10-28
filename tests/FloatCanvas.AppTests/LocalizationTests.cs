@@ -35,6 +35,25 @@ internal static class LocalizationTests
                 formatsValid &= zh.MinimumArgumentCount == en.MinimumArgumentCount;
             }
             check("Every embedded bilingual entry has matching valid format arguments", keys.Length > 0 && formatsValid);
+            foreach (var language in new[] { "zh-CN", "en" })
+            {
+                L.Initialize(language);
+                bool english = language == "en";
+                check(language + " line and circle tools have consistent plain display names", ToolDisplayName.Get(EditorTool.Line) == (english ? "Line" : "直线") &&
+                    ToolDisplayName.Get(EditorTool.Ellipse) == (english ? "Circle" : "圆形"));
+                check(language + " every active tool has a localized preset name without shortcut legends", Enum.GetValues<EditorTool>()
+                    .Where(tool => tool != EditorTool.Redact).All(tool =>
+                    {
+                        string display = ToolDisplayName.Get(tool), name = ToolDisplayName.PresetName(tool);
+                        return !display.Contains("  ") && name == display + (english ? " preset" : "预设");
+                    }));
+                check(language + " legacy aliases use the current tool family when naming presets", ToolDisplayName.PresetName(EditorTool.Arrow) == ToolDisplayName.PresetName(EditorTool.Line) &&
+                    ToolDisplayName.PresetName(EditorTool.DoubleArrow) == ToolDisplayName.PresetName(EditorTool.Line) &&
+                    ToolDisplayName.PresetName(EditorTool.RoundedRectangle) == ToolDisplayName.PresetName(EditorTool.Rectangle) &&
+                    ToolDisplayName.PresetName(EditorTool.Triangle) == ToolDisplayName.PresetName(EditorTool.Symbol));
+                check(language + " canvas and image use the same preset naming convention", ToolDisplayName.PresetName(EditorTool.Canvas) == (english ? "Canvas preset" : "画布预设") &&
+                    ToolDisplayName.PresetName(EditorTool.Image) == (english ? "Image preset" : "贴图预设"));
+            }
             L.Initialize("en");
             check("English welcome is resolved at runtime", L.Get("Welcome.Title") == "FloatCanvas · Welcome");
             check("English formatted status substitutes actual values", L.Format("Image.Imported", 3) == "Imported 3 image(s).");

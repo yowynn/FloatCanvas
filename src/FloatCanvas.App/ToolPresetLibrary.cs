@@ -132,9 +132,18 @@ internal sealed class ToolPresetLibrary
             if (tool == EditorTool.Number) parameters.Style.Fill = 0xFFFFFFFF;
             if (tool == EditorTool.Highlighter) parameters.Style.StrokeWidth = 24;
             configure?.Invoke(parameters);
-            result.Add(new() { Id = "official." + id, Name = L.Get("Preset." + key), Parameters = parameters, IsOfficial = true });
+            if (tool == EditorTool.CaptureRegion) parameters.ConstrainAspect = false;
+            result.Add(new() { Id = "official." + id, Name = L.Get("Recipe." + key), Parameters = parameters, IsOfficial = true });
         }
-        Add("freehand", "Freehand", EditorTool.Freehand); Add("highlighter", "Highlighter", EditorTool.Highlighter);
+        // Each family starts with its standard form, followed by ready-to-use common combinations.
+        // These remain complete snapshots; personal presets and legacy missing-field defaults are untouched.
+        Add("freehand", "Freehand", EditorTool.Freehand);
+        Add("freehand-fine", "FreehandFine", EditorTool.Freehand, p => p.Style.StrokeWidth = 2);
+        Add("freehand-bold", "FreehandBold", EditorTool.Freehand, p => p.Style.StrokeWidth = 12);
+        Add("freehand-dotted", "FreehandDotted", EditorTool.Freehand, p => { p.Style.StrokeWidth = 24; p.Style.StrokePattern = StrokePattern.Dotted; });
+        Add("highlighter", "Highlighter", EditorTool.Highlighter);
+        Add("highlighter-yellow", "HighlighterYellow", EditorTool.Highlighter, p => { p.Style.Stroke = 0xFFCB912F; p.Style.StrokeWidth = 32; });
+        Add("highlighter-green", "HighlighterGreen", EditorTool.Highlighter, p => p.Style.Stroke = 0xFF448361);
         void Line(string id, string label, ArrowHeadStyle start, ArrowHeadStyle end, StrokePattern pattern = StrokePattern.Solid) =>
             Add(id, label, EditorTool.Line,
                 p => { p.Style.StartArrowHead = start; p.Style.EndArrowHead = end; p.Style.StrokePattern = pattern; });
@@ -146,20 +155,50 @@ internal sealed class ToolPresetLibrary
         Add("rectangle", "Rectangle", EditorTool.Rectangle, p => p.CornerRadius = 0);
         Add("rounded-rectangle", "RoundedRectangle", EditorTool.Rectangle, p => p.CornerRadius = 12);
         Add("square", "Square", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; });
-        Add("ellipse", "Ellipse", EditorTool.Ellipse);
+        Add("rectangle-soft", "RectangleSoft", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.Style.Fill = ColorLibrary.BackgroundRed; });
+        Add("rectangle-filled", "RectangleFilled", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.Style.Fill = ColorLibrary.BackgroundRed; p.Style.LinkColors = true; });
         Add("circle", "Circle", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; });
-        Add("triangle", "Triangle", EditorTool.Symbol, p => p.Symbol = SymbolKind.Triangle);
-        Add("text", "Text", EditorTool.Text); Add("number", "Number", EditorTool.Number); Add("eraser", "Eraser", EditorTool.Eraser);
-        Add("blur", "Blur", EditorTool.Blur); Add("pixelate", "Pixelate", EditorTool.Pixelate);
-        Add("select", "Standard", EditorTool.Select); Add("image", "Standard", EditorTool.Image);
-        Add("crop", "Standard", EditorTool.Crop); Add("capture", "Standard", EditorTool.CaptureRegion);
-        Add("emoji", "Standard", EditorTool.Emoji); Add("stamp", "Standard", EditorTool.Stamp);
-        // Symbols share one tool; the gallery provides its concrete geometry.
-        foreach (var symbol in Enum.GetValues<SymbolKind>().Where(value => value != SymbolKind.Triangle))
-        {
-            Add("symbol-" + symbol.ToString().ToLowerInvariant(), "Standard", EditorTool.Symbol, p => p.Symbol = symbol);
-            result[^1].Name = L.Get("Symbol." + symbol);
-        }
+        Add("ellipse", "Ellipse", EditorTool.Ellipse);
+        Add("circle-soft", "CircleSoft", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; p.Style.Fill = ColorLibrary.BackgroundRed; });
+        Add("circle-filled", "CircleFilled", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; p.Style.Fill = ColorLibrary.BackgroundRed; p.Style.LinkColors = true; });
+        // The shape picker applies every style to any geometry in one click.
+        // Keep one canonical shape rather than repeating a recipe for each symbol.
+        Add("triangle", "SymbolOutline", EditorTool.Symbol);
+        Add("symbol-soft", "SymbolSoft", EditorTool.Symbol, p => p.Style.Fill = ColorLibrary.BackgroundRed);
+        Add("symbol-filled", "SymbolFilled", EditorTool.Symbol, p => { p.Style.LinkColors = true; p.Style.Fill = ColorLibrary.BackgroundRed; });
+        Add("symbol-dashed", "SymbolDashed", EditorTool.Symbol, p => p.Style.StrokePattern = StrokePattern.Dashed);
+        Add("symbol-green", "SymbolGreen", EditorTool.Symbol, p => { p.Style.Stroke = 0xFF448361; p.Style.StrokeWidth = 6; });
+        Add("text", "Text", EditorTool.Text);
+        Add("text-heading", "TextHeading", EditorTool.Text, p => p.Style.FontSize = 48);
+        Add("text-body", "TextBody", EditorTool.Text, p => { p.Style.Stroke = 0xFF252525; p.Style.FontSize = 24; });
+        Add("text-label", "TextLabel", EditorTool.Text, p => { p.Style.Stroke = 0xFF2383E2; p.Style.FontSize = 28; p.Style.TextAlignment = TextAlignment.Center; });
+        Add("number", "Number", EditorTool.Number);
+        Add("number-blue", "NumberBlue", EditorTool.Number, p => { p.Style.Stroke = 0xFF2383E2; p.Style.FontSize = 48; });
+        Add("number-compact", "NumberCompact", EditorTool.Number, p => { p.Style.Stroke = 0xFF252525; p.Style.FontSize = 36; });
+        Add("eraser", "Eraser", EditorTool.Eraser);
+        Add("blur", "Blur", EditorTool.Blur);
+        Add("blur-fine", "BlurFine", EditorTool.Blur, p => p.EffectStrength = 6);
+        Add("blur-strong", "BlurStrong", EditorTool.Blur, p => p.EffectStrength = 24);
+        Add("pixelate", "Pixelate", EditorTool.Pixelate);
+        Add("pixelate-fine", "PixelateFine", EditorTool.Pixelate, p => p.EffectStrength = 6);
+        Add("pixelate-strong", "PixelateStrong", EditorTool.Pixelate, p => p.EffectStrength = 24);
+        Add("select", "Select", EditorTool.Select);
+        Add("image", "Image", EditorTool.Image);
+        Add("image-half", "ImageHalf", EditorTool.Image, p => p.Style.Opacity = .5);
+        Add("image-faint", "ImageFaint", EditorTool.Image, p => p.Style.Opacity = .25);
+        Add("crop", "Crop", EditorTool.Crop);
+        Add("crop-square", "CropSquare", EditorTool.Crop, p => p.ConstrainAspect = true);
+        Add("capture", "Capture", EditorTool.CaptureRegion);
+        Add("capture-ellipse", "CaptureEllipse", EditorTool.CaptureRegion, p => p.CaptureShape = CaptureShape.Ellipse);
+        Add("capture-annotated", "CaptureAnnotated", EditorTool.CaptureRegion, p => p.CaptureSource = CaptureSource.BackgroundAndCanvas);
+        Add("capture-bordered", "CaptureBordered", EditorTool.CaptureRegion, p => p.CaptureBorderWidth = 4);
+        Add("capture-lasso", "CaptureLasso", EditorTool.CaptureRegion, p => p.CaptureShape = CaptureShape.FreehandLasso);
+        Add("capture-polygon", "CapturePolygon", EditorTool.CaptureRegion, p => p.CaptureShape = CaptureShape.PolygonLasso);
+        Add("emoji", "Emoji", EditorTool.Emoji);
+        Add("emoji-thumb", "EmojiThumb", EditorTool.Emoji, p => p.Emoji = "👍");
+        Add("emoji-check", "EmojiCheck", EditorTool.Emoji, p => p.Emoji = "✅");
+        Add("emoji-warning", "EmojiWarning", EditorTool.Emoji, p => p.Emoji = "⚠️");
+        Add("stamp", "Stamp", EditorTool.Stamp);
         return result;
     }
 }
