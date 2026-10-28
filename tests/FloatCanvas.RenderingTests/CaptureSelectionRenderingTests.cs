@@ -58,21 +58,21 @@ internal static class CaptureSelectionRenderingTests
         var selection = Capture(CaptureShape.Rectangle, new(-30, -20, 50, 40)) with { BorderWidth = 6, BorderColor = 0xFFFF0000 };
         var result = renderer.ExportSelectionPng(scene, assets, selection, false);
         using var pixels = Decode(result);
-        check("border expands physical placement on all four sides", result.Bounds == new RectD(-33, -23, 56, 46));
-        check("baked border retains full left and right extents", pixels.GetPixel(0, 23) == SKColors.Red && pixels.GetPixel(55, 23) == SKColors.Red);
-        check("baked border retains full top and bottom extents", pixels.GetPixel(28, 0) == SKColors.Red && pixels.GetPixel(28, 45) == SKColors.Red);
-        check("border does not replace the selection interior", pixels.GetPixel(28, 23) == SKColors.Blue);
-        check("round border joins do not extend beyond their allocated corners", pixels.GetPixel(0, 0).Alpha < 255 && pixels.GetPixel(55, 45).Alpha < 255);
+        check("outside border expands physical placement by its full width on all four sides", result.Bounds == new RectD(-36, -26, 62, 52));
+        check("baked border retains full left and right extents", pixels.GetPixel(0, 26) == SKColors.Red && pixels.GetPixel(61, 26) == SKColors.Red);
+        check("baked border retains full top and bottom extents", pixels.GetPixel(31, 0) == SKColors.Red && pixels.GetPixel(31, 51) == SKColors.Red);
+        check("border does not replace the selection interior", pixels.GetPixel(31, 26) == SKColors.Blue);
+        check("round border joins do not extend beyond their allocated corners", pixels.GetPixel(0, 0).Alpha < 255 && pixels.GetPixel(61, 51).Alpha < 255);
 
         var ellipse = renderer.ExportSelectionPng(scene, assets, selection with { Shape = CaptureShape.Ellipse }, false);
         using var ellipsePixels = Decode(ellipse);
-        check("ellipse border occupies its expanded bounds without clipping", ellipsePixels.GetPixel(28, 0).Red > 250 && ellipsePixels.GetPixel(0, 23).Red > 250);
+        check("ellipse border occupies its expanded bounds without clipping", ellipsePixels.GetPixel(31, 0).Red > 250 && ellipsePixels.GetPixel(0, 26).Red > 250);
         check("ellipse border preserves transparent outer corners", ellipsePixels.GetPixel(0, 0).Alpha == 0);
 
         RectD[] displays = [new(-100, -100, 95, 200), new(5, -100, 95, 200)];
         using var gapped = Decode(renderer.ExportSelectionPng(scene, assets, selection, false, displays));
-        check("physical monitor gaps remain transparent for content and border", Enumerable.Range(0, gapped.Height).All(y => Enumerable.Range(28, 10).All(x => gapped.GetPixel(x, y).Alpha == 0)));
-        check("physical monitor tiles retain full-size positions on both sides of gap", gapped.GetPixel(10, 23) == SKColors.Blue && gapped.GetPixel(45, 23) == SKColors.Blue);
+        check("physical monitor gaps remain transparent for content and border", Enumerable.Range(0, gapped.Height).All(y => Enumerable.Range(31, 10).All(x => gapped.GetPixel(x, y).Alpha == 0)));
+        check("physical monitor tiles retain full-size positions on both sides of gap", gapped.GetPixel(10, 26) == SKColors.Blue && gapped.GetPixel(45, 26) == SKColors.Blue);
         using var noDisplays = Decode(renderer.ExportSelectionPng(scene, assets, selection, false, []));
         check("an explicitly empty display set cannot leak any pixels", Pixels(noDisplays).All(p => p.Alpha == 0));
     }

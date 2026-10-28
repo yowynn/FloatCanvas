@@ -11,6 +11,9 @@ internal static class SnapshotImageCommand
         CaptureSelection selection, CapturedDesktop? desktop, IReadOnlyList<RectD> displays, TimeSpan animationTime = default,
         PointD screenOrigin = default)
     {
+        if (!double.IsFinite(selection.BorderWidth) || selection.BorderWidth < 0)
+            throw new ArgumentException(L.Get("Capture.EmptyRegion"), nameof(selection));
+        selection = selection with { Points = selection.Points.ToArray() };
         var scene = committedScene.Clone();
         // The new Image receives canvas opacity in the ordinary render pass, exactly once.
         scene.LayerOpacity = 1;
@@ -30,7 +33,10 @@ internal static class SnapshotImageCommand
         using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
         // DrawBackground is disabled for CanvasOnly, but this complete backdrop remains
         // available to the dynamic mosaic's own sampling pass.
-        return renderer.ExportSelectionPng(scene, assets, selection, background, displays);
+        // Keep the body unframed so later layer edits can change the border without
+        // resampling pixels or painting over a previous baked border.
+        var raster = renderer.ExportSelectionPng(scene, assets, selection with { BorderWidth = 0 }, background, displays);
+        return raster with { ImageBorderWidth = selection.BorderWidth, ImageBorderColor = selection.BorderColor };
     }
 
     internal static CanvasElement Insert(EditorSession session, CaptureRasterResult raster, Projective2D? capturedPlaneToScreen = null,
@@ -52,6 +58,7 @@ internal static class SnapshotImageCommand
         var image = new CanvasElement { Kind = ElementKind.Image,
             Width = raster.Bounds.Width / depth.Scale, Height = raster.Bounds.Height / depth.Scale,
             Style = new() { StrokeWidth = 0 } };
+        ConfigureBorder(image, raster, depth.Scale);
         var placement = Projective2D.FromAffine(Affine2D.Translation(raster.Bounds.X, raster.Bounds.Y)
             .Compose(Affine2D.Scale(depth.Scale, depth.Scale)));
         if (!BillboardGeometry.TryPlaceFromScreen(image, mapping, depth, placement) || !mapping.IsElementSafe(image))
@@ -85,6 +92,13 @@ internal static class SnapshotImageCommand
             Width = raster.Bounds.Width, Height = raster.Bounds.Height,
             Transform = placement is null ? screenPlacement : Affine2D.Identity,
             ProjectivePlacement = placement, Style = new() { StrokeWidth = 0 } };
+        ConfigureBorder(image, raster);
         return image;
+    }
+
+    private static void ConfigureBorder(CanvasElement image, CaptureRasterResult raster, double scale = 1)
+    {
+        image.ImageBorderWidth = raster.ImageBorderWidth / scale;
+        if (raster.ImageBorderColor is { } color) image.Style.Stroke = color;
     }
 }

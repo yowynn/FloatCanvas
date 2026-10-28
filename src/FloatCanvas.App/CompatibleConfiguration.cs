@@ -127,7 +127,7 @@ internal sealed class CompatibleConfiguration(string path)
         };
         if (owner == typeof(ToolParameters)) return name switch
         {
-            "DefaultWidth" or "DefaultHeight" => Range(value, 1, 1000000), "NumberStart" or "NumberStep" => Range(value, 1, 999999),
+            "DefaultWidth" or "DefaultHeight" => Range(value, 1, 1000000), "NumberStart" or "NumberStep" => Range(value, -999999, 999999),
             "NumberColorRolesVersion" => Range(value,0,1),
             "EffectStrength" => Range(value, double.Epsilon, 1024), "CaptureBorderWidth" => Range(value, 0, 1024), "CornerRadius" => Range(value, 0, double.MaxValue),
             "Emoji" => Text(value, 32) && System.Globalization.StringInfo.GetNextTextElement(value.GetValue<string>()).Length == value.GetValue<string>().Length, _ => true
@@ -135,7 +135,7 @@ internal sealed class CompatibleConfiguration(string path)
         if (owner == typeof(CanvasPresetParameters)) return name switch
         { "Columns" or "Rows" => Range(value,1,CanvasCalibration.MaximumGridCount), "GridWidth" => Range(value,double.Epsilon,64), "FlatCellSize" => Range(value,CanvasGridGeometry.MinimumCellSize,CanvasGridGeometry.MaximumCellSize), _ => true };
         if (owner == typeof(UserSettings)) return name switch
-        { "NumberStart" or "NumberStep" => Range(value,1,999999), "Theme" => new[]{"system","light","dark"}.Contains(value.GetValue<string>()), "Language" => new[]{"auto","zh-CN","en"}.Contains(value.GetValue<string>()), _ => true };
+        { "NumberStart" or "NumberStep" => Range(value,-999999,999999), "Theme" => new[]{"system","light","dark"}.Contains(value.GetValue<string>()), "Language" => new[]{"auto","zh-CN","en"}.Contains(value.GetValue<string>()), _ => true };
         if(owner==typeof(HotkeyBinding))return name switch {"Modifiers"=>Range(value,0,15),"VirtualKey"=>Range(value,1,255),_=>true};
         return true;
     }

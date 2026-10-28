@@ -16,7 +16,8 @@ internal sealed partial class EditorController
             if (selected is [var billboard] && billboard.IsBillboard)
             {
                 if (!mapping.IsElementSafe(billboard)) return [];
-                return Corners(ElementGeometry.LocalBounds(billboard)).Select(mapping.ElementToScreen(billboard).TransformPoint).ToArray();
+                var local = billboard.Kind == ElementKind.Image ? ElementGeometry.StrokedLocalBounds(billboard) : ElementGeometry.LocalBounds(billboard);
+                return Corners(local).Select(mapping.ElementToScreen(billboard).TransformPoint).ToArray();
             }
             if (selected.Any(e => e.IsBillboard))
             {
@@ -115,7 +116,9 @@ internal sealed partial class EditorController
             var local = ElementGeometry.IsLine(element.Kind) ? ElementGeometry.LineShaftPoints(element) :
                 ElementGeometry.UsesPoints(element.Kind) ? element.Points : ElementGeometry.Outline(element);
             bool closed = !ElementGeometry.UsesPoints(element.Kind);
-            bool intersects = ProjectedContourIntersectsRectangle(local, transform, rectangle, closed);
+            // Image alpha and its editable border can extend beyond the body contour.
+            // The full envelope above is a broad phase; the ink sample below is exact.
+            bool intersects = element.Kind == ElementKind.Image || ProjectedContourIntersectsRectangle(local, transform, rectangle, closed);
             bool hasStroke = element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !ElementGeometry.IsLiveEffect(element.Kind);
             if (!intersects && hasStroke)
                 intersects = ProjectedStrokeIntersectsRectangle(local, transform, rectangle, closed, element.Style.StrokeWidth);

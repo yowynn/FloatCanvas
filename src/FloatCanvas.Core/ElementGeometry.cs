@@ -19,7 +19,8 @@ public static partial class ElementGeometry
     public static RectD StrokedLocalBounds(CanvasElement element, bool includeStroke = true)
     {
         var bounds = LocalBounds(element);
-        double stroke = includeStroke && element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !IsLiveEffect(element.Kind) && !IsBoxShape(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
+        double stroke = !includeStroke ? 0 : element.Kind == ElementKind.Image ? element.ImageBorderWidth :
+            element.Kind is not (ElementKind.Text or ElementKind.Number) && !IsLiveEffect(element.Kind) && !IsBoxShape(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
         if (IsLine(element.Kind))
         {
             foreach (var point in GetArrowHeads(element).SelectMany(head => head))
@@ -86,6 +87,8 @@ public static partial class ElementGeometry
         {
             if (bounds.Contains(local)) return true;
             PointD[] corners = [new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)];
+            if (element.Kind == ElementKind.Image && element.ImageBorderWidth > 0 && (element.Style.Stroke >> 24) != 0 &&
+                StrokePathHit(transform, corners, true, worldPoint, local, element.ImageBorderWidth, tolerance)) return true;
             return ProjectedContourHit(transform, corners, worldPoint, tolerance);
         }
         var outline = Outline(element);

@@ -10,6 +10,14 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--image-border-cache-diagnostics"))
+            {
+                int checks = 0, failures = 0;
+                ImageBorderCacheTests.Run((name, condition) => { checks++; Console.WriteLine($"{(condition ? "PASS" : "FAIL")} {name}"); if (!condition) failures++; });
+                Console.WriteLine($"BORDER_CACHE_DIAGNOSTICS {checks} checks, {failures} failures."); return failures == 0 ? 0 : 1;
+            }
+            if (args.Contains("--image-border-cache-only")) { ImageBorderCacheTests.Run(Assert); Console.WriteLine($"PASS {_checks} baked image-border cache checks."); return 0; }
+            if (args.Contains("--image-alpha-border-only")) { ImageAlphaBorderRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} alpha-contour image border checks."); return 0; }
             if (args.Contains("--inner-stroke-only")) { InnerStrokeRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--inner-stroke-evidence")) { InnerStrokeRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--inner-stroke-evidence") + 1]); InnerStrokeRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--perspective-opacity-only")) { PerspectiveOpacityRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} perspective opacity checks."); return 0; }
@@ -67,6 +75,8 @@ internal static class Program
             AssetImportLosslessTests.Run(Assert);
             ImageDecodeBudgetTests.Run(Assert);
             AnimatedImageRenderingTests.Run(Assert);
+            ImageAlphaBorderRenderingTests.Run(Assert);
+            ImageBorderCacheTests.Run(Assert);
             AnimationMetadataTests.Run(Assert);
             AnimatedOverlayCacheTests.Run(Assert);
             IntermediateSurfaceRenderingTests.Run(Assert);

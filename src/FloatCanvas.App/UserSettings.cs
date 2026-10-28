@@ -20,6 +20,7 @@ internal sealed class UserSettings
     public bool PrimaryScreenOnly { get; set; } = false;
     public string? MonitorDeviceName { get; set; }
     public string? CanvasReferenceDisplay { get; set; }
+    public bool PreserveCanvasSettingsOnNewCanvas { get; set; }
     public bool ShowToolShortcutHints { get; set; } = true;
     public bool ShowFloatingLogo { get; set; } = true;
     // Supersede the old default-off preference once. New explicit choices persist.

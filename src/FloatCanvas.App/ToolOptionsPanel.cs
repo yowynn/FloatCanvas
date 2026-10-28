@@ -77,9 +77,9 @@ internal sealed class ToolOptionsPanel : UserControl
         Number(parameterGrid, "StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, 1024, (p, v) => p.Style.StrokeWidth = v);
         Number(parameterGrid, "Opacity", L.Get("Inspector.Opacity"), 0, 100, (p, v) => p.Style.Opacity = v / 100);
         Number(parameterGrid, "FontSize", L.Get("Inspector.FontSize"), 1, 4096, (p, v) => p.Style.FontSize = v);
-        Number(parameterGrid, "NumberStart", L.Get("ToolOptions.NumberStart"), 1, 999999, (p, v) => p.NumberStart = (int)v);
-        Number(parameterGrid, "NumberStep", L.Get("ToolOptions.NumberStep"), 1, 999999, (p, v) => p.NumberStep = (int)v);
-        Number(parameterGrid, "NextNumber", L.Get("ToolOptions.NextNumber"), 1, int.MaxValue, (_, _) => { });
+        Number(parameterGrid, "NumberStart", L.Get("ToolOptions.NumberStart"), -999999, 999999, (p, v) => p.NumberStart = (int)v);
+        Number(parameterGrid, "NumberStep", L.Get("ToolOptions.NumberStep"), -999999, 999999, (p, v) => p.NumberStep = (int)v);
+        Number(parameterGrid, "NextNumber", L.Get("ToolOptions.NextNumber"), int.MinValue, int.MaxValue, (_, _) => { });
         Number(parameterGrid, "DefaultWidth", L.Get("Inspector.Width"), 1, 1000000, (p, v) => p.DefaultWidth = v);
         Number(parameterGrid, "DefaultHeight", L.Get("Inspector.Height"), 1, 1000000, (p, v) => p.DefaultHeight = v);
         AddRow(parameterGrid, "FontFamily", L.Get("Inspector.FontFamily"), fontFamily);
@@ -335,7 +335,8 @@ internal sealed class ToolOptionsPanel : UserControl
     private void Number(Panel body, string key, string label, double min, double max, Action<ToolParameters, double> set)
     {
         double sliderMax = key switch { "StrokeWidth" => 64, "FontSize" => 512, "NumberStart" or "NumberStep" or "NextNumber" => 100, "DefaultWidth" or "DefaultHeight" => 600, "CornerRadius" => 100, "ArrowHeadSize" => 100, "EffectStrength" => 100, _ => max };
-        var field = new NumericValueField(min, max, sliderMaximum: Math.Min(max, sliderMax), step: key is "EffectStrength" or "StrokeWidth" or "CaptureBorderWidth" ? .1 : 1,
+        double? sliderMin = key switch { "NumberStep" => -100, "NumberStart" or "NextNumber" => 1, _ => null };
+        var field = new NumericValueField(min, max, sliderMinimum: sliderMin, sliderMaximum: Math.Min(max, sliderMax), step: key is "EffectStrength" or "StrokeWidth" or "CaptureBorderWidth" ? .1 : 1,
             integerOnly: key is "NumberStart" or "NumberStep" or "NextNumber")
         { Unit = key switch { "Opacity" => "%", "NumberStart" or "NextNumber" => "#", "NumberStep" => L.Get("Numeric.Unit.Step"), _ => "px" } };
         if (key is "NumberStart" or "NumberStep" or "NextNumber") field.Slider.IsSnapToTickEnabled = true;

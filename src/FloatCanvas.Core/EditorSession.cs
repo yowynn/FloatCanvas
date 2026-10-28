@@ -195,12 +195,11 @@ public sealed partial class EditorSession
     public IEnumerable<CanvasElement> SelectedElements() => Document.Elements.Where(e => Selection.Contains(e.Id));
     public void Add(CanvasElement element, string? label = null, int numberStep = 1)
     {
-        if (numberStep < 1) throw new ArgumentOutOfRangeException(nameof(numberStep));
         Execute(label ?? L.Get("History.AddElement"), d =>
         {
             if (d.Elements.Any(e => e.Id == element.Id)) throw new ArgumentException(L.Get("History.DuplicateElementId"), nameof(element));
             d.Elements.Add(element.Clone()); Selection.Clear(); Selection.Add(element.Id);
-            if (element.Kind == ElementKind.Number) d.NextNumber = Math.Max(d.NextNumber, (int)Math.Min(int.MaxValue, (long)element.Number + numberStep));
+            if (element.Kind == ElementKind.Number) d.NextNumber = NumberSequence.Advance(d.NextNumber, element.Number, numberStep);
         });
     }
     public void DeleteSelection() => Execute(L.Get("History.DeleteElements"), d => { d.Elements.RemoveAll(e => Selection.Contains(e.Id) && !e.Locked); Selection.Clear(); });

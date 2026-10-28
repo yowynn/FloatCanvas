@@ -46,8 +46,8 @@ internal static class InspectorVisibilityLifecycleTests
             inspector.Show(); Pump();
             results.Add(("reopening inspector synchronizes changes made while hidden", fields["Text"].Text == "changed while hidden"));
 
-            var picture = new CanvasElement { Kind = ElementKind.Image, Width = 80, Height = 60,
-                Style = new() { FontFamily = "Arial", Fill = 0xFF123456 } };
+            var picture = new CanvasElement { Kind = ElementKind.LiveBlur, Width = 80, Height = 60,
+                Style = new() { FontFamily = "Arial", Fill = 0xFF123456 }, Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(0, 0, 1, 1) }] };
             current.Add(picture); Pump();
             string hiddenFont = fields["FontFamily"].Text, hiddenText = fields["Text"].Text;
             uint hiddenStroke = colors["Stroke"].Value, hiddenFill = colors["Fill"].Value;
@@ -60,7 +60,7 @@ internal static class InspectorVisibilityLifecycleTests
             strokeProperty.AddValueChanged(colors["Stroke"], countColor); fillProperty.AddValueChanged(colors["Fill"], countColor);
             try
             {
-                current.Execute("image metadata changes", document =>
+                current.Execute("effect metadata changes", document =>
                 {
                     var image = document.Elements.Single(element => element.Id == picture.Id);
                     image.Style.FontFamily = "Times New Roman"; image.Text = "hidden text metadata";

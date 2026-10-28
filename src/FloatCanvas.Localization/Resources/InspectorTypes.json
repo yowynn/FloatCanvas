@@ -1,0 +1,6 @@
+{
+  "Inspector.EffectsSection": { "zh": "图像效果", "en": "Image effects" },
+  "Inspector.Effect": { "zh": "效果", "en": "Effect" },
+  "Inspector.EffectColor": { "zh": "遮盖颜色", "en": "Redaction color" },
+  "Inspector.Redaction": { "zh": "遮盖", "en": "Redaction" }
+}

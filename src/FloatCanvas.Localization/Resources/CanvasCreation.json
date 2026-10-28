@@ -1,0 +1,10 @@
+{
+  "Settings.PreserveCanvasSettings": {
+    "zh": "新建时保留画布参数",
+    "en": "Keep canvas settings when creating a canvas"
+  },
+  "Settings.PreserveCanvasSettingsHint": {
+    "zh": "默认关闭：新建画布恢复第一个官方预设的背景、网格与透视参数。开启后沿用当前参数；清空已有标注始终保留画布参数。",
+    "en": "Off by default: a new canvas restores the first official preset's background, grid and perspective settings. Turn on to keep the current values. Clearing annotations always keeps canvas settings."
+  }
+}

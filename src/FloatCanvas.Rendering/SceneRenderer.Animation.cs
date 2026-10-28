@@ -43,7 +43,7 @@ public sealed partial class SceneRenderer
         {
             hasAnimations = true;
             if (timeline.Locate(time).Delay is { } delay && (next is null || delay < next)) next = delay;
-            var projected = mapping.ProjectedBounds(element, includeStroke: false).Intersect(document.Viewport);
+            var projected = mapping.ProjectedBounds(element, includeStroke: true).Intersect(document.Viewport);
             if (!projected.IsEmpty) bounds.Add(projected);
         }
         // The animation can alter a filter whose sampling halo reaches another output.
@@ -81,7 +81,7 @@ public sealed partial class SceneRenderer
     {
         if (element.Kind != ElementKind.Image || !element.Visible || !(element.Style.Opacity > 0) || element.AssetId is not { } id) return null;
         if (element.IsBillboard && !mapping.IsElementSafe(element)) return null;
-        if (!mapping.ProjectedBounds(element, includeStroke: false).Intersects(document.Viewport)) return null;
+        if (!mapping.ProjectedBounds(element, includeStroke: true).Intersects(document.Viewport)) return null;
         if (_animationMetadata.TryGetValue(id, out var cached)) return cached;
         var bytes = assets.Get(id).Data.Span;
         // Header/timeline parsing is separated from GetImageEntry: static WebP must never

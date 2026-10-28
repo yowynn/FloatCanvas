@@ -5,7 +5,13 @@ using SkiaSharp;
 namespace FloatCanvas.Rendering;
 
 /// <summary>A PNG and its exact, integer-aligned physical-pixel placement.</summary>
-public sealed record CaptureRasterResult(byte[] PngBytes, RectD Bounds, bool HasVisiblePixels);
+public sealed record CaptureRasterResult(byte[] PngBytes, RectD Bounds, bool HasVisiblePixels)
+{
+    /// <summary>Editable frame metadata used when this body raster is inserted as an image.
+    /// General selection exports bake their frame and leave these properties at zero/null.</summary>
+    public double ImageBorderWidth { get; init; }
+    public uint? ImageBorderColor { get; init; }
+}
 
 public sealed partial class SceneRenderer
 {
@@ -31,9 +37,9 @@ public sealed partial class SceneRenderer
         if (filled.IsEmpty || filled.TightBounds.Width <= 0 || filled.TightBounds.Height <= 0)
             throw new ArgumentException(L.Get("Capture.EmptyRegion"), nameof(selection));
         var pathBounds = outline.TightBounds;
-        double halfBorder = selection.BorderWidth / 2;
-        double left = Math.Floor(pathBounds.Left - halfBorder), top = Math.Floor(pathBounds.Top - halfBorder);
-        double right = Math.Ceiling(pathBounds.Right + halfBorder), bottom = Math.Ceiling(pathBounds.Bottom + halfBorder);
+        double borderWidth = selection.BorderWidth;
+        double left = Math.Floor(pathBounds.Left - borderWidth), top = Math.Floor(pathBounds.Top - borderWidth);
+        double right = Math.Ceiling(pathBounds.Right + borderWidth), bottom = Math.Ceiling(pathBounds.Bottom + borderWidth);
         if (!double.IsFinite(left) || !double.IsFinite(top) || !double.IsFinite(right) || !double.IsFinite(bottom) ||
             right - left is < 1 or > int.MaxValue || bottom - top is < 1 or > int.MaxValue)
             throw new InvalidOperationException(L.Get("Export.BufferTooLarge"));
@@ -73,14 +79,7 @@ public sealed partial class SceneRenderer
         canvas.DrawImage(composed, (float)left, (float)top, Nearest);
         canvas.RestoreToCount(saved);
         if (selection.BorderWidth > 0 && (selection.BorderColor >> 24) != 0)
-        {
-            using var border = new SKPaint
-            {
-                IsAntialias = true, Style = SKPaintStyle.Stroke, Color = new SKColor(selection.BorderColor),
-                StrokeWidth = (float)selection.BorderWidth, StrokeJoin = SKStrokeJoin.Round, StrokeCap = SKStrokeCap.Round
-            };
-            canvas.DrawPath(outline, border);
-        }
+            DrawOutsideContour(canvas, outline, selection.BorderWidth, selection.BorderColor);
         using var image = output.Snapshot();
         bool visible = HasAlpha(image);
         using var png = image.Encode(SKEncodedImageFormat.Png, 100)

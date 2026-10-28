@@ -70,6 +70,10 @@ internal static class Program
             if (args.Contains("--projection-hover-runtime-preview")) { ProjectionHoverRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--projection-hover-only")) { ProjectionUnsafeHoverTests.Run(Assert); RetainedBillboardInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-tool-only")) { CanvasToolInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--new-canvas-settings-only")) { NewCanvasSettingsTests.Run(Assert); return 0; }
+            if (args.Contains("--signed-number-only")) { SignedNumberTests.Run(Assert); return 0; }
+            if (args.Contains("--image-outside-stroke-only")) { ImageOutsideStrokeTests.Run(Assert); return 0; }
+            if (args.Contains("--type-specific-inspector-only")) { TypeSpecificInspectorTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-guide-ui-only")) { CanvasGuideUiTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-tool-rendering-only")) { CanvasToolRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-anchor-capture-only")) { CanvasAnchorCaptureTests.Run(Assert); return 0; }
@@ -274,10 +278,14 @@ internal static class Program
             Preview4PropertiesTests.Run(Assert);
             MenuAcceptanceTests.Run(Assert);
             WindowTitleTests.Run(Assert);
-            AvatarMenuGestureTests.Run(Assert);
+            if (args.Contains("--background-regression"))
+                Console.WriteLine("SKIP native avatar capture fixture on the isolated desktop; verify separately with --avatar-menu-only.");
+            else AvatarMenuGestureTests.Run(Assert);
             PropertyVisualTests.Run(Assert);
             SegmentedChoiceTests.Run(Assert);
-            PropertyChangeRegionTests.Run(Assert);
+            if (args.Contains("--background-regression"))
+                Console.WriteLine("SKIP desktop-composition cue fixture on the isolated desktop; verify separately with --property-changes-only.");
+            else PropertyChangeRegionTests.Run(Assert);
             WindowSpacingTests.Run(Assert);
             TemporaryMoveControllerTests.Run(Assert);
             PropertiesClickSequenceTests.Run(Assert);
@@ -324,6 +332,7 @@ internal static class Program
             DragSizedObjectsTests.Run(Assert);
             CaptureSelectionTests.Run(Assert);
             SnapshotImageTests.Run(Assert);
+            ImageOutsideStrokeTests.Run(Assert);
             SnapshotCoordinateTests.Run(Assert);
             Feedback4GeometryTests.Run(Assert);
             StampPreviewTests.Run(Assert);
@@ -363,6 +372,7 @@ internal static class Program
             ImageToolEligibilityTests.Run(Assert); ImageEffectsAndCrop(); DocumentRegions(); TextDoubleClick(); RasterPreviewRanges();
             PointerNoOpTests.Run((name, condition) => Assert(name, condition));
             InspectorTests.Run((name, condition) => Assert(name, condition));
+            TypeSpecificInspectorTests.Run(Assert);
             AppIconTests.Run(Assert);
             WindowChromeTests.Run(Assert);
             WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult();

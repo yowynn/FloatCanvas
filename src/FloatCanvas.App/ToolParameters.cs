@@ -28,7 +28,7 @@ internal sealed class ToolParameters
     }
 
     internal bool IsValid() => Enum.IsDefined(Tool) && Style is { } s && Enum.IsDefined(Symbol) && Emoji is { Length: > 0 and <= 32 } &&
-        NumberStart is >= 1 and <= 999999 && NumberStep is >= 1 and <= 999999 &&
+        NumberStart is >= -999999 and <= 999999 && NumberStep is >= -999999 and <= 999999 &&
         NumberColorRolesVersion is 0 or 1 &&
         Enum.IsDefined(CaptureShape) && Enum.IsDefined(CaptureSource) && double.IsFinite(CaptureBorderWidth) && CaptureBorderWidth is >= 0 and <= 1024 &&
         double.IsFinite(DefaultWidth) && DefaultWidth >= 1 && DefaultWidth <= 1000000 && double.IsFinite(DefaultHeight) && DefaultHeight >= 1 && DefaultHeight <= 1000000 &&

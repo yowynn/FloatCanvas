@@ -122,8 +122,8 @@ internal sealed partial class DesktopSession : IDisposable
         _editor = new(_live);
         if (_toolbarToolMemory.TryGetValue(EditorTool.Freehand, out var savedPen)) _editor.ApplyParameters(savedPen);
         _toolbarToolMemory.TryGetValue(EditorTool.Number, out var savedNumber);
-        _editor.NumberStart = Math.Clamp(savedNumber?.NumberStart ?? _settings.NumberStart,1,999999);
-        _editor.NumberStep = Math.Clamp(savedNumber?.NumberStep ?? _settings.NumberStep,1,999999);
+        _editor.NumberStart = Math.Clamp(savedNumber?.NumberStart ?? _settings.NumberStart,-999999,999999);
+        _editor.NumberStep = Math.Clamp(savedNumber?.NumberStep ?? _settings.NumberStep,-999999,999999);
         _settings.NumberStart = _editor.NumberStart; _settings.NumberStep = _editor.NumberStep;
         document.NextNumber = _editor.NumberStart;
         _editor.Changed += () =>
@@ -1039,6 +1039,8 @@ internal sealed partial class DesktopSession : IDisposable
         window.Closed += (_, _) => _host.MonitorsChanged -= RefreshScreenScope;
         AppSettingsWindow.AddSetting(canvas, L.Get("Settings.Scope"), screenScope,
             ApplicationPaths.RequestedMonitorScope.HasValue ? L.Get("Settings.ScopeOverrideHint") : null);
+        var preserveCanvas = new System.Windows.Controls.CheckBox { IsChecked = _settings.PreserveCanvasSettingsOnNewCanvas };
+        AppSettingsWindow.AddSetting(canvas, L.Get("Settings.PreserveCanvasSettings"), preserveCanvas, L.Get("Settings.PreserveCanvasSettingsHint"));
         var historyField = new NumericValueField(0, 1000, sliderMaximum: 200, integerOnly: true) { Value = _settings.HistoryVersionLimit, Unit = L.Get("Numeric.Unit.Version") };
         var historyLimit = historyField.Input;
         AppSettingsWindow.AddSetting(canvas, L.Get("History.Limit"), historyField, L.Get("History.LimitHint"));
@@ -1052,6 +1054,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (!int.TryParse(historyLimit.Text, out int maximumHistory) || maximumHistory is < 0 or > 1000)
             { error.Text = L.Get("History.InvalidLimit"); window.SelectSection(canvas); historyLimit.Focus(); return; }
             var oldHistoryLimit = _settings.HistoryVersionLimit;
+            var oldPreserveCanvas = _settings.PreserveCanvasSettingsOnNewCanvas;
             var oldPassThroughLauncher = _settings.ShowPassThroughLauncher;
             var oldPreviewUpdates = _settings.IncludePrereleaseUpdates;
             var oldToggle = _settings.Toggle;
@@ -1068,6 +1071,7 @@ internal sealed partial class DesktopSession : IDisposable
             {
                 _host.RegisterHotkeys(toggle, hide);
                 _settings.HistoryVersionLimit = maximumHistory;
+                _settings.PreserveCanvasSettingsOnNewCanvas = preserveCanvas.IsChecked == true;
                 _settings.ShowPassThroughLauncher = passThroughLauncher.IsChecked == true;
                 _settings.Toggle = toggle;
                 _settings.Hide = hide;
@@ -1094,6 +1098,7 @@ internal sealed partial class DesktopSession : IDisposable
                 catch (Exception failure)
                 {
                     _settings.HistoryVersionLimit = oldHistoryLimit;
+                    _settings.PreserveCanvasSettingsOnNewCanvas = oldPreserveCanvas;
                     _settings.ShowPassThroughLauncher = oldPassThroughLauncher;
                     _settings.IncludePrereleaseUpdates = oldPreviewUpdates;
                     _settings.Toggle = oldToggle;

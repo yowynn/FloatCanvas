@@ -15,7 +15,6 @@ public static class SceneValidation
         SceneLimits.ValidateCapacity(document);
         Require(document.Groups!.Count <= SceneLimits.MaximumElements, L.Get("Scene.ElementCountExceeded"));
         Require(Unit(document.LayerOpacity), L.Get("Scene.InvalidLayerOpacity"));
-        Require(document.NextNumber >= 1, L.Get("Scene.InvalidNumberCounter"));
         Require(Rect(document.Viewport) && document.Viewport.Width > 0 && document.Viewport.Height > 0, L.Get("Scene.InvalidViewport"));
         ValidateCanvas(document);
         var ids = new HashSet<Guid>();
@@ -74,10 +73,10 @@ public static class SceneValidation
             (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&
             (s.EndArrowHead is null || Enum.IsDefined(s.EndArrowHead.Value)), L.Get("Scene.InvalidArrowHead"));
         Require(Enum.IsDefined(s.StrokePattern), L.Get("Scene.InvalidElementStyle"));
-        Require(element.Number >= 1, L.Get("Scene.InvalidElementNumber"));
         Require(element.Kind != ElementKind.Image || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidImageReference"));
         Require(element.AssetId is null || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidAssetReference"));
         Require(element.ImageCrop is null || NormalizedRect(element.ImageCrop.Value, positive: true), L.Get("Scene.InvalidImageCrop"));
+        Require(Nonnegative(element.ImageBorderWidth), L.Get("Scene.InvalidElementStyle"));
         Require(element.Effects is not null && element.Effects.Count <= 10_000, L.Get("Scene.InvalidEffects"));
         Require(element.Effects!.Count == 0 || element.Kind == ElementKind.Image || ElementGeometry.IsLiveEffect(element.Kind), L.Get("Scene.EffectsRequireImage"));
         Require(!ElementGeometry.IsLiveEffect(element.Kind) || element.Effects!.Count == 1 &&

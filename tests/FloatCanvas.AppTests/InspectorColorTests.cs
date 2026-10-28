@@ -33,11 +33,11 @@ internal static class InspectorColorTests
                 using var surface = new InspectorTestSurface(inspector);
                 var colors = Field<Dictionary<string, ColorField>>(inspector, "colorFields");
                 var fields = Field<Dictionary<string, Controls.TextBox>>(inspector, "fields");
-                check(language + " properties use two shared color fields without raw paint inputs", colors.Count == 2 &&
+                check(language + " properties use shared paint and effect colors without raw paint inputs", colors.Keys.Order().SequenceEqual(["EffectColor", "Fill", "Stroke"]) &&
                     colors["Stroke"].Role == ColorRole.Foreground && colors["Fill"].Role == ColorRole.Background &&
                     !fields.ContainsKey("Stroke") && !fields.ContainsKey("Fill") &&
                     colors["Stroke"].Value == 0xFF123456 && colors["Fill"].Value == 0x408090A0);
-                check(language + " color fields keep paint labels and exact accessible ARGB", colors.All(pair =>
+                check(language + " color fields keep paint labels and exact accessible ARGB", colors.Where(pair => pair.Key != "EffectColor").All(pair =>
                     Automation.AutomationProperties.GetLabeledBy(pair.Value) is Controls.TextBlock caption && !string.IsNullOrWhiteSpace(caption.Text) &&
                     Automation.AutomationProperties.GetName(pair.Value).Contains(ColorLibrary.ToHtml(pair.Value.Value))));
                 int undo = session.UndoCount; string before = JsonSerializer.Serialize(session.Document);

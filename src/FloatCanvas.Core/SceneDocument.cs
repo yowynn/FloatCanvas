@@ -82,6 +82,9 @@ public sealed class CanvasElement
     public bool NumberUsesForeground { get; set; }
     public string? AssetId { get; set; }
     public RectD? ImageCrop { get; set; }
+    /// <summary>Expansion of nonzero image alpha, painted below the image. Missing means no border, regardless of legacy Style.StrokeWidth.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double ImageBorderWidth { get; set; }
     public List<ImageEffect> Effects { get; set; } = [];
     public bool Visible { get; set; } = true;
     public bool Locked { get; set; }
@@ -91,7 +94,7 @@ public sealed class CanvasElement
         CornerRadius = CornerRadius, Symbol = Symbol, GroupId = GroupId, ConstrainAspect = ConstrainAspect, TextFrameFixed = TextFrameFixed,
         Transform = Transform, ProjectivePlacement = ProjectivePlacement, IsBillboard = IsBillboard,
         BillboardAnchor = BillboardAnchor, BillboardHeight = BillboardHeight, Style = Style.Clone(), Text = Text, Number = Number, AssetId = AssetId,
-        ImageCrop = ImageCrop, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked,
+        ImageCrop = ImageCrop, ImageBorderWidth = ImageBorderWidth, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked,
         NumberUsesForeground = NumberUsesForeground
     };
 }

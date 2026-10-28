@@ -69,7 +69,7 @@ internal static class Feedback4GeometryTests
             check("number start and step persist in independent tool presets", loaded.NumberStart == 7 && loaded.NumberStep == 3 && !JsonSerializer.Serialize(loaded).Contains("NextNumber", StringComparison.Ordinal));
             var legacy = JsonSerializer.Deserialize<ToolParameters>("{\"Tool\":11}")!;
             check("older tool snapshots gain default sequence rules", legacy.IsValid() && legacy.NumberStart == 1 && legacy.NumberStep == 1);
-            check("sequence rules reject invalid starts and steps", !new ToolParameters { NumberStart = 0 }.IsValid() && !new ToolParameters { NumberStep = 0 }.IsValid());
+            check("sequence rules reject invalid starts and steps", !new ToolParameters { NumberStart = -1000000 }.IsValid() && !new ToolParameters { NumberStep = 1000000 }.IsValid());
             var session = new EditorSession(new() { NextNumber = loaded.NumberStart }); var editor = new EditorController(session); editor.ApplyParameters(loaded);
             Gesture(editor, new(50, 50), new(50, 50)); Gesture(editor, new(300, 50), new(300, 50));
             check("number insertion advances the document counter by the configured step", session.Document.Elements.Select(e => e.Number).SequenceEqual([7, 10]) && session.Document.NextNumber == 13);

@@ -33,7 +33,7 @@ public sealed partial class SceneRenderer : IDisposable
     /// <summary>Estimated plane-space dash periods after and before screen-resolution trimming.</summary>
     public double GridDashIntervalCount { get; private set; }
     public double UnresolvedGridDashIntervalCount { get; private set; }
-    public long CachedImageBytes => _images.Values.Sum(e => e.CachedBytes) + _effects.Values.Sum(e => e.CachedBytes);
+    public long CachedImageBytes => _images.Values.Sum(e => e.CachedBytes) + _effects.Values.Sum(e => e.CachedBytes) + _imageBorders.Values.Sum(e => e.CachedBytes);
 
     /// <summary>Preserves the caller's matrix and clip. Viewport is in document coordinates.</summary>
     public void Draw(SKCanvas canvas, SceneDocument document, AssetLibrary assets, bool includeBackground = true,
@@ -420,6 +420,7 @@ public sealed partial class SceneRenderer : IDisposable
         RectD crop = (element.ImageCrop ?? new RectD(0, 0, 1, 1)).Normalize().Intersect(new(0, 0, 1, 1));
         if (crop.IsEmpty) return;
         var source = new SKRect((float)(crop.Left * image.Width), (float)(crop.Top * image.Height), (float)(crop.Right * image.Width), (float)(crop.Bottom * image.Height));
+        DrawImageBorder(canvas, element, image, new(source.Left, source.Top, source.Width, source.Height));
         SetPaint(0xFFFFFFFF, SKPaintStyle.Fill);
         canvas.DrawImage(image, source, new(0, 0, (float)element.Width, (float)element.Height), Linear, _paint);
     }
@@ -512,15 +513,22 @@ public sealed partial class SceneRenderer : IDisposable
         { _paths[id].Dispose(); _paths.Remove(id); }
         foreach (var id in _effects.Where(p => p.Value.Used < _clock - 2).Select(p => p.Key).ToArray())
         { _effects[id].Dispose(); _effects.Remove(id); }
+        // Animation frames retain their border masks until the byte-budget LRU evicts
+        // them, so a loop can reuse frames even after several intervening draws.
+        TrimImageBorderCaches();
         TrimImageCaches(Math.Max(0, CacheByteLimit));
     }
 
     private void TrimImageCaches(long limit, string? protectedImage = null)
     {
-        while (CachedImageBytes > limit && _images.Count + _effects.Count > 0)
+        while (CachedImageBytes > limit && _images.Count + _effects.Count + _imageBorders.Count > 0)
         {
             var image = _images.Where(entry => entry.Key != protectedImage).OrderBy(e => e.Value.Used).FirstOrDefault();
             var effect = _effects.Count == 0 ? default : _effects.MinBy(e => e.Value.Used);
+            var border = _imageBorders.Count == 0 ? default : _imageBorders.MinBy(e => e.Value.Used);
+            if (border.Value is not null && (image.Value is null || border.Value.Used <= image.Value.Used) &&
+                (effect.Value is null || border.Value.Used <= effect.Value.Used))
+            { border.Value.Dispose(); _imageBorders.Remove(border.Key); continue; }
             if (image.Value is null && effect.Value is null) break;
             if (image.Value is not null && (effect.Value is null || image.Value.Used <= effect.Value.Used))
             { image.Value.Dispose(); _images.Remove(image.Key); }
@@ -537,7 +545,8 @@ public sealed partial class SceneRenderer : IDisposable
         foreach (var entry in _paths.Values) entry.Dispose();
         foreach (var entry in _images.Values) entry.Dispose();
         foreach (var entry in _effects.Values) entry.Dispose();
-        _paths.Clear(); _images.Clear(); _effects.Clear(); _animationMetadata.Clear();
+        foreach (var entry in _imageBorders.Values) entry.Dispose();
+        _paths.Clear(); _images.Clear(); _effects.Clear(); _imageBorders.Clear(); _animationMetadata.Clear();
         ReleaseElementOpacitySurface();
         _paint.Dispose(); _text.Dispose();
     }

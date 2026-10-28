@@ -356,8 +356,7 @@ internal sealed partial class EditorController
                 if (completed == "draw" && Tool is EditorTool.Number or EditorTool.Emoji)
                 {
                     if (drawing?.Kind == ElementKind.Number)
-                        Session.Document.NextNumber = Math.Max(Session.Document.NextNumber,
-                            (int)Math.Min(int.MaxValue, (long)drawing.Number + NumberStep));
+                        Session.Document.NextNumber = NumberSequence.Advance(Session.Document.NextNumber, drawing.Number, NumberStep);
                     Session.Commit();
                 }
                 else if (completed == "draw" && !gestureMoved && drawing is not null && ElementGeometry.IsLine(drawing.Kind))
@@ -415,7 +414,6 @@ internal sealed partial class EditorController
         var style = Style.Clone();
         if (Tool == EditorTool.Number)
         {
-            if (NumberStep < 1) throw new ArgumentOutOfRangeException(nameof(NumberStep));
             double diameter = style.FontSize;
             drawing = new() { Kind = ElementKind.Number, Width = diameter, Height = diameter,
                 Style = style, Number = Session.Document.NextNumber, NumberUsesForeground = true, ConstrainAspect = true };

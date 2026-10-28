@@ -61,8 +61,8 @@ internal sealed partial class DesktopSession
         next.Tool = family;
         if (!remembered)
         {
-            next.NumberStart = Math.Clamp(_settings.NumberStart, 1, 999999);
-            next.NumberStep = Math.Clamp(_settings.NumberStep, 1, 999999);
+            next.NumberStart = Math.Clamp(_settings.NumberStart, -999999, 999999);
+            next.NumberStep = Math.Clamp(_settings.NumberStep, -999999, 999999);
             if (family == EditorTool.Highlighter) next.Style.StrokeWidth = Math.Max(24, next.Style.StrokeWidth);
             if (family == EditorTool.Number) next.Style.Fill = 0xFFFFFFFF;
         }

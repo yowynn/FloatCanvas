@@ -204,13 +204,14 @@ internal static class InspectorTests
             bool Visible(string key) => containers[key].Visibility == Wpf.Visibility.Visible;
             assert(kind + " keeps common geometry and opacity fields", new[] { "X", "Y", "W", "H", "Angle", "Opacity" }.All(Visible));
             if (kind == ElementKind.Image)
-                assert("image inspector collapses irrelevant style and text rows", new[] { "Stroke", "Fill", "StrokeWidth", "FontFamily", "FontSize", "TextAlignment", "Text", "Number" }.All(key => !Visible(key)));
+                assert("image inspector exposes its border while collapsing irrelevant fill and text rows", Visible("Stroke") && Visible("StrokeWidth") &&
+                    new[] { "Fill", "StrokePattern", "FontFamily", "FontSize", "TextAlignment", "Text", "Number" }.All(key => !Visible(key)));
             if (kind == ElementKind.Rectangle)
                 assert("shape inspector keeps paint and collapses text properties", Visible("Stroke") && Visible("Fill") && Visible("StrokeWidth") && new[] { "FontFamily", "FontSize", "TextAlignment", "Text", "Number" }.All(key => !Visible(key)));
             if (kind == ElementKind.Text)
                 assert("text inspector shows fonts alignment and content without number", Visible("FontFamily") && Visible("FontSize") && Visible("TextAlignment") && Visible("Text") && !Visible("Number"));
             if (kind == ElementKind.Number)
-                assert("number inspector shows font family and number while badge geometry controls size", Visible("FontFamily") && !Visible("FontSize") && Visible("Number") && !Visible("Text") && !Visible("TextAlignment"));
+                assert("number inspector shows font family, size and signed number", Visible("FontFamily") && Visible("FontSize") && Visible("Number") && !Visible("Text") && !Visible("TextAlignment"));
         }
         assert("contextual property layout remains detached", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);
     }
