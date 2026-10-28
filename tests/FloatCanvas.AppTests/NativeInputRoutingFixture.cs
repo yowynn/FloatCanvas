@@ -811,7 +811,7 @@ internal static class NativeInputRoutingFixture
             bubble.ContextMenu.Items[2] is Separator&&bubble.ContextMenu.Items.OfType<MenuItem>().All(item=>item.Icon is FrameworkElement));
         detach.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Pump();
         check("detaching preserves content and undo while hiding the binding bubble",BoundPath(rebound) is null&&rebound.Document.Elements.Count==2&&rebound.UndoCount==beforeDetachUndo+1&&bubble.Visibility==Visibility.Collapsed);
-        check("detaching leaves the saved file unchanged and retains unbound content for history",Await(new ProjectStore().LoadAsync(projectPath)).Document.Elements.Count==1&&(bool)Invoke("NeedsNewCanvasConfirmation")!);
+        check("detaching leaves the saved file unchanged and retains unbound content for history",Await(new ProjectStore().LoadAsync(projectPath)).Document.Elements.Count==1&&Await((Task<bool>)Invoke("NeedsNewCanvasConfirmationAsync")!));
 
         object? Invoke(string name, params object[] values) => typeof(DesktopSession).GetMethod(name, PrivateInstance)!.Invoke(session, values);
         void SetField(string name, object value) => typeof(DesktopSession).GetField(name, PrivateInstance)!.SetValue(session, value);

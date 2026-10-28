@@ -1,4 +1,4 @@
-// Private Windows ABI from the standalone overlay research. See Docs/Research/System-Overlay.md.
+// Private Windows ABI from the standalone overlay research.
 // Owns the external-window/input backend. No target-process hooks.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

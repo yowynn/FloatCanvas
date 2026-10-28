@@ -4,6 +4,7 @@
 .artifacts/
 artifacts/
 dist/
+dist-validation/
 /.local/
 /.codex/
 *.user

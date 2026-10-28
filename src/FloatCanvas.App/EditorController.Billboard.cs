@@ -142,7 +142,7 @@ internal sealed partial class EditorController
         if (BillboardSelectionGuide is not { } guide || pointerScreen.DistanceTo(guide.Center) >= 12) return false;
         billboardSources = Session.SelectedElements().ToDictionary(e => e.Id, e => e.Clone());
         transforms = billboardSources.ToDictionary(e => e.Key, e => e.Value.Transform);
-        gesture = "billboard-height"; Session.BeginTransaction(L.Get("Editor.History.Transform")); return true;
+        gesture = "billboard-height"; BeginPointerTransaction(L.Get("Editor.History.Transform")); return true;
     }
     private bool MoveBillboardSelection(PointD p, OverlayModifiers modifiers)
     {

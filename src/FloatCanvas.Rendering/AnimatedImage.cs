@@ -12,12 +12,14 @@ internal sealed class AnimatedImage : IDisposable
     private readonly SKCodecFrameInfo[] frames;
     private readonly AnimationTimeline timeline;
     private SKBitmap? decode, prior;
-    private SKImage? image;
+    private SharedSceneImage? image;
     private int priorIndex = -1;
     internal int FrameIndex { get; private set; } = -1;
-    internal SKImage Image => image ?? throw new InvalidOperationException("Animation frame has not been selected.");
+    internal SharedSceneImage SharedImage => image ?? throw new InvalidOperationException("Animation frame has not been selected.");
+    internal bool HasImage => image is not null;
+    internal SKImage Image => SharedImage.Image;
     internal long CachedBytes => (long)data.Size + (decode is null ? 0 : (long)decode.ByteCount) +
-        (prior is null ? 0 : (long)prior.ByteCount) + (image is null ? 0 : (long)image.Width * image.Height * 4) +
+        (prior is null ? 0 : (long)prior.ByteCount) + (image is null ? 0 : (long)image.Image.Width * image.Image.Height * 4) +
         frames.LongLength * 64 + timeline.CachedBytes;
     internal TimeSpan? NextDelay { get; private set; }
 
@@ -53,7 +55,7 @@ internal sealed class AnimatedImage : IDisposable
         timeline = new(frames, codec.RepetitionCount);
     }
 
-    internal bool Select(TimeSpan time)
+    internal bool Select(TimeSpan time, CancellationToken cancellationToken = default)
     {
         var (index, delay) = timeline.Locate(time); NextDelay = delay;
         if (index == FrameIndex) return false;
@@ -69,11 +71,15 @@ internal sealed class AnimatedImage : IDisposable
             // first seek or rewind. Sequentially compose in the same two buffers; keep no frame list.
             selected = decode;
             int first = priorIndex >= 0 && priorIndex < index ? priorIndex + 1 : 0;
-            for (int frame = first; frame <= index; frame++) selected = DecodeFrame(frame, info);
+            for (int frame = first; frame <= index; frame++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                selected = DecodeFrame(frame, info);
+            }
         }
         using var raw = SKImage.FromBitmap(selected);
         var next = AssetImport.ApplyOrientation(raw, codec.EncodedOrigin);
-        image?.Dispose(); image = next; FrameIndex = index;
+        image?.Release(); image = new(next); FrameIndex = index;
         return true;
     }
 
@@ -93,5 +99,5 @@ internal sealed class AnimatedImage : IDisposable
         return selected;
     }
 
-    public void Dispose() { image?.Dispose(); decode?.Dispose(); prior?.Dispose(); codec.Dispose(); data.Dispose(); }
+    public void Dispose() { image?.Release(); decode?.Dispose(); prior?.Dispose(); codec.Dispose(); data.Dispose(); }
 }

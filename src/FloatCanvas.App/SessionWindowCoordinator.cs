@@ -18,20 +18,26 @@ internal sealed class SessionWindowCoordinator : IDisposable
 {
     private const string ResourceKey = "FloatCanvas.SessionWindowCoordinator";
     private const string ModalResourceKey = ResourceKey + ".Modal";
+    [ThreadStatic] private static SessionWindowCoordinator? current;
+    private readonly SessionWindowCoordinator? previous;
     private readonly OverlayHost host;
     private readonly Window toolbar;
+    private readonly Func<IDisposable?> beginNativeDialog;
     private readonly Dictionary<Window, Registration> windows = [];
     private readonly Dictionary<object, Action> popups = [];
     private readonly HashSet<Window> suspendedWindows = [];
+    private readonly List<Window> modalWindows = [];
     internal bool IsSuspendingWindows { get; private set; }
     private WindowDismissReason? destination;
     private long nextIntent, intentToken, intentSession;
     private bool disposed;
     private long activationOrder;
 
-    internal SessionWindowCoordinator(OverlayHost host, Window toolbar)
+    internal SessionWindowCoordinator(OverlayHost host, Window toolbar, Func<IDisposable?>? beginNativeDialog = null)
     {
         this.host = host; this.toolbar = toolbar;
+        this.beginNativeDialog = beginNativeDialog ?? (() => host.BeginNativeDialog());
+        previous = current; current = this;
         toolbar.Resources[ResourceKey] = this;
     }
 
@@ -148,6 +154,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         WindowTitles.Apply(window);
         var coordinator = Find(window);
         coordinator?.Register(window);
+        using var modalScope = coordinator?.EnterModal(window);
         long version = coordinator?.host.EditingSessionVersion ?? 0;
         var owner = window.Owner;
         // The native transition expires at the next control turn, even while ShowDialog pumps.
@@ -166,6 +173,23 @@ internal sealed class SessionWindowCoordinator : IDisposable
                 coordinator.ReturnToOwner(owner);
             }
         }
+    }
+
+    private IDisposable EnterModal(Window window)
+    {
+        modalWindows.Add(window);
+        return new Scope(() => modalWindows.Remove(window));
+    }
+
+    internal void CloseEditingModals(WindowDismissReason reason = WindowDismissReason.ModeExit)
+    {
+        if (modalWindows.Count == 0) return;
+        using var intent = DirectTransfer(reason);
+        using var transition = BeginTransition();
+        // Nested ShowDialog/DispatcherFrame loops own disabled HWNDs. Close children
+        // first so every finally can unwind and restore exactly its disabled owners.
+        foreach (var window in modalWindows.ToArray().Reverse())
+            if (window.IsVisible) window.Close();
     }
 
     internal static void SetModalResult(Window window, bool result)
@@ -234,13 +258,18 @@ internal sealed class SessionWindowCoordinator : IDisposable
     }
 
     internal static bool? ShowNativeModal(Window owner, Func<bool?> show)
+        => RunNativeModal(owner, show);
+
+    internal static T RunNativeModal<T>(Window? owner, Func<T> show)
     {
-        var coordinator = Find(owner);
+        // A fallback may have no usable WPF owner because constructing that owner
+        // failed. The active thread's coordinator still owns the input handoff.
+        var coordinator = Find(owner) ?? (current is { disposed: false } ? current : null);
         long version = coordinator?.host.EditingSessionVersion ?? 0;
-        using var native = coordinator?.host.BeginNativeDialog();
-        using var entering = coordinator?.BeginTransition();
         try
         {
+            using var native = coordinator?.beginNativeDialog();
+            using var entering = coordinator?.BeginTransition();
             return show();
         }
         finally
@@ -248,7 +277,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
             if (coordinator is not null && coordinator.host.EditingSessionVersion == version)
             {
                 using var returning = coordinator.BeginTransition();
-                coordinator.ActivateIfOwned(owner);
+                coordinator.ActivateIfOwned(owner ?? coordinator.toolbar);
             }
         }
     }
@@ -285,6 +314,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         IsSuspendingWindows = true;
         try
         {
+            CloseEditingModals();
             foreach (var registration in windows.Values.ToArray())
             {
                 if (!registration.Window.IsVisible || registration.Pinned is null) continue;
@@ -465,6 +495,8 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     public void Dispose()
     {
+        if (disposed) return;
+        CloseEditingModals(WindowDismissReason.Shutdown);
         disposed = true; ++nextIntent; intentToken = 0; destination = null;
         foreach (var window in windows.Keys.ToArray())
         {
@@ -472,7 +504,8 @@ internal sealed class SessionWindowCoordinator : IDisposable
             window.Activated -= OnActivated; window.GotKeyboardFocus -= OnKeyboardFocus;
             window.Resources.Remove(ResourceKey);
         }
-        windows.Clear(); popups.Clear(); suspendedWindows.Clear(); toolbar.Resources.Remove(ResourceKey);
+        windows.Clear(); popups.Clear(); suspendedWindows.Clear(); modalWindows.Clear(); toolbar.Resources.Remove(ResourceKey);
+        if (ReferenceEquals(current, this)) current = previous;
     }
 
     private sealed class Registration

@@ -12,15 +12,21 @@ internal sealed partial class DesktopSession
     private CanvasPreviewContext? _presentedCanvasContext;
     private bool _canvasControlsWereVisible;
     private readonly CanvasPreviewScene _previewScene = new();
-    private CanvasPreviewContext? _currentCanvasContext, _requestedCanvasContext;
-    private long _canvasContextEpoch, _requestedContentRevision = -1, _canvasInputSequence, _canvasControlsSequence;
-    private long _canvasDraftRevision, _requestedDraftRevision = -1;
-    private bool? _requestedPreferGpu;
+    private CanvasPreviewContext? _currentCanvasContext;
+    private long _canvasContextEpoch, _canvasInputSequence, _canvasControlsSequence;
+    private long _canvasDraftRevision;
+    private readonly CanvasPreviewRequestState _canvasPreviewRequests = new();
     private PreviewRasterFrame? _presentedPixels;
     private DispatcherOperation? _presentOperation;
     private readonly List<PixelBounds> _presentationDirty = [], _previewPixelDamage = [];
     private IReadOnlyList<PixelBounds> _presentedControls = [];
     private SceneDocument? _preparedHiddenPreview;
+    private CanvasPreviewFrame? _submittingCanvasFrame;
+    private CanvasPreviewContext? _submittingCanvasContext, _failedPresentationContext;
+    private int _submissionDirtyCount, _presentationFailures;
+    private long _failedPresentationRevision;
+    private bool _presentationUncertain;
+    private DispatcherOperation? _hiddenPresentationRecovery;
 
     private CanvasPreviewContext CurrentPreviewContext()
     {
@@ -37,11 +43,17 @@ internal sealed partial class DesktopSession
     {
         var context = CurrentPreviewContext();
         if (pixelsOnly) _previewPixelDamage.AddRange(pixelDamage ?? _host.Monitors.Select(monitor => monitor.Bounds));
-        if (!pixelsOnly && _requestedCanvasContext == context && _requestedContentRevision == Active.PreviewRevision &&
-            _requestedDraftRevision == _canvasDraftRevision && _requestedPreferGpu == _settings.PreferGpuAcceleration) return;
-        _requestedCanvasContext = context; _requestedContentRevision = Active.PreviewRevision;
-        _requestedDraftRevision = _canvasDraftRevision; _requestedPreferGpu = _settings.PreferGpuAcceleration;
+        if (!_canvasPreviewRequests.TryRequest(new(context, Active.PreviewRevision, _canvasDraftRevision, _settings.PreferGpuAcceleration),
+            _canvasPreview.RequestedSequence + 1, force: pixelsOnly)) return;
         _canvasPreview.Request();
+    }
+
+    private void CanvasPreviewRequestFailed(CanvasPreviewContext? context, long sequence, Exception error)
+    {
+        _diagnostics.Write("Rendering.PreviewFailed", new { Sequence = sequence }, exception: error);
+        if (_disposed || !_canvasPreviewRequests.Fail(sequence, out bool retry)) return;
+        UpdateStatus(error.Message);
+        if (retry) RequestRender();
     }
 
     private bool CanvasControlsVisible() => _host.IsReceivingDrop || _host.IsEditing &&
@@ -96,7 +108,7 @@ internal sealed partial class DesktopSession
     private void QueueCanvasPresentation(IEnumerable<PixelBounds> regions)
     {
         if (_disposed) return;
-        _presentationDirty.AddRange(regions.Where(region => region.Width > 0 && region.Height > 0));
+        AddPresentationDamage(regions);
         if (_presentationDirty.Count == 0 || _presentOperation is { Status: DispatcherOperationStatus.Pending }) return;
         _presentOperation = _app.Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(PresentCanvas));
     }
@@ -108,17 +120,127 @@ internal sealed partial class DesktopSession
         var context = CurrentPreviewContext();
         var frame = _canvasPreview.Frame;
         bool current = frame is not null && frame.Context.HasSameContent(context);
-        if (_presentedCanvasContext != context) _presentationDirty.AddRange(_host.Monitors.Select(monitor => monitor.Bounds));
-        if (current) _presentationDirty.AddRange(frame!.Pixels.DamageComparedTo(_presentedPixels));
-        var damage = _presentationDirty.ToArray(); _presentationDirty.Clear();
+        if (_presentationUncertain || _presentedCanvasContext != context) AddPresentationDamage(_host.Monitors.Select(monitor => monitor.Bounds));
+        if (current) AddPresentationDamage(frame!.Pixels.DamageComparedTo(_presentedPixels));
+        var damage = _presentationDirty.ToArray();
         if (damage.Length == 0) return;
         _host.SetGpuWorkload(false);
-        _host.SetPresentationStamp(current ? frame!.Sequence : 0, current ? frame!.InputSequence : 0, ++_canvasControlsSequence);
-        _host.RenderRegions(damage);
-        _presentedPixels?.Dispose(); _presentedPixels = current ? frame!.Pixels.Retain() : null;
-        _presentedCanvasContext = context; _presentedControls = CanvasControlRegions();
-        _canvasControlsWereVisible = _presentedControls.Count > 0;
-        _host.NotifyInputProgress();
+        try { if (!_host.TryRenderRegions(damage)) ResumeHiddenCanvasPicking(); }
+        catch (Exception error)
+        {
+            // CompleteCanvasSubmission already retained full damage and scheduled the
+            // bounded retry. A native failure must not open a recursive WPF error dialog.
+            _diagnostics.Write("Rendering.SubmissionFailed", exception: error);
+        }
+    }
+
+    private void ResumeHiddenCanvasPicking()
+    {
+        if (_host.IsVisible || _host.IsPreviewVisible) return;
+        // Cancelling a failed new draft can hide the final preview HWND. No visible
+        // content remains to reconcile, and the next pen down must be able to start.
+        _editor.ClearPresentedScene(); _editor.ResumePresentedPicking(); _presentationUncertain = false;
+        if (_failedPresentationContext is not null) UpdateStatus(FloatCanvas.Localization.AppText.Get("Rendering.PresentationRecovered"));
+    }
+
+    private void ReconcileHiddenPresentation()
+    {
+        if (_host.IsVisible || _hiddenPresentationRecovery is { Status: DispatcherOperationStatus.Pending }) return;
+        _hiddenPresentationRecovery = _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            _hiddenPresentationRecovery = null;
+            if (_disposed || _host.IsVisible) return;
+            // A failed first draft can reenter UpdateHiddenCanvasState while its
+            // outer call still owns that guard. Recompute after the outer call unwinds.
+            UpdateHiddenCanvasState(); ResumeHiddenCanvasPicking();
+        }));
+    }
+
+    private void AddPresentationDamage(IEnumerable<PixelBounds> regions)
+    {
+        foreach (var region in regions)
+        {
+            if (region.Width <= 0 || region.Height <= 0) continue;
+            _presentationDirty.Add(region);
+            if (_presentationDirty.Count <= 128) continue;
+            _presentationDirty.Clear(); _presentationDirty.AddRange(_host.Monitors.Select(monitor => monitor.Bounds));
+            return;
+        }
+    }
+
+    private void BeginCanvasSubmission(OverlayFrameRequest request)
+    {
+        request.FailureHandler = error => _diagnostics.Write("Rendering.SubmissionFailed", exception: error);
+        var context = CurrentPreviewContext();
+        var frame = _canvasPreview.Frame;
+        _submittingCanvasContext = context;
+        _submittingCanvasFrame = null;
+        if (frame is not null && frame.Context.HasSameContent(context))
+        {
+            var pixels = frame.Pixels.Retain();
+            try { _submittingCanvasFrame = frame with { Pixels = pixels, PickingImages = frame.PickingImages?.Retain() }; }
+            catch { pixels.Dispose(); throw; }
+        }
+        _submissionDirtyCount = _presentationDirty.Count;
+        if (_presentationUncertain || _presentedCanvasContext != context) request.DirtyRegions = null;
+        else if (request.DirtyRegions is { } dirty)
+        {
+            var pixels = _submittingCanvasFrame?.Pixels.DamageComparedTo(_presentedPixels) ?? [];
+            request.DirtyRegions = dirty.Concat(_presentationDirty).Concat(pixels).ToArray();
+        }
+        _host.SetPresentationStamp(_submittingCanvasFrame?.Sequence ?? 0, _submittingCanvasFrame?.InputSequence ?? 0, ++_canvasControlsSequence);
+    }
+
+    private void CompleteCanvasSubmission(OverlayFrameTiming timing)
+    {
+        var frame = _submittingCanvasFrame;
+        var context = _submittingCanvasContext;
+        _submittingCanvasFrame = null; _submittingCanvasContext = null;
+        try
+        {
+            if (_disposed || context is null) return;
+            if (!timing.Succeeded || context != CurrentPreviewContext())
+            {
+                _presentationUncertain = true;
+                _editor.SuspendPresentedPicking();
+                ResumeHiddenCanvasPicking();
+                ReconcileHiddenPresentation();
+                AddPresentationDamage(_host.Monitors.Select(monitor => monitor.Bounds));
+                _animationTimer?.Stop();
+                long revision = frame?.ContentRevision ?? Active.PreviewRevision;
+                if (_failedPresentationContext != context || _failedPresentationRevision != revision)
+                { _failedPresentationContext = context; _failedPresentationRevision = revision; _presentationFailures = 0; }
+                bool retry = ++_presentationFailures == 1;
+                UpdateStatus(FloatCanvas.Localization.AppText.Get(retry ? "Rendering.PresentationRetrying" : "Rendering.PresentationFailed"));
+                if (retry) QueueCanvasPresentation(_host.Monitors.Select(monitor => monitor.Bounds));
+                return;
+            }
+            if (timing.Outputs.Count == 0) return;
+            _presentationDirty.RemoveRange(0, Math.Min(_submissionDirtyCount, _presentationDirty.Count));
+            bool reuseFrame = frame is not null && !context.Hidden && !_presentationUncertain &&
+                _presentedCanvasContext == context && _canvasPreviewRequests.PresentedSequence == frame.Sequence;
+            if (frame is not null && !context.Hidden && frame.PickingDocument is { } picking)
+            {
+                if (!reuseFrame)
+                {
+                    _editor.ApplyPresentedScene(picking, frame.PickingImages, frame.AnimationTime, frame.PickingResources);
+                    _canvasPreviewRequests.Presented(frame.Sequence);
+                    _presentationUncertain = false;
+                    ApplyAnimationSchedule(frame.Animation);
+                }
+                if (_failedPresentationContext is not null) UpdateStatus(FloatCanvas.Localization.AppText.Get("Rendering.PresentationRecovered"));
+                _presentationUncertain = false;
+            }
+            else if (context.Hidden) { _editor.ClearPresentedScene(); _editor.ResumePresentedPicking(); _presentationUncertain = false; }
+            else { _editor.SuspendPresentedPicking(); _presentationUncertain = true; }
+            _presentationFailures = 0; _failedPresentationContext = null;
+            if (!reuseFrame || _presentedPixels is null)
+            { _presentedPixels?.Dispose(); _presentedPixels = frame?.Pixels.Retain(); }
+            _presentedCanvasContext = context; _presentedControls = CanvasControlRegions();
+            _canvasControlsWereVisible = _presentedControls.Count > 0;
+            _host.NotifyInputProgress();
+        }
+        finally { frame?.Dispose(); }
     }
 
     private async ValueTask<CanvasPreviewSnapshot> CaptureCanvasPreviewAsync()
@@ -185,9 +307,12 @@ internal sealed partial class DesktopSession
         if (_canvasPreview.Frame?.Context == CurrentPreviewContext())
         {
             ApplyAnimationSchedule(frame.Animation);
-            QueueCanvasPresentation(_presentedCanvasContext == frame.Context
-                ? frame.Pixels.DamageComparedTo(_presentedPixels)
-                : _host.Monitors.Select(monitor => monitor.Bounds));
+            // An already-running animation may complete after a failed publication.
+            // It is not a new recovery intent and must not restart the retry budget.
+            if (!_presentationUncertain || _failedPresentationContext != frame.Context || _failedPresentationRevision != frame.ContentRevision)
+                QueueCanvasPresentation(_presentedCanvasContext == frame.Context
+                    ? frame.Pixels.DamageComparedTo(_presentedPixels)
+                    : _host.Monitors.Select(monitor => monitor.Bounds));
         }
         PreviewBackendChanged?.Invoke();
     }

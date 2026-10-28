@@ -124,8 +124,7 @@ public sealed partial class OverlayHost
             nint after = peer.Handle;
             foreach (var row in after != 0 ? stack : stack.Reverse())
             {
-                const uint flags = 0x213; // NOSIZE | NOMOVE | NOACTIVATE | NOOWNERZORDER; no SHOWWINDOW.
-                batch = DeferWindowPos(batch, row.Handle, after != 0 ? after : HwndTopmost, 0, 0, 0, 0, flags);
+                batch = DeferWindowPos(batch, row.Handle, after != 0 ? after : HwndTopmost, 0, 0, 0, 0, ToolWindowRaiseFlags);
                 // A tool can close between enumeration and the batch. DeferWindowPos frees
                 // the batch on failure; leave input/capture and the normal error UI untouched.
                 if (batch == 0) return;

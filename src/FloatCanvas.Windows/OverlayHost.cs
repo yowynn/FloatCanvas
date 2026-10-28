@@ -77,6 +77,8 @@ public sealed partial class OverlayHost : IDisposable
     public double LastRenderMilliseconds { get; private set; }
     /// <summary>Optional per-call timing. No timing records or output collections are allocated without a subscriber.</summary>
     public event Action<OverlayFrameTiming>? FrameSubmitted;
+    /// <summary>Runs once before outputs are drawn, under the nonreentrant render guard.</summary>
+    public event Action<OverlayFrameRequest>? FrameRendering;
     /// <summary>Changes when an external foreground choice invalidates an in-flight edit request.</summary>
     public long ForegroundLossVersion { get; private set; }
 
@@ -257,7 +259,7 @@ public sealed partial class OverlayHost : IDisposable
             if (IsVisible) ShowWindowPreservingZOrder(pair.Display.Handle);
             else ShowWindow(pair.Display.Handle, 0);
             ShowWindow(pair.Input.Handle, 8);
-            SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, 0x13); // no move/size/activate
+            SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, ToolWindowRaiseFlags);
         }
         if (!ActivateInputAtCursor())
         {
@@ -382,6 +384,10 @@ public sealed partial class OverlayHost : IDisposable
     public void RenderRegions(IReadOnlyList<PixelBounds> dirtyRegions)
         => RenderCore(dirtyRegions, retained: true);
 
+    /// <summary>Returns true only if this call successfully submitted pixels to an output.</summary>
+    public bool TryRenderRegions(IReadOnlyList<PixelBounds> dirtyRegions)
+        => RenderCore(dirtyRegions, retained: true);
+
     /// <summary>Total area of the per-output native dirty bounds in the most recent call.</summary>
     public long LastRenderedPixelCount { get; private set; }
     private (long Content, long Input, long Controls) _presentationStamp;
@@ -394,20 +400,25 @@ public sealed partial class OverlayHost : IDisposable
         _presentationStamp = (contentSequence, inputSequence, controlsSequence);
     }
 
-    private void RenderCore(IReadOnlyList<PixelBounds>? dirtyRegions, bool retained)
+    private bool RenderCore(IReadOnlyList<PixelBounds>? dirtyRegions, bool retained)
     {
         CheckThread();
-        if ((!IsVisible && !IsPreviewVisible) || _rendering || _systemScreenshot is not null) return;
+        if ((!IsVisible && !IsPreviewVisible) || _rendering || _systemScreenshot is not null) return false;
         _rendering = true;
         var started = Stopwatch.GetTimestamp();
         var observer = FrameSubmitted;
         var stamp = _presentationStamp;
         List<OverlayOutputTiming>? outputs = observer is null ? null : new(_windows.Count);
         bool succeeded = false;
+        OverlayFrameRequest? request = null;
         var completedBackend = OverlayRenderBackend.Cpu;
         LastRenderedPixelCount = 0;
         try
         {
+            request = new OverlayFrameRequest(dirtyRegions);
+            FrameRendering?.Invoke(request);
+            dirtyRegions = request.DirtyRegions;
+            stamp = _presentationStamp;
             using var dpi = new ThreadDpiAwarenessScope(Capabilities);
             // Completed worker pixels and current controls are composed into retained CPU DIBs.
             var gpu = retained ? null : PrepareGpuRenderer();
@@ -430,13 +441,22 @@ public sealed partial class OverlayHost : IDisposable
             LastCompletedRenderBackend = completedBackend;
             succeeded = true;
         }
+        catch (Exception error) when (request?.FailureHandler is not null)
+        {
+            request.FailureHandler(error);
+        }
         finally
         {
             long completed = Stopwatch.GetTimestamp();
             LastRenderMilliseconds = Stopwatch.GetElapsedTime(started, completed).TotalMilliseconds;
-            _rendering = false;
-            if (observer is not null) observer(new(started, completed, succeeded, outputs!.AsReadOnly(), stamp.Content, stamp.Input, stamp.Controls));
+            try
+            {
+                if (observer is not null) observer(new(started, completed, succeeded, outputs!.AsReadOnly(), stamp.Content, stamp.Input, stamp.Controls));
+            }
+            finally { _rendering = false; }
         }
+
+        return succeeded && LastRenderedPixelCount > 0;
 
         void RenderOutputs(GpuRenderContext? gpu)
         {
@@ -607,7 +627,7 @@ public sealed partial class OverlayHost : IDisposable
                 // Establish the full stack while the new windows are hidden, so even the
                 // first displayed frame stays below input and the owner's tool windows.
                 foreach (var pair in _windows)
-                    SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, 0x13);
+                    SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, ToolWindowRaiseFlags);
             }
             InputActivated?.Invoke();
             foreach (var pair in _windows)

@@ -10,9 +10,15 @@ internal static class AppDialog
 {
     public static MessageBoxResult Show(Window? owner, string message, string title,
         MessageBoxButton buttons = MessageBoxButton.OK, MessageBoxImage image = MessageBoxImage.None, string? yesKey = null, string? noKey = null)
+        => ShowCore(owner, message, title, buttons, image,
+            () => Create(owner, message, title, buttons, image, yesKey, noKey), MessageBoxNative);
+
+    internal static MessageBoxResult ShowCore(Window? owner, string message, string title,
+        MessageBoxButton buttons, MessageBoxImage image, Func<(Window Window, Func<MessageBoxResult> Result)> create,
+        Func<nint, string, string, uint, int> showNative)
     {
         (Window Window, Func<MessageBoxResult> Result) dialog;
-        try { dialog = Create(owner, message, title, buttons, image, yesKey, noKey); }
+        try { dialog = create(); }
         catch (Exception ex)
         {
             // Construction can fail while displaying an earlier startup failure.
@@ -21,7 +27,8 @@ internal static class AppDialog
             System.Diagnostics.Debug.WriteLine(ex);
             bool editing = SessionWindowCoordinator.IsEditingWindow(owner);
             nint handle = owner is null || (!editing && !OverlayWindowScope.IsRegularWindow(owner)) ? 0 : new System.Windows.Interop.WindowInteropHelper(owner).Handle;
-            return (MessageBoxResult)MessageBoxNative(handle, message, WindowTitles.Format(title, !editing), NativeFallbackFlags(handle, buttons, image, editing));
+            return SessionWindowCoordinator.RunNativeModal(owner, () =>
+                (MessageBoxResult)showNative(handle, message, WindowTitles.Format(title, !editing), NativeFallbackFlags(handle, buttons, image, editing)));
         }
         SessionWindowCoordinator.ShowModal(dialog.Window);
         return dialog.Result();

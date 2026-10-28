@@ -11,6 +11,7 @@ using System.Windows.Interop;
 using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
+using FloatCanvas.Windows;
 
 namespace FloatCanvas.App;
 
@@ -190,23 +191,28 @@ internal sealed class OverlayPopupWindow : IDisposable
         if(measuredSize is null)child.Measure(MeasurementLimit);
         var size=measuredSize??child.DesiredSize;
         Point position=target?.PointToScreen(new Point())??CursorPosition();
-        double scale=target is Visual visual?VisualTreeHelper.GetDpi(visual).DpiScaleX:1;
-        if(placement==PlacementMode.Bottom && target is FrameworkElement element) position.Y+=element.ActualHeight*scale;
-        if(placement==PlacementMode.Right && target is FrameworkElement right) position.X+=right.ActualWidth*scale;
+        Point monitorAnchor=target is FrameworkElement monitorTarget
+            ? monitorTarget.PointToScreen(new(monitorTarget.ActualWidth/2,monitorTarget.ActualHeight/2)) : position;
+        var dpi=target is Visual visual?VisualTreeHelper.GetDpi(visual):new DpiScale(1,1);
+        double scaleX=dpi.DpiScaleX,scaleY=dpi.DpiScaleY;
+        if(placement==PlacementMode.Bottom && target is FrameworkElement element) position.Y+=element.ActualHeight*scaleY;
+        if(placement==PlacementMode.Right && target is FrameworkElement right) position.X+=right.ActualWidth*scaleX;
         if(placement==PlacementMode.MousePoint) position=CursorPosition();
+        Point[] candidates=[position];
         if(placement==PlacementMode.Custom && custom is not null && target is FrameworkElement anchor)
         {
             var choices=custom(size,anchor.RenderSize,new Point(offsetX,offsetY));
-            if(choices.Length!=0) position=anchor.PointToScreen(choices[0].Point);
+            if(choices.Length!=0) candidates=choices.Select(choice=>anchor.PointToScreen(choice.Point)).ToArray();
         }
-        var area=System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)position.X,(int)position.Y)).WorkingArea;
-        position.X=Math.Clamp(position.X,area.Left,Math.Max(area.Left,area.Right-size.Width*scale));
-        position.Y=Math.Clamp(position.Y,area.Top,Math.Max(area.Top,area.Bottom-size.Height*scale));
+        if(placement==PlacementMode.MousePoint) monitorAnchor=position;
+        var area=System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)monitorAnchor.X,(int)monitorAnchor.Y)).WorkingArea;
+        int width=Math.Max(1,(int)Math.Ceiling(size.Width*scaleX)),height=Math.Max(1,(int)Math.Ceiling(size.Height*scaleY));
+        position=OverlayPopupPlacement.Place(candidates,new Size(width,height),new Rect(area.Left,area.Top,area.Width,area.Height),new Vector(offsetX*scaleX,offsetY*scaleY));
         source=new HwndSource(new HwndSourceParameters("FloatCanvas.Popup")
         {
             ParentWindow=scope.Owner,WindowStyle=unchecked((int)0x80000000),ExtendedWindowStyle=0x08000088|(hitTestVisible?0:0x20),
-            UsesPerPixelOpacity=true,PositionX=(int)Math.Round(position.X+offsetX*scale),PositionY=(int)Math.Round(position.Y+offsetY*scale),
-            Width=Math.Max(1,(int)Math.Ceiling(size.Width*scale)),Height=Math.Max(1,(int)Math.Ceiling(size.Height*scale))
+            UsesPerPixelOpacity=true,PositionX=(int)Math.Round(position.X),PositionY=(int)Math.Round(position.Y),
+            Width=width,Height=height
         });
         source.CompositionTarget.BackgroundColor=Colors.Transparent;
         source.RootVisual=child;
@@ -234,8 +240,7 @@ internal sealed class OverlayPopupWindow : IDisposable
     }
     internal static void RaiseWindow(nint handle)
     {
-        if(IsWindowVisible(handle)&&!SetWindowPos(handle,-1,0,0,0,0,0x213))
-            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        if(IsWindowVisible(handle))OverlayCoordinates.RaiseToolWindow(handle);
     }
     internal void Focus(UIElement element)
     {SetActiveWindow(source.Handle);SetFocus(source.Handle);element.Focus();Keyboard.Focus(element);}
@@ -305,7 +310,6 @@ internal sealed class OverlayPopupWindow : IDisposable
     [DllImport("user32.dll")] private static extern nint GetFocus();
     [DllImport("user32.dll")] private static extern bool ShowWindow(nint hwnd,int command);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
-    [DllImport("user32.dll",SetLastError=true)] private static extern bool SetWindowPos(nint hwnd,nint after,int x,int y,int width,int height,uint flags);
 }
 
 internal sealed class OverlayContextMenu : ContextMenu

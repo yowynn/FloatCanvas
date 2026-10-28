@@ -14,16 +14,20 @@ internal sealed class NewCanvasButton : Button
 {
     private readonly Func<bool> canCreate;
     private readonly Func<Task> create;
-    private readonly Func<bool> needsConfirmation;
+    private readonly Func<Task<bool>> needsConfirmation;
     private bool executing;
+    private long confirmationEpoch;
     internal bool IsConfirming { get; private set; }
     internal Popup ConfirmationPopup { get; }
     private readonly PopupHandle confirmationDisplay;
 
     internal NewCanvasButton(Func<bool> canCreate, Func<Task> create,Func<bool>? needsConfirmation=null)
+        : this(canCreate, create, () => Task.FromResult(needsConfirmation?.Invoke() ?? true)) { }
+
+    internal NewCanvasButton(Func<bool> canCreate, Func<Task> create, Func<Task<bool>> needsConfirmation)
     {
         this.canCreate = canCreate; this.create = create;
-        this.needsConfirmation=needsConfirmation??(()=>true);
+        this.needsConfirmation=needsConfirmation;
         Tag = "new-canvas"; Width = MinWidth = Height = MinHeight = 26;
         Margin = new Thickness(2, 0, 2, 0); Padding = new Thickness(3);
         BorderThickness = new Thickness(1); BorderBrush = Brushes.Transparent;
@@ -59,22 +63,28 @@ internal sealed class NewCanvasButton : Button
     {
         if (executing) return;
         if (!canCreate()) { CancelConfirmation(); return; }
-        if (!IsConfirming && needsConfirmation())
+        executing = true;
+        long epoch = confirmationEpoch;
+        try
         {
-            IsConfirming = true; Refresh();
-            if (IsLoaded)
+            bool confirm = !IsConfirming && await needsConfirmation();
+            if (epoch != confirmationEpoch || !canCreate()) return;
+            if (confirm)
             {
-                confirmationDisplay.IsOpen = true;
+                IsConfirming = true; Refresh();
+                if (IsLoaded) confirmationDisplay.IsOpen = true;
+                return;
             }
-            return;
+            CancelConfirmation(); IsEnabled = false;
+            await create();
         }
-        CancelConfirmation(); executing = true; IsEnabled = false;
-        try { await create(); }
+        catch (OperationCanceledException) { CancelConfirmation(); }
         finally { executing = false; IsEnabled = true; }
     }
 
     internal void CancelConfirmation()
     {
+        confirmationEpoch++;
         if (!IsConfirming) return;
         IsConfirming = false; confirmationDisplay.IsOpen = false; Refresh();
     }

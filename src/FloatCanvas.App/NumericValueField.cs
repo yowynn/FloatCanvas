@@ -187,7 +187,15 @@ internal sealed class NumericValueField : UserControl
         railGesture = false;
         if (owner is not null) owner.Deactivated -= OnDeactivated;
         owner = null;
-        try { if (!commit) Publish(gestureStart); }
+        try
+        {
+            if (!commit)
+            {
+                bool changed = value != gestureStart;
+                SetModelValue(gestureStart);
+                if (changed) ValueChanged?.Invoke(gestureStart);
+            }
+        }
         finally
         {
             IsInteracting = false;
@@ -235,7 +243,7 @@ internal sealed class NumericValueField : UserControl
         AutomationProperties.SetItemStatus(Slider, outside.Text.Length == 0 ? "" : Format(next));
     }
 
-    private static string Format(double next) => next.ToString(next != 0 && Math.Abs(next) < .001 ? "G" : "0.###", CultureInfo.CurrentCulture);
+    private static string Format(double next) => next.ToString("G", CultureInfo.CurrentCulture);
 
     internal double Value
     {
@@ -243,14 +251,23 @@ internal sealed class NumericValueField : UserControl
         set
         {
             if (!double.IsFinite(value) || value < minimum || value > maximum || (integerOnly && value != Math.Truncate(value))) throw new ArgumentOutOfRangeException(nameof(value));
-            synchronizing = true;
-            try { invalidDraft = hasPlaceholder = false; this.value = value; Input.Text = Format(value); Slider.Value = Math.Clamp(value, Slider.Minimum, Slider.Maximum); }
-            finally { synchronizing = false; }
-            RefreshRange(value);
+            SetModelValue(value);
         }
+    }
+
+    // Loading an already validated document must not clamp it to the range for
+    // creating new edits. Retain exact text/value until the user changes it.
+    internal void SetModelValue(double modelValue)
+    {
+        if (!double.IsFinite(modelValue)) throw new ArgumentOutOfRangeException(nameof(modelValue));
+        synchronizing = true;
+        try { invalidDraft = hasPlaceholder = false; value = modelValue; Input.Text = Format(modelValue); Slider.Value = Math.Clamp(modelValue, Slider.Minimum, Slider.Maximum); }
+        finally { synchronizing = false; }
+        RefreshRange(modelValue);
     }
 
     internal bool TryGetValue(out double result) =>
         (double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out result) || double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out result)) &&
-        double.IsFinite(result) && result >= minimum && result <= maximum && (!integerOnly || result == Math.Truncate(result));
+        double.IsFinite(result) && ((result >= minimum && result <= maximum && (!integerOnly || result == Math.Truncate(result))) ||
+            !invalidDraft && Input.Text == Format(value) && result == value);
 }

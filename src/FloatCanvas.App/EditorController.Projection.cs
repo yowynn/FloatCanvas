@@ -87,27 +87,64 @@ internal sealed partial class EditorController
     private CanvasElement? HitTestScreen(PointD point, double tolerance)
     {
         if (CanvasContentHidden) return null;
-        if (!CanvasDepthOrder.IsEnabled(Session.Document)) return Session.Document.Elements
-            .LastOrDefault(element => !element.Locked && ElementHitTestScreen(element, point, tolerance));
-        return SelectionRenderer.PickDepth(Session.Document, Session.Assets, point, tolerance);
+        if (_pointPreflight is { } preflight && preflight.Point == point && preflight.Hits.TryGetValue(tolerance, out var id))
+            return id is null ? null : Session.Document.Elements.FirstOrDefault(e => e.Id == id && e.Visible && !e.Locked);
+        var document = PickingDocument;
+        var hit = !CanvasDepthOrder.IsEnabled(document) ? document.Elements
+            .LastOrDefault(element => !element.Locked && ElementHitTestScreenCore(document, element, point, tolerance)) :
+            SelectionRenderer.PickDepth(document, PickingAssets, point, tolerance);
+        // The shown snapshot may lag a removal. Never resurrect or mutate its frozen nodes.
+        return hit is null ? null : Session.Document.Elements.FirstOrDefault(e => e.Id == hit.Id && e.Visible && !e.Locked);
     }
 
     private bool ElementHitTestScreen(CanvasElement element, PointD point, double tolerance)
     {
-        var mapping = CanvasMapping.Create(Session.Document);
+        if (_pointPreflight is { } preflight && preflight.Point == point && preflight.Ink.TryGetValue((element.Id, tolerance), out bool ink)) return ink;
+        var document = PickingDocument;
+        var shown = document.Elements.FirstOrDefault(e => e.Id == element.Id);
+        return shown is not null && ElementHitTestScreenCore(document, shown, point, tolerance);
+    }
+
+    private bool ElementHitTestScreenCore(SceneDocument document, CanvasElement element, PointD point, double tolerance)
+        => ElementHitTestScreenCore(document, PickingAssets, SelectionRenderer, element, point, tolerance);
+
+    private static bool ElementHitTestScreenCore(SceneDocument document, AssetLibrary assets, SceneRenderer renderer,
+        CanvasElement element, PointD point, double tolerance, CancellationToken cancellationToken = default)
+    {
+        var mapping = CanvasMapping.Create(document);
         return (!element.IsBillboard || mapping.IsElementSafe(element)) &&
             ElementGeometry.HitTestProjected(element, point, mapping.PlaneToScreen, tolerance) &&
-            SelectionRenderer.IntersectsElementInk(Session.Document, Session.Assets, element,
-                new(point.X - Math.Max(.5, tolerance), point.Y - Math.Max(.5, tolerance), Math.Max(1, tolerance * 2), Math.Max(1, tolerance * 2)));
+            renderer.IntersectsElementInk(document, assets, element,
+                new(point.X - Math.Max(.5, tolerance), point.Y - Math.Max(.5, tolerance), Math.Max(1, tolerance * 2), Math.Max(1, tolerance * 2)), cancellationToken);
     }
 
     private void SelectScreenRectangle(RectD rectangle, bool additive)
     {
         if (CanvasContentHidden) return;
-        var mapping = CanvasMapping.Create(Session.Document);
-        var selected = additive ? new HashSet<Guid>(Session.Selection) : [];
-        foreach (var element in Session.Document.Elements.Where(e => e.Visible && !e.Locked))
+        if (BackgroundPickingEnabled)
         {
+            PendingPicking = SelectScreenRectangleAsync(rectangle, additive);
+            return;
+        }
+        ApplyRectangleHits(ScreenRectangleHits(PickingDocument, PickingAssets, SelectionRenderer, rectangle), additive, Session.Selection.ToArray());
+    }
+
+    private void ApplyRectangleHits(IEnumerable<Guid> hits, bool additive, IEnumerable<Guid> previous)
+    {
+        var selected = additive ? new HashSet<Guid>(previous) : [];
+        foreach (var id in hits)
+            if (Session.Document.Elements.Any(e => e.Id == id && e.Visible && !e.Locked)) selected.UnionWith(Session.SelectionUnitIds(id));
+        Session.SetSelection(selected);
+    }
+
+    private static IReadOnlyList<Guid> ScreenRectangleHits(SceneDocument document, AssetLibrary assets, SceneRenderer renderer,
+        RectD rectangle, CancellationToken cancellationToken = default)
+    {
+        var mapping = CanvasMapping.Create(document);
+        var selected = new List<Guid>();
+        foreach (var element in document.Elements.Where(e => e.Visible && !e.Locked))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             if (element.IsBillboard && !mapping.IsElementSafe(element)) continue;
             if (!mapping.ProjectedBounds(element).Intersects(rectangle)) continue;
             // The box is a screen gesture. Test the projected contour, rather than the
@@ -126,10 +163,9 @@ internal sealed partial class EditorController
                 intersects = ElementGeometry.GetStyledArrowHeads(element).Any(head =>
                     ProjectedContourIntersectsRectangle(head.Points, transform, rectangle, true) ||
                     head.Style == ArrowHeadStyle.Open && ProjectedStrokeIntersectsRectangle(head.Points, transform, rectangle, false, element.Style.StrokeWidth));
-            if (intersects && SelectionRenderer.IntersectsElementInk(Session.Document, Session.Assets, element, rectangle))
-                selected.UnionWith(Session.SelectionUnitIds(element.Id));
+            if (intersects && renderer.IntersectsElementInk(document, assets, element, rectangle, cancellationToken)) selected.Add(element.Id);
         }
-        Session.SetSelection(selected);
+        return selected;
     }
 
     private static bool ProjectedContourIntersectsRectangle(IReadOnlyList<PointD> points, Projective2D transform,

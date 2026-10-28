@@ -31,6 +31,12 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--color-robustness-only")) { ColorRobustnessTests.Run(Assert); return 0; }
+            if (args.Contains("--window-robustness-only")) { WindowRobustnessTests.RunNative(Assert); return 0; }
+            if (args.Contains("--native-presentation-lifecycle-only")) { NativePresentationLifecycleTests.Run(Assert); return 0; }
+            if (args.Contains("--archive-worker-only")) { ArchiveWorkerTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--preview-request-recovery-only")) { PreviewRequestRecoveryTests.Run(Assert); return 0; }
+            if (args.Contains("--presented-picking-only")) { PresentedPickingTests.Run(Assert); return 0; }
             if (args.Contains("--segmented-choices-only")) { SegmentedChoiceTests.Run(Assert, args.SkipWhile(a => a != "--segmented-choices-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--property-changes-only")) { PropertyChangeRegionTests.Run(Assert, args.SkipWhile(a => a != "--property-changes-only").Skip(1).FirstOrDefault()); return 0; }
             if (args is ["--color-modal-receiver", var receiverOutput]) { ColorModalReceiver.Run(receiverOutput); return 0; }
@@ -139,6 +145,8 @@ internal static class Program
             if (args.Contains("--brush-preview-only")) { BrushPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--preview-animation-schedule-only")) { PreviewAnimationScheduleTests.Run(Assert); return 0; }
             if (args.Contains("--unified-preview-performance-only")) { UnifiedPreviewPerformanceTests.Run(Assert); return 0; }
+            if (args.Contains("--unified-preview-blocked-only")) { UnifiedPreviewPerformanceTests.RunBlockedOnly(Assert); return 0; }
+            if (args.Contains("--unified-preview-blocked-enhanced-only")) { UnifiedPreviewPerformanceTests.RunBlockedOnly(Assert, true); return 0; }
             if (args.Contains("--unified-preview-correctness-only")) { UnifiedPreviewCorrectnessTests.Run(Assert); return 0; }
             if (args.Contains("--unified-preview-enhanced-performance-only")) { UnifiedPreviewPerformanceTests.Run(Assert, true); return 0; }
             if (args.Contains("--async-preview-freeze-only")) { AsyncPreviewFreezeTests.Run(Assert); return 0; }
@@ -295,6 +303,11 @@ internal static class Program
             else AvatarMenuGestureTests.Run(Assert);
             PropertyVisualTests.Run(Assert);
             SegmentedChoiceTests.Run(Assert);
+            ColorRobustnessTests.Run(Assert);
+            WindowRobustnessTests.Run(Assert);
+            PreviewRequestRecoveryTests.Run(Assert);
+            PresentedPickingTests.Run(Assert);
+            ArchiveWorkerTests.RunAsync(Assert).GetAwaiter().GetResult();
             if (args.Contains("--background-regression"))
                 Console.WriteLine("SKIP desktop-composition cue fixture on the isolated desktop; verify separately with --property-changes-only.");
             else PropertyChangeRegionTests.Run(Assert);

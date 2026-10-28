@@ -1,0 +1,18 @@
+{
+  "Rendering.PresentationRetrying": {
+    "zh": "画面更新未完成，正在重试。画布操作将在恢复后继续可用。",
+    "en": "The canvas update did not complete. Retrying; canvas interaction will resume after recovery."
+  },
+  "Rendering.PresentationFailed": {
+    "zh": "画面更新失败，已暂停画布操作。请切换画布显示后重试。",
+    "en": "The canvas update failed; canvas interaction is paused. Toggle canvas visibility to retry."
+  },
+  "Rendering.PresentationRecovered": {
+    "zh": "画面已恢复，画布操作可继续使用。",
+    "en": "The canvas display has recovered. Canvas interaction is available again."
+  },
+  "Document.RestoreKindMismatch": {
+    "zh": "文件的画布类型已改变。请单独打开该文件；当前画布和未保存改动已保留。",
+    "en": "The file's canvas type has changed. Open it separately; the current canvas and unsaved changes have been preserved."
+  }
+}

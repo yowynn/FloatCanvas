@@ -25,8 +25,14 @@ internal sealed class ColorPickerPanel : UserControl
     private bool valueDirty = true, collectionsDirty = true, previewDirty, preparing;
     private uint value;
     private string? revealSwatch;
+    private uint gestureStart;
+    internal bool IsInteracting { get; private set; }
+    internal Func<bool>? CanBeginGesture { get; set; }
+    internal event Action? GestureStarted;
+    internal event Action<bool>? GestureCompleted;
     internal Func<Window?>? DialogOwner { get; set; }
     internal FrameworkElement DragHandle { get; }
+    internal string ErrorMessage => error.Text;
     public event Action<uint>? ColorChosen;
     public event Action<uint>? DraftChanged;
     public event Action? EyedropperRequested;
@@ -104,7 +110,19 @@ internal sealed class ColorPickerPanel : UserControl
             ClearInputError(); RefreshPreview();
         };
         hex.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Run(Apply); e.Handled = true; } };
-        hex.LostKeyboardFocus += (_, _) => { if (!syncing && !TryRead(out _)) InvalidInput(); };
+        hex.GotKeyboardFocus += (_, _) => BeginGesture();
+        hex.LostKeyboardFocus += (_, _) => { if (!syncing && !TryRead(out _)) InvalidInput(); EndGesture(true); };
+        alphaField.Input.GotKeyboardFocus += (_, _) => BeginGesture();
+        alphaField.Input.LostKeyboardFocus += (_, _) => { if (!alphaField.IsInteracting) EndGesture(true); };
+        alphaField.CanBeginGesture = BeginGesture;
+        alphaField.GestureCompleted += EndGesture;
+        spectrum.CanBeginGesture = BeginGesture;
+        spectrum.GestureCompleted += EndGesture;
+        hue.PreviewMouseLeftButtonDown += (_, _) => BeginGesture();
+        hue.PreviewMouseLeftButtonUp += (_, _) => EndGesture(true);
+        hue.LostMouseCapture += (_, _) => { if (Mouse.LeftButton != MouseButtonState.Pressed) EndGesture(true); else EndGesture(false); };
+        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && IsInteracting) { EndGesture(false); e.Handled = true; } };
+        Unloaded += (_, _) => EndGesture(false);
         alphaField.ValueChanged += _ => { if (!syncing) { ClearInputError(); RefreshPreview(); } };
         alphaField.InvalidInput += () => { if (!syncing) InvalidInput(); };
         hue.ValueChanged += (_, _) => { if (!syncing) spectrum.ChangeHue(hue.Value); };
@@ -114,6 +132,49 @@ internal sealed class ColorPickerPanel : UserControl
         RefreshCollections();
         IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); };
         Loaded += (_, _) => { if (IsVisible) PrepareForShow(); };
+    }
+
+    internal bool BeginGesture()
+    {
+        if (syncing) return false;
+        if (IsInteracting) return true;
+        if (CanBeginGesture?.Invoke() == false || !TryGetDraft(out gestureStart)) return false;
+        IsInteracting = true;
+        GestureStarted?.Invoke();
+        return true;
+    }
+
+    internal void EndGesture(bool commit)
+    {
+        if (!IsInteracting) return;
+        IsInteracting = false;
+        if (!commit)
+        {
+            bool wasSyncing = syncing; syncing = true;
+            try { alphaField.CancelGesture(); spectrum.CancelGesture(); ReleaseHueCapture(); Value = gestureStart; }
+            finally { syncing = wasSyncing; }
+            DraftChanged?.Invoke(gestureStart);
+        }
+        GestureCompleted?.Invoke(commit);
+    }
+
+    internal void SynchronizeExternalValue(uint color)
+    {
+        bool wasSyncing = syncing; syncing = true;
+        try
+        {
+            bool active = IsInteracting;
+            IsInteracting = false;
+            alphaField.CancelGesture(); spectrum.CancelGesture(); ReleaseHueCapture();
+            Value = color;
+            if (active) GestureCompleted?.Invoke(false);
+        }
+        finally { syncing = wasSyncing; }
+    }
+
+    private void ReleaseHueCapture()
+    {
+        if (Mouse.Captured is Visual captured && (ReferenceEquals(captured, hue) || hue.IsAncestorOf(captured))) Mouse.Capture(null);
     }
 
     internal void PrepareForShow()

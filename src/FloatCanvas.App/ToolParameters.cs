@@ -28,18 +28,18 @@ internal sealed class ToolParameters
     }
 
     internal bool IsValid() => Enum.IsDefined(Tool) && Style is { } s && Enum.IsDefined(Symbol) && Emoji is { Length: > 0 and <= 32 } &&
-        NumberStart is >= -999999 and <= 999999 && NumberStep is >= -999999 and <= 999999 &&
+        NumericParameterDomain.ForTool(nameof(NumberStart)).Contains(NumberStart) && NumericParameterDomain.ForTool(nameof(NumberStep)).Contains(NumberStep) &&
         NumberColorRolesVersion is 0 or 1 &&
-        Enum.IsDefined(CaptureShape) && Enum.IsDefined(CaptureSource) && double.IsFinite(CaptureBorderWidth) && CaptureBorderWidth is >= 0 and <= 1024 &&
-        double.IsFinite(DefaultWidth) && DefaultWidth >= 1 && DefaultWidth <= 1000000 && double.IsFinite(DefaultHeight) && DefaultHeight >= 1 && DefaultHeight <= 1000000 &&
+        Enum.IsDefined(CaptureShape) && Enum.IsDefined(CaptureSource) && NumericParameterDomain.ForTool(nameof(CaptureBorderWidth)).Contains(CaptureBorderWidth) &&
+        NumericParameterDomain.ForTool(nameof(DefaultWidth)).Contains(DefaultWidth) && NumericParameterDomain.ForTool(nameof(DefaultHeight)).Contains(DefaultHeight) &&
         !string.IsNullOrWhiteSpace(Emoji) && System.Globalization.StringInfo.GetNextTextElement(Emoji).Length == Emoji.Length &&
-        (CornerRadius is null || double.IsFinite(CornerRadius.Value) && CornerRadius >= 0) &&
-        double.IsFinite(EffectStrength) && EffectStrength > 0 && EffectStrength <= 1024 &&
-        double.IsFinite(s.StrokeWidth) && s.StrokeWidth >= 0 && s.StrokeWidth <= 1024 &&
-        double.IsFinite(s.Opacity) && s.Opacity >= 0 && s.Opacity <= 1 &&
-        double.IsFinite(s.FontSize) && s.FontSize > 0 && s.FontSize <= 4096 &&
+        (CornerRadius is null || NumericParameterDomain.ForTool(nameof(CornerRadius)).Contains(CornerRadius.Value)) &&
+        NumericParameterDomain.ForTool(nameof(EffectStrength)).Contains(EffectStrength) &&
+        NumericParameterDomain.ForStyle(nameof(s.StrokeWidth)).Contains(s.StrokeWidth) &&
+        NumericParameterDomain.ForStyle(nameof(s.Opacity)).Contains(s.Opacity) &&
+        NumericParameterDomain.ForStyle(nameof(s.FontSize)).Contains(s.FontSize) &&
         s.FontFamily is { Length: > 0 and <= 1024 } && Enum.IsDefined(s.TextAlignment) &&
-        Enum.IsDefined(s.ArrowHeadStyle) && double.IsFinite(s.ArrowHeadSize) && s.ArrowHeadSize >= 0 && s.ArrowHeadSize <= 512 &&
+        Enum.IsDefined(s.ArrowHeadStyle) && NumericParameterDomain.ForStyle(nameof(s.ArrowHeadSize)).Contains(s.ArrowHeadSize) &&
         (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&
         (s.EndArrowHead is null || Enum.IsDefined(s.EndArrowHead.Value)) && Enum.IsDefined(s.StrokePattern);
 }

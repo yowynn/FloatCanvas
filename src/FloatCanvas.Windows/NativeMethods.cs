@@ -16,6 +16,10 @@ internal static class NativeMethods
         WmCaptureChanged = 0x215, WmRefreshMonitors = 0x8001, WmValidateEditingFocus = 0x8002;
     internal static readonly nint HwndTopmost = -1;
     internal static readonly nint DpiPerMonitorV2 = -4;
+    internal const uint SwpNoSize = 0x1, SwpNoMove = 0x2, SwpNoZOrder = 0x4,
+        SwpNoActivate = 0x10, SwpNoOwnerZOrder = 0x200;
+    internal const uint ToolWindowRaiseFlags = SwpNoSize | SwpNoMove | SwpNoActivate | SwpNoOwnerZOrder;
+    internal const uint ToolWindowPositionFlags = SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpNoOwnerZOrder;
 
     // A visual restore must not raise the canvas, its owner, or any tool window.
     internal static void ShowWindowPreservingZOrder(nint window)

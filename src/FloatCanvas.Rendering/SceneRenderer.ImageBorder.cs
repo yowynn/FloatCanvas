@@ -25,7 +25,7 @@ public sealed partial class SceneRenderer
         if (!(element.ImageBorderWidth > 0) || (element.Style.Stroke >> 24) == 0) return;
         // GPU effect images are released after each frame. Reuse their identical alpha
         // support by content rather than by the short-lived SKImage handle.
-        int sourceFrame = _images[element.AssetId!].FrameIndex;
+        int sourceFrame = ImageFrameIndex(element.AssetId!);
         bool gpuEffects = element.Effects.Count != 0 && canvas.Context is not null;
         var frameKey = new ImageBorderFrameKey(element.Id, sourceFrame);
         if (!_imageBorders.TryGetValue(frameKey, out var entry) || !entry.Matches(element, crop, gpuEffects))

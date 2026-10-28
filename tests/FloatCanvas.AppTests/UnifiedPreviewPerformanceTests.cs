@@ -22,6 +22,15 @@ internal static class UnifiedPreviewPerformanceTests
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
     [DllImport("user32.dll")] private static extern bool GetWindowBand(nint window, out uint band);
 
+    internal static void RunBlockedOnly(Action<string, bool> check, bool enhanced = false)
+    {
+        string profile = Path.Combine(Path.GetTempPath(), "FloatCanvas-blocked-preview", Guid.NewGuid().ToString("N"));
+        ApplicationPaths.Configure(["--profile", profile]);
+        new UserSettings { Language = "en", PreferGpuAcceleration = false }.Save();
+        var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        CheckBlocked(check, MeasureBlockedWorker(app, enhanced));
+    }
+
     internal static void Run(Action<string, bool> check, bool enhanced = false)
     {
         string evidence = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "artifacts",
@@ -105,6 +114,11 @@ internal static class UnifiedPreviewPerformanceTests
                     sample.AppliedAt <= sample.CapturedTimestamp && sample.CapturedTimestamp <= sample.RenderStartedTimestamp &&
                     sample.RenderStartedTimestamp <= sample.RenderCompletedTimestamp && sample.RenderCompletedTimestamp <= sample.SubmittedAt));
         }
+        CheckBlocked(check, blocked);
+    }
+
+    private static void CheckBlocked(Action<string, bool> check, BlockedMeasurement blocked)
+    {
         check("500 ms raster block keeps input dispatch P95 within one refresh", blocked.DispatchDelay.P95 <= RefreshMilliseconds);
         check("500 ms raster block keeps every input dispatch delay below 50 ms", blocked.DispatchDelay.Max <= 50);
         check("500 ms raster block keeps input dispatch gaps below 50 ms", blocked.DispatchGaps.Max <= 50);
@@ -162,13 +176,16 @@ internal static class UnifiedPreviewPerformanceTests
         using var fixture = new Fixture(app, 3840, 2160, candidate: true, enhanced);
         fixture.Initialize(); fixture.Settle();
         fixture.Send(OverlayPointerKind.Down, 150); fixture.Settle();
-        fixture.Preview!.Dispose();
+        var preview = fixture.Preview!;
         using var started = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         int first = 0;
-        var capture = (Func<CanvasPreviewSnapshot>)typeof(DesktopSession).GetMethod("CaptureCanvasPreview", Private)!
-            .CreateDelegate(typeof(Func<CanvasPreviewSnapshot>), fixture.Session);
-        var replacement = new CanvasPreviewPump(app.Dispatcher, capture, snapshot =>
+        var renderField = typeof(CanvasPreviewPump).GetField("renderOverride", Private)!;
+        var originalRender = renderField.GetValue(preview);
+        // Keep the production pump, presented frame and monotonic sequence intact.
+        // Replacing the pump here would remove the old frame while it is supposed
+        // to remain on screen, causing the presenter to suspend stale-frame input.
+        renderField.SetValue(preview, new Func<CanvasPreviewSnapshot, CanvasPreviewFrame>(snapshot =>
         {
             if (Interlocked.Exchange(ref first, 1) == 0)
             {
@@ -177,11 +194,7 @@ internal static class UnifiedPreviewPerformanceTests
             }
             using var renderer = new CanvasPreviewRenderer();
             return renderer.Render(snapshot);
-        });
-        typeof(DesktopSession).GetField("_canvasPreview", Private)!.SetValue(fixture.Session, replacement);
-        replacement.FrameReady += (Action)typeof(DesktopSession).GetMethod("PresentCanvasPreview", Private)!
-            .CreateDelegate(typeof(Action), fixture.Session);
-        replacement.Failed += error => fixture.Failure = error;
+        }));
         var delays = new List<double>(); var gaps = new List<double>();
         long lastDispatch = 0;
         int latestApplied = 0, lastPainted = -1;
@@ -192,7 +205,7 @@ internal static class UnifiedPreviewPerformanceTests
             lastPainted = ReadRectangle(pixels);
             int edge = 100 + latestApplied * 3;
             var color = pixels.GetPixelColor(edge, 130);
-            guideMoved |= replacement.Busy && latestApplied > 3 && color.Blue > 140 && color.Blue > color.Red + 40;
+            guideMoved |= preview.Busy && latestApplied > 3 && color.Blue > 140 && color.Blue > color.Red + 40;
             ownWindowsHidden &= Hidden(fixture.Host);
             noInputLease &= NoInputLease(fixture.Host);
         }
@@ -201,7 +214,7 @@ internal static class UnifiedPreviewPerformanceTests
         var samples = Enumerable.Range(0, blockedMoves + 1).Select(sequence => new InputSample { Sequence = sequence }).ToArray();
         try
         {
-            replacement.Request(); fixture.Until(() => started.IsSet);
+            preview.Request(); fixture.Until(() => started.IsSet);
             using var source = new LatestPointerSource(app.Dispatcher, blockedMoves, 8, samples, sequence =>
             {
                 long now = Stopwatch.GetTimestamp();
@@ -227,6 +240,7 @@ internal static class UnifiedPreviewPerformanceTests
         {
             release.Set(); fixture.Host.Draw -= Observe;
             fixture.Until(() => !fixture.Busy);
+            renderField.SetValue(preview, originalRender);
         }
     }
 
@@ -294,7 +308,7 @@ internal static class UnifiedPreviewPerformanceTests
         internal Exception? Failure { get; set; }
         internal bool Busy => Preview?.Busy ?? false;
         internal bool Pending => directOperation?.Status == DispatcherOperationStatus.Pending || Session is not null &&
-            (PendingOperation(Session, "_renderOperation") || PendingOperation(Session, "_presentOperation"));
+            (PendingOperation(Session, "_renderOperation") || PendingOperation(Session, "_presentOperation") || !Editor.PendingPicking.IsCompleted);
         internal void Initialize()
         {
             Editor.Session.Execute("unified preview rectangle fixture", doc => doc.Elements = [new()

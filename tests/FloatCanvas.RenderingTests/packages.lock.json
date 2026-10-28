@@ -66,6 +66,13 @@
           "SkiaSharp": "[4.153.1, )",
           "SkiaSharp.HarfBuzz": "[4.153.1, )"
         }
+      },
+      "floatcanvas.storage": {
+        "type": "Project",
+        "dependencies": {
+          "FloatCanvas.Core": "[1.0.0, )",
+          "FloatCanvas.Localization": "[1.0.0, )"
+        }
       }
     }
   }

@@ -1,6 +1,6 @@
 # 官方预设与工具命名设计
 
-审阅日期：2026-10-28。本文记录官方内容、排序、名称及验证入口；完整参数以 `ToolPresetLibrary`、`CanvasPresetLibrary` 为准。
+本文规定官方内容、排序、名称与交互契约；完整参数以 `ToolPresetLibrary`、`CanvasPresetLibrary` 为准。
 
 ## 内容原则与兼容边界
 
@@ -10,21 +10,6 @@
 - 浅红填充使用软件背景色板红色 `#FFDCDC`。黄色、绿色、蓝色、黑色分别取软件前景色板 `#CB912F`、`#448361`、`#2383E2`、`#252525`。
 - 不迁移或覆盖个人预设；不修改通用模型的缺字段默认语义。旧个人预设仍按原兼容逻辑读取。
 - 选择、橡皮擦、印章没有可区分的工具外观参数，因此只保留一个标准范式。印章内容仍由素材库决定，不用重复预设伪造不同效果。
-
-## 当前 profile 的只读检查
-
-首次设计时通过 `ApplicationPaths.DefaultProfileDirectory`、运行实例命令行和对应 `App.Startup` 诊断记录，确认用户实例使用：
-
-`C:\Users\Wynne\AppData\Local\FloatCanvas`
-
-实际读取的内容：
-
-| 文件 | 内容 | 设计处理 |
-| --- | --- | --- |
-| `tool-presets.json` | 两个画笔记录：“测试”（实线、宽 27.651）、“测试2”（点线、宽 24.176） | 用户澄清：标为“测试”的内容不视为提供参考。因此没有复制其名称、颜色或完整参数作为官方内容。 |
-| `canvas-presets.json` | 版本 3，空列表 | 没有可用画布示范。 |
-
-首次检查没有发现可用的正式示范；全部方案按工具用途和现有生产模型独立设计。画笔的粗细与点线、图形的轮廓与填充、特效的强度、截图的形状与来源等采用同一种可推导方式。首次检查前后 SHA-256、大小和修改时间记录在 `.artifacts/official-presets-20261028/worktree-evidence/profile-read-before.json` 与 `profile-read-after.json`；上表只描述该次检查时的文件内容。
 
 ## 官方清单与顺序
 
@@ -53,19 +38,19 @@
 
 符号形状选择器继续使用 `Symbol.*` 双语资源，五种样式与其余普通工具内容使用 `Recipe.*` 双语资源，画布沿用 `CanvasPreset.*`。工具显示名称与官方配方名称分离，今后调整配方名不会改动工具条显示名。
 
-## 画板、画布与一步启用排查
+## 画布与可选参数的启用规则
 
 项目当前没有独立的 Board/画板工具或图层模型。白板、黑板属于 `EditorTool.Canvas` 对应的 `SceneDocument.Canvas` 设置，由 `CanvasPresetLibrary` 应用；普通矩形等属于 `ToolPresetLibrary`。
 
-| 检查项 | 处理结果 |
+| 参数 | 行为 |
 | --- | --- |
-| 关闭的画布网格 | transparent、whiteboard、blackboard 均显式保存 `GridVisible=false`、色板红色、线宽 1、正行列数。只打开一次“显示网格”即可看到网格。原定义是半透明白或蓝灰，并非全透明，但没有满足预留红色的要求。 |
+| 关闭的画布网格 | transparent、whiteboard、blackboard 均显式保存 `GridVisible=false`、色板红色、线宽 1、正行列数。只打开一次“显示网格”即可看到网格。 |
 | 关闭的透视 | 官方应用保持 `ResetProjection=true`，生成有效参考四角、矩阵和正间距；打开透视一次即可生效。个人校准仍按原快照恢复。 |
 | 截图边框 | 0 宽直接表达“无边框”，没有另一个开关；边框色保持不透明红色，单次提高宽度即可显示。 |
 | 直线箭头 | None 表达关闭端点；箭头尺寸 0 有自动尺寸语义，不是无效尺寸。选一次端点样式即可显示。 |
 | 图形填充 | 透明色直接表达“无填充”，没有独立填充开关；轮廓标准保持透明内填。实心组合使用 LinkColors，并保留有效浅红色 Fill，切回分离颜色即可使用。 |
 | 可见内容与特效 | 有效描边、文字颜色、总体不透明度、字号、尺寸和特效强度均非零；高亮不重复降低 alpha。 |
-| 贴图透明度 | 审查发现原新图插入路径没有消费 Image 工具的 Opacity。补通图片工作参数到新图创建及立牌路径，避免看似存在、实际无效的常用预设；替换图片保持原外观。 |
+| 贴图透明度 | 新图创建及立牌路径使用 Image 工具的 Opacity 参数；替换图片保持原外观。 |
 
 通用 `CanvasPresetParameters.GridColor` 默认值保持原样，避免改动旧个人预设省略该字段时的行为。
 
@@ -77,81 +62,17 @@
 - 箭头、双箭头、圆角矩形、旧三角形别名使用当前工具族名称。用户已有预设名称不变。
 - README 和中英使用指南同步工具入口名称；具体几何对象仍可称为“椭圆 / Ellipse”，截图圈选入口则统一称为“圆形 / Circle”。
 
-## 验证与证据
-
-证据目录：`.artifacts/official-presets-20261028/`。`worktree-evidence/` 保存首次独立工作树验证的原始材料，`main-integration/` 保存从 `H:\FloatCanvas` 整合后重新构建和运行的证据。自动检查使用临时 profile；有窗口的检查运行在隔离的 Windows 桌面，不替换或重启当前运行实例。
-
-首次 68 项方案在工作树及主目录整合后的 Release 全解决方案构建均成功，**0 警告、0 错误**。以下为首次方案的历史验证：**15 组、2,186 项检查在两次验证中均全部通过**，各次日志与 `verification-summary.json` 分别保存于对应证据子目录。本轮精简与交互修改的验证见文末。
-
-| 验证组 | 通过项数 |
-| --- | ---: |
-| official-preset-design | 352 |
-| complete-presets | 211 |
-| presets | 73 |
-| canvas-presets | 204 |
-| tool-state | 82 |
-| gpu-settings（含本地化） | 29 |
-| preview4-menu | 101 |
-| toolbar2 | 399 |
-| image-import | 80 |
-| tool-icons | 52 |
-| image-tools | 167 |
-| preset-fallback | 82 |
-| preset-isolation | 146 |
-| tool-compatibility | 37 |
-| tool-options | 171 |
-
-主要入口：
-
-- `--official-preset-design-only <证据目录>`：官方清单、首项顺序、中英切换、完整应用、独立快照、一步启用网格/透视、真实裁剪手势、个人旧文件读取保持原字节，以及中英预设图集/JSON 清单。
-- `--complete-presets-only`、`--presets-only`、`--canvas-presets-only`、`--tool-state-only`：完整参数替换、旧文件默认、存储、画布及状态回归。
-- `--gpu-settings-only`、`--preview4-menu-only`、`--toolbar2-only`：本地化、工具菜单、工具条入口及快捷键。
-- `--image-import-only`、`--tool-icons-only`、`--image-tools-only`：三个贴图预设的实际导出 alpha、原始 PNG 保留、工作状态隔离、贴面/立牌、拖放、替换和撤销重做，及透明度图标差异。
-
-主目录实际执行使用独立构建输出下的 Release 测试程序加 `--isolated-ui-desktop`：
-
-```powershell
-Set-Location H:\FloatCanvas
-dotnet build FloatCanvas.slnx -c Release `
-    --artifacts-path H:\FloatCanvas\.artifacts\official-presets-20261028\main-integration\build
-& .\.artifacts\official-presets-20261028\main-integration\build\bin\FloatCanvas.AppTests\release\FloatCanvas.AppTests.exe `
-    --isolated-ui-desktop --official-preset-design-only .artifacts\official-presets-20261028\main-integration
-```
-
-关键证据文件：
-
-- `build-release.log`、`verification-summary.json`、各验证组 `.log` 和 `regression-group-*.json`。
-- `official-presets-zh-CN.json` / `official-presets-en.json`：逐工具、逐顺序的 ID、名称、standard/common 分类及完整参数。
-- `official-presets-zh-CN.png` / `official-presets-en.png`：使用真实生产图标渲染的清单图集，已逐图检查名称可读和图标输出。图标会按现有逻辑归一化部分字号/宽度；具体尺寸以参数清单为准。
-- `toolbar/`：中英提示、明暗主题和 100% / 125% / 150% / 200% 工具条受控窗口渲染。
-- `worktree-evidence/profile-read-before.json` / `profile-read-after.json`：首次检查的两个真实个人预设文件的 SHA-256、字节数和修改时间完全相同。
-- `main-integration/integration-before.json`、`official-presets.patch`：迁移的 26 个已有文件修改、5 个新增文件和明确排除的既有并发改动。
-- `main-integration/preservation-after.json`、`staged-before.patch` / `staged-after.patch`：主目录三份文档的暂存删除未变，UI-Layout、原生覆盖层、fixture README 的字节哈希未变，个人预设和原运行构建产物哈希未变。
-- `main-integration/app-compile-items.json`、`localization-resource-items.json`：主目录项目评估中的实际编译项与本地化嵌入资源项，包含新增 ToolDisplayName 和 OfficialPresets。
-
-## 主目录整合结果
-
-2026-10-28，按用户要求已将全部实现放入 `H:\FloatCanvas`。主目录与工作树迁移前 HEAD 均为 `44618074eec5255b5013c043aede7b946d2af64f`，本次任务文件与主目录既有修改没有重叠。先以明确文件清单生成 patch 并通过 `git apply --check`，再迁移已有文件修改和新增文件；源码与已验证工作树的字节哈希一致，本报告追加主目录整合说明。
-
-主目录原有三份 `Docs/Research` 文档的暂存删除、`Docs/UI-Layout.md`、`src/FloatCanvas.SystemOverlay.Native/SystemOverlay.cpp`、`tests/FloatCanvas.FullscreenInputFixture/README.md` 均被排除在迁移 patch 之外，并通过最终哈希和暂存 patch 比对确认保留。
-
-`scripts/Publish.ps1` 从自身所在的 `H:\FloatCanvas` 解析项目根并编译当前源码，不引用本任务独立工作树；SDK 自动包含新 `.cs`，Localization 项目的 `Resources/*.json` 包含新官方名称资源。用户直接从主目录运行原打包流程即可得到本次功能和同步后的中英使用指南，无需复制工作树文件。本文是项目审阅报告，按现有打包规则不加入运行 ZIP。
-
-首次整合验证的输出仅写入 `main-integration/build/`，未替换 `src/FloatCanvas.App/bin/Release` 的运行产物；当时主目录运行实例 PID 5904 保持运行。此前工作树预览和原始测试证据已复制至 `worktree-evidence/`，首次主目录图集和参数清单位于 `main-integration/`。
-
-## 后续调整：截图、图形样式与序号联动
-
-2026-10-28，本轮修改直接在 `H:\FloatCanvas` 实施，当前清单为上文的 **18 个工具族、62 项预设**。
+## 交互契约
 
 ### 截图创建与图层编辑
 
-- 截图配置不再显示“等比缩放”开关。矩形和圆形截图默认自由比例；只在按住 Shift 时临时约束为 1:1，释放立即恢复，无须额外移动鼠标。
+- 截图配置不提供持久“等比缩放”开关。矩形和圆形截图默认自由比例；只在按住 Shift 时临时约束为 1:1，释放立即恢复，无须额外移动鼠标。
 - 平面和透视贴面的比例约束在画布平面中计算；立牌截图在屏幕选区中计算。套索拉直和多边形八方向约束保持。
 - 旧个人预设或工具状态中的 `ConstrainAspect=true` 在应用到截图工具时归一为 false，截图圈选本身也只读取 Shift。新工作快照与个人保存入口输出 false；全部官方截图项显式为 false。不修改旧个人预设文件的原始值，通用字段仍服务于其他工具。
 - 圈选按钮、提示、辅助技术名称及官方预设名称统一为“圆形 / Circle”；内部 `CaptureShape.Ellipse` 不变。名称不强制正圆，自由比例仍可圈选椭圆。
 - 创建好的截图仍是图片图层，属性中的等比开关和宽高联动保留；裁剪、模糊、马赛克区域以及其他图形的等比能力保持。
 
-### 多图形工具精简
+### 符号样式与几何
 
 对应当前 **符号工具**的形状选择器，五种样式统一以 72×72 三角形示范，按下列顺序展示：
 
@@ -163,7 +84,7 @@ dotnet build FloatCanvas.slnx -c Release `
 | 常用预设 | `official.symbol-dashed` | 虚线轮廓 / Dashed outline | 红色、宽 4、虚线、无填充 |
 | 常用预设 | `official.symbol-green` | 绿色强调 / Green emphasis | 色板绿色、宽 6、实线、无填充 |
 
-原来八个重复几何项及“实心星形”“绿色对勾”两个专用形状组合不再单列。三角形、五角星、爱心、对勾、叉号、菱形、五边形、六边形和对话框均可在选择器中一步切换；回归逐一验证整套样式和尺寸保留，并能创建对应可编辑图层。矩形、圆形等独立工具预设不合并，个人预设不删除。
+三角形、五角星、爱心、对勾、叉号、菱形、五边形、六边形和对话框在选择器中切换，保留当前样式和尺寸，并创建对应的可编辑图层。矩形、圆形等独立工具预设保持独立，个人预设不删除。
 
 ### 序号边界
 
@@ -179,40 +100,14 @@ dotnet build FloatCanvas.slnx -c Release `
 
 独立保留真正的序号起始基准，其他工具完整快照中的隐藏起始字段不会意外移动当前计数；切回序号工具仍按实际旧起始值判断。现有序号图层数值和步进规则不回写，当前序号仍随各自画布保存。自动同步当前序号仍标记文档变化供保存／恢复使用，但不会意外显示隐藏的画布；实际新增图形后仍按原规则显现。
 
-本轮证据目录为 `.artifacts/preset-refinements-20261028/`，包含最初失败复现、独立构建、各组回归日志、当前 62 项双语图集和完整参数清单，以及截图面板中英明暗主题渲染。
+## 验证入口
 
-### 本轮主目录验证结果
+生产参数以 `ToolPresetLibrary`、`CanvasPresetLibrary` 为准。`FloatCanvas.AppTests` 提供以下专项，完整应用测试同时覆盖这些契约：
 
-Release 全解决方案构建通过，**0 警告、0 错误**。**23 组、2,410 项检查全部通过**，当前结果以本轮 `verification-summary.json` 和 `final-regressions.json` 为准。
+- `--official-preset-design-only <输出目录>`：官方清单、首项顺序、双语名称、完整应用及独立快照。
+- `--complete-presets-only`、`--presets-only`、`--canvas-presets-only`、`--tool-state-only`：参数替换、兼容默认值及工作状态。
+- `--symbol-style-presets-only`：切换符号几何时保留样式和尺寸。
+- `--capture-aspect-policy-only <输出目录>`：截图比例与 Shift 约束。
+- `--number-start-link-only`：起始值与当前序号的联动、取消及上下文隔离。
 
-| 验证组 | 通过项数 |
-| --- | ---: |
-| capture-aspect-policy | 72 |
-| number-start-link | 54 |
-| symbol-style-presets | 93 |
-| official-preset-design | 328 |
-| complete-presets | 193 |
-| presets | 61 |
-| capture-selection | 61 |
-| snapshot-image | 65 |
-| preview4-shift | 164 |
-| canvas-anchor-capture | 36 |
-| signed-number | 57 |
-| number-bounds | 12 |
-| feedback4-options | 88 |
-| numeric-controls | 184 |
-| tool-options | 171 |
-| hidden-tool-properties | 34 |
-| segmented-choices | 348 |
-| tool-state | 83 |
-| preset-fallback | 82 |
-| preset-isolation | 146 |
-| tool-compatibility | 37 |
-| gpu-settings（含本地化） | 29 |
-| phase2-hidden-canvas | 12 |
-
-所有应用检查运行于隔离 Windows 桌面和临时 profile；构建使用 `--artifacts-path H:\FloatCanvas\.artifacts\preset-refinements-20261028\build`，没有覆盖主目录原运行构建产物。本轮真实个人预设和工具状态文件的哈希、原有并发文件、Git 暂存内容以及运行实例均保持不变，见 `preservation-after.json`。
-
-已实际查看 `capture-options-{zh-CN,en}-{light,dark}.png` 和当前双语预设图集，确认截图面板没有等比行，Circle 短标签、提示与辅助技术名称一致；五种符号样式可清晰区分。首次复现及后续拖动跨值、同会话文档替换的失败日志保留，临时诊断代码已清除。
-
-编译和隔离测试能验证代码、图像输出与受控窗口行为；不等同于在真实显示器上的最终视觉验收。本次整体本地提交包含实现、必要测试和本报告；不涉及推送、发布或重启运行实例。
+输出使用忽略目录，例如 `.artifacts/preset-validation/`；涉及窗口的检查可使用 `--isolated-ui-desktop`。

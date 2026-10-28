@@ -74,14 +74,14 @@ internal sealed class ToolOptionsPanel : UserControl
         background.ValueChanged += value => Change(p => p.Style.Fill = value);
         foreground.EyedropperRequested += () => EyedropperRequested?.Invoke(foreground);
         background.EyedropperRequested += () => EyedropperRequested?.Invoke(background);
-        Number(parameterGrid, "StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, 1024, (p, v) => p.Style.StrokeWidth = v);
-        Number(parameterGrid, "Opacity", L.Get("Inspector.Opacity"), 0, 100, (p, v) => p.Style.Opacity = v / 100);
-        Number(parameterGrid, "FontSize", L.Get("Inspector.FontSize"), 1, 4096, (p, v) => p.Style.FontSize = v);
-        Number(parameterGrid, "NumberStart", L.Get("ToolOptions.NumberStart"), -999999, 999999, (p, v) => p.NumberStart = (int)v);
-        Number(parameterGrid, "NumberStep", L.Get("ToolOptions.NumberStep"), -999999, 999999, (p, v) => p.NumberStep = (int)v);
-        Number(parameterGrid, "NextNumber", L.Get("ToolOptions.NextNumber"), int.MinValue, int.MaxValue, (_, _) => { });
-        Number(parameterGrid, "DefaultWidth", L.Get("Inspector.Width"), 1, 1000000, (p, v) => p.DefaultWidth = v);
-        Number(parameterGrid, "DefaultHeight", L.Get("Inspector.Height"), 1, 1000000, (p, v) => p.DefaultHeight = v);
+        Number(parameterGrid, "StrokeWidth", L.Get("Inspector.StrokeWidth"), (p, v) => p.Style.StrokeWidth = v);
+        Number(parameterGrid, "Opacity", L.Get("Inspector.Opacity"), (p, v) => p.Style.Opacity = v / 100);
+        Number(parameterGrid, "FontSize", L.Get("Inspector.FontSize"), (p, v) => p.Style.FontSize = v);
+        Number(parameterGrid, "NumberStart", L.Get("ToolOptions.NumberStart"), (p, v) => p.NumberStart = (int)v);
+        Number(parameterGrid, "NumberStep", L.Get("ToolOptions.NumberStep"), (p, v) => p.NumberStep = (int)v);
+        Number(parameterGrid, "NextNumber", L.Get("ToolOptions.NextNumber"), (_, _) => { });
+        Number(parameterGrid, "DefaultWidth", L.Get("Inspector.Width"), (p, v) => p.DefaultWidth = v);
+        Number(parameterGrid, "DefaultHeight", L.Get("Inspector.Height"), (p, v) => p.DefaultHeight = v);
         AddRow(parameterGrid, "FontFamily", L.Get("Inspector.FontFamily"), fontFamily);
         Picker(parameterGrid, "TextAlignment", L.Get("Inspector.TextAlignment"),
             [(L.Get("Inspector.AlignLeft"), FloatCanvas.Core.TextAlignment.Left), (L.Get("Inspector.AlignCenter"), FloatCanvas.Core.TextAlignment.Center),
@@ -95,16 +95,16 @@ internal sealed class ToolOptionsPanel : UserControl
         Picker(parameterGrid, "StrokePattern", L.Get("Inspector.StrokePattern"),
             [(L.Get("Inspector.PatternSolid"), StrokePattern.Solid), (L.Get("Inspector.PatternDashed"), StrokePattern.Dashed), (L.Get("Inspector.PatternDotted"), StrokePattern.Dotted)],
             (p, v) => p.Style.StrokePattern = (StrokePattern)v);
-        Number(parameterGrid, "ArrowHeadSize", L.Get("Inspector.ArrowHeadSize"), 0, 512, (p, v) => p.Style.ArrowHeadSize = v);
-        Number(parameterGrid, "CornerRadius", L.Get("Inspector.CornerRadius"), 0, 10000000, (p, v) => p.CornerRadius = v);
-        Number(parameterGrid, "EffectStrength", L.Get("ToolOptions.EffectStrength"), .01, 1024, (p, v) => p.EffectStrength = v);
+        Number(parameterGrid, "ArrowHeadSize", L.Get("Inspector.ArrowHeadSize"), (p, v) => p.Style.ArrowHeadSize = v);
+        Number(parameterGrid, "CornerRadius", L.Get("Inspector.CornerRadius"), (p, v) => p.CornerRadius = v);
+        Number(parameterGrid, "EffectStrength", L.Get("ToolOptions.EffectStrength"), (p, v) => p.EffectStrength = v);
         Picker(parameterGrid, "CaptureShape", L.Get("Snapshot.Shape"),
             Enum.GetValues<CaptureShape>().Select(value => (L.Get("Snapshot.Shape." + value), (object)value)).ToArray(),
             (p, value) => p.CaptureShape = (CaptureShape)value);
         Picker(parameterGrid, "CaptureSource", L.Get("Snapshot.Source"),
             Enum.GetValues<CaptureSource>().Select(value => (L.Get("Snapshot.Source." + value), (object)value)).ToArray(),
             (p, value) => p.CaptureSource = (CaptureSource)value);
-        Number(parameterGrid, "CaptureBorderWidth", L.Get("Snapshot.BorderWidth"), 0, 1024, (p, value) => p.CaptureBorderWidth = value);
+        Number(parameterGrid, "CaptureBorderWidth", L.Get("Snapshot.BorderWidth"), (p, value) => p.CaptureBorderWidth = value);
         var size = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Size")), PropertyPanelLayout.Pair(rows["DefaultWidth"], rows["DefaultHeight"], aspect));
         rows.Add("Size", size); parameterGrid.Children.Add(size);
         var aspectRow = PropertyPanelLayout.BooleanRow(L.Get("Inspector.KeepAspect"), aspectSwitch);
@@ -198,8 +198,18 @@ internal sealed class ToolOptionsPanel : UserControl
             Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji);
             Show("CaptureShape", capture); Show("CaptureSource", capture); Show("CaptureBorderWidth", capture);
             noParameters.Visibility = paint || text || boxRegion || tool == EditorTool.Image ? Visibility.Collapsed : Visibility.Visible;
-            if (IsApplicable("Foreground")) {foreground.Value = capture ? p.CaptureBorderColor : p.Style.Stroke;foreground.PrepareForShow();}
-            if (IsApplicable("Background")) {background.Value = p.Style.Fill;background.PrepareForShow();}
+            bool colorEcho = foreground.IsNotifyingOwner || background.IsNotifyingOwner;
+            if (IsApplicable("Foreground"))
+            {
+                uint value = capture ? p.CaptureBorderColor : p.Style.Stroke;
+                if (colorEcho) foreground.Value = value; else foreground.SynchronizeModel(value);
+                foreground.PrepareForShow();
+            }
+            if (IsApplicable("Background"))
+            {
+                if (colorEcho) background.Value = p.Style.Fill; else background.SynchronizeModel(p.Style.Fill);
+                background.PrepareForShow();
+            }
             if (IsApplicable("Size")) aspect.IsChecked = p.ConstrainAspect;
             if (IsApplicable("FontFamily")) ToolOptionPreviews.SelectFont(fontFamily, p.Style.FontFamily);
             if (IsApplicable("Aspect")) aspectSwitch.IsChecked = p.ConstrainAspect;
@@ -332,12 +342,10 @@ internal sealed class ToolOptionsPanel : UserControl
         AutomationProperties.SetName(control, label); rows.Add(key, row); body.Children.Add(row);
         if (control is NumericValueField numeric) { AutomationProperties.SetName(numeric.Input, label); AutomationProperties.SetName(numeric.Slider, label); }
     }
-    private void Number(Panel body, string key, string label, double min, double max, Action<ToolParameters, double> set)
+    private void Number(Panel body, string key, string label, Action<ToolParameters, double> set)
     {
-        double sliderMax = key switch { "StrokeWidth" => 64, "FontSize" => 512, "NumberStart" or "NumberStep" or "NextNumber" => 100, "DefaultWidth" or "DefaultHeight" => 600, "CornerRadius" => 100, "ArrowHeadSize" => 100, "EffectStrength" => 100, _ => max };
-        double? sliderMin = key switch { "NumberStep" => -100, "NumberStart" or "NextNumber" => 1, _ => null };
-        var field = new NumericValueField(min, max, sliderMinimum: sliderMin, sliderMaximum: Math.Min(max, sliderMax), step: key is "EffectStrength" or "StrokeWidth" or "CaptureBorderWidth" ? .1 : 1,
-            integerOnly: key is "NumberStart" or "NumberStep" or "NextNumber")
+        var domain = NumericParameterDomain.ForTool(key);
+        var field = new NumericValueField(domain.Minimum, domain.Maximum, domain.RailMinimum, domain.RailMaximum, domain.Step, domain.Integer)
         { Unit = key switch { "Opacity" => "%", "NumberStart" or "NextNumber" => "#", "NumberStep" => L.Get("Numeric.Unit.Step"), _ => "px" } };
         if (key is "NumberStart" or "NumberStep" or "NextNumber") field.Slider.IsSnapToTickEnabled = true;
         var box = field.Input; numbers.Add(key, box); numericFields.Add(key, field); AddRow(body, key, label, field);

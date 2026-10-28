@@ -6,16 +6,16 @@ public static class OverlayCoordinates
     /// <summary>Raises an application-owned tool window without moving, resizing or activating it.</summary>
     public static void RaiseToolWindow(nint window)
     {
-        if (!NativeMethods.SetWindowPos(window, NativeMethods.HwndTopmost, 0, 0, 0, 0, 0x13))
+        if (!NativeMethods.SetWindowPos(window, NativeMethods.HwndTopmost, 0, 0, 0, 0, NativeMethods.ToolWindowRaiseFlags))
             throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
     }
 
-    /// <summary>Places an application-owned tool window using physical coordinates, preserving its size.</summary>
+    /// <summary>Places an application-owned tool window using physical coordinates, preserving size, activation and relative order.</summary>
     public static void PositionToolWindow(nint window, OverlayPoint position)
     {
         using var dpi = new ThreadDpiAwarenessScope(WindowsCapabilities.Current);
-        if (!NativeMethods.SetWindowPos(window, NativeMethods.HwndTopmost, checked((int)Math.Round(position.X)),
-                checked((int)Math.Round(position.Y)), 0, 0, 0x11))
+        if (!NativeMethods.SetWindowPos(window, 0, checked((int)Math.Round(position.X)),
+                checked((int)Math.Round(position.Y)), 0, 0, NativeMethods.ToolWindowPositionFlags))
             throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
     }
 

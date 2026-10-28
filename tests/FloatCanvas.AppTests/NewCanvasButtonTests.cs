@@ -26,6 +26,7 @@ internal static class NewCanvasButtonTests
             ClickAndBusy(check);
             CancelAndGate(check);
             FailedClearRestores(check);
+            AsynchronousConfirmation(check);
             int fastCreates=0;
             var immediate=new NewCanvasButton(()=>true,()=>{fastCreates++;return Task.CompletedTask;},()=>false);
             Click(immediate);
@@ -63,6 +64,20 @@ internal static class NewCanvasButtonTests
         Click(button);
         check("a later first click requires a new confirmation instead of clearing again", button.IsConfirming && clears == 1);
         button.CancelConfirmation();
+    }
+
+    private static void AsynchronousConfirmation(Action<string, bool> check)
+    {
+        int creates = 0;
+        var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var button = new NewCanvasButton(() => true, () => { creates++; return Task.CompletedTask; }, () => answer.Task);
+        var pending = button.ActivateAsync();
+        check("new-canvas fingerprint decision yields before arming or clearing", !pending.IsCompleted && creates == 0 && !button.IsConfirming);
+        button.CancelConfirmation(); answer.SetResult(true); Await(pending);
+        check("late fingerprint cannot rearm a dismissed toolbar", creates == 0 && !button.IsConfirming);
+        var canceled = new NewCanvasButton(() => true, () => { creates++; return Task.CompletedTask; }, () => Task.FromCanceled<bool>(new CancellationToken(true)));
+        Await(canceled.ActivateAsync());
+        check("canceled fingerprint decision restores an idle usable button", canceled.IsEnabled && !canceled.IsConfirming && creates == 0);
     }
 
     private static void CancelAndGate(Action<string, bool> check)

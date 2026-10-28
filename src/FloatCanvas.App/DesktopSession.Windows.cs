@@ -26,7 +26,6 @@ internal sealed partial class DesktopSession
     }
 
     private readonly HashSet<Window> _regularWindows = [];
-    private readonly HashSet<Window> _editingDialogs = [];
 
     private void CloseRegularWindows()
     {
@@ -35,7 +34,7 @@ internal sealed partial class DesktopSession
 
     private void CloseEditingDialogs()
     {
-        foreach (var window in _editingDialogs.ToArray()) window.Close();
+        _windowCoordinator?.CloseEditingModals();
     }
 
     private void ConfigureAppWindow(Window window, bool dialog = false, bool regular = false)
@@ -82,12 +81,10 @@ internal sealed partial class DesktopSession
         bool editing = _host.IsEditing;
         ConfigureAppWindow(window, true, regular: !editing);
         if (!editing) { ShowAppWindow(window, true); return; }
-        _editingDialogs.Add(window);
         _host.SuspendApplicationHotkeys(true);
         try { SessionWindowCoordinator.ShowModal(window); }
         finally
         {
-            _editingDialogs.Remove(window);
             try { _host.SuspendApplicationHotkeys(false); }
             catch (Exception error) { UpdateStatus(error.Message); }
         }

@@ -72,6 +72,9 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
         });
         owner.IsVisibleChanged += OwnerVisibilityChanged;
         InputManager.Current.PreProcessInput += BeforeInput;
+        // Finish initial session placement before the source-button anchor runs. Creating the
+        // HWND inside Show's placement pass would let that outer pass overwrite this anchor.
+        _ = new WindowInteropHelper(shown).EnsureHandle();
         SessionWindowCoordinator.Show(shown, activate: owner.IsActive || SessionWindowCoordinator.Find(owner) is not null);
         shown.UpdateLayout();
         AppWindowChrome.EnsureVisibleBounds(shown);

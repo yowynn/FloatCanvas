@@ -58,7 +58,7 @@ public sealed partial class OverlayHost
             foreach (var pair in _windows)
             {
                 ShowWindow(pair.Input.Handle, 8); // SW_SHOWNA: external source retains activation and its drag capture.
-                if (!SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, 0x13))
+                if (!SetWindowPos(pair.Input.Handle, HwndTopmost, 0, 0, 0, 0, ToolWindowRaiseFlags))
                     throw new Win32Exception(Marshal.GetLastPInvokeError(), L.Get("ImageDropHost.ShowFailed"));
             }
             return true;

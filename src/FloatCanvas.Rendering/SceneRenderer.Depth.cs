@@ -43,6 +43,7 @@ public sealed partial class SceneRenderer
             throw new InvalidOperationException("The depth composition viewport is too large.");
         var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
         var imageBounds = new RectD(viewport.X, viewport.Y, width, height);
+        using var boundarySamples = new DepthBoundarySamples(source, mapping, imageBounds);
         using var workingBuffer = RentDepthSurface(canvas, info, "Cannot allocate the depth composition surface.");
         var working = workingBuffer.Surface;
         working.Canvas.Clear(SKColors.Transparent); working.Canvas.Translate(-(float)viewport.X, -(float)viewport.Y);
@@ -74,15 +75,15 @@ public sealed partial class SceneRenderer
             imageBounds);
         try
         {
-            foreach (var entry in DepthEvents(source, mapping))
+            foreach (var entry in DepthEvents(source, mapping, boundarySamples))
             {
                 if (entry.Index < 0)
                 {
-                    if (plane is not null) DrawDepthPlaneImage(working.Canvas, plane, imageBounds, entry.Clip);
+                    if (plane is not null) DrawDepthPlaneImage(working.Canvas, plane, imageBounds, entry);
                     continue;
                 }
                 var element = source.Elements[entry.Index];
-                if (plane is not null && !element.IsBillboard) continue;
+                if (plane is not null && !element.IsBillboard && !entry.Equality) continue;
                 if (ElementGeometry.IsLiveEffect(element.Kind))
                 {
                     // Images belong to this single event. A planar filter may occur in several disjoint strips.
@@ -142,10 +143,10 @@ public sealed partial class SceneRenderer
         return surface.Snapshot();
     }
 
-    private static void DrawDepthPlaneImage(SKCanvas canvas, SKImage image, RectD bounds, IReadOnlyList<PointD>? polygon)
+    private static void DrawDepthPlaneImage(SKCanvas canvas, SKImage image, RectD bounds, DepthEvent entry)
     {
         int saved = canvas.Save();
-        try { if (ClipDepthEvent(canvas, polygon)) canvas.DrawImage(image, ToRect(bounds), Nearest); }
+        try { if (ClipDepthEvent(canvas, entry)) canvas.DrawImage(image, ToRect(bounds), Nearest); }
         finally { canvas.RestoreToCount(saved); }
     }
 
@@ -169,7 +170,7 @@ public sealed partial class SceneRenderer
         int saved = canvas.Save();
         try
         {
-            if (!ClipDepthEvent(canvas, entry.Clip)) return;
+            if (!ClipDepthEvent(canvas, entry)) return;
             var element = document.Elements[entry.Index];
             if (ElementGeometry.IsLiveEffect(element.Kind)) DrawLivePixelate(canvas, document.Elements, entry.Index, assets);
             else DrawElement(canvas, element, assets, TransformFor(document), document, knownHardClip);
@@ -190,7 +191,15 @@ public sealed partial class SceneRenderer
         return !canvas.IsClipEmpty;
     }
 
-    private static IEnumerable<DepthEvent> DepthEvents(SceneDocument document, CanvasMapping mapping)
+    private static bool ClipDepthEvent(SKCanvas canvas, DepthEvent entry)
+    {
+        if (!ClipDepthEvent(canvas, entry.Clip)) return false;
+        if (entry.Samples is not null)
+            canvas.ClipPath(entry.Samples, entry.Equality ? SKClipOperation.Intersect : SKClipOperation.Difference, false);
+        return !canvas.IsClipEmpty;
+    }
+
+    private static IEnumerable<DepthEvent> DepthEvents(SceneDocument document, CanvasMapping mapping, DepthBoundarySamples boundaries)
     {
         var projection = mapping.PlaneToScreen;
         if (projection.M31 == 0 && projection.M32 == 0)
@@ -207,7 +216,18 @@ public sealed partial class SceneRenderer
         foreach (var group in billboards.GroupBy(i => projection.Denominator(document.Elements[i].BillboardAnchor)))
         {
             foreach (var entry in PlaneStrip(group.Key, far)) yield return entry;
-            foreach (int index in group) yield return new(index, null);
+            // A plane/billboard equality is a real sample, not a floating-point tolerance.
+            // Exclude those samples from both adjacent strips, then interleave their plane
+            // ink with the equal-depth billboards by the persisted layer index.
+            var equal = boundaries.ForDepth(group.Key);
+            int first = 0;
+            foreach (int index in group)
+            {
+                foreach (var entry in EqualityPlane(first, index, equal)) yield return entry;
+                yield return new(index, null);
+                first = index + 1;
+            }
+            foreach (var entry in EqualityPlane(first, document.Elements.Count, equal)) yield return entry;
             far = group.Key;
         }
         foreach (var entry in PlaneStrip(0, far)) yield return entry;
@@ -216,11 +236,65 @@ public sealed partial class SceneRenderer
         {
             var polygon = CanvasDepthOrder.ClipPlaneDepthRange(mapping, document.Viewport, near, farDepth);
             if (polygon.Count < 3) yield break;
-            yield return new(-1, polygon);
+            yield return new(-1, polygon, boundaries.All);
             for (int index = 0; index < document.Elements.Count; index++)
-                if (document.Elements[index] is { IsBillboard: false, Visible: true } e && e.Style.Opacity > 0) yield return new(index, polygon);
+                if (document.Elements[index] is { IsBillboard: false, Visible: true } e && e.Style.Opacity > 0) yield return new(index, polygon, boundaries.All);
+        }
+
+        IEnumerable<DepthEvent> EqualityPlane(int first, int end, SKPath? samples)
+        {
+            if (samples is null || samples.IsEmpty) yield break;
+            for (int i = first; i < end; i++)
+                if (document.Elements[i] is { IsBillboard: false, Visible: true } e && e.Style.Opacity > 0)
+                    yield return new(i, null, samples, true);
         }
     }
 
-    private readonly record struct DepthEvent(int Index, IReadOnlyList<PointD>? Clip);
+    private readonly record struct DepthEvent(int Index, IReadOnlyList<PointD>? Clip, SKPath? Samples = null, bool Equality = false);
+
+    private sealed class DepthBoundarySamples : IDisposable
+    {
+        private readonly Dictionary<double, SKPath> samples = [];
+        internal SKPath All { get; }
+        internal SKPath? ForDepth(double depth) => samples.GetValueOrDefault(depth);
+
+        internal DepthBoundarySamples(SceneDocument document, CanvasMapping mapping, RectD bounds)
+        {
+            if (mapping.PlaneToScreen.M31 == 0 && mapping.PlaneToScreen.M32 == 0) { All = new(); return; }
+            using var all = new SKPathBuilder();
+            var inverse = mapping.ScreenToPlane;
+            foreach (double depth in document.Elements.Where(e => e.IsBillboard && e.Visible && e.Style.Opacity > 0)
+                .Select(e => mapping.PlaneToScreen.Denominator(e.BillboardAnchor)).Where(d => double.IsFinite(d) && d > 0).Distinct())
+            {
+                using var builder = new SKPathBuilder();
+                for (int row = 0; row < (int)bounds.Height; row++)
+                {
+                    double y = bounds.Top + row + .5;
+                    if (inverse.M31 == 0)
+                    {
+                        if (Equal(bounds.Left + .5, y, depth)) Add(0, (int)bounds.Width, row);
+                    }
+                    else
+                    {
+                        double x = (1 / depth - inverse.M32 * y - inverse.M33) / inverse.M31;
+                        if (!double.IsFinite(x) || x < bounds.Left - 4 || x > bounds.Right + 4) continue;
+                        int center = (int)Math.Floor(x - bounds.Left - .5);
+                        for (int column = Math.Max(0, center - 3); column <= Math.Min((int)bounds.Width - 1, center + 3); column++)
+                            if (Equal(bounds.Left + column + .5, y, depth)) Add(column, column + 1, row);
+                    }
+                }
+                samples[depth] = builder.Detach();
+
+                bool Equal(double x, double y, double expected) => CanvasDepthOrder.TryPlaneDepth(mapping, new(x, y), out double actual) && actual == expected;
+                void Add(int left, int right, int row)
+                {
+                    var rect = new SKRect((float)(bounds.Left + left), (float)(bounds.Top + row), (float)(bounds.Left + right), (float)(bounds.Top + row + 1));
+                    builder.AddRect(rect); all.AddRect(rect);
+                }
+            }
+            All = all.Detach();
+        }
+
+        public void Dispose() { All.Dispose(); foreach (var path in samples.Values) path.Dispose(); }
+    }
 }

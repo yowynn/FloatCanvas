@@ -56,7 +56,11 @@ internal sealed record CanvasPreviewFrame(CanvasPreviewContext Context, PreviewR
     internal double CaptureMilliseconds { get; init; }
     internal long RenderStartedTimestamp { get; init; }
     internal long RenderCompletedTimestamp { get; init; }
-    public void Dispose() => Pixels.Dispose();
+    internal TimeSpan AnimationTime { get; init; }
+    internal SceneDocument? PickingDocument { get; init; }
+    internal SceneImageSnapshot? PickingImages { get; init; }
+    internal AssetResource[]? PickingResources { get; init; }
+    public void Dispose() { PickingImages?.Dispose(); Pixels.Dispose(); }
 }
 
 internal sealed record CanvasPreviewMetrics(long BuildCount, long HitCount, long CachedRasterBytes,
@@ -122,7 +126,9 @@ internal sealed class CanvasPreviewRenderer : IDisposable
             {
                 Sequence = snapshot.Sequence, ContentRevision = snapshot.ContentRevision, InputSequence = snapshot.InputSequence,
                 CapturedTimestamp = snapshot.CapturedTimestamp, CaptureMilliseconds = snapshot.CaptureMilliseconds,
-                RenderStartedTimestamp = renderStarted, RenderCompletedTimestamp = Stopwatch.GetTimestamp()
+                RenderStartedTimestamp = renderStarted, RenderCompletedTimestamp = Stopwatch.GetTimestamp(),
+                AnimationTime = snapshot.AnimationTime, PickingDocument = snapshot.Document,
+                PickingImages = renderer.CaptureImageSnapshot(), PickingResources = snapshot.Resources
             };
         }
         finally { renderer.LiveBackdrop = null; }
@@ -149,10 +155,12 @@ internal sealed class CanvasPreviewPump : IDisposable
     internal CanvasPreviewFrame? Frame { get; private set; }
     internal CanvasPreviewMetrics CacheMetrics => Frame?.Cache ?? new(0, 0, 0, 128L * 1024 * 1024, 0);
     internal long CompletedFrames { get; private set; }
+    internal long RequestedSequence => requestedSequence;
     internal long GpuFrames { get; private set; }
     internal long CpuFrames { get; private set; }
     internal event Action? FrameReady;
     internal event Action<Exception>? Failed;
+    internal event Action<CanvasPreviewContext?, long, Exception>? RequestFailed;
 
     internal CanvasPreviewPump(Dispatcher dispatcher, Func<CanvasPreviewSnapshot> capture,
         Func<CanvasPreviewSnapshot, CanvasPreviewFrame>? renderOverride = null,
@@ -182,37 +190,39 @@ internal sealed class CanvasPreviewPump : IDisposable
             return;
         }
         long began = Stopwatch.GetTimestamp();
-        var snapshot = capture(); // Called only when the worker is ready, never for every slider tick.
         pending = false; Busy = true;
-        PublishSnapshot(snapshot, began);
+        long sequence = requestedSequence;
+        try { PublishSnapshot(capture(), began); }
+        catch (Exception error) { CompleteCapture(null, error, began, sequence); }
     }
 
     private async void CaptureLatestAsync()
     {
         long began = Stopwatch.GetTimestamp();
+        long sequence = requestedSequence;
         CanvasPreviewSnapshot? snapshot = null;
         Exception? error = null;
         try { snapshot = await captureAsync!(); }
         catch (Exception failure) { error = failure; }
-        if (dispatcher.CheckAccess()) { CompleteCapture(snapshot, error, began); return; }
+        if (dispatcher.CheckAccess()) { CompleteCapture(snapshot, error, began, sequence); return; }
         lock (gate)
         {
             if (disposed || dispatcher.HasShutdownStarted) { snapshot?.Dispose(); return; }
         }
         DispatcherOperation operation;
-        try { operation = dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() => CompleteCapture(snapshot, error, began))); }
+        try { operation = dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() => CompleteCapture(snapshot, error, began, sequence))); }
         catch (InvalidOperationException) when (dispatcher.HasShutdownStarted) { snapshot?.Dispose(); return; }
         _ = operation.Task.ContinueWith(task => { if (task.IsCanceled) snapshot?.Dispose(); },
             CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
 
-    private void CompleteCapture(CanvasPreviewSnapshot? snapshot, Exception? error, long began)
+    private void CompleteCapture(CanvasPreviewSnapshot? snapshot, Exception? error, long began, long sequence)
     {
         dispatcher.VerifyAccess();
         if (disposed || dispatcher.HasShutdownStarted) { snapshot?.Dispose(); Busy = false; return; }
         if (error is null) { PublishSnapshot(snapshot!, began); return; }
         snapshot?.Dispose(); Busy = false;
-        try { Failed?.Invoke(error); }
+        try { RequestFailed?.Invoke(null, sequence, error); Failed?.Invoke(error); }
         finally { StartLatest(); }
     }
 
@@ -260,7 +270,9 @@ internal sealed class CanvasPreviewPump : IDisposable
                 DispatcherOperation operation;
                 // Finished pixels are render work. Input-priority pointer traffic must not
                 // starve their presentation or the capture of the newest pending value.
-                try { operation = dispatcher.InvokeAsync(() => Complete(completed, error), DispatcherPriority.Render); }
+                var failedContext = snapshot.Context;
+                long failedSequence = snapshot.Sequence;
+                try { operation = dispatcher.InvokeAsync(() => Complete(completed, error, failedContext, failedSequence), DispatcherPriority.Render); }
                 catch (InvalidOperationException) when (dispatcher.HasShutdownStarted) { completed?.Dispose(); return; }
                 // A shutdown can cancel a callback after it was queued. Its result still owns pixels.
                 _ = operation.Task.ContinueWith(task => { if (task.IsCanceled) completed?.Dispose(); },
@@ -295,7 +307,7 @@ internal sealed class CanvasPreviewPump : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetThreadInformation(IntPtr thread, int informationClass, ref ThreadPowerThrottling policy, uint size);
 
-    private void Complete(CanvasPreviewFrame? frame, Exception? error)
+    private void Complete(CanvasPreviewFrame? frame, Exception? error, CanvasPreviewContext context, long sequence)
     {
         Busy = false;
         if (disposed) { frame?.Dispose(); return; }
@@ -310,7 +322,7 @@ internal sealed class CanvasPreviewPump : IDisposable
                 StartLatest();
                 FrameReady?.Invoke();
             }
-            if (error is not null) Failed?.Invoke(error);
+            if (error is not null) { RequestFailed?.Invoke(context, sequence, error); Failed?.Invoke(error); }
         }
         // Even a failed frame must not drop a newer final input value.
         finally { StartLatest(); }

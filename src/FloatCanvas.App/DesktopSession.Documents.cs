@@ -92,7 +92,7 @@ internal sealed partial class DesktopSession
                     _live = new(restored.State.LiveDocument, _assets);
                     _capture = restored.State.CaptureDocument is { } draft ? new(draft, _assets) : null;
                     _captureOrigin = restored.State.CaptureOrigin;
-                    _documentRecoveryFingerprint = WorkspaceFingerprint(restored.State);
+                    _documentRecoveryFingerprint = await Task.Run(() => WorkspaceFingerprint(restored.State), _documentLifetime.Token);
                     restoredWorkspace = true;
                     if (restored.FromBackup)
                     {
@@ -116,7 +116,7 @@ internal sealed partial class DesktopSession
                 RecoveryHistory.BeginFreshWorkspace(baseline);
                 _documentRecoveryFingerprint = WorkspaceFingerprint(baseline);
             }
-            else { RecoveryHistory.WorkspaceRestored(); RecoveryHistory.EnterWorkspace(SnapshotWorkspace()); }
+            else { RecoveryHistory.WorkspaceRestored(); await RecoveryHistory.EnterWorkspaceAsync(SnapshotWorkspace(), _documentLifetime.Token); }
             _host.SetEditing(false);
             _toolbar.Hide(); _inspector?.Hide(); RequestRender();
         }
@@ -265,7 +265,7 @@ internal sealed partial class DesktopSession
             _editor.ReplaceSession(_live, _liveOrigin);
             SwitchToolState(_documentLiveTool);
             RecoveryHistory.WorkspaceRestored();
-            RecoveryHistory.EnterWorkspace(SnapshotWorkspace());
+            await RecoveryHistory.EnterWorkspaceAsync(SnapshotWorkspace(), _documentLifetime.Token);
             _documentRecoveryFingerprint = null;
             OnMonitorsChanged();
             // The chosen history entry becomes the current editable workspace.
@@ -294,13 +294,38 @@ internal sealed partial class DesktopSession
     }
     private async Task RequestExitAsync()
     {
-        if (_documentExitRequested || _documentBusy) return;
+        if (_documentExitRequested || _documentBusy)
+        {
+            LogExitStage("Request.Rejected", _documentExitRequested ? "AlreadyRequested" : "DocumentBusy");
+            return;
+        }
+        LogExitStage("Request.Prepare.Begin");
         CloseImageDrop();
         _inspector?.CompletePendingEdit();
         _documentExitRequested = true; _editor.Cancel();
-        try { FlushToolState(commitDraft: true); if (!await ConfirmLeaveWorkspaceAsync()) { _documentExitRequested = false; ScheduleRecovery(); return; } await FlushRecoveryAsync(); await ArchiveWorkspaceAsync(); _app.Shutdown(); }
+        try
+        {
+            LogExitStage("ToolState.Flush.Begin");
+            FlushToolState(commitDraft: true);
+            LogExitStage("Documents.Confirm.Begin");
+            if (!await ConfirmLeaveWorkspaceAsync())
+            {
+                LogExitStage("Cancelled", "UserDeclined");
+                _documentExitRequested = false; ScheduleRecovery(); return;
+            }
+            LogExitStage("Recovery.Flush.Begin");
+            await FlushRecoveryAsync();
+            LogExitStage("Recovery.Flush.Complete");
+            LogExitStage("Workspace.Archive.Begin");
+            await ArchiveWorkspaceAsync();
+            LogExitStage("Workspace.Archive.Complete");
+            LogExitStage("Shutdown.Requested");
+            _app.Shutdown();
+            LogExitStage("Shutdown.Scheduled");
+        }
         catch (Exception ex)
         {
+            LogExitStage("Failed", exception: ex);
             _documentExitRequested = false;
             ShowError(L.Get("Recovery.ExitSaveFailed") + ex.Message);
         }
@@ -364,10 +389,10 @@ internal sealed partial class DesktopSession
             projectPath = ProjectLaunchRequest.NormalizePath(projectPath);
             _editor.Cancel(); var previous = Active;
             if (!await ConfirmReplaceAsync(previous, L.Get("Project.ReplaceCurrent"))) return;
-            string previousContent = Fingerprint(previous.Document);
+            long previousContent = previous.PreviewRevision;
             long focusVersion = _host.ForegroundLossVersion;
             var loaded = await _projectStore.LoadAsync(projectPath, _documentLifetime.Token);
-            if (!ReferenceEquals(Active, previous) || Fingerprint(previous.Document) != previousContent)
+            if (!ReferenceEquals(Active, previous) || previous.PreviewRevision != previousContent)
             { UpdateStatus(L.Get("Project.OpenChanged")); return; }
             ImageImportBudget.ValidateResources(loaded.Assets.Resources);
             MergeAssets(loaded.Assets);
@@ -391,9 +416,11 @@ internal sealed partial class DesktopSession
                 _editor.ReplaceSession(session, _liveOrigin); SwitchToolState(_documentLiveTool);
                 OnMonitorsChanged();
             }
-            _documentFiles[session] = new() { Path = projectPath, SavedFingerprint = Fingerprint(session.Document), SavedContentVersion = session.ContentVersion, DiskVersion = loaded.FileVersion };
+            var openedSnapshot = session.Document.Clone();
+            string openedFingerprint = await Task.Run(() => Fingerprint(openedSnapshot), _documentLifetime.Token);
+            _documentFiles[session] = new() { Path = projectPath, SavedFingerprint = openedFingerprint, SavedContentVersion = session.ContentVersion, DiskVersion = loaded.FileVersion };
             RecoveryHistory.WorkspaceRestored();
-            RecoveryHistory.EnterWorkspace(SnapshotWorkspace());
+            await RecoveryHistory.EnterWorkspaceAsync(SnapshotWorkspace(), _documentLifetime.Token);
             _documentRecoveryFingerprint = null;
             bool editing;
             if (focusVersion != _host.ForegroundLossVersion)
@@ -429,10 +456,12 @@ internal sealed partial class DesktopSession
             path = dialog.FileName;
         }
         long savedContentVersion = session.ContentVersion;
-        var snapshot = session.Document.Clone(); string fingerprint = Fingerprint(snapshot);
+        var snapshot = session.Document.Clone();
+        var resources = ResourceLibrary(snapshot.ReferencedAssets.Select(_assets.Get).ToArray());
+        string fingerprint = await Task.Run(() => Fingerprint(snapshot), _documentLifetime.Token);
         var diskVersion = !saveAs && string.Equals(path, state.Path, StringComparison.OrdinalIgnoreCase) ? state.DiskVersion : await ProjectFileVersion.ReadAsync(path, _documentLifetime.Token);
         ProjectFileVersion writtenVersion;
-        try { writtenVersion = await _projectStore.SaveVersionedAsync(path, snapshot, _assets, _documentLifetime.Token, diskVersion); }
+        try { writtenVersion = await _projectStore.SaveVersionedAsync(path, snapshot, resources, _documentLifetime.Token, diskVersion); }
         catch (ProjectFileConflictException ex)
         {
             var answer = AppDialog.Show(_toolbar, ex.Message + "\n" + L.Get("Project.SaveConflictChoice"), L.Get("App.Name"), MessageBoxButton.YesNo, MessageBoxImage.Warning, "Project.SaveCopy", "Project.KeepCurrent");

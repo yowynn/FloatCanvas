@@ -31,12 +31,12 @@ internal sealed partial class DesktopSession
         if (_host.IsVisible && CurrentAnimationSchedule() is { HasAnimations: true }) _animationClock.Start();
         else _animationClock.Stop();
         _renderer.AnimationTime = _animationClock.Elapsed;
-        _editor.AnimationTime = _renderer.AnimationTime;
+        // Input uses the last successfully presented snapshot, not this request clock.
     }
 
     private void ScheduleAnimationFrame()
     {
-        if (_disposed || !_host.IsVisible || _cleanCaptureDepth != 0 ||
+        if (_disposed || _presentationUncertain || !_host.IsVisible || _cleanCaptureDepth != 0 ||
             CurrentAnimationSchedule() is not { HasAnimations: true } schedule) return;
         // No pending frame means finite animations have reached their last frame.
         if (schedule.NextDelay is not { } delay) return;
@@ -67,7 +67,7 @@ internal sealed partial class DesktopSession
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            if (!_host.IsVisible || _cleanCaptureDepth != 0 || CurrentAnimationSchedule() is not { HasAnimations: true } schedule) return;
+            if (_presentationUncertain || !_host.IsVisible || _cleanCaptureDepth != 0 || CurrentAnimationSchedule() is not { HasAnimations: true } schedule) return;
             RequestPixelRender(schedule.DirtyBounds.Select(bounds => bounds.Inflate(1)).Select(bounds =>
                 new PixelBounds((int)Math.Floor(bounds.Left + _editor.ScreenOrigin.X), (int)Math.Floor(bounds.Top + _editor.ScreenOrigin.Y),
                     checked((int)Math.Ceiling(bounds.Right) - (int)Math.Floor(bounds.Left)),

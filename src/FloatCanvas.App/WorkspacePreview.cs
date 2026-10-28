@@ -7,6 +7,12 @@ namespace FloatCanvas.App;
 /// <summary>A bounded snapshot of the annotation layer, without reading the desktop.</summary>
 internal static class WorkspacePreview
 {
+    internal static byte[]? TryRender(SceneDocument document, AssetLibrary assets, TimeSpan animationTime = default)
+    {
+        try { return Render(document, assets, animationTime); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or NotSupportedException or System.IO.IOException or OverflowException)
+        { return null; }
+    }
     internal static byte[]? Render(SceneDocument document, AssetLibrary assets, TimeSpan animationTime = default)
     {
         var viewport = document.Viewport.Normalize();

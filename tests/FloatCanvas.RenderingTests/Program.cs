@@ -10,6 +10,7 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--picking-consistency-only")) { PickingConsistencyTests.Run(Assert); return 0; }
             if (args.Contains("--image-border-cache-diagnostics"))
             {
                 int checks = 0, failures = 0;
@@ -61,6 +62,7 @@ internal static class Program
             if (args.Contains("--numbers-only")) { NumberFitRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--live-effects-only")) { LivePixelateRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--capture-selection-only")) { CaptureSelectionRenderingTests.Run(Assert); return 0; }
+            PickingConsistencyTests.Run(Assert);
             ShapesAndCoordinates();
             InnerStrokeRenderingTests.Run(Assert);
             AlphaAndBackground();

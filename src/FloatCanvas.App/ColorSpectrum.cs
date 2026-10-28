@@ -11,6 +11,9 @@ internal sealed class ColorSpectrum : FrameworkElement
 {
     private double hue, saturation = 1, brightness = 1;
     internal event Action<uint>? ColorChanged;
+    internal Func<bool>? CanBeginGesture { get; set; }
+    internal event Action<bool>? GestureCompleted;
+    private bool dragging;
     internal double Hue => hue;
     internal uint SelectedColor
     {
@@ -52,16 +55,30 @@ internal sealed class ColorSpectrum : FrameworkElement
     }
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        Focus(); CaptureMouse(); Pick(e.GetPosition(this)); e.Handled = true;
+        if (CanBeginGesture?.Invoke() == false) { e.Handled = true; return; }
+        Focus(); dragging = CaptureMouse();
+        if (dragging) Pick(e.GetPosition(this)); else GestureCompleted?.Invoke(false);
+        e.Handled = true;
     }
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        if (IsMouseCaptured) { Pick(e.GetPosition(this)); e.Handled = true; }
+        if (dragging) { Pick(e.GetPosition(this)); e.Handled = true; }
     }
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
-        if (!IsMouseCaptured) return;
-        Pick(e.GetPosition(this)); ReleaseMouseCapture(); e.Handled = true;
+        if (!dragging) return;
+        Pick(e.GetPosition(this)); dragging = false; ReleaseMouseCapture(); GestureCompleted?.Invoke(true); e.Handled = true;
+    }
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        if (!dragging) return;
+        dragging = false; GestureCompleted?.Invoke(false);
+    }
+    internal void CancelGesture()
+    {
+        dragging = false;
+        if (IsMouseCaptured) ReleaseMouseCapture();
     }
     protected override void OnKeyDown(KeyEventArgs e)
     {

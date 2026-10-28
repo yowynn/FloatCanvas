@@ -5,16 +5,20 @@ namespace FloatCanvas.Rendering;
 
 public sealed partial class SceneRenderer
 {
+    private CancellationToken pickingCancellation;
     /// <summary>Tests visible rendered ink in a screen-space rectangle, using bounded raster tiles.</summary>
-    public bool IntersectsElementInk(SceneDocument document, AssetLibrary assets, CanvasElement element, RectD rectangle)
+    public bool IntersectsElementInk(SceneDocument document, AssetLibrary assets, CanvasElement element, RectD rectangle,
+        CancellationToken cancellationToken = default)
     {
         if (!element.Visible || element.Style.Opacity <= 0 || document.LayerOpacity <= 0) return false;
+        var previousCancellation = pickingCancellation; pickingCancellation = cancellationToken;
         BeginFrame(document);
-        try { return IntersectsElementInkCore(document, assets, element, rectangle); }
-        finally { EndFrame(); }
+        try { return IntersectsElementInkCore(document, assets, element, rectangle, cancellationToken); }
+        finally { EndFrame(); pickingCancellation = previousCancellation; }
     }
 
-    private bool IntersectsElementInkCore(SceneDocument document, AssetLibrary assets, CanvasElement element, RectD rectangle)
+    private bool IntersectsElementInkCore(SceneDocument document, AssetLibrary assets, CanvasElement element, RectD rectangle,
+        CancellationToken cancellationToken = default)
     {
         var bounds = ProjectedBounds(document, element, includeStroke: true).Intersect(document.Viewport).Intersect(rectangle);
         if (bounds.IsEmpty || !double.IsFinite(bounds.Width) || !double.IsFinite(bounds.Height)) return false;
@@ -27,6 +31,7 @@ public sealed partial class SceneRenderer
         for (double top = Math.Floor(bounds.Top); top < bounds.Bottom; top += height)
         for (double left = Math.Floor(bounds.Left); left < bounds.Right; left += width)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var canvas = surface.Canvas;
             canvas.RestoreToCount(1); canvas.ResetMatrix(); canvas.Clear(SKColors.Transparent);
             canvas.Save(); canvas.Translate((float)-left, (float)-top); canvas.ClipRect(ToRect(bounds));
@@ -41,8 +46,11 @@ public sealed partial class SceneRenderer
     }
 
     /// <summary>Spatial picking with the same element transforms and plane ink as screen composition.</summary>
-    public CanvasElement? PickDepth(SceneDocument document, AssetLibrary assets, PointD point, double tolerance = 4)
+    public CanvasElement? PickDepth(SceneDocument document, AssetLibrary assets, PointD point, double tolerance = 4,
+        CancellationToken cancellationToken = default)
     {
+        if (!(document.LayerOpacity > 0)) return null;
+        var previousCancellation = pickingCancellation; pickingCancellation = cancellationToken;
         var mapping = CanvasMapping.Create(document);
         bool planeSafe = CanvasDepthOrder.TryPlaneDepth(mapping, point, out double planeDepth);
         using var surface = SKSurface.Create(new SKImageInfo(1, 1, SKColorType.Bgra8888, SKAlphaType.Premul))
@@ -61,6 +69,7 @@ public sealed partial class SceneRenderer
             }
             foreach (int index in CanvasDepthOrder.BackToFrontAt(document, mapping, point).Reverse())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var item = document.Elements[index];
                 if (!item.Visible || item.Style.Opacity <= 0) continue;
                 if (!item.IsBillboard && !planeSafe) continue;
@@ -74,12 +83,12 @@ public sealed partial class SceneRenderer
                         ? Alpha(item.Style.Opacity) : (byte)0
                     : Sample(canvas => DrawElement(canvas, item, assets, mapping.PlaneToScreen, document));
                 bool ink = alpha > 0 || tolerance > 0 && IntersectsElementInkCore(document, assets, item,
-                    new(point.X - tolerance, point.Y - tolerance, tolerance * 2, tolerance * 2));
+                    new(point.X - tolerance, point.Y - tolerance, tolerance * 2, tolerance * 2), cancellationToken);
                 if (!item.Locked && ink) return item;
                 if (alpha == 255) return null;
             }
             return null;
         }
-        finally { EndFrame(); }
+        finally { EndFrame(); pickingCancellation = previousCancellation; }
     }
 }

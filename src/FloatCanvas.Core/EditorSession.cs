@@ -160,6 +160,8 @@ public sealed partial class EditorSession
     public void RestoreDocument(string label, SceneDocument document, long? knownContentVersion = null)
     {
         ArgumentNullException.ThrowIfNull(document);
+        // A restore edits this session; changing the slot's kind requires opening a new session.
+        if (document.Kind != Document.Kind) throw new ArgumentException(L.Get("Document.RestoreKindMismatch"), nameof(document));
         if (knownContentVersion is { } version && (version < 0 || version > nextContentVersion))
             throw new ArgumentOutOfRangeException(nameof(knownContentVersion));
         BeginTransaction(label);

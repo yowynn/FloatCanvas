@@ -49,6 +49,8 @@ internal sealed class CanvasSettingsWindow : Window
     private string? referenceDevice;
     internal CanvasSettings? DisplayedSettings { get; private set; }
     public event Action<uint>? BackgroundChanged, GridColorChanged;
+    internal Func<bool>? BeginColorGesture { get; set; }
+    internal event Action<bool>? ColorGestureCompleted;
     public event Action<ColorField>? EyedropperRequested;
     public event Action<bool>? ProjectionChanged, GridVisibilityChanged;
     public event Action<bool>? DepthPriorityOcclusionChanged;
@@ -172,6 +174,11 @@ internal sealed class CanvasSettingsWindow : Window
         System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(pin, true);
         AppWindowChrome.SetHeaderActions(this, pin); ActionIconButton.UpdatePin(pin, false);
         background.ValueChanged += value => { if (!refreshing) BackgroundChanged?.Invoke(value); };
+        foreach (var color in new[] { background, gridColor })
+        {
+            color.CanBeginGesture = () => BeginColorGesture?.Invoke() != false;
+            color.GestureCompleted += commit => ColorGestureCompleted?.Invoke(commit);
+        }
         background.EyedropperRequested += () => EyedropperRequested?.Invoke(background);
         gridColor.EyedropperRequested += () => EyedropperRequested?.Invoke(gridColor);
         gridColor.ValueChanged += value => { if (!refreshing) GridColorChanged?.Invoke(value); };
@@ -383,7 +390,7 @@ internal sealed class CanvasSettingsWindow : Window
     internal void ResetPin() { IsPinned = false; RefreshPin(); }
     private void RefreshGridSize(double value)
     {
-        gridSize.Value = Math.Clamp(value, CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize);
+        gridSize.SetModelValue(value);
         gridSize.Input.Text = value.ToString("G", System.Globalization.CultureInfo.CurrentCulture);
     }
     private void RefreshWidth(double value)

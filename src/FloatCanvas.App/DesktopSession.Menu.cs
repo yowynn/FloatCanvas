@@ -103,7 +103,7 @@ internal sealed partial class DesktopSession
         updates.Click += (_, _) => RunUiAction(ShowUpdates); menu.Items.Add(updates);
         menu.Items.Add(new Controls.Separator());
         var exit = new Controls.MenuItem { Header = L.Get("Desktop.Exit"), Icon = CommandGlyphs.Create(CommandGlyphs.Exit) };
-        exit.Click += (_, _) => _ = ExitAfterSnapshotAsync(); menu.Items.Add(exit);
+        exit.Click += (_, _) => _ = ExitAfterSnapshotAsync("LauncherMenu"); menu.Items.Add(exit);
         return menu;
     }
 

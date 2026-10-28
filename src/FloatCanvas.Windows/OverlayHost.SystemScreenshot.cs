@@ -164,7 +164,7 @@ public sealed partial class OverlayHost
             _screenshotPeerShown = true;
             foreach (var item in _systemScreenshot)
                 if (_screenshotPeer != peer.Handle || rows.Any(row => row.Handle == item.Window.Handle && row.Rank < peer.Rank))
-                    _ = SetWindowPos(item.Window.Handle, peer.Handle, 0, 0, 0, 0, 0x213);
+                    _ = SetWindowPos(item.Window.Handle, peer.Handle, 0, 0, 0, 0, ToolWindowRaiseFlags);
             _screenshotPeer = peer.Handle;
         }
         else if (_screenshotPeerShown || Environment.TickCount64 - _screenshotStarted >= 2000)

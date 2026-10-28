@@ -13,7 +13,7 @@ namespace FloatCanvas.App;
 internal sealed class ColorField : UserControl
 {
     public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(nameof(Value), typeof(uint), typeof(ColorField),
-        new FrameworkPropertyMetadata(ColorLibrary.ForegroundRed, (sender, _) => ((ColorField)sender).RefreshValue()));
+        new FrameworkPropertyMetadata(ColorLibrary.ForegroundRed, (sender, _) => ((ColorField)sender).SynchronizeValue()));
     private readonly ColorLibrary library;
     private readonly System.Windows.Controls.Button button = new() { MinHeight = 34, Padding = new Thickness(6, 4, 6, 4) };
     private readonly Grid swatch = new() { IsHitTestVisible = false };
@@ -25,6 +25,7 @@ internal sealed class ColorField : UserControl
     private int suppressedPressTime;
     private int pickerSuspensions;
     private bool valueDirty = true;
+    private bool publishingValue;
 
     internal bool IsMixed
     {
@@ -33,12 +34,18 @@ internal sealed class ColorField : UserControl
     }
 
     internal bool IsPickerOpen => popupDisplay.IsOpen;
+    internal bool IsInteracting => picker.IsInteracting;
+    internal bool IsSynchronizingModel { get; private set; }
+    internal bool IsNotifyingOwner { get; private set; }
     internal DependencyObject PickerRoot => popupDisplay.Child!;
     public ColorRole Role { get; }
     public uint Value { get => (uint)GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
     public event Action<uint>? ValueChanged;
     public event Action? EyedropperRequested;
     internal event Action? PickerClosed;
+    internal Func<bool>? CanBeginGesture { get; set; }
+    internal event Action? GestureStarted;
+    internal event Action<bool>? GestureCompleted;
 
     public ColorField(ColorRole role, ColorLibrary? library = null)
     {
@@ -65,6 +72,9 @@ internal sealed class ColorField : UserControl
         }
         Content = row;
         picker = new ColorPickerPanel(role, this.library);
+        picker.CanBeginGesture = () => CanBeginGesture?.Invoke() != false;
+        picker.GestureStarted += () => GestureStarted?.Invoke();
+        picker.GestureCompleted += commit => GestureCompleted?.Invoke(commit);
         picker.DialogOwner = () => Window.GetWindow(picker) ?? Window.GetWindow(this);
         picker.DragHandle.Visibility = Visibility.Collapsed;
         var border = new Border { Child = new System.Windows.Documents.AdornerDecorator { Child = picker } };
@@ -83,6 +93,7 @@ internal sealed class ColorField : UserControl
                 PresetHistoryKeyboardRoute.Handle(e, Keyboard.Modifiers, command);
             if (e.Key != Key.Escape) return;
             if (NumericValueField.TryCancelForInput(e.OriginalSource as DependencyObject)) { e.Handled = true; return; }
+            if (picker.IsInteracting) { picker.EndGesture(false); e.Handled = true; return; }
             ClosePicker(); button.Focus(); e.Handled = true;
         };
         SessionWindowCoordinator? popupSession = null;
@@ -148,11 +159,11 @@ internal sealed class ColorField : UserControl
             if (returnToButton && MayReturnFocus && button.IsVisible && button.IsEnabled) button.Focus();
             return;
         }
-        if (Value != value) library.Remember(value);
         bool changed = IsMixed || Value != value;
         IsMixed = false;
-        Value = value;
-        if (changed) ValueChanged?.Invoke(value);
+        SetPublishedValue(value);
+        if (changed) NotifyOwner(value);
+        if (changed) Remember(value);
     }
     internal bool OwnsPickerInput(DependencyObject? source)
     {
@@ -178,15 +189,56 @@ internal sealed class ColorField : UserControl
         draftCommitted = true;
         picker.Run(() =>
         {
+            picker.EndGesture(true);
             if (picker.TryGetDraft(out uint color) && (!IsMixed || color != Value)) ApplyPickerValue(color);
-            if (pickerSessionChanged) library.Remember(Value);
+            if (pickerSessionChanged) Remember(Value);
         });
     }
     private void ApplyPickerValue(uint color)
     {
         if (!IsMixed && Value == color) return;
-        pickerSessionChanged = true; IsMixed = false; Value = color;
-        ValueChanged?.Invoke(color);
+        pickerSessionChanged = true; IsMixed = false; SetPublishedValue(color);
+        NotifyOwner(color);
+    }
+    private void NotifyOwner(uint color)
+    {
+        IsNotifyingOwner = true;
+        try { ValueChanged?.Invoke(color); }
+        finally { IsNotifyingOwner = false; }
+    }
+    internal void SynchronizeModel(uint color)
+    {
+        IsSynchronizingModel = true;
+        try { picker.SynchronizeExternalValue(color); pickerSessionChanged = false; Value = color; }
+        finally { IsSynchronizingModel = false; }
+    }
+    private void SetPublishedValue(uint value)
+    {
+        publishingValue = true;
+        try { Value = value; }
+        finally { publishingValue = false; }
+    }
+    private void SynchronizeValue()
+    {
+        if (!publishingValue && !IsSynchronizingModel)
+        {
+            // Owner echo of our exact value never changes the dependency property.
+            // A different value is an external undo, preset or document replacement.
+            IsSynchronizingModel = true;
+            try { picker?.SynchronizeExternalValue(Value); }
+            finally { IsSynchronizingModel = false; }
+            pickerSessionChanged = false;
+        }
+        RefreshValue();
+    }
+    private void Remember(uint color)
+    {
+        picker.Run(() => library.Remember(color));
+        if (picker.ErrorMessage is { Length: > 0 } message)
+        {
+            button.ToolTip = message;
+            AutomationProperties.SetHelpText(this, message);
+        }
     }
     internal void OpenPicker(bool focus = false)
     {

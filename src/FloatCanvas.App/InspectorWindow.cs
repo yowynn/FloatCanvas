@@ -485,7 +485,8 @@ internal sealed class InspectorWindow : Wpf.Window
                 session.NotifyElementsChanged(changes.Select(change => change.Item1.Id));
             }
             finally { applying = false; }
-            editTimer.Stop(); editTimer.Start();
+            editTimer.Stop();
+            if (!colorFields.Values.Any(field => field.IsInteracting)) editTimer.Start();
             SetStatus(L.Get("Inspector.PropertiesApplied"), false);
         }
         catch (Exception ex) { invalidDraft=validatingDraft;SetStatus(ex.Message, true); }
@@ -519,7 +520,7 @@ internal sealed class InspectorWindow : Wpf.Window
                 if (key == changedKey || !IsFieldVisible(key)) continue;
                 var value = PropertyValue(selected[0], key);
                 if (selected.Skip(1).Any(e => !Equals(PropertyValue(e, key), value))) { SetMixedField(key, value); continue; }
-                if (value is double number) box.Text = (key == "Opacity" ? number * 100 : number).ToString("0.###", CultureInfo.CurrentCulture);
+                if (value is double number) numericFields[key].SetModelValue(key == "Opacity" ? number * 100 : number);
                 else box.Text = Convert.ToString(value, CultureInfo.CurrentCulture) ?? "";
             }
         }
@@ -748,6 +749,23 @@ internal sealed class InspectorWindow : Wpf.Window
             ChangeField(key);
         };
         field.EyedropperRequested += () => EyedropperRequested?.Invoke(field);
+        field.CanBeginGesture = () =>
+        {
+            CompleteEdit();
+            return !invalidDraft && canMutate() && !getSession().IsTransactionActive;
+        };
+        field.GestureCompleted += commit =>
+        {
+            if (commit) { CompleteEdit(); return; }
+            editTimer.Stop(); var previous = editSession; editSession = null;
+            if (previous is not null && ReferenceEquals(previous, getSession()) && previous.IsTransactionActive && previous.TransactionId == editTransaction)
+            {
+                applying = true;
+                try { previous.Cancel(); }
+                finally { applying = false; }
+            }
+            LoadSelection(true);
+        };
         field.PickerClosed += CompleteEdit;
         colorFields.Add(key, field); fieldContainers.Add(key, row);
         return row;
@@ -1000,7 +1018,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private bool IsFieldVisible(string key) => propertyPanel.Visibility == Wpf.Visibility.Visible &&
         fieldContainers.TryGetValue(key, out var container) && container.Visibility == Wpf.Visibility.Visible;
     private void SetField(string key, double value)
-    { if (IsFieldVisible(key)) fields[key].Text = value.ToString("0.###", CultureInfo.CurrentCulture); }
+    { if (IsFieldVisible(key)) numericFields[key].SetModelValue(value); }
     private void SetMixedField(string key, object? representative)
     {
         if (!IsFieldVisible(key)) return;

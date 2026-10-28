@@ -7,20 +7,34 @@ namespace FloatCanvas.App;
 
 internal sealed record WorkspaceRecoveryEntry(string DirectoryPath, DateTime SavedAtUtc, bool IsCurrent, string? SourceFile = null);
 
-// DesktopSession serializes recovery operations; RecoveryStore retains its atomic package writes.
+// Snapshot-based history work is serialized off UI; RecoveryStore retains its atomic package writes.
 internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
 {
     private string? freshBaseline;
     private string? entryBaseline;
+    private long entryEpoch;
+    private readonly SemaphoreSlim operations = new(1, 1);
     public int MaximumVersions { get; set; } = 60;
     private sealed record HistoryInfo(string Fingerprint, string? SourceFile, bool Eligible = true, long PackageTicks = 0, long PackageLength = 0);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Ticks, long Length, HistoryInfo Info)> legacyInfo = new(StringComparer.OrdinalIgnoreCase);
 
     public void EnterWorkspace(WorkspaceState workspace)
     {
+        Interlocked.Increment(ref entryEpoch);
         entryBaseline = ContentFingerprint(workspace);
     }
+    public async Task EnterWorkspaceAsync(WorkspaceState workspace, CancellationToken ct = default)
+    {
+        long epoch = Interlocked.Increment(ref entryEpoch);
+        string fingerprint = await Task.Run(() => ContentFingerprint(workspace), ct).ConfigureAwait(false);
+        if (epoch == Interlocked.Read(ref entryEpoch)) entryBaseline = fingerprint;
+    }
     public bool HasNewVersion(WorkspaceState workspace) => ContentFingerprint(workspace) != entryBaseline && HasValue(workspace);
+    public Task<bool> HasNewVersionAsync(WorkspaceState workspace, CancellationToken ct = default)
+    {
+        string? baseline = entryBaseline;
+        return Task.Run(() => HasValue(workspace) && ContentFingerprint(workspace) != baseline, ct);
+    }
     private static bool HasValue(WorkspaceState workspace) => HasObjects(workspace);
     private static bool HasObjects(WorkspaceState workspace) => workspace.LiveDocument.Elements.Count > 0 ||
         workspace.LiveDocument.Background is not null || workspace.CaptureDocument is not null;
@@ -45,13 +59,36 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
         File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(info));
         File.Move(path + ".tmp", path, true);
     }
-    public async Task ArchiveAsync(WorkspaceState workspace, AssetLibrary assets, byte[]? preview,
-        string? sourceFile, bool force = false, CancellationToken ct = default)
+    public Task ArchiveAsync(WorkspaceState workspace, AssetLibrary assets, byte[]? preview,
+        string? sourceFile, bool force = false, CancellationToken ct = default, Func<WorkspaceState, AssetLibrary, byte[]?>? createPreview = null)
     {
-        if (MaximumVersions <= 0) return;
-        if (!(force ? HasValue(workspace) : HasNewVersion(workspace))) return;
+        var snapshot = workspace.Clone();
+        var resources = assets.Resources.ToArray();
+        string? baseline = entryBaseline;
+        int maximum = MaximumVersions;
+        return RunSerializedAsync(() => ArchiveCoreAsync(snapshot, resources, preview, sourceFile, force, baseline, maximum, ct, createPreview), ct);
+    }
+
+    private async Task RunSerializedAsync(Func<Task> operation, CancellationToken ct)
+    {
+        await operations.WaitAsync(ct).ConfigureAwait(false);
+        try { await Task.Run(operation, ct).ConfigureAwait(false); }
+        finally { operations.Release(); }
+    }
+
+    private async Task ArchiveCoreAsync(WorkspaceState workspace, AssetResource[] resources, byte[]? preview,
+        string? sourceFile, bool force, string? baseline, int maximum, CancellationToken ct, Func<WorkspaceState, AssetLibrary, byte[]?>? createPreview)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (maximum <= 0 || !HasValue(workspace)) return;
         string fingerprint = ContentFingerprint(workspace);
-        if (GetEntries().Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath)?.Fingerprint == fingerprint)) return;
+        if (!force && fingerprint == baseline) return;
+        if (GetEntries(ct).Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath, ct)?.Fingerprint == fingerprint)) return;
+        ct.ThrowIfCancellationRequested();
+        var assets = new AssetLibrary();
+        foreach (var resource in resources) assets.Add(resource);
+        if (createPreview is not null) preview = createPreview(workspace, assets);
+        ct.ThrowIfCancellationRequested();
         string parent = Path.Combine(store.DirectoryPath, "history");
         Directory.CreateDirectory(parent);
         string identity = DateTime.UtcNow.ToString("yyyyMMdd-HHmmssfff") + "-" + Guid.NewGuid().ToString("N");
@@ -65,14 +102,21 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
             Directory.Move(pending, Path.Combine(parent, identity));
         }
         finally { PublicationCleanup.RemovePendingDirectory(pending); }
-        Trim();
+        Trim(maximum, ct);
     }
-    public void Trim()
+    public void Trim() => Trim(MaximumVersions);
+    public Task TrimAsync(CancellationToken ct = default)
+    {
+        int maximum = MaximumVersions;
+        return RunSerializedAsync(() => { Trim(maximum, ct); return Task.CompletedTask; }, ct);
+    }
+    private void Trim(int maximum, CancellationToken ct = default)
     {
         string parent = Path.GetFullPath(Path.Combine(store.DirectoryPath, "history"));
         PublicationCleanup.SweepPending(parent);
-        foreach (var entry in GetEntries().Where(e => !e.IsCurrent).Skip(Math.Clamp(MaximumVersions, 0, 1000)))
+        foreach (var entry in GetEntries(ct).Where(e => !e.IsCurrent).Skip(Math.Clamp(maximum, 0, 1000)))
         {
+            ct.ThrowIfCancellationRequested();
             string target = Path.GetFullPath(entry.DirectoryPath);
             if (!string.Equals(Path.GetDirectoryName(target), parent, StringComparison.OrdinalIgnoreCase) ||
                 !System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(target), @"^\d{8}-\d{9}-[a-f0-9]{32}$") ||
@@ -115,18 +159,24 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     }
 
     private bool archiveBeforeWrite = true;
-    public async Task PrepareClearAsync(CancellationToken ct=default)
+    public Task PrepareClearAsync(CancellationToken ct=default)
+    {
+        string? baseline = entryBaseline;
+        int maximum = MaximumVersions;
+        return RunSerializedAsync(() => PrepareClearCoreAsync(baseline, maximum, ct), ct);
+    }
+    private async Task PrepareClearCoreAsync(string? baseline, int maximum, CancellationToken ct)
     {
         if(!archiveBeforeWrite)return;
         // Clearing this recovered canvas must not publish it to history. A fresh
         // launch may still hold a different previous session, which must survive.
         try
         {
-            if(EntryInfo(store.DirectoryPath)?.Fingerprint==entryBaseline)
+            if(EntryInfo(store.DirectoryPath, ct)?.Fingerprint==baseline)
             {archiveBeforeWrite=false;return;}
         }
         catch(Exception ex) when(ex is InvalidDataException or JsonException or NotSupportedException or EndOfStreamException) { }
-        await PreserveBeforeFirstWriteAsync(ct).ConfigureAwait(false);
+        await PreserveCurrentCoreAsync(maximum, ct).ConfigureAwait(false);
     }
 
     public void BeginFreshWorkspace(WorkspaceState baseline) { freshBaseline = ContentFingerprint(baseline); EnterWorkspace(baseline); }
@@ -140,18 +190,23 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
             Task.Run(() => ContentFingerprint(workspace) != baseline, token);
     }
 
-    public async Task PreserveBeforeFirstWriteAsync(CancellationToken ct = default)
+    public Task PreserveBeforeFirstWriteAsync(CancellationToken ct = default)
     {
-        if (!archiveBeforeWrite) return;
-        await PreserveCurrentAsync(ct).ConfigureAwait(false);
+        int maximum = MaximumVersions;
+        return RunSerializedAsync(() => archiveBeforeWrite ? PreserveCurrentCoreAsync(maximum, ct) : Task.CompletedTask, ct);
     }
 
-    public async Task PreserveCurrentAsync(CancellationToken ct = default)
+    public Task PreserveCurrentAsync(CancellationToken ct = default)
+    {
+        int maximum = MaximumVersions;
+        return RunSerializedAsync(() => PreserveCurrentCoreAsync(maximum, ct), ct);
+    }
+    private async Task PreserveCurrentCoreAsync(int maximum, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var sources = new[] { store.CurrentPath, store.BackupPath }.Where(File.Exists).ToArray();
         HistoryInfo? info;
-        try { info = sources.Length > 0 ? EntryInfo(store.DirectoryPath) : null; }
+        try { info = sources.Length > 0 ? EntryInfo(store.DirectoryPath, ct) : null; }
         catch (Exception ex) when (ex is InvalidDataException or JsonException or NotSupportedException or EndOfStreamException)
         {
             // Keep unreadable packages byte-exact in quarantine before replacing current recovery.
@@ -159,7 +214,7 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
             archiveBeforeWrite = false;
             return;
         }
-        if (MaximumVersions > 0 && sources.Length > 0 && info is { Eligible: true } && !GetEntries().Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath)?.Fingerprint == info.Fingerprint))
+        if (maximum > 0 && sources.Length > 0 && info is { Eligible: true } && !GetEntries(ct).Any(e => !e.IsCurrent && EntryInfo(e.DirectoryPath, ct)?.Fingerprint == info.Fingerprint))
         {
             string history = Path.Combine(store.DirectoryPath, "history");
             Directory.CreateDirectory(history);
@@ -190,10 +245,15 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
             finally { PublicationCleanup.RemovePendingDirectory(pending); }
         }
         archiveBeforeWrite = false;
-        Trim();
+        Trim(maximum, ct);
     }
 
-    public Task<IReadOnlyList<WorkspaceRecoveryEntry>> GetEntriesAsync(CancellationToken ct = default) => Task.Run(() => GetEntries(ct), ct);
+    public async Task<IReadOnlyList<WorkspaceRecoveryEntry>> GetEntriesAsync(CancellationToken ct = default)
+    {
+        await operations.WaitAsync(ct).ConfigureAwait(false);
+        try { return await Task.Run(() => GetEntries(ct), ct).ConfigureAwait(false); }
+        finally { operations.Release(); }
+    }
 
     public IReadOnlyList<WorkspaceRecoveryEntry> GetEntries(CancellationToken ct = default)
     {

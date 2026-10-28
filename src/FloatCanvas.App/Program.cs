@@ -58,6 +58,7 @@ internal static class Program
         }
         var diagnostics = new ApplicationDiagnostics(ApplicationPaths.ProfileDirectory);
         diagnostics.Write("App.Startup", new { Executable = Environment.ProcessPath,
+            WindowsStartup = args.Contains("--startup"), SystemUptimeMilliseconds = Environment.TickCount64,
             AssemblyId = typeof(Program).Assembly.ManifestModule.ModuleVersionId,
             WindowsAssemblyId = typeof(FloatCanvas.Windows.OverlayHost).Assembly.ManifestModule.ModuleVersionId,
             RenderingAssemblyId = typeof(FloatCanvas.Rendering.SceneRenderer).Assembly.ManifestModule.ModuleVersionId,
@@ -65,7 +66,10 @@ internal static class Program
             OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription });
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         { if (e.ExceptionObject is Exception exception) diagnostics.WriteUnhandled(exception); };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => diagnostics.Write("App.ProcessExit", new { Environment.ExitCode });
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        app.Dispatcher.ShutdownStarted += (_, _) => diagnostics.Write("App.Dispatcher.ShutdownStarted");
+        app.Dispatcher.ShutdownFinished += (_, _) => diagnostics.Write("App.Dispatcher.ShutdownFinished");
         CompatibleConfiguration.ConfirmRepair=(path,fields)=>ConfigurationStartup.ConfirmWrite(path,fields,diagnostics);
         DesktopSession? session = null;
         OverlayBackendProtection? protection = null;
@@ -140,11 +144,19 @@ internal static class Program
                 app.Shutdown(1);
             }
         };
-        app.Exit += (_, _) =>
+        app.Exit += (_, e) =>
         {
-            session?.Dispose();
-            protection?.Complete();
+            diagnostics.Write("App.Exit.Begin", new { e.ApplicationExitCode });
+            try
+            {
+                session?.Dispose();
+                diagnostics.Write("App.Exit.ProtectionComplete.Begin");
+                protection?.Complete();
+                diagnostics.Write("App.Exit.Complete");
+            }
+            catch (Exception error) { diagnostics.Write("App.Exit.Failed", exception: error); throw; }
         };
         app.Run();
+        diagnostics.Write("App.Run.Returned", new { Environment.ExitCode });
     }
 }

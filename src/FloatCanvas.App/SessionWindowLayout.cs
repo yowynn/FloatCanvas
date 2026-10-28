@@ -127,11 +127,14 @@ internal sealed class SessionWindowLayout
 
     private static Size Measure(Window window, MonitorInfo monitor)
     {
+        bool contentWidth = window.SizeToContent is SizeToContent.Width or SizeToContent.WidthAndHeight;
+        bool contentHeight = window.SizeToContent is SizeToContent.Height or SizeToContent.WidthAndHeight;
         double width = double.IsFinite(window.Width) ? window.Width : window.ActualWidth > 1 ? window.ActualWidth : monitor.WorkArea.Width * 96d / monitor.DpiX;
         window.ApplyTemplate();
         var root = VisualTreeHelper.GetChildrenCount(window) > 0 ? VisualTreeHelper.GetChild(window, 0) as FrameworkElement : null;
-        root?.Measure(new Size(width, window.MaxHeight));
-        double height = double.IsFinite(window.Height) ? window.Height : root?.DesiredSize.Height ?? window.ActualHeight;
+        root?.Measure(new Size(contentWidth ? window.MaxWidth : width, window.MaxHeight));
+        if (contentWidth && root is not null) width = root.DesiredSize.Width;
+        double height = !contentHeight && double.IsFinite(window.Height) ? window.Height : root?.DesiredSize.Height ?? window.ActualHeight;
         return new(Math.Clamp(width, window.MinWidth, window.MaxWidth), Math.Clamp(height, window.MinHeight, window.MaxHeight));
     }
 

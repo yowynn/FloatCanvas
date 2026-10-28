@@ -119,7 +119,7 @@ internal sealed partial class DesktopSession
         Cell(Separator(), toolColumn++);
         Action("undo", L.Get("ToolbarV2.Undo"), "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,13", Undo, "Ctrl+Z");
         Action("redo", L.Get("ToolbarV2.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13", Redo, "Ctrl+Y");
-        _newCanvasButton = new NewCanvasButton(() => !DocumentOperationBusy, () => RunCommand(StartNewCanvasAsync),NeedsNewCanvasConfirmation);
+        _newCanvasButton = new NewCanvasButton(() => !_disposed && !DocumentOperationBusy, () => RunCommand(StartNewCanvasAsync), NeedsNewCanvasConfirmationAsync);
         Cell(_newCanvasButton, toolColumn++);
         var clearCurrent=ToolbarIcon(L.Get("History.ClearCurrent"),CommandGlyphs.ClearCanvas,()=>_ = RunCommand(ClearCurrentCanvasAsync),"Ctrl+Backspace / Ctrl+Delete");
         clearCurrent.Tag="clear";clearCurrent.SetResourceReference(Controls.Control.StyleProperty,"CanvasDangerButton");

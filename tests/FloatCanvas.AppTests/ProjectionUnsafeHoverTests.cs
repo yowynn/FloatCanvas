@@ -46,6 +46,7 @@ internal static class ProjectionUnsafeHoverTests
             SceneIdentity = document, Document = new(), Resources = [], Outputs = []
         }, snapshot => new(snapshot.Context, new([]), OverlayRenderBackend.Cpu, false, null, null, 0));
         Set(session, "_canvasPreview", preview);
+        Set(session, "_canvasPreviewRequests", new CanvasPreviewRequestState());
         // GetUninitializedObject bypasses the production collection initializer.
         var dirtyRegions = new List<PixelBounds>();
         Set(session, "_pixelDirtyRegions", dirtyRegions);

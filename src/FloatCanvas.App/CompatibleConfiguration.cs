@@ -122,14 +122,13 @@ internal sealed class CompatibleConfiguration(string path)
         if (value is null) return true;
         if (owner == typeof(ElementStyle)) return name switch
         {
-            "StrokeWidth" => Range(value, 0, 1024), "Opacity" => Range(value, 0, 1), "FontSize" => Range(value, double.Epsilon, 4096),
-            "ArrowHeadSize" => Range(value, 0, 512), "FontFamily" => Text(value, 1024), _ => true
+            "StrokeWidth" or "Opacity" or "FontSize" or "ArrowHeadSize" => NumericParameterDomain.ForStyle(name).Contains(value.Deserialize<double>()),
+            "FontFamily" => Text(value, 1024), _ => true
         };
         if (owner == typeof(ToolParameters)) return name switch
         {
-            "DefaultWidth" or "DefaultHeight" => Range(value, 1, 1000000), "NumberStart" or "NumberStep" => Range(value, -999999, 999999),
+            "DefaultWidth" or "DefaultHeight" or "NumberStart" or "NumberStep" or "EffectStrength" or "CaptureBorderWidth" or "CornerRadius" => NumericParameterDomain.ForTool(name).Contains(value.Deserialize<double>()),
             "NumberColorRolesVersion" => Range(value,0,1),
-            "EffectStrength" => Range(value, double.Epsilon, 1024), "CaptureBorderWidth" => Range(value, 0, 1024), "CornerRadius" => Range(value, 0, double.MaxValue),
             "Emoji" => Text(value, 32) && System.Globalization.StringInfo.GetNextTextElement(value.GetValue<string>()).Length == value.GetValue<string>().Length, _ => true
         };
         if (owner == typeof(CanvasPresetParameters)) return name switch

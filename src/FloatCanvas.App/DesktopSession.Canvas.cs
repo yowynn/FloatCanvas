@@ -13,6 +13,7 @@ internal sealed partial class DesktopSession
     private readonly CanvasCalibrationController _canvasCalibration = new();
     private readonly CanvasGridScaleController _canvasGridScale = new();
     private CanvasSettingsWindow? _canvasSettingsWindow;
+    private CanvasColorEdit? _canvasColorEdit;
     private EditorSession? _calibrationSession;
     private bool _canvasSafetyPromptOpen;
     private bool _synchronizingCanvasTool;
@@ -55,7 +56,16 @@ internal sealed partial class DesktopSession
             };
             _windowCoordinator?.Register(window, () => window.IsPinned, DismissCanvasSettings);
             window.CommandKey += OnKey;
-            window.BackgroundChanged += color => ChangeCanvas(c => c.BackgroundColor = color);
+            _canvasColorEdit = new(() => Active, () => !DocumentOperationBusy && _host.IsEditing,
+                () => { _canvasGridScale.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel(); CancelSnapshotCapture("CanvasSettingsChanged"); CancelLivePreparation(); },
+                () => { SynchronizeCanvasTool(); RequestRender(); });
+            window.BeginColorGesture = _canvasColorEdit.Begin;
+            window.ColorGestureCompleted += _canvasColorEdit.Complete;
+            void ColorChange(Action<CanvasSettings> update)
+            {
+                if (!_canvasColorEdit.Preview(update)) ChangeCanvas(update);
+            }
+            window.BackgroundChanged += color => ColorChange(c => c.BackgroundColor = color);
             window.EyedropperRequested += BeginEyedropper;
             window.ProjectionChanged += SetCanvasProjection;
             window.DepthPriorityOcclusionChanged += enabled =>
@@ -75,7 +85,7 @@ internal sealed partial class DesktopSession
             {
                 EnsureCanvasReference(c); c.Grid.Visible = visible;
             });
-            window.GridColorChanged += color => ChangeCanvas(c => c.Grid.Color = color);
+            window.GridColorChanged += color => ColorChange(c => c.Grid.Color = color);
             window.GridWidthChanged += width => ChangeCanvas(c => c.Grid.Width = width);
             window.GridPatternChanged += pattern => ChangeCanvas(c => c.Grid.Pattern = pattern);
             window.PresetApplied += ApplyCanvasPreset;

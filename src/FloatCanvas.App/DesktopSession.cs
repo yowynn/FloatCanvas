@@ -36,6 +36,7 @@ internal sealed partial class DesktopSession : IDisposable
     private readonly SceneRenderer _renderer = new();
     private readonly CanvasPreviewPump _canvasPreview;
     private readonly IDisposable? _escapeTrace;
+    private readonly DispatcherResponsivenessMonitor? _dispatcherResponsiveness;
     private readonly EditorController _editor;
     private DispatcherOperation? _renderOperation;
     private EditorSession _live;
@@ -102,7 +103,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.ApplyRenderPreference(_settings.PreferGpuAcceleration);
         _host.RenderBackendChanged += () => _diagnostics.Write("Rendering.Backend", new
             { Backend = _host.RenderBackend.ToString(), _host.GpuDetails, _host.LastGpuFailure });
-        _host.CanBeginCanvasGesture = () => !_disposed && !DocumentOperationBusy && !ComponentDispatcher.IsThreadModal;
+        _host.CanBeginCanvasGesture = () => !_disposed && !_presentationUncertain && !DocumentOperationBusy && !ComponentDispatcher.IsThreadModal;
         var keyboardBridge = new PrivateKeyboardBridge(handle => _host.Diagnostics.Any(pair => pair.InputHandle == handle));
         if(!_host.UsesSystemInput) _host.EnableKeyboardIsolation((packet, complete) =>
         {
@@ -120,6 +121,7 @@ internal sealed partial class DesktopSession : IDisposable
         { DeviceName = m.DeviceName, Bounds = new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height), DpiX = m.DpiX, DpiY = m.DpiY }).ToList() };
         _live = new(document, _assets);
         _editor = new(_live);
+        _editor.BackgroundPickingEnabled = true;
         if (_toolbarToolMemory.TryGetValue(EditorTool.Freehand, out var savedPen)) _editor.ApplyParameters(savedPen);
         _toolbarToolMemory.TryGetValue(EditorTool.Number, out var savedNumber);
         _editor.NumberStart = Math.Clamp(savedNumber?.NumberStart ?? _settings.NumberStart,-999999,999999);
@@ -142,12 +144,10 @@ internal sealed partial class DesktopSession : IDisposable
         _host.CaptureDiagnostic += OnCaptureDiagnostic;
         _canvasPreview = new(_app.Dispatcher, CaptureCanvasPreview, captureAsync: CaptureCanvasPreviewAsync);
         _canvasPreview.FrameReady += PresentCanvasPreview;
-        _canvasPreview.Failed += error =>
-        {
-            _diagnostics.Write("Rendering.PreviewFailed", exception: error);
-            ShowError(error.Message);
-        };
+        _canvasPreview.RequestFailed += CanvasPreviewRequestFailed;
         _host.Draw += Draw;
+        _host.FrameRendering += BeginCanvasSubmission;
+        _host.FrameSubmitted += CompleteCanvasSubmission;
         _host.CaptureToolVisuals = CaptureScreenshotTools;
         _host.SystemScreenshotFinished += RestoreScreenshotTools;
         _host.Pointer += pointer=>
@@ -229,7 +229,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (_host.UsesSystemInput && protection?.AllowsAutomaticFallback == true)
             menu.Items.Add(CommandGlyphs.TrayItem(L.Get("OverlaySafety.DesktopCommand"), CommandGlyphs.Windows,
                 (_, _) => RequestDesktopFallback("User selected ordinary desktop mode.")));
-        menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.Exit"), CommandGlyphs.Exit, async (_, _) => await ExitAfterSnapshotAsync()));
+        menu.Items.Add(CommandGlyphs.TrayItem(L.Get("Desktop.Exit"), CommandGlyphs.Exit, async (_, _) => await ExitAfterSnapshotAsync("TrayMenu")));
         menu.Items.Insert(4, CommandGlyphs.TrayItem(L.Get("Welcome.Open"), CommandGlyphs.Welcome, (_, _) => RunUiAction(() => OpenWelcome(true))));
         var floatingLogo = CommandGlyphs.TrayItem(L.Get("Settings.PassThroughLauncher"), CommandGlyphs.FloatingLogo, (_, _) => RunUiAction(ToggleFloatingLogo));
         menu.Items.Insert(5, floatingLogo);
@@ -245,6 +245,7 @@ internal sealed partial class DesktopSession : IDisposable
             menu.Items.OfType<Forms.ToolStripMenuItem>().Single(item => item.Text == L.Get("Desktop.HotkeySettings")).ShortcutKeyDisplayString = "Ctrl+,";
         };
         _escapeTrace = EscapeInputTrace.Start(_diagnostics, CaptureEscapeState);
+        _dispatcherResponsiveness = new(_app.Dispatcher, _diagnostics);
     }
 
     private object CaptureEscapeState() => new
@@ -472,7 +473,7 @@ internal sealed partial class DesktopSession : IDisposable
         // Animation and live background frames change pixels, not controls or document
         // state. Let pending input run before these continuously arriving frames.
         // A queued full edit render always takes precedence over this shortcut.
-        if (_disposed) return;
+        if (_disposed || _presentationUncertain) return;
         _pixelDirtyRegions.AddRange(dirtyRegions ?? _host.Monitors.Select(monitor => monitor.Bounds));
         if (IsRenderPending) return;
         _pixelsOnlyRender = true;
@@ -708,9 +709,9 @@ internal sealed partial class DesktopSession : IDisposable
     {
         var canvas = surface.Canvas;
         var context = CurrentPreviewContext();
-        bool current = _canvasPreview.Frame is { } frame && frame.Context.HasSameContent(context);
+        bool current = _submittingCanvasFrame is { } frame && frame.Context.HasSameContent(context);
         if (current)
-            _canvasPreview.Frame!.Pixels.Draw(canvas);
+            _submittingCanvasFrame!.Pixels.Draw(canvas);
         else
         {
             // A rebuilt HWND was cleared without current content. Old retained
@@ -1123,7 +1124,7 @@ internal sealed partial class DesktopSession : IDisposable
                     finally { if (startupChanged) shell!.SetStartup(oldStartup); }
                     throw;
                 }
-                RecoveryHistory.Trim();
+                await RecoveryHistory.TrimAsync(_documentLifetime.Token);
                 RefreshHotkeyHints(_passThroughButton, _welcomeShortcuts, _settings.Toggle, _settings.Hide, _welcomeHideShortcut);
                 _welcomeView?.Refresh(_settings.Toggle, _settings.Hide);
                 RefreshToolShortcutHints();
@@ -1157,28 +1158,42 @@ internal sealed partial class DesktopSession : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        LogExitStage("Dispose.Begin");
+        _dispatcherResponsiveness?.Dispose();
+        _host.FrameRendering -= BeginCanvasSubmission;
+        _host.FrameSubmitted -= CompleteCanvasSubmission;
+        _submittingCanvasFrame?.Dispose(); _submittingCanvasFrame = null;
         _escapeTrace?.Dispose();
+        LogExitStage("Dispose.RegularWindows.Begin");
         CloseEditingDialogs(); CloseRegularWindows();
         EndEyedropper(restore: false);
+        LogExitStage("Dispose.ToolState.Begin");
         try { FlushToolState(commitDraft: true); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { UpdateStatus(ex.Message); }
         _disposed = true;
         if (ReferenceEquals(_colorLibrary.HistorySession, _presetHistorySession)) _colorLibrary.HistorySession = null;
+        LogExitStage("Dispose.Canvas.Begin");
         EndCanvasCalibration(hidePanel: true);
         _canvasSettingsWindow?.CloseForDispose();
+        LogExitStage("Dispose.WindowCoordinator.Begin");
         _windowCoordinator?.Dispose();
+        LogExitStage("Dispose.OverlayWindows.Begin");
         _overlayWindows?.Dispose();
         _toolStateSaveTimer?.Stop();
         _animationTimer?.Stop();
         _animationClock.Stop();
+        LogExitStage("Dispose.LiveCapture.Begin");
         StopLiveEffectsCapture();
         CloseImageDrop();
         System.Windows.Input.InputManager.Current.PreProcessInput -= OnWpfInputProgress;
         System.Windows.Input.InputManager.Current.PostProcessInput -= OnWpfPointerFocus;
         Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemThemeChanged;
+        LogExitStage("Dispose.DocumentTimers.Begin");
         StopDocumentTimers(); _renderOperation?.Abort(); _renderOperation = null; _renderAgain = false;
+        LogExitStage("Dispose.Tray.Begin");
         _trayClicks.Dispose();
         _tray.Visible = false; var trayIcon = _tray.Icon; _tray.ContextMenuStrip?.Dispose(); _tray.Dispose(); trayIcon?.Dispose();
+        LogExitStage("Dispose.ToolWindows.Begin");
         _welcomeWindow?.Close();
         _updatesWindow?.Close();
         _passThroughLauncher?.Close();
@@ -1186,6 +1201,12 @@ internal sealed partial class DesktopSession : IDisposable
         _inspector?.Close(); _layers?.Close(); _stampWindow?.Close(); _toolbar.Close();
         _editor.DetachSession();
         _presentOperation?.Abort(); _presentedPixels?.Dispose(); _presentedPixels = null;
-        _canvasPreview.Dispose(); _host.Dispose(); _renderer.Dispose();
+        LogExitStage("Dispose.Preview.Begin");
+        _canvasPreview.Dispose();
+        LogExitStage("Dispose.OverlayHost.Begin");
+        _host.Dispose();
+        LogExitStage("Dispose.Renderer.Begin");
+        _renderer.Dispose();
+        LogExitStage("Dispose.Complete");
     }
 }

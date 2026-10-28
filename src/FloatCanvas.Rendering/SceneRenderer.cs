@@ -416,7 +416,7 @@ public sealed partial class SceneRenderer : IDisposable
     {
         if (element.AssetId is null || element.Width <= 0 || element.Height <= 0) return;
         var original = GetImage(element.AssetId, assets);
-        var image = element.Effects.Count == 0 ? original : GetEffectImage(canvas, element, original, _images[element.AssetId].FrameIndex);
+        var image = element.Effects.Count == 0 ? original : GetEffectImage(canvas, element, original, ImageFrameIndex(element.AssetId));
         RectD crop = (element.ImageCrop ?? new RectD(0, 0, 1, 1)).Normalize().Intersect(new(0, 0, 1, 1));
         if (crop.IsEmpty) return;
         var source = new SKRect((float)(crop.Left * image.Width), (float)(crop.Top * image.Height), (float)(crop.Right * image.Width), (float)(crop.Bottom * image.Height));
@@ -427,10 +427,11 @@ public sealed partial class SceneRenderer : IDisposable
 
     private SKImage GetImage(string assetId, AssetLibrary assets)
     {
+        if (PresentedImages?.TryGet(assetId, out var presented, out _) == true) return presented;
         var entry = GetImageEntry(assetId, assets); entry.Used = _clock;
         if (entry.Playback is { } playback)
         {
-            if (playback.Select(AnimationTime)) AnimationFrameDecodeCount++;
+            if (playback.Select(AnimationTime, pickingCancellation)) AnimationFrameDecodeCount++;
             if (playback.NextDelay is { } delay && (NextAnimationDelay is null || delay < NextAnimationDelay)) NextAnimationDelay = delay;
         }
         return entry.Image;
@@ -633,15 +634,17 @@ public sealed partial class SceneRenderer : IDisposable
     }
     private class ImageEntry : IDisposable
     {
-        private readonly SKImage? image;
+        private readonly SharedSceneImage? image;
         public AnimatedImage? Playback { get; }
-        public SKImage Image => Playback?.Image ?? image!;
+        public SharedSceneImage SharedImage => Playback?.SharedImage ?? image!;
+        public bool HasImage => Playback?.HasImage ?? image is not null;
+        public SKImage Image => SharedImage.Image;
         public int FrameIndex => Playback?.FrameIndex ?? -1;
-        public long CachedBytes => Playback?.CachedBytes ?? Bytes(image!);
+        public long CachedBytes => Playback?.CachedBytes ?? Bytes(image!.Image);
         public long Used { get; set; }
-        public ImageEntry(SKImage image, long used) { this.image = image; Used = used; }
+        public ImageEntry(SKImage image, long used) { this.image = new(image); Used = used; }
         public ImageEntry(AnimatedImage playback, long used) { Playback = playback; Used = used; }
-        public void Dispose() { image?.Dispose(); Playback?.Dispose(); }
+        public void Dispose() { image?.Release(); Playback?.Dispose(); }
     }
     private sealed class EffectEntry(string assetId, int sourceFrame, EffectSnapshot[] effects, SKImage image, long used, bool isGpu) : ImageEntry(image, used)
     {

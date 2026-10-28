@@ -1,234 +1,48 @@
 # 更新日志 / Changelog
 
+每个版本按用户影响和重要程度排序；同一功能的开发迭代合并为最终变化。
+Each version lists changes by user impact and importance, combining development iterations into their final behavior.
+
 ## [Unreleased]
 
-- 修复非透视网格随缩放格数变化而弹动的问题：网格独立固定在主屏中心交点；画布工具可在任意位置起拖，包括图层像素上。
-- Keep the flat grid anchored to the primary-display center while scaling, independently of the perspective pin and layer placement. Allow Canvas grid-size drags to start over layer pixels.
+## [0.3.0] - 2026-10-28
 
-- 透视画布新增九宫格钉点，默认左下角；固定参照下从最终参数重新求解。保留“调整时锁定网格大小”，固定逻辑格长和相位、自动显示精确覆盖数。重置恢复普通画布的1:1显示，按当前数量重建正方形网格；数量按列在前、行在后显示。支持角落奇数完整格及v1～v7迁移至v8。
-- Add a nine-point perspective pin, defaulting to bottom left, and solve final parameters from a fixed reference. Retain grid-size locking with fixed logical spacing and phase and exact automatic coverage. Reset restores an unwarped 1:1 view and rebuilds square cells for the current counts. Show columns before rows; support complete odd grids at corners and v1–v7 migration to v8.
+0.3.0 带来可选全屏增强覆盖、更流畅的复杂画布编辑，以及统一的属性、预设与颜色交互。以下汇总相对 0.2.1 的主要变化。
 
-- 增强覆盖层向 Windows 系统截图和 ShareX 全屏截图／编辑界面自动交接，避免实时画布继续覆盖冻结截图和其中的工具条影像；不自动接管其他软件。自身工具、弹窗与输入窗口落到画布下方时独立恢复顺序，不依赖截图识别。
-- Yield enhanced presentation automatically to Windows screen clipping and ShareX fullscreen capture/editor surfaces, preventing the live canvas from covering frozen screenshots and their toolbar pixels. Other programs do not trigger automatic handoff. Independently recover own tools, popups and input windows above the canvas when their order is inverted.
+Version 0.3.0 adds optional enhanced fullscreen overlays, more responsive editing of complex canvases, and consistent property, preset and color controls. These are the main changes since 0.2.1.
 
-- 修复使用增强输入进入编辑时因残留按键状态而无限等待的问题：仍检测到按键按下超过 2 秒时取消本次进入，显示具体按键及重试提示，保留当前工程与撤销记录；等待释放和输入接管确认分别计时。
-- Fix indefinite enhanced-input editing-entry waits caused by residual pressed-key state. Cancel an entry that still detects held keys after two seconds, show the blocking keys and retry instructions, and preserve the current project and undo history. Key release and input acknowledgement use separate time budgets.
-- 普通模式进入编辑时，历史按键记录不再覆盖当前按键快照；已放行按键的重复和释放仍完整放行，避免旧状态粘连及吞掉全局松键。
-- On ordinary-mode entry, historical key observations no longer override the current keyboard snapshot. Preserve the complete repeat/release stream of passed keys to avoid stale local state and swallowed global releases.
+- **全屏覆盖与截图交接。** 新增自动、增强、普通三种覆盖模式。自动模式每次启动检测当前接口能力，遇到可恢复故障可保留画布、文件关联和撤销记录后回退普通模式。增强覆盖可向 Windows 系统截图和 ShareX 全屏截图／编辑界面让出显示及输入，避免实时画布盖住冻结截图。系统文件框正常取得焦点；增强兼容性仍取决于 Windows 和目标应用。
+- **Fullscreen overlays and capture handoff.** Choose Automatic, Enhanced or Ordinary mode. Automatic checks current capabilities at startup and can recover to Ordinary while retaining the canvas, file binding and undo history. Enhanced presentation yields display and input to Windows screen clipping and ShareX fullscreen capture/editor surfaces, keeping the live canvas off frozen captures. System file dialogs receive normal focus; enhanced compatibility still depends on Windows and the target application.
 
-- 修复半透明工程在透视中心平移和四角调整时的长时间迟滞；中心移动保留原投影与格长，透视笔迹保留完整边缘覆盖，局部缓冲、合成区域和笔迹几何复用减少重复绘制成本。
-- Fix long stalls when translating or adjusting translucent perspective canvases. Preserve the original projection and grid spacing during translation, retain complete stroke coverage, and reuse bounded opacity buffers, ink regions and stroke geometry.
+- **复杂画布响应。** 画布、网格及图像效果预览移至后台，复用未变内容并只发布变化区域；选择框与透视手柄保持独立反馈。减少半透明笔迹、透视调整和图片描边的重复计算，将精确拾取、历史预览和内容哈希移出界面线程；连续笔画保留路径和最终输入，预览失败支持恢复。
+- **Responsive complex canvases.** Render canvas, grid and image-effect previews in the background, reuse unchanged content and publish changed regions while keeping selection and perspective guides responsive. Reduce repeated work for translucent ink, perspective adjustments and image outlines. Move precise picking, history previews and content hashing off the UI thread, preserve stroke paths and final input, and recover from preview failures.
 
-- 统一数值编辑的框内图标加速拖动、直接输入和底部范围滑轨，显示实际单位；自动值和混合多选也可直接起拖。取消恢复原值，整次手势合并撤销，颜色面板中的 Esc 先取消数值拖动，再关闭面板。
-- Unify numeric editing with accelerated embedded-icon scrubbing, direct input and a common-range rail, including units and automatic or mixed values. Cancellation restores the original values and each gesture commits once; Escape cancels a numeric color edit before dismissing its panel.
+- **透视画布与精确网格。** 画布成为独立工具，支持九宫格钉点、固定参照、精确格长与调整时锁定网格大小；非透视网格固定于主屏中心，缩放不再跳动。透视禁区提供提示，并可保留原图层，临时裁剪危险部分，调回安全范围后恢复。工程格式升级至 **v8**，可读取 **v1～v7**；旧版应用无法读取新保存的 v8 工程，与旧版交换时请保留原文件。
+- **Perspective canvases and precise grids.** Canvas is a dedicated tool with nine-point pinning, a fixed reference, exact spacing and grid-size locking during adjustment. Flat grids stay anchored to the primary-screen center without scale jumps. Unsafe perspective regions are highlighted; layers can be retained with unsafe portions temporarily clipped until safe geometry is restored. Projects now use **v8** and read **v1–v7**. Older apps cannot read newly saved v8 files; retain originals for exchange with older versions.
 
-- 属性与工具配置采用 440 DIP 参数区、96 DIP 标签列、12 DIP 属性字号和 13 DIP 半粗体栏目名。数值、颜色、单行文本和下拉框统一为 34 DIP 高；布尔属性统一右对齐拨动开关，Alpha 统一称为“不透明度”，标识统一为线条图标。修复开关裁切和轨道边距，移除下拉箭头竖线、冗余颜色提示及首栏顶线。
-- Standardize 440-DIP parameter areas, 96-DIP label columns, 12-DIP property labels and 13-DIP semibold headings. Numeric, color, single-line text and dropdown editors share a 34-DIP height. Right-align boolean switches, use consistent opacity terminology and monoline icons, and fix clipped switches and uneven rails. Remove dropdown dividers, redundant color hints and the first section's top rule.
+- **统一属性编辑。** 工具配置与图层属性共享直接输入、图标拖值、范围滑轨、分段选项及宽高比例锁链，补齐各类型参数和负数序号。参数修改即时预览，取消恢复原值，一次拖动合并为一次撤销；合法的兼容数值可完整显示。底色与网格始终位于图层下方，整体透明度统一作用于完整画布。
+- **Consistent property editing.** Tool options and layer properties share direct entry, icon scrubbing, range rails, segmented choices and aspect locks, with complete type-specific controls and negative numbered labels. Preview edits immediately, restore values on cancellation and undo each drag as one action; display valid compatible values accurately. Background and grid remain beneath layers, with canvas opacity applied to the complete composition.
 
-- 位置和大小使用等宽 X/Y/W/H 组合输入，中间保留固定 36 DIP 空隙，大小行放置持久化比例锁链，输入与拖动实时联动，非正方形预设按配置比例创建。少量溢出标签悬停滚动，窄窗口自动调整排布。
-- Group Position and Size into equal-width X/Y/W/H fields with a fixed 36-DIP gap and a persistent aspect chain. Typing and dragging update linked dimensions live, and shape creation retains configured preset ratios. Overflowing labels scroll on hover and narrow windows adapt their layout.
+- **完整且独立的预设。** 整理 18 个工具族、62 项官方预设，统一标准尺寸、样式与预览。官方和个人预设应用完整参数，不再意外继承上一个工具的状态；个人预设和各工具工作状态继续保留。工具、画布及色板预设的新增、覆盖、删除、重命名和排序统一纳入画布撤销／重做，修改提示采用内侧三角标记。
+- **Complete, independent presets.** Organize 62 official presets across 18 tool families with consistent default sizes, styles and previews. Official and personal presets apply complete parameters without accidentally inheriting another tool's state, while preserving personal presets and independent working settings. Tool, canvas and swatch preset creation, overwrite, deletion, renaming and ordering share canvas undo/redo; an inset triangle marks modified presets.
 
-- 所有普通窗口、对话框及带标题弹出面板的左右内容边距统一为 12 DIP；清理重复滚动条预留，统一内容区与底部操作区边界，并同步素材库的高 DPI 列宽计算。
-- Use 12-DIP horizontal content insets across ordinary windows, dialogs and titled panels. Remove duplicate scrollbar reservations, align content and footer edges, and update DPI-aware stamp-library sizing.
+- **图片外观与截图。** 图片新增可编辑的 Alpha 轮廓外描边，按图片内容和动画帧缓存；新置图可应用预设不透明度。置图、截图及相关类型参数统一进入属性流程；矩形与圆形截图默认自由比例，按住 Shift 临时约束为 1:1。形状支持边框与填充颜色联动。
+- **Images and capture.** Add editable outlines following image alpha contours, cached by image content and animation frame. Newly inserted images can apply preset opacity. Unify image, capture and type-specific property controls. Rectangular and circular captures use free proportions by default; hold Shift for a temporary 1:1 constraint. Shapes support linked outline/fill colors.
 
-- 关联文件菜单新增“还原改动”，无改动时置灰，支持 Ctrl+Z/Ctrl+Y，并保留内容相同时的保存点身份。菜单按还原、打开文件所在位置、分隔线、取消文件关联排列。
-- Add Revert changes to the bound-file menu, disabled when saved, with Ctrl+Z/Ctrl+Y and correct save-point identity even when restored content is unchanged. Order it before Open file location, a separator and Detach file.
+- **颜色、选择与撤销可靠性。** 颜色窗口采用可拖动的双栏布局，支持最近使用、个人色板与取色。统一颜色手势的预览、提交和取消，避免旧草稿覆盖撤销结果；最近颜色记录保存失败不再阻断基本改色。点选与框选依据可见像素和当前呈现的动画帧，透明内容、相同深度及重叠选框的渲染与选择顺序保持一致。
+- **Reliable color, selection and undo.** Use movable two-column color windows with recent colors, personal swatches and eyedropper access. Share preview, commit and cancellation rules so stale drafts cannot overwrite undo results; recent-color history write failures no longer block basic color changes. Point and rectangle selection follow visible pixels and the presented animation frame, with consistent handling of transparency, equal depth and overlapping selection frames.
 
-- 统一后台预览的局部像素发布与保留呈现，减少简单图形拖拽时的整屏复制和重复合成；纯选择框更新不再触发内容重绘，慢帧期间继续保留独立操作反馈。
-- Publish changed preview blocks and retain presented pixels through one background rendering path, reducing full-screen copies and duplicate composition during simple drags; guide-only changes no longer redraw content, while slow frames retain independent interaction feedback.
-- 预览快照复用未变对象，长笔画快照后的追加使用共享分块；动画元数据和印章悬停预览移出界面绘制路径。
-- Reuse unchanged preview nodes and shared path chunks after snapshots; move animation metadata and stamp hover rendering off the UI drawing path.
+- **窗口焦点与多屏。** 统一所属窗口、菜单、颜色子窗口及模态对话框的焦点与层级，改进屏幕边缘放置和退出清理；固定窗口可在下次进入编辑时恢复。绘图范围支持具体显示器，断开时回退主屏、重连时恢复，并保留画布映射。修复编辑入口残留按键导致的等待、快捷键松开后的选框及临时窗口状态。
+- **Window focus and multiple displays.** Unify focus and ordering for owned windows, menus, color panels and modal dialogs, improve edge placement and exit cleanup, and restore pinned windows on the next editing session. Select individual displays, fall back to the primary display on disconnect and restore the selection on reconnect while preserving canvas mapping. Fix entry waits caused by stale keys, selection feedback after shortcut release and temporary window state.
 
-- Windows 系统截图期间保留工具条覆盖画布的完整画面，并临时让出增强显示及编辑输入；截图结束后恢复实时画布，避免绘制内容压住系统截图界面。
-- Preserve tools above the canvas during Windows screen clipping, temporarily yielding enhanced presentation and editing input; restore the live canvas after clipping so it cannot cover the system capture UI.
+- **文件、历史与配置。** 文件关联菜单新增“还原改动”，支持撤销／重做；保存后立即刷新文件状态，历史画布可双击恢复。统一编辑、保存与恢复的容量限制，检测外部文件变更，防止跨画布类型恢复破坏会话。配置兼容保留未知字段，损坏时可先备份再修复；退出与历史写入补齐恢复和诊断处理。
+- **Files, history and configuration.** Add undoable Revert changes to the bound-file menu, refresh file state immediately after saving and restore canvas history with a double-click. Align editing, save and recovery limits, detect external file changes and reject restores across canvas kinds. Retain unknown configuration fields across compatible edits and offer backup before repairing damaged configuration; strengthen shutdown, history writes and diagnostics.
 
-- 预设参数修改提示改为右上角内侧的圆角三角封角，取消越界蓝点及其滚动区留白，保持原预览和相邻槽完整。
-- Mark modified presets with an inset rounded triangle at the upper-right corner, removing the protruding dot and its scroll padding while preserving previews and adjacent tiles.
+- **日常绘制操作。** 隐藏画布时仍可创建新内容，仅预览本次新增内容，提交后显示并选中，取消则保持隐藏。头像双击统一切换显隐，`Tab` 折叠／展开工具条；补齐置图、截图、透明度和窗口快捷键。更新头像、工具图标及中英文帮助，保留输入框、菜单与对话框自身的按键行为。
+- **Everyday drawing.** Create while the canvas is hidden, preview only new content, reveal and select it on commit, or remain hidden on cancellation. Double-click either launcher to toggle visibility and use `Tab` to fold or unfold the toolbar. Complete image, capture, opacity and window shortcuts, refresh artwork and bilingual help, and preserve text-field, menu and dialog key handling.
 
-- 画布工具的空闲 Esc 与普通工具一样退出编辑，不再额外切到选择工具；未完成的画布手势和非固定配置仍优先取消／关闭。
-- Let idle Escape leave editing from Canvas like other tools, without an extra switch to Select; retain cancellation of unfinished canvas gestures and dismissal of unpinned settings.
-
-- 修复后台预览导致普通画笔落笔延迟：完成的新帧按渲染优先级呈现，普通笔画等待期间不再重复上传旧帧；选择框、校准手柄等界面反馈仍可独立更新。
-- Fix brush-start delays with background previews: present completed frames at render priority and avoid uploading unchanged old frames while ordinary strokes wait, retaining independent selection-guide and calibration-handle feedback.
-
-- 补齐闭眼创建的原生输入路径：隐藏内容不再阻止画布新手势、焦点返回和图片拖入，模态、输入租期及忙碌检查保留。
-- Complete hidden-canvas creation through the native input path: hidden content no longer blocks new gestures, canvas focus return or image drops, while retaining modal, input-lease and busy checks.
-
-- 颜色窗口改为左右布局：左侧调色，右侧显示最近使用和我的色板，每排保持十个；移除标题下方的额外描边，标题栏只保留关闭按钮。
-- Arrange color adjustments on the left and recent/personal swatches on the right, retaining ten swatches per row. Remove the extra line below the caption and keep only Close in the color caption.
-
-- 颜色子窗口只使用应用主题资源，不再继承并搬走来源窗口的标题按钮或帮助内容。
-- Keep source caption buttons and help in their own window when opening a color child, using application theme resources for the child.
-
-- 整框拖动保留 Alt 单独编辑组成员及 Shift 增减选择；单击组成员可恢复整组选择。
-- Retain Alt child editing and Shift selection changes with whole-frame dragging; clicking a group member can restore group selection.
-
-- 重叠选框内部保留两种操作：单击按可见前景选取，拖动则移动当前已选图层，避免整框拖动截获深度点选。
-- Preserve visible-foreground clicks inside overlapping selection frames while dragging the same area moves the current selection.
-
-- 将画布、网格和图像效果预览移到独立线程；忙碌时合并中间输入，完成后读取最新快照，最终值保留。选择框、透视手柄与输入留在界面线程，CPU／GPU 预览资源独立管理；后台恢复记录的内容哈希和元数据写入同样移出界面线程。
-- Render canvas, grid and image-effect previews on a dedicated thread. Coalesce intermediate input and capture the latest state after each frame, including the final value. Keep selection guides, perspective handles and input on the UI thread, with independent CPU/GPU resources. Move recovery hashing and metadata writes off the UI thread as well.
-
-- 层级恢复不再争抢后来出现的同层置顶窗口；截图等界面可覆盖画布，丢失置顶状态时在既有置顶窗口后恢复工具与画布顺序。
-- Respect later topmost peers during overlay-order recovery, allowing screenshot UI above the canvas and restoring lost topmost state behind existing peers while preserving tool order.
-
-- 画布显示窗口退出 Windows Peek 淡出，避免 Alt+Tab 预览其他应用时画布瞬间消失；监视器重建后同样保留此规则。
-- Exclude canvas display windows from Windows Peek fading, keeping annotations visible while Alt+Tab previews another application and after monitor rebuilds.
-
-- 颜色面板改为带标题栏、拖动与关闭按钮的常规所属窗口；新建／重命名色板的模态窗口直接归属颜色窗口，点击来源面板关闭二级窗口并保留该次点击。
-- Present colors in a regular owned window with caption dragging and Close. Own swatch naming dialogs from that window, and close the secondary panel on a source-panel press without consuming the press.
-
-- 放大预设参数修改蓝点并将其中心移到上边框；为个人预设首行预留空间，避免圆点被滚动区域裁切。
-- Enlarge the preset-modification dot and center it on the upper border, reserving space above personal presets to avoid clipping.
-
-- 统一点选与框选的可见像素判断，排除文字留白、图片透明区域及空心内部；已选框内部可拖动，单图层选框随旋转。印章保留已有选框；文字工具仍单击编辑、拖边框移动。
-- Unify selection around visible ink, excluding empty text, transparent image regions and hollow interiors. Move selected layers from frame interiors and rotate single-layer frames; retain Stamp selection frames and Text-tool click editing with border dragging.
-
-- 闭眼编辑时允许新增内容和调整画布，只预览当前新内容；提交后自动睁眼并选中新图层，取消保留闭眼。隐藏旧图层无法被选择或修改，插图、文字、截图和效果入口不再因闭眼被禁止。
-- Allow creation and canvas adjustment while hidden, previewing only the new content. Reveal and select after commit, or remain hidden after cancellation. Protect hidden existing layers and allow image, text, capture and effect insertion entry points.
-
-- 创建新图层的点击不再成为打开属性的双击首击；Ctrl 双击可连续创建两个序号等预设图层。
-- Keep creation clicks out of properties double-click pairing, allowing Ctrl-double-click to create two numbered or preset layers.
-
-- 编辑头像拖动不再留下隐藏键盘焦点；选中图层后 Enter 正常打开属性，主菜单仍可通过鼠标和菜单键打开。
-- Prevent editing-mascot drags from retaining hidden keyboard focus; Enter opens selected-layer properties while mouse and menu-key access remain available.
-
-- 保存及另存为完成后立即刷新文件绑定气泡，无需继续操作画布。
-- Refresh the bound-file bubble immediately after Save or Save As completes.
-
-- 历史画布支持双击列表项恢复；打开历史时关闭欢迎界面，成功恢复后显示画布并进入编辑模式。
-- Restore canvas history by double-clicking an entry; close Welcome when opening history and enter editing with the restored canvas visible after success.
-
-- 手动关闭工具配置后重置固定状态；退出编辑时记住打开的固定窗口并在下次进入时恢复，图层窗口始终按固定窗口处理。窗口层级遵循最近焦点及父子关系，标题按钮统一为帮助、固定、关闭。
-- Reset tool-options pins on manual close; restore open pinned windows on the next editing session and treat Layers as pinned. Stack windows by recent focus and ownership, with Help, Pin and Close in caption order.
-
-- 放大新画布二次确认气泡与文字，使用连续描边连接气泡和尾巴。
-- Enlarge the new-canvas confirmation hint and text, joining its body and pointer with one continuous outline.
-
-- 任务栏和托盘始终使用戴皇冠图标，仅按画布显隐切换睁眼／闭眼；悬浮头像继续区分编辑与穿透模式。
-- Keep crowned taskbar and tray icons, switching only between open and closed eyes with canvas visibility; floating launchers retain their mode-specific artwork.
-
-- 修复颜色二级面板点击所属面板时未收起的问题，保留父控件首次点击、内部编辑及子对话框；颜色面板可通过标题区域拖动。
-- Fix secondary color panels staying open after a click in their parent panel, preserving the parent click, internal editing and owned dialogs. Color panels can be dragged by their title area.
-- 移除预设与印章槽选中勾号；预设参数改动以选中框角落的小圆点提示，不再遮挡图标。
-- Remove selected check marks from presets and stamp slots. Indicate modified preset parameters with a small dot at the selection-border corner instead of covering the preview.
-
-- 清理预设撤销按钮移除后的颜色弹窗留白：空错误提示不再占位，真实错误按内容展开，修正后恢复紧凑高度。
-- Remove empty footer space from color popups after preset-undo removal. Error messages expand only when needed and collapse again after correction.
-
-- 移除工具、画布和颜色面板的独立“撤销预设更改”按钮与历史栈；预设的新建、删除、覆盖、重命名和排序统一加入当前画布的撤销／重做历史，支持 Ctrl+Z、Ctrl+Y 和 Ctrl+Shift+Z。
-- Remove separate preset-undo buttons and stacks from tool, canvas and color panels. Preset creation, deletion, overwrite, rename and ordering now share the current canvas's undo/redo history through Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z.
-
-- 官方与个人工具预设统一应用完整、确定的参数；旧个人预设缺少的新增参数恢复为默认值。官方预览固定，移除首次选用时继承颜色、线宽并保存为官方基线的行为，旧官方缓存不再影响应用；各工具当前工作状态继续独立保存。
-- Apply complete, deterministic parameters for official and personal tool presets, using defaults for new parameters missing from older personal presets. Keep official previews fixed, remove first-use color and stroke-width inheritance, and ignore older official baseline caches while retaining each tool's independent working state.
-
-- 将“深度优先遮挡”移到画布工具配置，仅在启用透视画布时显示；画布预设保存该开关，旧预设缺少时默认关闭。缺少校准时按参考屏幕与预设行列、格长生成默认几何，避免继承当前四角。应用仍解除网格调整锁，目标画布的非透视原点与重置屏幕偏好保持独立。
-- Move Depth-priority occlusion to Canvas tool settings, visible only with perspective enabled. Save it in canvas presets, defaulting to off when missing. Generate default geometry from the reference display and preset counts/spacing when calibration is absent instead of inheriting current corners. Application still releases the adjustment lock; the destination's flat origin and reset-display preference remain independent.
-
-- 优化半透明笔迹、荧光笔和形状的绘制，避免每个对象都进行全屏临时图层合成；复杂填充、描边与箭头仍保持整体透明度语义。
-- Optimize translucent strokes, highlighters and shapes to avoid a full-screen temporary layer per element; preserve whole-element opacity for combined fills, outlines and arrowheads.
-
-- 设置新增“自动／增强／普通”全屏覆盖模式，默认自动；强制模式跳过能力检测和自动回退，保存后重启生效。
-- Add Automatic, Enhanced and Ordinary overlay settings. Automatic remains the default; forced modes bypass detection and fallback. Restart to apply.
-
-- 全屏增强每次启动重新验证实际接口，不再因旧异常记录、诊断写入失败或未验证的系统版本号直接回退；探测超时后仍尝试实际初始化。移除界面超时、慢绘制或输入释放失败时主动结束进程的行为，由 Windows 和用户处理未响应应用；紧急快捷键仅请求正常释放输入。
-- Recheck actual overlay capabilities on every launch instead of rejecting historical exits, unwritable diagnostics or unlisted OS builds. Attempt real initialization after an inconclusive probe. Remove process self-termination for slow or unresponsive UI and input-release failures; leave unresponsive-app handling to Windows and the user, and make the emergency chord request normal input release only.
-
-- 统一编辑、保存与恢复的容量边界，避免合法操作生成无法重开的工程；检测外部文件变化，优化脏状态查询、撤销快照、历史预览和资源写入，并限制单次图片导入的内存预算。
-- Align editing, saving and recovery limits so valid edits remain reopenable; detect external file changes and reduce dirty-state, undo, preview and asset-copy costs, with bounded image imports.
-
-- 共享文字塑形、按词换行与双向光标映射，捕获探测失败可退避重试，局部动图与滤镜仅刷新受影响输出。
-- Share text shaping, word wrapping and bidirectional caret mapping; retry transient capture probes and restrict animated/effect updates to affected outputs.
-
-- 保留鼠标为主、快捷键加速的操作方式，Tab 继续展开／收起工具条，不遍历按钮或显示额外的焦点虚框；支持高对比主题、明确错误和锁定反馈、缺失字体提示及预设撤销。历史和印章列表按视口加载，窄窗口可滚动操作，欢迎页可继续最近工作，应用内可阅读离线帮助。
-- Preserve mouse-led interaction with shortcuts for faster actions. Tab expands/collapses the toolbar without button traversal or additional dashed focus outlines. Add high-contrast styling, explicit validation/lock/font feedback and preset undo; bound history and stamp lists to the viewport, retain actions in narrow windows, expose recent work and provide offline help.
-
-- 更新安装改用持久事务和独立原生恢复启动器，准备阶段可取消，保留受保护的失败恢复证据并限制成功更新缓存；配置目录别名共享单实例身份。
-- Make updates recoverable through a durable transaction and native recovery launcher, with cancellable preparation, protected failure evidence and bounded completed-update caches; normalize profile aliases for single-instance ownership.
-
-- 新增可预览、可选择日志的脱敏诊断导出及本安装的系统集成注销入口；发布依赖锁定并附带 CycloneDX 清单。正式发布必须具备受信签名身份；本地未签名验证包单独标识，不能作为正式更新安装。
-- Add previewable, optional-log diagnostic exports and an installation-owned integration removal command; lock release dependencies and include a CycloneDX inventory. Formal releases require trusted signing identities, while unsigned local validation packages remain distinct and ineligible for automatic updates.
-
-- 统一工具条快捷键角标的共享布局，修正 C／I／P 偏移；恢复画布按钮透视琥珀态并叠加蓝色工具选框，统一画布、放置模式、置图与截图的图标画幅和笔宽。
-- Share toolbar shortcut layout to align C/I/P; restore amber perspective styling beneath the Canvas tool's blue selection border, and unify icon canvas size and stroke weight across Canvas, placement, import and capture.
-
-- 托盘左键单击延迟进入编辑、双击切换画布显隐；右键继续打开原生菜单。加宽菜单并在右侧显示快捷键。
-- Delay a tray single click to enter editing, use double-click to toggle canvas visibility, retain the native right-click menu, and widen it with right-aligned shortcut hints.
-
-- 新建画布的二次确认气泡移到上排按钮上方，限制在头像皇冠高度以内，并以小尾巴指向原确认按钮。
-- Place the new-canvas confirmation bubble above its upper-row button, within the mascot's crown height, with a pointer toward the confirmation target.
-
-- 为主菜单各功能分组、欢迎页、设置和悬浮头像分配独立图标，消除不同功能复用画笔、窗口、属性或眼睛图标的情况；托盘同步相同命令图标。
-- Give menu categories, Welcome, Settings and the floating logo distinct artwork; share each command's matching icon with the tray.
-
-- “更多工具”在选中模糊或马赛克时显示该工具的实时图标，选择其他工具后恢复三点图标。
-- Show the active Blur or Mosaic artwork on More tools; restore three dots when another tool is selected.
-
-- 修复隐藏画布后清除、再次显示时旧内容短暂闪回：所有显示窗口先提交当前画面，再恢复可见。
-- Refresh every retained display before showing it, preventing cleared hidden canvas content from flashing back.
-
-- 修复工具配置与图层属性数值错误提示残留：纠正输入、离开输入区域或重新打开面板后清除过期提示，保留忙碌时尚未应用的属性草稿；统一移除滚动内容区域的键盘焦点虚框。
-- Clear stale tool-option and layer-property errors after correcting an entry, leaving the input area or reopening the panel, while retaining unapplied property drafts during busy operations; remove the dashed keyboard focus outline from scrolling content areas.
-
-- 修复文字工具抢占选框控制区域：文本内区编辑、边框移动、角点缩放、手柄旋转；编辑中的边框也可变换。文字框改宽高后重新适配字号与换行，消除旧自动换行留下的空高，保留手动空段落。
-- Keep text editing inside the text interior and restore border movement, corner resizing and handle rotation, including during inline editing. Refit font size and wrapping after frame changes so removed automatic line breaks leave no empty height; preserve deliberate empty paragraphs.
-
-- 添加 I 置图、P 截图、Ctrl+PageUp/PageDown 调节透明度，以及仅打开的 Ctrl+L 图层、Ctrl+, 设置、Ctrl+T 当前工具参数；补齐工具提示、菜单提示和 I/P 角标，属性提示标注 Enter。
-- Add I for image import, P for capture, Ctrl+PageUp/PageDown for opacity, and open-only Ctrl+L for Layers, Ctrl+, for Settings and Ctrl+T for current tool options. Complete toolbar/menu hints, I/P corner legends and the Enter property hint.
-
-- 修复原生画布在 Ctrl 快捷键松开后不刷新选框：复制保留原选择，粘贴与复制副本选中新图层；移除未公开的 A 工具别名，Ctrl+A 全选时保留当前工具。
-- Restore selection handles immediately after releasing Ctrl on the native canvas. Copy keeps the original selection, paste and duplicate select new layers, unbound A no longer changes tools, and Ctrl+A retains the active tool.
-
-- 以透视矩形中心的投影统一网格原点和中央把手，修复偶数行列时四边／四角脱离格线；远端网格按屏幕间距局部抽稀，保留近景格线，并在 Skia 展开前移除无法分辨的虚线／点线周期，避免天际线附近长路径拖慢校准。
-- Align the grid origin and center handle with the projected rectangle center so even-count edges and corners stay on the grid. Thin compressed spans by screen spacing while retaining near lines, and remove unresolvable dash/dot spans before Skia expands their long paths near the horizon.
-
-- 绘图范围按全部屏幕、仅主屏排列，多屏时列出具体屏幕；按设备保存选择，断开回退主屏、重连恢复，并随屏幕布局更新列表，保留已打开设置中的未保存范围选择。恢复重置透视的屏幕选择，单活动屏时禁用下拉。
-- Order drawing scope as All screens, Primary screen only, then individual screens. Save device identity, fall back to primary on disconnect, restore on reconnect, and refresh lists after topology changes while retaining pending scope edits. Restore reset-display choices and disable the dropdown for a single active screen.
-
-- 配置兼容读取会忽略未知字段／枚举并为缺失、不可解析或越界字段提供局部默认值；后续修改其他设置仍保留原始未知数据。损坏配置在启动前提供“退出／备份并修复配置”，自动备份全部配置后只重置出错文件；启动错误的完整堆栈保留在日志。主菜单新增“系统与调试”，可打开安装和用户数据目录。
-- Read configuration compatibly with local defaults for missing, unreadable or out-of-range values while retaining unknown fields and enums through later saves. Damaged configuration offers Exit or Backup and repair before native session startup, backs up all configuration and resets only the unreadable file. Keep startup stack traces in logs and add System and diagnostics folder shortcuts.
-
-- 统一官方尺度：文字 36、符号／序号／Emoji 72、自由形状至少一边 108。序号按图形大小自动适配文字，使用图形／文字独立色板；Emoji 实际随边框拉伸。形状在工具和图层属性中可链接边框与填充颜色，并随预设、工程和恢复数据保存。
-- Standardize official sizing at 36 for text, 72 for symbols, numbers and emoji, and a 108-pixel side for free shapes. Fit numbered labels to badge geometry with separate shape/text palettes, stretch emoji artwork with its frame, and persist linked outline/fill colors in tool presets, projects and recovery data.
-
-- 将全屏增强作为可选后端：启动前由独立进程探测，接口缺失、初始化失败或上次异常退出时回退到普通桌面模式。运行中安全释放输入后重建桌面界面，保留画布、资源、文件绑定及撤销记录；增加 `--desktop-mode` 与 `--retry-fullscreen` 启动入口。
-- Make fullscreen enhancement optional: probe it in an isolated startup process and use ordinary desktop mode after missing interfaces, initialization failures or an unclean prior exit. After safely releasing input, rebuild desktop surfaces while preserving documents, assets, file bindings and undo history; add `--desktop-mode` and `--retry-fullscreen` launch options.
-
-- 进入编辑的松键等待期间保留穿透悬浮头像，工具条实际出现时再隐藏头像，避免两者都不可见的间隔。
-- Keep the pass-through logo visible while waiting for entry keys to be released, then hide it when the editing toolbar appears, avoiding a gap with neither visible.
-
-- 系统打开／保存文件框期间暂停覆盖输入，保留同一编辑会话；关闭或取消后恢复绘画，显式退出则不再恢复。不再拦截系统文件框的前台激活，某些游戏可能因此离开全屏。
-- Suspend overlay input while a system Open/Save dialog runs, retain the editing session, and resume drawing on return or cancellation. An explicit exit cancels restoration. File dialogs use normal foreground activation, which may take some games out of fullscreen.
-
-- 修复进入覆盖编辑时提前接管输入、退出后残留按下状态的问题：在触发消息处理结束后结合异步与线程队列状态，等待仍按下的键盘按键和鼠标按钮释放，再申请输入委托。
-- Fix premature input takeover and residual pressed states when entering overlay editing. After the triggering message returns, combine asynchronous and thread-queue state and wait for held keyboard keys and mouse buttons to be released before requesting input delegation.
-
-- 编辑与穿透模式的头像双击统一为画布显隐，保留模式与工具条折叠状态。单击继续延迟执行右键对应动作：编辑态打开主菜单，穿透态只进入编辑。工具条折叠改为按 `Tab` 或使用主菜单第一项“收起工具条／展开工具条”；不在头像旁新增按钮，输入框、菜单与对话框保留自身的 `Tab` 行为。
-- Unify logo double-clicks across edit and pass-through modes to toggle canvas visibility while retaining mode and toolbar expansion. A delayed single click still mirrors immediate right-click: open the main menu while editing, or only enter editing from pass-through. Fold/unfold the toolbar with `Tab` or the first main-menu item, **Collapse toolbar / Expand toolbar**, without adding buttons beside the logo; input fields, menus and dialogs retain their own `Tab` behavior.
-
-- 穿透浮动头像为编辑头像的 75%，改为双手捧皇冠、无笔，移除文字遮罩；编辑态继续戴冠。两组均以睁眼／闭眼表示画布显隐，托盘图标同步状态。
-- Keep the pass-through mascot at 75% scale, holding her crown in both hands without a pen or text badge. Editing keeps the crown on her head. Both pairs use open/closed eyes for visibility, with matching tray states.
-
-- 将画布调整改为普通互斥工具：单击或按 `C` 选中并显示蓝框，再次选择打开参数板，位置、关闭与固定规则统一；非透视常显参考网格并支持空白处径向拖动调节格长，透视自动显示校准框与手柄。
-- Make Canvas an exclusive tool: click or press `C` to select it with a blue border, then select it again for options with shared positioning, dismissal and pinning. Flat mode shows a persistent reference grid with radial sizing from empty space; perspective shows calibration handles immediately.
-
-- 网格原点为非透视时的主屏中心、透视时的中央整体移动手柄。非透视将行列数合并为精确“网格大小”，单位与矩形宽高一致；单纯开关保留行列数和校准，显式改格长才按主屏推导新格数与参考框，覆盖旧形变。重置默认围绕主屏并保留精确格长，多活动屏幕时可从下拉菜单选择重置屏幕。
-- Anchor flat grids at the primary-screen center and perspective grids at the central move handle. Flat mode uses an exact Grid size in the same units as rectangle dimensions. Mode switches retain counts and calibration; explicit size edits derive new counts and a reference from the primary screen. Reset defaults to the primary screen with exact spacing; a dropdown selects another active display when multiple screens are in use.
-
-- “调整时锁定网格大小”仅锁格长，原点仍随中央手柄变化，不再固定格线交点与图层锚点的关系。修复点线网格因短划线端帽导致几乎不可见的问题，普通绘制与深度合成中的点线均使用可见圆点；参考线继续采用黑白交替线段。
-- Lock grid size while adjusting now retains spacing while the origin follows the central handle; it no longer fixes intersections to layer anchors. Fix nearly invisible dotted grids with round caps in ordinary and depth rendering; reference lines retain alternating black and white segments.
-
-- 新工程格式 v7 保存精确非透视格长与原点，兼容读取 v1～v6；画布预设库 v3 保留精确格长与校准快照。应用透视预设解除调整锁后按投影格长同步平面尺寸，非透视预设保留精确保存值；旧工程和预设继续可读。
-- Project format v7 retains exact flat spacing and origin and reads v1–v6; canvas preset library v3 retains exact spacing and calibration snapshots. Applying perspective presets releases the adjustment lock and synchronizes flat size with projection spacing; flat presets retain their exact saved size. Older projects and presets remain readable.
-
-- 正常编辑时，鼠标进入透视禁区会以淡红色轻提示整个禁止区域，离开即隐藏，不进入导出。
-- Softly highlight the whole unsafe perspective region in red while the pointer is inside it during editing. Hide the hint on leaving and exclude it from exports.
-
-- 透视越界处理新增“应用并保留图层（慎用）”，保存原始图层、位置与组合，危险部分临时裁剪或隐藏；保存重开、撤销重做均保留，调回透视后恢复显示。弹窗仅突出需处理的图层数量，各选项说明收进关闭按钮旁的问号帮助。
-- Add “Apply and keep layers (use with caution)” to perspective safety resolution. Preserve original layers, positions and groups through save/reopen and undo/redo; clip or hide unsafe parts until the perspective returns to safe space. Keep the dialog focused on the emphasized affected layer count and move option explanations into the help button beside Close.
-
-- 加重贴面与立牌放置图标的线条，使工具条和菜单中的视觉分量与其他图标更一致。
-- Increase Surface and Billboard placement icon stroke weight in both the toolbar and menus to match neighboring icons.
+- **更新与故障恢复。** 更新安装使用独立启动器和可恢复事务，发行流程增加签名身份校验、依赖锁与软件物料清单。浮绘不再因慢绘制或界面超时主动结束进程；紧急快捷键请求正常释放输入，界面完全阻塞时仍须等待其恢复或由 Windows／用户处理。
+- **Updates and failure recovery.** Use an independent launcher and recoverable update transactions, with publisher verification, locked dependencies and a software bill of materials in the release pipeline. Slow rendering or UI timeouts no longer terminate the app automatically. The emergency shortcut requests normal input release; a fully blocked UI must still resume or be handled by Windows or the user.
 
 ## [0.2.1] - 2026-10-21
 

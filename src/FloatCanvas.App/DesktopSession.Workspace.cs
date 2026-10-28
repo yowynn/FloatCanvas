@@ -65,7 +65,7 @@ internal sealed partial class DesktopSession
             var loaded = await _projectStore.LoadAsync(file.Path!, _documentLifetime.Token);
             ImageImportBudget.ValidateResources(loaded.Assets.Resources);
             MergeAssets(loaded.Assets);
-            string fingerprint = Fingerprint(loaded.Document);
+            string fingerprint = await Task.Run(() => Fingerprint(loaded.Document), _documentLifetime.Token);
             long? savedVersion = fingerprint == file.SavedFingerprint && file.SavedContentVersion >= 0 ? file.SavedContentVersion : null;
             target.RestoreDocument(L.Get("Project.Revert"), loaded.Document, savedVersion);
             file.SavedFingerprint = fingerprint;
@@ -91,9 +91,21 @@ internal sealed partial class DesktopSession
         });
     }
 
-    private bool NeedsNewCanvasConfirmation() => FileState(_live).Path is null &&
-        (_capture is null || FileState(_capture).Path is null) && RecoveryHistory.HasNewVersion(new()
-        {LiveDocument=_live.Document,CaptureDocument=_capture?.Document,CaptureOrigin=_captureOrigin});
+    private async Task<bool> NeedsNewCanvasConfirmationAsync()
+    {
+        while (!_disposed)
+        {
+            var live = _live; var capture = _capture;
+            if (FileState(live).Path is not null || capture is not null && FileState(capture).Path is not null) return false;
+            long liveRevision = live.PreviewRevision; long? captureRevision = capture?.PreviewRevision;
+            var origin = _captureOrigin;
+            var snapshot = new WorkspaceState { LiveDocument = live.Document.Clone(), CaptureDocument = capture?.Document.Clone(), CaptureOrigin = origin };
+            bool changed = await RecoveryHistory.HasNewVersionAsync(snapshot, _documentLifetime.Token);
+            if (ReferenceEquals(_live, live) && ReferenceEquals(_capture, capture) && live.PreviewRevision == liveRevision &&
+                capture?.PreviewRevision == captureRevision && _captureOrigin == origin) return changed;
+        }
+        return false;
+    }
 
     private async Task<bool> ConfirmLeaveWorkspaceAsync()
     {
@@ -102,11 +114,17 @@ internal sealed partial class DesktopSession
     }
     private async Task ArchiveWorkspaceAsync(bool force = false)
     {
-        var snapshot = SnapshotWorkspace();
-        byte[]? preview;
-        try { preview = WorkspacePreview.Render(snapshot.LiveDocument, _assets, _renderer.AnimationTime); }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or NotSupportedException or System.IO.IOException or OverflowException) { preview = null; }
-        await RecoveryHistory.ArchiveAsync(snapshot, _assets, preview, FileState(Active).Path, force, _documentLifetime.Token);
+        await _documentRecoveryGate.WaitAsync(_documentLifetime.Token);
+        try
+        {
+            await _documentRecoveryTask;
+            var snapshot = SnapshotWorkspace();
+            var assets = ResourceLibrary(RecoveryResourceSnapshot(snapshot));
+            var animationTime = _renderer.AnimationTime;
+            await RecoveryHistory.ArchiveAsync(snapshot, assets, null, FileState(Active).Path, force, _documentLifetime.Token,
+                (state, resources) => WorkspacePreview.TryRender(state.LiveDocument, resources, animationTime));
+        }
+        finally { _documentRecoveryGate.Release(); }
     }
     private async Task ClearCurrentCanvasAsync()
     {
@@ -162,7 +180,7 @@ internal sealed partial class DesktopSession
             _editor.ReplaceSession(_live, _liveOrigin); _editor.Tool = tool;
             _documentRecoveryFingerprint = null;
             RecoveryHistory.WorkspaceRestored();
-            RecoveryHistory.EnterWorkspace(SnapshotWorkspace());
+            await RecoveryHistory.EnterWorkspaceAsync(SnapshotWorkspace(), _documentLifetime.Token);
             await FlushRecoveryAsync();
             UpdateStatus(L.Get("Feedback4.Canvas.NewStarted"));
             RequestRender();

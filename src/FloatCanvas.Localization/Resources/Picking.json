@@ -1,0 +1,6 @@
+{
+  "Editor.PickingCancelled": {
+    "zh": "画布或输入已发生变化，已取消本次操作。请重试。",
+    "en": "The canvas or input changed, so this operation was cancelled. Please try again."
+  }
+}

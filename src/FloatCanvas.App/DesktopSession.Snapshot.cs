@@ -14,6 +14,28 @@ internal sealed partial class DesktopSession
     private readonly ApplicationDiagnostics _diagnostics = new(ApplicationPaths.ProfileDirectory);
     private SnapshotCaptureRequest? _snapshotCaptureRequest;
     private Task _snapshotCaptureTask = Task.CompletedTask;
+    private long _exitDiagnosticStartedAt;
+    private string _exitDiagnosticSource = "Unknown";
+    private Guid? _exitDiagnosticId;
+
+    private void LogExitStage(string stage, string? reason = null, Exception? exception = null)
+    {
+        try
+        {
+            _diagnostics.Write("App.Exit.Stage", new
+            {
+                Stage = stage, Reason = reason, Source = _exitDiagnosticSource,
+                ElapsedMilliseconds = _exitDiagnosticStartedAt == 0 ? (long?)null : Environment.TickCount64 - _exitDiagnosticStartedAt,
+                ManagedThreadId = Environment.CurrentManagedThreadId, _quietStartup, _disposed,
+                _documentBusy, _documentExitRequested, _documentStopped,
+                SnapshotPending = _snapshotCaptureRequest is not null, SnapshotTask = _snapshotCaptureTask.Status,
+                RecoveryTask = _documentRecoveryTask.Status, RecoveryGateAvailable = _documentRecoveryGate.CurrentCount,
+                Editing = _host.IsEditing, CanvasVisible = _host.IsVisible, Enhanced = _host.UsesSystemInput,
+                DispatcherShutdownStarted = _app.Dispatcher.HasShutdownStarted
+            }, exception, _exitDiagnosticId);
+        }
+        catch { } // Diagnostic state capture must not change the shutdown path.
+    }
 
     private void BeginSnapshotCapture(CaptureSelection selection) =>
         _snapshotCaptureTask = RunCommand(() => InsertSnapshotAsync(selection));
@@ -67,14 +89,26 @@ internal sealed partial class DesktopSession
         catch (Exception notificationError) { _diagnostics.Write("Snapshot.NotificationFailed", exception: notificationError, requestId: request.Id); }
     }
 
-    private async Task ExitAfterSnapshotAsync()
+    private async Task ExitAfterSnapshotAsync(string source)
     {
+        if (!_documentExitRequested)
+        {
+            _exitDiagnosticStartedAt = Environment.TickCount64;
+            _exitDiagnosticSource = source;
+            _exitDiagnosticId = Guid.NewGuid();
+        }
+        LogExitStage("Requested");
         if (_snapshotCaptureRequest is not null)
         {
+            LogExitStage("Snapshot.Cancel.Begin");
             CancelSnapshotCapture("ApplicationExit"); SetEditing(false);
+            LogExitStage("Snapshot.Wait.Begin");
             await _snapshotCaptureTask;
+            LogExitStage("Snapshot.Wait.Complete");
         }
+        LogExitStage("Command.Dispatch", DocumentOperationBusy ? "Busy" : null);
         await RunCommand(RequestExitAsync);
+        LogExitStage("Command.Returned");
     }
 
     private async Task InsertSnapshotAsync(CaptureSelection selection)

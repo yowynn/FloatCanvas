@@ -139,7 +139,7 @@ internal sealed class SegmentedChoice : Grid
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
-        if (Keyboard.Modifiers == ModifierKeys.None && items.Count > 0 && e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End)
+        if (e.KeyboardDevice.Modifiers == ModifierKeys.None && items.Count > 0 && e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End)
         {
             SelectedIndex = e.Key switch
             {
