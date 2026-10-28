@@ -14,7 +14,6 @@
     <Version>0.3.0</Version>
   </PropertyGroup>
   <ItemGroup>
-    <EmbeddedResource Include="ReleaseTrust.json" LogicalName="FloatCanvas.ReleaseTrust.json" />
     <None Include="../../Docs/User-Guide*.md" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
     <None Include="$(IntermediateOutputPath)system-overlay/FloatCanvas.SystemOverlay.dll" Link="FloatCanvas.SystemOverlay.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\FloatCanvas.ico" />

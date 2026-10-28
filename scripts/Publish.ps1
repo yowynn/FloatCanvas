@@ -1,3 +1,4 @@
+#requires -Version 7.2
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
@@ -16,7 +17,6 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw 'A valid release version is required.' }
 if (-not $ValidationOnly) {
     if ($Configuration -ne 'Release') { throw 'Formal publication requires Release configuration. Use -ValidationOnly for local package validation.' }
-    & (Join-Path $PSScriptRoot 'Protect-Release.ps1') -Mode Preflight
 }
 $distRoot = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     [IO.Path]::GetFullPath((Join-Path $projectRoot $(if ($ValidationOnly) { 'dist-validation' } else { 'dist' })))
@@ -54,7 +54,13 @@ $stagingPackage = Assert-DistPath (Join-Path $stagingRoot $packageName)
 $stagingZip = Assert-DistPath (Join-Path $distRoot ".publish-$runId.zip")
 $finalPackage = Assert-DistPath (Join-Path $distRoot $packageName)
 $finalZip = Assert-DistPath (Join-Path $distRoot ($packageName + '.zip'))
-if ($ValidationOnly -and (Test-Path -LiteralPath ($finalZip + '.release.json'))) { throw 'A validation package cannot replace a signed release output. Choose a separate OutputDirectory.' }
+if ($ValidationOnly -and ((Test-Path -LiteralPath $finalPackage) -or (Test-Path -LiteralPath $finalZip))) {
+    $previousManifest = Join-Path $finalPackage 'PACKAGE-INFO.json'
+    if (-not (Test-Path -LiteralPath $previousManifest -PathType Leaf) -or
+        (Get-Content -LiteralPath $previousManifest -Raw | ConvertFrom-Json).DistributionTrust -cne 'UnsignedValidation') {
+        throw 'A validation package cannot replace a release output. Choose a separate OutputDirectory.'
+    }
+}
 $backupPackage = Assert-DistPath (Join-Path $distRoot ".previous-$runId")
 $backupZip = Assert-DistPath (Join-Path $distRoot ".previous-$runId.zip")
 $newPackageInstalled = $false
@@ -139,7 +145,7 @@ try {
     }
     $manifest = [pscustomobject]@{
         Product = '浮绘 FloatCanvas'; Version = $Version; RuntimeIdentifier = 'win-x64'; SelfContained = $false
-        DistributionTrust = $(if ($ValidationOnly) { 'UnsignedValidation' } else { 'PublisherSigned' })
+        DistributionTrust = $(if ($ValidationOnly) { 'UnsignedValidation' } else { 'Unsigned' })
         Configuration = $Configuration; PublishedAt = [DateTimeOffset]::Now.ToString('o'); RequiredFrameworks = $requiredFrameworks
         Validation = $(if ($Version.Contains('-')) { 'Preview build. See User-Guide.md for platform support and feature limitations.' }
             else { 'Release build. See User-Guide.md for platform support and feature limitations.' })
@@ -182,10 +188,8 @@ try {
         @($packageFiles | ForEach-Object { [IO.Path]::GetRelativePath($stagingPackage, $_.FullName).Replace('\', '/') }) + 'PACKAGE-INFO.json' | Sort-Object
     )
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $stagingPackage 'PACKAGE-INFO.json') -Encoding UTF8
-    if (-not $ValidationOnly) { & (Join-Path $PSScriptRoot 'Protect-Release.ps1') -Mode SignPackage -PackageDirectory $stagingPackage }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::CreateFromDirectory($stagingRoot, $stagingZip, [IO.Compression.CompressionLevel]::Optimal, $false)
-    if (-not $ValidationOnly) { & (Join-Path $PSScriptRoot 'Protect-Release.ps1') -Mode SignManifest -ZipPath $stagingZip -Version $Version }
 
     # Keep the previous complete distribution recoverable until the new folder and ZIP both exist.
     if (Test-Path -LiteralPath $finalPackage) { Move-Item -LiteralPath (Assert-DistPath $finalPackage) -Destination (Assert-DistPath $backupPackage) }
@@ -196,7 +200,6 @@ try {
     $newZipInstalled = $true
     $zipHash = (Get-FileHash -LiteralPath $finalZip -Algorithm SHA256).Hash.ToLowerInvariant()
     "$zipHash  $packageName.zip" | Set-Content -LiteralPath ($finalZip + '.sha256') -Encoding ASCII
-    if (-not $ValidationOnly) { [IO.File]::Move($stagingZip + '.release.json', $finalZip + '.release.json', $true) }
     $replacementCommitted = $true
     foreach ($backup in @($backupPackage, $backupZip)) {
         if (Test-Path -LiteralPath $backup) {
@@ -219,7 +222,7 @@ catch {
     throw
 }
 finally {
-    foreach ($temporary in @($stagingRoot, $stagingZip, $stagingZip + '.release.json', (Join-Path $distRoot ".launcher-$runId"))) {
+    foreach ($temporary in @($stagingRoot, $stagingZip, (Join-Path $distRoot ".launcher-$runId"))) {
         if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath (Assert-DistPath $temporary) -Recurse -Force }
     }
     Pop-Location

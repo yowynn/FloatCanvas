@@ -254,15 +254,15 @@ internal static class AppUpdateWindowTests
                 foreach (string name in new[] { "FloatCanvas.exe", "FloatCanvas.dll", "FloatCanvas.deps.json", "FloatCanvas.runtimeconfig.json", "PACKAGE-INFO.json" })
                 {
                     using var writer = new StreamWriter(zip.CreateEntry("FloatCanvas-0.3.0-win-x64/" + name).Open());
-                    writer.Write(name == "PACKAGE-INFO.json" ? JsonSerializer.Serialize(new { Product = "浮绘 FloatCanvas", Version = "0.3.0", RuntimeIdentifier = "win-x64", Configuration = "Release", SelfContained = false }) : "fixture");
+                    writer.Write(name == "PACKAGE-INFO.json" ? JsonSerializer.Serialize(new { Product = "浮绘 FloatCanvas", Version = "0.3.0", RuntimeIdentifier = "win-x64", Configuration = "Release", SelfContained = false, DistributionTrust = "Unsigned" }) : "fixture");
                 }
             }
             package = stream.ToArray();
         }
         string metadata = ReleaseMetadata.Replace("\"size\":1024", "\"size\":" + package.Length).Replace(new string('a', 64), Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant());
         using var http = new HttpClient(new FakeHandler((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com"
-            ? JsonResponse(metadata) : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(request.RequestUri.AbsolutePath.EndsWith(".release.json", StringComparison.Ordinal) ? ReleaseSignatureTestData.Sign(ReleaseSignatureTestData.Payload(package, "0.3.0")) : package) })));
-        using var client = new GitHubUpdateClient(http, ReleaseSignatureTestData.Trust);
+            ? JsonResponse(metadata) : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(package) })));
+        using var client = new GitHubUpdateClient(http);
         int oldApplyCalls = 0, commits = 0, exits = 0;
         foreach (bool cancelBeforeCommit in new[] { true, false })
         {
@@ -308,7 +308,7 @@ internal static class AppUpdateWindowTests
     {
         tag_name = "v0.3.0", draft = false, prerelease = false, body = Notes,
         html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v0.3.0",
-        assets = new[] { new { name = "FloatCanvas-0.3.0-win-x64.zip", state = "uploaded", size = 1024, digest = "sha256:" + new string('a', 64), browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.3.0/FloatCanvas-0.3.0-win-x64.zip" }, new { name = "FloatCanvas-0.3.0-win-x64.zip.release.json", state = "uploaded", size = 1024, digest = "", browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.3.0/FloatCanvas-0.3.0-win-x64.zip.release.json" } }
+        assets = new[] { new { name = "FloatCanvas-0.3.0-win-x64.zip", state = "uploaded", size = 1024, digest = "sha256:" + new string('a', 64), browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.3.0/FloatCanvas-0.3.0-win-x64.zip" } }
     } });
 
     private static void Await(Task task) { PumpUntil(() => task.IsCompleted); task.GetAwaiter().GetResult(); }

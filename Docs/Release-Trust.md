@@ -1,34 +1,46 @@
-# 发布者签名与更新信任 / Publisher trust
+# 发布包与完整性检查 / Packages and integrity checks
 
-当前仓库尚未配置正式发布公钥、代码签名证书或签名服务。`src/FloatCanvas.App/ReleaseTrust.json` 的白名单为空。正式发布被阻断，客户端不能自动安装缺少签名或不受信任的发行包；这不表示现有下载曾遭篡改，也不表示当前源码已经获得发行者认证。
+浮绘以无签名 Windows ZIP 包发布，不要求代码签名证书、发布签名密钥或独立签名清单。`PACKAGE-INFO.json` 将正式包标记为 `Unsigned`。下载、解压和应用内更新仍进行完整性与包结构检查。
 
-Current production trust is deliberately unconfigured. Formal publishing fails closed, and the updater rejects unsigned releases or unknown signing keys. Source builds and tests remain available. A successful build is not publisher certification.
+FloatCanvas ships unsigned Windows ZIP packages. Publishing and updating do not require a code-signing certificate, publisher signing key or detached signature manifest. Release packages declare `Unsigned` in `PACKAGE-INFO.json`; download, archive and update integrity checks remain enabled.
 
-## 正式发布条件 / Formal release prerequisites
+## 发布内容 / Release assets
 
-1. 取得真实代码签名身份并在受控签名机器提供其私钥。审核证书 SHA-256 指纹并提交到 `AuthenticodeSha256`。脚本只读取已有的 `CurrentUser/My` 身份，不创建证书、不安装根证书、不修改信任存储。
-2. 在独立受控位置生成并保管至少 3072 位 RSA 发布清单密钥。只将公钥 PEM 与唯一 `KeyId` 提交到 `Keys`，并先通过可信渠道交付包含该公钥的客户端。不得把私钥提交仓库。首次从旧版升级需要可信的带签名完整包；旧版同源 hash 校验不会因此追溯变成发布者认证。
-3. 提供环境变量 `FLOATCANVAS_RELEASE_KEY_ID`、`FLOATCANVAS_RELEASE_PRIVATE_KEY_PATH`、`FLOATCANVAS_SIGNING_CERT_THUMBPRINT`（已有证书的 SHA-1 选择指纹）、`FLOATCANVAS_TIMESTAMP_URL`（HTTPS RFC3161 服务）；可用 `FLOATCANVAS_SIGNTOOL_PATH` 指定 Windows SDK SignTool。公钥与证书 SHA-256 必须匹配仓库白名单，环境变量无法覆盖客户端信任。
-4. 使用 PowerShell 7.2+ 执行 `scripts/Publish.ps1`。自有 `FloatCanvas*.exe` / `FloatCanvas*.dll`（包括子目录中的自有资源 DLL）采用 Authenticode SHA-256 与 RFC3161 SHA-256 时间戳签名，并经 Windows Authenticode 策略、时间戳存在性和证书白名单验证。第三方文件由完整 ZIP 的独立签名覆盖。
+- `FloatCanvas-<version>-win-x64.zip`：完整应用、用户文档、许可证、依赖清单与 `PACKAGE-INFO.json`。
+- `FloatCanvas-<version>-win-x64.zip.sha256`：ZIP 的 SHA-256 和准确文件名。
+- ZIP 内的 `DEPENDENCIES.cdx.json`：基于锁定依赖生成的 CycloneDX SBOM。
 
-The release runner must already have the approved signing identity. The workflow currently has no usable identity configured and cannot publish. It does not provision certificates. A future signing-service integration must retain the same publisher and timestamp checks.
+Each release contains the complete ZIP and its `.sha256` companion. The ZIP includes application files, user documentation, licenses, a CycloneDX dependency inventory and an exact owned-file manifest. It requires the compatible .NET 10 Windows Desktop Runtime x64 installed on the system.
 
-## 清单与离线核验 / Manifest and offline verification
+## 校验范围 / What is checked
 
-`FloatCanvas-<version>-win-x64.zip.release.json` 包含 `KeyId`、base64 原始 UTF-8 `Payload` 和 base64 `Signature`。签名采用 RSA-PSS / SHA-256，覆盖原始 payload 字节；payload 绑定 schema 1、`FloatCanvas`、版本、`win-x64`、ZIP 文件名、字节数和 SHA-256。客户端使用内嵌公钥验证，之后才下载 ZIP，并继续检查 hash、路径、大小、解压与包清单。GitHub 的 digest 与 `.sha256` 仍必须一致。
+发布流程从已有版本标签构建，核对标签、应用版本与提交一致；测试和发布使用锁定依赖。构建产物以不可覆写的 workflow artifact 传递给发布阶段。上传前再次校验 ZIP 的 SHA-256、文件名、内部版本、程序集版本、唯一根目录和完整文件清单，并确认远端标签仍指向同一提交。流程拒绝覆盖已有 GitHub Release 或资产。
 
-离线核验时，从已经信任的源码版本取得公钥与脚本，执行：
+The release workflow verifies the existing tag, application version and commit, uses locked dependencies and passes a unique build artifact to the publication job. Before publication it checks the ZIP checksum and package identity, validates its structure and file inventory, and rechecks the remote tag. Existing GitHub releases and assets are not overwritten.
+
+客户端保留项目 GitHub 来源、HTTPS 下载地址、版本、架构、字节数与 SHA-256 检查；解压检查拒绝越界路径和非法包内容。安装保留事务备份与失败回滚，不将应用旁的无关文件当作包内文件删除。`UnsignedValidation` 本地验证包不能通过自动更新安装。
+
+The updater retains the project's GitHub source checks, HTTPS download rules, version, architecture, byte-count and SHA-256 checks. Archive validation rejects unsafe paths and invalid package contents. Installation keeps transactional backups and rollback, and preserves unrelated files alongside the application. Local `UnsignedValidation` packages are not accepted for automatic installation.
+
+SHA-256 用于发现下载内容损坏或与发行元数据不一致，不能单独证明发布者身份。来自同一来源的 ZIP、hash 或 GitHub digest 不是独立的发布者认证；当前发行包没有 Authenticode 或发布者签名验证。
+
+SHA-256 detects corruption or a mismatch with release metadata. A ZIP and checksum from the same source, including a GitHub asset digest, do not independently authenticate the publisher. These releases have no Authenticode or publisher-signature verification.
+
+## 本地构建与核对 / Local packaging and verification
+
+使用 PowerShell 7.2+，在装有项目要求的 .NET SDK、MSVC 和 Windows SDK 的 Windows 环境执行：
 
 ```powershell
-./scripts/Protect-Release.ps1 -Mode VerifyManifest -ZipPath ./FloatCanvas-1.0.0-win-x64.zip -Version 1.0.0
+./scripts/Publish.ps1 -Configuration Release
+./scripts/Smoke-Package.ps1 -ZipPath ./dist/FloatCanvas-0.3.0-win-x64.zip -StaticOnly -RequireRelease
+Get-FileHash ./dist/FloatCanvas-0.3.0-win-x64.zip -Algorithm SHA256
+Get-Content ./dist/FloatCanvas-0.3.0-win-x64.zip.sha256
 ```
 
-Verification requires no private key and rejects unknown keys, altered signatures, changed ZIP bytes, version/architecture/name/size mismatches, and unsigned validation packages. The trust configuration must come from an already trusted source; downloading a replacement public key beside an untrusted ZIP does not establish publisher identity.
+将计算结果与 `.sha256` 中的 hash 比较。`-StaticOnly` 仅验证包内容，不启动应用；省略该参数可运行独立配置的启动 smoke。
 
-## 轮换、撤销和验收 / Rotation, revocation and acceptance
+Compare the computed hash with the `.sha256` file. Static smoke checks do not launch the application; omitting `-StaticOnly` also checks startup with a separate profile.
 
-轮换应先由现有受信任版本交付新公钥，再用新 KeyId 签后续版本。撤销应在可信客户端更新中移除旧 KeyId；尚未更新的离线客户端仍保留旧信任，需要通过可信渠道更换客户端。这里没有实时撤销服务，也不承诺旧版客户端立即感知密钥失窃。
+`-ValidationOnly` 保留本地验证用途，默认输出到 `dist-validation` 并标记 `UnsignedValidation`。正常发布默认输出到 `dist`，标记 `Unsigned`。两种模式均不签名；`-RequireRelease` 确保发布阶段不会误用本地验证包。
 
-`-ValidationOnly` 仅用于离线 package/smoke，默认输出到 `dist-validation`，包标记 `UnsignedValidation`，不生成发布签名，客户端和 Release workflow 拒绝把它作为正式发行。它不能覆盖已有签名发行的同一路径。
-
-Tests use an ephemeral in-process RSA key; they do not create a production key or a certificate. Actual trusted-certificate signing, RFC3161 responses, expiration-with-timestamp policy, and the configured release service remain external acceptance requirements. Microsoft documents the relevant [SignTool signing and verification options](https://learn.microsoft.com/windows/win32/seccrypto/signtool) and [.NET RSA-PSS padding](https://learn.microsoft.com/dotnet/api/system.security.cryptography.rsasignaturepaddingmode?view=net-10.0).
+`-ValidationOnly` writes local test packages to `dist-validation` and marks them `UnsignedValidation`. Normal publication defaults to `dist` and marks packages `Unsigned`. Neither mode signs files; `-RequireRelease` prevents local validation packages from being published as releases.

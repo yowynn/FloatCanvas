@@ -524,7 +524,7 @@ v8 工程保存此开关并兼容读取 v1～v7；缺少此开关的旧工程默
 
 删除便携安装前，先退出浮绘，在该安装目录运行 `FloatCanvas.exe --unregister-integration`，移除属于此安装的当前用户启动项和文件打开方式注册。其他安装的注册、Windows `UserChoice` 和用户资料保留。命令完成后可删除这个便携程序目录；`%LOCALAPPDATA%\FloatCanvas` 中的预设、印章和历史不会自动删除，重要资料请自行备份。若正在使用自定义 `--profile`，资料位于指定目录。
 
-从源码开发构建需要 **.NET SDK 10.0.402** 或仓库 `global.json` 允许的后续补丁，以及 **Visual Studio C++ Build Tools**（含 MSVC 和 Windows SDK），用于构建原生组件。普通用户运行已发布包只需前文所述桌面运行时。签名验证和发布签名的配置取决于发布流程，不应把本地成功构建视为已签名发行版。
+从源码开发构建需要 **.NET SDK 10.0.402** 或仓库 `global.json` 允许的后续补丁，以及 **Visual Studio C++ Build Tools**（含 MSVC 和 Windows SDK），用于构建原生组件。普通用户运行已发布包只需前文所述桌面运行时。当前发行包为无签名 ZIP，不需要配置发布密钥或代码签名证书；下载与更新仍校验 SHA-256、文件大小及包结构。
 
 ## 支持范围与限制
 

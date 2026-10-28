@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace FloatCanvas.App;
 
-internal sealed record AvailableUpdate(string Version, string Notes, Uri ReleaseUrl, Uri PackageUrl, long Size, string? Sha256, Uri? ChecksumUrl, Uri? SignatureUrl = null);
+internal sealed record AvailableUpdate(string Version, string Notes, Uri ReleaseUrl, Uri PackageUrl, long Size, string? Sha256, Uri? ChecksumUrl);
 internal sealed record UpdateCheckResult(AvailableUpdate? Update, string? CurrentNotes);
 internal sealed record UpdateProgress(long ReceivedBytes, long TotalBytes);
 internal sealed record PreparedUpdate(string PackageDirectory, string Version, IReadOnlyList<string> Files);
@@ -28,11 +28,9 @@ internal sealed class GitHubUpdateClient : IDisposable
     private const int MaxMetadataBytes = 4 * 1024 * 1024, MaxEntries = 5000;
     private readonly HttpClient client;
     private readonly bool ownsClient;
-    private readonly ReleaseTrust releaseTrust;
-    internal GitHubUpdateClient(HttpClient? client = null, ReleaseTrust? releaseTrust = null)
+    internal GitHubUpdateClient(HttpClient? client = null)
     {
         ownsClient = client is null;
-        this.releaseTrust = releaseTrust ?? ReleaseTrust.Installed;
         this.client = client ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate }) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
@@ -76,10 +74,7 @@ internal sealed class GitHubUpdateClient : IDisposable
                     Uri packageUrl = RepositoryUri(Text(package, "browser_download_url"), $"/releases/download/{tag}/{filename}");
                     Uri releaseUrl = RepositoryUri(Text(release, "html_url"), $"/releases/tag/{tag}");
                     Uri? checksum = sums.Length == 0 ? null : RepositoryUri(Text(sums[0], "browser_download_url"), $"/releases/download/{tag}/{filename}.sha256");
-                    var signatures = assets.EnumerateArray().Where(a => Text(a, "name") == filename + ".release.json").ToArray();
-                    if (signatures.Length > 1) throw new InvalidDataException("The release contains duplicate publisher signatures.");
-                    Uri? signature = signatures.Length == 0 ? null : RepositoryUri(Text(signatures[0], "browser_download_url"), $"/releases/download/{tag}/{filename}.release.json");
-                    best = new AvailableUpdate(value, Text(release, "body"), releaseUrl, packageUrl, size, hash, checksum, signature);
+                    best = new AvailableUpdate(value, Text(release, "body"), releaseUrl, packageUrl, size, hash, checksum);
                     bestVersion = version;
                 }
                 if (count < 100) break;
@@ -96,8 +91,6 @@ internal sealed class GitHubUpdateClient : IDisposable
         string packageName = PackageName(update.Version), filename = packageName + ".zip";
         ValidateDownloadUri(update.PackageUrl, filename);
         if (update.ChecksumUrl is not null) ValidateDownloadUri(update.ChecksumUrl, filename + ".sha256");
-        if (update.SignatureUrl is null) throw new InvalidDataException("This release has no publisher signature. Automatic installation is unavailable.");
-        ValidateDownloadUri(update.SignatureUrl, filename + ".release.json");
         if (update.Size <= 0 || update.Size > MaxPackageBytes || (update.Sha256 is null && update.ChecksumUrl is null)) throw new InvalidDataException("The release does not contain a supported package and checksum.");
         string? digest = update.Sha256 is null ? null : ValidHash(update.Sha256);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -109,10 +102,6 @@ internal sealed class GitHubUpdateClient : IDisposable
         bool complete = false;
         try
         {
-            var signed = ReleaseSignature.Verify(await ReadSmallAsync(update.SignatureUrl, 32768, true, timeout.Token).ConfigureAwait(false), releaseTrust, update.Version, filename, update.Size);
-            if (digest is not null && !string.Equals(digest, signed.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("GitHub's checksum disagrees with the signed release manifest.");
-            digest = signed.Sha256;
             if (update.ChecksumUrl is not null)
             {
                 string sumText = Encoding.UTF8.GetString(await ReadSmallAsync(update.ChecksumUrl, 8192, true, timeout.Token).ConfigureAwait(false));
@@ -248,7 +237,7 @@ internal sealed class GitHubUpdateClient : IDisposable
         {
             using var json = JsonDocument.Parse(File.ReadAllBytes(manifest), new JsonDocumentOptions { MaxDepth = 16 });
             var root = json.RootElement;
-            if (Text(root, "DistributionTrust") == "UnsignedValidation") throw new InvalidDataException("A local unsigned validation package cannot be installed as a publisher release.");
+            if (Text(root, "DistributionTrust") == "UnsignedValidation") throw new InvalidDataException("A local validation package cannot be installed as a release.");
             if (Text(root, "Product") != "浮绘 FloatCanvas" || Text(root, "Version") != version || Text(root, "RuntimeIdentifier") != "win-x64" ||
                 Text(root, "Configuration") != "Release" || !root.TryGetProperty("SelfContained", out var contained) || contained.ValueKind != JsonValueKind.False)
                 throw new InvalidDataException("The update package manifest does not match this product, version, architecture or release configuration.");

@@ -512,7 +512,7 @@ Choose **Main menu → System and diagnostics → Export diagnostic bundle…** 
 
 Before deleting a portable installation, exit FloatCanvas and run `FloatCanvas.exe --unregister-integration` from that installation directory. It removes current-user startup and file-opening registrations owned by that installation, preserving registrations belonging to other installations, Windows `UserChoice` and user data. Once the command completes, delete the portable application directory. Presets, stamps and history under `%LOCALAPPDATA%\FloatCanvas` are retained; back up important work separately. A custom `--profile` keeps data in the selected directory.
 
-Building from source requires **.NET SDK 10.0.402**, or a later patch allowed by the repository's `global.json`, plus **Visual Studio C++ Build Tools**, including MSVC and a Windows SDK, for the native component. Running a published package requires only the desktop runtime described earlier. Release signing depends on the configured release process; a successful local build does not establish that a package is signed.
+Building from source requires **.NET SDK 10.0.402**, or a later patch allowed by the repository's `global.json`, plus **Visual Studio C++ Build Tools**, including MSVC and a Windows SDK, for the native component. Running a published package requires only the desktop runtime described earlier. Current releases are unsigned ZIPs and do not require publisher keys or code-signing certificates. Downloads and updates still validate SHA-256, file sizes and package structure.
 
 ## Support and limitations
 

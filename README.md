@@ -42,7 +42,7 @@ Windows 屏幕标注工具。直接在桌面上绘画、贴图和调整对象，
 
 ## 下载与使用
 
-Windows x64 二进制包由仓库的 [Releases](https://github.com/yowynn/FloatCanvas/releases) 提供，附带 ZIP 和 SHA-256 校验文件。也可按下文从源码构建；源代码检出不包含打包产物。
+Windows x64 二进制包由仓库的 [Releases](https://github.com/yowynn/FloatCanvas/releases) 提供，附带无签名 ZIP 和 SHA-256 校验文件。也可按下文从源码构建；源代码检出不包含打包产物。
 
 解压发行包，保留全部文件，运行 `FloatCanvas.exe`。默认发行包不附带 .NET 运行时或调试符号文件（PDB）。电脑已有兼容的 **.NET 10 Windows Desktop Runtime x64** 时可直接启动。
 

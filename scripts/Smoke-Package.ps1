@@ -1,5 +1,6 @@
+#requires -Version 7.2
 [CmdletBinding()]
-param([string]$ZipPath, [string]$ExtractionRoot, [string]$ReportPath, [switch]$StaticOnly, [switch]$IsolateHotkeys)
+param([string]$ZipPath, [string]$ExtractionRoot, [string]$ReportPath, [switch]$StaticOnly, [switch]$IsolateHotkeys, [switch]$RequireRelease)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($ZipPath)) {
@@ -37,6 +38,10 @@ foreach ($document in @('README.md', 'README.en.md', 'User-Guide.md', 'User-Guid
 $manifest = Get-Content -LiteralPath (Join-Path $packageDirectory 'PACKAGE-INFO.json') -Raw | ConvertFrom-Json
 if ($manifest.Product -cne '浮绘 FloatCanvas' -or $manifest.RuntimeIdentifier -cne 'win-x64' -or $manifest.Configuration -cne 'Release') {
     throw 'The update manifest must identify the FloatCanvas Windows x64 Release package.'
+}
+if ($manifest.DistributionTrust -cnotin @('Unsigned', 'UnsignedValidation') -or
+    ($RequireRelease -and $manifest.DistributionTrust -cne 'Unsigned')) {
+    throw 'The distribution must identify an unsigned package; local validation packages cannot be published as releases.'
 }
 $numeric = '(?:0|[1-9][0-9]*)'
 $identifier = '(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
@@ -86,7 +91,8 @@ foreach ($name in @('Microsoft.NETCore.App', 'Microsoft.WindowsDesktop.App')) {
         throw "The framework-dependent package must require $name 10.0."
     }
 }
-if (@($runtime.runtimeOptions.includedFrameworks | Where-Object { $null -ne $_ }).Count -gt 0) {
+$includedFrameworks = $runtime.runtimeOptions.PSObject.Properties['includedFrameworks']
+if ($null -ne $includedFrameworks -and @($includedFrameworks.Value | Where-Object { $null -ne $_ }).Count -gt 0) {
     throw 'The framework-dependent package must not declare included runtime frameworks.'
 }
 $runtimeFiles = @(Get-ChildItem -LiteralPath $runDirectory -Recurse -File | Where-Object {
@@ -136,6 +142,7 @@ try {
         ExtractedExecutable = $executablePath; ExitCode = $process.ExitCode
         RequiredFrameworks = $requiredFrameworks; FrameworkDependent = $true; ManifestSelfContained = $manifest.SelfContained
         OwnedFileCount = $ownedFiles.Count; ManifestFilesComplete = $true; BinaryVersion = $binaryVersion
+        DistributionTrust = $manifest.DistributionTrust
         Mode = $appReport.Mode; CapturedInput = $appReport.CapturedInput
         MonitorScope = $appReport.MonitorScope; ActiveMonitorCount = @($appReport.Monitors).Count
         LanguagePreference = $appReport.LanguagePreference; InterfaceLanguage = $appReport.InterfaceLanguage

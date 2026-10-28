@@ -41,8 +41,8 @@ Version 0.3.0 adds optional enhanced fullscreen overlays, more responsive editin
 - **日常绘制操作。** 隐藏画布时仍可创建新内容，仅预览本次新增内容，提交后显示并选中，取消则保持隐藏。头像双击统一切换显隐，`Tab` 折叠／展开工具条；补齐置图、截图、透明度和窗口快捷键。更新头像、工具图标及中英文帮助，保留输入框、菜单与对话框自身的按键行为。
 - **Everyday drawing.** Create while the canvas is hidden, preview only new content, reveal and select it on commit, or remain hidden on cancellation. Double-click either launcher to toggle visibility and use `Tab` to fold or unfold the toolbar. Complete image, capture, opacity and window shortcuts, refresh artwork and bilingual help, and preserve text-field, menu and dialog key handling.
 
-- **更新与故障恢复。** 更新安装使用独立启动器和可恢复事务，发行流程增加签名身份校验、依赖锁与软件物料清单。浮绘不再因慢绘制或界面超时主动结束进程；紧急快捷键请求正常释放输入，界面完全阻塞时仍须等待其恢复或由 Windows／用户处理。
-- **Updates and failure recovery.** Use an independent launcher and recoverable update transactions, with publisher verification, locked dependencies and a software bill of materials in the release pipeline. Slow rendering or UI timeouts no longer terminate the app automatically. The emergency shortcut requests normal input release; a fully blocked UI must still resume or be handled by Windows or the user.
+- **更新与故障恢复。** 更新安装使用独立启动器和可恢复事务，发行提供无签名 ZIP 与 SHA-256 校验文件，保留依赖锁、软件物料清单和更新包完整性检查。浮绘不再因慢绘制或界面超时主动结束进程；紧急快捷键请求正常释放输入，界面完全阻塞时仍须等待其恢复或由 Windows／用户处理。
+- **Updates and failure recovery.** Use an independent launcher and recoverable update transactions, with unsigned ZIP releases, SHA-256 checksums, locked dependencies, a software bill of materials and update-package integrity checks. Slow rendering or UI timeouts no longer terminate the app automatically. The emergency shortcut requests normal input release; a fully blocked UI must still resume or be handled by Windows or the user.
 
 ## [0.2.1] - 2026-10-21
 

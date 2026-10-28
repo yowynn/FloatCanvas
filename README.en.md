@@ -42,7 +42,7 @@ Animation requires the original file or encoded data. Clipboard sources supplyin
 
 ## Download and use
 
-Windows x64 binaries are provided through the repository's [Releases](https://github.com/yowynn/FloatCanvas/releases), as a ZIP with a SHA-256 file. You can also build from source using the instructions below; a source checkout does not include packaged binaries.
+Windows x64 binaries are provided through the repository's [Releases](https://github.com/yowynn/FloatCanvas/releases), as an unsigned ZIP with a SHA-256 file. You can also build from source using the instructions below; a source checkout does not include packaged binaries.
 
 Extract the package, keep all files together, and run `FloatCanvas.exe`. The default package excludes the .NET runtime and debug symbols (PDB files). It starts directly when a compatible **.NET 10 Windows Desktop Runtime x64** is installed.
 
