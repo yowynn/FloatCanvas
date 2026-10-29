@@ -42,13 +42,18 @@ Animation requires the original file or encoded data. Clipboard sources supplyin
 
 ## Download and use
 
-Windows x64 binaries are provided through the repository's [Releases](https://github.com/yowynn/FloatCanvas/releases), as an unsigned ZIP with a SHA-256 file. You can also build from source using the instructions below; a source checkout does not include packaged binaries.
+Windows x64 binaries are provided through the repository's [Releases](https://github.com/yowynn/FloatCanvas/releases). The published 0.3.0 release provides a ZIP. Starting with the next release, each version will offer both unsigned formats below, each with its own `.sha256` checksum file:
 
-Extract the package, keep all files together, and run `FloatCanvas.exe`. The default package excludes the .NET runtime and debug symbols (PDB files). It starts directly when a compatible **.NET 10 Windows Desktop Runtime x64** is installed.
+- **Installer: `FloatCanvas-<version>-win-x64-Setup.exe`** installs for the current user, by default under `%LOCALAPPDATA%\Programs\FloatCanvas`, without requiring administrator rights to install the app. It creates a Start menu entry and a Windows uninstall entry, with an optional desktop shortcut. It does not enable login startup automatically.
+- **ZIP: `FloatCanvas-<version>-win-x64.zip`** lets you manage the application directory yourself. Extract it to a local folder writable by your Windows account, keep all files together, and run `FloatCanvas.exe`.
 
-If a compatible runtime is missing, the launcher displays a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then start FloatCanvas again. You can also find it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). Running FloatCanvas does not require the SDK.
+Both formats contain the same application files and exclude the .NET runtime and debug symbols (PDB files). They share the default user profile under `%LOCALAPPDATA%\FloatCanvas`; uninstalling the installed app retains settings and projects. A compatible **.NET 10 Windows Desktop Runtime x64** must be installed. You can also build from source using the instructions below; a source checkout does not include packaged binaries.
 
-Click the version at the bottom of the welcome screen to open **Check for updates**. It checks this project's GitHub releases automatically and always links to the [project page](https://github.com/yowynn/FloatCanvas). When an update is available, choose **Update now** to download, verify and replace the app, then restart automatically. No manual extraction or overwriting is needed. Keep the complete extracted ZIP in a local folder writable by your Windows account. Updates default to stable releases; enable **Include preview releases** to opt in. Current-version notes remain available when there is no update. See [updating the app](Docs/User-Guide.en.md#check-and-install-updates).
+The installer offers Simplified Chinese and English, initially follows the Windows display language, and lets you choose manually. Before installation, it checks for a compatible stable .NET 10 Windows Desktop Runtime x64. If it is missing, open the official Microsoft download page, install the runtime yourself, then choose **Check again**. Setup can continue only after the check passes; it does not download or install the runtime automatically. **Launch FloatCanvas** is selected on the completion page and can be cleared.
+
+For the ZIP edition, a missing compatible runtime causes the launcher to display a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then start FloatCanvas again. You can also find it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). Running FloatCanvas does not require the SDK.
+
+Click the version at the bottom of the welcome screen to open **Check for updates**. It checks this project's GitHub releases automatically and always links to the [project page](https://github.com/yowynn/FloatCanvas). When an update is available, choose **Update now** to download, verify and replace the app, then restart automatically. No manual extraction or overwriting is needed. Both formats update through the official ZIP; installed copies also refresh their version in the Windows uninstall entry. Updates default to stable releases; enable **Include preview releases** to opt in. Current-version notes remain available when there is no update. See [updating the app](Docs/User-Guide.en.md#check-and-install-updates).
 
 | Shortcut | Action |
 | --- | --- |
@@ -102,13 +107,16 @@ Build a Windows Release package without the .NET runtime or PDB files, and check
 ```powershell
 ./scripts/Publish.ps1
 ./scripts/Smoke-Package.ps1
+./scripts/Publish-Installer.ps1 -ZipPath ./dist/FloatCanvas-0.3.0-win-x64.zip
 ```
+
+The installer script uses the verified ZIP to produce `-Setup.exe` and its `.sha256` file in the same directory. It downloads a pinned Inno Setup compiler; no code-signing certificate is required. Adjust the example version to match your build.
 
 Optional output on another drive: `./scripts/Publish.ps1 -OutputDirectory 'C:\FloatCanvas\dist' -ArtifactsPath 'C:\FloatCanvas\build'`. Packages and main build intermediates use those locations; small publish dependency lock files remain in ignored source `obj` directories.
 
 ## Release a source version
 
-After pushing to a repository with GitHub Actions enabled, branch updates and pull requests run CI. To publish, push a `v<Version>` tag matching the application project's `Version`, or manually run the release workflow and select an existing tag. The workflow builds, tests, packages and smoke-tests the extracted app, then creates a Release with the ZIP and SHA-256 file attached. Changing the version alone does not publish a release.
+After pushing to a repository with GitHub Actions enabled, branch updates and pull requests run CI. To publish, push a `v<Version>` tag matching the application project's `Version`, or manually run the release workflow and select an existing tag. The workflow builds, tests, packages and smoke-tests the extracted app, then creates a Release with the ZIP, EXE installer and their individual SHA-256 files attached. Both formats are unsigned. Changing the version alone does not publish a release; existing releases and assets are not overwritten.
 
 ## License
 

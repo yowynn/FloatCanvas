@@ -174,6 +174,7 @@ internal static class Program
             if (args.Contains("--stamp-shelf-only")) { Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult(); StampLibraryUiTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-shelf-native-geometry-only")) { StampLibraryUiTests.RunNativeGeometry(Assert); return 0; }
             if (args.Contains("--shell-integration-only")) { ShellIntegrationTests.Run(Assert); return 0; }
+            if (args.Contains("--installer-registration-only")) { InstallerRegistrationTests.Run(Assert); return 0; }
             if (args.Contains("--shell-runtime-only")) { ShellRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--menu-acceptance-only")) { MenuAcceptanceTests.Run(Assert); return 0; }
             if (args.Contains("--avatar-menu-only")) { AvatarMenuGestureTests.Run(Assert); LauncherGestureStateTests.Run(Assert); return 0; }
@@ -324,6 +325,7 @@ internal static class Program
             CanvasPresetTests.Run(Assert);
             Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult();
             ShellIntegrationTests.Run(Assert);
+            InstallerRegistrationTests.Run(Assert);
             OverlayProtectionTests.Run(Assert);
             LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert);
             BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert);

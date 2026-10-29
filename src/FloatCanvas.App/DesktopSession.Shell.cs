@@ -68,6 +68,8 @@ internal sealed partial class DesktopSession
         if (_projectOpenRequests.Count != 0) await DrainProjectOpenRequestsAsync();
         else if (!_quietStartup) ShowWelcome();
         AppUpdateInstaller.AcknowledgeStartup();
+        if (_shellIntegrationAllowed)
+            InstallerRegistration.Refresh(AppContext.BaseDirectory, error => _diagnostics.Write("Installer.RegistrationFailed", exception: error));
         NotifyUpdateResult();
     }
 }

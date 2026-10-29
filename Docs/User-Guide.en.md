@@ -12,9 +12,24 @@ FloatCanvas keeps annotations and images visible over the screen. Enter edit mod
 
 ## Start and switch modes
 
-For the packaged app, extract the Windows x64 ZIP for your version, keep all files together, and run `FloatCanvas.exe`. The default package excludes the .NET runtime and debug symbols (PDB files). It starts directly when a compatible **.NET 10 Windows Desktop Runtime x64** is installed.
+The published 0.3.0 release provides a Windows x64 ZIP. Starting with the next release, each version offers both an unsigned ZIP and an EXE installer, each with its own `.sha256` checksum file. Both use the same application files:
 
-If a compatible runtime is missing, the launcher displays a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then run `FloatCanvas.exe` again. You can also select it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). The SDK is not required; the plain .NET Runtime, ASP.NET Core Runtime and .NET Framework do not replace the required desktop runtime.
+- **Installer:** run `FloatCanvas-<version>-win-x64-Setup.exe`. It installs for the current user under `%LOCALAPPDATA%\Programs\FloatCanvas` by default, without requiring administrator rights to install the app. Launch it from the Start menu or the optional desktop shortcut. The installer does not enable login startup automatically.
+- **ZIP:** extract it to a local folder writable by your Windows account, keep all files together, and run `FloatCanvas.exe`.
+
+Both formats share settings, presets, stamps and history under `%LOCALAPPDATA%\FloatCanvas` by default. Neither includes the .NET runtime or debug symbols (PDB files). A compatible **.NET 10 Windows Desktop Runtime x64** must be installed.
+
+**Installer workflow:**
+
+1. Choose Simplified Chinese or English; the initial default follows the Windows display language. The standard wizard, runtime checks and error messages use the selected language.
+2. Read the welcome page and check the runtime. Setup requires a compatible stable **.NET 10 Windows Desktop Runtime x64** and its required .NET Core runtime. An x86-only installation, another major version, a preview, the plain .NET Runtime or ASP.NET Core Runtime does not replace it.
+3. If the check fails, use the page button to open Microsoft's official download page, download and install **Windows Desktop Runtime x64** yourself, then return to Setup and choose **Check again**. Setup can continue only after the check passes; it does not download or install the runtime automatically.
+4. Read the license, choose the installation directory and whether to create a desktop shortcut, then confirm installation. The desktop shortcut is initially unchecked; a Start menu entry is created normally.
+5. **Launch FloatCanvas** is selected on the completion page. Leave it selected and choose Finish to start the app, or clear it and open the app from the Start menu later.
+
+Silent installation also requires a successful runtime check. A missing runtime returns an error without writing application files or uninstall registration, and silent installation never starts FloatCanvas automatically.
+
+For the **ZIP edition**, a missing compatible runtime causes the launcher to display a .NET installation prompt. Click **Download** to open Microsoft's download page, download and run the **Windows Desktop Runtime x64** installer, then run `FloatCanvas.exe` again. You can also select it on the official [.NET 10 download page](https://dotnet.microsoft.com/download/dotnet/10.0). The SDK is not required; the plain .NET Runtime, ASP.NET Core Runtime and .NET Framework do not replace the required desktop runtime.
 
 Choose **Settings → System → Fullscreen overlay mode**, save, and restart:
 
@@ -126,7 +141,7 @@ Click the version in the lower-left corner of the welcome screen to open **Check
 
 When an update is available, choose **Update now**. FloatCanvas shows download progress, verifies the package, saves recovery data for your current canvas, exits, replaces the app and restarts automatically to resume your work. Settings, presets and canvas data are retained. Cancel the download or close the panel to keep using your current version. Download or verification failures do not replace the app; if replacement fails, it attempts to restore the previous version and reports the problem.
 
-In-app installation requires the complete official Windows x64 ZIP extracted to a **local folder writable by your Windows account**. Keep all package files together. Read-only folders, network locations and development runs cannot install updates directly; move the complete published app to a suitable folder first. Updating does not install the .NET runtime for you.
+In-app updates work with installed copies and the complete official Windows x64 ZIP extracted to a **local folder writable by your Windows account**. Both download the official ZIP for updates; installed copies also refresh the Windows uninstall version and owned-file inventory. Keep all package files together. Read-only folders, network locations and development runs cannot install updates directly; move the complete published app to a suitable folder first. Updating does not install the .NET runtime for you.
 
 **Include preview releases** is off by default. Both stable and preview builds then offer only newer stable releases. Enable it to include newer previews; older versions are never installed. Save this preference directly in the update panel, or through **Settings → System**. Changing it in the update panel checks again. The switch is disabled while checking or downloading.
 
@@ -510,9 +525,15 @@ Click the toolbar status display to read and copy the last 20 complete messages 
 
 Choose **Main menu → System and diagnostics → Export diagnostic bundle…** to preview the app version, system information, execution mode and redacted logs. You can exclude logs before saving a local ZIP file. The application does not upload it; inspect the bundle before attaching it to a report. The bundle excludes canvases, projects, stamps and configuration files. Original logs remain in the user-data directory.
 
-Before deleting a portable installation, exit FloatCanvas and run `FloatCanvas.exe --unregister-integration` from that installation directory. It removes current-user startup and file-opening registrations owned by that installation, preserving registrations belonging to other installations, Windows `UserChoice` and user data. Once the command completes, delete the portable application directory. Presets, stamps and history under `%LOCALAPPDATA%\FloatCanvas` are retained; back up important work separately. A custom `--profile` keeps data in the selected directory.
+**Installed app:** exit FloatCanvas, then uninstall it through Windows **Installed apps**. The uninstaller removes the installation's owned application files, shortcuts, startup entry and file-opening registrations. It retains settings, projects and unrelated files in the application directory. Installing again lets you reuse your existing data.
 
-Building from source requires **.NET SDK 10.0.402**, or a later patch allowed by the repository's `global.json`, plus **Visual Studio C++ Build Tools**, including MSVC and a Windows SDK, for the native component. Running a published package requires only the desktop runtime described earlier. Current releases are unsigned ZIPs and do not require publisher keys or code-signing certificates. Downloads and updates still validate SHA-256, file sizes and package structure.
+If the uninstaller cannot detect the .NET 10 Desktop Runtime, it can still remove the app, but skips the runtime-dependent cleanup of startup and file-opening registrations. Uninstall FloatCanvas before removing the runtime. If you have already removed the runtime, restore it before uninstalling FloatCanvas to complete this cleanup.
+
+**ZIP:** before deleting the application directory, exit FloatCanvas and run `FloatCanvas.exe --unregister-integration` from that directory to remove its current-user startup and file-opening registrations. Once the command completes, delete the application directory.
+
+Both preserve registrations belonging to other installations, Windows `UserChoice` and user data. Presets, stamps and history under `%LOCALAPPDATA%\FloatCanvas` are retained; back up important work separately. A custom `--profile` keeps data in the selected directory.
+
+Building from source requires **.NET SDK 10.0.402**, or a later patch allowed by the repository's `global.json`, plus **Visual Studio C++ Build Tools**, including MSVC and a Windows SDK, for the native component. Running a published package requires only the desktop runtime described earlier. Both ZIP and EXE installers are unsigned and do not require publisher keys or code-signing certificates. Downloads and updates still validate SHA-256, file sizes and package structure.
 
 ## Support and limitations
 

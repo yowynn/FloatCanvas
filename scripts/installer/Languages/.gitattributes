@@ -1,0 +1,3 @@
+# Keep vendored upstream bytes identical to the recorded SHA-256 values.
+ChineseSimplified.isl -text -whitespace
+Inno-Setup-LICENSE.txt -text -whitespace

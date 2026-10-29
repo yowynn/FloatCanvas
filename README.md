@@ -42,13 +42,18 @@ Windows 屏幕标注工具。直接在桌面上绘画、贴图和调整对象，
 
 ## 下载与使用
 
-Windows x64 二进制包由仓库的 [Releases](https://github.com/yowynn/FloatCanvas/releases) 提供，附带无签名 ZIP 和 SHA-256 校验文件。也可按下文从源码构建；源代码检出不包含打包产物。
+Windows x64 二进制包由仓库的 [Releases](https://github.com/yowynn/FloatCanvas/releases) 提供。已发布的 0.3.0 提供 ZIP；从下一次发布起，同一版本将同时提供以下两种无签名包，各附独立的 `.sha256` 校验文件：
 
-解压发行包，保留全部文件，运行 `FloatCanvas.exe`。默认发行包不附带 .NET 运行时或调试符号文件（PDB）。电脑已有兼容的 **.NET 10 Windows Desktop Runtime x64** 时可直接启动。
+- **安装版 `FloatCanvas-<version>-win-x64-Setup.exe`**：默认安装到 `%LOCALAPPDATA%\Programs\FloatCanvas`，仅供当前用户使用，安装应用无需管理员权限。提供开始菜单入口和 Windows 卸载项，可选桌面快捷方式；不会自动开启登录启动。
+- **ZIP 版 `FloatCanvas-<version>-win-x64.zip`**：解压到当前用户可写的本地目录，保留全部文件，运行 `FloatCanvas.exe`，适合自行管理程序目录。
 
-若缺少兼容运行时，启动程序会显示 .NET 安装提示。点击 **Download** 前往微软官方下载页面，下载并运行 **Windows Desktop Runtime x64** 安装程序，完成后重新启动浮绘。也可从 [.NET 10 官方下载页](https://dotnet.microsoft.com/download/dotnet/10.0)选择该运行时；运行浮绘无需安装 SDK。
+两种包使用相同的程序文件，不附带 .NET 运行时或调试符号文件（PDB）。默认共用 `%LOCALAPPDATA%\FloatCanvas` 中的用户配置；卸载安装版会保留配置与作品。电脑已有兼容的 **.NET 10 Windows Desktop Runtime x64** 时可直接启动。也可按下文从源码构建；源代码检出不包含打包产物。
 
-点击欢迎页底部的版本号打开“检查更新”；面板自动检查本项目的 GitHub Release，并始终提供[项目主页](https://github.com/yowynn/FloatCanvas)链接。有可用更新时，点击“立即更新”，应用将下载、校验、替换程序并自动重启，无需手动解压覆盖。请将完整 ZIP 解压到当前用户可写的本地目录。默认只接收正式版本，可开启“接收预览版本更新”；没有更新时仍可查看当前版本日志。详见[更新说明](Docs/User-Guide.md#检查与安装更新)。
+安装版提供简体中文和 English 界面，首次默认跟随 Windows 显示语言，也可手动选择。安装前检查兼容的稳定版 .NET 10 Windows Desktop Runtime x64；缺少时，可打开微软官方下载页，自行安装运行时后点击“重新检测”，检测通过后才能继续。安装器不会自动下载或安装运行时。完成页默认勾选“启动浮绘”，可以取消。
+
+ZIP 版缺少兼容运行时时，启动程序会显示 .NET 安装提示。点击 **Download** 前往微软官方下载页面，下载并运行 **Windows Desktop Runtime x64** 安装程序，完成后重新启动浮绘。也可从 [.NET 10 官方下载页](https://dotnet.microsoft.com/download/dotnet/10.0)选择该运行时；运行浮绘无需安装 SDK。
+
+点击欢迎页底部的版本号打开“检查更新”；面板自动检查本项目的 GitHub Release，并始终提供[项目主页](https://github.com/yowynn/FloatCanvas)链接。有可用更新时，点击“立即更新”，应用将下载、校验、替换程序并自动重启，无需手动解压覆盖。安装版与 ZIP 版均使用官方 ZIP 更新，安装版同时维护 Windows 卸载项的版本信息。默认只接收正式版本，可开启“接收预览版本更新”；没有更新时仍可查看当前版本日志。详见[更新说明](Docs/User-Guide.md#检查与安装更新)。
 
 | 快捷键 | 操作 |
 | --- | --- |
@@ -102,13 +107,16 @@ dotnet run --project src/FloatCanvas.App -c Release
 ```powershell
 ./scripts/Publish.ps1
 ./scripts/Smoke-Package.ps1
+./scripts/Publish-Installer.ps1 -ZipPath ./dist/FloatCanvas-0.3.0-win-x64.zip
 ```
+
+安装包脚本从已验证的 ZIP 生成同目录下的 `-Setup.exe` 和 `.sha256`，自动获取固定版本的 Inno Setup 编译器，不需要代码签名证书。示例版本号应与本次构建一致。
 
 可选跨盘输出：`./scripts/Publish.ps1 -OutputDirectory 'C:\FloatCanvas\dist' -ArtifactsPath 'C:\FloatCanvas\build'`；包和主要构建中间文件写入指定位置，少量发布依赖锁文件仍保留在源码的忽略目录 `obj` 中。
 
 ## 发布源码版本
 
-推送到已启用 GitHub Actions 的仓库后，普通分支更新和 PR 会运行 CI。发布时，推送与应用工程 `Version` 一致的 `v<Version>` 标签，或手动运行发布工作流并选择已有标签；工作流会构建、测试、打包、检查解压启动，再创建附带 ZIP 与 SHA-256 文件的 Release。仅修改版本号不会自动发布。
+推送到已启用 GitHub Actions 的仓库后，普通分支更新和 PR 会运行 CI。发布时，推送与应用工程 `Version` 一致的 `v<Version>` 标签，或手动运行发布工作流并选择已有标签；工作流会构建、测试、打包、检查解压启动，再创建同时附带 ZIP、EXE 安装包及各自 SHA-256 文件的 Release。两种包均不签名。仅修改版本号不会自动发布，已有 Release 和资产不会被覆盖。
 
 ## 许可证
 

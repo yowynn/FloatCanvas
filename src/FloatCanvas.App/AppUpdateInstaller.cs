@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -113,7 +114,8 @@ internal static class AppUpdateInstaller
             if (journal?.Phase is "Committed" or "RolledBack")
             {
                 Verify(plan.InstallDirectory, journal.Phase == "Committed" ? plan.NewFiles : plan.OldFiles);
-                ClearRecoveryPointer(plan, planPath); return 2;
+                ClearRecoveryPointer(plan, planPath);
+                RefreshInstallerRegistration(plan, job); return 2;
             }
             ownsJob = true;
             using (var current = Process.GetCurrentProcess()) WriteJson(Path.Combine(job, "ready.json"), Identity(current));
@@ -131,6 +133,7 @@ internal static class AppUpdateInstaller
                 {
                     Verify(plan.InstallDirectory, plan.NewFiles);
                     WriteJournal(job, "Committed", touched); committed = true; ClearRecoveryPointer(plan, planPath);
+                    RefreshInstallerRegistration(plan, job);
                     SaveResult(plan, new(true, false, plan.Version, null)); return 0;
                 }
                 if (journal.Phase == "Starting") StopUnacknowledgedLaunch(plan, job);
@@ -168,6 +171,7 @@ internal static class AppUpdateInstaller
                 WriteJournal(job, "Committed", touched); committed = true;
             });
             hooks?.AfterCheckpoint?.Invoke("Committed"); ClearRecoveryPointer(plan, planPath);
+            RefreshInstallerRegistration(plan, job);
             SaveResult(plan, new(true, false, plan.Version, null));
             Log(job, "Update installed and restarted."); return 0;
         }
@@ -538,6 +542,20 @@ internal static class AppUpdateInstaller
         }
         return manifest;
     }
+
+    internal static string RefreshInstallerFileList(string directory)
+    {
+        var manifest = ReadManifest(directory);
+        if (manifest.Files.Any(path => path.Equals(InstallerRegistration.FilesName, StringComparison.OrdinalIgnoreCase) ||
+            path.Equals(RecoveryPointerName, StringComparison.OrdinalIgnoreCase) ||
+            Regex.IsMatch(path, @"^unins\d+\.(exe|dat|msg)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)))
+            throw new InvalidOperationException("The package must not own installer or recovery metadata.");
+        AtomicWrite(Child(directory, InstallerRegistration.FilesName), Encoding.UTF8.GetBytes(string.Join("\r\n", manifest.Files) + "\r\n"));
+        return manifest.Version;
+    }
+
+    private static void RefreshInstallerRegistration(InstallPlan plan, string job) =>
+        InstallerRegistration.Refresh(plan.InstallDirectory, error => Log(job, "Could not refresh the Windows installation registration: " + error));
 
     private static string[] RestartArguments(string[] arguments, string profile)
     {

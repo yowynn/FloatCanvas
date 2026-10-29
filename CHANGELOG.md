@@ -5,6 +5,9 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+- **安装版与 ZIP 双发行。** 新增仅供当前用户使用的中英文 EXE 安装程序，提供安装前运行时检查、开始菜单、可选桌面快捷方式、完成后启动选项和 Windows 卸载项；继续提供 ZIP 供自行管理目录。两种包使用相同程序文件，均无签名、附 SHA-256 校验文件，仍需 .NET 10 Windows Desktop Runtime x64。安装器在缺少运行时时引导前往微软下载并重新检测，通过后才能继续，不自动代装运行时。两者均可在应用内更新；安装版同步卸载版本信息，卸载保留用户配置、作品与非程序文件。
+- **Installer and ZIP releases.** Add a per-user EXE installer in Simplified Chinese and English with a runtime check before installation, Start menu and optional desktop shortcuts, a launch option on completion, and a Windows uninstall entry, alongside the ZIP for managing the app directory yourself. Both contain the same application files, remain unsigned, include individual SHA-256 checksums and require .NET 10 Windows Desktop Runtime x64. If the runtime is missing, Setup offers Microsoft's download page and a recheck, and can continue only after the check passes; it does not install the runtime automatically. Both support in-app updates; installed copies refresh their uninstall version and retain settings, projects and unrelated files when uninstalled.
+
 ## [0.3.0] - 2026-10-28
 
 0.3.0 带来可选全屏增强覆盖、更流畅的复杂画布编辑，以及统一的属性、预设与颜色交互。以下汇总相对 0.2.1 的主要变化。

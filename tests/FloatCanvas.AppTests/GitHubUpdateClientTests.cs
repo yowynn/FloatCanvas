@@ -28,25 +28,41 @@ internal static class GitHubUpdateClientTests
         Directory.CreateDirectory(directory);
         try
         {
-            foreach (bool sidecarOnly in new[] { false, true })
+            foreach (var (sidecarOnly, includeInstaller) in new[] { (false, false), (true, false), (false, true), (true, true) })
             {
-                var assets = new List<object> { new { name = "FloatCanvas-1.0.0-win-x64.zip", state = "uploaded", size = package.Length,
-                    digest = sidecarOnly ? null : "sha256:" + hash, browser_download_url = Asset("1.0.0").ToString() } };
-                if (sidecarOnly) assets.Add(new { name = "FloatCanvas-1.0.0-win-x64.zip.sha256", browser_download_url = Asset("1.0.0", ".zip.sha256").ToString() });
+                bool hasChecksum = sidecarOnly || includeInstaller;
+                string scenario = $"sidecarOnly={sidecarOnly}, includeInstaller={includeInstaller}";
+                var assets = new List<object>();
+                if (includeInstaller)
+                {
+                    // Installer assets deliberately precede the ZIP and have a different digest.
+                    assets.Add(new { name = "FloatCanvas-1.0.0-win-x64-Setup.exe", state = "uploaded", size = 123,
+                        digest = "sha256:" + new string('e', 64), browser_download_url = Asset("1.0.0", "-Setup.exe").ToString() });
+                    assets.Add(new { name = "FloatCanvas-1.0.0-win-x64-Setup.exe.sha256", state = "uploaded", size = 108,
+                        browser_download_url = Asset("1.0.0", "-Setup.exe.sha256").ToString() });
+                }
+                assets.Add(new { name = "FloatCanvas-1.0.0-win-x64.zip", state = "uploaded", size = package.Length,
+                    digest = sidecarOnly ? null : "sha256:" + hash, browser_download_url = Asset("1.0.0").ToString() });
+                if (hasChecksum) assets.Add(new { name = "FloatCanvas-1.0.0-win-x64.zip.sha256", browser_download_url = Asset("1.0.0", ".zip.sha256").ToString() });
                 string metadata = JsonSerializer.Serialize(new[] { new { tag_name = "v1.0.0", html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v1.0.0", assets } });
                 var requests = new List<Uri>();
                 using var client = Client(request =>
                 {
                     requests.Add(request.RequestUri!);
-                    return request.RequestUri!.Host == "api.github.com" ? Response(metadata) : request.RequestUri.AbsolutePath.EndsWith(".sha256", StringComparison.Ordinal)
-                        ? Response(hash + "  FloatCanvas-1.0.0-win-x64.zip") : Bytes(package);
+                    if (request.RequestUri!.Host == "api.github.com") return Response(metadata);
+                    if (request.RequestUri == Asset("1.0.0", ".zip.sha256")) return Response(hash + "  FloatCanvas-1.0.0-win-x64.zip");
+                    if (request.RequestUri == Asset("1.0.0")) return Bytes(package);
+                    throw new InvalidOperationException("The ZIP update client requested an unrelated release asset: " + request.RequestUri);
                 });
                 var update = (await client.CheckAsync("0.3.0", default)).Update;
-                check($"official unsigned release without a signature attachment is discovered (sidecarOnly={sidecarOnly})", update is not null && update.Version == "1.0.0");
+                check($"official unsigned release without a signature attachment is discovered ({scenario})", update is not null && update.Version == "1.0.0");
+                check($"release discovery selects the ZIP and its own checksum even when Setup assets precede it ({scenario})",
+                    update!.PackageUrl == Asset("1.0.0") && update.ChecksumUrl == (hasChecksum ? Asset("1.0.0", ".zip.sha256") : null));
                 var prepared = await client.DownloadAsync(update!, directory, null, default);
-                check($"official unsigned release validates and stages for controlled installation (sidecarOnly={sidecarOnly})", prepared.Version == "1.0.0" && prepared.Files.Count == Names.Length &&
+                check($"official unsigned release validates and stages for controlled installation ({scenario})", prepared.Version == "1.0.0" && prepared.Files.Count == Names.Length &&
                     File.Exists(Path.Combine(prepared.PackageDirectory, "FloatCanvas.exe")));
-                check($"unsigned update flow never requests a publisher-signature sidecar (sidecarOnly={sidecarOnly})", requests.Count == (sidecarOnly ? 3 : 2) && requests.All(uri => !uri.AbsolutePath.EndsWith(".release.json", StringComparison.Ordinal)));
+                check($"unsigned update flow requests only the release API, ZIP and optional ZIP checksum ({scenario})",
+                    requests.Count == (hasChecksum ? 3 : 2) && requests.Where(uri => uri.Host != "api.github.com").All(uri => uri == Asset("1.0.0") || uri == Asset("1.0.0", ".zip.sha256")));
             }
         }
         finally { Directory.Delete(directory, true); }
