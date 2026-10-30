@@ -67,10 +67,17 @@ internal static class InspectorColorTests
                 requested!.SetUserValue(0x7F102030); inspector.Refresh();
                 check(language + " sampled colors apply immediately", colors["Fill"].Value == 0x7F102030 &&
                     session.Document.Elements.Single().Style.Fill == 0x7F102030 && library.History.Contains(0x7F102030u));
+                var closedEscape = new Input.KeyEventArgs(Input.Keyboard.PrimaryDevice, new DetachedPresentationSource(), 0, Input.Key.Escape)
+                    { RoutedEvent = Input.Keyboard.PreviewKeyDownEvent };
+                ((Wpf.UIElement)colors["Fill"].PickerRoot).RaiseEvent(closedEscape);
+                check(language + " a closed color picker leaves Escape available to its parent and preserves sampled paint", !closedEscape.Handled &&
+                    !colors["Fill"].IsPickerOpen && colors["Fill"].Value == 0x7F102030 && session.Document.Elements.Single().Style.Fill == 0x7F102030);
+                colors["Fill"].OpenPicker();
+                check(language + " the color Escape fixture opens the real secondary picker", colors["Fill"].IsPickerOpen);
                 var escape = new Input.KeyEventArgs(Input.Keyboard.PrimaryDevice, new DetachedPresentationSource(), 0, Input.Key.Escape)
                     { RoutedEvent = Input.Keyboard.PreviewKeyDownEvent };
                 ((Wpf.UIElement)colors["Fill"].PickerRoot).RaiseEvent(escape);
-                check(language + " popup Escape is consumed without losing the pending paint draft", escape.Handled &&
+                check(language + " open picker Escape is consumed without losing sampled paint", escape.Handled && !colors["Fill"].IsPickerOpen &&
                     colors["Fill"].Value == 0x7F102030 && session.Document.Elements.Single().Style.Fill == 0x7F102030);
                 check(language + " closed picker does not consume a parent's next Escape", !colors["Fill"].TryClosePicker());
                 Invoke(inspector, "Apply");
