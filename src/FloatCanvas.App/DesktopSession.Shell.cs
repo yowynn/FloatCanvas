@@ -4,14 +4,15 @@ namespace FloatCanvas.App;
 
 internal sealed partial class DesktopSession
 {
-    private readonly Queue<string> _projectOpenRequests = new();
+    internal readonly record struct ProjectOpenRequest(string Path, bool EnterEditing);
+    private readonly Queue<ProjectOpenRequest> _projectOpenRequests = new();
     private bool _shellReady, _openingShellProject, _startupPending, _quietStartup;
     private bool _shellIntegrationAllowed;
 
-    internal bool QueueProjectOpen(string path)
+    internal bool QueueProjectOpen(string path, bool enterEditing = false)
     {
         if (_disposed || _documentExitRequested) return false;
-        _projectOpenRequests.Enqueue(ProjectLaunchRequest.NormalizePath(path));
+        _projectOpenRequests.Enqueue(new(ProjectLaunchRequest.NormalizePath(path), enterEditing));
         ScheduleProjectOpenDrain(DrainProjectOpenRequestsAsync);
         return true;
     }
@@ -36,7 +37,8 @@ internal sealed partial class DesktopSession
                     continue;
                 }
                 if (!_welcomeManual) _welcomeWindow?.Hide();
-                await OpenProjectPathAsync(_projectOpenRequests.Dequeue());
+                var request = _projectOpenRequests.Dequeue();
+                await OpenProjectPathCoreAsync(request.Path, request.EnterEditing || _host.IsEditing);
             }
         }
         catch (OperationCanceledException) when (_documentLifetime.IsCancellationRequested) { }

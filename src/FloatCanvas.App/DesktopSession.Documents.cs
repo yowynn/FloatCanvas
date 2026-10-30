@@ -372,7 +372,9 @@ internal sealed partial class DesktopSession
 
     private Task OpenProjectAsync() => OpenProjectPathAsync(null);
 
-    private async Task OpenProjectPathAsync(string? projectPath)
+    private Task OpenProjectPathAsync(string? projectPath) => OpenProjectPathCoreAsync(projectPath, _host.IsEditing);
+
+    private async Task OpenProjectPathCoreAsync(string? projectPath, bool enterEditing)
     {
         if (DocumentOperationBusy) return;
         _inspector?.CompletePendingEdit();
@@ -422,12 +424,19 @@ internal sealed partial class DesktopSession
             RecoveryHistory.WorkspaceRestored();
             await RecoveryHistory.EnterWorkspaceAsync(SnapshotWorkspace(), _documentLifetime.Token);
             _documentRecoveryFingerprint = null;
-            bool editing;
-            if (focusVersion != _host.ForegroundLossVersion)
-            { SetEditing(false); editing = false; UpdateStatus(L.Get("Project.OpenedPassThrough")); }
-            else editing = SetEditing(true);
+            _host.SetVisible(true);
+            UpdateHiddenCanvasState();
+            bool editing = _host.IsEditing;
+            bool focusLost = focusVersion != _host.ForegroundLossVersion;
+            if (enterEditing)
+            {
+                if (focusLost)
+                { SetEditing(false); editing = false; }
+                else editing = SetEditing(true);
+            }
             ScheduleRecovery();
             if (editing) UpdateStatus(L.Get("Project.OpenedPrefix") + Path.GetFileName(projectPath));
+            else if (!enterEditing || focusLost) UpdateStatus(L.Get("Project.OpenedPassThrough"));
             RequestRender();
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Project.OpenFailed") + ex.Message); }

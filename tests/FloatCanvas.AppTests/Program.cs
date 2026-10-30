@@ -99,6 +99,7 @@ internal static class Program
             if (args.Contains("--perspective-safety-only")) { PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert); GeometrySafetySnapshotTests.Run(Assert); PerspectiveSafetyCommandTests.Run(Assert); return 0; }
             if (args.Contains("--startup-dialog-only")) { StartupDialogTests.Run(Assert); return 0; }
             if (args.Contains("--project-open-dispatch-only")) { ProjectOpenDispatchTests.Run(Assert); return 0; }
+            if (args.Contains("--project-open-mode-only")) { ProjectOpenModeTests.Run(Assert); return 0; }
             if (args.Contains("--depth-occlusion-ui-only")) { DepthOcclusionUiRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--depth-occlusion-only")) { DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-only")) { BillboardControllerTests.Run(Assert); return 0; }

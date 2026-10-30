@@ -422,8 +422,8 @@
     "en": "Opening a project will replace the live canvas"
   },
   "Project.OpenedPassThrough": {
-    "zh": "工程已打开；已切换到其他应用，保持穿透模式。",
-    "en": "Project opened. Another application is active; the canvas remains in pass-through mode."
+    "zh": "工程已打开，保持穿透模式。",
+    "en": "Project opened. The canvas remains in pass-through mode."
   },
   "Project.OpenedPrefix": {
     "zh": "已打开 ",

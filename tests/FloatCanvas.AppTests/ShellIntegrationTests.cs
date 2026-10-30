@@ -85,19 +85,19 @@ internal static class ShellIntegrationTests
         Task Complete() => (Task)typeof(DesktopSession).GetMethod("CompleteStartupAsync", flags)!.Invoke(session, null)!;
         Directory.CreateDirectory(ApplicationPaths.ProfileDirectory);
         using var lifetime = new CancellationTokenSource();
-        Set("_documentLifetime", lifetime); Set("_projectOpenRequests", new Queue<string>());
+        Set("_documentLifetime", lifetime); Set("_projectOpenRequests", new Queue<DesktopSession.ProjectOpenRequest>());
         Set("_quietStartup", true); Set("_documentBusyValue", true);
         session.QueueProjectOpen(path);
-        check("project handoff stays queued while startup waits for hotkey recovery", Get<Queue<string>>("_projectOpenRequests").Count == 1 && !Get<bool>("_openingShellProject"));
+        check("project handoff stays queued while startup waits for hotkey recovery", Get<Queue<DesktopSession.ProjectOpenRequest>>("_projectOpenRequests").Count == 1 && !Get<bool>("_openingShellProject"));
         Set("_startupPending", true);
         Task completing = Complete();
         check("successful hotkey recovery enables and starts draining the pending project", Get<bool>("_shellReady") && !Get<bool>("_startupPending") && Get<bool>("_openingShellProject") && !completing.IsCompleted);
-        check("repeated startup completion cannot launch a duplicate drain", Complete().IsCompletedSuccessfully && Get<Queue<string>>("_projectOpenRequests").Count == 1 && Get<bool>("_openingShellProject"));
+        check("repeated startup completion cannot launch a duplicate drain", Complete().IsCompletedSuccessfully && Get<Queue<DesktopSession.ProjectOpenRequest>>("_projectOpenRequests").Count == 1 && Get<bool>("_openingShellProject"));
         Set("_documentExitRequestedValue", true);
-        check("an exiting desktop session rejects new queued projects", !session.QueueProjectOpen(path) && Get<Queue<string>>("_projectOpenRequests").Count == 1);
+        check("an exiting desktop session rejects new queued projects", !session.QueueProjectOpen(path) && Get<Queue<DesktopSession.ProjectOpenRequest>>("_projectOpenRequests").Count == 1);
         lifetime.Cancel();
         completing.GetAwaiter().GetResult();
-        check("shutdown unwinds a startup drain without losing its busy request", !Get<bool>("_openingShellProject") && Get<Queue<string>>("_projectOpenRequests").Count == 1);
+        check("shutdown unwinds a startup drain without losing its busy request", !Get<bool>("_openingShellProject") && Get<Queue<DesktopSession.ProjectOpenRequest>>("_projectOpenRequests").Count == 1);
     }
 
     private static async Task ActivationAsync(Action<string, bool> check, string path)

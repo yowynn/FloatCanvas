@@ -17,7 +17,7 @@ internal sealed partial class DesktopSession
         PointD CaptureOrigin, bool CaptureActive, EditorTool Tool, EditorTool LiveTool, bool Visible,
         Dictionary<EditorSession, (string? Path, string? Fingerprint, long ContentVersion, FloatCanvas.Storage.ProjectFileVersion? DiskVersion)> Files,
         WorkspaceRecoveryHistory? History, string? RecoveryFingerprint, bool RecoveryWritesBlocked,
-        string? FrozenCaptureWarning, string[] PendingProjects, PointD LiveOrigin = default);
+        string? FrozenCaptureWarning, ProjectOpenRequest[] PendingProjects, PointD LiveOrigin = default);
 
     internal bool TryRequestDesktopFallback(Exception error)
     {
@@ -74,7 +74,7 @@ internal sealed partial class DesktopSession
         _editor.ReplaceSession(active, ReferenceEquals(active, _capture) ? _captureOrigin : _liveOrigin);
         SwitchToolState(state.Tool);
         if (!state.Visible) _host.SetVisible(false);
-        foreach (var project in state.PendingProjects) QueueProjectOpen(project);
+        foreach (var project in state.PendingProjects) QueueProjectOpen(project.Path, project.EnterEditing);
     }
 
     private void NotifyDesktopFallback()

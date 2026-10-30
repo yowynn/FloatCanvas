@@ -280,7 +280,7 @@ internal sealed partial class DesktopSession : IDisposable
         _startupPending = true;
         _quietStartup = _fallbackState is not null || args.Contains("--startup");
         string? requestedProject = _fallbackState is null ? ProjectLaunchRequest.Parse(args) : null;
-        if (requestedProject is not null) QueueProjectOpen(requestedProject);
+        if (requestedProject is not null) QueueProjectOpen(requestedProject, enterEditing: true);
         try
         {
             if (_fallbackState is { } restored) RestoreFallbackWorkspace(restored);

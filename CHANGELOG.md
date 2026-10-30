@@ -5,6 +5,9 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+- 细化工程打开行为：双击工程启动浮绘时进入编辑；已运行时保持当前编辑或穿透模式，穿透中双击工程仅切换画布。成功打开工程自动显示画布并打开小眼睛。
+- Refine project opening: launching FloatCanvas through a project enters editing; opening in a running instance preserves edit or pass-through mode. A successful open always reveals the canvas and opens the eyes.
+
 - 修复首次启动空画布与新建画布的默认参数不一致：两者统一采用第一个官方画布预设的完整配置，包括未启用网格时保存的描边颜色；已有工程与恢复记录保留原配置。
 - Make fresh startup canvases and new canvases share the complete first official canvas preset, including the stored stroke color when the grid is disabled. Existing projects and recovered workspaces retain their settings.
 

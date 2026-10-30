@@ -478,6 +478,8 @@ Older projects and history containing a separate frozen capture draft remain rea
 
 ZIP copies and current-user installations register `.floatcanvas` files for the current user on normal startup; machine Setup registers the file type for all users. You can also use **Register .floatcanvas file type** in Settings. Double-click a project or choose FloatCanvas in Windows **Open with** to open it. If the app is already running, the project goes to that instance, with the existing save confirmation before replacing work. Existing Windows default-app choices are preserved; choose **Always** in Open with to make FloatCanvas the default. After moving the portable folder, run it from the new location to refresh file associations, and recheck the login startup setting. The command line also accepts `FloatCanvas.exe "project.floatcanvas"` or `FloatCanvas.exe --open "project.floatcanvas"`.
 
+When FloatCanvas is closed, double-clicking a project starts the app, opens the project and enters edit mode. While the app is running, opening a project keeps the current mode: `Ctrl+O` or the menu keeps editing active, and double-clicking a project during pass-through replaces the canvas while staying in pass-through. A successful open always shows the canvas and opens the eyes. Cancelling or failing to open retains the previous visibility.
+
 | Operation | Result | Can objects still be edited? |
 | --- | --- | --- |
 | Save/save project as | A `.floatcanvas` file with the current canvas, original images and effects | Yes; reopen it with **Open project** |

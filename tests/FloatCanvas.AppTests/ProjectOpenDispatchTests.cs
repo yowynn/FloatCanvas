@@ -10,7 +10,7 @@ internal static class ProjectOpenDispatchTests
     {
         var session = (DesktopSession)RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var queue = new Queue<string>();
+        var queue = new Queue<DesktopSession.ProjectOpenRequest>();
         void Set(string name, object value) => typeof(DesktopSession).GetField(name, flags)!.SetValue(session, value);
         bool Get(string name) => (bool)typeof(DesktopSession).GetField(name, flags)!.GetValue(session)!;
         Set("_projectOpenRequests", queue); Set("_shellReady", true);
@@ -21,7 +21,8 @@ internal static class ProjectOpenDispatchTests
         Set("_documentBusyValue", true);
         using var lifetime = new CancellationTokenSource();
         Set("_documentLifetime", lifetime);
-        check("project handoff acknowledges its normalized queued path", session.QueueProjectOpen(path) && queue.SequenceEqual([Path.GetFullPath(path)]));
+        check("project handoff acknowledges its normalized queued path without requesting edit mode", session.QueueProjectOpen(path) &&
+            queue.SequenceEqual([new DesktopSession.ProjectOpenRequest(Path.GetFullPath(path), false)]));
         check("project handoff does not execute the asynchronous drain's synchronous prefix", !Get("_openingShellProject"));
         Set("_documentExitRequestedValue", true);
         PumpOnce();
