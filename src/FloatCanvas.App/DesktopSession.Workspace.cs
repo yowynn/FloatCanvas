@@ -148,6 +148,13 @@ internal sealed partial class DesktopSession
         finally { _documentBusy = false; ScheduleRecovery(); }
     }
 
+    private CanvasSettings CreateDefaultCanvasSettings(RectD viewport)
+    {
+        var primary = _host.PrimaryMonitor.Bounds;
+        var reference = new RectD(primary.Left - _liveOrigin.X, primary.Top - _liveOrigin.Y, primary.Width, primary.Height);
+        return CanvasPresetLibrary.Apply(CanvasPresetLibrary.OfficialOnly().Official.First().Parameters, new(), reference, viewport);
+    }
+
     private async Task ReplaceCanvasAsync()
     {
         if (DocumentOperationBusy) return;
@@ -168,10 +175,8 @@ internal sealed partial class DesktopSession
             var previous = _live.Document;
             var tool = _editor.Tool;
             int first = Math.Clamp(_settings.NumberStart,-999999,999999);
-            var primary = _host.PrimaryMonitor.Bounds;
-            var reference = new RectD(primary.Left - _liveOrigin.X, primary.Top - _liveOrigin.Y, primary.Width, primary.Height);
             var canvas = _settings.PreserveCanvasSettingsOnNewCanvas ? previous.Canvas.Clone() :
-                CanvasPresetLibrary.Apply(CanvasPresetLibrary.OfficialOnly().Official.First().Parameters, new(), reference, previous.Viewport);
+                CreateDefaultCanvasSettings(previous.Viewport);
             _live = new(new SceneDocument { Viewport = previous.Viewport, LayerOpacity = previous.LayerOpacity,
                 Canvas = canvas,
                 DisplayLayout = previous.DisplayLayout.Select(m => m.Clone()).ToList(), NextNumber = first }, _assets);

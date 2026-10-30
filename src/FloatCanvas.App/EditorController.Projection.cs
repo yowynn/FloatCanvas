@@ -26,8 +26,9 @@ internal sealed partial class EditorController
                 var screenBounds = displayed.Select(e => mapping.ProjectedBounds(e)).Aggregate(RectD.Union);
                 return Corners(screenBounds);
             }
-            // A snapshot's projective pixel placement must not turn its plane edit frame into a screen rectangle.
-            var plane = selected is [var single] && !(single.Kind == ElementKind.Image && single.ProjectivePlacement is not null)
+            // Captures use the plane envelope of their contour, rather than the PNG allocation rectangle.
+            var plane = selected is [var single] && !(single.Kind == ElementKind.Image &&
+                (single.ProjectivePlacement is not null || single.ImageFrame is not null))
                 ? Corners(ElementGeometry.StrokedLocalBounds(single)).Select(ElementGeometry.LocalToPlane(single).TransformPoint)
                 : Corners(bounds);
             return ToScreenPoints(plane);

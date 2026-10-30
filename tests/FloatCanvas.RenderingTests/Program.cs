@@ -10,6 +10,8 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--ground-plane-occlusion-only")) { GroundPlaneOcclusionTests.Run(Assert); return 0; }
+            if (args.Contains("--ground-plane-picking-only")) { GroundPlanePickingTests.Run(Assert); Console.WriteLine($"PASS {_checks} ground picking checks."); return 0; }
             if (args.Contains("--picking-consistency-only")) { PickingConsistencyTests.Run(Assert); return 0; }
             if (args.Contains("--image-border-cache-diagnostics"))
             {
@@ -100,6 +102,8 @@ internal static class Program
         GridLockRenderingTests.Run(Assert);
             BillboardRenderingTests.Run(Assert);
             DepthOcclusionRenderingTests.Run(Assert);
+            GroundPlaneOcclusionTests.Run(Assert);
+            GroundPlanePickingTests.Run(Assert);
             DepthCompositionPerformanceTests.Run(Assert);
             Console.WriteLine($"PASS {_checks} real render/import/export checks.");
             return 0;

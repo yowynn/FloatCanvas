@@ -58,10 +58,9 @@ internal static class SnapshotImageTests
                 Math.Abs(frame[0].Y - frame[1].Y) < 1e-7 && Math.Abs(frame[1].X - frame[2].X) < 1e-7 &&
                 Math.Abs(frame[2].Y - frame[3].Y) < 1e-7 && Math.Abs(frame[3].X - frame[0].X) < 1e-7);
             var planeBounds = RectD.FromPoints(frame[0], frame[2]);
-            check(shape + " screenshot frame contains all inverse-projected pixel corners", EditorController.Corners(ElementGeometry.LocalBounds(image))
-                .Select(ElementGeometry.LocalToPlane(image).TransformPoint).All(point =>
-                    point.X >= planeBounds.Left - 1e-7 && point.X <= planeBounds.Right + 1e-7 &&
-                    point.Y >= planeBounds.Top - 1e-7 && point.Y <= planeBounds.Bottom + 1e-7));
+            check(shape + " screenshot frame exactly matches the captured plane region", selected!.PlaneBounds is { } capturedPlane &&
+                Math.Abs(planeBounds.Left - capturedPlane.Left) < 1e-7 && Math.Abs(planeBounds.Top - capturedPlane.Top) < 1e-7 &&
+                Math.Abs(planeBounds.Right - capturedPlane.Right) < 1e-7 && Math.Abs(planeBounds.Bottom - capturedPlane.Bottom) < 1e-7);
             void Drag(PointD from, PointD to)
             {
                 foreach (var (kind, point) in new[] { (OverlayPointerKind.Down, from), (OverlayPointerKind.Move, to), (OverlayPointerKind.Up, to) })
@@ -260,10 +259,16 @@ internal static class SnapshotImageTests
         await project.SaveAsync(projectPath, session.Document.Clone(), assets);
         var loaded = await project.LoadAsync(projectPath);
         var loadedImage = loaded.Document.Elements.Last();
-        check("project roundtrip keeps a normal PNG image with exact alpha pixels and placement", loadedImage.Kind == ElementKind.Image && loadedImage.Transform == image.Transform && loadedImage.Width == image.Width && loadedImage.Height == image.Height && loaded.Assets.Get(loadedImage.AssetId!).Data.Span.SequenceEqual(raster.PngBytes));
+        check("project roundtrip keeps a normal PNG image with exact alpha pixels, placement and edit frame", loadedImage.Kind == ElementKind.Image && loadedImage.Transform == image.Transform && loadedImage.Width == image.Width && loadedImage.Height == image.Height &&
+            (image.ImageFrame is null ? loadedImage.ImageFrame is null : loadedImage.ImageFrame?.SequenceEqual(image.ImageFrame) == true) && loaded.Assets.Get(loadedImage.AssetId!).Data.Span.SequenceEqual(raster.PngBytes));
         using (var archive = ZipFile.OpenRead(projectPath))
         using (var reader = new StreamReader(archive.GetEntry("scene.json")!.Open()))
-            check("project snapshot adds no persistent screenshot geometry or source type", !reader.ReadToEnd().Contains("CaptureShape", StringComparison.Ordinal));
+        {
+            string sceneJson = reader.ReadToEnd();
+            check("project snapshot stores its image frame without persisting capture-tool or source choices",
+                sceneJson.Contains("ImageFrame", StringComparison.Ordinal) == (image.ImageFrame is not null) && !sceneJson.Contains("CaptureShape", StringComparison.Ordinal) &&
+                !sceneJson.Contains("CaptureSource", StringComparison.Ordinal));
+        }
         var reopened = new EditorSession(loaded.Document, loaded.Assets);
         reopened.SetSelection([loadedImage.Id]);
         var before = loadedImage.Transform;
@@ -279,7 +284,8 @@ internal static class SnapshotImageTests
         var store = new RecoveryStore(Path.Combine(directory, "recovery"));
         await store.SaveAsync(workspace, assets);
         var restored = await store.LoadAsync();
-        check("recovery roundtrip preserves the new live snapshot as a normal image", restored is not null && restored.State.LiveDocument.Elements.Last().Kind == ElementKind.Image && restored.Assets.Get(image.AssetId!).Data.Span.SequenceEqual(raster.PngBytes));
+        check("recovery roundtrip preserves the new live snapshot as a normal image with its edit frame", restored is not null && restored.State.LiveDocument.Elements.Last().Kind == ElementKind.Image &&
+            (image.ImageFrame is null ? restored.State.LiveDocument.Elements.Last().ImageFrame is null : restored.State.LiveDocument.Elements.Last().ImageFrame?.SequenceEqual(image.ImageFrame) == true) && restored.Assets.Get(image.AssetId!).Data.Span.SequenceEqual(raster.PngBytes));
         check("recovery retains the old FrozenCapture draft and original screen origin unchanged", restored?.State.CaptureDocument?.Kind == DocumentKind.FrozenCapture && JsonSerializer.Serialize(restored.State.CaptureDocument) == oldState && restored.State.CaptureOrigin == new PointD(-90, -50));
         using var legacyRenderer = new SceneRenderer();
         using var legacyPixels = SKBitmap.Decode(legacyRenderer.ExportPng(restored!.State.CaptureDocument!, restored.Assets));

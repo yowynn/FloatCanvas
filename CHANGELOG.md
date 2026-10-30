@@ -5,6 +5,15 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+- 修复首次启动空画布与新建画布的默认参数不一致：两者统一采用第一个官方画布预设的完整配置，包括未启用网格时保存的描边颜色；已有工程与恢复记录保留原配置。
+- Make fresh startup canvases and new canvases share the complete first official canvas preset, including the stored stroke color when the grid is disabled. Existing projects and recovered workspaces retain their settings.
+
+- 修复深度优先遮挡下画布背景和网格失去平面遮挡的回归：立牌没入平面下方时，底色与网格按深度和实际透明度覆盖对应部分；深度相同时仍位于所有对象下方。
+- Restore ground-plane occlusion for canvas color and grid in depth-priority mode. Billboard portions below the plane are covered according to ground depth and actual alpha; at equal depth the ground stays below every object.
+
+- 修复透视贴面截图选框被 PNG 透明角落扩大：新截图按实际选区与可见外描边计算画布平面上的最小外接矩形，保留原始截图像素，并在保存、内部复制和裁剪后保留轮廓。
+- Fix oversized perspective Surface snapshot frames caused by transparent PNG corners. New snapshots use the smallest canvas-plane envelope of the capture contour and visible outside border, retain their original sampled pixels, and preserve the contour through saving, internal copying and cropping.
+
 - **安装、更新与卸载。** 新增中英文无签名 EXE 安装程序，与 ZIP 使用相同程序文件并分别附 SHA-256 校验。可选当前用户或所有用户安装；已有运行时直接跳过，缺少时一键从微软下载、校验、安装 .NET 10 桌面运行时并重新检测，不自动重启电脑。当前用户安装继续使用 ZIP 更新并同步卸载清单，系统安装通过管理员确认的安装向导更新。原生卸载清理不依赖 .NET，默认保留个人资料，也可明确选择账户与目录后删除；另存的作品、自定义资料目录和其他安装的注册保留。
 - **Install, update and uninstall.** Add an unsigned Simplified Chinese/English EXE installer using the same files as the ZIP, with an individual SHA-256 checksum for each. Choose current-user or all-users installation. An existing runtime skips its page; otherwise one action downloads, verifies and installs Microsoft's .NET 10 Desktop Runtime, then checks again without automatically restarting Windows. Current-user ZIP updates refresh the uninstall inventory; machine updates use Setup with administrator approval. Native uninstall cleanup no longer depends on .NET. Personal data is retained by default or deleted only for explicitly selected accounts and directories; projects saved elsewhere, custom profiles and other installations' registrations remain.
 

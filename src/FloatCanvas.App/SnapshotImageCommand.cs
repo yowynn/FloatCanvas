@@ -36,7 +36,17 @@ internal static class SnapshotImageCommand
         // Keep the body unframed so later layer edits can change the border without
         // resampling pixels or painting over a previous baked border.
         var raster = renderer.ExportSelectionPng(scene, assets, selection with { BorderWidth = 0 }, background, displays);
-        return raster with { ImageBorderWidth = selection.BorderWidth, ImageBorderColor = selection.BorderColor };
+        // A perspective screenshot has transparent corners in its screen-aligned PNG.
+        // Retain its actual contour separately so the plane edit frame excludes those corners,
+        // while the original sampled pixels and their placement remain unchanged.
+        var contour = selection.Points.Count > 0 ? selection.Points : EditorController.Corners(selection.Bounds);
+        return raster with
+        {
+            ImageBorderWidth = selection.BorderWidth, ImageBorderColor = selection.BorderColor,
+            ImageFrame = selection.BillboardDepthLine is null && CanvasMapping.Create(scene).PlaneToScreen != Projective2D.Identity
+                ? contour.Select(point => new PointD(Math.Clamp((point.X - raster.Bounds.X) / raster.Bounds.Width, 0, 1),
+                    Math.Clamp((point.Y - raster.Bounds.Y) / raster.Bounds.Height, 0, 1))).ToArray() : null
+        };
     }
 
     internal static CanvasElement Insert(EditorSession session, CaptureRasterResult raster, Projective2D? capturedPlaneToScreen = null,
@@ -91,7 +101,7 @@ internal static class SnapshotImageCommand
         var image = new CanvasElement { Kind = ElementKind.Image, AssetId = id,
             Width = raster.Bounds.Width, Height = raster.Bounds.Height,
             Transform = placement is null ? screenPlacement : Affine2D.Identity,
-            ProjectivePlacement = placement, Style = new() { StrokeWidth = 0 } };
+            ProjectivePlacement = placement, ImageFrame = raster.ImageFrame?.ToList(), Style = new() { StrokeWidth = 0 } };
         ConfigureBorder(image, raster);
         return image;
     }

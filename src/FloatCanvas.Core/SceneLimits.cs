@@ -13,7 +13,7 @@ public static class SceneLimits
     {
         if (document.Elements.Count > MaximumElements || document.Groups.Count > MaximumElements)
             throw new InvalidDataException(L.Get("Scene.ElementCountExceeded"));
-        if (document.Elements.Append(document.Background).Any(e => e is not null && (e.Points is null || e.Points.Count > MaximumPathPoints)))
+        if (document.Elements.Append(document.Background).Any(e => e is not null && (e.Points is null || e.Points.Count > MaximumPathPoints || e.ImageFrame?.Count > MaximumPathPoints)))
             throw new InvalidDataException(L.Get("Scene.PathCapacityExceeded"));
         var parents = new Dictionary<Guid, Guid?>();
         foreach (var group in document.Groups)
@@ -40,7 +40,7 @@ public static class SceneLimits
         // path size. Only documents near the package JSON ceiling need a streaming count.
         long upperBound = 4096L + (document.Canvas?.Projection?.Quad?.Count ?? 0) * 96L;
         foreach (var element in document.Elements.Append(document.Background).OfType<CanvasElement>())
-            upperBound += 2048L + element.Points.Count * 96L + (element.Effects?.Count ?? 0) * 512L +
+            upperBound += 2048L + (element.Points.Count + (element.ImageFrame?.Count ?? 0)) * 96L + (element.Effects?.Count ?? 0) * 512L +
                 6L * ((element.Name?.Length ?? 0) + (element.Text?.Length ?? 0) + (element.AssetId?.Length ?? 0) + (element.Style?.FontFamily?.Length ?? 0));
         upperBound += document.Groups.Sum(group => 192L + (group.Name?.Length ?? 0) * 6L);
         upperBound += document.DisplayLayout.Sum(display => 256L + (display?.DeviceName?.Length ?? 0) * 6L);

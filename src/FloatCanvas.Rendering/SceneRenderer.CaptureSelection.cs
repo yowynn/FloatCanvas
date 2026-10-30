@@ -11,6 +11,8 @@ public sealed record CaptureRasterResult(byte[] PngBytes, RectD Bounds, bool Has
     /// General selection exports bake their frame and leave these properties at zero/null.</summary>
     public double ImageBorderWidth { get; init; }
     public uint? ImageBorderColor { get; init; }
+    /// <summary>Optional capture contour normalized to the body raster, excluding allocation padding.</summary>
+    public IReadOnlyList<PointD>? ImageFrame { get; init; }
 }
 
 public sealed partial class SceneRenderer

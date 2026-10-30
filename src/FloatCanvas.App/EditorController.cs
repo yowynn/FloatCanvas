@@ -741,6 +741,7 @@ internal sealed partial class EditorController
         Session.Execute(L.Get("Editor.History.CropImage"), d =>
         {
             var image = d.Elements.First(e => e.Id == id);
+            ElementGeometry.CropImageFrame(image, local);
             image.ImageCrop = normalized;
             image.Width = local.Width; image.Height = local.Height;
             if (image.ProjectivePlacement is { } placement)

@@ -34,7 +34,7 @@ internal static class DepthOcclusionInteractionTests
         check("close but distinct depth does not become a layer-order tie", renderer.PickDepth(scene, assets, point) == near);
         far = Billboard(400, 0xFF0000FF); scene.Elements = [far];
         scene.Canvas.BackgroundColor = 0xFFFFFFFF;
-        check("opaque canvas base leaves the visible farther billboard pickable", renderer.PickDepth(scene, assets, point) == far);
+        check("opaque canvas plane blocks picking the occluded farther billboard", renderer.PickDepth(scene, assets, point) is null);
         scene.Canvas.BackgroundColor = 0x80FFFFFF;
         check("translucent plane color retains picking through visible billboard", renderer.PickDepth(scene, assets, point) == far);
         scene.Canvas.BackgroundColor = 0;

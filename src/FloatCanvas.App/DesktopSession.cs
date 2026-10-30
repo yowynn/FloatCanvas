@@ -119,6 +119,7 @@ internal sealed partial class DesktopSession : IDisposable
         var bounds = _host.Monitors.Select(m => new RectD(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height)).Aggregate(RectD.Union);
         var document = new SceneDocument { Viewport = bounds, DisplayLayout = _host.Monitors.Select(m => new DisplayLayoutHint
         { DeviceName = m.DeviceName, Bounds = new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height), DpiX = m.DpiX, DpiY = m.DpiY }).ToList() };
+        document.Canvas = CreateDefaultCanvasSettings(document.Viewport);
         _live = new(document, _assets);
         _editor = new(_live);
         _editor.BackgroundPickingEnabled = true;

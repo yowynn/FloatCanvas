@@ -58,7 +58,9 @@ internal static class ImageImportCommand
         {
             if (replace)
             {
-                target.SelectedElements().Single(e => e.Kind == ElementKind.Image && !e.Locked).AssetId = resources[0].Id;
+                var selected = target.SelectedElements().Single(e => e.Kind == ElementKind.Image && !e.Locked);
+                selected.AssetId = resources[0].Id;
+                selected.ImageFrame = null;
                 return;
             }
             target.Selection.Clear();

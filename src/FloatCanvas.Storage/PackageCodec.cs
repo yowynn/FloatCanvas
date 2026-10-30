@@ -309,6 +309,11 @@ internal static class PackageCodec
         }
         if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("ProjectivePlacement", out var placement) && placement.ValueKind != JsonValueKind.Null)
             RequireMatrixProperties(placement);
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("ImageFrame", out var frame) && frame.ValueKind != JsonValueKind.Null)
+        {
+            if (frame.ValueKind != JsonValueKind.Array) throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
+            foreach (var point in frame.EnumerateArray()) RequireProperties(point, "X", "Y");
+        }
     }
     private static void RequireMatrixProperties(JsonElement matrix) => RequireProperties(matrix, "M11", "M12", "M13", "M21", "M22", "M23", "M31", "M32", "M33");
     private static void RequireProperties(JsonElement value, params string[] properties)

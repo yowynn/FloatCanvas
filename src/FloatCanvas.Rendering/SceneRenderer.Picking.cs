@@ -58,6 +58,7 @@ public sealed partial class SceneRenderer
         BeginFrame(document);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             byte Sample(Action<SKCanvas> draw)
             {
                 var canvas = surface.Canvas;
@@ -67,6 +68,7 @@ public sealed partial class SceneRenderer
                 using var pixels = surface.PeekPixels();
                 return pixels.GetPixelColor(0, 0).Alpha;
             }
+            byte? groundAlpha = null;
             foreach (int index in CanvasDepthOrder.BackToFrontAt(document, mapping, point).Reverse())
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -76,6 +78,23 @@ public sealed partial class SceneRenderer
                 if (item.IsBillboard && !mapping.IsElementSafe(item)) continue;
                 double depth = planeDepth;
                 if (item.IsBillboard && !CanvasDepthOrder.TryAnchorDepth(mapping, item.BillboardAnchor, out depth)) continue;
+                if (CanvasDepthOrder.IsEnabled(document) && planeSafe && depth > planeDepth)
+                {
+                    // Ground is the lowest plane ink. Crossing its depth in this front-to-back
+                    // walk must stop at opaque ground even when every nearer object missed.
+                    groundAlpha ??= Sample(canvas =>
+                    {
+                        int saved = canvas.Save();
+                        try
+                        {
+                            canvas.ClipRect(ToRect(document.Viewport));
+                            DrawPlaneColor(canvas, document, document.Background is not { Visible: true });
+                            DrawGrid(canvas, document);
+                        }
+                        finally { canvas.RestoreToCount(saved); }
+                    });
+                    if (groundAlpha == 255) return null;
+                }
                 bool hit = ElementGeometry.HitTestProjected(item, point, mapping.PlaneToScreen, tolerance);
                 if (!hit) continue;
                 byte alpha = ElementGeometry.IsLiveEffect(item.Kind)

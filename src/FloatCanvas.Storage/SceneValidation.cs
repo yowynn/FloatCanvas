@@ -76,6 +76,8 @@ public static class SceneValidation
         Require(element.Kind != ElementKind.Image || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidImageReference"));
         Require(element.AssetId is null || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidAssetReference"));
         Require(element.ImageCrop is null || NormalizedRect(element.ImageCrop.Value, positive: true), L.Get("Scene.InvalidImageCrop"));
+        Require(element.ImageFrame is null || element.Kind == ElementKind.Image && element.ImageFrame.Count is >= 3 and <= SceneLimits.MaximumPathPoints &&
+            element.ImageFrame.All(p => Point(p) && p.X is >= 0 and <= 1 && p.Y is >= 0 and <= 1), L.Get("Scene.InvalidImageCrop"));
         Require(Nonnegative(element.ImageBorderWidth), L.Get("Scene.InvalidElementStyle"));
         Require(element.Effects is not null && element.Effects.Count <= 10_000, L.Get("Scene.InvalidEffects"));
         Require(element.Effects!.Count == 0 || element.Kind == ElementKind.Image || ElementGeometry.IsLiveEffect(element.Kind), L.Get("Scene.EffectsRequireImage"));

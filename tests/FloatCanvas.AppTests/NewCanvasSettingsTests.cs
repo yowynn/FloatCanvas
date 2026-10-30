@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Threading;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 
 internal static class NewCanvasSettingsTests
@@ -25,6 +26,17 @@ internal static class NewCanvasSettingsTests
             using var fixture = new Fixture(app);
             var settings = Field<UserSettings>(fixture.Session, "_settings");
             var reference = (RectD)fixture.Invoke("CanvasReferenceViewport")!;
+            var startupDefault = CanvasPresetLibrary.Apply(CanvasPresetLibrary.OfficialOnly().Official.First().Parameters,
+                new(), reference, fixture.Live.Document.Viewport);
+            check("startup canvas matches every field of the first official canvas preset including disabled colors",
+                Json(fixture.Live.Document.Canvas) == Json(startupDefault));
+            check("startup retains the official opaque red grid color even while the grid is disabled",
+                !fixture.Live.Document.Canvas.Grid.Visible && fixture.Live.Document.Canvas.Grid.Color == startupDefault.Grid.Color &&
+                (fixture.Live.Document.Canvas.Grid.Color >> 24) == 255);
+            fixture.Run("InitializeDocumentsAsync", false);
+            fixture.Invoke("OnMonitorsChanged");
+            check("fresh document initialization and monitor synchronization retain the complete official default",
+                Json(fixture.Live.Document.Canvas) == Json(startupDefault));
             fixture.Live.Document.Canvas.Grid.FlatOrigin = new(-111, -222);
             fixture.Invoke("SynchronizeFlatGridOrigin");
             check("flat-grid screen reference is the current primary center rather than a saved movable point",
@@ -34,6 +46,13 @@ internal static class NewCanvasSettingsTests
                 GridWidth = 3.5, Columns = 12, Rows = 9, DepthPriorityOcclusion = true }, new(), reference, fixture.Live.Document.Viewport);
             changed.Projection.LockedGridCellSize = changed.Projection.CellSize;
             fixture.Live.ExecuteSettings("fixture custom canvas", document => document.Canvas = changed);
+            var beforeRecovery = fixture.Live;
+            string recoveredCanvas = Json(beforeRecovery.Document.Canvas);
+            Field<RecoveryStore>(fixture.Session, "_recoveryStore").SaveAsync(
+                new WorkspaceState { LiveDocument = beforeRecovery.Document.Clone() }, beforeRecovery.Assets).GetAwaiter().GetResult();
+            fixture.Run("InitializeDocumentsAsync", true);
+            check("explicit recovery retains its stored complete canvas settings rather than applying startup defaults",
+                !ReferenceEquals(beforeRecovery, fixture.Live) && Json(fixture.Live.Document.Canvas) == recoveredCanvas);
             var previous = fixture.Live.Document;
             string originalCanvas = Json(previous.Canvas);
             var expectedDefault = CanvasPresetLibrary.Apply(CanvasPresetLibrary.OfficialOnly().Official.First().Parameters, new(), reference, previous.Viewport);
@@ -98,10 +117,10 @@ internal static class NewCanvasSettingsTests
             Host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), Private, null, [OverlayMonitorScope.PrimaryScreen, provider, false], null)!;
             Session = new DesktopSession(app, Host); Field<System.Windows.Forms.NotifyIcon>(Session, "_tray").Visible = false;
         }
-        internal object? Invoke(string method) => typeof(DesktopSession).GetMethod(method, Private)!.Invoke(Session, null);
-        internal void Run(string method)
+        internal object? Invoke(string method, params object[] arguments) => typeof(DesktopSession).GetMethod(method, Private)!.Invoke(Session, arguments);
+        internal void Run(string method, params object[] arguments)
         {
-            var task = (Task)Invoke(method)!; var timer = Stopwatch.StartNew();
+            var task = (Task)Invoke(method, arguments)!; var timer = Stopwatch.StartNew();
             while (!task.IsCompleted && timer.Elapsed < TimeSpan.FromSeconds(30))
             {
                 var frame = new DispatcherFrame();

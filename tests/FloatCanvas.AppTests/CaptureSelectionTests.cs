@@ -9,6 +9,7 @@ internal static class CaptureSelectionTests
 {
     internal static void Run(Action<string, bool> check)
     {
+        PerspectiveCaptureBoundsTests.Run(check);
         DragSelections(check);
         Lassos(check);
         SelectionAndCancellation(check);

@@ -15,7 +15,10 @@ public static partial class ElementGeometry
         return new(0, 0, Math.Max(0, element.Width), Math.Max(0, element.Height));
     }
     public static RectD Bounds(CanvasElement element, bool includeStroke = true)
-        => LocalToPlane(element).TryTransformBounds(StrokedLocalBounds(element, includeStroke), out var bounds) ? bounds : default;
+    {
+        if (TryImageFrameBounds(element, includeStroke, out var frame)) return frame;
+        return LocalToPlane(element).TryTransformBounds(StrokedLocalBounds(element, includeStroke), out var bounds) ? bounds : default;
+    }
     public static RectD StrokedLocalBounds(CanvasElement element, bool includeStroke = true)
     {
         var bounds = LocalBounds(element);

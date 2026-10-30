@@ -4,6 +4,8 @@ using System.Text.Json;
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
 void Near(double actual, double expected, string message) => Check(Math.Abs(actual - expected) < 1e-8, $"{message}: {actual} != {expected}");
+if (args.Contains("--image-frame-only")) { ImageFrameGeometryTests.Run(Check); Console.WriteLine($"PASS {checks} image frame checks"); return; }
+ImageFrameGeometryTests.Run(Check);
 RestoreDocumentKindTests.Run(Check);
 if (args.Contains("--restore-kind-only")) { Console.WriteLine($"PASS {checks} restore kind checks"); return; }
 if (args.Contains("--preview-changes-only")) { PreviewChangeTests.Run(Check); Console.WriteLine($"PASS {checks} preview change checks"); return; }

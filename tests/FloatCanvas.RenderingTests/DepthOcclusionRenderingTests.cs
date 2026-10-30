@@ -33,13 +33,13 @@ internal static class DepthOcclusionRenderingTests
             check("crossing plane order is spatial regardless of layer sequence", pixels.GetPixel(80, 40) == SKColors.Lime && pixels.GetPixel(80, 80) == SKColors.Red);
         scene.Elements = [board]; scene.Canvas.BackgroundColor = 0xFF00FF00;
         using (var pixels = Pixels(renderer, scene, assets, false))
-            check("opaque canvas color remains beneath billboards at every plane depth", pixels.GetPixel(80, 40) == SKColors.Red && pixels.GetPixel(80, 80) == SKColors.Red && pixels.GetPixel(5, 5) == SKColors.Lime);
+            check("opaque canvas color occludes only billboard pixels behind the plane", pixels.GetPixel(80, 40) == SKColors.Lime && pixels.GetPixel(80, 80) == SKColors.Red && pixels.GetPixel(5, 5) == SKColors.Lime);
         using (var pixels = Pixels(renderer, scene, assets)) check("transparent export excludes canvas color as before", pixels.GetPixel(80, 40) == SKColors.Red && pixels.GetPixel(5, 5).Alpha == 0);
         scene.Canvas.BackgroundColor = 0x8000FF00;
         using (var pixels = Pixels(renderer, scene, assets, false))
         {
             var mixed = pixels.GetPixel(80, 40);
-            check("translucent canvas color remains beneath an opaque farther billboard", mixed == SKColors.Red && pixels.GetPixel(5, 5).Alpha == 128);
+            check("translucent canvas color blends over a farther billboard", mixed.Red is >= 126 and <= 128 && mixed.Green == 128 && mixed.Alpha == 255 && pixels.GetPixel(5, 5).Alpha == 128);
         }
         scene.Canvas.BackgroundColor = 0; scene.Background = Plane(scene, 0xFF00FF00);
         using (var pixels = Pixels(renderer, scene, assets, false)) check("document photograph remains behind billboards rather than becoming a plane occluder", pixels.GetPixel(80, 40) == SKColors.Red);
@@ -70,8 +70,8 @@ internal static class DepthOcclusionRenderingTests
                 At(gridOnly, coveredBehind).Green > 240 && At(gridOnly, coveredFront).Green > 240 && At(gridOnly, gapBehind).Alpha == 0);
         board.Visible = true;
         using (var pixels = Pixels(renderer, scene, assets))
-            check("configured grid strokes remain beneath all billboard pixels regardless of depth",
-                At(pixels, coveredBehind) == SKColors.Red && At(pixels, coveredFront) == SKColors.Red && At(pixels, gapBehind) == SKColors.Red);
+            check("configured grid strokes occlude only billboard pixels behind the plane",
+                At(pixels, coveredBehind) == SKColors.Lime && At(pixels, coveredFront) == SKColors.Red && At(pixels, gapBehind) == SKColors.Red);
 
         scene = Scene(); board = Billboard(scene, 60, 0x80FF0000); plane = Plane(scene, 0x8000FF00); scene.Elements = [plane, board];
         scene.LayerOpacity = .5;
