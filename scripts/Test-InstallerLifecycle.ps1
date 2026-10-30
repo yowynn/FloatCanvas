@@ -69,12 +69,29 @@ function Invoke-Probe([string]$Name, [string[]]$Arguments) {
 }
 
 try {
-    foreach ($relative in @('safe\sub', 'busy', 'linked', 'outside', 'invalid-list')) {
+    foreach ($relative in @('safe\sub', 'busy', 'linked', 'outside', 'invalid-list', 'unicode-list')) {
         New-Item -ItemType Directory -Path (Join-Path $fixture $relative) -Force | Out-Null
     }
     [IO.File]::WriteAllText((Join-Path $fixture 'safe\sub\payload.dll'), 'isolated payload')
     [IO.File]::WriteAllText((Join-Path $fixture 'safe\FloatCanvas.install-files.txt'), "sub/payload.dll`r`n")
     [IO.File]::WriteAllText((Join-Path $fixture 'invalid-list\FloatCanvas.install-files.txt'), "../outside/keep.txt`r`n")
+    # Match the package ownership manifest's UTF-8 encoding without relying on
+    # the compiler's source-file code page for non-ASCII path literals.
+    $unicodePaths = [string[]]@(
+        'updated-components/更新后新增文件.txt',
+        'accented/café-Ångström.txt',
+        'non-latin/Καλημέρα-Привет-العربية.txt',
+        'emoji/色彩-🎨.txt',
+        '目录/文件中',
+        'width/末尾点．',
+        'width/末尾空格　'
+    )
+    [IO.File]::WriteAllLines((Join-Path $fixture 'unicode-list\FloatCanvas.install-files.txt'), $unicodePaths, [Text.UTF8Encoding]::new($false))
+    foreach ($relative in $unicodePaths) {
+        $payload = Join-Path (Join-Path $fixture 'unicode-list') $relative
+        New-Item -ItemType Directory -Path (Split-Path -Parent $payload) -Force | Out-Null
+        [IO.File]::WriteAllText($payload, 'isolated Unicode payload', [Text.UTF8Encoding]::new($false))
+    }
     [IO.File]::WriteAllText((Join-Path $fixture 'outside\keep.txt'), 'outside fixture must survive')
     [IO.File]::WriteAllText((Join-Path $fixture 'busy\locked.txt'), 'locked fixture must survive')
     New-Item -ItemType Junction -Path $junction -Target (Join-Path $fixture 'outside') | Out-Null

@@ -26,13 +26,16 @@ begin
 end;
 
 function SafeChild(Root, Relative: String; var Path: String): Boolean;
-var Remaining, Part, Stem: String; Separator, I: Integer;
+var Remaining, Part, Stem, Backslash, Slash, Dot: String; Separator, I: Integer;
 begin
   Result := False;
-  if (Relative = '') or (Length(Relative) > 240) or (Pos('\', Relative) <> 0) then exit;
+  { Pos with a Char needle narrows to ANSI; keep Unicode path searches and
+    their returned indices in String form, independently of the system ACP. }
+  Backslash := '\'; Slash := '/'; Dot := '.';
+  if (Relative = '') or (Length(Relative) > 240) or (Pos(Backslash, Relative) <> 0) then exit;
   Remaining := Relative;
   while Remaining <> '' do begin
-    Separator := Pos('/', Remaining);
+    Separator := Pos(Slash, Remaining);
     if Separator = 0 then begin Part := Remaining; Remaining := ''; end
     else begin
       Part := Copy(Remaining, 1, Separator - 1);
@@ -42,8 +45,8 @@ begin
     if (Part = '') or (Part = '.') or (Part = '..') then exit;
     if (Part[Length(Part)] = '.') or (Part[Length(Part)] = ' ') then exit;
     for I := 1 to Length(Part) do
-      if (Ord(Part[I]) < 32) or (Pos(Part[I], ':<>"|?*') <> 0) then exit;
-    Stem := Uppercase(Part); Separator := Pos('.', Stem);
+      if (Ord(Part[I]) < 32) or (Pos(Copy(Part, I, 1), ':<>"|?*') <> 0) then exit;
+    Stem := Uppercase(Part); Separator := Pos(Dot, Stem);
     if Separator > 0 then Stem := Copy(Stem, 1, Separator - 1);
     if (Stem = 'CON') or (Stem = 'PRN') or (Stem = 'AUX') or (Stem = 'NUL') or
       ((Length(Stem) = 4) and ((Copy(Stem, 1, 3) = 'COM') or (Copy(Stem, 1, 3) = 'LPT')) and

@@ -45,6 +45,8 @@ function CreateFileW(Name: String; Access, Share: LongWord; Security: LongWord;
   external 'CreateFileW@kernel32.dll stdcall';
 function CloseHandle(Handle: THandle): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
+function GetACP: LongWord;
+  external 'GetACP@kernel32.dll stdcall';
 
 #include "..\Paths.iss"
 #include "..\UninstallLifecycle.iss"
@@ -149,8 +151,9 @@ begin
 end;
 
 procedure PathChecks;
-var Root, Child: String; Files: TArrayOfString;
+var Root, Child, Expected, Forbidden, Character: String; Files: TArrayOfString; I, J: Integer;
 begin
+  Log('Lifecycle path validation ACP=' + IntToStr(GetACP));
   Root := AddBackslash(FixtureDirectory) + 'safe';
   Check('regular data tree accepted', DataTreeSafe(Root));
   Check('locked data rejected', not DataTreeSafe(AddBackslash(FixtureDirectory) + 'busy'));
@@ -165,8 +168,36 @@ begin
   Check('device path rejected', not SafeChild(Root, 'CON.txt', Child));
   Check('alternate stream rejected', not SafeChild(Root, 'payload.dll:stream', Child));
   Check('trailing separator rejected', not SafeChild(Root, 'sub/', Child));
+  Check('ASCII trailing dot rejected', not SafeChild(Root, 'bad.', Child));
+  Check('ASCII trailing space rejected', not SafeChild(Root, 'bad ', Child));
   Check('valid ownership list accepted', ReadOwnedFiles(Root, Files));
   Check('traversing ownership list rejected', not ReadOwnedFiles(AddBackslash(FixtureDirectory) + 'invalid-list', Files));
+  for I := 0 to 31 do
+    Check('ASCII control rejected ' + IntToStr(I), not SafeChild(Root, 'bad' + Chr(I) + 'name.txt', Child));
+  Forbidden := ':<>"|?*';
+  for I := 1 to Length(Forbidden) do
+    Check('forbidden filename character rejected ' + IntToStr(I),
+      not SafeChild(Root, 'bad' + Copy(Forbidden, I, 1) + 'name.txt', Child));
+  Root := AddBackslash(FixtureDirectory) + 'unicode-list';
+  Check('Unicode fixture list loads', LoadStringsFromFile(AddBackslash(Root) + OwnedListName, Files));
+  Check('Unicode fixture has all path families', GetArrayLength(Files) = 7);
+  for I := 0 to GetArrayLength(Files) - 1 do begin
+    { Compare the former scalar-to-string conversion with a string slice only
+      in this fixture. This logs the active-code-page defect on CI without
+      adding diagnostics to the production path validator. }
+    for J := 1 to Length(Files[I]) do begin
+      Character := Copy(Files[I], J, 1);
+      if (Pos(Files[I][J], Forbidden) <> 0) and (Pos(Character, Forbidden) = 0) then
+        Log('Unicode scalar conversion changed forbidden-character lookup: entry=' + IntToStr(I) +
+          '; unit=' + IntToStr(J) + '; scalar=' + IntToStr(Ord(Files[I][J])));
+    end;
+    Check('Unicode payload path accepted ' + IntToStr(I), SafeChild(Root, Files[I], Child));
+    Check('Unicode payload remains within root ' + IntToStr(I), IsWithin(Child, Root));
+    Expected := Files[I]; StringChangeEx(Expected, '/', '\', True);
+    Check('Unicode payload path preserved exactly ' + IntToStr(I), Child = AddBackslash(Root) + Expected);
+    Check('Unicode payload identity preserved ' + IntToStr(I), FileExists(Child));
+  end;
+  Check('Unicode ownership list accepted', ReadOwnedFiles(Root, Files));
 end;
 
 procedure HandoffChecks;
