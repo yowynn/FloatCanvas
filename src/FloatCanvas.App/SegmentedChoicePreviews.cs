@@ -16,7 +16,7 @@ internal static class SegmentedChoicePreviews
         string path = name switch
         {
             "flat" or "surface" => "M2,4 L14,4 L14,14 L2,14 Z M2,9 H14 M8,4 V14",
-            "perspective" => "M5,2 L14,5 L11,14 L2,11 Z M3.5,6.5 L12.5,9.5 M9.5,3.5 L6.5,12.5",
+            "perspective" => "M5,4 H11 L14,14 H2 Z M4,7.33 H12 M8,4 V14",
             "billboard" => "M3,1 H13 V12 H3 Z M8,12 V15 M5,15 H11",
             "system" or "desktop" => "M1,2 H15 V12 H1 Z M8,12 V15 M4,15 H12",
             "light" => "M8,4 A4,4 0 1 0 8,12 A4,4 0 1 0 8,4 M8,0 V2 M8,14 V16 M0,8 H2 M14,8 H16 M2,2 L3,3 M13,13 L14,14 M2,14 L3,13 M13,3 L14,2",

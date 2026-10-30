@@ -291,10 +291,13 @@ internal sealed class OverlayPopupWindow : IDisposable
                 if(OverlayWindowScope.Current!=scope || !scope.IsInputActive || !target.IsVisible || targetSource.IsDisposed) return;
                 nint focused=GetFocus();
                 if(focused!=0 && focused!=targetSource.Handle && focused!=scope.Owner) return;
-                  // Native focus alone cannot distinguish two controls in the same
-                  // HWND. Preserve a destination chosen while this popup was closing.
-                  if(Keyboard.FocusedElement is DependencyObject focusedElement &&
-                      !BelongsTo(focusedElement,target) && !BelongsTo(focusedElement,content)) return;
+                // Destroying an owned menu can restore the canvas HWND before
+                // its source control. That automatic fallback is not a new destination.
+                // Preserve an explicitly selected control in any other HWND.
+                if(Keyboard.FocusedElement is DependencyObject focusedElement &&
+                    !BelongsTo(focusedElement,target) && !BelongsTo(focusedElement,content) &&
+                    !(focused==scope.Owner && focusedElement is Visual ownerVisual &&
+                        (PresentationSource.FromVisual(ownerVisual) as HwndSource)?.Handle==scope.Owner)) return;
                 SetActiveWindow(GetAncestor(targetSource.Handle,2));SetFocus(targetSource.Handle);target.Focus();Keyboard.Focus(target);
             });
         }

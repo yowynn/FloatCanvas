@@ -20,6 +20,7 @@ internal sealed class ColorField : UserControl
     private readonly TextBlock label = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 10, FontWeight = FontWeights.SemiBold };
     private readonly PopupHandle popupDisplay;
     private readonly ColorPickerPanel picker;
+    private readonly ColorClipboardMenu clipboard;
     private bool pickerSessionOpen, draftCommitted, pickerSessionChanged, isMixed;
     private bool suppressTriggerClick;
     private int suppressedPressTime;
@@ -72,6 +73,10 @@ internal sealed class ColorField : UserControl
         }
         Content = row;
         picker = new ColorPickerPanel(role, this.library);
+        clipboard = new ColorClipboardMenu(button, () => Value, SetUserValue, message =>
+        {
+            button.ToolTip = message; AutomationProperties.SetHelpText(this, message);
+        }, allowTransparent: true);
         picker.CanBeginGesture = () => CanBeginGesture?.Invoke() != false;
         picker.GestureStarted += () => GestureStarted?.Invoke();
         picker.GestureCompleted += commit => GestureCompleted?.Invoke(commit);
@@ -82,6 +87,7 @@ internal sealed class ColorField : UserControl
         var popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };
         popupDisplay=new(popup, L.Get(role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background")) { TargetPressToggles = true };
+        if (popupDisplay.Key is WindowPopup window) window.EscapePressed += (_, e) => HandlePickerEscape(e);
         PopupChildDialog.Attach(border, popupDisplay.Key);
         PreviewKeyDown += (_, e) =>
         {
@@ -91,10 +97,7 @@ internal sealed class ColorField : UserControl
         {
             if (SessionWindowCoordinator.Find(Window.GetWindow(this))?.HistoryCommand is { } command)
                 PresetHistoryKeyboardRoute.Handle(e, Keyboard.Modifiers, command);
-            if (e.Key != Key.Escape) return;
-            if (NumericValueField.TryCancelForInput(e.OriginalSource as DependencyObject)) { e.Handled = true; return; }
-            if (picker.IsInteracting) { picker.EndGesture(false); e.Handled = true; return; }
-            ClosePicker(); button.Focus(); e.Handled = true;
+            HandlePickerEscape(e);
         };
         SessionWindowCoordinator? popupSession = null;
         popupDisplay.OnOpened((_, _) =>
@@ -277,6 +280,18 @@ internal sealed class ColorField : UserControl
     {
         if (!popupDisplay.IsOpen && !pickerSessionOpen) return false;
         ClosePicker(); if (MayReturnFocus) button.Focus(); return true;
+    }
+    private void HandlePickerEscape(KeyEventArgs e)
+    {
+        if (e.Handled || e.Key != Key.Escape) return;
+        if (NumericValueField.TryCancelForInput(e.OriginalSource as DependencyObject)) { e.Handled = true; return; }
+        if (picker.IsInteracting)
+        {
+            bool cancelledEdit = picker.HasCancellableGesture;
+            picker.EndGesture(false);
+            if (cancelledEdit) { e.Handled = true; return; }
+        }
+        if (TryClosePicker()) e.Handled = true;
     }
     private bool MayReturnFocus => SessionWindowCoordinator.Find(Window.GetWindow(this))?.IsDirectTransfer != true;
     private void RefreshValue()

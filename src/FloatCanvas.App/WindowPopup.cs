@@ -18,6 +18,7 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
     internal bool TargetPressToggles { get; set; }
     internal double VerticalOffset { get; set; } = offset;
     internal event EventHandler? Opened, Closed;
+    internal event KeyEventHandler? EscapePressed;
     internal bool IsOpen
     {
         get => window is not null;
@@ -64,6 +65,13 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
         point.Y = System.Math.Clamp(point.Y, work.Top, System.Math.Max(work.Top, work.Bottom - (child.DesiredSize.Height + 34) * scale));
         shown.SourceInitialized += (_, _) => OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(shown).Handle, new(point.X, point.Y));
         shown.Closed += OnClosed;
+        // Bubble after content cancellation, including when focus is on the caption or window root.
+        shown.KeyDown += (_, e) =>
+        {
+            if (e.Handled || e.Key != Key.Escape) return;
+            EscapePressed?.Invoke(this, e);
+            if (!e.Handled) { e.Handled = true; IsOpen = false; }
+        };
         shown.Deactivated += (_, _) => shown.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (ReferenceEquals(window, shown) && suspensionDepth == 0 && !StaysOpen && !shown.IsActive && !shown.IsKeyboardFocusWithin &&

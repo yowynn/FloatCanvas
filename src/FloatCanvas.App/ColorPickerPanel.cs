@@ -15,18 +15,22 @@ internal sealed class ColorPickerPanel : UserControl
     private readonly TextBox hex = new() { Height = PropertyPanelLayout.ControlHeight, MinHeight = PropertyPanelLayout.ControlHeight, Padding = new(8, 0, 8, 0), MaxLength = 9, MinWidth = 130, VerticalContentAlignment = VerticalAlignment.Center };
     private readonly NumericValueField alphaField = new(0, 100) { Unit = "%" };
     private readonly Slider alpha;
-    private readonly Border preview = new() { Height = PropertyPanelLayout.ControlHeight, Width = 42, CornerRadius = new(5), Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(1) };
+    private readonly Border preview = new() { Height = PropertyPanelLayout.ControlHeight, Width = 42, CornerRadius = new(5), Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(1), Background = Brushes.Transparent };
+    private readonly ColorClipboardMenu clipboard;
     private readonly ColorSpectrum spectrum = new();
-    private readonly Slider hue = new() { Minimum = 0, Maximum = 360, Height = 20, Margin = new Thickness(0, 4, 0, 3) };
+    private readonly ColorHueSlider hue = new() { Height = 28, Margin = new Thickness(0, 6, 0, 8) };
     private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11, Margin = new Thickness(0, 5, 0, 0), Visibility = Visibility.Collapsed };
     private readonly PixelTilePanel history = new(10, 28), pinned = new(10, 28);
     private readonly TextBlock historyHeading = Heading("Color.History"), pinnedHeading = Heading("Color.Pinned");
     private bool syncing;
     private bool valueDirty = true, collectionsDirty = true, previewDirty, preparing;
-    private uint value;
+    private uint value, previewColor;
+    private uint ClipboardColor => TryGetDraft(out uint color) ? color : previewColor;
     private string? revealSwatch;
     private uint gestureStart;
     internal bool IsInteracting { get; private set; }
+    internal bool HasCancellableGesture => IsInteracting && (hue.IsPointerInteracting || alphaField.IsInteracting || spectrum.IsMouseCaptured ||
+        !TryGetDraft(out uint color) || color != gestureStart);
     internal Func<bool>? CanBeginGesture { get; set; }
     internal event Action? GestureStarted;
     internal event Action<bool>? GestureCompleted;
@@ -75,14 +79,7 @@ internal sealed class ColorPickerPanel : UserControl
         var customLabel = PropertyPanelLayout.Label(L.Get("Color.Custom")); customLabel.Margin = new(0, 7, 0, 5); body.Children.Add(customLabel);
         body.Children.Add(spectrum);
         AutomationProperties.SetName(hue, L.Get("Color.Hue"));
-        var hueColors = new GradientStopCollection
-        {
-            new(Colors.Red, 0), new(Colors.Yellow, 1d / 6), new(Colors.Lime, 2d / 6), new(Colors.Cyan, .5),
-            new(Colors.Blue, 4d / 6), new(Colors.Magenta, 5d / 6), new(Colors.Red, 1)
-        };
-        var hueTrack = new Border { Background = new LinearGradientBrush(hueColors, 0), CornerRadius = new CornerRadius(3), Height = 5,
-            Margin = new Thickness(7, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-        var hueRow = new Grid(); hueRow.Children.Add(hueTrack); hueRow.Children.Add(hue); body.Children.Add(hueRow);
+        hue.SetResourceReference(StyleProperty, "CanvasHueSlider"); body.Children.Add(hue);
         var input = new Grid(); input.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); input.ColumnDefinitions.Add(new ColumnDefinition());
         preview.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder"); input.Children.Add(preview);
         input.Children.Add(hex); Grid.SetColumn(hex, 1); body.Children.Add(input);
@@ -100,6 +97,9 @@ internal sealed class ColorPickerPanel : UserControl
         error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); body.Children.Add(error);
         AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
         Content = new ScrollViewer { Margin = WindowLayout.ContentMargin(), Content = columns, MaxHeight = 520, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        clipboard = new ColorClipboardMenu(preview, () => ClipboardColor, PasteColor, ShowError);
+        preview.ToolTip = L.Get("Color.CopyPreviewHint"); preview.Cursor = Cursors.Hand;
+        AutomationProperties.SetName(preview, L.Get("Color.CopyPreviewHint"));
         hex.TextChanged += (_, _) =>
         {
             if (syncing) return;
@@ -118,27 +118,32 @@ internal sealed class ColorPickerPanel : UserControl
         alphaField.GestureCompleted += EndGesture;
         spectrum.CanBeginGesture = BeginGesture;
         spectrum.GestureCompleted += EndGesture;
-        hue.PreviewMouseLeftButtonDown += (_, _) => BeginGesture();
-        hue.PreviewMouseLeftButtonUp += (_, _) => EndGesture(true);
-        hue.LostMouseCapture += (_, _) => { if (Mouse.LeftButton != MouseButtonState.Pressed) EndGesture(true); else EndGesture(false); };
+        hue.CanBeginPointerGesture = BeginGesture;
+        hue.PointerGestureCompleted += EndGesture;
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && IsInteracting) { EndGesture(false); e.Handled = true; } };
         Unloaded += (_, _) => EndGesture(false);
         alphaField.ValueChanged += _ => { if (!syncing) { ClearInputError(); RefreshPreview(); } };
         alphaField.InvalidInput += () => { if (!syncing) InvalidInput(); };
         hue.ValueChanged += (_, _) => { if (!syncing) spectrum.ChangeHue(hue.Value); };
         spectrum.ColorChanged += color => { if (!syncing) hex.Text = ColorLibrary.ToHtml(color, false); };
-        preview.MouseLeftButtonDown += (_, e) => { spectrum.Focus(); e.Handled = true; };
+        preview.MouseLeftButtonDown += (_, e) => { spectrum.Focus(); clipboard.Copy(ColorClipboardFormat.HexArgb); e.Handled = true; };
         Value = role == ColorRole.Background ? 0u : ColorLibrary.ForegroundRed;
         RefreshCollections();
         IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); };
         Loaded += (_, _) => { if (IsVisible) PrepareForShow(); };
     }
 
-    internal bool BeginGesture()
+    internal bool BeginGesture() => BeginGesture(null);
+    private bool BeginGesture(uint? fallback)
     {
         if (syncing) return false;
         if (IsInteracting) return true;
-        if (CanBeginGesture?.Invoke() == false || !TryGetDraft(out gestureStart)) return false;
+        if (CanBeginGesture?.Invoke() == false) return false;
+        if (!TryGetDraft(out gestureStart))
+        {
+            if (fallback is not uint color) return false;
+            gestureStart = color;
+        }
         IsInteracting = true;
         GestureStarted?.Invoke();
         return true;
@@ -155,6 +160,7 @@ internal sealed class ColorPickerPanel : UserControl
             finally { syncing = wasSyncing; }
             DraftChanged?.Invoke(gestureStart);
         }
+        else hue.EndPointerGesture(true);
         GestureCompleted?.Invoke(commit);
     }
 
@@ -174,7 +180,7 @@ internal sealed class ColorPickerPanel : UserControl
 
     private void ReleaseHueCapture()
     {
-        if (Mouse.Captured is Visual captured && (ReferenceEquals(captured, hue) || hue.IsAncestorOf(captured))) Mouse.Capture(null);
+        hue.EndPointerGesture(false);
     }
 
     internal void PrepareForShow()
@@ -255,6 +261,12 @@ internal sealed class ColorPickerPanel : UserControl
     }
     private void Apply() { if (TryRead(out uint color)) ColorChosen?.Invoke(color); else InvalidInput(); }
     private void Choose(uint color) { Value = color; DraftChanged?.Invoke(color); }
+    private void PasteColor(uint color)
+    {
+        if (!BeginGesture(ClipboardColor)) return;
+        try { Choose(color); }
+        finally { EndGesture(true); }
+    }
     internal bool TryGetDraft(out uint color)
     {
         if (valueDirty) { color = value; return true; }
@@ -279,6 +291,7 @@ internal sealed class ColorPickerPanel : UserControl
         previewDirty = false;
         if (TryRead(out var color))
         {
+            previewColor = color;
             preview.Child = CreateSwatch(color);
             bool wasSyncing = syncing; syncing = true;
             try
@@ -309,8 +322,10 @@ internal sealed class ColorPickerPanel : UserControl
     {
         try { action(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        { error.Text = "⚠ " + ex.Message; error.Visibility = Visibility.Visible; error.BringIntoView(); }
+        { ShowError(ex.Message); }
     }
+    private void ShowError(string message)
+    { error.Text = "⚠ " + message; error.Visibility = Visibility.Visible; error.BringIntoView(); }
     private System.Windows.Controls.Button IconButton(PanelActionIcon icon, string key, Action action, string? shortcut = null) =>
         ActionIconButton.Create(icon, L.Get(key), () => Run(action), shortcut);
     private System.Windows.Controls.Button SwatchButton(uint color, string name, Action action)

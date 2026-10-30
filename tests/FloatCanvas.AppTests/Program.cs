@@ -38,6 +38,11 @@ internal static class Program
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
             if (args.Contains("--toolbar-opacity-gesture-only")) { ToolbarOpacityGestureTests.Run(Assert); return 0; }
             if (args.Contains("--color-robustness-only")) { ColorRobustnessTests.Run(Assert); return 0; }
+            if (args.Contains("--color-clipboard-only")) { ColorClipboardTests.Run(Assert); ColorClipboardMenuTests.Run(Assert); return 0; }
+            if (args.Contains("--color-picker-visuals-only")) { ColorPickerVisualTests.Run(Assert, args.SkipWhile(a => a != "--color-picker-visuals-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--color-copy-lifecycle-only")) { ColorCopyFeedbackLifecycleTests.Run(Assert, args.SkipWhile(a => a != "--color-copy-lifecycle-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--color-picker-escape-only")) { ColorPickerEscapeTests.Run(Assert, args.SkipWhile(a => a != "--color-picker-escape-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--inspector-color-menu-only")) { InspectorColorMenuLifecycleTests.Run(Assert, args.SkipWhile(a => a != "--inspector-color-menu-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-robustness-only")) { WindowRobustnessTests.RunNative(Assert); return 0; }
             if (args.Contains("--native-presentation-lifecycle-only")) { NativePresentationLifecycleTests.Run(Assert); return 0; }
             if (args.Contains("--archive-worker-only")) { ArchiveWorkerTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
@@ -312,6 +317,8 @@ internal static class Program
             PropertyVisualTests.Run(Assert);
             SegmentedChoiceTests.Run(Assert);
             ColorRobustnessTests.Run(Assert);
+            ColorClipboardTests.Run(Assert); ColorClipboardMenuTests.Run(Assert);
+            ColorPickerVisualTests.Run(Assert);
             WindowRobustnessTests.Run(Assert);
             PreviewRequestRecoveryTests.Run(Assert);
             PresentedPickingTests.Run(Assert);

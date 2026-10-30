@@ -30,7 +30,7 @@ internal sealed class ColorSpectrum : FrameworkElement
 
     internal ColorSpectrum()
     {
-        Height = 112; MinWidth = 180; Focusable = true; Cursor = Cursors.Cross;
+        Height = 160; MinWidth = 180; Focusable = true; Cursor = Cursors.Cross;
         AutomationProperties.SetName(this, L.Get("Color.Spectrum"));
         ToolTip = L.Get("Color.SpectrumHint");
     }

@@ -19,6 +19,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private readonly Dictionary<string, Controls.TextBox> fields = [];
     private readonly Dictionary<string, NumericValueField> numericFields = [];
     private readonly Dictionary<string, ColorField> colorFields = [];
+    private readonly HashSet<OverlayContextMenu> contextMenus = [];
     private readonly Dictionary<string, Wpf.FrameworkElement> fieldContainers = [];
     private readonly HashSet<string> dirtyFields = [];
     private readonly Controls.StackPanel propertyPanel = new();
@@ -218,6 +219,8 @@ internal sealed class InspectorWindow : Wpf.Window
         editTimer.Tick += (_, _) => { if (!numericFields.Values.Any(field => field.IsInteracting)) CompleteEdit(); };
         Deactivated += (_, _) => {CancelNumericGestures();CompleteEdit();QueueFocusCheck();};
         propertyPanel.LostKeyboardFocus += (_, _) => { if (!propertyPanel.IsKeyboardFocusWithin) CompleteEdit(); };
+        propertyPanel.AddHandler(Controls.ContextMenuService.ContextMenuOpeningEvent,
+            new Controls.ContextMenuEventHandler(TrackContextMenu), true);
         Closing += (_, e) => { e.Cancel = true; CancelNumericGestures(); CompleteEdit(); CancelScrub(); CloseColorPickers(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); else { ObserveSession(null); CancelNumericGestures(); CompleteEdit(); CloseColorPickers();
             if (SessionWindowCoordinator.Find(this)?.IsSuspendingWindows == true && IsPinned) return;
@@ -262,11 +265,21 @@ internal sealed class InspectorWindow : Wpf.Window
     private void QueueFocusCheck()=>Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,()=>
     {
         if(SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending==true)return;
-        if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||colorFields.Values.Any(color=>color.IsPickerOpen)||
+        if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||contextMenus.Any(menu=>menu.IsOpen)||colorFields.Values.Any(color=>color.IsPickerOpen)||
             fontPicker.IsDropDownOpen)return;
         if(Wpf.Application.Current.Windows.Cast<Wpf.Window>().Any(window=>window.IsActive&&IsChildWindow(window)))return;
         Dismiss(WindowDismissReason.ExternalFocus);
     });
+    private void TrackContextMenu(object sender, Controls.ContextMenuEventArgs args)
+    {
+        for(var source=args.OriginalSource as Wpf.DependencyObject;source is not null;
+            source=source is Media.Visual?Media.VisualTreeHelper.GetParent(source)??Wpf.LogicalTreeHelper.GetParent(source):Wpf.LogicalTreeHelper.GetParent(source))
+        {
+            if(source is not Wpf.FrameworkElement {ContextMenu:OverlayContextMenu menu})continue;
+            if(contextMenus.Add(menu))menu.Closed+=(_,_)=>QueueFocusCheck();
+            return;
+        }
+    }
     private bool IsChildWindow(Wpf.Window window)
     {
         for(var owner=window.Owner;owner is not null;owner=owner.Owner)if(ReferenceEquals(owner,this))return true;

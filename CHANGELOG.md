@@ -5,6 +5,15 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+- **颜色编辑。** 两级当前颜色控件均提供复制／粘贴菜单，支持 `#RRGGBB`、`#AARRGGBB`、`rgb()`、`rgba()`、`hsl()`、`hsla()`；不带 Alpha 的颜色粘贴时保留当前不透明度，无效文本禁用粘贴。左键二级预览复制 `#AARRGGBB`，复制成功短暂显示“已复制”，一级菜单独立提供“置为透明”。
+- **Color editing.** Both current-color controls offer Copy/Paste menus for `#RRGGBB`, `#AARRGGBB`, `rgb()`, `rgba()`, `hsl()` and `hsla()`. Pasting without Alpha preserves opacity; invalid text disables Paste. Left-click the secondary preview to copy `#AARRGGBB`; successful copies briefly show Copied. The primary menu has a separate Set to transparent action.
+
+- **选色与窗口交互。** 加高自定义选色区域，色相条改用彩虹轨道和细长拨杆，支持从轨道或拨杆连续拖动。修复颜色菜单误收起未固定属性窗口、复制提示被来源窗口遮住，并补齐窗口各处焦点下的 `Esc` 关闭；正在调整时先取消，再按一次关闭，一次调节保持一步撤销。
+- **Color picking and window interaction.** Enlarge the spectrum and use a rainbow hue track with a slim lever, supporting continuous dragging from either. Keep unpinned Properties open during color-menu commands, keep copy receipts above their source, and support `Esc` dismissal from the window or its caption. During an edit or drag, the first press cancels and the next closes; each adjustment keeps one undo step.
+
+- 将画布类型的“透视”图标改为由平面四格网格变形而来的梯形，更直观地区分平面与透视。
+- Replace the Perspective canvas-type icon with a trapezoid derived from the Flat four-cell grid.
+
 - 细化工程打开行为：双击工程启动浮绘时进入编辑；已运行时保持当前编辑或穿透模式，穿透中双击工程仅切换画布。成功打开工程自动显示画布并打开小眼睛。
 - Refine project opening: launching FloatCanvas through a project enters editing; opening in a running instance preserves edit or pass-through mode. A successful open always reveals the canvas and opens the eyes.
 

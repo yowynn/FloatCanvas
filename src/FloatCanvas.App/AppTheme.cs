@@ -486,6 +486,43 @@ internal static class AppTheme
               </ControlTemplate>
             </Setter.Value></Setter>
           </Style>
+          <Style x:Key="CanvasHueSlider" TargetType="Slider" BasedOn="{StaticResource CanvasControlBase}">
+            <Setter Property="MinHeight" Value="28"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Slider">
+                <Grid Background="Transparent">
+                  <Border x:Name="HueLane" Height="14" Margin="5,0" CornerRadius="3" VerticalAlignment="Center" IsHitTestVisible="False">
+                    <Border.Background><LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                      <GradientStop Color="#FFFF0000" Offset="0"/><GradientStop Color="#FFFFFF00" Offset="0.1666666667"/>
+                      <GradientStop Color="#FF00FF00" Offset="0.3333333333"/><GradientStop Color="#FF00FFFF" Offset="0.5"/>
+                      <GradientStop Color="#FF0000FF" Offset="0.6666666667"/><GradientStop Color="#FFFF00FF" Offset="0.8333333333"/>
+                      <GradientStop Color="#FFFF0000" Offset="1"/>
+                    </LinearGradientBrush></Border.Background>
+                  </Border>
+                  <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                         Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                         Orientation="{TemplateBinding Orientation}" IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+                    <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}" Command="{x:Static Slider.DecreaseLarge}"/></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb x:Name="HueThumb" Width="10" Height="24" Focusable="False" IsTabStop="False">
+                      <Thumb.Template><ControlTemplate TargetType="Thumb">
+                        <Border BorderBrush="#D9232323" BorderThickness="1" CornerRadius="2" Background="#26000000">
+                          <Border x:Name="Lever" BorderBrush="White" BorderThickness="2" CornerRadius="1"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Lever" Property="Background" Value="#20FFFFFF"/></Trigger>
+                          <Trigger Property="IsDragging" Value="True"><Setter TargetName="Lever" Property="Background" Value="#40FFFFFF"/></Trigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate></Thumb.Template>
+                    </Thumb></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}" Command="{x:Static Slider.IncreaseLarge}"/></Track.IncreaseRepeatButton>
+                  </Track>
+                </Grid>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
           <Style x:Key="CanvasNumericSlider" TargetType="Slider" BasedOn="{StaticResource CanvasControlBase}">
             <Setter Property="MinHeight" Value="0"/>
             <Setter Property="Template"><Setter.Value>
