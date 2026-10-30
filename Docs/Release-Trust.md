@@ -8,11 +8,11 @@ FloatCanvas ships unsigned Windows ZIP and EXE installer packages containing the
 
 - `FloatCanvas-<version>-win-x64.zip`：完整应用、用户文档、许可证、依赖清单与 `PACKAGE-INFO.json`。
 - `FloatCanvas-<version>-win-x64.zip.sha256`：ZIP 的 SHA-256 和准确文件名。
-- `FloatCanvas-<version>-win-x64-Setup.exe`：从同一 ZIP 构建的当前用户安装程序，包含快捷方式及卸载支持。
+- `FloatCanvas-<version>-win-x64-Setup.exe`：从同一 ZIP 构建的安装程序，支持当前用户／所有用户范围、运行时下载引导、快捷方式及卸载。
 - `FloatCanvas-<version>-win-x64-Setup.exe.sha256`：EXE 安装包的 SHA-256 和准确文件名。
 - ZIP 内的 `DEPENDENCIES.cdx.json`：基于锁定依赖生成的 CycloneDX SBOM。
 
-Each release contains the complete ZIP, an EXE installer built from that ZIP, and a `.sha256` companion for each format. The ZIP includes application files, user documentation, licenses, a CycloneDX dependency inventory and an exact owned-file manifest. The installer adds shortcuts and uninstall support. Both require the compatible .NET 10 Windows Desktop Runtime x64 installed on the system.
+Each release contains the complete ZIP, an EXE installer built from that ZIP, and a `.sha256` companion for each format. The ZIP includes application files, user documentation, licenses, a CycloneDX dependency inventory and an exact owned-file manifest. Setup supports current-user or all-users installation, runtime download/install, shortcuts and uninstall. Both formats require a compatible .NET 10 Windows Desktop Runtime x64; it is downloaded on demand by Setup and is not embedded in either package.
 
 ## 校验范围 / What is checked
 
@@ -20,9 +20,17 @@ Each release contains the complete ZIP, an EXE installer built from that ZIP, an
 
 The release workflow verifies the existing tag, application version and commit and uses locked dependencies. The installer uses only the verified ZIP payload and a pinned Inno Setup 6.7.4 compiler whose download is checked against a fixed SHA-256. A unique build artifact passes the packages to the publication job. Before publication it checks both checksums, validates the ZIP's identity, structure and file inventory, and rechecks the remote tag. Existing GitHub releases and assets are not overwritten.
 
-客户端保留项目 GitHub 来源、HTTPS 下载地址、版本、架构、字节数与 SHA-256 检查；解压检查拒绝越界路径和非法包内容。安装保留事务备份与失败回滚，不将应用旁的无关文件当作包内文件删除。`UnsignedValidation` 本地验证包不能通过自动更新安装。
+安装器构建时从微软 .NET 10 官方发布元数据选择稳定的 Windows x64 Desktop Runtime，核对下载文件的官方 SHA-512，再将确定的版本、HTTPS URL 和 SHA-256 固化到 Setup。用户点击运行时安装后，下载完成后和执行前均检查 SHA-256；命令行不能替换下载地址、校验值或可执行文件。运行时安装允许 Windows 请求管理员确认，检测成功才继续，不自动重启；静默安装必须显式传入 `/INSTALLRUNTIME` 才会安装共享运行时。这些完整性检查不改变浮绘自身无签名发行的规则。
 
-The updater retains the project's GitHub source checks, HTTPS download rules, version, architecture, byte-count and SHA-256 checks. Archive validation rejects unsafe paths and invalid package contents. Installation keeps transactional backups and rollback, and preserves unrelated files alongside the application. Local `UnsignedValidation` packages are not accepted for automatic installation.
+During packaging, Setup selects a stable Windows x64 Desktop Runtime from Microsoft's official .NET 10 release metadata, verifies the download against its published SHA-512, and embeds that version, HTTPS URL and SHA-256. The runtime download is checked again before execution; command-line arguments cannot replace the pinned URL, hash or executable. Windows may request administrator approval. Setup continues only after runtime detection succeeds, never automatically restarts Windows, and requires explicit `/INSTALLRUNTIME` consent for silent runtime installation. These integrity checks do not change FloatCanvas's unsigned distribution policy.
+
+客户端保留项目 GitHub 来源、HTTPS 下载地址、版本、架构、字节数与 SHA-256 检查；解压检查拒绝越界路径和非法包内容。当前用户／ZIP 更新保留事务备份与失败回滚，不将应用旁的无关文件当作包内文件删除，并为当前用户安装刷新卸载文件清单。`UnsignedValidation` 本地 ZIP 验证包不能通过自动更新安装。
+
+The updater retains the project's GitHub source checks, HTTPS download rules, version, architecture, byte-count and SHA-256 checks. Archive validation rejects unsafe paths and invalid package contents. Current-user/ZIP updates keep transactional backups and rollback, preserve unrelated files alongside the application and refresh the current-user uninstall file inventory. Local `UnsignedValidation` ZIPs are not accepted for automatic installation.
+
+所有用户安装通过同一项目发布中的 Setup 更新，单独验证其资产名称、版本、大小和 SHA-256，执行前再次校验并锁定文件。普通应用和 ZIP 更新助手不提权；Setup 自行请求管理员确认并发送就绪信号后，浮绘才退出，完成后可用原用户身份恢复画布。安装登记、系统集成和个人资料清理按明确范围处理；卸载器根据当前清单删除程序文件，个人资料默认保留，选择删除时逐目录确认，清理失败明确报告。
+
+All-users installations update through Setup from the same project release, with separate asset-name, version, size and SHA-256 checks and a locked recheck before execution. Neither the normal app nor its ZIP worker is elevated. Setup requests administrator approval and signals readiness before FloatCanvas exits, then can resume the canvas as the original user. Registration, shell integration and personal-data cleanup respect their scopes. The uninstaller uses the current file inventory, retains personal data by default, confirms selected data directories and reports cleanup failures.
 
 SHA-256 用于发现下载内容损坏或与发行元数据不一致，不能单独证明发布者身份。来自同一来源的 ZIP、hash 或 GitHub digest 不是独立的发布者认证；当前发行包没有 Authenticode 或发布者签名验证。
 
@@ -36,6 +44,9 @@ SHA-256 detects corruption or a mismatch with release metadata. A ZIP and checks
 ./scripts/Publish.ps1 -Configuration Release
 ./scripts/Smoke-Package.ps1 -ZipPath ./dist/FloatCanvas-0.3.0-win-x64.zip -StaticOnly -RequireRelease
 ./scripts/Publish-Installer.ps1 -ZipPath ./dist/FloatCanvas-0.3.0-win-x64.zip
+./scripts/Test-InstallerRuntime.ps1
+./scripts/Test-InstallerBootstrap.ps1
+./scripts/Test-InstallerLifecycle.ps1
 Get-FileHash ./dist/FloatCanvas-0.3.0-win-x64.zip -Algorithm SHA256
 Get-Content ./dist/FloatCanvas-0.3.0-win-x64.zip.sha256
 Get-FileHash ./dist/FloatCanvas-0.3.0-win-x64-Setup.exe -Algorithm SHA256

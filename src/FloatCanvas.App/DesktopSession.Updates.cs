@@ -18,20 +18,42 @@ internal sealed partial class DesktopSession
         if (DocumentOperationBusy) return;
         if (_host.IsEditing) SetEditing(false);
         var client = new GitHubUpdateClient();
+        bool allUsers = InstallerRegistration.Scope(AppContext.BaseDirectory) == InstallationScope.AllUsers;
         string version = typeof(DesktopSession).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
-        var window = new AppUpdateWindow(version, client, ApplyUpdateAsync, AppUpdateInstaller.CanUpdateDirectory(AppContext.BaseDirectory),
+        var window = new AppUpdateWindow(version, client, ApplyUpdateAsync, allUsers || AppUpdateInstaller.CanUpdateDirectory(AppContext.BaseDirectory),
             includePrereleases: _settings.IncludePrereleaseUpdates, savePreviewPreference: enabled =>
             {
                 bool previous = _settings.IncludePrereleaseUpdates;
                 _settings.IncludePrereleaseUpdates = enabled;
                 try { _settings.Save(); }
                 catch { _settings.IncludePrereleaseUpdates = previous; throw; }
-            }, prepareAndApplyUpdate: ApplyUpdateAsync);
+            }, prepareAndApplyUpdate: ApplyUpdateAsync, applyInstallerUpdate: allUsers ? ApplyInstallerUpdateAsync : null);
         _updatesWindow = window;
         ConfigureAppWindow(window, true, regular: true);
         window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         window.Closed += (_, _) => { client.Dispose(); if (ReferenceEquals(_updatesWindow, window)) _updatesWindow = null; };
         ShowAppWindow(window, true);
+    }
+
+    private async Task ApplyInstallerUpdateAsync(PreparedInstallerUpdate update, System.Threading.CancellationToken cancellationToken, Action beginCommit)
+    {
+        if (DocumentOperationBusy) throw new InvalidOperationException(L.Get("Desktop.Busy"));
+        CloseImageDrop(); _editor.Cancel(); _documentExitRequested = true;
+        try
+        {
+            try { FlushToolState(commitDraft: true); await FlushRecoveryForUpdateAsync(); }
+            catch (Exception ex) { throw new IOException(L.Get("Updates.ExitSaveFailed"), ex); }
+            cancellationToken.ThrowIfCancellationRequested(); beginCommit();
+            string monitor = ApplicationPaths.RequestedMonitorScope switch
+            {
+                FloatCanvas.Windows.OverlayMonitorScope.PrimaryScreen => "primary",
+                FloatCanvas.Windows.OverlayMonitorScope.AllScreens => "all",
+                _ => "auto"
+            };
+            await InstallerUpdateLauncher.LaunchAsync(update, AppContext.BaseDirectory, ApplicationPaths.ProfileDirectory, monitor, cancellationToken);
+            _app.Shutdown();
+        }
+        catch { _documentExitRequested = false; throw; }
     }
 
     private async Task ApplyUpdateAsync(PreparedUpdate update)

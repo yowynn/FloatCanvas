@@ -10,6 +10,75 @@ internal static class InstallerRegistrationTests
     internal static void Run(Action<string, bool> check)
     {
         Ownership(check); PackageChanges(check); PendingUpdate(check); InvalidPackages(check); WriteFailure(check);
+        InstallationScopes(check); InstallerHandoff(check);
+    }
+
+    private static void InstallationScopes(Action<string, bool> check)
+    {
+        using var f = new Fixture();
+        using var machine = f.Root.CreateSubKey("MachineFixture");
+        check("unregistered ZIP location has portable scope", InstallerRegistration.Scope(f.Root, machine, f.Directory) == InstallationScope.Portable);
+        using var registration = machine.CreateSubKey(InstallerRegistration.RegistryPath);
+        registration.SetValue("InstallLocation", f.Directory);
+        check("machine scope requires the installer marker as well as registration", InstallerRegistration.Scope(f.Root, machine, f.Directory) == InstallationScope.Portable);
+        File.WriteAllText(f.List, "original list");
+        check("matching machine registration selects all-users Setup updates", InstallerRegistration.Scope(f.Root, machine, f.Directory) == InstallationScope.AllUsers);
+        registration.SetValue("InstallLocation", f.Directory + "-other");
+        check("another machine installation does not claim a nearby ZIP", InstallerRegistration.Scope(f.Root, machine, f.Directory) == InstallationScope.Portable);
+        f.Register();
+        check("matching user registration selects current-user ZIP updates", InstallerRegistration.Scope(f.Root, machine, f.Directory) == InstallationScope.CurrentUser);
+        registration.SetValue("InstallLocation", f.Directory.ToUpperInvariant() + "\\");
+        check("machine scope wins over ambiguous current-user registration", InstallerRegistration.Scope(f.Root, machine, f.Directory) == InstallationScope.AllUsers);
+        check("scope discovery is read-only and preserves uninstall metadata", f.DisplayVersion == "0.3.0" && File.ReadAllText(f.List) == "original list");
+    }
+
+    private static void InstallerHandoff(Action<string, bool> check)
+    {
+        using var f = new Fixture();
+        string filename = Path.Combine(f.Directory, "FloatCanvas-1.0.0-win-x64-Setup.exe");
+        byte[] payload = "MZtest installer"u8.ToArray(); File.WriteAllBytes(filename, payload);
+        var update = new PreparedInstallerUpdate(filename, "1.0.0", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload)));
+        using (var held = InstallerUpdateLauncher.VerifyInstaller(update))
+        {
+            bool locked = false;
+            try { File.WriteAllText(filename, "changed"); } catch (IOException) { locked = true; }
+            check("verified Setup remains locked against changes while its wizard initializes", locked);
+        }
+        string name = "Local\\FloatCanvas.Update." + Guid.NewGuid().ToString("N");
+        var start = InstallerUpdateLauncher.CreateStartInfo(filename, f.Directory, f.Directory + " profile", "all", name);
+        check("Setup handoff delegates elevation to Inno and never elevates the ZIP worker", start.UseShellExecute && string.IsNullOrEmpty(start.Verb) && start.FileName == filename && start.ArgumentList.Contains("/ALLUSERS"));
+        check("Setup handoff preserves directory and recovery profile without a shell command", start.ArgumentList.Contains("/DIR=" + f.Directory) && start.ArgumentList.Contains("/FLOATCANVASUPDATEPROFILE=" + f.Directory + " profile") && start.ArgumentList.Contains("/FLOATCANVASUPDATEMONITOR=all") && start.ArgumentList.Contains("/FLOATCANVASUPDATEEVENT=" + name));
+        foreach (string invalid in new[] { "relative", f.Directory + "\" /DIR=elsewhere", f.Directory + "\nline" })
+        {
+            bool rejected = false;
+            try { InstallerUpdateLauncher.CreateStartInfo(filename, f.Directory, invalid, "auto", name); } catch (ArgumentException) { rejected = true; }
+            check("unsafe Setup profile argument is rejected: " + invalid, rejected);
+        }
+        using (var ready = InstallerUpdateLauncher.CreateReadyEvent(name))
+        using (var second = EventWaitHandle.OpenExisting(name))
+        {
+            check("Setup readiness is initially unsignaled", !ready.WaitOne(0)); second.Set();
+            check("Setup readiness can be acknowledged through its named event", ready.WaitOne(0));
+            InstallerUpdateLauncher.WaitUntilReadyAsync(ready, () => false, default).GetAwaiter().GetResult();
+            ready.Reset();
+            bool cancelled = false;
+            try { InstallerUpdateLauncher.WaitUntilReadyAsync(ready, () => true, default).GetAwaiter().GetResult(); }
+            catch (InvalidOperationException) { cancelled = true; }
+            check("Setup exiting before initialization does not authorize application shutdown", cancelled);
+            using var cancel = new CancellationTokenSource(); cancel.Cancel();
+            cancelled = false;
+            try { InstallerUpdateLauncher.WaitUntilReadyAsync(ready, () => false, cancel.Token).GetAwaiter().GetResult(); }
+            catch (OperationCanceledException) { cancelled = true; }
+            check("cancelled Setup handoff does not authorize application shutdown", cancelled);
+            bool timedOut = false;
+            try { InstallerUpdateLauncher.WaitUntilReadyAsync(ready, () => false, default, TimeSpan.Zero).GetAwaiter().GetResult(); }
+            catch (TimeoutException) { timedOut = true; }
+            check("Setup handoff has a bounded readiness wait", timedOut);
+        }
+        File.WriteAllText(filename, "MZtampered");
+        bool changed = false;
+        try { using var ignored = InstallerUpdateLauncher.VerifyInstaller(update); } catch (InvalidDataException) { changed = true; }
+        check("Setup is rehashed immediately before execution", changed);
     }
 
     private static void Ownership(Action<string, bool> check)

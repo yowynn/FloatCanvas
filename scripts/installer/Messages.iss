@@ -1,22 +1,8 @@
 [CustomMessages]
-en.WelcomeDescription=Install FloatCanvas for the current Windows user.%n%nSetup checks for the Microsoft .NET 10 Windows Desktop Runtime (x64) before installing. Your projects and settings are kept separately and are preserved when you uninstall.
-zhcn.WelcomeDescription=此向导将为当前 Windows 用户安装浮绘 FloatCanvas。%n%n安装前会检查 Microsoft .NET 10 桌面运行时（x64）。作品和设置独立保存，卸载浮绘时会保留这些资料。
+en.WelcomeDescription=Install FloatCanvas for the selected Windows users.%n%nSetup checks the required runtime and can download and install it if needed. Personal data is stored separately; uninstall keeps it unless you explicitly choose to delete it.
+zhcn.WelcomeDescription=此向导将按所选范围安装浮绘 FloatCanvas。%n%n安装前会检查所需运行环境，缺少时可下载并安装。个人资料独立保存；卸载默认保留，也可明确选择删除。
 en.LaunchFloatCanvas=Launch FloatCanvas
 zhcn.LaunchFloatCanvas=启动浮绘
-en.RuntimeTitle=Check the .NET desktop runtime
-zhcn.RuntimeTitle=检查 .NET 桌面运行时
-en.RuntimeSubtitle=FloatCanvas needs the .NET 10 Windows Desktop Runtime (x64).
-zhcn.RuntimeSubtitle=浮绘需要 .NET 10 Windows Desktop Runtime（x64）。
-en.RuntimeAvailable=Compatible .NET 10 Windows Desktop Runtime (x64) detected: %1.%n%nClick Next to continue installing FloatCanvas.
-zhcn.RuntimeAvailable=已检测到兼容的 .NET 10 桌面运行时（x64）：%1。%n%n点击“下一步”继续安装浮绘。
-en.RuntimeMissing=A compatible .NET 10 Windows Desktop Runtime (x64) was not detected.%n%nOpen the official Microsoft download page and choose Windows Desktop Runtime, Windows, x64. Install it, then return here and click Check again.%n%nThe plain .NET Runtime, ASP.NET Core Runtime, x86 runtime and preview versions do not meet this requirement. Setup does not download or install the runtime automatically.
-zhcn.RuntimeMissing=未检测到兼容的 .NET 10 桌面运行时（x64）。%n%n请打开微软官方下载页，选择“桌面运行时 / Desktop Runtime”的 Windows x64 安装程序。安装后回到此页，点击“重新检测”。%n%n普通 .NET 运行时、ASP.NET Core 运行时、x86 版本和预览版不满足要求。此向导不会自动下载或安装运行时。
-en.RuntimeDownload=Open Microsoft download page
-zhcn.RuntimeDownload=打开微软官方下载页
-en.RuntimeRetry=Check again
-zhcn.RuntimeRetry=重新检测
-en.RuntimeDownloadFailed=The download page could not be opened. Visit https://dotnet.microsoft.com/download/dotnet/10.0 and choose Windows Desktop Runtime x64.
-zhcn.RuntimeDownloadFailed=无法打开下载页面。请访问 https://dotnet.microsoft.com/download/dotnet/10.0 并选择 Windows Desktop Runtime x64。
 en.InvalidVersion=The installed package version is invalid.
 zhcn.InvalidVersion=已安装程序的版本信息无效。
 en.InvalidDirectory=Choose a local program directory separate from your FloatCanvas user data. Links and junctions are not supported.

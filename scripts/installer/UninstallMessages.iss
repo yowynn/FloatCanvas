@@ -1,0 +1,23 @@
+[CustomMessages]
+en.InvalidUpdateHandoff=The update could not connect to the running FloatCanvas session. Close Setup and try the update again.
+zhcn.InvalidUpdateHandoff=更新程序无法连接到正在运行的浮绘。请关闭安装程序，再重试更新。
+en.UninstallDataTitle=Uninstall FloatCanvas
+zhcn.UninstallDataTitle=卸载浮绘
+en.UninstallDataDescription=Your personal data is kept by default. Select only the accounts whose default FloatCanvas data you want to delete. Saved projects elsewhere and custom profiles are not deleted.
+zhcn.UninstallDataDescription=默认保留个人资料。仅勾选需要删除默认浮绘资料的账户。保存在其他位置的作品和自定义资料目录不会被删除。
+en.UninstallDataWarning=Selected data includes settings, presets, stamps and drawing history, and may also be used by the ZIP edition. Close all copies of FloatCanvas before deleting data. This cannot be undone.
+zhcn.UninstallDataWarning=选中的资料包括设置、预设、印章和画布历史，也可能被 ZIP 版共用。删除前请退出所有浮绘实例。删除后无法撤销。
+en.UninstallDataEmpty=No default personal data directories were found. Personal data will be kept.
+zhcn.UninstallDataEmpty=未找到默认个人资料目录。个人资料将被保留。
+en.UninstallContinue=Uninstall
+zhcn.UninstallContinue=卸载
+en.UninstallCancel=Cancel
+zhcn.UninstallCancel=取消
+en.UninstallDataConfirm=Delete the personal data in these directories?%n%n%1%n%nProjects saved elsewhere are kept. This cannot be undone.
+zhcn.UninstallDataConfirm=确定删除以下目录中的个人资料吗？%n%n%1%n%n保存在其他位置的作品会保留。此操作无法撤销。
+en.UninstallCleanupFailed=Some items could not be cleaned up. FloatCanvas has not been fully uninstalled. Close programs using these items and retry:%n%n%1
+zhcn.UninstallCleanupFailed=部分项目无法清理，浮绘尚未完整卸载。请关闭占用这些项目的程序后重试：%n%n%1
+en.UninstallUnsafeData=Personal data could not be safely deleted. No linked directories or files in use will be removed:%n%n%1
+zhcn.UninstallUnsafeData=无法安全删除个人资料。不会删除链接目录或正在使用的文件：%n%n%1
+en.UninstallWrongAccount=This installation is registered to a different Windows account, or its registration is missing. Uninstall it from the account that installed it, or repair the installation first.
+zhcn.UninstallWrongAccount=此安装属于另一个 Windows 账户，或安装登记已缺失。请从原安装账户卸载，或先修复安装。

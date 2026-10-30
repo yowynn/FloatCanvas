@@ -1,0 +1,10 @@
+{
+  "InstallerUpdates.AllUsers": {"zh":"此版本为所有用户安装。更新将打开安装向导，并需要管理员确认；当前画布会先保存到恢复记录。","en":"This copy is installed for all users. Updating opens Setup and requires administrator approval. The current canvas is saved for recovery first."},
+  "InstallerUpdates.NoSetup": {"zh":"发现新版本，但该版本未提供安装程序。请打开发布页查看说明；此安装位置不能直接应用 ZIP 更新。","en":"A newer release is available, but it has no Setup package. Open its release page for instructions; ZIP updates cannot be applied directly to this installation."},
+  "InstallerUpdates.Install": {"zh":"下载并打开安装程序","en":"Download and open Setup"},
+  "InstallerUpdates.OpenRelease": {"zh":"打开发布页","en":"Open release page"},
+  "InstallerUpdates.Opening": {"zh":"正在打开安装程序，请完成管理员确认…","en":"Opening Setup. Please complete the administrator prompt…"},
+  "InstallerUpdates.Cancelled": {"zh":"安装程序已取消或未能完成初始化，浮绘继续运行。","en":"Setup was cancelled or could not initialize. FloatCanvas is still running."},
+  "InstallerUpdates.Timeout": {"zh":"尚未收到安装程序的就绪确认。浮绘继续运行；请关闭未完成的安装窗口后重试。","en":"Setup did not confirm it was ready. FloatCanvas is still running. Close any unfinished Setup window before trying again."},
+  "InstallerUpdates.ScopeChanged": {"zh":"安装位置或安装范围已改变，请重新打开“检查更新”后重试。","en":"The installation location or scope changed. Reopen Check for updates and try again."}
+}

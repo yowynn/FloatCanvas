@@ -20,6 +20,7 @@ internal sealed class AppUpdateWindow : Window
     private readonly GitHubUpdateClient client;
     private readonly Func<PreparedUpdate, Task> applyUpdate;
     private readonly Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate;
+    private readonly Func<PreparedInstallerUpdate, CancellationToken, Action, Task>? applyInstallerUpdate;
     private readonly bool canInstall;
     private readonly Action<bool>? savePreviewPreference;
     private readonly Action<Uri> openLink;
@@ -55,10 +56,12 @@ internal sealed class AppUpdateWindow : Window
     internal AppUpdateWindow(string currentVersion, GitHubUpdateClient client,
         Func<PreparedUpdate, Task> applyUpdate, bool canInstall, string? cacheDirectory = null, bool autoCheck = true,
         bool includePrereleases = false, Action<bool>? savePreviewPreference = null,
-        Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate = null, Action<Uri>? openLink = null)
+        Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate = null, Action<Uri>? openLink = null,
+        Func<PreparedInstallerUpdate, CancellationToken, Action, Task>? applyInstallerUpdate = null)
     {
         this.currentVersion = currentVersion; this.client = client; this.applyUpdate = applyUpdate; this.canInstall = canInstall;
         this.prepareAndApplyUpdate = prepareAndApplyUpdate;
+        this.applyInstallerUpdate = applyInstallerUpdate;
         this.savePreviewPreference = savePreviewPreference;
         this.openLink = openLink ?? (uri => { _ = Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); });
         PreviewUpdates.IsChecked = includePrereleases;
@@ -166,9 +169,11 @@ internal sealed class AppUpdateWindow : Window
         SetStatus(L.Get("Updates.Checking")); SetDetail("");
         try
         {
-            var result = await client.CheckAsync(currentVersion, cancellation.Token, PreviewUpdates.IsChecked == true);
+            var result = await client.CheckAsync(currentVersion, cancellation.Token, PreviewUpdates.IsChecked == true, preferInstaller: applyInstallerUpdate is not null);
             if (closed) return;
             available = result.Update;
+            if (applyInstallerUpdate is not null && available is not null)
+                SetDetail(L.Get(available.IsInstaller ? "InstallerUpdates.AllUsers" : "InstallerUpdates.NoSetup"));
             SetStatus(L.Get(available is null ? "Updates.UpToDate" : "Updates.Available"));
             string version = "v" + (available?.Version ?? currentVersion);
             UpdateDisplay("version", () => LatestVersionText.Text = version);
@@ -199,11 +204,24 @@ internal sealed class AppUpdateWindow : Window
     {
         if (closed || IsBusy || !canInstall || available is null) return;
         var update = available;
+        if (applyInstallerUpdate is not null && !update.IsInstaller) { OpenProjectLink(update.ReleaseUrl); return; }
         using var cancellation = BeginOperation(true);
         SetStatus(L.Get("Updates.Downloading")); SetDetail("");
         try
         {
             var progress = new DownloadProgressReporter(this, cancellation);
+            if (applyInstallerUpdate is not null)
+            {
+                var installer = await client.DownloadInstallerAsync(update, cacheDirectory, progress, cancellation.Token);
+                if (closed || cancellation.IsCancellationRequested) return;
+                SetStatus(L.Get("InstallerUpdates.Opening"));
+                await applyInstallerUpdate(installer, cancellation.Token, () =>
+                {
+                    cancellation.Token.ThrowIfCancellationRequested(); applying = true;
+                    UpdateDisplay("controls", PaintOperationControls); SetStatus(L.Get("InstallerUpdates.Opening"));
+                });
+                return;
+            }
             var prepared = await client.DownloadAsync(update, cacheDirectory, progress, cancellation.Token);
             if (closed || cancellation.IsCancellationRequested) return;
             SetStatus(L.Get("Engineering.UpdatesPreparing"));
@@ -236,6 +254,7 @@ internal sealed class AppUpdateWindow : Window
     private void PaintOperationControls()
     {
         bool busy = IsBusy;
+        InstallButton.Content = L.Get(applyInstallerUpdate is null ? "Updates.Install" : available is { IsInstaller: false } ? "InstallerUpdates.OpenRelease" : "InstallerUpdates.Install");
         CheckButton.IsEnabled = !busy; InstallButton.IsEnabled = !busy && canInstall && available is not null;
         PreviewUpdates.IsEnabled = !busy;
         CancelButton.Visibility = DownloadProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;

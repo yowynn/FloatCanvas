@@ -15,9 +15,67 @@ internal static class GitHubUpdateClientTests
     {
         SemVersionOrder(check);
         await UnsignedReleaseLifecycle(check);
+        await MachineInstallerLifecycle(check);
         await ReleaseSelection(check);
         await HttpFailures(check);
         await PackageValidation(check);
+    }
+
+    private static async Task MachineInstallerLifecycle(Action<string, bool> check)
+    {
+        byte[] setup = "MZisolated installer fixture"u8.ToArray();
+        string hash = Convert.ToHexString(SHA256.HashData(setup));
+        string directory = Path.Combine(Path.GetTempPath(), "FloatCanvas-setup-update-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            foreach (bool sidecarOnly in new[] { false, true })
+            {
+                var assets = new object[]
+                {
+                    new { name = "FloatCanvas-1.0.0-win-x64.zip", state = "uploaded", size = 100, digest = "sha256:" + new string('a', 64), browser_download_url = Asset("1.0.0").ToString() },
+                    new { name = "FloatCanvas-1.0.0-win-x64-Setup.exe", state = "uploaded", size = setup.Length, digest = sidecarOnly ? null : "sha256:" + hash, browser_download_url = Asset("1.0.0", "-Setup.exe").ToString() },
+                    new { name = "FloatCanvas-1.0.0-win-x64-Setup.exe.sha256", state = "uploaded", browser_download_url = Asset("1.0.0", "-Setup.exe.sha256").ToString() }
+                };
+                string metadata = JsonSerializer.Serialize(new[] { new { tag_name = "v1.0.0", html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v1.0.0", assets } });
+                var requests = new List<Uri>();
+                using var client = Client(request =>
+                {
+                    requests.Add(request.RequestUri!);
+                    if (request.RequestUri!.Host == "api.github.com") return Response(metadata);
+                    if (request.RequestUri == Asset("1.0.0", "-Setup.exe.sha256")) return Response(hash + "  FloatCanvas-1.0.0-win-x64-Setup.exe");
+                    if (request.RequestUri == Asset("1.0.0", "-Setup.exe")) return Bytes(setup);
+                    throw new InvalidOperationException("Machine updater requested an unrelated asset.");
+                });
+                var update = (await client.CheckAsync("0.3.0", default, preferInstaller: true)).Update!;
+                check("all-users releases select Setup with its own digest and sidecar (sidecar-only=" + sidecarOnly + ")", update.IsInstaller && update.PackageUrl == Asset("1.0.0", "-Setup.exe") && update.ChecksumUrl == Asset("1.0.0", "-Setup.exe.sha256"));
+                var prepared = await client.DownloadInstallerAsync(update, directory, null, default);
+                check("machine update stages a verified unsigned installer without running it", prepared.Version == "1.0.0" && File.ReadAllBytes(prepared.InstallerPath).SequenceEqual(setup) && prepared.Sha256.Equals(hash, StringComparison.OrdinalIgnoreCase));
+                check("machine update never downloads the ZIP", requests.Where(uri => uri.Host != "api.github.com").All(uri => uri == Asset("1.0.0", "-Setup.exe") || uri == Asset("1.0.0", "-Setup.exe.sha256")));
+                await Reject<InvalidDataException>("Setup cannot enter the ZIP extraction path", () => client.DownloadAsync(update, directory, null, default), check);
+            }
+            using (var noSetup = Client(_ => Response(JsonSerializer.Serialize(new[] { Release("1.0.0") }))))
+            {
+                var newer = (await noSetup.CheckAsync("0.3.0", default, preferInstaller: true)).Update;
+                check("a newer ZIP-only release remains visible for manual release-page guidance", newer is { Version: "1.0.0", IsInstaller: false });
+            }
+            var installer = new AvailableUpdate("1.0.0", "", new Uri("https://github.com/yowynn/FloatCanvas/releases/tag/v1.0.0"), Asset("1.0.0", "-Setup.exe"), setup.Length, hash, null, true);
+            using var valid = Client(_ => Bytes(setup));
+            foreach (var (label, invalid) in new (string, AvailableUpdate)[]
+            {
+                ("wrong release version", installer with { PackageUrl = Asset("1.0.1", "-Setup.exe") }),
+                ("ZIP passed as Setup", installer with { IsInstaller = false }),
+                ("wrong digest", installer with { Sha256 = new string('e', 64) }),
+                ("wrong expected size", installer with { Size = setup.Length + 1 }),
+                ("foreign host", installer with { PackageUrl = new Uri("https://evil.example/FloatCanvas-1.0.0-win-x64-Setup.exe") }),
+                ("sidecar for another asset", installer with { ChecksumUrl = Asset("1.0.0", ".zip.sha256") })
+            }) await Reject<InvalidDataException>("Setup download rejects " + label, () => valid.DownloadInstallerAsync(invalid, directory, null, default), check);
+            byte[] html = "<html>failure page</html>"u8.ToArray();
+            using var invalidExe = Client(_ => Bytes(html));
+            await Reject<InvalidDataException>("a matching digest cannot turn an HTML response into an executable", () => invalidExe.DownloadInstallerAsync(installer with { Size = html.Length, Sha256 = Convert.ToHexString(SHA256.HashData(html)) }, directory, null, default), check);
+            check("failed installer downloads leave no partial files", Directory.EnumerateDirectories(directory).All(path => Directory.GetFiles(path).Length == 1));
+        }
+        finally { Directory.Delete(directory, true); }
     }
 
     private static async Task UnsignedReleaseLifecycle(Action<string, bool> check)

@@ -52,5 +52,7 @@ jobs:
           $zip = "dist/FloatCanvas-$version-win-x64.zip"
           ./scripts/Publish-Installer.ps1 -ZipPath $zip
           ./scripts/Test-InstallerRuntime.ps1
+          ./scripts/Test-InstallerBootstrap.ps1
+          ./scripts/Test-InstallerLifecycle.ps1
           ./scripts/Smoke-Installer.ps1 -ZipPath $zip -SetupPath "dist/FloatCanvas-$version-win-x64-Setup.exe"
           ./scripts/Smoke-Installer.ps1 -ZipPath $zip -SetupPath "dist/FloatCanvas-$version-win-x64-Setup.exe" -Language zhcn

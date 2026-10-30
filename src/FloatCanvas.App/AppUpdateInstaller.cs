@@ -21,7 +21,7 @@ internal static class AppUpdateInstaller
 
     internal static bool CanUpdateDirectory(string installDir)
     {
-        try { var root = Root(installDir); ReadManifest(root); ProbeWritable(root); return true; }
+        try { var root = Root(installDir); if (InstallerRegistration.Scope(root) == InstallationScope.AllUsers) return false; ReadManifest(root); ProbeWritable(root); return true; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or JsonException or InvalidOperationException) { return false; }
     }
 
@@ -29,6 +29,7 @@ internal static class AppUpdateInstaller
     {
         cancellationToken.ThrowIfCancellationRequested();
         string install = Root(installDir), profile = Root(profileDir), source = Root(update.PackageDirectory);
+        if (InstallerRegistration.Scope(install) == InstallationScope.AllUsers) throw new InvalidOperationException("All-users installations must be updated through Setup.");
         Separate(install, profile); Separate(install, source);
         var old = ReadManifest(install); var replacement = ReadManifest(source);
         RequireNewer(replacement.Version, old.Version);
@@ -107,6 +108,8 @@ internal static class AppUpdateInstaller
         try
         {
             (plan, job) = ReadPlan(planPath);
+            if (InstallerRegistration.Scope(plan.InstallDirectory) == InstallationScope.AllUsers)
+                throw new InvalidOperationException("All-users installations must be updated through Setup.");
             if (plan.ParentProcessId == Environment.ProcessId) throw new InvalidOperationException("An update worker cannot wait for itself.");
             // The OS owns the lease: a stale file does not imply a live worker.
             guard = new FileStream(Path.Combine(job, "worker.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);

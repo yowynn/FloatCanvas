@@ -70,12 +70,50 @@ internal static class AppUpdateWindowTests
             SingleCheckAndClose(output, check);
             DownloadCancellation(output, check);
             PreparationAndCommit(output, check);
+            MachineSetupUpdates(output, check);
             check("update UI fixtures leave no additional application windows", app.Windows.Cast<Window>().SequenceEqual(initialWindows));
         }
         finally
         {
             foreach (var window in app.Windows.Cast<Window>().Where(w => !initialWindows.Contains(w)).ToArray()) window.Close();
             L.Initialize(priorLanguage); AppTheme.Apply("light"); SynchronizationContext.SetSynchronizationContext(priorContext);
+        }
+    }
+
+    private static void MachineSetupUpdates(string output, Action<string, bool> check)
+    {
+        byte[] bytes = "MZdetached setup fixture"u8.ToArray();
+        foreach (bool hasInstaller in new[] { false, true })
+        foreach (string language in new[] { "zh-CN", "en" })
+        {
+            L.Initialize(language);
+            string name = "FloatCanvas-0.3.0-win-x64" + (hasInstaller ? "-Setup.exe" : ".zip");
+            string metadata = JsonSerializer.Serialize(new[] { new
+            {
+                tag_name = "v0.3.0", html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v0.3.0", body = "Release notes",
+                assets = new[] { new { name, state = "uploaded", size = bytes.Length, digest = "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)), browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.3.0/" + name } }
+            } });
+            using var http = new HttpClient(new FakeHandler((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com" ? JsonResponse(metadata) : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) })));
+            using var client = new GitHubUpdateClient(http);
+            int zipCalls = 0, setupCalls = 0;
+            var links = new List<Uri>();
+            var window = new AppUpdateWindow("0.2.0", client, _ => { zipCalls++; return Task.CompletedTask; }, true,
+                Path.Combine(output, "setup-cache"), autoCheck: false, openLink: links.Add,
+                applyInstallerUpdate: (prepared, token, commit) =>
+                {
+                    token.ThrowIfCancellationRequested(); setupCalls++; commit();
+                    check(language + " machine handoff receives the verified Setup only", prepared.Version == "0.3.0" && File.ReadAllBytes(prepared.InstallerPath).SequenceEqual(bytes));
+                    return Task.CompletedTask;
+                });
+            try
+            {
+                Await(window.CheckAsync());
+                check(language + " machine update describes installation scope and available action", window.DetailText.Text == L.Get(hasInstaller ? "InstallerUpdates.AllUsers" : "InstallerUpdates.NoSetup") && Equals(window.InstallButton.Content, L.Get(hasInstaller ? "InstallerUpdates.Install" : "InstallerUpdates.OpenRelease")));
+                Await(window.DownloadUpdateAsync());
+                check(language + " machine updates never invoke ZIP replacement", zipCalls == 0 && setupCalls == (hasInstaller ? 1 : 0));
+                check(language + " missing Setup offers the exact release instead of claiming up to date", hasInstaller ? links.Count == 0 : links.Single().AbsoluteUri == "https://github.com/yowynn/FloatCanvas/releases/tag/v0.3.0");
+            }
+            finally { window.Close(); }
         }
     }
 

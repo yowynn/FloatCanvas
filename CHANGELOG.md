@@ -5,14 +5,14 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+- **安装、更新与卸载。** 新增中英文无签名 EXE 安装程序，与 ZIP 使用相同程序文件并分别附 SHA-256 校验。可选当前用户或所有用户安装；已有运行时直接跳过，缺少时一键从微软下载、校验、安装 .NET 10 桌面运行时并重新检测，不自动重启电脑。当前用户安装继续使用 ZIP 更新并同步卸载清单，系统安装通过管理员确认的安装向导更新。原生卸载清理不依赖 .NET，默认保留个人资料，也可明确选择账户与目录后删除；另存的作品、自定义资料目录和其他安装的注册保留。
+- **Install, update and uninstall.** Add an unsigned Simplified Chinese/English EXE installer using the same files as the ZIP, with an individual SHA-256 checksum for each. Choose current-user or all-users installation. An existing runtime skips its page; otherwise one action downloads, verifies and installs Microsoft's .NET 10 Desktop Runtime, then checks again without automatically restarting Windows. Current-user ZIP updates refresh the uninstall inventory; machine updates use Setup with administrator approval. Native uninstall cleanup no longer depends on .NET. Personal data is retained by default or deleted only for explicitly selected accounts and directories; projects saved elsewhere, custom profiles and other installations' registrations remain.
+
 - **数值控件交互。** 点击滑块保持原值，拖动保留按下偏移；点击输入框以外的区域后可用左右键按步长微调。拖动和数据回填统一显示最多三位小数，保留原数据精度。画布数值拖动实时预览，松手计为一次撤销，取消恢复原值。
 - **Numeric controls.** Thumb clicks preserve the value and drags keep the press offset. Click outside the text input to adjust with Left/Right. Dragged and refreshed values display at most three decimal places while preserving stored precision. Canvas numeric drags preview continuously, commit one undo step on release and restore the starting value on cancellation.
 
 - **滑条常用区间。** 网格行列滑条改为 1～32，按工具和属性用途细化线宽、字号、大小、圆角、箭头、滤镜、序号步长、宽高及离地高度区间。直接输入和图标拖动保留原有合法范围，工具切换、面板刷新及预设加载不截断原数值。
 - **Common slider ranges.** Grid count sliders cover 1–32; stroke, font, size, corner, arrow, filter, number-step, dimension and elevation sliders use ranges suited to their context. Direct entry and icon dragging retain their original valid limits, and tool switches, panel refreshes and preset loading preserve larger values.
-
-- **安装版与 ZIP 双发行。** 新增仅供当前用户使用的中英文 EXE 安装程序，提供安装前运行时检查、开始菜单、可选桌面快捷方式、完成后启动选项和 Windows 卸载项；继续提供 ZIP 供自行管理目录。两种包使用相同程序文件，均无签名、附 SHA-256 校验文件，仍需 .NET 10 Windows Desktop Runtime x64。安装器在缺少运行时时引导前往微软下载并重新检测，通过后才能继续，不自动代装运行时。两者均可在应用内更新；安装版同步卸载版本信息，卸载保留用户配置、作品与非程序文件。
-- **Installer and ZIP releases.** Add a per-user EXE installer in Simplified Chinese and English with a runtime check before installation, Start menu and optional desktop shortcuts, a launch option on completion, and a Windows uninstall entry, alongside the ZIP for managing the app directory yourself. Both contain the same application files, remain unsigned, include individual SHA-256 checksums and require .NET 10 Windows Desktop Runtime x64. If the runtime is missing, Setup offers Microsoft's download page and a recheck, and can continue only after the check passes; it does not install the runtime automatically. Both support in-app updates; installed copies refresh their uninstall version and retain settings, projects and unrelated files when uninstalled.
 
 ## [0.3.0] - 2026-10-28
 

@@ -14,10 +14,11 @@ using System.Threading.Tasks;
 
 namespace FloatCanvas.App;
 
-internal sealed record AvailableUpdate(string Version, string Notes, Uri ReleaseUrl, Uri PackageUrl, long Size, string? Sha256, Uri? ChecksumUrl);
+internal sealed record AvailableUpdate(string Version, string Notes, Uri ReleaseUrl, Uri PackageUrl, long Size, string? Sha256, Uri? ChecksumUrl, bool IsInstaller = false);
 internal sealed record UpdateCheckResult(AvailableUpdate? Update, string? CurrentNotes);
 internal sealed record UpdateProgress(long ReceivedBytes, long TotalBytes);
 internal sealed record PreparedUpdate(string PackageDirectory, string Version, IReadOnlyList<string> Files);
+internal sealed record PreparedInstallerUpdate(string InstallerPath, string Version, string Sha256);
 
 /// <summary>Public releases only. Downloads and validates into a private staging directory, never into the running application.</summary>
 internal sealed class GitHubUpdateClient : IDisposable
@@ -34,7 +35,7 @@ internal sealed class GitHubUpdateClient : IDisposable
         this.client = client ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate }) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
-    internal async Task<UpdateCheckResult> CheckAsync(string currentVersion, CancellationToken cancellationToken, bool includePrereleases = false)
+    internal async Task<UpdateCheckResult> CheckAsync(string currentVersion, CancellationToken cancellationToken, bool includePrereleases = false, bool preferInstaller = false)
     {
         if (!SemVersion.TryParse(currentVersion, out var current)) throw new FormatException("The current application version is not a valid semantic version.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -59,8 +60,9 @@ internal sealed class GitHubUpdateClient : IDisposable
                     if (version!.CompareTo(current) == 0 && currentNotes is null) currentNotes = Text(release, "body");
                     if (version.CompareTo(current) <= 0 || (!includePrereleases && (version.IsPrerelease || Boolean(release, "prerelease"))) ||
                         version.CompareTo(bestVersion) <= 0) continue;
-                    string filename = PackageName(value) + ".zip";
                     if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) continue;
+                    bool installer = preferInstaller && assets.EnumerateArray().Any(a => Text(a, "name") == PackageName(value) + "-Setup.exe" && Text(a, "state") is "uploaded" or "");
+                    string filename = PackageName(value) + (installer ? "-Setup.exe" : ".zip");
                     var packages = assets.EnumerateArray().Where(a => Text(a, "name") == filename && Text(a, "state") is "uploaded" or "").ToArray();
                     if (packages.Length == 0) continue;
                     if (packages.Length != 1) throw new InvalidDataException("The release contains duplicate update packages.");
@@ -74,7 +76,7 @@ internal sealed class GitHubUpdateClient : IDisposable
                     Uri packageUrl = RepositoryUri(Text(package, "browser_download_url"), $"/releases/download/{tag}/{filename}");
                     Uri releaseUrl = RepositoryUri(Text(release, "html_url"), $"/releases/tag/{tag}");
                     Uri? checksum = sums.Length == 0 ? null : RepositoryUri(Text(sums[0], "browser_download_url"), $"/releases/download/{tag}/{filename}.sha256");
-                    best = new AvailableUpdate(value, Text(release, "body"), releaseUrl, packageUrl, size, hash, checksum);
+                    best = new AvailableUpdate(value, Text(release, "body"), releaseUrl, packageUrl, size, hash, checksum, installer);
                     bestVersion = version;
                 }
                 if (count < 100) break;
@@ -87,6 +89,7 @@ internal sealed class GitHubUpdateClient : IDisposable
 
     internal async Task<PreparedUpdate> DownloadAsync(AvailableUpdate update, string cacheDirectory, IProgress<UpdateProgress>? progress, CancellationToken cancellationToken)
     {
+        if (update.IsInstaller) throw new InvalidDataException("A Setup package cannot be installed by the ZIP updater.");
         if (!SemVersion.TryParse(update.Version, out _)) throw new InvalidDataException("The update version is invalid.");
         string packageName = PackageName(update.Version), filename = packageName + ".zip";
         ValidateDownloadUri(update.PackageUrl, filename);
@@ -137,6 +140,56 @@ internal sealed class GitHubUpdateClient : IDisposable
             return new PreparedUpdate(directory, update.Version, files.AsReadOnly());
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested) { throw new TimeoutException("Downloading the update timed out. Please try again.", ex); }
+        finally { if (!complete) { try { Directory.Delete(staging, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } }
+    }
+
+    internal async Task<PreparedInstallerUpdate> DownloadInstallerAsync(AvailableUpdate update, string cacheDirectory, IProgress<UpdateProgress>? progress, CancellationToken cancellationToken)
+    {
+        if (!update.IsInstaller || !SemVersion.TryParse(update.Version, out _)) throw new InvalidDataException("The release does not contain a supported installer.");
+        string filename = PackageName(update.Version) + "-Setup.exe";
+        ValidateDownloadUri(update.PackageUrl, filename);
+        if (update.ChecksumUrl is not null) ValidateDownloadUri(update.ChecksumUrl, filename + ".sha256");
+        if (update.Size <= 0 || update.Size > MaxPackageBytes || (update.Sha256 is null && update.ChecksumUrl is null)) throw new InvalidDataException("The release does not contain a supported installer and checksum.");
+        string? digest = update.Sha256 is null ? null : ValidHash(update.Sha256);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(10));
+        string cache = Path.GetFullPath(cacheDirectory);
+        AssertNoReparseAncestors(cache); Directory.CreateDirectory(cache);
+        string staging = Path.Combine(cache, "setup-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(staging);
+        bool complete = false;
+        try
+        {
+            if (update.ChecksumUrl is not null)
+            {
+                string sidecar = ReadChecksum(Encoding.UTF8.GetString(await ReadSmallAsync(update.ChecksumUrl, 8192, true, timeout.Token).ConfigureAwait(false)), filename);
+                if (digest is not null && !string.Equals(digest, sidecar, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("GitHub and the release checksum disagree.");
+                digest = sidecar;
+            }
+            string path = Path.Combine(staging, filename);
+            using (var response = await GetAsync(update.PackageUrl, true, timeout.Token).ConfigureAwait(false))
+            {
+                if (response.Content.Headers.ContentLength is long length && length != update.Size) throw new InvalidDataException("The installer size does not match its release metadata.");
+                await using var input = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+                await using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true);
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                byte[] buffer = new byte[81920]; long received = 0; int read;
+                while ((read = await input.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) != 0)
+                {
+                    received += read;
+                    if (received > update.Size || received > MaxPackageBytes) throw new InvalidDataException("The installer exceeds its expected size.");
+                    hash.AppendData(buffer, 0, read); await output.WriteAsync(buffer.AsMemory(0, read), timeout.Token).ConfigureAwait(false);
+                    progress?.Report(new UpdateProgress(received, update.Size));
+                }
+                if (received != update.Size || !string.Equals(Convert.ToHexString(hash.GetHashAndReset()), digest, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("The installer is incomplete or its checksum is incorrect. No application files were changed.");
+            }
+            using (var input = File.OpenRead(path))
+                if (input.ReadByte() != 'M' || input.ReadByte() != 'Z') throw new InvalidDataException("The downloaded installer is not a Windows executable.");
+            complete = true;
+            return new(path, update.Version, digest!);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested) { throw new TimeoutException("Downloading the installer timed out. Please try again.", ex); }
         finally { if (!complete) { try { Directory.Delete(staging, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } }
     }
 
@@ -288,7 +341,11 @@ internal sealed class GitHubUpdateClient : IDisposable
     {
         if (!Https(uri) || uri.Host != "github.com" || !string.IsNullOrEmpty(uri.Query)) throw new InvalidDataException("The update package URL is invalid.");
         string[] parts = Uri.UnescapeDataString(uri.AbsolutePath).Split('/');
-        if (parts.Length != 7 || parts[1] != "yowynn" || parts[2] != "FloatCanvas" || parts[3] != "releases" || parts[4] != "download" || !SemVersion.TryParse(parts[5].StartsWith('v') ? parts[5][1..] : parts[5], out _) || parts[6] != filename || !filename.StartsWith(PackageName(parts[5].StartsWith('v') ? parts[5][1..] : parts[5]) + ".zip", StringComparison.Ordinal)) throw new InvalidDataException("The update package URL is outside the project release.");
+        if (parts.Length != 7 || parts[1] != "yowynn" || parts[2] != "FloatCanvas" || parts[3] != "releases" || parts[4] != "download" || !SemVersion.TryParse(parts[5].StartsWith('v') ? parts[5][1..] : parts[5], out _) || parts[6] != filename)
+            throw new InvalidDataException("The update package URL is outside the project release.");
+        string package = PackageName(parts[5].StartsWith('v') ? parts[5][1..] : parts[5]);
+        if (filename != package + ".zip" && filename != package + ".zip.sha256" && filename != package + "-Setup.exe" && filename != package + "-Setup.exe.sha256")
+            throw new InvalidDataException("The update package URL does not match its version and asset type.");
     }
     private static bool AllowedRequest(Uri uri, bool asset)
     {

@@ -49,7 +49,8 @@ internal sealed partial class DesktopSession
         try
         {
             var shell = WindowsShellIntegration.Current();
-            shell.RegisterProjectType();
+            if (InstallerRegistration.Scope(AppContext.BaseDirectory) != InstallationScope.AllUsers)
+                shell.RegisterProjectType();
             if (shell.StartupEnabled) shell.SetStartup(true); // Refresh a portable executable's moved location.
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException)

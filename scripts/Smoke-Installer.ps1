@@ -68,7 +68,7 @@ function Assert-Payload {
 }
 $uninstaller = Join-Path $install 'unins000.exe'
 try {
-    $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', '/TASKS=""', "/DIR=`"$install`"")
+    $arguments = @('/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', '/TASKS=""', "/DIR=`"$install`"")
     $missingRuntime = Join-Path $run 'missing-runtime'
     New-Item -ItemType Directory -Path $missingRuntime -Force | Out-Null
     Invoke-Installer $SetupPath ($arguments + "/LOG=`"$(Join-Path $run 'reject-missing-runtime.log')`"") -ExpectFailure -ChildEnvironment @{ DOTNET_ROOT_X64 = $missingRuntime }
@@ -91,7 +91,7 @@ try {
     finally { $lock.Dispose() }
     Assert-Payload
     # Moving an existing installation must not orphan its original uninstall log.
-    $otherArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', '/TASKS=""', "/DIR=`"$(Join-Path $run 'other-install')`"")
+    $otherArguments = @('/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', '/TASKS=""', "/DIR=`"$(Join-Path $run 'other-install')`"")
     Invoke-Installer $SetupPath ($otherArguments + "/LOG=`"$(Join-Path $run 'reject-moved-install.log')`"") -ExpectFailure
     Assert-Payload
     # A future package must not claim a user file that it did not previously own.

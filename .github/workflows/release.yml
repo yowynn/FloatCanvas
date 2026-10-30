@@ -78,8 +78,11 @@ jobs:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           ./scripts/Publish-Installer.ps1 -ZipPath "dist/FloatCanvas-$env:PACKAGE_VERSION-win-x64.zip"
-      - name: Verify runtime detection without changing the system runtime
-        run: ./scripts/Test-InstallerRuntime.ps1
+      - name: Verify runtime detection, bootstrap and native lifecycle helpers
+        run: |
+          ./scripts/Test-InstallerRuntime.ps1
+          ./scripts/Test-InstallerBootstrap.ps1
+          ./scripts/Test-InstallerLifecycle.ps1
       - name: Verify installation, payload identity and data-preserving uninstall
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}

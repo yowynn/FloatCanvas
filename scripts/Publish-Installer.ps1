@@ -37,9 +37,12 @@ $CompilerPath = (Resolve-Path -LiteralPath $CompilerPath).Path
 $version = [string]$manifest.Version
 $numericVersion = ($version -split '-', 2)[0] + '.0'
 $name = "FloatCanvas-$version-win-x64-Setup"
+$runtime = & (Join-Path $PSScriptRoot 'Get-DotNetRuntime.ps1') -CacheDirectory (Join-Path $WorkingDirectory 'runtime-cache')
 $stagingOutput = Join-Path $work 'compiled'
 New-Item -ItemType Directory -Path $stagingOutput -Force | Out-Null
-$arguments = @('/Qp', "/DAppVersion=$version", "/DFileVersion=$numericVersion", "/DPayloadDirectory=$payload", "/DOwnedList=$ownedList", "/DOutputDirectory=$stagingOutput", "/DOutputName=$name", (Join-Path $PSScriptRoot 'installer/FloatCanvas.iss'))
+$arguments = @('/Qp', "/DAppVersion=$version", "/DFileVersion=$numericVersion", "/DPayloadDirectory=$payload", "/DOwnedList=$ownedList", "/DOutputDirectory=$stagingOutput", "/DOutputName=$name",
+    "/DRuntimeInstallerVersion=$($runtime.Version)", "/DRuntimeInstallerUrl=$($runtime.Url)", "/DRuntimeInstallerSha256=$($runtime.Sha256)",
+    (Join-Path $PSScriptRoot 'installer/FloatCanvas.iss'))
 & $CompilerPath @arguments
 if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed: $LASTEXITCODE" }
 $compiled = Join-Path $stagingOutput "$name.exe"
