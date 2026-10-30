@@ -26,7 +26,7 @@ begin
 end;
 
 function SafeChild(Root, Relative: String; var Path: String): Boolean;
-var Remaining, Part, Stem, Backslash, Slash, Dot: String; Separator, I: Integer;
+var Remaining, Part, Stem, Backslash, Slash, Dot, Character: String; Separator, I: Integer;
 begin
   Result := False;
   { Pos with a Char needle narrows to ANSI; keep Unicode path searches and
@@ -44,8 +44,11 @@ begin
     end;
     if (Part = '') or (Part = '.') or (Part = '..') then exit;
     if (Part[Length(Part)] = '.') or (Part[Length(Part)] = ' ') then exit;
-    for I := 1 to Length(Part) do
-      if (Ord(Part[I]) < 32) or (Pos(Copy(Part, I, 1), ':<>"|?*') <> 0) then exit;
+    for I := 1 to Length(Part) do begin
+      { Nested Copy arguments can use ANSI temporaries; store the Unicode slice. }
+      Character := Copy(Part, I, 1);
+      if (Ord(Part[I]) < 32) or (Pos(Character, ':<>"|?*') <> 0) then exit;
+    end;
     Stem := Uppercase(Part); Separator := Pos(Dot, Stem);
     if Separator > 0 then Stem := Copy(Stem, 1, Separator - 1);
     if (Stem = 'CON') or (Stem = 'PRN') or (Stem = 'AUX') or (Stem = 'NUL') or

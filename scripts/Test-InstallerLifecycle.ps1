@@ -40,6 +40,15 @@ namespace FloatCanvasLifecycleProbe {
 '@
 }
 
+function Write-ProbeFailure([string]$Name, [string]$Report) {
+    foreach ($path in @($Report, (Join-Path $run "$Name.log"))) {
+        if (Test-Path -LiteralPath $path) {
+            Write-Host "Lifecycle probe failure details: $path"
+            Get-Content -LiteralPath $path -Tail 100 -ErrorAction Continue | ForEach-Object { Write-Host $_ }
+        }
+    }
+}
+
 function Invoke-Probe([string]$Name, [string[]]$Arguments) {
     $report = Join-Path $run "$Name.txt"
     $info = [Diagnostics.ProcessStartInfo]::new((Join-Path $run 'LifecycleProbe.exe'))
@@ -50,15 +59,15 @@ function Invoke-Probe([string]$Name, [string[]]$Arguments) {
     }
     $process = [Diagnostics.Process]::Start($info)
     try {
-        if (-not $process.WaitForExit(30000)) { $process.Kill($true); throw "Lifecycle probe timed out: $Name" }
-        if ($process.ExitCode -ne 1 -or -not (Test-Path -LiteralPath $report)) { throw "Lifecycle probe did not finish: $Name (exit $($process.ExitCode))." }
+        if (-not $process.WaitForExit(30000)) { $process.Kill($true); Write-ProbeFailure $Name $report; throw "Lifecycle probe timed out: $Name" }
+        if ($process.ExitCode -ne 1 -or -not (Test-Path -LiteralPath $report)) { Write-ProbeFailure $Name $report; throw "Lifecycle probe did not finish: $Name (exit $($process.ExitCode))." }
     } finally { $process.Dispose() }
     $record = @{}
     foreach ($line in [IO.File]::ReadAllLines($report)) {
         $parts = $line.Split('=', 2)
         if ($parts.Count -eq 2) { $record[$parts[0]] = $parts[1] }
     }
-    if ($record.Passed -ne '1') { throw "Lifecycle probe failed: $Name ($($record.Error)). See $report." }
+    if ($record.Passed -ne '1') { Write-ProbeFailure $Name $report; throw "Lifecycle probe failed: $Name ($($record.Error)). See $report." }
     if ($record.Profile) {
         $parsed = [FloatCanvasLifecycleProbe.CommandLine]::Parse('FloatCanvas.exe ' + $record.Arguments)
         if ($parsed.Count -lt 4 -or $parsed[1] -ne '--profile' -or $parsed[2] -cne $record.Profile -or $parsed[3] -ne '--recover') {
