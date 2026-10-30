@@ -15,7 +15,9 @@ begin
   Result := False;
   while Path <> '' do begin
     Attributes := GetFileAttributesW(Path);
-    if (Attributes <> InvalidAttributes) and ((Attributes and ReparseAttribute) <> 0) then exit;
+    if (Attributes <> InvalidAttributes) and ((Attributes and ReparseAttribute) <> 0) then begin
+      Log('Refusing linked path: ' + Path); exit;
+    end;
     Parent := ExtractFileDir(Path);
     if Parent = Path then break;
     Path := Parent;
@@ -57,10 +59,17 @@ var I: Integer; Child: String;
 begin
   Result := False;
   if not NoLinks(AddBackslash(Root) + OwnedListName) then exit;
-  if not LoadStringsFromFile(AddBackslash(Root) + OwnedListName, Files) then exit;
-  if (GetArrayLength(Files) < 1) or (GetArrayLength(Files) > 4096) then exit;
+  if not LoadStringsFromFile(AddBackslash(Root) + OwnedListName, Files) then begin
+    Log('Unable to read ownership list: ' + AddBackslash(Root) + OwnedListName); exit;
+  end;
+  if (GetArrayLength(Files) < 1) or (GetArrayLength(Files) > 4096) then begin
+    Log('Invalid ownership list count: ' + IntToStr(GetArrayLength(Files))); exit;
+  end;
+  Log('Ownership list count=' + IntToStr(GetArrayLength(Files)) + '; last=' + Files[GetArrayLength(Files) - 1]);
   for I := 0 to GetArrayLength(Files) - 1 do
-    if not SafeChild(Root, Files[I], Child) then exit;
+    if not SafeChild(Root, Files[I], Child) then begin
+      Log('Unsafe ownership list entry [' + IntToStr(I) + ']: ' + Files[I]); exit;
+    end;
   Result := True;
 end;
 
@@ -73,7 +82,9 @@ begin
     try
       repeat
         if (Found.Name <> '.') and (Found.Name <> '..') then begin
-          if (Found.Attributes and ReparseAttribute) <> 0 then begin Result := True; break; end;
+          if (Found.Attributes and ReparseAttribute) <> 0 then begin
+            Log('Directory contains a link: ' + AddBackslash(Root) + Found.Name); Result := True; break;
+          end;
           if (Found.Attributes and $10) <> 0 then begin
             Child := AddBackslash(Root) + Found.Name;
             if TreeHasLinks(Child) then begin Result := True; break; end;
@@ -95,15 +106,17 @@ begin
 end;
 
 function FileBusy(Path: String): Boolean;
-var Handle: THandle;
+var Handle: THandle; ErrorCode: Integer;
 begin
   Result := False;
   if not FileExists(Path) then exit;
   { Open for write without writing: mapped/running binaries and locked files must
     block installation/uninstallation instead of being scheduled for deletion. }
   Handle := CreateFileW(Path, $C0000000, 0, 0, 3, 0, 0);
+  ErrorCode := DLLGetLastError;
   Result := Handle = THandle(-1);
-  if not Result then CloseHandle(Handle);
+  if Result then Log('File preflight rejected: ' + Path + '; error=' + IntToStr(ErrorCode) + ' (' + SysErrorMessage(ErrorCode) + ')')
+  else CloseHandle(Handle);
 end;
 
 function ReadPackageVersion(Root: String; var Version: String): Boolean;

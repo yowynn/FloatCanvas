@@ -272,6 +272,7 @@ var Root, Child, Installed: String; I: Integer; UserOwned, MachineOwned: Boolean
 begin
   CleanupErrors := '';
   Root := NormalPath(ExpandConstant('{app}'));
+  Log('Uninstall preflight root: ' + Root);
   UserOwned := RegQueryStringValue(HKCU, UninstallKey, 'InstallLocation', Installed) and
     (CompareText(NormalPath(Installed), Root) = 0);
   MachineOwned := RegQueryStringValue(HKLM64, UninstallKey, 'InstallLocation', Installed) and
@@ -283,8 +284,14 @@ begin
     not DirExists(AddBackslash(Root) + '.floatcanvas-update') and ReadOwnedFiles(Root, UninstallFiles);
   if Result then
     for I := 0 to GetArrayLength(UninstallFiles) - 1 do
-      if not SafeChild(Root, UninstallFiles[I], Child) or FileBusy(Child) then begin Result := False; break; end;
-  if not Result then begin SuppressibleMsgBox(CustomMessage('UninstallBlocked'), mbError, MB_OK, IDOK); exit; end;
+      if not SafeChild(Root, UninstallFiles[I], Child) or FileBusy(Child) then begin
+        Log('Uninstall preflight rejected entry [' + IntToStr(I) + ']: ' + UninstallFiles[I]); Result := False; break;
+      end;
+  if not Result then begin
+    if FileExists(AddBackslash(Root) + '.floatcanvas-update') or DirExists(AddBackslash(Root) + '.floatcanvas-update') then
+      Log('Uninstall preflight found an unfinished update marker.');
+    SuppressibleMsgBox(CustomMessage('UninstallBlocked'), mbError, MB_OK, IDOK); exit;
+  end;
   FindUserProfiles;
   Result := ChoosePersonalData;
   if not Result then exit;
