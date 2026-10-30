@@ -265,7 +265,22 @@ public sealed partial class SceneRenderer : IDisposable
                     }
                     else if (element.Style.StrokePattern != StrokePattern.Solid)
                     {
-                        _paint.Style = SKPaintStyle.Fill; canvas.DrawPath(geometry.PatternStroke, _paint); _paint.Style = SKPaintStyle.Stroke;
+                        _paint.Style = SKPaintStyle.Fill;
+                        if (element.Style.StrokePattern == StrokePattern.Dashed && element.Kind is ElementKind.Freehand or ElementKind.Highlighter)
+                        {
+                            // Apply the shared dash mask during drawing. Intersecting the
+                            // complete stroke and every mask polygon rebuilds a costly
+                            // global boolean path on each pointer sample.
+                            int clip = canvas.Save();
+                            try
+                            {
+                                canvas.ClipPath(geometry.PatternMask, SKClipOperation.Intersect, true);
+                                canvas.DrawPath(geometry.SolidStroke, _paint);
+                            }
+                            finally { canvas.RestoreToCount(clip); }
+                        }
+                        else canvas.DrawPath(geometry.PatternStroke, _paint);
+                        _paint.Style = SKPaintStyle.Stroke;
                     }
                     else canvas.DrawPath(geometry.Path, _paint);
                     _paint.PathEffect = null;
@@ -578,8 +593,12 @@ public sealed partial class SceneRenderer : IDisposable
         private SKPath? _opacityStroke;
         private SKPath? _innerStroke;
         private SKPath? _patternStroke;
+        private SKPath? _patternMask;
+        private SKPath? _solidStroke;
         private readonly StrokePatternGeometry? _patternGeometry = element.Style.StrokePattern == StrokePattern.Solid ? null : ElementGeometry.StrokePatternGeometry(element);
         public SKPath PatternStroke => _patternStroke ??= BuildStroke(false);
+        public SKPath PatternMask => _patternMask ??= BuildPatternMask();
+        public SKPath SolidStroke => _solidStroke ??= BuildStroke(false, patterned: false);
         public SKPath InnerStroke
         {
             get
@@ -588,16 +607,24 @@ public sealed partial class SceneRenderer : IDisposable
                 return _innerStroke = BuildStroke(true);
             }
         }
-        private SKPath BuildStroke(bool inside)
+        private SKPath BuildStroke(bool inside, bool patterned = true)
         {
             using var paint = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)_strokeWidth * (inside ? 2 : 1),
                 StrokeJoin = inside ? SKStrokeJoin.Miter : SKStrokeJoin.Round, StrokeMiter = 4, StrokeCap = SKStrokeCap.Round };
             using var expanded = inside ? paint.GetFillPath(Path, 16) : paint.GetFillPath(Path);
             using var solid = inside ? Path.Op(expanded, SKPathOp.Intersect) : new SKPath(expanded);
             if (solid is null) throw new InvalidOperationException("Cannot construct a solid stroke band.");
-            if (_patternGeometry is null) return new(solid);
+            if (!patterned || _patternGeometry is null) return new(solid);
+            using var mask = BuildPatternMask();
+            // Dots are already fitted as complete circles. Only dash masks are cut
+            // against S, retaining S's original corners, joins and endpoint caps.
+            return _strokePattern == StrokePattern.Dotted ? new(mask) : solid.Op(mask, SKPathOp.Intersect) ??
+                throw new InvalidOperationException("Cannot cut dash gaps from a solid stroke band.");
+        }
+        private SKPath BuildPatternMask()
+        {
             using var builder = new SKPathBuilder();
-            foreach (var polygon in _patternGeometry.DashPolygons)
+            foreach (var polygon in _patternGeometry!.DashPolygons)
             {
                 double area = 0;
                 for (int i = 0; i < polygon.Count; i++) { var a = polygon[i]; var b = polygon[(i + 1) % polygon.Count]; area += a.X*b.Y-b.X*a.Y; }
@@ -605,11 +632,7 @@ public sealed partial class SceneRenderer : IDisposable
             }
             foreach (var point in _patternGeometry.Dots)
                 builder.AddCircle((float)point.X, (float)point.Y, (float)_patternGeometry.Radius);
-            using var mask = builder.Detach();
-            // Dots are already fitted as complete circles. Only dash masks are cut
-            // against S, retaining S's original corners, joins and endpoint caps.
-            return _strokePattern == StrokePattern.Dotted ? new(mask) : solid.Op(mask, SKPathOp.Intersect) ??
-                throw new InvalidOperationException("Cannot cut dash gaps from a solid stroke band.");
+            return builder.Detach();
         }
         private float _opacityStrokeScale;
         public SKPath? OpacityStroke(SKPaint paint, SKMatrix matrix)
@@ -630,7 +653,7 @@ public sealed partial class SceneRenderer : IDisposable
             _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
             _strokePattern == e.Style.StrokePattern &&
             e.Points.ContentEquals(_points);
-        public void Dispose() { _opacityStroke?.Dispose(); _innerStroke?.Dispose(); _patternStroke?.Dispose(); Path.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
+        public void Dispose() { _opacityStroke?.Dispose(); _innerStroke?.Dispose(); _patternStroke?.Dispose(); _patternMask?.Dispose(); _solidStroke?.Dispose(); Path.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
     }
     private class ImageEntry : IDisposable
     {

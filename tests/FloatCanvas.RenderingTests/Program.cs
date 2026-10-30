@@ -10,6 +10,7 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--dashed-freehand-only")) { DashedFreehandPerformanceTests.Run(Assert); return 0; }
             if (args.Contains("--ground-plane-occlusion-only")) { GroundPlaneOcclusionTests.Run(Assert); return 0; }
             if (args.Contains("--ground-plane-picking-only")) { GroundPlanePickingTests.Run(Assert); Console.WriteLine($"PASS {_checks} ground picking checks."); return 0; }
             if (args.Contains("--picking-consistency-only")) { PickingConsistencyTests.Run(Assert); return 0; }
@@ -67,6 +68,7 @@ internal static class Program
             PickingConsistencyTests.Run(Assert);
             ShapesAndCoordinates();
             InnerStrokeRenderingTests.Run(Assert);
+            DashedFreehandPerformanceTests.Run(Assert);
             AlphaAndBackground();
             ElementOpacityRenderingTests.Run(Assert);
             ElementOpacityRenderingTests.Performance(Assert);
