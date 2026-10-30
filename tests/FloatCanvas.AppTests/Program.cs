@@ -92,6 +92,7 @@ internal static class Program
             if (args.Contains("--canvas-tool-only")) { CanvasToolInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-pin-only")) { CanvasPinCalibrationTests.Run(Assert); CanvasSettingsControlTests.Run(Assert); return 0; }
             if (args.Contains("--new-canvas-settings-only")) { NewCanvasSettingsTests.Run(Assert); return 0; }
+            if (args.Contains("--new-canvas-escape-only")) { NewCanvasEscapeRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--signed-number-only")) { SignedNumberTests.Run(Assert); return 0; }
             if (args.Contains("--image-outside-stroke-only")) { ImageOutsideStrokeTests.Run(Assert); return 0; }
             if (args.Contains("--type-specific-inspector-only")) { TypeSpecificInspectorTests.Run(Assert); return 0; }

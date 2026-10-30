@@ -903,7 +903,7 @@ internal sealed partial class DesktopSession : IDisposable
             : GetToolbarForegroundWindow()!=handle)) return;
         var previous = System.Windows.Input.FocusManager.GetFocusedElement(_toolbar) as UIElement;
         var target = previous is { Focusable: true, IsVisible: true, IsEnabled: true } && ReferenceEquals(Window.GetWindow(previous), _toolbar)
-            ? previous : _toolbarLauncher;
+            ? previous : _toolbar;
         System.Windows.Input.Keyboard.Focus(target);
     }
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
