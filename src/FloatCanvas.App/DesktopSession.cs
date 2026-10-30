@@ -839,19 +839,21 @@ internal sealed partial class DesktopSession : IDisposable
     private void PlaceToolbar()
     {
         var m=_host.PrimaryMonitor;
-        var target = _settings.ToolbarX is { } x && _settings.ToolbarY is { } y
-            ? _host.Monitors.FirstOrDefault(a=>a.Bounds.Contains(new OverlayPoint(x,y))) ?? m : m;
         var surface = (FrameworkElement)_toolbar.Content;
         surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var origin = SessionWindowLayout.ToolbarOrigin(target, surface.DesiredSize.Width, surface.DesiredSize.Height, _settings.ToolbarX, _settings.ToolbarY);
+        // A saved position may legally straddle adjacent active screens. The
+        // native bounds hook constrains it against their union using the actual frame size.
+        var origin = _settings.ToolbarX is { } savedX && _settings.ToolbarY is { } savedY
+            ? new OverlayPoint(savedX, savedY)
+            : SessionWindowLayout.ToolbarOrigin(m, surface.DesiredSize.Width, surface.DesiredSize.Height, null, null);
         var handle = new WindowInteropHelper(_toolbar).EnsureHandle();
         OverlayCoordinates.PositionToolWindow(handle,origin);
-        _settings.ToolbarX=origin.X; _settings.ToolbarY=origin.Y;
+        SaveToolbarPosition();
     }
     private void SaveToolbarPosition()
     {
-        var p=_toolbar.PointToScreen(new System.Windows.Point(0,0));
-        _settings.ToolbarX=p.X; _settings.ToolbarY=p.Y;
+        if (!SessionWindowLayout.TryOrigin(_toolbar, out var origin)) return;
+        _settings.ToolbarX=origin.X; _settings.ToolbarY=origin.Y;
     }
     private void MoveIntoView()
     {

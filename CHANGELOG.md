@@ -5,6 +5,9 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+- 限制工具条拖动和展开后的屏幕边界：展开时图标与完整工具条保持可见，收起时保留整个图标；仅主屏／指定屏幕限制在所选屏幕内，全部屏幕允许跨相邻接缝但不进入屏幕间的空隙，拖动过程中实时调整。
+- Constrain toolbar dragging and expansion to the selected drawing displays. Keep the full expanded toolbar and icon visible, or the whole icon when collapsed. Primary/individual-display scope stays on that display; All screens permits continuous display seams while excluding gaps, with live adjustment during dragging.
+
 - 修复印章库在深色主题下仍显示白色列表背景的问题。选中快捷槽后点击印章仅设置一次，成功后自动取消槽位选择；失败时保留选择以便重试。
 - Fix the stamp gallery retaining a white background in dark mode. Selecting a slot and clicking a stamp now assigns it once and clears the slot selection on success; failures keep the selection for retry.
 

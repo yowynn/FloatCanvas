@@ -171,6 +171,7 @@ internal sealed partial class DesktopSession
             Topmost = true, ShowInTaskbar = true, Icon = _host.IsVisible?AppIcon.WindowImage:AppIcon.HiddenWindowImage, FontSize = 14, FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"),
             UseLayoutRounding = true, SnapsToDevicePixels = true };
         OverlayWindowScope.Prepare(window);
+        ToolbarWindowBounds.Attach(window, () => _host.Monitors);
         _toolbarMenu = CreateLauncherMenu();
         _toolbarMenu.TargetPressToggles = true;
         // A WPF menu captures the mouse. Inspect coordinates before outside-click
@@ -210,7 +211,7 @@ internal sealed partial class DesktopSession
         Action libraryChanged = () => window.Dispatcher.BeginInvoke(() => { ValidateSelectedStamp(); RefreshToolbarState(); });
         _stampLibrary.Changed += libraryChanged;
         window.Closed += (_, _) => _stampLibrary.Changed -= libraryChanged;
-        window.LocationChanged += (_, _) => { RepositionToolOptions(); RefreshPassThroughLauncher(); };
+        window.LocationChanged += (_, _) => { if (ReferenceEquals(_toolbar, window) && window.IsVisible) SaveToolbarPosition(); RepositionToolOptions(); RefreshPassThroughLauncher(); };
         window.SizeChanged += (_, _) => RepositionToolOptions();
         window.Deactivated += (_, _) => { _newCanvasButton.CancelConfirmation(); QueueToolOptionsFocusCheck(); };
         window.IsVisibleChanged += (_, _) => { if (!window.IsVisible) { _newCanvasButton.CancelConfirmation(); CloseToolOptions(); _toolbarMenu.IsOpen = false; _moreToolsMenu.IsOpen=false; _toolbarLauncher.CancelPendingGestures(); } };

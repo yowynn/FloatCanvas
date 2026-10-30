@@ -37,6 +37,8 @@ internal static class Program
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
             if (args.Contains("--toolbar-opacity-gesture-only")) { ToolbarOpacityGestureTests.Run(Assert); return 0; }
+            if (args.Contains("--toolbar-screen-bounds-only")) { ToolbarScreenBoundsTests.Run(Assert); return 0; }
+            if (args.Contains("--toolbar-window-bounds-only")) { ToolbarWindowBoundsTests.Run(Assert, args.SkipWhile(a => a != "--toolbar-window-bounds-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--color-robustness-only")) { ColorRobustnessTests.Run(Assert); return 0; }
             if (args.Contains("--color-clipboard-only")) { ColorClipboardTests.Run(Assert); ColorClipboardMenuTests.Run(Assert); return 0; }
             if (args.Contains("--color-picker-visuals-only")) { ColorPickerVisualTests.Run(Assert, args.SkipWhile(a => a != "--color-picker-visuals-only").Skip(1).FirstOrDefault()); return 0; }
@@ -335,6 +337,7 @@ internal static class Program
             Preview4ShiftTests.Run(Assert);
             Preview4DragTests.Run(Assert);
             Preview4SettingsTests.Run(Assert);
+            ToolbarScreenBoundsTests.Run(Assert);
             Preview4MenuTests.Run(Assert);
             Preview4ColorTests.Run(Assert);
             CanvasPresetTests.Run(Assert);

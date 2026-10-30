@@ -138,7 +138,7 @@ internal sealed class SessionWindowLayout
         return new(Math.Clamp(width, window.MinWidth, window.MaxWidth), Math.Clamp(height, window.MinHeight, window.MaxHeight));
     }
 
-    private static bool TryOrigin(Window window, out OverlayPoint origin)
+    internal static bool TryOrigin(Window window, out OverlayPoint origin)
     {
         nint handle = new WindowInteropHelper(window).Handle;
         if (handle != 0 && GetWindowRect(handle, out var rectangle))

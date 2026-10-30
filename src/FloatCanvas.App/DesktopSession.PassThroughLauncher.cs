@@ -75,6 +75,7 @@ internal sealed partial class DesktopSession
         if (_passThroughLauncher is null)
         {
             _passThroughLauncher = new();
+            ToolbarWindowBounds.Attach(_passThroughLauncher, () => _host.Monitors);
             _passThroughLauncher.EnterEditingRequested += () => RunUiAction(() => SetEditing(true));
             _passThroughLauncher.ToggleVisibilityRequested += () => RunUiAction(ToggleCanvasVisibility);
             _passThroughLauncher.PositionChanged += origin =>
@@ -90,11 +91,10 @@ internal sealed partial class DesktopSession
             var initial = SessionWindowLayout.ToolbarOrigin(primary, surface.DesiredSize.Width, surface.DesiredSize.Height, null, null);
             _settings.ToolbarX = initial.X; _settings.ToolbarY = initial.Y;
         }
-        var target = _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(new OverlayPoint(_settings.ToolbarX.Value, _settings.ToolbarY.Value))) ?? _host.PrimaryMonitor;
-        var origin = SessionWindowLayout.ToolbarOrigin(target, PassThroughLauncherWindow.ArtworkSize, PassThroughLauncherWindow.ArtworkSize,
-            _settings.ToolbarX, _settings.ToolbarY);
-        _settings.ToolbarX = origin.X; _settings.ToolbarY = origin.Y;
+        var origin = new OverlayPoint(_settings.ToolbarX.Value, _settings.ToolbarY.Value);
         _passThroughLauncher.SetEntryHint(_systemInputEntryHint);
         _passThroughLauncher.ShowAt(origin, _host.IsVisible);
+        if (SessionWindowLayout.TryOrigin(_passThroughLauncher, out var actual))
+        { _settings.ToolbarX = actual.X; _settings.ToolbarY = actual.Y; }
     }
 }

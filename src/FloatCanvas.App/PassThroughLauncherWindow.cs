@@ -56,7 +56,6 @@ internal sealed class PassThroughLauncherWindow : Window
     private void CompleteDrag(Point before)
     {
         if (before == new Point(Left, Top)) return;
-        AppWindowChrome.EnsureVisibleBounds(this);
         var point = PointToScreen(new Point());
         PositionChanged?.Invoke(new(point.X, point.Y));
     }
