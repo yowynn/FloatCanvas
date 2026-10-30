@@ -1,8 +1,8 @@
 # 发布包与完整性检查 / Packages and integrity checks
 
-浮绘以无签名 Windows ZIP 和 EXE 安装包发布，不要求代码签名证书、发布签名密钥或独立签名清单。两种包使用相同的程序文件，`PACKAGE-INFO.json` 将正式包标记为 `Unsigned`。下载、解压和应用内更新仍进行完整性与包结构检查。双格式发布适用于下一次发布，已发布的 0.3.0 ZIP 及历史资产不变。
+浮绘以无签名 Windows ZIP 和 EXE 安装包发布，不要求代码签名证书、发布签名密钥或独立签名清单。两种包使用相同的程序文件，`PACKAGE-INFO.json` 将正式包标记为 `Unsigned`。下载、解压和应用内更新仍进行完整性与包结构检查。双格式发布从 0.3.1 开始，已发布的 0.3.0 ZIP 及历史资产不变。
 
-FloatCanvas ships unsigned Windows ZIP and EXE installer packages containing the same application files. Publishing and updating do not require a code-signing certificate, publisher signing key or detached signature manifest. Release packages declare `Unsigned` in `PACKAGE-INFO.json`; download, archive and update integrity checks remain enabled. Dual-format publication starts with the next release; the published 0.3.0 ZIP and historical assets remain unchanged.
+FloatCanvas ships unsigned Windows ZIP and EXE installer packages containing the same application files. Publishing and updating do not require a code-signing certificate, publisher signing key or detached signature manifest. Release packages declare `Unsigned` in `PACKAGE-INFO.json`; download, archive and update integrity checks remain enabled. Dual-format publication starts with 0.3.1; the published 0.3.0 ZIP and historical assets remain unchanged.
 
 ## 发布内容 / Release assets
 
@@ -42,15 +42,15 @@ SHA-256 detects corruption or a mismatch with release metadata. A ZIP and checks
 
 ```powershell
 ./scripts/Publish.ps1 -Configuration Release
-./scripts/Smoke-Package.ps1 -ZipPath ./dist/FloatCanvas-0.3.0-win-x64.zip -StaticOnly -RequireRelease
-./scripts/Publish-Installer.ps1 -ZipPath ./dist/FloatCanvas-0.3.0-win-x64.zip
+./scripts/Smoke-Package.ps1 -ZipPath ./dist/FloatCanvas-0.3.1-win-x64.zip -StaticOnly -RequireRelease
+./scripts/Publish-Installer.ps1 -ZipPath ./dist/FloatCanvas-0.3.1-win-x64.zip
 ./scripts/Test-InstallerRuntime.ps1
 ./scripts/Test-InstallerBootstrap.ps1
 ./scripts/Test-InstallerLifecycle.ps1
-Get-FileHash ./dist/FloatCanvas-0.3.0-win-x64.zip -Algorithm SHA256
-Get-Content ./dist/FloatCanvas-0.3.0-win-x64.zip.sha256
-Get-FileHash ./dist/FloatCanvas-0.3.0-win-x64-Setup.exe -Algorithm SHA256
-Get-Content ./dist/FloatCanvas-0.3.0-win-x64-Setup.exe.sha256
+Get-FileHash ./dist/FloatCanvas-0.3.1-win-x64.zip -Algorithm SHA256
+Get-Content ./dist/FloatCanvas-0.3.1-win-x64.zip.sha256
+Get-FileHash ./dist/FloatCanvas-0.3.1-win-x64-Setup.exe -Algorithm SHA256
+Get-Content ./dist/FloatCanvas-0.3.1-win-x64-Setup.exe.sha256
 ```
 
 将计算结果分别与各自 `.sha256` 中的 hash 比较，示例版本号应与本次构建一致。`-StaticOnly` 仅验证包内容，不启动应用；省略该参数可运行独立配置的启动 smoke。生成安装包不会安装或启动浮绘。

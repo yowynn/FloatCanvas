@@ -176,6 +176,7 @@ internal static class ToolbarOpacitySliderTests
 
     private static void KeyboardAndRange(Action<string, bool> check)
     {
+        using var modifiers = new ThreadModifierScope(ModifierKeys.None);
         var slider = new ToolbarOpacitySlider { Value = .5 };
         Layout(Surface(slider), 1);
         var peer = UIElementAutomationPeer.CreatePeerForElement(slider);

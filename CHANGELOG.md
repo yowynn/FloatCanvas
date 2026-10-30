@@ -5,41 +5,34 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
-- 限制工具条拖动和展开后的屏幕边界：展开时图标与完整工具条保持可见，收起时保留整个图标；仅主屏／指定屏幕限制在所选屏幕内，全部屏幕允许跨相邻接缝但不进入屏幕间的空隙，拖动过程中实时调整。
-- Constrain toolbar dragging and expansion to the selected drawing displays. Keep the full expanded toolbar and icon visible, or the whole icon when collapsed. Primary/individual-display scope stays on that display; All screens permits continuous display seams while excluding gaps, with live adjustment during dragging.
+## [0.3.1] - 2026-10-30
 
-- 修复印章库在深色主题下仍显示白色列表背景的问题。选中快捷槽后点击印章仅设置一次，成功后自动取消槽位选择；失败时保留选择以便重试。
-- Fix the stamp gallery retaining a white background in dark mode. Selecting a slot and clicking a stamp now assigns it once and clears the slot selection on success; failures keep the selection for retry.
+- **安装、更新与卸载。** 新增简体中文／英文无签名 EXE 安装程序，与 ZIP 使用相同程序文件，各附 SHA-256 校验。支持当前用户或所有用户安装，缺少 .NET 10 桌面运行时 x64 时可下载、校验、安装并重新检测。当前用户安装继续使用 ZIP 更新并刷新卸载清单；系统安装通过安装向导更新。卸载清理不依赖 .NET，默认保留资料，删除资料需明确选择账户与目录；另存作品、自定义资料目录和其他安装的注册保留。
+- **Install, update and uninstall.** Add an unsigned Simplified Chinese/English EXE installer using the same application files as the ZIP, each with its own SHA-256 checksum. Choose current-user or all-users installation; missing .NET 10 Desktop Runtime x64 can be downloaded, verified, installed and checked again. Current-user updates use the ZIP and refresh uninstall metadata; machine installations update through Setup. Uninstall cleanup does not depend on .NET and retains personal data unless explicitly selected by account and directory. Projects saved elsewhere, custom profiles and other installations' registrations are preserved.
 
-- **颜色编辑。** 两级当前颜色控件均提供复制／粘贴菜单，支持 `#RRGGBB`、`#AARRGGBB`、`rgb()`、`rgba()`、`hsl()`、`hsla()`；不带 Alpha 的颜色粘贴时保留当前不透明度，无效文本禁用粘贴。左键二级预览复制 `#AARRGGBB`，复制成功短暂显示“已复制”，一级菜单独立提供“置为透明”。
-- **Color editing.** Both current-color controls offer Copy/Paste menus for `#RRGGBB`, `#AARRGGBB`, `rgb()`, `rgba()`, `hsl()` and `hsla()`. Pasting without Alpha preserves opacity; invalid text disables Paste. Left-click the secondary preview to copy `#AARRGGBB`; successful copies briefly show Copied. The primary menu has a separate Set to transparent action.
+- **颜色复制与粘贴。** 两级当前颜色控件均提供复制／粘贴菜单，支持 `#RRGGBB`、`#AARRGGBB`、`rgb()`、`rgba()`、`hsl()`、`hsla()`，八位 HEX 明确按 Alpha 在前解释。不带 Alpha 的颜色粘贴时保留当前不透明度，无效文本禁用粘贴。左键二级预览直接复制 `#AARRGGBB`，复制成功短暂显示“已复制”；一级菜单独立提供“置为透明”。
+- **Color copy and paste.** Both current-color controls offer Copy/Paste menus for `#RRGGBB`, `#AARRGGBB`, `rgb()`, `rgba()`, `hsl()` and `hsla()`, with Alpha first in eight-digit hex. Pasting without Alpha preserves opacity; invalid text disables Paste. Left-click the secondary preview to copy `#AARRGGBB`; successful copies briefly show Copied. The primary menu has a separate Set to transparent action.
 
-- **选色与窗口交互。** 加高自定义选色区域，色相条改用彩虹轨道和细长拨杆，支持从轨道或拨杆连续拖动。修复颜色菜单误收起未固定属性窗口、复制提示被来源窗口遮住，并补齐窗口各处焦点下的 `Esc` 关闭；正在调整时先取消，再按一次关闭，一次调节保持一步撤销。
-- **Color picking and window interaction.** Enlarge the spectrum and use a rainbow hue track with a slim lever, supporting continuous dragging from either. Keep unpinned Properties open during color-menu commands, keep copy receipts above their source, and support `Esc` dismissal from the window or its caption. During an edit or drag, the first press cancels and the next closes; each adjustment keeps one undo step.
+- **选色与面板交互。** 加高自定义选色区域，色相条改用彩虹轨道和细长拨杆，可从轨道或拨杆按下并连续拖动。`Esc` 先取消正在修改的色值或色相、不透明度、谱面拖动，再按一次关闭颜色窗口；仅进入色值输入框而未修改时，一次即可关闭。打开颜色菜单或执行复制会保留来源工具／属性窗口，复制提示保持在来源窗口上方。
+- **Color picking and panels.** Enlarge the spectrum and use a rainbow hue track with a slim lever, supporting continuous dragging from either. `Esc` first cancels an edited color value or a hue, opacity or spectrum drag; press it again to close the color window. Focusing the unchanged hex input still allows one-press dismissal. Color menus and copy commands keep their source Tool options or Properties open, with copy receipts above the source.
 
-- 将画布类型的“透视”图标改为由平面四格网格变形而来的梯形，更直观地区分平面与透视。
-- Replace the Perspective canvas-type icon with a trapezoid derived from the Flat four-cell grid.
+- **工具条边界。** 限制工具条拖动和展开后的屏幕边界：展开时图标与完整工具条保持可见，收起时保留整个图标；仅主屏／指定屏幕限制在所选屏幕内，全部屏幕允许跨相邻接缝但不进入屏幕间的空隙，拖动过程中实时调整。
+- **Toolbar bounds.** Constrain toolbar dragging and expansion to the selected drawing displays. Keep the full expanded toolbar and icon visible, or the whole icon when collapsed. Primary/individual-display scope stays on that display; All screens permits continuous display seams while excluding gaps, with live adjustment during dragging.
 
-- 细化工程打开行为：双击工程启动浮绘时进入编辑；已运行时保持当前编辑或穿透模式，穿透中双击工程仅切换画布。成功打开工程自动显示画布并打开小眼睛。
-- Refine project opening: launching FloatCanvas through a project enters editing; opening in a running instance preserves edit or pass-through mode. A successful open always reveals the canvas and opens the eyes.
+- **印章库。** 修复印章库在深色主题下仍显示白色列表背景的问题。选中快捷槽后点击印章仅设置一次，成功后自动取消槽位选择；失败时保留选择以便重试。
+- **Stamp library.** Fix the stamp gallery retaining a white background in dark mode. Selecting a slot and clicking a stamp now assigns it once and clears the slot selection on success; failures keep the selection for retry.
 
-- 修复首次启动空画布与新建画布的默认参数不一致：两者统一采用第一个官方画布预设的完整配置，包括未启用网格时保存的描边颜色；已有工程与恢复记录保留原配置。
-- Make fresh startup canvases and new canvases share the complete first official canvas preset, including the stored stroke color when the grid is disabled. Existing projects and recovered workspaces retain their settings.
+- **数值与透明度控件。** 数值滑块按下不跳值，拖动保留按下偏移；点击输入框外可用左右键微调。拖动和回填最多显示三位小数，保留数据精度；细化各属性的滑条常用范围，网格数量滑条为 1～32，直接输入与图标拖动仍保留原有合法范围。工具条整体不透明度改为带空心滑块的渐宽色带，轨道与滑块均可连续拖动；画布参数和整体透明度一次拖动合并为一步撤销，取消恢复原值。
+- **Numeric and opacity controls.** Thumb presses no longer jump; drags retain their initial offset, and clicks outside text inputs allow arrow-key adjustment. Dragged and refreshed values show up to three decimals without losing stored precision. Refine common slider ranges, including 1–32 for grid counts, while direct entry and icon scrubbing retain their full legal ranges. Toolbar opacity uses a widening ribbon and hollow handle with continuous dragging from either the rail or handle. Canvas-parameter and opacity drags each create one undo step and restore their starting values on cancellation.
 
-- 修复深度优先遮挡下画布背景和网格失去平面遮挡的回归：立牌没入平面下方时，底色与网格按深度和实际透明度覆盖对应部分；深度相同时仍位于所有对象下方。
-- Restore ground-plane occlusion for canvas color and grid in depth-priority mode. Billboard portions below the plane are covered according to ground depth and actual alpha; at equal depth the ground stays below every object.
+- **透视截图与遮挡。** 新建透视贴面截图的选框按实际选区和可见外描边计算，不再被 PNG 透明角落扩大，原始截图像素及轮廓随保存、内部复制和裁剪保留。修复深度优先遮挡下底色与网格的平面遮挡：按深度和实际透明度覆盖没入平面下方的立牌部分，深度相同时仍位于对象下方。画布“透视”选项改为与“平面”对应的梯形网格图标。
+- **Perspective captures and occlusion.** New Surface capture frames use their actual contours and visible outside borders instead of transparent PNG corners, preserving original pixels and contours through saving, internal copying and cropping. Restore depth-aware ground-color and grid occlusion: submerged billboard portions are covered according to depth and actual alpha, with the ground below objects at equal depth. The Perspective option now uses a trapezoid grid matching the Flat icon.
 
-- 修复透视贴面截图选框被 PNG 透明角落扩大：新截图按实际选区与可见外描边计算画布平面上的最小外接矩形，保留原始截图像素，并在保存、内部复制和裁剪后保留轮廓。
-- Fix oversized perspective Surface snapshot frames caused by transparent PNG corners. New snapshots use the smallest canvas-plane envelope of the capture contour and visible outside border, retain their original sampled pixels, and preserve the contour through saving, internal copying and cropping.
+- **画布默认值与工程打开。** 首次启动的空画布与新建画布统一采用第一个官方画布预设的完整配置，已有工程和恢复记录保留原配置。双击工程启动浮绘时进入编辑；已运行时保持当前编辑／穿透模式。成功打开工程自动显示画布，取消或打开失败保留原显隐状态。
+- **Canvas defaults and project opening.** Fresh startup canvases and new canvases use the complete first official canvas preset; existing projects and recovered workspaces retain their settings. Opening a project to launch FloatCanvas enters editing; an already running instance preserves its edit/pass-through mode. A successful open reveals the canvas, while cancellation or failure preserves visibility.
 
-- **安装、更新与卸载。** 新增中英文无签名 EXE 安装程序，与 ZIP 使用相同程序文件并分别附 SHA-256 校验。可选当前用户或所有用户安装；已有运行时直接跳过，缺少时一键从微软下载、校验、安装 .NET 10 桌面运行时并重新检测，不自动重启电脑。当前用户安装继续使用 ZIP 更新并同步卸载清单，系统安装通过管理员确认的安装向导更新。原生卸载清理不依赖 .NET，默认保留个人资料，也可明确选择账户与目录后删除；另存的作品、自定义资料目录和其他安装的注册保留。
-- **Install, update and uninstall.** Add an unsigned Simplified Chinese/English EXE installer using the same files as the ZIP, with an individual SHA-256 checksum for each. Choose current-user or all-users installation. An existing runtime skips its page; otherwise one action downloads, verifies and installs Microsoft's .NET 10 Desktop Runtime, then checks again without automatically restarting Windows. Current-user ZIP updates refresh the uninstall inventory; machine updates use Setup with administrator approval. Native uninstall cleanup no longer depends on .NET. Personal data is retained by default or deleted only for explicitly selected accounts and directories; projects saved elsewhere, custom profiles and other installations' registrations remain.
-
-- **数值控件交互。** 点击滑块保持原值，拖动保留按下偏移；点击输入框以外的区域后可用左右键按步长微调。拖动和数据回填统一显示最多三位小数，保留原数据精度。画布数值拖动实时预览，松手计为一次撤销，取消恢复原值。
-- **Numeric controls.** Thumb clicks preserve the value and drags keep the press offset. Click outside the text input to adjust with Left/Right. Dragged and refreshed values display at most three decimal places while preserving stored precision. Canvas numeric drags preview continuously, commit one undo step on release and restore the starting value on cancellation.
-
-- **滑条常用区间。** 网格行列滑条改为 1～32，按工具和属性用途细化线宽、字号、大小、圆角、箭头、滤镜、序号步长、宽高及离地高度区间。直接输入和图标拖动保留原有合法范围，工具切换、面板刷新及预设加载不截断原数值。
-- **Common slider ranges.** Grid count sliders cover 1–32; stroke, font, size, corner, arrow, filter, number-step, dimension and elevation sliders use ranges suited to their context. Direct entry and icon dragging retain their original valid limits, and tool switches, panel refreshes and preset loading preserve larger values.
+工程格式仍为 v8。包含本版新增截图轮廓的工程需要 0.3.1 或更新版本；降级到 0.3.0 前请保留原始工程副本。
+The project schema remains v8. Projects containing the new capture-contour data require 0.3.1 or later; keep original project copies before downgrading to 0.3.0.
 
 ## [0.3.0] - 2026-10-28
 

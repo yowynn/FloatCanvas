@@ -10,7 +10,7 @@ A Windows screen annotation tool. Draw over your desktop, place images and edit 
 
 ![FloatCanvas preview showing a perspective grid, route annotations and the floating toolbar](Docs/Images/floatcanvas-preview.png)
 
-Current source version: **0.3.0**. See [Releases](https://github.com/yowynn/FloatCanvas/releases) for published versions and downloads, the [changelog](CHANGELOG.md) for important changes, and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
+Current source version: **0.3.1**. See [Releases](https://github.com/yowynn/FloatCanvas/releases) for published versions and downloads, the [changelog](CHANGELOG.md) for important changes, and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
 
 The toolbar separates gray New and red-broom Clear. New confirms according to file and edit state; Clear is immediate, undoable and adds no history. A folding filename bubble shows the bound project. Stamp-slot context menus contain four maintenance actions: Rename, Overwrite, Delete and Unpin.
 
@@ -24,7 +24,7 @@ The toolbar separates gray New and red-broom Clear. New confirms according to fi
 - Independent canvas background color and opacity, corner dragging or unordered four-corner placement, solid/dashed/dotted grids, and official/personal presets. Flat mode has one Grid size field; perspective shows columns before rows. Reset restores an unwarped 1:1 document view and rebuilds square cells for the current coverage at the target display center. Version 8 saves the pin, fixed default reference and layer placement and reads v1–v7 projects. Default Surface objects follow projection; experimental Billboards choose an equal-depth line and face the screen while scaling with anchor depth.
 - Strong perspective can include the horizon on screen, with grids and Surface content clipped to a safe boundary. Hovering over an unsafe area while editing softly tints its extent red. On release, cancel, relocate, delete, or keep the original layers so adjusting the perspective back restores their display (use with caution), in one undoable operation.
 - The spatial nine-point pin defaults to bottom left and fits complete odd-count grids. Solve each adjustment from the fixed reference and final parameters, without accumulated deformation. **Keep grid size while adjusting** fixes logical spacing and pin phase so layers remain aligned to their original grid lines; corners move freely while exact fractional coverage updates automatically. Explicitly editing the flat grid size establishes new counts and a reference frame, replacing the previous perspective deformation.
-- Enable perspective in Canvas tool settings to expose Depth-priority occlusion, interleaving billboards and Surface content by anchor depth and using layer order at identical depth. Canvas color and the grid remain below all objects; overall opacity applies after composition. The option is off by default and saved with canvases and canvas presets.
+- Enable perspective in Canvas tool settings to expose Depth-priority occlusion, interleaving billboards and Surface content by anchor depth and using layer order at identical depth. Canvas color and the grid participate at the ground-plane depth and remain below objects at equal depth; overall opacity applies after composition. The option is off by default and saved with canvases and canvas presets.
 - Hold `Shift` while moving to constrain movement to a canvas X/Y axis through the original drag start. A billboard's body moves its anchor; its center handle adjusts elevation vertically on screen, including negative elevation, and corner resizing uses the center as its origin.
 - Reopen Welcome from the main menu or tray. Pass-through shows a smaller mascot holding her crown in both hands, without a pen. Wearing the crown means editing; holding it means pass-through. Open/closed eyes indicate a visible/hidden canvas. Click to enter editing, double-click for visibility, or disable the floating mascot in Settings.
 - A stamp library with editable and flattened stamps, search, continuous scrolling, drag reordering and a ten-slot shelf ordered `1`–`9`, then `0`. Pin by dragging onto a slot or selecting a slot and clicking an entry. Editable groups retain animation when the library is reopened and the stamp is placed again.
@@ -36,13 +36,13 @@ The toolbar separates gray New and red-broom Clear. New confirms according to fi
 - Simplified Chinese and English interfaces, with automatic Windows display-language selection.
 - Check GitHub releases in the app; current-user installations and ZIP copies update in place and restart, while all-users installations update through Setup.
 
-Billboard creation is off by default and affects only new objects. Leaving it off retains existing tool workflows; the general Shift movement constraint and corrected Surface capture outlines apply independently. Disabling perspective resets new-object placement while preserving existing billboard data. Older apps cannot read newly saved v8 projects; retain the original file when exchanging with them.
+Billboard creation is off by default and affects only new objects. Leaving it off retains existing tool workflows; the general Shift movement constraint and corrected Surface capture outlines apply independently. Disabling perspective resets new-object placement while preserving existing billboard data. Apps limited to v1–v7 cannot read v8 projects. Projects containing the capture-contour data introduced in 0.3.1 require 0.3.1 or later; retain original files before exchanging with older versions or downgrading.
 
 Animation requires the original file or encoded data. Clipboard sources supplying only PNG/Bitmap produce a static image; FloatCanvas does not fetch the original online. Hiding pauses refresh and pass-through keeps playback running. Snapshots, exports and merged image stamps take a static frame; animated export and playback controls are not available.
 
 ## Download and use
 
-Windows x64 binaries are provided through the repository's [Releases](https://github.com/yowynn/FloatCanvas/releases). The published 0.3.0 release provides a ZIP. Starting with the next release, each version will offer both unsigned formats below, each with its own `.sha256` checksum file:
+Windows x64 binaries are provided through the repository's [Releases](https://github.com/yowynn/FloatCanvas/releases). Version 0.3.0 provides a ZIP; 0.3.1 introduces the EXE installer. Both unsigned formats below have their own `.sha256` checksum file:
 
 - **Installer: `FloatCanvas-<version>-win-x64-Setup.exe`** lets you choose installation for yourself or all users. The initial default is the current user under `%LOCALAPPDATA%\Programs\FloatCanvas`; an all-users installation defaults to Program Files and requires administrator approval. If you change the all-users directory, choose a folder that every intended user can read and execute. It creates Start menu and Windows uninstall entries for the selected scope, with an optional desktop shortcut. It does not enable login startup automatically.
 - **ZIP: `FloatCanvas-<version>-win-x64.zip`** lets you manage the application directory yourself. Extract it to a local folder writable by your Windows account, keep all files together, and run `FloatCanvas.exe`.
@@ -107,7 +107,7 @@ Build a Windows Release package without the .NET runtime or PDB files, and check
 ```powershell
 ./scripts/Publish.ps1
 ./scripts/Smoke-Package.ps1
-./scripts/Publish-Installer.ps1 -ZipPath ./dist/FloatCanvas-0.3.0-win-x64.zip
+./scripts/Publish-Installer.ps1 -ZipPath ./dist/FloatCanvas-0.3.1-win-x64.zip
 ```
 
 The installer script uses the verified ZIP to produce `-Setup.exe` and its `.sha256` file in the same directory. It downloads a pinned Inno Setup compiler; no code-signing certificate is required. Adjust the example version to match your build.
