@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using L = FloatCanvas.Localization.AppText;
@@ -20,8 +21,10 @@ internal sealed class NumericValueField : UserControl
     private readonly TextBlock outside = new() { FontSize = 11, IsHitTestVisible = false, Margin = new(4, 0, 0, 0) };
     private readonly TextBlock suffix = new() { FontSize = 10, VerticalAlignment = VerticalAlignment.Center,
         Width = 26, TextAlignment = TextAlignment.Center, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-    private bool synchronizing, invalidDraft, hasPlaceholder, railGesture, endingGesture;
+    private bool synchronizing, invalidDraft, hasPlaceholder, modelText, railGesture, endingGesture;
     private double value, gestureStart;
+    private double railPointerOrigin;
+    private bool railThumbPressed;
     private Window? owner;
     internal TextBox Input { get; }
     internal Slider Slider { get; }
@@ -74,16 +77,22 @@ internal sealed class NumericValueField : UserControl
         var hover = new Trigger { Property = IsMouseOverProperty, Value = true }; hover.Setters.Add(new Setter(Border.BackgroundProperty, new DynamicResourceExtension("CanvasHover"))); anchorStyle.Triggers.Add(hover);
         DragAnchor.Style = anchorStyle;
         SetScrubAnchor(NumericPropertyKind.Number, string.IsNullOrWhiteSpace(label) ? L.Get("Numeric.Value") : label);
-        if (!customAnchorGesture) { AnchorScrubber = new NumericScrubber(DragAnchor, BeginGesture, delta => Publish(gestureStart + delta * step), EndGesture); scrubbers.Add(AnchorScrubber); }
+        if (!customAnchorGesture) { AnchorScrubber = new NumericScrubber(DragAnchor, BeginGesture, delta => Publish(gestureStart + delta * step), EndGesture, Slider); scrubbers.Add(AnchorScrubber); }
         suffix.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
         editor.Children.Add(DragAnchor); Grid.SetColumn(Input, 1); editor.Children.Add(Input); Grid.SetColumn(suffix, 2); editor.Children.Add(suffix);
         panel.Children.Add(editor); Grid.SetRow(Slider, 1); panel.Children.Add(Slider);
         outside.SetResourceReference(TextBlock.ForegroundProperty, "CanvasAccent"); Grid.SetRow(outside, 1); outside.FontSize = 9; outside.Margin = new(0); panel.Children.Add(outside);
         var frame = new Border { Child = panel };
         frame.SetResourceReference(StyleProperty, "CanvasNumericFrame"); Content = frame;
+        PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (e.OriginalSource is Visual source && (source == Input || Input.IsAncestorOf(source))) return;
+            Slider.Focus();
+        };
         Input.TextChanged += (_, _) =>
         {
             if (synchronizing) return;
+            modelText = false;
             hasPlaceholder = false;
             if (!TryGetValue(out double next)) { invalidDraft = true; InvalidInput?.Invoke(); return; }
             bool corrected = invalidDraft; invalidDraft = false;
@@ -100,14 +109,22 @@ internal sealed class NumericValueField : UserControl
             Publish(Slider.Value);
             if (!IsInteracting) SliderValueCommitted?.Invoke();
         };
+        Slider.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key is not (Key.Left or Key.Right) || Keyboard.Modifiers != ModifierKeys.None) return;
+            e.Handled = true;
+            if (!IsEnabled || Input.IsReadOnly || !TryGetValue(out double current)) return;
+            double before = value;
+            // The representative thumb can be at a common-range endpoint while
+            // the actual value is farther out. Arrow keys edit that actual value.
+            Publish(current + (e.Key == Key.Right ? step : -step));
+            if (!IsInteracting && value != before) SliderValueCommitted?.Invoke();
+        };
         Slider.PreviewMouseLeftButtonDown += (_, e) =>
         {
             if (e.ChangedButton != MouseButton.Left) return;
             Slider.Focus();
-            if (!BeginGesture()) { e.Handled = true; return; }
-            railGesture = true;
-            if (!Slider.CaptureMouse()) EndGesture(false);
-            else UpdateRail(e.GetPosition(Slider).X);
+            StartRailGesture(e.GetPosition(Slider), Slider.CaptureMouse);
             e.Handled = true;
         };
         Slider.PreviewMouseMove += (_, e) =>
@@ -138,6 +155,7 @@ internal sealed class NumericValueField : UserControl
     {
         if (label is TextBlock caption) SetScrubAnchor(anchorKind, caption.Text);
         AutomationProperties.SetLabeledBy(Input, label); AutomationProperties.SetLabeledBy(Slider, label);
+        label.PreviewMouseLeftButtonDown += (_, _) => Slider.Focus();
     }
 
     // Mixed selections and automatic values are valid states, unlike an invalid
@@ -162,20 +180,61 @@ internal sealed class NumericValueField : UserControl
     // The same lifecycle is used by embedded icons, rails, and detached checks.
     internal bool BeginGesture()
     {
-        if (IsInteracting || !IsEnabled || Visibility != Visibility.Visible || Input.IsReadOnly || CanBeginGesture?.Invoke() == false) return false;
+        if (IsInteracting || !IsEnabled || Visibility != Visibility.Visible || Input.IsReadOnly) return false;
         if (!TryGetValue(out gestureStart))
         {
             if (!hasPlaceholder) return false;
             gestureStart = value;
         }
+        if (CanBeginGesture?.Invoke() == false) return false;
+        railThumbPressed = false;
         IsInteracting = true; owner = Window.GetWindow(this);
         if (owner is not null) owner.Deactivated += OnDeactivated;
         GestureStarted?.Invoke(); return true;
     }
 
+    internal void StartRailGesture(Point point, Func<bool> capture)
+    {
+        if (!BeginGesture()) return;
+        // Capture synchronizes WPF mouse input and can route a move before it
+        // returns. Establish thumb/track mode before that reentrant input.
+        StartRail(point);
+        if (!IsInteracting) return;
+        if (!capture()) EndGesture(false);
+        else if (!IsInteracting)
+        {
+            if (Slider.IsMouseCaptured) Slider.ReleaseMouseCapture();
+        }
+    }
+
+    internal void StartRail(Point point)
+    {
+        if (!IsInteracting) return;
+        railPointerOrigin = point.X;
+        railThumbPressed = false;
+        if (Slider.Template.FindName("PART_Track", Slider) is Track { Thumb: { } thumb })
+        {
+            var bounds = new Rect(thumb.TranslatePoint(new(), Slider), thumb.RenderSize);
+            railThumbPressed = bounds.Contains(point);
+        }
+        railGesture = true;
+        if (!railThumbPressed) UpdateRail(point.X);
+    }
+
     internal void UpdateRail(double x)
     {
         if (!IsInteracting || !double.IsFinite(x)) return;
+        if (railGesture && railThumbPressed)
+        {
+            if (x == railPointerOrigin)
+            {
+                if (value != gestureStart) { SetModelValue(gestureStart); ValueChanged?.Invoke(gestureStart); }
+                return;
+            }
+            double delta = (x - railPointerOrigin) / Math.Max(1, Slider.ActualWidth - 8) * (Slider.Maximum - Slider.Minimum);
+            Publish(Math.Clamp(Math.Clamp(gestureStart, Slider.Minimum, Slider.Maximum) + delta, Slider.Minimum, Slider.Maximum));
+            return;
+        }
         double fraction = Math.Clamp((x - 4) / Math.Max(1, Slider.ActualWidth - 8), 0, 1);
         Publish(Slider.Minimum + (Slider.Maximum - Slider.Minimum) * fraction);
     }
@@ -228,7 +287,7 @@ internal sealed class NumericValueField : UserControl
         if (!double.IsFinite(next)) return;
         next = Math.Clamp(Math.Round(Math.Clamp(next, minimum, maximum), integerOnly || Slider.IsSnapToTickEnabled ? 0 : 3), minimum, maximum);
         bool changed = value != next || invalidDraft || hasPlaceholder;
-        invalidDraft = hasPlaceholder = false; value = next;
+        invalidDraft = hasPlaceholder = false; modelText = true; value = next;
         synchronizing = true;
         try { Slider.Value = Math.Clamp(next, Slider.Minimum, Slider.Maximum); Input.Text = Format(next); }
         finally { synchronizing = false; }
@@ -243,7 +302,26 @@ internal sealed class NumericValueField : UserControl
         AutomationProperties.SetItemStatus(Slider, outside.Text.Length == 0 ? "" : Format(next));
     }
 
-    private static string Format(double next) => next.ToString("G", CultureInfo.CurrentCulture);
+    // A common-range change only moves the rail's representative thumb. The
+    // model, typed draft and gesture limits retain their independent domains.
+    internal void SetSliderRange(double sliderMinimum, double sliderMaximum)
+    {
+        if (!double.IsFinite(sliderMinimum) || !double.IsFinite(sliderMaximum) ||
+            sliderMinimum < minimum || sliderMaximum > maximum || sliderMaximum < sliderMinimum)
+            throw new ArgumentOutOfRangeException(nameof(sliderMinimum));
+        bool wasSynchronizing = synchronizing; synchronizing = true;
+        try
+        {
+            if (sliderMinimum > Slider.Maximum) Slider.Maximum = sliderMaximum;
+            Slider.Minimum = sliderMinimum;
+            Slider.Maximum = sliderMaximum;
+            Slider.Value = Math.Clamp(value, sliderMinimum, sliderMaximum);
+        }
+        finally { synchronizing = wasSynchronizing; }
+        RefreshRange(value);
+    }
+
+    private static string Format(double next) => Math.Round(next, 3) == 0 ? "0" : next.ToString("0.###", CultureInfo.CurrentCulture);
 
     internal double Value
     {
@@ -255,19 +333,22 @@ internal sealed class NumericValueField : UserControl
         }
     }
 
-    // Loading an already validated document must not clamp it to the range for
-    // creating new edits. Retain exact text/value until the user changes it.
+    // Formatting a validated model value must not lose its underlying precision
+    // or clamp it to the range for creating new edits.
     internal void SetModelValue(double modelValue)
     {
         if (!double.IsFinite(modelValue)) throw new ArgumentOutOfRangeException(nameof(modelValue));
         synchronizing = true;
-        try { invalidDraft = hasPlaceholder = false; value = modelValue; Input.Text = Format(modelValue); Slider.Value = Math.Clamp(modelValue, Slider.Minimum, Slider.Maximum); }
+        try { invalidDraft = hasPlaceholder = false; modelText = true; value = modelValue; Input.Text = Format(modelValue); Slider.Value = Math.Clamp(modelValue, Slider.Minimum, Slider.Maximum); }
         finally { synchronizing = false; }
         RefreshRange(modelValue);
     }
 
-    internal bool TryGetValue(out double result) =>
-        (double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out result) || double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out result)) &&
-        double.IsFinite(result) && ((result >= minimum && result <= maximum && (!integerOnly || result == Math.Truncate(result))) ||
-            !invalidDraft && Input.Text == Format(value) && result == value);
+    internal bool TryGetValue(out double result)
+    {
+        if (modelText && !invalidDraft && !hasPlaceholder && Input.Text == Format(value))
+        { result = value; return true; }
+        return (double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out result) || double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out result)) &&
+            double.IsFinite(result) && result >= minimum && result <= maximum && (!integerOnly || result == Math.Truncate(result));
+    }
 }

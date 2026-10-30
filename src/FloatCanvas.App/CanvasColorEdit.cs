@@ -3,11 +3,12 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>One continuous canvas color edit owns one settings transaction.</summary>
+/// <summary>One continuous canvas color or numeric edit owns one settings transaction.</summary>
 internal sealed class CanvasColorEdit(Func<EditorSession> current, Func<bool> canMutate, Action prepare, Action changed)
 {
     private EditorSession? session;
     private long transaction;
+    internal bool IsActive => session is not null;
     private bool Owns => session is not null && ReferenceEquals(session, current()) && session.IsTransactionActive && session.TransactionId == transaction;
     internal bool Begin()
     {

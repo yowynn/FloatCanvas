@@ -339,6 +339,7 @@ internal sealed class InspectorWindow : Wpf.Window
             invalidDraft=false;
             propertyPanel.IsEnabled = selected.Length > 0 && selected.All(e => !e.Locked);
             PrepareEffectSelection(selected);
+            RefreshNumericRanges(selected);
             SetPropertyVisibility(selected);
             selectionLabel.Text = selected.Length > 1 ? L.Format("Feedback4.Inspector.MultipleSelection", selected.Length) : element is null ? L.Get("Inspector.SelectElement")
                 : L.Format("Inspector.ElementSelection", ElementName(element), element.Locked ? L.Get("Inspector.LockedSuffix") : "", !element.Visible ? L.Get("Inspector.HiddenSuffix") : "");
@@ -674,22 +675,23 @@ internal sealed class InspectorWindow : Wpf.Window
             var field = Field(key, label);
             var limits = key switch
             {
-                "X" or "Y" or "BillboardHeight" => (-10000000d, 10000000d, -8192d, 8192d, 1d),
-                "W" or "H" => (0d, 10000000d, 0d, 1000d, 1d),
+                "X" or "Y" => (-10000000d, 10000000d, -8192d, 8192d, 1d),
+                "BillboardHeight" => (-10000000d, 10000000d, -1000d, 1000d, 1d),
+                "W" or "H" => (0d, 10000000d, 1d, 1000d, 1d),
                 "Angle" => (-360000d, 360000d, -180d, 180d, 1d),
-                "StrokeWidth" => (0d, 10000000d, 0d, 64d, .1d),
-                "CornerRadius" => (0d, 10000000d, 0d, 256d, 1d),
-                "ArrowHeadSize" => (0d, 512d, 0d, 128d, 1d),
+                "StrokeWidth" => (0d, 10000000d, 0d, 32d, .1d),
+                "CornerRadius" => (0d, 10000000d, 0d, 64d, 1d),
+                "ArrowHeadSize" => (0d, 512d, 0d, 64d, 1d),
                 "Opacity" => (0d, 100d, 0d, 100d, 1d),
                 "FontSize" => (1d, 4096d, 8d, 144d, 1d),
-                "EffectStrength" => (.01d, 1024d, .01d, 100d, .1d),
+                "EffectStrength" => (.01d, 1024d, .1d, 64d, .1d),
                 "Number" => ((double)int.MinValue, (double)int.MaxValue, 1d, 100d, 1d),
                 _ => (1d, 1000000d, 1d, 100d, 1d)
             };
             var numeric = new NumericValueField(field, limits.Item1, limits.Item2, limits.Item3, limits.Item4, limits.Item5, integerOnly: key == "Number", customAnchorGesture: geometryScrub)
             { Unit = key switch { "Angle" => "°", "Opacity" => "%", "Number" => "#", _ => "px" } };
             numeric.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), label);
-            if (geometryScrub) scrubbers.Add(new NumericScrubber(numeric.DragAnchor, () => BeginScrub(key), delta => UpdateScrub(key, delta), FinishScrub));
+            if (geometryScrub) scrubbers.Add(new NumericScrubber(numeric.DragAnchor, () => BeginScrub(key), delta => UpdateScrub(key, delta), FinishScrub, numeric.Slider));
             if (key == "Number") numeric.Slider.IsSnapToTickEnabled = true;
             Automation.AutomationProperties.SetName(numeric.Slider, label);
             numeric.CanBeginGesture = () => { CompleteEdit(); return !invalidDraft && canMutate() && !getSession().IsTransactionActive; };
@@ -820,6 +822,7 @@ internal sealed class InspectorWindow : Wpf.Window
                 "CornerRadius" => Math.Clamp(value, 0, 10000000), "Angle" => Math.Clamp(value, -360000, 360000),
                 _ => Math.Clamp(value, -10000000, 10000000)
             };
+            value = Math.Round(value, 3);
             var edited = source.Clone();
             switch (key)
             {
@@ -907,6 +910,15 @@ internal sealed class InspectorWindow : Wpf.Window
             ? [] : Enumerable.Range(0, selected.Min(element => element.Effects.Count))
                 .Where(index => selected.All(element => element.Effects[index].Kind == selected[0].Effects[index].Kind)).ToArray();
         if (!compatibleEffects.Contains(effectIndex)) effectIndex = compatibleEffects.FirstOrDefault(-1);
+    }
+
+    private void RefreshNumericRanges(CanvasElement[] selected)
+    {
+        if (selected.Length > 0 && selected.All(element => element.Kind == ElementKind.Highlighter))
+            numericFields["StrokeWidth"].SetSliderRange(16, 64);
+        else numericFields["StrokeWidth"].SetSliderRange(0, selected.Any(element => element.Kind == ElementKind.Image) ? 16 : 32);
+        var effect = selected.Length == 0 ? null : SelectedEffect(selected[0]);
+        numericFields["EffectStrength"].SetSliderRange(effect?.Kind == ImageEffectKind.Pixelate ? 1 : .1, 64);
     }
 
     private ImageEffect? SelectedEffect(CanvasElement element) => compatibleEffects.Contains(effectIndex) && effectIndex < element.Effects.Count

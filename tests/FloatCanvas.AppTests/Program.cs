@@ -24,6 +24,9 @@ internal static class Program
             if (args.Contains("--window-spacing-only")) { WindowSpacingTests.Run(Assert); return 0; }
             if (args.Contains("--property-visuals-only")) { PropertyVisualTests.Run(Assert); return 0; }
             if (args.Contains("--numeric-controls-only")) { NumericControlTests.Run(Assert, args.SkipWhile(a => a != "--numeric-controls-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--numeric-rails-only")) { NumericRailRangeTests.Run(Assert); return 0; }
+            if (args.Contains("--numeric-pointer-regression-only")) { NumericPointerRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-numeric-preview-only")) { CanvasNumericPreviewTests.Run(Assert); return 0; }
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             if (args is ["--numeric-pointer-preview", var pointerOutput]) { NumericPointerFixture.Preview(pointerOutput); return 0; }
@@ -405,6 +408,8 @@ internal static class Program
             WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult();
             WorkspacePreviewTests.RunAsync(Assert).GetAwaiter().GetResult();
             NumericControlTests.Run(Assert);
+            NumericRailRangeTests.Run(Assert);
+            CanvasNumericPreviewTests.Run(Assert);
             PanelReviewRegressionTests.Run(Assert);
             ThemeTests.Run((name, condition) => Assert(name, condition));
             MonitorScopeSettingsTests.Run((name, condition) => Assert(name, condition));

@@ -7,6 +7,7 @@ namespace FloatCanvas.App;
 internal sealed class NumericScrubber
 {
     private readonly FrameworkElement label;
+    private readonly FrameworkElement focusTarget;
     private readonly Func<bool> begin;
     private readonly Action<double> update;
     private readonly Action<bool> finish;
@@ -16,9 +17,10 @@ internal sealed class NumericScrubber
 
     internal bool IsActive { get; private set; }
 
-    internal NumericScrubber(FrameworkElement label, Func<bool> begin, Action<double> update, Action<bool> finish)
+    internal NumericScrubber(FrameworkElement label, Func<bool> begin, Action<double> update, Action<bool> finish, FrameworkElement? focusTarget = null)
     {
         this.label = label;
+        this.focusTarget = focusTarget ?? label;
         this.begin = begin;
         this.update = update;
         this.finish = finish;
@@ -99,7 +101,7 @@ internal sealed class NumericScrubber
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left || !TryBegin(e.GetPosition(Window.GetWindow(label) ?? (IInputElement)label).X)) return;
-        label.Focus();
+        focusTarget.Focus();
         if (IsActive && !label.CaptureMouse()) End(false);
         e.Handled = true;
     }

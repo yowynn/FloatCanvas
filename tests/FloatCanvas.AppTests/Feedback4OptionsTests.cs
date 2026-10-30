@@ -120,7 +120,7 @@ internal static class Feedback4OptionsTests
         check(locale + " text font picker reads system fonts with visual samples", fonts.Items.Count > 10 &&
             fonts.Items.Cast<object>().All(item => item is FontPickerControl.FontChoice { Family: not null }));
         controller.Tool = EditorTool.Emoji; panel.PrepareForShow();
-        check(locale + " emoji size uses a size label and a generous slider range", Field<Dictionary<string,TextBlock>>(panel, "captions")["FontSize"].Text == L.Get("ToolOptions.Size") && fields["FontSize"].Slider.Maximum == 512);
+        check(locale + " emoji size uses a size label and its common slider range", Field<Dictionary<string,TextBlock>>(panel, "captions")["FontSize"].Text == L.Get("ToolOptions.Size") && fields["FontSize"].Slider.Minimum == 16 && fields["FontSize"].Slider.Maximum == 256);
         fields["FontSize"].Input.Text = "32"; check(locale + " precise emoji size input remains editable", controller.Style.FontSize == 32);
         check(locale + " naming is not an inline parameter", !rows.ContainsKey("PresetName"));
         var thickness = new NumericValueField(0, 100); var preview = (Border)ToolOptionPreviews.StrokeWidth(thickness);

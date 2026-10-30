@@ -33,7 +33,7 @@ internal static class CanvasGridSettingsControlsTests
             window.PrepareForShow();
             check("flat canvas options expose one size field and hide perspective counts and lock", flat.Visibility == Visibility.Visible &&
                 counts.Visibility == Visibility.Collapsed && Field<FrameworkElement>(window, "pinRow").Visibility == Visibility.Collapsed);
-            check("flat size text preserves complete stored double precision", size.Input.Text == precise.ToString("G", CultureInfo.CurrentCulture) &&
+            check("flat size display uses three decimals while preserving complete stored double precision", size.Input.Text == precise.ToString("0.###", CultureInfo.CurrentCulture) &&
                 size.TryGetValue(out double actual) && actual == precise && size.Value == precise);
             check("flat size uses a continuous common-range slider without integer snapping", size.Slider.Minimum == 1 && size.Slider.Maximum == 400 && !size.Slider.IsSnapToTickEnabled);
             columns.Slider.Value = 12; rows.Slider.Value = 11;
@@ -43,12 +43,12 @@ internal static class CanvasGridSettingsControlsTests
             const double changed = 81.9876543210123;
             size.Input.Text = changed.ToString("G", CultureInfo.InvariantCulture); SendEnter(size.Input);
             check("precise flat size text emits one semantic edit and preserves all digits", edits.Count == 1 && edits[0] == changed &&
-                current.Grid.FlatCellSize == changed && size.Input.Text == changed.ToString("G", CultureInfo.CurrentCulture));
+                current.Grid.FlatCellSize == changed && size.Input.Text == changed.ToString("0.###", CultureInfo.CurrentCulture));
             foreach (string invalid in new[] { ".5", "1000001", "NaN", "invalid" })
             {
                 size.Input.Text = invalid; SendEnter(size.Input);
                 check("invalid flat size restores its exact previous value without an edit", edits.Count == 1 && current.Grid.FlatCellSize == changed &&
-                    size.Input.Text == changed.ToString("G", CultureInfo.CurrentCulture));
+                    size.Input.Text == changed.ToString("0.###", CultureInfo.CurrentCulture));
             }
             for (int iteration = 0; iteration < 100; iteration++)
             {

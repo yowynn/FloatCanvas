@@ -55,8 +55,8 @@ internal static class CanvasSettingsControlTests
                 Field<ColorField>(window, "gridColor").Role == ColorRole.Foreground && Field<ColorField>(window, "background").Role == ColorRole.Background);
             check("canvas line patterns reuse icon and text previews", Field<SegmentedChoice>(window, "pattern").Items.Cast<RadioButton>().All(item =>
                 item.Content is StackPanel panel && panel.Children[0] is Image && panel.Children[1] is TextBlock));
-            check("canvas count sliders retain integer range and snap to whole cells", new[] { columns, rows }.All(field =>
-                field.Slider.Minimum == 1 && field.Slider.Maximum == 256 && field.Slider.TickFrequency == 1 && field.Slider.IsSnapToTickEnabled));
+            check("canvas count sliders cover the common range and snap to whole cells", new[] { columns, rows }.All(field =>
+                field.Slider.Minimum == 1 && field.Slider.Maximum == 32 && field.Slider.TickFrequency == 1 && field.Slider.IsSnapToTickEnabled));
             int countEdits = 0, widthEdits = 0;
             window.GridCountsChanged += (_, _) => countEdits++;
             window.GridWidthChanged += _ => widthEdits++;
@@ -70,7 +70,7 @@ internal static class CanvasSettingsControlTests
             columns.Slider.Value = 12.4;
             check("cell slider normalizes to integer and commits once", columns.Value == 12 && columns.Input.Text == "12" && countEdits == 1);
             width.Slider.Value = 3.125;
-            check("canvas width keeps fractional precision and original bounds", width.Value == 3.125 && widthEdits == 1 && width.Slider.Minimum == 1 && width.Slider.Maximum == 20 && !width.Slider.IsSnapToTickEnabled);
+            check("canvas width keeps fractional precision within its common range", width.Value == 3.125 && widthEdits == 1 && width.Slider.Minimum == .5 && width.Slider.Maximum == 8 && !width.Slider.IsSnapToTickEnabled);
             width.Input.Text = "65";
             check("canvas width rejects out of range input without slider commit", !width.TryGetValue(out _) && widthEdits == 1);
             var continuous = new NumericValueField(0, 100);

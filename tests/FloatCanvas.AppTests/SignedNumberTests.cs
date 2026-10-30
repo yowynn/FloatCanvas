@@ -105,7 +105,7 @@ internal static class SignedNumberTests
         var panel = new ToolOptionsPanel(editor, new ToolPresetLibrary(Path.Combine(folder, "ui-presets.json")), new ColorLibrary(Path.Combine(folder, "ui-colors.json")));
         panel.PrepareForShow();
         var fields = (Dictionary<string, NumericValueField>)typeof(ToolOptionsPanel).GetField("numericFields", Private)!.GetValue(panel)!;
-        check("number-step rail places zero at its middle", fields["NumberStep"].Slider.Minimum == -100 && fields["NumberStep"].Slider.Maximum == 100);
+        check("number-step rail places zero at its middle", fields["NumberStep"].Slider.Minimum == -10 && fields["NumberStep"].Slider.Maximum == 10);
         check("start and current-counter rails keep their familiar positive range", fields["NumberStart"].Slider.Minimum == 1 && fields["NextNumber"].Slider.Minimum == 1);
         fields["NumberStep"].Input.Text = "0";
         check("tool UI accepts a zero step", editor.NumberStep == 0);

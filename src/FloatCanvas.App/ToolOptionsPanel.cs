@@ -167,6 +167,11 @@ internal sealed class ToolOptionsPanel : UserControl
             foreach (var field in numericFields.Values) field.CancelGesture();
             status.Text = "";
             var p = controller.Parameters; var tool = p.Tool;
+            foreach (var (key, field) in numericFields)
+            {
+                var domain = NumericParameterDomain.ForTool(key, tool);
+                field.SetSliderRange(domain.RailMinimum, domain.RailMaximum);
+            }
             if (fontContextTool != tool || !ReferenceEquals(fontContextSession, controller.Session))
             {
                 linkedColorsRegion.Reset();

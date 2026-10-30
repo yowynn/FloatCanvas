@@ -359,7 +359,7 @@ internal static class CanvasPresetTests
             {
                 window.Refresh(new() { Grid = new() { Width = value } });
                 window.PrepareForShow();
-                check("canvas width restores legal stored value " + value, width.TryGetValue(out double actual) && actual == value && width.Slider.Minimum == 1 && width.Slider.Maximum == 20 && propertyEdits == 0);
+                check("canvas width restores legal stored value " + value, width.TryGetValue(out double actual) && actual == value && width.Slider.Minimum == .5 && width.Slider.Maximum == 8 && propertyEdits == 0);
             }
             var content = (FrameworkElement)window.Content; content.Measure(new(600, 540)); content.Arrange(new Rect(0, 0, 600, 540)); content.UpdateLayout();
             check("canvas panel content lays out both property and preset columns", Field<ColorField>(window, "background").ActualWidth > 100 && gallery.ActualWidth >= 196);

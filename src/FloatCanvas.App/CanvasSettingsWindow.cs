@@ -14,9 +14,9 @@ internal sealed class CanvasSettingsWindow : Window
     private readonly ColorField background = new(ColorRole.Background), gridColor = new(ColorRole.Foreground);
     private readonly SegmentedChoice projection = SegmentedChoicePreviews.CanvasMode();
     private readonly CheckBox gridVisible = new(), depthPriorityOcclusion = new(), gridSizeLock = new();
-    private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true) { Unit = L.Get("Numeric.Unit.Column") },
-        rows = new(1, CanvasCalibration.MaximumGridCount, integerOnly: true) { Unit = L.Get("Numeric.Unit.Row") },
-        width = new(double.Epsilon, 64, sliderMinimum: 1, sliderMaximum: 20, step: .5) { Unit = "px" };
+    private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, sliderMaximum: 32, integerOnly: true) { Unit = L.Get("Numeric.Unit.Column") },
+        rows = new(1, CanvasCalibration.MaximumGridCount, sliderMaximum: 32, integerOnly: true) { Unit = L.Get("Numeric.Unit.Row") },
+        width = new(double.Epsilon, 64, sliderMinimum: .5, sliderMaximum: 8, step: .5) { Unit = "px" };
     private readonly NumericValueField gridSize = new(CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize,
         sliderMinimum: 1, sliderMaximum: 400, step: 1) { Unit = "px" };
     private readonly NumericValueField guideOpacity = new(0, 100, integerOnly: true) { Unit = "%" };
@@ -51,6 +51,8 @@ internal sealed class CanvasSettingsWindow : Window
     public event Action<uint>? BackgroundChanged, GridColorChanged;
     internal Func<bool>? BeginColorGesture { get; set; }
     internal event Action<bool>? ColorGestureCompleted;
+    internal Func<bool>? BeginNumericGesture { get; set; }
+    internal event Action<bool>? NumericGestureCompleted;
     public event Action<ColorField>? EyedropperRequested;
     public event Action<bool>? ProjectionChanged, GridVisibilityChanged;
     public event Action<bool>? DepthPriorityOcclusionChanged;
@@ -212,7 +214,7 @@ internal sealed class CanvasSettingsWindow : Window
         {
             if (refreshing || current.Projection.Enabled) return;
             if (gridSize.TryGetValue(out double value))
-            { if (value != (current.Grid.FlatCellSize ?? current.Projection.GridCellSize)) GridSizeChanged?.Invoke(value); }
+            { if (gridSize.IsInteracting || value != (current.Grid.FlatCellSize ?? current.Projection.GridCellSize)) GridSizeChanged?.Invoke(value); }
             else RefreshGridSize(current.Grid.FlatCellSize ?? current.Projection.GridCellSize);
         }
         CommitOnExit(gridSize.Input, CommitGridSize);
@@ -221,13 +223,21 @@ internal sealed class CanvasSettingsWindow : Window
         {
             if (refreshing) return;
             if (width.TryGetValue(out double value))
-            { if (value != current.Grid.Width) GridWidthChanged?.Invoke(value); }
+            { if (width.IsInteracting || value != current.Grid.Width) GridWidthChanged?.Invoke(value); }
             else RefreshWidth(current.Grid.Width);
         }
         CommitOnExit(width.Input, CommitWidth);
         width.SliderValueCommitted += () => { if (!refreshing) CommitWidth(); };
         CommitOnExit(guideOpacity.Input, CommitGuideOpacity);
         guideOpacity.SliderValueCommitted += CommitGuideOpacity;
+        foreach (var (field, publish) in new (NumericValueField, Action)[]
+        { (columns, CommitCounts), (rows, CommitCounts), (gridSize, CommitGridSize), (width, CommitWidth) })
+        {
+            field.CanBeginGesture = () => BeginNumericGesture?.Invoke() != false;
+            field.ValueChanged += _ => { if (field.IsInteracting) publish(); };
+            field.GestureCompleted += commit => NumericGestureCompleted?.Invoke(commit);
+        }
+        guideOpacity.ValueChanged += _ => { if (guideOpacity.IsInteracting) CommitGuideOpacity(); };
         Closing += (_, e) => { if (disposing) return; e.Cancel = true; ResetPin(); SessionWindowCoordinator.Hide(this); Dismissed?.Invoke(); };
         ToolOptionsKeyboardRoute.Attach(this, () =>
         {
@@ -250,6 +260,16 @@ internal sealed class CanvasSettingsWindow : Window
         current = settings.Clone(); pendingDisplayedSettings = settings; refreshPending = true;
         if (IsVisible) PrepareForShow();
         else presets.Refresh(current);
+    }
+    internal void RefreshAfterNumericGesture(CanvasSettings settings)
+    {
+        Refresh(settings);
+        // The completed drag must follow the owning document even if its rail
+        // keeps keyboard focus, or an external undo invalidated the gesture.
+        columns.SetModelValue(settings.Projection.Columns);
+        rows.SetModelValue(settings.Projection.Rows);
+        gridSize.SetModelValue(settings.Grid.FlatCellSize ?? settings.Projection.GridCellSize);
+        width.SetModelValue(settings.Grid.Width);
     }
     internal void PrepareForShow()
     {
@@ -391,18 +411,16 @@ internal sealed class CanvasSettingsWindow : Window
     private void RefreshGridSize(double value)
     {
         gridSize.SetModelValue(value);
-        gridSize.Input.Text = value.ToString("G", System.Globalization.CultureInfo.CurrentCulture);
     }
     private void RefreshWidth(double value)
     {
         width.Value = value;
-        if (value < .001) width.Input.Text = value.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
     }
     private void CommitCounts()
     {
         if (refreshing || !current.Projection.Enabled || current.Projection.LockedGridCellSize.HasValue) return;
         if (columns.TryGetValue(out double c) && rows.TryGetValue(out double r))
-        { if (c != current.Projection.Columns || r != current.Projection.Rows) GridCountsChanged?.Invoke((int)c, (int)r); }
+        { if (columns.IsInteracting || rows.IsInteracting || c != current.Projection.Columns || r != current.Projection.Rows) GridCountsChanged?.Invoke((int)c, (int)r); }
         else { columns.Value = current.Projection.Columns; rows.Value = current.Projection.Rows; }
     }
     private static void RefreshLockedCount(TextBox field, double value)

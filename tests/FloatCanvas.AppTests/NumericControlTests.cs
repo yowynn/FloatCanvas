@@ -25,6 +25,8 @@ internal static class NumericControlTests
             AppTheme.Apply("light");
             PropertyVisualTests.Run(check);
             FieldGestures(check);
+            Precision(check);
+            ThumbPress(check);
             InspectorGestures(check);
             ToolGestures(root, check);
             AspectRatios(root, check);
@@ -124,6 +126,58 @@ internal static class NumericControlTests
         inspector.CompletePendingEdit(); session.SetSelection([other.Id]); inspector.PrepareForShow();
         check("selection transfer cancels preview and prepares the newly selected layer", !field.IsInteracting && !session.IsTransactionActive && session.Selection.SetEquals([other.Id]) && JsonSerializer.Serialize(session.Document) == before);
         check("inspector numeric checks remain detached", new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0 && !inspector.IsVisible);
+    }
+
+    private static void Precision(Action<string, bool> check)
+    {
+        const double precise = .37799999999999995;
+        var field = new NumericValueField(-1000, 1000);
+        field.SetModelValue(precise);
+        check("model refresh formats numeric text to at most three decimal places", field.Input.Text == .378.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture));
+        check("formatting leaves the original model value available without a lossy roundtrip", field.Value == precise && field.TryGetValue(out var exact) && exact == precise);
+        field.Input.Text = "12.123456789";
+        check("explicit typed precision remains available to the model", field.TryGetValue(out exact) && exact == 12.123456789);
+        field.SetModelValue(.000000003);
+        check("small computed numeric values do not expose floating point tails or exponents", field.Input.Text == "0" && field.TryGetValue(out exact) && exact == .000000003);
+        field.SetModelValue(-.000000003);
+        check("rounded negative values display zero without a misleading negative sign", field.Input.Text == "0" && field.TryGetValue(out exact) && exact == -.000000003);
+        var session = new EditorSession(); session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60 });
+        var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
+        var width = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields")["W"];
+        Invoke(inspector, "BeginScrub", "W"); Invoke(inspector, "UpdateScrub", "W", .37799999999999995);
+        check("custom layer geometry dragging follows the same three decimal precision as the rail", Math.Abs(session.Document.Elements[0].Width - 100.378) < 1e-9 && width.Input.Text == 100.378.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture));
+        Invoke(inspector, "FinishScrub", false);
+        check("cancelling rounded geometry dragging restores the exact original layer", session.Document.Elements[0].Width == 100 && !session.IsTransactionActive);
+    }
+
+    private static void ThumbPress(Action<string, bool> check)
+    {
+        var field = new NumericValueField(0, 100) { Value = 50 };
+        Measure(field, 240, 34);
+        var track = (System.Windows.Controls.Primitives.Track)field.Slider.Template.FindName("PART_Track", field.Slider);
+        var thumb = track.Thumb;
+        var edge = thumb.TranslatePoint(new(thumb.ActualWidth - 1, thumb.ActualHeight / 2), field.Slider);
+        int commits = 0; field.SliderValueCommitted += () => commits++;
+        field.BeginGesture(); field.StartRail(edge);
+        check("pressing off center inside the actual slider thumb preserves its value", field.Value == 50);
+        field.UpdateRail(edge.X); field.EndGesture(true);
+        check("a thumb click and release leaves the value and history unchanged", field.Value == 50 && commits == 0);
+        field.BeginGesture(); field.StartRail(edge); field.UpdateRail(edge.X + 10);
+        check("dragging from the thumb edge preserves the pointer offset", Math.Abs(field.Value - (50 + Math.Round(1000 / (field.Slider.ActualWidth - 8), 3))) < .001);
+        field.CancelGesture();
+        field.BeginGesture(); field.StartRail(new(field.Slider.ActualWidth - 4, edge.Y));
+        check("a track press outside the thumb immediately previews the clicked position", field.Value == 100);
+        field.EndGesture(true);
+        foreach (double exact in new[] { 50.123456789, 500d })
+        {
+            var compatible = new NumericValueField(0, 1000, sliderMaximum: 100) { Value = exact };
+            Measure(compatible, 240, 34);
+            var compatibleTrack = (System.Windows.Controls.Primitives.Track)compatible.Slider.Template.FindName("PART_Track", compatible.Slider);
+            var compatibleThumb = compatibleTrack.Thumb;
+            var point = compatibleThumb.TranslatePoint(new(compatibleThumb.ActualWidth - 1, compatibleThumb.ActualHeight / 2), compatible.Slider);
+            compatible.BeginGesture(); compatible.StartRail(point); compatible.UpdateRail(point.X); compatible.EndGesture(true);
+            check("a stationary thumb press preserves exact model precision and out-of-rail values " + exact, compatible.Value == exact);
+        }
     }
 
     private static void ToolGestures(string root, Action<string, bool> check)

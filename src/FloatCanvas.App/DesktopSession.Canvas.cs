@@ -14,6 +14,7 @@ internal sealed partial class DesktopSession
     private readonly CanvasGridScaleController _canvasGridScale = new();
     private CanvasSettingsWindow? _canvasSettingsWindow;
     private CanvasColorEdit? _canvasColorEdit;
+    private CanvasColorEdit? _canvasNumericEdit;
     private EditorSession? _calibrationSession;
     private bool _canvasSafetyPromptOpen;
     private bool _synchronizingCanvasTool;
@@ -61,6 +62,15 @@ internal sealed partial class DesktopSession
                 () => { SynchronizeCanvasTool(); RequestRender(); });
             window.BeginColorGesture = _canvasColorEdit.Begin;
             window.ColorGestureCompleted += _canvasColorEdit.Complete;
+            _canvasNumericEdit = new(() => Active, () => !DocumentOperationBusy && _host.IsEditing,
+                () => { _canvasGridScale.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel(); CancelSnapshotCapture("CanvasSettingsChanged"); CancelLivePreparation(); },
+                () => { SynchronizeCanvasTool(); RequestRender(); });
+            window.BeginNumericGesture = _canvasNumericEdit.Begin;
+            window.NumericGestureCompleted += commit =>
+            {
+                _canvasNumericEdit.Complete(commit);
+                window.RefreshAfterNumericGesture(Active.Document.Canvas);
+            };
             void ColorChange(Action<CanvasSettings> update)
             {
                 if (!_canvasColorEdit.Preview(update)) ChangeCanvas(update);
@@ -211,6 +221,11 @@ internal sealed partial class DesktopSession
     private void ChangeCanvas(Action<CanvasSettings> change)
     {
         if (DocumentOperationBusy || !_host.IsEditing) return;
+        if (_canvasNumericEdit is { IsActive: true })
+        {
+            _canvasNumericEdit.Preview(change);
+            return;
+        }
         _canvasGridScale.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel();
         CancelSnapshotCapture("CanvasSettingsChanged"); CancelLivePreparation();
         Active.ExecuteSettings(L.Get("Canvas.Title"), document => change(document.Canvas));
