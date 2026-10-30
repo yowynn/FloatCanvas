@@ -38,16 +38,28 @@ function Invoke-Installer([string]$Executable, [string[]]$Arguments, [switch]$Ex
         $start.ArgumentList.Add($argument)
     }
     foreach ($key in $ChildEnvironment.Keys) { $start.Environment[$key] = [string]$ChildEnvironment[$key] }
+    $logArgument = $start.ArgumentList | Where-Object { $_.StartsWith('/LOG=', [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    $logPath = if ($logArgument) { $logArgument.Substring(5) } else { $null }
+    $caseName = if ($logPath) { [IO.Path]::GetFileNameWithoutExtension($logPath) } else { [IO.Path]::GetFileName($Executable) }
+    Write-Host "Installer smoke [$Language/$caseName]: starting (expect failure: $ExpectFailure)."
     $process = [Diagnostics.Process]::Start($start)
     try {
         if (-not $process.WaitForExit(120000)) {
             $process.Kill($true)
-            throw "Installer test timed out: $Executable"
+            throw "Installer test timed out [$caseName]: $Executable"
         }
+        Write-Host "Installer smoke [$Language/$caseName]: exit $($process.ExitCode)."
         if ($ExpectFailure) {
-            if ($process.ExitCode -eq 0) { throw "Installer accepted an unsafe operation: $Executable" }
+            if ($process.ExitCode -eq 0) { throw "Installer accepted an unsafe operation [$caseName]: $Executable" }
         }
-        elseif ($process.ExitCode -ne 0) { throw "Installer test exited with code $($process.ExitCode): $Executable" }
+        elseif ($process.ExitCode -ne 0) { throw "Installer test exited with code $($process.ExitCode) [$caseName]: $Executable" }
+    }
+    catch {
+        if ($logPath -and (Test-Path -LiteralPath $logPath)) {
+            Write-Host "Installer smoke [$Language/$caseName] log tail:"
+            Get-Content -LiteralPath $logPath -Tail 80 -ErrorAction Continue | ForEach-Object { Write-Host $_ }
+        }
+        throw
     }
     finally { $process.Dispose() }
 }
@@ -67,6 +79,7 @@ function Assert-Payload {
     }
 }
 $uninstaller = Join-Path $install 'unins000.exe'
+$primaryError = $null
 try {
     $arguments = @('/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', '/TASKS=""', "/DIR=`"$install`"")
     $missingRuntime = Join-Path $run 'missing-runtime'
@@ -104,7 +117,7 @@ try {
     try {
         [IO.File]::WriteAllText($pointer, 'Unfinished update fixture.')
         Invoke-Installer $SetupPath ($arguments + "/LOG=`"$(Join-Path $run 'reject-pending-update.log')`"") -ExpectFailure
-        Invoke-Installer $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -ExpectFailure
+        Invoke-Installer $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$(Join-Path $run 'reject-pending-uninstall.log')`"") -ExpectFailure
     }
     finally { Remove-Item -LiteralPath $pointer }
     $installedManifest = Join-Path $install 'PACKAGE-INFO.json'
@@ -176,11 +189,16 @@ try {
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $run 'result.json') -Encoding UTF8
     Write-Host "PASS installer smoke: $(Join-Path $run 'result.json')"
 }
+catch { $primaryError = $_; throw }
 finally {
     if (Test-Path -LiteralPath $uninstallKey) {
         $location = (Get-ItemProperty -LiteralPath $uninstallKey).InstallLocation
         if ($location.TrimEnd('\') -ieq $install -and (Test-Path -LiteralPath $uninstaller)) {
-            Invoke-Installer $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$(Join-Path $run 'cleanup.log')`"")
+            try { Invoke-Installer $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$(Join-Path $run 'cleanup.log')`"") }
+            catch {
+                if ($null -eq $primaryError) { throw }
+                Write-Warning "Installer smoke cleanup also failed; preserving the original failure: $($_.Exception.Message)"
+            }
         }
     }
 }
