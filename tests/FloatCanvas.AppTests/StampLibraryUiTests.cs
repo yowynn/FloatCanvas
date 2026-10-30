@@ -167,15 +167,45 @@ internal static class StampLibraryUiTests
             Click(Field<Dictionary<int, Controls.Button>>(window, "slotButtons")[5]);
             Tile(merged).RaiseEvent(new Input.MouseButtonEventArgs(Input.Mouse.PrimaryDevice, Environment.TickCount, Input.MouseButton.Left) { RoutedEvent = Input.Mouse.PreviewMouseUpEvent });
             check(locale + " a tile release without its own matching press cannot pin or use a stamp", library.Pins[5] is null && !Field<bool>(window, "busy") && uses.Count == 0);
+            var pinsBeforeFailedAssign = library.Pins.ToArray();
+            Invoke(window, "ActivateTile", Guid.NewGuid());
+            PumpUntil(() => !Field<bool>(window, "busy"));
+            check(locale + " a failed stamp assignment preserves the selected destination for retry",
+                Field<int?>(window, "selectedSlot") == 5 && library.Pins.SequenceEqual(pinsBeforeFailedAssign));
+            string pinCatalog = Path.Combine(library.DirectoryPath, "library.json");
+            byte[] pinCatalogBeforeFailure = File.ReadAllBytes(pinCatalog);
+            var pinCatalogAttributes = File.GetAttributes(pinCatalog);
+            try
+            {
+                File.SetAttributes(pinCatalog, pinCatalogAttributes | FileAttributes.ReadOnly);
+                Invoke(window, "ActivateTile", merged);
+                PumpUntil(() => !Field<bool>(window, "busy"));
+                check(locale + " a catalog write failure keeps the destination selected and preserves pins for retry",
+                    Field<int?>(window, "selectedSlot") == 5 && library.Pins.SequenceEqual(pinsBeforeFailedAssign) &&
+                    File.ReadAllBytes(pinCatalog).SequenceEqual(pinCatalogBeforeFailure));
+            }
+            finally { File.SetAttributes(pinCatalog, pinCatalogAttributes); }
             Invoke(window, "ActivateTile", merged);
             PumpUntil(() => !Field<bool>(window, "busy") && library.Pins[5] == merged);
-            check(locale + " choosing a shelf slot then a stamp pins it without invoking use", Field<int?>(window, "selectedSlot") == 5 && uses.Count == 0 && library.Pins[9] == merged);
+            check(locale + " choosing a shelf slot then a stamp pins it once and clears the active destination",
+                Field<int?>(window, "selectedSlot") is null && uses.Count == 0 && library.Pins[9] == merged &&
+                Field<Dictionary<int, Controls.Button>>(window, "slotButtons").Values.Cast<SelectionTileButton>().All(button => !button.Selected));
+            Invoke(window, "ActivateTile", editable);
+            check(locale + " the next ordinary stamp click cannot replace a slot without choosing its destination again",
+                !Field<bool>(window, "busy") && library.Pins[5] == merged && uses.Count == 0);
+            Click(Field<Dictionary<int, Controls.Button>>(window, "slotButtons")[5]);
+            Invoke(window, "ActivateTile", merged);
+            PumpUntil(() => !Field<bool>(window, "busy"));
+            check(locale + " assigning the same stamp again also completes the one-shot destination",
+                Field<int?>(window, "selectedSlot") is null && library.Pins[5] == merged);
             var badge = ((Controls.Grid)((Controls.StackPanel)Tile(merged).Content).Children[0]).Children.OfType<Controls.Border>().Single(item => Equals(item.Tag, "Stamp.PinBadge"));
             check(locale + " duplicate pins show a compact vector pin with the first toolbar-order slot number", badge.Child is Controls.StackPanel pinBadge &&
                 pinBadge.Children.Count == 2 && pinBadge.Children[0] is Controls.Viewbox { Width: 12, Height: 12 } && pinBadge.Children[1] is Controls.TextBlock { Text: "6" });
             Click(Menu(merged, "Stamp.Unpin")); PumpUntil(() => !Field<bool>(window, "busy") && library.Pins[5] is null);
             check(locale + " repeated unpin follows toolbar order one through nine then zero and retains other stamps", library.Pins[9] == merged && library.Pins[0] == editable);
+            Click(Field<Dictionary<int, Controls.Button>>(window, "slotButtons")[5]);
             Invoke(window, "ActivateTile", merged); PumpUntil(() => !Field<bool>(window, "busy") && library.Pins[5] == merged);
+            Click(Field<Dictionary<int, Controls.Button>>(window, "slotButtons")[5]);
             Click(Field<Dictionary<int, Controls.Button>>(window, "slotClearButtons")[5]); PumpUntil(() => !Field<bool>(window, "busy") && library.Pins[5] is null);
             check(locale + " the slot corner X clears only its pin without changing slot selection or using the stamp", library.Items.Any(item => item.Id == merged) && library.Pins[0] == editable &&
                 library.Pins[9] == merged && Field<int?>(window, "selectedSlot") == 5 && uses.Count == 0);

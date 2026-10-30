@@ -96,6 +96,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var empty = new Controls.StackPanel(); empty.Children.Add(emptyText); empty.Children.Add(emptyAction);
         Controls.DockPanel.SetDock(empty, Controls.Dock.Top); body.Children.Add(empty);
         emptyAction.Click += (_, _) => { if (search.Text.Length > 0) search.Text = ""; else { CommandKey?.Invoke(0x56); Hide(); } };
+        grid.SetResourceReference(StyleProperty, typeof(Controls.ListBox));
         grid.Padding = new(ListPadding); grid.BorderThickness = new(ListBorder);
         grid.ItemsPanel = new Controls.ItemsPanelTemplate(new Wpf.FrameworkElementFactory(typeof(VirtualizingTilePanel)));
         Controls.ScrollViewer.SetCanContentScroll(grid, true); Controls.VirtualizingPanel.SetIsVirtualizing(grid, true);
@@ -314,7 +315,11 @@ internal sealed class StampLibraryWindow : Wpf.Window
 
     private void ActivateTile(Guid id)
     {
-        if (selectedSlot is { } index) RunAsync(() => library.PinAsync(index, id));
+        if (selectedSlot is { } index) RunAsync(async () =>
+        {
+            await library.PinAsync(index, id);
+            if (selectedSlot == index) { selectedSlot = null; RefreshSlotSelection(); }
+        });
     }
 
     private Task UnpinFirstAsync(Guid id)

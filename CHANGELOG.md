@@ -5,6 +5,9 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+- 修复印章库在深色主题下仍显示白色列表背景的问题。选中快捷槽后点击印章仅设置一次，成功后自动取消槽位选择；失败时保留选择以便重试。
+- Fix the stamp gallery retaining a white background in dark mode. Selecting a slot and clicking a stamp now assigns it once and clears the slot selection on success; failures keep the selection for retry.
+
 - **颜色编辑。** 两级当前颜色控件均提供复制／粘贴菜单，支持 `#RRGGBB`、`#AARRGGBB`、`rgb()`、`rgba()`、`hsl()`、`hsla()`；不带 Alpha 的颜色粘贴时保留当前不透明度，无效文本禁用粘贴。左键二级预览复制 `#AARRGGBB`，复制成功短暂显示“已复制”，一级菜单独立提供“置为透明”。
 - **Color editing.** Both current-color controls offer Copy/Paste menus for `#RRGGBB`, `#AARRGGBB`, `rgb()`, `rgba()`, `hsl()` and `hsla()`. Pasting without Alpha preserves opacity; invalid text disables Paste. Left-click the secondary preview to copy `#AARRGGBB`; successful copies briefly show Copied. The primary menu has a separate Set to transparent action.
 

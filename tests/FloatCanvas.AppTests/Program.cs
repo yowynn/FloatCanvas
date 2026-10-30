@@ -253,6 +253,7 @@ internal static class Program
             if (args.Contains("--corner-client-only")) { CornerClientTests.Run(Assert); return 0; }
             if (args.Contains("--lcd-only")) { LcdPaletteTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-library-ui-only")) { StampLibraryUiTests.Run(Assert); return 0; }
+            if (args.Contains("--stamp-library-theme-only")) { StampLibraryThemeTests.Run(Assert, args.SkipWhile(a => a != "--stamp-library-theme-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--inspector-only")) { InspectorTests.Run(Assert); return 0; }
             if (args.Contains("--inspector-hidden-only")) { InspectorVisibilityLifecycleTests.Run(Assert); return 0; }
             if (args.Contains("--inspector-behavior-only")) { InspectorScrubTests.Run(Assert); InspectorLiveTests.Run(Assert); InspectorColorTests.Run(Assert); BillboardInspectorTests.Run(Assert); return 0; }
