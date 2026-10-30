@@ -27,6 +27,8 @@ internal static class Program
             if (args.Contains("--numeric-rails-only")) { NumericRailRangeTests.Run(Assert); return 0; }
             if (args.Contains("--numeric-pointer-regression-only")) { NumericPointerRegressionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-numeric-preview-only")) { CanvasNumericPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--toolbar-opacity-only")) { ToolbarOpacitySliderTests.Run(Assert, args.SkipWhile(a => a != "--toolbar-opacity-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--toolbar-opacity-pointer-only")) { ToolbarOpacitySliderTests.RunPointer(Assert); return 0; }
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             if (args is ["--numeric-pointer-preview", var pointerOutput]) { NumericPointerFixture.Preview(pointerOutput); return 0; }
@@ -34,6 +36,7 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--toolbar-opacity-gesture-only")) { ToolbarOpacityGestureTests.Run(Assert); return 0; }
             if (args.Contains("--color-robustness-only")) { ColorRobustnessTests.Run(Assert); return 0; }
             if (args.Contains("--window-robustness-only")) { WindowRobustnessTests.RunNative(Assert); return 0; }
             if (args.Contains("--native-presentation-lifecycle-only")) { NativePresentationLifecycleTests.Run(Assert); return 0; }
@@ -380,6 +383,7 @@ internal static class Program
             ObjectClipboardTests.Run(Assert);
             LauncherGestureStateTests.Run(Assert);
             ToolbarInteractionTests.Run(Assert);
+            ToolbarOpacitySliderTests.Run(Assert);
             CompletePresetContractTests.Run(Assert);
             ToolPresetAndColorTests.Run(Assert);
             PresetFallbackTests.Run(Assert);

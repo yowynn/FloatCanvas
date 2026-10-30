@@ -442,14 +442,28 @@ internal sealed partial class DesktopSession
     {var separator=new Controls.Border {Width=1,Margin=new Thickness(4,4,4,4)};separator.SetResourceReference(Controls.Border.BackgroundProperty,"CanvasBorder");return separator;}
     private Controls.Slider CreateToolbarOpacitySlider()
     {
-        var opacity=new Controls.Slider {Minimum=0,Maximum=1,Value=1,Width=56,Height=26,Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=L.Get("Feedback3.Toolbar.Opacity")+" · Ctrl+PageUp / Ctrl+PageDown"};
+        var opacity=new ToolbarOpacitySlider {Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=L.Get("Feedback3.Toolbar.Opacity")+" · Ctrl+PageUp / Ctrl+PageDown"};
         opacity.FocusVisualStyle=null; Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(opacity,false);
         System.Windows.Automation.AutomationProperties.SetName(opacity,L.Get("Feedback3.Toolbar.Opacity"));
-        opacity.PreviewMouseLeftButtonDown+=(_,_)=>{if(!DocumentOperationBusy){_editor.Cancel();Active.BeginTransaction(L.Get("History.LayerOpacity"));}};
+        void RefreshOpacityTooltip() => opacity.ToolTip = L.Get("Feedback3.Toolbar.Opacity") + $" · {opacity.Value * 100:0.#}% · Ctrl+PageUp / Ctrl+PageDown";
+        RefreshOpacityTooltip();
+        EditorSession? pointerSession=null; long pointerTransaction=0;
+        bool OwnsPointerTransaction()=>pointerSession is {IsTransactionActive:true}&&ReferenceEquals(pointerSession,Active)&&pointerSession.TransactionId==pointerTransaction;
+        opacity.PointerGestureStarted+=()=>{pointerSession=null;if(!DocumentOperationBusy){_editor.Cancel();pointerSession=Active;pointerSession.BeginTransaction(L.Get("History.LayerOpacity"));pointerTransaction=pointerSession.TransactionId;}};
         opacity.ValueChanged+=(_,_)=>
-        {if(_syncingControls||DocumentOperationBusy)return;if(Active.IsTransactionActive){Active.Document.LayerOpacity=opacity.Value;Active.NotifySettingsChanged();}else Active.ExecuteSettings(L.Get("History.LayerOpacity"),document=>document.LayerOpacity=opacity.Value);};
-        opacity.PreviewMouseLeftButtonUp+=(_,_)=>{if(Active.IsTransactionActive)Active.CommitSettings();};
-        opacity.LostMouseCapture+=(_,_)=>{if(Active.IsTransactionActive)Active.CommitSettings();};return opacity;
+        {
+            RefreshOpacityTooltip();if(_syncingControls||DocumentOperationBusy)return;
+            if(opacity.IsPointerInteracting&&!OwnsPointerTransaction())
+            {
+                // Escape or a document command can end this gesture's transaction.
+                // Late pointer input must not turn the cancelled preview into new edits.
+                opacity.EndPointerGesture();
+                _syncingControls=true;try{opacity.Value=Active.Document.LayerOpacity;}finally{_syncingControls=false;}
+                return;
+            }
+            if(Active.IsTransactionActive){Active.Document.LayerOpacity=opacity.Value;Active.NotifySettingsChanged();}else Active.ExecuteSettings(L.Get("History.LayerOpacity"),document=>document.LayerOpacity=opacity.Value);
+        };
+        opacity.PointerGestureCompleted+=()=>{if(OwnsPointerTransaction())pointerSession!.CommitSettings();pointerSession=null;};return opacity;
     }
     private static Controls.Border Surface(UIElement child, double radius, Thickness padding)
     {
