@@ -21,7 +21,10 @@ internal sealed class AppUpdateWindow : Window
     private readonly Func<PreparedUpdate, Task> applyUpdate;
     private readonly Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate;
     private readonly Func<PreparedInstallerUpdate, CancellationToken, Action, Task>? applyInstallerUpdate;
-    private readonly bool canInstall;
+    private bool canInstall;
+    private readonly Func<string?>? checkInstallDirectory;
+    private string? installDirectoryError;
+    private readonly TextBlock installIssue = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 12, 0, 0) };
     private readonly Action<bool>? savePreviewPreference;
     private readonly Action<Uri> openLink;
     private bool restoringPreviewPreference;
@@ -57,9 +60,11 @@ internal sealed class AppUpdateWindow : Window
         Func<PreparedUpdate, Task> applyUpdate, bool canInstall, string? cacheDirectory = null, bool autoCheck = true,
         bool includePrereleases = false, Action<bool>? savePreviewPreference = null,
         Func<PreparedUpdate, CancellationToken, Action, Task>? prepareAndApplyUpdate = null, Action<Uri>? openLink = null,
-        Func<PreparedInstallerUpdate, CancellationToken, Action, Task>? applyInstallerUpdate = null)
+        Func<PreparedInstallerUpdate, CancellationToken, Action, Task>? applyInstallerUpdate = null,
+        Func<string?>? checkInstallDirectory = null)
     {
         this.currentVersion = currentVersion; this.client = client; this.applyUpdate = applyUpdate; this.canInstall = canInstall;
+        this.checkInstallDirectory = checkInstallDirectory;
         this.prepareAndApplyUpdate = prepareAndApplyUpdate;
         this.applyInstallerUpdate = applyInstallerUpdate;
         this.savePreviewPreference = savePreviewPreference;
@@ -81,6 +86,7 @@ internal sealed class AppUpdateWindow : Window
         AutomationProperties.SetName(NotesText, L.Get("Updates.ReleaseNotes"));
         AutomationProperties.SetName(DownloadProgress, L.Get("Updates.Downloading"));
         Content = CreateContent(); AppWindowChrome.Apply(this);
+        RefreshInstallDirectory();
         CheckButton.Click += (_, _) => _ = CheckAsync();
         InstallButton.Click += (_, _) => _ = DownloadUpdateAsync();
         CancelButton.Click += (_, _) => operation?.Cancel();
@@ -127,11 +133,8 @@ internal sealed class AppUpdateWindow : Window
         notesHeading.Children.Add(new TextBlock { Text = L.Get("Updates.ReleaseNotes"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
         Grid.SetColumn(ChangelogButton, 1); notesHeading.Children.Add(ChangelogButton); Add(notesHeading, 4);
         Add(NotesText, 5); Add(DownloadProgress, 6);
-        if (!canInstall)
-        {
-            var development = Muted(L.Get("Updates.Development")); development.TextWrapping = TextWrapping.Wrap; development.Margin = new(0, 12, 0, 0);
-            Add(development, 7);
-        }
+        installIssue.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
+        Add(installIssue, 7);
         var actions = new Grid { Margin = new(0, 16, 0, 0) };
         actions.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -163,6 +166,7 @@ internal sealed class AppUpdateWindow : Window
     internal async Task CheckAsync()
     {
         if (closed || IsBusy) return;
+        RefreshInstallDirectory();
         using var cancellation = BeginOperation(false);
         available = null; UpdateDisplay("version", () => LatestVersionText.Text = "—");
         UpdateDisplay("notes", () => NotesText.Text = L.Get("Updates.NoNotes"));
@@ -202,7 +206,9 @@ internal sealed class AppUpdateWindow : Window
 
     internal async Task DownloadUpdateAsync()
     {
-        if (closed || IsBusy || !canInstall || available is null) return;
+        if (closed || IsBusy) return;
+        RefreshInstallDirectory();
+        if (!canInstall || available is null) return;
         var update = available;
         if (applyInstallerUpdate is not null && !update.IsInstaller) { OpenProjectLink(update.ReleaseUrl); return; }
         using var cancellation = BeginOperation(true);
@@ -249,6 +255,21 @@ internal sealed class AppUpdateWindow : Window
         operation = null;
         if (closed) return;
         UpdateDisplay("controls", PaintOperationControls);
+    }
+
+    private void RefreshInstallDirectory()
+    {
+        if (checkInstallDirectory is not null)
+        {
+            installDirectoryError = checkInstallDirectory();
+            canInstall = installDirectoryError is null;
+        }
+        UpdateDisplay("install-directory", () =>
+        {
+            installIssue.Text = installDirectoryError is null ? L.Get("Updates.Development") : L.Format("Updates.InstallBlockedDetails", installDirectoryError);
+            installIssue.Visibility = canInstall ? Visibility.Collapsed : Visibility.Visible;
+            PaintOperationControls();
+        });
     }
 
     private void PaintOperationControls()

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
@@ -19,11 +20,23 @@ internal static class AppUpdateInstaller
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
     private static readonly string[] Required = { "FloatCanvas.exe", "FloatCanvas.dll", "FloatCanvas.Core.dll", "FloatCanvas.Localization.dll", "FloatCanvas.Rendering.dll", "FloatCanvas.Storage.dll", "FloatCanvas.Windows.dll", "FloatCanvas.deps.json", "FloatCanvas.runtimeconfig.json", "SkiaSharp.dll", "SkiaSharp.HarfBuzz.dll", "HarfBuzzSharp.dll", "libSkiaSharp.dll", "libHarfBuzzSharp.dll", ManifestName };
 
-    internal static bool CanUpdateDirectory(string installDir)
+    internal static bool CanUpdateDirectory(string installDir) => GetUpdateDirectoryError(installDir) is null;
+
+    internal static string? GetUpdateDirectoryError(string installDir)
     {
-        try { var root = Root(installDir); if (InstallerRegistration.Scope(root) == InstallationScope.AllUsers) return false; ReadManifest(root); ProbeWritable(root); return true; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or JsonException or InvalidOperationException) { return false; }
+        try
+        {
+            var root = Root(installDir);
+            if (InstallerRegistration.Scope(root) == InstallationScope.AllUsers) return L.Get("Updates.RequiresSetup");
+            ReadManifest(root); ProbeWritable(root); return null;
+        }
+        catch (IncompletePackageFileException ex) { return L.Format("Updates.IncompletePackage", ex.RelativeFile); }
+        catch (UnauthorizedAccessException) { return L.Get("Updates.DirectoryAccessDenied"); }
+        catch (Exception ex) when (ex is IOException or ArgumentException or JsonException or InvalidOperationException) { return ex.Message; }
     }
+
+    private sealed class IncompletePackageFileException(string relativeFile) : IOException("The portable package is incomplete: " + relativeFile)
+    { internal string RelativeFile { get; } = relativeFile; }
 
     internal static string Prepare(PreparedUpdate update, string installDir, string profileDir, string[] restartArgs, CancellationToken cancellationToken = default)
     {
@@ -438,16 +451,21 @@ internal static class AppUpdateInstaller
     internal static void AcknowledgeStartup()
     {
         string? path = Environment.GetEnvironmentVariable(StartupPlanEnvironment);
+        string? launcherId = Environment.GetEnvironmentVariable(UpdateStartupProcess.LauncherIdEnvironment);
+        string? launcherCreated = Environment.GetEnvironmentVariable(UpdateStartupProcess.LauncherCreationEnvironment);
         Environment.SetEnvironmentVariable(StartupPlanEnvironment, null);
+        Environment.SetEnvironmentVariable(UpdateStartupProcess.LauncherIdEnvironment, null);
+        Environment.SetEnvironmentVariable(UpdateStartupProcess.LauncherCreationEnvironment, null);
         if (string.IsNullOrEmpty(path)) return;
         try
         {
             var (plan, job) = ReadPlan(path);
             if (!Same(AppContext.BaseDirectory, plan.InstallDirectory)) return;
             using var current = Process.GetCurrentProcess();
-            WriteJson(Path.Combine(job, "started.json"), Identity(current));
+            using var launcher = UpdateStartupProcess.TryGetLauncher(plan.InstallDirectory, launcherId, launcherCreated);
+            WriteJson(Path.Combine(job, "started.json"), Identity(launcher ?? current));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or JsonException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or JsonException or System.ComponentModel.Win32Exception) { }
     }
 
     private static void Restart(InstallPlan plan, string job, InstallerHooks? hooks, Action? acknowledge = null)
@@ -541,7 +559,7 @@ internal static class AppUpdateInstaller
         foreach (string relative in manifest.Files)
         {
             string file = Child(directory, relative);
-            if (!File.Exists(file) || new FileInfo(file).Length == 0) throw new IOException("The portable package is incomplete: " + relative);
+            if (!File.Exists(file) || new FileInfo(file).Length == 0) throw new IncompletePackageFileException(relative);
         }
         return manifest;
     }

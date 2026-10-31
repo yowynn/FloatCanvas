@@ -27,7 +27,8 @@ internal sealed partial class DesktopSession
                 _settings.IncludePrereleaseUpdates = enabled;
                 try { _settings.Save(); }
                 catch { _settings.IncludePrereleaseUpdates = previous; throw; }
-            }, prepareAndApplyUpdate: ApplyUpdateAsync, applyInstallerUpdate: allUsers ? ApplyInstallerUpdateAsync : null);
+            }, prepareAndApplyUpdate: ApplyUpdateAsync, applyInstallerUpdate: allUsers ? ApplyInstallerUpdateAsync : null,
+            checkInstallDirectory: allUsers ? null : () => AppUpdateInstaller.GetUpdateDirectoryError(AppContext.BaseDirectory));
         _updatesWindow = window;
         ConfigureAppWindow(window, true, regular: true);
         window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -118,7 +119,7 @@ internal sealed partial class DesktopSession
         try
         {
             if (AppUpdateInstaller.ConsumeResult(ApplicationPaths.ProfileDirectory) is { Success: false } result)
-                AppDialog.Show(_welcomeWindow, L.Get("Updates.InstallFailed") + "\n" + result.Error,
+                AppDialog.Show(_welcomeWindow, L.Format("Updates.PreviousInstallFailed", result.Version) + "\n" + result.Error,
                     L.Get("Updates.Title"), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (IOException ex) { UpdateStatus(ex.Message); }

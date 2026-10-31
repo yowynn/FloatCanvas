@@ -12,6 +12,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (EnhancedKeyboardIsolationTests.TryRunChild(args, out int keyboardObserverCode)) return keyboardObserverCode;
+        if (UpdateStartupProcessTests.TryRunChild(args, out int startupCode)) return startupCode;
         if (args.FirstOrDefault() == "--update-fault-child")
             return args is [_, var planPath, var stage, var index] && int.TryParse(index, out int faultIndex)
                 ? UpdateProcessRecoveryTests.Child(planPath, stage, faultIndex) : 72;
@@ -223,6 +224,7 @@ internal static class Program
             if (args.Contains("--updates-recovery-only")) { UpdateRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--update-installer-only")) { UpdateInstallerTests.Run(Assert); return 0; }
             if (args.Contains("--update-window-only")) { AppUpdateWindowTests.Run(Assert); return 0; }
+            if (args.Contains("--update-startup-process-only")) { UpdateStartupProcessTests.Run(Assert); return 0; }
             if (args.Contains("--window-titles-only")) { WindowTitleTests.Run(Assert); return 0; }
             if (args.Contains("--panel-acceptance-only")) { PanelAcceptanceTests.Run(Assert); return 0; }
             if (args.Contains("--font-interaction-only")) { FontInteractionAcceptanceTests.Run(Assert); return 0; }
@@ -372,6 +374,7 @@ internal static class Program
             WelcomeSessionTests.Run(Assert);
             GitHubUpdateClientTests.Run(Assert);
             UpdateInstallerTests.Run(Assert);
+            UpdateStartupProcessTests.Run(Assert);
             UpdateCacheTests.Run(Assert);
             UpdateProcessRecoveryTests.Run(Assert);
             UpdateRecoveryTests.Run(Assert);

@@ -9,6 +9,7 @@
   "Updates.CheckFailed": {"zh":"暂时无法检查更新","en":"Couldn't check for updates"},
   "Updates.DownloadFailed": {"zh":"更新下载失败","en":"Couldn't download the update"},
   "Updates.InstallFailed": {"zh":"更新未完成，已保留或恢复原版本。","en":"Update did not complete. The previous version was retained or restored."},
+  "Updates.PreviousInstallFailed": {"zh":"上次更新到 v{0} 未完成，请查看错误详情。","en":"The previous update to v{0} did not complete. See the details below."},
   "Updates.ExitSaveFailed": {"zh":"无法保存当前画布，已取消更新。","en":"Unable to save the current canvas. The update was cancelled."},
   "Updates.ReleaseNotes": {"zh":"更新说明","en":"What's new"},
   "Updates.MoreLogs": {"zh":"查看更多日志","en":"View full changelog"},
@@ -21,7 +22,11 @@
   "Updates.Downloading": {"zh":"正在下载更新…","en":"Downloading the update…"},
   "Updates.DownloadProgress": {"zh":"正在下载更新 · {0}%","en":"Downloading the update · {0}%"},
   "Updates.Restarting": {"zh":"正在安装，完成后将自动重启…","en":"Installing. FloatCanvas will restart automatically…"},
-  "Updates.Development": {"zh":"当前运行位置不支持安装更新。请使用完整发行包，并放在当前用户可写的本地目录。","en":"Updates cannot be installed from this location. Use the complete published package in a local folder writable by your Windows account."},
+  "Updates.Development": {"zh":"无法安装更新。请确认程序文件完整，且当前账户可写入程序目录。修复后可重新检查。","en":"The update cannot be installed. Check that the package is complete and the application folder is writable, then check again."},
+  "Updates.InstallBlockedDetails": {"zh":"无法安装更新：{0}\n修复后请重新检查，或将完整发行包解压到新目录。","en":"The update cannot be installed: {0}\nFix the issue and check again, or extract the complete release into a new folder."},
+  "Updates.IncompletePackage": {"zh":"程序文件缺失或为空：{0}","en":"A package file is missing or empty: {0}"},
+  "Updates.DirectoryAccessDenied": {"zh":"当前账户无权访问或写入程序目录。","en":"Your Windows account cannot access or write to the application folder."},
+  "Updates.RequiresSetup": {"zh":"所有用户安装需要通过安装向导更新。","en":"All-users installations must be updated through Setup."},
   "Updates.Repository": {"zh":"GitHub · yowynn/FloatCanvas ↗","en":"GitHub · yowynn/FloatCanvas ↗"},
   "Updates.OpenLinkFailed": {"zh":"无法打开 GitHub 链接","en":"Couldn't open the GitHub link"}
 }

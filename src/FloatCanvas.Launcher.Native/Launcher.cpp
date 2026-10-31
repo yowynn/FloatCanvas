@@ -8,12 +8,99 @@ namespace fs = std::filesystem;
 
 static bool Exists(const fs::path& path) { return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES; }
 static void Fail(const wchar_t* message) { MessageBoxW(nullptr, message, L"FloatCanvas", MB_OK | MB_ICONERROR); }
-static bool Start(const fs::path& executable, const std::wstring& arguments, DWORD timeout, DWORD* exitCode = nullptr, bool useExecutableDirectory = false)
+
+class ScopedEnvironmentValue
 {
+    const wchar_t* name_;
+    std::wstring previous_;
+    bool existed_ = false, changed_ = false;
+public:
+    explicit ScopedEnvironmentValue(const wchar_t* name) : name_(name) {}
+    ScopedEnvironmentValue(const ScopedEnvironmentValue&) = delete;
+    ScopedEnvironmentValue& operator=(const ScopedEnvironmentValue&) = delete;
+    bool Set(const std::wstring& value)
+    {
+        SetLastError(ERROR_SUCCESS);
+        DWORD size = GetEnvironmentVariableW(name_, nullptr, 0);
+        if (size)
+        {
+            previous_.resize(size);
+            SetLastError(ERROR_SUCCESS);
+            DWORD length = GetEnvironmentVariableW(name_, previous_.data(), size);
+            if (length >= size || (!length && GetLastError() != ERROR_SUCCESS)) return false;
+            previous_.resize(length); existed_ = true;
+        }
+        else if (GetLastError() == ERROR_ENVVAR_NOT_FOUND) existed_ = false;
+        else if (GetLastError() == ERROR_SUCCESS) existed_ = true;
+        else return false;
+        if (!SetEnvironmentVariableW(name_, value.c_str())) return false;
+        changed_ = true; return true;
+    }
+    ~ScopedEnvironmentValue()
+    {
+        if (changed_) SetEnvironmentVariableW(name_, existed_ ? previous_.c_str() : nullptr);
+    }
+};
+
+class UpdateLaunchScope
+{
+    HANDLE job_ = nullptr;
+    bool joined_ = false, active_ = false;
+    ScopedEnvironmentValue pid_{ L"FLOATCANVAS_UPDATE_LAUNCHER_PID" };
+    ScopedEnvironmentValue creation_{ L"FLOATCANVAS_UPDATE_LAUNCHER_CREATION_FILETIME" };
+public:
+    UpdateLaunchScope() = default;
+    UpdateLaunchScope(const UpdateLaunchScope&) = delete;
+    UpdateLaunchScope& operator=(const UpdateLaunchScope&) = delete;
+    bool Prepare()
+    {
+        SetLastError(ERROR_SUCCESS);
+        DWORD planSize = GetEnvironmentVariableW(L"FLOATCANVAS_UPDATE_STARTUP_PLAN", nullptr, 0);
+        DWORD error = GetLastError();
+        if (planSize <= 1) return planSize == 1 || error == ERROR_ENVVAR_NOT_FOUND || error == ERROR_SUCCESS;
+        active_ = true;
+        FILETIME created{}, ended{}, kernel{}, user{};
+        if (!GetProcessTimes(GetCurrentProcess(), &created, &ended, &kernel, &user)) return false;
+        ULARGE_INTEGER time{}; time.LowPart = created.dwLowDateTime; time.HighPart = created.dwHighDateTime;
+        // The handle is private and non-inheritable. Joining before CreateProcess
+        // makes even a child killed before publishing its PID part of this lifetime.
+        job_ = CreateJobObjectW(nullptr, nullptr);
+        if (!job_) return false;
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(job_, JobObjectExtendedLimitInformation, &limits, sizeof(limits)) ||
+            !AssignProcessToJobObject(job_, GetCurrentProcess())) return false;
+        joined_ = true;
+        return pid_.Set(std::to_wstring(GetCurrentProcessId())) && creation_.Set(std::to_wstring(time.QuadPart));
+    }
+    bool Active() const { return active_; }
+    [[noreturn]] void AbortAfterSpawn(DWORD exitCode) const
+    {
+        // A failed wait must not detach a live Host. This job contains only the
+        // wrapper and the processes it created for this update launch.
+        if (job_) TerminateJobObject(job_, exitCode);
+        ExitProcess(exitCode);
+    }
+    ~UpdateLaunchScope()
+    {
+        if (!job_) return;
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        // Normal child exit and pre-spawn errors must retain their exit status.
+        // If clearing unexpectedly fails after joining, leave the handle to OS
+        // teardown rather than terminating this still-returning wrapper here.
+        if (SetInformationJobObject(job_, JobObjectExtendedLimitInformation, &limits, sizeof(limits)) || !joined_)
+            CloseHandle(job_);
+    }
+};
+
+static bool Start(const fs::path& executable, const std::wstring& arguments, DWORD timeout, DWORD* exitCode = nullptr, bool useExecutableDirectory = false, bool* created = nullptr)
+{
+    if (created) *created = false;
     std::wstring command = L"\"" + executable.wstring() + L"\" " + arguments;
     STARTUPINFOW startup{ sizeof(startup) }; PROCESS_INFORMATION process{};
     auto directory = executable.parent_path().wstring();
     if (!CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr, useExecutableDirectory ? directory.c_str() : nullptr, &startup, &process)) return false;
+    if (created) *created = true;
     CloseHandle(process.hThread);
     // Recovery is idempotent and owns an OS file lease. Never kill an updater on a timeout.
     bool result = timeout == 0 || WaitForSingleObject(process.hProcess, timeout) == WAIT_OBJECT_0;
@@ -74,7 +161,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int)
     auto host = directory / L"FloatCanvas.Host.exe";
     // An interrupted first upgrade can restore a package predating this launcher.
     if (recoveryCopy && !Exists(host)) host = directory / L"FloatCanvas.exe";
-    if (!Start(host, launchArguments, INFINITE, &exitCode))
-    { Fail(L"FloatCanvas.Host.exe could not start. Extract the complete portable package before launching FloatCanvas."); return 2; }
+    UpdateLaunchScope update;
+    if (!update.Prepare())
+    { Fail(L"FloatCanvas could not start safely for this update. Keep the update backup and try again."); return 2; }
+    bool created = false;
+    if (!Start(host, launchArguments, INFINITE, &exitCode, false, &created))
+    {
+        if (update.Active() && created) update.AbortAfterSpawn(2);
+        Fail(L"FloatCanvas.Host.exe could not start. Extract the complete portable package before launching FloatCanvas."); return 2;
+    }
     return static_cast<int>(exitCode);
 }

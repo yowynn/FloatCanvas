@@ -10,6 +10,21 @@ internal static class UpdateInstallerTests
     internal static void Run(Action<string, bool> check)
     {
         BasicTransaction(check); Rollback(check, false); Rollback(check, true); PreflightAndReadOnly(check); WaitingAndTampering(check); Validation(check); Cancellation(check);
+        DirectoryErrorDetails(check);
+    }
+
+    private static void DirectoryErrorDetails(Action<string, bool> check)
+    {
+        using var f = new Fixture();
+        string file = Path.Combine(f.Install, "FloatCanvas.Core.dll");
+        string contents = File.ReadAllText(file);
+        File.Delete(file);
+        check("update eligibility identifies a missing owned file without blaming the directory name", !AppUpdateInstaller.CanUpdateDirectory(f.Install) &&
+            AppUpdateInstaller.GetUpdateDirectoryError(f.Install)?.Contains("FloatCanvas.Core.dll", StringComparison.Ordinal) == true);
+        File.WriteAllText(file, "");
+        check("update eligibility identifies an empty owned file", AppUpdateInstaller.GetUpdateDirectoryError(f.Install)?.Contains("FloatCanvas.Core.dll", StringComparison.Ordinal) == true);
+        File.WriteAllText(file, contents);
+        check("repairing an owned file clears the update eligibility error", AppUpdateInstaller.GetUpdateDirectoryError(f.Install) is null && AppUpdateInstaller.CanUpdateDirectory(f.Install));
     }
 
     private static void Cancellation(Action<string, bool> check)

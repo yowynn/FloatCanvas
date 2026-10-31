@@ -66,6 +66,7 @@ internal static class AppUpdateWindowTests
             }
             L.Initialize("zh-CN"); AppTheme.Apply("light");
             NoUpdateAndError(output, check);
+            DirectoryRepairRecheck(output, check);
             PreviewChannelAndCurrentNotes(output, check);
             SingleCheckAndClose(output, check);
             DownloadCancellation(output, check);
@@ -77,6 +78,41 @@ internal static class AppUpdateWindowTests
         {
             foreach (var window in app.Windows.Cast<Window>().Where(w => !initialWindows.Contains(w)).ToArray()) window.Close();
             L.Initialize(priorLanguage); AppTheme.Apply("light"); SynchronizationContext.SetSynchronizationContext(priorContext);
+        }
+    }
+
+    private static void DirectoryRepairRecheck(string output, Action<string, bool> check)
+    {
+        foreach (string language in new[] { "zh-CN", "en" })
+        {
+            L.Initialize(language);
+            using var http = new HttpClient(new FakeHandler((_, _) => Task.FromResult(JsonResponse(ReleaseMetadata))));
+            using var client = new GitHubUpdateClient(http);
+            string? issue = L.Format("Updates.IncompletePackage", "DEPENDENCIES.cdx.json");
+            int applications = 0;
+            var window = new AppUpdateWindow("0.2.1", client, _ => { applications++; return Task.CompletedTask; }, false,
+                Path.Combine(output, "directory-repair-" + language), autoCheck: false, checkInstallDirectory: () => issue);
+            try
+            {
+                Await(window.CheckAsync());
+                check(language + " unavailable update identifies the missing package file", !window.InstallButton.IsEnabled &&
+                    TextBlocks((DependencyObject)window.Content).Any(text => text.Text.Contains("DEPENDENCIES.cdx.json", StringComparison.Ordinal)));
+                issue = null;
+                Await(window.CheckAsync());
+                check(language + " rechecking after a directory repair enables the existing update window", window.InstallButton.IsEnabled);
+                issue = L.Format("Updates.IncompletePackage", "Docs/Release-Trust.md");
+                Await(window.DownloadUpdateAsync()); window.PrepareForShow();
+                check(language + " install revalidates package files before downloading or applying", applications == 0 && !window.InstallButton.IsEnabled &&
+                    TextBlocks((DependencyObject)window.Content).Any(text => text.Text.Contains("Docs/Release-Trust.md", StringComparison.Ordinal)));
+            }
+            finally { window.Close(); }
+        }
+
+        static IEnumerable<TextBlock> TextBlocks(DependencyObject parent)
+        {
+            if (parent is TextBlock block) yield return block;
+            foreach (var child in LogicalTreeHelper.GetChildren(parent).OfType<DependencyObject>())
+                foreach (var text in TextBlocks(child)) yield return text;
         }
     }
 
