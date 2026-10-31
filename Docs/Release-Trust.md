@@ -4,6 +4,16 @@
 
 FloatCanvas ships unsigned Windows ZIP and EXE installer packages containing the same application files. Publishing and updating do not require a code-signing certificate, publisher signing key or detached signature manifest. Release packages declare `Unsigned` in `PACKAGE-INFO.json`; download, archive and update integrity checks remain enabled. Dual-format publication starts with 0.3.1; the published 0.3.0 ZIP and historical assets remain unchanged.
 
+## 更新日志写作 / Release-note style
+
+从 0.3.2 开始，更新日志和 GitHub Release 说明以让用户快速看清本版主要变化为目标。按用户影响归纳主要功能、重要修复及必要兼容性说明，合并同类变化，使用简短、直接的条目。无需逐项列出提示气泡、控件反馈、细小交互分支、实现细节、测试数量或开发过程；详细用法留在用户指南。涉及数据兼容、升级操作或其他重要使用限制的信息仍需明确说明。
+
+此规则用于本次及后续版本；已经发布的历史更新日志保持原样，不追溯重写。中英文说明保持相同范围和重点。
+
+Starting with 0.3.2, changelog entries and GitHub Release notes should make the release's main changes clear at a glance. Group major features, important fixes and necessary compatibility information by user impact, using short, direct bullets. Leave minor UI feedback, small interaction branches, implementation details, test counts and development history out of release notes; keep detailed usage in the user guides. Retain essential information about data compatibility, required upgrade steps and significant limitations.
+
+Apply this rule to the current and future releases. Preserve previously published changelog sections without rewriting them. Keep Chinese and English notes aligned in scope and emphasis.
+
 ## 发布内容 / Release assets
 
 - `FloatCanvas-<version>-win-x64.zip`：完整应用、用户文档、许可证、依赖清单与 `PACKAGE-INFO.json`。

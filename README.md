@@ -10,7 +10,7 @@ Windows 屏幕标注工具。直接在桌面上绘画、贴图和调整对象，
 
 ![浮绘 FloatCanvas 预览：透视网格、路线标注与浮动工具条](Docs/Images/floatcanvas-preview.png)
 
-当前源码版本：**0.3.1**；已发布的版本与下载见 [Releases](https://github.com/yowynn/FloatCanvas/releases)，重要改动见[更新日志](CHANGELOG.md)，操作说明见[使用指南](Docs/User-Guide.md)。立牌与深度优先遮挡仍为默认关闭的实验性功能。
+当前源码版本：**0.3.2**；已发布的版本与下载见 [Releases](https://github.com/yowynn/FloatCanvas/releases)，重要改动见[更新日志](CHANGELOG.md)，操作说明见[使用指南](Docs/User-Guide.md)。立牌与深度优先遮挡仍为默认关闭的实验性功能。
 
 工具条分为灰色新建和红色扫把清空；新建按文件和修改状态确认，清空立即执行、可撤销且不入历史。绑定文件显示随折叠的文件名气泡；印章槽右键提供重命名、覆盖、删除和取消固定四项维护操作。
 

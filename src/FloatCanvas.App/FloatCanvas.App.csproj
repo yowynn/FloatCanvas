@@ -11,7 +11,7 @@
     <Product>浮绘 FloatCanvas</Product>
     <Description>可编辑的 Windows 屏幕标注画布</Description>
     <SatelliteResourceLanguages>zh-Hans;zh-CN;en</SatelliteResourceLanguages>
-    <Version>0.3.1</Version>
+    <Version>0.3.2</Version>
   </PropertyGroup>
   <ItemGroup>
     <None Include="../../Docs/User-Guide*.md" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />

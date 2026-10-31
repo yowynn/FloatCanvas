@@ -2,7 +2,7 @@
 
 [简体中文](User-Guide.md) | English
 
-This guide covers the Windows x64 **0.3.0** source. Published packages are listed in [Releases](https://github.com/yowynn/FloatCanvas/releases), with version changes in the [changelog](../CHANGELOG.md). Earlier versions may have different interfaces and features. Save important work as a project file.
+This guide covers the Windows x64 **0.3.2** source. Published packages are listed in [Releases](https://github.com/yowynn/FloatCanvas/releases), with version changes in the [changelog](../CHANGELOG.md). Earlier versions may have different interfaces and features. Save important work as a project file.
 
 A drag that starts on the canvas stays with the canvas, even when it crosses the toolbar or ends on a button. Buttons are not triggered on release. A gesture that starts on the toolbar stays with the toolbar and does not draw on the canvas.
 

@@ -10,7 +10,7 @@ A Windows screen annotation tool. Draw over your desktop, place images and edit 
 
 ![FloatCanvas preview showing a perspective grid, route annotations and the floating toolbar](Docs/Images/floatcanvas-preview.png)
 
-Current source version: **0.3.1**. See [Releases](https://github.com/yowynn/FloatCanvas/releases) for published versions and downloads, the [changelog](CHANGELOG.md) for important changes, and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
+Current source version: **0.3.2**. See [Releases](https://github.com/yowynn/FloatCanvas/releases) for published versions and downloads, the [changelog](CHANGELOG.md) for important changes, and the [user guide](Docs/User-Guide.en.md) for instructions. Billboard placement and depth-priority occlusion remain experimental and off by default.
 
 The toolbar separates gray New and red-broom Clear. New confirms according to file and edit state; Clear is immediate, undoable and adds no history. A folding filename bubble shows the bound project. Stamp-slot context menus contain four maintenance actions: Rename, Overwrite, Delete and Unpin.
 

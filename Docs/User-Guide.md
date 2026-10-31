@@ -2,7 +2,7 @@
 
 简体中文 | [English](User-Guide.en.md)
 
-本指南对应 Windows x64 **0.3.0** 源码。已发布安装包见 [Releases](https://github.com/yowynn/FloatCanvas/releases)，版本变化见[更新日志](../CHANGELOG.md)。较早版本的界面和功能可能不同。建议将重要工作另存为工程文件。
+本指南对应 Windows x64 **0.3.2** 源码。已发布安装包见 [Releases](https://github.com/yowynn/FloatCanvas/releases)，版本变化见[更新日志](../CHANGELOG.md)。较早版本的界面和功能可能不同。建议将重要工作另存为工程文件。
 
 在画布上按下鼠标开始绘制或移动后，整次拖动由画布处理；即使经过工具条或在按钮上松开，也不会触发按钮。从工具条上按下鼠标，则由工具条处理，不会在画布上留下笔迹。
 

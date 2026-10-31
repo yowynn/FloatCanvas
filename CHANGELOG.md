@@ -5,6 +5,20 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-31
+
+- **编辑交互。** 修复新建画布后 Esc 无法返回，以及增强模式下 Peek 等外部快捷键干扰编辑的问题。
+- **Editing interaction.** Fix Esc after creating a canvas and prevent external shortcuts such as Peek from disrupting enhanced editing.
+
+- **虚线性能。** 改善画笔和荧光笔使用虚线时的绘制及显示流畅度。
+- **Dashed strokes.** Improve drawing and display performance for dashed pen and highlighter strokes.
+
+- **等比缩放。** 统一工具预设、创建图层和属性调整的比例规则，修复 Shift 临时切换失效。
+- **Aspect ratios.** Align aspect behavior across tool presets, new layers and property edits, and restore temporary Shift overrides.
+
+- **更新可靠性。** 修复旧版 ZIP 跨版本升级失败及回滚不完整的问题，改善更新异常提示。
+- **Reliable updates.** Fix legacy ZIP upgrades and incomplete rollback, with clearer update failure messages.
+
 ## [0.3.1] - 2026-10-30
 
 - **安装、更新与卸载。** 新增简体中文／英文无签名 EXE 安装程序，与 ZIP 使用相同程序文件，各附 SHA-256 校验。支持当前用户或所有用户安装，缺少 .NET 10 桌面运行时 x64 时可下载、校验、安装并重新检测。当前用户安装继续使用 ZIP 更新并刷新卸载清单；系统安装通过安装向导更新。卸载清理不依赖 .NET，默认保留资料，删除资料需明确选择账户与目录；另存作品、自定义资料目录和其他安装的注册保留。
