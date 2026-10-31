@@ -104,8 +104,9 @@ internal sealed partial class DesktopSession : IDisposable
         _host.RenderBackendChanged += () => _diagnostics.Write("Rendering.Backend", new
             { Backend = _host.RenderBackend.ToString(), _host.GpuDetails, _host.LastGpuFailure });
         _host.CanBeginCanvasGesture = () => !_disposed && !_presentationUncertain && !DocumentOperationBusy && !ComponentDispatcher.IsThreadModal;
-        var keyboardBridge = new PrivateKeyboardBridge(handle => _host.Diagnostics.Any(pair => pair.InputHandle == handle));
-        if(!_host.UsesSystemInput) _host.EnableKeyboardIsolation((packet, complete) =>
+        var keyboardBridge = new PrivateKeyboardBridge(handle => _host.Diagnostics.Any(pair => pair.InputHandle == handle),
+            () => _host.UsesSystemInput && _host.HasEditingInput && _host.IsKeyboardIsolationActive);
+        _host.EnableKeyboardIsolation((packet, complete) =>
         {
             if(packet.VirtualKey is 0x10 or 0xA0 or 0xA1&&!packet.IsLocalBalance)
                 _editor?.ModifiersChanged(packet.Modifiers,packet.PointerPosition,packet.Time,packet.PointerLeftDown);

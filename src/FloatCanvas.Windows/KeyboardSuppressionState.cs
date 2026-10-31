@@ -27,6 +27,7 @@ internal sealed class KeyboardSuppressionState
     private bool foregroundResumeVeto;
     private nint inputMethodOrigin;
     private long inputMethodDeadline;
+    private bool passModifiers;
 
     public KeyboardSuppressionState(int capacity, long tailLifetime)
     {
@@ -52,7 +53,7 @@ internal sealed class KeyboardSuppressionState
         this.toggle = toggle; this.hide = hide;
     }
 
-    public long Begin(byte[] initialState, HotkeyBinding toggle, HotkeyBinding hide, long now)
+    public long Begin(byte[] initialState, HotkeyBinding toggle, HotkeyBinding hide, long now, bool passModifiers = false)
     {
         if (initialState.Length != 256) throw new ArgumentException(L.Get("Keyboard.InvalidStateLength"), nameof(initialState));
         ValidateHotkey(toggle); ValidateHotkey(hide);
@@ -77,6 +78,7 @@ internal sealed class KeyboardSuppressionState
         }
         NormalizeModifiers();
         this.toggle = toggle; this.hide = hide; lease++; IsActive = true; LastEndReason = null; foregroundResumeVeto = false;
+        this.passModifiers = passModifiers;
         return lease;
     }
 
@@ -114,6 +116,12 @@ internal sealed class KeyboardSuppressionState
             UpdateLocal(key, up, false);
             if (up) inherited[key] = false;
             TrackPassed(key, up);
+            if (passModifiers)
+            {
+                if (queue.Count >= capacity) End(KeyboardLeaseEndReason.QueueOverflow, now);
+                else queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, up, !up,
+                    foreground, message: message, stateOnly: true));
+            }
             return false; // Inherited global down must retain repeats and physical release.
         }
         if (!up && IsEscape(key, out var escape))
@@ -137,9 +145,17 @@ internal sealed class KeyboardSuppressionState
             UpdateLocal(key, up, !up && !physical[key]);
             inherited[key] = !up;
             TrackPassed(key, up);
+            if (passModifiers)
+            {
+                if (queue.Count >= capacity) End(KeyboardLeaseEndReason.QueueOverflow, now);
+                else queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, up, false,
+                    foreground, message: message, stateOnly: true));
+            }
             return false;
         }
-        if (up && !suppressed[key]) { UpdateLocal(key, true, false); TrackPassed(key, true); return false; }
+        bool passedNativeKey = passModifiers && (key is 0xA0 or 0xA1 or 0xA2 or 0xA3 or 0xA4 or 0xA5 or
+            0x14 or 0x90 or 0x91 or 0x2C or >= 0xAD and <= 0xB3);
+        if (up && !suppressed[key] && !passedNativeKey) { UpdateLocal(key, true, false); TrackPassed(key, true); return false; }
         // Visibility is independent of editing. A consumed visibility key keeps its
         // stream until physical release even if its modifiers have already been lifted.
         if (visibilityCommand[key] && !up) { SuppressedCount++; return true; }
@@ -152,6 +168,18 @@ internal sealed class KeyboardSuppressionState
         }
         bool repeat = !up && physical[key];
         UpdateLocal(key, up, !repeat && !up);
+        // Delegation still delivers these original messages to our UI. Preserve their
+        // global streams for Alt+Tab, reverse switching and Ctrl+Esc, along with lock,
+        // screenshot and media keys. Only publish an ordered state snapshot, never a
+        // second key message through the private bridge.
+        if (passedNativeKey)
+        {
+            scans[key] = scan; flags[key] = eventFlags; targets[key] = foreground;
+            queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, up, repeat,
+                foreground, message: message, pointerPosition: pointerPosition, pointerLeftDown: pointerLeftDown, stateOnly: true));
+            TrackPassed(key, up);
+            return false;
+        }
         suppressed[key] = !up; scans[key] = scan; flags[key] = eventFlags; targets[key] = foreground;
         SuppressedCount++;
         if (visibilityCommand[key])
@@ -262,9 +290,9 @@ internal sealed class KeyboardSuppressionState
         Array.Clear(visibilityCommand);
         // Merge pending old-lease releases with new ones: quick Begin/End cannot lose balance
         // or grow an unbounded backlog of control packets while a UI packet is in flight.
-        var balanceKeys = new HashSet<int>(queue.Where(p => p.IsLocalBalance).Select(p => (int)p.VirtualKey));
+        var balanceKeys = new HashSet<int>(queue.Where(p => p.IsLocalBalance && !p.IsStateOnly).Select(p => (int)p.VirtualKey));
         for (int i = 1; i < 255; i++) if (claimedDown[i]) balanceKeys.Add(i);
-        if (inFlightPacket is { Kind: KeyboardInputPacketKind.Key } pending)
+        if (inFlightPacket is { Kind: KeyboardInputPacketKind.Key, IsStateOnly: false } pending)
             balanceKeys.Add(Canonical((int)pending.VirtualKey, pending.ScanCode, pending.Flags));
         queue.Clear();
         for (int i = 1; i < 255; i++)
@@ -279,12 +307,16 @@ internal sealed class KeyboardSuppressionState
             queue.Enqueue(Packet(KeyboardInputPacketKind.Key, (uint)i, scans[i], flags[i] | 0x80, 0, true, false,
                 targets[i], balance: true, message: (flags[i] & 0x20) != 0 ? 0x105u : 0x101u));
         }
+        // Retire pending snapshots even when no private key remains held. Passed
+        // modifiers keep their native stream and never acquire a private key-up.
+        if (passModifiers) queue.Enqueue(Packet(KeyboardInputPacketKind.Key, 0, 0, 0, 0, false, false, 0,
+            balance: true, stateOnly: true));
         if (command is { } kind) queue.Enqueue(Packet(kind, 0, 0, 0, 0, false, false, 0, reason: reason));
         queue.Enqueue(Packet(KeyboardInputPacketKind.LeaseEnded, 0, 0, 0, 0, false, false, 0, reason: reason));
     }
     private KeyboardInputPacket Packet(KeyboardInputPacketKind kind, uint key, uint scan, uint eventFlags, uint time,
-        bool up, bool repeat, nint foreground, bool balance = false, KeyboardLeaseEndReason? reason = null, uint message = 0, OverlayPoint? pointerPosition = null, bool? pointerLeftDown = null) =>
-        new(++sequence, lease, kind, key, scan, eventFlags, time, up, repeat, foreground, local, balance, reason, message) {PointerPosition=pointerPosition,PointerLeftDown=pointerLeftDown};
+        bool up, bool repeat, nint foreground, bool balance = false, KeyboardLeaseEndReason? reason = null, uint message = 0, OverlayPoint? pointerPosition = null, bool? pointerLeftDown = null, bool stateOnly = false) =>
+        new(++sequence, lease, kind, key, scan, eventFlags, time, up, repeat, foreground, local, balance, reason, message) {PointerPosition=pointerPosition,PointerLeftDown=pointerLeftDown,IsStateOnly=stateOnly};
     public void ExpireTails(long now)
     {
         for (int i = 1; i < 255; i++) if (tails[i] != 0 && now >= tails[i]) { tails[i] = 0; physical[i] = false; }
@@ -296,7 +328,7 @@ internal sealed class KeyboardSuppressionState
         notificationPending = false;
         if (inFlight != 0 || !queue.TryDequeue(out packet)) { packet = null; return false; }
         inFlight = packet.Sequence; inFlightPacket = packet;
-        if (packet.Kind == KeyboardInputPacketKind.Key)
+        if (packet.Kind == KeyboardInputPacketKind.Key && !packet.IsStateOnly)
             claimedDown[Canonical((int)packet.VirtualKey, packet.ScanCode, packet.Flags)] = !packet.IsKeyUp;
         return true;
     }

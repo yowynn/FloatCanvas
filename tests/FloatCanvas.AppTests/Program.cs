@@ -11,6 +11,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (EnhancedKeyboardIsolationTests.TryRunChild(args, out int keyboardObserverCode)) return keyboardObserverCode;
         if (args.FirstOrDefault() == "--update-fault-child")
             return args is [_, var planPath, var stage, var index] && int.TryParse(index, out int faultIndex)
                 ? UpdateProcessRecoveryTests.Child(planPath, stage, faultIndex) : 72;
@@ -36,6 +37,8 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--enhanced-keyboard-isolation-only")) { EnhancedKeyboardIsolationTests.Run(Assert); return 0; }
+            if (args.Contains("--private-keyboard-bridge-state-only")) { PrivateKeyboardBridgeStateTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-opacity-gesture-only")) { ToolbarOpacityGestureTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-screen-bounds-only")) { ToolbarScreenBoundsTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-window-bounds-only")) { ToolbarWindowBoundsTests.Run(Assert, args.SkipWhile(a => a != "--toolbar-window-bounds-only").Skip(1).FirstOrDefault()); return 0; }

@@ -102,6 +102,7 @@ public sealed partial class OverlayHost
     {
         if (_keyboardIsolation is null) return true;
         if (_keyboardIsolation.IsLeaseActive) return true;
+        if (_systemInput is not null) return false; // Only a fresh native ACK may begin a delegated lease.
         bool inputMethod = _keyboardIsolation.TryGetInputMethodSwitch(_keyboardLease, out var origin) &&
             GetForegroundWindow() == origin;
         if (!inputMethod && !_focusTransitions.CanResume(_keyboardLease, _keyboardIsolation.LastEndReason, IsForegroundFromThisProcess()))

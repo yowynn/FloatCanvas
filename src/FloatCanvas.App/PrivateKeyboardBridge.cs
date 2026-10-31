@@ -21,11 +21,15 @@ internal sealed class PrivateKeyboardBridge
 {
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly Func<nint, bool> _isCommandTarget;
+    private readonly Func<bool> _hasEditingInput;
     private readonly HashSet<uint> _modalCommandKeys = [];
     private long _keyLease;
 
-    internal PrivateKeyboardBridge(Func<nint, bool>? isCommandTarget = null)
-        => _isCommandTarget = isCommandTarget ?? (_ => false);
+    internal PrivateKeyboardBridge(Func<nint, bool>? isCommandTarget = null, Func<bool>? hasEditingInput = null)
+    {
+        _isCommandTarget = isCommandTarget ?? (_ => false);
+        _hasEditingInput = hasEditingInput ?? (() => false);
+    }
 
     /// <summary>
     /// A non-activating WPF Popup can assign logical keyboard focus while Win32 still
@@ -109,6 +113,8 @@ internal sealed class PrivateKeyboardBridge
         // Updating this thread's key-state table does not update system asynchronous state.
         // Apply balancing releases even if the user has already chosen another foreground.
         var state = packet.CopyKeyboardState();
+        if (packet.IsLocalBalance && packet.IsStateOnly && packet.VirtualKey == 0)
+            ReconcilePhysicalModifiers(state, key => GetAsyncKeyState(key) < 0);
         var current = new byte[256];
         if (!GetKeyboardState(current))
             throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("App.ReadKeyboardStateFailed"));
@@ -116,6 +122,9 @@ internal sealed class PrivateKeyboardBridge
         foreach (int button in new[] { 1, 2, 4, 5, 6 }) state[button] = current[button];
         if (!SetKeyboardState(state))
             throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("App.UpdateKeyboardStateFailed"));
+        // Enhanced input passes modifier messages through the native stream. Keep
+        // their ordered snapshot without delivering a second key event or text.
+        if (packet.IsStateOnly) return true;
 
         // Always apply the release snapshot above, including modifier balancing.
         // A genuinely new press after release remains ordinary editable text.
@@ -125,7 +134,10 @@ internal sealed class PrivateKeyboardBridge
 
         var foreground = GetForegroundWindow();
         var focus = GetFocus();
-        if (!IsOurWindow(foreground) || !IsOurWindow(focus)) return false;
+        // Enhanced input deliberately leaves global foreground on its external owner.
+        // Its caller must prove both acknowledged input ownership and an active
+        // isolation lease; the local destination still belongs to this UI thread.
+        if (!CanDispatchTo(foreground, focus, _hasEditingInput)) return false;
 
         uint flags = packet.Flags;
         uint keyData = 1 | ((packet.ScanCode & 0xff) << 16) | ((flags & 1) << 24) |
@@ -162,6 +174,21 @@ internal sealed class PrivateKeyboardBridge
         return true;
     }
 
+    internal static bool CanDispatchTo(nint foreground, nint focus, Func<bool> hasEditingInput)
+        => IsOurWindow(focus) && (IsOurWindow(foreground) || hasEditingInput());
+
+    internal static void ReconcilePhysicalModifiers(byte[] state, Func<int, bool> isDown)
+    {
+        // The lease-ending snapshot can outlive a native modal handoff. Passed
+        // modifiers still belong to their real native stream, so retain keys the
+        // user is holding while removing any stale private-packet state.
+        foreach (int key in new[] { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C })
+            state[key] = (byte)((state[key] & 0x7F) | (isDown(key) ? 0x80 : 0));
+        state[0x10] = (byte)((state[0x10] & 0x7F) | ((state[0xA0] | state[0xA1]) & 0x80));
+        state[0x11] = (byte)((state[0x11] & 0x7F) | ((state[0xA2] | state[0xA3]) & 0x80));
+        state[0x12] = (byte)((state[0x12] & 0x7F) | ((state[0xA4] | state[0xA5]) & 0x80));
+    }
+
     private static bool IsOurWindow(nint window) => window != 0 &&
         GetWindowThreadProcessId(window, out uint processId) != 0 && processId == Environment.ProcessId;
 
@@ -184,6 +211,7 @@ internal sealed class PrivateKeyboardBridge
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetKeyboardState([Out] byte[] state);
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern nint GetFocus();
     [DllImport("user32.dll")] private static extern nint SetFocus(nint window);

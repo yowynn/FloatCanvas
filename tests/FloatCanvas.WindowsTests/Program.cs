@@ -35,6 +35,8 @@ try
     if (args.Contains("--dirty-output-only")) { DirtyOutputRenderingTests.Run(Check); Console.WriteLine($"PASS {checks} dirty output checks."); return 0; }
     KeyboardPassedStateTests.Run(Check);
     if (args.Contains("--keyboard-passed-state-only")) { Console.WriteLine($"PASS {checks} passed keyboard state checks."); return 0; }
+    DelegatedKeyboardStateTests.Run(Check);
+    if (args.Contains("--delegated-keyboard-state-only")) { Console.WriteLine($"PASS {checks} delegated keyboard state checks."); return 0; }
     SystemInputEntryTimingTests.Run(Check);
     if (args.Contains("--system-input-entry-timing-only")) { Console.WriteLine($"PASS {checks} system input entry timing checks."); return 0; }
     RetryableCapabilityProbeTests.Run(Check);

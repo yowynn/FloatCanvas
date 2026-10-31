@@ -37,6 +37,8 @@ public sealed class KeyboardInputPacket
     public bool IsKeyUp { get; }
     public bool IsRepeat { get; }
     public bool IsLocalBalance { get; }
+    /// <summary>A passed modifier updates ordered local state without replaying its native key message.</summary>
+    public bool IsStateOnly { get; internal init; }
     public nint ForegroundWindow { get; }
     public OverlayModifiers Modifiers { get; }
     /// <summary>Physical pointer position sampled with a Shift transition, before UI dispatch.</summary>

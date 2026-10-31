@@ -12,9 +12,10 @@ namespace FloatCanvas.Windows;
 /// A matching held-key tail remains suppressed until its release or two seconds of stream silence.
 /// Only matching observed hook releases (VK/scan/extended flag) clear a tail early; the zero
 /// global async state of a suppressed key is not evidence that the physical key was released.
-/// Windows chords pass to the OS; actual external foreground and Alt+Tab/etc end the lease.
-/// Already-suppressed modifiers are never reconstructed globally,
-/// so this alone does not promise a working OS Alt+Tab chord. Ctrl+Alt+Esc releases the lease
+/// Windows chords pass to the OS; foreground outside the acknowledged owner and Alt+Tab/etc end the lease.
+/// Delegated leases retain native modifier streams so system switching needs no reconstruction.
+/// Ordinary leases never reconstruct already-suppressed modifiers globally and cannot by
+/// themselves promise a working OS Alt+Tab chord. Ctrl+Alt+Esc releases the lease
 /// on the hook thread. Hook/native/notification failures unconditionally fail open, including tails.
 /// </summary>
 public sealed class KeyboardInputIsolation : IDisposable
@@ -38,6 +39,10 @@ public sealed class KeyboardInputIsolation : IDisposable
     private long lastHeartbeat, externalInputVersion;
     private Exception? failure;
     private bool notificationFailed;
+    // Published on the owner UI thread only after native delegation is acknowledged.
+    // Hook callbacks never call the thread-affine COM backend.
+    private nint delegatedForeground;
+    private uint delegatedProcess;
 
     private KeyboardInputIsolation(nint window, uint message, int queueCapacity, TimeSpan timeout)
     {
@@ -120,9 +125,32 @@ public sealed class KeyboardInputIsolation : IDisposable
         lock (gate)
         {
             if (Volatile.Read(ref stopped) != 0) throw new InvalidOperationException(L.Get("Keyboard.IsolationStopped"));
+            delegatedForeground = 0; delegatedProcess = 0;
             return BeginLeaseCore(toggle, hide);
         }
     }
+
+    internal long BeginDelegatedLease(HotkeyBinding toggle, HotkeyBinding hide, nint target)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        ValidateHotkey(toggle); ValidateHotkey(hide);
+        lock (gate)
+        {
+            if (Volatile.Read(ref stopped) != 0 || Failure is not null)
+                throw new InvalidOperationException(L.Get("Keyboard.IsolationUnavailable"), Failure);
+            uint process = 0;
+            if (target == 0 || !Native.IsWindow(target) || Native.GetWindowThreadProcessId(target, out process) == 0 ||
+                (Native.GetForegroundWindow() != target && !OwnsWindow(Native.GetForegroundWindow())))
+                throw new InvalidOperationException(L.Get("Keyboard.ForegroundRequired"));
+            delegatedForeground = target; delegatedProcess = process;
+            try { return BeginLeaseCore(toggle, hide); }
+            catch { delegatedForeground = 0; delegatedProcess = 0; throw; }
+        }
+    }
+
+    private bool OwnsKeyboardForeground(nint foreground) => OwnsWindow(foreground) ||
+        delegatedForeground != 0 && foreground == delegatedForeground && Native.IsWindow(foreground) &&
+        Native.GetWindowThreadProcessId(foreground, out uint process) != 0 && process == delegatedProcess;
 
     /// <summary>
     /// A caller-owned short internal transition may replace exactly one foreground-ended
@@ -178,7 +206,7 @@ public sealed class KeyboardInputIsolation : IDisposable
                 initial[i] = (byte)((initial[i] & 0x7F) | (Native.GetAsyncKeyState(i) < 0 ? 0x80 : 0));
         long now = Environment.TickCount64;
         Volatile.Write(ref lastHeartbeat, now);
-        long lease = state.Begin(initial, toggle, hide, now);
+        long lease = state.Begin(initial, toggle, hide, now, passModifiers: delegatedForeground != 0);
         modifierHistory.Reset(now, state.CurrentModifiers);
         pointerPresses.Clear();
         if (!Native.SetKeyboardState(state.CopyLocalState()))
@@ -195,7 +223,7 @@ public sealed class KeyboardInputIsolation : IDisposable
     }
 
     public void EndLease(KeyboardLeaseEndReason reason = KeyboardLeaseEndReason.Explicit)
-    { lock (gate) { state.End(reason, Environment.TickCount64); pointerPresses.Clear(); NotifyLocked(); } }
+    { lock (gate) { state.End(reason, Environment.TickCount64); delegatedForeground = 0; delegatedProcess = 0; pointerPresses.Clear(); NotifyLocked(); } }
     /// <summary>Atomically replaces both private command bindings without restarting an active lease.</summary>
     public void UpdateHotkeys(HotkeyBinding toggle, HotkeyBinding hide)
     {
@@ -253,7 +281,7 @@ public sealed class KeyboardInputIsolation : IDisposable
                 // Sample the foreground in the same critical section as the lease identity.
                 // An old outside snapshot must not end a lease the UI has just replaced.
                 nint foreground = Native.GetForegroundWindow();
-                bool own = OwnsWindow(foreground);
+                bool own = OwnsKeyboardForeground(foreground);
                 long tailsBefore = state.TailSuppressedCount;
                 bool shiftKey=key.VirtualKey is 0x10 or 0xA0 or 0xA1;
                 OverlayPoint? pointerPosition=shiftKey&&Native.GetPhysicalCursorPos(out var cursor)?new(cursor.X,cursor.Y):null;
@@ -287,16 +315,19 @@ public sealed class KeyboardInputIsolation : IDisposable
             {
                 var press = Marshal.PtrToStructure<Native.MouseEvent>(data);
                 nint foreground = Native.GetForegroundWindow();
-                bool own = OwnsWindow(foreground);
                 nint target = Native.WindowFromPoint(new(press.X, press.Y));
                 bool externalTarget = target != 0 && !OwnsWindow(target);
                 // WindowFromPoint is not the recipient while our foreground UI thread
                 // owns mouse capture (including the legacy offscreen input carrier).
                 var info = new Native.GuiThreadInfo { Size = (uint)Marshal.SizeOf<Native.GuiThreadInfo>() };
-                bool ownCapture = externalTarget && own && Native.GetGUIThreadInfo(notificationThreadId, ref info) && OwnsWindow(info.Capture);
                 long now = Environment.TickCount64;
                 lock (gate)
                 {
+                    bool own = OwnsKeyboardForeground(foreground);
+                    // With delegation the hit-tested external window is not the input
+                    // recipient, even before the first canvas press acquires capture.
+                    bool ownCapture = own && state.IsActive && delegatedForeground != 0 ||
+                        externalTarget && own && Native.GetGUIThreadInfo(notificationThreadId, ref info) && OwnsWindow(info.Capture);
                     if (CaptureInputIntent.CountsPointer(externalTarget, own, ownCapture))
                     {
                         long observedVersion = Interlocked.Increment(ref externalInputVersion);
@@ -332,9 +363,10 @@ public sealed class KeyboardInputIsolation : IDisposable
             if (!state.IsActive) { state.ExpireTails(now); NotifyLocked(); return; }
             observedLease = state.LeaseId;
         }
-        bool own = OwnsWindow(Native.GetForegroundWindow()) && IsInputDesktopAvailable();
+        bool desktopAvailable = IsInputDesktopAvailable();
         lock (gate)
         {
+            bool own = OwnsKeyboardForeground(Native.GetForegroundWindow()) && desktopAvailable;
             state.ExpireTails(now);
             if (state.IsActive && state.LeaseId == observedLease)
             {

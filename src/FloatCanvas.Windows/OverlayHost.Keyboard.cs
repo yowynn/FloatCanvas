@@ -14,7 +14,9 @@ public sealed partial class OverlayHost
     private long _keyboardLease;
 
     public bool IsKeyboardIsolationEnabled => _keyboardIsolation is not null;
-    public bool IsKeyboardIsolationActive => _systemInput?.Acknowledged??(_keyboardIsolation?.IsLeaseActive == true);
+    public bool IsKeyboardIsolationActive => _keyboardIsolation is { } isolation
+        ? isolation.IsLeaseActive && (_systemInput?.Acknowledged ?? true)
+        : _systemInput?.Acknowledged == true;
     public event Action<KeyboardLeaseEndReason>? KeyboardIsolationReleased;
 
     /// <summary>
@@ -46,8 +48,11 @@ public sealed partial class OverlayHost
     private void BeginKeyboardIsolation()
     {
         if (_keyboardIsolation is null) return;
-        _keyboardLease = _keyboardIsolation.BeginLease(_toggleHotkey ?? HotkeyBinding.DefaultToggle,
-            _hideHotkey ?? HotkeyBinding.DefaultHide);
+        var toggle = _toggleHotkey ?? HotkeyBinding.DefaultToggle;
+        var hide = _hideHotkey ?? HotkeyBinding.DefaultHide;
+        _keyboardLease = _systemInput is { } system
+            ? _keyboardIsolation.BeginDelegatedLease(toggle, hide, system.Target)
+            : _keyboardIsolation.BeginLease(toggle, hide);
         if (SetTimer(ControlHandle, KeyboardHeartbeatTimer, 100, 0) == 0)
             throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("Keyboard.MonitorStartFailed"));
     }
@@ -64,6 +69,9 @@ public sealed partial class OverlayHost
         if (message == 0x113 && wParam == InputMethodFocusTimer) { CheckInputMethodContext(); return true; }
         if (message == 0x113 && wParam == KeyboardHeartbeatTimer)
         {
+            if (IsEditing && _nativeDialogDepth == 0 && _systemInput is { } system &&
+                (!system.OwnsInput || !system.Acknowledged))
+            { EndEditingAfterFocusLoss(); return true; }
             _keyboardIsolation?.Heartbeat();
             // A failed notification cannot carry its own LeaseEnded packet to this UI.
             // The recovered UI must still stop claiming editing before accepting input.
@@ -89,11 +97,11 @@ public sealed partial class OverlayHost
         {
             // A previous lease can finish after rapid explicit re-entry. Its pending release
             // must not clear modifiers or close the new editing session.
-            if (packet.LeaseId != _keyboardLease) return true;
+            if (packet.LeaseId != _keyboardLease && !(_keyboardLease == 0 && packet.IsLocalBalance)) return true;
             switch (packet.Kind)
             {
                 case KeyboardInputPacketKind.Key:
-                    if (packet.IsLocalBalance || (IsEditing && isolation.IsLeaseActive))
+                    if (packet.IsLocalBalance || (HasEditingInput && isolation.IsLeaseActive))
                         _dispatchPrivateKey?.Invoke(packet, CompleteOnce);
                     break;
                 case KeyboardInputPacketKind.Toggle:
@@ -103,6 +111,7 @@ public sealed partial class OverlayHost
                     if (IsEditing) HideRequested?.Invoke();
                     break;
                 case KeyboardInputPacketKind.LeaseEnded:
+                    if (_nativeDialogDepth != 0 && packet.EndReason == KeyboardLeaseEndReason.Explicit) break;
                     if (IsEditing)
                     {
                         var reason = packet.EndReason ?? KeyboardLeaseEndReason.HookFailure;

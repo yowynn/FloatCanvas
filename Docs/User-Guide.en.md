@@ -64,6 +64,8 @@ A specific-screen scope uses that screen's center as the canvas reference. **Pri
 
 In edit mode, FloatCanvas receives normal window keyboard and mouse input. An unmapped letter should not be sent to the application underneath. Switching to another application hides editing tools and enters pass-through without removing annotations. If FloatCanvas cannot acquire the required input focus, it stays in pass-through and explains why.
 
+Enhanced editing also isolates ordinary keys and FloatCanvas shortcuts, preventing underlying actions such as Explorer's Peek preview on Space. Text still uses the current input method. Alt+Tab, Windows shortcuts, lock keys and volume/media keys remain available; switching applications leaves edit mode.
+
 Switching between FloatCanvas windows, completing a rename or closing a panel keeps edit mode and the toolbar. Closing a child panel on its own returns to an available parent window. Clicking the canvas closes related temporary child panels and unpinned panels together, then handles that canvas action normally. Pinned panels stay open. Modal dialogs, such as Rename or Delete confirmation, require confirmation or cancellation before drawing can continue.
 
 Open pinned panels return on the next editing session. Manually closing tool options or canvas settings resets their pin; Layers always follows the pinned-window rule. Related child windows stay above their source, while peer panels follow recent focus.

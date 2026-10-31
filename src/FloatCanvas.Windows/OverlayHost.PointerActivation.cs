@@ -108,7 +108,7 @@ public sealed partial class OverlayHost
         bool applicationAllows = CanBeginCanvasGesture?.Invoke() != false;
         bool modalBlocked = HasDisabledOwnOwner(GetForegroundWindow());
         // A denial must not conceal a real external foreground change during the gate.
-        if (!OwnsEditingInput() || (_systemInput is null && !EnsureEditingKeyboardIsolation()))
+        if (!OwnsEditingInput() || !EnsureEditingKeyboardIsolation())
             return FailCanvasPointerStart();
         return applicationAllows && !modalBlocked && IsCanvasPointerAvailable(state);
     }

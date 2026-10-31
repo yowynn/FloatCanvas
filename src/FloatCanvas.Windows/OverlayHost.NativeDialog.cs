@@ -22,6 +22,7 @@ public sealed partial class OverlayHost
             KillTimer(ControlHandle, SystemInputTimer);
             _systemInputReady = false;
             CancelPointer();
+            EndKeyboardIsolation();
             _systemInput.End();
             foreach (var pair in _windows) ShowWindow(pair.Input.Handle, 0);
             return scope;

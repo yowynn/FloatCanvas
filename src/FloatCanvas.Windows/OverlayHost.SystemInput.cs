@@ -69,6 +69,7 @@ public sealed partial class OverlayHost
         catch(Exception error)
         {
             if(_disposed){failure=error.Message;return false;}
+            EndKeyboardIsolation();
             _systemInput?.End();
             IsEditing=false;_focusTransitions.EndSession();KillTimer(ControlHandle,SystemInputTimer);
             foreach(var pair in _windows) ShowWindow(pair.Input.Handle,0);
@@ -77,6 +78,8 @@ public sealed partial class OverlayHost
     }
     private void RequestSystemInput(nint foreground)
     {
+        EndKeyboardIsolation();
+        _keyboardLease = 0; // A suspended lease cannot end the pending native request on return.
         GetCursorPos(out var cursor);
         var active=_windows.FirstOrDefault(pair=>pair.Monitor.Bounds.Contains(new(cursor.X,cursor.Y)))??_windows.First();
         _systemInputReady=false;
@@ -107,6 +110,13 @@ public sealed partial class OverlayHost
         KillTimer(ControlHandle,SystemInputTimer);
         if(!HasEditingInput){EndEditingAfterFocusLoss();return;}
         if(_systemInputReady)return;
+        try { BeginKeyboardIsolation(); }
+        catch (Exception error)
+        {
+            EndEditingAfterFocusLoss();
+            Error?.Invoke(error);
+            return;
+        }
         _systemInputReady=true;
         foreach(var pair in _windows)ShowWindow(pair.Input.Handle,8);
         GetCursorPos(out var cursor);
