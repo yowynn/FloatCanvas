@@ -190,7 +190,6 @@ try {
     $worker = Get-Process -Id $workerId
     Write-Host "Actual published ZIP worker started: $workerId; old launcher=$launcherId; old Host=$($parent.Id); fixture=$run"
     $clock = [Diagnostics.Stopwatch]::StartNew()
-    $previousPhase = ''
     $previousAcknowledgement = ''
     $suspendedUpdatedHost = $false
     $candidateHost = $null
@@ -220,16 +219,9 @@ try {
                 Write-Host "CONTROLLED FAULT: suspended $threadCount threads of new fixture Host $($candidateHost.ProcessId) before acknowledgement."
             }
         }
-        $journalPath = Join-Path $job 'journal.json'
-        if (Test-Path -LiteralPath $journalPath) {
-            $journal = Get-Content -LiteralPath $journalPath -Raw | ConvertFrom-Json
-            if ($journal.Phase -cne $previousPhase) {
-                $previousPhase = $journal.Phase
-                $observations.Add([pscustomobject]@{ Elapsed=$clock.Elapsed.TotalSeconds; Phase=$previousPhase; Processes=@(Owned-Processes) })
-                $observations | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $run 'stages.json') -Encoding utf8
-                Write-Host "Published ZIP stage: $previousPhase"
-            }
-        }
+        # Opening the live journal can prevent the immutable worker's File.Move
+        # from replacing it on Windows, even with delete sharing. Observe startup
+        # and owned processes here; read the journal only after the worker exits.
         Start-Sleep -Milliseconds 100
         $worker.Refresh()
     }

@@ -308,18 +308,32 @@ internal static class AppUpdateInstaller
         string profile = Root(profileDir), jobs = Path.Combine(profile, "updates", "jobs");
         NoReparse(jobs);
         int retained = 0;
+        var completed = new List<(string Job, DateTime JournalTime)>();
         // The journal timestamp is stable; removing payloads changes the directory timestamp.
-        foreach (string job in (Directory.Exists(jobs) ? Directory.GetDirectories(jobs) : Array.Empty<string>()).OrderByDescending(path => File.GetLastWriteTimeUtc(Path.Combine(path, "journal.json"))))
+        // Inspect timestamps only while holding the worker lease.
+        foreach (string job in Directory.Exists(jobs) ? Directory.GetDirectories(jobs) : Array.Empty<string>())
         {
             if (!Guid.TryParseExact(Path.GetFileName(job), "N", out _)) continue;
             try
             {
                 NoReparse(job);
-                if (ReadJournal(job)?.Phase != "Committed") continue;
+                using var lease = new FileStream(Child(job, "worker.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.Delete);
+                if (ReadJournal(job)?.Phase == "Committed") completed.Add((job, File.GetLastWriteTimeUtc(Path.Combine(job, "journal.json"))));
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or JsonException) { }
+        }
+        foreach (var candidate in completed.OrderByDescending(entry => entry.JournalTime))
+        {
+            string job = candidate.Job;
+            try
+            {
+                NoReparse(job);
                 // Open, rather than create: inspecting pending/foreign jobs must not modify them.
                 // Delete sharing lets this lease remain held while an obsolete whole job is removed.
                 string lockPath = Child(job, "worker.lock");
                 using var lease = new FileStream(lockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Delete);
+                // Revalidate after taking the lease; the worker may have changed state since sorting.
+                if (ReadJournal(job)?.Phase != "Committed") continue;
                 string planPath = Child(job, "plan.json");
                 var plan = ReadJson<InstallPlan>(planPath);
                 if (plan.Format != 1 || !Same(plan.ProfileDirectory, profile) || plan.ProfileDirectory != profile)

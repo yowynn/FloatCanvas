@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FloatCanvas.App;
@@ -10,7 +11,7 @@ internal static class UpdateCacheTests
 
     internal static void Run(Action<string, bool> check)
     {
-        BoundedSuccessfulUpdates(check); ProtectedJobs(check); FailedJobDoesNotDisableCollection(check); RecoveryLauncherCopies(check); DamagedBackup(check); UnknownContent(check); JunctionPreflight(check); DownloadOwnership(check);
+        BoundedSuccessfulUpdates(check); ProtectedJobs(check); ActiveWorkerJournalWrites(check); FailedJobDoesNotDisableCollection(check); RecoveryLauncherCopies(check); DamagedBackup(check); UnknownContent(check); JunctionPreflight(check); DownloadOwnership(check);
     }
 
     private static void BoundedSuccessfulUpdates(Action<string, bool> check)
@@ -52,6 +53,53 @@ internal static class UpdateCacheTests
         check("update cache leaves failed pending live foreign and recoverable committed jobs byte-identical", f.Matches(f.Jobs, before));
         check("committed recovery pointer retains worker and replacement package", File.Exists(Path.Combine(recovering, "worker", "FloatCanvas.exe")) && File.Exists(Path.Combine(recovering, "package", "FloatCanvas.exe")));
         check("protected jobs do not retain unrelated old complete downloads", Directory.GetDirectories(f.Downloads).Length == 1);
+    }
+
+    private static void ActiveWorkerJournalWrites(Action<string, bool> check)
+    {
+        using var f = new Fixture(); string live = f.Job(1);
+        var before = f.Snapshot(live); before.Remove("journal.json");
+        var writeJournal = typeof(AppUpdateInstaller).GetMethod("WriteJournal", BindingFlags.Static | BindingFlags.NonPublic)!
+            .CreateDelegate<Action<string, string, IEnumerable<string>>>();
+        // Stay within the production journal limits while making a reader/writer overlap likely.
+        string[] touched = Enumerable.Range(0, 8192).Select(index => "Docs/" + index.ToString("D4") + "-" + new string('j', 72) + ".md").ToArray();
+        writeJournal(live, "Starting", touched);
+        check("active worker journal stress uses valid metadata below the production size limit", new FileInfo(Path.Combine(live, "journal.json")).Length <= 1_048_576);
+        const int writes = 128, cleanerCount = 4;
+        int completed = 0, accessDenied = 0, ioFailures = 0, cleanupPasses = 0;
+        string? firstFailure = null;
+        using (var lease = new FileStream(Path.Combine(live, "worker.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        using (var stop = new CancellationTokenSource())
+        using (var ready = new CountdownEvent(cleanerCount))
+        {
+            var cleaners = Enumerable.Range(0, cleanerCount).Select(_ => Task.Factory.StartNew(() =>
+            {
+                AppUpdateInstaller.CleanupCompletedJobs(f.Profile); Interlocked.Increment(ref cleanupPasses); ready.Signal();
+                while (!stop.IsCancellationRequested)
+                {
+                    AppUpdateInstaller.CleanupCompletedJobs(f.Profile); Interlocked.Increment(ref cleanupPasses);
+                }
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+            try
+            {
+                if (!ready.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Journal cleanup stress did not start.");
+                for (int index = 0; index < writes; index++)
+                    try { writeJournal(live, index == writes - 1 ? "Committed" : "Starting", touched); completed++; }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        if (ex is UnauthorizedAccessException) accessDenied++; else ioFailures++;
+                        firstFailure ??= ex.GetType().Name + ": " + ex.Message;
+                    }
+            }
+            finally { stop.Cancel(); Task.WaitAll(cleaners); }
+            Console.WriteLine($"Active worker journal writes: completed={completed}/{writes}, accessDenied={accessDenied}, ioFailures={ioFailures}, cleanupPasses={cleanupPasses}, firstFailure={firstFailure ?? "none"}");
+            writeJournal(live, "Committed", Required);
+        }
+        var after = f.Snapshot(live); after.Remove("journal.json");
+        check("cleanup leaves active worker payload and metadata unchanged", before.Count == after.Count && before.All(pair => after.TryGetValue(pair.Key, out string? value) && value == pair.Value));
+        check("cleanup never interrupts an active worker atomic journal write", completed == writes && accessDenied == 0 && ioFailures == 0 && cleanupPasses >= cleanerCount);
+        AppUpdateInstaller.CleanupCompletedJobs(f.Profile);
+        check("released committed worker remains collectible after concurrent cleanup", File.Exists(Path.Combine(live, "backup", "FloatCanvas.dll")) && !Directory.Exists(Path.Combine(live, "worker")) && !Directory.Exists(Path.Combine(live, "package")));
     }
 
     private static void FailedJobDoesNotDisableCollection(Action<string, bool> check)
