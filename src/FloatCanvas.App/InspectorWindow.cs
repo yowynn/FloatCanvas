@@ -638,7 +638,7 @@ internal sealed class InspectorWindow : Wpf.Window
                 throw new InvalidOperationException(L.Get("Inspector.ZeroSize"));
             double sx = resizeX ? Number("W", L.Get("Inspector.Width"), .01, 10000000) / size.X : 1;
             double sy = resizeY ? Number("H", L.Get("Inspector.Height"), .01, 10000000) / size.Y : 1;
-            if (keepAspect.IsChecked == true)
+            if (ElementGeometry.PreservesAspect(edited))
             {
                 if (resizeX && resizeY && Math.Abs(sx - sy) > Math.Max(sx, sy) * .005)
                     throw new InvalidOperationException(L.Get("Inspector.AspectMismatch"));
@@ -848,8 +848,9 @@ internal sealed class InspectorWindow : Wpf.Window
                 case "Angle": edited.Transform = Affine2D.Around(PropertyBounds(source).Center, Affine2D.Rotation(value - ElementAngle(source))).Compose(source.Transform); break;
                 case "W": case "H":
                     var size = GeometricSize(source); double factor = value / (key == "W" ? size.X : size.Y);
-                    double sx = key == "W" || keepAspect.IsChecked == true ? factor : 1;
-                    double sy = key == "H" || keepAspect.IsChecked == true ? factor : 1;
+                    bool constrainAspect = ElementGeometry.PreservesAspect(source);
+                    double sx = key == "W" || constrainAspect ? factor : 1;
+                    double sy = key == "H" || constrainAspect ? factor : 1;
                     ResizeElement(edited, sx, sy); break;
                 case "StrokeWidth":
                     if (edited.Kind == ElementKind.Image) edited.ImageBorderWidth = value; else edited.Style.StrokeWidth = value;

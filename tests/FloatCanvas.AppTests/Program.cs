@@ -297,6 +297,8 @@ internal static class Program
             if (args.Contains("--official-preset-design-only")) { OfficialPresetDesignTests.Run(Assert, args.SkipWhile(a => a != "--official-preset-design-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--symbol-style-presets-only")) { SymbolStylePresetTests.Run(Assert); return 0; }
             if (args.Contains("--capture-aspect-policy-only")) { CaptureAspectPolicyTests.Run(Assert, args.SkipWhile(a => a != "--capture-aspect-policy-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--aspect-policy-only")) { AspectPolicyRegressionTests.Run(Assert); AspectInspectorRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--aspect-inspector-only")) { AspectInspectorRegressionTests.Run(Assert); return 0; }
             if (args.Contains("--number-start-link-only")) { NumberStartLinkTests.Run(Assert); return 0; }
             if (args.Contains("--complete-presets-only")) { CompletePresetContractTests.Run(Assert); return 0; }
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
@@ -376,6 +378,8 @@ internal static class Program
             CreationSelectionTests.Run(Assert);
             ClickPlacementThresholdTests.Run(Assert);
             DragSizedObjectsTests.Run(Assert);
+            AspectPolicyRegressionTests.Run(Assert);
+            AspectInspectorRegressionTests.Run(Assert);
             CaptureSelectionTests.Run(Assert);
             SnapshotImageTests.Run(Assert);
             ImageOutsideStrokeTests.Run(Assert);

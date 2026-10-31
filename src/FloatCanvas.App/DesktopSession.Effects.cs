@@ -63,9 +63,10 @@ internal sealed partial class DesktopSession
         var animationTime = _renderer.AnimationTime;
         if (region.IsEmpty) return;
         var mapping = CanvasMapping.Create(target.Document);
-        // Snapshot this transient choice before the controller ends the input gesture or an
-        // asynchronous desktop capture yields. The region is already logical screen/s here.
+        // Snapshot placement and the tool's layer defaults before the input gesture ends
+        // or asynchronous capture yields. The region is already logical screen/s here.
         var billboardDepth = _editor.ActiveBillboardDepthLine;
+        bool constrainAspect = _editor.ConstrainAspect;
         var regionToScreen = billboardDepth is { } selectedDepth
             ? Projective2D.FromAffine(Affine2D.Scale(selectedDepth.Scale, selectedDepth.Scale)) : mapping.PlaneToScreen;
         if (!regionToScreen.TryTransformBounds(region, out var projectedRegion) ||
@@ -74,7 +75,7 @@ internal sealed partial class DesktopSession
         if (desktopFilter && _host.Capabilities.SupportsCaptureExclusion)
         {
             var effect = new CanvasElement { Kind = kind == ImageEffectKind.Blur ? ElementKind.LiveBlur : ElementKind.LivePixelate, Width = region.Width, Height = region.Height,
-                Transform = Affine2D.Translation(region.X, region.Y), Style = new() { StrokeWidth = 0 },
+                Transform = Affine2D.Translation(region.X, region.Y), ConstrainAspect = constrainAspect, Style = new() { StrokeWidth = 0 },
                 Effects = [new ImageEffect { Kind = kind, Amount = amount, Bounds = new(0,0,1,1) }] };
             if (billboardDepth is { } depth && !BillboardGeometry.TryPlaceFromScreen(effect, mapping, depth,
                 regionToScreen.Compose(ElementGeometry.LocalToPlane(effect))))
@@ -104,6 +105,7 @@ internal sealed partial class DesktopSession
             var image = billboardDepth is { } depth
                 ? SnapshotImageCommand.CreateBillboardElement(_assets, raster, mapping, depth)
                 : SnapshotImageCommand.CreateElement(_assets, raster, mapping.PlaneToScreen);
+            image.ConstrainAspect = constrainAspect;
             image.Effects = [new ImageEffect { Kind = kind, Amount = amount, Color = color, Bounds = new(0, 0, 1, 1) }];
             if (!mapping.IsElementSafe(image)) { UpdateStatus(L.Get("Perspective.InputOutsidePlane")); return; }
             target.Add(image);

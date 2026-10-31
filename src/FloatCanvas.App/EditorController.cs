@@ -479,16 +479,17 @@ internal sealed partial class EditorController
         Session.NotifyChanged();
     }
 
-    private void ResizePlacement(PointD point)
+    private void ResizePlacement(PointD point, OverlayModifiers modifiers)
     {
         if (drawing is null || !gestureMoved) return;
         var delta = point - start;
-        double scale = Math.Max(1 / Math.Min(drawing.Width, drawing.Height),
-            Math.Max(Math.Abs(delta.X) / drawing.Width, Math.Abs(delta.Y) / drawing.Height));
-        double x = delta.X < 0 ? start.X - drawing.Width * scale : start.X;
-        double y = delta.Y < 0 ? start.Y - drawing.Height * scale : start.Y;
+        double sx = Math.Max(1 / drawing.Width, Math.Abs(delta.X) / drawing.Width);
+        double sy = Math.Max(1 / drawing.Height, Math.Abs(delta.Y) / drawing.Height);
+        if (ElementGeometry.PreservesAspect(drawing) ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = Math.Max(sx, sy);
+        double x = delta.X < 0 ? start.X - drawing.Width * sx : start.X;
+        double y = delta.Y < 0 ? start.Y - drawing.Height * sy : start.Y;
         // Scale the complete instance so the glyph and badge grow together; tool defaults stay unchanged.
-        drawing.Transform = Affine2D.Translation(x, y).Compose(Affine2D.Scale(scale, scale));
+        drawing.Transform = Affine2D.Translation(x, y).Compose(Affine2D.Scale(sx, sy));
     }
 
     /// <summary>Handles keys belonging to an unfinished capture before ordinary editor commands.</summary>
@@ -607,7 +608,7 @@ internal sealed partial class EditorController
             }
             if (Tool is EditorTool.Number or EditorTool.Emoji)
             {
-                ResizePlacement(p); RefreshBillboardDrawing(); Session.NotifyChanged(); return;
+                ResizePlacement(p, modifiers); RefreshBillboardDrawing(); Session.NotifyChanged(); return;
             }
             var local = p - start;
             if (drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter)
