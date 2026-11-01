@@ -72,7 +72,7 @@ internal static class ToolStateStoreTests
             ["unknown version"] = Change(valid, n => n["Version"] = 99),
             ["missing root field"] = Change(valid, n => n.Remove("Buttons")),
             ["unknown root field"] = Change(valid, n => n["Unknown"] = true),
-            ["duplicate root field"] = valid.Replace("\"Version\": 1", "\"Version\": 1, \"Version\": 1", StringComparison.Ordinal),
+            ["duplicate root field"] = valid.Replace("\"Version\": 2", "\"Version\": 2, \"Version\": 2", StringComparison.Ordinal),
             ["missing parameter field"] = Change(valid, n => n["Tools"]!["Freehand"]!.AsObject().Remove("Style")),
             ["missing style field"] = Change(valid, n => n["Tools"]!["Freehand"]!["Style"]!.AsObject().Remove("FontFamily")),
             ["unknown parameter field"] = Change(valid, n => n["Tools"]!["Freehand"]!["Unknown"] = 1),

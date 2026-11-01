@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using System.Windows;
@@ -13,142 +14,103 @@ internal static class AspectInspectorRegressionTests
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
-        var findings = new List<(string Name, bool Passed)>();
         foreach (string dimension in new[] { "W", "H" })
+        foreach (bool constrained in new[] { true, false })
+        foreach (bool individually in new[] { true, false })
         {
-            var session = new EditorSession();
-            var locked = new CanvasElement { Kind = ElementKind.Rectangle, Width = 160, Height = 100, ConstrainAspect = true };
-            var free = new CanvasElement { Kind = ElementKind.Rectangle, Width = 80, Height = 40, ConstrainAspect = false };
-            session.Document.Elements.AddRange([locked, free]); session.SetSelection([locked.Id, free.Id]);
-            var inspector = new InspectorWindow(() => session);
-            using var surface = new InspectorTestSurface(inspector);
-            var chain = Field<AspectRatioButton>(inspector, "keepAspect");
-            var fields = Field<Dictionary<string, TextBox>>(inspector, "fields");
-            Observe(dimension + " mixed-lock selection displays an indeterminate aspect chain", chain.IsThreeState && chain.IsChecked is null);
+            var (session, locked, free) = Selection(); session.TransformIndividually = individually;
+            var inspector = new InspectorWindow(() => session); using var surface = new InspectorTestSurface(inspector);
+            var panel = Field<NodeTransformPanel>(inspector, "nodeTransforms");
+            var fields = Field<Dictionary<string, NumericValueField>>(panel, "fields");
+            Field<CheckBox>(panel, "aspect").IsChecked = constrained;
+            string label = $"{dimension} selection aspect={constrained}, individual={individually}";
             string original = JsonSerializer.Serialize(session.Document.Elements);
-            int undo = session.UndoCount;
-            fields[dimension].Text = dimension == "W" ? "320" : "200";
-            inspector.CompletePendingEdit();
-            var afterLocked = session.Document.Elements.Single(e => e.Id == locked.Id);
-            var afterFree = session.Document.Elements.Single(e => e.Id == free.Id);
-            Console.WriteLine("ASPECT_INSPECTOR " + JsonSerializer.Serialize(new
+            var before = session.SelectedWorldElements().ToDictionary(element => element.Id, element => ElementGeometry.Bounds(element));
+            var combined = session.SelectionBounds()!.Value;
+            double value = (dimension == "W" ? combined.Width : combined.Height) * 2;
+            fields[dimension].Input.Text = value.ToString(CultureInfo.CurrentCulture);
+            Invoke(panel, "Publish", dimension); inspector.CompletePendingEdit();
+            var after = session.SelectedWorldElements().ToDictionary(element => element.Id, element => ElementGeometry.Bounds(element));
+            double sx = dimension == "W" || constrained ? 2 : 1, sy = dimension == "H" || constrained ? 2 : 1;
+            foreach (var id in new[] { locked.Id, free.Id })
             {
-                Dimension = dimension, Before = original,
-                After = session.Document.Elements.Select(e => new { e.Id, e.Width, e.Height, e.ConstrainAspect }),
-                UndoBefore = undo, UndoAfter = session.UndoCount,
-                Chain = chain.IsChecked, chain.IsThreeState
-            }));
-            Observe(dimension + " numeric edit preserves the locked layer's own ratio within a mixed selection",
-                Near(afterLocked.Width, 320) && Near(afterLocked.Height, 200));
-            Observe(dimension + " numeric edit leaves the unlocked layer's other dimension independent",
-                dimension == "W" ? Near(afterFree.Width, 320) && Near(afterFree.Height, 40) : Near(afterFree.Width, 80) && Near(afterFree.Height, 200));
-            Observe(dimension + " numeric edit retains both stored lock choices", afterLocked.ConstrainAspect == true && afterFree.ConstrainAspect == false);
-            Observe(dimension + " multi-layer numeric edit commits one undo entry", session.UndoCount == undo + 1 && !session.IsTransactionActive);
-            bool undone = session.Undo();
-            Observe(dimension + " one undo restores both dimensions and both lock choices", undone && JsonSerializer.Serialize(session.Document.Elements) == original);
-            bool redone = session.Redo();
-            Observe(dimension + " redo reapplies the linked and independent dimensions", redone &&
-                Near(session.Document.Elements.Single(e => e.Id == locked.Id).Width, 320) &&
-                Near(session.Document.Elements.Single(e => e.Id == locked.Id).Height, 200));
+                check(label + " applies the same selected-axis scale to every member", Near(after[id].Width, before[id].Width * sx) && Near(after[id].Height, before[id].Height * sy));
+                PointD expected = individually ? before[id].Center :
+                    Affine2D.Around(combined.Center, Affine2D.Scale(sx, sy)).TransformPoint(before[id].Center);
+                check(label + " uses the chosen whole-selection or individual pivot", after[id].Center.DistanceTo(expected) < 1e-8);
+            }
+            check(label + " keeps local dimensions and each layer's stored creation policy",
+                session.Document.Elements.Single(e => e.Id == locked.Id) is { Width: 160, Height: 100, ConstrainAspect: true } &&
+                session.Document.Elements.Single(e => e.Id == free.Id) is { Width: 80, Height: 40, ConstrainAspect: false });
+            string preview = JsonSerializer.Serialize(session.Document.Elements);
+            check(label + " commits one complete transform", session.UndoCount == 1 && !session.IsTransactionActive);
+            check(label + " one undo restores both local placements and policies", session.Undo() && JsonSerializer.Serialize(session.Document.Elements) == original);
+            check(label + " redo restores the complete transform", session.Redo() && JsonSerializer.Serialize(session.Document.Elements) == preview);
         }
-        Scrubs(Observe);
-        UnifiedChoices(Observe);
-        foreach (var finding in findings) check(finding.Name, finding.Passed);
-        void Observe(string name, bool passed)
-        {
-            findings.Add((name, passed));
-            Console.WriteLine($"ASPECT_INSPECTOR_FINDING {passed}: {name}");
-        }
+        Scrubs(check);
+        SingleLeafPolicies(check);
     }
 
-    private static void Scrubs(Action<string, bool> observe)
+    private static void Scrubs(Action<string, bool> check)
     {
         foreach (string dimension in new[] { "W", "H" })
         foreach (bool commit in new[] { true, false })
         {
-            var (session, locked, free) = Selection();
-            var inspector = new InspectorWindow(() => session);
+            var (session, _, _) = Selection(); var inspector = new InspectorWindow(() => session);
             using var surface = new InspectorTestSurface(inspector);
-            string label = $"{dimension} mixed-lock numeric drag commit={commit}";
+            var panel = Field<NodeTransformPanel>(inspector, "nodeTransforms");
+            var fields = Field<Dictionary<string, NumericValueField>>(panel, "fields");
+            string label = $"{dimension} selection transform gesture commit={commit}";
             string original = JsonSerializer.Serialize(session.Document.Elements);
-            int undo = session.UndoCount;
-            bool began = (bool)Invoke(inspector, "BeginScrub", dimension)!;
-            observe(label + " starts the production multi-layer scrub", began && session.IsTransactionActive);
-            if (!began) continue;
-            Invoke(inspector, "UpdateScrub", dimension, 16d);
-            Invoke(inspector, "UpdateScrub", dimension, 32d);
-            var activeLocked = session.Document.Elements.Single(e => e.Id == locked.Id);
-            var activeFree = session.Document.Elements.Single(e => e.Id == free.Id);
-            Console.WriteLine("ASPECT_INSPECTOR_SCRUB " + JsonSerializer.Serialize(new
-            {
-                Dimension = dimension, Commit = commit,
-                Preview = session.Document.Elements.Select(e => new { e.Width, e.Height, e.ConstrainAspect }),
-                session.UndoCount, session.IsTransactionActive
-            }));
-            observe(label + " previews the locked layer's own ratio", dimension == "W"
-                ? Near(activeLocked.Width, 192) && Near(activeLocked.Height, 120)
-                : Near(activeLocked.Width, 211.2) && Near(activeLocked.Height, 132));
-            observe(label + " previews only the requested axis on the unlocked layer", dimension == "W"
-                ? Near(activeFree.Width, 112) && Near(activeFree.Height, 40)
-                : Near(activeFree.Width, 80) && Near(activeFree.Height, 72));
-            observe(label + " preserves both lock choices without preview history", activeLocked.ConstrainAspect == true &&
-                activeFree.ConstrainAspect == false && session.UndoCount == undo);
+            var bounds = session.SelectionBounds()!.Value;
+            double start = dimension == "W" ? bounds.Width : bounds.Height;
+            check(label + " starts the production selection transform transaction", (bool)Invoke(panel, "BeginEdit")! && session.IsTransactionActive);
+            fields[dimension].Input.Text = (start * 1.2).ToString(CultureInfo.CurrentCulture); Invoke(panel, "Publish", dimension);
+            fields[dimension].Input.Text = (start * 1.4).ToString(CultureInfo.CurrentCulture); Invoke(panel, "Publish", dimension);
+            var after = session.SelectionBounds()!.Value;
+            check(label + " second sample is relative to the initial snapshot", Near(after.Width, bounds.Width * 1.4) && Near(after.Height, bounds.Height * 1.4) && session.UndoCount == 0);
             string preview = JsonSerializer.Serialize(session.Document.Elements);
-            Invoke(inspector, "FinishScrub", commit);
             if (commit)
             {
-                observe(label + " commits one complete gesture", !session.IsTransactionActive && session.UndoCount == undo + 1 &&
-                    JsonSerializer.Serialize(session.Document.Elements) == preview);
-                observe(label + " undo restores both layers and locks", session.Undo() && JsonSerializer.Serialize(session.Document.Elements) == original);
-                observe(label + " redo restores both layer previews", session.Redo() && JsonSerializer.Serialize(session.Document.Elements) == preview);
+                panel.CompletePendingEdit();
+                check(label + " commits one history entry", session.UndoCount == 1 && !session.IsTransactionActive && JsonSerializer.Serialize(session.Document.Elements) == preview);
+                check(label + " undo and redo preserve the exact local snapshots", session.Undo() && JsonSerializer.Serialize(session.Document.Elements) == original &&
+                    session.Redo() && JsonSerializer.Serialize(session.Document.Elements) == preview);
             }
-            else observe(label + " cancellation restores both layers and history", !session.IsTransactionActive && session.UndoCount == undo &&
-                JsonSerializer.Serialize(session.Document.Elements) == original);
+            else
+            {
+                panel.CancelEditing();
+                check(label + " cancellation restores all members without history", session.UndoCount == 0 && !session.IsTransactionActive && JsonSerializer.Serialize(session.Document.Elements) == original);
+            }
         }
     }
 
-    private static void UnifiedChoices(Action<string, bool> observe)
+    private static void SingleLeafPolicies(Action<string, bool> check)
     {
         foreach (string dimension in new[] { "W", "H" })
         foreach (bool constrained in new[] { true, false })
         {
-            var (session, locked, free) = Selection();
-            var inspector = new InspectorWindow(() => session);
-            using var surface = new InspectorTestSurface(inspector);
+            var (session, locked, _) = Selection(); session.SetSelection([locked.Id]);
+            var inspector = new InspectorWindow(() => session); using var surface = new InspectorTestSurface(inspector);
             var chain = Field<AspectRatioButton>(inspector, "keepAspect");
+            chain.IsChecked = constrained; chain.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); inspector.CompletePendingEdit();
             var fields = Field<Dictionary<string, TextBox>>(inspector, "fields");
-            string label = $"{dimension} explicit multi-layer aspect choice={constrained}";
-            string original = JsonSerializer.Serialize(session.Document.Elements);
-            chain.IsChecked = constrained; chain.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            inspector.CompletePendingEdit();
-            observe(label + " unifies both stored layer choices", session.Document.Elements.All(e => e.ConstrainAspect == constrained) &&
-                !chain.IsThreeState && chain.IsChecked == constrained && session.UndoCount == 1);
-            string unified = JsonSerializer.Serialize(session.Document.Elements);
-            fields[dimension].Text = dimension == "W" ? "320" : "200";
-            inspector.CompletePendingEdit();
-            var actualLocked = session.Document.Elements.Single(e => e.Id == locked.Id);
-            var actualFree = session.Document.Elements.Single(e => e.Id == free.Id);
-            double lockedWidth = dimension == "W" || constrained ? 320 : 160;
-            double lockedHeight = dimension == "H" || constrained ? 200 : 100;
-            double freeWidth = dimension == "W" ? 320 : constrained ? 400 : 80;
-            double freeHeight = dimension == "H" ? 200 : constrained ? 160 : 40;
-            observe(label + " applies the unified choice to each layer's numeric resize", Near(actualLocked.Width, lockedWidth) &&
-                Near(actualLocked.Height, lockedHeight) && Near(actualFree.Width, freeWidth) && Near(actualFree.Height, freeHeight));
-            observe(label + " keeps choice and numeric edit as separate undo steps", session.UndoCount == 2 && !session.IsTransactionActive &&
-                session.Undo() && JsonSerializer.Serialize(session.Document.Elements) == unified &&
-                session.Undo() && JsonSerializer.Serialize(session.Document.Elements) == original);
+            fields[dimension].Text = dimension == "W" ? "320" : "200"; inspector.CompletePendingEdit();
+            var result = session.Document.Elements.Single(element => element.Id == locked.Id);
+            check($"{dimension} single leaf retains its own persisted aspect policy={constrained}",
+                result.ConstrainAspect == constrained && Near(result.Width, dimension == "W" || constrained ? 320 : 160) &&
+                Near(result.Height, dimension == "H" || constrained ? 200 : 100));
         }
     }
 
     private static (EditorSession Session, CanvasElement Locked, CanvasElement Free) Selection()
     {
         var session = new EditorSession();
-        var locked = new CanvasElement { Kind = ElementKind.Rectangle, Width = 160, Height = 100, ConstrainAspect = true };
-        var free = new CanvasElement { Kind = ElementKind.Rectangle, Width = 80, Height = 40, ConstrainAspect = false };
+        var locked = new CanvasElement { Kind = ElementKind.Rectangle, Width = 160, Height = 100, ConstrainAspect = true, Style = new() { StrokeWidth = 0 } };
+        var free = new CanvasElement { Kind = ElementKind.Rectangle, Width = 80, Height = 40, Transform = Affine2D.Translation(240, 50), ConstrainAspect = false, Style = new() { StrokeWidth = 0 } };
         session.Document.Elements.AddRange([locked, free]); session.SetSelection([locked.Id, free.Id]);
         return (session, locked, free);
     }
-
     private static bool Near(double actual, double expected) => Math.Abs(actual - expected) < 1e-8;
     private static T Field<T>(object instance, string name) => (T)instance.GetType().GetField(name, Private)!.GetValue(instance)!;
     private static object? Invoke(object instance, string name, params object[] args) => instance.GetType().GetMethod(name, Private)!.Invoke(instance, args);

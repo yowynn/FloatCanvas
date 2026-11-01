@@ -42,6 +42,7 @@ internal sealed partial class DesktopSession
 
     private void OpenCanvasSettings()
     {
+        if (Active.IsReadOnly) { UpdateStatus(L.Get("GroupCanvas.ReadOnly")); return; }
         if (DocumentOperationBusy || !_host.IsEditing || _editor.Tool != EditorTool.Canvas) return;
         bool alreadyOpen = IsCanvasSettingsOpen;
         SynchronizeFlatGridOrigin();
@@ -86,6 +87,12 @@ internal sealed partial class DesktopSession
             };
             window.GridCountsChanged += SetCanvasGridCounts;
             window.GridSizeChanged += SetCanvasGridSize;
+            window.PlaneSizeChanged += (width, height) => ResizeCanvasPlane(width, height);
+            window.PlaneAspectChanged += SetCanvasPlaneAspect;
+            window.GridOriginChanged += origin => ChangeCanvas(c => { EnsureCanvasReference(c); c.Grid.PlaneOrigin = origin; });
+            window.GridOriginToPinRequested += () => ChangeCanvas(c => { EnsureCanvasReference(c); c.Grid.PlaneOrigin = c.Projection.PinPoint; });
+            window.RectificationPreviewRequested += () => _ = RunCommand(ShowCanvasRectificationPreviewAsync);
+            window.GridCalibrationRequested += BeginCanvasGridCalibration;
             window.PinLocationChanged += SetCanvasPinLocation;
             window.GridSizeLockChanged += SetCanvasGridSizeLock;
             window.ResetDisplayRequested += ResetCanvasProjectionOnDisplay;
@@ -154,6 +161,7 @@ internal sealed partial class DesktopSession
 
     private void SynchronizeFlatGridOrigin()
     {
+        if (HasPrefabEditContext) { _canvasOriginDocument = Active.Document; return; }
         if (_host.Monitors.Count == 0) return;
         var primary = _host.PrimaryMonitor.Bounds;
         Active.Document.Canvas.Grid.FlatOrigin = new PointD(primary.Left + primary.Width / 2d, primary.Top + primary.Height / 2d) - _editor.ScreenOrigin;
@@ -210,16 +218,18 @@ internal sealed partial class DesktopSession
 
     private void EnsureCanvasReference(CanvasSettings settings)
     {
-        if (settings.Projection.Quad.Count == 4) return;
+        if (settings.Projection.Quad.Count == 4) { CanvasGeometryMigration.UpgradeLegacy(settings); return; }
         var old = settings.Projection;
         double size = CanvasGridGeometry.ResolveCellSize(settings, CanvasReferenceViewport());
         settings.Projection = CanvasGridGeometry.CreateFlatReference(CanvasReferenceViewport(), old.Columns, old.Rows, size);
         settings.Projection.Enabled = old.Enabled;
+        CanvasGeometryMigration.UpgradeLegacy(settings);
 
     }
 
     private void ChangeCanvas(Action<CanvasSettings> change)
     {
+        if (Active.IsReadOnly) { UpdateStatus(L.Get("GroupCanvas.ReadOnly")); return; }
         if (DocumentOperationBusy || !_host.IsEditing) return;
         if (_canvasNumericEdit is { IsActive: true })
         {
@@ -256,9 +266,14 @@ internal sealed partial class DesktopSession
 
     private void SetCanvasGridSize(double size)
     {
-        if (Active.Document.Canvas.Projection.Enabled || !double.IsFinite(size) || size is < 1 or > CanvasGridGeometry.MaximumCellSize) return;
+        if (!double.IsFinite(size) || size is < 1 or > CanvasGridGeometry.MaximumCellSize) return;
         if (CanvasGridGeometry.ResolveCellSize(Active.Document.Canvas, CanvasReferenceViewport()) == size) return;
-        ChangeCanvas(settings => CanvasGridScaleController.ApplyGridSize(settings, CanvasReferenceViewport(), size));
+        ChangeCanvas(settings =>
+        {
+            EnsureCanvasReference(settings);
+            if (settings.Projection.Enabled) settings.Grid.PlaneCellSize = size;
+            else CanvasGridScaleController.ApplyGridSize(settings, CanvasReferenceViewport(), size);
+        });
     }
 
     private void ApplyCanvasPreset(CanvasPresetParameters parameters)
@@ -292,6 +307,8 @@ internal sealed partial class DesktopSession
         ChangeCanvas(settings =>
         {
             var original = settings.Projection;
+            if (original.PlaneBounds is { } plane)
+            { settings.Grid.PlaneCellSize = plane.Width / columns; return; }
             if (original.Columns == columns && original.Rows == rows) return;
             if (original.Quad.Count == 0)
             {
@@ -334,7 +351,8 @@ internal sealed partial class DesktopSession
         try { ChangeCanvas(settings =>
         {
             settings.Projection = CreateResetCanvasProjection(settings, reference ?? CanvasReferenceViewport());
-            settings.Grid.FlatCellSize = settings.Projection.GridCellSize;
+            if (settings.Projection.PlaneBounds is null) settings.Grid.FlatCellSize = settings.Projection.GridCellSize;
+            else settings.Grid.PlaneOrigin = settings.Projection.PinPoint;
             settings.Grid.FlatTranslation = default;
         }); }
         catch (ArgumentOutOfRangeException) { UpdateStatus(L.Get("Canvas.InvalidGrid")); }
@@ -343,6 +361,15 @@ internal sealed partial class DesktopSession
     internal static CanvasProjectionSettings CreateResetCanvasProjection(CanvasSettings settings, RectD reference)
     {
         var old = settings.Projection;
+        if (old.PlaneBounds is { } plane)
+        {
+            var bounds = new RectD(reference.Center.X - plane.Width / 2, reference.Center.Y - plane.Height / 2, plane.Width, plane.Height);
+            var next = old.Clone(); next.PlaneBounds = bounds; next.Origin = new(bounds.X, bounds.Y);
+            next.Matrix = Projective2D.Identity;
+            next.Quad = [new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)];
+            next.PinPlanePoint = CanvasProjectionGeometry.PinPoint(bounds, next.PinLocation);
+            return next;
+        }
         var reset = CanvasCalibration.CreateInitial(reference, old.Columns, old.Rows);
         reset.PinLocation = old.PinLocation;
         reset.PinPlanePoint = reset.PinPoint;
@@ -354,6 +381,7 @@ internal sealed partial class DesktopSession
 
     private void EndCanvasCalibration(bool hidePanel = false, bool restoreWindows = true)
     {
+        ClearCanvasGridCalibration();
         _canvasGridScale?.Cancel();
         _calibrationSession = null;
         if (_canvasCalibration.IsActive) _canvasCalibration.End();
@@ -447,6 +475,7 @@ internal sealed partial class DesktopSession
     private bool HandleCanvasToolPointer(OverlayPointerEvent e)
     {
         if (_editor.Tool != EditorTool.Canvas) return false;
+        if (HandleCanvasGridCalibrationPointer(e)) return true;
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
         {
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
@@ -520,6 +549,7 @@ internal sealed partial class DesktopSession
 
     private void DrawCanvasCalibration(SKCanvas canvas)
     {
+        if (_canvasGridCalibrationSession is not null) { DrawCanvasGridCalibration(canvas); return; }
         if (!_canvasCalibration.IsActive) return;
         DrawCanvasSafetyBoundary(canvas);
         if(_canvasCalibration.IsPlacing){DrawCanvasFourPoints(canvas);return;}

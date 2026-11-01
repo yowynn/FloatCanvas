@@ -27,6 +27,17 @@ internal static class ImageDropDataReaderTests
             check($"OLE {(wide ? "Unicode" : "ANSI")} file snapshot owns the paths and no encoded image branch", payload.FilePaths.SequenceEqual(new[] { @"C:\fixture\one.PNG", @"D:\images\two.webp" }) && payload.EncodedImages.Count == 0);
             check("OLE CF_HDROP storage is released after both capability and snapshot reads", source.Handles.All(Freed));
         }
+        foreach (bool wide in new[] { true, false })
+        {
+            string[] files = [@"C:\fixture\linked.FLOATCANVAS", @"D:\fixture\preset.floatprefab", @"C:\fixture\image.png"];
+            var source = new Source().Global(15, -1, Paths(files, wide));
+            check($"OLE {(wide ? "Unicode" : "ANSI")} paths negotiate project prefab and image files together", ImageDropDataReader.Supports(source));
+            var payload = ImageDropDataReader.Read(source);
+            check("OLE project payload retains ordered absolute paths for linked placement", payload.HasProjects && payload.FilePaths.SequenceEqual(files) && payload.EncodedImages.Count == 0);
+            check("OLE linked-project file list releases all borrowed global allocations", source.Handles.All(Freed));
+        }
+        var virtualProject = new Source().Global(DescriptorFormat, -1, Descriptors([("virtual.floatcanvas", (long?)16)])).Stream(ContentsFormat, 0, new(new byte[16]));
+        check("virtual project without a stable file path cannot advertise a persistent linked drop", !ImageDropDataReader.Supports(virtualProject) && Rejects(() => ImageDropDataReader.Read(virtualProject)) && virtualProject.Gets.All(item => item.Format != ContentsFormat));
         foreach (string[] paths in new[] { new[] { @"C:\a.png", @"C:\wrong.txt" }, new[] { " " }, new[] { "relative.png" }, Array.Empty<string>(), Enumerable.Repeat(@"C:\a.png", 33).ToArray() })
         {
             var source = new Source().Global(15, -1, Paths(paths, true));

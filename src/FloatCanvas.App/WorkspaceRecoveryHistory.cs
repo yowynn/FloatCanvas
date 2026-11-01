@@ -37,7 +37,8 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
     }
     private static bool HasValue(WorkspaceState workspace) => HasObjects(workspace);
     private static bool HasObjects(WorkspaceState workspace) => workspace.LiveDocument.Elements.Count > 0 ||
-        workspace.LiveDocument.Background is not null || workspace.CaptureDocument is not null;
+        workspace.LiveDocument.Groups.Count > 0 || workspace.LiveDocument.Instances.Count > 0 || workspace.LiveDocument.Definitions.Count > 0 ||
+        workspace.LiveDocument.Background is not null || workspace.CaptureDocument is not null || workspace.PendingPrefabEdit is not null;
     public void WriteCurrentInfo(WorkspaceState workspace, string? sourceFile)
         => CreateCurrentInfoWriter(workspace, sourceFile)();
     // Capture the entry identity on UI; hashing and file IO can then run on a worker
@@ -306,10 +307,12 @@ internal sealed class WorkspaceRecoveryHistory(RecoveryStore store)
 
     private static string ContentFingerprint(WorkspaceState workspace)
     {
-        var content = workspace.Clone();
+        var content = WindowSourcePersistence.AuthoredProjection(workspace);
         // Monitor discovery alone must never turn a blank launch into a new recovery generation.
         content.LiveDocument.Viewport = default;
         content.LiveDocument.DisplayLayout = [];
+        if (content.LiveDocument.Elements.Count == 0 && content.LiveDocument.Groups.Count == 0 && content.LiveDocument.Instances.Count == 0 &&
+            content.LiveDocument.Definitions.Count == 0 && content.LiveDocument.Background is null) content.LiveDocument.ResourceId = Guid.Empty;
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(content)));
     }
 }

@@ -26,6 +26,7 @@ internal static class LayerRenameTests
         Storage(check).GetAwaiter().GetResult();
         LayersWindowTests.Run(check);
         InspectorLayerPanelTests.Run(check);
+        LayerTreeTests.Run(check);
     }
 
     private static void Core(Action<string, bool> check)
@@ -69,14 +70,14 @@ internal static class LayerRenameTests
         var window = new LayersWindow(() => session, () => allowed);
         window.PrepareForShow();
         var list = (Controls.ListBox)Field(window, "layers");
-        Controls.ListBoxItem Item(Guid id) => list.Items.Cast<Controls.ListBoxItem>().Single(i => (Guid)i.Tag == id);
-        Controls.TextBlock Label(Guid id) => ((Controls.Grid)Item(id).Content).Children.OfType<Controls.TextBlock>().Single();
-        Controls.TextBox Editor(Guid id) => ((Controls.Grid)Item(id).Content).Children.OfType<Controls.TextBox>().Single();
+        Controls.ListBoxItem Item(Guid id) => window.Container(id)!;
+        Controls.TextBlock Label(Guid id) => LayerTreeRowPresenter.Find(Item(id))!.Label;
+        Controls.TextBox Editor(Guid id) => LayerTreeRowPresenter.Find(Item(id))!.Editor;
         void ClickName(Guid id)
         {
             window.PrepareForShow();
-            Label(id).RaiseEvent(new Input.MouseButtonEventArgs(Input.Mouse.PrimaryDevice, Environment.TickCount, Input.MouseButton.Left)
-            { RoutedEvent = Input.Mouse.PreviewMouseDownEvent });
+            var presenter = LayerTreeRowPresenter.Find(Item(id))!;
+            presenter.ActivateNameClick(LayerRowPolishTests.PaintedPoint(Label(id)));
         }
         ClickName(b.Id);
         check(locale + " first click on an unselected name does not enter rename", !window.IsRenaming);

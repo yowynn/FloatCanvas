@@ -48,7 +48,7 @@ internal static class LauncherMenuTests
             check(label + " tools match the active toolbar families without retired solid cover",
                 tools.SequenceEqual(new[] { EditorTool.Select, EditorTool.Eraser, EditorTool.Freehand, EditorTool.Highlighter,
                     EditorTool.Line, EditorTool.Rectangle, EditorTool.Ellipse, EditorTool.Text, EditorTool.Number,
-                    EditorTool.Symbol, EditorTool.Emoji, EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate, EditorTool.CaptureRegion, EditorTool.Canvas }));
+                    EditorTool.Symbol, EditorTool.Emoji, EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate, EditorTool.Presentation, EditorTool.PointerPresentation, EditorTool.CaptureRegion, EditorTool.Canvas }));
             var canvasTool = entries.Single(item => Equals(item.Tag, EditorTool.Canvas));
             var lineTool = entries.Single(item => Equals(item.Tag, EditorTool.Line));
             var circleTool = entries.Single(item => Equals(item.Tag, EditorTool.Ellipse));

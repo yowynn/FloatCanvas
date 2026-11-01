@@ -1,0 +1,6 @@
+{
+  "Placement.ImportTitle": { "zh": "置入图片或工程", "en": "Place images or projects" },
+  "Placement.Filter": { "zh": "图片、画布与预制体 (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif;*.floatcanvas;*.floatprefab)|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif;*.floatcanvas;*.floatprefab|图片 (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif)|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif|画布工程 (*.floatcanvas)|*.floatcanvas|预制体 (*.floatprefab)|*.floatprefab", "en": "Images, canvases and prefabs (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif;*.floatcanvas;*.floatprefab)|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif;*.floatcanvas;*.floatprefab|Images (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif)|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif|Canvas projects (*.floatcanvas)|*.floatcanvas|Prefabs (*.floatprefab)|*.floatprefab" },
+  "Placement.Imported": { "zh": "已置入 {0} 项内容。", "en": "Placed {0} items." },
+  "Placement.ImportFailed": { "zh": "置入失败：", "en": "Unable to place content: " }
+}

@@ -19,6 +19,7 @@ internal sealed partial class DesktopSession
     private void CreateToolOptionsPopup(Window toolbar)
     {
         _toolOptionsPanel = new(_editor, _toolPresets, _colorLibrary, _toolStateStore);
+        ConfigurePresentationUi(_toolOptionsPanel);
         _toolOptionsFrame = new Border { Child = _toolOptionsPanel };
         _toolOptionsWindow = new Window { Content = _toolOptionsFrame, Width = ToolOptionsPanel.PreferredWidth + 2,
             MinWidth = PropertyPanelLayout.TwoColumnMinimumWidth, MinHeight = PropertyPanelLayout.TwoColumnMinimumHeight,
@@ -102,6 +103,12 @@ internal sealed partial class DesktopSession
         _toolOptionsWindow.Owner ??= _toolbar;
         ConstrainToolOptions();
         ShowAnchoredToolWindow(_toolOptionsWindow, alreadyOpen, PositionToolOptions);
+    }
+
+    private void ShowPresentationPointerSettings()
+    {
+        if (_editor.Tool != EditorTool.PointerPresentation) ActivateTool(EditorTool.PointerPresentation);
+        OpenToolOptions();
     }
 
     private void CloseToolOptions() => DismissToolOptions(WindowDismissReason.Close);

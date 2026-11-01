@@ -10,6 +10,15 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--window-sources-only")) { WindowSourceRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} window source rendering checks."); return 0; }
+            if (args.Contains("--window-evidence")) { WindowSourceRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--window-evidence") + 1]); return 0; }
+            if (args.Contains("--presentation-only")) { PresentationRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} presentation rendering checks."); return 0; }
+            if (args.Contains("--presentation-pointer-only")) { PresentationPointerRenderingTests.Run(Assert, args.SkipWhile(a => a != "--presentation-pointer-only").Skip(1).FirstOrDefault()); Console.WriteLine($"PASS {_checks} global pointer and keyboard rendering checks."); return 0; }
+            if (args.Contains("--presentation-evidence")) { PresentationRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--presentation-evidence") + 1]); return 0; }
+            if (args.Contains("--groups-only")) { GroupedSceneRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} grouped scene rendering checks."); return 0; }
+            if (args.Contains("--prefabs-only")) { PrefabOccurrenceRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} prefab occurrence checks."); return 0; }
+            if (args.Contains("--canvas-rectification-only")) { CanvasRectificationTests.Run(Assert); Console.WriteLine($"PASS {_checks} canvas rectification checks."); return 0; }
+            if (args.Contains("--appearance-only")) { StyleVariantRenderingTests.Run(Assert, args.SkipWhile(a => a != "--appearance-only").Skip(1).FirstOrDefault()); Console.WriteLine($"PASS {_checks} appearance rendering checks."); return 0; }
             if (args.Contains("--dashed-freehand-only")) { DashedFreehandPerformanceTests.Run(Assert); return 0; }
             if (args.Contains("--ground-plane-occlusion-only")) { GroundPlaneOcclusionTests.Run(Assert); return 0; }
             if (args.Contains("--ground-plane-picking-only")) { GroundPlanePickingTests.Run(Assert); Console.WriteLine($"PASS {_checks} ground picking checks."); return 0; }
@@ -77,6 +86,7 @@ internal static class Program
             TextAndNumbers();
             UnicodeTextLayoutTests.Run(Assert);
             NumberFitRenderingTests.Run(Assert);
+            StyleVariantRenderingTests.Run(Assert);
             OrientationAndFormats();
             AssetImportLosslessTests.Run(Assert);
             ImageDecodeBudgetTests.Run(Assert);
@@ -94,6 +104,9 @@ internal static class Program
             ClearedLiveOpacityTests.Run(Assert);
             CaptureSelectionRenderingTests.Run(Assert);
             CanvasProjectionRenderingTests.Run(Assert);
+            CanvasRectificationTests.Run(Assert);
+            GroupedSceneRenderingTests.Run(Assert);
+            PrefabOccurrenceRenderingTests.Run(Assert);
             GridDensityRenderingTests.Run(Assert);
             HorizonSafetyRenderingTests.Run(Assert);
             ProjectionUnsafeRegionRenderingTests.Run(Assert);
@@ -103,6 +116,9 @@ internal static class Program
         CanvasPinRenderingTests.Run(Assert);
         GridLockRenderingTests.Run(Assert);
             BillboardRenderingTests.Run(Assert);
+            PresentationRenderingTests.Run(Assert);
+            PresentationPointerRenderingTests.Run(Assert);
+            WindowSourceRenderingTests.Run(Assert);
             DepthOcclusionRenderingTests.Run(Assert);
             GroundPlaneOcclusionTests.Run(Assert);
             GroundPlanePickingTests.Run(Assert);
@@ -227,7 +243,10 @@ internal static class Program
         var wrapped = renderer.MeasureText("中文测试自动换行", style, 60);
         Assert("text wrapping respects local width", wrapped.LineCount >= 4 && wrapped.Width <= 60);
         var number = Document(80, 80);
-        number.Elements.Add(new() { Kind = ElementKind.Number, Width = 60, Height = 60, Number = 27, Style = new() { Stroke = 0xFFEE3333, FontSize = 30 }, Transform = Affine2D.Translation(10, 10) });
+        var legacyNumber = new CanvasElement { Kind = ElementKind.Number, Width = 60, Height = 60, Number = 27,
+            Style = new() { FontSize = 30 }, Transform = Affine2D.Translation(10, 10) };
+        AppearanceMigration.MigrateElement(legacyNumber, new(0xFFEE3333, 0, false, null), numberUsesForeground: false);
+        number.Elements.Add(legacyNumber);
         using var label = Decode(renderer.ExportPng(number, new(), true));
         Assert("number badge renders circle and white digits", label.GetPixel(40, 14).Red > 200 && label.GetPixel(40, 14).Alpha > 200 &&
             Enumerable.Range(20, 40).Any(y => Enumerable.Range(20, 40).Any(x => { var c = label.GetPixel(x, y); return c.Red > 245 && c.Green > 245 && c.Blue > 245 && c.Alpha > 200; })));

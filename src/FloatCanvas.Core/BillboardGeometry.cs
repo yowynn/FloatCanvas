@@ -31,6 +31,15 @@ public readonly record struct BillboardDepthLine(PointD ScreenPoint, PointD Scre
     }
 }
 
+/// <summary>A world-space placement; content geometry and style remain unchanged.</summary>
+public readonly record struct BillboardPlacement(PointD Anchor, double Height, Affine2D Linear);
+
+public enum BillboardPlacementFailure
+{
+    None, EmptyGeometry, NonAffineScreenTransform, UnsafeGround,
+    GroundXNotRepresentable, InvalidScale, UnsafeContent
+}
+
 /// <summary>One geometry contract for billboard drawing, hit testing, editing and export.</summary>
 public static class BillboardGeometry
 {
@@ -65,6 +74,12 @@ public static class BillboardGeometry
     public static bool TryEqualDepthLine(CanvasMapping mapping, PointD screenPoint, out BillboardDepthLine line)
     {
         line = default;
+        if (mapping.ViewRoot is { } root)
+        {
+            if (!TryEqualDepthLine(root, screenPoint, out var rootLine)) return false;
+            double viewScale = rootLine.Scale * mapping.ViewPlacement.ElevationScale;
+            line = rootLine with { Scale = viewScale }; return double.IsFinite(viewScale) && viewScale != 0;
+        }
         if (!mapping.TryToPlane(screenPoint, out var anchor) || !mapping.TryGetDepthScale(anchor, out double scale)) return false;
         var inverse = mapping.ScreenToPlane;
         double length = Math.Sqrt(inverse.M31 * inverse.M31 + inverse.M32 * inverse.M32);
@@ -79,6 +94,13 @@ public static class BillboardGeometry
     public static bool TryAnchor(CanvasMapping mapping, BillboardDepthLine line, PointD screenCenter, out PointD anchor, out double height)
     {
         anchor = default; height = 0;
+        if (mapping.ViewRoot is { } root)
+        {
+            var rootLine = line with { Scale = line.Scale / mapping.ViewPlacement.ElevationScale };
+            if (!TryAnchor(root, rootLine, screenCenter, out var rootAnchor, out double rootHeight)) return false;
+            anchor = mapping.FromRootPoint(rootAnchor); height = rootHeight / mapping.ViewPlacement.ElevationScale;
+            return double.IsFinite(anchor.X) && double.IsFinite(anchor.Y) && double.IsFinite(height);
+        }
         if (!double.IsFinite(line.Scale) || line.Scale <= 0 || !line.TryVerticalIntersection(screenCenter.X, out var ground) ||
             !mapping.TryToPlane(ground, out anchor) || !mapping.TryGetDepthScale(anchor, out double actualScale) ||
             Math.Abs(actualScale / line.Scale - 1) > 1e-6) return false;
@@ -105,18 +127,127 @@ public static class BillboardGeometry
     }
 
     /// <summary>
+    /// Resolves a screen affine without changing content. This model places the content center
+    /// directly above its ground point, so a different ground X cannot preserve the screen affine.
+    /// The body may extend above the horizon; only the ground and finite screen envelope are guarded.
+    /// </summary>
+    public static bool TryResolveScreenPlacement(CanvasElement content, CanvasMapping mapping,
+        Projective2D localToScreen, PointD groundScreen, out BillboardPlacement placement,
+        out BillboardPlacementFailure failure)
+    {
+        placement = default;
+        return TryScreenContent(content, localToScreen, out var screen, out var local, out var envelope, out failure) &&
+            TryResolvePlacement(mapping, screen, local, envelope, groundScreen, out placement, out failure);
+    }
+
+    /// <summary>
+    /// Uses the transformed geometry frame's bottom midpoint, rather than an alpha/ink bound.
+    /// A degenerate stroke uses its stroked envelope's bottom, retaining the geometry center X.
+    /// </summary>
+    public static bool TryResolveScreenBottom(CanvasElement content, CanvasMapping mapping,
+        Projective2D localToScreen, out BillboardPlacement placement, out BillboardPlacementFailure failure)
+    {
+        placement = default;
+        if (!TryScreenContent(content, localToScreen, out var screen, out var local, out var envelope, out failure)) return false;
+        var center = screen.TransformPoint(local.Center);
+        var frame = screen.TransformBounds(local.IsEmpty ? envelope : local);
+        return TryResolvePlacement(mapping, screen, local, envelope, new(center.X, frame.Bottom), out placement, out failure);
+    }
+
+    private static bool TryScreenContent(CanvasElement content, Projective2D transform, out Affine2D screen,
+        out RectD local, out RectD envelope, out BillboardPlacementFailure failure)
+    {
+        screen = default; local = ElementGeometry.LocalBounds(content); envelope = default;
+        failure = BillboardPlacementFailure.EmptyGeometry;
+        if (ElementGeometry.UsesPoints(content.Kind) && content.Points.Count == 0 || !FiniteBounds(local)) return false;
+        envelope = ElementGeometry.StrokedLocalBounds(content);
+        if (!FiniteBounds(envelope) || local.IsEmpty && (!ElementGeometry.UsesPoints(content.Kind) || envelope.IsEmpty)) return false;
+        failure = BillboardPlacementFailure.NonAffineScreenTransform;
+        if (!transform.IsFinite || transform.M33 == 0) return false;
+        double factor = 1 / transform.M33;
+        // Accept roundoff from H * H^-1, but reject a genuine projective denominator
+        // over this content's domain. The check is invariant under homogeneous rescaling.
+        double denominatorVariation = Math.Abs(transform.M31 * factor) * Math.Max(Math.Abs(envelope.Left), Math.Abs(envelope.Right)) +
+            Math.Abs(transform.M32 * factor) * Math.Max(Math.Abs(envelope.Top), Math.Abs(envelope.Bottom));
+        screen = new(transform.M11 * factor, transform.M12 * factor, transform.M21 * factor,
+            transform.M22 * factor, transform.M13 * factor, transform.M23 * factor);
+        if (denominatorVariation > 1e-12 || !LayerPlacement.Finite(screen) || !screen.TryInverse(out _)) return false;
+        var bounds = screen.TransformBounds(envelope);
+        failure = BillboardPlacementFailure.UnsafeContent;
+        if (!FiniteBounds(bounds) || Math.Abs(bounds.Left) > CanvasProjectionSafety.MaximumCoordinate ||
+            Math.Abs(bounds.Right) > CanvasProjectionSafety.MaximumCoordinate || Math.Abs(bounds.Top) > CanvasProjectionSafety.MaximumCoordinate ||
+            Math.Abs(bounds.Bottom) > CanvasProjectionSafety.MaximumCoordinate) return false;
+        // A tiny residual denominator must also be negligible in physical pixels.
+        PointD[] corners = [new(envelope.Left, envelope.Top), new(envelope.Right, envelope.Top),
+            new(envelope.Right, envelope.Bottom), new(envelope.Left, envelope.Bottom)];
+        failure = BillboardPlacementFailure.NonAffineScreenTransform;
+        foreach (var point in corners)
+            if (!transform.TryTransformPoint(point, out var projected) || projected.DistanceTo(screen.TransformPoint(point)) > 1e-7) return false;
+        failure = BillboardPlacementFailure.None; return true;
+    }
+
+    private static bool TryResolvePlacement(CanvasMapping mapping, Affine2D screen, RectD local, RectD envelope,
+        PointD groundScreen, out BillboardPlacement placement, out BillboardPlacementFailure failure)
+    {
+        placement = default;
+        if (mapping.ViewRoot is { } root)
+        {
+            if (!TryResolvePlacement(root, screen, local, envelope, groundScreen, out var rootPlacement, out failure)) return false;
+            if (mapping.TryFromRootPlacement(rootPlacement, out placement)) return true;
+            failure = BillboardPlacementFailure.InvalidScale; return false;
+        }
+        var center = screen.TransformPoint(local.Center);
+        failure = BillboardPlacementFailure.GroundXNotRepresentable;
+        if (!double.IsFinite(groundScreen.X) || Math.Abs(groundScreen.X - center.X) > 1e-7) return false;
+        // Snap rounding at the frame midpoint to the model's exact center-X invariant.
+        groundScreen = new(center.X, groundScreen.Y);
+        failure = BillboardPlacementFailure.UnsafeGround;
+        if (!mapping.TryToPlane(groundScreen, out var anchor)) return false;
+        failure = BillboardPlacementFailure.InvalidScale;
+        if (!mapping.TryGetDepthScale(anchor, out double scale) || !TryScreenLinear(screen, scale, out var linear)) return false;
+        double height = (groundScreen.Y - center.Y) / scale;
+        if (!double.IsFinite(height)) return false;
+        // Validate the actual reconstructed envelope as well as the requested screen affine.
+        var actual = Affine2D.Translation(mapping.ToScreen(anchor).X, mapping.ToScreen(anchor).Y - height * scale)
+            .Compose(Affine2D.Scale(scale, scale)).Compose(linear).Compose(Affine2D.Translation(-local.Center.X, -local.Center.Y));
+        var bounds = actual.TransformBounds(envelope);
+        failure = BillboardPlacementFailure.UnsafeContent;
+        if (!FiniteBounds(bounds) || Math.Abs(bounds.Left) > CanvasProjectionSafety.MaximumCoordinate ||
+            Math.Abs(bounds.Right) > CanvasProjectionSafety.MaximumCoordinate || Math.Abs(bounds.Top) > CanvasProjectionSafety.MaximumCoordinate ||
+            Math.Abs(bounds.Bottom) > CanvasProjectionSafety.MaximumCoordinate) return false;
+        placement = new(anchor, height, linear); failure = BillboardPlacementFailure.None; return true;
+    }
+
+    private static bool TryScreenLinear(Affine2D screen, double scale, out Affine2D linear)
+    {
+        linear = new(screen.M11 / scale, screen.M12 / scale, screen.M21 / scale, screen.M22 / scale, 0, 0);
+        return LayerPlacement.Finite(linear) && linear.TryInverse(out _);
+    }
+
+    private static bool FiniteBounds(RectD bounds) => double.IsFinite(bounds.Left) && double.IsFinite(bounds.Top) &&
+        double.IsFinite(bounds.Right) && double.IsFinite(bounds.Bottom) && double.IsFinite(bounds.Width) && double.IsFinite(bounds.Height);
+
+    /// <summary>
     /// Converts an already logical draft to billboard placement using its actual screen transform.
     /// Geometry/style are untouched. Screen matrix must be affine and contain the selected depth scale.
     /// </summary>
     public static bool TryPlaceFromScreen(CanvasElement element, CanvasMapping mapping, BillboardDepthLine line, Projective2D localToScreen)
     {
+        if (mapping.ViewRoot is { } root)
+        {
+            var placed = mapping.ToRootElement(element);
+            if (!TryPlaceFromScreen(placed, root, line with { Scale = line.Scale / mapping.ViewPlacement.ElevationScale }, localToScreen) ||
+                !mapping.TryFromRootPlacement(new(placed.BillboardAnchor, placed.BillboardHeight, placed.Transform), out var source)) return false;
+            element.Transform = source.Linear; element.ProjectivePlacement = null; element.IsBillboard = true;
+            element.BillboardAnchor = source.Anchor; element.BillboardHeight = source.Height; return true;
+        }
         if (!localToScreen.IsFinite || Math.Abs(localToScreen.M31) > 1e-10 || Math.Abs(localToScreen.M32) > 1e-10 ||
             Math.Abs(localToScreen.M33) < 1e-10 || !localToScreen.TryTransformPoint(ElementGeometry.LocalBounds(element).Center, out var center) ||
             !TryAnchor(mapping, line, center, out var anchor, out double height)) return false;
-        double factor = 1 / (localToScreen.M33 * line.Scale);
-        var linear = new Affine2D(localToScreen.M11 * factor, localToScreen.M12 * factor,
+        double factor = 1 / localToScreen.M33;
+        var screen = new Affine2D(localToScreen.M11 * factor, localToScreen.M12 * factor,
             localToScreen.M21 * factor, localToScreen.M22 * factor, 0, 0);
-        if (!linear.TryInverse(out _)) return false;
+        if (!TryScreenLinear(screen, line.Scale, out var linear)) return false;
         element.Transform = linear; element.ProjectivePlacement = null;
         element.IsBillboard = true; element.BillboardAnchor = anchor; element.BillboardHeight = height;
         return true;
@@ -158,6 +289,11 @@ public static class BillboardGeometry
     public static bool TryMoveAnchor(CanvasElement element, CanvasMapping mapping, PointD localGrab, PointD screenPointer, out PointD anchor)
     {
         anchor = default;
+        if (mapping.ViewRoot is { } root)
+        {
+            if (!TryMoveAnchor(mapping.ToRootElement(element), root, localGrab, screenPointer, out var rootAnchor)) return false;
+            anchor = mapping.FromRootPoint(rootAnchor); return double.IsFinite(anchor.X) && double.IsFinite(anchor.Y);
+        }
         if (!element.IsBillboard || !mapping.TryGetDepthScale(element.BillboardAnchor, out double scale)) return false;
         var offset = Linear(element.Transform).TransformPoint(localGrab - ElementGeometry.LocalBounds(element).Center);
         offset = new(offset.X, offset.Y - element.BillboardHeight);

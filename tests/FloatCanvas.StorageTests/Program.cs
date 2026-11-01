@@ -7,7 +7,24 @@ using System.Text.Json.Nodes;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+if (args.Contains("--window-source-only")) { await WindowSourceStorageTests.RunAsync(Check); Console.WriteLine($"PASS {checks} window source storage checks"); return; }
+await WindowSourceStorageTests.RunAsync(Check);
+if (args.Contains("--presentation-only")) { await PresentationStorageTests.RunAsync(Check); Console.WriteLine($"PASS {checks} presentation storage checks"); return; }
+await PresentationStorageTests.RunAsync(Check);
+if (args.Contains("--canonical-appearance-only")) { await CanonicalAppearanceStorageTests.RunAsync(Check); Console.WriteLine($"PASS {checks} canonical appearance storage checks"); return; }
+await CanonicalAppearanceStorageTests.RunAsync(Check);
+await PrefabStorageTests.RunAsync(Check);
+if (args.Contains("--prefab-only")) { Console.WriteLine($"PASS {checks} prefab storage checks"); return; }
+await SceneGraphStorageTests.RunAsync(Check);
+if (args.Contains("--groups-only")) { Console.WriteLine($"PASS {checks} scene graph storage checks"); return; }
 await DataRemediationTests.RunAsync(Check);
+await CanvasIndependentStorageTests.RunAsync(Check);
+if (args.Contains("--migration-only"))
+{
+    await SceneFormatMigrationTests.RunAsync(Check);
+    await StyleVariantStorageTests.RunAsync(Check);
+    Console.WriteLine($"PASS {checks} migration storage checks"); return;
+}
 if (args.Contains("--billboard-only"))
 {
     await BillboardStorageTests.RunAsync(Check);
@@ -190,6 +207,8 @@ Check((await orderedRecovery.LoadAsync())!.State.LiveDocument.NextNumber == 6, "
 await ArrowHeadStorageTests.RunAsync(store, root, Check);
 await EditablePresetStorageTests.RunAsync(store, root, Check);
 await FormatVersionTests.RunAsync(store, root, Check);
+await SceneFormatMigrationTests.RunAsync(Check);
+await StyleVariantStorageTests.RunAsync(Check);
 await LivePixelateStorageTests.RunAsync(Check);
 await RecoveryPreviewStorageTests.RunAsync(Check);
 await CanvasProjectionStorageTests.RunAsync(Check);

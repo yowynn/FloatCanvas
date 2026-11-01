@@ -13,6 +13,7 @@ internal sealed partial class DesktopSession
     private LiveDesktopCapture? _liveDesktopCapture;
     private DesktopBackdrop? _desktopBackdrop;
     private long _liveCleanBoundary, _liveTargetVersion;
+    private object? _liveTargetViewEpoch;
     private sealed class CaptureDispatchGate { public int Posted; }
     private bool _liveCaptureExcluded;
     private string? _liveCaptureError;
@@ -31,8 +32,11 @@ internal sealed partial class DesktopSession
     {
         if (_liveEffectPreparation is { } pending && !IsLivePreparationCurrent(pending)) CancelLivePreparation();
         if (_desktopBackdrop is not null && !IsLiveBackdropCompatible()) ClearLiveBackdrop();
-        bool hasEffects = SceneRenderer.HasLiveEffects(Active.Document);
-        bool needed = !_disposed && _cleanCaptureDepth == 0 && Active.Document.Kind == DocumentKind.LiveOverlay &&
+        var view = CurrentGroupCanvasView();
+        bool hasSourceEffects = MayContainLiveEffects(view.Document);
+        var world = hasSourceEffects ? CurrentWorldEffectScene() : view.Document;
+        bool hasEffects = hasSourceEffects && SceneRenderer.HasLiveEffects(world);
+        bool needed = !_disposed && _cleanCaptureDepth == 0 && view.Document.Kind == DocumentKind.LiveOverlay &&
             (_host.IsVisible && hasEffects || _liveEffectPreparation is not null);
         if (!needed)
         {
@@ -102,20 +106,24 @@ internal sealed partial class DesktopSession
                 return;
             }
         }
-        var samplingRegions=Active.Document.Elements.Where(e=>e.Visible && e.Style.Opacity>0 && ElementGeometry.IsLiveEffect(e.Kind))
-            .Select(e=>SceneRenderer.LiveEffectSamplingBounds(Active.Document,e).Intersect(Active.Document.Viewport))
+        var samplingRegions=world.Elements.Where(e=>e.Visible && e.Style.Opacity>0 && ElementGeometry.IsLiveEffect(e.Kind))
+            .Select(e=>SceneRenderer.LiveEffectSamplingBounds(world,e).Intersect(world.Viewport))
             .Concat(_liveEffectPreparation is { } preparation ? [preparation.Bounds] : []);
-        var origin = _editor.ScreenOrigin;
+        var origin = view.Origin;
         var regions=samplingRegions.Where(b=>!b.IsEmpty).Select(b=>new PixelBounds((int)Math.Floor(b.Left + origin.X),(int)Math.Floor(b.Top + origin.Y),
                 checked((int)Math.Ceiling(b.Right + origin.X)-(int)Math.Floor(b.Left + origin.X)),
                 checked((int)Math.Ceiling(b.Bottom + origin.Y)-(int)Math.Floor(b.Top + origin.Y)))).ToArray();
         long version=_liveDesktopCapture.UpdateTargets(_host.Monitors,regions,_liveCleanBoundary);
+        _liveTargetViewEpoch = view.Epoch;
         if(version!=_liveTargetVersion)
         {
             _liveTargetVersion=version;
             if (!IsLiveBackdropCompatible()) ClearLiveBackdrop();
         }
     }
+
+    internal static bool MayContainLiveEffects(SceneDocument document) => document.Elements.Any(element => ElementGeometry.IsLiveEffect(element.Kind)) ||
+        document.Instances.Count > 0 && document.Definitions.Any(definition => definition.Graph.Elements.Any(element => ElementGeometry.IsLiveEffect(element.Kind)));
 
     private void QueueLiveDesktopFrame(LiveDesktopCapture source, CaptureDispatchGate gate)
     {
@@ -127,7 +135,8 @@ internal sealed partial class DesktopSession
             if(!source.TryGetLatest(out var frame))return;
             using(frame)
             {
-                if(frame.TargetVersion!=_liveTargetVersion)return;
+                var view = CurrentGroupCanvasView();
+                if(frame.TargetVersion!=_liveTargetVersion || !ReferenceEquals(view.Epoch, _liveTargetViewEpoch))return;
                 var tiles=new List<DesktopBackdrop.Tile>();
                 try
                 {
@@ -135,7 +144,7 @@ internal sealed partial class DesktopSession
                     {
                         output.Bitmap.SetImmutable();
                         var b=output.Bounds;
-                        tiles.Add(new(new RectD(b.Left - _editor.ScreenOrigin.X,b.Top - _editor.ScreenOrigin.Y,b.Width,b.Height),SKImage.FromBitmap(output.Bitmap)));
+                        tiles.Add(new(new RectD(b.Left - view.Origin.X,b.Top - view.Origin.Y,b.Width,b.Height),SKImage.FromBitmap(output.Bitmap)));
                     }
                     var next=new DesktopBackdrop(tiles);
                     _renderer.LiveBackdrop=next; _desktopBackdrop?.Dispose(); _desktopBackdrop=next;
@@ -165,6 +174,6 @@ internal sealed partial class DesktopSession
             catch(Exception ex) { if(!_disposed)UpdateStatus(ex.Message); }
         }
         if (!keepBackdrop) ClearLiveBackdrop();
-        _liveTargetVersion=0; _liveCaptureError=null;
+        _liveTargetVersion=0; _liveTargetViewEpoch=null; _liveCaptureError=null;
     }
 }

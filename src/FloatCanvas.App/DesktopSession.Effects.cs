@@ -8,20 +8,28 @@ namespace FloatCanvas.App;
 
 internal sealed partial class DesktopSession
 {
-    private sealed record EffectRenderRequest(EditorSession Target, SceneDocument Document, long Revision, WindowSessionRequest Window, PointD ScreenOrigin);
+    private sealed record EffectRenderRequest(EditorSession Target, SceneDocument Document, long Revision, long EditScopeVersion, WindowSessionRequest Window, PointD ScreenOrigin);
     private EffectRenderRequest BeginEffectRender(EditorSession target) =>
-        new(target, target.Document, target.SceneRevision, new(_host.EditingSessionVersion, _host.IsEditing, target.Document), _editor.ScreenOrigin);
+        new(target, target.Document, target.SceneRevision, target.EditScopeVersion, new(_host.EditingSessionVersion, _host.IsEditing, target.Document), _editor.ScreenOrigin);
     private bool CanFinishEffect(EffectRenderRequest request) => !_disposed && !_documentStopped && !_documentExitRequested &&
         !_documentLifetime.IsCancellationRequested && ReferenceEquals(request.Target, Active) &&
         ReferenceEquals(request.Document, request.Target.Document) && request.Revision == request.Target.SceneRevision && request.ScreenOrigin == _editor.ScreenOrigin &&
+        request.EditScopeVersion == request.Target.EditScopeVersion &&
         !request.Target.IsTransactionActive && request.Window.IsCurrent(_host.EditingSessionVersion, _host.IsEditing, Active.Document) &&
         (!request.Window.Editing || (_windowCoordinator?.CanContinue(request.Window, Active.Document) == true &&
             (!_host.IsKeyboardIsolationEnabled || _host.IsKeyboardIsolationActive)));
+    private bool CanFinishEffectInsertion(EffectRenderRequest request) => CanFinishEffect(request) && request.Target.CanInsertInEditScope;
 
     private async Task<StampRenderContext?> PrepareStampRenderingAsync(EditorSession session)
     {
         var selection = session.CreateSelectionSnapshot();
         bool hasLiveEffects = SceneRenderer.HasLiveEffects(selection);
+        bool hasWindows = SceneEvaluation.Build(selection).Leaves.Any(leaf => leaf.RenderElement.WindowSource is not null);
+        using var windowRaster = hasWindows ? FreezeWindowSourceCapture(session) : null;
+        Guid resourceId = session.Document.ResourceId;
+        using var windowPackage = windowRaster is null ? null : new WindowDocumentPackageCapture(session.Document, ResourceSnapshot(session.Document),
+            (address, intent) => windowRaster.RetainFrame(resourceId, address, intent));
+        bool preparedWindows = windowPackage is { FrameCount: > 0 };
         var animationTime = _renderer.AnimationTime;
         var request = BeginEffectRender(session);
         _documentBusy=true;
@@ -36,10 +44,16 @@ internal sealed partial class DesktopSession
                     return renderer.HasAnimatedImages(selection, ResourceLibrary(selectedResources));
                 });
                 if (!CanFinishEffect(request)) throw new OperationCanceledException("Stamp render context is no longer current.");
-                if (!animated) return null;
+                if (!animated && !preparedWindows) return null;
             }
-            var snapshot=session.Document.Clone();
-            var resources=ResourceSnapshot(snapshot).ToList();
+            SceneDocument snapshot; AssetResource[] resources;
+            if (preparedWindows)
+            {
+                var prepared = await Task.Run(() => windowPackage!.Prepare(_documentLifetime.Token), _documentLifetime.Token);
+                if (!CanFinishEffect(request)) throw new OperationCanceledException("Stamp media context is no longer current.");
+                snapshot = prepared.Document; resources = prepared.Resources.ToArray();
+            }
+            else { snapshot = session.Document.Clone(); resources = ResourceSnapshot(snapshot); }
             CapturedDesktop? screenCapture = null;
             if(hasLiveEffects && snapshot.Kind==DocumentKind.LiveOverlay)
             {
@@ -47,7 +61,7 @@ internal sealed partial class DesktopSession
                 if (!CanFinishEffect(request)) throw new OperationCanceledException("Stamp render context is no longer current.");
                 screenCapture = captured;
             }
-            return new(snapshot,ResourceLibrary(resources), animationTime, screenCapture, request.ScreenOrigin);
+            return new(snapshot,ResourceLibrary(resources), animationTime, screenCapture, request.ScreenOrigin, preparedWindows);
         }
         finally {_documentBusy=false;RequestRender();}
     }
@@ -59,6 +73,7 @@ internal sealed partial class DesktopSession
     {
         if (kind is not (ImageEffectKind.Blur or ImageEffectKind.Pixelate)) return;
         var target = Active;
+        if (!target.CanInsertInEditScope) return;
         var request = BeginEffectRender(target);
         var animationTime = _renderer.AnimationTime;
         if (region.IsEmpty) return;
@@ -66,8 +81,9 @@ internal sealed partial class DesktopSession
         // Snapshot placement and the tool's layer defaults before the input gesture ends
         // or asynchronous capture yields. The region is already logical screen/s here.
         var billboardDepth = _editor.ActiveBillboardDepthLine;
+        bool screenFirst = _editor.UsesScreenBillboardCreation;
         bool constrainAspect = _editor.ConstrainAspect;
-        var regionToScreen = billboardDepth is { } selectedDepth
+        var regionToScreen = screenFirst ? Projective2D.Identity : billboardDepth is { } selectedDepth
             ? Projective2D.FromAffine(Affine2D.Scale(selectedDepth.Scale, selectedDepth.Scale)) : mapping.PlaneToScreen;
         if (!regionToScreen.TryTransformBounds(region, out var projectedRegion) ||
             projectedRegion.Intersect(target.Document.Viewport).IsEmpty) return;
@@ -80,8 +96,15 @@ internal sealed partial class DesktopSession
             if (billboardDepth is { } depth && !BillboardGeometry.TryPlaceFromScreen(effect, mapping, depth,
                 regionToScreen.Compose(ElementGeometry.LocalToPlane(effect))))
             { UpdateStatus(L.Get("Billboard.InvalidDepth")); return; }
+            if (screenFirst)
+            {
+                if (!BillboardGeometry.TryResolveScreenBottom(effect, mapping, ElementGeometry.LocalToPlane(effect), out var placement, out _))
+                { UpdateStatus(L.Get("Billboard.PendingGround")); return; }
+                effect.IsBillboard = true; effect.BillboardAnchor = placement.Anchor;
+                effect.BillboardHeight = placement.Height; effect.Transform = placement.Linear;
+            }
             if (!mapping.IsElementSafe(effect)) { UpdateStatus(L.Get("Perspective.InputOutsidePlane")); return; }
-            if (!await PrepareLiveEffectAsync(request, effect) || !CanFinishEffect(request)) return;
+            if (!await PrepareLiveEffectAsync(request, effect) || !CanFinishEffectInsertion(request)) return;
             target.Add(effect);
             UpdateStatus(L.Get("Effect.LiveReady"));
             return;
@@ -92,7 +115,7 @@ internal sealed partial class DesktopSession
             var snapshot = target.CreateCommittedSnapshot(); snapshot.LayerOpacity = 1;
             var resources = ResourceSnapshot(snapshot).ToList();
             var capture = await captureDesktop();
-            if (!CanFinishEffect(request)) return;
+            if (!CanFinishEffectInsertion(request)) return;
             var selection = new CaptureSelection(CaptureShape.PolygonLasso, CaptureSource.BackgroundAndCanvas,
                 projectedRegion, EditorController.Corners(region).Select(regionToScreen.TransformPoint).ToArray(), 0, 0);
             var raster = await Task.Run(() =>
@@ -101,9 +124,10 @@ internal sealed partial class DesktopSession
                 using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
                 return renderer.ExportSelectionPng(snapshot, ResourceLibrary(resources), selection, includeBackground: true);
             }, _documentLifetime.Token);
-            if (!CanFinishEffect(request) || !CanAddCanvasContent()) return;
-            var image = billboardDepth is { } depth
-                ? SnapshotImageCommand.CreateBillboardElement(_assets, raster, mapping, depth)
+            if (!CanFinishEffectInsertion(request) || !CanAddCanvasContent()) return;
+            target.RequireWritableScope();
+            var image = screenFirst || billboardDepth is not null
+                ? SnapshotImageCommand.CreateBillboardElement(_assets, raster, mapping, billboardDepth)
                 : SnapshotImageCommand.CreateElement(_assets, raster, mapping.PlaneToScreen);
             image.ConstrainAspect = constrainAspect;
             image.Effects = [new ImageEffect { Kind = kind, Amount = amount, Color = color, Bounds = new(0, 0, 1, 1) }];

@@ -26,11 +26,12 @@ internal static class Preview4DragRuntimeFixture
         try
         {
             window.Show();Pump();var list=Field<ListBox>(window,"layers");
+            IEnumerable<ListBoxItem> Rows()=>list.Items.Cast<LayerTreeRow>().Select(row=>window.Container(row.Id)).OfType<ListBoxItem>();
             Thumb? active=null;Point start=new(),screenStart=new();
             void Begin()
             {
-                var item=list.Items.Cast<ListBoxItem>().Single(row=>(Guid)row.Tag==a.Id);
-                active=((Grid)item.Content).Children.OfType<Thumb>().Single();
+                var item=window.Container(a.Id)!;
+                active=LayerTreeRowPresenter.Find(item)!.Handle;
                 start=active.TranslatePoint(new(12,18),list);
                 screenStart=list.PointToScreen(start);
                 active.RaiseEvent(new DragStartedEventArgs(12,18) {RoutedEvent=Thumb.DragStartedEvent});
@@ -38,13 +39,13 @@ internal static class Preview4DragRuntimeFixture
             void Move(Point point){Invoke("UpdateDropTarget",point);Pump();}
             void Complete(Point point,bool cancelled=false)
             {var delta=list.PointToScreen(point)-screenStart;active!.RaiseEvent(new DragCompletedEventArgs(delta.X,delta.Y,cancelled) {RoutedEvent=Thumb.DragCompletedEvent});Pump();}
-            Point Front()=>list.Items.Cast<ListBoxItem>().First().TranslatePoint(new(40,6),list);
+            Point Front()=>Rows().First().TranslatePoint(new(40,6),list);
             Begin();Move(Front());
             var feedback=Field<TileDragFeedback>(window,"dragFeedback");
             var ghost=Field<DragGhost>(feedback,"ghost");var visual=Field<Window>(ghost,"window");
             nint handle=new WindowInteropHelper(visual).Handle;
             check("layer drag shows a shared horizontal insertion line",feedback.TargetBounds is {Height:0,Width:>0});
-            check("multi-layer drag dims exactly the selected rows",list.Items.Cast<ListBoxItem>().All(row=>Math.Abs(row.Opacity-((Guid)row.Tag==c.Id?1:.35))<.001));
+            check("multi-layer drag dims exactly the selected rows",Rows().All(row=>Math.Abs(row.Opacity-((Guid)row.Tag==c.Id?1:.35))<.001));
             check("the floating drag image is visible at sixty-percent opacity without taking foreground",visual.IsVisible&&visual.Opacity==.6&&!visual.IsActive&&!visual.IsHitTestVisible&&GetForegroundWindow()==foreground);
             check("the floating image has non-activating and transparent native styles",(GetWindowLongPtr(handle,-20)&(nint)0x08000020)==(nint)0x08000020&&SendMessage(handle,0x84,0,0)==-1);
             Save(window,"layers");Save(visual,"ghost");
@@ -52,7 +53,7 @@ internal static class Preview4DragRuntimeFixture
             check("the mouse-following image remains visible outside its source window",visual.IsVisible&&ghostRect.Left<ownerRect.Left&&feedback.TargetBounds is null);
             var source=(HwndSource)PresentationSource.FromVisual(window);
             window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,source,Environment.TickCount,Key.Escape) {RoutedEvent=Keyboard.PreviewKeyDownEvent});Pump();
-            check("Escape closes the floating image and restores all selected rows",!visual.IsVisible&&Field<TileDragFeedback?>(window,"dragFeedback") is null&&list.Items.Cast<ListBoxItem>().All(row=>row.Opacity==1)&&session.UndoCount==0);
+            check("Escape closes the floating image and restores all selected rows",!visual.IsVisible&&Field<TileDragFeedback?>(window,"dragFeedback") is null&&Rows().All(row=>row.Opacity==1)&&session.UndoCount==0);
             Begin();var point=Front();Move(point);Complete(point);
             check("a multi-layer drop changes the real order in one undo step",session.Document.Elements.Select(element=>element.Id).SequenceEqual([c.Id,a.Id,b.Id])&&session.UndoCount==1);
             check("drag completion removes every floating drag window",!app.Windows.Cast<Window>().Any(item=>item.Content is Image&&item.WindowStyle==WindowStyle.None));

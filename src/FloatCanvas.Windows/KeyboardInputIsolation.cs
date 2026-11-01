@@ -25,6 +25,8 @@ public sealed class KeyboardInputIsolation : IDisposable
     private readonly KeyboardModifierHistory modifierHistory;
     private readonly IsolatedPointerPresses pointerPresses;
     private readonly CaptureInputObservationBuffer inputObservations = new();
+    private readonly PresentationInputTap presentationInput = new();
+    private uint presentationInputMessage;
     private readonly nint notificationWindow;
     private readonly uint notificationThreadId;
     private readonly uint notificationMessage;
@@ -76,6 +78,19 @@ public sealed class KeyboardInputIsolation : IDisposable
 
     public bool IsLeaseActive { get { lock (gate) return state.IsActive; } }
     public long CurrentLeaseId { get { lock (gate) return state.LeaseId; } }
+    internal void ConfigurePresentationInputTap(bool keyboard, bool pointer, long epoch, uint message)
+    {
+        if (message is < 0x8000 or > 0xBFFF) throw new ArgumentOutOfRangeException(nameof(message));
+        lock (gate) { presentationInputMessage = message; presentationInput.Configure(keyboard, pointer, epoch); }
+    }
+    internal bool TryDrainPresentationInput(uint generation, out PresentationObservedBatch? batch)
+    { lock (gate) return presentationInput.TryDrain(generation, out batch); }
+    private void NotifyPresentationInputLocked(uint generation)
+    {
+        if (generation == 0 || presentationInputMessage == 0) return;
+        if (!OwnsWindow(notificationWindow) || !Native.PostMessage(notificationWindow, presentationInputMessage, generation, 0))
+            presentationInput.Clear(); // A visual notification must never change keyboard suppression.
+    }
     public int QueuedPacketCount { get { lock (gate) return state.QueuedCount; } }
     public long SuppressedCount { get { lock (gate) return state.SuppressedCount; } }
     public long TailSuppressedCount { get { lock (gate) return state.TailSuppressedCount; } }
@@ -209,6 +224,7 @@ public sealed class KeyboardInputIsolation : IDisposable
         long lease = state.Begin(initial, toggle, hide, now, passModifiers: delegatedForeground != 0);
         modifierHistory.Reset(now, state.CurrentModifiers);
         pointerPresses.Clear();
+        presentationInput.Clear();
         if (!Native.SetKeyboardState(state.CopyLocalState()))
         {
             int error = Marshal.GetLastWin32Error();
@@ -223,7 +239,7 @@ public sealed class KeyboardInputIsolation : IDisposable
     }
 
     public void EndLease(KeyboardLeaseEndReason reason = KeyboardLeaseEndReason.Explicit)
-    { lock (gate) { state.End(reason, Environment.TickCount64); delegatedForeground = 0; delegatedProcess = 0; pointerPresses.Clear(); NotifyLocked(); } }
+    { lock (gate) { state.End(reason, Environment.TickCount64); delegatedForeground = 0; delegatedProcess = 0; pointerPresses.Clear(); presentationInput.Clear(); NotifyLocked(); } }
     /// <summary>Atomically replaces both private command bindings without restarting an active lease.</summary>
     public void UpdateHotkeys(HotkeyBinding toggle, HotkeyBinding hide)
     {
@@ -296,6 +312,13 @@ public sealed class KeyboardInputIsolation : IDisposable
                         foreground, 0, suppress, state.TailSuppressedCount != tailsBefore));
                 }
                 if (state.IsActive) modifierHistory.Record(key.Time, now, state.CurrentModifiers);
+                try
+                {
+                    NotifyPresentationInputLocked(presentationInput.Keyboard(key.VirtualKey, key.ScanCode, key.Flags,
+                        message is 0x101 or 0x105, now, own && state.IsActive &&
+                        now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds));
+                }
+                catch { presentationInput.Clear(); } // A visual observer cannot end the editing lease.
                 NotifyLocked();
             }
             return suppress && Volatile.Read(ref stopped) == 0 ? 1 : Native.CallNextHookEx(0, code, message, data);
@@ -309,7 +332,8 @@ public sealed class KeyboardInputIsolation : IDisposable
 
     private nint OnPointer(int code, nuint message, nint data)
     {
-        if (code == 0 && Volatile.Read(ref stopped) == 0 && IsCapturePointerInteraction(message))
+        if (code == 0 && Volatile.Read(ref stopped) == 0 &&
+            (IsCapturePointerInteraction(message) || message is 0x202 or 0x205 or 0x208))
         {
             try
             {
@@ -328,7 +352,7 @@ public sealed class KeyboardInputIsolation : IDisposable
                     // recipient, even before the first canvas press acquires capture.
                     bool ownCapture = own && state.IsActive && delegatedForeground != 0 ||
                         externalTarget && own && Native.GetGUIThreadInfo(notificationThreadId, ref info) && OwnsWindow(info.Capture);
-                    if (CaptureInputIntent.CountsPointer(externalTarget, own, ownCapture))
+                    if (IsCapturePointerInteraction(message) && CaptureInputIntent.CountsPointer(externalTarget, own, ownCapture))
                     {
                         long observedVersion = Interlocked.Increment(ref externalInputVersion);
                         inputObservations.Record(new(observedVersion,
@@ -341,6 +365,12 @@ public sealed class KeyboardInputIsolation : IDisposable
                     if (message is 0x201 or 0x204 or 0x207 && own && state.IsActive &&
                         now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds)
                         pointerPresses.Record((uint)message, press.Time, new(press.X, press.Y), state.CurrentModifiers);
+                    try
+                    {
+                        NotifyPresentationInputLocked(presentationInput.Pointer((uint)message, press.X, press.Y, now,
+                            own && state.IsActive && now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds));
+                    }
+                    catch { presentationInput.Clear(); } // Keep the original pointer stream unchanged.
                 }
             }
             catch (Exception error) { Fail(error); }

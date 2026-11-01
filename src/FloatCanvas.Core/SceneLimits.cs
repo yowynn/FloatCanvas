@@ -5,52 +5,52 @@ namespace FloatCanvas.Core;
 /// <summary>Capacity contract shared by editing and persistence.</summary>
 public static class SceneLimits
 {
+    private static readonly System.Text.Json.JsonSerializerOptions capacityJson = new() { MaxDepth = 128 };
     public const int MaximumElements = 100_000;
     public const int MaximumPathPoints = 2_000_000;
     public const int MaximumGroupDepth = 64;
+    public const int MaximumDefinitions = 4096;
+    public const int MaximumExpandedLeaves = 100_000;
+    public const int MaximumExpandedNodes = 300_000;
+    public const int MaximumExpandedPathPoints = 16_000_000;
+    public const int MaximumExpandedEffects = 2_000_000;
     public const long MaximumSceneJsonBytes = 128L * 1024 * 1024;
     public static void ValidateCapacity(SceneDocument document)
     {
-        if (document.Elements.Count > MaximumElements || document.Groups.Count > MaximumElements)
-            throw new InvalidDataException(L.Get("Scene.ElementCountExceeded"));
-        if (document.Elements.Append(document.Background).Any(e => e is not null && (e.Points is null || e.Points.Count > MaximumPathPoints || e.ImageFrame?.Count > MaximumPathPoints)))
+        _ = PrefabClosure.Validate(document);
+        var graphs = new SceneNodeGraph[] { document }.Concat(document.Definitions.Select(definition => definition.Graph));
+        var elements = graphs.SelectMany(graph => graph.Elements).Append(document.Background).OfType<CanvasElement>();
+        if (elements.Any(e => e.Points is null || e.Points.Count > MaximumPathPoints || e.ImageFrame?.Count > MaximumPathPoints))
             throw new InvalidDataException(L.Get("Scene.PathCapacityExceeded"));
-        var parents = new Dictionary<Guid, Guid?>();
-        foreach (var group in document.Groups)
-            if (group is null || !parents.TryAdd(group.Id, group.ParentId)) throw new InvalidDataException(L.Get("Scene.InvalidElementId"));
-        var depths = new Dictionary<Guid, int>();
-        foreach (var group in document.Groups)
-        {
-            var chain = new List<Guid>(); var visited = new HashSet<Guid>(); Guid? current = group.Id;
-            int depth = 0;
-            while (current is { } id)
-            {
-                if (depths.TryGetValue(id, out depth)) break;
-                if (!visited.Add(id) || !parents.TryGetValue(id, out current)) throw new InvalidDataException(L.Get("Scene.InvalidElementId"));
-                chain.Add(id);
-                if (chain.Count > MaximumGroupDepth) throw new InvalidDataException(L.Get("Scene.GroupDepthExceeded"));
-            }
-            for (int i = chain.Count - 1; i >= 0; i--)
-            {
-                if (++depth > MaximumGroupDepth) throw new InvalidDataException(L.Get("Scene.GroupDepthExceeded"));
-                depths[chain[i]] = depth;
-            }
-        }
+        if (elements.Any(element => element.Style is null || !AppearanceRegistry.IsValidColorRoles(element.Style.AdditionalColors) ||
+            !ElementAppearance.IsValidVariant(element.Kind, element.Style.Variant) || !Enum.IsDefined(element.NumberTextSizeMode) || !PresentationLimits.IsValidElement(element) || !WindowSourceLimits.IsValidElement(element)))
+            throw new InvalidDataException(L.Get("Scene.InvalidElementStyle"));
+        if (document.Background?.WindowSource is not null) throw new InvalidDataException("A canvas background cannot be a live window source.");
         // An inexpensive upper bound keeps ordinary commits independent of unchanged
         // path size. Only documents near the package JSON ceiling need a streaming count.
         long upperBound = 4096L + (document.Canvas?.Projection?.Quad?.Count ?? 0) * 96L;
-        foreach (var element in document.Elements.Append(document.Background).OfType<CanvasElement>())
+        foreach (var element in elements)
             upperBound += 2048L + (element.Points.Count + (element.ImageFrame?.Count ?? 0)) * 96L + (element.Effects?.Count ?? 0) * 512L +
-                6L * ((element.Name?.Length ?? 0) + (element.Text?.Length ?? 0) + (element.AssetId?.Length ?? 0) + (element.Style?.FontFamily?.Length ?? 0));
-        upperBound += document.Groups.Sum(group => 192L + (group.Name?.Length ?? 0) * 6L);
+                6L * ((element.Name?.Length ?? 0) + (element.Text?.Length ?? 0) + (element.AssetId?.Length ?? 0) + (element.Style?.FontFamily?.Length ?? 0)) +
+                (element.Style?.AdditionalColors.Sum(pair => 64L + pair.Key.Length * 6L) ?? 0) + (element.Presentation is null ? 0 : 1024L) +
+                WindowSourceLimits.EstimateBytes(element.WindowSource) * 3L;
+        foreach (var graph in graphs)
+        {
+            upperBound += graph.Groups.Sum(group => 1024L + (group.Name?.Length ?? 0) * 6L + (group.ChildOrder?.Count ?? 0) * 80L);
+            upperBound += graph.Instances.Sum(instance => 1024L + (instance.Name?.Length ?? 0) * 6L);
+            upperBound += (graph.RootOrder?.Count ?? 0) * 80L;
+        }
+        upperBound += document.Definitions.Sum(definition => 2048L + definition.Name.Length * 6L +
+            (definition.Source is { } source ? 4096L + (source.Locator?.Length ?? 0) * 6L + source.OriginClosure.Count * 512L + source.ImportedDefinitionIds.Count * 160L : 0));
         upperBound += document.DisplayLayout.Sum(display => 256L + (display?.DeviceName?.Length ?? 0) * 6L);
         if (upperBound > MaximumSceneJsonBytes) ValidateJsonCapacity(document, MaximumSceneJsonBytes);
     }
 
-    internal static void ValidateJsonCapacity(SceneDocument document, long maximumBytes)
+    internal static void ValidateJsonCapacity(SceneDocument document, long maximumBytes) => ValidatePayloadJsonCapacity(document, maximumBytes);
+    public static void ValidatePayloadJsonCapacity<T>(T document, long maximumBytes = MaximumSceneJsonBytes)
     {
         using var counter = new CountingStream(maximumBytes);
-        System.Text.Json.JsonSerializer.Serialize(counter, document);
+        System.Text.Json.JsonSerializer.Serialize(counter, document, capacityJson);
     }
     private sealed class CountingStream(long maximum) : Stream
     {

@@ -12,6 +12,7 @@ public sealed partial class SceneRenderer
     /// <summary>Metadata-only query. Desktop UI scheduling consumes CaptureAnimationSchedule results instead.</summary>
     public bool HasAnimatedImages(SceneDocument document, AssetLibrary assets)
     {
+        document = WorldDocument(document);
         ObjectDisposedException.ThrowIf(_disposed, this);
         return VisibleAnimations(document, assets).Any();
     }
@@ -22,6 +23,7 @@ public sealed partial class SceneRenderer
     /// <summary>Whole-scene timing lookup without pixel decoding. Called on the renderer's owning thread.</summary>
     public TimeSpan? GetNextAnimationDelay(SceneDocument document, AssetLibrary assets, TimeSpan time)
     {
+        document = WorldDocument(document);
         ObjectDisposedException.ThrowIf(_disposed, this);
         TimeSpan? next = null;
         foreach (var (_, timeline) in VisibleAnimations(document, assets))
@@ -32,6 +34,7 @@ public sealed partial class SceneRenderer
     /// <summary>Capture on the preview worker; the returned value retains no live scene, assets or codec.</summary>
     public SceneAnimationSchedule CaptureAnimationSchedule(SceneDocument document, AssetLibrary assets, TimeSpan time)
     {
+        document = WorldDocument(document);
         ObjectDisposedException.ThrowIf(_disposed, this);
         foreach (string id in _animationMetadata.Keys.Where(id => !assets.TryGet(id, out _)).ToArray())
             _animationMetadata.Remove(id);
@@ -68,6 +71,7 @@ public sealed partial class SceneRenderer
 
     internal (int First, int Last) AnimatedElementRange(SceneDocument document, AssetLibrary assets)
     {
+        document = WorldDocument(document);
         int first = -1, last = -1;
         var mapping = CanvasMapping.Create(document);
         if (document.LayerOpacity > 0)
@@ -79,7 +83,7 @@ public sealed partial class SceneRenderer
 
     private AnimationTimeline? VisibleAnimation(CanvasElement element, SceneDocument document, AssetLibrary assets, CanvasMapping mapping)
     {
-        if (element.Kind != ElementKind.Image || !element.Visible || !(element.Style.Opacity > 0) || element.AssetId is not { } id) return null;
+        if (element.Kind != ElementKind.Image || element.WindowSource is not null || !element.Visible || !(element.Style.Opacity > 0) || element.AssetId is not { } id) return null;
         if (element.IsBillboard && !mapping.IsElementSafe(element)) return null;
         if (!mapping.ProjectedBounds(element, includeStroke: true).Intersects(document.Viewport)) return null;
         if (_animationMetadata.TryGetValue(id, out var cached)) return cached;

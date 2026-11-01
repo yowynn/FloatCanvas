@@ -31,8 +31,8 @@ internal static class InputMethodUiContextTests
             check("IME UI fixture begins a real layer rename", (bool)Invoke(layers, "BeginRename", element.Id)!);
             Pump();
             var list = Field<ListBox>(layers, "layers");
-            var row = list.Items.Cast<ListBoxItem>().Single(item => (Guid)item.Tag == element.Id);
-            var input = ((Grid)row.Content).Children.OfType<TextBox>().Single();
+            var row = layers.Container(element.Id)!;
+            var input = LayerTreeRowPresenter.Find(row)!.Editor;
             input.Text = "Rename survives input method switch";
             ArmCandidate();
             check("The production host exposes the bounded input-method candidate", host.IsInputMethodSwitchPending);

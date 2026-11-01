@@ -37,6 +37,11 @@ internal static class SegmentedChoicePreviews
 
     internal static FrameworkElement Icon(object value)
     {
+        if (value is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline)
+        {
+            var sample = new ToolParameters { Tool = EditorTool.Number, Style = new() { Variant = (string)value, Stroke = 0xFF4285D4, Fill = 0xFFFFFFFF, StrokeWidth = 4 } };
+            return (FrameworkElement)ToolParameterIcon.Create(sample, 18);
+        }
         if (value is CaptureShape capture) return (FrameworkElement)ToolParameterIcon.Create(new ToolParameters { Tool = EditorTool.CaptureRegion, CaptureShape = capture }, 18);
         if (value is CaptureSource source) return Icon(source switch { CaptureSource.Background => "background", CaptureSource.CanvasOnly => "canvas", _ => "combined" });
         var drawing = new DrawingGroup();
@@ -94,16 +99,23 @@ internal static class SegmentedChoicePreviews
     internal static SegmentedChoice ColorStyle()
     {
         var choice = new SegmentedChoice();
-        choice.Add(L.Get("Color.StyleSeparate"), false, Icon("flat")); choice.Add(L.Get("Color.StyleUnified"), true, Icon("flat"));
+        AddVariants(choice, ElementKind.Rectangle);
         return choice;
+    }
+
+    internal static void AddVariants(SegmentedChoice choice, ElementKind kind)
+    {
+        foreach (var variant in AppearanceRegistry.VariantsFor(kind)) Add(choice, L.Get(variant.LabelKey), variant.Id);
     }
 
     internal static void UpdateColorStyle(SegmentedChoice choice, EditorTool tool, SymbolKind symbol = default)
     {
-        for (int index = 0; index < 2; index++)
+        ElementKind kind = Enum.TryParse<ElementKind>(tool.ToString(), out var parsed) ? parsed : ElementKind.Rectangle;
+        var variants = AppearanceRegistry.VariantsFor(kind);
+        for (int index = 0; index < Math.Min(choice.Items.Count, variants.Count); index++)
         {
             var sample = new ToolParameters { Tool = tool, Symbol = symbol, DefaultWidth = 120, DefaultHeight = 90, CornerRadius = tool == EditorTool.RoundedRectangle ? 18 : 0 };
-            sample.Style.Stroke = 0xFF4285D4; sample.Style.Fill = 0x554285D4; sample.Style.StrokeWidth = 7; sample.Style.LinkColors = index == 1;
+            sample.Style.Foreground = 0xFF4285D4; sample.Style.Background = 0x554285D4; sample.Style.StrokeWidth = 7; sample.Style.Variant = variants[index].Id;
             choice.SetIcon(index, (FrameworkElement)ToolParameterIcon.Create(sample, 18));
         }
     }

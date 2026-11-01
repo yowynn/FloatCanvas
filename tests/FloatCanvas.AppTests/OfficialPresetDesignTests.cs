@@ -22,7 +22,8 @@ internal static class OfficialPresetDesignTests
         [EditorTool.Text] = "text", [EditorTool.Number] = "number", [EditorTool.Image] = "image",
         [EditorTool.Eraser] = "eraser", [EditorTool.Crop] = "crop", [EditorTool.Blur] = "blur",
         [EditorTool.Pixelate] = "pixelate", [EditorTool.CaptureRegion] = "capture", [EditorTool.Symbol] = "triangle",
-        [EditorTool.Emoji] = "emoji", [EditorTool.Stamp] = "stamp"
+        [EditorTool.Emoji] = "emoji", [EditorTool.Stamp] = "stamp", [EditorTool.Presentation] = "presentation-keys",
+        [EditorTool.PointerPresentation] = "presentation-pointer-halo"
     };
 
     internal static void Run(Action<string, bool> check, string? output = null)
@@ -67,7 +68,7 @@ internal static class OfficialPresetDesignTests
         foreach (var (tool, id) in FirstIds)
         {
             var first = library.OfficialFor(tool).First();
-            check(tool + " starts with its classic standard recipe", first.Id == "official." + id && first.Parameters.Style.Stroke == ColorLibrary.ForegroundRed);
+            check(tool + " starts with its standard recipe", first.Id == "official." + id && first.Parameters.Style.Foreground == (tool == EditorTool.Presentation ? 0xFFF8FAFC : ColorLibrary.ForegroundRed));
         }
         check("the circle standard is circular and the ellipse remains available", library.OfficialFor(EditorTool.Ellipse).First().Parameters is
             { ConstrainAspect: true, DefaultWidth: 108, DefaultHeight: 108 } && library.Apply("official.ellipse") is { ConstrainAspect: false, DefaultWidth: 144, DefaultHeight: 108 });

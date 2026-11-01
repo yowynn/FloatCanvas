@@ -38,6 +38,10 @@ internal static class FormatVersionTests
         check(LegacyV1ReaderAccepts(path), "legacy fixture satisfies the real v1 manifest and scene version gates");
         var loaded = await store.LoadAsync(path);
         var expected = legacy.Clone(); expected.Version = SceneDocument.CurrentVersion;
+        foreach (var element in expected.Elements)
+            AppearanceMigration.MigrateElement(element, new(element.Style.Stroke, element.Style.Fill, element.Style.LinkColors,
+                element.Style.Variant == ElementAppearance.Default ? null : element.Style.Variant), element.NumberUsesForeground);
+        expected.ResourceId = loaded.Document.ResourceId;
         check(loaded.Document.Version == SceneDocument.CurrentVersion && JsonSerializer.Serialize(loaded.Document) == JsonSerializer.Serialize(expected),
             "v1 scene migrates in memory preserving IDs, transforms, alpha, arrow styles, text, crops and effects");
         check(loaded.Assets.Get(assetId).Data.Span.SequenceEqual(assets.Get(assetId).Data.Span) &&
@@ -104,6 +108,7 @@ internal static class FormatVersionTests
     private static void RemoveNewFields(JsonObject scene)
     {
         scene["Version"] = 1; scene.Remove("Groups"); scene.Remove("Canvas");
+        LegacyFixtureSchema.RemovePrefabFields(scene);
         foreach (var element in scene["Elements"]!.AsArray().Append(scene["Background"]).Where(e => e is not null))
         {
             var item = element!.AsObject(); item.Remove("GroupId"); item.Remove("CornerRadius"); item.Remove("Symbol");

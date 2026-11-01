@@ -47,21 +47,23 @@ internal static class EditablePresetTests
         int beforeGroup = session.UndoCount; Guid group = session.GroupSelection("label")!.Value;
         check(session.Document.Groups.Count == 1 && session.Document.Elements.All(e => e.GroupId == group) && session.UndoCount == beforeGroup + 1, "group creates one logical vector transaction");
         session.SelectAt(new(20, 40));
-        check(session.Selection.SetEquals([box.Id, text.Id]), "normal hit selects complete group");
+        check(session.Selection.SetEquals([group]) && session.SelectedElements().Count() == 2, "normal hit selects the group node and expands members explicitly");
         session.SelectAt(new(20, 40), individual: true);
         check(session.Selection.SetEquals([text.Id]), "individual hit selects editable group member");
         session.UpdateSelection(e => e.Text = "单独编辑");
         check(session.Document.Elements.Single(e => e.Id == text.Id).Text == "单独编辑" && session.Document.Groups.Count == 1, "member edit preserves surrounding group");
-        session.Add(outside); session.SetSelection([box.Id, text.Id, outside.Id]);
+        session.Add(outside); session.SetSelection([group, outside.Id]);
         Guid outer = session.GroupSelection("outer")!.Value;
-        check(session.Document.Groups.Single(g => g.Id == group).ParentId == outer && session.SelectionUnitIds(text.Id).Count() == 3, "nested group retains inner identity and outer hit unit");
-        var originalTransforms = session.Document.Elements.ToDictionary(e => e.Id, e => e.Transform);
+        check(session.Document.Groups.Single(g => g.Id == group).ParentId == outer && session.SelectionUnitIds(text.Id).SequenceEqual([outer]), "nested group retains inner identity and resolves the outer node as its hit unit");
+        var originalTransforms = SceneEvaluation.Build(session.Document).RenderDocument.Elements.ToDictionary(e => e.Id, e => e.Transform);
         var transform = Affine2D.Translation(25, 10).Compose(Affine2D.Rotation(20)).Compose(Affine2D.Scale(2, 2));
         session.TransformSelection(transform);
-        check(session.Document.Elements.All(e => e.Transform == transform.Compose(originalTransforms[e.Id])) && session.Document.Elements.Single(e => e.Id == text.Id).Kind == ElementKind.Text,
-            "whole nested group scales and rotates vector text without rasterization");
+        check(SceneEvaluation.Build(session.Document).RenderDocument.Elements.All(e => e.Transform == transform.Compose(originalTransforms[e.Id])) &&
+            session.Document.Elements.All(e => e.Transform == originalTransforms[e.Id]) && session.Document.Groups.Single(g => g.Id == outer).Transform == transform &&
+            session.Document.Elements.Single(e => e.Id == text.Id).Kind == ElementKind.Text,
+            "whole nested group changes its local parent placement while vector child geometry stays editable and unbaked");
         session.Undo();
-        check(session.Document.Elements.All(e => e.Transform == originalTransforms[e.Id]), "whole group transform undo restores every matrix");
+        check(SceneEvaluation.Build(session.Document).RenderDocument.Elements.All(e => e.Transform == originalTransforms[e.Id]), "whole group transform undo restores every world matrix");
         session.UngroupSelection();
         check(session.Document.Groups.Count == 1 && session.Document.Groups[0].ParentId is null && session.Document.Elements.Single(e => e.Id == outside.Id).GroupId is null, "ungroup removes one outer level and preserves child grouping");
         session.Undo();
@@ -73,7 +75,7 @@ internal static class EditablePresetTests
         check(session.Document.Groups.Count == 2 && session.Document.Elements.Count == 3, "deleting a duplicated group prunes only now-empty metadata");
         session.Undo(); session.Redo();
         check(session.Document.Groups.Count == 2, "delete undo redo maintains valid grouping");
-        session.SetSelection([box.Id, text.Id, outside.Id]);
+        session.SetSelection([outer]);
         var snapshot = session.CreateSelectionSnapshot();
         check(snapshot.Viewport.X == 0 && snapshot.Viewport.Y == 0 && snapshot.Groups.Count == 2 && snapshot.Elements.Single(e => e.Id == text.Id).Text == "单独编辑", "normalized stamp snapshot preserves nested editable text");
         var independent = snapshot.Clone(true);
@@ -86,14 +88,14 @@ internal static class EditablePresetTests
         var assetId = session.Assets.Add([1, 2, 3]);
         var picture = new CanvasElement { Kind = ElementKind.Image, AssetId = assetId, Width = 50, Height = 40, ImageCrop = new(.1, .2, .7, .6),
             Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(.2, .2, .3, .3) }], Transform = Affine2D.Rotation(35) };
-        session.Add(picture); session.SetSelection([box.Id, text.Id, picture.Id]);
+        session.Add(picture); session.SetSelection([group, picture.Id]);
         var imageSnapshot = session.CreateSelectionSnapshot();
         var destination = new EditorSession();
         destination.InsertDocument(imageSnapshot, session.Assets, Affine2D.Scale(3, 3), group: true);
         var imported = destination.Document.Elements.Single(e => e.Kind == ElementKind.Image);
         check(imported.Id != picture.Id && imported.Effects[0].Id != picture.Effects[0].Id && imported.ImageCrop == picture.ImageCrop && destination.Assets.Get(imported.AssetId!).Data.Span.SequenceEqual(new byte[] { 1, 2, 3 }), "stamp insertion remaps effect/entity IDs and keeps original resource bytes and crop");
         check(destination.Document.Elements.Single(e => e.Kind == ElementKind.Text).Text == "单独编辑" && imported.Transform == Affine2D.Scale(3, 3).Compose(imageSnapshot.Elements.Single(e => e.Id == picture.Id).Transform), "stamp insertion transforms vectors without resampling media");
-        check(destination.SelectionUnitIds(imported.Id).Count() == 3, "ungrouped selection inserts as a single editable stamp unit when requested");
+        check(destination.SelectionUnitIds(imported.Id).Count() == 1 && destination.SelectedElements().Count() == 3, "ungrouped selection inserts as one editable stamp node with three explicit member leaves");
         check(destination.UndoCount == 1 && destination.Undo() && destination.Document.Elements.Count == 0 && destination.Document.Groups.Count == 0 && destination.Redo(), "stamp insertion is one undoable transaction including groups");
         int beforeFailedInsert = destination.Document.Elements.Count;
         bool rejected = false;

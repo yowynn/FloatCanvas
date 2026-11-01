@@ -64,7 +64,7 @@ internal static class CanvasProjectionStorageTests
                 {
                     JsonObject json;
                     using (var reader = new StreamReader(archive.GetEntry(name)!.Open())) json = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
-                    json["Version"] = version; if (name == "scene.json") json.Remove("Canvas");
+                    json["Version"] = version; if (name == "scene.json") { json.Remove("Canvas"); LegacyFixtureSchema.RemovePrefabFields(json); }
                     archive.GetEntry(name)!.Delete(); using var writer = new StreamWriter(archive.CreateEntry(name).Open()); await writer.WriteAsync(json.ToJsonString());
                 }
             var migrated = await store.LoadAsync(legacy);

@@ -51,7 +51,7 @@ internal static class CanvasPresetTests
         var legacyApplied = legacyLibrary.Apply(saved.Id, different, viewport, viewport);
         var expected = CanvasCalibration.CreateInitial(viewport, source.Projection.Columns, source.Projection.Rows); expected.Enabled = true;
         check("missing legacy canvas fields use defaults and reference geometry without inheriting destination state or rewriting the file",
-            !legacyApplied.DepthPriorityOcclusion && JsonSerializer.Serialize(legacyApplied.Projection) == JsonSerializer.Serialize(expected) &&
+            !legacyApplied.DepthPriorityOcclusion && ProjectionJson(legacyApplied.Projection) == ProjectionJson(expected) &&
             legacyApplied.Grid.FlatOrigin == target.Grid.FlatOrigin && File.ReadAllText(legacyPath) == legacyBytes);
         var withSize = legacyLibrary.User.Single().Parameters.Clone(); withSize.FlatCellSize = 73.125;
         var sized = CanvasPresetLibrary.Apply(withSize, different, viewport, viewport);
@@ -65,7 +65,7 @@ internal static class CanvasPresetTests
         var settings = new CanvasSettings { BackgroundColor = 0x80456789, Grid = new() { Visible = true, Color = 0xFFAABBCC, Width = 64, Pattern = StrokePattern.Dashed } };
         settings.Projection = CanvasCalibration.CreateInitial(new(80, 100, 1920, 1080), 12, 9); settings.Projection.Enabled = true;
         var preset = library.Save("  Perspective grid  ", settings); string json = File.ReadAllText(path);
-        check("personal canvas presets persist complete calibration and precise flat grid fields in version three", json.Contains("\"Version\": 3") && json.Contains("FlatCellSize") && json.Contains("Calibration") && json.Contains("Quad") && json.Contains("Matrix") && json.Contains("Origin") && json.Contains("CellSize") &&
+        check("personal canvas presets persist complete calibration and precise flat grid fields in version four", json.Contains("\"Version\": 4") && json.Contains("FlatCellSize") && json.Contains("Calibration") && json.Contains("Quad") && json.Contains("Matrix") && json.Contains("Origin") && json.Contains("CellSize") &&
             json.Contains("ProjectionEnabled") && json.Contains("BackgroundColor") && !json.Contains("Monitor") && !json.Contains("Display"));
         check("canvas preset save trims names and preserves legal wide grid lines", preset.Name == "Perspective grid" && preset.Parameters.GridWidth == 64);
         settings.BackgroundColor = 0; settings.Grid.Width = 2;
@@ -111,7 +111,7 @@ internal static class CanvasPresetTests
         var applied = CanvasPresetLibrary.Apply(parameters, current, reference, viewport);
         check("applying a canvas preset leaves its source document untouched", JsonSerializer.Serialize(current) == before);
         var expected = CanvasCalibration.CreateInitial(reference, 13, 7); expected.Enabled = true;
-        check("presets without calibration restore reference geometry using their own counts", JsonSerializer.Serialize(applied.Projection) == JsonSerializer.Serialize(expected));
+        check("presets without calibration restore reference geometry using their own counts", ProjectionJson(applied.Projection) == ProjectionJson(expected));
         check("preset counts recalculate a valid transform with all portable fields", applied.Projection.Columns == 13 && applied.Projection.Rows == 7 && applied.Projection.Enabled &&
             CanvasCalibration.IsStableViewport(applied.Projection.Matrix, viewport) && parameters.Matches(CanvasPresetParameters.From(applied)));
         var sameCounts = CanvasPresetParameters.From(applied); sameCounts.BackgroundColor = 0;
@@ -124,7 +124,7 @@ internal static class CanvasPresetTests
         var broken = new CanvasSettings(); broken.Projection.Quad = [new(0, 0), new(200, 0), new(0, 200), new(200, 200)];
         string brokenBefore = JsonSerializer.Serialize(broken);
         var repaired = CanvasPresetLibrary.Apply(parameters, broken, reference, viewport);
-        check("a preset without calibration replaces invalid destination geometry without mutating its source", JsonSerializer.Serialize(repaired.Projection) == JsonSerializer.Serialize(expected) && JsonSerializer.Serialize(broken) == brokenBefore);
+        check("a preset without calibration replaces invalid destination geometry without mutating its source", ProjectionJson(repaired.Projection) == ProjectionJson(expected) && JsonSerializer.Serialize(broken) == brokenBefore);
         check("preset initialization refuses a viewport too small for valid calibration", Reject(() => CanvasPresetLibrary.Apply(parameters, new(), new(0, 0, 1, 1), new(0, 0, 1, 1))));
         var library = new CanvasPresetLibrary(Path.Combine(folder, "calibration.json"));
         string id = library.Save("Portable", applied).Id;
@@ -144,7 +144,7 @@ internal static class CanvasPresetTests
         var saved = library.Save("Perspective", source); var reloaded = new CanvasPresetLibrary(path);
         var fresh = new CanvasSettings(); string freshBefore = JsonSerializer.Serialize(fresh);
         var applied = reloaded.Apply(saved.Id, fresh, new(1000, 1000, 800, 600), viewport);
-        check("save reload and apply restores every calibrated projection field exactly", JsonSerializer.Serialize(applied.Projection) == JsonSerializer.Serialize(source.Projection) && JsonSerializer.Serialize(fresh) == freshBefore);
+        check("save reload and apply restores every calibrated projection field exactly after geometry adoption", ProjectionJson(applied.Projection) == ProjectionJson(source.Projection) && JsonSerializer.Serialize(fresh) == freshBefore);
         var plane = projection.Origin + new PointD(150, 250);
         check("save reload and apply preserves the actual projective point mapping", projection.Matrix.TransformPoint(plane).DistanceTo(applied.Projection.Matrix.TransformPoint(plane)) < 1e-10);
         var originalDocument = new SceneDocument { Viewport = viewport, Canvas = source.Clone() };
@@ -176,7 +176,8 @@ internal static class CanvasPresetTests
         string beforeInvalid = File.ReadAllText(path);
         foreach (var corrupt in new Action<CanvasProjectionSettings>[] {
             p => p.Quad[2] = p.Quad[0], p => p.Matrix = Projective2D.Identity, p => p.Matrix = p.Matrix with { M11 = double.NaN },
-            p => p.CellSize = 0, p => p.Origin = new(double.PositiveInfinity, 0), p => p.AlgorithmVersion = 999, p => p.Rows++ })
+            p => p.CellSize = 0, p => p.Origin = new(double.PositiveInfinity, 0), p => p.AlgorithmVersion = 999,
+            p => p.PlaneBounds = p.PlaneBounds!.Value with { Width = p.PlaneBounds.Value.Width + 1 } })
         {
             var invalid = current.Clone(); corrupt(invalid.Projection);
             check("invalid snapshot save refuses inconsistent or nonfinite calibration atomically", Reject(() => reloaded.Update(saved.Id, invalid)) && File.ReadAllText(path) == beforeInvalid);
@@ -210,7 +211,7 @@ internal static class CanvasPresetTests
         check("legacy recipes without calibration restore default reference geometry", legacyApplied.Projection.Quad.SequenceEqual(CanvasCalibration.CreateInitial(viewport, current.Projection.Columns, current.Projection.Rows).Quad) && legacyApplied.Projection.Matrix == CanvasCalibration.CreateInitial(viewport, current.Projection.Columns, current.Projection.Rows).Matrix);
         legacy.Save("New perspective", current);
         var migrated = new CanvasPresetLibrary(legacyPath);
-        check("an explicit edit writes version three while retaining all legacy recipes and their portable semantics", File.ReadAllText(legacyPath).Contains("\"Version\": 3") && migrated.User.Count == legacy.User.Count && migrated.User.Single(p => p.Id == saved.Id).Parameters.Calibration is null && migrated.User.Last().Parameters.Calibration is not null);
+        check("an explicit edit writes version four while retaining all legacy recipes and their portable semantics", File.ReadAllText(legacyPath).Contains("\"Version\": 4") && migrated.User.Count == legacy.User.Count && migrated.User.Single(p => p.Id == saved.Id).Parameters.Calibration is null && migrated.User.Last().Parameters.Calibration is not null);
     }
 
     private static void FlatGridPersistence(string folder, Action<string, bool> check)
@@ -260,7 +261,7 @@ internal static class CanvasPresetTests
         check("version-two recipes derive flat size without changing their saved projection", legacyApplied.Grid.FlatCellSize == source.Projection.GridCellSize &&
             legacyApplied.Projection.Matrix == source.Projection.Matrix && legacyApplied.Projection.Quad.SequenceEqual(source.Projection.Quad));
         legacy.Save("Version three grid", source);
-        check("an explicit version-two library edit upgrades to v3 and preserves the prior recipe", File.ReadAllText(legacyPath).Contains("\"Version\": 3") &&
+        check("an explicit version-two library edit upgrades to v4 and preserves the prior recipe", File.ReadAllText(legacyPath).Contains("\"Version\": 4") &&
             new CanvasPresetLibrary(legacyPath).User.Count == 2 && new CanvasPresetLibrary(legacyPath).User.Single(preset => preset.Id == old.Id).Parameters.FlatCellSize is null);
     }
 
@@ -285,8 +286,8 @@ internal static class CanvasPresetTests
         appliedOn.Projection.Enabled = false;
         var offFromOn = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOn });
         appliedOn.Projection.Enabled = true;
-        var resetOn = CanvasGridGeometry.CreateFlatReference(reference, appliedOn.Projection.Columns, appliedOn.Projection.Rows, appliedOn.Grid.FlatCellSize!.Value);
-        resetOn.Enabled = true; appliedOn.Projection = resetOn;
+        var resetOn = DesktopSession.CreateResetCanvasProjection(appliedOn, reference);
+        resetOn.Enabled = true; appliedOn.Projection = resetOn; appliedOn.Grid.PlaneOrigin = resetOn.PinPoint;
         var resetFromOn = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOn });
         check("an unlocked on-mode preset retains matching flat and reset perspective grids", offFromOn.GridCellSize == resetFromOn.GridCellSize &&
             resetFromOn.GridOrigin == resetOn.PinPoint && resetFromOn.PlaneToScreen == Projective2D.Identity);
@@ -297,8 +298,8 @@ internal static class CanvasPresetTests
             plain.Projection.CellSize == 73.1 && plain.Projection.Matrix == Projective2D.Identity && plain.Grid.FlatCellSize == 73.1 && !plain.Projection.Enabled);
         var beforeReset = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = plain });
         plain.Projection.Enabled = true;
-        var plainReset = CanvasGridGeometry.CreateFlatReference(reference, plain.Projection.Columns, plain.Projection.Rows, plain.Grid.FlatCellSize!.Value);
-        plainReset.Enabled = true; plain.Projection = plainReset;
+        var plainReset = DesktopSession.CreateResetCanvasProjection(plain, reference);
+        plainReset.Enabled = true; plain.Projection = plainReset; plain.Grid.PlaneOrigin = plainReset.PinPoint;
         var afterReset = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = plain });
         check("a portable recipe preserves content and spacing while flat and perspective retain their own grid phases", beforeReset.GridCellSize == afterReset.GridCellSize &&
             beforeReset.GridOrigin == reference.Center && afterReset.GridOrigin == plainReset.PinPoint && afterReset.PlaneToScreen == beforeReset.PlaneToScreen);
@@ -316,10 +317,10 @@ internal static class CanvasPresetTests
         check("off-mode snapshot toggles retain the precise size and exact count pair and geometry", appliedOff.Grid.FlatCellSize == offSnapshot.Grid.FlatCellSize &&
             JsonSerializer.Serialize(appliedOff.Projection) == JsonSerializer.Serialize(dormant));
         var offMapping = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOff });
-        var offReset = CanvasGridGeometry.CreateFlatReference(reference, dormant.Columns, dormant.Rows, appliedOff.Grid.FlatCellSize!.Value);
-        offReset.Enabled = true; appliedOff.Projection = offReset;
+        var offReset = DesktopSession.CreateResetCanvasProjection(appliedOff, reference);
+        offReset.Enabled = true; appliedOff.Projection = offReset; appliedOff.Grid.PlaneOrigin = offReset.PinPoint;
         var offResetMapping = CanvasMapping.Create(new SceneDocument { Viewport = reference, Canvas = appliedOff });
-        check("resetting an off-mode snapshot uses its saved flat size rather than the dormant projection scale", offResetMapping.GridCellSize == offMapping.GridCellSize &&
+        check("resetting an independent snapshot preserves perspective density and the separate saved flat size", offResetMapping.GridCellSize == appliedOff.Grid.PlaneCellSize && appliedOff.Grid.FlatCellSize == offMapping.GridCellSize &&
             offResetMapping.GridOrigin == offReset.PinPoint && offResetMapping.PlaneToScreen == Projective2D.Identity);
     }
 
@@ -407,6 +408,11 @@ internal static class CanvasPresetTests
                 !string.IsNullOrWhiteSpace(Field<TextBlock>(fallback, "status").Text) && File.ReadAllText(corruptFile) == "broken library");
         }
         finally { fallback?.CloseForDispose(); ApplicationPaths.Configure(["--profile", previousProfile]); }
+    }
+    private static string ProjectionJson(CanvasProjectionSettings projection)
+    {
+        var canvas = new CanvasSettings { Projection = projection.Clone() };
+        CanvasGeometryMigration.UpgradeLegacy(canvas); return JsonSerializer.Serialize(canvas.Projection);
     }
     private static bool Reject(Action action) { try { action(); return false; } catch (Exception ex) when (ex is ArgumentException or InvalidDataException or KeyNotFoundException or InvalidOperationException) { return true; } }
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;

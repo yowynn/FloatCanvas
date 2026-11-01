@@ -73,8 +73,11 @@ internal static class BillboardStorageTests
                 using (var reader = new StreamReader(zip.GetEntry(name)!.Open())) json = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
                 json["Version"] = 3;
                 if (name == "scene.json")
+                {
+                    LegacyFixtureSchema.RemovePrefabFields(json);
                     foreach (var element in json["Elements"]!.AsArray())
                     { element!.AsObject().Remove("IsBillboard"); element.AsObject().Remove("BillboardAnchor"); element.AsObject().Remove("BillboardHeight"); }
+                }
                 zip.GetEntry(name)!.Delete(); using var writer = new StreamWriter(zip.CreateEntry(name).Open()); await writer.WriteAsync(json.ToJsonString());
             }
         var oldLoaded = await store.LoadAsync(legacy);

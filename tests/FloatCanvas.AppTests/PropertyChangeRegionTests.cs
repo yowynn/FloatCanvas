@@ -176,7 +176,7 @@ internal static class PropertyChangeRegionTests
     }
 
     private static void Toggle(CheckBox toggle) { toggle.IsChecked = toggle.IsChecked != true; toggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); }
-    private static void Toggle(SegmentedChoice choice) => choice.SelectedValue = choice.SelectedValue is not true;
+    private static void Toggle(SegmentedChoice choice) => choice.SelectedIndex = choice.SelectedIndex == 0 ? 1 : 0;
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
     private static void Pump(int milliseconds)
     {

@@ -97,6 +97,7 @@ internal static class DepthOcclusionSettingsTests
         var desktop = (DesktopSession)RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
         Set(desktop, "_host", host); Set(desktop, "_editor", editor);
         Set(desktop, "_canvasCalibration", new CanvasCalibrationController());
+        Set(desktop, "_canvasGridCalibrationPoints", new List<PointD>());
         Set(desktop, "_canvasGridScale", new CanvasGridScaleController());
         Set(desktop, "_pixelDirtyRegions", new List<PixelBounds>());
         Set(desktop, "_disposed", true); // Skip render dispatch only; real preset application and history still run.

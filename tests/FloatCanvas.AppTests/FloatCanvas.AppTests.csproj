@@ -5,4 +5,5 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/FloatCanvas.App/FloatCanvas.App.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Fixtures/Appearance/*.json" /></ItemGroup>
 </Project>

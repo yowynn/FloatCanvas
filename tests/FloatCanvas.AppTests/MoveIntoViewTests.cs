@@ -56,7 +56,8 @@ internal static class MoveIntoViewTests
         var reachableA = Box(1900, 100); var distantB = Box(2200, 100); var reachable = Session(reachableA, distantB); Group(reachable, reachableA, distantB);
         check("a group with any visible editable member remains untouched", !Execute(reachable) && distantB.Transform.OffsetX == 2200 && reachable.UndoCount == 0);
         var spanA = Box(-200, 100); var spanB = Box(2200, 100); var spanning = Session(spanA, spanB); Group(spanning, spanA, spanB);
-        check("an oversized group with no visible member becomes reachable without collapsing spacing", Execute(spanning) && ElementGeometry.Bounds(spanA).Left == 0 && spanB.Transform.OffsetX - spanA.Transform.OffsetX == 2400);
+        check("an oversized group with no visible member becomes reachable without collapsing spacing", Execute(spanning) &&
+            ElementGeometry.Bounds(SceneEvaluation.Build(spanning.Document).FindElement(spanA.Id)!).Left == 0 && spanB.Transform.OffsetX - spanA.Transform.OffsetX == 2400);
 
         var oversized = Session(Box(3000, 100, 3000, 200));
         check("oversized objects retain size with an accessible visible portion", Execute(oversized) && ElementGeometry.Bounds(oversized.Document.Elements[0]).Intersect(Single[0].WorkArea).Width >= 32 && oversized.Document.Elements[0].Width == 3000 && oversized.Document.Elements[0].Transform.M11 == 1);

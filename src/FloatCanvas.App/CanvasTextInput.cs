@@ -65,8 +65,9 @@ internal sealed class CanvasTextInput : IDisposable
         if(disposed||!edit.IsActive)return;
         var dpi=VisualTreeHelper.GetDpi(window);
         var caret=edit.Caret;
-        if(!edit.LocalToScreen.TryTransformPoint(new(caret.X,caret.Y),out var position))return;
-        var jacobian=edit.LocalToScreen.Jacobian(new(caret.X,caret.Y));
+        var matrix=edit.LocalToScreen;
+        if(!matrix.TryTransformPoint(new(caret.X,caret.Y),out var position))return;
+        var jacobian=matrix.Jacobian(new(caret.X,caret.Y));
         double scale=Math.Sqrt(jacobian.M11*jacobian.M11+jacobian.M21*jacobian.M21)/dpi.DpiScaleX;
         edit.Input.FontSize=Math.Clamp(edit.Target.Style.FontSize*scale,1,2048);
         edit.Input.FontFamily=new FontFamily(edit.Target.Style.FontFamily);

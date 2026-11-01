@@ -13,6 +13,16 @@ internal static class ToolParameterIconTests
     {
         _ = Wpf.Application.Current ?? new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
+        var demonstration = new ToolPresetLibrary(Path.Combine(Path.GetTempPath(), "FloatCanvas-icon-unused-" + Guid.NewGuid().ToString("N"))).Official;
+        var keyboardPreviews = demonstration.Where(preset => preset.Parameters.Tool == EditorTool.Presentation)
+            .Select(preset => Rasterize(ToolParameterIcon.Create(preset.Parameters), 16)).ToArray();
+        check("log keycaps and full-keyboard recipes keep distinct visible artwork at sixteen DIP", keyboardPreviews.Length == 3 && keyboardPreviews.All(bitmap => InkCount(bitmap) > 12) && keyboardPreviews.Select(Hash).Distinct().Count() == 3);
+        var mouseRecipes = demonstration.Where(preset => preset.Parameters.Tool == EditorTool.PointerPresentation).ToArray();
+        var mousePreviews = mouseRecipes.Select(preset => Rasterize(ToolParameterIcon.Create(preset.Parameters), 16)).ToArray();
+        check("halo clicks and trail mouse recipes expose distinct configured artwork at sixteen DIP", mousePreviews.Length == 3 && mousePreviews.All(bitmap => InkCount(bitmap) > 12) && mousePreviews.Select(Hash).Distinct().Count() == 3);
+        var customMouse = mouseRecipes[0].Parameters.Clone(); string mouseBefore = JsonSerializer.Serialize(customMouse);
+        string oldMouseIcon = Hash(Rasterize(ToolParameterIcon.Create(customMouse), 16)); customMouse.PointerPresentation!.CursorColor = 0xFF00FF00;
+        check("mouse artwork reflects effect color and alpha while preserving the saved recipe", Hash(Rasterize(ToolParameterIcon.Create(customMouse), 16)) != oldMouseIcon && JsonSerializer.Serialize(mouseRecipes[0].Parameters) == mouseBefore);
         check("new and older profiles display shortcut legends by default",new UserSettings().ShowToolShortcutHints&&JsonSerializer.Deserialize<UserSettings>("{}")!.ShowToolShortcutHints);
         var settings=new UserSettings {ShowToolShortcutHints=false};
         check("shortcut legend visibility is a persistent preference",!JsonSerializer.Deserialize<UserSettings>(JsonSerializer.Serialize(settings))!.ShowToolShortcutHints);

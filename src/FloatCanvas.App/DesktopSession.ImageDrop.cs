@@ -31,10 +31,11 @@ internal sealed partial class DesktopSession
 
     private void BeginCanvasDropReception()
     {
-        if (!CanAddCanvasContent()) return;
+        if (!CanAddCanvasContent() || Active.IsTransactionActive || !Active.CanInsertInEditScope) return;
         CloseImageDrop(); _editor.Cancel();
-        _imageDropOrigin = _editor.ScreenOrigin;
-        _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token, ImageInsertionOpacity());
+        _imageDropOrigin = _editor.CanvasOrigin;
+        _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token, ImageInsertionOpacity(),
+            () => _editor.CurrentCanvasMapping, () => CurrentGroupCanvasView().Epoch);
         _toolbar.Hide(); _inspector?.Hide(); FinishInlineText();
         // The source owns the mouse and its OLE loop until Drop returns. Showing a
         // target must not activate a window or acquire the ordinary keyboard lease.
@@ -52,7 +53,7 @@ internal sealed partial class DesktopSession
     private void OnImageDropTick(object? sender, EventArgs e)
     {
         if (_disposed || !_host.IsReceivingDrop || _imageDropRequest is not { IsImporting: false } request ||
-            !request.IsCurrent(_imageDropRequest, _live, _capture))
+            !request.IsCurrent(_imageDropRequest, _live, _capture, Active))
         { CloseImageDrop(); RequestRender(); return; }
         if (GetDropKeyState(0x1B) < 0) { CloseImageDrop(); RequestRender(); return; }
         if (OverlayHost.IsPrimaryMouseButtonDown) { _imageDropReleasedAt = null; return; }
@@ -65,19 +66,20 @@ internal sealed partial class DesktopSession
     }
 
     private bool SupportsCanvasImageDrop(OleDataObject data) => !_disposed && !DocumentOperationBusy &&
-        (_host.IsEditing || _host.IsReceivingDrop) && ImageDropDataReader.Supports(data);
+        (_host.IsEditing || _host.IsReceivingDrop) && !Active.IsTransactionActive && Active.CanInsertInEditScope && ImageDropDataReader.Supports(data);
 
     private bool ReceiveCanvasImageDrop(OleDataObject data, OverlayPoint point)
     {
-        if (_disposed || DocumentOperationBusy || (!_host.IsEditing && !_host.IsReceivingDrop)) return false;
+        if (_disposed || DocumentOperationBusy || Active.IsTransactionActive || !Active.CanInsertInEditScope || (!_host.IsEditing && !_host.IsReceivingDrop)) return false;
         _editor.Cancel();
         var request = _imageDropRequest;
         if (request is null)
         {
-            _imageDropOrigin = _editor.ScreenOrigin;
-            request = _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token, ImageInsertionOpacity());
+            _imageDropOrigin = _editor.CanvasOrigin;
+            request = _imageDropRequest = new(Active, VisibleDocumentArea(), _documentLifetime.Token, ImageInsertionOpacity(),
+                () => _editor.CurrentCanvasMapping, () => CurrentGroupCanvasView().Epoch);
         }
-        if (!request.IsCurrent(_imageDropRequest, _live, _capture) ||
+        if (!request.IsCurrent(_imageDropRequest, _live, _capture, Active) ||
             !request.TrySetDropPoint(new(point.X, point.Y), _imageDropOrigin)) return false;
         StopImageDropTimer();
         request.IsImporting = true; _documentBusy = true;
@@ -87,7 +89,7 @@ internal sealed partial class DesktopSession
             // Copy delayed/virtual OLE data while the source still owns its medium.
             // No COM data object, stream or borrowed native handle crosses await.
             var payload = ImageDropDataReader.Read(data);
-            if (!request.IsCurrent(_imageDropRequest, _live, _capture))
+            if (!request.IsCurrent(_imageDropRequest, _live, _capture, Active))
             { FinishImageDrop(request); return false; }
             _app.Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => _ = ImportCanvasDropAsync(request, payload, sourceForeground)));
             return true;
@@ -105,21 +107,40 @@ internal sealed partial class DesktopSession
     {
         try
         {
-            if (_disposed || !request.IsCurrent(_imageDropRequest, _live, _capture) ||
+            if (_disposed || !request.IsCurrent(_imageDropRequest, _live, _capture, Active) ||
                 GetToolbarForegroundWindow() != sourceForeground) return;
             _host.EndDropReception();
             // This runs only after the native Drop callback has returned to OLE.
             if (!SetEditing(true, preserveImageDrop: true)) { request.Cancel(); return; }
+            var editor = _editor; long placementVersion = editor.PlacementContextVersion, editingVersion = _host.EditingSessionVersion;
+            var origin = editor.CanvasOrigin; var monitors = _host.Monitors; var prefabContext = _prefabEditContext;
+            request.BindCompletionGuard(() => !_disposed && !_documentStopped && !_documentExitRequested && ReferenceEquals(Active, request.Target) &&
+                ReferenceEquals(_editor, editor) && ReferenceEquals(editor.Session, request.Target) && editor.PlacementContextVersion == placementVersion &&
+                editor.CanvasOrigin == origin && _host.IsEditing && _host.EditingSessionVersion == editingVersion &&
+                ReferenceEquals(_host.Monitors, monitors) && ReferenceEquals(_prefabEditContext, prefabContext));
             UpdateStatus(L.Get("ImageDrop.Importing"));
+            if (payload.HasProjects)
+            {
+                // File-backed projects keep their source locator. Virtual image bytes
+                // remain owned snapshots; they never invent a persistent file link.
+                var extraImages = await NormalizeCanvasDropAsync(new([], payload.EncodedImages.Select(bytes => bytes.ToArray()).ToArray()), request.Token);
+                if (_disposed || _documentStopped || !request.IsCurrent(_imageDropRequest, _live, _capture, Active)) return;
+                var batch = await CanvasContentImport.PrepareAsync(request.Target, payload.FilePaths, extraImages,
+                    request.Placement, request.DropCenter, request.Opacity, FileState(request.Target).Path, request.Token);
+                if (_disposed || _documentStopped || !request.TryCommit(_imageDropRequest, _live, _capture, batch, Active)) return;
+                if (ReferenceEquals(Active, request.Target)) SwitchToolState(EditorTool.Select);
+                ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("Placement.Imported", batch.NodeCount));
+                return;
+            }
             var images = await NormalizeCanvasDropAsync(payload, request.Token);
             if (_editor.BillboardMode && Active.Document.Canvas.Projection.Enabled)
             {
                 if (_disposed || _documentStopped || images.Count == 0 ||
-                    !request.TryCompleteDeferred(_imageDropRequest, _live, _capture)) return;
+                    !request.TryCompleteDeferred(_imageDropRequest, _live, _capture, Active)) return;
                 if (!InsertImages(request.Target, images, false, request.Opacity)) SwitchToolState(EditorTool.Select);
                 return;
             }
-            if (_disposed || _documentStopped || !request.TryCommit(_imageDropRequest, _live, _capture, images)) return;
+            if (_disposed || _documentStopped || !request.TryCommit(_imageDropRequest, _live, _capture, images, Active)) return;
             if (ReferenceEquals(Active, request.Target)) SwitchToolState(EditorTool.Select);
             ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("ImageDrop.Imported", images.Count));
         }

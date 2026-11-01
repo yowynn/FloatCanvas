@@ -12,6 +12,7 @@ internal sealed class InlineTextEdit : IDisposable
     internal const double FramePadding = 4;
     private readonly EditorSession session;
     private readonly SceneRenderer renderer;
+    private readonly Func<CanvasMapping> canvasMapping;
     private readonly CanvasElement original;
     private readonly bool isNew;
     private readonly long transaction;
@@ -27,32 +28,65 @@ internal sealed class InlineTextEdit : IDisposable
     internal bool IsSelecting { get; private set; }
     internal TextEditingGeometry Geometry { get; private set; }
     private readonly BillboardDepthLine? creationDepth;
+    private readonly bool screenFirst;
+    private readonly SceneDocument ownerDocument;
+    private readonly long scopeVersion;
+    private readonly Projective2D creationProjection;
     private readonly Affine2D creationTransform;
-    internal Projective2D LocalToScreen => CanvasMapping.Create(session.Document).ElementToScreen(Target);
+    private readonly LayerPlacement parentPlacement;
+    private readonly bool parentVisible, parentLocked;
+    internal CanvasElement WorldTarget
+    {
+        get
+        {
+            var world = Target.Clone();
+            if (screenFirst) return world;
+            SceneGraph.ApplyPlacement(world, parentPlacement);
+            world.Visible &= parentVisible; world.Locked |= parentLocked; world.GroupId = null; return world;
+        }
+    }
+    private CanvasMapping CurrentCanvasMapping => canvasMapping();
+    internal Projective2D LocalToScreen => screenFirst ? ElementGeometry.LocalToPlane(Target) : CurrentCanvasMapping.ElementToScreen(WorldTarget);
+    internal CanvasElement? ScreenDraft => screenFirst && IsActive ? Target.Clone() : null;
+    internal bool HasScreenDraft => screenFirst && IsActive;
+    internal CanvasElement? ResolvedScreenDraft => screenFirst && TryResolveScreenDraft(out var candidate) ? candidate : null;
     internal event Action? Changed;
     internal event Action? Finished;
     internal event Action? PlacementRejected;
 
-    internal InlineTextEdit(EditorSession session,CanvasElement? existing,PointD point,ElementStyle style,SceneRenderer renderer, BillboardDepthLine? billboardDepth = null)
+    internal InlineTextEdit(EditorSession session,CanvasElement? existing,PointD point,ElementStyle style,SceneRenderer renderer, BillboardDepthLine? billboardDepth = null,
+        bool billboardScreenFirst = false, Func<CanvasMapping>? canvasMapping = null)
     {
         this.session=session;this.renderer=renderer;isNew=existing is null;
+        this.canvasMapping = canvasMapping ?? (() => CanvasMapping.Create(session.Document));
+        screenFirst = isNew && billboardScreenFirst;
+        ownerDocument = session.Document; scopeVersion = session.EditScopeVersion;
+        creationProjection = CurrentCanvasMapping.PlaneToScreen;
         if(session.IsTransactionActive)throw new InvalidOperationException(L.Get("Text.ActionInProgress"));
-        if(existing is not null&&(existing.Kind!=ElementKind.Text||existing.Locked||!session.Document.Elements.Contains(existing)))
+        var graph = new SceneGraph(session.Document);
+        if(existing is not null&&(existing.Kind!=ElementKind.Text||!session.Document.Elements.Contains(existing)||graph.IsLocked(existing.Id)))
             throw new InvalidOperationException(L.Get("Text.CannotEdit"));
-        Target=existing??new CanvasElement {Kind=ElementKind.Text,Width=40,Height=style.FontSize*1.35,
+        if (isNew && session.EditScopeId is { } scope && graph.IsLocked(scope)) throw new InvalidOperationException(L.Get("Text.CannotEdit"));
+        var draft=existing??new CanvasElement {Kind=ElementKind.Text,Width=40,Height=style.FontSize*1.35,
             Style=style.Clone(),Transform=Affine2D.Translation(point.X,point.Y)};
-        creationDepth = isNew ? billboardDepth : null; creationTransform = Target.Transform;
-        PlaceBillboardText();
+        if (isNew) AppearanceMigration.NormalizeElement(draft);
+        creationDepth = isNew ? billboardDepth : null; creationTransform = draft.Transform;
+        if (creationDepth is { } depth)
+            BillboardGeometry.TryPlaceFromScreen(draft, CurrentCanvasMapping, depth,
+                Projective2D.FromAffine(Affine2D.Scale(depth.Scale, depth.Scale).Compose(creationTransform)));
+        session.BeginTransaction(L.Get(isNew?"History.AddElement":"History.EditText"));transaction=session.TransactionId;
+        Target = isNew && !screenFirst ? graph.InsertElement(draft, session.EditScopeId) : draft;
+        parentPlacement = graph.ScopeWorldPlacement(screenFirst ? session.EditScopeId : Target.GroupId);
+        parentVisible = Target.GroupId is not { } parent || graph.IsVisible(parent);
+        parentLocked = Target.GroupId is { } owner && graph.IsLocked(owner);
         original=Target.Clone();Input.Text=Target.Text;
         Geometry=renderer.TextEditingGeometry(Input.Text,Target.Style,Target.Width);
-        session.BeginTransaction(L.Get(isNew?"History.AddElement":"History.EditText"));transaction=session.TransactionId;
-        if(isNew)session.Document.Elements.Add(Target);
-        session.SetSelection([Target.Id]);
+        session.SetSelection(screenFirst ? [] : [Target.Id]);
         Input.TextChanged+=OnTextChanged;
         Input.SelectionChanged+=(_,_)=> { if (!movingCaret) { caretAffinity=null; affinityIndex=-1; } Changed?.Invoke(); };
         session.Changed+=OnSessionChanged;
         if(!isNew)Input.SelectAll();
-        session.NotifyChanged();
+        if (!screenFirst) session.NotifyChanged();
     }
 
     private static string Normalize(string text)=>text.Replace("\r\n","\n").Replace('\r','\n');
@@ -76,19 +110,42 @@ internal sealed class InlineTextEdit : IDisposable
         }
         Geometry=renderer.TextEditingGeometry(Input.Text,Target.Style,Target.Width);
         PlaceBillboardText();
-        session.NotifyChanged();Changed?.Invoke();
+        if (!screenFirst) session.NotifyChanged();
+        Changed?.Invoke();
+    }
+    private bool TryResolveScreenDraft(out CanvasElement candidate)
+    {
+        candidate = Target.Clone();
+        if (!ReferenceEquals(ownerDocument, session.Document) || session.EditScopeVersion != scopeVersion ||
+            creationProjection != CurrentCanvasMapping.PlaneToScreen || !session.CanInsertInEditScope ||
+            !BillboardGeometry.TryResolveScreenBottom(candidate, CurrentCanvasMapping,
+                ElementGeometry.LocalToPlane(candidate), out var placement, out _)) return false;
+        candidate.IsBillboard = true; candidate.ProjectivePlacement = null;
+        candidate.BillboardAnchor = placement.Anchor; candidate.BillboardHeight = placement.Height; candidate.Transform = placement.Linear;
+        return true;
     }
     private void PlaceBillboardText()
     {
         if (creationDepth is not { } depth) return;
         var screen = Projective2D.FromAffine(Affine2D.Scale(depth.Scale, depth.Scale).Compose(creationTransform));
-        BillboardGeometry.TryPlaceFromScreen(Target, CanvasMapping.Create(session.Document), depth, screen);
+        var world = WorldTarget;
+        if (!BillboardGeometry.TryPlaceFromScreen(world, CurrentCanvasMapping, depth, screen)) return;
+        SceneGraph.ApplyPlacement(world, parentPlacement.Inverse());
+        Target.Transform = world.Transform; Target.ProjectivePlacement = world.ProjectivePlacement;
+        Target.IsBillboard = world.IsBillboard; Target.BillboardAnchor = world.BillboardAnchor; Target.BillboardHeight = world.BillboardHeight;
     }
     private void OnSessionChanged(object? sender,EventArgs args)
     {
         if(!IsActive)return;
         if(!session.IsTransactionActive||session.TransactionId!=transaction)
         {Detach();Finished?.Invoke();return;}
+        if (screenFirst)
+        {
+            if (!ReferenceEquals(ownerDocument, session.Document) || scopeVersion != session.EditScopeVersion ||
+                creationProjection != CurrentCanvasMapping.PlaneToScreen || !session.CanInsertInEditScope)
+                Finish(commit: false);
+            return;
+        }
         if(!session.Document.Elements.Contains(Target)||Target.Kind!=ElementKind.Text||Target.Locked)
         {Finish(commit:true,selectEdited:false);return;}
         if(!session.Selection.SetEquals([Target.Id]))Finish(commit:true,selectEdited:false);
@@ -163,13 +220,16 @@ internal sealed class InlineTextEdit : IDisposable
         Detach();
         if(owns)
         {
-            bool unsafePlacement = commit && Target.Text.Length > 0 && !CanvasMapping.Create(session.Document).IsElementSafe(Target);
+            CanvasElement? screenCandidate = null;
+            bool unsafePlacement = commit && Target.Text.Length > 0 && (screenFirst
+                ? !TryResolveScreenDraft(out screenCandidate) : !CurrentCanvasMapping.IsElementSafe(WorldTarget));
             if(!commit||unsafePlacement||isNew&&string.IsNullOrWhiteSpace(Target.Text))session.Cancel();
             else
             {
-                if(Target.Text.Length==0)session.Document.Elements.Remove(Target);
+                if (screenFirst && screenCandidate is not null) new SceneGraph(session.Document).InsertElement(screenCandidate, session.EditScopeId);
+                if(Target.Text.Length==0) new SceneGraph(session.Document).RemoveNodes([Target.Id]);
                 session.Commit();
-                if(selectEdited&&session.Document.Elements.Contains(Target))session.SetSelection([Target.Id]);
+                if(selectEdited&&session.Document.Elements.Any(element => element.Id == Target.Id))session.SetSelection([Target.Id]);
             }
             if(unsafePlacement)PlacementRejected?.Invoke();
         }

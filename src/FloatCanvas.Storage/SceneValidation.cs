@@ -9,20 +9,41 @@ public static class SceneValidation
     public static void Validate(SceneDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (document.Version is not (1 or 2 or 3 or 4 or 5 or 6 or 7 or SceneDocument.CurrentVersion)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+        PrefabClosure.RequireSourceGraphs(document);
+        if (!SceneFormatMigration.Supports(document.Version)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
         Require(Enum.IsDefined(document.Kind), L.Get("Scene.InvalidDocumentKind"));
-        Require(document.Elements is not null && document.DisplayLayout is not null && document.Groups is not null, L.Get("Scene.MissingCollections"));
+        Require(document.Elements is not null && document.DisplayLayout is not null && document.Groups is not null && document.Instances is not null && document.Definitions is not null && document.Provenance is not null, L.Get("Scene.MissingCollections"));
+        if (document.Version < 11) Require(document.Instances.Count == 0 && document.Definitions.Count == 0, L.Format("Scene.UnsupportedVersion", document.Version));
+        if (document.Version < 13) Require(!document.Elements.Concat(document.Definitions.SelectMany(definition => definition.Graph.Elements)).Append(document.Background)
+            .OfType<CanvasElement>().Any(element => element.Kind == ElementKind.Presentation || element.Presentation is not null), "Presentation content requires scene format 13.");
+        if (document.Version < 14) Require(!document.Elements.Concat(document.Definitions.SelectMany(definition => definition.Graph.Elements)).Append(document.Background)
+            .OfType<CanvasElement>().Any(element => element.WindowSource is not null), "Window sources require scene format 14.");
+        if (document.Version < 15) Require(!document.Elements.Concat(document.Definitions.SelectMany(definition => definition.Graph.Elements)).Append(document.Background)
+            .OfType<CanvasElement>().Any(element => element.Presentation is { } settings &&
+                (settings.DisplayStyle != PresentationDisplayStyle.Log || settings.KeyboardLayout is not null)), "Keyboard display styles and layouts require scene format 15.");
         SceneLimits.ValidateCapacity(document);
         Require(document.Groups!.Count <= SceneLimits.MaximumElements, L.Get("Scene.ElementCountExceeded"));
         Require(Unit(document.LayerOpacity), L.Get("Scene.InvalidLayerOpacity"));
         Require(Rect(document.Viewport) && document.Viewport.Width > 0 && document.Viewport.Height > 0, L.Get("Scene.InvalidViewport"));
         ValidateCanvas(document);
         var ids = new HashSet<Guid>();
-        foreach (var element in document.Elements) ValidateElement(element, ids);
+        var graph = ValidateGraph(document, ids);
+        foreach (var definition in document.Definitions) ValidateGraph(definition.Graph, new());
+        if (document.Version < 10)
+            Require(document.RootOrder is null && document.Groups.All(group => group.Transform == Affine2D.Identity && group.ElevationScale == 1 &&
+                group.Visible && !group.Locked && group.OrderMode == GroupOrderMode.LegacyPassThrough && group.ChildOrder is null),
+                L.Format("Scene.UnsupportedVersion", document.Version));
+        var rendered = document.Instances.Count == 0 ? document.Elements.Select(graph.ToWorld) : SceneEvaluation.Build(document).RenderDocument.Elements;
+        foreach (var placed in rendered)
+        {
+            Require(LayerPlacementFinite(placed.Transform) && Point(placed.BillboardAnchor) && double.IsFinite(placed.BillboardHeight) &&
+                ElementGeometry.LocalToPlane(placed).TryTransformBounds(ElementGeometry.StrokedLocalBounds(placed), out var bounds) && Rect(bounds),
+                L.Get("Scene.InvalidRenderedBounds"));
+        }
         if (document.Canvas.Projection.Enabled)
         {
             var mapping = CanvasMapping.Create(document);
-            foreach (var element in document.Elements.Where(e => e.IsBillboard))
+            foreach (var element in rendered.Where(e => e.IsBillboard))
             {
                 // A retained layer can lie outside the current drawing domain. Its local
                 // geometry is still validated above; rendering hides unsafe anchors.
@@ -31,10 +52,10 @@ public static class SceneValidation
                         L.Get("Scene.InvalidElementTransform"));
             }
         }
-        ValidateGroups(document, ids);
         if (document.Background is not null)
         {
             Require(document.Background.Kind == ElementKind.Image, L.Get("Scene.BackgroundMustBeImage"));
+            Require(document.Background.WindowSource is null, "A canvas background cannot be a live window source.");
             ValidateElement(document.Background, ids);
             Require(document.Background.GroupId is null, L.Get("Scene.BackgroundMustBeImage"));
         }
@@ -52,6 +73,54 @@ public static class SceneValidation
             Require(workspace.CaptureDocument.Kind == DocumentKind.FrozenCapture, L.Get("Recovery.InvalidCaptureDocumentKind"));
         }
         Require(Point(workspace.CaptureOrigin), L.Get("Recovery.InvalidCaptureOrigin"));
+        foreach (var state in PrefabDraftState.Enumerate(workspace.PendingPrefabEdit))
+        {
+            Require(workspace.LiveDocument.Version >= 11 && state.OwnerResourceId != Guid.Empty && state.DefinitionId != Guid.Empty && state.ExpectedRevision != Guid.Empty,
+                "Invalid prefab edit recovery identity.");
+            Require(state.DraftDocument is not null && state.ReturnSelection is not null && state.DraftSelection is not null &&
+                state.ReturnSelection.Count <= SceneLimits.MaximumElements && state.DraftSelection.Count <= SceneLimits.MaximumElements &&
+                state.ReturnSelection.All(id => id != Guid.Empty) && state.DraftSelection.All(id => id != Guid.Empty) &&
+                state.ReturnSelection.Distinct().Count() == state.ReturnSelection.Count && state.DraftSelection.Distinct().Count() == state.DraftSelection.Count &&
+                state.ReturnScopeId != Guid.Empty && state.DraftScopeId != Guid.Empty, "Invalid prefab edit recovery selection.");
+            Require(state.SourcePath is null || state.SourcePath.Length is > 0 and <= 32767 && !state.SourcePath.Any(char.IsControl), "Invalid prefab edit source path.");
+            Require(state.SourceFileSha256 is null || state.SourceFileSha256.Length == 64 && state.SourceFileSha256.All(Uri.IsHexDigit), "Invalid prefab edit file identity.");
+            Require(!state.IsSourceProject || state.SourcePath is not null && state.SourceFileSha256 is not null, "Missing source project recovery context.");
+            Validate(state.DraftDocument);
+        }
+    }
+    public static void Validate(PrefabPackage package)
+    {
+        Require(package is not null && SceneFormatMigration.SupportsPrefab(package.Version) && package.Provenance is not null, "Unsupported prefab package version.");
+        if (package.Version < 15) Require(!package.Definitions.SelectMany(definition => definition.Graph.Elements)
+            .Any(element => element.Presentation is { } settings && (settings.DisplayStyle != PresentationDisplayStyle.Log || settings.KeyboardLayout is not null)),
+            "Keyboard display styles and layouts require scene format 15.");
+        if (package.Version < 13) Require(!package.Definitions.SelectMany(definition => definition.Graph.Elements)
+            .Any(element => element.Kind == ElementKind.Presentation || element.Presentation is not null), "Presentation content requires scene format 13.");
+        if (package.Version < 14) Require(!package.Definitions.SelectMany(definition => definition.Graph.Elements)
+            .Any(element => element.WindowSource is not null), "Window sources require scene format 14.");
+        _ = PrefabClosure.Validate(package);
+        foreach (var definition in package.Definitions) ValidateGraph(definition.Graph, new());
+        var entry = new PrefabInstance { DefinitionId = package.EntryDefinitionId };
+        var view = new SceneDocument { Instances = [entry], RootOrder = [entry.Id], Definitions = package.Definitions };
+        foreach (var element in SceneEvaluation.Build(view).RenderDocument.Elements)
+            Require(ElementGeometry.LocalToPlane(element).TryTransformBounds(ElementGeometry.StrokedLocalBounds(element), out var bounds) && Rect(bounds),
+                L.Get("Scene.InvalidRenderedBounds"));
+        SceneLimits.ValidatePayloadJsonCapacity(package);
+    }
+    private static SceneGraph ValidateGraph(SceneNodeGraph source, HashSet<Guid> ids)
+    {
+        foreach (var element in source.Elements) ValidateElement(element, ids);
+        foreach (var instance in source.Instances)
+            Require(instance is not null && instance.Id != Guid.Empty && ids.Add(instance.Id) && instance.DefinitionId != Guid.Empty &&
+                instance.Name is not null && instance.Name.Length <= EditorSession.MaximumLayerNameLength, L.Get("Scene.InvalidElementId"));
+        var graph = ValidateGroups(source, ids);
+        foreach (var element in source.Elements)
+        {
+            var placed = graph.ToWorld(element);
+            Require(LayerPlacementFinite(placed.Transform) && Point(placed.BillboardAnchor) && double.IsFinite(placed.BillboardHeight) &&
+                ElementGeometry.LocalToPlane(placed).TryTransformBounds(ElementGeometry.StrokedLocalBounds(placed), out var bounds) && Rect(bounds), L.Get("Scene.InvalidRenderedBounds"));
+        }
+        return graph;
     }
     private static void ValidateElement(CanvasElement element, HashSet<Guid> ids)
     {
@@ -68,12 +137,16 @@ public static class SceneValidation
         Require(element.Points is not null && element.Points.Count <= SceneLimits.MaximumPathPoints && element.Points.All(Point), L.Get("Scene.InvalidElementPath"));
         Require(element.Style is not null && element.Text is not null && element.Text.Length <= 2_000_000, L.Get("Scene.InvalidElementContent"));
         var s = element.Style!;
+        Require(ElementAppearance.IsValidVariant(element.Kind, s.Variant), L.Get("Scene.InvalidElementStyle"));
+        Require(AppearanceRegistry.IsValidColorRoles(s.AdditionalColors) && Enum.IsDefined(element.NumberTextSizeMode), L.Get("Scene.InvalidElementStyle"));
+        Require(PresentationLimits.IsValidElement(element), L.Get("Scene.InvalidElementStyle"));
+        Require(WindowSourceLimits.IsValidElement(element), "Invalid live window source.");
         Require(Nonnegative(s.StrokeWidth) && Unit(s.Opacity) && Positive(s.FontSize) && s.FontFamily is not null && s.FontFamily.Length <= 1024 && Enum.IsDefined(s.TextAlignment), L.Get("Scene.InvalidElementStyle"));
         Require(Enum.IsDefined(s.ArrowHeadStyle) && Nonnegative(s.ArrowHeadSize) && s.ArrowHeadSize <= 512 &&
             (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&
             (s.EndArrowHead is null || Enum.IsDefined(s.EndArrowHead.Value)), L.Get("Scene.InvalidArrowHead"));
         Require(Enum.IsDefined(s.StrokePattern), L.Get("Scene.InvalidElementStyle"));
-        Require(element.Kind != ElementKind.Image || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidImageReference"));
+        Require(element.Kind != ElementKind.Image || element.WindowSource is not null || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidImageReference"));
         Require(element.AssetId is null || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidAssetReference"));
         Require(element.ImageCrop is null || NormalizedRect(element.ImageCrop.Value, positive: true), L.Get("Scene.InvalidImageCrop"));
         Require(element.ImageFrame is null || element.Kind == ElementKind.Image && element.ImageFrame.Count is >= 3 and <= SceneLimits.MaximumPathPoints &&
@@ -104,7 +177,7 @@ public static class SceneValidation
         Require(projection.Columns is >= 1 and <= CanvasCalibration.MaximumGridCount && projection.Rows is >= 1 and <= CanvasCalibration.MaximumGridCount,
             L.Get("Scene.InvalidCanvas"));
         Require(Point(projection.Origin) && projection.CellSize is >= .01 and <= 1_000_000 && double.IsFinite(projection.CellSize) &&
-            projection.AlgorithmVersion is 1 or CanvasCalibration.AlgorithmVersion && projection.Matrix.IsFinite && projection.Matrix.TryInverse(out _), L.Get("Scene.InvalidCanvas"));
+            projection.AlgorithmVersion is 1 or 2 or CanvasCalibration.AlgorithmVersion && projection.Matrix.IsFinite && projection.Matrix.TryInverse(out _), L.Get("Scene.InvalidCanvas"));
         Require(Enum.IsDefined(projection.PinLocation) && (projection.PinPlanePoint is null || Point(projection.PinPlanePoint.Value)) &&
             Point(canvas.Grid.FlatTranslation), L.Get("Scene.InvalidCanvas"));
         Require(projection.ReferenceBounds is null || Rect(projection.ReferenceBounds.Value) && !projection.ReferenceBounds.Value.IsEmpty,
@@ -115,22 +188,26 @@ public static class SceneValidation
         Require(canvas.Grid.FlatCellSize is null || canvas.Grid.FlatCellSize is >= CanvasGridGeometry.MinimumCellSize and <= CanvasGridGeometry.MaximumCellSize &&
             double.IsFinite(canvas.Grid.FlatCellSize.Value), L.Get("Scene.InvalidCanvas"));
         Require(canvas.Grid.FlatOrigin is null || Point(canvas.Grid.FlatOrigin.Value), L.Get("Scene.InvalidCanvas"));
+        Require(projection.PlaneBounds is null || Rect(projection.PlaneBounds.Value) &&
+            CanvasProjectionGeometry.IsValidSize(projection.PlaneBounds.Value.Width, projection.PlaneBounds.Value.Height), L.Get("Scene.InvalidCanvas"));
+        Require(canvas.Grid.PlaneCellSize is null || double.IsFinite(canvas.Grid.PlaneCellSize.Value) &&
+            canvas.Grid.PlaneCellSize is >= CanvasGridGeometry.MinimumCellSize and <= CanvasGridGeometry.MaximumCellSize, L.Get("Scene.InvalidCanvas"));
+        Require(canvas.Grid.PlaneOrigin is null || Point(canvas.Grid.PlaneOrigin.Value), L.Get("Scene.InvalidCanvas"));
         if (projection.Quad.Count == 0)
         {
             Require(!projection.Enabled && projection.Matrix == Projective2D.Identity, L.Get("Scene.InvalidCanvas"));
             return;
         }
         Require(CanvasCalibration.TryGridToScreen(projection.Columns, projection.Rows, projection.Quad, out _), L.Get("Scene.InvalidCanvas"));
-        PointD[] corners = [projection.Origin, projection.Origin + new PointD(projection.Columns * projection.CellSize, 0),
-            projection.Origin + new PointD(projection.Columns * projection.CellSize, projection.Rows * projection.CellSize),
-            projection.Origin + new PointD(0, projection.Rows * projection.CellSize)];
+        var plane = CanvasProjectionGeometry.ResolvePlaneBounds(projection);
+        PointD[] corners = [new(plane.Left, plane.Top), new(plane.Right, plane.Top), new(plane.Right, plane.Bottom), new(plane.Left, plane.Bottom)];
         for (int i = 0; i < corners.Length; i++)
             Require(projection.Matrix.Denominator(corners[i]) > 0 && projection.Matrix.TryTransformPoint(corners[i], out var actual) &&
                 actual.DistanceTo(projection.Quad[i]) <= 1e-5, L.Get("Scene.InvalidCanvas"));
         // The screen may contain the horizon; drawing and editing clip against the finite ground domain.
         Require(CanvasCalibration.IsValidProjection(projection.Matrix), L.Get("Scene.InvalidCanvas"));
     }
-    private static void ValidateGroups(SceneDocument document, HashSet<Guid> ids)
+    private static SceneGraph ValidateGroups(SceneNodeGraph document, HashSet<Guid> ids)
     {
         var groups = new Dictionary<Guid, CanvasGroup>();
         foreach (var group in document.Groups)
@@ -139,29 +216,9 @@ public static class SceneValidation
                 L.Get("Scene.InvalidElementId"));
             groups.Add(group.Id, group);
         }
-        foreach (var group in document.Groups)
-        {
-            var visited = new HashSet<Guid> { group.Id };
-            var parent = group.ParentId;
-            while (parent is { } value)
-            {
-                Require(visited.Count < 64 && visited.Add(value) && groups.ContainsKey(value), L.Get("Scene.InvalidElementId"));
-                parent = groups[value].ParentId;
-            }
-        }
-        var used = new HashSet<Guid>();
-        foreach (var element in document.Elements)
-        {
-            var parent = element.GroupId;
-            while (parent is { } value)
-            {
-                Require(groups.ContainsKey(value), L.Get("Scene.InvalidElementId"));
-                if (!used.Add(value)) break;
-                parent = groups[value].ParentId;
-            }
-        }
-        Require(document.Groups.All(g => used.Contains(g.Id)), L.Get("Scene.InvalidElementId"));
+        return new SceneGraph(document);
     }
+    private static bool LayerPlacementFinite(Affine2D value) => Finite(value.M11, value.M12, value.M21, value.M22, value.OffsetX, value.OffsetY);
     private static bool Finite(params double[] values) => values.All(double.IsFinite);
     private static bool Point(PointD p) => Finite(p.X, p.Y);
     private static bool Rect(RectD r) => Finite(r.X, r.Y, r.Width, r.Height) && r.Width >= 0 && r.Height >= 0 && Finite(r.Right, r.Bottom);

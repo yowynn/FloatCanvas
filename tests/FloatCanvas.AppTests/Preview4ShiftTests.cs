@@ -149,7 +149,7 @@ internal static class Preview4ShiftTests
         var points=document.Elements.Single().Points;
         check("key-time anchors are mapped from physical pixels through screen origin and perspective",points.Count==4&&points[2].DistanceTo(new(25,10))<1e-6&&points[^1].DistanceTo(new(200,60))<1e-6);
         var release=Screen(new(420,260));editor.ModifiersChanged(OverlayModifiers.None,new(release.X,release.Y));
-        check("projected Shift release retains its actual plane endpoint",points[^1].DistanceTo(new(220,80))<1e-6);editor.Cancel();
+        check("projected Shift release retains its actual plane endpoint",document.Elements.Single().Points[^1].DistanceTo(new(220,80))<1e-6);editor.Cancel();
     }
     private static void Options(Action<string,bool> check)
     {

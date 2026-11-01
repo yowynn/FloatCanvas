@@ -77,7 +77,7 @@ internal sealed class ToolPresetGallery : UserControl
         bool toolChanged = observedTool != tool; observedTool = tool;
         if (!official.Concat(users).Any(p => p.Id == SelectedId)) { selections[tool] = official.First().Id; changed = true; }
         var selectedPreset = official.Concat(users).FirstOrDefault(p => p.Id == SelectedId);
-        selectedModified = selectedPreset is not null && JsonSerializer.Serialize(PreviewParameters(selectedPreset)) != JsonSerializer.Serialize(controller.Parameters);
+        selectedModified = selectedPreset is not null && JsonSerializer.Serialize(PreservePointerMaster(PreviewParameters(selectedPreset).Clone())) != JsonSerializer.Serialize(controller.Parameters);
         TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)), (button, id) => UpdateTile(button, official.Single(p => p.Id == id)));
         TileCollection.Synchronize(UserTiles, users.Select(p => p.Id), id =>
         {
@@ -106,7 +106,7 @@ internal sealed class ToolPresetGallery : UserControl
         var preset = library.OfficialFor(tool).Concat(library.UserFor(tool)).FirstOrDefault(p => p.Id == id);
         if (preset is null) return;
         selections[tool] = id;
-        controller.ApplyParameters(library.Apply(id));
+        controller.ApplyParameters(PreservePointerMaster(library.Apply(id)));
         Refresh(revealSelection: true); stateStore?.MarkChanged(); Applied?.Invoke();
     });
     internal void SaveNamed(string name)
@@ -149,6 +149,12 @@ internal sealed class ToolPresetGallery : UserControl
         ((SelectionTileButton)button).SetSelected(preset.Id == SelectedId, selectedModified);
     }
     private static ToolParameters PreviewParameters(ToolPreset preset) => preset.Parameters;
+    private ToolParameters PreservePointerMaster(ToolParameters parameters)
+    {
+        if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer)
+            pointer.Enabled = controller.Parameters.PointerPresentation?.Enabled ?? false;
+        return parameters;
+    }
     private IEnumerable<Button> Tiles() => OfficialTiles.Children.OfType<Button>().Concat(UserTiles.Children.OfType<Button>());
     private void RevealSelection() => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
     {

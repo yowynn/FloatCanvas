@@ -12,7 +12,7 @@ using Automation = System.Windows.Automation;
 namespace FloatCanvas.App;
 
 /// <summary>Live property edits for the current selection; layers live in their own window.</summary>
-internal sealed class InspectorWindow : Wpf.Window
+internal sealed partial class InspectorWindow : Wpf.Window
 {
     private readonly Func<EditorSession> getSession;
     private readonly Func<bool> canMutate;
@@ -23,6 +23,7 @@ internal sealed class InspectorWindow : Wpf.Window
     private readonly Dictionary<string, Wpf.FrameworkElement> fieldContainers = [];
     private readonly HashSet<string> dirtyFields = [];
     private readonly Controls.StackPanel propertyPanel = new();
+    private readonly NodeTransformPanel nodeTransforms;
     private readonly Controls.TextBlock selectionLabel = new() { TextWrapping = Wpf.TextWrapping.Wrap, FontWeight = Wpf.FontWeights.SemiBold };
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, MinHeight = 28, FontSize = 11 };
     private readonly Controls.Border textSection;
@@ -30,9 +31,11 @@ internal sealed class InspectorWindow : Wpf.Window
     private readonly PropertyChangeRegion linkedColorsRegion;
     private readonly AspectRatioButton keepAspect = new();
     private readonly SegmentedChoice linkColors = SegmentedChoicePreviews.ColorStyle();
+    private readonly SegmentedChoice numberStyle = new();
     private (ElementKind Kind, SymbolKind Symbol)? colorStyleContext;
     private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
     private readonly SegmentedChoice alignment = new(), arrowStyle = new(), startArrow = new(), endArrow = new(), strokePattern = new(), placement = new();
+    private readonly Controls.CheckBox preservePlacementAppearance = new();
     private readonly Controls.ComboBox effectChoice = new OverlayComboBox { DisplayMemberPath = nameof(EffectOption.Label), SelectedValuePath = nameof(EffectOption.Index) },
         symbolChoice = new OverlayComboBox { SelectedValuePath = nameof(Controls.ComboBoxItem.Tag) };
     private sealed record EffectOption(int Index, string Label);
@@ -65,6 +68,7 @@ internal sealed class InspectorWindow : Wpf.Window
     public event Action? Dismissed;
     public event Action<int>? CommandKey;
     public event Action<ColorField>? EyedropperRequested;
+    internal event Action<Guid>? PrefabEditRequested;
 
     public InspectorWindow(Func<EditorSession> getSession, Func<bool>? canMutate = null, ColorLibrary? colorLibrary = null)
     {
@@ -88,6 +92,7 @@ internal sealed class InspectorWindow : Wpf.Window
         selectionLabel.FontSize = 12;
         selectionLabel.Margin = new(0, 2, 0, 8);
         body.Children.Add(selectionLabel);
+        nodeTransforms = new(getSession, this.canMutate); nodeTransforms.EditPrefabRequested += id => PrefabEditRequested?.Invoke(id); body.Children.Add(nodeTransforms);
         body.Children.Add(propertyPanel);
         propertyPanel.Children.Add(SectionHeading("Inspector.GeometrySection", L.Get("Inspector.GeometryHint")));
         propertyPanel.Children.Add(FieldPair("X", "X", "Y", "Y"));
@@ -146,10 +151,16 @@ internal sealed class InspectorWindow : Wpf.Window
         var linkRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Color.Style")), linkColors);
         Automation.AutomationProperties.SetName(linkColors, L.Get("Color.Style"));
         fieldContainers.Add("LinkColors", linkRow);
+        SegmentedChoicePreviews.AddVariants(numberStyle, ElementKind.Number);
+        SegmentedChoicePreviews.UpdateColorStyle(numberStyle, EditorTool.Number);
+        var numberStyleRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Color.Style")), numberStyle);
+        Automation.AutomationProperties.SetName(numberStyle, L.Get("Color.Style"));
+        fieldContainers.Add("StyleVariant", numberStyleRow);
         linkedColorsRegion = new(colors);
-        linkedColorsGroup.Children.Add(linkRow); linkedColorsGroup.Children.Add(linkedColorsRegion);
+        numberStyle.SelectionChanged += (_, _) => { if (!refreshing && numberStyle.SelectedValue is string) linkedColorsRegion.Change(() => ChangeField("StyleVariant")); };
+        linkedColorsGroup.Children.Add(linkRow); linkedColorsGroup.Children.Add(numberStyleRow); linkedColorsGroup.Children.Add(linkedColorsRegion);
         propertyPanel.Children.Add(linkedColorsGroup);
-        linkColors.SelectionChanged += (_, _) => { if (!refreshing && linkColors.SelectedValue is bool) linkedColorsRegion.Change(() => ChangeField("LinkColors")); };
+        linkColors.SelectionChanged += (_, _) => { if (!refreshing && linkColors.SelectedValue is string) linkedColorsRegion.Change(() => ChangeField("LinkColors")); };
         propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.Opacity"), null, null));
         var effectsSection = SectionHeading("Inspector.EffectsSection");
         fieldContainers.Add("EffectsSection", effectsSection); propertyPanel.Children.Add(effectsSection);
@@ -206,9 +217,14 @@ internal sealed class InspectorWindow : Wpf.Window
         Automation.AutomationProperties.SetName(placement,L.Get("Billboard.Placement"));
         placement.SelectionChanged+=(_,_)=>{if(!refreshing)ChangeField("Placement");};
         placementSection.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Billboard.Placement")), placement));fieldContainers.Add("Placement",placementSection);
+        preservePlacementAppearance.Content = L.Get("Billboard.PreserveAppearance");
+        preservePlacementAppearance.IsChecked = true;
+        placementSection.Children.Add(preservePlacementAppearance);
         propertyPanel.Children.Add(placementSection);
         placementSection.Children.Add(FieldPair("BillboardHeight",L.Get("Billboard.Height"),null,null));
         placementSection.ToolTip=L.Get("Billboard.AnchorHint");
+        InitializePresentationControls(body);
+        InitializeWindowSourcesControls(body);
         var footer = new Controls.StackPanel();
         var footerBorder = new Controls.Border { Child = footer, BorderThickness = new(0, 1, 0, 0), Padding = WindowLayout.ContentMargin(8, 8) };
         footerBorder.SetResourceReference(Controls.Border.BorderBrushProperty, "CanvasBorder");
@@ -290,11 +306,15 @@ internal sealed class InspectorWindow : Wpf.Window
     public void Refresh()
     {
         if (!IsVisible) return;
+        RefreshPresentationRuntime();
+        RefreshWindowSourcesUi();
         RefreshSelection();
     }
 
     internal void PrepareForShow()
     {
+        RefreshPresentationRuntime();
+        RefreshWindowSourcesUi();
         if (editSession is not null) CompleteEdit();
         preparingForShow++;
         try { RefreshSelection(); }
@@ -304,6 +324,11 @@ internal sealed class InspectorWindow : Wpf.Window
     private void RefreshSelection()
     {
         if (applying || scrubSession is not null) return;
+        if (nodeTransforms.IsEditing)
+        {
+            if (nodeTransforms.HasCurrentContext) return;
+            nodeTransforms.CompletePendingEdit();
+        }
         var session = getSession();
         if (IsVisible) ObserveSession(session);
         if (!ReferenceEquals(session, formSession) || !session.Selection.SetEquals(formSelection))
@@ -334,17 +359,31 @@ internal sealed class InspectorWindow : Wpf.Window
         if (!IsVisible && preparingForShow == 0) { pendingSelectionReload = true; return; }
         var session = getSession();
         if (IsVisible) ObserveSession(session);
+        nodeTransforms.Refresh();
+        var groupIds = session.Document.Groups.Select(group => group.Id).Concat(session.Document.Instances.Select(instance => instance.Id)).ToHashSet();
+        if (session.Selection.Any(groupIds.Contains))
+        {
+            dirtyFields.Clear(); invalidDraft = false; editTimer.Stop(); pendingSelectionReload = false;
+            formSession = session; formSelection = session.Selection.ToArray();
+            formFingerprint = JsonSerializer.Serialize(new { Groups = session.Document.Groups.Where(group => session.Selection.Contains(group.Id)), Instances = session.Document.Instances.Where(instance => session.Selection.Contains(instance.Id)) });
+            propertyPanel.Visibility = Wpf.Visibility.Collapsed;
+            presentationSourceSelection = false; RefreshPresentationRuntime();
+            selectionLabel.Text = L.Format("GroupTransform.Selection", session.Selection.Count); selectionLabel.Visibility = Wpf.Visibility.Visible;
+            AppWindowChrome.SetHeaderDetail(this, selectionLabel.Text); return;
+        }
         var selected = session.SelectedElements().ToArray();
+        presentationSourceSelection = selected.Any(element => element.Kind == ElementKind.Presentation); RefreshPresentationRuntime();
         var element = selected.FirstOrDefault();
         var fingerprint = JsonSerializer.Serialize(selected);
         if (!discardDraft && !pendingSelectionReload && ReferenceEquals(formSession, session) && fingerprint == formFingerprint && formProjectionEnabled==session.Document.Canvas.Projection.Enabled &&
+            (!presentationSourceSelection || HasCurrentPresentationSettingsContext) &&
             (!invalidDraft || (IsVisible && propertyPanel.IsKeyboardFocusWithin) || !canMutate())) return;
         refreshing = true;
         try
         {
             if (!ReferenceEquals(formSession, session) || !session.Selection.SetEquals(formSelection))
                 ((FontPickerControl)fontPicker).ResetModelContext();
-            formSession = session; formSelection = selected.Select(e => e.Id).ToArray();
+            formSession = session; formSelection = session.Selection.ToArray();
             pendingSelectionReload = false;
             formFingerprint = fingerprint;
             formProjectionEnabled=session.Document.Canvas.Projection.Enabled;
@@ -369,8 +408,9 @@ internal sealed class InspectorWindow : Wpf.Window
                     if (colorStyleContext != context)
                     { SegmentedChoicePreviews.UpdateColorStyle(linkColors, element.Kind, element.Symbol); colorStyleContext = context; }
                 }
-                linkColors.SelectedValue = selected.Select(e => e.Style.LinkColors).Distinct().Count() > 1 ? null : element?.Style.LinkColors;
+                linkColors.SelectedValue = selected.Select(e => AppearanceRegistry.Resolve(e).Id).Distinct().Count() > 1 ? null : element is null ? null : AppearanceRegistry.Resolve(element).Id;
             }
+            if (IsFieldVisible("StyleVariant")) numberStyle.SelectedValue = selected.Select(ElementAppearance.NumberVariant).Distinct().Count() > 1 ? null : element is null ? null : ElementAppearance.NumberVariant(element);
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = PropertyBounds(element);
             var size = GeometricSize(element);
@@ -417,7 +457,8 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private void ChangeField(string key)
     {
-        if (refreshing || !fieldContainers.TryGetValue(key, out var container) || container.Visibility != Wpf.Visibility.Visible) return;
+        string containerKey = key.StartsWith("Presentation.", StringComparison.Ordinal) ? "PresentationSettings" : key;
+        if (refreshing || !fieldContainers.TryGetValue(containerKey, out var container) || container.Visibility != Wpf.Visibility.Visible) return;
         dirtyFields.Clear(); dirtyFields.Add(key);
         ApplyLive();
     }
@@ -431,6 +472,7 @@ internal sealed class InspectorWindow : Wpf.Window
 
     private void CompleteEdit()
     {
+        nodeTransforms.CompletePendingEdit();
         editTimer.Stop();
         var session = editSession;
         editSession = null;
@@ -439,6 +481,7 @@ internal sealed class InspectorWindow : Wpf.Window
             applying = true;
             try { session.Commit(); }
             finally { applying = false; }
+            nodeTransforms.Refresh();
         }
         else if (!invalidDraft || !canMutate()) return;
         // Preserve the caret and intermediate input when completing an idle typing burst.
@@ -461,7 +504,8 @@ internal sealed class InspectorWindow : Wpf.Window
             var selected = session.SelectedElements().ToArray();
             if (!ReferenceEquals(session, formSession) || !session.Selection.SetEquals(formSelection) || selected.Length == 0)
                 throw new InvalidOperationException(L.Get("Inspector.SelectionChanged"));
-            if (selected.Any(e => e.Locked)) throw new InvalidOperationException(L.Get("Inspector.ElementLocked"));
+            var selectionGraph = new SceneGraph(session.Document);
+            if (selected.Any(e => selectionGraph.IsLocked(e.Id))) throw new InvalidOperationException(L.Get("Inspector.ElementLocked"));
             bool ownsTransaction = ReferenceEquals(editSession, session) && session.IsTransactionActive && session.TransactionId == editTransaction;
             if (session.IsTransactionActive && !ownsTransaction) throw new InvalidOperationException(L.Get("Inspector.FinishDrawing"));
             if (dirtyFields.Count == 0) return;
@@ -470,7 +514,8 @@ internal sealed class InspectorWindow : Wpf.Window
             validatingDraft=true;
             var changes = selected.Select(source => (Source: source, Edited: EditElement(source))).ToArray();
             var mapping = CanvasMapping.Create(session.Document);
-            if (changes.Any(change => !mapping.IsElementSafe(change.Edited)))
+            var graph = new SceneGraph(session.Document);
+            if (changes.Any(change => !mapping.IsElementSafe(graph.ToWorld(change.Edited))))
                 throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
             validatingDraft=false;invalidDraft=false;
             if (!ownsTransaction)
@@ -489,7 +534,8 @@ internal sealed class InspectorWindow : Wpf.Window
                     source.Width = edited.Width; source.Height = edited.Height; source.CornerRadius = edited.CornerRadius;
                     source.ImageBorderWidth = edited.ImageBorderWidth;
                     source.ConstrainAspect = edited.ConstrainAspect; source.TextFrameFixed = edited.TextFrameFixed;
-                    source.NumberUsesForeground = edited.NumberUsesForeground;
+                    source.NumberTextSizeMode = edited.NumberTextSizeMode;
+                    source.Presentation = edited.Presentation;
                     source.IsBillboard=edited.IsBillboard;source.BillboardAnchor=edited.BillboardAnchor;source.BillboardHeight=edited.BillboardHeight;
                     source.ProjectivePlacement=edited.ProjectivePlacement;
                 }
@@ -500,7 +546,7 @@ internal sealed class InspectorWindow : Wpf.Window
             }
             finally { applying = false; }
             editTimer.Stop();
-            if (!colorFields.Values.Any(field => field.IsInteracting)) editTimer.Start();
+            if (!colorFields.Values.Any(field => field.IsInteracting) && !presentationSettings.IsInteracting) editTimer.Start();
             SetStatus(L.Get("Inspector.PropertiesApplied"), false);
         }
         catch (Exception ex) { invalidDraft=validatingDraft;SetStatus(ex.Message, true); }
@@ -515,7 +561,8 @@ internal sealed class InspectorWindow : Wpf.Window
             if(changedKey=="ConstrainAspect")
             {keepAspect.IsThreeState=false;keepAspect.IsChecked=selected.All(ElementGeometry.PreservesAspect);}
             if(changedKey=="Placement")SetPropertyVisibility(selected);
-            if(changedKey=="LinkColors")SetPropertyVisibility(selected);
+            if(changedKey is "LinkColors" or "StyleVariant")SetPropertyVisibility(selected);
+            if (changedKey.StartsWith("Presentation.", StringComparison.Ordinal)) RefreshPresentationSettings(selected);
             if(changedKey=="Symbol")
             {
                 SetPropertyVisibility(selected);
@@ -544,23 +591,26 @@ internal sealed class InspectorWindow : Wpf.Window
     private CanvasElement EditElement(CanvasElement source)
     {
         var edited = source.Clone();
+        foreach (string key in dirtyFields.Where(key => key.StartsWith("Presentation.", StringComparison.Ordinal)))
+            presentationSettings.ApplyEdit(edited.Presentation ??= new(), key[13..], source.Id);
         if(dirtyFields.Contains("Placement"))
         {
+            var graph = new SceneGraph(getSession().Document);
+            var world = graph.ToWorld(edited);
+            var mapping = CanvasMapping.Create(getSession().Document);
             if(!getSession().Document.Canvas.Projection.Enabled||placement.SelectedIndex is <0 or >1||
-                !BillboardGeometry.TrySetBillboard(edited,placement.SelectedIndex==1,CanvasMapping.Create(getSession().Document)))
+                !(preservePlacementAppearance.IsChecked == true
+                    ? BillboardPlacementConversion.TryPreserveScreen(world, placement.SelectedIndex == 1, mapping)
+                    : BillboardGeometry.TrySetBillboard(world,placement.SelectedIndex==1,mapping)))
                 throw new InvalidOperationException(L.Get("Billboard.ConversionFailed"));
+            EditorSession.CopyPlacement(edited, graph.ToLocal(world, edited.GroupId));
         }
         if(dirtyFields.Contains("BillboardHeight"))edited.BillboardHeight=Number("BillboardHeight",L.Get("Billboard.Height"),-10000000,10000000);
         if(dirtyFields.Contains("ConstrainAspect"))edited.ConstrainAspect=keepAspect.IsChecked==true;
-        if(dirtyFields.Contains("LinkColors"))edited.Style.LinkColors=linkColors.SelectedValue is true;
-        if (source.Kind == ElementKind.Number && !source.NumberUsesForeground && dirtyFields.Overlaps(["Stroke", "Fill"]))
-        {
-            edited.Style.Stroke = (uint)PropertyValue(source, "Stroke")!;
-            edited.Style.Fill = (uint)PropertyValue(source, "Fill")!;
-            edited.NumberUsesForeground = true;
-        }
-        if (dirtyFields.Contains("Stroke")) edited.Style.Stroke = colorFields["Stroke"].Value;
-        if (dirtyFields.Contains("Fill")) edited.Style.Fill = colorFields["Fill"].Value;
+        if(dirtyFields.Contains("LinkColors") && linkColors.SelectedValue is string shapeVariant)ElementAppearance.SetVariant(edited, shapeVariant);
+        if(dirtyFields.Contains("StyleVariant") && numberStyle.SelectedValue is string variant)ElementAppearance.SetVariant(edited, variant);
+        if (dirtyFields.Contains("Stroke")) ElementAppearance.SetPrimaryColor(edited, colorFields["Stroke"].Value);
+        if (dirtyFields.Contains("Fill")) ElementAppearance.SetSecondaryColor(edited, colorFields["Fill"].Value);
         if (dirtyFields.Contains("StrokeWidth"))
         {
             double width = Number("StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, source.Kind == ElementKind.Image ? 10000000 : 1024);
@@ -590,9 +640,9 @@ internal sealed class InspectorWindow : Wpf.Window
         if (dirtyFields.Contains("StrokePattern")) edited.Style.StrokePattern = (StrokePattern)strokePattern.SelectedIndex;
         if (dirtyFields.Contains("CornerRadius")) edited.CornerRadius = Number("CornerRadius", L.Get("Inspector.CornerRadius"), 0, 10000000);
         if (dirtyFields.Contains("Opacity")) edited.Style.Opacity = Number("Opacity", L.Get("Inspector.Opacity"), 0, 100) / 100;
-        if (dirtyFields.Contains("FontSize") && source.Kind is ElementKind.Text or ElementKind.Number)
+        if (dirtyFields.Contains("FontSize") && source.Kind is ElementKind.Text or ElementKind.Number or ElementKind.Presentation)
             edited.Style.FontSize = Number("FontSize", L.Get("Inspector.FontSize"), 1, 4096);
-        if (dirtyFields.Contains("FontFamily") && source.Kind is ElementKind.Text or ElementKind.Number)
+        if (dirtyFields.Contains("FontFamily") && source.Kind is ElementKind.Text or ElementKind.Number or ElementKind.Presentation)
         {
             var family = fields["FontFamily"].Text.Trim();
             if (family.Length == 0 || family.Length > 200) throw new InvalidOperationException(L.Get("Inspector.InvalidFontFamily"));
@@ -824,10 +874,10 @@ internal sealed class InspectorWindow : Wpf.Window
         { CancelScrub(); return; }
         double displayValue = scrubStartValue;
         var changes = new List<(CanvasElement Target, CanvasElement Edited)>();
+        var targets = session.Document.Elements.ToDictionary(element => element.Id);
         foreach (var source in scrubSources)
         {
-            var target = session.Document.Elements.FirstOrDefault(e => e.Id == source.Id);
-            if (target is null) { CancelScrub(); return; }
+            if (!targets.TryGetValue(source.Id, out var target)) { CancelScrub(); return; }
             double value = Convert.ToDouble(PropertyValue(source, key), CultureInfo.InvariantCulture) + delta * (key == "StrokeWidth" ? .1 : 1);
             value = key switch
             {
@@ -861,7 +911,8 @@ internal sealed class InspectorWindow : Wpf.Window
             if (source.Id == scrubSources[0].Id) displayValue = value;
         }
         var mapping = CanvasMapping.Create(session.Document);
-        scrubUnsafe = changes.Any(change => !mapping.IsElementSafe(change.Edited));
+        var graph = new SceneGraph(session.Document);
+        scrubUnsafe = changes.Any(change => !mapping.IsElementSafe(graph.ToWorld(change.Edited)));
         if (scrubCaption is not null) scrubCaption.Cursor = scrubUnsafe ? Input.Cursors.No : Input.Cursors.SizeWE;
         if (scrubUnsafe) { status.Text = L.Get("Perspective.InputOutsidePlane"); return; }
         status.Text = "";
@@ -955,14 +1006,16 @@ internal sealed class InspectorWindow : Wpf.Window
         bool image = element.Kind == ElementKind.Image || ElementGeometry.IsLiveEffect(element.Kind), text = element.Kind == ElementKind.Text, number = element.Kind == ElementKind.Number;
         return key switch
         {
-            "Stroke" => !ElementGeometry.IsLiveEffect(element.Kind),
-            "Fill" => number || ElementGeometry.IsBoxShape(element.Kind) && !element.Style.LinkColors,
+            "Stroke" => AppearanceRegistry.Resolve(element).ForegroundActive,
+            "Fill" => AppearanceRegistry.Resolve(element).BackgroundActive,
             "LinkColors" => ElementGeometry.IsBoxShape(element.Kind),
-            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !text && !number,
-            "StrokePattern" => !image && !text && !number,
+            "StyleVariant" => number,
+            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !text && element.Kind != ElementKind.Presentation && (!number || ElementAppearance.IsOutlineNumber(element)),
+            "StrokePattern" => !image && !text && !number && element.Kind != ElementKind.Presentation,
             "CornerRadius" => element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle,
-            "FontFamily" => text || number,
-            "FontSize" => text || number,
+            "FontFamily" => text || number || element.Kind == ElementKind.Presentation,
+            "FontSize" => text || number || element.Kind == ElementKind.Presentation,
+            "PresentationSettings" => element.Kind == ElementKind.Presentation,
             "Text" or "TextAlignment" => text,
             "Number" => number,
             "Symbol" => element.Kind is ElementKind.Symbol or ElementKind.Triangle,
@@ -982,8 +1035,8 @@ internal sealed class InspectorWindow : Wpf.Window
         "X" => e.IsBillboard?e.BillboardAnchor.X:PropertyBounds(e).Left, "Y" => e.IsBillboard?e.BillboardAnchor.Y:PropertyBounds(e).Top,
         "BillboardHeight" => e.BillboardHeight,
         "W" => GeometricSize(e).X, "H" => GeometricSize(e).Y, "Angle" => ElementAngle(e),
-        "Stroke" => e.Kind == ElementKind.Number && !e.NumberUsesForeground ? (e.Style.Fill >> 24) == 0 ? e.Style.Stroke : e.Style.Fill : e.Style.Stroke,
-        "Fill" => e.Kind == ElementKind.Number && !e.NumberUsesForeground ? 0xFFFFFFFF : e.Style.Fill,
+        "Stroke" => e.Style.Foreground,
+        "Fill" => e.Style.Background,
         "StrokeWidth" => e.Kind == ElementKind.Image ? e.ImageBorderWidth : e.Style.StrokeWidth,
         "CornerRadius" => ElementGeometry.CornerRadius(e), "Opacity" => e.Style.Opacity,
         "ArrowHeadStyle" => e.Style.ArrowHeadStyle, "ArrowHeadSize" => e.Style.ArrowHeadSize,
@@ -998,20 +1051,26 @@ internal sealed class InspectorWindow : Wpf.Window
     private void SetPropertyVisibility(CanvasElement[] selected)
     {
         var element = selected.FirstOrDefault();
-        bool editable = selected.Length > 0 && selected.All(e => !e.Locked);
+        var graph = new SceneGraph(getSession().Document);
+        bool editable = selected.Length > 0 && selected.All(e => !graph.IsLocked(e.Id));
         foreach (var key in new[] { "W", "H" }) fieldContainers[key].ToolTip = selected.Any(e => e.ProjectivePlacement is not null)
             ? L.Get("Perspective.InspectorPlaneBounds") : null;
         propertyPanel.Visibility = editable ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         textSection.Visibility = editable && selected.All(e => Supports(e, "FontSize")) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
             container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-        linkedColorsGroup.Visibility = new[] { "Stroke", "Fill", "LinkColors" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        RefreshPresentationSettings(selected);
+        if (nodeTransforms.IsApplicable)
+            foreach (var key in new[] { "X", "Y", "W", "H", "Angle", "ConstrainAspect" }) fieldContainers[key].Visibility = Wpf.Visibility.Collapsed;
+        linkedColorsGroup.Visibility = new[] { "Stroke", "Fill", "LinkColors", "StyleVariant" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         bool number = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Number);
         bool shape = selected.Length > 0 && selected.All(e => ElementGeometry.IsBoxShape(e.Kind));
         bool images = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Image);
-        ((Controls.TextBlock)((Controls.Grid)fieldContainers["Stroke"]).Children[0]).Text = L.Get(number ? "Color.NumberShape" : images ? "Snapshot.BorderColor" : shape ? selected.All(e => e.Style.LinkColors) ? "Color.Unified" : "Color.Outline" : "Inspector.Stroke");
+        bool presentation = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Presentation);
+        ((Controls.TextBlock)textSection.Child).Text = L.Get(presentation ? "Presentation.Text" : "Inspector.TextSection");
+        ((Controls.TextBlock)((Controls.Grid)fieldContainers["Stroke"]).Children[0]).Text = L.Get(presentation ? "Presentation.Foreground" : number ? selected.All(e => AppearanceRegistry.Resolve(e).NumberTextRole == AppearanceColorRole.Foreground) ? "Color.Unified" : "Color.NumberShape" : images ? "Snapshot.BorderColor" : shape ? selected.All(e => !AppearanceRegistry.Resolve(e).BackgroundActive) ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["StrokeWidth"]).Children[0]).Text = L.Get(images ? "Property.BorderWidth" : "Inspector.StrokeWidth");
-        ((Controls.TextBlock)((Controls.Grid)fieldContainers["Fill"]).Children[0]).Text = L.Get(number ? "Color.NumberText" : "Color.Interior");
+        ((Controls.TextBlock)((Controls.Grid)fieldContainers["Fill"]).Children[0]).Text = L.Get(presentation ? "Presentation.Background" : number ? "Color.NumberText" : shape ? "Color.Interior" : "Color.Background");
         bool perspective=getSession().Document.Canvas.Projection.Enabled;
         if(!perspective){fieldContainers["Placement"].Visibility=Wpf.Visibility.Collapsed;fieldContainers["BillboardHeight"].Visibility=Wpf.Visibility.Collapsed;}
         foreach(var key in new[]{"X","Y"})fieldContainers[key].ToolTip=selected.Any(e=>e.IsBillboard)?L.Get("Billboard.AnchorHint"):null;
@@ -1085,6 +1144,7 @@ internal sealed class InspectorWindow : Wpf.Window
     {
         bool active = false;
         foreach (var field in numericFields.Values) active |= field.CancelGesture();
+        active |= presentationSettings.CancelGestures();
         return active;
     }
     private bool RouteCommandKey(int key, bool control, bool textInput)

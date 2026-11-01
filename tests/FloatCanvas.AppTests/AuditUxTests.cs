@@ -100,8 +100,15 @@ internal static class AuditUxTests
         check("audit empty command state disables undo redo object actions with reasons", !Can("undo") && !Can("redo") && !Can("delete") && !Can("group") && Hint("undo").Length > 0 && Hint("group").Length > 0 && Can("copy"));
         var one = new CanvasElement(); var two = new CanvasElement(); active.Add(one); active.Add(two); active.SetSelection([one.Id, two.Id]);
         check("audit editable selection enables grouping and undo", Can("group") && Can("delete") && Can("undo") && !Can("redo"));
-        active.GroupSelection(); check("audit complete selected group enables ungroup", Can("ungroup"));
-        active.Undo(); check("audit redo state follows editor history", Can("redo"));
+        var groupId = active.GroupSelection()!.Value;
+        check("audit selected group node enables ungroup and rewrapping", active.Selection.SetEquals([groupId]) && Can("ungroup") && Can("group"));
+        active.SetNodeLocked(groupId, true);
+        check("audit inherited group lock disables destructive commands", !Can("delete") && !Can("duplicate") && !Can("group") && !Can("ungroup"));
+        active.Undo(); active.Undo();
+        var empty = active.CreateEmptyGroup();
+        check("audit empty group remains an actionable layer node", active.Selection.SetEquals([empty]) && Can("delete") && Can("duplicate") && Can("group") && Can("ungroup"));
+        active.Undo();
+        check("audit redo state follows editor history", Can("redo"));
         active.Document.Elements.ForEach(element => element.Locked = true); active.SetSelection(active.Document.Elements.Select(element => element.Id));
         check("audit locked selection disables destructive object actions", !Can("delete") && !Can("duplicate") && !Can("group"));
         var inspector = new InspectorWindow(() => active); inspector.PrepareForShow();

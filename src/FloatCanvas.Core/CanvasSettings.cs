@@ -23,6 +23,9 @@ public sealed class CanvasProjectionSettings
     public PointD Origin { get; set; }
     /// <summary>Persisted plane units per square cell; loading never recalibrates this value.</summary>
     public double CellSize { get; set; } = 1;
+    /// <summary>Independent source rectangle in logical pixels. Null is the legacy count-based calibration.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RectD? PlaneBounds { get; set; }
     /// <summary>Fixed logical grid spacing while corners change; null follows the calibrated cell size.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? LockedGridCellSize { get; set; }
@@ -31,7 +34,7 @@ public sealed class CanvasProjectionSettings
     public RectD? ReferenceBounds { get; set; }
     public PointD? PinPlanePoint { get; set; }
     [JsonIgnore]
-    public PointD PinPoint => ReferenceBounds is { } bounds
+    public PointD PinPoint => PlaneBounds is { } plane ? PinPlanePoint ?? CanvasProjectionGeometry.PinPoint(plane, PinLocation) : ReferenceBounds is { } bounds
         ? bounds.Center + new PointD((PinGridPoint.X - Columns / 2.0) * ReferenceCellSize, (PinGridPoint.Y - Rows / 2.0) * ReferenceCellSize)
         : PinPlanePoint ?? Origin + PinGridPoint * CellSize;
     [JsonIgnore]
@@ -50,7 +53,7 @@ public sealed class CanvasProjectionSettings
     public int AlgorithmVersion { get; set; } = CanvasCalibration.AlgorithmVersion;
     public CanvasProjectionSettings Clone() => new()
     {
-        Enabled = Enabled, Columns = Columns, Rows = Rows, Origin = Origin, CellSize = CellSize, LockedGridCellSize = LockedGridCellSize,
+        Enabled = Enabled, Columns = Columns, Rows = Rows, Origin = Origin, CellSize = CellSize, PlaneBounds = PlaneBounds, LockedGridCellSize = LockedGridCellSize,
         Quad = [.. Quad], Matrix = Matrix, AlgorithmVersion = AlgorithmVersion, PinLocation = PinLocation, PinPlanePoint = PinPlanePoint, ReferenceBounds = ReferenceBounds
     };
 }
@@ -66,6 +69,11 @@ public sealed class CanvasGridSettings
     /// <summary>Primary-screen center in document screen coordinates. Null uses the document viewport center.</summary>
     public PointD? FlatOrigin { get; set; }
     public PointD FlatTranslation { get; set; }
+    /// <summary>Perspective-grid spacing and phase; changing either never changes the projection.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? PlaneCellSize { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PointD? PlaneOrigin { get; set; }
     public CanvasGridSettings Clone() => (CanvasGridSettings)MemberwiseClone();
 }
 
@@ -73,7 +81,7 @@ public sealed class CanvasGridSettings
 public static class CanvasCalibration
 {
     public const int MaximumGridCount = 256;
-    public const int AlgorithmVersion = 2;
+    public const int AlgorithmVersion = 3;
     public static bool TryOrderCorners(IReadOnlyList<PointD> points,out PointD[] quad)
     {
         quad=[];
@@ -99,6 +107,8 @@ public static class CanvasCalibration
     public static bool TryCalibrate(CanvasProjectionSettings current, IReadOnlyList<PointD> quad, RectD viewport,
         out CanvasProjectionSettings settings, out string? error)
     {
+        if (current.PlaneBounds is not null)
+            return CanvasProjectionGeometry.TryCalibrate(current, quad, out settings, out error);
         settings = current.Clone(); error = null;
         if (!Enum.IsDefined(current.PinLocation) || current.Columns is < 1 or > MaximumGridCount || current.Rows is < 1 or > MaximumGridCount)
         { error = "Canvas.InvalidGrid"; return false; }
@@ -144,6 +154,11 @@ public static class CanvasCalibration
         settings = current.Clone(); error = "Canvas.InvalidQuad";
         if (!Enum.IsDefined(location) || current.Quad.Count != 4) return false;
         settings.PinLocation = location;
+        if (current.PlaneBounds is { } plane)
+        {
+            settings.PinPlanePoint = CanvasProjectionGeometry.PinPoint(plane, location);
+            error = null; return true;
+        }
         return TryCalibrate(settings, current.Quad, viewport, out settings, out error);
     }
     /// <summary>Adopt a saved reference without recalibrating or changing its content projection.</summary>
@@ -161,7 +176,8 @@ public static class CanvasCalibration
         var projection = settings.Projection;
         var point = projection.PinPoint;
         settings.Grid.FlatTranslation = projection.Matrix.TransformPoint(point) - point;
-        settings.Grid.FlatCellSize = projection.LockedGridCellSize ?? projection.ReferenceCellSize;
+        if (projection.PlaneBounds is null)
+            settings.Grid.FlatCellSize = projection.LockedGridCellSize ?? projection.ReferenceCellSize;
         projection.Enabled = enabled;
     }
     public static bool IsValidProjection(Projective2D matrix) => matrix.IsFinite && matrix.TryInverse(out _);
@@ -231,6 +247,9 @@ public static class CanvasCalibration
 public sealed class CanvasMapping
 {
     private readonly RectD viewport;
+    internal CanvasMapping? ViewRoot { get; }
+    internal LayerPlacement ViewPlacement { get; }
+    private readonly LayerPlacement viewInverse;
     public Projective2D PlaneToScreen { get; }
     public Projective2D ScreenToPlane { get; }
     public PointD GridOrigin { get; }
@@ -251,26 +270,64 @@ public sealed class CanvasMapping
             Affine2D.Translation(document.Canvas.Grid.FlatTranslation.X, document.Canvas.Grid.FlatTranslation.Y));
         ScreenToPlane = PlaneToScreen.Inverse();
         GridCellSize = CanvasGridGeometry.ResolveCellSize(document.Canvas, viewport);
-        GridOrigin = settings.Enabled ? reference.PinPoint :
+        GridOrigin = settings.Enabled ? document.Canvas.Grid.PlaneOrigin ?? reference.PinPoint :
             (document.Canvas.Grid.FlatOrigin ?? viewport.Center) - document.Canvas.Grid.FlatTranslation;
         Safety = new(PlaneToScreen);
         SafeScreenPolygon = Safety.ClipScreen(viewport);
         VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();
     }
+    private CanvasMapping(CanvasMapping root, LayerPlacement placement)
+    {
+        ViewRoot = root; ViewPlacement = placement; viewInverse = placement.Inverse(); viewport = root.viewport;
+        PlaneToScreen = root.PlaneToScreen.Compose(Projective2D.FromAffine(placement.PlaneTransform));
+        ScreenToPlane = PlaneToScreen.Inverse(); GridOrigin = viewInverse.PlaneTransform.TransformPoint(root.GridOrigin); GridCellSize = root.GridCellSize;
+        Safety = new(PlaneToScreen); SafeScreenPolygon = root.SafeScreenPolygon;
+        VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();
+    }
     public static CanvasMapping Create(SceneDocument document) => new(document);
+    /// <summary>Maps an editable source plane through its placement in the displayed root canvas without changing either document.</summary>
+    public static CanvasMapping CreateView(SceneDocument rootDisplay, LayerPlacement sourceToRoot)
+    {
+        ArgumentNullException.ThrowIfNull(rootDisplay);
+        if (!sourceToRoot.IsValid) throw new ArgumentException("The editing view requires an invertible source placement.", nameof(sourceToRoot));
+        return new(Create(rootDisplay), sourceToRoot);
+    }
     public PointD ToScreen(PointD point) => PlaneToScreen.TransformPoint(point);
-    public bool IsVisible(PointD plane) => Safety.IsPlaneSafe(plane);
-    public bool IsScreenSafe(PointD point) => Safety.IsScreenSafe(point);
-    public bool TryToPlane(PointD point, out PointD plane) => Safety.TryToPlane(point, out plane);
-    public Projective2D ElementToScreen(CanvasElement element) => BillboardGeometry.ElementToTarget(element, PlaneToScreen);
+    public bool IsVisible(PointD plane) => ViewRoot is { } root ? root.IsVisible(ViewPlacement.PlaneTransform.TransformPoint(plane)) : Safety.IsPlaneSafe(plane);
+    public bool IsScreenSafe(PointD point) => ViewRoot?.IsScreenSafe(point) ?? Safety.IsScreenSafe(point);
+    public bool TryToPlane(PointD point, out PointD plane)
+    {
+        if (ViewRoot is not { } root) return Safety.TryToPlane(point, out plane);
+        plane = default;
+        if (!root.TryToPlane(point, out var rootPoint)) return false;
+        plane = FromRootPoint(rootPoint); return double.IsFinite(plane.X) && double.IsFinite(plane.Y);
+    }
+    public Projective2D ElementToScreen(CanvasElement element) => ViewRoot is { } root
+        ? root.ElementToScreen(ToRootElement(element)) : BillboardGeometry.ElementToTarget(element, PlaneToScreen);
     public bool TryGetDepthScale(PointD anchor, out double scale)
     {
         scale = 0;
+        if (ViewRoot is { } root)
+        {
+            if (!root.TryGetDepthScale(ViewPlacement.PlaneTransform.TransformPoint(anchor), out double depth)) return false;
+            scale = depth * ViewPlacement.ElevationScale; return double.IsFinite(scale) && scale != 0;
+        }
         return IsVisible(anchor) && BillboardGeometry.TryDepthScale(PlaneToScreen, anchor, out scale);
+    }
+    internal CanvasElement ToRootElement(CanvasElement element)
+    { var placed = element.Clone(); SceneGraph.ApplyPlacement(placed, ViewPlacement); return placed; }
+    internal PointD FromRootPoint(PointD point) => viewInverse.PlaneTransform.TransformPoint(point);
+    internal bool TryFromRootPlacement(BillboardPlacement root, out BillboardPlacement source)
+    {
+        source = new(FromRootPoint(root.Anchor), root.Height / ViewPlacement.ElevationScale,
+            (viewInverse.PlaneTransform with { OffsetX = 0, OffsetY = 0 }).Compose(root.Linear));
+        return double.IsFinite(source.Anchor.X) && double.IsFinite(source.Anchor.Y) && double.IsFinite(source.Height) &&
+            LayerPlacement.Finite(source.Linear) && source.Linear.TryInverse(out _);
     }
     /// <summary>Tests the complete stroked local envelope. Billboards use their ground anchor, not their screen top.</summary>
     public bool IsElementSafe(CanvasElement element, bool includeStroke = true)
     {
+        if (ViewRoot is { } root) return root.IsElementSafe(ToRootElement(element), includeStroke);
         var local = ElementGeometry.StrokedLocalBounds(element, includeStroke);
         if (element.IsBillboard)
             return TryGetDepthScale(element.BillboardAnchor, out _) &&
@@ -287,6 +344,7 @@ public sealed class CanvasMapping
         => BillboardGeometry.TryAnchor(this, line, screenCenter, out anchor, out height);
     public RectD ProjectedBounds(CanvasElement element, bool includeStroke = true)
     {
+        if (ViewRoot is { } root) return root.ProjectedBounds(ToRootElement(element), includeStroke);
         if (element.IsBillboard)
         {
             if (!TryGetDepthScale(element.BillboardAnchor, out _)) return default;

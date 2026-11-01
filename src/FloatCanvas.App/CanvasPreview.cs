@@ -10,13 +10,14 @@ namespace FloatCanvas.App;
 
 // Contexts contain identity tokens only; the worker never reads live editor or window objects.
 internal sealed record CanvasPreviewContext(object Session, object Monitors, PointD Origin,
-    bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1)
+    bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1,
+    object? ScreenDraftEpoch = null, object? PresentationEpoch = null, object? WindowEpoch = null, object? GroupEpoch = null)
 {
     // Editing guides may lag one worker frame; never discard the matching base
     // scene while they update. Epoch still rejects a completed A→B→A transition.
     internal bool HasSameContent(CanvasPreviewContext other) => Equals(Session, other.Session) && Equals(Monitors, other.Monitors) &&
         Origin == other.Origin && Hidden == other.Hidden && Equals(DocumentEpoch, other.DocumentEpoch) &&
-        Equals(VisibilityEpoch, other.VisibilityEpoch) && Epoch == other.Epoch;
+        Equals(VisibilityEpoch, other.VisibilityEpoch) && Equals(GroupEpoch, other.GroupEpoch) && Epoch == other.Epoch;
 }
 
 internal sealed class CanvasPreviewSnapshot : IDisposable
@@ -24,6 +25,18 @@ internal sealed class CanvasPreviewSnapshot : IDisposable
     internal required CanvasPreviewContext Context { get; init; }
     internal required object SceneIdentity { get; init; }
     internal required SceneDocument Document { get; init; }
+    internal SceneDocument? SourceDocument { get; init; }
+    internal EvaluatedScene? Evaluation { get; init; }
+    internal FrozenSceneEvaluation? FrozenEvaluation { get; init; }
+    internal FrozenSceneEvaluation? EditingEvaluation { get; init; }
+    internal LayerPlacement? EditingPlacement { get; init; }
+    internal TransientScreenElement? ScreenDraft { get; init; }
+    internal Guid? ScreenDraftScopeId { get; init; }
+    internal PresentationFrame? PresentationFrame { get; init; }
+    internal object? PresentationPlanIdentity { get; init; }
+    internal PointD PresentationOrigin { get; init; }
+    internal WindowFrameSet? WindowFrames { get; init; }
+    internal object? WindowOwnerContext { get; init; }
     internal required AssetResource[] Resources { get; init; }
     internal required PixelBounds[] Outputs { get; init; }
     internal long Revision { get; init; }
@@ -31,6 +44,7 @@ internal sealed class CanvasPreviewSnapshot : IDisposable
     internal int First { get; init; } = -1;
     internal int Last { get; init; } = -1;
     internal bool BypassCache { get; init; }
+    internal bool GraphChanged { get; init; }
     internal bool PreferGpu { get; init; }
     internal TimeSpan AnimationTime { get; init; }
     internal DesktopBackdrop? Backdrop { get; init; }
@@ -42,7 +56,7 @@ internal sealed class CanvasPreviewSnapshot : IDisposable
     internal long CapturedTimestamp { get; set; }
     internal double CaptureMilliseconds { get; set; }
     internal IReadOnlyList<PixelBounds>? PixelDamage { get; init; }
-    public void Dispose() => Backdrop?.Dispose();
+    public void Dispose() { Backdrop?.Dispose(); WindowFrames?.Dispose(); }
 }
 
 internal sealed record CanvasPreviewFrame(CanvasPreviewContext Context, PreviewRasterFrame Pixels,
@@ -58,14 +72,35 @@ internal sealed record CanvasPreviewFrame(CanvasPreviewContext Context, PreviewR
     internal long RenderCompletedTimestamp { get; init; }
     internal TimeSpan AnimationTime { get; init; }
     internal SceneDocument? PickingDocument { get; init; }
+    internal SceneDocument? PickingSourceDocument { get; init; }
+    internal EvaluatedScene? PickingEvaluation { get; init; }
     internal SceneImageSnapshot? PickingImages { get; init; }
     internal AssetResource[]? PickingResources { get; init; }
-    public void Dispose() { PickingImages?.Dispose(); Pixels.Dispose(); }
+    internal int PresentationPrimitiveCount { get; init; }
+    internal bool PresentationBudgetExceeded { get; init; }
+    internal PresentationFrame? PresentationFrameSnapshot { get; init; }
+    internal object? PresentationPlanIdentity { get; init; }
+    internal WindowFrameSet? PickingWindowFrames { get; init; }
+    internal object? WindowOwnerContext { get; init; }
+    internal WindowRenderInfo? WindowInfo { get; init; }
+    internal CanvasPreviewFrame Retain()
+    {
+        var pixels = Pixels.Retain(); SceneImageSnapshot? images = null; WindowFrameSet? windows = null;
+        try
+        {
+            images = PickingImages?.Retain(); windows = PickingWindowFrames?.Retain();
+            return this with { Pixels = pixels, PickingImages = images, PickingWindowFrames = windows };
+        }
+        catch { windows?.Dispose(); images?.Dispose(); pixels.Dispose(); throw; }
+    }
+    public void Dispose() { PickingImages?.Dispose(); PickingWindowFrames?.Dispose(); Pixels.Dispose(); }
 }
 
 internal sealed record CanvasPreviewMetrics(long BuildCount, long HitCount, long CachedRasterBytes,
     long RasterCacheByteLimit, long InPlaceOpacityFrameCount, long ActivePixelBytes = 0, long PooledPixelBytes = 0,
-    long RasterBufferBytes = 0, long ImageCacheBytes = 0, long CopiedPixelBytes = 0, long AnimationMetadataBytes = 0);
+    long RasterBufferBytes = 0, long ImageCacheBytes = 0, long CopiedPixelBytes = 0, long AnimationMetadataBytes = 0,
+    long PresentationPlanBuildCount = 0, long PresentationFrameBuildCount = 0,
+    long WindowPlanBuildCount = 0, long WindowFrameBuildCount = 0, long WindowFrameBytes = 0);
 
 /// <summary>All mutable Skia/cache/GPU state belongs to the preview worker.</summary>
 internal sealed class CanvasPreviewRenderer : IDisposable
@@ -75,17 +110,37 @@ internal sealed class CanvasPreviewRenderer : IDisposable
     private readonly PreviewRasterizer targets = new();
     private readonly AssetLibrary assets = new();
     private CanvasPreviewSnapshot? previous;
+    private SceneDocument? evaluatedSource;
+    private long evaluatedRevision = -1;
+    private long evaluatedCommittedRevision = -1, evaluatedTransaction = -1;
+    private FrozenSceneEvaluation? fallbackEvaluation;
+    private PresentationRenderInfo? previousPresentation;
+    private WindowRenderInfo? previousWindows;
     internal CanvasPreviewRenderer() => cache = new(renderer);
 
     internal CanvasPreviewFrame Render(CanvasPreviewSnapshot snapshot)
     {
+        snapshot = ResolveWorldSnapshot(snapshot);
         var timer = Stopwatch.StartNew();
         long renderStarted = Stopwatch.GetTimestamp();
         foreach (var resource in snapshot.Resources) assets.Add(resource);
-        assets.Prune(snapshot.Document.ReferencedAssets);
+        assets.Prune(snapshot.Document.ReferencedAssets.Concat(snapshot.ScreenDraft?.ScreenElement.AssetId is { } asset ? [asset] : []));
         renderer.AnimationTime = snapshot.AnimationTime;
         renderer.LiveBackdrop = snapshot.Backdrop;
+        renderer.PresentationFrame = snapshot.PresentationFrame;
+        renderer.PresentationOrigin = snapshot.PresentationOrigin;
+        var windowFrames = snapshot.WindowFrames is not null && ReferenceEquals(snapshot.WindowFrames.OwnerContext, snapshot.WindowOwnerContext) &&
+            ReferenceEquals(snapshot.WindowOwnerContext, snapshot.Context.WindowEpoch) ? snapshot.WindowFrames : null;
+        renderer.WindowFrames = windowFrames; renderer.WindowOwnerContext = windowFrames?.OwnerContext;
         var document = snapshot.Document;
+        var presentation = renderer.PreparePresentation(document);
+        var presentationDamage = ReferenceEquals(previousPresentation, presentation) ? [] :
+            (previousPresentation?.DirtyBounds ?? []).Concat(presentation.DirtyBounds).ToArray();
+        var windows = renderer.PrepareWindowFrames(document);
+        var windowDamage = ReferenceEquals(previousWindows, windows) ? [] : (previousWindows?.DirtyBounds ?? []).Concat(windows.DirtyBounds).ToArray();
+        // A graph revision invalidates static tiles once. Animation ticks reuse the
+        // same immutable world view and must not permanently bypass those tiles.
+        if (snapshot.GraphChanged && !ReferenceEquals(previous?.Document, document)) cache.Invalidate();
         bool Filter(CanvasElement element) => element.Kind == ElementKind.Image && element.Visible && element.Style.Opacity > 0 &&
             SceneRenderer.ProjectedBounds(document, element).Intersects(document.Viewport) &&
             element.Effects.Any(effect => effect.Kind is ImageEffectKind.Blur or ImageEffectKind.Pixelate);
@@ -93,7 +148,7 @@ internal sealed class CanvasPreviewRenderer : IDisposable
             document.LayerOpacity > 0 && document.Elements.Any(Filter);
         try
         {
-            var damage = CanvasPreviewDamage.Between(previous, snapshot, renderer, assets);
+            var damage = CanvasPreviewDamage.Between(previous, snapshot, renderer, assets, presentationDamage, windowDamage);
             var pixels = targets.Render(snapshot.Outputs, snapshot.PreferGpu, gpuWorkload, surface =>
             {
                 var canvas = surface.Canvas;
@@ -101,7 +156,8 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                 try
                 {
                     canvas.Translate((float)snapshot.Context.Origin.X, (float)snapshot.Context.Origin.Y);
-                    cache.DrawOnClearedRasterTarget(surface, document, assets, snapshot.Revision, snapshot.Transaction,
+                    if (snapshot.ScreenDraft is { } screenDraft) renderer.DrawWithScreenDraft(canvas, document, assets, screenDraft);
+                    else cache.DrawOnClearedRasterTarget(surface, document, assets, snapshot.Revision, snapshot.Transaction,
                         snapshot.First, snapshot.Last, snapshot.BypassCache, snapshot.SceneIdentity);
                     if (snapshot.Context.Calibration && !snapshot.Context.Placing)
                         renderer.DrawCalibrationGuides(canvas, document, snapshot.Context.GuideOpacity);
@@ -117,21 +173,90 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                 finally { canvas.RestoreToCount(saved); }
             }, damage);
             previous = snapshot;
+            previousPresentation = presentation;
+            previousWindows = windows;
             var animation = renderer.CaptureAnimationSchedule(document, assets, snapshot.AnimationTime);
+            var editing = snapshot.EditingEvaluation?.Scene;
+            var picking = editing is not null && snapshot.EditingPlacement is { } placement
+                ? EditingDocument(editing, document, placement) : snapshot.Document;
             return new(snapshot.Context, pixels, targets.Backend, gpuWorkload,
                 targets.GpuDetails, targets.GpuFailure, timer.Elapsed.TotalMilliseconds,
                 new(cache.BuildCount, cache.HitCount, cache.CachedRasterBytes, cache.RasterCacheByteLimit, cache.InPlaceOpacityFrameCount,
                     targets.ActivePixelBytes, targets.PooledPixelBytes, targets.RasterBufferBytes, renderer.CachedImageBytes,
-                    pixels.CopiedBytes, renderer.CachedAnimationMetadataBytes), animation)
+                    pixels.CopiedBytes, renderer.CachedAnimationMetadataBytes, renderer.PresentationPlanBuildCount,
+                    renderer.PresentationFrameBuildCount, renderer.WindowPlanBuildCount, renderer.WindowFrameBuildCount, windows.PixelBytes), animation)
             {
                 Sequence = snapshot.Sequence, ContentRevision = snapshot.ContentRevision, InputSequence = snapshot.InputSequence,
                 CapturedTimestamp = snapshot.CapturedTimestamp, CaptureMilliseconds = snapshot.CaptureMilliseconds,
                 RenderStartedTimestamp = renderStarted, RenderCompletedTimestamp = Stopwatch.GetTimestamp(),
-                AnimationTime = snapshot.AnimationTime, PickingDocument = snapshot.Document,
-                PickingImages = renderer.CaptureImageSnapshot(), PickingResources = snapshot.Resources
+                AnimationTime = snapshot.AnimationTime, PickingDocument = picking,
+                PickingSourceDocument = snapshot.SourceDocument, PickingEvaluation = editing ?? snapshot.Evaluation,
+                PickingImages = renderer.CaptureImageSnapshot(), PickingResources = snapshot.Resources,
+                PresentationPrimitiveCount = presentation.PrimitiveCount, PresentationBudgetExceeded = presentation.BudgetExceeded,
+                PresentationFrameSnapshot = presentation.BudgetExceeded ? null : snapshot.PresentationFrame,
+                PresentationPlanIdentity = snapshot.PresentationPlanIdentity,
+                PickingWindowFrames = windowFrames?.Retain(), WindowOwnerContext = windowFrames?.OwnerContext, WindowInfo = windows
             };
         }
-        finally { renderer.LiveBackdrop = null; }
+        finally { renderer.LiveBackdrop = null; renderer.PresentationFrame = null; renderer.WindowFrames = null; renderer.WindowOwnerContext = null; }
+    }
+
+    private static SceneDocument EditingDocument(EvaluatedScene editing, SceneDocument display, LayerPlacement placement)
+    {
+        var source = editing.RenderDocument;
+        return new()
+        {
+            ResourceId = source.ResourceId, Kind = source.Kind, Viewport = display.Viewport,
+            Canvas = display.Canvas.Clone(), LayerOpacity = source.LayerOpacity,
+            Elements = source.Elements.Select(element =>
+            {
+                var result = element.Clone(); SceneGraph.ApplyPlacement(result, placement); return result;
+            }).ToList()
+        };
+    }
+
+    private CanvasPreviewSnapshot ResolveWorldSnapshot(CanvasPreviewSnapshot source)
+    {
+        if (source.Document.IsRuntimeEvaluated || source.ScreenDraft is null && source.PresentationFrame is null && source.WindowFrames is null && source.FrozenEvaluation is null && source.Document.Groups.Count == 0 && source.Document.Instances.Count == 0 && source.Document.RootOrder is null) return source;
+        var frozen = source.FrozenEvaluation;
+        if (frozen is null)
+        {
+            if (!ReferenceEquals(evaluatedSource, source.Document) || evaluatedRevision != source.ContentRevision ||
+                evaluatedCommittedRevision != source.Revision || evaluatedTransaction != source.Transaction || fallbackEvaluation is null)
+            {
+                evaluatedSource = source.Document; evaluatedRevision = source.ContentRevision;
+                evaluatedCommittedRevision = source.Revision; evaluatedTransaction = source.Transaction;
+                fallbackEvaluation = new(source.Document);
+            }
+            frozen = fallbackEvaluation;
+        }
+        var evaluation = frozen.Scene; var range = frozen.RenderRange(source.First, source.Last);
+        var screenDraft = source.ScreenDraft;
+        if (screenDraft is not null)
+        {
+            if (!frozen.TryScreenDraftSlot(source.ScreenDraftScopeId, out int insertionIndex, out bool visible)) screenDraft = null;
+            else
+            {
+                var raw = screenDraft.ScreenElement.Clone(); raw.Visible &= visible;
+                var candidate = screenDraft.ResolvedWorldElement?.Clone(); if (candidate is not null) candidate.Visible &= visible;
+                screenDraft = new(raw, insertionIndex, candidate);
+            }
+        }
+        return new()
+        {
+            Context = source.Context, SceneIdentity = source.SceneIdentity, Document = evaluation.RenderDocument,
+            SourceDocument = source.SourceDocument ?? source.Document, Evaluation = evaluation, FrozenEvaluation = frozen,
+            EditingEvaluation = source.EditingEvaluation, EditingPlacement = source.EditingPlacement,
+            ScreenDraft = screenDraft, ScreenDraftScopeId = source.ScreenDraftScopeId,
+            PresentationFrame = source.PresentationFrame, PresentationOrigin = source.PresentationOrigin,
+            PresentationPlanIdentity = source.PresentationPlanIdentity,
+            WindowFrames = source.WindowFrames, WindowOwnerContext = source.WindowOwnerContext,
+            Resources = source.Resources, Outputs = source.Outputs, Revision = source.Revision, Transaction = source.Transaction,
+            First = range.First, Last = range.Last, BypassCache = source.BypassCache, GraphChanged = source.GraphChanged, PreferGpu = source.PreferGpu,
+            AnimationTime = source.AnimationTime, Backdrop = source.Backdrop, PlacementScene = source.PlacementScene, PlacementClip = source.PlacementClip,
+            Sequence = source.Sequence, ContentRevision = source.ContentRevision, InputSequence = source.InputSequence,
+            CapturedTimestamp = source.CapturedTimestamp, CaptureMilliseconds = source.CaptureMilliseconds, PixelDamage = source.PixelDamage
+        };
     }
 
     public void Dispose() { cache.Dispose(); renderer.Dispose(); targets.Dispose(); }

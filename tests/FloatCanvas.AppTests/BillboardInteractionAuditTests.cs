@@ -41,7 +41,7 @@ internal static class BillboardInteractionAuditTests
                     IsBillboard = true, BillboardAnchor = new(300, 100), BillboardHeight = -380, Style = new() { StrokeWidth = 1 } };
             scene.Elements.Add(element);
             var session = new EditorSession(scene); session.SetSelection([element.Id]);
-            var editor = new EditorController(session) { Tool = tool, BillboardMode = true };
+            var editor = new EditorController(session) { Tool = tool, BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine, BillboardMode = true };
             var mapping = CanvasMapping.Create(scene); var localToScreen = mapping.ElementToScreen(element);
             var opposite = endpoint ? localToScreen.TransformPoint(element.Points[0]) : default;
             var corners = editor.SelectionScreenCorners;
@@ -153,7 +153,7 @@ internal static class BillboardInteractionAuditTests
             var scene = new SceneDocument { Viewport = new(0, 0, 600, 450) };
             var projection = CanvasCalibration.CreateInitial(scene.Viewport); projection.Enabled = true;
             projection.Matrix = new(1, 0, 0, 0, 1, 0, 0, .001, 1); scene.Canvas.Projection = projection;
-            var session = new EditorSession(scene); var editor = new EditorController(session) { Tool = tool, BillboardMode = true };
+            var session = new EditorSession(scene); var editor = new EditorController(session) { Tool = tool, BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine, BillboardMode = true };
             RectD? requested = null; bool retainedAtEvent = false;
             editor.DesktopEffectRequested += (region, _, _, _) => { requested = region; retainedAtEvent = editor.ActiveBillboardDepthLine is not null; };
             Send(editor, OverlayPointerKind.Down, new(300, 300)); Send(editor, OverlayPointerKind.Up, new(300, 300));
@@ -195,7 +195,7 @@ internal static class BillboardInteractionAuditTests
         check("billboard crop keeps center and ground anchor while retaining normalized source coordinates", image.BillboardAnchor == anchor &&
             mapping.ElementToScreen(image).TransformPoint(ElementGeometry.LocalBounds(image).Center).DistanceTo(center) < 1e-6 &&
             image.ImageCrop is { } crop && Math.Abs(crop.X - .1) < 1e-6 && Math.Abs(crop.Y - .1) < 1e-6 && Math.Abs(crop.Width - .4) < 1e-6 && Math.Abs(crop.Height - .5) < 1e-6);
-        var plain = new EditorSession(); editor.BillboardMode = true; editor.ReplaceSession(plain, default);
+        var plain = new EditorSession(); editor.BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine; editor.BillboardMode = true; editor.ReplaceSession(plain, default);
         plain.Document.Canvas.Projection.Enabled = true; plain.NotifyChanged();
         check("switching through a nonperspective canvas resets global billboard mode", !editor.BillboardMode);
     }
@@ -250,7 +250,7 @@ internal static class BillboardInteractionAuditTests
                 var projection = CanvasCalibration.CreateInitial(document.Viewport);
                 projection.Enabled = true; projection.Matrix = new(1, 0, 0, 0, 1, 0, 0, .0025, 1);
                 projection.Quad = projection.Quad.Select(projection.Matrix.TransformPoint).ToList(); document.Canvas.Projection = projection;
-                editor.Tool = EditorTool.Rectangle; editor.BillboardMode = true;
+                editor.Tool = EditorTool.Rectangle; editor.BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine; editor.BillboardMode = true;
                 Send(editor, OverlayPointerKind.Down, new(64, 70)); Send(editor, OverlayPointerKind.Up, new(64, 70));
                 var depth = editor.ActiveBillboardDepthLine!.Value; var screenRegion = new RectD(20, 20, 50, 25);
                 var logicalRegion = new RectD(screenRegion.X / depth.Scale, screenRegion.Y / depth.Scale, screenRegion.Width / depth.Scale, screenRegion.Height / depth.Scale);

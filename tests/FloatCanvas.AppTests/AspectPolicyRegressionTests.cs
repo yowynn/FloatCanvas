@@ -104,7 +104,8 @@ internal static class AspectPolicyRegressionTests
             projection.Matrix = new(1, 0, 0, 0, 1, 0, 0, .001, 1); projection.Enabled = true;
             projection.Quad = projection.Quad.Select(projection.Matrix.TransformPoint).ToList(); document.Canvas.Projection = projection;
             var session = new EditorSession(document);
-            var editor = new EditorController(session) { Tool = tool, Emoji = "😀", BillboardMode = billboard };
+            var editor = new EditorController(session) { Tool = tool, Emoji = "😀",
+                BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine, BillboardMode = billboard };
             var mapping = CanvasMapping.Create(document);
             string name = $"{tool} {(billboard ? "Billboard" : "plane perspective")} Shift={shift}";
             if (billboard)
@@ -190,7 +191,7 @@ internal static class AspectPolicyRegressionTests
                 foreach (bool locked in new[] { false, true })
                 foreach (bool shift in new[] { false, true })
                 {
-                    editor.Cancel(); editor.Session.Document.Elements.Clear(); editor.Session.SetSelection([]);
+                    editor.Cancel(); ClearElements(editor.Session); editor.Session.SetSelection([]);
                     editor.ApplyParameters(new() { Tool = tool, ConstrainAspect = locked, EffectStrength = 8 });
                     // This hidden fixture has no submitted display frame. Each case
                     // explicitly uses its current document as the picking source.
@@ -226,7 +227,7 @@ internal static class AspectPolicyRegressionTests
                 }
                 if (build >= 19041)
                 {
-                    editor.Cancel(); editor.Session.Document.Elements.Clear(); editor.Session.SetSelection([]);
+                    editor.Cancel(); ClearElements(editor.Session); editor.Session.SetSelection([]);
                     var preset = new ToolParameters { Tool = EditorTool.Blur, ConstrainAspect = false, EffectStrength = 8 };
                     editor.ApplyParameters(preset); editor.ApplyPresentedScene(null, null, TimeSpan.Zero);
                     operation = null; requested = null; int beforeUndo = editor.Session.UndoCount;
@@ -271,6 +272,11 @@ internal static class AspectPolicyRegressionTests
         }
     }
 
+    private static void ClearElements(EditorSession session)
+    {
+        var graph = new SceneGraph(session.Document);
+        graph.RemoveNodes(graph.EnumerateChildren(null).ToArray());
+    }
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
     private static bool Near(double a, double b) => Math.Abs(a - b) < 1e-6;
     private static bool Square(RectD bounds) => Near(bounds.Width, bounds.Height);

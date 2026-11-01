@@ -18,6 +18,7 @@ internal sealed partial class DesktopSession
     private void ShowTextEditor(CanvasElement? existing,PointD point)
     {
         var depth = existing is null ? _editor.ActiveBillboardDepthLine : null;
+        bool screenFirst = existing is null && _editor.UsesScreenBillboardCreation;
         FinishInlineText();_inspector?.CompletePendingEdit();_editor.Cancel();
         if(!CanAddCanvasContent())return;
         if(existing?.Kind==ElementKind.Number)
@@ -26,13 +27,15 @@ internal sealed partial class DesktopSession
             if(!_inspectorWanted)ToggleInspector();
             return;
         }
-        var edit=new InlineTextEdit(Active,existing,point,_editor.Style,_renderer,depth);
+        var edit=new InlineTextEdit(Active,existing,point,_editor.Style,_renderer,depth,screenFirst,()=>_editor.CurrentCanvasMapping);
         edit.PlacementRejected+=()=>UpdateStatus(FloatCanvas.Localization.AppText.Get("Perspective.InputOutsidePlane"));
         _inlineBillboardDepth = depth;
         _inlineText=edit;
+        InvalidateScreenDraftPreview();
         UpdateHiddenCanvasState();
         edit.Changed+=()=>
         {
+            InvalidateScreenDraftPreview();
             _inlineCaretVisible=true;
             UpdateHiddenCanvasState();
             _inlineCaretTimer?.Stop();_inlineCaretTimer?.Start();RequestRender();
@@ -41,13 +44,14 @@ internal sealed partial class DesktopSession
         {
             if(!ReferenceEquals(_inlineText,edit))return;
             _inlineText=null;_inlineBillboardDepth=null;_inlineCaretTimer?.Stop();
+            InvalidateScreenDraftPreview();
             var input=_canvasTextInput;_canvasTextInput=null;input?.Dispose();
             UpdateHiddenCanvasState();
             RequestRender();
         };
         try
         {
-            _canvasTextInput=new(_toolbar,edit,()=>_editor.ScreenOrigin);
+            _canvasTextInput=new(_toolbar,edit,()=>_editor.CanvasOrigin);
             _canvasTextInput.CompleteRequested+=commit=>
             {
                 FinishInlineText(commit,selectEdited:commit);
@@ -77,7 +81,7 @@ internal sealed partial class DesktopSession
     private bool HandleInlineTextPointer(OverlayPointerEvent pointer)
     {
         if(_inlineText is not {IsActive:true} edit)return false;
-        var point=new PointD(pointer.Position.X-_editor.ScreenOrigin.X,pointer.Position.Y-_editor.ScreenOrigin.Y);
+        var point=new PointD(pointer.Position.X-_editor.CanvasOrigin.X,pointer.Position.Y-_editor.CanvasOrigin.Y);
         bool down=pointer.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick;
         if(down&&(pointer.Button!=OverlayMouseButton.Left||(pointer.Modifiers&OverlayModifiers.Control)!=0||_editor.IsSelectionFrameHit(point)||!edit.Contains(point)))
         {FinishInlineText();return false;}
@@ -97,7 +101,7 @@ internal sealed partial class DesktopSession
     private void DrawInlineText(SKCanvas canvas)
     {
         if(_inlineText is not {IsActive:true} edit)return;
-        if(!CanvasMapping.Create(Active.Document).IsElementSafe(edit.Target))return;
+        if(!_editor.CurrentCanvasMapping.IsElementSafe(edit.WorldTarget))return;
         var matrix=edit.LocalToScreen;
         double padding=InlineTextEdit.FramePadding;
         var corners=EditorController.Corners(new(-padding,-padding,edit.Target.Width+padding*2,edit.Target.Height+padding*2)).Select(matrix.TransformPoint).ToArray();

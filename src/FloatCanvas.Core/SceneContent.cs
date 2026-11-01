@@ -16,6 +16,13 @@ internal static class SceneContent
         if (left is PointCollection points) return points.ContentEquals((PointCollection)right);
         var type = left.GetType();
         if (type.IsValueType || left is string) return left.Equals(right);
+        if (left is IDictionary leftMap && right is IDictionary rightMap)
+        {
+            if (leftMap.Count != rightMap.Count) return false;
+            foreach (DictionaryEntry pair in leftMap)
+                if (!rightMap.Contains(pair.Key) || !Equal(pair.Value, rightMap[pair.Key])) return false;
+            return true;
+        }
         if (left is IList a && right is IList b)
         {
             if (a.Count != b.Count) return false;

@@ -22,13 +22,21 @@ internal sealed partial class DesktopSession
     private MonitorInfo[] _liveBackdropMonitors = [];
     private LiveDesktopCapture? _liveBackdropSource;
     private long _liveBackdropTargetVersion;
+    private object? _liveBackdropGroupEpoch;
+    private bool _liveBackdropHadGroupContext;
 
-    private bool IsLiveBackdropCompatible() => _desktopBackdrop is not null &&
-        ReferenceEquals(_liveBackdropSession, Active) && _liveBackdropViewport == Active.Document.Viewport && _liveBackdropOrigin == _editor.ScreenOrigin &&
-        _liveBackdropMonitors.SequenceEqual(_host.Monitors);
+    private bool IsLiveBackdropCompatible()
+    {
+        if (_desktopBackdrop is null) return false;
+        var view = CurrentGroupCanvasView();
+        return ReferenceEquals(_liveBackdropSession, Active) && _liveBackdropViewport == view.Document.Viewport &&
+            _liveBackdropOrigin == view.Origin && _liveBackdropMonitors.SequenceEqual(_host.Monitors) &&
+            _liveBackdropHadGroupContext == HasGroupCanvasContext &&
+            (!HasGroupCanvasContext || ReferenceEquals(_liveBackdropGroupEpoch, view.Epoch));
+    }
 
     private bool IsLivePreparationCurrent(LiveEffectPreparation pending) =>
-        pending.Tool == _editor.Tool && CanFinishEffect(pending.Request);
+        pending.Tool == _editor.Tool && CanFinishEffectInsertion(pending.Request);
 
     private void ClearLiveBackdrop()
     {
@@ -36,15 +44,18 @@ internal sealed partial class DesktopSession
         _desktopBackdrop?.Dispose(); _desktopBackdrop = null;
         _liveBackdropSession = null; _liveBackdropMonitors = [];
         _liveBackdropSource = null; _liveBackdropTargetVersion = 0;
+        _liveBackdropGroupEpoch = null; _liveBackdropHadGroupContext = false;
     }
 
     private void RememberLiveBackdrop(LiveDesktopCapture source, long targetVersion)
     {
         // Undo/redo replace SceneDocument snapshots inside the same logical canvas.
         // Raw desktop pixels do not depend on those annotation snapshots.
+        var view = CurrentGroupCanvasView();
         _liveBackdropSession = Active;
-        _liveBackdropViewport = Active.Document.Viewport;
-        _liveBackdropOrigin = _editor.ScreenOrigin;
+        _liveBackdropViewport = view.Document.Viewport;
+        _liveBackdropOrigin = view.Origin;
+        _liveBackdropGroupEpoch = view.Epoch; _liveBackdropHadGroupContext = HasGroupCanvasContext;
         _liveBackdropMonitors = _host.Monitors.ToArray();
         _liveBackdropSource = source; _liveBackdropTargetVersion = targetVersion;
     }
@@ -54,7 +65,8 @@ internal sealed partial class DesktopSession
         if (!IsLiveBackdropCompatible() || _liveDesktopCapture is not { } source || source.Completion.IsCompleted ||
             !ReferenceEquals(source, _liveBackdropSource) || _liveBackdropTargetVersion != _liveTargetVersion ||
             source.TargetVersion != _liveTargetVersion || source.LastError is not null) return false;
-        var required = _host.Monitors.Select(m => bounds.Intersect(new(m.Bounds.Left - _editor.ScreenOrigin.X, m.Bounds.Top - _editor.ScreenOrigin.Y, m.Bounds.Width, m.Bounds.Height)))
+        var origin = CurrentGroupCanvasView().Origin;
+        var required = _host.Monitors.Select(m => bounds.Intersect(new(m.Bounds.Left - origin.X, m.Bounds.Top - origin.Y, m.Bounds.Width, m.Bounds.Height)))
             .Where(region => !region.IsEmpty).ToArray();
         return required.Length > 0 && required.All(region => _desktopBackdrop!.Tiles.Any(tile =>
             tile.Bounds.Left <= region.Left && tile.Bounds.Top <= region.Top &&

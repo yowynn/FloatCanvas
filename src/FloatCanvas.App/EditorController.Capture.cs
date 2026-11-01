@@ -19,8 +19,8 @@ internal sealed partial class EditorController
         RectD bounds;
         if (CaptureShape is CaptureShape.Rectangle or CaptureShape.Ellipse)
         {
-            var mapping = CanvasMapping.Create(Session.Document);
-            if (ActiveBillboardDepthLine is null && mapping.PlaneToScreen != Projective2D.Identity)
+            var mapping = CurrentCanvasMapping;
+            if (!UsesScreenBillboardCreation && ActiveBillboardDepthLine is null && mapping.PlaneToScreen != Projective2D.Identity)
             {
                 if (!mapping.TryToPlane(start, out var planeStart) || !mapping.TryToPlane(point, out var planeEnd))
                 { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
@@ -55,14 +55,15 @@ internal sealed partial class EditorController
             contour = Array.AsReadOnly(points.ToArray());
             bounds = CaptureBounds(points);
         }
-        var safeMapping = CanvasMapping.Create(Session.Document);
-        if (ActiveBillboardDepthLine is null &&
+        var safeMapping = CurrentCanvasMapping;
+        if (!UsesScreenBillboardCreation && ActiveBillboardDepthLine is null &&
             !(contour.Count > 0 ? contour : Corners(bounds)).All(safeMapping.IsScreenSafe))
         { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
         SetPointerBlocked(false);
         CapturePreview = new(CaptureShape, CaptureSource, bounds, contour,
             CaptureBorderWidth * (ActiveBillboardDepthLine?.Scale ?? 1), CaptureBorderColor)
-        { PlaneBounds = planeBounds, PlaneToScreen = projection, BillboardDepthLine = ActiveBillboardDepthLine };
+        { PlaneBounds = planeBounds, PlaneToScreen = projection, BillboardDepthLine = ActiveBillboardDepthLine,
+            BillboardScreenFirst = UsesScreenBillboardCreation };
         Changed?.Invoke();
     }
 
@@ -74,6 +75,13 @@ internal sealed partial class EditorController
         bool invalidRegion = IsPointerBlocked;
         bool valid = !invalidRegion && selection is { Bounds.Width: >= 2, Bounds.Height: >= 2 } &&
             (selection.Shape is CaptureShape.Rectangle or CaptureShape.Ellipse || HasCaptureArea(selection.Points));
+        if (valid && selection!.BillboardScreenFirst)
+        {
+            var content = new CanvasElement { Kind = ElementKind.Image, Width = selection.Bounds.Width, Height = selection.Bounds.Height };
+            valid = BillboardGeometry.TryResolveScreenBottom(content, CurrentCanvasMapping,
+                Projective2D.FromAffine(Affine2D.Translation(selection.Bounds.X, selection.Bounds.Y)), out _, out _);
+            if (!valid) Message?.Invoke(FloatCanvas.Localization.AppText.Get("Billboard.PendingGround"));
+        }
         // Finishing and cancellation both discard only transient geometry, without a document transaction.
         gesture = null; CapturePreview = null; capturePoints.Clear(); lastGestureMove = null;
         straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null;

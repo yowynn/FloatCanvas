@@ -25,8 +25,8 @@ internal sealed partial class EditorController
         if (message) Message?.Invoke(L.Get("Perspective.InputOutsidePlane"));
     }
 
-    private bool IsDrawingSafe() => drawing is null ||
-        CanvasMapping.Create(Session.Document).IsElementSafe(drawing);
+    private bool IsDrawingSafe() => screenBillboardDrawing || drawing is null ||
+        CurrentCanvasMapping.IsElementSafe(drawing);
 
     // A billboard's upper half can be above the ground horizon. Ground inversion
     // is therefore optional for selecting and operating its screen-facing content.
@@ -41,7 +41,7 @@ internal sealed partial class EditorController
             if (source?.IsBillboard != true)
             {
                 source = null;
-                var selected = Session.SelectedElements().Where(e => e.IsBillboard && e.Visible && !e.Locked).ToArray();
+                var selected = Session.SelectedWorldElements().Where(e => e.IsBillboard && e.Visible && !e.Locked).ToArray();
                 if (selected.Length > 0 && IsSelectionFrameHit(pointerScreen, includeInterior: true)) source = selected[0];
             }
         }
@@ -52,16 +52,20 @@ internal sealed partial class EditorController
     private void MoveSafely(PointD point, OverlayModifiers modifiers)
     {
         SetPointerBlocked(false);
+        if (nodeTransform is not null && gesture is "move" or "rotate" or "resize") { Move(point, modifiers); return; }
         if (IsPlanarStrokeDrawing) { MoveStrokeSafely(point, modifiers); return; }
         var changed = Session.IsTransactionActive && gesture is "draw" or "endpoint" or "move" or "rotate" or "resize" or "billboard-height"
-            ? Session.Document.Elements.Where(e => e == drawing || transforms.ContainsKey(e.Id)).Select(e =>
+            ? Session.Document.Elements.Where(e => e.Id == drawing?.Id || transforms.ContainsKey(e.Id)).Select(e =>
                 (Item: e, State: new GeometrySnapshot(e, gesture == "draw", gesture == "endpoint" && e == drawing ? endpoint : -1))).ToArray()
             : [];
         Move(point, modifiers);
-        var mapping = CanvasMapping.Create(Session.Document);
-        if (!IsPointerBlocked && changed.All(pair => mapping.IsElementSafe(pair.Item))) return;
-        foreach (var (item, state) in changed) state.Restore(item);
-        if (changed.Length > 0) Session.NotifyChanged();
+        var mapping = CurrentCanvasMapping;
+        var graph = new SceneGraph(Session.Document);
+        if (!IsPointerBlocked && changed.All(pair => mapping.IsElementSafe(graph.ToWorld(graph.FindElement(pair.Item.Id) ?? pair.Item)))) return;
+        foreach (var (item, state) in changed) state.Restore(graph.FindElement(item.Id) ?? item);
+        if (drawing is not null && drawingParents.ContainsKey(drawing.Id) && new SceneGraph(Session.Document).FindElement(drawing.Id) is { } restored)
+            drawing = new SceneGraph(Session.Document).ToWorld(restored);
+        if (changed.Length > 0) NotifyGeometryChanged();
         RejectPointer();
     }
 
@@ -115,13 +119,13 @@ internal sealed partial class EditorController
         {
             strokeFragmentIds.Add(drawing.Id);
             drawing = drawing.Clone(newId: true); drawing.Points = [local];
-            Session.Document.Elements.Add(drawing); strokeFragmentIds.Add(drawing.Id);
+            InsertWorldDrawing(); strokeFragmentIds.Add(drawing.Id);
             straightStrokeStart = (modifiers & OverlayModifiers.Shift) != 0 ? 0 : null;
             strokeInterrupted = false;
         }
         else UpdateStroke(drawing.Points, local, modifiers);
         strokeLocalBounds = bounds;
-        Session.NotifyChanged();
+        NotifyGeometryChanged();
     }
 
     private bool IsStrokeCandidateSafe(PointD point, out RectD bounds)
@@ -133,13 +137,13 @@ internal sealed partial class EditorController
         // modifier-boundary appends. Cache accepted bounds instead of rescanning a long stroke.
         bounds = strokeInterrupted ? new RectD(local.X, local.Y, 0, 0) :
             RectD.Union(strokeLocalBounds ?? ElementGeometry.LocalBounds(drawing), new(local.X, local.Y, 0, 0));
-        return CanvasMapping.Create(Session.Document).IsElementSafe(new CanvasElement
+        return CurrentCanvasMapping.IsElementSafe(new CanvasElement
         { Kind = drawing.Kind, Transform = drawing.Transform, Style = drawing.Style, Points = Corners(bounds).ToList() });
     }
 
     private void FinishSafeStroke()
     {
-        Session.Commit();
+        CommitPointerEdit();
         Cancel();
     }
 }

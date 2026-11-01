@@ -3,7 +3,34 @@ using System.Text.Json;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+if (args.Contains("--canvas-view-mapping-only")) { CanvasViewMappingTests.Run(Check); Console.WriteLine($"PASS {checks} canvas view mapping checks"); return; }
+CanvasViewMappingTests.Run(Check);
+if (args.Contains("--group-prefab-export-only")) { GroupPrefabExportTests.Run(Check); Console.WriteLine($"PASS {checks} ordinary group prefab export checks"); return; }
+GroupPrefabExportTests.Run(Check);
+if (args.Contains("--presentation-global-only")) { PresentationGlobalSettingsTests.Run(Check); Console.WriteLine($"PASS {checks} global presentation settings checks"); return; }
+PresentationGlobalSettingsTests.Run(Check);
+if (args.Contains("--window-source-only")) { WindowSourceCoreTests.Run(Check); Console.WriteLine($"PASS {checks} window source core checks"); return; }
+WindowSourceCoreTests.Run(Check);
+if (args.Contains("--presentation-only")) { PresentationCoreTests.Run(Check); Console.WriteLine($"PASS {checks} presentation core checks"); return; }
+PresentationCoreTests.Run(Check);
+if (args.Contains("--canonical-appearance-only")) { CanonicalAppearanceTests.Run(Check); Console.WriteLine($"PASS {checks} canonical appearance checks"); return; }
+if (args.Contains("--prefab-session-only")) { PrefabSessionTests.Run(Check); Console.WriteLine($"PASS {checks} prefab session checks"); return; }
+if (args.Contains("--prefab-session-audit-only")) { PrefabSessionAuditTests.Run(Check); Console.WriteLine($"PASS {checks} prefab session audit checks"); return; }
+PrefabGraphTests.Run(Check);
+if (args.Contains("--prefab-graph-only")) { Console.WriteLine($"PASS {checks} prefab graph checks"); return; }
+if (args.Contains("--node-session-scale-only")) { NodeSessionTests.RunScale(Check); Console.WriteLine($"PASS {checks} node session scale checks"); return; }
+NodeSessionTests.Run(Check);
+if (args.Contains("--node-session-only")) { Console.WriteLine($"PASS {checks} node session checks"); return; }
+PrefabSessionTests.Run(Check);
+PrefabSessionAuditTests.Run(Check);
+SceneGraphTests.Run(Check);
+if (args.Contains("--groups-only")) { Console.WriteLine($"PASS {checks} scene graph checks"); return; }
+if (args.Contains("--canvas-geometry-only")) { CanvasIndependentGeometryTests.Run(Check); Console.WriteLine($"PASS {checks} independent canvas checks"); return; }
+CanvasIndependentGeometryTests.Run(Check);
 void Near(double actual, double expected, string message) => Check(Math.Abs(actual - expected) < 1e-8, $"{message}: {actual} != {expected}");
+ElementAppearanceTests.Run(Check);
+CanonicalAppearanceTests.Run(Check);
+if (args.Contains("--appearance-only")) { Console.WriteLine($"PASS {checks} appearance checks"); return; }
 if (args.Contains("--image-frame-only")) { ImageFrameGeometryTests.Run(Check); Console.WriteLine($"PASS {checks} image frame checks"); return; }
 ImageFrameGeometryTests.Run(Check);
 RestoreDocumentKindTests.Run(Check);
@@ -31,6 +58,7 @@ Check(new RectD(-100, -100, 200, 200).Contains(new(0, 0)), "negative desktop bou
 foreach (ElementKind kind in Enum.GetValues<ElementKind>())
 {
     var element = Box(); element.Kind = kind; element.Text = "浮绘\n编辑"; element.Number = 7;
+    if (kind == ElementKind.Presentation) element.Presentation = new();
     if (ElementGeometry.UsesPoints(kind)) element.Points = [new(0, 0), new(100, 60)];
     var session = new EditorSession(); session.Add(element);
     session.TransformSelection(affine);
@@ -87,7 +115,7 @@ int previousUndo = editor.UndoCount;
 try { editor.Execute("failing action", d => { d.Elements.Clear(); throw new InvalidDataException(); }); }
 catch (InvalidDataException) { }
 Check(editor.Document.Elements.Count == before.Elements.Count && previousUndo == editor.UndoCount, "failed operation is atomic");
-editor.BeginTransaction("eraser stroke"); editor.Document.Elements.RemoveRange(0, 2); editor.Commit();
+editor.BeginTransaction("eraser stroke"); new SceneGraph(editor.Document).RemoveNodes(editor.Document.Elements.Take(2).Select(element => element.Id).ToArray()); editor.Commit();
 Check(editor.UndoCount == previousUndo + 1, "multiple erase removals one history step"); editor.Undo(); Check(editor.Document.Elements.Count == 5, "undo eraser stroke");
 int afterUndo = editor.UndoCount, afterRedo = editor.RedoCount;
 editor.Execute("zero move", _ => editor.ApplySelectionTransform(Affine2D.Identity));
@@ -142,7 +170,7 @@ hugeAssets.Prune(hugeHistory.ReferencedAssetsIncludingHistory());
 Check(hugeAssets.TotalBytes == 0, "unreferenced oversized resource collectible by shared library owner");
 
 // Versioned models round-trip every element and do not serialize computed convenience properties.
-var document = new SceneDocument { Background = image.Clone(), Elements = Enum.GetValues<ElementKind>().Select(kind => new CanvasElement { Kind = kind, Width = 123, Height = 45, Transform = affine, Text = "浮绘\nsecond line", AssetId = assetId, ImageCrop = new(.1, .2, .7, .6), Points = [new(-1, 2), new(5, 8)], Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(.1, .2, .3, .4) }] }).ToList() };
+var document = new SceneDocument { Background = image.Clone(), Elements = Enum.GetValues<ElementKind>().Select(kind => new CanvasElement { Kind = kind, Width = 123, Height = 45, Transform = affine, Text = "浮绘\nsecond line", AssetId = kind == ElementKind.Presentation ? null : assetId, ImageCrop = new(.1, .2, .7, .6), Points = kind == ElementKind.Presentation ? [] : [new(-1, 2), new(5, 8)], Effects = kind == ElementKind.Presentation ? [] : [new() { Kind = ImageEffectKind.Blur, Bounds = new(.1, .2, .3, .4) }], Presentation = kind == ElementKind.Presentation ? new() : null }).ToList() };
 string serialized = JsonSerializer.Serialize(document);
 var roundTrip = JsonSerializer.Deserialize<SceneDocument>(serialized)!;
 Check(serialized == JsonSerializer.Serialize(roundTrip), "scene exact JSON round-trip");

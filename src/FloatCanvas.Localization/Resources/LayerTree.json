@@ -1,0 +1,21 @@
+{
+  "Layers.NewGroup": { "zh": "新建组合", "en": "New group" },
+  "Layers.DefaultGroup": { "zh": "组合", "en": "Group" },
+  "Layers.NumberedGroup": { "zh": "组合 {0}", "en": "Group {0}" },
+  "Layers.UntitledGroup": { "zh": "未命名组合", "en": "Unnamed group" },
+  "Layers.RootScope": { "zh": "主画布", "en": "Main canvas" },
+  "Layers.ParentScope": { "zh": "上一级", "en": "Parent level" },
+  "Layers.ScopeHint": { "zh": "返回此层级编辑", "en": "Return to this editing level" },
+  "Layers.EnterGroup": { "zh": "进入组合", "en": "Enter group" },
+  "Layers.EnterHint": { "zh": "双击文字重命名；双击图标或留白进入组合", "en": "Double-click text to rename; double-click the icon or blank space to enter" },
+  "Layers.InstanceHint": { "zh": "双击文字重命名此实例；双击图标或留白编辑共享定义", "en": "Double-click text to rename this instance; double-click the icon or blank space to edit its shared definition" },
+  "Layers.Expand": { "zh": "展开组合", "en": "Expand group" },
+  "Layers.Collapse": { "zh": "折叠组合", "en": "Collapse group" },
+  "Layers.LegacyOrder": { "zh": "保留旧图层顺序：成员可能与组外图层交错", "en": "Preserved legacy order: members may interleave with layers outside this group" },
+  "Layers.CollectGroup": { "zh": "收拢为普通组", "en": "Consolidate group" },
+  "Layers.CollectHint": { "zh": "收拢会将成员移至连续层级，可能改变与其他图层的遮挡关系。", "en": "Consolidating puts members in one consecutive block and may change overlaps with other layers." },
+  "Layers.MoveOut": { "zh": "移到上一级", "en": "Move to parent level" },
+  "Layers.DropInto": { "zh": "移入 {0}", "en": "Move into {0}" },
+  "Layers.InheritedLock": { "zh": "上级组合已锁定", "en": "Parent group is locked" },
+  "Layers.TreeHelp": { "zh": "列表只展示当前层级的图层。双击文字优先重命名，包括组合；双击图标或文字外的留白、点击右侧箭头或按 Enter 进入组合。用上方面包屑切换层级，上一级按钮、左方向键、Backspace 或 Esc 返回一层。拖动手柄到行间可排序，拖到组合名称中间可移入，也可拖到面包屑移出。F2 也可重命名；Ctrl+G 编组，Ctrl+Shift+G 解组。旧跨层组合保留原画面，可从右键菜单明确收拢。", "en": "The list shows only the current level. Double-click painted text to rename any layer or group. Double-click its icon or blank space, click its entry arrow or press Enter to enter a group. Use breadcrumbs to change levels; the parent button, Left, Backspace or Esc returns one level. Drag between rows to reorder, onto a group to move inside, or onto a breadcrumb to move out. F2 also renames; Ctrl+G groups and Ctrl+Shift+G ungroups. Legacy interleaved groups preserve their picture until explicitly consolidated." }
+}

@@ -69,7 +69,7 @@ internal static class Round2StampRuntimeFixture
     {
         editor.Session.Document.Canvas.Projection = new() { Enabled=true, Matrix=new(1,.08,0,0,1,0,0,.0003,1),
             Quad=[new(0,0),new(800,0),new(600,400),new(0,400)] };
-        editor.Session.SetSelection([]); editor.BillboardMode=true;
+        editor.Session.SetSelection([]); editor.BillboardWorkflow=BillboardCreationWorkflow.FixedDepthLine; editor.BillboardMode=true;
         using var surface=SKSurface.Create(new SKImageInfo(40,30));surface.Canvas.Clear(SKColors.Coral);
         using var image=surface.Snapshot();using var encoded=image.Encode(SKEncodedImageFormat.Png,100);
         var png=encoded.ToArray();var normalized=new NormalizedImage(png,40,30);

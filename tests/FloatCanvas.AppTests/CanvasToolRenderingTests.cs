@@ -104,6 +104,8 @@ internal static class CanvasToolRenderingTests
         HostFlag(nameof(OverlayHost.IsVisible), true); HostFlag(nameof(OverlayHost.IsEditing), true);
         Set(desktop, "_host", host); Set(desktop, "_editor", editor);
         Set(desktop, "_canvasCalibration", new CanvasCalibrationController());
+        Set(desktop, "_canvasGridCalibrationPoints", new List<PointD>());
+        Set(desktop, "_windowSourceLeaves", Array.Empty<ResolvedLeaf>());
         Set(desktop, "_hiddenCanvasElements", new HashSet<Guid>()); Set(desktop, "_canvasGuideOpacity", 1d);
         CanvasPreviewContext Context() => (CanvasPreviewContext)typeof(DesktopSession).GetMethod("CurrentPreviewContext", flags)!.Invoke(desktop, null)!;
         var normal = Context(); editor.Tool = EditorTool.Canvas; var selected = Context();

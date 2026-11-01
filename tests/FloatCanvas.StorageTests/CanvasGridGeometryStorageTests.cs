@@ -16,7 +16,8 @@ internal static class CanvasGridGeometryStorageTests
             out var calibrated, out _), "centered grid storage fixture calibrates");
         var scene = new SceneDocument { Viewport = viewport, Canvas = new() { Projection = calibrated,
             Grid = new() { Visible = true, FlatCellSize = 73.125, FlatOrigin = new(960, 540) }, DepthPriorityOcclusion = true },
-            Elements = [new() { Kind = ElementKind.Rectangle, Width = 50, Height = 30, Transform = Affine2D.Translation(-100, 200) }] };
+            Elements = [new() { Kind = ElementKind.Rectangle, Width = 50, Height = 30, Transform = Affine2D.Translation(-100, 200),
+                Style = new() { Variant = ElementAppearance.ShapeIndependent } }] };
         var assets = new AssetLibrary(); var store = new ProjectStore();
         string path = Path.Combine(root, "centered.floatcanvas");
         string original = JsonSerializer.Serialize(scene);
@@ -48,6 +49,7 @@ internal static class CanvasGridGeometryStorageTests
                     var json = await ReadAsync(archive, name); json["Version"] = version;
                     if (name == "scene.json")
                     {
+                        LegacyFixtureSchema.RemovePrefabFields(json);
                         var canvas = json["Canvas"]!;
                         canvas["Grid"]!.AsObject().Remove("FlatCellSize"); canvas["Grid"]!.AsObject().Remove("FlatOrigin");
                         if (version < 6) canvas["Projection"]!.AsObject().Remove("LockedGridCellSize"); else canvas["Projection"]!["LockedGridCellSize"] = null;

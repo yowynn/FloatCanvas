@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace FloatCanvas.Core;
 
-public enum ElementKind { Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse, Triangle, Text, Number, Image, Symbol, LivePixelate, LiveBlur }
+public enum ElementKind { Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse, Triangle, Text, Number, Image, Symbol, LivePixelate, LiveBlur, Presentation }
 public enum DocumentKind { LiveOverlay, FrozenCapture }
 public enum TextAlignment { Left, Center, Right }
 public enum ImageEffectKind { Blur, Pixelate, Redact }
@@ -12,12 +12,40 @@ public enum ArrowHeadStyle { FilledTriangle, Open, Diamond, None }
 public enum StrokePattern { Solid, Dashed, Dotted }
 public enum SymbolKind { Triangle, Star, Heart, Check, Cross, Diamond, Pentagon, Hexagon, SpeechBubble }
 
-public sealed class ElementStyle
+public sealed class ElementStyle : IJsonOnDeserialized
 {
-    public uint Stroke { get; set; } = 0xFFEF4444;
-    public uint Fill { get; set; }
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool LinkColors { get; set; }
+    private uint foreground = 0xFFEF4444, background;
+    private uint? legacyStroke, legacyFill;
+    private bool? legacyLinkColors;
+    private bool canonicalColorsRead;
+    private bool deserialized;
+    private string? variant = ElementAppearance.Default;
+    private bool variantRead;
+    public uint Foreground { get => foreground; set { foreground = value; canonicalColorsRead = true; } }
+    public uint Background { get => background; set { background = value; canonicalColorsRead = true; } }
+    [JsonConverter(typeof(AppearanceColorRolesConverter))]
+    public Dictionary<string, uint> AdditionalColors { get; set; } = new(StringComparer.Ordinal);
+    /// <summary>Stable appearance identifier. Null is accepted only as a transitional in-memory default.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Variant { get => variant; set { variant = value; variantRead = true; } }
+    [JsonIgnore] public uint Stroke { get => Foreground; set => Foreground = value; }
+    [JsonIgnore] public uint Fill { get => Background; set => Background = value; }
+    [JsonIgnore] public bool LinkColors
+    {
+        get => Variant == ElementAppearance.ShapeUniform;
+        set { if (Variant is null or ElementAppearance.Default or ElementAppearance.ShapeIndependent or ElementAppearance.ShapeUniform) Variant = value ? ElementAppearance.ShapeUniform : ElementAppearance.ShapeIndependent; }
+    }
+    // Read-only wire aliases. Getters never emit a second persisted color authority.
+    [JsonPropertyName("Stroke"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public uint? LegacyStrokeWire { get => null; set => legacyStroke = value; }
+    [JsonPropertyName("Fill"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public uint? LegacyFillWire { get => null; set => legacyFill = value; }
+    [JsonPropertyName("LinkColors"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyLinkColorsWire { get => null; set => legacyLinkColors = value; }
+    [JsonIgnore] internal bool HasLegacyInput => deserialized && !canonicalColorsRead || legacyStroke is not null || legacyFill is not null || legacyLinkColors is not null;
+    [JsonIgnore] internal LegacyAppearance LegacyInput => new(legacyStroke ?? foreground, legacyFill ?? background, legacyLinkColors ?? false, variantRead ? Variant : null);
+    internal void ClearLegacyInput() { legacyStroke = null; legacyFill = null; legacyLinkColors = null; canonicalColorsRead = true; }
+    void IJsonOnDeserialized.OnDeserialized() => deserialized = true;
     public double StrokeWidth { get; set; } = 4;
     public ArrowHeadStyle ArrowHeadStyle { get; set; } = ArrowHeadStyle.FilledTriangle;
     /// <summary>Head length in local document pixels; zero preserves automatic max(10, StrokeWidth * 4).</summary>
@@ -30,7 +58,10 @@ public sealed class ElementStyle
     public string FontFamily { get; set; } = "Microsoft YaHei UI";
     public double FontSize { get; set; } = 24;
     public TextAlignment TextAlignment { get; set; }
-    public ElementStyle Clone() => (ElementStyle)MemberwiseClone();
+    public ElementStyle Clone()
+    {
+        var copy = (ElementStyle)MemberwiseClone(); copy.AdditionalColors = new(AdditionalColors, StringComparer.Ordinal); return copy;
+    }
 }
 
 public sealed class ImageEffect
@@ -43,7 +74,7 @@ public sealed class ImageEffect
     public ImageEffect Clone(bool newId = false) => new() { Id = newId ? Guid.NewGuid() : Id, Kind = Kind, Bounds = Bounds, Amount = Amount, Color = Color };
 }
 
-public sealed class CanvasElement
+public sealed class CanvasElement : IJsonOnDeserialized
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     /// <summary>Optional user layer label. Null keeps the localized default for the element kind.</summary>
@@ -74,13 +105,32 @@ public sealed class CanvasElement
     public PointD BillboardAnchor { get; set; }
     /// <summary>Logical height above the ground anchor; screen distance is height times the depth scale.</summary>
     public double BillboardHeight { get; set; }
-    public ElementStyle Style { get; set; } = new();
+    private ElementStyle style = new();
+    private bool styleRead;
+    public ElementStyle Style { get => style; set { style = value; styleRead = true; } }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PresentationSettings? Presentation { get; set; }
     public string Text { get; set; } = "";
     public int Number { get; set; } = 1;
-    /// <summary>New badges use Stroke for their shape and Fill for text; absent preserves legacy badge colors.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool NumberUsesForeground { get; set; }
+    /// <summary>Badge text can fit its body or retain the historical FontSize cap, independently of its colors.</summary>
+    public NumberTextSizeMode NumberTextSizeMode { get; set; }
+    [JsonIgnore] public bool NumberUsesForeground
+    {
+        get => NumberTextSizeMode == global::FloatCanvas.Core.NumberTextSizeMode.FitBadge;
+        set => NumberTextSizeMode = value ? global::FloatCanvas.Core.NumberTextSizeMode.FitBadge : global::FloatCanvas.Core.NumberTextSizeMode.CapFontSize;
+    }
+    [JsonIgnore] internal bool LegacyNumberUsesForegroundInput { get; private set; }
+    [JsonPropertyName("NumberUsesForeground"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyNumberUsesForegroundWire { get => null; set => LegacyNumberUsesForegroundInput = value ?? false; }
+    void IJsonOnDeserialized.OnDeserialized()
+    {
+        if (Style is null) return;
+        if (!styleRead) AppearanceMigration.MigrateElement(this, new(Style.Foreground, Style.Background, false, null), LegacyNumberUsesForegroundInput);
+        else AppearanceMigration.NormalizeElement(this);
+    }
     public string? AssetId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WindowSourceDescriptor? WindowSource { get; set; }
     public RectD? ImageCrop { get; set; }
     /// <summary>Capture contour in normalized image-body coordinates. Null retains the source bitmap's full frame.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -96,9 +146,9 @@ public sealed class CanvasElement
         Id = newId ? Guid.NewGuid() : Id, Name = Name, Kind = Kind, Points = Points.Snapshot(), Width = Width, Height = Height,
         CornerRadius = CornerRadius, Symbol = Symbol, GroupId = GroupId, ConstrainAspect = ConstrainAspect, TextFrameFixed = TextFrameFixed,
         Transform = Transform, ProjectivePlacement = ProjectivePlacement, IsBillboard = IsBillboard,
-        BillboardAnchor = BillboardAnchor, BillboardHeight = BillboardHeight, Style = Style.Clone(), Text = Text, Number = Number, AssetId = AssetId,
-        ImageCrop = ImageCrop, ImageFrame = ImageFrame?.ToList(), ImageBorderWidth = ImageBorderWidth, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked,
-        NumberUsesForeground = NumberUsesForeground
+        BillboardAnchor = BillboardAnchor, BillboardHeight = BillboardHeight, Style = Style.Clone(), Presentation = Presentation?.Clone(), Text = Text, Number = Number, AssetId = AssetId,
+        WindowSource = WindowSource?.Clone(), ImageCrop = ImageCrop, ImageFrame = ImageFrame?.ToList(), ImageBorderWidth = ImageBorderWidth, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked,
+        NumberTextSizeMode = NumberTextSizeMode
     };
 }
 
@@ -111,36 +161,38 @@ public sealed class DisplayLayoutHint
     public DisplayLayoutHint Clone() => (DisplayLayoutHint)MemberwiseClone();
 }
 
-public sealed partial class SceneDocument
+public sealed partial class SceneDocument : SceneNodeGraph
 {
-    public const int CurrentVersion = 8;
+    private SceneResourceIdentity resourceIdentity = new(Guid.NewGuid());
+    public const int CurrentVersion = 15;
     public int Version { get; set; } = CurrentVersion;
+    public Guid ResourceId { get => resourceIdentity.Id; set => resourceIdentity = new(value); }
+    public List<PrefabDefinition> Definitions { get; set; } = [];
+    [JsonIgnore] public bool ResourceIdentityPersistent => resourceIdentity.Persistent;
+    public void RecordResourceIdentityPersistence() => resourceIdentity.Persistent = true;
+    [JsonIgnore] public DocumentProvenance Provenance { get; set; } = new();
     public DocumentKind Kind { get; set; }
-    public List<CanvasElement> Elements { get; set; } = [];
-    public List<CanvasGroup> Groups { get; set; } = [];
     public CanvasElement? Background { get; set; }
     public CanvasSettings Canvas { get; set; } = new();
     public RectD Viewport { get; set; } = new(0, 0, 1920, 1080);
     public double LayerOpacity { get; set; } = 1;
     public int NextNumber { get; set; } = 1;
     public List<DisplayLayoutHint> DisplayLayout { get; set; } = [];
-    [JsonIgnore] public IEnumerable<string> ReferencedAssets => Elements.Append(Background).Where(e => e?.AssetId is not null).Select(e => e!.AssetId!).Distinct(StringComparer.Ordinal);
+    [JsonIgnore] public IEnumerable<string> ReferencedAssets => ReferencedAssetIds.Concat(Background?.AssetId is { } asset ? [asset] : [])
+        .Concat(Definitions.SelectMany(definition => definition.Graph.ReferencedAssetIds)).Distinct(StringComparer.Ordinal);
     public SceneDocument Clone(bool newIds = false, IReadOnlyDictionary<string, string>? assetIdMap = null)
     {
-        var groupIds = Groups.ToDictionary(g => g.Id, g => newIds ? Guid.NewGuid() : g.Id);
-        CanvasElement Copy(CanvasElement element)
+        var graph = SceneGraphClone.CloneGraph(this, newIds ? GraphCloneIdentity.NewNodes : GraphCloneIdentity.Preserve, assetIds: assetIdMap).Graph;
+        var background = Background?.Clone(newIds);
+        if (background?.AssetId is { } asset && assetIdMap is not null) background.AssetId = assetIdMap[asset];
+        var result = new SceneDocument
         {
-            var copy = element.Clone(newIds);
-            if (copy.GroupId is { } group) copy.GroupId = groupIds[group];
-            if (copy.AssetId is { } asset && assetIdMap is not null) copy.AssetId = assetIdMap[asset];
-            return copy;
-        }
-        return new()
-        {
-            Version = Version, Kind = Kind, Elements = Elements.Select(Copy).ToList(), Background = Background is null ? null : Copy(Background), Canvas = Canvas.Clone(),
-            Groups = Groups.Select(g => new CanvasGroup { Id = groupIds[g.Id], ParentId = g.ParentId is { } parent ? groupIds[parent] : null, Name = g.Name }).ToList(),
+            Version = Version, Provenance = Provenance, IsRuntimeEvaluated = graph.IsRuntimeEvaluated, Kind = Kind,
+            Elements = graph.Elements, Groups = graph.Groups, Instances = graph.Instances, RootOrder = graph.RootOrder,
+            Definitions = Definitions.Select(definition => definition.Clone(assetIdMap)).ToList(), Background = background, Canvas = Canvas.Clone(),
             Viewport = Viewport, LayerOpacity = LayerOpacity, NextNumber = NextNumber, DisplayLayout = DisplayLayout.Select(d => d.Clone()).ToList()
         };
+        result.resourceIdentity = resourceIdentity; return result;
     }
     /// <summary>The supplied bitmap asset represents exactly the captured region.</summary>
     public SceneDocument CreateCapture(RectD region, string backgroundAssetId)
@@ -148,18 +200,20 @@ public sealed partial class SceneDocument
         region = region.Normalize();
         if (region.Width < 1 || region.Height < 1) throw new ArgumentException(L.Get("Capture.EmptyRegion"), nameof(region));
         var translation = Affine2D.Translation(-region.X, -region.Y);
-        var capture = new SceneDocument
-        {
-            Kind = DocumentKind.FrozenCapture, Viewport = new(0, 0, region.Width, region.Height), LayerOpacity = LayerOpacity, NextNumber = NextNumber,
-            Background = new() { Kind = ElementKind.Image, AssetId = backgroundAssetId, Width = region.Width, Height = region.Height, Locked = true },
-            Elements = Elements.Where(e => e.Visible && ElementGeometry.Bounds(e).Intersects(region)).Select(e =>
-            {
-                var clone = e.Clone(); BillboardGeometry.ApplyPlaneTransform(clone, translation); return clone;
-            }).ToList(),
-            Groups = Groups.Select(g => g.Clone()).ToList(),
-            DisplayLayout = DisplayLayout.Select(d => d.Clone()).ToList()
-        };
-        capture.PruneGroups();
+        var evaluation = SceneEvaluation.Build(this);
+        var capture = CloneElements(evaluation.Leaves.Where(leaf => leaf.RenderElement.Visible && ElementGeometry.Bounds(leaf.RenderElement).Intersects(region)).Select(leaf => leaf.HostNodeId));
+        capture.Version = CurrentVersion; capture.Provenance = new(); capture.Kind = DocumentKind.FrozenCapture;
+        capture.Viewport = new(0, 0, region.Width, region.Height);
+        capture.Background = new() { Kind = ElementKind.Image, AssetId = backgroundAssetId, Width = region.Width, Height = region.Height, Locked = true };
+        // Translate ownership roots once; descendants retain genuine local geometry.
+        foreach (var group in capture.Groups.Where(group => group.ParentId is null))
+            group.Transform = translation.Compose(group.Transform);
+        foreach (var element in capture.Elements.Where(element => element.GroupId is null))
+            BillboardGeometry.ApplyPlaneTransform(element, translation);
+        foreach (var instance in capture.Instances.Where(instance => instance.ParentId is null))
+            instance.Transform = translation.Compose(instance.Transform);
+        capture.ResourceId = Guid.NewGuid();
+        capture.DisplayLayout = DisplayLayout.Select(display => display.Clone()).ToList();
         return capture.Clone(true);
     }
 }

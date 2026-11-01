@@ -64,7 +64,7 @@ internal static class ArrowHeadTests
         var a = new CanvasElement { Kind = ElementKind.Text, Text = "committed A", Width = 80, Height = 24 };
         var b = new CanvasElement { Kind = ElementKind.Rectangle, Width = 30, Height = 20 };
         var session = new EditorSession(); session.Add(a);
-        session.BeginTransaction("pending B"); session.Document.Elements.Add(b);
+        session.BeginTransaction("pending B"); new SceneGraph(session.Document).InsertElement(b);
         var snapshot = session.CreateCommittedSnapshot();
         check(snapshot.Elements.Count == 1 && snapshot.Elements[0].Id == a.Id, "active gesture committed snapshot includes A and excludes unfinished B");
         snapshot.Elements[0].Text = "independent";
@@ -74,7 +74,7 @@ internal static class ArrowHeadTests
         session.BeginTransaction("cancel mutation"); session.Document.Elements[0].Text = "pending"; session.Document.Elements.RemoveAt(1); session.Cancel();
         check(session.CreateCommittedSnapshot().Elements[0].Text == "committed A" && session.CreateCommittedSnapshot().Elements.Count == 2, "cancel restores committed A and B for recovery snapshots");
         var canceled = new EditorSession(); canceled.Add(a);
-        canceled.BeginTransaction("discard B"); canceled.Document.Elements.Add(b); canceled.Cancel();
+        canceled.BeginTransaction("discard B"); new SceneGraph(canceled.Document).InsertElement(b); canceled.Cancel();
         var canceledSnapshot = canceled.CreateCommittedSnapshot();
         check(canceledSnapshot.Elements.Count == 1 && canceledSnapshot.Elements[0].Id == a.Id && canceledSnapshot.Elements[0].Text == "committed A",
             "canceling unfinished B leaves a committed snapshot containing only unchanged A");

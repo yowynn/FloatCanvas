@@ -13,6 +13,7 @@ internal sealed class ImageDropPayload
 {
     internal IReadOnlyList<string> FilePaths { get; }
     internal IReadOnlyList<byte[]> EncodedImages { get; }
+    internal bool HasProjects => FilePaths.Any(path => Path.GetExtension(path).ToLowerInvariant() is ".floatcanvas" or ".floatprefab");
     internal ImageDropPayload(string[] paths, byte[][] images)
     { FilePaths = Array.AsReadOnly(paths); EncodedImages = Array.AsReadOnly(images); }
 }
@@ -117,8 +118,8 @@ internal static class ImageDropDataReader
             }
             if (paths.Count == MaxImages) throw Invalid("The drop exceeds the image count limit.");
             string path = wide ? Unicode.GetString(bytes, position, end - position) : DecodeAnsi(bytes.AsSpan(position, end - position).ToArray());
-            if (string.IsNullOrWhiteSpace(path) || path.Length > 32767 || !Path.IsPathFullyQualified(path) || !SupportedExtension(Path.GetExtension(path)))
-                throw Invalid("Every dropped file must be an absolute image path with a supported extension.");
+            if (string.IsNullOrWhiteSpace(path) || path.Length > 32767 || !Path.IsPathFullyQualified(path) || !SupportedFileExtension(Path.GetExtension(path)))
+                throw Invalid("Every dropped file must be an absolute image, canvas or prefab path with a supported extension.");
             paths.Add(path); position = end + step;
         }
     }
@@ -216,6 +217,7 @@ internal static class ImageDropDataReader
     private static FORMATETC Request(short format, TYMED medium, int index) => new()
     { cfFormat = format, dwAspect = DVASPECT.DVASPECT_CONTENT, lindex = index, tymed = medium };
     private static bool SupportedExtension(string extension) => extension.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp" or ".gif";
+    private static bool SupportedFileExtension(string extension) => SupportedExtension(extension) || extension.ToLowerInvariant() is ".floatcanvas" or ".floatprefab";
     private static void RequireImage(byte[] bytes, string extension)
     {
         bool matches = extension.ToLowerInvariant() switch

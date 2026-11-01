@@ -19,7 +19,7 @@ internal static class LayersWindowTests
         var window = new LayersWindow(() => session, () => allowed);
         window.PrepareForShow();
         var list = (Controls.ListBox)Field(window, "layers");
-        Controls.ListBoxItem Item(Guid id) => list.Items.Cast<Controls.ListBoxItem>().Single(item => (Guid)item.Tag == id);
+        Controls.ListBoxItem Item(Guid id) => window.Container(id)!;
         void Click(string key)
         {
             var menu = Item(session.Selection.First()).ContextMenu;
@@ -53,14 +53,14 @@ internal static class LayersWindowTests
         assert("dropping at the existing position makes no history entry", session.UndoCount == before);
         Invoke(window, "ReorderLayers", new Guid[] { a.Id }, c.Id, false); window.PrepareForShow();
         assert("drop below a displayed row places the layer behind it", session.Document.Elements.FindIndex(e => e.Id == a.Id) + 1 == session.Document.Elements.FindIndex(e => e.Id == c.Id));
-        var row = Item(a.Id); var grid = (Controls.Grid)row.Content;
-        var visible = grid.Children.OfType<Primitives.ToggleButton>().First();
+        var row = Item(a.Id); var presenter = LayerTreeRowPresenter.Find(row)!;
+        var visible = presenter.VisibleButton;
         var previousIcon = ((System.Windows.Shapes.Path)visible.Content).Data.ToString();
         visible.IsChecked = false; visible.RaiseEvent(new Wpf.RoutedEventArgs(Primitives.ButtonBase.ClickEvent));
         window.PrepareForShow();
         assert("eye icon toggles real layer visibility and its glyph while preserving selection", !session.Document.Elements.Single(e => e.Id == a.Id).Visible && session.Selection.SetEquals([a.Id]) &&
             ((System.Windows.Shapes.Path)visible.Content).Data.ToString() != previousIcon);
-        var locked = grid.Children.OfType<Primitives.ToggleButton>().Last();
+        var locked = presenter.LockedButton;
         locked.IsChecked = true; locked.RaiseEvent(new Wpf.RoutedEventArgs(Primitives.ButtonBase.ClickEvent));
         before = session.UndoCount; Invoke(window, "ReorderLayers", new Guid[] { a.Id }, c.Id, true);
         assert("locked layer cannot be reordered by its handle", session.Document.Elements.Single(e => e.Id == a.Id).Locked && session.UndoCount == before);

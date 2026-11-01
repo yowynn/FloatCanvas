@@ -13,7 +13,7 @@ internal static class BillboardControllerTests
         session.Document.Canvas.Projection.Enabled = true;
         session.Document.Canvas.Projection.Matrix = new(1, 0, 0, 0, 1, 0, 0, .001, 1);
         session.Document.Canvas.Projection.Quad = [new(0,0),new(800,0),new(800,600),new(0,600)];
-        var editor = new EditorController(session) { Tool = EditorTool.Rectangle, BillboardMode = true };
+        var editor = new EditorController(session) { Tool = EditorTool.Rectangle, BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine, BillboardMode = true };
         editor.Style.StrokeWidth = 5;
         Send(editor, OverlayPointerKind.Move, new(300, 300));
         check("billboard preview shows only a depth line without adding a layer", editor.VisibleBillboardDepthLine is not null && session.Document.Elements.Count == 0);
@@ -69,7 +69,7 @@ internal static class BillboardControllerTests
     private static void CancelAndInsertion(Action<string,bool> check)
     {
         var session = new EditorSession(); session.Document.Canvas.Projection.Enabled = true;
-        var editor = new EditorController(session) { BillboardMode = true }; bool inserted=false;
+        var editor = new EditorController(session) { BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine, BillboardMode = true }; bool inserted=false;
         editor.BeginBillboardInsertion((line,point)=>inserted=true);
         Send(editor, OverlayPointerKind.Down, new(300,300)); Send(editor, OverlayPointerKind.Up, new(300,300));
         check("queued image insertion does not insert during depth confirmation", !inserted && editor.HasPendingBillboardInsertion);

@@ -27,7 +27,7 @@ internal static class CanvasPinStorageTests
         using (var zip = ZipFile.OpenRead(path))
         {
             var payload = await Read(zip, "scene.json");
-            check(payload["Version"]!.GetValue<int>() == 8 && !payload["Canvas"]!["Projection"]!.AsObject().ContainsKey("LockedGridCellSize"), "v8 writes explicit pins and omits old lock");
+            check(payload["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion && !payload["Canvas"]!["Projection"]!.AsObject().ContainsKey("LockedGridCellSize"), "current format writes explicit pins and omits an unused grid lock");
         }
         var legacy = Path.Combine(folder, "v7.floatcanvas"); File.Copy(path, legacy);
         using (var zip = ZipFile.Open(legacy, ZipArchiveMode.Update))
@@ -36,6 +36,7 @@ internal static class CanvasPinStorageTests
                 var json = await Read(zip, name); json["Version"] = 7;
                 if (name == "scene.json")
                 {
+                    LegacyFixtureSchema.RemovePrefabFields(json);
                     var projection = json["Canvas"]!["Projection"]!.AsObject();
                     projection.Remove("PinLocation"); projection.Remove("PinPlanePoint"); projection.Remove("ReferenceBounds"); projection["AlgorithmVersion"] = 1; projection["LockedGridCellSize"] = 73;
                     json["Canvas"]!["Grid"]!.AsObject().Remove("FlatTranslation");

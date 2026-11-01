@@ -38,8 +38,11 @@ internal static class NumberFitRenderingTests
                 Width = sample.Width,
                 Height = sample.Height,
                 Transform = Affine2D.Translation(margin * scale, margin * scale).Compose(Affine2D.Scale(scale, scale)),
-                Style = new() { Stroke = 0xFFE03E3E, FontFamily = "Microsoft YaHei UI", FontSize = sample.FontSize }
+                Style = new() { FontFamily = "Microsoft YaHei UI", FontSize = sample.FontSize }
             };
+            // These historical fitting cases use the pre-v12 badge colors and capped
+            // font rule. Interpret their raw legacy values once before rendering.
+            AppearanceMigration.MigrateElement(badge, new(0xFFE03E3E, 0, false, null), numberUsesForeground: false);
             string original = JsonSerializer.Serialize(badge);
             var scene = new SceneDocument
             {

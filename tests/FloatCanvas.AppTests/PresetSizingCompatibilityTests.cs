@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
@@ -42,7 +43,7 @@ internal static class PresetSizingCompatibilityTests
         var badgeScene = new SceneDocument { Viewport = new(0,0,72,72), Elements = [number.Clone()] }; badgeScene.Elements[0].Transform = Affine2D.Identity;
         using var badge = SKBitmap.Decode(renderer.ExportPng(badgeScene, session.Assets, true));
         check("new badges use foreground red for shapes and background white for labels", badge.GetPixel(36, 8) == new SKColor(ColorLibrary.ForegroundRed) && badge.Pixels.Count(p => p == SKColors.White) > 30);
-        var oldBadge = number.Clone(); oldBadge.NumberUsesForeground = false; oldBadge.Style.Stroke = 0xFF00FF00; oldBadge.Style.Fill = 0xFF2383E2;
+        var oldBadge = JsonSerializer.Deserialize<CanvasElement>("{\"Kind\":" + (int)ElementKind.Number + ",\"Width\":72,\"Height\":72,\"Style\":{\"Stroke\":" + 0xFF00FF00u + ",\"Fill\":" + 0xFF2383E2u + ",\"FontSize\":72}}")!;
         badgeScene.Elements = [oldBadge]; oldBadge.Transform = Affine2D.Identity;
         using var legacy = SKBitmap.Decode(renderer.ExportPng(badgeScene, session.Assets, true));
         check("legacy saved number colors retain their previous blue shape and white label", legacy.GetPixel(36,8) == new SKColor(0xFF2383E2) && legacy.Pixels.Count(p => p == SKColors.White) > 20);
@@ -51,7 +52,7 @@ internal static class PresetSizingCompatibilityTests
     {
         editor.Tool = EditorTool.Rectangle; editor.Style.Stroke = 0xFF2383E2; editor.Style.Fill = 0;
         var panel = new ToolOptionsPanel(editor, library, new ColorLibrary(Path.Combine(ApplicationPaths.ProfileDirectory,"linked-colors.json"))); panel.PrepareForShow();
-        var linked = Field<SegmentedChoice>(panel, "linkColors"); linked.SelectedValue = true;
+        var linked = Field<SegmentedChoice>(panel, "linkColors"); linked.SelectedValue = ElementAppearance.ShapeUniform;
         panel.PrepareForShow();
         var rows = Field<Dictionary<string,System.Windows.FrameworkElement>>(panel,"rows");
         check("linked tool colors expose one foreground color and preserve the saved background", editor.Style.LinkColors && editor.Style.Fill == 0 && rows["Background"].Visibility == System.Windows.Visibility.Collapsed);

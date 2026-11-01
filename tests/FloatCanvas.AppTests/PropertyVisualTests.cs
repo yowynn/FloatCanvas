@@ -41,7 +41,7 @@ internal static class PropertyVisualTests
         T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
         var toggle = Field<SegmentedChoice>(inspector, "linkColors");
         check("mixed inspector color styles leave both native radio options unselected", toggle.SelectedIndex == -1 && toggle.Items.All(option => option.IsChecked != true));
-        toggle.SelectedValue = true; inspector.CompletePendingEdit();
+        toggle.SelectedValue = ElementAppearance.ShapeUniform; inspector.CompletePendingEdit();
         check("mixed color-style selection applies unified colors to every layer and is undoable", session.SelectedElements().All(e => e.Style.LinkColors)
             && session.Undo() && session.SelectedElements().Select(e => e.Style.LinkColors).Distinct().Count() == 2);
         var numbers = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields");

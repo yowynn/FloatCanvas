@@ -18,13 +18,17 @@ public sealed partial class SceneRenderer
     public DesktopBackdrop? LiveBackdrop { get; set; }
     /// <summary>Full lower scene for exporting an editable selection, clipboard object, or stamp.</summary>
     public SceneDocument? LiveEffectContext { get; set; }
-    public static bool HasLiveEffects(SceneDocument document) =>
-        document.LayerOpacity > 0 && document.Elements.Any(e => e.Visible && e.Style.Opacity > 0 &&
+    public static bool HasLiveEffects(SceneDocument document)
+    {
+        document = WorldDocument(document);
+        return document.LayerOpacity > 0 && document.Elements.Any(e => e.Visible && e.Style.Opacity > 0 &&
             ElementGeometry.IsLiveEffect(e.Kind) && !LiveEffectSamplingBounds(document, e).IsEmpty);
+    }
 
     /// <summary>Bounded screen-pixel capture ROI. Geometry follows the canvas; blur and pixelation sizes remain screen pixels.</summary>
     public static RectD LiveEffectSamplingBounds(SceneDocument document, CanvasElement effect)
     {
+        (document, effect) = WorldElement(document, effect);
         var outline = LiveMask(document, effect, SceneRenderSpace.ScreenComposite);
         if (outline.Count < 3) return default;
         var bounds = PointBounds(outline);
@@ -43,15 +47,15 @@ public sealed partial class SceneRenderer
     private void DrawLivePixelate(SKCanvas canvas, IReadOnlyList<CanvasElement> elements, int index, AssetLibrary assets)
     {
         var effect = elements[index];
-        var sourceDocument = LiveEffectContext ?? _drawingDocument;
-        if (LiveEffectContext is { } context)
+        var sourceDocument = EffectiveLiveEffectContext ?? _drawingDocument;
+        if (EffectiveLiveEffectContext is { } context)
         {
             int original = context.Elements.FindIndex(e => e.Id == effect.Id);
             if (original >= 0) { elements = context.Elements; index = original; }
         }
         if (effect.Style.Opacity <= 0) return;
         var corners = sourceDocument is null ? ElementGeometry.Outline(effect).Select(ElementGeometry.LocalToPlane(effect).TransformPoint).ToArray() :
-            LiveMask(sourceDocument, effect, _renderSpace);
+            LiveMaskForDrawing(sourceDocument, effect, _renderSpace);
         if (corners.Count < 3) return;
         var visibleBounds = PointBounds(corners);
         if (visibleBounds.IsEmpty || !canvas.LocalClipBounds.IntersectsWith(ToRect(visibleBounds))) return;
@@ -109,6 +113,15 @@ public sealed partial class SceneRenderer
             canvas.DrawImage(sampled.Image, ToRect(sampled.Bounds), effect.Kind == ElementKind.LiveBlur ? Linear : Nearest, paint);
         }
         finally { canvas.RestoreToCount(saved); }
+    }
+
+    private IReadOnlyList<PointD> LiveMaskForDrawing(SceneDocument document, CanvasElement effect, SceneRenderSpace space)
+    {
+        if (IsTransientScreenElement(document, effect))
+            return ClipPolygon(ElementGeometry.Outline(effect).Select(ElementGeometry.LocalToPlane(effect).TransformPoint).ToArray(),
+                [new(document.Viewport.Left, document.Viewport.Top), new(document.Viewport.Right, document.Viewport.Top),
+                 new(document.Viewport.Right, document.Viewport.Bottom), new(document.Viewport.Left, document.Viewport.Bottom)]);
+        return LiveMask(document, effect, space);
     }
 
     private static IReadOnlyList<PointD> LiveMask(SceneDocument document, CanvasElement effect, SceneRenderSpace space)

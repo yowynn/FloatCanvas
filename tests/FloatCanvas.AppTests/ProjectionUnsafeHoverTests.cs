@@ -38,6 +38,8 @@ internal static class ProjectionUnsafeHoverTests
         Set(session, "_app", app); Set(session, "_host", host); Set(session, "_editor", editor);
         Set(session, "_assets", state.Assets); Set(session, "_renderer", renderer);
         Set(session, "_canvasCalibration", calibration);
+        Set(session, "_canvasGridCalibrationPoints", new List<PointD>());
+        Set(session, "_windowSourceLeaves", Array.Empty<ResolvedLeaf>());
         Set(session, "_settings", new UserSettings());
         // This fixture verifies UI adorners only. The independent preview worker publishes empty tiles.
         using var preview = new CanvasPreviewPump(app.Dispatcher, () => new()

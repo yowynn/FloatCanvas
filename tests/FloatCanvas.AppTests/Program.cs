@@ -38,6 +38,42 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--presentation-chords-only")) { PresentationChordSequenceTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-physical-state-only")) { PresentationPhysicalStateTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-tools-desktop-only")) { PresentationToolsDesktopTests.Run(Assert); return 0; }
+            if (args.Contains("--pointer-presentation-tool-only")) { PointerPresentationToolTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-styles-ui-only")) { PresentationStylesUiTests.Run(Assert, args.SkipWhile(a => a != "--presentation-styles-ui-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--keyboard-layout-modal-only")) { KeyboardLayoutModalTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-editing-route-only")) { PresentationEditingInputRouteTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-scope-runtime-only")) { PresentationScopeRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-inspector-persistence-only")) { PresentationInspectorPersistenceTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-global-ui-only")) { PresentationGlobalUiTests.Run(Assert, args.SkipWhile(a => a != "--presentation-global-ui-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--presentation-followup-ui-only")) { PresentationFollowupWindowTests.Run(Assert, args.SkipWhile(a => a != "--presentation-followup-ui-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--group-controller-only")) { GroupControllerTests.Run(Assert); return 0; }
+            if (args.Contains("--node-controller-audit-only")) { NodeControllerAuditTests.Run(Assert); return 0; }
+            if (args.Contains("--groups-creation-only")) { GroupedCreationTests.Run(Assert); return 0; }
+            if (args.Contains("--groups-recovery-only")) { GroupedRecoveryTests.Run(Assert); return 0; }
+            if (args.Contains("--prefab-boundaries-only")) { PrefabInstanceBoundaryTests.Run(Assert); return 0; }
+            if (args.Contains("--prefab-preview-only")) { PrefabPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--group-canvas-scene-only")) { GroupCanvasSceneTests.Run(Assert); return 0; }
+            if (args.Contains("--group-canvas-root-editing-only")) { GroupCanvasRootEditingTests.Run(Assert, args.SkipWhile(a => a != "--group-canvas-root-editing-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--inline-text-view-mapping-only")) { InlineTextViewMappingTests.Run(Assert); return 0; }
+            if (args.Contains("--layers-workflow-qa-only")) { LayersWorkflowQaTests.Run(Assert, args.SkipWhile(a => a != "--layers-workflow-qa-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--linked-content-lifecycle-only")) { Task.Run(() => LinkedContentLifecycleTests.RunAsync(Assert, args.SkipWhile(a => a != "--linked-content-lifecycle-only").Skip(1).FirstOrDefault())).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--linked-content-desktop-only")) { LinkedContentDesktopTests.Run(Assert, args.SkipWhile(a => a != "--linked-content-desktop-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--group-canvas-ui-only")) { GroupCanvasUiTests.Run(Assert, args.SkipWhile(a => a != "--group-canvas-ui-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--effect-scope-only")) { EffectScopeRequestTests.Run(Assert); return 0; }
+            if (args.Contains("--groups-preview-only")) { GroupedPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--layer-tree-only")) { LayerTreeTests.Run(Assert, args.SkipWhile(a => a != "--layer-tree-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--icon-clipping-only")) { IconClippingRegressionTests.Run(Assert, args.SkipWhile(a => a != "--icon-clipping-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--prefab-ui-only")) { PrefabUiTests.Run(Assert, args.SkipWhile(a => a != "--prefab-ui-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--prefab-desktop-only")) { PrefabDesktopContextTests.Run(Assert, args.SkipWhile(a => a != "--prefab-desktop-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--prefab-owner-preview-only")) { PrefabOwnerPreviewTests.Run(Assert, args.SkipWhile(a => a != "--prefab-owner-preview-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--layer-tree-virtualization-only")) { LayerTreeTests.Virtualization(Assert); return 0; }
+            if (args.Contains("--layer-tree-drag-only")) { LayerTreeTests.Dragging(Assert); return 0; }
+            if (args.Contains("--canvas-geometry-ui-only")) { CanvasIndependentUiTests.Run(Assert, args.SkipWhile(a => a != "--canvas-geometry-ui-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--canvas-geometry-lifecycle-only")) { CanvasAnchorCaptureTests.Run(Assert, geometryOnly: true); return 0; }
+            if (args.Contains("--appearance-only")) { StyleVariantTests.Run(Assert); return 0; }
             if (args.Contains("--enhanced-keyboard-isolation-only")) { EnhancedKeyboardIsolationTests.Run(Assert); return 0; }
             if (args.Contains("--private-keyboard-bridge-state-only")) { PrivateKeyboardBridgeStateTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-opacity-gesture-only")) { ToolbarOpacityGestureTests.Run(Assert); return 0; }
@@ -70,6 +106,8 @@ internal static class Program
             if (args.Contains("--update-cache-only")) { UpdateCacheTests.Run(Assert); return 0; }
             if (args.Contains("--update-process-recovery-only")) { UpdateProcessRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--configuration-compatibility-only")) { ConfigurationCompatibilityTests.Run(Assert); return 0; }
+            if (args.Contains("--canonical-appearance-only")) { CanonicalToolAppearanceTests.Run(Assert, args.SkipWhile(a => a != "--canonical-appearance-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--presentation-ui-only")) { PresentationUiTests.Run(Assert, args.SkipWhile(a => a != "--presentation-ui-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--preset-sizing-only")) { PresetSizingCompatibilityTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-protection-only")) { OverlayProtectionTests.Run(Assert); return 0; }
             if (args.Contains("--overlay-modes-only")) { OverlayModeTests.Run(Assert); return 0; }
@@ -115,6 +153,31 @@ internal static class Program
             if (args.Contains("--depth-occlusion-ui-only")) { DepthOcclusionUiRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--depth-occlusion-only")) { DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-only")) { BillboardControllerTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-screen-only")) { BillboardScreenCreationTests.Run(Assert); return 0; }
+            if (args.Contains("--screen-billboard-desktop-only")) { ScreenBillboardDesktopTests.Run(Assert); return 0; }
+            if (args.Contains("--screen-draft-preview-only")) { ScreenDraftPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-preview-only")) { PresentationPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-privacy-only")) { PresentationKeyboardPrivacyProbeTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-runtime-only")) { PresentationRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-native-only")) { PresentationNativeInputTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-desktop-only") || args.Contains("--presentation-desktop-rework-only"))
+            { string flag = args.Contains("--presentation-desktop-rework-only") ? "--presentation-desktop-rework-only" : "--presentation-desktop-only";
+                PresentationDesktopReworkTests.Run(Assert, args.SkipWhile(a => a != flag).Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--presentation-capture-only")) { PresentationCaptureTests.Run(Assert); return 0; }
+            if (args.Contains("--presentation-privacy-gate-only")) { PresentationPrivacyGateTests.Run(Assert); return 0; }
+            if (args.Contains("--window-source-ui-only")) { WindowSourceUiTests.Run(Assert, args.SkipWhile(a => a != "--window-source-ui-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--window-preview-only")) { WindowPreviewTests.Run(Assert); return 0; }
+            if (args.Contains("--window-source-runtime-only")) { WindowSourceRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--window-source-replace-only")) { WindowSourceImageReplaceTests.Run(Assert); return 0; }
+            if (args.Contains("--window-source-insertion-only")) { WindowSourceInsertionTests.Run(Assert); return 0; }
+            if (args.Contains("--window-source-persistence-only")) { Task.Run(() => WindowSourcePersistenceTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--window-source-desktop-only")) { WindowSourceDesktopTests.Run(Assert); return 0; }
+            if (args.Contains("--window-source-persistence-desktop-only")) { WindowSourcePersistenceDesktopTests.Run(Assert, args.SkipWhile(a => a != "--window-source-persistence-desktop-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--window-source-guard-only")) { WindowSourceOperationGuardTests.Run(Assert); return 0; }
+            if (args.Contains("--window-source-commands-desktop-only")) { WindowSourceCommandTests.Run(Assert, args.SkipWhile(a => a != "--window-source-commands-desktop-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--window-source-document-boundary-only")) { WindowSourceDocumentBoundaryTests.Run(Assert, args.SkipWhile(a => a != "--window-source-document-boundary-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--window-source-prefab-binding-only")) { WindowSourcePrefabBindingTests.Run(Assert, args.SkipWhile(a => a != "--window-source-prefab-binding-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--window-raster-capture-only")) { WindowRasterCaptureTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-creation-only")) { BillboardCreationTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-audit-only")) { BillboardInteractionAuditTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-ui-runtime-only")) { BillboardUiRuntimeTests.Run(Assert); return 0; }
@@ -212,6 +275,7 @@ internal static class Program
             if (args.Contains("--image-import-only")) { EncodedPngImportTests.Run(Assert); ImageDropTests.Run(Assert); return 0; }
             if (args.Contains("--image-drop-reader-only")) { ImageDropDataReaderTests.Run(Assert); return 0; }
             if (args.Contains("--gpu-settings-only")) { GpuSettingsTests.Run(Assert); LocalizationTests.Run(Assert); return 0; }
+            if (args.Contains("--localization-only")) { LocalizationTests.Run(Assert); return 0; }
             if (args.Contains("--animation-integration-only")) { AnimatedImageIntegrationTests.Run(Assert); return 0; }
             if (args.Contains("--snapshot-image-only")) { SnapshotImageTests.Run(Assert); return 0; }
             if (args.Contains("--snapshot-coordinates-only")) { SnapshotCoordinateTests.Run(Assert); return 0; }
@@ -281,6 +345,12 @@ internal static class Program
             if (args.Contains("--billboard-stamp-preview-only")) { BillboardStampPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--emoji-only")) { EmojiTests.Run(Assert); return 0; }
             if (args.Contains("--layer-names-only")) { LayerRenameTests.Run(Assert); return 0; }
+            if (args.Contains("--layer-row-polish-only")) { LayerRowPolishTests.Run(Assert, args.SkipWhile(a => a != "--layer-row-polish-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--project-drop-only")) { ProjectDropIntegrationTests.Run(Assert, args.SkipWhile(a => a != "--project-drop-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--canvas-content-import-only")) { Task.Run(() => CanvasContentImportTests.RunAsync(Assert, args.SkipWhile(a => a != "--canvas-content-import-only").Skip(1).FirstOrDefault())).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--canvas-content-import-desktop-only")) { CanvasContentImportDesktopTests.Run(Assert, args.SkipWhile(a => a != "--canvas-content-import-desktop-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--stamp-placement-names-only")) { Task.Run(() => StampPlacementNamesTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--stamp-placement-request-only")) { Task.Run(() => StampPlacementRequestTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--welcome-only")) { WelcomeSessionTests.Run(Assert); HotkeyHintTests.Run(Assert); return 0; }
             if (args.Contains("--session-lifecycle-only")) { SessionLifecycleFixture.Run(Assert); return 0; }
             if (args.Contains("--window-layout-only")) { WindowLayoutFixture.Run(Assert); return 0; }
@@ -309,6 +379,9 @@ internal static class Program
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
+            StyleVariantTests.Run(Assert);
+            GroupControllerTests.Run(Assert);
+            NodeControllerAuditTests.Run(Assert);
             OfficialPresetDesignTests.Run(Assert);
             SymbolStylePresetTests.Run(Assert);
             CaptureAspectPolicyTests.Run(Assert);
@@ -349,12 +422,35 @@ internal static class Program
             Preview4MenuTests.Run(Assert);
             Preview4ColorTests.Run(Assert);
             CanvasPresetTests.Run(Assert);
+            CanvasIndependentUiTests.Run(Assert);
+            GroupedPreviewTests.Run(Assert);
+            GroupedCreationTests.Run(Assert);
+            GroupedRecoveryTests.Run(Assert);
+            PrefabInstanceBoundaryTests.Run(Assert);
+            PrefabPreviewTests.Run(Assert);
+            EffectScopeRequestTests.Run(Assert);
             Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult();
             ShellIntegrationTests.Run(Assert);
             InstallerRegistrationTests.Run(Assert);
             OverlayProtectionTests.Run(Assert);
             LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert);
-            BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert);
+            BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert); BillboardScreenCreationTests.Run(Assert); ScreenDraftPreviewTests.Run(Assert);
+            PresentationPreviewTests.Run(Assert);
+            PresentationChordSequenceTests.Run(Assert);
+            PresentationPhysicalStateTests.Run(Assert);
+            PointerPresentationToolTests.Run(Assert);
+            PresentationEditingInputRouteTests.Run(Assert);
+            PresentationScopeRuntimeTests.Run(Assert);
+            PresentationInspectorPersistenceTests.Run(Assert);
+            PresentationKeyboardPrivacyProbeTests.Run(Assert); PresentationPrivacyGateTests.Run(Assert); PresentationRuntimeTests.Run(Assert); PresentationCaptureTests.Run(Assert);
+            WindowSourceUiTests.Run(Assert);
+            WindowPreviewTests.Run(Assert);
+            WindowSourceRuntimeTests.Run(Assert);
+            WindowSourceImageReplaceTests.Run(Assert);
+            WindowSourceInsertionTests.Run(Assert);
+            Task.Run(() => WindowSourcePersistenceTests.RunAsync(Assert)).GetAwaiter().GetResult();
+            WindowSourceOperationGuardTests.Run(Assert);
+            WindowRasterCaptureTests.Run(Assert);
             PerspectiveInputTests.Run(Assert); CanvasCalibrationTests.Run(Assert);
             PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert);
             ProjectionUnsafeHoverTests.Run(Assert);
@@ -380,6 +476,8 @@ internal static class Program
             UpdateRecoveryTests.Run(Assert);
             AppUpdateWindowTests.Run(Assert);
             LayerRenameTests.Run(Assert);
+            PrefabUiTests.Run(Assert);
+            PrefabOwnerPreviewTests.Run(Assert);
             EmojiTests.Run(Assert);
             CreationSelectionTests.Run(Assert);
             ClickPlacementThresholdTests.Run(Assert);
@@ -412,6 +510,8 @@ internal static class Program
             PresetFallbackTests.Run(Assert);
             PresetSizingCompatibilityTests.Run(Assert);
             ConfigurationCompatibilityTests.Run(Assert);
+            CanonicalToolAppearanceTests.Run(Assert);
+            PresentationUiTests.Run(Assert);
             ToolStateStoreTests.Run(Assert);
             PresetIsolationTests.Run(Assert);
             ToolOptionsPanelTests.Run(Assert);

@@ -6,13 +6,13 @@ namespace FloatCanvas.Rendering;
 public sealed partial class SceneRenderer
 {
     internal bool UsesDepthComposition(SceneDocument document) => CanvasDepthOrder.IsEnabled(document) &&
-        (HasVisibleBillboard(document) || LiveEffectContext is { } context && CanvasDepthOrder.IsEnabled(context) && HasVisibleBillboard(context));
+        (HasVisibleBillboard(document) || EffectiveLiveEffectContext is { } context && CanvasDepthOrder.IsEnabled(context) && HasVisibleBillboard(context));
 
-    private static bool HasVisibleBillboard(SceneDocument document)
+    private bool HasVisibleBillboard(SceneDocument document)
     {
         CanvasMapping? mapping = null;
         foreach (var item in document.Elements)
-            if (item is { IsBillboard: true, Visible: true } && item.Style.Opacity > 0 &&
+            if (item is { IsBillboard: true, Visible: true } && item.Style.Opacity > 0 && HasPresentationInk(item) &&
                 CanvasDepthOrder.TryAnchorDepth(mapping ??= CanvasMapping.Create(document), item.BillboardAnchor, out _)) return true;
         return false;
     }
@@ -29,7 +29,7 @@ public sealed partial class SceneRenderer
         bool photograph = includeBackground && document.Background is { Visible: true };
         DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground && photograph, canvasOpacity: opacity);
         if (!(opacity > 0)) return;
-        var source = LiveEffectContext is { } context && CanvasDepthOrder.IsEnabled(context) ? context : document;
+        var source = EffectiveLiveEffectContext is { } context && CanvasDepthOrder.IsEnabled(context) ? context : document;
         var mapping = ReferenceEquals(source, document) ? _mapping! : CanvasMapping.Create(source);
         var viewport = source.Viewport.Normalize();
         // Ordinary depth composition has no outside-pixel dependencies. Keep the document's mapping
@@ -43,7 +43,7 @@ public sealed partial class SceneRenderer
             throw new InvalidOperationException("The depth composition viewport is too large.");
         var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
         var imageBounds = new RectD(viewport.X, viewport.Y, width, height);
-        using var boundarySamples = new DepthBoundarySamples(source, mapping, imageBounds, localOutput);
+        using var boundarySamples = new DepthBoundarySamples(source, mapping, imageBounds, localOutput, HasPresentationInk);
         using var workingBuffer = RentDepthSurface(canvas, info, "Cannot allocate the depth composition surface.");
         var working = workingBuffer.Surface;
         working.Canvas.Clear(SKColors.Transparent); working.Canvas.Translate(-(float)viewport.X, -(float)viewport.Y);
@@ -218,7 +218,7 @@ public sealed partial class SceneRenderer
         return !canvas.IsClipEmpty;
     }
 
-    private static IEnumerable<DepthEvent> DepthEvents(SceneDocument document, CanvasMapping mapping, DepthBoundarySamples boundaries)
+    private IEnumerable<DepthEvent> DepthEvents(SceneDocument document, CanvasMapping mapping, DepthBoundarySamples boundaries)
     {
         var projection = mapping.PlaneToScreen;
         if (projection.M31 == 0 && projection.M32 == 0)
@@ -229,7 +229,7 @@ public sealed partial class SceneRenderer
             yield break;
         }
         var billboards = Enumerable.Range(0, document.Elements.Count)
-            .Where(i => document.Elements[i] is { IsBillboard: true, Visible: true } e && e.Style.Opacity > 0 && CanvasDepthOrder.TryAnchorDepth(mapping, e.BillboardAnchor, out _))
+            .Where(i => document.Elements[i] is { IsBillboard: true, Visible: true } e && e.Style.Opacity > 0 && HasPresentationInk(e) && CanvasDepthOrder.TryAnchorDepth(mapping, e.BillboardAnchor, out _))
             .OrderByDescending(i => projection.Denominator(document.Elements[i].BillboardAnchor)).ThenBy(i => i).ToArray();
         double far = double.PositiveInfinity;
         foreach (var group in billboards.GroupBy(i => projection.Denominator(document.Elements[i].BillboardAnchor)))
@@ -284,12 +284,12 @@ public sealed partial class SceneRenderer
         internal SKPath All { get; }
         internal SKPath? ForDepth(double depth) => samples.GetValueOrDefault(depth);
 
-        internal DepthBoundarySamples(SceneDocument document, CanvasMapping mapping, RectD bounds, bool correctRasterOwnership)
+        internal DepthBoundarySamples(SceneDocument document, CanvasMapping mapping, RectD bounds, bool correctRasterOwnership, Func<CanvasElement, bool> include)
         {
             this.bounds = bounds;
             if (mapping.PlaneToScreen.M31 == 0 && mapping.PlaneToScreen.M32 == 0) { All = new(); return; }
             var inverse = mapping.ScreenToPlane;
-            var depths = document.Elements.Where(e => e.IsBillboard && e.Visible && e.Style.Opacity > 0)
+            var depths = document.Elements.Where(e => e.IsBillboard && e.Visible && e.Style.Opacity > 0 && include(e))
                 .Select(e => mapping.PlaneToScreen.Denominator(e.BillboardAnchor)).Where(d => double.IsFinite(d) && d > 0).Distinct().ToArray();
             // Filters and isolated contexts already share one full-source raster phase.
             // Preserve their exact equality masks and lower-prefix sampling unchanged.

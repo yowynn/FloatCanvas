@@ -129,9 +129,13 @@
     "zh": "重做 · Ctrl+Y",
     "en": "Redo · Ctrl+Y"
   },
-  "Toolbar.Image": {
+  "Tool.Image": {
     "zh": "贴图",
     "en": "Image"
+  },
+  "Toolbar.Image": {
+    "zh": "置入图片或工程",
+    "en": "Place images or projects"
   },
   "Toolbar.Capture": {
     "zh": "截图",
@@ -404,6 +408,10 @@
   "Project.Filter": {
     "zh": "浮绘工程 (*.floatcanvas)|*.floatcanvas",
     "en": "FloatCanvas project (*.floatcanvas)|*.floatcanvas"
+  },
+  "Project.OpenFilter": {
+    "zh": "浮绘工程与预制体 (*.floatcanvas;*.floatprefab)|*.floatcanvas;*.floatprefab|浮绘工程 (*.floatcanvas)|*.floatcanvas|浮绘预制体 (*.floatprefab)|*.floatprefab",
+    "en": "FloatCanvas projects and prefabs (*.floatcanvas;*.floatprefab)|*.floatcanvas;*.floatprefab|FloatCanvas project (*.floatcanvas)|*.floatcanvas|FloatCanvas prefab (*.floatprefab)|*.floatprefab"
   },
   "Project.ReplaceCurrent": {
     "zh": "打开工程将替换当前画布",

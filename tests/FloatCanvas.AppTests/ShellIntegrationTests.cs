@@ -9,6 +9,8 @@ internal static class ShellIntegrationTests
         string path = Path.Combine(Path.GetTempPath(), "a b", "画布.FLOATCANVAS");
         check("shell parses an Explorer positional project with spaces and Unicode", ProjectLaunchRequest.Parse([path]) == Path.GetFullPath(path));
         check("shell parses explicit open alongside isolated profile", ProjectLaunchRequest.Parse(["--profile", "own", "--open", path, "--primary-screen"]) == Path.GetFullPath(path));
+        string prefab = Path.ChangeExtension(path, ".FLOATPREFAB");
+        check("shell accepts an explicit prefab path for import dispatch", ProjectLaunchRequest.Parse(["--open", prefab]) == Path.GetFullPath(prefab));
         check("startup-only invocation carries no project", ProjectLaunchRequest.Parse(["--startup"]) is null);
         string defaultProfile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FloatCanvas");
         check("settings and update restarts keep Windows integration available for the daily profile",

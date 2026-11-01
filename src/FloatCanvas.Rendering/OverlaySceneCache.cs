@@ -90,8 +90,34 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(canvas); ArgumentNullException.ThrowIfNull(document); ArgumentNullException.ThrowIfNull(assets);
+        var source = document;
+        document = SceneRenderer.WorldDocument(document);
+        if (!ReferenceEquals(source, document))
+        {
+            sceneIdentity ??= source;
+            if (dynamicFirst >= 0 && dynamicLast >= dynamicFirst && dynamicLast < source.Elements.Count)
+            {
+                var selected = source.Elements.Skip(dynamicFirst).Take(dynamicLast - dynamicFirst + 1).Select(element => element.Id).ToHashSet();
+                var indices = document.Elements.Select((element, index) => (element, index)).Where(pair => selected.Contains(pair.element.Id)).Select(pair => pair.index).ToArray();
+                dynamicFirst = indices.Length == 0 ? -1 : indices.Min(); dynamicLast = indices.Length == 0 ? -1 : indices.Max();
+            }
+        }
+        bool suppliedRangeValid = dynamicFirst >= 0 && dynamicLast >= dynamicFirst && dynamicLast < document.Elements.Count;
+        bool suppliedRangeInvalid = !suppliedRangeValid && (dynamicFirst != -1 || dynamicLast != -1);
+        var presentation = renderer.PreparePresentation(document);
+        if (presentation.DynamicFirst >= 0)
+        {
+            dynamicFirst = dynamicFirst >= 0 ? Math.Min(dynamicFirst, presentation.DynamicFirst) : presentation.DynamicFirst;
+            dynamicLast = Math.Max(dynamicLast, presentation.DynamicLast);
+        }
+        var windows = renderer.PrepareWindowFrames(document);
+        if (windows.DynamicFirst >= 0)
+        {
+            dynamicFirst = dynamicFirst >= 0 ? Math.Min(dynamicFirst, windows.DynamicFirst) : windows.DynamicFirst;
+            dynamicLast = Math.Max(dynamicLast, windows.DynamicLast);
+        }
         bool dynamic = dynamicFirst >= 0 && dynamicLast >= dynamicFirst && dynamicLast < document.Elements.Count;
-        bool invalidRange = !dynamic && (dynamicFirst != -1 || dynamicLast != -1);
+        bool invalidRange = suppliedRangeInvalid || !dynamic && (dynamicFirst != -1 || dynamicLast != -1);
         if (canvas.Context is not null || bypassCache || invalidRange || renderer.UsesDepthComposition(document) || SceneRenderer.HasLiveEffects(document) ||
             !TryTile(canvas, out var tile) || byteLimit == 0)
         {

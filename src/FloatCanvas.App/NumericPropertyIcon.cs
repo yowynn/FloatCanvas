@@ -45,9 +45,9 @@ internal sealed class NumericPropertyIcon : FrameworkElement
 
     internal static NumericPropertyKind ForProperty(string key) => key switch
     {
-        "X" => NumericPropertyKind.X, "Y" => NumericPropertyKind.Y,
-        "W" or "DefaultWidth" => NumericPropertyKind.Width,
-        "H" or "DefaultHeight" or "BillboardHeight" => NumericPropertyKind.Height,
+        "X" or "Canvas.GridOriginX" => NumericPropertyKind.X, "Y" or "Canvas.GridOriginY" => NumericPropertyKind.Y,
+        "W" or "DefaultWidth" or "Canvas.PlaneWidth" => NumericPropertyKind.Width,
+        "H" or "DefaultHeight" or "BillboardHeight" or "Canvas.PlaneHeight" => NumericPropertyKind.Height,
         "Opacity" or "Color.Alpha" => NumericPropertyKind.Opacity,
         "Angle" => NumericPropertyKind.Angle,
         "StrokeWidth" or "CaptureBorderWidth" or "Canvas.GridWidth" => NumericPropertyKind.StrokeWidth,

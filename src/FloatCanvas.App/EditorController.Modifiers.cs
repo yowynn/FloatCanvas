@@ -13,16 +13,19 @@ internal sealed partial class EditorController
 
     internal void ModifiersChanged(OverlayModifiers modifiers,OverlayPoint? position=null,uint? time=null,bool? pointerLeftDown=null)
     {
+        if (!IsScreenDraftContextCurrent) { Cancel(); return; }
+        if (gesture is not null && _pointerOwnedSession is not null && !OwnsPointerTransaction)
+        { CancelGesture(rollback: false, notify: false); return; }
         if(gesture is null||(gestureModifiers&OverlayModifiers.Shift)==(modifiers&OverlayModifiers.Shift))return;
         if(time is { } inputTime&&modifierTime is { } boundary&&unchecked((int)(inputTime-boundary))<0)return;
         modifierTime=time??modifierTime;
         if(pointerLeftDown==false&&!temporaryMove&&gesture!="capture-polygon")
         {gestureModifiers=modifiers;return;}
-        var screen=position is { } point?new PointD(point.X-ScreenOrigin.X,point.Y-ScreenOrigin.Y):pointerScreen;
+        var screen=position is { } point?new PointD(point.X-CanvasOrigin.X,point.Y-CanvasOrigin.Y):pointerScreen;
         PointD current;
         if(HasCaptureGesture)current=screen;
         else if(UsesBillboardDrawingInput)current=BillboardInput(screen);
-        else if(!CanvasMapping.Create(Session.Document).TryToPlane(screen,out current))
+        else if(!CurrentCanvasMapping.TryToPlane(screen,out current))
         { if(IsPlanarStrokeDrawing)strokeInterrupted=true;RejectPointer();return; }
         pointerScreen=screen;
         if(IsPlanarStrokeDrawing&&!IsStrokeCandidateSafe(current,out _))
@@ -76,9 +79,9 @@ internal sealed partial class EditorController
         double distance=points[^1].DistanceTo(point);
         if(gesture=="draw"&&drawing is not null)
         {
-            var mapping = billboardDrawing && billboardDepth is { } depth ?
+            var mapping = screenBillboardDrawing ? ElementGeometry.LocalToPlane(drawing) : billboardDrawing && billboardDepth is { } depth ?
                 Projective2D.FromAffine(Affine2D.Scale(depth.Scale, depth.Scale)).Compose(ElementGeometry.LocalToPlane(drawing)) :
-                CanvasMapping.Create(Session.Document).ElementToScreen(drawing);
+                CurrentCanvasMapping.ElementToScreen(drawing);
             distance=mapping.TransformPoint(points[^1]).DistanceTo(mapping.TransformPoint(point));
         }
         if(distance>=(force?1e-9:.75))points.Add(point);

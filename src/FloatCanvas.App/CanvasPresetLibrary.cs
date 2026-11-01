@@ -26,29 +26,37 @@ internal sealed class CanvasPresetParameters
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CanvasProjectionSettings? Calibration { get; set; }
     public PointD FlatTranslation { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? PlaneCellSize { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PointD? PlaneOrigin { get; set; }
     internal bool IsValid => Columns is >= 1 and <= CanvasCalibration.MaximumGridCount &&
         Rows is >= 1 and <= CanvasCalibration.MaximumGridCount && double.IsFinite(GridWidth) && GridWidth is > 0 and <= 64 && Enum.IsDefined(GridPattern) &&
-        (FlatCellSize is null || double.IsFinite(FlatCellSize.Value) && FlatCellSize is >= CanvasGridGeometry.MinimumCellSize and <= CanvasGridGeometry.MaximumCellSize) && ValidCalibration();
+        (FlatCellSize is null || double.IsFinite(FlatCellSize.Value) && FlatCellSize is >= CanvasGridGeometry.MinimumCellSize and <= CanvasGridGeometry.MaximumCellSize) &&
+        (PlaneCellSize is null || double.IsFinite(PlaneCellSize.Value) && PlaneCellSize is >= CanvasGridGeometry.MinimumCellSize and <= CanvasGridGeometry.MaximumCellSize) &&
+        (PlaneOrigin is null || double.IsFinite(PlaneOrigin.Value.X) && double.IsFinite(PlaneOrigin.Value.Y)) && ValidCalibration();
     internal CanvasPresetParameters Clone()
     {
         var copy = (CanvasPresetParameters)MemberwiseClone(); copy.Calibration = Calibration?.Clone(); return copy;
     }
     internal bool Matches(CanvasPresetParameters other) => BackgroundColor == other.BackgroundColor && DepthPriorityOcclusion == other.DepthPriorityOcclusion && ProjectionEnabled == other.ProjectionEnabled &&
-        FlatTranslation == other.FlatTranslation && Columns == other.Columns && Rows == other.Rows && GridVisible == other.GridVisible && GridColor == other.GridColor &&
+        FlatTranslation == other.FlatTranslation && MatchesGrid(other) && Columns == other.Columns && Rows == other.Rows && GridVisible == other.GridVisible && GridColor == other.GridColor &&
         GridWidth == other.GridWidth && GridPattern == other.GridPattern && (FlatCellSize is null || FlatCellSize == other.FlatCellSize) && (Calibration is null || other.Calibration is { } c &&
             Calibration.Enabled == c.Enabled && Calibration.Columns == c.Columns && Calibration.Rows == c.Rows &&
-            Calibration.Origin == c.Origin && Calibration.CellSize == c.CellSize && Calibration.Matrix == c.Matrix &&
-            Calibration.PinLocation == c.PinLocation && Calibration.ReferenceBounds == c.ReferenceBounds && Calibration.AlgorithmVersion == c.AlgorithmVersion && Calibration.Quad.SequenceEqual(c.Quad));
+            Calibration.Origin == c.Origin && Calibration.CellSize == c.CellSize && CanvasProjectionGeometry.ResolvePlaneBounds(Calibration) == CanvasProjectionGeometry.ResolvePlaneBounds(c) && Calibration.PinPoint == c.PinPoint && Calibration.Matrix == c.Matrix &&
+            Calibration.PinLocation == c.PinLocation && Calibration.ReferenceBounds == c.ReferenceBounds && Calibration.Quad.SequenceEqual(c.Quad));
+    private bool MatchesGrid(CanvasPresetParameters other) =>
+        (Calibration is null && PlaneCellSize is null || (PlaneCellSize ?? Calibration?.CellSize) == (other.PlaneCellSize ?? other.Calibration?.CellSize)) &&
+        (Calibration is null && PlaneOrigin is null || (PlaneOrigin ?? Calibration?.PinPoint) == (other.PlaneOrigin ?? other.Calibration?.PinPoint));
     internal static CanvasPresetParameters From(CanvasSettings settings) => new()
     {
         BackgroundColor = settings.BackgroundColor, DepthPriorityOcclusion = settings.DepthPriorityOcclusion, ProjectionEnabled = settings.Projection.Enabled,
         Columns = settings.Projection.Columns, Rows = settings.Projection.Rows, GridVisible = settings.Grid.Visible,
         GridColor = settings.Grid.Color, GridWidth = settings.Grid.Width, GridPattern = settings.Grid.Pattern,
         // Capture logical spacing, pin and ordinary-mode placement together.
-        FlatCellSize = settings.Projection.Enabled && settings.Projection.Quad.Count == 4
+        FlatCellSize = settings.Projection.PlaneBounds is null && settings.Projection.Enabled && settings.Projection.Quad.Count == 4
             ? settings.Projection.CellSize
             : settings.Grid.FlatCellSize ?? (settings.Projection.Quad.Count == 4 ? settings.Projection.GridCellSize : null),
-        Calibration = settings.Projection.Quad.Count == 0 ? null : settings.Projection.Clone(), FlatTranslation = settings.Grid.FlatTranslation
+        Calibration = settings.Projection.Quad.Count == 0 ? null : settings.Projection.Clone(), FlatTranslation = settings.Grid.FlatTranslation,
+        PlaneCellSize = settings.Grid.PlaneCellSize, PlaneOrigin = settings.Grid.PlaneOrigin
     };
     private bool ValidCalibration()
     {
@@ -74,7 +82,7 @@ internal sealed class CanvasPresetLibrary
 {
     private sealed class State
     {
-        public int Version { get; set; } = 3;
+        public int Version { get; set; } = 4;
         public List<CanvasPreset> Presets { get; set; } = [];
     }
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
@@ -98,7 +106,7 @@ internal sealed class CanvasPresetLibrary
             var state = compatibility.Read<State>(JsonOptions);
             foreach(var preset in state.Presets.Where(p=>p?.Parameters is not null && !p.Parameters.IsValid && p.Parameters.Calibration is not null))
                 preset.Parameters.Calibration=null;
-            if (state is null || state.Version is not (1 or 2 or 3) || state.Presets is null || state.Presets.Count > 1000 ||
+            if (state is null || state.Version is not (1 or 2 or 3 or 4) || state.Presets is null || state.Presets.Count > 1000 ||
                 state.Presets.Any(p => p is null || p.Id is not { Length: > 5 and <= 80 } || !p.Id.StartsWith("user-", StringComparison.Ordinal) ||
                     !ValidName(p.Name) || p.Parameters is null || !p.Parameters.IsValid) ||
                 state.Presets.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != state.Presets.Count)
@@ -173,9 +181,12 @@ internal sealed class CanvasPresetLibrary
         {
             BackgroundColor = parameters.BackgroundColor, DepthPriorityOcclusion = parameters.DepthPriorityOcclusion, Projection = projection,
             Grid = new() { Visible = parameters.GridVisible, Color = parameters.GridColor, Width = parameters.GridWidth, Pattern = parameters.GridPattern,
-                FlatCellSize = projection.Enabled ? projection.GridCellSize : parameters.FlatCellSize ?? projection.GridCellSize,
-                FlatOrigin = current.Grid.FlatOrigin ?? referenceViewport.Center, FlatTranslation = parameters.FlatTranslation }
+                FlatCellSize = projection.PlaneBounds is not null ? parameters.FlatCellSize ?? parameters.PlaneCellSize ?? projection.GridCellSize :
+                    projection.Enabled ? projection.GridCellSize : parameters.FlatCellSize ?? projection.GridCellSize,
+                FlatOrigin = current.Grid.FlatOrigin ?? referenceViewport.Center, FlatTranslation = parameters.FlatTranslation,
+                PlaneCellSize = parameters.PlaneCellSize, PlaneOrigin = parameters.PlaneOrigin }
         };
+        CanvasGeometryMigration.UpgradeLegacy(result);
         SceneValidation.Validate(new SceneDocument { Canvas = result, Viewport = viewport });
         return result;
     }
@@ -213,7 +224,7 @@ internal sealed class CanvasPresetLibrary
                     // Keep existing version-two preset files readable by older applications.
                     property.IsRequired = false; property.ShouldSerialize = (_, _) => false;
                 }
-                else property.IsRequired = property.Name is not (nameof(CanvasProjectionSettings.PinLocation) or nameof(CanvasProjectionSettings.PinPlanePoint) or nameof(CanvasProjectionSettings.ReferenceBounds));
+                else property.IsRequired = property.Name is not (nameof(CanvasProjectionSettings.PinLocation) or nameof(CanvasProjectionSettings.PinPlanePoint) or nameof(CanvasProjectionSettings.ReferenceBounds) or nameof(CanvasProjectionSettings.PlaneBounds));
             }
         });
         return new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, TypeInfoResolver = resolver };

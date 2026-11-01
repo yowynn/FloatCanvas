@@ -11,9 +11,12 @@ internal sealed partial class EditorController
     private bool billboardDrawing;
     private bool billboardDraftValid = true;
     private Affine2D billboardDraftTransform;
-    private Action<BillboardDepthLine, PointD>? pendingBillboardInsertion;
+    private Action<BillboardDepthLine?, PointD>? pendingBillboardInsertion;
+    private bool pendingBillboardScreenFirst;
     private SceneDocument? pendingBillboardDocument;
     private long pendingBillboardRevision;
+    private long pendingBillboardScopeVersion;
+    private PointD pendingBillboardOrigin;
     private Projective2D pendingBillboardProjection;
     internal bool HasPendingBillboardInsertion => pendingBillboardInsertion is not null;
     private Dictionary<Guid, CanvasElement> billboardSources = [];
@@ -21,7 +24,7 @@ internal sealed partial class EditorController
     public bool BillboardMode
     {
         get => billboardMode && Session.Document.Canvas.Projection.Enabled;
-        set { Cancel(); billboardMode = value && Session.Document.Canvas.Projection.Enabled; if (billboardMode) Message?.Invoke(L.Get("Billboard.ChooseDepth")); Changed?.Invoke(); }
+        set { bool next = value && Session.Document.Canvas.Projection.Enabled; if (billboardMode != next) PlacementContextVersion++; Cancel(); billboardMode = next; if (billboardMode) Message?.Invoke(L.Get(UsesScreenBillboardCreation ? "Billboard.DrawDirect" : "Billboard.ChooseDepth")); Changed?.Invoke(); }
     }
     internal BillboardDepthLine? ActiveBillboardDepthLine => billboardDepth;
     internal BillboardDepthLine? VisibleBillboardDepthLine => billboardDepth ?? billboardPreviewDepth;
@@ -30,7 +33,8 @@ internal sealed partial class EditorController
         get
         {
             if (!Session.Document.Canvas.Projection.Enabled) return null;
-            var elements = Session.SelectedElements().Where(e => e.Visible && !e.Locked).ToArray();
+            if (HasNodeSelection) return null;
+            var elements = Session.SelectedWorldElements().Where(e => e.Visible && !e.Locked).ToArray();
             if (elements is not [var item] || !item.IsBillboard) return null;
             return BillboardGuide(item);
         }
@@ -39,6 +43,15 @@ internal sealed partial class EditorController
     {
         get
         {
+            if (screenBillboardDrawing && drawing is not null)
+            {
+                var bounds = ElementGeometry.LocalToPlane(drawing).TransformBounds(ElementGeometry.LocalBounds(drawing));
+                return (bounds.Center, new(bounds.Center.X, bounds.Bottom));
+            }
+            if (CapturePreview is { BillboardScreenFirst: true } screenCapture)
+                return (screenCapture.Bounds.Center, new(screenCapture.Bounds.Center.X, screenCapture.Bounds.Bottom));
+            if (screenBillboardRegion && Marquee is { } screenRegion)
+                return (screenRegion.Center, new(screenRegion.Center.X, screenRegion.Bottom));
             if (drawing is { IsBillboard: true } item) return BillboardGuide(item);
             if (CapturePreview is { } capture && billboardDepth is { } depth &&
                 depth.TryVerticalIntersection(capture.Bounds.Center.X, out var ground)) return (capture.Bounds.Center, ground);
@@ -52,7 +65,7 @@ internal sealed partial class EditorController
     }
     private (PointD Center, PointD Anchor)? BillboardGuide(CanvasElement item)
     {
-        var mapping = CanvasMapping.Create(Session.Document);
+        var mapping = CurrentCanvasMapping;
         if (!mapping.IsVisible(item.BillboardAnchor)) return null;
         var center = mapping.ElementToScreen(item).TransformPoint(ElementGeometry.LocalBounds(item).Center);
         return (center, mapping.ToScreen(item.BillboardAnchor));
@@ -61,24 +74,50 @@ internal sealed partial class EditorController
     {
         billboardDepth = billboardPreviewDepth = null;
         billboardDrawing = false;
+        screenBillboardDrawing = false;
+        screenBillboardRegion = false;
     }
     internal bool BeginBillboardInsertion(Action<BillboardDepthLine, PointD> insert)
+        => BeginBillboardInsertionCore((depth, point) => insert(depth!.Value, point), screenFirst: false);
+    internal bool BeginBillboardPlacement(Action<BillboardDepthLine?, PointD> insert)
+        => BeginBillboardInsertionCore(insert, UsesScreenBillboardCreation);
+    internal bool CancelBillboardPlacement(Action<BillboardDepthLine?, PointD> expected)
+    {
+        if (!ReferenceEquals(pendingBillboardInsertion, expected)) return false;
+        pendingBillboardInsertion = null; pendingBillboardDocument = null;
+        pendingBillboardScreenFirst = false; ClearBillboardDepth();
+        IsPointerBlocked = false; Changed?.Invoke(); return true;
+    }
+    private bool BeginBillboardInsertionCore(Action<BillboardDepthLine?, PointD> insert, bool screenFirst)
     {
         if (!BillboardMode) return false;
         Cancel(); pendingBillboardInsertion = insert;
         pendingBillboardDocument = Session.Document; pendingBillboardRevision = Session.SceneRevision;
+        pendingBillboardScopeVersion = Session.EditScopeVersion; pendingBillboardOrigin = CanvasOrigin;
+        pendingBillboardScreenFirst = screenFirst;
         pendingBillboardProjection = Session.Document.Canvas.Projection.Matrix;
-        Message?.Invoke(L.Get("Billboard.ChooseDepth")); Changed?.Invoke(); return true;
+        Message?.Invoke(L.Get(screenFirst ? "Billboard.PlaceDirect" : "Billboard.ChooseDepth")); Changed?.Invoke(); return true;
     }
     private bool HandleBillboardDepthInput(OverlayPointerEvent e)
     {
         if (pendingBillboardInsertion is not null && (!ReferenceEquals(pendingBillboardDocument, Session.Document) ||
-            pendingBillboardRevision != Session.SceneRevision || pendingBillboardProjection != Session.Document.Canvas.Projection.Matrix))
+            pendingBillboardRevision != Session.SceneRevision || pendingBillboardProjection != Session.Document.Canvas.Projection.Matrix ||
+            pendingBillboardScopeVersion != Session.EditScopeVersion || pendingBillboardOrigin != CanvasOrigin))
         { Cancel(); return true; }
         if (!Session.Document.Canvas.Projection.Enabled)
         { billboardMode = false; ClearBillboardDepth(); pendingBillboardInsertion = null; return false; }
         if (!BillboardMode || gesture is not null || !(IsBillboardCreationTool || pendingBillboardInsertion is not null)) return false;
-        var mapping = CanvasMapping.Create(Session.Document);
+        if (UsesScreenBillboardCreation && pendingBillboardInsertion is null) return false;
+        if (pendingBillboardScreenFirst && pendingBillboardInsertion is { } screenInsert)
+        {
+            if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
+            {
+                pendingBillboardInsertion = null; ClearBillboardDepth();
+                screenInsert(null, pointerScreen);
+            }
+            return true;
+        }
+        var mapping = CurrentCanvasMapping;
         bool selectedHit = pendingBillboardInsertion is null && billboardDepth is null &&
             ShouldShowSelection(e.Modifiers) && IsSelectionFrameHit(pointerScreen, includeInterior: true) &&
             (mapping.TryToPlane(pointerScreen, out var selectionPlane) || TryBillboardSelectionInput(out selectionPlane));
@@ -109,26 +148,39 @@ internal sealed partial class EditorController
         return false;
     }
     private PointD BillboardInput(PointD screen) => billboardDepth is { } line ? screen * (1 / line.Scale) : screen;
-    private bool UsesBillboardDrawingInput => billboardDrawing || gesture == "desktop-effect" && billboardDepth is not null;
+    private bool UsesBillboardDrawingInput => billboardDrawing || screenBillboardRegion || gesture == "desktop-effect" && billboardDepth is not null;
     private bool IsBillboardCreationTool => IsCreationTool(Tool) ||
         Tool is EditorTool.Blur or EditorTool.Pixelate && (Session.Document.Kind == DocumentKind.LiveOverlay ||
             !Session.SelectedElements().Any(e => e.Kind == ElementKind.Image) && Session.Document.Background is null);
     private void BeginBillboardDrawing()
     {
-        billboardDrawing = BillboardMode && billboardDepth is not null;
+        screenBillboardDrawing = UsesScreenBillboardCreation;
+        billboardDrawing = screenBillboardDrawing || BillboardMode && billboardDepth is not null;
+        if (screenBillboardDrawing)
+        {
+            screenDraftProjection = CurrentCanvasMapping.PlaneToScreen;
+            screenDraftOrigin = CanvasOrigin; screenDraftScopeVersion = Session.EditScopeVersion;
+        }
         billboardDraftValid = true;
         if (billboardDrawing && drawing is not null) RefreshBillboardDrawing();
     }
     private void PrepareBillboardDrawing()
     {
-        if (!billboardDrawing || drawing is null) return;
+        if (!billboardDrawing || drawing is null || screenBillboardDrawing) return;
         drawing.IsBillboard = false; drawing.Transform = billboardDraftTransform; drawing.Visible = true;
     }
     private bool RefreshBillboardDrawing()
     {
+        if (screenBillboardDrawing)
+        {
+            bool wasValid = billboardDraftValid;
+            billboardDraftValid = TryScreenBillboardCandidate(out _);
+            if (wasValid && !billboardDraftValid) Message?.Invoke(L.Get("Billboard.PendingGround"));
+            return billboardDraftValid;
+        }
         if (!billboardDrawing || drawing is null || billboardDepth is not { } line) return true;
         billboardDraftTransform = drawing.Transform;
-        var mapping = CanvasMapping.Create(Session.Document);
+        var mapping = CurrentCanvasMapping;
         var screen = Projective2D.FromAffine(Affine2D.Scale(line.Scale, line.Scale)).Compose(ElementGeometry.LocalToPlane(drawing));
         bool valid = BillboardGeometry.TryPlaceFromScreen(drawing, mapping, line, screen);
         billboardDraftValid = valid; drawing.Visible = valid;
@@ -140,7 +192,7 @@ internal sealed partial class EditorController
     private bool TryStartBillboardHeight()
     {
         if (BillboardSelectionGuide is not { } guide || pointerScreen.DistanceTo(guide.Center) >= 12) return false;
-        billboardSources = Session.SelectedElements().ToDictionary(e => e.Id, e => e.Clone());
+        billboardSources = Session.SelectedWorldElements().ToDictionary(e => e.Id, e => e.Clone());
         transforms = billboardSources.ToDictionary(e => e.Key, e => e.Value.Transform);
         gesture = "billboard-height"; BeginPointerTransaction(L.Get("Editor.History.Transform")); return true;
     }
@@ -148,16 +200,19 @@ internal sealed partial class EditorController
     {
         if (gesture == "billboard-height")
         {
-            var mapping = CanvasMapping.Create(Session.Document);
+            var mapping = CurrentCanvasMapping;
             foreach (var item in Session.SelectedElements())
                 if (billboardSources.TryGetValue(item.Id, out var source) && mapping.TryGetDepthScale(source.BillboardAnchor, out var scale))
-                    item.BillboardHeight = source.BillboardHeight - (pointerScreen.Y - startScreen.Y) / scale;
-            Session.NotifyChanged(); return true;
+                {
+                    var candidate = source.Clone(); candidate.BillboardHeight -= (pointerScreen.Y - startScreen.Y) / scale;
+                    WriteWorldElement(candidate);
+                }
+            NotifyGeometryChanged(); return true;
         }
         if (gesture is not ("move" or "rotate" or "resize") || billboardSources.Count == 0) return false;
         var selected = Session.SelectedElements().Where(e => !e.Locked).ToArray();
         bool mixed = selected.Any(e => !e.IsBillboard);
-        var canvas = CanvasMapping.Create(Session.Document);
+        var canvas = CurrentCanvasMapping;
         billboardMoveDelta = null;
         if (gesture == "move")
         {
@@ -222,7 +277,7 @@ internal sealed partial class EditorController
                 item.Transform = candidate.Transform;
                 item.BillboardHeight = candidate.BillboardHeight;
             }
-            if (!mixed) { Session.NotifyChanged(); return true; }
+            if (!mixed) { NotifyGeometryChanged(); return true; }
             return false;
         }
         foreach (var item in selected.Where(e => e.IsBillboard))
@@ -260,7 +315,7 @@ internal sealed partial class EditorController
                 else item.Transform = source.Transform.Compose(Affine2D.Scale(sx, sy));
             }
         }
-        if (!mixed) { Session.NotifyChanged(); return true; }
+        if (!mixed) { NotifyGeometryChanged(); return true; }
         return false;
     }
 }

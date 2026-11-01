@@ -44,7 +44,7 @@ internal static class Preview4MenuTests
                 Audit("main", main);
                 var mainItems = Items(main).ToArray();
                 var drawingItems = mainItems.Where(item => item.Tag is EditorTool).ToArray();
-                check($"{locale} {theme} drawing commands and Canvas have distinct tool symbols", drawingItems.Length == 16 &&
+                check($"{locale} {theme} drawing commands and Canvas have distinct tool symbols", drawingItems.Length == 18 &&
                     drawingItems.Select(item => Data((FrameworkElement)item.Icon)).Distinct().Count() == drawingItems.Length &&
                     drawingItems.Single(item => Equals(item.Tag, EditorTool.Canvas)).InputGestureText == "C");
                 check($"{locale} {theme} pass-through matches the toolbar check mark", Data((FrameworkElement)mainItems.Single(item => Equals(item.Header, L.Get("ToolbarV2.PassThrough"))).Icon) == Geometry.Parse(CommandGlyphs.PassThrough).ToString());

@@ -30,7 +30,7 @@ internal static class TemporaryMoveControllerTests
             session.UndoCount == 0 && JsonSerializer.Serialize(session.Document) == before);
         editor.Cancel(); var group = session.GroupSelection();
         check("Ctrl+G can group the selection while its adorners are hidden", group is not null &&
-            session.Selection.SetEquals([a.Id, b.Id]) && session.Document.Groups.Count == 1 && session.UndoCount == 1);
+            session.Selection.SetEquals([group.Value]) && session.Document.Groups.Count == 1 && session.UndoCount == 1);
         editor.ModifiersChanged(OverlayModifiers.Control | OverlayModifiers.Shift); editor.Cancel(); session.UngroupSelection();
         check("Ctrl+Shift+G can ungroup the retained selection", session.Document.Groups.Count == 0 &&
             session.Selection.SetEquals([a.Id, b.Id]) && session.UndoCount == 2);
@@ -105,14 +105,16 @@ internal static class TemporaryMoveControllerTests
         Send(editor, OverlayPointerKind.Down, new(180, 145), OverlayMouseButton.Middle);
         Send(editor, OverlayPointerKind.Move, new(210, 160), OverlayMouseButton.Middle);
         Send(editor, OverlayPointerKind.Up, new(210, 160), OverlayMouseButton.Middle);
-        check("Middle dragging an unselected group member selects and moves the full group like Move", session.Selection.SetEquals([a.Id, b.Id]) &&
-            session.Document.Elements.Select(item => item.Transform).SequenceEqual([Affine2D.Translation(110, 85), Affine2D.Translation(360, 85)]) &&
-            session.Document.Groups.Single().Id == group && session.UndoCount == 2);
+        var world = SceneEvaluation.Build(session.Document).RenderDocument;
+        check("Middle dragging an unselected group member selects and moves the full group like Move", group is { } id && session.Selection.SetEquals([id]) &&
+            world.Elements.Select(item => item.Transform).SequenceEqual([Affine2D.Translation(110, 85), Affine2D.Translation(360, 85)]) &&
+            session.Document.Elements.Select(item => item.Transform).SequenceEqual([Affine2D.Translation(80, 70), Affine2D.Translation(330, 70)]) &&
+            session.Document.Groups.Single().Id == group && session.Document.Groups.Single().Transform == Affine2D.Translation(30, 15) && session.UndoCount == 2);
         session.SetSelection([]);
         Send(editor, OverlayPointerKind.Down, new(60, 40), OverlayMouseButton.Middle);
         Send(editor, OverlayPointerKind.Move, new(600, 300), OverlayMouseButton.Middle);
         Send(editor, OverlayPointerKind.Up, new(600, 300), OverlayMouseButton.Middle);
-        check("Middle blank-area drag uses Move marquee selection without creating a stamp or history entry", session.Selection.SetEquals([a.Id, b.Id]) &&
+        check("Middle blank-area drag uses Move marquee selection without creating a stamp or history entry", group is { } selectedGroup && session.Selection.SetEquals([selectedGroup]) &&
             session.Document.Elements.Count == 2 && session.UndoCount == 2 && editor.Tool == EditorTool.Stamp);
     }
 

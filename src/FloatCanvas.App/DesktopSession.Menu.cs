@@ -61,15 +61,36 @@ internal sealed partial class DesktopSession
         Item(images, L.Get("Menu.ReplaceImage"), CommandGlyphs.ReplaceImage, () => _ = RunCommand(() => ImportImagesAsync(null, true)), command: "replace-image");
         images.Items.Add(new Controls.Separator());
         foreach (var tool in new[] { EditorTool.Crop, EditorTool.Blur, EditorTool.Pixelate }) images.Items.Add(ToolMenuItem(tool));
+        menu.Items.Add(CreateWindowSourcesMenu());
+        var presentation = Group("Presentation.Menu", CommandGlyphs.PresentationTools);
+        presentation.Items.Add(ToolMenuItem(EditorTool.Presentation));
+        presentation.Items.Add(ToolMenuItem(EditorTool.PointerPresentation));
+        var pointerToggle = new Controls.MenuItem { Header = L.Get("Presentation.Global.PointerEnabled"),
+            Icon = CommandGlyphs.Create(CommandGlyphs.PresentationPointer), IsCheckable = true };
+        pointerToggle.Click += (_, _) => RunUiAction(TogglePresentationPointer); presentation.Items.Add(pointerToggle);
+        menu.Opened += (_, _) => pointerToggle.IsChecked = _settings.PresentationGlobal.Pointer.Enabled;
         var canvas = Group("ToolbarV2.Canvas", CommandGlyphs.CanvasTools);
         canvas.Items.Add(ToolMenuItem(EditorTool.CaptureRegion));
         canvas.Items.Add(ToolMenuItem(EditorTool.Canvas));
         var billboard=new Controls.MenuItem {Header=L.Get("Billboard.Toggle"),Icon=CommandGlyphs.Create(CommandGlyphs.Placement(_editor.BillboardMode)),IsCheckable=true,Tag="billboard"};
         billboard.Click+=(_,_)=>RunUiAction(ToggleBillboardMode);canvas.Items.Add(billboard);
+        var fixedDepth = new Controls.MenuItem { Header = L.Get("Billboard.FixedDepthWorkflow"),
+            Icon = CommandGlyphs.Create(CommandGlyphs.Billboard), IsCheckable = true };
+        fixedDepth.Click += (_, _) => RunUiAction(() =>
+        {
+            FinishInlineText();
+            _editor.BillboardWorkflow = _editor.BillboardWorkflow == BillboardCreationWorkflow.FixedDepthLine
+                ? BillboardCreationWorkflow.ScreenFirst : BillboardCreationWorkflow.FixedDepthLine;
+            _settings.BillboardWorkflow = _editor.BillboardWorkflow;
+            _settings.Save(); RefreshBillboardState(); RequestRender();
+        });
+        canvas.Items.Add(fixedDepth);
         menu.Opened+=(_,_)=>
         {
             RefreshBillboardState();billboard.IsEnabled=Active.Document.Canvas.Projection.Enabled&&!DocumentOperationBusy;
             billboard.IsChecked=_editor.BillboardMode;billboard.Icon=CommandGlyphs.Create(CommandGlyphs.Placement(_editor.BillboardMode));
+            fixedDepth.IsChecked = _editor.BillboardWorkflow == BillboardCreationWorkflow.FixedDepthLine;
+            fixedDepth.IsEnabled = !DocumentOperationBusy;
         };
         Item(canvas, L.Get("Desktop.ToggleVisibility"), CommandGlyphs.Visibility, ToggleCanvasVisibility, FormatHotkey(_settings.Hide));
         Item(canvas, L.Get("Menu.MoveIntoView"), CommandGlyphs.MoveIntoView, MoveIntoView);

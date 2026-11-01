@@ -8,7 +8,7 @@ namespace FloatCanvas.App;
 internal sealed partial class DesktopSession
 {
     private StampLibraryWindow? _stampWindow;
-    private LoadedProject? _selectedStamp;
+    private LoadedStamp? _selectedStamp;
     private Guid? _selectedStampId;
     private Guid _selectedStampRevision;
     private bool _selectedStampUsesSource;
@@ -36,6 +36,21 @@ internal sealed partial class DesktopSession
 
     private void HandleCanvasPointer(OverlayPointerEvent e)
     {
+        if (Active.IsReadOnly) return;
+        _ = CurrentGroupCanvasView();
+        if (!_hasEditableCanvasOccurrence) return;
+        if (_editor.Tool == EditorTool.PointerPresentation)
+        {
+            if (_eyedropper is not null)
+            {
+                if (!DocumentOperationBusy) HandleEyedropperPointer(e);
+                _propertiesClicks?.Reset(); return;
+            }
+            ClearProjectionHover();
+            _propertiesClicks?.Reset();
+            _editor.HandleTemporaryMovePointer(e);
+            return;
+        }
         ObserveProjectionHover(e);
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
             _editor.ClickPlacementDragThreshold = ClickPlacementThresholdFor(_host.Monitors, e.Position);
@@ -86,7 +101,7 @@ internal sealed partial class DesktopSession
         else propertiesDoubleClick = _propertiesClicks.Observe(e, dismissedProperties);
         if (_editor.Tool == EditorTool.Stamp && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick &&
             e.Button == OverlayMouseButton.Left && (e.Modifiers & OverlayModifiers.Control) == 0 &&
-            _editor.IsSelectionFrameHit(new(e.Position.X - _editor.ScreenOrigin.X, e.Position.Y - _editor.ScreenOrigin.Y), includeInterior: true))
+            _editor.IsSelectionFrameHit(new(e.Position.X - _editor.CanvasOrigin.X, e.Position.Y - _editor.CanvasOrigin.Y), includeInterior: true))
         {
             _editor.PointerForCanvas(e, propertiesDoubleClick);
             return;
@@ -103,7 +118,7 @@ internal sealed partial class DesktopSession
             {
                 var loaded = _selectedStamp; var target = Active; var document = target.Document;
                 long revision = target.SceneRevision;
-                _editor.BeginBillboardInsertion((depth, center) =>
+                _editor.BeginBillboardPlacement((depth, center) =>
                 {
                     var current = _stampLibrary.Items.FirstOrDefault(item => item.Id == billboardStampId);
                     if (_disposed || _documentStopped || DocumentOperationBusy || !ReferenceEquals(Active, target) ||
@@ -111,7 +126,7 @@ internal sealed partial class DesktopSession
                         current?.Revision != rasterEntry.Revision || _selectedStampId != billboardStampId || _selectedStampUsesSource) return;
                     PlaceStampSafely(() =>
                     {
-                        StampLibrary.PlaceBillboardRaster(loaded, target, depth, center);
+                        StampLibrary.PlaceBillboardRaster(loaded, target, depth, center, current.Name);
                         ScheduleRecovery(); RequestRender();
                     });
                 });
@@ -135,7 +150,7 @@ internal sealed partial class DesktopSession
                 _ = RunCommand(() => ReloadStampAndPlaceAsync(request));
                 return;
             }
-            PlaceStampSafely(() => StampLibrary.Place(_selectedStamp, Active, stampPoint));
+            PlaceStampSafely(() => StampLibrary.Place(_selectedStamp, Active, stampPoint, current.Name));
             return;
         }
         if (e.Kind == OverlayPointerKind.Down && e.Button == OverlayMouseButton.Right) SwitchToolState(EditorTool.Select);
@@ -171,7 +186,7 @@ internal sealed partial class DesktopSession
         if (current is null || !StampRequestGuard.CanPlace(request, _stampSelectionRequest, _selectedStampId, current.Revision,
             _host.IsEditing && _host.IsVisible, !_disposed && !_documentStopped && !DocumentOperationBusy)) return;
         _selectedStamp = loaded; _selectedStampRevision = current.Revision;
-        StampLibrary.Place(loaded, request.Target, request.Position);
+        StampLibrary.Place(loaded, request.Target, request.Position, current.Name);
     }
 
     private void SelectStamp(Guid id) => SelectStamp(id, useSource: false, fromSlot: false);
@@ -187,7 +202,7 @@ internal sealed partial class DesktopSession
         _selectedStampFromSlot = fromSlot; _selectedStampUsesSource = useSource;
         var request = StampRequestGuard.Capture(++_stampSelectionRequest, id, expected.Revision, useSource, default);
         _stampSelectionPending = true; UpdateStatus(L.Get("Stamp.Loading"));
-        LoadedProject loaded;
+        LoadedStamp loaded;
         try { loaded = useSource ? await _stampLibrary.LoadSourceAsync(id, _documentLifetime.Token) : await _stampLibrary.LoadStampAsync(id, _documentLifetime.Token); }
         finally { if (request.Token == _stampSelectionRequest) _stampSelectionPending = false; }
         var entry = _stampLibrary.Items.FirstOrDefault(item => item.Id == id);
@@ -259,6 +274,7 @@ internal sealed partial class DesktopSession
             _layers.CommandKey += OnKey;
             _windowCoordinator?.Register(_layers, () => true);
             _layers.Dismissed += () => _layersWanted = false;
+            ConnectPrefabLayers(_layers);
         }
         if (_layersWanted) { _layers.PrepareForShow(); ShowAppWindow(_layers, true); }
         else SessionWindowCoordinator.Hide(_layers);

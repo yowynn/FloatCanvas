@@ -41,7 +41,7 @@ internal static class LayerDragDpiTests
                 RunCase("first layer between third and fourth", [1], 1, 3, [2, 3, 1, 4]);
                 RunCase("last layer moves upward into the first gap", [4], 4, 1, [1, 4, 2, 3]);
                 RunCase("a non-first layer moves downward", [2], 2, 3, [1, 3, 2, 4]);
-                RunCase("dragging an unselected group member retains group order", [1, 2], 1, 3, [3, 1, 2, 4], grouped: true);
+                RunCase("dragging an unselected group retains its member order", [1, 2], 1, 2, [3, 1, 2, 4], grouped: true);
                 RunCase("disjoint selected layers retain their relative order", [1, 3], 1, 4, [2, 4, 1, 3]);
                 RunCase("canceled completion retains the document", [1], 1, 3, [1, 2, 3, 4], canceled: true);
                 RunCase("dropping into the existing slot adds no history", [1], 1, 1, [1, 2, 3, 4]);
@@ -55,10 +55,10 @@ internal static class LayerDragDpiTests
                     session.SetSelection(selectedIds);
                     Guid? group = grouped ? session.GroupSelection("Drag group") : null;
                     if (grouped) session.SetSelection([]);
-                    window.Refresh(); Layout(root);
-                    var rows = list.Items.Cast<ListBoxItem>().ToArray();
-                    var item = rows.Single(row => (Guid)row.Tag == elements[moving - 1].Id);
-                    var handle = ((Grid)item.Content).Children.OfType<Thumb>().Single();
+                    window.PrepareForShow(); Layout(root);
+                    var rows = list.Items.Cast<LayerTreeRow>().Select(row => window.Container(row.Id)!).ToArray();
+                    var item = rows.Single(row => (Guid)row.Tag == (group ?? elements[moving - 1].Id));
+                    var handle = LayerTreeRowPresenter.Find(item)!.Handle;
                     var start = handle.TranslatePoint(new Point(12, 18), list);
                     var screenStart = list.PointToScreen(start);
                     double y = gap == rows.Length ? rows[^1].TranslatePoint(new Point(0, rows[^1].ActualHeight - 2), list).Y :
@@ -77,18 +77,19 @@ internal static class LayerDragDpiTests
                         !app.Windows.Cast<Window>().Any(candidate => candidate.IsVisible));
                     handle.RaiseEvent(new DragCompletedEventArgs(physicalChange.X, physicalChange.Y, canceled) { RoutedEvent = Thumb.DragCompletedEvent });
                     Layout(root);
-                    var actual = session.Document.Elements.AsEnumerable().Reverse().Select(element => element.Name).ToArray();
+                    var graph = new SceneGraph(session.Document);
+                    var actual = graph.OrderedLeafIds.Reverse().Select(id => graph.FindElement(id)!.Name).ToArray();
                     bool changed = !expected.SequenceEqual([1, 2, 3, 4]);
                     check(name + " commits exactly the displayed target", actual.SequenceEqual(expected.Select(number => number.ToString())) &&
-                        session.UndoCount == undo + (changed ? 1 : 0) && session.Selection.SetEquals(selectedIds));
+                        session.UndoCount == undo + (changed ? 1 : 0) && session.Selection.SetEquals(group is { } selectedGroup ? [selectedGroup] : selectedIds));
                     if (group is { } groupId)
                         check(name + " preserves group identity", session.Document.Groups.Single().Id == groupId &&
                             session.Document.GroupElements(groupId).Select(element => element.Id).ToHashSet().SetEquals(selectedIds));
                     if (changed)
                     {
-                        session.Undo(); window.Refresh(); Layout(root);
+                        session.Undo(); window.PrepareForShow(); Layout(root);
                         check(name + " undoes as one operation", session.Document.Elements.AsEnumerable().Reverse().Select(element => element.Name).SequenceEqual(["1", "2", "3", "4"]) && session.UndoCount == undo);
-                        session.Redo(); window.Refresh(); Layout(root);
+                        session.Redo(); window.PrepareForShow(); Layout(root);
                         check(name + " redoes the same order", session.Document.Elements.AsEnumerable().Reverse().Select(element => element.Name).SequenceEqual(actual) && session.UndoCount == undo + 1);
                     }
                 }

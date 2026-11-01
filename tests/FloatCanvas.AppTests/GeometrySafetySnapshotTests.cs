@@ -58,11 +58,13 @@ internal static class GeometrySafetySnapshotTests
         Send(editor, OverlayPointerKind.Down, down);
         Send(editor, OverlayPointerKind.Move, safe);
         var accepted = line.Points.ToArray();
-        check("safe endpoint preview edits the original list in place", session.IsTransactionActive && ReferenceEquals(line.Points, originalPoints) &&
-            line.Points[1].DistanceTo(new(400, 1700)) < 1e-6);
+        check("safe endpoint preview updates the source entity while retaining its previous point snapshot", session.IsTransactionActive &&
+            ReferenceEquals(line, session.Document.Elements.Single()) && line.Points[1].DistanceTo(new(400, 1700)) < 1e-6 &&
+            originalPoints.SequenceEqual([new PointD(0, 0), new(200, 100)]));
         Send(editor, OverlayPointerKind.Move, unsafeExtent);
-        check("unsafe endpoint sample restores the previous point in the original list", editor.IsPointerBlocked && ReferenceEquals(line.Points, originalPoints) &&
-            line.Points.SequenceEqual(accepted) && mapping.IsElementSafe(line));
+        check("unsafe endpoint sample restores the previous accepted geometry on the source entity", editor.IsPointerBlocked &&
+            ReferenceEquals(line, session.Document.Elements.Single()) && line.Points.SequenceEqual(accepted) && mapping.IsElementSafe(line) &&
+            originalPoints.SequenceEqual([new PointD(0, 0), new(200, 100)]));
         Send(editor, OverlayPointerKind.Up, unsafeExtent);
         check("unsafe endpoint release still restores the complete mouse-down transaction", !session.IsTransactionActive && session.UndoCount == 0 &&
             JsonSerializer.Serialize(session.Document) == original);

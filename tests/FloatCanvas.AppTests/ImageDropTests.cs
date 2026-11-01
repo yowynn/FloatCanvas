@@ -19,9 +19,42 @@ internal static class ImageDropTests
         check("picker placement remains centered and one undo", capture.Document.Elements.Single().Transform == Affine2D.Translation(640, 460) &&
             capture.UndoCount == 1 && capture.Undo() && before == JsonSerializer.Serialize(capture.Document));
         GuardedCompletion(check);
+        GuardedAuthoringContext(check);
         PreserveExistingCapture(check);
         FileDecodingAndRetry(check);
         DropPosition(check);
+        GroupViewDropPosition(check);
+    }
+
+    private static void GroupViewDropPosition(Action<string, bool> check)
+    {
+        var target = new EditorSession(new() { Viewport = new(0, 0, 600, 400) });
+        var display = new SceneDocument { Viewport = new(0, 0, 1000, 700) };
+        display.Canvas.Projection = CanvasCalibration.CreateInitial(display.Viewport);
+        display.Canvas.Projection.Enabled = true;
+        display.Canvas.Projection.Matrix = new(1.2, .05, 40, .03, .95, 22, .0002, .0001, 1);
+        var placement = new LayerPlacement(Affine2D.Translation(120, 80).Compose(Affine2D.Rotation(18)).Compose(Affine2D.Scale(1.4, .8)), 1);
+        var mapping = CanvasMapping.CreateView(display, placement);
+        object epoch = new(); var initialEpoch = epoch;
+        string camera = JsonSerializer.Serialize(target.Document.Canvas);
+        using var request = new ImageDropRequest(target, new(0, 0, 400, 300), CancellationToken.None,
+            mapping: () => mapping, viewEpoch: () => epoch);
+        var sourcePoint = new PointD(90, 70); var origin = new PointD(-1300, 40);
+        var physical = mapping.ToScreen(sourcePoint) + origin;
+        check("a root-canvas drop resolves physical coordinates through the entered instance and root perspective",
+            request.TrySetDropPoint(physical, origin) && request.DropCenter!.Value.DistanceTo(sourcePoint) < 1e-8);
+        check("a root-canvas drop commits into its real source graph without baking the root camera",
+            request.TryCommit(request, target, null, [new([7, 8, 9], 40, 30)]) &&
+            ElementGeometry.Bounds(target.Document.Elements.Single(), includeStroke: false).Center.DistanceTo(sourcePoint) < 1e-8 &&
+            JsonSerializer.Serialize(target.Document.Canvas) == camera && target.UndoCount == 1 && target.Undo());
+        using var pending = new ImageDropRequest(target, new(0, 0, 400, 300), CancellationToken.None,
+            mapping: () => mapping, viewEpoch: () => epoch);
+        epoch = new();
+        check("switching the group canvas invalidates an unfinished drop even with identical camera matrices",
+            !pending.IsCurrent(pending, target, null));
+        epoch = initialEpoch;
+        check("a late drop cannot revive after returning to the original group view",
+            !pending.TryCommit(pending, target, null, [new([7, 8, 9], 40, 30)]) && target.Document.Elements.Count == 0);
     }
 
     private static void GuardedCompletion(Action<string, bool> check)
@@ -61,6 +94,42 @@ internal static class ImageDropTests
             committed == JsonSerializer.Serialize(session.Document) && session.Document.ReferencedAssets.All(id => session.Assets.TryGet(id, out _)));
     }
 
+    private static void GuardedAuthoringContext(Action<string, bool> check)
+    {
+        foreach (string change in new[] { "scope", "scope ABA", "author edit", "foreign transaction", "context callback", "context callback ABA" })
+        {
+            var target = new EditorSession(); Guid group = target.CreateEmptyGroup("Target");
+            using var request = new ImageDropRequest(target, new(0, 0, 500, 400), CancellationToken.None);
+            bool context = true;
+            request.BindCompletionGuard(() => context);
+            switch (change)
+            {
+                case "scope": target.SetEditScope(group); break;
+                case "scope ABA": target.SetEditScope(group); target.SetEditScope(null); break;
+                case "author edit": target.Add(new() { Kind = ElementKind.Rectangle, Width = 10, Height = 10 }); break;
+                case "foreign transaction": target.BeginTransaction("foreign edit"); break;
+                case "context callback": context = false; break;
+                case "context callback ABA": context = false; _ = request.IsCurrent(request, target, null); context = true; break;
+            }
+            string before = JsonSerializer.Serialize(target.Document); int undo = target.UndoCount; long transaction = target.TransactionId;
+            check("drop rejects an expired " + change + " context without publishing assets", !request.TryCommit(request, target, null, [new([1], 10, 10)]) &&
+                JsonSerializer.Serialize(target.Document) == before && target.Assets.Count == 0 && target.UndoCount == undo);
+            if (change == "foreign transaction")
+            {
+                check("drop rejection preserves the other command's active transaction", target.IsTransactionActive && target.TransactionId == transaction);
+                target.Cancel();
+            }
+        }
+        var current = new EditorSession(); current.BeginTransaction("existing edit");
+        using var pending = new ImageDropRequest(current, new(0, 0, 500, 400), CancellationToken.None);
+        current.Cancel();
+        check("a request created while another transaction is active cannot revive after its cancellation", !pending.IsCurrent(pending, current, null) && current.Assets.Count == 0);
+        var draft = new EditorSession();
+        using var draftRequest = new ImageDropRequest(draft, new(0, 0, 500, 400), CancellationToken.None);
+        check("explicit active prefab draft may receive a drop without becoming the main live canvas", draftRequest.TryCommit(draftRequest, new(), null, [new([7], 10, 10)], draft) &&
+            draft.Document.Elements.Count == 1 && draft.UndoCount == 1);
+    }
+
     private static void PreserveExistingCapture(Action<string, bool> check)
     {
         var assets = new AssetLibrary(); string original = assets.Add([9, 8, 7]);
@@ -77,7 +146,7 @@ internal static class ImageDropTests
         using var request = new ImageDropRequest(capture, new(200, 130, 500, 350), CancellationToken.None);
         check("drop still targets capture after controller returns to live", request.TryCommit(request, live, capture, [new([6, 7, 8], 200, 100)]) &&
             editor.Session == live && editor.Tool == EditorTool.Freehand && live.Document.Elements.Count == 0);
-        var stripped = capture.Document.Clone(); stripped.Elements.RemoveAt(1);
+        var stripped = capture.Document.Clone(); new SceneGraph(stripped).RemoveNodes([stripped.Elements[1].Id]);
         check("drop preserves original crop, effects, transform, background and viewport", before == JsonSerializer.Serialize(stripped) &&
             existing == JsonSerializer.Serialize(capture.Document.Elements[0]) && assets.Get(original).Data.Span.SequenceEqual(new byte[] { 9, 8, 7 }));
         check("inactive capture change needs explicit recovery notification", controllerChanges == 0 && capture.CreateCommittedSnapshot().Elements.Count == 2);

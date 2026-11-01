@@ -58,7 +58,7 @@ internal static class EditablePresetRenderingTests
         var session = new EditorSession(new() { Viewport = new(0, 0, 130, 120), Elements = [badge, label] });
         session.SetSelection([badge.Id, label.Id]); session.GroupSelection("vector stamp");
         byte[] grouped = renderer.ExportPng(session.Document, assets, true);
-        var ungrouped = session.Document.Clone(); ungrouped.Groups.Clear(); foreach (var element in ungrouped.Elements) element.GroupId = null;
+        var ungrouped = session.Document.Clone(); ungrouped.Groups.Clear(); ungrouped.RootOrder = null; foreach (var element in ungrouped.Elements) element.GroupId = null;
         check("logical grouping retains exact compositing and vector text pixels", grouped.AsSpan().SequenceEqual(renderer.ExportPng(ungrouped, assets, true)));
         var stamp = session.CreateSelectionSnapshot();
         var receiving = new EditorSession(new() { Viewport = new(0, 0, 400, 350) });

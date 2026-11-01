@@ -20,21 +20,20 @@ public sealed partial class SceneRenderer
     internal long ImageBorderMaskHitCount { get; private set; }
     internal long CachedImageBorderBytes => _imageBorders.Values.Sum(entry => entry.CachedBytes);
 
-    private void DrawImageBorder(SKCanvas canvas, CanvasElement element, SKImage image, RectD crop)
+    private void DrawImageBorder(SKCanvas canvas, CanvasElement element, SKImage image, RectD crop, RasterFrameKey sourceFrame, RectD destination)
     {
-        if (!(element.ImageBorderWidth > 0) || (element.Style.Stroke >> 24) == 0) return;
+        if (!(element.ImageBorderWidth > 0) || (element.Style.Foreground >> 24) == 0) return;
         // GPU effect images are released after each frame. Reuse their identical alpha
         // support by content rather than by the short-lived SKImage handle.
-        int sourceFrame = ImageFrameIndex(element.AssetId!);
         bool gpuEffects = element.Effects.Count != 0 && canvas.Context is not null;
         var frameKey = new ImageBorderFrameKey(element.Id, sourceFrame);
-        if (!_imageBorders.TryGetValue(frameKey, out var entry) || !entry.Matches(element, crop, gpuEffects))
+        if (!_imageBorders.TryGetValue(frameKey, out var entry) || !entry.Matches(element, crop, gpuEffects, destination))
         {
-            var next = BuildImageBorder(element, image, crop, gpuEffects);
+            var next = BuildImageBorder(element, image, crop, gpuEffects, destination);
             // A changed recipe invalidates every animation frame. Build first so a failed
             // allocation cannot leave a disposed object published in the cache.
             foreach (var key in _imageBorders.Where(item => item.Key.Element == element.Id &&
-                !item.Value.Matches(element, crop, gpuEffects)).Select(item => item.Key).ToArray())
+                (sourceFrame.IsWindow || !item.Value.Matches(element, crop, gpuEffects, destination))).Select(item => item.Key).ToArray())
             { _imageBorders[key].Dispose(); _imageBorders.Remove(key); }
             if (_imageBorders.Remove(frameKey, out var previous)) previous.Dispose();
             entry = next;
@@ -49,7 +48,7 @@ public sealed partial class SceneRenderer
         // An empty animation frame needs only its small semantic entry, not empty tiles.
         if (entry.Path is { IsEmpty: true }) return;
         if (!CacheImageBorders || ImageBorderBudget < entry.OwnBytes + 256)
-        { DrawImageBorderSupport(canvas, element, entry, crop, element.Style.Stroke); return; }
+        { DrawImageBorderSupport(canvas, element, entry, crop, element.Style.Foreground); return; }
 
         var matrix = canvas.TotalMatrix;
         int offsetX = 0, offsetY = 0;
@@ -62,7 +61,7 @@ public sealed partial class SceneRenderer
             matrix.TransX -= offsetX; matrix.TransY -= offsetY;
         }
         var tiles = ImageBorderTiles(canvas.DeviceClipBounds, matrix, element, offsetX, offsetY);
-        using var colorFilter = SKColorFilter.CreateBlendMode(new SKColor(element.Style.Stroke), SKBlendMode.SrcIn);
+        using var colorFilter = SKColorFilter.CreateBlendMode(new SKColor(element.Style.Foreground), SKBlendMode.SrcIn);
         using var tint = new SKPaint { ColorFilter = colorFilter };
         int saved = canvas.Save();
         try
@@ -98,7 +97,7 @@ public sealed partial class SceneRenderer
                         canvas.ClipRect(new(rectangle.Left + offsetX, rectangle.Top + offsetY,
                             rectangle.Right + offsetX, rectangle.Bottom + offsetY));
                         canvas.SetMatrix(CanvasMatrix(matrix, offsetX, offsetY));
-                        DrawImageBorderSupport(canvas, element, entry, crop, element.Style.Stroke);
+                        DrawImageBorderSupport(canvas, element, entry, crop, element.Style.Foreground);
                     }
                     finally { canvas.RestoreToCount(clipped); }
                     tile++; continue;
@@ -184,7 +183,7 @@ public sealed partial class SceneRenderer
                 using var paint = ImageBorderPaint(element.ImageBorderWidth, SKColors.White);
                 foreach (var surface in surfaces) surface.Canvas.DrawPath(path, paint);
             }
-            else DrawComplexImageBorderGeometry(surfaces.Select(surface => surface.Canvas).ToArray(), element, support.Alpha!, crop, SKColors.White);
+            else DrawComplexImageBorderGeometry(surfaces.Select(surface => surface.Canvas).ToArray(), element, support.Alpha!, crop, support.Destination, SKColors.White);
             for (int i = 0; i < surfaces.Count; i++)
             {
                 using var image = surfaces[i].Snapshot();
@@ -233,12 +232,12 @@ public sealed partial class SceneRenderer
             var tint = new SKColor(color);
             using var layer = new SKPaint { Color = SKColors.White.WithAlpha(tint.Alpha) };
             int saved = tint.Alpha == 255 ? canvas.Save() : canvas.SaveLayer(layer);
-            try { DrawComplexImageBorderGeometry([canvas], element, support.Alpha!, crop, tint.WithAlpha(255)); }
+            try { DrawComplexImageBorderGeometry([canvas], element, support.Alpha!, crop, support.Destination, tint.WithAlpha(255)); }
             finally { canvas.RestoreToCount(saved); }
         }
     }
 
-    private ImageBorderEntry BuildImageBorder(CanvasElement element, SKImage image, RectD crop, bool gpuEffects)
+    private ImageBorderEntry BuildImageBorder(CanvasElement element, SKImage image, RectD crop, bool gpuEffects, RectD destination)
     {
         ImageBorderSupportBuildCount++;
         var alpha = new SKBitmap(new SKImageInfo(image.Width, image.Height, SKColorType.Alpha8, SKAlphaType.Premul));
@@ -262,14 +261,14 @@ public sealed partial class SceneRenderer
                     while (x < right && row[x] != 0) x++;
                     if (start == x) continue;
                     if (rectangles.Count == MaximumBorderContourRuns)
-                        return new(element, crop, gpuEffects, null, alpha, _clock);
+                        return new(element, crop, gpuEffects, destination, null, alpha, _clock);
                     rectangles.Add(new(start, y, x, y + 1));
                 }
             }
             if (rectangles.Count == 0)
             {
                 alpha.Dispose();
-                return new(element, crop, gpuEffects, new SKPath(), null, _clock);
+                return new(element, crop, gpuEffects, destination, new SKPath(), null, _clock);
             }
             using var region = new SKRegion();
             region.SetRects(CollectionsMarshal.AsSpan(rectangles));
@@ -277,23 +276,23 @@ public sealed partial class SceneRenderer
             using var builder = new SKPathBuilder(); builder.AddRect(ToRect(crop));
             using var cropPath = builder.Detach();
             var path = boundary.Op(cropPath, SKPathOp.Intersect) ?? new SKPath();
-            float sx = (float)(element.Width / crop.Width), sy = (float)(element.Height / crop.Height);
-            path.Transform(new SKMatrix(sx, 0, (float)-crop.Left * sx, 0, sy, (float)-crop.Top * sy, 0, 0, 1));
+            float sx = (float)(destination.Width / crop.Width), sy = (float)(destination.Height / crop.Height);
+            path.Transform(new SKMatrix(sx, 0, (float)destination.Left + (float)-crop.Left * sx, 0, sy, (float)destination.Top + (float)-crop.Top * sy, 0, 0, 1));
             alpha.Dispose();
-            return new(element, crop, gpuEffects, path, null, _clock);
+            return new(element, crop, gpuEffects, destination, path, null, _clock);
         }
         catch { alpha.Dispose(); throw; }
     }
 
     // A checkerboard can have millions of separate contours. Keep just its bounded Alpha8
     // bitmap and stream a fixed number of expanded row runs, rather than building a huge path.
-    private static void DrawComplexImageBorderGeometry(IReadOnlyList<SKCanvas> canvases, CanvasElement element, SKBitmap alpha, RectD crop, SKColor color)
+    private static void DrawComplexImageBorderGeometry(IReadOnlyList<SKCanvas> canvases, CanvasElement element, SKBitmap alpha, RectD crop, RectD destination, SKColor color)
     {
         using var paint = new SKPaint { Color = color.WithAlpha(255), IsAntialias = true };
         using var builder = new SKPathBuilder();
         var bytes = alpha.GetPixelSpan();
         int count = 0;
-        double sx = element.Width / crop.Width, sy = element.Height / crop.Height, width = element.ImageBorderWidth;
+        double sx = destination.Width / crop.Width, sy = destination.Height / crop.Height, width = element.ImageBorderWidth;
         int left = Math.Max(0, (int)Math.Floor(crop.Left)), right = Math.Min(alpha.Width, (int)Math.Ceiling(crop.Right));
         for (int y = Math.Max(0, (int)Math.Floor(crop.Top)); y < Math.Min(alpha.Height, (int)Math.Ceiling(crop.Bottom)); y++)
         {
@@ -304,10 +303,10 @@ public sealed partial class SceneRenderer
                 int start = x;
                 while (x < right && row[x] != 0) x++;
                 if (start == x) continue;
-                var rectangle = new SKRect((float)((Math.Max(start, crop.Left) - crop.Left) * sx - width),
-                    (float)((Math.Max(y, crop.Top) - crop.Top) * sy - width),
-                    (float)((Math.Min(x, crop.Right) - crop.Left) * sx + width),
-                    (float)((Math.Min(y + 1, crop.Bottom) - crop.Top) * sy + width));
+                var rectangle = new SKRect((float)(destination.Left + (Math.Max(start, crop.Left) - crop.Left) * sx - width),
+                    (float)(destination.Top + (Math.Max(y, crop.Top) - crop.Top) * sy - width),
+                    (float)(destination.Left + (Math.Min(x, crop.Right) - crop.Left) * sx + width),
+                    (float)(destination.Top + (Math.Min(y + 1, crop.Bottom) - crop.Top) * sy + width));
                 builder.AddRoundRect(rectangle, (float)width, (float)width);
                 if (++count == 1024)
                 { using var chunk = builder.Detach(); foreach (var canvas in canvases) canvas.DrawPath(chunk, paint); count = 0; }
@@ -316,7 +315,7 @@ public sealed partial class SceneRenderer
         if (count != 0) { using var chunk = builder.Detach(); foreach (var canvas in canvases) canvas.DrawPath(chunk, paint); }
     }
 
-    private readonly record struct ImageBorderFrameKey(Guid Element, int Frame);
+    private readonly record struct ImageBorderFrameKey(Guid Element, RasterFrameKey Frame);
     private readonly record struct ImageBorderMaskKey(SKMatrix Matrix, SKRectI Rectangle);
 
     private sealed class ImageBorderMask(ImageBorderMaskKey key, SKImage image, long used) : IDisposable
@@ -330,11 +329,12 @@ public sealed partial class SceneRenderer
         public void Dispose() => Image.Dispose();
     }
 
-    private sealed class ImageBorderEntry(CanvasElement element, RectD crop, bool gpuEffects, SKPath? path, SKBitmap? alpha, long used) : IDisposable
+    private sealed class ImageBorderEntry(CanvasElement element, RectD crop, bool gpuEffects, RectD destination, SKPath? path, SKBitmap? alpha, long used) : IDisposable
     {
         private readonly double width = element.Width, height = element.Height;
         private readonly string? assetId = element.AssetId;
         private readonly EffectSnapshot[] effects = element.Effects.Select(EffectSnapshot.From).ToArray();
+        public RectD Destination { get; } = destination;
         public SKPath? Path { get; } = path;
         public SKBitmap? Alpha { get; } = alpha;
         public long Used { get; set; } = used;
@@ -342,9 +342,9 @@ public sealed partial class SceneRenderer
         public Dictionary<ImageBorderMaskKey, ImageBorderMask> Masks { get; } = [];
         public long OwnBytes { get; } = 256 + (path is { } p ? (long)p.PointCount * 8 + p.VerbCount + 64 : 0) + (alpha?.ByteCount ?? 0) + element.Effects.Count * 64L;
         public long CachedBytes => OwnBytes + Masks.Values.Sum(mask => mask.CachedBytes);
-        public bool Matches(CanvasElement current, RectD sourceCrop, bool currentGpuEffects)
+        public bool Matches(CanvasElement current, RectD sourceCrop, bool currentGpuEffects, RectD currentDestination)
         {
-            if (assetId != current.AssetId || crop != sourceCrop || width != current.Width ||
+            if (assetId != current.AssetId || crop != sourceCrop || Destination != currentDestination || width != current.Width ||
                 height != current.Height || gpuEffects != currentGpuEffects || effects.Length != current.Effects.Count) return false;
             for (int i = 0; i < effects.Length; i++)
                 if (effects[i] != EffectSnapshot.From(current.Effects[i])) return false;

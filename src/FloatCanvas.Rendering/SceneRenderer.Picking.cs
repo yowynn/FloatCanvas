@@ -10,6 +10,7 @@ public sealed partial class SceneRenderer
     public bool IntersectsElementInk(SceneDocument document, AssetLibrary assets, CanvasElement element, RectD rectangle,
         CancellationToken cancellationToken = default)
     {
+        (document, element) = WorldElement(document, element);
         if (!element.Visible || element.Style.Opacity <= 0 || document.LayerOpacity <= 0) return false;
         var previousCancellation = pickingCancellation; pickingCancellation = cancellationToken;
         BeginFrame(document);
@@ -22,6 +23,7 @@ public sealed partial class SceneRenderer
     {
         var bounds = ProjectedBounds(document, element, includeStroke: true).Intersect(document.Viewport).Intersect(rectangle);
         if (bounds.IsEmpty || !double.IsFinite(bounds.Width) || !double.IsFinite(bounds.Height)) return false;
+        if (element.Kind == ElementKind.Presentation) return PresentationIntersects(document, element, rectangle);
         // Live effects own their sampling region even when the desktop happens to be uniform.
         if (ElementGeometry.IsLiveEffect(element.Kind)) return true;
         int width = (int)Math.Clamp(Math.Ceiling(bounds.Width) + 1, 1, 256);
@@ -49,6 +51,7 @@ public sealed partial class SceneRenderer
     public CanvasElement? PickDepth(SceneDocument document, AssetLibrary assets, PointD point, double tolerance = 4,
         CancellationToken cancellationToken = default)
     {
+        document = WorldDocument(document);
         if (!(document.LayerOpacity > 0)) return null;
         var previousCancellation = pickingCancellation; pickingCancellation = cancellationToken;
         var mapping = CanvasMapping.Create(document);
@@ -101,9 +104,11 @@ public sealed partial class SceneRenderer
                     ? ElementGeometry.HitTestProjected(item, point, mapping.PlaneToScreen, 0)
                         ? Alpha(item.Style.Opacity) : (byte)0
                     : Sample(canvas => DrawElement(canvas, item, assets, mapping.PlaneToScreen, document));
-                bool ink = alpha > 0 || tolerance > 0 && IntersectsElementInkCore(document, assets, item,
+                // A presentation's empty authored region is an editing target. Its
+                // locked region is not imaginary opaque ink covering lower objects.
+                bool ink = item.Kind == ElementKind.Presentation || alpha > 0 || tolerance > 0 && IntersectsElementInkCore(document, assets, item,
                     new(point.X - tolerance, point.Y - tolerance, tolerance * 2, tolerance * 2), cancellationToken);
-                if (!item.Locked && ink) return item;
+                if ((SceneEvaluation.RuntimeView(document)?.IsPickableOccurrence(item.Id) ?? !item.Locked) && ink) return item;
                 if (alpha == 255) return null;
             }
             return null;

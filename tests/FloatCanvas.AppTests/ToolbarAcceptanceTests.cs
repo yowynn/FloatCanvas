@@ -224,7 +224,7 @@ internal static class ToolbarAcceptanceTests
             check("done entry is a check mark rather than the pass-through cursor",mark.SequenceEqual(new[]{new Wpf.Point(2,8),new Wpf.Point(6,12),new Wpf.Point(14,3)}));
             check("save-stamp and stamp-management are independent lower-row entries",allButtons.Any(button=>Equals(button.Tag,"save-stamp")) && allButtons.Any(button=>Equals(button.Tag,"manage-stamps")));
             var imageMenu=more.ContextMenu;
-            check("More owns only general canvas blur and mosaic",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is not null && imageMenu.Items.OfType<Controls.MenuItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{L.Get("Tool.Blur"),L.Get("Tool.Pixelate")}));
+            check("More retains blur pixelate and both demonstration tools in order",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is not null && imageMenu.Items.OfType<Controls.MenuItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{L.Get("Tool.Blur"),L.Get("Tool.Pixelate"),L.Get("Tool.Presentation"),L.Get("Tool.PointerPresentation")}));
             var cropButton=buttons.Single(button=>Equals(button.Tag,"crop"));
             check("disabled unselected crop retains only its tool name",Controls.ToolTipService.GetShowOnDisabled(cropButton) && Equals(cropButton.ToolTip,L.Get("Tool.Crop")));
             var cropMenus=Field<List<Controls.MenuItem>>(session,"_cropMenuItems");

@@ -21,7 +21,7 @@ internal sealed class ToolPresetLibrary
 {
     private sealed class State
     {
-        public int Version { get; set; } = 1;
+        public int Version { get; set; } = 2;
         public List<ToolPreset> Presets { get; set; } = [];
     }
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
@@ -40,18 +40,19 @@ internal sealed class ToolPresetLibrary
         try
         {
             var state = compatibility.Read<State>(JsonOptions);
-            if (state is null || state.Version != 1 || state.Presets is null || state.Presets.Count > 1000 ||
+            if (state is null || state.Version is not (1 or 2) || state.Presets is null || state.Presets.Count > 1000 ||
                 state.Presets.Any(p => p is null || p.Id is not { Length: > 5 and <= 80 } || !p.Id.StartsWith("user-", StringComparison.Ordinal) ||
-                    !ValidName(p.Name) || p.Parameters is null || !p.Parameters.IsValid()) || state.Presets.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != state.Presets.Count)
+                    !ValidName(p.Name) || p.Parameters is null || !p.Parameters.IsValid(allowUnsupportedAppearance: true)) || state.Presets.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != state.Presets.Count)
                 throw new InvalidDataException(L.Get("Preset.InvalidLibrary"));
             presets = state.Presets.Select(p => p.Clone()).ToList();
+            foreach (var preset in presets) NormalizePointerPreset(preset.Parameters);
         }
         catch (JsonException ex) { throw new InvalidDataException(L.Get("Preset.InvalidLibrary"), ex); }
     }
 
     public IReadOnlyList<ToolPreset> Official => CreateOfficial();
     // Keep retired user records on disk while excluding them from executable recipes.
-    public IReadOnlyList<ToolPreset> User => presets.Where(p => p.Parameters.Tool != EditorTool.Redact).Select(p => p.Clone()).ToArray();
+    public IReadOnlyList<ToolPreset> User => presets.Where(p => p.Parameters.Tool != EditorTool.Redact && p.Parameters.IsValid()).Select(p => p.Clone()).ToArray();
     public IReadOnlyList<ToolPreset> All => Official.Concat(User).ToArray();
     internal static EditorTool Family(EditorTool tool) => tool switch
     {
@@ -72,6 +73,8 @@ internal sealed class ToolPresetLibrary
 
     public ToolPreset Save(string name, ToolParameters parameters)
     {
+        parameters = parameters.Clone(); parameters.NormalizeAppearance();
+        NormalizePointerPreset(parameters);
         Validate(name, parameters);
         if (presets.Count >= 1000) throw new InvalidDataException(L.Get("Preset.InvalidLibrary"));
         var preset = new ToolPreset { Id = "user-" + Guid.NewGuid().ToString("N"), Name = name.Trim(), Parameters = parameters.Clone() };
@@ -87,6 +90,8 @@ internal sealed class ToolPresetLibrary
 
     public ToolPreset Update(string id, ToolParameters parameters)
     {
+        parameters = parameters.Clone(); parameters.NormalizeAppearance();
+        NormalizePointerPreset(parameters);
         var preset = FindUser(id).Clone(); Validate(preset.Name, parameters); preset.Parameters = parameters.Clone();
         Replace(preset, L.Format("PresetHistory.Update", preset.Name)); return preset.Clone();
     }
@@ -112,6 +117,11 @@ internal sealed class ToolPresetLibrary
         }, movedId);
     }
     private static bool ValidName(string? name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 80;
+    private static void NormalizePointerPreset(ToolParameters parameters)
+    {
+        if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer)
+            pointer.Enabled = false; // The application master switch is not part of an effect recipe.
+    }
     private static void Validate(string name, ToolParameters parameters)
     {
         if (!ValidName(name)) throw new ArgumentException(L.Get("Preset.InvalidName"), nameof(name));
@@ -129,9 +139,10 @@ internal sealed class ToolPresetLibrary
             if (tool is EditorTool.Rectangle or EditorTool.Ellipse) { parameters.DefaultWidth = 144; parameters.DefaultHeight = 108; }
             if (tool is EditorTool.Number or EditorTool.Emoji) parameters.Style.FontSize = 72;
             if (tool == EditorTool.Text) parameters.Style.FontSize = 36;
-            if (tool == EditorTool.Number) parameters.Style.Fill = 0xFFFFFFFF;
+            if (tool == EditorTool.Number) parameters.Style.Background = 0xFFFFFFFF;
             if (tool == EditorTool.Highlighter) parameters.Style.StrokeWidth = 24;
             configure?.Invoke(parameters);
+            parameters.NormalizeAppearance();
             if (tool == EditorTool.CaptureRegion) parameters.ConstrainAspect = false;
             result.Add(new() { Id = "official." + id, Name = L.Get("Recipe." + key), Parameters = parameters, IsOfficial = true });
         }
@@ -142,8 +153,8 @@ internal sealed class ToolPresetLibrary
         Add("freehand-bold", "FreehandBold", EditorTool.Freehand, p => p.Style.StrokeWidth = 12);
         Add("freehand-dotted", "FreehandDotted", EditorTool.Freehand, p => { p.Style.StrokeWidth = 24; p.Style.StrokePattern = StrokePattern.Dotted; });
         Add("highlighter", "Highlighter", EditorTool.Highlighter);
-        Add("highlighter-yellow", "HighlighterYellow", EditorTool.Highlighter, p => { p.Style.Stroke = 0xFFCB912F; p.Style.StrokeWidth = 32; });
-        Add("highlighter-green", "HighlighterGreen", EditorTool.Highlighter, p => p.Style.Stroke = 0xFF448361);
+        Add("highlighter-yellow", "HighlighterYellow", EditorTool.Highlighter, p => { p.Style.Foreground = 0xFFCB912F; p.Style.StrokeWidth = 32; });
+        Add("highlighter-green", "HighlighterGreen", EditorTool.Highlighter, p => p.Style.Foreground = 0xFF448361);
         void Line(string id, string label, ArrowHeadStyle start, ArrowHeadStyle end, StrokePattern pattern = StrokePattern.Solid) =>
             Add(id, label, EditorTool.Line,
                 p => { p.Style.StartArrowHead = start; p.Style.EndArrowHead = end; p.Style.StrokePattern = pattern; });
@@ -155,26 +166,26 @@ internal sealed class ToolPresetLibrary
         Add("rectangle", "Rectangle", EditorTool.Rectangle, p => p.CornerRadius = 0);
         Add("rounded-rectangle", "RoundedRectangle", EditorTool.Rectangle, p => p.CornerRadius = 12);
         Add("square", "Square", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; });
-        Add("rectangle-soft", "RectangleSoft", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.Style.Fill = ColorLibrary.BackgroundRed; });
-        Add("rectangle-filled", "RectangleFilled", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.Style.Fill = ColorLibrary.BackgroundRed; p.Style.LinkColors = true; });
+        Add("rectangle-soft", "RectangleSoft", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.Style.Background = ColorLibrary.BackgroundRed; });
+        Add("rectangle-filled", "RectangleFilled", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.Style.Background = ColorLibrary.BackgroundRed; p.Style.Variant = ElementAppearance.ShapeUniform; });
         Add("circle", "Circle", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; });
         Add("ellipse", "Ellipse", EditorTool.Ellipse);
-        Add("circle-soft", "CircleSoft", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; p.Style.Fill = ColorLibrary.BackgroundRed; });
-        Add("circle-filled", "CircleFilled", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; p.Style.Fill = ColorLibrary.BackgroundRed; p.Style.LinkColors = true; });
+        Add("circle-soft", "CircleSoft", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; p.Style.Background = ColorLibrary.BackgroundRed; });
+        Add("circle-filled", "CircleFilled", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; p.Style.Background = ColorLibrary.BackgroundRed; p.Style.Variant = ElementAppearance.ShapeUniform; });
         // The shape picker applies every style to any geometry in one click.
         // Keep one canonical shape rather than repeating a recipe for each symbol.
         Add("triangle", "SymbolOutline", EditorTool.Symbol);
-        Add("symbol-soft", "SymbolSoft", EditorTool.Symbol, p => p.Style.Fill = ColorLibrary.BackgroundRed);
-        Add("symbol-filled", "SymbolFilled", EditorTool.Symbol, p => { p.Style.LinkColors = true; p.Style.Fill = ColorLibrary.BackgroundRed; });
+        Add("symbol-soft", "SymbolSoft", EditorTool.Symbol, p => p.Style.Background = ColorLibrary.BackgroundRed);
+        Add("symbol-filled", "SymbolFilled", EditorTool.Symbol, p => { p.Style.Variant = ElementAppearance.ShapeUniform; p.Style.Background = ColorLibrary.BackgroundRed; });
         Add("symbol-dashed", "SymbolDashed", EditorTool.Symbol, p => p.Style.StrokePattern = StrokePattern.Dashed);
-        Add("symbol-green", "SymbolGreen", EditorTool.Symbol, p => { p.Style.Stroke = 0xFF448361; p.Style.StrokeWidth = 6; });
+        Add("symbol-green", "SymbolGreen", EditorTool.Symbol, p => { p.Style.Foreground = 0xFF448361; p.Style.StrokeWidth = 6; });
         Add("text", "Text", EditorTool.Text);
         Add("text-heading", "TextHeading", EditorTool.Text, p => p.Style.FontSize = 48);
-        Add("text-body", "TextBody", EditorTool.Text, p => { p.Style.Stroke = 0xFF252525; p.Style.FontSize = 24; });
-        Add("text-label", "TextLabel", EditorTool.Text, p => { p.Style.Stroke = 0xFF2383E2; p.Style.FontSize = 28; p.Style.TextAlignment = TextAlignment.Center; });
+        Add("text-body", "TextBody", EditorTool.Text, p => { p.Style.Foreground = 0xFF252525; p.Style.FontSize = 24; });
+        Add("text-label", "TextLabel", EditorTool.Text, p => { p.Style.Foreground = 0xFF2383E2; p.Style.FontSize = 28; p.Style.TextAlignment = TextAlignment.Center; });
         Add("number", "Number", EditorTool.Number);
-        Add("number-blue", "NumberBlue", EditorTool.Number, p => { p.Style.Stroke = 0xFF2383E2; p.Style.FontSize = 48; });
-        Add("number-compact", "NumberCompact", EditorTool.Number, p => { p.Style.Stroke = 0xFF252525; p.Style.FontSize = 36; });
+        Add("number-blue", "NumberBlue", EditorTool.Number, p => { p.Style.Foreground = 0xFF2383E2; p.Style.FontSize = 48; });
+        Add("number-compact", "NumberCompact", EditorTool.Number, p => { p.Style.Foreground = 0xFF252525; p.Style.FontSize = 36; });
         Add("eraser", "Eraser", EditorTool.Eraser);
         Add("blur", "Blur", EditorTool.Blur);
         Add("blur-fine", "BlurFine", EditorTool.Blur, p => p.EffectStrength = 6);
@@ -199,6 +210,27 @@ internal sealed class ToolPresetLibrary
         Add("emoji-check", "EmojiCheck", EditorTool.Emoji, p => p.Emoji = "✅");
         Add("emoji-warning", "EmojiWarning", EditorTool.Emoji, p => p.Emoji = "⚠️");
         Add("stamp", "Stamp", EditorTool.Stamp);
+        Add("presentation-keys", "PresentationKeys", EditorTool.Presentation, p =>
+        {
+            p.DefaultWidth = 360; p.DefaultHeight = 120; p.Style.Foreground = 0xFFF8FAFC; p.Style.Background = 0xDD20252F; p.Style.FontSize = 22;
+            p.Presentation = new() { Modules = PresentationModules.Keys, KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys };
+        });
+        Add("presentation-keycaps", "PresentationKeycaps", EditorTool.Presentation, p =>
+        {
+            p.DefaultWidth = 360; p.DefaultHeight = 100; p.Style.Foreground = 0xFFF8FAFC; p.Style.Background = 0xDD20252F; p.Style.FontSize = 22;
+            p.Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keycaps, KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys };
+        });
+        Add("presentation-keyboard", "PresentationKeyboard", EditorTool.Presentation, p =>
+        {
+            p.DefaultWidth = 760; p.DefaultHeight = 260; p.Style.Foreground = 0xFFF8FAFC; p.Style.Background = 0xDD20252F; p.Style.FontSize = 18;
+            p.Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keyboard, KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys, KeyPanelMaximumWidth = 760 };
+        });
+        Add("presentation-pointer-halo", "PresentationPointerHalo", EditorTool.PointerPresentation, p =>
+            p.PointerPresentation = new() { CursorEnabled = true, ClicksEnabled = false, TrailEnabled = false });
+        Add("presentation-pointer-clicks", "PresentationPointerClicks", EditorTool.PointerPresentation, p =>
+            p.PointerPresentation = new() { CursorEnabled = false, ClicksEnabled = true, TrailEnabled = false });
+        Add("presentation-pointer-trail", "PresentationPointerTrail", EditorTool.PointerPresentation, p =>
+            p.PointerPresentation = new() { CursorEnabled = true, ClicksEnabled = false, TrailEnabled = true });
         return result;
     }
 }

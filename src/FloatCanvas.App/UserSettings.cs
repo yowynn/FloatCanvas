@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FloatCanvas.Windows;
+using FloatCanvas.Core;
 
 namespace FloatCanvas.App;
 
@@ -27,7 +28,18 @@ internal sealed class UserSettings
     [JsonIgnore] public bool ShowPassThroughLauncher { get => ShowFloatingLogo; set => ShowFloatingLogo = value; }
     public bool IncludePrereleaseUpdates { get; set; }
     public bool PreferGpuAcceleration { get; set; } = true;
+    public BillboardCreationWorkflow BillboardWorkflow { get; set; } = BillboardCreationWorkflow.ScreenFirst;
     public string OverlayMode { get; set; } = "auto";
+    private PresentationGlobalSettings presentationGlobal = new();
+    public PresentationGlobalSettings PresentationGlobal
+    {
+        get => presentationGlobal;
+        set
+        {
+            presentationGlobal = value?.IsValid() == true ? value.Clone() : new();
+            presentationGlobal.Pointer.NormalizeColorAlpha();
+        }
+    }
     private int historyVersionLimit = 60;
     public int HistoryVersionLimit { get => historyVersionLimit; set => historyVersionLimit = value >= 0 ? Math.Min(value, 1000) : 60; }
     public int NumberStart { get; set; } = 1;
@@ -45,6 +57,7 @@ internal sealed class UserSettings
 
     public void Save()
     {
+        presentationGlobal.Pointer.NormalizeColorAlpha();
         (compatibility??=new CompatibleConfiguration(FilePath)).Save(this,JsonOptions);
     }
 }

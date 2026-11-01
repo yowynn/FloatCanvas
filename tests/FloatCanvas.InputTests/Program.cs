@@ -15,6 +15,9 @@ namespace FloatCanvas.InputTests;
 
 internal static partial class Program
 {
+    private sealed record CreationReadyState(bool Ready, bool OwnerMatches, long PresentedRevision, long CurrentRevision,
+        bool ContextMatches, bool Uncertain, bool PickingSuspended, bool Gate, bool Pending, bool Busy, int DocumentIdentity);
+    private static readonly List<object> CreationReadiness = [];
     private static readonly Type DesktopType = Type.GetType("FloatCanvas.App.DesktopSession, FloatCanvas", true)!;
     private static readonly Type ToolType = Type.GetType("FloatCanvas.App.EditorTool, FloatCanvas", true)!;
     private static readonly List<object> Checks = [], ToolEvidence = [];
@@ -40,12 +43,20 @@ internal static partial class Program
     private static int LongLineMoves, LongLinePoints;
     private static IReadOnlyList<MonitorInfo> Monitors = [];
     private static Native.Point Anchor;
+    private static bool UseFreeTestHotkeys;
+    private static bool ActivateOwnedFixture;
+    private static string? NativeToolProbe;
+    private static HotkeyBinding TestToggle = HotkeyBinding.DefaultToggle, TestHide = HotkeyBinding.DefaultHide;
 
     [STAThread]
     private static int Main(string[] args)
     {
         if (args.Contains("--presentation-logic-only", StringComparer.Ordinal)) return PresentationMeasurements.RunLogicChecks();
         if (args.Length == 2 && args[0] == "--keyboard-observer") return RunKeyboardObserver(args[1]);
+        UseFreeTestHotkeys = args.Contains("--use-free-test-hotkeys", StringComparer.Ordinal);
+        ActivateOwnedFixture = args.Contains("--activate-owned-fixture", StringComparer.Ordinal);
+        int nativeToolIndex = Array.IndexOf(args, "--native-tool");
+        if (nativeToolIndex >= 0) NativeToolProbe = args.ElementAtOrDefault(nativeToolIndex + 1) ?? throw new ArgumentException("--native-tool requires a tool name.");
         KeyboardIsolation = args.Contains("--keyboard-isolation", StringComparer.Ordinal);
         KeyboardBridgeProbe = args.Contains("--keyboard-bridge-probe", StringComparer.Ordinal);
         KeyboardBridgeNativeModalProbe = args.Contains("--keyboard-bridge-native-modal-probe", StringComparer.Ordinal);
@@ -76,6 +87,7 @@ internal static partial class Program
             {
                 bool restoreOwnEnvironment = !PresentationThroughput || Lower?.Handle == Native.GetForegroundWindow() ||
                     Host?.Diagnostics.Any(w => w.InputHandle == Native.GetForegroundWindow()) == true;
+                if (ActivateOwnedFixture) restoreOwnEnvironment &= Native.IsOwnWindow(Native.GetForegroundWindow());
                 try { Cleanup(); }
                 catch (Exception ex) { Failure = (Failure ?? "") + "\nCleanup: " + ex; exitCode = 1; }
                 if (restoreOwnEnvironment)
@@ -95,7 +107,15 @@ internal static partial class Program
     private static async Task Run(Wpf.Application app)
     {
         RunDiagnosticStart = Stopwatch.GetTimestamp();
-        Lower = new NativeTestWindow(); Lower.Activate();
+        Lower = new NativeTestWindow();
+        if (ActivateOwnedFixture)
+        {
+            await Native.ActivateOwnedFixtureAsync(Lower);
+            Check(Lower.Counts.Clicks == 1 && Lower.Counts.Ups == 1 && Lower.Counts.DoubleClicks == 0 && Lower.Counts.DragMoves == 0,
+                "Owned activation prelude completes exactly one click before the production host is constructed");
+            Lower.Counts.Clicks = 0; Lower.Counts.Ups = 0;
+        }
+        else Lower.Activate();
         await WaitForOwnFixtureActivation();
         Session = ConstructOrdinarySession(app);
         await CallAsync("InitializeDocumentsAsync", true);
@@ -110,7 +130,9 @@ internal static partial class Program
                 Foreground = foreground.ToInt64(), ForegroundPid = pid, Host.IsEditing, PointerInjections, LongLineMoves });
             Console.WriteLine($"KEYBOARD_ISOLATION_RELEASED: reason={reason}; elapsedMs={elapsedMilliseconds:F3}; foreground={foreground}; pid={pid}; editing={Host.IsEditing}; pointerInjections={PointerInjections}; longLineMoves={LongLineMoves}");
         };
-        Host.RegisterHotkeys(HotkeyBinding.DefaultToggle, HotkeyBinding.DefaultHide);
+        if (UseFreeTestHotkeys) (TestToggle, TestHide) = FreeTestHotkeys();
+        Console.WriteLine($"TEST_HOTKEYS temporary={UseFreeTestHotkeys} toggle={TestToggle} hide={TestHide}");
+        Host.RegisterHotkeys(TestToggle, TestHide);
         var first = Lower.ScreenPoint(170, 190); var last = Lower.ScreenPoint(310, 270);
         Anchor = first;
         Check(Lower.OwnsPoint(new(first.X - 50, first.Y - 60)) && Lower.OwnsPoint(new(last.X + 100, last.Y + 100)), "Tool and transform sample rectangle is strictly inside our self-owned native client");
@@ -118,26 +140,42 @@ internal static partial class Program
         await ActivateInput();
         var editor = Active();
         int toolRound = 0;
-        foreach (string tool in RotationProbe ? Enumerable.Repeat("Freehand", 6) : new[] { "Freehand", "Highlighter", "Line", "Arrow", "DoubleArrow", "Rectangle", "RoundedRectangle", "Ellipse", "Triangle", "Number" })
+        foreach (string tool in RotationProbe ? Enumerable.Repeat("Freehand", 6) : NativeToolProbe is { } probe ? [probe] : new[] { "Freehand", "Highlighter", "Line", "Arrow", "DoubleArrow", "Rectangle", "RoundedRectangle", "Ellipse", "Triangle", "Number" })
         {
             toolRound++;
-            var document = editor.Document.Clone(); document.Elements.Clear(); document.NextNumber = 1;
+            var document = editor.Document.Clone(); document.Elements.Clear(); document.RootOrder?.Clear(); document.NextNumber = 1;
             editor.ReplaceDocument(document);
             SelectTool(tool);
             ((ElementStyle)Field<object>("_editor").GetType().GetProperty("Style")!.GetValue(Field<object>("_editor"))!).Stroke = 0xFF2383E2;
             await ActivateInput();
-            if (tool == "Number") await Click(new(first.X + 70, first.Y + 40));
-            else
+            await WaitForCreationPresentation(editor, tool);
+            var creationEvents = new List<object>();
+            void ObserveCreation(OverlayPointerEvent e) => creationEvents.Add(new { At = Stopwatch.GetTimestamp(), e.Kind, e.Button, e.Modifiers, e.Position,
+                Count = editor.Document.Elements.Count, editor.IsTransactionActive, Host!.IsEditing, Capture = Native.GetCapture().ToInt64(),
+                ActualTool = Field<object>("_editor").GetType().GetProperty("Tool")!.GetValue(Field<object>("_editor"))!.ToString() });
+            Host.Pointer += ObserveCreation;
+            try
             {
-                var path = Enumerable.Range(0, 25).Select(i => new Native.Point(first.X + (last.X - first.X) * i / 24,
-                    tool is "Freehand" or "Highlighter" ? first.Y + 38 + (int)Math.Round(Math.Sin(i * Math.PI * 2 / 24) * 25) : first.Y + (last.Y - first.Y) * i / 24)).ToArray();
-                await Drag(path);
+                if (tool == "Number") await Click(new(first.X + 70, first.Y + 40));
+                else
+                {
+                    var path = Enumerable.Range(0, 25).Select(i => new Native.Point(first.X + (last.X - first.X) * i / 24,
+                        tool is "Freehand" or "Highlighter" ? first.Y + 38 + (int)Math.Round(Math.Sin(i * Math.PI * 2 / 24) * 25) : first.Y + (last.Y - first.Y) * i / 24)).ToArray();
+                    await Drag(path);
+                }
+                await WaitForRenderToSettle();
             }
-            await WaitForRenderToSettle();
+            finally { Host.Pointer -= ObserveCreation; }
+            if (editor.Document.Elements.Count != 1 || NativeToolProbe is not null)
+                Console.WriteLine("NATIVE_CREATION_OBSERVATION " + JsonSerializer.Serialize(new { RequestedTool = tool, Round = toolRound,
+                    ActualTool = Field<object>("_editor").GetType().GetProperty("Tool")!.GetValue(Field<object>("_editor"))!.ToString(),
+                    Count = editor.Document.Elements.Count, Selection = editor.Selection.ToArray(), editor.IsTransactionActive, Host.IsEditing,
+                    First = new { first.X, first.Y }, Last = new { last.X, last.Y }, Foreground = Native.GetForegroundWindow().ToInt64(), HitAtFirst = Native.WindowFromPoint(first).ToInt64(),
+                    Capture = Native.GetCapture().ToInt64(), DoubleClickMilliseconds = Native.GetDoubleClickTime(), Events = creationEvents }));
             Check(editor.Document.Elements.Count == 1, tool + ": real WM pointer input created exactly one object");
             var element = editor.Document.Elements.Single(); Guid id = element.Id;
             Check(MatchesTool(element, tool), tool + ": actual controller tool retains the requested geometry and endpoint styles");
-            Check(tool is "Freehand" or "Highlighter" ? editor.Selection.Count == 0 : editor.Selection.SetEquals([id]),
+            Check(tool is "Freehand" or "Highlighter" or "Line" or "Arrow" or "DoubleArrow" ? editor.Selection.Count == 0 : editor.Selection.SetEquals([id]),
                 tool + ": real creation preserves its tool-specific selection policy");
             var bounds = ElementGeometry.Bounds(element, includeStroke: false);
             if (tool != "Number" && !(Math.Abs(bounds.Left - first.X) <= 2 && Math.Abs(bounds.Right - last.X) <= 2 && bounds.Height >= 40))
@@ -196,9 +234,10 @@ internal static partial class Program
             ToolEvidence.Add(new { Tool = tool, Round = toolRound, RealDragOrClick = true, ToolSelectedProgrammatically = true, VisibleBlueSamples = visiblePixels, PointCount = element.Points.Count, ElementId = id });
             Console.WriteLine($"Verified native tool: {tool}");
         }
-        if (RotationProbe) return;
+        if (RotationProbe || NativeToolProbe is not null) return;
 
-        // Real default RegisterHotKey behavior. Pass-through hotkeys may target only our native
+        // Real RegisterHotKey behavior; only explicit opt-in substitutes temporary test bindings.
+        // Pass-through hotkeys may target only our native
         // lower HWND; drawing and undo keyboard input always require the production input HWND.
         string content = JsonSerializer.Serialize(editor.Document);
         for (int i = 0; i < 100; i++)
@@ -207,16 +246,20 @@ internal static partial class Program
             if (Host.IsEditing) await ActivateInput(); else Lower.Activate();
             CheckHotkeyForeground();
             var stopwatch = Stopwatch.StartNew();
-            SendKey(0x11, false, true); SendKey(0xC0, false, true);
-            SendKey(0xC0, true, true); SendKey(0x11, true, true);
-            await WaitUntil(() => Host.IsEditing == expected, "Real default shortcut did not toggle the production application");
+            if (UseFreeTestHotkeys) PressTestBinding(TestToggle);
+            else
+            {
+                SendKey(0x11, false, true); SendKey(0xC0, false, true);
+                SendKey(0xC0, true, true); SendKey(0x11, true, true);
+            }
+            await WaitUntil(() => Host.IsEditing == expected, UseFreeTestHotkeys ? "Real temporary test shortcut did not toggle the production application" : "Real default shortcut did not toggle the production application");
             ToggleMilliseconds.Add(stopwatch.Elapsed.TotalMilliseconds);
-            Check(JsonSerializer.Serialize(editor.Document) == content, $"Default shortcut toggle {i + 1}: object content remains identical");
+            Check(JsonSerializer.Serialize(editor.Document) == content, $"{(UseFreeTestHotkeys ? "Temporary test shortcut" : "Default shortcut")} toggle {i + 1}: object content remains identical");
         }
         Check(Host.IsEditing, "One hundred real shortcut switches end back in editing mode");
         await ActivateInput();
         SelectTool("Freehand");
-        var longDocument = editor.Document.Clone(); longDocument.Elements.Clear(); editor.ReplaceDocument(longDocument);
+        var longDocument = editor.Document.Clone(); longDocument.Elements.Clear(); longDocument.RootOrder?.Clear(); editor.ReplaceDocument(longDocument);
         var longStart = Lower.ScreenPoint(120, 180);
         Move(longStart); Down();
         try
@@ -316,6 +359,35 @@ internal static partial class Program
         }
         if (Native.GetForegroundWindow() != hwnd) throw new InvalidOperationException($"Production input HWND {hwnd} could not become foreground ({Native.GetForegroundWindow()}); no keyboard input injected.");
     }
+    private static CreationReadyState ReadCreationReady(EditorSession editor)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var controller = Field<object>("_editor");
+        bool ownerMatches = ReferenceEquals(controller.GetType().GetField("presentedOwner", flags)!.GetValue(controller), editor.Document);
+        long revision = (long)controller.GetType().GetField("presentedContentRevision", flags)!.GetValue(controller)!;
+        bool suspended = (bool)controller.GetType().GetField("presentedPickingSuspended", flags)!.GetValue(controller)!;
+        bool uncertain = Field<bool>("_presentationUncertain");
+        bool context = Equals(Field<object?>("_presentedCanvasContext"), Call("CurrentPreviewContext"));
+        bool gate = Host!.CanBeginCanvasGesture?.Invoke() != false;
+        bool pending = (bool)DesktopType.GetProperty("IsRenderPending", flags)!.GetValue(Session)!;
+        bool busy = ReadPreviewProperty<bool>("Busy");
+        return new(ownerMatches && revision == editor.PreviewRevision && context && !uncertain && !suspended && gate && !pending && !busy,
+            ownerMatches, revision, editor.PreviewRevision, context, uncertain, suspended, gate, pending, busy,
+            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(editor.Document));
+    }
+    private static async Task WaitForCreationPresentation(EditorSession editor, string tool)
+    {
+        long started = Stopwatch.GetTimestamp(); var before = ReadCreationReady(editor); var current = before; bool denied = !before.Gate;
+        while (!current.Ready)
+        {
+            if (Stopwatch.GetElapsedTime(started).TotalSeconds > 10)
+                throw new TimeoutException("Current document/revision was not presented before native creation: " + JsonSerializer.Serialize(current));
+            await Task.Delay(1); current = ReadCreationReady(editor); denied |= !current.Gate;
+        }
+        var evidence = new { Tool = tool, Before = before, After = current, ObservedGateDenied = denied, WaitMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds };
+        CreationReadiness.Add(evidence); Console.WriteLine("NATIVE_CREATION_READY " + JsonSerializer.Serialize(evidence));
+        Check(current.Ready, tool + ": exact current document and revision are presented and production gesture gate is ready before physical Down");
+    }
     private static async Task Undo()
     {
         await ActivateInput(); SendKey(0x11, false, false); SendKey(0x5A, false, false); SendKey(0x5A, true, false); SendKey(0x11, true, false);
@@ -340,6 +412,30 @@ internal static partial class Program
     {
         foreach (ushort key in HeldModifiers.ToArray()) Native.Key(key, true);
         HeldModifiers.Clear();
+    }
+    private static void PressTestBinding(HotkeyBinding binding)
+    {
+        var modifiers = new List<ushort>();
+        if ((binding.Modifiers & 2) != 0) modifiers.Add(0x11);
+        if ((binding.Modifiers & 1) != 0) modifiers.Add(0x12);
+        if ((binding.Modifiers & 4) != 0) modifiers.Add(0x10);
+        foreach (ushort key in modifiers) SendKey(key, false, true);
+        SendKey((ushort)binding.VirtualKey, false, true); SendKey((ushort)binding.VirtualKey, true, true);
+        foreach (ushort key in modifiers.AsEnumerable().Reverse()) SendKey(key, true, true);
+    }
+    private static (HotkeyBinding Toggle, HotkeyBinding Hide) FreeTestHotkeys()
+    {
+        for (uint key = 0x7C; key < 0x87; key++)
+        {
+            if (!Native.RegisterHotKey(0, 0x53A1, 0x4007, key)) continue;
+            try
+            {
+                if (!Native.RegisterHotKey(0, 0x53A2, 0x4007, key + 1)) continue;
+                Native.UnregisterHotKey(0, 0x53A2); return (new(7, key), new(7, key + 1));
+            }
+            finally { Native.UnregisterHotKey(0, 0x53A1); }
+        }
+        throw new InvalidOperationException("No temporary Ctrl+Alt+Shift function-key pair is available for this owned fixture.");
     }
     private static int CountBlueScreenPixels(CanvasElement element)
     {
@@ -431,6 +527,10 @@ internal static partial class Program
         {
             Passed = passed, Failure, Timestamp = DateTimeOffset.Now, Profile, Checks, ToolEvidence, RotationProbe, ProbeInputViolation,
             WaitForInitialOwnFixtureActivation = KeyboardWaitForActivation,
+            UseFreeTestHotkeys, ToggleBinding = TestToggle, HideBinding = TestHide,
+            ActivateOwnedFixture,
+            NativeToolProbe,
+            CreationReadiness,
             ToolSelection = "Reflection invokes production SelectTool; drawing and transformations use real guarded SendInput and native WM messages.",
             PointerGuards, KeyboardGuards, PointerInjections, KeyboardInjections, KeyboardReleaseEvents,
             HotkeySwitches = ToggleMilliseconds.Count, HotkeySwitchP95Milliseconds = ToggleMilliseconds.Count == 0 ? 0 : ToggleMilliseconds.Order().ElementAt((int)Math.Ceiling(ToggleMilliseconds.Count * .95) - 1),

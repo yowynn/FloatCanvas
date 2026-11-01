@@ -12,6 +12,11 @@ internal sealed partial class EditorController
     /// <summary>Uses the normal Move selection gesture while retaining the actual tool and its working parameters.</summary>
     internal bool HandleTemporaryMovePointer(OverlayPointerEvent e)
     {
+        if (Tool == EditorTool.PointerPresentation)
+        {
+            if (temporaryMove || e.Kind == OverlayPointerKind.Cancel) Cancel();
+            return true;
+        }
         if (e.Kind == OverlayPointerKind.Cancel)
         {
             if (!temporaryMove) return false;
@@ -20,9 +25,10 @@ internal sealed partial class EditorController
         if (e.Button == OverlayMouseButton.Middle && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
         {
             Cancel();
+            if (Session.IsTransactionActive) return true;
             temporaryMove = true;
-            pointerScreen = new(e.Position.X - ScreenOrigin.X, e.Position.Y - ScreenOrigin.Y);
-            if (CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out var point) || TryBillboardSelectionInput(out point))
+            pointerScreen = new(e.Position.X - CanvasOrigin.X, e.Position.Y - CanvasOrigin.Y);
+            if (CurrentCanvasMapping.TryToPlane(pointerScreen, out var point) || TryBillboardSelectionInput(out point))
             {
                 start = point; startScreen = pointerScreen;
                 gestureModifiers = e.Modifiers;

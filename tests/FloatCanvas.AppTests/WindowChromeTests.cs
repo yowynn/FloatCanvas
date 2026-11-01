@@ -130,7 +130,7 @@ internal static class WindowChromeTests
             assert(mode + " " + (style ?? "Button") + " retains a deliberate pressed surface", ((Media.SolidColorBrush)chrome.Background).Color == Resource(style == "CanvasCloseCaptionButton" ? "CanvasCloseHover" : "CanvasPressed"));
             button.SetValue(pressedKey, false); button.SetValue(hoverKey, false);
         }
-        var layerToggle = (Primitives.ToggleButton)typeof(LayersWindow).GetMethod("StateButton", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.Invoke(null, null)!;
+        var layerToggle = (Primitives.ToggleButton)typeof(LayerTreeRowPresenter).GetMethod("StateButton", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.Invoke(null, null)!;
         Layout(layerToggle); var toggleChrome = (Controls.Border)layerToggle.Template.FindName("Chrome", layerToggle);
         var toggleSize = toggleChrome.RenderSize; layerToggle.SetValue(hoverKey, true); Layout(layerToggle);
         assert(mode + " layer state toggles share the ordinary hover without geometry changes", ((Media.SolidColorBrush)toggleChrome.Background).Color == Resource("CanvasButtonHover") && toggleChrome.RenderSize == toggleSize);

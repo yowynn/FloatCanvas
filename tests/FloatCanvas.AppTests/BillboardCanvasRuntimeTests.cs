@@ -65,6 +65,7 @@ internal static class BillboardCanvasRuntimeTests
             editor.Session.NotifyChanged();
             editor.Tool = EditorTool.Rectangle;
             editor.Style.Stroke = 0xFFB93349; editor.Style.StrokeWidth = 5; editor.Style.Fill = 0x20404040;
+            editor.BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine;
             editor.BillboardMode = true;
             var mapping = CanvasMapping.Create(document);
 

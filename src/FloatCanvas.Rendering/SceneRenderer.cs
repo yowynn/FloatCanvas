@@ -42,7 +42,7 @@ public sealed partial class SceneRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(assets);
-        BeginFrame(document, space);
+        document = BeginFrame(document, space);
         int saved = canvas.Save();
         try
         {
@@ -81,8 +81,10 @@ public sealed partial class SceneRenderer : IDisposable
         finally { canvas.RestoreToCount(saved); EndFrame(); }
     }
 
-    internal void BeginFrame(SceneDocument document, SceneRenderSpace space = SceneRenderSpace.ScreenComposite)
+    internal SceneDocument BeginFrame(SceneDocument document, SceneRenderSpace space = SceneRenderSpace.ScreenComposite)
     {
+        var source = document;
+        document = WorldDocument(document);
         ObjectDisposedException.ThrowIf(_disposed, this); ClearLiveEffectImages(); NextAnimationDelay = null; _clock++;
         GridCandidateCount = GridLineCount = 0;
         GridDashIntervalCount = 0;
@@ -90,14 +92,19 @@ public sealed partial class SceneRenderer : IDisposable
         if (space == SceneRenderSpace.PlaneContent && document.Elements.Any(e => e.Visible && ElementGeometry.IsLiveEffect(e.Kind)))
             throw new InvalidOperationException("Live desktop filters require screen composition before being placed back on the plane.");
         _drawingDocument = document; _renderSpace = space; _mapping = CanvasMapping.Create(document);
+        _frameLiveEffectContext = LiveEffectContext is { } context
+            ? ReferenceEquals(context, source) ? document : WorldDocument(context) : null;
+        PreparePresentation(document, space);
+        PrepareWindowFrames(document);
         var viewport = document.Viewport;
         _referenceOpacityAtHorizon = space == SceneRenderSpace.ScreenComposite &&
             (!_mapping.IsScreenSafe(new(viewport.Left, viewport.Top)) || !_mapping.IsScreenSafe(new(viewport.Right, viewport.Top)) ||
              !_mapping.IsScreenSafe(new(viewport.Right, viewport.Bottom)) || !_mapping.IsScreenSafe(new(viewport.Left, viewport.Bottom)));
+        return document;
     }
     internal void EndFrame()
     {
-        ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); _drawingDocument = null; _mapping = null; _referenceOpacityAtHorizon = false;
+        ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); _drawingDocument = null; _frameLiveEffectContext = null; _mapping = null; _referenceOpacityAtHorizon = false;
     }
     internal void DrawBackground(SKCanvas canvas, SceneDocument document, AssetLibrary assets,
         bool includeBackground = true, bool includeCanvasBackground = true, bool sampling = false, double canvasOpacity = 1)
@@ -165,14 +172,16 @@ public sealed partial class SceneRenderer : IDisposable
     private void DrawElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets, Projective2D planeToTarget, SceneDocument? document, bool knownHardClip = false)
     {
         if (element.Style.Opacity <= 0) return;
+        if (element.Kind == ElementKind.Presentation) { DrawPresentation(canvas, element); return; }
         int saved = canvas.Save();
         try
         {
             // Our safe-domain clips are hard polygons. Keep that provenance rather than
             // treating an arbitrary caller-supplied path/AA clip as interchangeable.
             bool opacityClipSafe = canvas.IsClipRect || knownHardClip;
-            var transform = BillboardGeometry.ElementToTarget(element, planeToTarget);
-            if (_renderSpace == SceneRenderSpace.ScreenComposite && document is not null)
+            bool screenDraft = IsTransientScreenElement(document, element);
+            var transform = BillboardGeometry.ElementToTarget(element, screenDraft ? Projective2D.Identity : planeToTarget);
+            if (!screenDraft && _renderSpace == SceneRenderSpace.ScreenComposite && document is not null)
             {
                 var mapping = MappingFor(document);
                 if (element.IsBillboard)
@@ -231,7 +240,7 @@ public sealed partial class SceneRenderer : IDisposable
             else if (element.Kind == ElementKind.Text)
             {
                 if (element.TextFrameFixed) canvas.ClipRect(new(0, 0, (float)element.Width, (float)element.Height));
-                SetPaint(element.Style.Stroke, SKPaintStyle.Fill);
+                SetPaint(element.Style.Foreground, SKPaintStyle.Fill);
                 if (EmojiGlyphs.IsEmoji(element.Text, element.Style))
                 {
                     var glyph = EmojiGlyphs.Measure(element.Text, element.Style.FontSize);
@@ -245,11 +254,11 @@ public sealed partial class SceneRenderer : IDisposable
             {
                 var geometry = GetPath(element);
                 bool shape = element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
-                uint fill = element.Style.LinkColors ? element.Style.Stroke : element.Style.Fill;
+                uint fill = ElementAppearance.ShapeFill(element.Style);
                 if (shape) DrawInsideShape(canvas, element, geometry, fill, directOpacity);
                 else if (element.Style.StrokeWidth > 0)
                 {
-                    SetPaint(element.Style.Stroke, SKPaintStyle.Stroke, element.Style.StrokeWidth);
+                    SetPaint(element.Style.Foreground, SKPaintStyle.Stroke, element.Style.StrokeWidth);
                     if (element.Kind == ElementKind.Highlighter) _paint.Color = _paint.Color.WithAlpha((byte)Math.Round(_paint.Color.Alpha * .35));
                     var strokeMatrix = canvas.TotalMatrix;
                     var opacityStroke = !includeOpacity && directOpacity == 1 && canvas.Context is null &&
@@ -300,7 +309,7 @@ public sealed partial class SceneRenderer : IDisposable
     private void DrawInsideShape(SKCanvas canvas, CanvasElement element, PathEntry geometry, uint fill, double directOpacity)
     {
         bool filled = (fill >> 24) != 0;
-        bool stroked = element.Style.StrokeWidth > 0 && (element.Style.Stroke >> 24) != 0;
+        bool stroked = element.Style.StrokeWidth > 0 && (element.Style.Foreground >> 24) != 0;
         // Replace fill with stroke on an isolated element layer, including the
         // antialiased transition. SourceOver would stack translucent colors there.
         int layer = filled && stroked ? canvas.SaveLayer(ToRect(geometry.StrokedBounds), null) : -1;
@@ -315,7 +324,7 @@ public sealed partial class SceneRenderer : IDisposable
             if (stroked)
             {
                 if (layer >= 0) _paint.BlendMode = SKBlendMode.Src;
-                SetPaint(element.Style.Stroke, SKPaintStyle.Fill);
+                SetPaint(element.Style.Foreground, SKPaintStyle.Fill);
                 if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
                 canvas.DrawPath(geometry.InnerStroke, _paint);
             }
@@ -331,7 +340,7 @@ public sealed partial class SceneRenderer : IDisposable
     {
         if (element.Kind is ElementKind.Freehand or ElementKind.Highlighter) return true;
         if (!ElementGeometry.IsBoxShape(element.Kind)) return false;
-        uint fill = element.Style.LinkColors ? element.Style.Stroke : element.Style.Fill;
+        uint fill = ElementAppearance.ShapeFill(element.Style);
         return (fill >> 24) == 0 || element.Style.StrokeWidth <= 0;
     }
 
@@ -411,11 +420,14 @@ public sealed partial class SceneRenderer : IDisposable
     {
         float width = (float)element.Width, height = (float)element.Height;
         if (width <= 0 || height <= 0) return;
-        SetPaint(element.NumberUsesForeground ? element.Style.Stroke : (element.Style.Fill >> 24) == 0 ? element.Style.Stroke : element.Style.Fill, SKPaintStyle.Fill);
-        canvas.DrawOval(new SKRect(0, 0, width, height), _paint);
+        bool outline = ElementAppearance.IsOutlineNumber(element);
+        double border = Math.Min(element.Style.StrokeWidth, Math.Min(width, height) / 2);
+        SetPaint(ElementAppearance.PrimaryColor(element), outline ? SKPaintStyle.Stroke : SKPaintStyle.Fill, border);
+        float inset = outline ? (float)(border / 2) : 0;
+        if (!outline || element.Style.StrokeWidth > 0) canvas.DrawOval(new SKRect(inset, inset, width - inset, height - inset), _paint);
         string label = element.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var style = element.Style.Clone();
-        style.FontSize = Math.Clamp(element.NumberUsesForeground ? Math.Min(width, height) * .58 : Math.Min(style.FontSize, Math.Min(width, height) * .58), 1, 2048);
+        style.FontSize = Math.Clamp(element.NumberTextSizeMode == NumberTextSizeMode.FitBadge ? Math.Min(width, height) * .58 : Math.Min(style.FontSize, Math.Min(width, height) * .58), 1, 2048);
         style.TextAlignment = TextAlignment.Left;
         // Measure the entire label without wrapping before fitting it. Canvas scaling
         // also keeps very small badges within bounds below the font engine's minimum size.
@@ -423,21 +435,24 @@ public sealed partial class SceneRenderer : IDisposable
         float scale = (float)Math.Min(1, Math.Min(width * .8 / metrics.Width, height * .8 / metrics.Height));
         canvas.Translate((width - (float)metrics.Width * scale) / 2, (height - (float)metrics.Height * scale) / 2);
         canvas.Scale(scale, scale);
-        SetPaint(element.NumberUsesForeground ? element.Style.Fill : 0xFFFFFFFF, SKPaintStyle.Fill);
+        SetPaint(ElementAppearance.NumberTextColor(element), SKPaintStyle.Fill);
         _text.Draw(canvas, label, style, 0, _paint);
     }
 
     private void DrawImage(SKCanvas canvas, CanvasElement element, AssetLibrary assets)
     {
-        if (element.AssetId is null || element.Width <= 0 || element.Height <= 0) return;
-        var original = GetImage(element.AssetId, assets);
-        var image = element.Effects.Count == 0 ? original : GetEffectImage(canvas, element, original, ImageFrameIndex(element.AssetId));
-        RectD crop = (element.ImageCrop ?? new RectD(0, 0, 1, 1)).Normalize().Intersect(new(0, 0, 1, 1));
-        if (crop.IsEmpty) return;
-        var source = new SKRect((float)(crop.Left * image.Width), (float)(crop.Top * image.Height), (float)(crop.Right * image.Width), (float)(crop.Bottom * image.Height));
-        DrawImageBorder(canvas, element, image, new(source.Left, source.Top, source.Width, source.Height));
+        if (element.Width <= 0 || element.Height <= 0) return;
+        if (!ResolveImageFrame(element, assets, out var original, out var frameKey, out var layout))
+        {
+            if (element.WindowSource is not null && original is null)
+            { SetPaint(0xFF50545B, SKPaintStyle.Fill); canvas.DrawRect(new SKRect(0, 0, (float)element.Width, (float)element.Height), _paint); }
+            return;
+        }
+        var image = element.Effects.Count == 0 ? original : GetEffectImage(canvas, element, original, frameKey);
+        var source = ToRect(layout.SourcePixels);
+        DrawImageBorder(canvas, element, image, new(source.Left, source.Top, source.Width, source.Height), frameKey, layout.Destination);
         SetPaint(0xFFFFFFFF, SKPaintStyle.Fill);
-        canvas.DrawImage(image, source, new(0, 0, (float)element.Width, (float)element.Height), Linear, _paint);
+        canvas.DrawImage(image, source, ToRect(layout.Destination), Linear, _paint);
     }
 
     private SKImage GetImage(string assetId, AssetLibrary assets)
@@ -465,11 +480,11 @@ public sealed partial class SceneRenderer : IDisposable
         _images.Add(id, entry); ImageDecodeCount++; return entry;
     }
 
-    private SKImage GetEffectImage(SKCanvas destination, CanvasElement element, SKImage original, int sourceFrame)
+    private SKImage GetEffectImage(SKCanvas destination, CanvasElement element, SKImage original, RasterFrameKey sourceFrame)
     {
         bool gpu = destination.Context is not null;
         var snapshots = element.Effects.Select(EffectSnapshot.From).ToArray();
-        if (_effects.TryGetValue(element.Id, out var cached) && cached.IsGpu == gpu && cached.AssetId == element.AssetId && cached.SourceFrame == sourceFrame && cached.Effects.SequenceEqual(snapshots))
+        if (_effects.TryGetValue(element.Id, out var cached) && cached.IsGpu == gpu && cached.SourceFrame == sourceFrame && cached.Effects.SequenceEqual(snapshots))
         { cached.Used = _clock; return cached.Image; }
         if (cached is not null) { _effects.Remove(element.Id); cached.Dispose(); }
         TrimImageCaches(Math.Max(0, CacheByteLimit - Bytes(original) * 2), element.AssetId);
@@ -517,7 +532,7 @@ public sealed partial class SceneRenderer : IDisposable
             }
             finally { canvas.RestoreToCount(saved); }
         }
-        var entry = new EffectEntry(element.AssetId!, sourceFrame, snapshots, surface.Snapshot(), _clock, gpu);
+        var entry = new EffectEntry(sourceFrame, snapshots, surface.Snapshot(), _clock, gpu);
         _effects[element.Id] = entry;
         return entry.Image;
     }
@@ -564,6 +579,8 @@ public sealed partial class SceneRenderer : IDisposable
         foreach (var entry in _imageBorders.Values) entry.Dispose();
         _paths.Clear(); _images.Clear(); _effects.Clear(); _imageBorders.Clear(); _animationMetadata.Clear();
         ReleaseElementOpacitySurface();
+        presentationPlan?.Dispose(); presentationPlan = null; presentationState = null;
+        windowPlan = null; windowState = null;
         _paint.Dispose(); _text.Dispose();
     }
 
@@ -669,11 +686,10 @@ public sealed partial class SceneRenderer : IDisposable
         public ImageEntry(AnimatedImage playback, long used) { Playback = playback; Used = used; }
         public void Dispose() { image?.Release(); Playback?.Dispose(); }
     }
-    private sealed class EffectEntry(string assetId, int sourceFrame, EffectSnapshot[] effects, SKImage image, long used, bool isGpu) : ImageEntry(image, used)
+    private sealed class EffectEntry(RasterFrameKey sourceFrame, EffectSnapshot[] effects, SKImage image, long used, bool isGpu) : ImageEntry(image, used)
     {
         public bool IsGpu { get; } = isGpu;
-        public string AssetId { get; } = assetId;
-        public int SourceFrame { get; } = sourceFrame;
+        public RasterFrameKey SourceFrame { get; } = sourceFrame;
         public EffectSnapshot[] Effects { get; } = effects;
     }
     private readonly record struct EffectSnapshot(ImageEffectKind Kind, RectD Bounds, double Amount, uint Color)

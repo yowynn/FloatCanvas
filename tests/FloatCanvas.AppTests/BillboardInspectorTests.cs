@@ -18,6 +18,9 @@ internal static class BillboardInspectorTests
             var fields=Field<Dictionary<string,TextBox>>(inspector,"fields");
             var containers=Field<Dictionary<string,FrameworkElement>>(inspector,"fieldContainers");
             var picker=Field<SegmentedChoice>(inspector,"placement");
+            var preserve = Field<CheckBox>(inspector, "preservePlacementAppearance");
+            check("placement defaults to preserving the current screen appearance", preserve.IsChecked == true);
+            preserve.IsChecked = false; // Exercise the retained logical conversion explicitly.
             check("perspective inspector exposes surface placement without an elevation field",picker.SelectedIndex==0&&containers["Placement"].Visibility==Visibility.Visible&&containers["BillboardHeight"].Visibility==Visibility.Collapsed);
             int before=session.UndoCount;picker.SelectedIndex=1;inspector.CompletePendingEdit();inspector.PrepareForShow();
             var e=session.Document.Elements.Single();var anchor=e.BillboardAnchor;
@@ -48,6 +51,28 @@ internal static class BillboardInspectorTests
             check("billboard inspector tests create no native window",new System.Windows.Interop.WindowInteropHelper(inspector).Handle==0);
         }
         finally{inspector.Close();}
+        PreserveAppearance(check);
+    }
+    private static void PreserveAppearance(Action<string, bool> check)
+    {
+        var document = new SceneDocument { Viewport = new(0, 0, 800, 700) };
+        document.Canvas.Projection = CanvasCalibration.CreateInitial(document.Viewport, 10, 8);
+        document.Canvas.Projection.Enabled = true; document.Canvas.Projection.Matrix = Projective2D.Identity;
+        var session = new EditorSession(document);
+        session.Add(new CanvasElement { Kind = ElementKind.Rectangle, Width = 100, Height = 60, Transform = Affine2D.Translation(200, 300) });
+        var inspector = new InspectorWindow(() => session);
+        try
+        {
+            inspector.PrepareForShow(); var picker = Field<SegmentedChoice>(inspector, "placement");
+            var before = CanvasMapping.Create(session.Document).ProjectedBounds(session.Document.Elements.Single(), false);
+            int history = session.UndoCount; picker.SelectedIndex = 1; inspector.CompletePendingEdit(); inspector.PrepareForShow();
+            var item = session.Document.Elements.Single();
+            check("inspector screen-preserving conversion keeps frame and creates one undo", item.IsBillboard && item.BillboardHeight == 30 &&
+                CanvasMapping.Create(session.Document).ProjectedBounds(item, false) == before && session.UndoCount == history + 1);
+            picker.SelectedIndex = 0; inspector.CompletePendingEdit(); inspector.PrepareForShow();
+            check("inspector screen-preserving reverse conversion keeps frame", !item.IsBillboard && CanvasMapping.Create(session.Document).ProjectedBounds(item, false) == before);
+        }
+        finally { inspector.Close(); }
     }
     private static T Field<T>(object target,string name)=>(T)target.GetType().GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(target)!;
 }

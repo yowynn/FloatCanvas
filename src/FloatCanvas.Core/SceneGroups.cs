@@ -1,12 +1,26 @@
+using System.Text.Json.Serialization;
+
 namespace FloatCanvas.Core;
 
-/// <summary>Logical nesting over flat vector elements. Transforms remain on the editable elements.</summary>
+public enum GroupOrderMode { LegacyPassThrough = 0, AtomicBlock = 1 }
+
+/// <summary>Editable ownership and local placement. Legacy groups preserve their interleaved draw slots.</summary>
 public sealed class CanvasGroup
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid? ParentId { get; set; }
     public string Name { get; set; } = "";
-    public CanvasGroup Clone() => (CanvasGroup)MemberwiseClone();
+    public Affine2D Transform { get; set; } = Affine2D.Identity;
+    public double ElevationScale { get; set; } = 1;
+    public bool Visible { get; set; } = true;
+    public bool Locked { get; set; }
+    public GroupOrderMode OrderMode { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<Guid>? ChildOrder { get; set; }
+    public CanvasGroup Clone()
+    {
+        var result = (CanvasGroup)MemberwiseClone(); result.ChildOrder = ChildOrder?.ToList(); return result;
+    }
 }
 
 public sealed partial class SceneDocument
@@ -27,22 +41,40 @@ public sealed partial class SceneDocument
     public SceneDocument CloneElements(IEnumerable<Guid> ids, bool newIds = false,
         IReadOnlyDictionary<string, string>? assetIdMap = null)
     {
-        var selected = ids.ToHashSet();
+        var graph = new SceneGraph(this);
+        var selected = ids.Where(id => graph.FindElement(id) is not null || graph.FindGroup(id) is not null || graph.FindInstance(id) is not null).ToHashSet();
+        var selectedGroups = selected.Where(id => graph.FindGroup(id) is not null).ToHashSet();
+        var elementIds = Elements.Where(element => selected.Contains(element.Id) || graph.AncestorIds(element.Id).Any(selectedGroups.Contains))
+            .Select(element => element.Id).ToHashSet();
+        var groupIds = Groups.Where(group => selectedGroups.Contains(group.Id) || graph.AncestorIds(group.Id).Any(selectedGroups.Contains))
+            .Select(group => group.Id).ToHashSet();
+        var instanceIds = Instances.Where(instance => selected.Contains(instance.Id) || graph.AncestorIds(instance.Id).Any(selectedGroups.Contains)).Select(instance => instance.Id).ToHashSet();
+        foreach (var id in elementIds.Concat(groupIds).Concat(instanceIds).ToArray()) groupIds.UnionWith(graph.AncestorIds(id));
+        var retained = elementIds.Concat(groupIds).Concat(instanceIds).ToHashSet();
         var snapshot = new SceneDocument
         {
-            Elements = Elements.Where(e => selected.Contains(e.Id)).Select(e => e.Clone()).ToList(),
-            Groups = Groups.Select(g => g.Clone()).ToList(), Viewport = Viewport,
+            IsRuntimeEvaluated = IsRuntimeEvaluated, Provenance = Provenance,
+            Elements = Elements.Where(e => elementIds.Contains(e.Id)).Select(e => e.Clone()).ToList(),
+            Instances = Instances.Where(instance => instanceIds.Contains(instance.Id)).Select(instance => instance.Clone()).ToList(),
+            Groups = Groups.Where(group => groupIds.Contains(group.Id)).Select(group =>
+            {
+                var copy = group.Clone(); copy.ChildOrder?.RemoveAll(id => !retained.Contains(id)); return copy;
+            }).ToList(),
+            RootOrder = RootOrder?.Where(retained.Contains).ToList(), Viewport = Viewport,
             LayerOpacity = LayerOpacity, NextNumber = NextNumber
         };
-        snapshot.PruneGroups();
+        snapshot.resourceIdentity = resourceIdentity;
+        snapshot.Definitions = PrefabClosure.ReachableDefinitions(snapshot, Definitions).Select(definition => definition.Clone()).ToList();
         return snapshot.Clone(newIds, assetIdMap);
     }
 
-    /// <summary>Removes group records with no remaining descendants after deletion or a partial snapshot.</summary>
+    /// <summary>Removes orphaned legacy metadata. User-created atomic groups remain valid when empty.</summary>
     public void PruneGroups()
     {
         var groups = Groups.ToDictionary(g => g.Id);
-        var used = Elements.SelectMany(e => Ancestors(e.GroupId, groups)).ToHashSet();
+        var used = Elements.SelectMany(e => Ancestors(e.GroupId, groups)).Concat(Instances.SelectMany(instance => Ancestors(instance.ParentId, groups)))
+            .Concat(Groups.Where(group => group.OrderMode == GroupOrderMode.AtomicBlock)
+                .SelectMany(group => new[] { group.Id }.Concat(Ancestors(group.ParentId, groups)))).ToHashSet();
         Groups.RemoveAll(g => !used.Contains(g.Id));
     }
 

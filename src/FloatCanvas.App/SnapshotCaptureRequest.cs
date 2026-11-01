@@ -8,6 +8,7 @@ internal sealed class SnapshotCaptureRequest(EditorSession target, long editingV
 {
     private readonly SceneDocument document = target.Document;
     private readonly long revision = target.SceneRevision;
+    private readonly long editScopeVersion = target.EditScopeVersion;
     internal Guid Id { get; } = Guid.NewGuid();
     internal EditorSession Target { get; } = target;
     internal long EditingVersion { get; private set; } = editingVersion;
@@ -18,6 +19,7 @@ internal sealed class SnapshotCaptureRequest(EditorSession target, long editingV
     internal CaptureDiagnosticEvent? NativeOutcome { get; set; }
     internal CaptureDiagnosticEvent? LatestNativeDiagnostic { get; set; }
     internal long ContentRevision => revision;
+    internal long EditScopeVersion => editScopeVersion;
     internal void Cancel(string reason = "Cancelled", bool userInitiated = false)
     {
         if (!Cancelled) CancellationReason = reason;
@@ -25,9 +27,10 @@ internal sealed class SnapshotCaptureRequest(EditorSession target, long editingV
     }
     internal string? ContentRejection(EditorSession current) => Cancelled ? "Cancelled:" + CancellationReason :
         !ReferenceEquals(Target, current) ? "SessionReplaced" : !ReferenceEquals(document, current.Document) ? "DocumentReplaced" :
+        editScopeVersion != current.EditScopeVersion ? "EditScopeChanged" :
         revision != current.SceneRevision ? "ContentChanged" : current.IsTransactionActive ? "TransactionActive" : null;
     internal bool MatchesContent(EditorSession current) => ContentRejection(current) is null;
     internal bool MatchesDocument(EditorSession current) => ReferenceEquals(Target, current) &&
-        ReferenceEquals(document, current.Document) && revision == current.SceneRevision;
+        ReferenceEquals(document, current.Document) && revision == current.SceneRevision && editScopeVersion == current.EditScopeVersion;
     internal void AcceptRestoredVersion(long version) => EditingVersion = version;
 }

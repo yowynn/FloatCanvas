@@ -79,6 +79,7 @@ internal static class BillboardGeometryTests
         var expectedAnchor = ElementGeometry.LocalToPlane(planar).TransformPoint(new(30, 10));
         check(BillboardGeometry.TrySetBillboard(planar, true, flatMapping) && planar.BillboardAnchor == expectedAnchor, "mode conversion retains logical center as anchor");
         check(BillboardGeometry.TrySetBillboard(planar, false, flatMapping) && !planar.IsBillboard && planar.Width == 60, "mode conversion retains editable dimensions");
+        BillboardScreenPlacementTests.Run(check);
     }
 
     public static SceneDocument Scene()

@@ -23,6 +23,8 @@ internal static class ToolParameterIcon
         if(parameters.Tool==EditorTool.Emoji)return new Image {Source=EmojiArtwork.Image(parameters.Emoji),Width=size,Height=size,Stretch=Stretch.Uniform};
         if(parameters.Tool==EditorTool.CaptureRegion)return CaptureIcon(parameters,size);
         if(parameters.Tool is EditorTool.Blur or EditorTool.Pixelate)return EffectIcon(parameters,size);
+        if(parameters.Tool==EditorTool.Presentation)return KeyboardIcon(parameters,size);
+        if(parameters.Tool==EditorTool.PointerPresentation)return PointerIcon(parameters,size);
         string? control=parameters.Tool switch
         {
             EditorTool.Select=>"M3,1 L3,15 L7,11 L10,16 L12,15 L9,10 L15,10 Z",
@@ -124,12 +126,62 @@ internal static class ToolParameterIcon
         return new Viewbox {Child=stage,Width=size,Height=size,Stretch=Stretch.Uniform,IsHitTestVisible=false};
     }
 
+    private static UIElement KeyboardIcon(ToolParameters parameters, double size)
+    {
+        string path = parameters.Presentation?.DisplayStyle switch
+        {
+            PresentationDisplayStyle.Keycaps => "M1,4 H6 V11 H1 Z M8,4 H15 V11 H8 Z M2,6 H5 M9,6 H14 M3,13 H13",
+            PresentationDisplayStyle.Keyboard => CommandGlyphs.Presentation,
+            _ => "M1,2 H5 V5 H1 Z M7,3.5 H15 M1,7 H7 V10 H1 Z M9,8.5 H15 M1,12 H4 V15 H1 Z M6,13.5 H15"
+        };
+        var icon = (Viewbox)ControlIcon(path, size, ColorBrush(parameters.Style.Foreground));
+        icon.Opacity = parameters.Style.Opacity;
+        var background = new System.Windows.Shapes.Rectangle { Width = 16, Height = 16, RadiusX = 1, RadiusY = 1,
+            Fill = ColorBrush(parameters.Style.Background), IsHitTestVisible = false };
+        Canvas.SetLeft(background, 1); Canvas.SetTop(background, 1); ((Canvas)icon.Child).Children.Insert(0, background);
+        return icon;
+    }
+
+    private static UIElement PointerIcon(ToolParameters parameters, double size)
+    {
+        var settings = parameters.PointerPresentation?.Clone() ?? new(); settings.NormalizeColorAlpha();
+        var icon = (Viewbox)ControlIcon(CommandGlyphs.PresentationPointerSettings, size);
+        var effects = new Canvas { Width = 16, Height = 16, IsHitTestVisible = false, RenderTransform = new TranslateTransform(1, 1) };
+        if (settings.TrailEnabled)
+            effects.Children.Add(new System.Windows.Shapes.Path { Data = Geometry.Parse("M1,14 Q4,10 7,13 Q10,15 14,8"), Stroke = ColorBrush(settings.TrailColor),
+                StrokeThickness = Math.Clamp(settings.TrailWidthPixels / 2, 1, 3), StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round });
+        if (settings.CursorEnabled) Circle(7, 7, Math.Clamp(settings.CursorRadiusPixels / 4.5, 2, 5), ColorBrush(settings.CursorColor), null, 0);
+        if (settings.ClicksEnabled)
+        {
+            Click(settings.LeftClick, 4, 8); Click(settings.RightClick, 8, 5); Click(settings.MiddleClick, 12, 9);
+        }
+        ((Canvas)icon.Child).Children.Insert(0, effects); return icon;
+
+        void Click(PresentationClickStyle style, double x, double y)
+        {
+            if (!style.Enabled) return;
+            var brush = ColorBrush(style.Color); bool disc = style.Shape == PresentationClickShape.Disc;
+            Circle(x, y, Math.Clamp(style.RadiusPixels / 8, 2, 4), disc ? brush : null, disc ? null : brush, Math.Clamp(style.StrokeWidthPixels / 2, .5, 2));
+        }
+        void Circle(double x, double y, double radius, Brush? fill, Brush? stroke, double width)
+        {
+            var circle = new System.Windows.Shapes.Ellipse { Width = radius * 2, Height = radius * 2, Fill = fill, Stroke = stroke, StrokeThickness = width };
+            Canvas.SetLeft(circle, x - radius); Canvas.SetTop(circle, y - radius); effects.Children.Add(circle);
+        }
+    }
+    private static Brush ColorBrush(uint argb)
+    {
+        var brush = new SolidColorBrush(Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb));
+        brush.Freeze(); return brush;
+    }
+
     private static BitmapSource Render(ToolParameters parameters)
     {
+        parameters = parameters.Clone(); parameters.NormalizeAppearance();
         var style=parameters.Style.Clone();
         // Preserve useful width differences while leaving enough room to identify
         // arrow heads and dashed strokes in a 16-DIP sample.
-        style.StrokeWidth=style.StrokeWidth==0 && style.Fill!=0?0:Math.Clamp(style.StrokeWidth,2,6);
+        style.StrokeWidth=style.StrokeWidth==0 && style.Background!=0?0:Math.Clamp(style.StrokeWidth,2,6);
         if(parameters.Tool is EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow)style.StrokeWidth=Math.Min(style.StrokeWidth,4);
         if(style.StrokePattern!=StrokePattern.Solid)style.StrokeWidth=Math.Min(style.StrokeWidth,3);
         style.FontSize=32;
@@ -149,7 +201,7 @@ internal static class ToolParameterIcon
             case EditorTool.Text:
                 element.Kind=ElementKind.Text;element.Text="T";element.Width=38;element.Height=40;element.Transform=Affine2D.Translation(6,2);break;
             case EditorTool.Number:
-                element.Kind=ElementKind.Number;element.NumberUsesForeground=true;element.Number=1;element.Width=32;element.Height=32;style.FontSize=24;element.Transform=Affine2D.Translation(8,8);break;
+                element.Kind=ElementKind.Number;element.NumberTextSizeMode=parameters.NumberTextSizeMode;element.Number=1;element.Width=32;element.Height=32;style.FontSize=24;element.Transform=Affine2D.Translation(8,8);break;
             case EditorTool.Highlighter:
                 // A preview describes the chosen color; document highlighter blending must
                 // not make its toolbar swatch hard to distinguish.

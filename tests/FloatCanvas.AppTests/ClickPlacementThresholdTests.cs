@@ -139,7 +139,7 @@ internal static class ClickPlacementThresholdTests
         projection = CanvasCalibration.CreateInitial(document.Viewport, 10, 8);
         projection.Matrix = new(1, 0, 0, 0, 1, 0, 0, .001, 1); projection.Enabled = true;
         projection.Quad = projection.Quad.Select(projection.Matrix.TransformPoint).ToList(); document.Canvas.Projection = projection;
-        session = new(document); editor = new(session) { Tool = EditorTool.Rectangle, BillboardMode = true, DefaultWidth = 90, DefaultHeight = 40 };
+        session = new(document); editor = new(session) { Tool = EditorTool.Rectangle, BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine, BillboardMode = true, DefaultWidth = 90, DefaultHeight = 40 };
         Send(editor, OverlayPointerKind.Down, new(300, 300)); Send(editor, OverlayPointerKind.Up, new(300, 300));
         Send(editor, OverlayPointerKind.Down, new(100, 100)); Send(editor, OverlayPointerKind.Move, new(103, 102)); Send(editor, OverlayPointerKind.Up, new(103, 102));
         var billboard = session.Document.Elements.Single();

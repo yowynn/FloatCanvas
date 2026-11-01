@@ -1,5 +1,6 @@
 using L = FloatCanvas.Localization.AppText;
 using FloatCanvas.Core;
+using System.Text.Json.Serialization;
 
 namespace FloatCanvas.Storage;
 
@@ -8,7 +9,9 @@ public sealed class WorkspaceState
     public SceneDocument LiveDocument { get; set; } = new();
     public SceneDocument? CaptureDocument { get; set; }
     public PointD CaptureOrigin { get; set; }
-    public WorkspaceState Clone() => new() { LiveDocument = LiveDocument.Clone(), CaptureDocument = CaptureDocument?.Clone(), CaptureOrigin = CaptureOrigin };
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PrefabDraftState? PendingPrefabEdit { get; set; }
+    public WorkspaceState Clone() => new() { LiveDocument = LiveDocument.Clone(), CaptureDocument = CaptureDocument?.Clone(), CaptureOrigin = CaptureOrigin, PendingPrefabEdit = PendingPrefabEdit?.Clone() };
 }
 
 public sealed record RecoveredWorkspace(WorkspaceState State, AssetLibrary Assets, bool FromBackup);
@@ -16,8 +19,10 @@ public sealed record RecoveredWorkspace(WorkspaceState State, AssetLibrary Asset
 public sealed class RecoveryStore
 {
     private readonly SemaphoreSlim gate = new(1, 1);
-    public RecoveryStore(string? directory = null)
+    private readonly string applicationVersion;
+    public RecoveryStore(string? directory = null, string? applicationVersion = null)
     {
+        this.applicationVersion = PackageProvenance.ApplicationVersion(applicationVersion);
         DirectoryPath = Path.GetFullPath(directory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FloatCanvas", "recovery"));
     }
     public string DirectoryPath { get; }
@@ -46,8 +51,13 @@ public sealed class RecoveryStore
     public Task SaveWithPreviewAsync(WorkspaceState state, AssetLibrary assets, byte[]? previewPng, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(state); ArgumentNullException.ThrowIfNull(assets);
+        PrefabClosure.RequireSourceGraphs(state.LiveDocument);
+        if (state.CaptureDocument is { } capture) PrefabClosure.RequireSourceGraphs(capture);
+        var drafts = PrefabDraftState.Enumerate(state.PendingPrefabEdit);
+        foreach (var draft in drafts) PrefabClosure.RequireSourceGraphs(draft.DraftDocument);
         ct.ThrowIfCancellationRequested();
-        var references = state.LiveDocument.ReferencedAssets.Concat(state.CaptureDocument?.ReferencedAssets ?? []);
+        var references = state.LiveDocument.ReferencedAssets.Concat(state.CaptureDocument?.ReferencedAssets ?? [])
+            .Concat(drafts.SelectMany(draft => draft.DraftDocument.ReferencedAssets));
         var resources = PackageCodec.ResolveResources(references, assets);
         byte[]? preview = RecoveryPreview.Snapshot(previewPng);
         return InOrderAsync(async () =>
@@ -64,7 +74,7 @@ public sealed class RecoveryStore
                 }
                 catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or System.Text.Json.JsonException or NotSupportedException) { }
             }
-            await PackageCodec.SaveAsync(CurrentPath, "recovery", state, resources, ct, preview).ConfigureAwait(false);
+            await PackageCodec.SaveAsync(CurrentPath, "recovery", state, resources, ct, preview, applicationVersion: applicationVersion).ConfigureAwait(false);
             return true;
         }, ct);
     }

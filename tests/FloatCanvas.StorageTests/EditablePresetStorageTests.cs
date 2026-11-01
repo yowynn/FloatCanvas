@@ -66,6 +66,8 @@ internal static class EditablePresetStorageTests
         await store.SaveAsync(legacyPath, legacy, new());
         await MutateAsync(legacyPath, n =>
         {
+            n["Version"] = 1;
+            LegacyFixtureSchema.RemovePrefabFields(n);
             n.Remove("Groups");
             foreach (var element in n["Elements"]!.AsArray())
             {
@@ -73,6 +75,14 @@ internal static class EditablePresetStorageTests
                 var style = obj["Style"]!.AsObject(); style.Remove("StartArrowHead"); style.Remove("EndArrowHead"); style.Remove("StrokePattern");
             }
         });
+        // This is a real pre-group format fixture, not a damaged current-format file.
+        using (var zip = ZipFile.Open(legacyPath, ZipArchiveMode.Update))
+        {
+            var manifestEntry = zip.GetEntry("manifest.json")!; JsonObject manifest;
+            using (var reader = new StreamReader(manifestEntry.Open())) manifest = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
+            manifest["Version"] = 1; manifestEntry.Delete();
+            using var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open()); await writer.WriteAsync(manifest.ToJsonString());
+        }
         var old = await store.LoadAsync(legacyPath);
         check(old.Document.Groups.Count == 0 && old.Document.Elements.All(e => e.GroupId is null && e.CornerRadius is null && e.Style.StrokePattern == StrokePattern.Solid) &&
             ElementGeometry.CornerRadius(old.Document.Elements[0]) == 12 && ElementGeometry.GetArrowHeads(old.Document.Elements[1]).Count == 1,

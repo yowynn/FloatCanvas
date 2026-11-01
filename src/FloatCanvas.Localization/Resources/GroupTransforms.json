@@ -1,0 +1,9 @@
+{
+  "GroupTransform.Overall": { "zh": "整体", "en": "Together" },
+  "GroupTransform.Individual": { "zh": "各自", "en": "Individually" },
+  "GroupTransform.Pivot": { "zh": "变换中心", "en": "Transform pivots" },
+  "GroupTransform.RotationDelta": { "zh": "旋转增量", "en": "Rotate by" },
+  "GroupTransform.Enter": { "zh": "进入组内编辑", "en": "Edit group contents" },
+  "GroupTransform.Selection": { "zh": "已选择 {0} 个图层节点", "en": "{0} layer nodes selected" },
+  "GroupTransform.LayoutHelp": { "zh": "位置和尺寸按画布平面计算；每次旋转输入为增量。选择“各自”时，每个组仍作为一个整体。", "en": "Position and size use the canvas plane. Rotation is an increment. With individual pivots, each group still moves as one object." }
+}

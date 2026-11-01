@@ -14,7 +14,7 @@ internal static class CanvasAnchorCaptureTests
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    internal static void Run(Action<string, bool> check)
+    internal static void Run(Action<string, bool> check, bool geometryOnly = false)
     {
         var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         string originalProfile = ApplicationPaths.ProfileDirectory, originalLanguage = L.Preference;
@@ -25,6 +25,7 @@ internal static class CanvasAnchorCaptureTests
         new UserSettings { Theme = "light", Language = "zh-CN" }.Save();
         try
         {
+            if (geometryOnly) { GeometryLifetimes(app, check); return; }
             LayersStayHidden(app, check);
             Completion(app, check);
             Cancellation(app, check);
@@ -39,6 +40,42 @@ internal static class CanvasAnchorCaptureTests
             ApplicationPaths.Configure(restore.ToArray()); L.Initialize(originalLanguage);
             Directory.Delete(profile, recursive: true);
         }
+    }
+
+    private static void GeometryLifetimes(Application app, Action<string, bool> check)
+    {
+        var foreground = GetForegroundWindow();
+        using var fixture = new Fixture(app, offscreenMonitor: true);
+        var target = fixture.Editor.Session;
+        target.Document.Canvas.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(target.Document.Canvas);
+        fixture.Editor.Tool = EditorTool.Canvas;
+        var before = System.Text.Json.JsonSerializer.Serialize(target.Document); int undo = target.UndoCount;
+        void SetField(string name, object? value) => typeof(DesktopSession).GetField(name, Private)!.SetValue(fixture.Session, value);
+        var hiddenRequest = new SnapshotCaptureRequest(target, fixture.Host.EditingSessionVersion); SetField("_canvasRectificationRequest", hiddenRequest);
+        fixture.Invoke("ToggleCanvasVisibility");
+        check("production hide route irreversibly cancels rectification even while editing remains enabled", hiddenRequest.Cancelled && !fixture.Host.IsVisible);
+        typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!.SetValue(fixture.Host, true);
+        check("showing the same canvas cannot revive the old rectification request", !hiddenRequest.MatchesContent(target) && hiddenRequest.Cancelled);
+        SetField("_canvasRectificationRequest", null);
+        var modeRequest = new SnapshotCaptureRequest(target, fixture.Host.EditingSessionVersion); SetField("_canvasRectificationRequest", modeRequest);
+        fixture.Invoke("SetEditing", false, false);
+        typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(fixture.Host, true);
+        check("leaving and re-entering editing cannot revive a pending rectification result", modeRequest.Cancelled && !modeRequest.MatchesContent(target));
+        SetField("_canvasRectificationRequest", null);
+        fixture.Invoke("BeginCanvasGridCalibration");
+        check("known-cell calibration starts with the exact editor session and no document mutation", ReferenceEquals(Field<EditorSession>(fixture.Session, "_canvasGridCalibrationSession"), target) && target.UndoCount == undo);
+        fixture.Invoke("OnKey", 0x1B);
+        check("Escape clears known-cell state without a history entry", typeof(DesktopSession).GetField("_canvasGridCalibrationSession", Private)!.GetValue(fixture.Session) is null && target.UndoCount == undo);
+        fixture.Invoke("BeginCanvasGridCalibration");
+        fixture.Invoke("EndCanvasCalibration", false, true);
+        fixture.Invoke("FinishCanvasGridCalibration", target, new PointD[] { new(0, 0), new(100, 0), new(0, 100) });
+        check("late known-cell completion after cancellation never opens a dialog or commits a fit", typeof(DesktopSession).GetField("_canvasGridCalibrationSession", Private)!.GetValue(fixture.Session) is null && target.UndoCount == undo);
+        check("cancellation paths preserve the complete document and history", System.Text.Json.JsonSerializer.Serialize(target.Document) == before && target.UndoCount == undo);
+        fixture.Host.SetPreviewVisible(false);
+        check("geometry lifecycle fixture never leaves a native input HWND visible", fixture.Host.Diagnostics.All(w => !IsWindowVisible(w.InputHandle)));
+        check("geometry lifecycle fixture preserves the actual foreground window", GetForegroundWindow() == foreground);
+        check("geometry lifecycle fixture stays outside all physical displays and never isolates the keyboard", fixture.Host.Diagnostics.All(w =>
+            w.Bounds.Right < -10000 && w.Bounds.Bottom < -10000) && !fixture.Host.IsKeyboardIsolationActive);
     }
 
     private static void Completion(Application app, Action<string, bool> check)
@@ -187,11 +224,11 @@ internal static class CanvasAnchorCaptureTests
         internal readonly CanvasSettingsWindow Panel;
         internal readonly Window Secondary, Hidden;
 
-        internal Fixture(Application app)
+        internal Fixture(Application app, bool offscreenMonitor = false)
         {
             App = app;
             var primary = ((IReadOnlyList<MonitorInfo>)typeof(OverlayHost).GetMethod("EnumerateMonitors", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!).First(m => m.IsPrimary);
-            var bounds = new PixelBounds(primary.WorkArea.Left + 30, primary.WorkArea.Top + 30, 640, 360);
+            var bounds = offscreenMonitor ? new PixelBounds(-18000, -18000, 640, 360) : new PixelBounds(primary.WorkArea.Left + 30, primary.WorkArea.Top + 30, 640, 360);
             Func<IReadOnlyList<MonitorInfo>> provider = () => [primary with { Bounds = bounds, WorkArea = bounds }];
             Host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), Private, null, [OverlayMonitorScope.PrimaryScreen, provider, false], null)!;
             Session = new DesktopSession(app, Host);
@@ -262,4 +299,5 @@ internal static class CanvasAnchorCaptureTests
         Dispatcher.PushFrame(frame);
     }
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
 }

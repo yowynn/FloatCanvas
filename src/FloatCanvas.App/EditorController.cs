@@ -10,7 +10,7 @@ internal enum EditorTool
     Select, Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse,
     Triangle, Text, Number, Image, Eraser, Crop, Blur, Pixelate,
     // Retained numeric value for reading old tool caches and presets only. Never activates.
-    Redact, CaptureRegion, Symbol, Emoji, Stamp, Canvas
+    Redact, CaptureRegion, Symbol, Emoji, Stamp, Canvas, Presentation = 23, PointerPresentation = 24
 }
 
 /// <summary>Converts native pointer gestures into atomic document operations.</summary>
@@ -26,10 +26,13 @@ internal sealed partial class EditorController
             var renderer = selectionRenderer ??= new() { CacheByteLimit = 64L * 1024 * 1024 };
             renderer.AnimationTime = presentedScene is null ? AnimationTime : presentedTime;
             renderer.PresentedImages = presentedImages;
+            renderer.WindowFrames = presentedWindowFrames;
+            renderer.WindowOwnerContext = presentedWindowOwnerContext;
             return renderer;
         }
     }
     private EditorTool tool = EditorTool.Freehand;
+    internal long PlacementContextVersion { get; private set; }
     public EditorTool Tool
     {
         get => tool;
@@ -39,9 +42,17 @@ internal sealed partial class EditorController
             if (value == EditorTool.Crop && !CanCropSelection) value = EditorTool.Select;
             if (value == EditorTool.Triangle)
             {
-                var parameters = Parameters; parameters.Tool = value; ApplyParameters(parameters); return;
+                var parameters = Parameters; parameters.Tool = value;
+                if (!ElementAppearance.IsValidVariant(ElementKind.Triangle, parameters.Style.Variant)) parameters.Style.Variant = null;
+                ApplyParameters(parameters); return;
             }
-            if (temporaryMove || tool != value) { Cancel(); tool = value; Changed?.Invoke(); }
+            if (temporaryMove || tool != value)
+            {
+                PlacementContextVersion++;
+                Cancel();
+                if (!Enum.TryParse<ElementKind>(value.ToString(), out var kind) || !ElementAppearance.IsValidVariant(kind, Style.Variant)) Style.Variant = null;
+                tool = value; Changed?.Invoke();
+            }
         }
     }
     public ElementStyle Style { get; private set; } = new() { Stroke = ColorLibrary.ForegroundRed };
@@ -69,24 +80,39 @@ internal sealed partial class EditorController
         finally { IsUpdatingNumberStart = false; }
     }
     public int NumberStep { get; set; } = 1;
+    public NumberTextSizeMode NumberTextSizeMode { get; set; } = NumberTextSizeMode.FitBadge;
     public CaptureShape CaptureShape { get; set; } = CaptureShape.Rectangle;
     public CaptureSource CaptureSource { get; set; } = CaptureSource.Background;
     public double CaptureBorderWidth { get; set; }
     public uint CaptureBorderColor { get; set; } = ColorLibrary.ForegroundRed;
-    public ToolParameters Parameters => new() { Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius,
+    public PresentationSettings? Presentation { get; set; }
+    public PresentationPointerSettings? PointerPresentation { get; set; }
+    public ToolParameters Parameters
+    {
+        get
+        {
+            var parameters = new ToolParameters { Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius,
         Symbol = Symbol, ConstrainAspect = Tool != EditorTool.CaptureRegion && ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
-        NumberStart = NumberStart, NumberStep = NumberStep, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
-        CaptureBorderWidth = CaptureBorderWidth, CaptureBorderColor = CaptureBorderColor };
+        NumberStart = NumberStart, NumberStep = NumberStep, NumberTextSizeMode = NumberTextSizeMode, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
+        CaptureBorderWidth = CaptureBorderWidth, CaptureBorderColor = CaptureBorderColor, Presentation = Presentation?.Clone(),
+        PointerPresentation = PointerPresentation?.Clone() };
+            parameters.NormalizeAppearance(); return parameters;
+        }
+    }
     public void ApplyParameters(ToolParameters parameters, bool? followNumberStart = null)
     {
+        parameters = parameters.Clone(); parameters.NormalizeAppearance();
         if (!parameters.IsValid()) throw new ArgumentException(nameof(parameters));
         // Old presets retain their serialized enum; only future drawing uses the unified symbol tool.
-        Cancel(); tool = parameters.Tool == EditorTool.Redact ? EditorTool.Blur :
+        var nextTool = parameters.Tool == EditorTool.Redact ? EditorTool.Blur :
             parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol :
             parameters.Tool == EditorTool.Crop && !CanCropSelection ? EditorTool.Select : parameters.Tool;
+        if (tool != nextTool) PlacementContextVersion++;
+        Cancel(); tool = nextTool;
         Style = parameters.Style.Clone(); CornerRadius = parameters.CornerRadius;
-        if(parameters.Tool==EditorTool.Number && parameters.NumberColorRolesVersion==0)
-        { Style.Stroke=(Style.Fill>>24)==0?Style.Stroke:Style.Fill;Style.Fill=0xFFFFFFFF; }
+        NumberTextSizeMode = parameters.NumberTextSizeMode;
+        Presentation = parameters.Presentation?.Clone();
+        PointerPresentation = parameters.PointerPresentation?.Clone();
         Symbol = parameters.Tool == EditorTool.Triangle ? SymbolKind.Triangle : parameters.Symbol;
         // Legacy capture recipes may carry an aspect lock; capture creation only follows held Shift.
         ConstrainAspect = parameters.Tool != EditorTool.CaptureRegion && parameters.ConstrainAspect; EffectStrength = parameters.EffectStrength;
@@ -101,7 +127,26 @@ internal sealed partial class EditorController
         NumberStep = parameters.NumberStep;
         Changed?.Invoke();
     }
-    public PointD ScreenOrigin { get; set; }
+    private PointD screenOrigin;
+    public PointD ScreenOrigin
+    {
+        get => screenOrigin;
+        set { if (screenOrigin == value) return; screenOrigin = value; PlacementContextVersion++; }
+    }
+    private CanvasMapping? viewMapping;
+    private PointD? viewOrigin;
+    private object? viewEpoch;
+    private LayerPlacement? viewPlacement;
+    internal PointD CanvasOrigin => viewOrigin ?? ScreenOrigin;
+    internal CanvasMapping CurrentCanvasMapping => viewMapping ?? CanvasMapping.Create(Session.Document);
+    internal void SetCanvasView(CanvasMapping? mapping, PointD? origin, object? epoch, LayerPlacement? placement = null)
+    {
+        bool changed = !ReferenceEquals(viewEpoch, epoch);
+        viewMapping = mapping; viewOrigin = origin; viewEpoch = epoch; viewPlacement = placement;
+        if (!changed) return;
+        PlacementContextVersion++;
+        ClearPresentedScene(); SuspendPresentedPicking();
+    }
     internal TimeSpan AnimationTime { get; set; }
     public RectD? Marquee { get; private set; }
     public IReadOnlyList<PointD>? EffectPreviewPolygon { get; private set; }
@@ -112,6 +157,8 @@ internal sealed partial class EditorController
     public event Action<string>? Message;
     public event Action<CanvasElement?, PointD>? EditText;
     internal event Action<PointD>? PropertiesRequested;
+    internal event Action<Guid>? PrefabEditRequested;
+    internal event Action<Guid>? WindowSourceCropRequested;
     internal event Action? Cancelling;
     public event Action<CaptureSelection>? CaptureSelectionCompleted;
     public event Action<RectD, ImageEffectKind, double, uint>? DesktopEffectRequested;
@@ -141,11 +188,11 @@ internal sealed partial class EditorController
 
     internal static bool IsCreationTool(EditorTool value) => value is EditorTool.Freehand or EditorTool.Highlighter or EditorTool.Line or
         EditorTool.Arrow or EditorTool.DoubleArrow or EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or
-        EditorTool.Triangle or EditorTool.Symbol or EditorTool.Text or EditorTool.Number or EditorTool.Emoji or EditorTool.Image or EditorTool.CaptureRegion;
+        EditorTool.Triangle or EditorTool.Symbol or EditorTool.Text or EditorTool.Number or EditorTool.Emoji or EditorTool.Image or EditorTool.CaptureRegion or EditorTool.Presentation;
     internal static bool UsesDefaultSize(EditorTool value) => value is
-        EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol;
+        EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol or EditorTool.Presentation;
     internal bool ShouldShowSelection(OverlayModifiers modifiers) =>
-        !CanvasContentHidden && InteractionTool is not (EditorTool.Eraser or EditorTool.Canvas) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
+        !CanvasContentHidden && Tool != EditorTool.PointerPresentation && InteractionTool is not (EditorTool.Eraser or EditorTool.Canvas) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
 
     /// <summary>The contiguous z-order span whose pixels can change during this pointer gesture.</summary>
     public (int First, int Last, bool BypassCache) RasterPreview
@@ -153,6 +200,7 @@ internal sealed partial class EditorController
         get
         {
             if (!Session.IsTransactionActive) return (-1, -1, false);
+            if (nodeTransform is not null) return (-1, -1, true);
             // Erasure changes the element list. Unknown transactions may mutate any content.
             // Both use the reference draw path rather than reuse potentially stale surfaces.
             if (gesture is not ("draw" or "endpoint" or "move" or "rotate" or "resize")) return (-1, -1, true);
@@ -170,8 +218,17 @@ internal sealed partial class EditorController
     public EditorController(EditorSession session) { Session = session; session.Changed += OnChanged; }
     internal void DetachSession() { CancelPicking(); ClearPresentedScene(); Session.Changed -= OnChanged; selectionRenderer?.Dispose(); selectionRenderer = null; }
     public bool CanCropSelection => ImageToolEligibility.TryGetCropTarget(Session, out _);
+    internal bool TryRedirectWindowSourceCrop()
+    {
+        if (!ImageToolEligibility.TryGetCropTarget(Session, out var image) || image!.WindowSource is null) return false;
+        if (!Session.IsTransactionActive) WindowSourceCropRequested?.Invoke(image.Id);
+        return true;
+    }
     private void OnChanged(object? sender, EventArgs e)
     {
+        if (!Session.Document.Canvas.Projection.Enabled) billboardMode = false;
+        if ((screenBillboardDrawing || screenBillboardRegion) &&
+            (!Session.Document.Canvas.Projection.Enabled || !IsScreenDraftContextCurrent)) { Cancel(); return; }
         if (!Session.Document.Canvas.Projection.Enabled) { billboardMode = false; ClearBillboardDepth(); }
         if (gesture == "image-crop" && !IsCurrentCropTarget()) Cancel();
         if (tool == EditorTool.Crop && !CanCropSelection) tool = EditorTool.Select;
@@ -179,10 +236,12 @@ internal sealed partial class EditorController
     }
     public void ReplaceSession(EditorSession session, PointD origin)
     {
+        PlacementContextVersion++;
         Cancel();
         ClearPresentedScene();
         Session.Changed -= OnChanged;
         Session = session;
+        viewMapping = null; viewOrigin = null; viewEpoch = null; viewPlacement = null;
         if (!session.Document.Canvas.Projection.Enabled) billboardMode = false;
         session.Changed += OnChanged;
         ScreenOrigin = origin;
@@ -190,7 +249,7 @@ internal sealed partial class EditorController
         Changed?.Invoke();
     }
     public bool TryToDocument(OverlayPoint p, out PointD point) =>
-        CanvasMapping.Create(Session.Document).TryToPlane(new(p.X - ScreenOrigin.X, p.Y - ScreenOrigin.Y), out point);
+        CurrentCanvasMapping.TryToPlane(new(p.X - CanvasOrigin.X, p.Y - CanvasOrigin.Y), out point);
     public PointD ToDocument(OverlayPoint p) => TryToDocument(p, out var point) ? point :
         throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
     public void Cancel()
@@ -200,9 +259,10 @@ internal sealed partial class EditorController
     {
         CancelPicking();
         temporaryMove = false;
-        if (notify) Cancelling?.Invoke();
+        if (notify && (_pointerOwnedSession is null || OwnsPointerTransaction)) Cancelling?.Invoke();
         resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
         resizeTextSources.Clear();
+        nodeTransform = null; nodeOriginalElements.Clear(); drawingParents.Clear();
         gesture = null; drawing = effectTarget = resizeSource = billboardEndpointSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
         lastGestureMove = null;
         CapturePreview = null; capturePoints.Clear();
@@ -213,13 +273,15 @@ internal sealed partial class EditorController
         selectionOnClick = null;
         ClearBillboardDepth(); pendingBillboardInsertion = null; billboardSources.Clear(); billboardMoveDelta = null;
         IsPointerBlocked = false; strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
-        if (rollback) Session.Cancel();
+        if (rollback && OwnsPointerTransaction) Session.Cancel();
+        _pointerOwnedSession = null; _pointerOwnedTransaction = 0;
         Changed?.Invoke();
     }
     public void Pointer(OverlayPointerEvent e) => PointerForCanvas(e, e.Kind == OverlayPointerKind.DoubleClick);
 
     internal void PointerForCanvas(OverlayPointerEvent e, bool propertiesDoubleClick)
     {
+        if (Tool == EditorTool.PointerPresentation) { if (e.Kind == OverlayPointerKind.Cancel) Cancel(); return; }
         if (presentedPickingSuspended)
         {
             if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) Message?.Invoke(L.Get("Rendering.PresentationFailed"));
@@ -236,15 +298,23 @@ internal sealed partial class EditorController
     private void PointerCore(OverlayPointerEvent e, bool propertiesDoubleClick)
     {
         if (e.Kind == OverlayPointerKind.Cancel) { Cancel(); return; }
+        // External cancellation, scope changes or a new owner can end a gesture's
+        // transaction before its queued pointer edges arrive.
+        if (gesture is not null && _pointerOwnedSession is not null && !OwnsPointerTransaction)
+        {
+            CancelGesture(rollback: false, notify: false);
+            if (e.Kind is not (OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)) return;
+        }
         if(e.Kind==OverlayPointerKind.Move&&gesture is not null&&e.Time is { } inputTime&&modifierTime is { } boundary&&unchecked((int)(inputTime-boundary))<0)return;
-        pointerScreen = new(e.Position.X - ScreenOrigin.X, e.Position.Y - ScreenOrigin.Y);
+        pointerScreen = new(e.Position.X - CanvasOrigin.X, e.Position.Y - CanvasOrigin.Y);
+        if (!IsScreenDraftContextCurrent) { Cancel(); return; }
         if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); Tool = EditorTool.Select; return; }
         if (HandleBillboardDepthInput(e)) return;
-        bool screenGesture = HasCaptureGesture || Tool == EditorTool.CaptureRegion && gesture is null;
+        bool screenGesture = HasCaptureGesture || Tool == EditorTool.CaptureRegion && gesture is null || UsesScreenCreationInput(e.Modifiers);
         PointD p;
         if (screenGesture) p = pointerScreen;
         else if (UsesBillboardDrawingInput || gesture is null && billboardDepth is not null) p = BillboardInput(pointerScreen);
-        else if (!CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out p) && !TryBillboardSelectionInput(out p))
+        else if (!CurrentCanvasMapping.TryToPlane(pointerScreen, out p) && !TryBillboardSelectionInput(out p))
         {
             if (IsPlanarStrokeDrawing)
             {
@@ -276,6 +346,9 @@ internal sealed partial class EditorController
             var hit = HitTestScreen(pointerScreen, 4);
             if (hit is not null)
             {
+                var node = ResolveHitSelectableNode(hit.Id);
+                if (node is { } group && Session.Document.Groups.Any(item => item.Id == group)) { Session.EnterScope(group); return; }
+                if (node is { } instance && Session.Document.Instances.Any(item => item.Id == instance)) { PrefabEditRequested?.Invoke(instance); return; }
                 Session.SetSelection([hit.Id]);PropertiesRequested?.Invoke(pointerScreen);return;
             }
         }
@@ -283,6 +356,8 @@ internal sealed partial class EditorController
         {
             var retainedDepth = billboardDepth;
             Cancel(); billboardDepth = retainedDepth;
+            if (Session.IsTransactionActive) return;
+            if (IsCreationTool(Tool) && !Session.CanInsertInEditScope) { Message?.Invoke(L.Get("Inspector.LockedSuffix")); return; }
             start = p; startScreen = pointerScreen; lastGestureMove = (p, e.Modifiers, e.Button);
             clickPlacementGestureThreshold = double.IsFinite(ClickPlacementDragThreshold) && ClickPlacementDragThreshold > 0
                 ? ClickPlacementDragThreshold : 6;
@@ -291,10 +366,15 @@ internal sealed partial class EditorController
             bool forceCreate = (e.Modifiers & OverlayModifiers.Control) != 0;
             if (Tool == EditorTool.Text && e.Kind == OverlayPointerKind.DoubleClick && !forceCreate &&
                 HitTestScreen(pointerScreen, 4) is { Kind: ElementKind.Text } existingText)
-            { EditText?.Invoke(existingText, p); return; }
+            {
+                if (IsInstanceHit(existingText.Id))
+                { if (ResolveHitHostNode(existingText.Id) is { } instance) PrefabEditRequested?.Invoke(instance); }
+                else EditText?.Invoke(existingText, p);
+                return;
+            }
             deselectOnClick = creating && !forceCreate && Session.Selection.Count > 0;
             var selectionPoint = p;
-            bool canSelect = !screenGesture || CanvasMapping.Create(Session.Document).TryToPlane(pointerScreen, out selectionPoint) ||
+            bool canSelect = !screenGesture || CurrentCanvasMapping.TryToPlane(pointerScreen, out selectionPoint) ||
                 TryBillboardSelectionInput(out selectionPoint);
             if (ShouldShowSelection(e.Modifiers) && canSelect && IsSelectionFrameHit(pointerScreen, includeInterior: true))
             {
@@ -305,6 +385,8 @@ internal sealed partial class EditorController
             if(Tool==EditorTool.Text)
             {
                 var text=forceCreate?null:HitTestScreen(pointerScreen,4);
+                if (text is not null && IsInstanceHit(text.Id))
+                { if (ResolveHitSelectableNode(text.Id) is { } instance) Session.SetSelection([instance]); return; }
                 EditText?.Invoke(text?.Kind==ElementKind.Text?text:null,p);
                 return;
             }
@@ -312,9 +394,9 @@ internal sealed partial class EditorController
             { Session.SetSelection([]); return; }
             if (Tool is EditorTool.Number or EditorTool.Emoji)
             {
-                BeginSizedPlacement(p); BeginBillboardDrawing();
+                BeginSizedPlacement(p);
                 if (!IsDrawingSafe()) { Cancel(); RejectPointer(true); return; }
-                Session.NotifyChanged(); return;
+                NotifyGeometryChanged(); return;
             }
             if (Tool == EditorTool.Image) { Message?.Invoke(L.Get("Editor.ImportImageHint")); return; }
             if (Tool == EditorTool.Stamp) return;
@@ -322,11 +404,13 @@ internal sealed partial class EditorController
             {
                 if (!ImageToolEligibility.TryGetCropTarget(Session, out effectTarget))
                 { Message?.Invoke(L.Get("Editor.CropImageHint")); return; }
+                if (effectTarget!.WindowSource is not null) { TryRedirectWindowSourceCrop(); effectTarget = null; return; }
                 cropRevision = Session.SceneRevision;
                 gesture = "image-crop"; UpdateImageRegion(p,e.Modifiers); return;
             }
             if (Tool == EditorTool.CaptureRegion)
             {
+                BeginScreenBillboardRegion();
                 gesture = CaptureShape == CaptureShape.PolygonLasso ? "capture-polygon" : "capture";
                 if (CaptureShape is CaptureShape.FreehandLasso or CaptureShape.PolygonLasso) capturePoints.Add(p);
                 if(CaptureShape==CaptureShape.FreehandLasso&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
@@ -335,11 +419,11 @@ internal sealed partial class EditorController
             if (Tool is EditorTool.Blur or EditorTool.Pixelate)
             {
                 if (Tool is EditorTool.Blur or EditorTool.Pixelate && Session.Document.Kind == DocumentKind.LiveOverlay)
-                { gesture = "desktop-effect"; Marquee = new(p.X,p.Y,0,0); return; }
+                { gesture = "desktop-effect"; BeginScreenBillboardRegion(); Marquee = new(p.X,p.Y,0,0); return; }
                 if (!TryGetSelectedImageTarget(out effectTarget, canvasFallback: true)) return;
                 effectTarget ??= Session.Document.Background;
                 if (effectTarget == null)
-                { gesture = "desktop-effect"; Marquee = new(p.X, p.Y, 0, 0); return; }
+                { gesture = "desktop-effect"; BeginScreenBillboardRegion(); Marquee = new(p.X, p.Y, 0, 0); return; }
                 if (!CanEditImage(effectTarget)) return;
                 gesture = "effect"; UpdateImageRegion(p,e.Modifiers); return;
             }
@@ -349,17 +433,19 @@ internal sealed partial class EditorController
             BeginPointerTransaction(L.Format("Editor.History.Draw", L.Get("Editor.ElementKind." + Tool)));
             drawing = new CanvasElement { Kind = Enum.Parse<ElementKind>(Tool.ToString()), Style = Style.Clone(), CornerRadius = CornerRadius,
                 Symbol = Symbol, Transform = Affine2D.Translation(p.X, p.Y), Points = [new(0, 0)] };
-            if(ElementGeometry.IsBoxShape(drawing.Kind))drawing.ConstrainAspect=ConstrainAspect;
+            if (Tool == EditorTool.Presentation)
+            { drawing.Presentation = (Presentation ?? new()).Clone(); drawing.Presentation.Modules = PresentationModules.Keys; }
+            if(ElementGeometry.IsBoxShape(drawing.Kind) || drawing.Kind == ElementKind.Presentation)drawing.ConstrainAspect=ConstrainAspect;
             if (Tool == EditorTool.Highlighter) drawing.Style.StrokeWidth = Math.Max(16, Style.StrokeWidth);
             if(drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
             if (UsesDefaultSize(Tool)) ApplyDefaultSize(drawing, start, e.Modifiers);
             BeginBillboardDrawing();
             if (!IsDrawingSafe()) { Cancel(); RejectPointer(true); return; }
-            Session.Document.Elements.Add(drawing);
+            InsertWorldDrawing();
             Session.Selection.Clear();
-            if (Tool is not (EditorTool.Freehand or EditorTool.Highlighter) && !ElementGeometry.IsLine(drawing.Kind))
+            if (!screenBillboardDrawing && Tool is not (EditorTool.Freehand or EditorTool.Highlighter) && !ElementGeometry.IsLine(drawing.Kind))
                 Session.Selection.Add(drawing.Id);
-            Session.NotifyChanged();
+            NotifyGeometryChanged();
         }
         else if (e.Kind == OverlayPointerKind.Move && gesture != null)
         {
@@ -384,7 +470,7 @@ internal sealed partial class EditorController
             if (IsPointerBlocked && !IsPlanarStrokeDrawing)
             {
                 Cancel();
-                SetPointerBlocked(!CanvasMapping.Create(Session.Document).IsScreenSafe(pointerScreen));
+                SetPointerBlocked(!CurrentCanvasMapping.IsScreenSafe(pointerScreen));
                 Message?.Invoke(L.Get("Perspective.InputOutsidePlane")); return;
             }
             if (billboardDrawing && !billboardDraftValid)
@@ -396,25 +482,25 @@ internal sealed partial class EditorController
             else if (completed == "desktop-effect" && Marquee is { Width: >= 2, Height: >= 2 } region)
                 DesktopEffectRequested?.Invoke(region, Enum.Parse<ImageEffectKind>(Tool.ToString()), EffectStrength, Style.Stroke);
             else if (completed == "image-crop") CommitImageCrop();
-            else if (Session.IsTransactionActive)
+            else if (OwnsPointerTransaction)
             {
                 if (completed == "draw" && Tool is EditorTool.Number or EditorTool.Emoji)
                 {
                     if (drawing?.Kind == ElementKind.Number)
                         Session.Document.NextNumber = NumberSequence.Advance(Session.Document.NextNumber, drawing.Number, NumberStep);
-                    Session.Commit();
+                    CommitPointerEdit();
                 }
                 else if (completed == "draw" && !gestureMoved && drawing is not null && ElementGeometry.IsLine(drawing.Kind))
                 { Session.Cancel(); if (deselectOnClick) Session.SetSelection([]); }
                 else if (completed == "draw" && !gestureMoved && drawing is not null && UsesDefaultSize(Tool))
-                { PrepareBillboardDrawing(); ApplyDefaultSize(drawing, start, e.Modifiers); if (RefreshBillboardDrawing() && IsDrawingSafe()) Session.Commit(); else { Session.Cancel(); RejectPointer(true); } }
+                { PrepareBillboardDrawing(); ApplyDefaultSize(drawing, start, e.Modifiers); if (RefreshBillboardDrawing() && IsDrawingSafe()) CommitPointerEdit(); else { Session.Cancel(); RejectPointer(true); } }
                 else if (completed == "draw" && deselectOnClick && !gestureMoved)
                 { Session.Cancel(); Session.SetSelection([]); }
                 else if (completed == "move" && shiftDeselectOnClick && !gestureMoved)
-                { var ids = shiftDeselectTarget is { } id ? Session.SelectionUnitIds(id).ToArray() : []; Session.Cancel(); Session.SetSelection(Session.Selection.Except(ids)); }
+                { var ids = shiftDeselectTarget is { } id && ResolveHitSelectableNode(id) is { } node ? new[] { node } : []; Session.Cancel(); Session.SetSelection(Session.Selection.Except(ids)); }
                 else if (completed == "move" && !gestureMoved && selectionOnClick is { } clicked)
-                { Session.Commit(); Session.SetSelection(clicked); }
-                else Session.Commit();
+                { CommitPointerEdit(); Session.SetSelection(clicked); }
+                else CommitPointerEdit();
             }
             resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
             resizeTextSources.Clear();
@@ -424,13 +510,14 @@ internal sealed partial class EditorController
             ClearBillboardDepth(); billboardSources.Clear();
             selectionOnClick = null;
             shiftDeselectTarget = null;
+            _pointerOwnedSession = null; _pointerOwnedTransaction = 0;
         }
     }
 
     internal bool IsSelectionFrameHit(PointD screen, bool includeInterior = false)
     {
         if (CanvasContentHidden) return false;
-        if (!Session.SelectedElements().Any(element => element.Visible && !element.Locked)) return false;
+        if (!Session.SelectedWorldElements(editableOnly: true).Any(element => element.Visible)) return false;
         if (SelectionScreenRotationHandle is { } rotation && screen.DistanceTo(rotation) < 14 ||
             BillboardSelectionGuide is { } guide && screen.DistanceTo(guide.Center) < 12 ||
             SelectionScreenEndpoints.Any(endpoint => screen.DistanceTo(endpoint) < 12)) return true;
@@ -462,7 +549,7 @@ internal sealed partial class EditorController
         {
             double diameter = style.FontSize;
             drawing = new() { Kind = ElementKind.Number, Width = diameter, Height = diameter,
-                Style = style, Number = Session.Document.NextNumber, NumberUsesForeground = true, ConstrainAspect = true };
+                Style = style, Number = Session.Document.NextNumber, NumberTextSizeMode = NumberTextSizeMode, ConstrainAspect = true };
         }
         else
         {
@@ -472,11 +559,12 @@ internal sealed partial class EditorController
         drawing.Transform = Affine2D.Translation(center.X - drawing.Width / 2, center.Y - drawing.Height / 2);
         BeginPointerTransaction(L.Get("History.AddElement"));
         gesture = "draw";
+        BeginBillboardDrawing();
         // These tools keep their continuous click-to-insert behavior even when another object is selected.
         deselectOnClick = false;
-        Session.Document.Elements.Add(drawing);
-        Session.Selection.Clear(); Session.Selection.Add(drawing.Id);
-        Session.NotifyChanged();
+        InsertWorldDrawing();
+        Session.Selection.Clear(); if (!screenBillboardDrawing) Session.Selection.Add(drawing.Id);
+        NotifyGeometryChanged();
     }
 
     private void ResizePlacement(PointD point, OverlayModifiers modifiers)
@@ -509,17 +597,17 @@ internal sealed partial class EditorController
     private void StartSelect(PointD p, OverlayModifiers modifiers, bool selectedOnly = false)
     {
         if (TryStartBillboardHeight()) return;
-        var bounds = Session.SelectionBounds();
-        var selected = Session.SelectedElements().Where(x => !x.Locked).ToArray();
+        var bounds = Session.SelectionBounds(editableOnly: true);
+        var selected = Session.SelectedWorldElements(editableOnly: true).ToArray();
         if (bounds != null && selected.Length > 0)
         {
             selectionBounds = bounds.Value;
-            if (selected.Length == 1 && selected[0].Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow && selected[0].Points.Count > 1)
+            if (!HasNodeSelection && selected.Length == 1 && selected[0].Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow && selected[0].Points.Count > 1)
             {
                 var element = selected[0];
                 foreach (var i in new[] { 0, element.Points.Count - 1 })
-                    if (CanvasMapping.Create(Session.Document).ElementToScreen(element).TransformPoint(element.Points[i]).DistanceTo(pointerScreen) < 12)
-                    { drawing = element; billboardEndpointSource = element.IsBillboard ? element.Clone() : null; endpoint = i; gesture = "endpoint"; BeginPointerTransaction(L.Get("Editor.History.AdjustEndpoint")); return; }
+                    if (CurrentCanvasMapping.ElementToScreen(element).TransformPoint(element.Points[i]).DistanceTo(pointerScreen) < 12)
+                    { BeginWorldEndpoint(Session.Document.Elements.Single(source => source.Id == element.Id)); billboardEndpointSource = element.IsBillboard ? element.Clone() : null; endpoint = i; gesture = "endpoint"; BeginPointerTransaction(L.Get("Editor.History.AdjustEndpoint")); return; }
             }
             if (SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14) gesture = "rotate";
             else if (SelectionScreenCorners.Any(c => pointerScreen.DistanceTo(c) < 12)) gesture = "resize";
@@ -531,7 +619,7 @@ internal sealed partial class EditorController
         if (gesture == "move" && !temporaryMove && !selectedOnly && modifiers is OverlayModifiers.None or OverlayModifiers.Shift &&
             HitTestScreen(pointerScreen, 7) is { } foreground)
         {
-            var unit = Session.SelectionUnitIds(foreground.Id).ToArray();
+            var unit = ResolveHitSelectableNode(foreground.Id) is { } foregroundNode ? new[] { foregroundNode } : [];
             if (modifiers == OverlayModifiers.Shift)
             {
                 if (unit.All(Session.Selection.Contains)) { shiftDeselectOnClick = true; shiftDeselectTarget = foreground.Id; }
@@ -546,13 +634,13 @@ internal sealed partial class EditorController
             bool individual = (modifiers & OverlayModifiers.Alt) != 0;
             if ((modifiers & OverlayModifiers.Shift) != 0)
             {
-                var ids = Session.SelectionUnitIds(hit.Id, individual).ToArray();
+                var ids = ResolveHitSelectableNode(hit.Id, individual) is { } additiveNode ? new[] { additiveNode } : [];
                 if (ids.All(Session.Selection.Contains)) { shiftDeselectOnClick = true; shiftDeselectTarget = hit.Id; }
                 else { Session.SetSelection(Session.Selection.Union(ids)); return; }
             }
-            var unit = Session.SelectionUnitIds(hit.Id, individual);
+            var unit = ResolveHitSelectableNode(hit.Id, individual) is { } selectedNode ? new[] { selectedNode } : [];
             if (individual || !unit.All(Session.Selection.Contains)) Session.SetSelection(unit);
-            selectionBounds = Session.SelectionBounds()!.Value;
+            selectionBounds = Session.SelectionBounds(editableOnly: true)!.Value;
             gesture = "move";
         }
         transforms = Session.SelectedElements().Where(x => !x.Locked).ToDictionary(x => x.Id, x => x.Transform);
@@ -560,6 +648,7 @@ internal sealed partial class EditorController
         resizeSource = gesture == "resize" && selected.Length == 1 && (ElementGeometry.IsBoxShape(selected[0].Kind) || selected[0].Kind == ElementKind.Text) ? selected[0].Clone() : null;
         resizeTextSources=gesture=="resize"?selected.Where(element=>element.Kind==ElementKind.Text).ToDictionary(element=>element.Id,element=>element.Clone()):[];
         if (resizeTextSources.Count>0) resizeTextRenderer = new();
+        PrepareNodeTransform();
         BeginPointerTransaction(L.Get("Editor.History.Transform"));
     }
 
@@ -570,6 +659,7 @@ internal sealed partial class EditorController
         // selected-frame body moves the current selection. Ignore click-sized jitter
         // until the existing physical movement threshold establishes that intent.
         if (gesture == "move" && (selectionOnClick is not null || shiftDeselectOnClick) && !gestureMoved) return;
+        if (MoveNodeSelection(p, modifiers)) return;
         if (MoveBillboardSelection(p, modifiers)) return;
         if (HasCaptureGesture) { UpdateCapturePreview(p, modifiers); return; }
         if (gesture is "effect" or "image-crop") { UpdateImageRegion(p,modifiers); Changed?.Invoke(); return; }
@@ -581,7 +671,7 @@ internal sealed partial class EditorController
             if (drawing.IsBillboard)
             {
                 var source = billboardEndpointSource ?? drawing;
-                var canvasMapping = CanvasMapping.Create(Session.Document);
+                var canvasMapping = CurrentCanvasMapping;
                 var screenMap = canvasMapping.ElementToScreen(source);
                 if (!screenMap.TryInverse(out var toLocal)) return;
                 var end = pointerScreen;
@@ -590,13 +680,13 @@ internal sealed partial class EditorController
                 drawing.Points = [..source.Points]; drawing.Points[endpoint] = toLocal.TransformPoint(end);
                 if (canvasMapping.TryGetEqualDepthLine(canvasMapping.ToScreen(source.BillboardAnchor), out var depth))
                     BillboardGeometry.TryPlaceFromScreen(drawing, canvasMapping, depth, screenMap);
-                Session.NotifyChanged(); return;
+                NotifyGeometryChanged(); return;
             }
             var mapping=ElementGeometry.LocalToPlane(drawing);
             if(!mapping.TryInverse(out var inverse))return;
             if((modifiers&OverlayModifiers.Shift)!=0)
                 p=EightDirectionEnd(mapping.TransformPoint(drawing.Points[endpoint==0?drawing.Points.Count-1:0]),p);
-            drawing.Points[endpoint] = inverse.TransformPoint(p); Session.NotifyChanged(); return;
+            drawing.Points[endpoint] = inverse.TransformPoint(p); NotifyGeometryChanged(); return;
         }
         if (gesture == "draw" && drawing != null)
         {
@@ -604,11 +694,11 @@ internal sealed partial class EditorController
             if (UsesDefaultSize(Tool) && !gestureMoved)
             {
                 ApplyDefaultSize(drawing, start, modifiers);
-                RefreshBillboardDrawing(); Session.NotifyChanged(); return;
+                RefreshBillboardDrawing(); NotifyGeometryChanged(); return;
             }
             if (Tool is EditorTool.Number or EditorTool.Emoji)
             {
-                ResizePlacement(p, modifiers); RefreshBillboardDrawing(); Session.NotifyChanged(); return;
+                ResizePlacement(p, modifiers); RefreshBillboardDrawing(); NotifyGeometryChanged(); return;
             }
             var local = p - start;
             if (drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter)
@@ -624,17 +714,14 @@ internal sealed partial class EditorController
                 drawing.Width = Math.Max(1, rect.Width); drawing.Height = Math.Max(1, rect.Height);
                 drawing.Transform = Affine2D.Translation(rect.X, rect.Y); drawing.Points.Clear();
             }
-            RefreshBillboardDrawing(); Session.NotifyChanged(); return;
+            RefreshBillboardDrawing(); NotifyGeometryChanged(); return;
         }
         Affine2D delta;
         if (gesture == "move")
         { var move = billboardMoveDelta ?? ConstrainMove(p - start, modifiers); delta = Affine2D.Translation(move.X, move.Y); }
         else if (gesture == "rotate")
         {
-            var center = selectionBounds.Center;
-            var degrees = (Math.Atan2(p.Y - center.Y, p.X - center.X) - Math.Atan2(start.Y - center.Y, start.X - center.X)) * 180 / Math.PI;
-            if ((modifiers & OverlayModifiers.Shift) != 0) degrees = Math.Round(degrees / 15) * 15;
-            delta = Affine2D.Around(center, Affine2D.Rotation(degrees));
+            delta = RotationDelta(selectionBounds.Center, start, p, modifiers);
         }
         else if (gesture == "resize")
         {
@@ -652,11 +739,11 @@ internal sealed partial class EditorController
                 if (source.Kind == ElementKind.Text)
                 {
                     TextFrameLayout.Resize(element, source, scaleX, scaleY, resizeTextRenderer!);
-                    Session.NotifyChanged(); return;
+                    NotifyGeometryChanged(); return;
                 }
                 element.Width = source.Width; element.Height = source.Height; element.CornerRadius = source.CornerRadius; element.Transform = original;
                 ElementGeometry.ResizeShapeGeometry(element, scaleX, scaleY);
-                Session.NotifyChanged(); return;
+                NotifyGeometryChanged(); return;
             }
             var center = selectionBounds.Center;
             var from = start - center; var to = p - center;
@@ -675,17 +762,21 @@ internal sealed partial class EditorController
                     TextFrameLayout.Transform(element,textSource,delta,resizeTextRenderer!);
                 else element.Transform = delta.Compose(original);
             }
-        Session.NotifyChanged();
+        NotifyGeometryChanged();
     }
 
     private void Erase(PointD p)
     {
         if (CanvasDepthOrder.IsEnabled(PickingDocument))
         {
-            if (HitTestScreen(pointerScreen, 10) is { } visible) Session.Document.Elements.Remove(visible);
+            if (HitTestScreen(pointerScreen, 10) is { } visible) new SceneGraph(Session.Document).RemoveNodes([visible.Id]);
         }
-        else Session.Document.Elements.RemoveAll(e => !e.Locked && ElementHitTestScreen(e, pointerScreen, 10));
-        Session.NotifyChanged();
+        else
+        {
+            var graph = new SceneGraph(Session.Document);
+            graph.RemoveNodes(Session.Document.Elements.Where(e => !graph.IsLocked(e.Id) && ElementHitTestScreen(e, pointerScreen, 10)).Select(e => e.Id).ToArray());
+        }
+        NotifyGeometryChanged();
     }
     private void CommitEffect()
     {
@@ -704,15 +795,18 @@ internal sealed partial class EditorController
     private bool TryGetSelectedImageTarget(out CanvasElement? image, bool canvasFallback = false)
     {
         var selected = Session.SelectedElements().Where(e => e.Kind == ElementKind.Image).ToArray();
+        if (Session.Selection.Any(id => Session.Document.Groups.Any(group => group.Id == id)))
+        { image = null; Message?.Invoke(L.Get("Editor.SelectSingleImage")); return false; }
         image = selected.Length == 1 ? selected[0] : null;
         if (selected.Length > 1 && !canvasFallback) { Message?.Invoke(L.Get("Editor.SelectSingleImage")); return false; }
-        if (image?.Locked == true) { Message?.Invoke(L.Get("Editor.ImageTargetLocked")); return false; }
+        if (image is not null && Session.IsNodeLocked(image.Id)) { Message?.Invoke(L.Get("Editor.ImageTargetLocked")); return false; }
         return true;
     }
     private void UpdateImageRegion(PointD p,OverlayModifiers modifiers)
     {
         if (effectTarget == null) return;
-        var targetMapping = effectTarget.IsBillboard ? CanvasMapping.Create(Session.Document).ElementToScreen(effectTarget) : ElementGeometry.LocalToPlane(effectTarget);
+        var world = new SceneGraph(Session.Document).ToWorld(effectTarget);
+        var targetMapping = world.IsBillboard ? CurrentCanvasMapping.ElementToScreen(world) : ElementGeometry.LocalToPlane(world);
         if (!targetMapping.TryInverse(out var inverse)) return;
         var anchor=inverse.TransformPoint(effectTarget.IsBillboard ? startScreen : start);
         var end=inverse.TransformPoint(effectTarget.IsBillboard ? pointerScreen : p);
@@ -724,8 +818,8 @@ internal sealed partial class EditorController
             end=anchor+new PointD(Math.CopySign(side,delta.X),Math.CopySign(side,delta.Y));
         }
         imageRegion = RectD.FromPoints(anchor,end).Intersect(new(0, 0, effectTarget.Width, effectTarget.Height));
-        EffectPreviewPolygon = Corners(imageRegion.Value).Select(ElementGeometry.LocalToPlane(effectTarget).TransformPoint).ToArray();
-        Marquee = ElementGeometry.LocalToPlane(effectTarget).TransformBounds(imageRegion.Value);
+        EffectPreviewPolygon = Corners(imageRegion.Value).Select(ElementGeometry.LocalToPlane(world).TransformPoint).ToArray();
+        Marquee = ElementGeometry.LocalToPlane(world).TransformBounds(imageRegion.Value);
     }
     private static RectD SourceRegion(CanvasElement image, RectD local)
     {

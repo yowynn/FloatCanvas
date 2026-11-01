@@ -5,14 +5,14 @@ namespace FloatCanvas.App;
 
 internal sealed partial class EditorController
 {
-    // All adorner points use the output coordinate system, before ScreenOrigin is added.
+    // All adorner points use the output coordinate system, before CanvasOrigin is added.
     internal IReadOnlyList<PointD> SelectionScreenCorners
     {
         get
         {
-            if (Session.SelectionBounds() is not { } bounds) return [];
-            var selected = Session.SelectedElements().Where(e => e.Visible && !e.Locked).ToArray();
-            var mapping = CanvasMapping.Create(Session.Document);
+            if (Session.SelectionBounds(editableOnly: true) is not { } bounds) return [];
+            var selected = Session.SelectedWorldElements(editableOnly: true).Where(e => e.Visible).ToArray();
+            var mapping = CurrentCanvasMapping;
             if (selected is [var billboard] && billboard.IsBillboard)
             {
                 if (!mapping.IsElementSafe(billboard)) return [];
@@ -58,8 +58,8 @@ internal sealed partial class EditorController
     {
         get
         {
-            if (Session.SelectedElements().ToArray() is not [var line] || !ElementGeometry.IsLine(line.Kind)) return [];
-            var mapping = CanvasMapping.Create(Session.Document);
+            if (HasNodeSelection || Session.SelectedWorldElements().ToArray() is not [var line] || !ElementGeometry.IsLine(line.Kind)) return [];
+            var mapping = CurrentCanvasMapping;
             if (line.IsBillboard && !mapping.IsElementSafe(line)) return [];
             return line.Points.Select(mapping.ElementToScreen(line).TransformPoint).ToArray();
         }
@@ -70,12 +70,12 @@ internal sealed partial class EditorController
         Corners(bounds).Select(p => p * depth.Scale).ToArray() : ToScreenPoints(Corners(bounds));
 
     internal IReadOnlyList<PointD> EffectScreenPreview => effectTarget is { IsBillboard: true } item && imageRegion is { } region ?
-        Corners(region).Select(CanvasMapping.Create(Session.Document).ElementToScreen(item).TransformPoint).ToArray() :
+        Corners(region).Select(CurrentCanvasMapping.ElementToScreen(new SceneGraph(Session.Document).ToWorld(item)).TransformPoint).ToArray() :
         EffectPreviewPolygon is { } points ? ToScreenPoints(points) : [];
 
     private IReadOnlyList<PointD> ToScreenPoints(IEnumerable<PointD> points)
     {
-        var matrix = CanvasMapping.Create(Session.Document).PlaneToScreen;
+        var matrix = CurrentCanvasMapping.PlaneToScreen;
         var result = new List<PointD>();
         foreach (var point in points)
         {
@@ -89,14 +89,33 @@ internal sealed partial class EditorController
     {
         if (CanvasContentHidden) return null;
         if (_pointPreflight is { } preflight && preflight.Point == point && preflight.Hits.TryGetValue(tolerance, out var id))
-            return id is null ? null : Session.Document.Elements.FirstOrDefault(e => e.Id == id && e.Visible && !e.Locked);
+            return id is null ? null : CurrentEditableLeaf(id.Value);
         var document = PickingDocument;
         var hit = !CanvasDepthOrder.IsEnabled(document) ? document.Elements
-            .LastOrDefault(element => !element.Locked && ElementHitTestScreenCore(document, element, point, tolerance)) :
+            .LastOrDefault(element => IsShownInkSelectable(document, element) && ElementHitTestScreenCore(document, element, point, tolerance)) :
             SelectionRenderer.PickDepth(document, PickingAssets, point, tolerance);
         // The shown snapshot may lag a removal. Never resurrect or mutate its frozen nodes.
-        return hit is null ? null : Session.Document.Elements.FirstOrDefault(e => e.Id == hit.Id && e.Visible && !e.Locked);
+        return hit is null ? null : CurrentEditableLeaf(hit.Id);
     }
+    private CanvasElement? CurrentEditableLeaf(Guid id)
+    {
+        var evaluation = CurrentPickingEvaluation;
+        if (evaluation.FindOccurrence(id) is not { } occurrence || !evaluation.IsPickableOccurrence(id) || ResolveHitSelectableNode(id) is null) return null;
+        var graph = new SceneGraph(Session.Document);
+        return occurrence.Source.DefinitionId is null ? graph.FindElement(occurrence.HostNodeId) : occurrence.RenderElement;
+    }
+
+    private Guid? ResolveHitHostNode(Guid runtimeId) => CurrentPickingEvaluation.HostNodeOfOccurrence(runtimeId) ??
+        (Session.Document.Instances.Any(instance => instance.Id == runtimeId) ? runtimeId : null);
+    private bool IsInstanceHit(Guid runtimeId) => ResolveHitHostNode(runtimeId) is { } host && Session.Document.Instances.Any(instance => instance.Id == host);
+    private Guid? ResolveHitSelectableNode(Guid runtimeId, bool individual = false)
+    {
+        var evaluation = CurrentPickingEvaluation;
+        if (!evaluation.IsPickableOccurrence(runtimeId) || evaluation.ResolveSelectableNode(runtimeId, Session.EditScopeId) is not { } selectable) return null;
+        return individual ? evaluation.HostNodeOfOccurrence(runtimeId) : selectable;
+    }
+    private static bool IsShownInkSelectable(SceneDocument document, CanvasElement element) =>
+        SceneEvaluation.RuntimeView(document)?.IsPickableOccurrence(element.Id) ?? (element.Visible && !element.Locked);
 
     private bool ElementHitTestScreen(CanvasElement element, PointD point, double tolerance)
     {
@@ -134,7 +153,7 @@ internal sealed partial class EditorController
     {
         var selected = additive ? new HashSet<Guid>(previous) : [];
         foreach (var id in hits)
-            if (Session.Document.Elements.Any(e => e.Id == id && e.Visible && !e.Locked)) selected.UnionWith(Session.SelectionUnitIds(id));
+            if (ResolveHitSelectableNode(id) is { } node) selected.Add(node);
         Session.SetSelection(selected);
     }
 
@@ -143,7 +162,7 @@ internal sealed partial class EditorController
     {
         var mapping = CanvasMapping.Create(document);
         var selected = new List<Guid>();
-        foreach (var element in document.Elements.Where(e => e.Visible && !e.Locked))
+        foreach (var element in document.Elements.Where(e => IsShownInkSelectable(document, e)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (element.IsBillboard && !mapping.IsElementSafe(element)) continue;

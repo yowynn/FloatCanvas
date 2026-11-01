@@ -27,8 +27,8 @@ internal sealed partial class EditorController
         if (gesture == "erase") return e.Kind is OverlayPointerKind.Move or OverlayPointerKind.Up;
         if (gesture == "move" && shiftDeselectOnClick) return e.Kind == OverlayPointerKind.Up;
         if (gesture is not null || Tool == EditorTool.Canvas) return false;
-        var point = new PointD(e.Position.X - ScreenOrigin.X, e.Position.Y - ScreenOrigin.Y);
-        return Tool == EditorTool.Text && BillboardMode || !CanvasMapping.Create(Session.Document).TryToPlane(point, out _);
+        var point = new PointD(e.Position.X - CanvasOrigin.X, e.Position.Y - CanvasOrigin.Y);
+        return Tool == EditorTool.Text && BillboardMode || !CurrentCanvasMapping.TryToPlane(point, out _);
     }
 
     private bool QueueBackgroundPointer(OverlayPointerEvent e, bool properties)
@@ -45,7 +45,7 @@ internal sealed partial class EditorController
         bool needs = PointerNeedsPicking(e);
         // New unselected pen strokes need no ink query. Keep their native input path immediate.
         if (gesture is null && IsCreationTool(Tool) && Tool != EditorTool.Text && Session.Selection.Count == 0 && !properties &&
-            CanvasMapping.Create(Session.Document).TryToPlane(new(e.Position.X - ScreenOrigin.X, e.Position.Y - ScreenOrigin.Y), out _)) needs = false;
+            CurrentCanvasMapping.TryToPlane(new(e.Position.X - CanvasOrigin.X, e.Position.Y - CanvasOrigin.Y), out _)) needs = false;
         if (!_pointerPickingRunning && !needs) return false;
         if (_pendingPointerEvents.Count > 0 && e.Kind == OverlayPointerKind.Move &&
             (Tool == EditorTool.Select || gesture is "move" or "resize" or "rotate" or "endpoint" or "marquee") &&
@@ -99,22 +99,24 @@ internal sealed partial class EditorController
                 var (input, properties) = _pendingPointerEvents[0]; _pendingPointerEvents.RemoveAt(0);
                 var session = Session; long revision = session.PreviewRevision;
                 var selection = session.Selection.ToArray(); var selectedTool = Tool;
-                var origin = ScreenOrigin;
+                var origin = CanvasOrigin;
                 if (PointerNeedsPicking(input))
                 {
                     var point = new PointD(input.Position.X - origin.X, input.Position.Y - origin.Y);
-                    var document = presentedScene ?? session.Document.Clone();
+                    var document = PickingDocument;
                     var resources = PickingAssets.Resources.ToArray();
                     using var images = presentedImages?.Retain();
+                    using var windowFrames = presentedWindowFrames?.Retain();
+                    var windowOwnerContext = presentedWindowOwnerContext;
                     var time = presentedScene is null ? AnimationTime : presentedTime;
                     _pointPreflight = await Task.Run(async () =>
                     {
                         await pickingWorker.WaitAsync(token).ConfigureAwait(false);
-                        try { return PreflightPoint(document, resources, images, time, point, token); }
+                        try { return PreflightPoint(document, resources, images, time, point, token, windowFrames, windowOwnerContext); }
                         finally { pickingWorker.Release(); }
                     }, token);
                     if (token.IsCancellationRequested) break;
-                    if (!ReferenceEquals(session, Session) || session.PreviewRevision != revision || ScreenOrigin != origin ||
+                    if (!ReferenceEquals(session, Session) || session.PreviewRevision != revision || CanvasOrigin != origin ||
                         Tool != selectedTool || !session.Selection.SetEquals(selection))
                     { AbortPointerPicking(); Message?.Invoke(L.Get("Editor.PickingCancelled")); break; }
                 }
@@ -142,10 +144,11 @@ internal sealed partial class EditorController
     }
 
     private static PointPreflight PreflightPoint(SceneDocument document, AssetResource[] resources, SceneImageSnapshot? images,
-        TimeSpan time, PointD point, CancellationToken token)
+        TimeSpan time, PointD point, CancellationToken token, WindowFrameSet? windowFrames = null, object? windowOwnerContext = null)
     {
         var assets = new AssetLibrary(); foreach (var resource in resources) assets.Add(resource);
-        using var renderer = new SceneRenderer { AnimationTime = time, PresentedImages = images, CacheByteLimit = 64L * 1024 * 1024 };
+        using var renderer = new SceneRenderer { AnimationTime = time, PresentedImages = images,
+            WindowFrames = windowFrames, WindowOwnerContext = windowOwnerContext, CacheByteLimit = 64L * 1024 * 1024 };
         var hits = new Dictionary<double, Guid?>(); var ink = new Dictionary<(Guid, double), bool>();
         foreach (double tolerance in new double[] { 4, 7, 10 })
         {
@@ -157,7 +160,7 @@ internal sealed partial class EditorController
                 foreach (var element in document.Elements)
                 {
                     token.ThrowIfCancellationRequested();
-                    bool hit = !element.Locked && ElementHitTestScreenCore(document, assets, renderer, element, point, tolerance, token);
+                    bool hit = IsShownInkSelectable(document, element) && ElementHitTestScreenCore(document, assets, renderer, element, point, tolerance, token);
                     ink[(element.Id, tolerance)] = hit;
                     if (hit) top = element.Id;
                 }

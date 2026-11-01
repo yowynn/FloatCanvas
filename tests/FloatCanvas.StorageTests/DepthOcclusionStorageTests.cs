@@ -51,6 +51,7 @@ internal static class DepthOcclusionStorageTests
                     var json = await ReadAsync(archive, name); json["Version"] = version;
                     if (name == "scene.json")
                     {
+                        LegacyFixtureSchema.RemovePrefabFields(json);
                         json["Canvas"]!.AsObject().Remove("DepthPriorityOcclusion");
                         if (version < 3) json.Remove("Canvas");
                         if (version < 4)

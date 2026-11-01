@@ -29,6 +29,13 @@ List<KeyboardInputPacket> Drain(KeyboardSuppressionState state)
 
 try
 {
+    if (args.Contains("--presentation-input-tap-only")) { PresentationInputTapTests.Run(Check); Console.WriteLine($"PASS {checks} editing presentation tap checks; metadata only, no hooks or input."); return 0; }
+    if (args.Contains("--presentation-hook-callback-only")) { PresentationHookCallbackTests.Run(Check); Console.WriteLine($"PASS {checks} direct editing hook callback checks; own fixture packets, no hooks installed or input injected."); return 0; }
+    if (args.Contains("--window-downsample-native-only")) { WindowDownsampleNativeTests.Run(Check); Console.WriteLine($"PASS {checks} own-texture GPU window downsampling checks; no windows or desktop capture."); return 0; }
+    if (args.Contains("--window-capture-native-only")) { WindowCaptureNativeTests.Run(Check); Console.WriteLine($"PASS {checks} own-window WGC lifecycle checks; no user windows or input."); return 0; }
+    PresentationInputTests.Run(Check);
+    if (args.Contains("--presentation-input-only")) { Console.WriteLine($"PASS {checks} passive input decoding/buffer checks."); return 0; }
+    PresentationInputTapTests.Run(Check);
     if (args.Contains("--preview-publication-performance")) { PreviewRasterPublicationTests.Performance(); return 0; }
     if (args.Contains("--preview-publication-only")) { PreviewRasterPublicationTests.Run(Check); Console.WriteLine($"PASS {checks} preview publication checks."); return 0; }
     if (args.Contains("--dirty-output-performance")) { DirtyOutputRenderingTests.Performance(); return 0; }

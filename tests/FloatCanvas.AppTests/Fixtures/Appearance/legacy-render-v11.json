@@ -1,0 +1,1772 @@
+[
+  {
+    "Name": "number flag=False style=absent fill=00112233 font=8",
+    "Element": {
+      "Id": "9e353ceb-7192-4325-811e-840d0d7736af",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "51B01C0647218EEFB61D17CD72BCCEED95B30B8CFC3475C6B814E2C6774D00D5"
+  },
+  {
+    "Name": "number flag=False style=absent fill=00112233 font=128",
+    "Element": {
+      "Id": "98c5ac08-c850-4e26-a6ee-fc54d65b5fdf",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "161B589AD8CB23486CE336E372CC42FB108C51A37A1395C59CE701F367DEA730"
+  },
+  {
+    "Name": "number flag=False style=absent fill=804499cc font=8",
+    "Element": {
+      "Id": "3c0cdaee-4f6f-41c3-a79a-752ed6860606",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "17C4FC34D498475E58AA0121C09B16989B3FB50C35B49DFC3FEECF49392E8681"
+  },
+  {
+    "Name": "number flag=False style=absent fill=804499cc font=128",
+    "Element": {
+      "Id": "be0679f1-9aa9-41ef-897b-1875d5b63864",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "4F8D14032BBC9D0BB456B4FE71527D4CF39549D4CC9823DD0EEABB63D0D6CBD5"
+  },
+  {
+    "Name": "number flag=False style=number.filled fill=00112233 font=8",
+    "Element": {
+      "Id": "fde8c38f-7541-4eb3-9463-2969bc8bf172",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.filled",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "8F18CBA6152CFE388553285E0BA28196372F2F83C400E2A3CACFFB92AE407D91"
+  },
+  {
+    "Name": "number flag=False style=number.filled fill=00112233 font=128",
+    "Element": {
+      "Id": "ea0f1b76-c1ba-49ef-8f7a-919eeeef2efa",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.filled",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "8F18CBA6152CFE388553285E0BA28196372F2F83C400E2A3CACFFB92AE407D91"
+  },
+  {
+    "Name": "number flag=False style=number.filled fill=804499cc font=8",
+    "Element": {
+      "Id": "2f2248bb-e62e-468f-bd02-0e961d6dde4c",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.filled",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "A173462079AA1EEE8E2C291C90D53F21371942C07DFABB0039629BF1D738E4AA"
+  },
+  {
+    "Name": "number flag=False style=number.filled fill=804499cc font=128",
+    "Element": {
+      "Id": "4c457e01-9b6f-4dcb-b262-fb0152496c66",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.filled",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "87B4EC28A87B568D7207DDA780F31E73A10362C8DC1A15F2D02FDAE99BE1286E"
+  },
+  {
+    "Name": "number flag=False style=number.outline fill=00112233 font=8",
+    "Element": {
+      "Id": "624edc24-5124-4b54-ab10-79e2ea30bf9a",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.outline",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "78AF66B8B0F56BCB9A1BA06A4177D6914EEC41B0A7EB4D9D8954C574857F9F46"
+  },
+  {
+    "Name": "number flag=False style=number.outline fill=00112233 font=128",
+    "Element": {
+      "Id": "b572562e-d30f-4ea8-a593-a52ce10a78e6",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.outline",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "5D62E37AF2FDB3BA968E2656D83BB9D3534D142A8BB3E11AD25741FAF1F8A266"
+  },
+  {
+    "Name": "number flag=False style=number.outline fill=804499cc font=8",
+    "Element": {
+      "Id": "3ce82736-7ba2-4a49-8fd1-1234227eb562",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.outline",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "78AF66B8B0F56BCB9A1BA06A4177D6914EEC41B0A7EB4D9D8954C574857F9F46"
+  },
+  {
+    "Name": "number flag=False style=number.outline fill=804499cc font=128",
+    "Element": {
+      "Id": "1a741c9b-7600-435a-9c77-771802bf14b0",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.outline",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "5D62E37AF2FDB3BA968E2656D83BB9D3534D142A8BB3E11AD25741FAF1F8A266"
+  },
+  {
+    "Name": "number flag=True style=absent fill=00112233 font=8",
+    "Element": {
+      "Id": "480b75ad-2877-438a-b410-69c647f40089",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "8F18CBA6152CFE388553285E0BA28196372F2F83C400E2A3CACFFB92AE407D91"
+  },
+  {
+    "Name": "number flag=True style=absent fill=00112233 font=128",
+    "Element": {
+      "Id": "0e7fecf7-33e7-4664-8b52-de76394388b7",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "8F18CBA6152CFE388553285E0BA28196372F2F83C400E2A3CACFFB92AE407D91"
+  },
+  {
+    "Name": "number flag=True style=absent fill=804499cc font=8",
+    "Element": {
+      "Id": "56683815-61e6-476f-b69e-78b03c51ded6",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "87B4EC28A87B568D7207DDA780F31E73A10362C8DC1A15F2D02FDAE99BE1286E"
+  },
+  {
+    "Name": "number flag=True style=absent fill=804499cc font=128",
+    "Element": {
+      "Id": "82579f7c-a4e4-4500-a3c8-3e008084cd80",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "87B4EC28A87B568D7207DDA780F31E73A10362C8DC1A15F2D02FDAE99BE1286E"
+  },
+  {
+    "Name": "number flag=True style=number.filled fill=00112233 font=8",
+    "Element": {
+      "Id": "53a495da-c9fa-43a4-ab25-70cf0a033f06",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.filled",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "8F18CBA6152CFE388553285E0BA28196372F2F83C400E2A3CACFFB92AE407D91"
+  },
+  {
+    "Name": "number flag=True style=number.filled fill=00112233 font=128",
+    "Element": {
+      "Id": "41128038-7c73-4b4b-a78c-21dece708f1c",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.filled",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "8F18CBA6152CFE388553285E0BA28196372F2F83C400E2A3CACFFB92AE407D91"
+  },
+  {
+    "Name": "number flag=True style=number.filled fill=804499cc font=8",
+    "Element": {
+      "Id": "a3d24d2f-71b5-4032-b907-398ce9e078a1",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.filled",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "87B4EC28A87B568D7207DDA780F31E73A10362C8DC1A15F2D02FDAE99BE1286E"
+  },
+  {
+    "Name": "number flag=True style=number.filled fill=804499cc font=128",
+    "Element": {
+      "Id": "0079a694-760b-414d-895f-aa413fe90b5e",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.filled",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "87B4EC28A87B568D7207DDA780F31E73A10362C8DC1A15F2D02FDAE99BE1286E"
+  },
+  {
+    "Name": "number flag=True style=number.outline fill=00112233 font=8",
+    "Element": {
+      "Id": "67abb6d6-cc1e-4a7f-8699-ada35cc18553",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.outline",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "5D62E37AF2FDB3BA968E2656D83BB9D3534D142A8BB3E11AD25741FAF1F8A266"
+  },
+  {
+    "Name": "number flag=True style=number.outline fill=00112233 font=128",
+    "Element": {
+      "Id": "4e387eb0-1d5e-4bc0-b604-41f74ae6637e",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.outline",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "5D62E37AF2FDB3BA968E2656D83BB9D3534D142A8BB3E11AD25741FAF1F8A266"
+  },
+  {
+    "Name": "number flag=True style=number.outline fill=804499cc font=8",
+    "Element": {
+      "Id": "8407375f-a3c2-4b3b-8ede-15224c75572c",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.outline",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 8,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "5D62E37AF2FDB3BA968E2656D83BB9D3534D142A8BB3E11AD25741FAF1F8A266"
+  },
+  {
+    "Name": "number flag=True style=number.outline fill=804499cc font=128",
+    "Element": {
+      "Id": "6f27dc94-91d4-4589-9934-9b07098ae2df",
+      "Kind": 10,
+      "Points": [],
+      "Width": 80,
+      "Height": 80,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 10,
+        "OffsetY": 10
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "number.outline",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 128,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 12,
+      "NumberUsesForeground": true,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "5D62E37AF2FDB3BA968E2656D83BB9D3534D142A8BB3E11AD25741FAF1F8A266"
+  },
+  {
+    "Name": "shape link=False style=absent fill=00112233",
+    "Element": {
+      "Id": "404196cf-b4bc-49ed-8422-b96752fd3a02",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "3ED162ED1C9A6372A966E0E81DD071EE8835DE4728647CA662605B3AD4F495FA"
+  },
+  {
+    "Name": "shape link=False style=absent fill=804499cc",
+    "Element": {
+      "Id": "0fb91e9c-8cc8-4b47-bb08-f196b6adb83e",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "D62C7DD6F719A3D5AB78E5F6D7B836E0BAA23DB4B1F0611B8483E68C8D3A7A8F"
+  },
+  {
+    "Name": "shape link=False style=shape.independent fill=00112233",
+    "Element": {
+      "Id": "7a6940f9-e30f-41ba-b551-528881a9f72f",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "shape.independent",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "3ED162ED1C9A6372A966E0E81DD071EE8835DE4728647CA662605B3AD4F495FA"
+  },
+  {
+    "Name": "shape link=False style=shape.independent fill=804499cc",
+    "Element": {
+      "Id": "8fb735b8-708f-447c-aaeb-bfa0dcf6fe2e",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "shape.independent",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "D62C7DD6F719A3D5AB78E5F6D7B836E0BAA23DB4B1F0611B8483E68C8D3A7A8F"
+  },
+  {
+    "Name": "shape link=False style=shape.uniform fill=00112233",
+    "Element": {
+      "Id": "e455e83e-229f-4716-89a3-1e790d3773a0",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "shape.uniform",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "E9D0C5F7895DB808847228E56141D6E5C875AA4E6BA09E631C3959BE31EA9E50"
+  },
+  {
+    "Name": "shape link=False style=shape.uniform fill=804499cc",
+    "Element": {
+      "Id": "189737e0-5b05-4aa8-97d7-d7179c1f7eda",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "shape.uniform",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "E9D0C5F7895DB808847228E56141D6E5C875AA4E6BA09E631C3959BE31EA9E50"
+  },
+  {
+    "Name": "shape link=True style=absent fill=00112233",
+    "Element": {
+      "Id": "c9466045-73fe-4c38-8857-9174cdf8a5ef",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "LinkColors": true,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "E9D0C5F7895DB808847228E56141D6E5C875AA4E6BA09E631C3959BE31EA9E50"
+  },
+  {
+    "Name": "shape link=True style=absent fill=804499cc",
+    "Element": {
+      "Id": "6a63f79c-e5b5-431e-919d-8aaa9411da1e",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "LinkColors": true,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "E9D0C5F7895DB808847228E56141D6E5C875AA4E6BA09E631C3959BE31EA9E50"
+  },
+  {
+    "Name": "shape link=True style=shape.independent fill=00112233",
+    "Element": {
+      "Id": "f8308856-17ae-4611-8ad8-3215ef205d03",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "shape.independent",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "LinkColors": true,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "3ED162ED1C9A6372A966E0E81DD071EE8835DE4728647CA662605B3AD4F495FA"
+  },
+  {
+    "Name": "shape link=True style=shape.independent fill=804499cc",
+    "Element": {
+      "Id": "3f3041ba-b2fb-456b-9cc4-b8283b125f86",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "shape.independent",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "LinkColors": true,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "D62C7DD6F719A3D5AB78E5F6D7B836E0BAA23DB4B1F0611B8483E68C8D3A7A8F"
+  },
+  {
+    "Name": "shape link=True style=shape.uniform fill=00112233",
+    "Element": {
+      "Id": "3719b94f-7f04-448e-a45f-86373a59b692",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "shape.uniform",
+        "Stroke": 4291572514,
+        "Fill": 1122867,
+        "LinkColors": true,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "E9D0C5F7895DB808847228E56141D6E5C875AA4E6BA09E631C3959BE31EA9E50"
+  },
+  {
+    "Name": "shape link=True style=shape.uniform fill=804499cc",
+    "Element": {
+      "Id": "584c7555-5aee-4fce-948c-b403f602c3de",
+      "Kind": 5,
+      "Points": [],
+      "Width": 70,
+      "Height": 60,
+      "CornerRadius": null,
+      "Symbol": 0,
+      "GroupId": null,
+      "Transform": {
+        "M11": 1,
+        "M12": 0,
+        "M21": 0,
+        "M22": 1,
+        "OffsetX": 15,
+        "OffsetY": 20
+      },
+      "BillboardAnchor": {
+        "X": 0,
+        "Y": 0
+      },
+      "BillboardHeight": 0,
+      "Style": {
+        "Variant": "shape.uniform",
+        "Stroke": 4291572514,
+        "Fill": 2151979468,
+        "LinkColors": true,
+        "StrokeWidth": 6,
+        "ArrowHeadStyle": 0,
+        "ArrowHeadSize": 0,
+        "StartArrowHead": null,
+        "EndArrowHead": null,
+        "StrokePattern": 0,
+        "Opacity": 1,
+        "FontFamily": "Microsoft YaHei UI",
+        "FontSize": 24,
+        "TextAlignment": 0
+      },
+      "Text": "",
+      "Number": 1,
+      "AssetId": null,
+      "ImageCrop": null,
+      "Effects": [],
+      "Visible": true,
+      "Locked": false
+    },
+    "PixelSha256": "E9D0C5F7895DB808847228E56141D6E5C875AA4E6BA09E631C3959BE31EA9E50"
+  }
+]

@@ -36,7 +36,8 @@ internal static class ProjectLaunchRequest
     internal static string NormalizePath(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Length > 32767 || path.IndexOfAny(['\0', '\r', '\n', '"']) >= 0 ||
-            !string.Equals(Path.GetExtension(path), ".floatcanvas", StringComparison.OrdinalIgnoreCase))
+            (!string.Equals(Path.GetExtension(path), ".floatcanvas", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(Path.GetExtension(path), ".floatprefab", StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException(L.Get("Shell.InvalidProject"));
         return Path.GetFullPath(path);
     }

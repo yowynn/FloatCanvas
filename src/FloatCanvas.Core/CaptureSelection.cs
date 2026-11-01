@@ -12,6 +12,8 @@ public sealed record CaptureSelection(CaptureShape Shape, CaptureSource Source, 
     public Projective2D? PlaneToScreen { get; init; }
     /// <summary>Chosen creation depth, frozen before asynchronous desktop acquisition.</summary>
     public BillboardDepthLine? BillboardDepthLine { get; init; }
+    /// <summary>Screen-first billboard intent, frozen independently of the optional advanced depth line.</summary>
+    public bool BillboardScreenFirst { get; init; }
     public CaptureSelection Translate(PointD offset) => this with
     {
         Bounds = Bounds with { X = Bounds.X + offset.X, Y = Bounds.Y + offset.Y },

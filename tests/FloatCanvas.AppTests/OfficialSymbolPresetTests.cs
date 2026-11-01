@@ -15,6 +15,7 @@ internal static class OfficialSymbolPresetTests
             ConstrainAspect = true, CornerRadius = 17, EffectStrength = 42,
             Style = new() { Stroke = 0xAB123456, Fill = 0x80456789, StrokeWidth = 7, Opacity = .6 }
         };
+        current.NormalizeAppearance();
         string original = JsonSerializer.Serialize(current);
         var official = library.OfficialFor(EditorTool.Symbol);
         check("official symbol recipes focus on five reusable styles with a shared standard shape", official.Count == 5 && official.All(p => p.Parameters.Symbol == SymbolKind.Triangle));

@@ -43,7 +43,9 @@ internal static class ConfigurationCompatibilityTests
         {
             string path=Path.Combine(folder,"legacy-state-"+fill+".json");var state=new ToolStateStore(path);var old=new ToolParameters {Tool=EditorTool.Number,Style=new(){Stroke=ColorLibrary.ForegroundRed,Fill=fill}};
             state.Tools[EditorTool.Number]=old;state.OfficialBaselines["official.number"]=old.Clone();state.PreviewSources[EditorTool.Number]=old.Clone();state.Save();var raw=JsonNode.Parse(File.ReadAllText(path))!;
-            raw["Tools"]!["Number"]!.AsObject().Remove("NumberColorRolesVersion");raw["OfficialBaselines"]!["official.number"]!.AsObject().Remove("NumberColorRolesVersion");raw["PreviewSources"]!["Number"]!.AsObject().Remove("NumberColorRolesVersion");File.WriteAllText(path,raw.ToJsonString());string original=File.ReadAllText(path);state=new(path);
+            raw["Version"] = 1;
+            foreach (var parameters in new[] { raw["Tools"]!["Number"]!, raw["OfficialBaselines"]!["official.number"]!, raw["PreviewSources"]!["Number"]! }) LegacyNumber(parameters, ColorLibrary.ForegroundRed, fill);
+            File.WriteAllText(path,raw.ToJsonString());string original=File.ReadAllText(path);state=new(path);
             foreach(var (label,parameters) in new[]{("working tool",state.Tools[EditorTool.Number]),("official baseline",state.OfficialBaselines["official.number"]),("preview source",state.PreviewSources[EditorTool.Number])})
             {
                 var editor=new EditorController(new EditorSession());editor.ApplyParameters(parameters);
@@ -82,7 +84,7 @@ internal static class ConfigurationCompatibilityTests
         var raw=JsonNode.Parse(File.ReadAllText(presetPath))!;raw["Version"]=23;raw["FutureRoot"]="future";raw["Presets"]![0]!["Parameters"]!["Style"]!["FutureColor"]=123;raw["Presets"]![0]!["Parameters"]!["Style"]!["StrokeWidth"]="new-width";
         File.WriteAllText(presetPath,raw.ToJsonString());library=new(presetPath);library.Rename(preset.Id,"Renamed");raw=JsonNode.Parse(File.ReadAllText(presetPath))!;
         check("preset rename retains future version nested fields and unreadable values",raw["Version"]!.GetValue<int>()==23 && raw["Presets"]![0]!["Parameters"]!["Style"]!["FutureColor"]!.GetValue<int>()==123 && raw["Presets"]![0]!["Parameters"]!["Style"]!["StrokeWidth"]!.GetValue<string>()=="new-width");
-        string numbersPath=Path.Combine(folder,"legacy-number-presets.json");var numberLibrary=new ToolPresetLibrary(numbersPath);var numberPreset=numberLibrary.Save("Legacy number",new ToolParameters {Tool=EditorTool.Number,Style=new(){Stroke=0xFF00FF00,Fill=0xFF2383E2}});raw=JsonNode.Parse(File.ReadAllText(numbersPath))!;raw["Presets"]![0]!["Parameters"]!.AsObject().Remove("NumberColorRolesVersion");File.WriteAllText(numbersPath,raw.ToJsonString());string oldNumber=File.ReadAllText(numbersPath);
+        string numbersPath=Path.Combine(folder,"legacy-number-presets.json");var numberLibrary=new ToolPresetLibrary(numbersPath);var numberPreset=numberLibrary.Save("Legacy number",new ToolParameters {Tool=EditorTool.Number,Style=new(){Stroke=0xFF00FF00,Fill=0xFF2383E2}});raw=JsonNode.Parse(File.ReadAllText(numbersPath))!;raw["Version"]=1;LegacyNumber(raw["Presets"]![0]!["Parameters"]!,0xFF00FF00,0xFF2383E2);File.WriteAllText(numbersPath,raw.ToJsonString());string oldNumber=File.ReadAllText(numbersPath);
         numberLibrary=new(numbersPath);var controller=new EditorController(new EditorSession());controller.ApplyParameters(numberLibrary.Apply(numberPreset.Id));
         check("legacy number presets convert their former badge color to foreground and retain white labels without rewriting",controller.Style.Stroke==0xFF2383E2 && controller.Style.Fill==0xFFFFFFFF && controller.Parameters.NumberColorRolesVersion==1 && File.ReadAllText(numbersPath)==oldNumber);
         var currentNumber=controller.Parameters;currentNumber.Style.Fill=0xFF000000;var modern=numberLibrary.Save("Modern labels",currentNumber);controller.ApplyParameters(new ToolPresetLibrary(numbersPath).Apply(modern.Id));
@@ -100,6 +102,13 @@ internal static class ConfigurationCompatibilityTests
             check("saving unrelated settings does not materialize missing fields as null",!raw.AsObject().ContainsKey("Toggle") && !raw.AsObject().ContainsKey("NumberStart"));
         }
         finally {ApplicationPaths.Configure(["--profile",previous]);}
+    }
+    private static void LegacyNumber(JsonNode parameters, uint stroke, uint fill)
+    {
+        parameters.AsObject().Remove("NumberColorRolesVersion"); parameters.AsObject().Remove("NumberTextSizeMode");
+        var style=parameters["Style"]!.AsObject();
+        foreach(string key in new[]{"Foreground","Background","AdditionalColors","Variant"})style.Remove(key);
+        style["Stroke"]=stroke;style["Fill"]=fill;
     }
     private static void Repair(string folder,Action<string,bool> check)
     {

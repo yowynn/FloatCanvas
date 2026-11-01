@@ -31,7 +31,7 @@ internal static class ToolPresetAndColorTests
         check("new tool parameters start with palette red and transparent fill", initial.Style.Stroke == 0xFFE03E3E && initial.Style.Fill == 0);
         check("new editor controllers start with palette red and transparent fill", controller.Style.Stroke == 0xFFE03E3E && controller.Style.Fill == 0);
         check("the first official recipe in each tool family uses palette red with white number labels and otherwise transparent fill", library.Official.Count > 0 && library.Official
-            .GroupBy(p => ToolPresetLibrary.Family(p.Parameters.Tool)).Select(group => group.First())
+            .Where(p => p.Parameters.Tool != EditorTool.Presentation).GroupBy(p => ToolPresetLibrary.Family(p.Parameters.Tool)).Select(group => group.First())
             .All(p => p.Parameters.Style.Stroke == ColorLibrary.ForegroundRed && p.Parameters.Style.Fill == (p.Parameters.Tool == EditorTool.Number ? 0xFFFFFFFF : 0)));
         var current = new ToolParameters
         {
@@ -39,6 +39,7 @@ internal static class ToolPresetAndColorTests
             Style = new() { Stroke = 0x7F112233, Fill = 0x33445566, StrokeWidth = 13, Opacity = .42, FontSize = 35, FontFamily = "Arial",
                 StartArrowHead = ArrowHeadStyle.Open, EndArrowHead = ArrowHeadStyle.None, ArrowHeadSize = 45, StrokePattern = StrokePattern.Dotted }
         };
+        current.NormalizeAppearance();
         var applied = library.Apply("official.arrow");
         check("official unified arrow restores its complete fixed parameters", applied.Tool == EditorTool.Line &&
             applied.Style.StartArrowHead == ArrowHeadStyle.None && applied.Style.EndArrowHead == ArrowHeadStyle.FilledTriangle && applied.Style.StrokePattern == StrokePattern.Solid &&

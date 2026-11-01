@@ -85,7 +85,7 @@ internal sealed partial class DesktopSession
         var more=ToolbarIcon(L.Get("Feedback4.Toolbar.More"),"M3,8 L3.1,8 M8,8 L8.1,8 M13,8 L13.1,8",OpenMoreTools,"M");
         AddShortcutHint(more,"M",EditorTool.Blur);more.Tag="more";Cell(more,toolColumn++);
         _moreToolsMenu=new OverlayContextMenu {PlacementTarget=more,Placement=Primitives.PlacementMode.Bottom};
-        foreach(var tool in new[]{EditorTool.Blur,EditorTool.Pixelate})_moreToolsMenu.Items.Add(ToolMenuItem(tool));
+        foreach(var tool in new[]{EditorTool.Blur,EditorTool.Pixelate,EditorTool.Presentation,EditorTool.PointerPresentation})_moreToolsMenu.Items.Add(ToolMenuItem(tool));
         more.ContextMenu=_moreToolsMenu;
         _toolbarToolButtons[EditorTool.Blur]=more;
         for (int row = 0; row < 2; row++)
@@ -253,6 +253,7 @@ internal sealed partial class DesktopSession
     private void ActivateTool(EditorTool tool)
     {
         if (DocumentOperationBusy) return;
+        if (tool == EditorTool.Crop && _editor.TryRedirectWindowSourceCrop()) return;
         if (tool != _editor.Tool) EndCanvasCalibration(hidePanel: true);
         if (tool == EditorTool.Crop && !_editor.CanCropSelection) return;
         if (tool == EditorTool.CaptureRegion && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
@@ -323,16 +324,7 @@ internal sealed partial class DesktopSession
         _toolbarStatusDisplay?.Refresh();
         // Crop is a dedicated entry with no remembered aliases. Keep legacy shared
         // button cache keys compatible while its working parameters persist normally.
-        if (_editor.Tool != EditorTool.Crop && _toolbarToolButtons.ContainsKey(ButtonFamily(_editor.Tool))) _toolbarButtonMemory[ButtonFamily(_editor.Tool)] = _editor.Tool;
-        foreach (var (tool, button) in _toolbarToolButtons)
-        {
-            if (tool == EditorTool.Crop) button.IsEnabled = _editor.CanCropSelection;
-            bool selected = ButtonFamily(_editor.Tool) == tool;
-            RefreshToolTooltip(tool, button, selected);
-            if(selected)button.SetResourceReference(Controls.Control.BorderBrushProperty,"CanvasAccent");else button.BorderBrush=Brushes.Transparent;
-            button.SetResourceReference(Controls.Control.BackgroundProperty, selected ? "CanvasHover" : "CanvasSurface");
-            System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? L.Get("ToolbarV2.Selected") : "");
-        }
+        RefreshToolbarToolSelection();
         foreach (var item in _cropMenuItems) item.IsEnabled = _editor.CanCropSelection;
         _syncingControls = true;
         try { if (!Active.IsTransactionActive) _opacitySlider.Value = Active.Document.LayerOpacity; }
@@ -370,6 +362,20 @@ internal sealed partial class DesktopSession
     private ToolParameters ToolbarPreviewParameters(EditorTool tool) =>
         _toolbarToolMemory.TryGetValue(ToolFamily(tool), out var saved) ? saved :
         _toolPresets.OfficialFor(tool).First().Parameters;
+
+    private void RefreshToolbarToolSelection()
+    {
+        if (_editor.Tool != EditorTool.Crop && _toolbarToolButtons.ContainsKey(ButtonFamily(_editor.Tool))) _toolbarButtonMemory[ButtonFamily(_editor.Tool)] = _editor.Tool;
+        foreach (var (tool, button) in _toolbarToolButtons)
+        {
+            if (tool == EditorTool.Crop) button.IsEnabled = _editor.CanCropSelection;
+            bool selected = ButtonFamily(_editor.Tool) == tool;
+            RefreshToolTooltip(tool, button, selected);
+            if(selected)button.SetResourceReference(Controls.Control.BorderBrushProperty,"CanvasAccent");else button.BorderBrush=Brushes.Transparent;
+            button.SetResourceReference(Controls.Control.BackgroundProperty, selected ? "CanvasHover" : "CanvasSurface");
+            System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? L.Get("ToolbarV2.Selected") : "");
+        }
+    }
 
     private static void RefreshToolTooltip(EditorTool tool, Controls.Button button, bool selected)
     {
@@ -413,7 +419,7 @@ internal sealed partial class DesktopSession
     }
 
     private static EditorTool ToolFamily(EditorTool tool) => ToolPresetLibrary.Family(tool);
-    private static EditorTool ButtonFamily(EditorTool tool) => ToolFamily(tool) switch { EditorTool.Pixelate => EditorTool.Blur,
+    private static EditorTool ButtonFamily(EditorTool tool) => ToolFamily(tool) switch { EditorTool.Pixelate or EditorTool.Presentation or EditorTool.PointerPresentation => EditorTool.Blur,
         EditorTool.Triangle => EditorTool.Symbol, var family => family };
     private static string ToolName(EditorTool tool) => ToolDisplayName.Get(tool);
     private Controls.Button ToolbarIcon(string label, string geometry, Action action, string shortcut = "")

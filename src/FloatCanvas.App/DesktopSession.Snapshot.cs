@@ -42,6 +42,7 @@ internal sealed partial class DesktopSession
 
     private void CancelSnapshotCapture(string reason = "ModeExit", bool userInitiated = true)
     {
+        CancelCanvasRectification(reason);
         if (_snapshotCaptureRequest is { } request)
         {
             request.Cancel(reason, userInitiated);
@@ -68,6 +69,7 @@ internal sealed partial class DesktopSession
         {
             Reason = reason, Status = status, request.NativeOperationId, RequestEditingVersion = request.EditingVersion,
             CurrentEditingVersion = _host.EditingSessionVersion, request.ContentRevision, CurrentRevision = Active.SceneRevision,
+            RequestEditScopeVersion = request.EditScopeVersion, CurrentEditScopeVersion = Active.EditScopeVersion,
             TargetIsCurrent = ReferenceEquals(request.Target, Active), _host.IsEditing, _host.IsVisible,
             KeyboardLeaseActive = _host.IsKeyboardIsolationActive, _host.ForegroundLossVersion,
             request.Cancelled, request.UserCancellation, request.CancellationReason,
@@ -120,6 +122,8 @@ internal sealed partial class DesktopSession
         }
         var request = new SnapshotCaptureRequest(Active, _host.EditingSessionVersion);
         var screenOrigin = _editor.ScreenOrigin;
+        var presentation = FreezePresentationCapture(request.Target);
+        using var windows = FreezeWindowSourceCapture(request.Target);
         _snapshotCaptureRequest = request;
         bool ContentCurrent() => !_disposed && !_documentStopped && !_documentExitRequested &&
             ReferenceEquals(_snapshotCaptureRequest, request) && request.MatchesContent(Active) && screenOrigin == _editor.ScreenOrigin;
@@ -177,11 +181,11 @@ internal sealed partial class DesktopSession
             }
             if (!CanInsert()) return;
             LogSnapshot(request, "RenderBegin");
-            var result = await Task.Run(() => SnapshotImageCommand.Render(snapshot, resources, selection, desktop, displays, animationTime, screenOrigin), _documentLifetime.Token);
+            var result = await Task.Run(() => SnapshotImageCommand.Render(snapshot, resources, selection, desktop, displays, animationTime, screenOrigin, presentation, windows), _documentLifetime.Token);
             if (!CanInsert()) return;
             if (!result.HasVisiblePixels) { LogSnapshot(request, "Empty"); UpdateStatus(L.Get("Snapshot.Empty")); return; }
             SnapshotImageCommand.Insert(request.Target, result, CanvasMapping.Create(snapshot).PlaneToScreen,
-                selection.BillboardDepthLine);
+                selection.BillboardDepthLine, selection.BillboardScreenFirst);
             LogSnapshot(request, "Inserted");
             UpdateStatus(WithCaptureWarning(L.Get("Snapshot.Inserted"), desktop is null ? null : CaptureWarning(desktop)));
             ScheduleRecovery();

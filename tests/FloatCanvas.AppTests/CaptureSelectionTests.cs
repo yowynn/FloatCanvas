@@ -25,7 +25,7 @@ internal static class CaptureSelectionTests
             { Projection = new() { Enabled = true, Matrix = new(1,.08,0,0,1,0,0,.001,1),
                 Quad = [new(0,0),new(800,0),new(600,400),new(0,400)] } } };
             var controller = new EditorController(new(document)) { Tool = EditorTool.CaptureRegion,
-                CaptureShape = shape, CaptureBorderWidth = 5, BillboardMode = true };
+                CaptureShape = shape, CaptureBorderWidth = 5, BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine, BillboardMode = true };
             CaptureSelection? captured = null; controller.CaptureSelectionCompleted += value => captured = value;
             Click(controller,new(150,250));
             var depth = controller.ActiveBillboardDepthLine;

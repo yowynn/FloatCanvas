@@ -16,6 +16,7 @@ internal static class PresetFallbackTests
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         nint foreground = GetForegroundWindow();
+        GetWindowThreadProcessId(foreground, out uint foregroundProcess);
         string language = L.Preference;
         string folder = Path.Combine(Path.GetTempPath(), "FloatCanvas-preset-fallback-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
@@ -30,7 +31,10 @@ internal static class PresetFallbackTests
             DeleteUnselectedPreset(folder, check);
             MissingLink(folder, check);
             AlreadyOfficialParameters(folder, check);
-            check("preset fallback fixtures preserve the user's native foreground", GetForegroundWindow() == foreground);
+            nint afterForeground = GetForegroundWindow(); GetWindowThreadProcessId(afterForeground, out uint afterProcess);
+            Console.WriteLine("PRESET_FOREGROUND " + JsonSerializer.Serialize(new { Before = foreground.ToInt64(), BeforeProcess = foregroundProcess,
+                After = afterForeground.ToInt64(), AfterProcess = afterProcess, TestProcess = Environment.ProcessId, ObservedUtc = DateTime.UtcNow }));
+            check("preset fallback fixtures preserve the user's native foreground", afterForeground == foreground);
         }
         finally { L.Initialize(language); AppTheme.Apply("light"); Directory.Delete(folder, true); }
     }
@@ -139,12 +143,14 @@ internal static class PresetFallbackTests
     private static ToolParameters Edited(ToolParameters current, bool blue)
     {
         var next = current.Clone();
-        next.Style.Stroke = blue ? 0xFF2476D0 : 0xFF38A66B; next.Style.Fill = blue ? 0x68204090u : 0x75448822u;
+        next.Style.Foreground = blue ? 0xFF2476D0 : 0xFF38A66B; next.Style.Background = blue ? 0x68204090u : 0x75448822u;
         next.Style.StrokeWidth = blue ? 11 : 19; next.Style.Opacity = blue ? .71 : .43;
         next.Style.StrokePattern = blue ? StrokePattern.Dashed : StrokePattern.Dotted;
         next.Style.StartArrowHead = blue ? ArrowHeadStyle.Open : ArrowHeadStyle.Diamond;
         next.Style.EndArrowHead = blue ? ArrowHeadStyle.None : ArrowHeadStyle.Open;
-        next.Style.ArrowHeadSize = blue ? 23 : 47; next.Style.LinkColors = !blue;
+        next.Style.ArrowHeadSize = blue ? 23 : 47;
+        if (next.AppearanceKind is { } kind && ElementGeometry.IsBoxShape(kind))
+            next.Style.Variant = blue ? ElementAppearance.ShapeIndependent : ElementAppearance.ShapeUniform;
         next.Style.FontFamily = blue ? "Arial" : "Consolas"; next.Style.FontSize = blue ? 31 : 53;
         next.Style.TextAlignment = blue ? FloatCanvas.Core.TextAlignment.Center : FloatCanvas.Core.TextAlignment.Right;
         next.DefaultWidth = blue ? 213 : 347; next.DefaultHeight = blue ? 137 : 219;
@@ -205,4 +211,5 @@ internal static class PresetFallbackTests
     }
 
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
 }

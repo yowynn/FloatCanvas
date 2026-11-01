@@ -23,7 +23,7 @@ public static partial class ElementGeometry
     {
         var bounds = LocalBounds(element);
         double stroke = !includeStroke ? 0 : element.Kind == ElementKind.Image ? element.ImageBorderWidth :
-            element.Kind is not (ElementKind.Text or ElementKind.Number) && !IsLiveEffect(element.Kind) && !IsBoxShape(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
+            element.Kind is not (ElementKind.Text or ElementKind.Number or ElementKind.Presentation) && !IsLiveEffect(element.Kind) && !IsBoxShape(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
         if (IsLine(element.Kind))
         {
             foreach (var point in GetArrowHeads(element).SelectMany(head => head))
@@ -36,12 +36,12 @@ public static partial class ElementGeometry
     public static bool IsLiveEffect(ElementKind kind) => kind is ElementKind.LivePixelate or ElementKind.LiveBlur;
     public static bool IsBoxShape(ElementKind kind) => kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
     public static bool PreservesAspect(CanvasElement element) => element.ConstrainAspect ??
-        (!IsBoxShape(element.Kind) && element.Kind != ElementKind.Text);
+        (!IsBoxShape(element.Kind) && element.Kind is not (ElementKind.Text or ElementKind.Presentation));
 
     /// <summary>Resize vector dimensions around their center, retaining circular corners and uniform strokes.</summary>
     public static void ResizeShapeGeometry(CanvasElement element, double scaleX, double scaleY)
     {
-        if (!IsBoxShape(element.Kind)) throw new ArgumentException(nameof(element));
+        if (!IsBoxShape(element.Kind) && element.Kind != ElementKind.Presentation) throw new ArgumentException(nameof(element));
         if (!double.IsFinite(scaleX) || !double.IsFinite(scaleY) || scaleX <= 0 || scaleY <= 0) throw new ArgumentOutOfRangeException(nameof(scaleX));
         if (element.ProjectivePlacement is not null)
         {
@@ -86,7 +86,7 @@ public static partial class ElementGeometry
             return false;
         }
         var bounds = LocalBounds(element);
-        if (element.Kind is ElementKind.Image or ElementKind.Text || IsLiveEffect(element.Kind))
+        if (element.Kind is ElementKind.Image or ElementKind.Text or ElementKind.Presentation || IsLiveEffect(element.Kind))
         {
             if (bounds.Contains(local)) return true;
             PointD[] corners = [new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top), new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)];
@@ -100,7 +100,7 @@ public static partial class ElementGeometry
             if (PointInPolygon(local, outline)) return true;
             return ProjectedContourHit(transform, outline, worldPoint, tolerance);
         }
-        if (((element.Style.LinkColors ? element.Style.Stroke : element.Style.Fill) >> 24) != 0 && (PointInPolygon(local, outline) || ProjectedContourHit(transform, outline, worldPoint, tolerance))) return true;
+        if ((ElementAppearance.ShapeFill(element.Style) >> 24) != 0 && (PointInPolygon(local, outline) || ProjectedContourHit(transform, outline, worldPoint, tolerance))) return true;
         bool inside = PointInPolygon(local, outline);
         if (!inside)
             for (int i = 0; i < outline.Count; i++)

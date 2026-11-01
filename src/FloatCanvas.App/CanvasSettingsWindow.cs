@@ -9,7 +9,7 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-internal sealed class CanvasSettingsWindow : Window
+internal sealed partial class CanvasSettingsWindow : Window
 {
     private readonly ColorField background = new(ColorRole.Background), gridColor = new(ColorRole.Foreground);
     private readonly SegmentedChoice projection = SegmentedChoicePreviews.CanvasMode();
@@ -105,6 +105,7 @@ internal sealed class CanvasSettingsWindow : Window
         projectionBody.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.DepthPriorityOcclusion"), depthPriorityOcclusion));
         pinRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Canvas.Pin")), pinSelector);
         projectionBody.Children.Add(pinRow);
+        projectionBody.Children.Add(BuildPlaneFields());
         pinSelector.ToolTip = L.Get("Canvas.PinHelp");
         gridSizeLock.ToolTip = L.Get("Canvas.GridSizeLockHelp");
         System.Windows.Automation.AutomationProperties.SetName(gridSizeLock, L.Get("Canvas.GridSizeLock"));
@@ -154,6 +155,7 @@ internal sealed class CanvasSettingsWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(pattern, L.Get("Canvas.GridPattern"));
         AddField(gridBody, "Canvas.GridPattern", pattern);
         body.Children.Add(gridBody);
+        body.Children.Add(BuildGridOriginFields());
         AddField(body, "Canvas.GuideOpacity", guideOpacity);
         guideOpacity.ToolTip = L.Get("Canvas.GuideOpacityHint");
         content.Children.Add(PropertyChangeRegion.ReserveHighlightSpace(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }));
@@ -201,7 +203,7 @@ internal sealed class CanvasSettingsWindow : Window
         };
         gridSizeLock.Click += (_, _) =>
         {
-            if (!refreshing && current.Projection.Enabled) GridSizeLockChanged?.Invoke(gridSizeLock.IsChecked == true);
+            if (!refreshing && current.Projection.Enabled && current.Projection.PlaneBounds is null) GridSizeLockChanged?.Invoke(gridSizeLock.IsChecked == true);
         };
         gridVisible.Click += (_, _) => { if (!refreshing) GridVisibilityChanged?.Invoke(gridVisible.IsChecked == true); };
         reset.Click += (_, _) => ResetDisplayRequested?.Invoke(selectedResetDevice);
@@ -212,10 +214,10 @@ internal sealed class CanvasSettingsWindow : Window
         rows.SliderValueCommitted += () => { if (!refreshing) CommitCounts(); };
         void CommitGridSize()
         {
-            if (refreshing || current.Projection.Enabled) return;
+            if (refreshing || current.Projection.Enabled && current.Projection.PlaneBounds is null) return;
             if (gridSize.TryGetValue(out double value))
-            { if (gridSize.IsInteracting || value != (current.Grid.FlatCellSize ?? current.Projection.GridCellSize)) GridSizeChanged?.Invoke(value); }
-            else RefreshGridSize(current.Grid.FlatCellSize ?? current.Projection.GridCellSize);
+            { if (gridSize.IsInteracting || value != DisplayGridSize) GridSizeChanged?.Invoke(value); }
+            else RefreshGridSize(DisplayGridSize);
         }
         CommitOnExit(gridSize.Input, CommitGridSize);
         gridSize.SliderValueCommitted += () => { if (!refreshing) CommitGridSize(); };
@@ -268,8 +270,9 @@ internal sealed class CanvasSettingsWindow : Window
         // keeps keyboard focus, or an external undo invalidated the gesture.
         columns.SetModelValue(settings.Projection.Columns);
         rows.SetModelValue(settings.Projection.Rows);
-        gridSize.SetModelValue(settings.Grid.FlatCellSize ?? settings.Projection.GridCellSize);
+        gridSize.SetModelValue(DisplayGridSize);
         width.SetModelValue(settings.Grid.Width);
+        SynchronizeGeometryNumbers();
     }
     internal void PrepareForShow()
     {
@@ -294,7 +297,7 @@ internal sealed class CanvasSettingsWindow : Window
             if (CanRefresh(projection)) projection.SelectedValue = current.Projection.Enabled;
             if (CanRefresh(gridVisible)) gridVisible.IsChecked = current.Grid.Visible;
             RefreshProjectionControls();
-            if (CanRefresh(gridSize) && !gridSize.IsKeyboardFocusWithin && !gridSize.IsInteracting) RefreshGridSize(current.Grid.FlatCellSize ?? current.Projection.GridCellSize);
+            if (CanRefresh(gridSize) && !gridSize.IsKeyboardFocusWithin && !gridSize.IsInteracting) RefreshGridSize(DisplayGridSize);
             if (CanRefresh(width) && !width.IsKeyboardFocusWithin && !width.IsInteracting) RefreshWidth(current.Grid.Width);
             if (CanRefresh(pattern)) pattern.SelectedValue = current.Grid.Pattern;
             presets.Refresh(current);
@@ -335,10 +338,16 @@ internal sealed class CanvasSettingsWindow : Window
     private void RefreshProjectionControls()
     {
         var settings = current.Projection;
+        bool independent = settings.PlaneBounds is not null;
         bool locked = settings.LockedGridCellSize.HasValue;
         depthPriorityOcclusion.Visibility = settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
         countPair.Visibility = pinRow.Visibility = gridSizeLockRow.Visibility = perspectiveActions.Visibility = settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
         flatSizePanel.Visibility = settings.Enabled ? Visibility.Collapsed : Visibility.Visible;
+        if (independent)
+        {
+            countPair.Visibility = gridSizeLockRow.Visibility = Visibility.Collapsed;
+            flatSizePanel.Visibility = Visibility.Visible;
+        }
         columns.Visibility = rows.Visibility = !locked ? Visibility.Visible : Visibility.Collapsed;
         lockedColumns.Visibility = lockedRows.Visibility = gridSizeLockHint.Visibility = locked && settings.Enabled ? Visibility.Visible : Visibility.Collapsed;
         if (CanRefresh(depthPriorityOcclusion)) depthPriorityOcclusion.IsChecked = current.DepthPriorityOcclusion;
@@ -349,8 +358,10 @@ internal sealed class CanvasSettingsWindow : Window
         var p = settings.PinGridPoint;
         pinHint.Text = L.Get("Canvas.PinHalfCells");
         pinHint.Visibility = settings.Enabled && !locked && (p.X % 1 != 0 || p.Y % 1 != 0) ? Visibility.Visible : Visibility.Collapsed;
+        if (independent) pinHint.Visibility = gridSizeLockHint.Visibility = Visibility.Collapsed;
         if (CanRefresh(columns) && !columns.IsKeyboardFocusWithin && !columns.IsInteracting) columns.Value = settings.Columns;
         if (CanRefresh(rows) && !rows.IsKeyboardFocusWithin && !rows.IsInteracting) rows.Value = settings.Rows;
+        RefreshIndependentFields();
     }
     private bool CanRefresh(FrameworkElement field)
     {
@@ -418,7 +429,7 @@ internal sealed class CanvasSettingsWindow : Window
     }
     private void CommitCounts()
     {
-        if (refreshing || !current.Projection.Enabled || current.Projection.LockedGridCellSize.HasValue) return;
+        if (refreshing || !current.Projection.Enabled || current.Projection.PlaneBounds is not null || current.Projection.LockedGridCellSize.HasValue) return;
         if (columns.TryGetValue(out double c) && rows.TryGetValue(out double r))
         { if (columns.IsInteracting || rows.IsInteracting || c != current.Projection.Columns || r != current.Projection.Rows) GridCountsChanged?.Invoke((int)c, (int)r); }
         else { columns.Value = current.Projection.Columns; rows.Value = current.Projection.Rows; }

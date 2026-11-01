@@ -46,6 +46,7 @@ internal sealed class CanvasGridScaleController
 
     internal static void ApplyGridSize(CanvasSettings settings, RectD reference, double size)
     {
+        if (settings.Projection.PlaneBounds is not null) { settings.Grid.FlatCellSize = size; return; }
         var counts = CanvasGridGeometry.CountsForCellSize(reference, size);
         var offset = settings.Grid.FlatTranslation;
         var planeReference = new RectD(reference.X - offset.X, reference.Y - offset.Y, reference.Width, reference.Height);

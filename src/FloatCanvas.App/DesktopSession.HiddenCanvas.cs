@@ -13,6 +13,8 @@ internal sealed partial class DesktopSession
     private void UpdateHiddenCanvasState()
     {
         if (_updatingHiddenCanvas || _disposed) return;
+        UpdatePresentationRuntime();
+        UpdateWindowSourceRuntime();
         _updatingHiddenCanvas = true;
         try
         {
@@ -27,7 +29,7 @@ internal sealed partial class DesktopSession
             {
                 _hiddenCanvasSession = Active;
                 _hiddenCanvasVersion = Active.ContentVersion;
-                _hiddenCanvasElements = Active.Document.Elements.Select(element => element.Id).ToHashSet();
+                _hiddenCanvasElements = Active.Document.Elements.Select(element => element.Id).Concat(Active.Document.Instances.Select(instance => instance.Id)).ToHashSet();
                 _editor.CanvasContentHidden = true;
                 Active.SetSelection([]);
             }
@@ -41,8 +43,9 @@ internal sealed partial class DesktopSession
                 UpdateStatus(L.Get("Feedback4.Canvas.Visible"));
                 return;
             }
-            bool draft = Active.Document.Elements.Any(element => !_hiddenCanvasElements.Contains(element.Id));
-            _host.SetPreviewVisible(draft || _inlineText is not null || _editor.CapturePreview is not null ||
+            bool draft = Active.Document.Elements.Any(element => !_hiddenCanvasElements.Contains(element.Id)) ||
+                Active.Document.Instances.Any(instance => !_hiddenCanvasElements.Contains(instance.Id));
+            _host.SetPreviewVisible(_settings.PresentationGlobal.Pointer.AnyEnabled || draft || _editor.HasScreenBillboardDraft || _inlineText is not null || _editor.CapturePreview is not null ||
                 _editor.EffectScreenPreview.Count > 0 || _host.IsEditing && _editor.Tool == EditorTool.Canvas);
         }
         finally { _updatingHiddenCanvas = false; }
@@ -54,7 +57,9 @@ internal sealed partial class DesktopSession
         var canvas = source.Canvas.Clone();
         canvas.BackgroundColor = 0;
         canvas.Grid.Visible = false;
-        return new() { Kind = source.Kind, Viewport = source.Viewport, LayerOpacity = source.LayerOpacity, Canvas = canvas,
-            Elements = source.Elements.Where(element => !_hiddenCanvasElements.Contains(element.Id)).ToList(), Groups = source.Groups };
+        var preview = source.CloneElements(source.Elements.Select(element => element.Id).Concat(source.Instances.Select(instance => instance.Id))
+            .Where(id => !_hiddenCanvasElements.Contains(id)));
+        preview.Kind = source.Kind; preview.Viewport = source.Viewport; preview.LayerOpacity = source.LayerOpacity; preview.Canvas = canvas;
+        return preview;
     }
 }

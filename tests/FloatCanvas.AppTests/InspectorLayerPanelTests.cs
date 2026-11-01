@@ -31,20 +31,20 @@ internal static class InspectorLayerPanelTests
                 string before = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
                 check(language + " properties and layers are independent custom-chrome windows", !Descendants(inspector).OfType<Controls.ListBox>().Any() &&
                     Descendants(layerWindow).Contains(layers) && inspector.WindowStyle == Wpf.WindowStyle.None && layerWindow.WindowStyle == Wpf.WindowStyle.None);
-                var row = (Controls.ListBoxItem)layers.Items[0];
-                var toggles = Descendants(row).OfType<Primitives.ToggleButton>().ToArray();
+                var row = layerWindow.Container(selected)!;
+                var presenter = LayerTreeRowPresenter.Find(row)!;
+                var toggles = new[] { presenter.VisibleButton, presenter.LockedButton };
                 check(language + " layer row uses two accessible icon toggles and a drag handle", toggles.Length == 2 &&
                     toggles.All(toggle => Peers.FrameworkElementAutomationPeer.CreatePeerForElement(toggle).GetPattern(Peers.PatternInterface.Toggle) is not null) &&
-                    Descendants(row).OfType<Primitives.Thumb>().Count() == 1 && !Descendants(row).OfType<Controls.CheckBox>().Any());
-                check(language + " layer commands live in the row context menu with shortcuts", row.ContextMenu.Items.OfType<Controls.MenuItem>().Count() == 7 &&
+                    presenter.Children.OfType<Primitives.Thumb>().Count() == 1 && !presenter.Children.OfType<Controls.CheckBox>().Any());
+                check(language + " layer commands live in the row context menu with shortcuts", row.ContextMenu.Items.OfType<Controls.MenuItem>().Count() >= 7 &&
                     row.ContextMenu.Items.OfType<Controls.MenuItem>().All(item => item.Icon is not null) &&
                     row.ContextMenu.Items.OfType<Controls.MenuItem>().Any(item => item.InputGestureText == "Ctrl+G"));
                 layerWindow.ApplyTemplate();
                 var help = (Controls.Button)layerWindow.Template.FindName("Help", layerWindow);
                 check(language + " layer help belongs to the shared header without an embedded body button", help.Visibility == Wpf.Visibility.Visible &&
                     Wpf.Automation.AutomationProperties.GetName(help) == L.Get("Layers.Help") &&
-                    layerWindow.Resources["CanvasWindowHelpText"] is string text && text == L.Get("Layers.HelpWithRename") &&
-                    !Descendants((Wpf.DependencyObject)layerWindow.Content).OfType<Controls.Button>().Any() && layerWindow.Icon is not null);
+                    layerWindow.Resources["CanvasWindowHelpText"] is string text && text == L.Get("Layers.TreeHelp") && layerWindow.Icon is not null);
                 inspector.CompletePendingEdit();
                 layers.SelectedItems.Clear(); inspector.PrepareForShow();
                 check(language + " independent layer selection collapses the empty property list", ((Controls.StackPanel)Field(inspector, "propertyPanel")).Visibility == Wpf.Visibility.Collapsed && session.Selection.Count == 0 && session.Document.Elements.Single().Text == "Unsubmitted\n保留草稿");

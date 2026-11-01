@@ -11,7 +11,7 @@ internal sealed class ToolStateStore
 {
     private sealed class State
     {
-        [JsonRequired] public int Version { get; set; } = 1;
+        [JsonRequired] public int Version { get; set; } = 2;
         [JsonRequired] public Dictionary<EditorTool, ToolParameters> Tools { get; set; } = [];
         [JsonRequired] public Dictionary<EditorTool, EditorTool> Buttons { get; set; } = [];
         [JsonRequired] public Dictionary<EditorTool, string> Selections { get; set; } = [];
@@ -50,6 +50,7 @@ internal sealed class ToolStateStore
             foreach(var key in state.Selections.Where(p=>!IsFamily(p.Key)||!ValidPresetId(p.Value)).Select(p=>p.Key).ToArray())state.Selections.Remove(key);
             foreach(var key in state.OfficialBaselines.Where(p=>!ValidPresetId(p.Key,true)||!p.Value.IsValid()).Select(p=>p.Key).ToArray())state.OfficialBaselines.Remove(key);
             Validate(state);
+            state.Version = 2;
             // Retired solid-cover entries are compatibility input only. They must not
             // restore an executable tool, family selection, preview, or toolbar alias.
             state.Tools.Remove(EditorTool.Redact); state.PreviewSources.Remove(EditorTool.Redact);
@@ -67,6 +68,7 @@ internal sealed class ToolStateStore
 
     public void Save()
     {
+        foreach (var parameters in Tools.Values.Concat(OfficialBaselines.Values).Concat(PreviewSources.Values)) parameters.NormalizeAppearance();
         var state = new State { Tools = Tools, Buttons = Buttons, Selections = Selections,
             OfficialBaselines = OfficialBaselines, PreviewSources = PreviewSources };
         Validate(state);
@@ -80,7 +82,7 @@ internal sealed class ToolStateStore
     private static void Validate(State state)
     {
         int families = Enum.GetValues<EditorTool>().Count(tool => ToolPresetLibrary.Family(tool) == tool);
-        if (state.Version != 1 || state.Tools is null || state.Buttons is null || state.Selections is null ||
+        if (state.Version is not (1 or 2) || state.Tools is null || state.Buttons is null || state.Selections is null ||
             state.OfficialBaselines is null || state.PreviewSources is null || state.Tools.Count > families ||
             state.Buttons.Count > families || state.Selections.Count > families || state.PreviewSources.Count > families ||
             state.OfficialBaselines.Count > 256 ||
@@ -95,7 +97,7 @@ internal sealed class ToolStateStore
         IsFamily(key) && parameters is not null && parameters.IsValid() && ToolPresetLibrary.Family(parameters.Tool) == key;
     private static bool IsFamily(EditorTool tool) => Enum.IsDefined(tool) && ToolPresetLibrary.Family(tool) == tool;
     private static EditorTool ButtonFamily(EditorTool tool) => ToolPresetLibrary.Family(tool) switch
-    { EditorTool.Crop or EditorTool.Pixelate or EditorTool.Redact => EditorTool.Blur, var family => family };
+    { EditorTool.Crop or EditorTool.Pixelate or EditorTool.Redact or EditorTool.Presentation or EditorTool.PointerPresentation => EditorTool.Blur, var family => family };
     private static bool ValidPresetId(string? id, bool officialOnly = false) => id is { Length: <= 80 } &&
         (id.StartsWith("official.", StringComparison.Ordinal) && id.Length > 9 || !officialOnly && id.StartsWith("user-", StringComparison.Ordinal) && id.Length > 5) &&
         id.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_');

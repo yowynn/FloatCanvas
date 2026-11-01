@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 namespace FloatCanvas.PlatformTests;
 
@@ -49,6 +50,48 @@ internal static class Native
             throw new Win32Exception(Marshal.GetLastWin32Error(), "SendInput to the self-owned test window failed.");
     }
     internal static nint ExtendedStyle(nint window) => GetWindowLongPtr(window, -20);
+    internal static bool IsOwnWindow(nint window) { GetWindowThreadProcessId(window, out uint owner); return window != 0 && owner == Environment.ProcessId; }
+    internal static async Task ActivateOwnedFixtureAsync(NativeTestWindow target)
+    {
+        using var process = Process.GetCurrentProcess(); long started = process.StartTime.ToUniversalTime().Ticks;
+        nint window = target.Handle; bool topmost = ((long)ExtendedStyle(window) & 8) != 0;
+        GetCursorPos(out var previousCursor); bool held = false;
+        var point = target.ScreenPoint(600, 400);
+        try
+        {
+            RequireIdentity();
+            if (!SetWindowPos(window, -1, 0, 0, 0, 0, 0x53)) throw new Win32Exception();
+            if (DwmFlush() != 0) throw new InvalidOperationException("Owned fixture compositor flush failed.");
+            await Task.Delay(70);
+            RequirePoint();
+            nint dc = GetDC(0); uint color;
+            try { color = GetPixel(dc, point.X, point.Y); } finally { ReleaseDC(0, dc); }
+            if ((color & 255) < 245 || ((color >> 8) & 255) < 245 || ((color >> 16) & 255) < 245)
+                throw new InvalidOperationException("Owned activation point is not the expected white client background.");
+            int clicks = target.Counts.Clicks, ups = target.Counts.Ups;
+            RequirePoint(); Move(point); RequirePoint(); Mouse(2); held = true; RequirePoint(); Mouse(4); held = false;
+            var wait = Stopwatch.StartNew();
+            while (GetForegroundWindow() != window || target.Counts.Clicks != clicks + 1 || target.Counts.Ups != ups + 1)
+            { if (wait.ElapsedMilliseconds > 1500) throw new InvalidOperationException("Owned click did not activate its exact fixture HWND."); await Task.Delay(10); }
+            Console.WriteLine($"OWNED_FIXTURE_ACTIVATED pid={process.Id} startedUtcTicks={started} hwnd={window} point={point.X},{point.Y} clicks={target.Counts.Clicks} ups={target.Counts.Ups}");
+        }
+        finally
+        {
+            if (held && IsOwnWindow(window) && (GetCapture() == window || WindowFromPoint(point) == window)) Mouse(4);
+            if (IsOwnWindow(window)) SetWindowPos(window, topmost ? -1 : -2, 0, 0, 0, 0, 0x13);
+            SetCursorPos(previousCursor.X, previousCursor.Y);
+        }
+        void RequireIdentity()
+        {
+            if (process.HasExited || process.Id != Environment.ProcessId || process.StartTime.ToUniversalTime().Ticks != started ||
+                target.Handle != window || !IsOwnWindow(window) || !IsWindowVisible(window))
+                throw new InvalidOperationException("Owned activation fixture PID/time/HWND identity changed.");
+        }
+        void RequirePoint()
+        { RequireIdentity(); if (!target.OwnsPoint(point) || WindowFromPoint(point) != window) throw new InvalidOperationException("Owned activation point does not hit its PID/time-verified HWND; no input is allowed."); }
+    }
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint owner);
+    [DllImport("dwmapi.dll")] private static extern int DwmFlush();
     [DllImport("user32.dll", SetLastError=true)] private static extern uint SendInput(uint count, Input[] input, int size);
     [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetForegroundWindow(nint hwnd);

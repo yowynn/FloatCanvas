@@ -9,6 +9,9 @@ public sealed record LoadedProject(SceneDocument Document, AssetLibrary Assets)
 
 public sealed class ProjectStore
 {
+    private readonly string applicationVersion;
+    public ProjectStore(string? applicationVersion = null) => this.applicationVersion = PackageProvenance.ApplicationVersion(applicationVersion);
+
     public Task SaveAsync(string path, SceneDocument document, AssetLibrary assets, CancellationToken ct = default)
         => SaveVersionedAsync(path, document, assets, ct);
 
@@ -17,10 +20,11 @@ public sealed class ProjectStore
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(assets);
+        PrefabClosure.RequireSourceGraphs(document);
         ct.ThrowIfCancellationRequested();
         // Capture immutable resource references before the caller can prune the shared library.
         var resources = PackageCodec.ResolveResources(document.ReferencedAssets, assets);
-        return Task.Run(() => PackageCodec.SaveAsync(path, "project", document, resources, ct, expectedVersion: expectedVersion), ct);
+        return Task.Run(() => PackageCodec.SaveAsync(path, "project", document, resources, ct, expectedVersion: expectedVersion, applicationVersion: applicationVersion), ct);
     }
     public Task<LoadedProject> LoadAsync(string path, CancellationToken ct = default) => Task.Run(async () =>
     {

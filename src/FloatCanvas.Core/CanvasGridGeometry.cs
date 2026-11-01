@@ -10,13 +10,14 @@ public static class CanvasGridGeometry
     public static double ResolveCellSize(CanvasSettings settings, RectD fallbackViewport)
     {
         if (!settings.Projection.Enabled && settings.Grid.FlatCellSize is { } size) return size;
+        if (settings.Projection.Enabled && settings.Grid.PlaneCellSize is { } planeSize) return planeSize;
         if (settings.Projection.Quad.Count != 0) return settings.Projection.GridCellSize;
         var initial = CanvasCalibration.CreateInitial(fallbackViewport, settings.Projection.Columns, settings.Projection.Rows);
         return initial.CellSize;
     }
 
     public static PointD ReferencePlaneCenter(CanvasProjectionSettings projection) =>
-        projection.Origin + new PointD(projection.Columns * projection.CellSize / 2, projection.Rows * projection.CellSize / 2);
+        CanvasProjectionGeometry.ResolvePlaneBounds(projection).Center;
 
     /// <summary>The projective rectangle center, at the intersection of its screen diagonals.</summary>
     public static PointD ReferenceCenter(CanvasProjectionSettings projection) =>

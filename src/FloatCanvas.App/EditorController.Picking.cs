@@ -7,31 +7,61 @@ namespace FloatCanvas.App;
 internal sealed partial class EditorController
 {
     private SceneDocument? presentedScene;
+    private EvaluatedScene? presentedEvaluation;
     private SceneImageSnapshot? presentedImages;
+    private WindowFrameSet? presentedWindowFrames;
+    private object? presentedWindowOwnerContext;
     private AssetLibrary? presentedAssets;
     private TimeSpan presentedTime;
     private bool presentedPickingSuspended;
     private CancellationTokenSource? pendingPickingCancellation;
     private readonly SemaphoreSlim pickingWorker = new(1, 1);
-    private SceneDocument PickingDocument => presentedScene ?? Session.Document;
+    private SceneDocument? presentedOwner;
+    private long presentedContentRevision = -1;
+    private EvaluatedScene CurrentPickingEvaluation
+    {
+        get
+        {
+            if (presentedScene is not null && ReferenceEquals(presentedOwner, Session.Document) && presentedContentRevision == Session.PreviewRevision &&
+                (presentedEvaluation ?? SceneEvaluation.RuntimeView(presentedScene)) is { } shown) return shown;
+            // No reference/revision cache of editable DTOs: public callers may mutate
+            // canvas settings or entities directly between pointer queries.
+            return SceneEvaluation.Build(Session.Document);
+        }
+    }
+    private SceneDocument PickingDocument => presentedScene ?? CurrentPickingEvaluation.RenderDocument;
     private AssetLibrary PickingAssets => presentedAssets ?? Session.Assets;
     internal bool BackgroundPickingEnabled { get; set; }
     internal Task PendingPicking { get; private set; } = Task.CompletedTask;
 
     internal void ApplyPresentedScene(SceneDocument? document, SceneImageSnapshot? images, TimeSpan time,
-        IReadOnlyList<AssetResource>? resources = null)
+        IReadOnlyList<AssetResource>? resources = null, long? contentRevision = null,
+        WindowFrameSet? windowFrames = null, object? windowOwnerContext = null, EvaluatedScene? evaluation = null)
     {
         presentedPickingSuspended = false;
         var retained = images?.Retain();
+        var windowRetained = document is not null && windowFrames is not null && ReferenceEquals(windowFrames.OwnerContext, windowOwnerContext)
+            ? windowFrames.Retain() : null;
         presentedImages?.Dispose(); presentedImages = retained;
-        presentedScene = document; presentedTime = time;
+        presentedWindowFrames?.Dispose(); presentedWindowFrames = windowRetained;
+        presentedWindowOwnerContext = windowRetained?.OwnerContext;
+        presentedScene = document; presentedTime = time; presentedEvaluation = evaluation;
+        presentedOwner = contentRevision is not null ? Session.Document : null;
+        presentedContentRevision = contentRevision ?? -1;
         presentedAssets = document is null ? null : new AssetLibrary();
         if (presentedAssets is not null)
             foreach (var resource in resources ?? Session.Assets.Resources.ToArray()) presentedAssets.Add(resource);
-        if (selectionRenderer is not null) selectionRenderer.PresentedImages = retained;
+        if (selectionRenderer is not null)
+        {
+            selectionRenderer.PresentedImages = retained;
+            selectionRenderer.WindowFrames = windowRetained; selectionRenderer.WindowOwnerContext = presentedWindowOwnerContext;
+        }
     }
 
     internal void ResumePresentedPicking() => presentedPickingSuspended = false;
+
+    private bool OwnsPointerTransaction => ReferenceEquals(_pointerOwnedSession, Session) && Session.IsTransactionActive &&
+        Session.TransactionId == _pointerOwnedTransaction;
 
     private void BeginPointerTransaction(string label)
     {
@@ -55,9 +85,13 @@ internal sealed partial class EditorController
     {
         CancelPicking();
         presentedScene = null;
+        presentedEvaluation = null;
+        presentedOwner = null; presentedContentRevision = -1;
         presentedAssets = null;
         presentedImages?.Dispose(); presentedImages = null;
-        if (selectionRenderer is not null) selectionRenderer.PresentedImages = null;
+        presentedWindowFrames?.Dispose(); presentedWindowFrames = null; presentedWindowOwnerContext = null;
+        if (selectionRenderer is not null)
+        { selectionRenderer.PresentedImages = null; selectionRenderer.WindowFrames = null; selectionRenderer.WindowOwnerContext = null; }
     }
 
     private void CancelPicking()
@@ -74,9 +108,11 @@ internal sealed partial class EditorController
         var session = Session;
         long revision = session.PreviewRevision;
         var selected = session.Selection.ToArray();
-        var document = presentedScene ?? session.Document.Clone();
+        var document = PickingDocument;
         var resources = PickingAssets.Resources.ToArray();
         using var images = presentedImages?.Retain();
+        using var windowFrames = presentedWindowFrames?.Retain();
+        var windowOwnerContext = presentedWindowOwnerContext;
         var time = presentedScene is null ? AnimationTime : presentedTime;
         var dispatcher = Dispatcher.CurrentDispatcher;
         try
@@ -87,7 +123,8 @@ internal sealed partial class EditorController
                 try
                 {
                     var assets = new AssetLibrary(); foreach (var resource in resources) assets.Add(resource);
-                    using var renderer = new SceneRenderer { AnimationTime = time, PresentedImages = images, CacheByteLimit = 64L * 1024 * 1024 };
+                    using var renderer = new SceneRenderer { AnimationTime = time, PresentedImages = images,
+                        WindowFrames = windowFrames, WindowOwnerContext = windowOwnerContext, CacheByteLimit = 64L * 1024 * 1024 };
                     return ScreenRectangleHits(document, assets, renderer, rectangle, token);
                 }
                 finally { pickingWorker.Release(); }

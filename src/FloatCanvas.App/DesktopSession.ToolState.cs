@@ -39,7 +39,10 @@ internal sealed partial class DesktopSession
             state.Selections[ToolFamily(current.Tool)] = id;
             state.MarkChanged();
         }
-        return _toolPresets.Apply(id);
+        var parameters = _toolPresets.Apply(id);
+        if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer)
+            pointer.Enabled = current.PointerPresentation?.Enabled ?? _settings.PresentationGlobal.Pointer.Enabled;
+        return parameters;
     }
 
     // Internal capture/import transitions use the same memory without opening UI
@@ -69,6 +72,7 @@ internal sealed partial class DesktopSession
         if (applyAlias && tool is EditorTool.Arrow or EditorTool.DoubleArrow)
             next = ApplyToolbarPreset(tool == EditorTool.Arrow ? "official.arrow" : "official.double-arrow", next);
         if (applyAlias && tool == EditorTool.RoundedRectangle) next = ApplyToolbarPreset("official.rounded-rectangle", next);
+        if (family == EditorTool.PointerPresentation) next.PointerPresentation = _settings.PresentationGlobal.Pointer.Clone();
         _editor.ApplyParameters(next);
         _toolStateStore?.MarkChanged();
     }

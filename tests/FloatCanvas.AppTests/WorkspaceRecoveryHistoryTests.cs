@@ -57,6 +57,12 @@ internal static class WorkspaceRecoveryHistoryTests
         var nextLaunch = new WorkspaceRecoveryHistory(store);
         nextLaunch.BeginFreshWorkspace(new WorkspaceState());
         assert("each new process again starts with an unwritten blank baseline", !nextLaunch.ShouldWrite(new WorkspaceState()));
+        var resourceWorkspace = new WorkspaceState(); var emptyDefinition = new PrefabDefinition { Name = "retained resource" };
+        resourceWorkspace.LiveDocument.Definitions.Add(emptyDefinition);
+        assert("a retained shared definition is meaningful workspace content even before placing artwork", nextLaunch.ShouldWrite(resourceWorkspace) && nextLaunch.HasNewVersion(resourceWorkspace));
+        var emptyInstance = new PrefabInstance { DefinitionId = emptyDefinition.Id }; resourceWorkspace.LiveDocument.Instances.Add(emptyInstance);
+        resourceWorkspace.LiveDocument.RootOrder = [emptyInstance.Id];
+        assert("an empty shared instance remains meaningful authored history", nextLaunch.HasNewVersion(resourceWorkspace));
         nextLaunch.WorkspaceRestored();
         assert("an explicit history selection can be saved even when selected workspace is empty", nextLaunch.ShouldWrite(new WorkspaceState()));
 

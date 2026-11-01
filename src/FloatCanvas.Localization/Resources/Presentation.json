@@ -1,0 +1,450 @@
+{
+  "Tool.Presentation": {
+    "zh": "键盘演示",
+    "en": "Keyboard demonstration"
+  },
+  "Preset.Presentation": {
+    "zh": "键盘显示",
+    "en": "Key display"
+  },
+  "ToolDescription.Presentation": {
+    "zh": "绘制按键显示区域，图层存在且可见时自动记录，显示内容跟随画布移动和透视。",
+    "en": "Draw a key display. Visible key layers record automatically and follow canvas placement and perspective."
+  },
+  "Editor.ElementKind.Presentation": {
+    "zh": "按键显示区",
+    "en": "Key display region"
+  },
+  "Recipe.PresentationKeys": {
+    "zh": "按键记录 · 简洁",
+    "en": "Key recording · Simple"
+  },
+  "Recipe.PresentationPointer": {
+    "zh": "鼠标演示区",
+    "en": "Pointer region"
+  },
+  "Presentation.Menu": {
+    "zh": "演示",
+    "en": "Presentation"
+  },
+  "Presentation.Settings": {
+    "zh": "键盘图层",
+    "en": "Key display layer"
+  },
+  "Presentation.Text": {
+    "zh": "按键文字",
+    "en": "Key text"
+  },
+  "Presentation.Foreground": {
+    "zh": "演示颜色",
+    "en": "Ink color"
+  },
+  "Presentation.Background": {
+    "zh": "面板背景",
+    "en": "Panel background"
+  },
+  "Presentation.Enabled": {
+    "zh": "启用此键盘图层",
+    "en": "Enable this key layer"
+  },
+  "Presentation.Module.Keys": {
+    "zh": "按键面板",
+    "en": "Key panel"
+  },
+  "Presentation.Module.Cursor": {
+    "zh": "光标高亮",
+    "en": "Cursor halo"
+  },
+  "Presentation.Module.Clicks": {
+    "zh": "点击波纹",
+    "en": "Click ripples"
+  },
+  "Presentation.Module.Trail": {
+    "zh": "短时轨迹",
+    "en": "Short trail"
+  },
+  "Presentation.KeyDisplay": {
+    "zh": "按键显示",
+    "en": "Key display"
+  },
+  "Presentation.KeyDisplay.ShortcutChords": {
+    "zh": "快捷键",
+    "en": "Shortcuts"
+  },
+  "Presentation.KeyDisplay.AllPhysicalKeys": {
+    "zh": "所有物理按键",
+    "en": "All physical keys"
+  },
+  "Presentation.Alignment": {
+    "zh": "面板位置",
+    "en": "Panel position"
+  },
+  "Presentation.Alignment.BottomLeft": {
+    "zh": "左下",
+    "en": "Bottom left"
+  },
+  "Presentation.Alignment.BottomCenter": {
+    "zh": "底部居中",
+    "en": "Bottom center"
+  },
+  "Presentation.Alignment.BottomRight": {
+    "zh": "右下",
+    "en": "Bottom right"
+  },
+  "Presentation.Alignment.TopLeft": {
+    "zh": "左上",
+    "en": "Top left"
+  },
+  "Presentation.Alignment.TopCenter": {
+    "zh": "顶部居中",
+    "en": "Top center"
+  },
+  "Presentation.Alignment.TopRight": {
+    "zh": "右上",
+    "en": "Top right"
+  },
+  "Presentation.RecentChordLimit": {
+    "zh": "显示条数",
+    "en": "Recent chords"
+  },
+  "Presentation.KeyHold": {
+    "zh": "按键停留",
+    "en": "Key duration"
+  },
+  "Presentation.PanelWidth": {
+    "zh": "面板最大宽",
+    "en": "Panel max width"
+  },
+  "Presentation.CursorRadius": {
+    "zh": "光环半径",
+    "en": "Halo radius"
+  },
+  "Presentation.RippleDuration": {
+    "zh": "波纹时长",
+    "en": "Ripple duration"
+  },
+  "Presentation.TrailDuration": {
+    "zh": "轨迹时长",
+    "en": "Trail duration"
+  },
+  "Presentation.TrailWidth": {
+    "zh": "轨迹宽度",
+    "en": "Trail width"
+  },
+  "Presentation.RegionHint": {
+    "zh": "图层存在且可见时自动记录，默认包含浮绘内部操作。空闲时透明，编辑时显示边界；隐藏或删除图层即可停止显示。",
+    "en": "Visible key layers record automatically, including FloatCanvas by default. Empty regions are transparent with editing guides. Hide or delete the layer to stop its display."
+  },
+  "Presentation.InvalidValue": {
+    "zh": "请填写有效范围内的数值。",
+    "en": "Enter a value within the allowed range."
+  },
+  "Presentation.Start": {
+    "zh": "开始演示",
+    "en": "Start"
+  },
+  "Presentation.Stop": {
+    "zh": "停止演示",
+    "en": "Stop"
+  },
+  "Presentation.KeepPausedTrail": {
+    "zh": "保留暂停时的轨迹",
+    "en": "Keep paused trail"
+  },
+  "Presentation.KeepPausedTrailHint": {
+    "zh": "将暂停时的采样轨迹保留为普通笔迹，可撤销；不保留消退动画。",
+    "en": "Keep the sampled trail as ordinary undoable ink. Fading is not retained."
+  },
+  "Presentation.Bake.Unavailable": {
+    "zh": "没有可保留的有效暂停轨迹。",
+    "en": "No valid paused trail is available."
+  },
+  "Presentation.Status.Stopped": {
+    "zh": "等待可见的键盘图层或鼠标效果",
+    "en": "Waiting for a visible key layer or pointer effect"
+  },
+  "Presentation.Status.PausedEditing": {
+    "zh": "当前记录范围不包含浮绘内部操作",
+    "en": "The selected input scope excludes FloatCanvas"
+  },
+  "Presentation.Status.PausedHidden": {
+    "zh": "画布隐藏，演示已暂停",
+    "en": "Paused while the canvas is hidden"
+  },
+  "Presentation.Status.NoLayers": {
+    "zh": "没有可见的键盘图层或鼠标效果",
+    "en": "No visible key layer or pointer effect"
+  },
+  "Presentation.Status.Starting": {
+    "zh": "正在开始演示",
+    "en": "Starting presentation"
+  },
+  "Presentation.Status.Running": {
+    "zh": "演示进行中",
+    "en": "Presentation running"
+  },
+  "Presentation.Status.Unavailable": {
+    "zh": "输入观察暂不可用",
+    "en": "Input observation is unavailable"
+  },
+  "Presentation.Status.KeyboardProtected": {
+    "zh": "键盘显示已暂停，鼠标效果继续",
+    "en": "Key display paused; pointer effects continue"
+  },
+  "Presentation.Status.OutsideScope": {
+    "zh": "当前应用不在键盘记录范围内",
+    "en": "The current application is outside the key recording scope"
+  },
+  "Presentation.Global.Keyboard": {
+    "zh": "全局键盘记录",
+    "en": "Global key recording"
+  },
+  "Presentation.Global.KeyboardScope": {
+    "zh": "记录范围",
+    "en": "Input scope"
+  },
+  "Presentation.Scope.AllApplications": {
+    "zh": "所有应用（含浮绘）",
+    "en": "All apps"
+  },
+  "Presentation.Scope.OutsideFloatCanvas": {
+    "zh": "仅其他应用",
+    "en": "Other apps only"
+  },
+  "Presentation.Scope.FloatCanvasOnly": {
+    "zh": "仅浮绘内部",
+    "en": "FloatCanvas only"
+  },
+  "Presentation.Global.KeyboardHint": {
+    "zh": "画出键盘图层后即记录，无需开始按钮。显示内容跟随图层的移动和透视；这里的范围设置适用于所有键盘图层。",
+    "en": "Key layers record immediately, including FloatCanvas by default. Their display follows layer placement and perspective. This scope applies to every key layer."
+  },
+  "Presentation.Global.Pointer": {
+    "zh": "全局鼠标效果",
+    "en": "Screen-wide pointer effects"
+  },
+  "Presentation.Global.PointerTitle": {
+    "zh": "鼠标演示",
+    "en": "Pointer effects"
+  },
+  "Presentation.Global.PointerSettings": {
+    "zh": "鼠标演示设置…",
+    "en": "Pointer settings…"
+  },
+  "Presentation.Global.PointerHint": {
+    "zh": "鼠标标记固定在屏幕上，覆盖软件响应的全部屏幕，不添加图层，也不随画布透视改变。",
+    "en": "Pointer marks stay on screen across all displays served by the app. They create no layers and do not follow canvas perspective."
+  },
+  "Presentation.Global.PointerEnabled": {
+    "zh": "启用鼠标演示",
+    "en": "Enable pointer effects"
+  },
+  "Presentation.Global.EnablePointerHint": {
+    "zh": "先启用鼠标演示；关闭时仍保留这些设置。",
+    "en": "Enable pointer effects to use these settings. Switching them off preserves your choices."
+  },
+  "Presentation.Global.CursorColor": {
+    "zh": "高亮颜色",
+    "en": "Halo color"
+  },
+  "Presentation.Global.LeftClick": {
+    "zh": "左键点击",
+    "en": "Left click"
+  },
+  "Presentation.Global.RightClick": {
+    "zh": "右键点击",
+    "en": "Right click"
+  },
+  "Presentation.Global.MiddleClick": {
+    "zh": "中键点击",
+    "en": "Middle click"
+  },
+  "Presentation.Global.ClickColor": {
+    "zh": "点击颜色",
+    "en": "Click color"
+  },
+  "Presentation.Global.ClickShape": {
+    "zh": "点击形状",
+    "en": "Click shape"
+  },
+  "Presentation.Global.ClickRadius": {
+    "zh": "点击半径",
+    "en": "Click radius"
+  },
+  "Presentation.Global.ClickWidth": {
+    "zh": "圆环宽度",
+    "en": "Ring width"
+  },
+  "Presentation.Shape.Ring": {
+    "zh": "圆环",
+    "en": "Ring"
+  },
+  "Presentation.Shape.Disc": {
+    "zh": "实心圆",
+    "en": "Disc"
+  },
+  "Presentation.Global.TrailColor": {
+    "zh": "轨迹颜色",
+    "en": "Trail color"
+  },
+  "Presentation.Global.Opacity": {
+    "zh": "不透明度",
+    "en": "Opacity"
+  },
+  "ToolDescription.PointerPresentation": {
+    "zh": "全屏鼠标演示。开关立即生效；将效果保存为预设，颜色中的透明度控制显示强度。",
+    "en": "Screen-wide pointer effects. Switches take effect immediately. Save styles as presets and adjust transparency in each color."
+  },
+  "Presentation.Layout.DisableAll": {
+    "zh": "全部隐藏",
+    "en": "Disable all"
+  },
+  "Recipe.PresentationPointerClicks": {
+    "zh": "点击提示",
+    "en": "Click effects"
+  },
+  "Presentation.Layout.Y": {
+    "zh": "Y",
+    "en": "Y"
+  },
+  "Presentation.Layout.Invalid": {
+    "zh": "请填写有效标签或键位范围。位置与大小必须位于 64×64 个键宽内。",
+    "en": "Enter a valid label and bounds. Position and size must fit within 64 units on each axis."
+  },
+  "Presentation.Layout.KeyLabel": {
+    "zh": "标签",
+    "en": "Label"
+  },
+  "Presentation.Layout.Height": {
+    "zh": "高度",
+    "en": "Height"
+  },
+  "Presentation.Layout.Reset": {
+    "zh": "恢复标准键盘",
+    "en": "Restore standard layout"
+  },
+  "Presentation.Layout.X": {
+    "zh": "X",
+    "en": "X"
+  },
+  "Presentation.Layout.Apply": {
+    "zh": "应用",
+    "en": "Apply"
+  },
+  "Tool.PointerPresentation": {
+    "zh": "鼠标演示",
+    "en": "Mouse demonstration"
+  },
+  "Presentation.Layout.Hint": {
+    "zh": "点击键位以选择，拖动调整位置；右侧可修改显示、标签和尺寸。位置与尺寸以普通按键宽度为单位，只有“应用”会保存本次草稿。",
+    "en": "Select and drag a key to reposition it, or edit its visibility, label and size on the right. One unit equals one standard key width. Only Apply saves this draft."
+  },
+  "Presentation.DisplayStyle.Log": {
+    "zh": "按键记录 · 简洁",
+    "en": "Key recording · Simple"
+  },
+  "Presentation.DisplayStyle.Keyboard": {
+    "zh": "实时键盘",
+    "en": "Live keyboard"
+  },
+  "Presentation.Layout.Edit": {
+    "zh": "编辑键盘布局…",
+    "en": "Edit keyboard layout…"
+  },
+  "Presentation.Layout.Label": {
+    "zh": "键盘布局",
+    "en": "Keyboard layout"
+  },
+  "Presentation.Layout.Cancel": {
+    "zh": "取消",
+    "en": "Cancel"
+  },
+  "Presentation.Layout.EnableAll": {
+    "zh": "全部显示",
+    "en": "Enable all"
+  },
+  "Recipe.PresentationPointerTrail": {
+    "zh": "鼠标轨迹",
+    "en": "Pointer trail"
+  },
+  "Recipe.PresentationPointerHalo": {
+    "zh": "光标高亮",
+    "en": "Cursor halo"
+  },
+  "Presentation.DisplayStyle.Keycaps": {
+    "zh": "按键记录 · 仿真键帽",
+    "en": "Key recording · Realistic keycaps"
+  },
+  "Presentation.Layout.Enabled": {
+    "zh": "显示此键位",
+    "en": "Include this key"
+  },
+  "Presentation.Layout.Width": {
+    "zh": "宽度",
+    "en": "Width"
+  },
+  "Presentation.DisplayStyle": {
+    "zh": "显示样式",
+    "en": "Display style"
+  },
+  "Presentation.Layout.UnitsHint": {
+    "zh": "一个单位等于普通按键的宽度。隐藏的键位仍可在预览中选择，物理按键保持不变。",
+    "en": "One unit equals one standard key width. Hidden keys remain selectable in the preview. Physical keys stay unchanged."
+  },
+  "Presentation.Layout.Selected": {
+    "zh": "所选键位",
+    "en": "Selected key"
+  },
+  "Presentation.Layout.Title": {
+    "zh": "编辑键盘布局",
+    "en": "Keyboard layout editor"
+  },
+  "Presentation.Layout.NoSelection": {
+    "zh": "此布局没有键位。可恢复标准键盘。",
+    "en": "This layout has no keys. Restore the standard layout to begin."
+  },
+  "Recipe.PresentationKeycaps": {
+    "zh": "按键记录 · 仿真键帽",
+    "en": "Key recording · Realistic keycaps"
+  },
+  "Recipe.PresentationKeyboard": {
+    "zh": "实时键盘",
+    "en": "Live keyboard"
+  },
+  "Presentation.Layout.PhysicalKey": {
+    "zh": "物理按键：{0}",
+    "en": "Physical key: {0}"
+  },
+  "Presentation.Layout.CustomKey": {
+    "zh": "自定义键位",
+    "en": "Custom key"
+  },
+  "Presentation.Layout.Unit": {
+    "zh": "键宽",
+    "en": "key"
+  },
+  "Presentation.LogStyle.Log": {
+    "zh": "简洁",
+    "en": "Simple"
+  },
+  "Presentation.LogStyle.Label": {
+    "zh": "记录样式",
+    "en": "Recording style"
+  },
+  "Presentation.Mode.Label": {
+    "zh": "演示模式",
+    "en": "Mode"
+  },
+  "Presentation.LogStyle.Keycaps": {
+    "zh": "仿真键帽",
+    "en": "Realistic keycaps"
+  },
+  "Presentation.Mode.Log": {
+    "zh": "按键记录",
+    "en": "Key recording"
+  },
+  "Presentation.Mode.Keyboard": {
+    "zh": "实时键盘",
+    "en": "Live keyboard"
+  }
+}

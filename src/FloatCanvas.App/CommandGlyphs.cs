@@ -71,6 +71,19 @@ internal static class CommandGlyphs
     internal const string ToolOptions = "M10,1 L8,3 L9,6 L12,7 L14,5 L15,6 C15,9 12,11 9,10 L4,15 C2,16 0,14 1,12 L6,7 C5,4 6,1 10,1 Z M2.7,12.5 L3.5,13.3";
     internal const string Layers = "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13";
     internal const string Stamp = "M6,8.5 V7 C6,5.5 4.8,4.7 4.8,3.2 C4.8,.6 11.2,.6 11.2,3.2 C11.2,4.7 10,5.5 10,7 V8.5 M6,8.5 H10 Q12,8.5 12,11 M6,8.5 Q4,8.5 4,11 M1.5,11 H14.5 V13.5 H1.5 Z M3,15.5 H13";
+    internal const string Presentation = "M1,3 H15 V13 H1 Z M4,6 H5 M7,6 H8 M10,6 H12 M4,9 H5 M7,9 H8 M10,9 H12 M5,11 H11";
+    internal const string PresentationTools = "M1,2 H15 V11 H1 Z M8,11 V15 M5,15 H11 M4,5 H11 M4,8 H8";
+    internal const string PresentationToggle = "M2,3 L9,8 L2,13 Z M11,5 H15 V11 H11 Z";
+    internal const string PresentationPointer = "M5,1 L5,13 L8,10 L10,15 L12,14 L10,9 L14,9 Z M2,7 A6,6 0 0 1 10,2";
+    internal const string PresentationPointerSettings = "M2,1 L2,12 L5,9 L7,14 L9,13 L7,8 L10,8 Z M11,2 H15 M13,1 V5 M10,11 H15 M12,9 V14";
+    internal const string PresentationBake = "M1,9 C3,3 6,13 9,7 C11,3 13,5 15,1 M2,15 H14 M8,10 V14 M5,11 L8,14 L11,11";
+    internal const string WindowSources = "M1,2 H11 V11 H1 Z M1,5 H11 M5,7 H15 V15 H5 Z M8,10 L12,12 L8,14 Z";
+    internal const string WindowSourceAdd = "M1,1 H12 V11 H1 Z M1,4 H12 M4,7 L7,5 L10,7 M12,10 V16 M9,13 H15";
+    internal const string WindowSourcePause = "M1,2 H15 V14 H1 Z M1,5 H15 M5,7 V12 M10,7 V12";
+    internal const string WindowSourceResume = "M1,2 H15 V14 H1 Z M1,5 H15 M6,7 L11,9.5 L6,12 Z";
+    internal const string WindowSourceRebind = "M1,1 H11 V9 H1 Z M1,4 H11 M7,12 H15 M12,9 L15,12 L12,15 M3,11 V15 H7";
+    internal const string WindowSourceCrop = "M1,2 H14 V14 H1 Z M1,5 H14 M5,6 V11 H12 M3,8 H9 V13";
+    internal const string WindowSourceFreeze = "M1,1 H15 V13 H1 Z M1,4 H15 M5,9 L8,6 L11,9 M8,6 V15 M5,15 H11";
     internal const string NewStamp = "M4.5,8.5 V7 C4.5,5.5 3.5,4.7 3.5,3.2 C3.5,.6 8.5,.6 8.5,3.2 C8.5,4.7 7.5,5.5 7.5,7 V8.5 M4.5,8.5 H7.5 Q9.5,8.5 9.5,11 M4.5,8.5 Q2.5,8.5 2.5,11 M1,11 H11 V13.5 H1 Z M2,15.5 H10 M12.5,2.5 V7.5 M10,5 H15";
     internal const string Updates = "M3,5 A6,6 0 0 1 13,3 L15,5 M15,1 V5 H11 M13,11 A6,6 0 0 1 3,13 L1,11 M1,15 V11 H5";
     internal const string PassThrough = "M2,8 L6,12 L14,3";
@@ -104,6 +117,8 @@ internal static class CommandGlyphs
         EditorTool.Pixelate => "M1,1 L15,1 L15,15 L1,15 Z M1,6 L15,6 M1,11 L15,11 M6,1 L6,15 M11,1 L11,15",
         EditorTool.Image => Image,
         EditorTool.Stamp => Stamp,
+        EditorTool.Presentation => Presentation,
+        EditorTool.PointerPresentation => PresentationPointerSettings,
         _ => throw new ArgumentOutOfRangeException(nameof(tool))
     };
 

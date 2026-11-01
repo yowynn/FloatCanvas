@@ -223,7 +223,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         if (pinnedSlot >= 0) artwork.Children.Add(Badge(shortcut, Wpf.HorizontalAlignment.Left, "Stamp.PinBadge"));
         tile.Children.Add(artwork);
         tile.Children.Add(new Controls.TextBlock { Text = entry.Name, TextTrimming = Wpf.TextTrimming.CharacterEllipsis, TextAlignment = Wpf.TextAlignment.Center });
-        var mode = new Controls.TextBlock { Text = L.Get(entry.Mode == StampSaveMode.EditableGroup ? "StampShelf.Group" : "StampShelf.Raster"), FontSize = 11, TextAlignment = Wpf.TextAlignment.Center, Margin = new(0, 3, 0, 0), Tag = "Stamp.Mode" };
+        var mode = new Controls.TextBlock { Text = L.Get(entry.Mode == StampSaveMode.SharedPrefab ? "Prefab.SharedStampBadge" : entry.Mode == StampSaveMode.EditableGroup ? "StampShelf.Group" : "StampShelf.Raster"), FontSize = 11, TextAlignment = Wpf.TextAlignment.Center, Margin = new(0, 3, 0, 0), Tag = "Stamp.Mode" };
         mode.SetResourceReference(Controls.TextBlock.ForegroundProperty, "CanvasMuted"); tile.Children.Add(mode);
         item.Content = tile; item.Margin = new(TileMargin); item.Padding = new(TilePadding); item.BorderThickness = new(TileBorder);
         Wpf.Automation.AutomationProperties.SetName(item, entry.Name); item.ContextMenu = TileContextMenu(entry.Id);
@@ -604,7 +604,8 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var name = new Controls.TextBox { Text = initialName, MaxLength = 120, Margin = new(0, 8, 0, 14) }; panel.Children.Add(name);
         var editable = new Controls.RadioButton { Content = L.Get("Stamp.EditableGroup"), IsChecked = mode == StampSaveMode.EditableGroup, Margin = new(0, 0, 0, 10) };
         var raster = new Controls.RadioButton { Content = L.Get("Stamp.RasterMerge"), IsChecked = mode == StampSaveMode.RasterMerge, Margin = new(0, 0, 0, 14) };
-        if (showMode) { panel.Children.Add(editable); panel.Children.Add(raster); }
+        var shared = new Controls.RadioButton { Content = L.Get("Prefab.SharedStamp"), IsChecked = mode == StampSaveMode.SharedPrefab, Margin = new(0, 0, 0, 14) };
+        if (showMode) { panel.Children.Add(editable); panel.Children.Add(raster); panel.Children.Add(shared); }
         var buttons = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = Wpf.HorizontalAlignment.Right };
         var save = Button("Stamp.Save", () => { }); save.IsDefault = true; buttons.Children.Add(save);
         var cancel = Button("Stamp.Cancel", () => { }); cancel.IsCancel = true; buttons.Children.Add(cancel); panel.Children.Add(buttons);
@@ -612,7 +613,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         NamePrompt.AttachValidation(name, save, panel);
         save.Click += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) SessionWindowCoordinator.SetModalResult(dialog, true); };
         dialog.Loaded += (_, _) => { name.Focus(); name.SelectAll(); };
-        return SessionWindowCoordinator.ShowModal(dialog) == true ? (name.Text.Trim(), raster.IsChecked == true ? StampSaveMode.RasterMerge : StampSaveMode.EditableGroup) : null;
+        return SessionWindowCoordinator.ShowModal(dialog) == true ? (name.Text.Trim(), shared.IsChecked == true ? StampSaveMode.SharedPrefab : raster.IsChecked == true ? StampSaveMode.RasterMerge : StampSaveMode.EditableGroup) : null;
     }
     private bool Confirm(string message)
     {

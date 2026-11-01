@@ -35,7 +35,7 @@ internal static class BillboardCreationTests
 
     private static void Drawing(Action<string,bool> check,EditorTool tool)
     {
-        var session=Session();var editor=new EditorController(session){Tool=tool,BillboardMode=true,Symbol=SymbolKind.Heart};editor.Style.StrokeWidth=5;
+        var session=Session();var editor=new EditorController(session){Tool=tool,BillboardWorkflow=BillboardCreationWorkflow.FixedDepthLine,BillboardMode=true,Symbol=SymbolKind.Heart};editor.Style.StrokeWidth=5;
         var depth=Depth(editor,new(300,300));
         check(tool+" first depth click creates no layer or undo under actual perspective",session.Document.Canvas.Projection.Quad.Count==4&&Near(depth.Scale,.7)&&session.Document.Elements.Count==0&&session.UndoCount==0&&!session.IsTransactionActive&&editor.BillboardDrawingGuide is null);
         Send(editor,OverlayPointerKind.Down,new(100,100));Send(editor,OverlayPointerKind.Move,new(150,140));Send(editor,OverlayPointerKind.Move,new(200,180));
@@ -67,7 +67,7 @@ internal static class BillboardCreationTests
     }
     private static void SignedCreation(Action<string,bool> check)
     {
-        var session=Session();var editor=new EditorController(session){Tool=EditorTool.Rectangle,BillboardMode=true};
+        var session=Session();var editor=new EditorController(session){Tool=EditorTool.Rectangle,BillboardWorkflow=BillboardCreationWorkflow.FixedDepthLine,BillboardMode=true};
         var depth=Depth(editor,new(300,200));Send(editor,OverlayPointerKind.Down,new(100,300));Send(editor,OverlayPointerKind.Up,new(200,380));
         var item=session.Document.Elements.Single();var mapping=CanvasMapping.Create(session.Document);
         check("creating below the chosen depth line yields signed negative elevation without moving the screen rectangle",item.IsBillboard&&Near(item.BillboardHeight,-140/depth.Scale)&&Near(mapping.ProjectedBounds(item,false),new RectD(100,300,100,80))&&Near(mapping.ToScreen(item.BillboardAnchor).Y,200));
@@ -101,7 +101,7 @@ internal static class BillboardCreationTests
         foreach(var tool in new[]{EditorTool.Crop,EditorTool.Blur,EditorTool.Pixelate})
         {
             var session=Session(DocumentKind.FrozenCapture);var image=new CanvasElement {Kind=ElementKind.Image,Width=100,Height=60,IsBillboard=true,BillboardAnchor=new(300,500),BillboardHeight=60,Transform=Affine2D.Rotation(25)};
-            session.Document.Elements.Add(image);session.SetSelection([image.Id]);var editor=new EditorController(session){Tool=tool,BillboardMode=true};
+            session.Document.Elements.Add(image);session.SetSelection([image.Id]);var editor=new EditorController(session){Tool=tool,BillboardWorkflow=BillboardCreationWorkflow.FixedDepthLine,BillboardMode=true};
             var mapping=CanvasMapping.Create(session.Document);var screen=mapping.ElementToScreen(image);var center=Center(image,mapping);var anchor=image.BillboardAnchor;
             var start=screen.TransformPoint(new(20,15));var end=screen.TransformPoint(new(80,45));
             Send(editor,OverlayPointerKind.Down,start,OverlayModifiers.Control);Send(editor,OverlayPointerKind.Move,end,OverlayModifiers.Control);
@@ -131,10 +131,13 @@ internal static class BillboardCreationTests
         var session=Session();Guid group=Guid.NewGuid();session.Document.Groups.Add(new(){Id=group});
         var board=new CanvasElement {Kind=ElementKind.Rectangle,Width=100,Height=60,IsBillboard=true,BillboardAnchor=new(500,500),BillboardHeight=80,Transform=Affine2D.Rotation(17),GroupId=group};
         var surface=new CanvasElement {Kind=ElementKind.Rectangle,Width=80,Height=60,Transform=Affine2D.Translation(180,200),GroupId=group};
-        session.Document.Elements.AddRange([surface,board]);session.SetSelection([surface.Id,board.Id]);var editor=new EditorController(session){Tool=EditorTool.Select};
+        session.Document.Elements.AddRange([surface,board]);session.SetSelection([group]);var editor=new EditorController(session){Tool=EditorTool.Select};
         string boardBefore=JsonSerializer.Serialize(board);var surfaceBefore=surface.Transform;var start=editor.SelectionScreenRotationHandle!.Value;
         Send(editor,OverlayPointerKind.Down,start);Send(editor,OverlayPointerKind.Up,start+new PointD(100,30));
-        check("mixed-group rotation moves only surface members and keeps every billboard field unchanged",surface.Transform!=surfaceBefore&&JsonSerializer.Serialize(board)==boardBefore&&session.UndoCount==1);
+        var world = SceneEvaluation.Build(session.Document).RenderDocument.Elements;
+        check("mixed-group rotation carries both surface and billboard through the parent without baking either child", surface.Transform == surfaceBefore &&
+            JsonSerializer.Serialize(board) == boardBefore && session.Document.Groups.Single().Transform != Affine2D.Identity &&
+            world[0].Transform != surfaceBefore && world[1].BillboardAnchor != board.BillboardAnchor && session.UndoCount == 1);
     }
     private static void OrdinaryShift(Action<string,bool> check)
     {
@@ -157,7 +160,7 @@ internal static class BillboardCreationTests
     {
         foreach(string mutation in new[]{"content","projection","document"})
         {
-            var session=Session();var editor=new EditorController(session){Tool=EditorTool.Image,BillboardMode=true};int inserted=0;
+            var session=Session();var editor=new EditorController(session){Tool=EditorTool.Image,BillboardWorkflow=BillboardCreationWorkflow.FixedDepthLine,BillboardMode=true};int inserted=0;
             editor.BeginBillboardInsertion((_,_)=>inserted++);Depth(editor,new(300,300));
             if(mutation=="content")session.Add(new(){Kind=ElementKind.Rectangle,Width=20,Height=20});
             else if(mutation=="projection")session.Document.Canvas.Projection.Matrix=session.Document.Canvas.Projection.Matrix with {M13=10};
@@ -165,7 +168,7 @@ internal static class BillboardCreationTests
             Send(editor,OverlayPointerKind.Down,new(120,100));
             check("pending billboard insertion is invalidated by "+mutation+" changes without calling its stale callback",inserted==0&&!editor.HasPendingBillboardInsertion&&editor.ActiveBillboardDepthLine is null&&!session.IsTransactionActive);
         }
-        var first=Session();var controller=new EditorController(first){Tool=EditorTool.Image,BillboardMode=true};int calls=0;
+        var first=Session();var controller=new EditorController(first){Tool=EditorTool.Image,BillboardWorkflow=BillboardCreationWorkflow.FixedDepthLine,BillboardMode=true};int calls=0;
         controller.BeginBillboardInsertion((_,_)=>calls++);Depth(controller,new(300,300));controller.ReplaceSession(new EditorSession(),new(50,60));
         Send(controller,OverlayPointerKind.Down,new(100,100));
         check("replacing with a nonperspective session clears global creation mode pending placement and guide",!controller.BillboardMode&&!controller.HasPendingBillboardInsertion&&controller.VisibleBillboardDepthLine is null&&calls==0);

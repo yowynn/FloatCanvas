@@ -45,6 +45,7 @@ internal static class SymbolStylePresetTests
                 }
             }
             var personal = new ToolParameters { Tool = EditorTool.Symbol, Symbol = SymbolKind.Heart, Style = new() { Stroke = 0xFF123456, Fill = 0xAB654321 } };
+            personal.NormalizeAppearance();
             var saved = library.Save("Personal shape", personal);
             string bytes = File.ReadAllText(Path.Combine(folder, "presets.json"));
             var reloaded = new ToolPresetLibrary(Path.Combine(folder, "presets.json")); _ = reloaded.Official;

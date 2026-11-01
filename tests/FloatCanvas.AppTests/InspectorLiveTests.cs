@@ -34,7 +34,10 @@ internal static class InspectorLiveTests
         check("multiple selection is explicitly labeled and shows only common fields", Field<Controls.TextBlock>(window, "selectionLabel").Visibility == Wpf.Visibility.Visible &&
             Field<Controls.TextBlock>(window, "selectionLabel").Text.Contains("2") && containers["Opacity"].Visibility == Wpf.Visibility.Visible &&
             containers["Stroke"].Visibility == Wpf.Visibility.Visible && containers["Fill"].Visibility == Wpf.Visibility.Collapsed && containers["Text"].Visibility == Wpf.Visibility.Collapsed && containers["FontSize"].Visibility == Wpf.Visibility.Collapsed);
-        check("different selected numeric values are represented as mixed blank input", fields["W"].Text == "");
+        var nodePanel = Field<NodeTransformPanel>(window, "nodeTransforms");
+        var nodeFields = Field<Dictionary<string, NumericValueField>>(nodePanel, "fields");
+        check("multi-selection geometry shows the whole selection size and hides per-layer geometry", containers["W"].Visibility == Wpf.Visibility.Collapsed &&
+            Math.Abs(nodeFields["W"].Value - session.SelectionBounds()!.Value.Width) < 1e-8);
         undo = session.UndoCount;
         fields["Opacity"].Text = "42";
         check("a shared property immediately updates every selected layer", session.Document.Elements.All(e => e.Style.Opacity == .42));
@@ -42,8 +45,10 @@ internal static class InspectorLiveTests
         check("multi-layer edit has one undo entry", session.UndoCount == undo + 1 && session.Undo() && session.Document.Elements.All(e => e.Style.Opacity == 1));
         session.SetSelection([first, second]);
         var before = session.Document.Elements.Select(e => ElementGeometry.Bounds(e).Left).ToArray();
-        check("common numeric label starts a multi-layer scrub", (bool)Invoke(window, "BeginScrub", "X")!);
-        Invoke(window, "UpdateScrub", "X", 15d); Invoke(window, "UpdateScrub", "X", 30d); Invoke(window, "FinishScrub", true);
+        check("common numeric label starts a multi-layer scrub", (bool)Invoke(nodePanel, "BeginEdit")!);
+        double left = session.SelectionBounds()!.Value.Left;
+        nodeFields["X"].Input.Text = (left + 15).ToString(System.Globalization.CultureInfo.CurrentCulture); Invoke(nodePanel, "Publish", "X");
+        nodeFields["X"].Input.Text = (left + 30).ToString(System.Globalization.CultureInfo.CurrentCulture); Invoke(nodePanel, "Publish", "X"); nodePanel.CompletePendingEdit();
         check("multi-layer scrub applies one relative delta per layer", session.Document.Elements.Select((e, i) => Math.Abs(ElementGeometry.Bounds(e).Left - before[i] - 30) < 1e-8).All(v => v));
         check("one undo restores the whole multi-layer scrub", session.Undo() && session.Document.Elements.Select((e, i) => Math.Abs(ElementGeometry.Bounds(e).Left - before[i]) < 1e-8).All(v => v));
         session.Execute("different colors", _ => session.Document.Elements[1].Style.Stroke = 0xFFABCDEF);
@@ -81,6 +86,7 @@ internal static class InspectorLiveTests
         var commandSession = (DesktopSession)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
         Set(commandSession, "_editor", new EditorController(session)); Set(commandSession, "_inspector", window);
         Set(commandSession, "_canvasCalibration", new CanvasCalibrationController());
+        Set(commandSession, "_canvasGridCalibrationPoints", new List<PointD>());
         fields["W"].Text = "245";
         bool commandSeesEdit = false;
         ((Task)Invoke(commandSession, "RunCommand", (Func<Task>)(() => { commandSeesEdit = !session.IsTransactionActive && Math.Abs(ElementGeometry.Bounds(session.Document.Elements.Single(e => e.Id == second), includeStroke: false).Width - 245) < 1e-8; return Task.CompletedTask; }))!).GetAwaiter().GetResult();

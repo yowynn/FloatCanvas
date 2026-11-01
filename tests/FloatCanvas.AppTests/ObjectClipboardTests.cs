@@ -27,7 +27,7 @@ internal static class ObjectClipboardTests
         var outside = new CanvasElement { Kind = ElementKind.Text, GroupId = unused.Id, Text = "unselected", Width = 80, Height = 20,
             Transform = Affine2D.Translation(1000, 1000) };
         var source = new EditorSession(new() { Groups = [outer, inner, unused], Elements = [rectangle, picture, number, hidden, outside], LayerOpacity = .6 }, assets);
-        source.SetSelection([rectangle.Id, picture.Id, number.Id, hidden.Id]);
+        source.SetSelection([outer.Id]);
         string sourceBefore = JsonSerializer.Serialize(source.Document);
 
         var copy = ObjectClipboardCommand.CreateSnapshot(source);
@@ -42,7 +42,7 @@ internal static class ObjectClipboardTests
         check("clipboard copy keeps cropped image effects and immutable asset references", copy.ReferencedAssets.SequenceEqual([asset]) &&
             copy.Elements.Single(element => element.Id == picture.Id) is { ImageCrop: { } crop, Effects: [{ Amount: 7 }] } && crop == picture.ImageCrop);
         check("clipboard copy never changes the source document, selection or history", JsonSerializer.Serialize(source.Document) == sourceBefore &&
-            source.Selection.SetEquals([rectangle.Id, picture.Id, number.Id, hidden.Id]) && source.UndoCount == 0);
+            source.Selection.SetEquals([outer.Id]) && source.UndoCount == 0);
 
         // A receiving document may already contain the same source group IDs (paste in the same canvas).
         var existing = new CanvasElement { Kind = ElementKind.Rectangle, GroupId = outer.Id, Width = 10, Height = 10 };
@@ -59,18 +59,20 @@ internal static class ObjectClipboardTests
             inserted.Single(element => element.Kind == ElementKind.Image).Effects.Single().Id != picture.Effects.Single().Id);
         var pastedRectangle = inserted.Single(element => element.Kind == ElementKind.Rectangle);
         check("paste uses the original 16px offset and preserves rotation and size", pastedRectangle.Width == rectangle.Width && pastedRectangle.Height == rectangle.Height &&
-            pastedRectangle.Transform == Affine2D.Translation(16, 16).Compose(rectangle.Transform));
-        check("pasted nested members remain one group and can also be selected individually", target.SelectionUnitIds(pastedRectangle.Id).Count() == 3 &&
+            SceneEvaluation.Build(target.Document).FindElement(pastedRectangle.Id)!.Transform == Affine2D.Translation(16, 16).Compose(rectangle.Transform) &&
+            pastedRectangle.Transform == rectangle.Transform);
+        check("pasted nested members select one group node and can also be selected individually", target.SelectionUnitIds(pastedRectangle.Id).SequenceEqual(target.Selection) &&
+            target.Selection.Count == 1 && new SceneGraph(target.Document).DescendantElementIds(target.Selection.Single()).Count() == 3 &&
             target.SelectionUnitIds(pastedRectangle.Id, individual: true).SequenceEqual([pastedRectangle.Id]));
         check("pasted content is unlocked and numbering advances monotonically", inserted.All(element => !element.Locked) && target.Document.NextNumber == 43);
         check("paste transfers the original image bytes into the receiving resource library", target.Assets.Get(asset).Data.Span.SequenceEqual(png));
         check("undo removes exactly the pasted objects and group metadata", target.Undo() && JsonSerializer.Serialize(target.Document) == targetBefore && target.Selection.SetEquals([existing.Id]));
         check("redo restores the full editable group hierarchy", target.Redo() && target.Document.Elements.Count == 4 && target.Document.Groups.Count == 3 &&
-            target.SelectionUnitIds(target.SelectedElements().First().Id).Count() == 3);
+            target.SelectionUnitIds(target.SelectedElements().First().Id).SequenceEqual(target.Selection) && target.SelectedElements().Count() == 3);
         var firstIds = target.Selection.ToHashSet();
         ObjectClipboardCommand.Insert(target, copy, assets, new(0, 0, 1920, 1080));
         check("repeated paste creates independent groups rather than joining earlier copies", !target.Selection.Overlaps(firstIds) &&
-            target.SelectionUnitIds(target.SelectedElements().First().Id).Count() == 3 && target.UndoCount == 2);
+            target.SelectionUnitIds(target.SelectedElements().First().Id).SequenceEqual(target.Selection) && target.SelectedElements().Count() == 3 && target.UndoCount == 2);
         check("paste never alters the clipboard document or its lock and transform data", copy.Elements.Single(element => element.Id == picture.Id).Locked &&
             copy.Elements.Single(element => element.Id == rectangle.Id).Transform == rectangle.Transform);
 
@@ -80,10 +82,12 @@ internal static class ObjectClipboardTests
         var pastedBounds = offscreen.SelectionBounds()!.Value;
         check("offscreen paste recenters the whole group into a negative-coordinate screen", pastedBounds.Center.DistanceTo(visible.Center) < 1e-8 && offscreen.UndoCount == 1);
         check("offscreen paste preserves member spacing and rotation without scaling", offscreen.Document.Elements[0].Transform.M11 == rectangle.Transform.M11 &&
-            offscreen.Document.Elements[1].Transform.OffsetX - offscreen.Document.Elements[2].Transform.OffsetX == picture.Transform.OffsetX - number.Transform.OffsetX);
+            offscreen.Document.Elements[1].Transform.OffsetX - offscreen.Document.Elements[2].Transform.OffsetX == picture.Transform.OffsetX - number.Transform.OffsetX &&
+            offscreen.Document.Elements[0].Transform == rectangle.Transform);
         var overlapTarget = new EditorSession();
         ObjectClipboardCommand.Insert(overlapTarget, copy, assets, new(120, 100, 10, 150));
-        check("partially visible paste keeps its usual offset instead of unexpectedly recentering", overlapTarget.Document.Elements[0].Transform == Affine2D.Translation(16, 16).Compose(rectangle.Transform));
+        check("partially visible paste keeps its usual offset instead of unexpectedly recentering",
+            SceneEvaluation.Build(overlapTarget.Document).FindElement(overlapTarget.Document.Elements[0].Id)!.Transform == Affine2D.Translation(16, 16).Compose(rectangle.Transform));
 
         source.SetSelection([]);
         var empty = ObjectClipboardCommand.CreateSnapshot(source);
@@ -102,10 +106,12 @@ internal static class ObjectClipboardTests
         check("capture cloning remaps group identities independently from the live document", !capture.Groups.Select(group => group.Id).Intersect(source.Document.Groups.Select(group => group.Id)).Any() &&
             capture.Elements.All(element => element.GroupId is { } id && capture.Groups.Any(group => group.Id == id)));
         var captureSession = new EditorSession(capture, assets);
-        captureSession.Execute("crop", document => document.Elements.RemoveAll(element => element.Kind == ElementKind.Image));
+        captureSession.Execute("crop", document => new SceneGraph(document).RemoveNodes(document.Elements.Where(element => element.Kind == ElementKind.Image).Select(element => element.Id).ToArray()));
         SceneValidation.Validate(captureSession.Document);
-        check("capture crop commits prune empty nested groups while preserving remaining ancestors", captureSession.Document.Groups.Count == 1 &&
-            captureSession.Document.Groups[0].ParentId is null && captureSession.Undo() && captureSession.Document.Groups.Count == 2);
+        check("capture crop removes image slots while preserving editable empty nested group nodes", captureSession.Document.Groups.Count == 2 &&
+            captureSession.Document.Elements.All(element => element.Kind != ElementKind.Image) &&
+            new SceneGraph(captureSession.Document).DescendantElementIds(captureSession.Document.Groups.Single(group => group.ParentId is not null).Id).Count() == 0 &&
+            captureSession.Undo() && captureSession.Document.Groups.Count == 2 && captureSession.Document.Elements.Any(element => element.Kind == ElementKind.Image));
         check("clipboard and capture cloning leave the live document unchanged", JsonSerializer.Serialize(source.Document) == sourceBefore);
     }
 }

@@ -60,6 +60,8 @@ internal static class ArrowHeadRenderingTests
         check("automatic head reacts to stroke width and rebuilds", renderer.PathBuildCount == builds + 1 && Count(big) > Count(small) * 3);
 
         arrow.Style = JsonSerializer.Deserialize<ElementStyle>("{\"Stroke\":4294901760,\"StrokeWidth\":4}")!;
+        // A standalone legacy style needs its owning kind before color migration.
+        AppearanceMigration.MigrateElement(arrow, new(0xFFFF0000, 0, false, null), numberUsesForeground: false);
         byte[] legacy = renderer.ExportPng(scene, assets, true);
         arrow.Style = new() { Stroke = 0xFFFF0000, StrokeWidth = 4, ArrowHeadStyle = ArrowHeadStyle.FilledTriangle, ArrowHeadSize = 0 };
         check("old JSON retains byte-identical default arrow rendering", legacy.AsSpan().SequenceEqual(renderer.ExportPng(scene, assets, true)));

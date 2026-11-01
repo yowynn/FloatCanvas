@@ -11,8 +11,11 @@ public sealed partial class SceneRenderer
     /// <summary>Borrowed temporary screen pixels for export/capture. Never projected or persisted as a canvas image.</summary>
     public DesktopBackdrop? ScreenBackdrop { get; set; }
 
-    public static RectD ProjectedBounds(SceneDocument document, CanvasElement element, bool includeStroke = false) =>
-        CanvasMapping.Create(document).ProjectedBounds(element, includeStroke);
+    public static RectD ProjectedBounds(SceneDocument document, CanvasElement element, bool includeStroke = false)
+    {
+        (document, element) = WorldElement(document, element);
+        return CanvasMapping.Create(document).ProjectedBounds(element, includeStroke);
+    }
 
     private Projective2D TransformFor(SceneDocument? document) =>
         _renderSpace == SceneRenderSpace.PlaneContent || document is null ? Projective2D.Identity :
@@ -24,7 +27,7 @@ public sealed partial class SceneRenderer
     internal void DrawCalibrationGuides(SKCanvas canvas, SceneDocument document, double opacity = 1)
     {
         if (!(opacity > 0)) return;
-        BeginFrame(document);
+        document = BeginFrame(document);
         int saved = canvas.Save();
         try
         {
@@ -84,8 +87,9 @@ public sealed partial class SceneRenderer
             // A long inverse-projected far edge must not make clearly separated cells
             // inside the calibration frame disappear through a global candidate stride.
             var projection = document.Canvas.Projection;
-            double coverage = vertical ? projection.GridColumns : projection.GridRows;
-            double startCell = ((vertical ? projection.Origin.X : projection.Origin.Y) - anchor) / cell;
+            var plane = CanvasProjectionGeometry.ResolvePlaneBounds(projection);
+            double coverage = (vertical ? plane.Width : plane.Height) / cell;
+            double startCell = ((vertical ? plane.X : plane.Y) - anchor) / cell;
             double fineStride = 1;
             while (coverage / fineStride > 2046) fineStride *= 2;
             double fineStart = Math.Floor(startCell / fineStride), fineEnd = Math.Ceiling((startCell + coverage) / fineStride);

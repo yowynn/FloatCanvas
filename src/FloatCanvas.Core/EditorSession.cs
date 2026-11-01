@@ -14,13 +14,15 @@ public sealed partial class EditorSession
     public long ContentVersion { get; private set; }
     public bool HasPendingChanges { get; private set; }
 
-    public EditorSession(SceneDocument? document = null, AssetLibrary? assets = null, int historyLimit = 100, long historyByteLimit = 256L * 1024 * 1024)
+    public EditorSession(SceneDocument? document = null, AssetLibrary? assets = null, int historyLimit = 100, long historyByteLimit = 256L * 1024 * 1024, bool readOnly = false)
     {
         if (historyLimit < 0 || historyByteLimit < 0) throw new ArgumentOutOfRangeException(nameof(historyLimit));
         Document = document ?? new(); Assets = assets ?? new(); HistoryLimit = historyLimit; HistoryByteLimit = historyByteLimit;
+        IsReadOnly = readOnly;
     }
     public SceneDocument Document { get; private set; }
     public AssetLibrary Assets { get; }
+    public bool IsReadOnly { get; }
     public HashSet<Guid> Selection { get; } = [];
     public int HistoryLimit { get; }
     public long HistoryByteLimit { get; }
@@ -47,6 +49,7 @@ public sealed partial class EditorSession
 
     public void BeginTransaction(string label)
     {
+        if (IsReadOnly) throw new InvalidOperationException(L.Get("GroupCanvas.ReadOnly"));
         if (IsTransactionActive) throw new InvalidOperationException(L.Get("History.TransactionAlreadyActive"));
         transactionContentVersion = ContentVersion; transactionPreviewRevision = PreviewRevision; HasPendingChanges = false;
         transactionBefore = Document.Clone(); transactionSelection = [.. Selection]; transactionLabel = label; TransactionId++;
@@ -61,7 +64,7 @@ public sealed partial class EditorSession
     {
         if (transactionBefore is null) throw new InvalidOperationException(L.Get("History.NoActiveTransaction"));
         var before = transactionBefore; var selectedBefore = transactionSelection!;
-        try { Document.PruneGroups(); SceneLimits.ValidateCapacity(Document); }
+        try { SceneLimits.ValidateCapacity(Document); }
         catch { Cancel(); throw; }
         PruneSelection();
         bool knownSettings = settingsOnly && PreviewElementsRevision <= transactionPreviewRevision && SettingsElementsUnchanged(before);
@@ -110,6 +113,7 @@ public sealed partial class EditorSession
     /// </summary>
     public void ExecuteExternal(string label, Action apply, Action undoOperation, Action redoOperation, long estimatedBytes = 0)
     {
+        if (IsReadOnly) throw new InvalidOperationException(L.Get("GroupCanvas.ReadOnly"));
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ArgumentNullException.ThrowIfNull(apply);
         ArgumentNullException.ThrowIfNull(undoOperation);
@@ -153,6 +157,7 @@ public sealed partial class EditorSession
     }
     public void ReplaceDocument(SceneDocument document)
     {
+        if (IsReadOnly) throw new InvalidOperationException(L.Get("GroupCanvas.ReadOnly"));
         ArgumentNullException.ThrowIfNull(document);
         transactionBefore = null; transactionSelection = null; Document = document; undo.Clear(); redo.Clear(); Selection.Clear(); OnChanged(contentChanged: true);
     }
@@ -169,68 +174,97 @@ public sealed partial class EditorSession
         catch { Cancel(); throw; }
     }
     public void SetSelection(IEnumerable<Guid> ids) { SetSelectionCore(ids); PruneSelection(); OnChanged(); }
-    public void SelectAll() => SetSelection(Document.Elements.Where(e => e.Visible && !e.Locked).Select(e => e.Id));
-    public CanvasElement? HitTest(PointD point, double tolerance = 4) => Document.Elements.LastOrDefault(e => !e.Locked && ElementGeometry.HitTest(e, point, tolerance));
+    public void SelectAll()
+    {
+        var graph = new SceneGraph(Document);
+        SetSelection(graph.EnumerateChildren(EditScopeId).Where(id => graph.IsVisible(id) && !graph.IsLocked(id)));
+    }
+    public CanvasElement? HitTest(PointD point, double tolerance = 4)
+    {
+        var graph = new SceneGraph(Document);
+        if (Document.Instances.Count > 0)
+        {
+            var evaluated = SceneEvaluation.Build(Document);
+            var hit = evaluated.Leaves.Reverse().FirstOrDefault(leaf => leaf.RenderElement.Visible && !graph.IsLocked(leaf.HostNodeId) &&
+                evaluated.ResolveSelectableNode(leaf.RuntimeElementId, EditScopeId) is not null && ElementGeometry.HitTest(leaf.RenderElement, point, tolerance));
+            return hit is null ? null : graph.FindElement(hit.RuntimeElementId) ?? hit.RenderElement.Clone();
+        }
+        var id = graph.OrderedLeafIds.Reverse().FirstOrDefault(id => graph.IsVisible(id) && !graph.IsLocked(id) &&
+            graph.ResolveSelectableNode(id, EditScopeId) is not null && ElementGeometry.HitTest(graph.ToWorld(graph.FindElement(id)!), point, tolerance));
+        return graph.FindElement(id);
+    }
     public void SelectAt(PointD point, bool additive = false, double tolerance = 4, bool individual = false)
     {
         var element = HitTest(point, tolerance);
         if (!additive) Selection.Clear();
         if (element is not null)
         {
-            var unit = SelectionUnitIds(element.Id, individual).ToArray();
+            var graph = new SceneGraph(Document);
+            var unit = graph.FindElement(element.Id) is not null ? SelectionUnitIds(element.Id, individual).ToArray() :
+                SceneEvaluation.Build(Document).ResolveSelectableNode(element.Id, EditScopeId) is { } node ? [node] : Array.Empty<Guid>();
             if (additive && unit.All(Selection.Contains)) Selection.ExceptWith(unit); else Selection.UnionWith(unit);
         }
+        SetSelectionCore(new SceneGraph(Document).NormalizeSelection(Selection));
         OnChanged();
     }
     public void SelectRectangle(RectD bounds, bool additive = false)
     {
         if (!additive) Selection.Clear();
-        foreach (var element in Document.Elements.Where(e => e.Visible && !e.Locked && ElementGeometry.Bounds(e).Intersects(bounds)))
-            Selection.UnionWith(SelectionUnitIds(element.Id));
+        var graph = new SceneGraph(Document);
+        if (Document.Instances.Count > 0)
+        {
+            var evaluated = SceneEvaluation.Build(Document);
+            foreach (var leaf in evaluated.Leaves)
+                if (leaf.RenderElement.Visible && !graph.IsLocked(leaf.HostNodeId) && WorldBounds(leaf.RenderElement).Intersects(bounds) &&
+                    evaluated.ResolveSelectableNode(leaf.RuntimeElementId, EditScopeId) is { } node) Selection.Add(node);
+        }
+        else foreach (var id in graph.OrderedLeafIds)
+                if (graph.IsVisible(id) && !graph.IsLocked(id) && WorldBounds(graph.ToWorld(graph.FindElement(id)!)).Intersects(bounds) && graph.ResolveSelectableNode(id, EditScopeId) is { } node) Selection.Add(node);
+        SetSelectionCore(graph.NormalizeSelection(Selection));
         OnChanged();
     }
-    public RectD? SelectionBounds()
+    public RectD? SelectionBounds(bool editableOnly = false)
     {
-        var selected = SelectedElements().ToArray();
-        return selected.Length == 0 ? null : selected.Select(e => ElementGeometry.Bounds(e)).Aggregate(RectD.Union);
+        var selected = SelectedWorldElements(editableOnly).ToArray();
+        return selected.Length == 0 ? null : selected.Select(WorldBounds).Aggregate(RectD.Union);
     }
-    public IEnumerable<CanvasElement> SelectedElements() => Document.Elements.Where(e => Selection.Contains(e.Id));
+    public IEnumerable<CanvasElement> SelectedElements()
+    {
+        var graph = new SceneGraph(Document); var ids = ExpandedSelectionIds(graph);
+        return graph.OrderedLeafIds.Where(ids.Contains).Select(id => graph.FindElement(id)!);
+    }
     public void Add(CanvasElement element, string? label = null, int numberStep = 1)
     {
         Execute(label ?? L.Get("History.AddElement"), d =>
         {
+            EnsureWritableParent(EditScopeId);
             if (d.Elements.Any(e => e.Id == element.Id)) throw new ArgumentException(L.Get("History.DuplicateElementId"), nameof(element));
-            d.Elements.Add(element.Clone()); Selection.Clear(); Selection.Add(element.Id);
+            new SceneGraph(d).InsertElement(element, EditScopeId); Selection.Clear(); Selection.Add(element.Id);
             if (element.Kind == ElementKind.Number) d.NextNumber = NumberSequence.Advance(d.NextNumber, element.Number, numberStep);
         });
     }
-    public void DeleteSelection() => Execute(L.Get("History.DeleteElements"), d => { d.Elements.RemoveAll(e => Selection.Contains(e.Id) && !e.Locked); Selection.Clear(); });
+    public void DeleteSelection() => Execute(L.Get("History.DeleteElements"), d =>
+    {
+        var graph = new SceneGraph(d); graph.RemoveNodes(graph.NormalizeSelection(Selection).Where(id => !graph.IsLocked(id)).ToArray()); Selection.Clear();
+    });
     public void TransformSelection(Affine2D transform, string? label = null) => Execute(label ?? L.Get("History.TransformElements"), _ => ApplySelectionTransform(transform));
     /// <summary>For live gesture updates inside an existing transaction; transform is relative to current positions.</summary>
     public void ApplySelectionTransform(Affine2D transform)
     {
-        var selected = SelectedElements().Where(e => !e.Locked).ToArray();
-        var candidates = selected.Select(e => e.Clone()).ToArray();
-        foreach (var candidate in candidates) BillboardGeometry.ApplyPlaneTransform(candidate, transform);
-        EnsureSafeInsertion(candidates);
-        foreach (var element in selected) BillboardGeometry.ApplyPlaneTransform(element, transform);
-        OnChanged(contentChanged: true);
+        if (IsReadOnly) throw new InvalidOperationException(L.Get("GroupCanvas.ReadOnly"));
+        if (!TryApplySelectionTransform(CaptureSelectionTransform(), transform)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
     }
-    public void UpdateSelection(Action<CanvasElement> update, string? label = null) => Execute(label ?? L.Get("History.UpdateProperties"), _ => { foreach (var e in SelectedElements().Where(e => !e.Locked)) update(e); });
-    public void SetLocked(bool locked) => Execute(locked ? L.Get("History.LockElements") : L.Get("History.UnlockElements"), _ => { foreach (var e in SelectedElements()) e.Locked = locked; });
-    public void SetVisible(bool visible) => Execute(visible ? L.Get("History.ShowElements") : L.Get("History.HideElements"), _ => { foreach (var e in SelectedElements()) e.Visible = visible; });
+    public void UpdateSelection(Action<CanvasElement> update, string? label = null) => Execute(label ?? L.Get("History.UpdateProperties"), _ =>
+    {
+        var graph = new SceneGraph(Document);
+        foreach (var element in SelectedElements().Where(element => !graph.IsLocked(element.Id))) update(element);
+    });
+    public void SetLocked(bool locked) => Execute(locked ? L.Get("History.LockElements") : L.Get("History.UnlockElements"), _ => { foreach (var id in Selection) SetNodeFlag(id, locked, locking: true); });
+    public void SetVisible(bool visible) => Execute(visible ? L.Get("History.ShowElements") : L.Get("History.HideElements"), _ => { foreach (var id in Selection) SetNodeFlag(id, visible, locking: false); });
     public void DuplicateSelection(double offsetX = 16, double offsetY = 16)
     {
-        var snapshot = Document.CloneElements(SelectedElements().Where(e => !e.Locked).Select(e => e.Id), true);
-        foreach (var clone in snapshot.Elements) BillboardGeometry.ApplyPlaneTransform(clone, Affine2D.Translation(offsetX, offsetY));
-        EnsureSafeInsertion(snapshot.Elements);
-        Execute(L.Get("History.DuplicateElements"), d =>
-        {
-            var clones = snapshot.Elements;
-            d.Groups.AddRange(snapshot.Groups);
-            Selection.Clear();
-            foreach (var clone in clones) { d.Elements.Add(clone); Selection.Add(clone.Id); }
-        });
+        var snapshot = CreateSelectionSnapshot(normalizeOrigin: false);
+        InsertDocument(snapshot, Assets, Affine2D.Translation(offsetX, offsetY), label: L.Get("History.DuplicateElements"), preserveDefinitions: true);
     }
     private void EnsureSafeInsertion(IEnumerable<CanvasElement> elements)
     {
@@ -240,24 +274,19 @@ public sealed partial class EditorSession
     }
     public void ReorderSelection(LayerOrder order)
     {
+        if (!WouldReorder(order)) return;
         Execute(L.Get("History.ReorderElements"), d =>
         {
-            bool Selected(CanvasElement e) => Selection.Contains(e.Id) && !e.Locked;
-            if (order is LayerOrder.Front or LayerOrder.Back)
-            {
-                var selected = d.Elements.Where(Selected).ToList(); d.Elements.RemoveAll(e => Selected(e));
-                if (order == LayerOrder.Front) d.Elements.AddRange(selected); else d.Elements.InsertRange(0, selected);
-            }
-            else if (order == LayerOrder.Forward)
-            {
-                for (int i = d.Elements.Count - 2; i >= 0; i--) if (Selected(d.Elements[i]) && !Selected(d.Elements[i + 1])) (d.Elements[i], d.Elements[i + 1]) = (d.Elements[i + 1], d.Elements[i]);
-            }
-            else for (int i = 1; i < d.Elements.Count; i++) if (Selected(d.Elements[i]) && !Selected(d.Elements[i - 1])) (d.Elements[i], d.Elements[i - 1]) = (d.Elements[i - 1], d.Elements[i]);
+            ReorderNodes(d, order);
         });
     }
     public IEnumerable<string> ReferencedAssetsIncludingHistory() => Document.ReferencedAssets.Concat(undo.Concat(redo).SelectMany(e => e.AssetIds)).Concat(transactionBefore?.ReferencedAssets ?? []).Distinct(StringComparer.Ordinal);
     private void SetSelectionCore(IEnumerable<Guid> ids) { var copy = ids.ToArray(); Selection.Clear(); Selection.UnionWith(copy); }
-    private void PruneSelection() => Selection.IntersectWith(Document.Elements.Select(e => e.Id));
+    private void PruneSelection()
+    {
+        ValidateEditScope();
+        SetSelectionCore(new SceneGraph(Document).NormalizeSelection(Selection));
+    }
     private void TrimHistory()
     {
         while (undo.Count + redo.Count > HistoryLimit || HistoryBytes > HistoryByteLimit)
@@ -269,14 +298,25 @@ public sealed partial class EditorSession
     }
     public static long EstimateBytes(SceneDocument document)
     {
-        long size = 256 + document.DisplayLayout.Count * 128 + document.Groups.Sum(g => 64L + g.Name.Length * 2L);
-        foreach (var e in document.Elements.Append(document.Background).Where(e => e is not null))
-            size += 512 + e!.Points.Count * 16L + e.Text.Length * 2L + (e.Name?.Length ?? 0) * 2L + e.Style.FontFamily.Length * 2L + (e.AssetId?.Length ?? 0) * 2L + e.Effects.Count * 96L;
+        long size = 256 + document.DisplayLayout.Count * 128;
+        foreach (var graph in document.Definitions.Select(definition => definition.Graph).Prepend(document))
+        {
+            size += graph.Groups.Sum(group => 128L + group.Name.Length * 2L + (group.ChildOrder?.Count ?? 0) * 16L) +
+                graph.Instances.Sum(instance => 160L + instance.Name.Length * 2L) + (graph.RootOrder?.Count ?? 0) * 16L;
+            foreach (var e in graph.Elements)
+                size += 512 + (e.Points.Count + (long)(e.ImageFrame?.Count ?? 0)) * 16L + e.Text.Length * 2L + (e.Name?.Length ?? 0) * 2L + e.Style.FontFamily.Length * 2L + (e.AssetId?.Length ?? 0) * 2L + e.Effects.Count * 96L +
+                    e.Style.AdditionalColors.Sum(pair => 64L + pair.Key.Length * 2L) + (e.Presentation is null ? 0 : 512L) + WindowSourceLimits.EstimateBytes(e.WindowSource);
+        }
+        if (document.Background is { } background) size += 512 + (background.Points.Count + (long)(background.ImageFrame?.Count ?? 0)) * 16L + (background.AssetId?.Length ?? 0) * 2L +
+            background.Style.AdditionalColors.Sum(pair => 64L + pair.Key.Length * 2L);
+        size += document.Definitions.Sum(definition => 256L + definition.Name.Length * 2L + (definition.Source?.Locator?.Length ?? 0) * 2L +
+            (definition.Source?.ImportedDefinitionIds.Count ?? 0) * 64L + (definition.Source?.OriginClosure.Count ?? 0) * 48L);
         return size;
     }
     private void OnChanged(bool contentChanged = false, bool preserveContentVersion = false, bool previewElementsChanged = true,
         IReadOnlySet<Guid>? previewChangedElements = null)
     {
+        ValidateEditScope();
         if (contentChanged) RecordPreviewChange(previewElementsChanged, previewChangedElements);
         if (contentChanged && IsTransactionActive) HasPendingChanges = true;
         if (contentChanged && !IsTransactionActive) { SceneRevision++; if (!preserveContentVersion) ContentVersion = ++nextContentVersion; }

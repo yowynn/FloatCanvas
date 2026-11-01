@@ -131,7 +131,7 @@ internal sealed class CanvasCalibrationController
             }
         }
         session.Document.Canvas.Projection = settings;
-        session.Document.Canvas.Grid.FlatCellSize = settings.GridCellSize;
+        if (settings.PlaneBounds is null) session.Document.Canvas.Grid.FlatCellSize = settings.GridCellSize;
         session.NotifySettingsChanged(); Changed?.Invoke(); return true;
     }
     public void Up(bool requestResolution = true)
@@ -161,8 +161,7 @@ internal sealed class CanvasCalibrationController
         { Error?.Invoke("Canvas.RelocateFailed"); return false; }
         if (action == CanvasSafetyAction.Delete)
         {
-            var ids = AffectedLayerIds.ToHashSet();
-            session!.Document.Elements.RemoveAll(e => ids.Contains(e.Id));
+            new SceneGraph(session!.Document).RemoveNodes(CanvasSafetyResolution.RootNodes(session.Document, AffectedLayerIds));
         }
         CommitDrag(); return true;
     }
@@ -195,7 +194,7 @@ internal sealed class CanvasCalibrationController
         session.BeginTransaction(L.Get("Canvas.CalibrationHistory")); transactionId = session.TransactionId;
         dragDocument = session.Document; placementGesture = true; IsPlacing = false;
         session.Document.Canvas.Projection = projection;
-        session.Document.Canvas.Grid.FlatCellSize = projection.GridCellSize;
+        if (projection.PlaneBounds is null) session.Document.Canvas.Grid.FlatCellSize = projection.GridCellSize;
         session.NotifySettingsChanged();
         // The fourth point is selected on Down. Wait for the physical Up before opening a modal.
         Up(requestResolution: false); Changed?.Invoke(); return true;

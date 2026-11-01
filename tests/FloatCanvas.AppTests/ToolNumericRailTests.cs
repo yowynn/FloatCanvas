@@ -82,6 +82,7 @@ internal static class ToolNumericRailTests
                 DefaultWidth = 2048, DefaultHeight = 1536, CornerRadius = 4096, EffectStrength = 512, CaptureBorderWidth = 512,
                 Style = new() { StrokeWidth = 512, FontSize = 1024, ArrowHeadSize = 256, Opacity = .123456789 } };
             var library = new ToolPresetLibrary(Path.Combine(folder, "wide-presets.json"));
+            parameters.NormalizeAppearance();
             library.Save("Values beyond common rails", parameters);
             var restored = new ToolPresetLibrary(Path.Combine(folder, "wide-presets.json")).User.Single().Parameters;
             check("saving and reopening presets preserves wide valid numeric values exactly", JsonSerializer.Serialize(restored) == JsonSerializer.Serialize(parameters));

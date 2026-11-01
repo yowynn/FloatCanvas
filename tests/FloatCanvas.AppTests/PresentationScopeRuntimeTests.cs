@@ -1,0 +1,239 @@
+using FloatCanvas.App;
+using FloatCanvas.Core;
+using FloatCanvas.Windows;
+using System.Diagnostics;
+using System.Windows.Threading;
+
+internal static class PresentationScopeRuntimeTests
+{
+    private static readonly PresentationRuntimeDemand Keyboard = new(true, false, false, false, true, 900, 450, 800);
+    private static readonly PresentationRuntimeDemand Both = new(true, true, true, true, true, 900, 450, 800);
+    private static PresentationObservedInput Key(int vk, bool down = true, long time = 1000) =>
+        new(down ? PresentationObservedKind.KeyDown : PresentationObservedKind.KeyUp, time, 1, vk, vk, 0, vk == 0x11 ? "Ctrl" : "C");
+    private static PresentationObservedCursor Cursor(int x, int y) => new(x, y, 1000);
+
+    internal static void Run(Action<string, bool> check)
+    {
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
+        try
+        {
+            DefaultsAndPointerSwitch(dispatcher, check);
+            ScopeAndPointerIndependence(dispatcher, check);
+            ScopePollWithoutInput(dispatcher, check);
+            SuppressionAndBeforeInput(dispatcher, check);
+            FaultAndUnknownScope(dispatcher, check);
+        }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+
+    private static void DefaultsAndPointerSwitch(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        var factory = new FakeFactory(); var clock = new FakeClock(); var identity = new object(); int changes = 0;
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => changes++, factory.Start, () => clock.Time, () => true);
+        broker.Configure(Keyboard, true, identity, "paused");
+        check("direct brokers stay unarmed until their desktop explicitly enables observation", !broker.Armed && factory.Requests.Count == 0);
+        broker.SetArmed(true); var source = factory.Requests.Single().Source;
+        check("default all-applications scope records internal editing input", broker.ObservingKeyboard && broker.Observing);
+        check("keyboard-only native demand also reserves cursor sampling for later pointer settings", factory.Requests.Single().Keyboard && factory.Requests.Single().Pointer);
+        int before = changes; broker.SetArmed(true);
+        check("repeating SetArmed true is idempotent without another native registration or publish", factory.Requests.Count == 1 && changes == before);
+        source.Queue([Key(0x11), Key(0x43)], Cursor(10, 20)); Pump(dispatcher);
+        check("keyboard-only demand records semantic chords while discarding optional pointer samples",
+            broker.Frame.RecentChords.Count == 1 && broker.Frame.RecentChords[0].Keys.Count == 2 && broker.Frame.CursorScreen is null);
+        var frame = broker.Frame; var lifetime = broker.Lifetime;
+        broker.Configure(Both, true, identity, "paused");
+        check("enabling global pointer effects does not restart observation or clear keyboard history",
+            factory.Requests.Count == 1 && source.StopCount == 0 && ReferenceEquals(frame, broker.Frame) && ReferenceEquals(lifetime, broker.Lifetime));
+        source.Queue(cursor: Cursor(20, 30)); Pump(dispatcher);
+        check("the same service can publish pointer data after its settings are enabled", broker.Frame.CursorScreen == new PointD(20, 30) && broker.Frame.RecentChords.Count == 1);
+        broker.Configure(Keyboard, true, identity, "paused");
+        check("disabling global pointer effects preserves the active keyboard event and source",
+            factory.Requests.Count == 1 && source.StopCount == 0 && broker.Frame.RecentChords.Count == 1 && broker.Frame.RecentChords[0].IsHeld);
+        source.Queue([Key(0x43, false)]); Pump(dispatcher);
+        check("released keyboard events expose their animation state independently of pointer demand", broker.HasKeyboardAnimation);
+        clock.Time = TimeSpan.FromMilliseconds(2000); PumpUntil(dispatcher, () => !broker.HasKeyboardAnimation);
+        check("keyboard animation ends when released semantic history expires", broker.Frame.RecentChords.Count == 0);
+        broker.Configure(Both with { Keyboard = false, AllPhysicalKeys = false }, true, identity, "paused");
+        check("a genuine keyboard registration-role change still replaces the native source",
+            factory.Requests.Count == 2 && !factory.Requests[1].Keyboard && factory.Requests[1].Pointer && source.StopCount > 0 && source.DisposeCount > 0);
+        broker.Configure(PresentationRuntimeDemand.Empty, true, identity, "paused");
+        check("removing the final keyboard or pointer demand closes the service", !broker.Observing && factory.Requests[1].Source.StopCount > 0);
+    }
+
+    private static void ScopeAndPointerIndependence(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        bool internalInput = false; var factory = new FakeFactory(); var clock = new FakeClock();
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => { }, factory.Start, () => clock.Time, () => internalInput);
+        broker.ConfigureKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas);
+        broker.Configure(Both, true, new object(), "paused"); broker.SetArmed(true);
+        var source = factory.Requests.Single().Source;
+        source.Queue([Key(0x11), Key(0x43)], Cursor(10, 10)); Pump(dispatcher);
+        source.Queue(cursor: Cursor(30, 30)); Pump(dispatcher);
+        check("outside-only scope accepts external shortcuts and retains independent pointer trails",
+            broker.ObservingKeyboard && broker.Frame.RecentChords.Count == 1 && broker.Frame.Trail.Count == 2);
+        var pointerFrame = broker.Frame; var lifetime = broker.Lifetime;
+        internalInput = true;
+        source.Queue([Key(0x43, false), Key(0x11, false), Key(0x11), Key(0x43)], Cursor(40, 40)); Pump(dispatcher);
+        check("entering FloatCanvas in outside-only scope filters keys while pointer tracking continues",
+            broker.Observing && !broker.ObservingKeyboard && broker.Frame.PressedKeys.Count == 0 && broker.Frame.RecentChords.Count == 0 && broker.Frame.CursorScreen == new PointD(40, 40));
+        check("scope eligibility changes retire old display lifetimes without restarting the service or losing its pointer trail",
+            !ReferenceEquals(lifetime, broker.Lifetime) && factory.Requests.Count == 1 && source.StopCount == 0 && broker.Frame.Trail.Count == 3 &&
+            pointerFrame.Trail.All(sample => broker.Frame.Trail.Contains(sample)));
+        broker.ConfigureKeyboardScope(PresentationKeyboardScope.FloatCanvasOnly);
+        source.Queue([Key(0x11), Key(0x43)], Cursor(50, 50)); Pump(dispatcher);
+        check("FloatCanvas-only scope records the internal keyboard while the global mouse remains available",
+            broker.ObservingKeyboard && broker.Frame.RecentChords.Count == 1 && broker.Frame.CursorScreen == new PointD(50, 50));
+        internalInput = false;
+        source.Queue([Key(0x11), Key(0x43)], Cursor(60, 60)); Pump(dispatcher);
+        check("FloatCanvas-only scope rejects external keyboard input without suppressing its pointer",
+            !broker.ObservingKeyboard && broker.Frame.RecentChords.Count == 0 && broker.Frame.CursorScreen == new PointD(60, 60) && factory.Requests.Count == 1);
+        broker.ConfigureKeyboardScope(PresentationKeyboardScope.AllApplications);
+        source.Queue([Key(0x11), Key(0x43)]); Pump(dispatcher);
+        check("returning to all-applications scope starts a clean semantic keyboard history", broker.ObservingKeyboard && broker.Frame.RecentChords.Count == 1 && broker.Frame.PressedKeys.Count == 2);
+    }
+
+    private static void ScopePollWithoutInput(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        bool internalInput = false; var factory = new FakeFactory(); var clock = new FakeClock(); int changes = 0;
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => changes++, factory.Start, () => clock.Time, () => internalInput);
+        broker.ConfigureKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas);
+        broker.Configure(Keyboard, true, new object(), "paused"); broker.SetArmed(true);
+        var source = factory.Requests.Single().Source;
+        source.Queue([Key(0x11), Key(0x43)]); Pump(dispatcher);
+        long sequence = broker.Frame.Sequence; object lifetime = broker.Lifetime;
+        internalInput = true;
+        check("ObservingKeyboard reflects the current scoped input owner before a new key packet arrives", !broker.ObservingKeyboard);
+        PumpUntil(dispatcher, () => broker.Frame.RecentChords.Count == 0);
+        check("bounded scope polling clears old keyboard pixels even when no new input arrives",
+            broker.Frame.Sequence > sequence && !ReferenceEquals(lifetime, broker.Lifetime) && source.StopCount == 0);
+        sequence = broker.Frame.Sequence; int callbacks = changes; PumpFor(dispatcher, 115);
+        check("stable scope polling performs no repeated frame publication or native restart",
+            broker.Frame.Sequence == sequence && changes == callbacks && factory.Requests.Count == 1);
+        internalInput = false;
+        PumpUntil(dispatcher, () => broker.Frame.Sequence > sequence);
+        check("returning to the allowed scope cannot resurrect keys held before the scope boundary",
+            broker.ObservingKeyboard && broker.Frame.PressedKeys.Count == 0 && broker.Frame.RecentChords.Count == 0);
+        source.Queue([Key(0x43, false), Key(0x11, false)]); Pump(dispatcher);
+        check("stale key-up packets after a scope boundary stay silent", broker.Frame.RecentChords.Count == 0);
+    }
+
+    private static void SuppressionAndBeforeInput(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        bool internalInput = false; var factory = new FakeFactory(); var clock = new FakeClock();
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => { }, factory.Start, () => clock.Time, () => internalInput);
+        broker.Configure(Both, true, new object(), "paused"); broker.SetArmed(true);
+        var source = factory.Requests.Single().Source;
+        source.Queue(cursor: Cursor(12, 34)); Pump(dispatcher);
+        broker.SuppressKeyboard(true);
+        broker.ConfigureKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas);
+        check("explicit scope changes preserve known password suppression and the pointer snapshot",
+            broker.Frame.KeyboardSuppressed && broker.Frame.CursorScreen == new PointD(12, 34) && source.StopCount == 0);
+        long epoch = broker.Frame.Epoch; internalInput = true;
+        PumpUntil(dispatcher, () => broker.Frame.Epoch > epoch);
+        source.Queue([Key(0x11), Key(0x43)], Cursor(30, 40), overflow: true); Pump(dispatcher);
+        check("scope changes and overflow cannot clear the keyboard privacy gate", broker.Frame.KeyboardSuppressed && broker.Frame.RecentChords.Count == 0 && broker.Frame.CursorScreen == new PointD(30, 40));
+        broker.ClearKeyboardForFocusChange();
+        check("focus keyboard cleanup keeps known suppression without clearing pointer state", broker.Frame.KeyboardSuppressed && broker.Frame.CursorScreen == new PointD(30, 40));
+        broker.ConfigureKeyboardScope(PresentationKeyboardScope.AllApplications); broker.SuppressKeyboard(false);
+        source.Queue([Key(0x11), Key(0x43)]); Pump(dispatcher);
+        check("a later explicit privacy release permits fresh keyboard input", !broker.Frame.KeyboardSuppressed && broker.Frame.RecentChords.Count == 1);
+        broker.ConfigureKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas); internalInput = false;
+        broker.BeforeInput += _ => internalInput = true;
+        source.Queue([Key(0x11), Key(0x43)], Cursor(44, 55)); Pump(dispatcher);
+        check("the keyboard scope is evaluated after BeforeInput while mouse data remains independent",
+            !broker.ObservingKeyboard && broker.Frame.RecentChords.Count == 0 && broker.Frame.CursorScreen == new PointD(44, 55));
+    }
+
+    private static void FaultAndUnknownScope(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        var factory = new FakeFactory(); var clock = new FakeClock(); int predicateCalls = 0;
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => { }, factory.Start, () => clock.Time,
+            () => { predicateCalls++; throw new InvalidOperationException("Synthetic owner unavailable"); });
+        broker.Configure(Both, true, new object(), "paused"); broker.SetArmed(true);
+        var source = factory.Requests.Single().Source;
+        source.Queue([Key(0x11), Key(0x43)], Cursor(10, 20)); Pump(dispatcher);
+        check("all-applications recording does not depend on internal-owner detection", broker.Frame.RecentChords.Count == 1 && predicateCalls == 0);
+        broker.ConfigureKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas);
+        source.Queue([Key(0x11), Key(0x43)], Cursor(30, 40)); Pump(dispatcher);
+        check("an unknown scoped owner fails keyboard recording closed rather than accidentally treating it as outside",
+            !broker.ObservingKeyboard && broker.Frame.PressedKeys.Count == 0 && broker.Frame.RecentChords.Count == 0 && broker.Frame.CursorScreen == new PointD(30, 40));
+        bool rejected = false; try { broker.ConfigureKeyboardScope((PresentationKeyboardScope)99); } catch (ArgumentOutOfRangeException) { rejected = true; }
+        check("invalid scope values are rejected without replacing the active source", rejected && factory.Requests.Count == 1 && source.StopCount == 0);
+        broker.BlockForBudget(); int count = factory.Requests.Count; long sequence = broker.Frame.Sequence;
+        PumpFor(dispatcher, 100);
+        check("budget-blocked input stays stopped without automatic retry polling", !broker.Observing && factory.Requests.Count == count && broker.Frame.Sequence == sequence);
+        broker.RetryIfFaulted();
+        check("an explicit meaningful-plan retry can recover a budget-blocked source", broker.Observing && factory.Requests.Count == count + 1);
+        count = factory.Requests.Count; sequence = broker.Frame.Sequence; broker.RetryIfFaulted();
+        check("RetryIfFaulted is a no-op for a healthy source", factory.Requests.Count == count && broker.Frame.Sequence == sequence);
+
+        var stoppedFactory = new FakeFactory { InitiallyRunning = false };
+        using var stopped = new PresentationRuntimeBroker(dispatcher, () => { }, stoppedFactory.Start, () => clock.Time);
+        stopped.Configure(Keyboard, true, new object(), "paused"); stopped.SetArmed(true);
+        var dead = stoppedFactory.Requests.Single().Source;
+        dead.Queue([Key(0x11), Key(0x43)]); Pump(dispatcher);
+        check("a source that never becomes running cannot publish keyboard events", !stopped.Observing && !stopped.ObservingKeyboard && stopped.Frame.PressedKeys.Count == 0 && dead.StopCount > 0 && dead.DisposeCount > 0);
+    }
+
+    private sealed class FakeClock { internal TimeSpan Time = TimeSpan.FromMilliseconds(1000); }
+    private sealed class FakeFactory
+    {
+        internal sealed record Request(long Epoch, bool Keyboard, bool Pointer, FakeSource Source);
+        internal readonly List<Request> Requests = [];
+        internal bool InitiallyRunning = true;
+        internal Task<IPresentationInputSource> Start(long epoch, bool keyboard, bool pointer, CancellationToken token)
+        {
+            var source = new FakeSource(epoch, InitiallyRunning);
+            Requests.Add(new(epoch, keyboard, pointer, source));
+            return Task.FromResult<IPresentationInputSource>(source);
+        }
+    }
+    private sealed class FakeSource(long epoch, bool running) : IPresentationInputSource
+    {
+        private readonly List<PresentationObservedInput> changes = [];
+        private PresentationObservedCursor? cursor;
+        private bool overflow;
+        private readonly TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public long Epoch => epoch;
+        public bool IsRunning { get; private set; } = running;
+        public Task Completion => completion.Task;
+        public event Action? Available;
+        internal int StopCount, DisposeCount;
+        internal void Queue(PresentationObservedInput[]? keys = null, PresentationObservedCursor? cursor = null, bool overflow = false)
+        {
+            if (keys is not null) changes.AddRange(keys);
+            if (cursor is not null) this.cursor = cursor;
+            this.overflow |= overflow; Available?.Invoke();
+        }
+        public PresentationObservedBatch Drain()
+        {
+            var batch = new PresentationObservedBatch(epoch, changes, cursor, overflow);
+            changes.Clear(); cursor = null; overflow = false; return batch;
+        }
+        public bool Stop() { StopCount++; IsRunning = false; completion.TrySetResult(); return true; }
+        public void Dispose() { DisposeCount++; IsRunning = false; completion.TrySetResult(); }
+    }
+    private static void Pump(Dispatcher dispatcher)
+    {
+        var frame = new DispatcherFrame();
+        dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
+    }
+    private static void PumpUntil(Dispatcher dispatcher, Func<bool> condition)
+    {
+        var watch = Stopwatch.StartNew();
+        while (!condition())
+        {
+            if (watch.Elapsed > TimeSpan.FromSeconds(3)) throw new TimeoutException("Synthetic scope transition did not settle");
+            Pump(dispatcher); Thread.Sleep(1);
+        }
+        Pump(dispatcher);
+    }
+    private static void PumpFor(Dispatcher dispatcher, int milliseconds)
+    {
+        var watch = Stopwatch.StartNew();
+        while (watch.ElapsedMilliseconds < milliseconds) { Pump(dispatcher); Thread.Sleep(1); }
+    }
+}

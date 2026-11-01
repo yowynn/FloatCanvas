@@ -154,15 +154,15 @@ internal static class CreationSelectionTests
                 Width = 120, Height = 80, Transform = Affine2D.Translation(40, 50) };
             var session = new EditorSession(new SceneDocument { Elements = [selected] }); session.SetSelection([selected.Id]);
             var controller = new EditorController(session) { Tool = requested };
-            bool expected = requested is not (EditorTool.Eraser or EditorTool.Canvas);
+            bool expected = requested is not (EditorTool.Eraser or EditorTool.Canvas or EditorTool.PointerPresentation);
             string before = JsonSerializer.Serialize(session.Document);
-            check(requested + " shows an existing selection except in Eraser and Canvas", controller.ShouldShowSelection(OverlayModifiers.None) == expected &&
+            check(requested + " follows its tool-specific existing-selection visibility", controller.ShouldShowSelection(OverlayModifiers.None) == expected &&
                 (!expected || controller.SelectionScreenCorners.Count == 4));
             if (requested is EditorTool.Blur or EditorTool.Pixelate or EditorTool.Crop)
                 check(requested + " retains its actual non-creation tool while showing the selected object", controller.Tool == requested &&
                     !EditorController.IsCreationTool(controller.Tool) && session.SelectedElements().Single().Id == selected.Id);
 
-            if (requested is not (EditorTool.Select or EditorTool.Eraser or EditorTool.Canvas))
+            if (requested is not (EditorTool.Select or EditorTool.Eraser or EditorTool.Canvas or EditorTool.PointerPresentation))
             {
                 var actualTool = controller.Tool; int commands = 0;
                 controller.EditText += (_, _) => commands++; controller.CaptureSelectionCompleted += _ => commands++;
@@ -414,6 +414,19 @@ internal static class CreationSelectionTests
                 JsonSerializer.Serialize(session.Document) == afterThird && session.Selection.SetEquals([third]));
             center = session.SelectionBounds()!.Value.Center;
             Gesture(controller, center, center, OverlayModifiers.Control);
+            if (tool == EditorTool.Emoji)
+            {
+                var expected = JsonSerializer.Deserialize<SceneDocument>(afterThird)!.Elements;
+                var differences = session.Document.Elements.Take(3).SelectMany((element, index) =>
+                {
+                    using var actualJson = JsonDocument.Parse(JsonSerializer.Serialize(element));
+                    using var expectedJson = JsonDocument.Parse(JsonSerializer.Serialize(expected[index]));
+                    return actualJson.RootElement.EnumerateObject().Where(property => property.Value.GetRawText() != expectedJson.RootElement.GetProperty(property.Name).GetRawText())
+                        .Select(property => new { Index = index, Property = property.Name, Actual = property.Value.GetRawText(), Expected = expectedJson.RootElement.GetProperty(property.Name).GetRawText() }).ToArray();
+                }).ToArray();
+                if (differences.Length > 0 || session.Document.Elements.Count != 4 || session.UndoCount != history + 3)
+                    Console.WriteLine("CREATION_EMOJI_DIAGNOSTIC " + JsonSerializer.Serialize(new { Count = session.Document.Elements.Count, History = session.UndoCount, ExpectedHistory = history + 3, Differences = differences }));
+            }
             check(tool + " Ctrl starts an overlapping insertion rather than adjusting the selected object", session.Document.Elements.Count == 4 &&
                 session.Selection.SetEquals([session.Document.Elements[^1].Id]) && session.Document.Elements[^1].Id != third && session.UndoCount == history + 3 &&
                 session.Document.Elements.Take(3).Select(e => JsonSerializer.Serialize(e)).SequenceEqual(JsonSerializer.Deserialize<SceneDocument>(afterThird)!.Elements.Select(e => JsonSerializer.Serialize(e))));

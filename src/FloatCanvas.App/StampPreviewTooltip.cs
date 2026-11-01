@@ -190,7 +190,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
         }
 
         internal PreviewPlayback(Imaging.BitmapSource? still) => this.still=still;
-        internal PreviewPlayback(LoadedProject stamp,StampEntry expected)
+        internal PreviewPlayback(LoadedStamp stamp,StampEntry expected)
         {
             source = stamp.Document;
             assets = stamp.Assets;
@@ -201,7 +201,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
 
         private SceneDocument PrepareDocument()
         {
-            var document = source!.Clone();
+            var document = SceneEvaluation.Build(source!).RenderDocument;
             double factor = 320 / Math.Max(document.Viewport.Width, document.Viewport.Height);
             var transform = Affine2D.Scale(factor, factor).Compose(Affine2D.Translation(-document.Viewport.X, -document.Viewport.Y));
             foreach (var element in document.Elements)

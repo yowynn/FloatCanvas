@@ -51,25 +51,29 @@ internal static class CanvasSafetyResolutionTests
             session.Selection.SetEquals(selection) && session.UndoCount == 0 && !controller.IsAwaitingResolution && !session.IsTransactionActive);
 
         var originals = session.Document.Elements.ToDictionary(e => e.Id, e => e.Clone());
-        string groupsBefore = JsonSerializer.Serialize(session.Document.Groups);
+        var groupsBefore = session.Document.Groups.ToDictionary(group => group.Id, group => group.Clone());
+        var originalWorld = SceneEvaluation.Build(session.Document).Leaves.ToDictionary(leaf => leaf.SourceElementId, leaf => leaf.RenderElement);
         controller.Down(start); controller.Move(target, OverlayModifiers.Control); controller.Up();
         check("relocate applies a pending calibration as one undo step", controller.Resolve(CanvasSafetyAction.Relocate) &&
             !controller.IsAwaitingResolution && !session.IsTransactionActive && session.UndoCount == 1);
         var mapping = CanvasMapping.Create(session.Document);
-        check("relocation returns every affected group and hidden locked layer to safe space", session.Document.Elements.All(e => mapping.IsElementSafe(e)) &&
-            JsonSerializer.Serialize(session.Document.Groups) == groupsBefore);
+        var relocatedWorld = SceneEvaluation.Build(session.Document).Leaves.ToDictionary(leaf => leaf.SourceElementId, leaf => leaf.RenderElement);
+        check("relocation returns every affected group and hidden locked layer to safe space", relocatedWorld.Values.All(e => mapping.IsElementSafe(e)) &&
+            session.Document.Groups.All(group => { var copy = group.Clone(); copy.Transform = groupsBefore[group.Id].Transform;
+                return JsonSerializer.Serialize(copy) == JsonSerializer.Serialize(groupsBefore[group.Id]); }));
         bool retained = true;
         foreach (var current in session.Document.Elements)
         {
             var normalized = current.Clone(); normalized.Transform = originals[current.Id].Transform; normalized.BillboardAnchor = originals[current.Id].BillboardAnchor;
             retained &= JsonSerializer.Serialize(normalized) == JsonSerializer.Serialize(originals[current.Id]);
         }
-        var grouped = groupIds.Select(id => session.Document.Elements.Single(e => e.Id == id)).ToArray();
-        var firstDelta = grouped[0].Transform.OffsetX - originals[grouped[0].Id].Transform.OffsetX;
-        var secondDelta = grouped[0].Transform.OffsetY - originals[grouped[0].Id].Transform.OffsetY;
+        var grouped = groupIds.Select(id => relocatedWorld[id]).ToArray();
+        var firstDelta = grouped[0].Transform.OffsetX - originalWorld[grouped[0].Id].Transform.OffsetX;
+        var secondDelta = grouped[0].Transform.OffsetY - originalWorld[grouped[0].Id].Transform.OffsetY;
         check("relocation preserves IDs geometry styles dimensions and the grouped relative offset", retained && grouped.All(e =>
-            Math.Abs(e.Transform.OffsetX - originals[e.Id].Transform.OffsetX - firstDelta) < 1e-6 &&
-            Math.Abs(e.Transform.OffsetY - originals[e.Id].Transform.OffsetY - secondDelta) < 1e-6));
+            Math.Abs(e.Transform.OffsetX - originalWorld[e.Id].Transform.OffsetX - firstDelta) < 1e-6 &&
+            Math.Abs(e.Transform.OffsetY - originalWorld[e.Id].Transform.OffsetY - secondDelta) < 1e-6) &&
+            groupIds.All(id => JsonSerializer.Serialize(session.Document.Elements.Single(e => e.Id == id)) == JsonSerializer.Serialize(originals[id])));
         string applied = JsonSerializer.Serialize(session.Document);
         check("one undo restores calibration and all relocated layers exactly", session.Undo() && JsonSerializer.Serialize(session.Document) == before && session.Selection.SetEquals(selection));
         check("one redo restores the accepted calibration and relocation exactly", session.Redo() && JsonSerializer.Serialize(session.Document) == applied);
@@ -164,7 +168,7 @@ internal static class CanvasSafetyResolutionTests
         // The real hidden/locked flags remain untouched. This isolated visibility probe
         // demonstrates rendering restoration even for a layer intentionally kept hidden.
         billboard.Visible = true; billboard.GroupId = null;
-        probe.Elements = [billboard]; probe.Groups = []; probe.Background = null;
+        probe.Elements = [billboard]; probe.Groups = []; probe.RootOrder = null; probe.Background = null;
         probe.Viewport = viewport; probe.LayerOpacity = 1; probe.Canvas.BackgroundColor = 0; probe.Canvas.Grid.Visible = false;
         return renderer.ExportPng(probe, assets, transparent: true);
     }

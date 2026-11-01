@@ -9,12 +9,14 @@ internal sealed partial class DesktopSession
 {
     private bool CanAddCanvasContent()
     {
+        if (Active.IsReadOnly) { UpdateStatus(L.Get("GroupCanvas.ReadOnly")); return false; }
         UpdateHiddenCanvasState();
         return true;
     }
 
     private void ToggleCanvasVisibility()
     {
+        if (_host.IsVisible) CancelCanvasRectification("CanvasHidden");
         EndCanvasCalibration(hidePanel: true);
         // Preserve the hide intent even if a second toggle shows the canvas before the
         // dispatcher next synchronizes capture or resumes an asynchronous preparation.
@@ -63,10 +65,12 @@ internal sealed partial class DesktopSession
         try
         {
             var loaded = await _projectStore.LoadAsync(file.Path!, _documentLifetime.Token);
+            NormalizePrefabLinkPaths(loaded.Document, file.Path);
             ImageImportBudget.ValidateResources(loaded.Assets.Resources);
             MergeAssets(loaded.Assets);
             string fingerprint = await Task.Run(() => Fingerprint(loaded.Document), _documentLifetime.Token);
             long? savedVersion = fingerprint == file.SavedFingerprint && file.SavedContentVersion >= 0 ? file.SavedContentVersion : null;
+            ForgetWindowSourceBindings(target);
             target.RestoreDocument(L.Get("Project.Revert"), loaded.Document, savedVersion);
             file.SavedFingerprint = fingerprint;
             file.SavedContentVersion = target.ContentVersion;
@@ -119,9 +123,11 @@ internal sealed partial class DesktopSession
         {
             await _documentRecoveryTask;
             var snapshot = SnapshotWorkspace();
-            var assets = ResourceLibrary(RecoveryResourceSnapshot(snapshot));
+            using var captured = CaptureWindowWorkspace(snapshot, RecoveryResourceSnapshot(snapshot));
             var animationTime = _renderer.AnimationTime;
-            await RecoveryHistory.ArchiveAsync(snapshot, assets, null, FileState(Active).Path, force, _documentLifetime.Token,
+            var prepared = await Task.Run(() => captured.Prepare(_documentLifetime.Token), _documentLifetime.Token);
+            var assets = ResourceLibrary(prepared.Resources);
+            await RecoveryHistory.ArchiveAsync(prepared.State, assets, null, FileState(Active).Path, force, _documentLifetime.Token,
                 (state, resources) => WorkspacePreview.TryRender(state.LiveDocument, resources, animationTime));
         }
         finally { _documentRecoveryGate.Release(); }
@@ -132,7 +138,7 @@ internal sealed partial class DesktopSession
         _inspector?.CompletePendingEdit();
         _editor.Cancel();
         var target = Active;
-        if (target.Document.Elements.Count == 0) return;
+        if (target.Document.Elements.Count == 0 && target.Document.Groups.Count == 0 && target.Document.Instances.Count == 0) return;
         _documentBusy = true;
         try
         {
@@ -140,7 +146,7 @@ internal sealed partial class DesktopSession
             _documentRecoveryTimer?.Stop();
             await _documentRecoveryTask;
             await RecoveryHistory.PrepareClearAsync(_documentLifetime.Token);
-            target.Execute(L.Get("Feedback4.Toolbar.ClearCanvas"), document => { document.Elements.Clear(); document.Groups.Clear(); target.Selection.Clear(); });
+            target.Execute(L.Get("Feedback4.Toolbar.ClearCanvas"), document => { document.Elements.Clear(); document.Groups.Clear(); document.Instances.Clear(); document.RootOrder?.Clear(); target.Selection.Clear(); });
             await FlushRecoveryAsync();
             UpdateStatus(L.Get("History.Cleared"));
             RequestRender();
@@ -158,6 +164,7 @@ internal sealed partial class DesktopSession
     private async Task ReplaceCanvasAsync()
     {
         if (DocumentOperationBusy) return;
+        if (!await CompletePrefabEditingBeforeDocumentChangeAsync()) return;
         EndCanvasCalibration(hidePanel: true);
         _inspector?.CompletePendingEdit();
         _documentBusy = true;
@@ -177,6 +184,7 @@ internal sealed partial class DesktopSession
             int first = Math.Clamp(_settings.NumberStart,-999999,999999);
             var canvas = _settings.PreserveCanvasSettingsOnNewCanvas ? previous.Canvas.Clone() :
                 CreateDefaultCanvasSettings(previous.Viewport);
+            ForgetAllWindowSourceBindings();
             _live = new(new SceneDocument { Viewport = previous.Viewport, LayerOpacity = previous.LayerOpacity,
                 Canvas = canvas,
                 DisplayLayout = previous.DisplayLayout.Select(m => m.Clone()).ToList(), NextNumber = first }, _assets);

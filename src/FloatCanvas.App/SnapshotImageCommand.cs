@@ -9,7 +9,7 @@ internal static class SnapshotImageCommand
 {
     internal static CaptureRasterResult Render(SceneDocument committedScene, IEnumerable<AssetResource> resources,
         CaptureSelection selection, CapturedDesktop? desktop, IReadOnlyList<RectD> displays, TimeSpan animationTime = default,
-        PointD screenOrigin = default)
+        PointD screenOrigin = default, PresentationCaptureSnapshot? presentation = null, WindowRasterCapture? windows = null)
     {
         if (!double.IsFinite(selection.BorderWidth) || selection.BorderWidth < 0)
             throw new ArgumentException(L.Get("Capture.EmptyRegion"), nameof(selection));
@@ -27,10 +27,13 @@ internal static class SnapshotImageCommand
         scene.Background = null;
         if (selection.Source == CaptureSource.Background)
         {
-            scene.Elements.Clear(); scene.Groups.Clear(); scene.Background = null;
+            scene.Elements.Clear(); scene.Groups.Clear(); scene.Instances.Clear(); scene.Definitions.Clear();
+            scene.RootOrder = null; scene.Background = null;
             scene.Canvas.BackgroundColor = 0; scene.Canvas.Grid.Visible = false;
         }
         using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
+        presentation?.ApplyTo(renderer);
+        windows?.ApplyTo(renderer);
         // DrawBackground is disabled for CanvasOnly, but this complete backdrop remains
         // available to the dynamic mosaic's own sampling pass.
         // Keep the body unframed so later layer edits can change the border without
@@ -43,18 +46,20 @@ internal static class SnapshotImageCommand
         return raster with
         {
             ImageBorderWidth = selection.BorderWidth, ImageBorderColor = selection.BorderColor,
-            ImageFrame = selection.BillboardDepthLine is null && CanvasMapping.Create(scene).PlaneToScreen != Projective2D.Identity
+            ImageFrame = !selection.BillboardScreenFirst && selection.BillboardDepthLine is null && CanvasMapping.Create(scene).PlaneToScreen != Projective2D.Identity
                 ? contour.Select(point => new PointD(Math.Clamp((point.X - raster.Bounds.X) / raster.Bounds.Width, 0, 1),
                     Math.Clamp((point.Y - raster.Bounds.Y) / raster.Bounds.Height, 0, 1))).ToArray() : null
         };
     }
 
     internal static CanvasElement Insert(EditorSession session, CaptureRasterResult raster, Projective2D? capturedPlaneToScreen = null,
-        BillboardDepthLine? billboardDepth = null)
+        BillboardDepthLine? billboardDepth = null, bool billboardScreenFirst = false)
     {
+        session.RequireWritableScope();
+        if (session.IsTransactionActive) throw new InvalidOperationException(L.Get("Text.ActionInProgress"));
         var mapping = CanvasMapping.Create(session.Document);
-        var image = billboardDepth is { } depth
-            ? CreateBillboardElement(session.Assets, raster, mapping, depth)
+        var image = billboardScreenFirst || billboardDepth is not null
+            ? CreateBillboardElement(session.Assets, raster, mapping, billboardDepth)
             : CreateElement(session.Assets, raster, capturedPlaneToScreen ?? mapping.PlaneToScreen);
         if (!mapping.IsElementSafe(image)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
         session.Add(image, L.Get("History.Snapshot"));
@@ -62,18 +67,36 @@ internal static class SnapshotImageCommand
     }
 
     internal static CanvasElement CreateBillboardElement(AssetLibrary assets, CaptureRasterResult raster,
-        CanvasMapping mapping, BillboardDepthLine depth)
+        CanvasMapping mapping, BillboardDepthLine? depth)
+    {
+        var image = PrepareBillboardElement(raster, mapping, depth);
+        image.AssetId = assets.Add(raster.PngBytes);
+        return image;
+    }
+
+    internal static CanvasElement PrepareBillboardElement(CaptureRasterResult raster, CanvasMapping mapping, BillboardDepthLine? depth)
     {
         if (!raster.HasVisiblePixels) throw new InvalidOperationException(L.Get("Snapshot.Empty"));
+        double scale = depth?.Scale ?? 1;
         var image = new CanvasElement { Kind = ElementKind.Image,
-            Width = raster.Bounds.Width / depth.Scale, Height = raster.Bounds.Height / depth.Scale,
+            Width = raster.Bounds.Width / scale, Height = raster.Bounds.Height / scale,
             Style = new() { StrokeWidth = 0 } };
-        ConfigureBorder(image, raster, depth.Scale);
+        ConfigureBorder(image, raster, scale);
         var placement = Projective2D.FromAffine(Affine2D.Translation(raster.Bounds.X, raster.Bounds.Y)
-            .Compose(Affine2D.Scale(depth.Scale, depth.Scale)));
-        if (!BillboardGeometry.TryPlaceFromScreen(image, mapping, depth, placement) || !mapping.IsElementSafe(image))
+            .Compose(Affine2D.Scale(scale, scale)));
+        bool placed;
+        if (depth is { } fixedDepth) placed = BillboardGeometry.TryPlaceFromScreen(image, mapping, fixedDepth, placement);
+        else
+        {
+            placed = BillboardGeometry.TryResolveScreenBottom(image, mapping, placement, out var resolved, out _);
+            if (placed)
+            {
+                image.IsBillboard = true; image.BillboardAnchor = resolved.Anchor;
+                image.BillboardHeight = resolved.Height; image.Transform = resolved.Linear;
+            }
+        }
+        if (!placed || !mapping.IsElementSafe(image))
             throw new InvalidOperationException(L.Get("Perspective.SnapshotOutsidePlane"));
-        image.AssetId = assets.Add(raster.PngBytes);
         return image;
     }
 

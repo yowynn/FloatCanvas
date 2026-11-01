@@ -9,6 +9,7 @@ internal sealed class NativeTestWindow : IDisposable
     private readonly Native.WndProc _wndProc;
     private readonly string _className = "FloatCanvas.PlatformTests." + Guid.NewGuid().ToString("N");
     private bool _dragging;
+    private readonly bool _ownsHandle = true;
     private Native.Point _down;
     public nint Handle { get; private set; }
     public InputCounts Counts { get; } = new();
@@ -33,6 +34,12 @@ internal sealed class NativeTestWindow : IDisposable
         if (Handle == 0) throw new Win32Exception();
         Native.ShowWindow(Handle, 5);
         Native.UpdateWindow(Handle);
+    }
+
+    /// <summary>Coordinates for a fixture-owned peer process; that process retains HWND destruction ownership.</summary>
+    internal NativeTestWindow(nint borrowedHandle)
+    {
+        _wndProc = WindowProc; Handle = borrowedHandle; _ownsHandle = false;
     }
 
     public Native.Point ScreenPoint(int x, int y)
@@ -106,6 +113,7 @@ internal sealed class NativeTestWindow : IDisposable
 
     public void Dispose()
     {
+        if (!_ownsHandle) { Handle = 0; return; }
         if (Handle != 0) Native.DestroyWindow(Handle);
         Handle = 0;
         Native.UnregisterClass(_className, Native.GetModuleHandle(null));

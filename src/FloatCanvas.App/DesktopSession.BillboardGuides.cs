@@ -9,6 +9,16 @@ internal sealed partial class DesktopSession
     {
         if (_canvasCalibration.IsActive) return;
         using var line = new SKPaint { Color = new(210,139,63), StrokeWidth = 1.5f, IsAntialias = true, Style = SKPaintStyle.Stroke };
+        var rawDraft = _editor.ScreenBillboardPending ? _editor.ScreenBillboardDraft :
+            _inlineText is { ScreenDraft: { } textDraft, ResolvedScreenDraft: null } ? textDraft : null;
+        if (rawDraft is not null)
+        {
+            var box = ElementGeometry.LocalToPlane(rawDraft).TransformBounds(ElementGeometry.LocalBounds(rawDraft));
+            using var pendingDash = SKPathEffect.CreateDash([5, 4], 0);
+            line.PathEffect = pendingDash;
+            canvas.DrawRect((float)box.X, (float)box.Y, (float)box.Width, (float)box.Height, line);
+            line.PathEffect = null;
+        }
         if ((_editor.VisibleBillboardDepthLine ?? _inlineBillboardDepth) is { } depth && depth.TryClip(Active.Document.Viewport, out var first, out var last))
         {
             using var dash = SKPathEffect.CreateDash([8, 5], 0);
@@ -18,6 +28,11 @@ internal sealed partial class DesktopSession
         }
         var guide = _editor.BillboardDrawingGuide ??
             ((_inlineText is not null || _editor.ShouldShowSelection(_host.InteractionModifiers)) ? _editor.BillboardSelectionGuide : null);
+        if (guide is null && _inlineText?.ScreenDraft is { } inlineDraft)
+        {
+            var box = ElementGeometry.LocalToPlane(inlineDraft).TransformBounds(ElementGeometry.LocalBounds(inlineDraft));
+            guide = (box.Center, new(box.Center.X, box.Bottom));
+        }
         if (guide is not { } points) return;
         canvas.DrawLine((float)points.Center.X, (float)points.Center.Y, (float)points.Anchor.X, (float)points.Anchor.Y, line);
         using var ground = new SKPaint { Color = line.Color, IsAntialias = true };

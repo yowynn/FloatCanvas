@@ -46,7 +46,8 @@ internal static class CaptureAspectPolicyTests
                 Matrix = new(1, .08, 0, 0, 1, 0, 0, .001, 1),
                 Quad = [new(0, 0), new(800, 0), new(600, 400), new(0, 400)] };
             var editor = new EditorController(new(document)) { Tool = EditorTool.CaptureRegion,
-                CaptureShape = shape, ConstrainAspect = legacyLock, BillboardMode = mode == "billboard" };
+                CaptureShape = shape, ConstrainAspect = legacyLock,
+                BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine, BillboardMode = mode == "billboard" };
             if (mode == "billboard")
             {
                 Pointer(editor, OverlayPointerKind.Down, new(150, 250));

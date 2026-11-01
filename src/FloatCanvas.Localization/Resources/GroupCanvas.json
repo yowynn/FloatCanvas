@@ -1,0 +1,20 @@
+{
+  "GroupCanvas.Context": { "zh": "组合与画布", "en": "Group and canvas" },
+  "GroupCanvas.Display": { "zh": "画布显示方式", "en": "Canvas display" },
+  "GroupCanvas.Ordinary": { "zh": "普通组", "en": "Ordinary group" },
+  "GroupCanvas.Embedded": { "zh": "工程内共享组合", "en": "Shared within this project" },
+  "GroupCanvas.ExternalFile": { "zh": "链接外部文件", "en": "Linked external file" },
+  "GroupCanvas.UnknownSource": { "zh": "来源路径不可用", "en": "Source path unavailable" },
+  "GroupCanvas.Temporary": { "zh": "临时画布", "en": "Temporary canvas" },
+  "GroupCanvas.RootProject": { "zh": "根工程画布", "en": "Root project canvas" },
+  "GroupCanvas.TemporaryHint": { "zh": "将当前已进入的组合单独显示在临时画布中", "en": "Show the entered group on its temporary canvas" },
+  "GroupCanvas.RootHint": { "zh": "在完整根工程画布中编辑当前组合，保留当前图层层级", "en": "Edit the current group in the complete root project while keeping the current layer level" },
+  "GroupCanvas.TemporaryNotice": { "zh": "在临时画布中编辑当前组合。", "en": "Edit the current group on its temporary canvas." },
+  "GroupCanvas.RootNotice": { "zh": "在完整根工程中编辑当前组合；选中和编辑范围保持当前层级。", "en": "Edit the current group within the full root project. Selection and edits stay within the current level." },
+  "GroupCanvas.Export": { "zh": "另存为预设", "en": "Save as prefab" },
+  "GroupCanvas.Detach": { "zh": "解除为普通组", "en": "Detach as group" },
+  "GroupCanvas.RelativeSource": { "zh": "来源：{0}（相对当前工程）", "en": "Source: {0} (relative to this project)" },
+  "GroupCanvas.AbsoluteSource": { "zh": "来源：{0}", "en": "Source: {0}" },
+  "GroupCanvas.ReadOnly": { "zh": "正在只读浏览离线快照，不能修改内容。", "en": "This offline snapshot is read-only. Its content cannot be changed." },
+  "GroupCanvas.ReadOnlyNotice": { "zh": "源文件不可用，正在只读浏览离线快照；解除为普通组后可编辑。", "en": "The source file is unavailable. This offline snapshot is read-only; detach it as a group to edit." }
+}

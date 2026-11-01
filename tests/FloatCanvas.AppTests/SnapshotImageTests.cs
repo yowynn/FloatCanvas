@@ -16,6 +16,7 @@ internal static class SnapshotImageTests
     private static async Task RunAsync(Action<string, bool> check)
     {
         SourcePixels(check);
+        PrefabBackgroundOnly(check);
         LayerOpacityAndLiveEffects(check);
         RequestGuards(check);
         ProjectedCaptureShapes(check);
@@ -30,6 +31,32 @@ internal static class SnapshotImageTests
             Matrix = new(1, .08, 0, 0, 1, 0, 0, .001, 1),
             Quad = [new(0,0),new(800,0),new(600,400),new(0,400)] } }
     };
+
+    private static void PrefabBackgroundOnly(Action<string, bool> check)
+    {
+        var assets = new AssetLibrary(); string stored = assets.Add(Png(120, 80, (_, _) => SKColors.Lime));
+        var nested = new PrefabDefinition { Name = "nested red", Graph = new() { Elements = [Box(0, 0, 120, 80, 0xFFFF0000)] } };
+        var child = new PrefabInstance { DefinitionId = nested.Id };
+        var definition = new PrefabDefinition { Name = "outer", Graph = new() { Instances = [child], RootOrder = [child.Id] } };
+        var group = new CanvasGroup { OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [], Transform = Affine2D.Translation(-80, -40) };
+        var instance = new PrefabInstance { DefinitionId = definition.Id, ParentId = group.Id }; group.ChildOrder = [instance.Id];
+        var annotation = Box(-75, -35, 100, 70, 0xFFFFFF00);
+        var source = new SceneDocument { Viewport = new(-80, -40, 120, 80), LayerOpacity = .3, Elements = [annotation], Groups = [group],
+            Instances = [instance], Definitions = [definition, nested], RootOrder = [annotation.Id, group.Id],
+            Background = new() { Kind = ElementKind.Image, AssetId = stored, Width = 120, Height = 80, Transform = Affine2D.Translation(-80, -40) } };
+        source.Canvas.BackgroundColor = 0xFF992266; source.Canvas.Grid.Visible = true; source.Canvas.Grid.FlatCellSize = 4;
+        var selection = Selection(CaptureSource.Background, new(-70, -30, 70, 50));
+        var desktop = Desktop(new(-80, -40, 120, 80), (_, _) => SKColors.Blue);
+        string original = JsonSerializer.Serialize(source); var originalBytes = assets.Get(stored).Data.ToArray(); int resourceCount = assets.Count;
+        var raster = SnapshotImageCommand.Render(source, assets.Resources, selection, desktop, [source.Viewport]);
+        using var background = Decode(raster);
+        check("prefab background-only capture excludes authored layers groups instances definitions grid and stored background", background.Pixels.All(pixel => pixel == SKColors.Blue) &&
+            raster.Bounds == selection.Bounds && background.Width == 70 && background.Height == 50);
+        using var combined = Decode(SnapshotImageCommand.Render(source, assets.Resources, selection with { Source = CaptureSource.BackgroundAndCanvas }, desktop, [source.Viewport]));
+        check("the same nested prefab remains visible when the capture source includes canvas content", combined.GetPixel(35, 25) == SKColors.Red);
+        check("prefab background-only preparation preserves the exact source graph definitions opacity and PNG assets", JsonSerializer.Serialize(source) == original &&
+            assets.Count == resourceCount && assets.Get(stored).Data.Span.SequenceEqual(originalBytes));
+    }
 
     private static void ProjectedCaptureShapes(Action<string, bool> check)
     {
@@ -229,6 +256,29 @@ internal static class SnapshotImageTests
         request.Cancel();
         request.AcceptRestoredVersion(17);
         check("cancelled capture permission remains revoked after an obsolete continuation arrives", request.Cancelled && !request.MatchesContent(target));
+
+        var scopeDocument = new SceneDocument(); var graph = new SceneGraph(scopeDocument);
+        var scope = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock });
+        var scoped = new EditorSession(scopeDocument); long revision = scoped.SceneRevision;
+        var rootRequest = new SnapshotCaptureRequest(scoped, 19);
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<string?> PendingResult()
+        {
+            await completion.Task.ConfigureAwait(false);
+            return rootRequest.ContentRejection(scoped);
+        }
+        var pending = PendingResult(); scoped.EnterScope(scope.Id);
+        check("entering a different edit scope invalidates the pending snapshot without a content revision", scoped.SceneRevision == revision &&
+            rootRequest.ContentRejection(scoped) == "EditScopeChanged" && !rootRequest.MatchesDocument(scoped));
+        scoped.LeaveScope(); completion.SetResult(true);
+        check("a delayed capture cannot revive after the original scope is restored", pending.GetAwaiter().GetResult() == "EditScopeChanged" &&
+            scoped.EditScopeId is null && scoped.SceneRevision == revision && !rootRequest.MatchesContent(scoped));
+        scoped.EnterScope(scope.Id); var innerRequest = new SnapshotCaptureRequest(scoped, 21);
+        scoped.SetEditScope(scope.Id);
+        check("reaffirming the same active scope keeps its snapshot permission valid", innerRequest.MatchesContent(scoped) && innerRequest.MatchesDocument(scoped));
+        scoped.LeaveScope(); scoped.EnterScope(scope.Id); innerRequest.AcceptRestoredVersion(23);
+        check("editing-session restoration cannot revive a snapshot after leaving and reentering its group", !innerRequest.MatchesContent(scoped) &&
+            !innerRequest.MatchesDocument(scoped) && innerRequest.ContentRejection(scoped) == "EditScopeChanged" && innerRequest.EditingVersion == 23);
     }
 
     private static async Task InsertAndPersistenceAsync(Action<string, bool> check)

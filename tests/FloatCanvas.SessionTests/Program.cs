@@ -29,6 +29,7 @@ internal static partial class Program
     private static RectD RetainedScreenshotBounds;
     private static ErrorModalEvidence? ErrorModal;
     private static bool WaitForActivation;
+    private static bool ActivateOwnedFixture;
     private static bool RasterOpacityProbe;
     private static readonly Stopwatch DiagnosticClock = Stopwatch.StartNew();
     private static readonly List<object> SessionDiagnostics = [];
@@ -38,6 +39,7 @@ internal static partial class Program
     {
         if (args.Contains("--multimonitor-probe")) return RunMultimonitorProbe(args);
         WaitForActivation = args.Contains("--wait-for-activation");
+        ActivateOwnedFixture = args.Contains("--activate-owned-fixture");
         RasterOpacityProbe = args.Contains("--raster-opacity-probe");
         ExternalClipboardProbe = args.Contains("--external-clipboard-probe");
         ToolbarZOrderProbe = args.Contains("--toolbar-z-order-probe");
@@ -193,8 +195,12 @@ internal static partial class Program
         using var lower = new NativeTestWindow();
         // Keep the fixture visible even when Windows denies foreground activation. The production
         // overlay is created afterwards and remains above this own-process test window.
-        Check(Native.SetWindowPos(lower.Handle, new nint(-1), 0, 0, 0, 0, 0x13), "Own lower fixture stays above unrelated desktop windows without activating them");
-        lower.Activate();
+        if (ActivateOwnedFixture) await Native.ActivateOwnedFixtureAsync(lower);
+        else
+        {
+            Check(Native.SetWindowPos(lower.Handle, new nint(-1), 0, 0, 0, 0, 0x13), "Own lower fixture stays above unrelated desktop windows without activating them");
+            lower.Activate();
+        }
         RecordSessionState("LowerActivateReturned", null, null, lower.Handle);
         if (WaitForActivation)
         {
@@ -371,12 +377,33 @@ internal static partial class Program
             Check(IdleFrames == 0, "Static pass-through presents zero stale rendering frames");
             await WaitForPreview(session);
             long beforeBatch = host.PresentedFrameCount, previewsBefore = PreviewProperty<long>(session, "CompletedFrames");
+            string documentBeforeBatch = JsonSerializer.Serialize(live.Document);
+            ObserveBatch("before-requests");
+            live.Execute("渲染合并验收内容变更", document => document.Elements.Single(element => element.Id == outside.Id).Width += 1);
             for (int i = 0; i < 100; i++) Call(session, "RequestRender");
+            ObserveBatch("after-requests");
             Check(Property<bool>(session, "IsRenderPending"), "A batch of rendering requests schedules one pending dispatcher operation");
             await WaitForPreview(session);
+            ObserveBatch("after-wait");
             Check(PreviewProperty<long>(session, "CompletedFrames") == previewsBefore + 1 &&
                 host.PresentedFrameCount - beforeBatch is var presented && presented >= host.Monitors.Count && presented <= 2 * host.Monitors.Count,
                 "One hundred requests coalesce into one scene preview plus bounded UI-guide presentation");
+            Check(live.Undo() && JsonSerializer.Serialize(live.Document) == documentBeforeBatch,
+                "Coalescing fixture undo restores the exact preceding authored document");
+            await WaitForPreview(session);
+            long cachedPreviews = PreviewProperty<long>(session, "CompletedFrames"), cachedPresentations = host.PresentedFrameCount;
+            for (int i = 0; i < 100; i++) Call(session, "RequestRender");
+            await WaitForPreview(session);
+            Check(!Property<bool>(session, "IsRenderPending") && !PreviewProperty<bool>(session, "Busy") &&
+                PreviewProperty<long>(session, "CompletedFrames") == cachedPreviews && host.PresentedFrameCount == cachedPresentations,
+                "One hundred unchanged requests reuse the cached scene without extra previews or presentations");
+            void ObserveBatch(string phase)
+            {
+                if (ActivateOwnedFixture) Console.WriteLine("RENDER_BATCH " + JsonSerializer.Serialize(new { Phase = phase,
+                    Pending = Property<bool>(session, "IsRenderPending"), Busy = PreviewProperty<bool>(session, "Busy"),
+                    Completed = PreviewProperty<long>(session, "CompletedFrames"), BeforeCompleted = previewsBefore,
+                    Presented = host.PresentedFrameCount, BeforePresented = beforeBatch, PresentDelta = host.PresentedFrameCount - beforeBatch, Monitors = host.Monitors.Count }));
+            }
             if (RasterOpacityProbe)
             {
                 long beforeOpacity = PreviewCacheMetric(session, "InPlaceOpacityFrameCount");
@@ -611,7 +638,7 @@ internal static partial class Program
         live.Execute("恢复样本序号", d => d.NextNumber = originalNextNumber);
         live.BeginTransaction("尚未结束的长手势");
         var pending = new CanvasElement { Kind = ElementKind.Rectangle, Width = 10, Height = 10 };
-        live.Document.Elements.Add(pending); live.NotifyChanged();
+        new SceneGraph(live.Document).InsertElement(pending); live.NotifyChanged();
         try
         {
             await Task.Delay(1400);
@@ -686,8 +713,10 @@ internal static partial class Program
             ExternalClipboardProbe, ExternalClipboardRestored, ExternalClipboardCases, PopupPixelDiagnostics,
             ExternalClipboardScope = "Opt-in PNG/Bitmap/FileDrop data objects without FloatCanvas.Objects.v1, real Clipboard and production PasteAsync, then direct managed controller move and undo. This does not exercise a physical Ctrl+V keystroke, file dialog or OS drag-and-drop.",
             SessionDiagnostics = sessionDiagnostics,
-            SessionDiagnosticScope = "Observations at existing fixture boundaries and production release events; no new activation, input injection, retry or waiting beyond the original 80 ms entry wait. CurrentThreadFocusHandle is GetFocus on the WPF/overlay UI thread, not another process's focus. Status and handles belong to this own session.",
-            PhysicalInputInjection = false, SeededObjectsAreCoreFixtures = true, IdlePresentedFrames = IdleFrames,
+            SessionDiagnosticScope = ActivateOwnedFixture
+                ? "Explicit owned-fixture activation emits one PID/time/HWND/white-point-verified click before constructing the production host. Original production assertions remain; rendering diagnostics only observe counts. CurrentThreadFocusHandle belongs to this test thread. No external window is automated."
+                : "Observations at existing fixture boundaries and production release events; no new activation, input injection, retry or waiting beyond the original 80 ms entry wait. CurrentThreadFocusHandle is GetFocus on the WPF/overlay UI thread, not another process's focus. Status and handles belong to this own session.",
+            PhysicalInputInjection = ActivateOwnedFixture, OwnedFixtureActivation = ActivateOwnedFixture, SeededObjectsAreCoreFixtures = true, IdlePresentedFrames = IdleFrames,
             ScreenshotRetention = "Only a crop inside our own native test-window client; full desktop captures remain in memory and are removed before any project/recovery write.",
             RetainedScreenshotBounds, Runtime = Environment.Version.ToString(), Os = Environment.OSVersion.ToString(), ErrorModal,
             ErrorModalForegroundScope = "Actual foreground HWND is observed without forcing activation; IsForeground=false limits this run to visibility, unobstructed physical confirmation-button targeting and self-owned dismissal, not keyboard foreground proof."

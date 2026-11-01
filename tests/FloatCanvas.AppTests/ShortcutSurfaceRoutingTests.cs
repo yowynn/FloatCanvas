@@ -69,11 +69,29 @@ internal static class ShortcutSurfaceRoutingTests
                     int before = commands[surface].Count;
                     var args = Send(sources[surface].Button, key);
                     bool keepListNavigation = surface == 1 && key is Key.Left or Key.Up or Key.Right or Key.Down;
-                    check($"{names[surface]} ordinary control {(keepListNavigation ? "retains list navigation" : "routes")} {key}",
+                    bool nativeButtonActivation = surface == 1 && key == Key.Enter;
+                    check($"{names[surface]} ordinary control {(nativeButtonActivation ? "retains native button activation" : keepListNavigation ? "retains list navigation" : "routes")} {key}",
+                        nativeButtonActivation ? !args.Handled && commands[surface].Count == before :
                         keepListNavigation ? commands[surface].Count == before :
                         args.Handled && commands[surface].Count == before + 1 && commands[surface][^1] == KeyInterop.VirtualKeyFromKey(key));
                 }
             }
+
+            int nativeClicks = 0, nativeBefore = commands[1].Count;
+            RoutedEventHandler countNativeClick = (_, _) => nativeClicks++;
+            sources[1].Button.Click += countNativeClick;
+            try
+            {
+                var preview = Send(sources[1].Button, Key.Enter);
+                var keyDown = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Enter)
+                    { RoutedEvent = Keyboard.KeyDownEvent };
+                InstallModifiers();
+                if (!preview.Handled) sources[1].Button.RaiseEvent(keyDown);
+                check("Layers Button Return invokes its native Click exactly once without a global command",
+                    !preview.Handled && keyDown.Handled && nativeClicks == 1 && commands[1].Count == nativeBefore);
+            }
+            finally { sources[1].Button.Click -= countNativeClick; }
+            ExpectRoute(1, sources[1].Panel, Key.Enter);
 
             SetModifiers(ModifierKeys.Control);
             check("shortcut matrix controls only its thread-local Ctrl state", Keyboard.Modifiers == ModifierKeys.Control);
@@ -86,9 +104,14 @@ internal static class ShortcutSurfaceRoutingTests
                 ExpectRoute(0, sources[0].Button, Key.G);
                 ExpectRoute(2, sources[2].Button, Key.G);
                 int before = commands[1].Count;
+                int undoBefore = state.UndoCount;
                 var args = Send(sources[1].Button, Key.G);
                 check($"Layers Ctrl{(shift ? "+Shift" : "")}+G executes its real local grouping command once",
-                    args.Handled && commands[1].Count == before && state.Document.Groups.Count == (shift ? 0 : 1) && state.Selection.SetEquals([first.Id, second.Id]));
+                    args.Handled && commands[1].Count == before && state.Document.Groups.Count == (shift ? 0 : 1) && state.UndoCount == undoBefore + 1 &&
+                    (shift ? state.Selection.SetEquals([first.Id, second.Id]) : state.Selection.SetEquals([state.Document.Groups.Single().Id])));
+                // A visible Layers window refreshes after the command. Keep this
+                // detached fixture's current-level rows in sync before the next key.
+                layers.PrepareForShow();
             }
 
             for (int surface = 0; surface < surfaces.Length; surface++)

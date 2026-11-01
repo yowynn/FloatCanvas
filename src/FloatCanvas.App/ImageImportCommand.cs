@@ -37,6 +37,9 @@ internal static class ImageImportCommand
     internal static void Insert(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD placement, bool replace = false, PointD? dropCenter = null, double opacity = 1)
     {
         ValidateOpacity(opacity);
+        RequireWritableScope(target);
+        CanvasElement? replacement = null;
+        if (replace && !ImageToolEligibility.TryGetReplaceTarget(target, out replacement)) throw new InvalidOperationException(L.Get("Image.SelectFirst"));
         var elements = new List<CanvasElement>();
         if (!replace)
         {
@@ -58,25 +61,28 @@ internal static class ImageImportCommand
         {
             if (replace)
             {
-                var selected = target.SelectedElements().Single(e => e.Kind == ElementKind.Image && !e.Locked);
+                var selected = replacement!;
                 selected.AssetId = resources[0].Id;
+                selected.WindowSource = null;
                 selected.ImageFrame = null;
                 return;
             }
             target.Selection.Clear();
+            var graph = new SceneGraph(document);
             for (int index = 0; index < elements.Count; index++)
             {
                 var element = elements[index]; element.AssetId = resources[index].Id;
-                document.Elements.Add(element); target.Selection.Add(element.Id);
+                graph.InsertElement(element, target.EditScopeId); target.Selection.Add(element.Id);
             }
         });
     }
 
     /// <summary>Fresh image pixels remain encoded; screen placement is converted to shared logical units once.</summary>
     internal static void InsertBillboard(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD screenPlacement,
-        BillboardDepthLine depth, PointD screenCenter, double opacity = 1)
+        BillboardDepthLine? depth, PointD screenCenter, double opacity = 1)
     {
         ValidateOpacity(opacity);
+        RequireWritableScope(target);
         var mapping = CanvasMapping.Create(target.Document);
         var elements = new List<CanvasElement>();
         int index = 0;
@@ -86,7 +92,7 @@ internal static class ImageImportCommand
             double screenWidth = image.Width * fit, screenHeight = image.Height * fit;
             var bounds = new RectD(screenCenter.X - screenWidth / 2 + index * 20,
                 screenCenter.Y - screenHeight / 2 + index * 20, screenWidth, screenHeight);
-            var element = SnapshotImageCommand.CreateBillboardElement(target.Assets,
+            var element = SnapshotImageCommand.PrepareBillboardElement(
                 new(image.PngBytes, bounds, true), mapping, depth);
             element.Style.Opacity = opacity;
             elements.Add(element);
@@ -95,12 +101,22 @@ internal static class ImageImportCommand
         target.Execute(L.Get("Image.ImportTitle"), document =>
         {
             target.Selection.Clear();
-            foreach (var element in elements) { document.Elements.Add(element); target.Selection.Add(element.Id); }
+            var graph = new SceneGraph(document);
+            for (int i = 0; i < elements.Count; i++)
+            {
+                var element = elements[i]; element.AssetId = target.Assets.Add(images[i].PngBytes, images[i].MediaType);
+                graph.InsertElement(element, target.EditScopeId); target.Selection.Add(element.Id);
+            }
         });
     }
 
     private static void ValidateOpacity(double opacity)
     {
         if (!double.IsFinite(opacity) || opacity is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(opacity));
+    }
+    private static void RequireWritableScope(EditorSession target)
+    {
+        if (target.IsTransactionActive) throw new InvalidOperationException(L.Get("Text.ActionInProgress"));
+        if (target.EditScopeId is { } scope && target.IsNodeLocked(scope)) throw new InvalidOperationException(L.Get("Inspector.LockedSuffix"));
     }
 }

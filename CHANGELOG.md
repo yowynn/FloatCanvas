@@ -5,6 +5,29 @@ Each version lists changes by user impact and importance, combining development 
 
 ## [Unreleased]
 
+当前开发版本：**0.4.0** / Current development version: **0.4.0**.
+
+- **共享预制体与子工程。** 从选择创建共享定义，多次放置复用同一份内容，完成编辑后同步全部实例，也可解除链接为普通组。普通组、工程内共享与外部文件采用统一的内部列表和临时／根工程画布切换，明确显示来源，普通组可直接导出预制体。新增工程资源面板、共享印章和自包含 `.floatprefab` 文件；链接工程保留离线快照，支持通过“置入”和拖放加入当前画布，以及源文件编辑、刷新和重新定位，并保留文件冲突检查。
+- **Shared prefabs and subprojects.** Create shared definitions from selections, reuse their content across instances, publish edits to every instance, or detach a copy as an ordinary group. Ordinary, shared and external groups use the same internal list and temporary/root canvas choices, identify their source, and export ordinary groups directly as prefabs. Add project resources, shared stamps and self-contained `.floatprefab` files. Linked projects retain offline snapshots and can be placed or dropped into the current canvas, with source editing, refresh, relocation and file-conflict checks.
+
+- **嵌套组合与图层管理。** 组合成为独立图层，采用面包屑路径和当前层级列表浏览，支持进入嵌套组合编辑、拖动调整层级，以及整体或各自旋转、缩放。组的移动与变换保留内部局部坐标；旧工程中交错排列的组合保持原显示顺序，可手动收拢为连续组。
+- **Nested groups and layers.** Groups become independent layers, browsed through breadcrumbs and a list of the current level, with nested group editing, drag-and-drop hierarchy changes, and whole-selection or individual transforms. Group movement preserves local member coordinates. Interleaved groups in older projects retain their original paint order and can be explicitly collected into a contiguous group.
+
+- **画布比例与网格。** 平面尺寸与网格间距、原点独立设置，提供 A4 等纸张比例、横竖方向切换和扭正预览；改变网格密度不再拉伸透视内容。新增三交点辅助标定，只需指出两个方向各跨几格；保留旧工程原有投影与钉点，取消或切换工程不会迟到插图。
+- **Canvas proportions and grids.** Set plane dimensions independently from grid spacing and origin, with paper ratios such as A4, orientation switching and a rectification preview. Grid-density edits no longer stretch projected content. Calibrate from three intersections and a known cell span on each axis. Existing projections and pins are preserved, and cancellation or document changes cannot insert a late capture.
+
+- **立牌创建。** 默认直接在屏幕上绘制或放置立牌，再调整接地点与高度；支持从地平线上方起笔，保留高级等深线流程。图片、截图与文字共用放置规则，属性转换可选择保持当前画面。
+- **Billboard creation.** Draw or place billboards directly on screen, then adjust ground position and elevation. Strokes can start above the horizon, with the advanced fixed-depth workflow retained. Images, captures and text share placement rules, and placement conversion can preserve the current appearance.
+
+- **窗口源。** 将选定窗口的持续画面放到画布，支持裁剪、重新绑定、暂停和冻结为普通图片，并在共享实例中复用来源。工程保留完整离线画面，重开后明确重新绑定；实时更新不增加撤销记录。
+- **Window sources.** Place a selected window's continuing output on the canvas, with cropping, rebinding, pause and freezing as an ordinary image. Shared instances reuse the source. Projects retain full offline images and require explicit rebinding after reopening; live updates add no undo steps.
+
+- **演示工具。** 键盘演示与鼠标演示采用标准参数／预设窗口。键盘分为按键记录和实时键盘，记录可选简洁或仿真键帽，实时 104 键布局可调整键位显隐、位置与尺寸；模式专属选项与共有属性分层，保留透视，可见即记录，隐藏或删除停止，编辑模式继续。修复编辑模式下键盘布局窗口的应用与取消。鼠标高亮、左右中键点击和轨迹独立全屏显示，以颜色 Alpha 控制透明度；个人效果偏好不修改画布图层，实时输入不进入工程。
+- **Presentation.** Keyboard and Mouse demonstration use standard parameter and preset windows. Choose Key recording with Simple or Realistic keycaps appearance, or Live keyboard with an editable 104-key layout, with mode-specific options followed by shared properties. Visible key layers record during editing and retain perspective; hide or delete them to stop. Fix applying and cancelling keyboard layouts in editing mode. Screen-wide mouse halos, left/right/middle clicks and trails use color Alpha for transparency. Personal mouse preferences leave canvas layers unchanged, and live input is not stored in projects.
+
+- **工程格式与样式。** 工程和恢复文件采用格式 v15，记录创建与最后保存的软件版本，并通过显式迁移保留旧工程外观及原有键盘日志；新版保存键盘样式和自定义布局，旧版应用不能读取新格式。统一前景色、背景色与样式标识，序号提供实心、同色空心和双色空心三种样式；切换样式保留隐藏颜色，支持多选编辑及个人预设。
+- **Project format and styles.** Projects and recovery files use format v15, record creation and last-saving software versions, and explicitly migrate older documents while preserving their appearance and existing key logs. New files retain keyboard styles and custom layouts and cannot be read by older apps. Foreground, background and named styles are shared across tools. Number badges offer filled, single-color outline and two-color outline styles, retaining hidden colors across style changes, multi-selection edits and personal presets.
+
 ## [0.3.2] - 2026-10-31
 
 - **编辑交互。** 修复新建画布后 Esc 无法返回，以及增强模式下 Peek 等外部快捷键干扰编辑的问题。

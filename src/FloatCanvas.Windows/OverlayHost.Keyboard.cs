@@ -12,6 +12,20 @@ public sealed partial class OverlayHost
     private KeyboardInputIsolation? _keyboardIsolation;
     private Action<KeyboardInputPacket, Action>? _dispatchPrivateKey;
     private long _keyboardLease;
+    private const uint PresentationInputMessage = 0x8006;
+    private bool _presentationTapKeyboard, _presentationTapPointer;
+    private long _presentationTapEpoch;
+
+    /// <summary>Passive metadata from the existing editing hooks, delivered on the owner UI thread.</summary>
+    public event Action<PresentationObservedBatch>? PresentationInputObserved;
+
+    public void ConfigurePresentationInputTap(bool keyboard, bool pointer, long epoch)
+    {
+        CheckThread();
+        if (epoch < 0) throw new ArgumentOutOfRangeException(nameof(epoch));
+        _presentationTapKeyboard = keyboard; _presentationTapPointer = pointer; _presentationTapEpoch = epoch;
+        _keyboardIsolation?.ConfigurePresentationInputTap(keyboard, pointer, epoch, PresentationInputMessage);
+    }
 
     public bool IsKeyboardIsolationEnabled => _keyboardIsolation is not null;
     public bool IsKeyboardIsolationActive => _keyboardIsolation is { } isolation
@@ -43,6 +57,7 @@ public sealed partial class OverlayHost
         _dispatchPrivateKey = dispatcher;
         try { _keyboardIsolation = KeyboardInputIsolation.StartAsync(ControlHandle, KeyboardPacketMessage).GetAwaiter().GetResult(); }
         catch { _dispatchPrivateKey = null; throw; }
+        _keyboardIsolation.ConfigurePresentationInputTap(_presentationTapKeyboard, _presentationTapPointer, _presentationTapEpoch, PresentationInputMessage);
     }
 
     private void BeginKeyboardIsolation()
@@ -66,6 +81,17 @@ public sealed partial class OverlayHost
 
     private bool HandleKeyboardControlMessage(uint message, nuint wParam)
     {
+        if (message == PresentationInputMessage)
+        {
+            var source = _keyboardIsolation;
+            if (source is not null && source.TryDrainPresentationInput(unchecked((uint)wParam), out var batch) &&
+                IsEditing && HasEditingInput && source.IsLeaseActive)
+            {
+                try { PresentationInputObserved?.Invoke(batch!); }
+                catch { /* A visual subscriber cannot interrupt the editing input dispatcher. */ }
+            }
+            return true;
+        }
         if (message == 0x113 && wParam == InputMethodFocusTimer) { CheckInputMethodContext(); return true; }
         if (message == 0x113 && wParam == KeyboardHeartbeatTimer)
         {

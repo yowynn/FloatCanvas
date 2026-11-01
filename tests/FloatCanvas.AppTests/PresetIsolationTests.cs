@@ -125,6 +125,7 @@ internal static class PresetIsolationTests
     {
         var session = (DesktopSession)RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
         Set(session, "_canvasCalibration", new CanvasCalibrationController());
+        Set(session, "_canvasGridCalibrationPoints", new List<PointD>());
         Set(session, "_editor", controller); Set(session, "_toolPresets", library); Set(session, "_settings", new UserSettings());
         Set(session, "_status", new TextBlock()); Set(session, "_host", RuntimeHelpers.GetUninitializedObject(typeof(OverlayHost)));
         Set(session, "_toolbarToolButtons", new Dictionary<EditorTool, Button>());

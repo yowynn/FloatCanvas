@@ -15,12 +15,19 @@ internal static class Program
     private static int _exitCode = 1;
     private static bool _waitForActivation;
     private static bool _primaryScreenProbe;
+    private static bool _useFreeTestHotkeys;
+    private static bool _activateOwnedFixture;
+    private static HotkeyBinding _testToggle = HotkeyBinding.DefaultToggle, _testHide = HotkeyBinding.DefaultHide;
 
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args is ["--capture-lower-peer", var readyPath, var closePath, var nonce, var parent] && int.TryParse(parent, out int parentProcessId))
+            return CaptureLowerPeer.Run(readyPath, closePath, nonce, parentProcessId);
         _waitForActivation = args.Contains("--wait-for-activation");
         _primaryScreenProbe = args.Contains("--primary-screen-probe");
+        _useFreeTestHotkeys = args.Contains("--use-free-test-hotkeys");
+        _activateOwnedFixture = args.Contains("--activate-owned-fixture");
         var captureOnly = args.Contains("--capture-only");
         var evidenceIndex = Array.IndexOf(args, "--evidence");
         var evidencePath = evidenceIndex >= 0 && args.Length > evidenceIndex + 1
@@ -65,6 +72,7 @@ internal static class Program
         try
         {
             var target = cleanupTarget = new NativeTestWindow();
+            if (_activateOwnedFixture) await Native.ActivateOwnedFixtureAsync(target);
             var host = cleanupHost = _primaryScreenProbe ? PrimaryScreenFixture.CreateHost(out primaryProbe) : new OverlayHost();
             monitors = host.Monitors.ToArray();
             host.Error += ex => Errors.Add(ex.ToString());
@@ -92,7 +100,9 @@ internal static class Program
                     }
                 }
             };
-            host.RegisterHotkeys(HotkeyBinding.DefaultToggle, HotkeyBinding.DefaultHide);
+            if (_useFreeTestHotkeys) (_testToggle, _testHide) = FreeTestHotkeys();
+            Console.WriteLine($"TEST_HOTKEYS temporary={_useFreeTestHotkeys} toggle={_testToggle} hide={_testHide}");
+            host.RegisterHotkeys(_testToggle, _testHide);
             host.SetVisible(true);
             host.SetEditing(false);
             host.Render();
@@ -164,7 +174,7 @@ internal static class Program
             Assert("reserve-conflicting-hotkey", Native.RegisterHotKey(target.Handle, 0x1234, 0x4003, 0x4A),
                 "The self-owned lower HWND reserves Ctrl+Alt+J for transaction rollback testing.");
             var conflictThrown = false;
-            try { host.RegisterHotkeys(new HotkeyBinding(3, 0x4A), HotkeyBinding.DefaultHide); }
+            try { host.RegisterHotkeys(new HotkeyBinding(3, 0x4A), _testHide); }
             catch (Win32Exception) { conflictThrown = true; }
             finally { Native.UnregisterHotKey(target.Handle, 0x1234); }
             Assert("conflicting-hotkey-rejected", conflictThrown,
@@ -289,16 +299,17 @@ internal static class Program
             // Keep the owned windows alive during input cleanup, so button/key releases cannot
             // accidentally land in the user's original foreground application after destruction.
             var foreground = Native.GetForegroundWindow();
+            bool restoreForeground = !_activateOwnedFixture || Native.IsOwnWindow(foreground);
             if (cleanupTarget?.Handle == foreground || cleanupHost?.Diagnostics.Any(d => d.InputHandle == foreground) == true)
             {
                 Native.Mouse(4); Native.Mouse(16);
-                Native.Key((ushort)HotkeyBinding.DefaultToggle.VirtualKey, true); Native.Key(0x10, true); Native.Key(0x12, true); Native.Key(0x11, true);
+                Native.Key((ushort)_testToggle.VirtualKey, true); Native.Key(0x10, true); Native.Key(0x12, true); Native.Key(0x11, true);
                 Native.ReleaseCapture();
             }
             cleanupHost?.Dispose();
             cleanupTarget?.Dispose();
             Native.SetCursorPos(previousCursor.X, previousCursor.Y);
-            if (previousForeground != 0) Native.SetForegroundWindow(previousForeground);
+            if (previousForeground != 0 && restoreForeground) Native.SetForegroundWindow(previousForeground);
             Directory.CreateDirectory(Path.GetDirectoryName(evidencePath)!);
             var sortedTimings = timings.Order().ToArray();
             var evidence = new
@@ -312,6 +323,8 @@ internal static class Program
                 actualMonitors = monitors,
                 originalCheckCount = Checks.Count,
                 originalPassedCount = Checks.Count(c => c.Passed),
+                useFreeTestHotkeys = _useFreeTestHotkeys, toggleBinding = _testToggle, hideBinding = _testHide,
+                activateOwnedFixture = _activateOwnedFixture,
                 primaryScreenProbe = primaryProbe?.Evidence,
                 checks = Checks,
                 errors = Errors,
@@ -376,13 +389,13 @@ internal static class Program
 
     private static async Task ToggleWithHotkey(Func<int> count, int expected)
     {
-        PressBinding(HotkeyBinding.DefaultToggle);
+        PressBinding(_testToggle);
         await WaitUntil(() => count() >= expected, "Global toggle hotkey did not arrive.");
     }
 
     private static async Task HideWithHotkey()
     {
-        PressBinding(HotkeyBinding.DefaultHide);
+        PressBinding(_testHide);
         await Task.Delay(25);
     }
 
@@ -395,6 +408,21 @@ internal static class Program
         foreach (var modifier in modifiers) Native.Key(modifier);
         Native.Key((ushort)binding.VirtualKey); Native.Key((ushort)binding.VirtualKey, true);
         foreach (var modifier in modifiers.AsEnumerable().Reverse()) Native.Key(modifier, true);
+    }
+
+    private static (HotkeyBinding Toggle, HotkeyBinding Hide) FreeTestHotkeys()
+    {
+        for (uint key = 0x7C; key < 0x87; key++)
+        {
+            if (!Native.RegisterHotKey(0, 0x53A1, 0x4007, key)) continue;
+            try
+            {
+                if (!Native.RegisterHotKey(0, 0x53A2, 0x4007, key + 1)) continue;
+                Native.UnregisterHotKey(0, 0x53A2); return (new(7, key), new(7, key + 1));
+            }
+            finally { Native.UnregisterHotKey(0, 0x53A1); }
+        }
+        throw new InvalidOperationException("No temporary Ctrl+Alt+Shift function-key pair is available for this owned fixture.");
     }
 
     private static async Task WaitUntil(Func<bool> condition, string error)
