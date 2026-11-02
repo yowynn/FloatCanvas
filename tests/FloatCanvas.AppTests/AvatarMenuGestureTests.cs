@@ -17,10 +17,10 @@ internal static class AvatarMenuGestureTests
         var desktop=System.Windows.Forms.SystemInformation.VirtualScreen;
         var launcher = new ToolbarLauncher();
         using var source = new HwndSource(new HwndSourceParameters("FloatCanvas.AvatarGestureTests")
-        { Width = 94, Height = 94, PositionX = desktop.Left-10000, PositionY = desktop.Top-10000,
+        { Width = 101, Height = 101, PositionX = desktop.Left-10000, PositionY = desktop.Top-10000,
             WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle=0x08000080 });
         source.RootVisual = launcher;
-        launcher.Measure(new Size(94, 94)); launcher.Arrange(new Rect(0, 0, 94, 94));launcher.UpdateLayout();
+        launcher.Measure(new Size(101, 101)); launcher.Arrange(new Rect(0, 0, 101, 101));launcher.UpdateLayout();
         // CaptureMouse synchronously reports native input. Complete this source's
         // Loaded/input initialization before driving its protected press handler;
         // a hidden HWND with pending initialization can correctly lose capture

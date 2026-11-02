@@ -22,8 +22,8 @@ internal static class Preview4MenuRuntimeFixture
         var toolbarPaths = Descendants(Field<Button>(session, "_passThroughButton")).OfType<System.Windows.Shapes.Path>().ToArray();
         var pass = entries.Single(item => Equals(item.Header, L.Get("ToolbarV2.PassThrough")));
         check("actual pass-through menu and toolbar share the same artwork", toolbarPaths.Any(path => path.Data.ToString() == Preview4MenuTests.Data((FrameworkElement)pass.Icon)));
-        var more = Field<ContextMenu>(session, "_moreToolsMenu");
-        check("actual nested image tools have distinct non-placeholder symbols", more.Items.Count == 2 && Preview4MenuTests.Items(more).Select(item => Preview4MenuTests.Data((FrameworkElement)item.Icon)).Distinct().Count() == 2);
+        var more = Field<Dictionary<EditorTool,Button>>(session, "_extraToolButtons");
+        check("actual nested image tools have distinct non-placeholder symbols", more.Count == 4 && more.Values.All(button => button.Content is FrameworkElement && button.ContextMenu is null));
         check("new canvas has no dropdown or default-canvas menu",Field<NewCanvasButton>(session,"_newCanvasButton").ContextMenu is null&&!entries.Any(item=>Equals(item.Header,"新建默认画布")||Equals(item.Header,"New default canvas")));
         var tray = Field<System.Windows.Forms.NotifyIcon>(session, "_tray").ContextMenuStrip!;
         check("actual tray menu includes welcome and floating logo with all eight images", tray.Items.Count == 8 && tray.Items.Cast<System.Windows.Forms.ToolStripMenuItem>().All(item => item.Image is System.Drawing.Bitmap { Width: 36, Height: 36 }));

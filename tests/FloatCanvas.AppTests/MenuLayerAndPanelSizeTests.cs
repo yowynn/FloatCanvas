@@ -80,7 +80,7 @@ internal static class MenuLayerAndPanelSizeTests
                 var stamp=Field<StampLibraryWindow>(session,"_stampWindow");
                 var slot=stamp.CreateToolbarMenu(entry.Id,0,toolbar);slot.PlacementTarget=Field<ToolbarLauncher>(session,"_toolbarLauncher");
                 var main=Field<OverlayContextMenu>(session,"_toolbarMenu");main.PlacementTarget=slot.PlacementTarget;
-                foreach(var (name,menu) in new[]{("main",main),("more",Field<OverlayContextMenu>(session,"_moreToolsMenu")),("stamp slot",slot)})
+                foreach(var (name,menu) in new[]{("main",main),("stamp slot",slot)})
                 {
                     menu.Opacity=0;Invoke(session,"RaiseVisibleToolWindows");Pump();
                     nint barHwnd=new WindowInteropHelper(toolbar).Handle,panelHwnd=new WindowInteropHelper(canvas).Handle;

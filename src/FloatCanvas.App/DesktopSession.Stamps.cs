@@ -174,7 +174,6 @@ internal sealed partial class DesktopSession
         _canvasSettingsWindow?.ClosePickers();
         _windowCoordinator?.DismissTransient(WindowDismissReason.CanvasPress);
         if (_toolbarMenu is not null) _toolbarMenu.IsOpen = false;
-        if (_moreToolsMenu is not null) _moreToolsMenu.IsOpen = false;
     }
 
     private async Task ReloadStampAndPlaceAsync(StampPlacementRequest request)

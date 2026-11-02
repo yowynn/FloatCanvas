@@ -97,16 +97,17 @@ internal static class ToolbarAcceptanceTests
             check("production toolbar preserves two 26 DIP rows separated by two DIP",grid.RowDefinitions.Select(row=>row.Height.Value).SequenceEqual(new[]{26d,2d,26d}));
             check("production toolbar shares 30 DIP columns around tool and action separators",grid.ColumnDefinitions.Count==32 && grid.ColumnDefinitions.Select((column,index)=>(column,index)).All(pair=>pair.column.Width.IsAbsolute && pair.column.Width.Value==(pair.index is 2 or 13 or 16 or 20 or 23?10:30)));
             check("production upper row retains every action around its dedicated separators",buttons.Length==25 && buttons.Select(Controls.Grid.GetColumn).Order().SequenceEqual(Enumerable.Range(0,32).Where(column=>column is not (2 or 13 or 16 or 20 or 23 or 28 or 29))) && !buttons.Any(button=>Equals(button.Tag,"tool:Blur")));
-            check("compact 60 DIP tool body aligns with the shared 94 DIP mascot",Near(body.ActualHeight,60)&&Near(body.TranslatePoint(new Wpf.Point(),shell).Y,32)&&ToolbarLauncher.ArtworkSize==94);
+            check("compact 60 DIP tool body aligns with the shared 101 DIP mascot",Near(body.ActualHeight,60)&&Near(body.TranslatePoint(new Wpf.Point(),shell).Y,39)&&ToolbarLauncher.ArtworkSize==101);
             var fileBubble=Field<BoundFileIndicator>(session,"_boundFileIndicator");
             fileBubble.Refresh(@"C:\图标验收\示例画布.floatcanvas",true,true);Measure(shell);
-            check("bound-file bubble keeps four DIP clearance above the unchanged toolbar",Near(fileBubble.TranslatePoint(new Wpf.Point(0,fileBubble.ActualHeight),shell).Y+4,body.TranslatePoint(new Wpf.Point(),shell).Y));
+            check("bound-file bubble matches the shared upper row height and clearance",fileBubble.ActualHeight==ToolbarUpperRow.ExtensionHeight&&Near(fileBubble.TranslatePoint(new Wpf.Point(0,fileBubble.ActualHeight),shell).Y+ToolbarUpperRow.SurfaceGap,body.TranslatePoint(new Wpf.Point(),shell).Y));
             Save(shell,Path.Combine(output,"production-toolbar-bound-file-light.png"),1.5);
             fileBubble.Refresh(null,false,true);
             check("production lower row puts stamp actions under Select and Eraser",allButtons.Any(button=>Equals(button.Tag,"manage-stamps")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==0) && allButtons.Any(button=>Equals(button.Tag,"save-stamp")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==1));
             check("production lower row keeps its stamp actions and fills the remaining width with LCD",Controls.Grid.GetRow(shelf)==2 && Controls.Grid.GetColumn(shelf)==3 && Controls.Grid.GetColumnSpan(shelf)==10 && Controls.Grid.GetRow(display)==2 && Controls.Grid.GetColumn(display)==14 && Controls.Grid.GetColumnSpan(display)==18 && allButtons.Where(button=>Controls.Grid.GetRow(button)==2).Select(Controls.Grid.GetColumn).Order().SequenceEqual(new[]{0,1}));
             var billboard=allButtons.Single(button=>Equals(button.Tag,"billboard"));
             check("placement entry sits immediately right of canvas in the upper row and is unavailable without perspective",Controls.Grid.GetColumn(billboard)==15&&Controls.Grid.GetRow(billboard)==0&&!billboard.IsEnabled&&!editor.BillboardMode&&Controls.ToolTipService.GetShowOnDisabled(billboard));
+            check("placement idle chrome reserves the same transparent one-DIP border as ordinary buttons",billboard.BorderThickness==new Wpf.Thickness(1)&&billboard.BorderBrush==Media.Brushes.Transparent);
             var surfaceArtwork=Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString();
             editor.Session.Document.Canvas.Projection=CanvasCalibration.CreateInitial(new(0,0,1200,800),10,8);
             editor.Session.Document.Canvas.Projection.Enabled=true;Invoke(session,"RefreshToolbarState");Measure(shell);
@@ -128,13 +129,13 @@ internal static class ToolbarAcceptanceTests
                 var preview=ToolParameterIcon.Create(new ToolPresetLibrary(Path.Combine(profile,"preview-recipes.json")).OfficialFor(tool).First().Parameters);
                 check(tool+" toolbar artwork uses the same preview as its official preset",Descendants(tools[tool]).OfType<Shapes.Path>().Single().Data.ToString()==Descendants(preview).OfType<Shapes.Path>().Single().Data.ToString());
             }
-            var moreMenu=Field<Controls.ContextMenu>(session,"_moreToolsMenu");
+            var extraButtons=Field<Dictionary<EditorTool,Controls.Button>>(session,"_extraToolButtons");
             Invoke(session,"RefreshMoreToolPreviews");
-            var effectEntries=moreMenu.Items.OfType<Controls.MenuItem>().Where(item=>item.Tag is EditorTool.Blur or EditorTool.Pixelate).ToArray();
-            check("more menu contains both blur and pixelate exactly once",effectEntries.Length==2&&effectEntries.Select(item=>(EditorTool)item.Tag).Distinct().Count()==2);
-            check("more menu uses live neutral tool previews for both blur and pixelate",effectEntries.All(item=>item.Icon is Wpf.DependencyObject icon&&Descendants(icon).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasText"]));
-            CheckPresentationMenuPreviews(check,session,moreMenu);
-            CheckMorePreviewLifecycle(check,session,editor,(OverlayContextMenu)moreMenu,shell.Dispatcher);
+            var effectEntries=extraButtons.Where(pair=>pair.Key is EditorTool.Blur or EditorTool.Pixelate).ToArray();
+            check("more menu contains both blur and pixelate exactly once",effectEntries.Length==2&&effectEntries.Select(item=>item.Key).Distinct().Count()==2);
+            check("more menu uses live neutral tool previews for both blur and pixelate",effectEntries.All(item=>item.Value.Content is Wpf.DependencyObject icon&&Descendants(icon).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasText"]));
+            CheckPresentationMenuPreviews(check,session,extraButtons);
+            CheckMorePreviewLifecycle(check,session,editor,extraButtons,shell);
             var parametersBefore=System.Text.Json.JsonSerializer.Serialize(editor.Parameters);
             billboard.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
             Measure(shell);
@@ -173,12 +174,12 @@ internal static class ToolbarAcceptanceTests
             string idleMoreGlyph = MoreGlyph();
             editor.Tool = EditorTool.Blur; Invoke(session,"RefreshToolbarState"); Measure(shell);
             string blurMoreGlyph = MoreGlyph();
-            check("More replaces its idle dots with the selected blur preview", blurMoreGlyph != idleMoreGlyph);
+            check("More replaces its closed tray icon with the selected blur preview", blurMoreGlyph != idleMoreGlyph);
             editor.Tool = EditorTool.Pixelate; Invoke(session,"RefreshToolbarState"); Measure(shell);
             check("More distinguishes mosaic from blur", MoreGlyph() != idleMoreGlyph && MoreGlyph() != blurMoreGlyph);
             editor.Tool = EditorTool.Freehand; Invoke(session,"RefreshToolbarState"); Measure(shell);
-            check("More restores its idle dots while another tool is selected", MoreGlyph() == idleMoreGlyph);
-            check("idle More identifies its menu shortcut without unrelated options instructions",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Feedback4.Toolbar.More")+" · M");
+            check("More restores its closed tray icon while another tool is selected", MoreGlyph() == idleMoreGlyph);
+            check("idle More identifies its menu shortcut without unrelated options instructions",more.IsEnabled&&ToolShortcutCatalog.IsReserved(0x4D)&&!ToolShortcutCatalog.TryGetTool(0x4D,out _)&&more.ToolTip?.ToString()==L.Get("Toolbar.MoreExpand")+" · M");
             var tooltipParameters=editor.Parameters;
             editor.Tool=EditorTool.Freehand;Invoke(session,"RefreshToolbarState");
             string canvasTooltip=L.Get("Canvas.Title")+" · C";
@@ -187,10 +188,10 @@ internal static class ToolbarAcceptanceTests
             check("selected canvas adds one panel instruction line",Equals(tools[EditorTool.Canvas].ToolTip,canvasTooltip+"\n"+L.Format("Toolbar.ToolOptionsWithKeyHint","C")));
             check("switching away removes the previous tool's extra instruction",Equals(tools[EditorTool.Freehand].ToolTip,L.Get("Preset.Freehand")+" · B"));
             editor.Tool=EditorTool.Blur;Invoke(session,"RefreshToolbarState");
-            string moreTooltip=L.Get("Feedback4.Toolbar.More")+" · M\n"+L.Get("Toolbar.ToolOptionsHint");
-            check("selected blur exposes options without claiming M opens its panel",Equals(more.ToolTip,moreTooltip));
+            string moreTooltip=L.Get("Toolbar.MoreExpand")+" · M";
+            check("selected blur keeps the More expansion command tooltip",Equals(more.ToolTip,moreTooltip));
             editor.Tool=EditorTool.Pixelate;Invoke(session,"RefreshToolbarState");
-            check("selected mosaic shares More's precise options instruction",Equals(more.ToolTip,moreTooltip));
+            check("selected mosaic shares More's expansion command",Equals(more.ToolTip,moreTooltip));
             editor.Tool=EditorTool.CaptureRegion;Invoke(session,"RefreshToolbarState");
             check("selected capture has exactly its name and panel instruction",Equals(tools[EditorTool.CaptureRegion].ToolTip,L.Get("Acceptance2.Toolbar.Capture")+" · P\n"+L.Format("Toolbar.ToolOptionsWithKeyHint","P")));
             editor.Tool=EditorTool.Select;Invoke(session,"RefreshToolbarState");
@@ -227,7 +228,7 @@ internal static class ToolbarAcceptanceTests
             check("done entry is a check mark rather than the pass-through cursor",mark.SequenceEqual(new[]{new Wpf.Point(2,8),new Wpf.Point(6,12),new Wpf.Point(14,3)}));
             check("save-stamp and stamp-management are independent lower-row entries",allButtons.Any(button=>Equals(button.Tag,"save-stamp")) && allButtons.Any(button=>Equals(button.Tag,"manage-stamps")));
             var imageMenu=more.ContextMenu;
-            check("More retains blur pixelate and both demonstration tools in order",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is not null && imageMenu.Items.OfType<Controls.MenuItem>().Select(item=>item.Header?.ToString()).SequenceEqual(new[]{L.Get("Tool.Blur"),L.Get("Tool.Pixelate"),L.Get("Tool.Presentation"),L.Get("Tool.PointerPresentation")}));
+            check("More retains blur pixelate and both demonstration tools in order",ReferenceEquals(tools[EditorTool.Blur],more)&&imageMenu is null && extraButtons.Keys.SequenceEqual(new[]{EditorTool.Blur,EditorTool.Pixelate,EditorTool.Presentation,EditorTool.PointerPresentation}));
             var cropButton=buttons.Single(button=>Equals(button.Tag,"crop"));
             check("disabled unselected crop retains only its tool name",Controls.ToolTipService.GetShowOnDisabled(cropButton) && Equals(cropButton.ToolTip,L.Get("Tool.Crop")));
             var cropMenus=Field<List<Controls.MenuItem>>(session,"_cropMenuItems");
@@ -342,6 +343,15 @@ internal static class ToolbarAcceptanceTests
                 RenderVisibilityStates(session,host,shell,theme,output);
                 RenderPlacementStates(check,session,editor,billboard,import,placementMenu,modeMenu,shell,theme,output);
                 var bitmap=Save(shell,Path.Combine(output,"production-toolbar-"+theme+".png"),1.5);
+                var upper=Field<ToolbarUpperRow>(session,"_toolbarUpperRow");
+                var create=Field<NewCanvasButton>(session,"_newCanvasButton");
+                upper.SetExpanded(true); fileBubble.Refresh(@"C:\图标验收\一个用来检查截断及上方整排同时显示的非常长的工程名称.floatcanvas",true,true);
+                typeof(NewCanvasButton).GetProperty(nameof(NewCanvasButton.IsConfirming),Private|BindingFlags.Public)!.SetValue(create,true);
+                typeof(NewCanvasButton).GetMethod("Refresh",Private)!.Invoke(create,null);Measure(shell);
+                check(theme+" filename and confirmation retain their offsets while the extension reserves headroom",Near(shell.ActualHeight,body.ActualHeight+ToolbarLauncher.BodyTop+ToolbarUpperRow.Headroom+3)&&fileBubble.ActualWidth<=330&&upper.ActualHeight==ToolbarUpperRow.ExtensionHeight&&!create.ConfirmationPopup.IsOpen);
+                foreach(double scale in new[]{1d,1.5,2d}) Save(shell,Path.Combine(output,$"upper-row-{theme}-{scale*100:0}.png"),scale);
+                CheckUpperRowOverlap(check,shell,upper,fileBubble,theme,output);
+                create.CancelConfirmation(); fileBubble.Refresh(null,false,true); upper.SetExpanded(false);Measure(shell);
                 var legend=hints.Single(value=>value.Text=="R");
                 check(theme+" small shortcut lettering has strong contrast against its masking surface",Contrast(((Media.SolidColorBrush)legend.Foreground).Color,expected)>=7);
                 foreach(double scale in new[]{1d,1.5,2d})
@@ -378,12 +388,12 @@ internal static class ToolbarAcceptanceTests
     }
 
     private static bool Near(double a,double b)=>Math.Abs(a-b)<.05;
-    private static void CheckPresentationMenuPreviews(Action<string,bool> check,DesktopSession session,Controls.ContextMenu menu)
+    private static void CheckPresentationMenuPreviews(Action<string,bool> check,DesktopSession session,Dictionary<EditorTool,Controls.Button> buttons)
     {
         var memory=Field<Dictionary<EditorTool,ToolParameters>>(session,"_toolbarToolMemory");
         foreach(var tool in new[]{EditorTool.Presentation,EditorTool.PointerPresentation})
         {
-            var entries=menu.Items.OfType<Controls.MenuItem>().Where(item=>Equals(item.Tag,tool)).ToArray();
+            var entries=buttons.Where(pair=>pair.Key==tool).Select(pair=>pair.Value).ToArray();
             check("more menu contains one "+tool+" preview",entries.Length==1);
             bool hadPrevious=memory.TryGetValue(tool,out var previous);
             try
@@ -393,10 +403,10 @@ internal static class ToolbarAcceptanceTests
                 parameters.PointerPresentation=new() {CursorEnabled=true,ClicksEnabled=false,TrailEnabled=false,CursorColor=0xFF168F69};
                 parameters.Style.Foreground=0xFF168F69;memory[tool]=parameters;
                 Invoke(session,"RefreshMoreToolPreviews");
-                var icon=(Wpf.FrameworkElement)entries[0].Icon;Measure(icon);var green=Raster(icon,4);
+                var icon=(Wpf.FrameworkElement)entries[0].Content;Measure(icon);var green=Raster(icon,4);
                 parameters=parameters.Clone();parameters.Style.Foreground=0xFF8B4CCF;parameters.PointerPresentation!.CursorColor=0xFF8B4CCF;memory[tool]=parameters;
                 Invoke(session,"RefreshMoreToolPreviews");
-                icon=(Wpf.FrameworkElement)entries[0].Icon;Measure(icon);var purple=Raster(icon,4);
+                icon=(Wpf.FrameworkElement)entries[0].Content;Measure(icon);var purple=Raster(icon,4);
                 check(tool+" menu preview follows its remembered color and refreshes when that color changes",
                     ContainsColor(green,Media.Color.FromRgb(0x16,0x8F,0x69))&&ContainsColor(purple,Media.Color.FromRgb(0x8B,0x4C,0xCF))&&Fingerprint(green)!=Fingerprint(purple));
             }
@@ -407,44 +417,45 @@ internal static class ToolbarAcceptanceTests
             }
         }
     }
-    private static void CheckMorePreviewLifecycle(Action<string,bool> check,DesktopSession session,EditorController editor,OverlayContextMenu menu,Threading.Dispatcher dispatcher)
+    private static void CheckMorePreviewLifecycle(Action<string,bool> check,DesktopSession session,EditorController editor,
+        Dictionary<EditorTool,Controls.Button> buttons,Wpf.FrameworkElement shell)
     {
         var previous=editor.Parameters;
-        var target=menu.PlacementTarget;
-        double opacity=menu.Opacity;
-        var entries=menu.Items.OfType<Controls.MenuItem>().ToArray();
-        var closedIcons=entries.Select(item=>item.Icon).ToArray();
-        var anchor=new Controls.Button {Width=30,Height=26};
-        var root=new Controls.Border {Opacity=0,Child=anchor};
-        using var source=new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("FloatCanvas hidden More previews")
-        {Width=40,Height=36,PositionX=-20000,PositionY=-20000,WindowStyle=unchecked((int)0x80000000),ExtendedWindowStyle=0x080000A0}) {RootVisual=root};
+        var row=Field<ToolbarUpperRow>(session,"_toolbarUpperRow");
+        var main=Field<Dictionary<EditorTool,Controls.Button>>(session,"_toolbarToolButtons");
         try
         {
+            row.SetExpanded(true); Measure(shell);
+            check("expanded tools are toolbar-owned buttons with no separate popup or assigned shortcut",buttons.Values.All(button=>
+                Descendants(shell).Contains(button)&&button.ContextMenu is null&&string.IsNullOrEmpty(Wpf.Automation.AutomationProperties.GetAcceleratorKey(button))));
+            check("expanded row fits the enlarged mascot without changing window height",Near(shell.ActualHeight,ToolbarLauncher.ArtworkSize+1+ToolbarUpperRow.Headroom)&&row.TranslatePoint(new(0,0),shell).Y>=3&&Field<ToolbarLauncher>(session,"_toolbarLauncher").Height==101);
+            var strip = row.Children.OfType<Controls.Border>().Single(border => border.Child is Controls.Grid);
+            var first = buttons.Values.First();
+            double inset = first.TranslatePoint(new Wpf.Point(), strip).Y;
+            var body = Field<Controls.Border>(session,"_toolbarExpandedContent");
+            check("extra row retains its top inset and adds bottom rounding clearance",
+                Near(inset-strip.BorderThickness.Top,2) && Near(strip.ActualHeight-inset-first.ActualHeight-strip.BorderThickness.Bottom,3) &&
+                Near(strip.TranslatePoint(new Wpf.Point(0,strip.ActualHeight),shell).Y+ToolbarUpperRow.SurfaceGap,body.TranslatePoint(new Wpf.Point(),shell).Y));
+            check("first extra tool aligns with More while later tools keep their own grouped spacing",Near(first.TranslatePoint(new Wpf.Point(),shell).X,main[EditorTool.Blur].TranslatePoint(new Wpf.Point(),shell).X)&&Near(buttons[EditorTool.Pixelate].TranslatePoint(new Wpf.Point(),shell).X-first.TranslatePoint(new Wpf.Point(),shell).X,30));
+            var last=buttons.Values.Last();
+            check("extension has four tools without a close button and equal clearance on all edges",((Controls.Grid)strip.Child).Children.OfType<Controls.Button>().Count()==4&&
+                Near(first.TranslatePoint(new(),strip).X-strip.BorderThickness.Left,2)&&Near(strip.ActualWidth-last.TranslatePoint(new Wpf.Point(last.ActualWidth,0),strip).X-strip.BorderThickness.Right,2));
+            var done=Descendants(body).OfType<Controls.Button>().Single(button=>Equals(button.Tag,"done"));
+            check("main toolbar right inset equals the two-DIP vertical inset and outer corners are concentric",Near(body.ActualWidth-done.TranslatePoint(new Wpf.Point(done.ActualWidth,0),body).X-body.BorderThickness.Right,2)&&body.CornerRadius==new Wpf.CornerRadius(6));
             var next=previous.Clone();next.Tool=EditorTool.Blur;next.EffectStrength=5;
             editor.ApplyParameters(next);Invoke(session,"RefreshToolbarState");
-            check("closed More menu retains its existing preview controls while tool parameters change",!menu.IsOpen&&entries.Select(item=>item.Icon).SequenceEqual(closedIcons));
-            ShowWindow(source.Handle,4);PumpToIdle(dispatcher);
-            menu.PlacementTarget=anchor;menu.Opacity=0;
-            Invoke(session,"RefreshMoreToolPreviews");menu.IsOpen=true;
-            var openedIcons=entries.Select(item=>item.Icon).ToArray();
-            var blurIcon=(Wpf.FrameworkElement)entries.Single(item=>Equals(item.Tag,EditorTool.Blur)).Icon;
-            Measure(blurIcon);string openedBlur=Fingerprint(Raster(blurIcon,1));
-            check("opening More prepares the latest previews after hidden parameter changes",menu.IsOpen&&openedIcons.Zip(closedIcons).All(pair=>!ReferenceEquals(pair.First,pair.Second)));
+            var icon=(Wpf.FrameworkElement)buttons[EditorTool.Blur].Content;Measure(icon);string before=Fingerprint(Raster(icon,1));
             next=editor.Parameters;next.EffectStrength=31;editor.ApplyParameters(next);Invoke(session,"RefreshToolbarState");
-            blurIcon=(Wpf.FrameworkElement)entries.Single(item=>Equals(item.Tag,EditorTool.Blur)).Icon;
-            Measure(blurIcon);string changedBlur=Fingerprint(Raster(blurIcon,1));
-            check("open More menu synchronizes changed previews",menu.IsOpen&&entries.Select(item=>item.Icon).Zip(openedIcons).All(pair=>!ReferenceEquals(pair.First,pair.Second))&&changedBlur!=openedBlur);
-            menu.IsOpen=false;
-            var closedAgain=entries.Select(item=>item.Icon).ToArray();
-            next=editor.Parameters;next.EffectStrength=12;editor.ApplyParameters(next);Invoke(session,"RefreshToolbarState");
-            check("closing More suspends preview rebuilding again",!menu.IsOpen&&entries.Select(item=>item.Icon).SequenceEqual(closedAgain));
+            icon=(Wpf.FrameworkElement)buttons[EditorTool.Blur].Content;Measure(icon);
+            check("expanded tool keeps its live parameter preview without dismissing the row",row.IsExpanded&&Fingerprint(Raster(icon,1))!=before);
+            editor.Tool=EditorTool.Freehand;Invoke(session,"RefreshToolbarState");
+            check("selecting a main tool retains the expanded row and its orange More state",row.IsExpanded&&main[EditorTool.Blur].BorderBrush==Wpf.Application.Current.Resources["CanvasHiddenBorder"]);
+            editor.Tool=EditorTool.Pixelate;Invoke(session,"RefreshToolbarState");row.SetExpanded(false);
+            var shown=(Wpf.FrameworkElement)Field<Dictionary<EditorTool,Controls.ContentPresenter>>(session,"_toolbarGlyphHosts")[EditorTool.Blur].Content; Measure(shown); var expected=(Wpf.FrameworkElement)ToolParameterIcon.Create(editor.Parameters); Measure(expected);
+            check("explicit collapse keeps the active extra tool and returns its preview to More",editor.Tool==EditorTool.Pixelate&&!row.IsExpanded&&Fingerprint(Raster(shown,2))==Fingerprint(Raster(expected,2)));
+            row.SetExpanded(true);Measure(shell);Save(shell,Path.Combine(Environment.GetEnvironmentVariable("FLOATCANVAS_TOOLBAR2_PREVIEW_DIR")??Path.GetTempPath(),"expanded-toolbar.png"),1.5);
         }
-        finally
-        {
-            menu.IsOpen=false;menu.PlacementTarget=target;menu.Opacity=opacity;
-            root.Child=null;source.RootVisual=null;
-            editor.ApplyParameters(previous);Invoke(session,"RefreshToolbarState");PumpToIdle(dispatcher);
-        }
+        finally {row.SetExpanded(false);editor.ApplyParameters(previous);Invoke(session,"RefreshToolbarState");}
     }
     private static void PrepareShelfPreview(Wpf.FrameworkElement shell,StampShelfControl shelf)
     {
@@ -691,6 +702,20 @@ internal static class ToolbarAcceptanceTests
             var previous=((Controls.Grid)slots[0].Content).Children.OfType<Controls.Border>().Single();
             check($"{scale:P0} native lower mask preserves its previous slot frame",NeighborUnchanged(shell,current.Children.OfType<Controls.TextBlock>().Single(),previous,Controls.Border.BorderBrushProperty,false,scale));
             Save(shell,Path.Combine(output,$"production-toolbar-native-{scale*100:0}.png"),scale);
+            var upper=Descendants(shell).OfType<ToolbarUpperRow>().Single();
+            upper.SetExpanded(true);Measure(root);
+            var extra=Descendants(upper).OfType<Controls.Button>().Single(button=>Equals(button.Tag,"extra-tool:Pixelate"));
+            var oldBrush=extra.BorderBrush;extra.SetResourceReference(Controls.Control.BorderBrushProperty,"CanvasAccent");
+            Measure(root);
+            Save(shell,Path.Combine(output,$"selected-extra-native-{scale*100:0}.png"),scale);
+            for(Media.Visual? visual=extra;visual is not null&&visual!=shell;visual=Media.VisualTreeHelper.GetParent(visual) as Media.Visual)
+            {
+                var clip=Media.VisualTreeHelper.GetClip(visual);
+                var bounds=extra.TransformToAncestor(visual).TransformBounds(new Wpf.Rect(extra.RenderSize));
+                Console.WriteLine($"EXTRA CLIP {scale}: {visual.GetType().Name} size={(visual as Wpf.FrameworkElement)?.RenderSize} clip={clip?.Bounds} button={bounds}");
+                check($"{scale:P0} selected extra frame fits {visual.GetType().Name} layout clip",clip is null||clip.Bounds.Contains(bounds));
+            }
+            extra.BorderBrush=oldBrush;upper.SetExpanded(false);Measure(root);
             source.RootVisual=null;
         }
         finally
@@ -759,6 +784,34 @@ internal static class ToolbarAcceptanceTests
     }
     private static Wpf.Point[] Vertices(Media.Geometry geometry)=>geometry.GetFlattenedPathGeometry().Figures.SelectMany(figure=>new[]{figure.StartPoint}.Concat(figure.Segments.SelectMany(segment=>segment switch
     {Media.LineSegment line=>new[]{line.Point},Media.PolyLineSegment poly=>poly.Points.AsEnumerable(),_=>throw new InvalidOperationException("Expected a flattened line path.")}))).ToArray();
+    private static void CheckUpperRowOverlap(Action<string,bool> check,Wpf.FrameworkElement shell,ToolbarUpperRow upper,BoundFileIndicator file,string theme,string output)
+    {
+        var strip=Field<Controls.Border>(upper,"strip");var confirmation=Field<Controls.Border>(upper,"confirmation");
+        check(theme+" header surfaces share the extension height and top edge",file.ActualHeight==strip.ActualHeight&&confirmation.ActualHeight==strip.ActualHeight&&
+            Near(file.TranslatePoint(new(),shell).Y,strip.TranslatePoint(new(),shell).Y)&&Near(confirmation.TranslatePoint(new(),shell).Y,strip.TranslatePoint(new(),shell).Y));
+        var slots=(Controls.Grid)strip.Child;int count=slots.ColumnDefinitions.Count;double width=strip.Width;
+        var additions=new List<Controls.Button>();
+        try
+        {
+            for(int i=0;i<8;i++)
+            {
+                slots.ColumnDefinitions.Add(new(){Width=new Wpf.GridLength(30)});
+                var button=new Controls.Button {Content=(i+5).ToString(),Width=26,Height=26,MinWidth=0,MinHeight=0,Margin=new Wpf.Thickness(2,0,2,0),Padding=new Wpf.Thickness(0),Background=Media.Brushes.Red};
+                Controls.Grid.SetColumn(button,count+i);slots.Children.Add(button);additions.Add(button);
+            }
+            strip.Width=width+240;Measure(shell);
+            var origin=confirmation.TranslatePoint(new(),shell);
+            check(theme+" extended tool row reaches under the confirmation",strip.TranslatePoint(new Wpf.Point(strip.ActualWidth,0),shell).X>origin.X+12);
+            var hit=Media.VisualTreeHelper.HitTest(upper,confirmation.TranslatePoint(new Wpf.Point(10,confirmation.ActualHeight-6),upper))?.VisualHit;
+            check(theme+" confirmation owns the topmost hit-testable surface above hidden tools",Equals(confirmation.ReadLocalValue(Wpf.UIElement.IsHitTestVisibleProperty),true)&&(ReferenceEquals(hit,confirmation)||hit is not null&&Descendants(confirmation).Contains(hit)));
+            var pixels=Save(shell,Path.Combine(output,$"overflow-confirmation-{theme}.png"),1.5);
+            var actual=ColorAt(pixels,(int)((origin.X+10)*1.5),(int)((origin.Y+confirmation.ActualHeight-6)*1.5));
+            var expected=((Media.SolidColorBrush)confirmation.Background).Color;
+            check(theme+" confirmation covers future tools with its opaque surface",Controls.Panel.GetZIndex(confirmation)>Controls.Panel.GetZIndex(strip)&&
+                Math.Abs(actual.R-expected.R)<=2&&Math.Abs(actual.G-expected.G)<=2&&Math.Abs(actual.B-expected.B)<=2);
+        }
+        finally {foreach(var button in additions)slots.Children.Remove(button);while(slots.ColumnDefinitions.Count>count)slots.ColumnDefinitions.RemoveAt(count);strip.Width=width;Measure(shell);}
+    }
     private static Imaging.RenderTargetBitmap Save(Wpf.FrameworkElement element,string path,double scale)
     {
         var pixels=new Imaging.RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth*scale),(int)Math.Ceiling(element.ActualHeight*scale),96*scale,96*scale,Media.PixelFormats.Pbgra32);pixels.Render(element);

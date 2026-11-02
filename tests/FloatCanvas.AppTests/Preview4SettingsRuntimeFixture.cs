@@ -28,7 +28,7 @@ internal static class Preview4SettingsRuntimeFixture
             Near(mascot.PointToScreen(new Point(mascot.ActualWidth, mascot.ActualHeight)), toolbarAnchor) &&
             ReferenceEquals(((Image)mascot.Launcher.Content).Source, AppIcon.LauncherImage(host.IsVisible,false)));
         check("pass-through keeps the editing window's artwork and hit size", Math.Abs(mascot.ActualWidth - ToolbarLauncher.ArtworkSize) < 1 && Math.Abs(mascot.ActualHeight - ToolbarLauncher.ArtworkSize) < 1 &&
-            mascot.Launcher.TransformToAncestor((Visual)mascot.Content).TransformBounds(new Rect(mascot.Launcher.RenderSize)).Size == new Size(94,94));
+            mascot.Launcher.TransformToAncestor((Visual)mascot.Content).TransformBounds(new Rect(mascot.Launcher.RenderSize)).Size == new Size(101,101));
         nint handle = new WindowInteropHelper(mascot).Handle;
         check("mascot stays non-activating while accepting mouse clicks", !mascot.ShowActivated && !mascot.Focusable && !mascot.Launcher.Focusable &&
             ((long)GetWindowLongPtr(handle, -20) & 0x08000080L) == 0x08000080L && SendMessage(handle, 0x21, 0, 0) == 3);
@@ -68,7 +68,7 @@ internal static class Preview4SettingsRuntimeFixture
         Invoke(session,"SetEditing",false,false);Pump();
         check("both modes retain the shared fitted position after a passive drag",mascot.IsVisible&&Near(fitted,mascot.PointToScreen(new Point())));
         var monitor=host.PrimaryMonitor;before=new Point(mascot.Left,mascot.Top);
-        OverlayCoordinates.PositionToolWindow(handle,new(monitor.Bounds.Right-94*monitor.DpiX/96d-2,monitor.Bounds.Top+120));
+        OverlayCoordinates.PositionToolWindow(handle,new(monitor.Bounds.Right-101*monitor.DpiX/96d-2,monitor.Bounds.Top+120));
         Invoke(mascot,"CompleteDrag",before);Pump();
         activate(()=>Invoke(session,"SetEditing",true,false));Pump();
         fitted=toolbarLauncher.PointToScreen(new Point());

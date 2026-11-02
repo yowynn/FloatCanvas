@@ -32,6 +32,8 @@ internal sealed partial class DesktopSession
         }
         button.IsEnabled=perspective&&!DocumentOperationBusy;
         ActionIconButton.UpdateToggleAppearance(button,billboard);
+        // Keep the idle fill inset like other toolbar buttons; only the active border is visible.
+        button.BorderThickness = new System.Windows.Thickness(1);
         string title=AppText.Get("Billboard.Toggle");
         string mode=AppText.Get(billboard?"Billboard.BillboardMode":"Billboard.DefaultMode");
         string tooltip=PlacementTooltip(billboard);

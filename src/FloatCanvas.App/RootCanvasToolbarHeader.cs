@@ -18,12 +18,12 @@ internal sealed class RootCanvasToolbarHeader : Grid
     internal RootCanvasToolbarHeader(BoundFileIndicator file, Action returnToMain, Func<bool> canReturn)
     {
         this.file = file; this.canReturn = canReturn;
-        Height = 28; VerticalAlignment = VerticalAlignment.Top;
+        Height = ToolbarUpperRow.ExtensionHeight; VerticalAlignment = VerticalAlignment.Top;
         Margin = new(ToolbarLauncher.ArtworkSize, 0, 3, 0);
         ColumnDefinitions.Add(new()); ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         file.AlignTextLeft(15); file.ClipToBounds = true; Children.Add(file);
         file.DisplayChanged += RefreshVisibility;
-        this.returnToMain.Height = this.returnToMain.MinHeight = 28; this.returnToMain.MinWidth = 0;
+        this.returnToMain.Height = this.returnToMain.MinHeight = ToolbarUpperRow.ExtensionHeight; this.returnToMain.MinWidth = 0;
         this.returnToMain.Padding = new(8, 3, 8, 3); this.returnToMain.Margin = new(4, 0, 0, 0);
         this.returnToMain.SetResourceReference(StyleProperty, "CanvasCaptionButton");
         this.returnToMain.BorderThickness = new(1);

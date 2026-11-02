@@ -258,7 +258,7 @@ internal sealed partial class DesktopSession : IDisposable
         ToolbarVisible = _toolbar.IsVisible,
         ToolbarExpanded = _settings.ToolbarExpanded,
         MainMenuOpen = _toolbarMenu.IsOpen,
-        MoreMenuOpen = _moreToolsMenu.IsOpen,
+        MoreToolsExpanded = _toolbarUpperRow.IsExpanded,
         ToolOptionsOpen = IsToolOptionsOpen,
         ToolOptionsPinned = _toolOptionsPinned,
         ToolColorOpen = _toolOptionsPanel.IsColorPickerOpen,

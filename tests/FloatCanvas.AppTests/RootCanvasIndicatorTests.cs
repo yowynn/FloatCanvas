@@ -49,7 +49,7 @@ internal static class RootCanvasIndicatorTests
                     var label = Field<TextBlock>(file, "label");
                     check(prefix + root + " header reserves separate filename and return bounds width=" + width + " dirty=" + dirty,
                         fileBounds.Right <= buttonBounds.Left + .1 && buttonBounds.Right <= header.ActualWidth + .1 &&
-                        buttonBounds.Height == 28 && label.ActualWidth <= label.MaxWidth + .1 && label.MaxWidth <= 300 &&
+                        buttonBounds.Height == ToolbarUpperRow.ExtensionHeight && label.ActualWidth <= label.MaxWidth + .1 && label.MaxWidth <= 300 &&
                         label.TextTrimming == TextTrimming.CharacterEllipsis && (string)file.ToolTip == LongPath(locale));
                     if (width == 420 && dirty)
                     {

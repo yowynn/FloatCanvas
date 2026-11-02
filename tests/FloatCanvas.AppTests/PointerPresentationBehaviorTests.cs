@@ -115,6 +115,8 @@ internal static class PointerPresentationBehaviorTests
     {
         var buttons = new Dictionary<EditorTool, Button> { [EditorTool.Select] = new(), [EditorTool.Freehand] = new(), [EditorTool.Blur] = new(), [EditorTool.Canvas] = new() };
         Set(desktop, "_toolbarToolButtons", buttons); Set(desktop, "_toolbarButtonMemory", new Dictionary<EditorTool, EditorTool>());
+        Set(desktop, "_toolbarUpperRow", System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(ToolbarUpperRow)));
+        Set(desktop, "_extraToolButtons", new Dictionary<EditorTool, Button>());
         editor.Tool = EditorTool.PointerPresentation; Call(desktop, "RefreshToolbarToolSelection");
         check("the real toolbar buttons select only More when mouse presentation is active", buttons.Where(pair => AutomationProperties.GetItemStatus(pair.Value).Length > 0).Select(pair => pair.Key).SequenceEqual([EditorTool.Blur]));
         editor.Tool = EditorTool.Select; Call(desktop, "RefreshToolbarToolSelection");

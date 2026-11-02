@@ -24,13 +24,13 @@ internal static class Preview4SettingsTests
         foreach (uint dpi in new uint[] { 96,144,192 })
         {
             var monitor=new MonitorInfo("left",new(-1920,0,1920,1080),new(-1920,0,1920,1040),dpi,dpi,false);
-            var passive=SessionWindowLayout.ToolbarOrigin(monitor,94,94,-80,200);
+            var passive=SessionWindowLayout.ToolbarOrigin(monitor,101,101,-80,200);
             var editing=SessionWindowLayout.ToolbarOrigin(monitor,680,95,passive.X,passive.Y);
             check($"{dpi} DPI entering editing near the right edge fits the whole toolbar",editing.X<passive.X&&editing.X+680*dpi/96d<=monitor.Bounds.Right&&editing.Y==passive.Y);
-            var returned=SessionWindowLayout.ToolbarOrigin(monitor,94,94,editing.X,editing.Y);
+            var returned=SessionWindowLayout.ToolbarOrigin(monitor,101,101,editing.X,editing.Y);
             check($"{dpi} DPI passive mode retains the fitted shared origin instead of restoring a detached position",returned==editing);
             var normal=SessionWindowLayout.ToolbarOrigin(monitor,680,95,-1800,200);
-            check($"{dpi} DPI ordinary shared positions do not move on mode changes",normal==new OverlayPoint(-1800,200)&&SessionWindowLayout.ToolbarOrigin(monitor,94,94,normal.X,normal.Y)==normal);
+            check($"{dpi} DPI ordinary shared positions do not move on mode changes",normal==new OverlayPoint(-1800,200)&&SessionWindowLayout.ToolbarOrigin(monitor,101,101,normal.X,normal.Y)==normal);
         }
         string previousLanguage = L.Preference;
         try
@@ -65,13 +65,13 @@ internal static class Preview4SettingsTests
         {
             var surface = (Grid)window.Content;
             surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            check($"{language} {theme} passive and editing mascots both measure at 94 DIP", surface.DesiredSize == new Size(94, 94) && window.Width == 94 && window.Height == 94&&window.Launcher.LayoutTransform==Transform.Identity);
-            surface.Arrange(new Rect(0, 0, 94, 94)); surface.UpdateLayout();
+            check($"{language} {theme} passive and editing mascots both measure at 101 DIP", surface.DesiredSize == new Size(101, 101) && window.Width == 101 && window.Height == 101&&window.Launcher.LayoutTransform==Transform.Identity);
+            surface.Arrange(new Rect(0, 0, 101, 101)); surface.UpdateLayout();
             WritePreview(surface, language, theme, true);
             check($"{language} {theme} crown artwork conveys pass-through without a text overlay", surface.Children.Count == 1 &&
                 SettingsWindowFixture.Descendants(surface).OfType<Button>().SequenceEqual(new[] { window.Launcher }));
             check($"{language} {theme} passive hit surface matches the editing artwork",
-                window.Launcher.TransformToAncestor(surface).TransformBounds(new Rect(window.Launcher.RenderSize)) == new Rect(0, 0, 94, 94));
+                window.Launcher.TransformToAncestor(surface).TransformBounds(new Rect(window.Launcher.RenderSize)) == new Rect(0, 0, 101, 101));
             foreach (bool visible in new[] { true, false })
             {
                 window.Launcher.SetCanvasVisible(visible);
@@ -89,7 +89,7 @@ internal static class Preview4SettingsTests
         Directory.CreateDirectory(directory); surface.UpdateLayout();
         foreach (double scale in new[] { 1d, 1.5, 2d })
         {
-            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(94 * scale), (int)Math.Ceiling(94 * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(101 * scale), (int)Math.Ceiling(101 * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             bitmap.Render(surface);
             var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
             string path = Path.Combine(directory, $"passive-{language}-{theme}-{(visible ? "open" : "closed")}-{scale * 100:0}.png");

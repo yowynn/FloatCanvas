@@ -258,9 +258,9 @@ internal static class NativeInputRoutingFixture
                 Invoke("CloseToolOptions"); SetForegroundWindow(new WindowInteropHelper(toolbar).Handle); Click(button); button.Focus(); Pump();
                 var previousTool = editor.Tool;
                 Key(0x4D, false); Key(0x4D, true);
-                var more = Field<ContextMenu>(session, "_moreToolsMenu");
-                check("toolbar-focused M opens its actual More menu and retains the current tool", more.IsOpen && more.PlacementTarget is FrameworkElement target && Window.GetWindow(target) == toolbar && editor.Tool == previousTool);
-                more.IsOpen = false; Pump();
+                var more = Field<ToolbarUpperRow>(session, "_toolbarUpperRow");
+                check("toolbar-focused M opens its actual More menu and retains the current tool", more.IsExpanded && Window.GetWindow(more) == toolbar && editor.Tool == previousTool);
+                more.SetExpanded(false); Pump();
             }
             if (scenario is "all" or "inspector")
             {

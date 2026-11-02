@@ -27,6 +27,13 @@ internal static class NewCanvasButtonTests
             CancelAndGate(check);
             FailedClearRestores(check);
             AsynchronousConfirmation(check);
+            int inlineCreates = 0, inlineChanges = 0;
+            var inline = new NewCanvasButton(() => true, () => { inlineCreates++; return Task.CompletedTask; }) { UseInlineConfirmation = true };
+            inline.ConfirmationChanged += () => inlineChanges++;
+            Click(inline);
+            check("toolbar-owned confirmation publishes state without opening a popup", inline.IsConfirming && inlineChanges == 1 && !inline.ConfirmationPopup.IsOpen);
+            Click(inline);
+            check("inline confirmation preserves the same deliberate second-click action", inlineCreates == 1 && !inline.IsConfirming && inlineChanges == 2);
             int fastCreates=0;
             var immediate=new NewCanvasButton(()=>true,()=>{fastCreates++;return Task.CompletedTask;},()=>false);
             Click(immediate);

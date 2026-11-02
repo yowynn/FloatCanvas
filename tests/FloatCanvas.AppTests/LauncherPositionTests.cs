@@ -25,7 +25,7 @@ internal static class LauncherPositionTests
         var surface=(FrameworkElement)toolbar.Content;surface.Measure(new Size(double.PositiveInfinity,double.PositiveInfinity));
         foreach(bool atRight in new[]{false,true})
         {
-            double x=atRight?monitor.Bounds.Right-94*monitor.DpiX/96d-2:monitor.Bounds.Left+30;
+            double x=atRight?monitor.Bounds.Right-ToolbarLauncher.ArtworkSize*monitor.DpiX/96d-2:monitor.Bounds.Left+30;
             var requested=new OverlayPoint(x,monitor.Bounds.Top+150);
             var before=new Point(passive.Left,passive.Top);
             OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(passive).Handle,requested);Pump();

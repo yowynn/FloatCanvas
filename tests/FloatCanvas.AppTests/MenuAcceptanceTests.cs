@@ -25,7 +25,7 @@ internal static class MenuAcceptanceTests
         check("diagnostic menu is integrated into report issue", !menu.Items.OfType<MenuItem>().Any(item => Equals(item.Header, L.Get("Menu.SystemDiagnostics"))));
         var launcher = new ToolbarLauncher(); int menuRequests = 0;
         using var launcherSource = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("FloatCanvas.MenuAcceptanceLauncher")
-        { Width = 94, Height = 94, PositionX = -10000, PositionY = -10000, WindowStyle = unchecked((int)0x80000000) });
+        { Width = 101, Height = 101, PositionX = -10000, PositionY = -10000, WindowStyle = unchecked((int)0x80000000) });
         launcherSource.RootVisual = launcher;
         launcher.MenuRequested += () => menuRequests++;
         var right = new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Right) { RoutedEvent = UIElement.PreviewMouseRightButtonDownEvent };

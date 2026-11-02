@@ -193,7 +193,8 @@ internal sealed partial class DesktopSession
         double x, y;
         if (_settings.ToolbarExpanded)
         {
-            var button = selectedButton ?? _toolbarToolButtons.GetValueOrDefault(ButtonFamily(_editor.Tool)) ?? (FrameworkElement)_toolbarLauncher;
+            var button = selectedButton ?? (_toolbarUpperRow.IsExpanded ? _extraToolButtons.GetValueOrDefault(ToolFamily(_editor.Tool)) : null)
+                ?? _toolbarToolButtons.GetValueOrDefault(ButtonFamily(_editor.Tool)) ?? (FrameworkElement)_toolbarLauncher;
             var center=button.PointToScreen(new(button.ActualWidth/2,0));
             x=center.X-width/2;
             double below=origin.Y+_toolbar.ActualHeight*sy+8*sy;

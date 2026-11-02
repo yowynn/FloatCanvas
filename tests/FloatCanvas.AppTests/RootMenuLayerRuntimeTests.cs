@@ -20,8 +20,8 @@ internal static class RootMenuLayerRuntimeTests
         if(!GetCursorPos(out var cursor))throw new InvalidOperationException("Could not save the desktop cursor.");
         nint bar=new WindowInteropHelper(toolbar).Handle;
         var main=Field<OverlayContextMenu>(session,"_toolbarMenu");
-        var more=Field<OverlayContextMenu>(session,"_moreToolsMenu");
-        var moreTrigger=(FrameworkElement)more.PlacementTarget;
+        var more=Field<ToolbarUpperRow>(session,"_toolbarUpperRow");
+        check("expanded tools share the toolbar visual rather than a transient menu",Window.GetWindow(more)==toolbar);
         var launcher=Field<ToolbarLauncher>(session,"_toolbarLauncher");
         var shelf=Field<StampShelfControl>(session,"_stampShelf");
         shelf.PrepareForShow();Pump();
@@ -47,9 +47,9 @@ internal static class RootMenuLayerRuntimeTests
                     panel.Show();Pump();
                     check("the first-level canvas panel initially sits above the toolbar",Rank(new WindowInteropHelper(panel).Handle)<Rank(bar));
                 }
-                foreach(string kind in new[]{"main","more","stamp slot"})
+                foreach(string kind in new[]{"main","stamp slot"})
                 {
-                    FrameworkElement target=kind=="main"?launcher:kind=="more"?moreTrigger:slot;
+                    FrameworkElement target=kind=="main"?launcher:slot;
                     var point=target.PointToScreen(kind=="main"?new Point(60,70):new Point(target.ActualWidth/2,target.ActualHeight/2));
                     SetCursorPos((int)Math.Round(point.X),(int)Math.Round(point.Y));Pump();
                     var hit=GetAncestor(WindowFromPoint(new(){X=(int)Math.Round(point.X),Y=(int)Math.Round(point.Y)}),2);
@@ -61,7 +61,7 @@ internal static class RootMenuLayerRuntimeTests
                     MouseInput(right?8u:2u);rightHeld=right;leftHeld=!right;Pump(180);
                     if(kind=="main") {opened=main;CheckRoot("held");}
                     MouseInput(right?16u:4u);rightHeld=leftHeld=false;Pump(250);
-                    opened=kind=="main"?main:kind=="more"?more:(OverlayContextMenu)slot.ContextMenu;
+                    opened=kind=="main"?main:(OverlayContextMenu)slot.ContextMenu;
                     CheckRoot("released");
                     if(kind=="main"&&!withPanel&&Environment.GetEnvironmentVariable("FLOATCANVAS_MENU_LAYER_SCREENSHOT") is {Length:>0} path)
                         Capture((HwndSource)PresentationSource.FromVisual(opened),path);
@@ -85,7 +85,7 @@ internal static class RootMenuLayerRuntimeTests
         finally
         {
             if(rightHeld)MouseInput(16);if(leftHeld)MouseInput(4);
-            if(opened is not null)opened.IsOpen=false;main.IsOpen=false;more.IsOpen=false;
+            if(opened is not null)opened.IsOpen=false;main.IsOpen=false;more.SetExpanded(false);
             panel?.CloseForDispose();launcher.CancelPendingGestures();SetCursorPos(cursor.X,cursor.Y);Pump();
         }
         GetCursorPos(out var restored);

@@ -11,7 +11,7 @@ namespace FloatCanvas.App;
 internal sealed class BoundFileIndicator : Grid
 {
     private const double TextInset=15;
-    private const double TopInset=ToolbarLauncher.BodyTop-28-4;
+    private const double TopInset=0;
     private readonly TextBlock label = new() { FontSize=12, FontWeight=FontWeights.SemiBold,
         TextTrimming=TextTrimming.CharacterEllipsis, VerticalAlignment=VerticalAlignment.Center, MaxWidth=300 };
     private readonly Border unsaved;
@@ -20,7 +20,7 @@ internal sealed class BoundFileIndicator : Grid
     internal BoundFileIndicator(Action revert,Action locate,Action detach,Func<bool> canRevert,Func<bool> canDetach)
     {
         HorizontalAlignment=HorizontalAlignment.Left;VerticalAlignment=VerticalAlignment.Top;
-        Margin=new Thickness(94,TopInset,10,0);Height=28;Visibility=Visibility.Collapsed;
+        Margin=new Thickness(ToolbarLauncher.ArtworkSize,TopInset,10,0);Height=ToolbarUpperRow.ExtensionHeight;Visibility=Visibility.Collapsed;
         TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);
         label.FontFamily=new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI");
         var tail=new System.Windows.Shapes.Path {Data=Geometry.Parse("M8 17 Q5 20 0 21 Q5 23 11 20 Z")};

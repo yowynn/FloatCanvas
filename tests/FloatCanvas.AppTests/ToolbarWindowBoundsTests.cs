@@ -34,6 +34,29 @@ internal static class ToolbarWindowBoundsTests
         nint handle = new WindowInteropHelper(toolbar).Handle;
         var expanded = Bounds(handle);
         check("toolbar bounds fixture uses the actual expanded production toolbar", expanded.Width > 500 && expanded.Height > 0);
+        var upper = Field<ToolbarUpperRow>(session, "_toolbarUpperRow");
+        var editor = Field<EditorController>(session, "_editor");
+        var tools = Field<Dictionary<EditorTool,System.Windows.Controls.Button>>(session, "_toolbarToolButtons");
+        var extra = Field<Dictionary<EditorTool,System.Windows.Controls.Button>>(session, "_extraToolButtons");
+        typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, true);
+        tools[EditorTool.Blur].RaiseEvent(new(System.Windows.Controls.Button.ClickEvent)); Pump();
+        check("actual More click uses the reserved top row without resizing the toolbar HWND", upper.IsExpanded && Window.GetWindow(upper)==toolbar && Bounds(handle).Width==expanded.Width && Bounds(handle).Height==expanded.Height);
+        extra[EditorTool.Pixelate].RaiseEvent(new(System.Windows.Controls.Button.ClickEvent)); Pump();
+        check("actual extra-tool click selects its tool and leaves the row expanded", upper.IsExpanded && editor.Tool==EditorTool.Pixelate);
+        tools[EditorTool.Freehand].RaiseEvent(new(System.Windows.Controls.Button.ClickEvent)); Pump();
+        Invoke(session,"CloseToolOptions"); Invoke(session,"OnKey",0x1B); Pump();
+        check("main-tool selection options closure and Escape do not dismiss the extra row",upper.IsExpanded);
+        // Escape may leave editing; restore the visible editing toolbar before testing its command guard.
+        typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, true); toolbar.Show(); Pump();
+        var strip=(System.Windows.Controls.Grid)upper.Children.OfType<System.Windows.Controls.Border>().Single(border=>border.Child is System.Windows.Controls.Grid).Child;
+        check("extra row contains only its four tools and no trailing close control",strip.Children.OfType<System.Windows.Controls.Button>().Count()==4);
+        tools[EditorTool.Blur].RaiseEvent(new(System.Windows.Controls.Button.ClickEvent)); Pump();
+        check("More is the single collapse control and preserves the active tool",!upper.IsExpanded && editor.Tool==EditorTool.Freehand);
+        tools[EditorTool.Blur].RaiseEvent(new(System.Windows.Controls.Button.ClickEvent)); Pump();
+        Invoke(session,"OpenMoreTools"); Pump();
+        check("the shared M command toggles an expanded row closed",!upper.IsExpanded);
+        upper.SetExpanded(true); Pump(); expanded=Bounds(handle);
+        typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, false);
         Move(handle, primary.Bounds.Left + 80, primary.Bounds.Top + 120);
         int outside = 0;
         void Located(object? sender, EventArgs args) { if (!Covered(Bounds(handle), host.Monitors)) outside++; }
@@ -45,7 +68,7 @@ internal static class ToolbarWindowBoundsTests
         check("native toolbar movement is constrained before any outside LocationChanged frame (" + constrained + "; outside=" + outside + ")",
             Covered(constrained, host.Monitors) && outside == 0 && constrained.Left == primary.Bounds.Left);
         var canonical = Field<UserSettings>(session, "_settings");
-        check("live constrained toolbar movement saves its actual native origin as the canonical position", canonical.ToolbarX == constrained.Left && canonical.ToolbarY == constrained.Top);
+        check("live constrained toolbar movement saves its actual native origin as the canonical position (saved="+canonical.ToolbarX+","+canonical.ToolbarY+"; visible="+toolbar.IsVisible+")", canonical.ToolbarX == constrained.Left && canonical.ToolbarY == constrained.Top);
         ProductionScopes(session, toolbar, handle, host, primary, secondary, separated, check);
         ProductionExpansion(session, toolbar, host, primary, expanded, check);
         NativeHook(toolbar, primary, secondary, check);

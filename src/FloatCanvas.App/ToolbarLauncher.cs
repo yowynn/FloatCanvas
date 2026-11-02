@@ -12,8 +12,8 @@ namespace FloatCanvas.App;
 /// <summary>One accessible launcher with mutually exclusive primary, visibility and window-drag gestures.</summary>
 internal sealed class ToolbarLauncher : System.Windows.Controls.Button
 {
-    internal const double ArtworkSize = 94;
-    internal const double BodyTop = 32;
+    internal const double ArtworkSize = 101;
+    internal const double BodyTop = 39;
     internal const double BodyLeft = 44;
     private LauncherGestureState gestures = null!;
     private readonly DispatcherTimer clickTimer;
@@ -55,7 +55,7 @@ internal sealed class ToolbarLauncher : System.Windows.Controls.Button
         // The crown/hair junction meets the 60-DIP bar's top; the pillow masks
         // both left corners. Extra inner padding preserves the first tool's position.
         body.Margin = new Thickness(BodyLeft, BodyTop, 3, 3);
-        body.Padding = new Thickness(58, 2, 4, 2);
+        body.Padding = new Thickness(58, 2, 0, 2); // Left includes the mascot overlap; edge buttons retain two-DIP inner clearance.
         body.VerticalAlignment = VerticalAlignment.Top;
         HorizontalAlignment = HorizontalAlignment.Left;
         VerticalAlignment = VerticalAlignment.Top;

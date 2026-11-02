@@ -13,6 +13,14 @@ internal static class ToolParameterIconTests
     {
         _ = Wpf.Application.Current ?? new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
+        var pen = new ToolParameters { Tool = EditorTool.Freehand, Style = new() { Foreground = 0xFFCC3344, StrokeWidth = 2 } };
+        var penBefore = JsonSerializer.Serialize(pen);
+        var thin = Hash(Rasterize(ToolParameterIcon.Create(pen),16));
+        check("curved pen preview shares one immutable image between toolbar and preset sizes",ReferenceEquals(((Controls.Image)ToolParameterIcon.Create(pen,16)).Source,((Controls.Image)ToolParameterIcon.Create(pen,24)).Source)&&JsonSerializer.Serialize(pen)==penBefore);
+        pen.Style.StrokeWidth=6;
+        check("curved pen preview still displays stroke width",thin!=Hash(Rasterize(ToolParameterIcon.Create(pen),16)));
+        var thick=Hash(Rasterize(ToolParameterIcon.Create(pen),16));pen.Style.Foreground=0xFF2266DD;
+        check("curved pen preview still displays the chosen color",thick!=Hash(Rasterize(ToolParameterIcon.Create(pen),16)));
         var demonstration = new ToolPresetLibrary(Path.Combine(Path.GetTempPath(), "FloatCanvas-icon-unused-" + Guid.NewGuid().ToString("N"))).Official;
         var keyboardPreviews = demonstration.Where(preset => preset.Parameters.Tool == EditorTool.Presentation)
             .Select(preset => Rasterize(ToolParameterIcon.Create(preset.Parameters), 16)).ToArray();

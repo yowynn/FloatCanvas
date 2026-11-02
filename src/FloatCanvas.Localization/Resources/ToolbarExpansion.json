@@ -1,0 +1,5 @@
+{
+  "Toolbar.MoreExpand": { "zh": "展开更多工具", "en": "Expand extra tools" },
+  "Toolbar.MoreCollapse": { "zh": "收起更多工具", "en": "Collapse extra tools" },
+  "Toolbar.NewCanvasConfirm": { "zh": "再次点击，创建新画布", "en": "Click again to create a canvas" }
+}

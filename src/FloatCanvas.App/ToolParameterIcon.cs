@@ -207,7 +207,11 @@ internal static class ToolParameterIcon
                 // not make its toolbar swatch hard to distinguish.
                 element.Kind=ElementKind.Freehand;element.Points=[new(1,23),new(30,4)];style.StrokeWidth=Math.Clamp(parameters.Style.StrokeWidth,8,14);break;
             default:
-                element.Kind=ElementKind.Freehand;element.Points=[new(0,25),new(7,5),new(17,21),new(29,3),new(32,15)];break;
+                element.Kind=ElementKind.Freehand;
+                var curve = Geometry.Parse(LayerTypeIcon.Geometry(ElementKind.Freehand)).GetFlattenedPathGeometry(.01, ToleranceType.Absolute);
+                element.Points = curve.Figures.SelectMany(figure => new[] { figure.StartPoint }.Concat(figure.Segments
+                    .OfType<PolyLineSegment>().SelectMany(segment => segment.Points))).Select(point => new PointD(point.X * 2, point.Y * 2)).ToList();
+                break;
         }
         if(parameters.ConstrainAspect && parameters.Tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Symbol or EditorTool.Triangle)
         {

@@ -18,6 +18,8 @@ internal sealed class NewCanvasButton : Button
     private bool executing;
     private long confirmationEpoch;
     internal bool IsConfirming { get; private set; }
+    internal bool UseInlineConfirmation { get; set; }
+    internal event Action? ConfirmationChanged;
     internal Popup ConfirmationPopup { get; }
     private readonly PopupHandle confirmationDisplay;
 
@@ -72,7 +74,7 @@ internal sealed class NewCanvasButton : Button
             if (confirm)
             {
                 IsConfirming = true; Refresh();
-                if (IsLoaded) confirmationDisplay.IsOpen = true;
+                if (IsLoaded && !UseInlineConfirmation) confirmationDisplay.IsOpen = true;
                 return;
             }
             CancelConfirmation(); IsEnabled = false;
@@ -91,6 +93,7 @@ internal sealed class NewCanvasButton : Button
 
     private void Refresh()
     {
+        ConfirmationChanged?.Invoke();
         string label = L.Get(IsConfirming ? "History.NewConfirm" : "Feedback4.Toolbar.NewBlankCanvas");
         ToolTip = IsConfirming ? null : label + "  Ctrl+N";
         AutomationProperties.SetName(this, label);
