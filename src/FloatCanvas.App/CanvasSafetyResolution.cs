@@ -11,7 +11,7 @@ internal static class CanvasSafetyResolution
     {
         var mapping = CanvasMapping.Create(document);
         var graph = new SceneGraph(document);
-        var affectedRoots = SceneEvaluation.Build(document).Leaves.Where(leaf => !mapping.IsElementSafe(leaf.RenderElement))
+        var affectedRoots = SceneEvaluation.Build(document).Leaves.Where(leaf => leaf.RootCanvas == RootCanvasKind.Main && !mapping.IsElementSafe(leaf.RenderElement))
             .Select(leaf => RootNode(graph, leaf.HostNodeId)).ToHashSet();
         return document.Elements.Select(element => element.Id).Concat(document.Instances.Select(instance => instance.Id))
             .Where(id => affectedRoots.Contains(RootNode(graph, id))).ToArray();
@@ -32,7 +32,7 @@ internal static class CanvasSafetyResolution
         var graph = new SceneGraph(document);
         var affected = affectedIds.Select(id => RootNode(graph, id)).ToHashSet();
         var units = SceneEvaluation.Build(document).Leaves
-            .Where(leaf => affected.Contains(RootNode(graph, leaf.HostNodeId))).GroupBy(leaf => RootNode(graph, leaf.HostNodeId)).ToArray();
+            .Where(leaf => leaf.RootCanvas == RootCanvasKind.Main && affected.Contains(RootNode(graph, leaf.HostNodeId))).GroupBy(leaf => RootNode(graph, leaf.HostNodeId)).ToArray();
         var replacements = new Dictionary<Guid, CanvasElement>();
         var groupMoves = new Dictionary<Guid, Affine2D>();
         var reference = document.Canvas.Projection;

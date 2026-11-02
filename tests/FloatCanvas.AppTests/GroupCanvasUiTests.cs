@@ -48,6 +48,12 @@ internal static class GroupCanvasUiTests
         var export = Field<Button>(layers, "groupExport"); var detach = Field<Button>(layers, "groupDetach");
         check(prefix + "missing owner context hides the operation area", site.Visibility == Visibility.Collapsed && layers.CurrentGroupContext is null);
         int first = 0, replacement = 0, temporaryCalls = 0, rootCalls = 0;
+        layers.SetGroupContext(new("Foreground", GroupStorageKind.Ordinary, null, GroupCanvasMode.RootProject, false,
+            Temporary: () => temporaryCalls++, Root: () => rootCalls++, IsRootContext: true)); host.Layout();
+        check(prefix + "root level keeps the view selector without exposing group storage or operations", site.Visibility == Visibility.Visible &&
+            choice.SelectedValue is GroupCanvasMode.RootProject && Field<TextBlock>(layers, "groupStorage").Visibility == Visibility.Collapsed &&
+            export.Visibility == Visibility.Collapsed && detach.Visibility == Visibility.Collapsed && choice.Items.All(item => item.IsEnabled));
+        layers.SetGroupContext(null);
         var ordinary = new GroupCanvasContext("Stamp A", GroupStorageKind.Ordinary, null, GroupCanvasMode.Temporary, true, Export: () => first++);
         layers.SetGroupContext(ordinary with { IsEntered = false, Temporary = () => temporaryCalls++ });
         check(prefix + "a selected but unentered group has no operation card or exposed callbacks", site.Visibility == Visibility.Collapsed && layers.CurrentGroupContext is null && choice.SelectedValue is null && choice.Items.All(item => !item.IsEnabled));

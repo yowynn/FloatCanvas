@@ -60,7 +60,7 @@ internal sealed partial class EditorController
     private void PublishScreenBillboard()
     {
         if (!TryScreenBillboardCandidate(out var candidate)) throw new InvalidOperationException(L.Get("Billboard.InvalidDepth"));
-        new SceneGraph(Session.Document).InsertElement(candidate, Session.EditScopeId);
+        new SceneGraph(Session.Document).InsertElement(candidate, Session.EditScopeId, rootCanvas: Session.ActiveRootCanvas);
         if (candidate.Kind is not (ElementKind.Freehand or ElementKind.Highlighter) && !ElementGeometry.IsLine(candidate.Kind))
             Session.Selection.Add(candidate.Id);
     }

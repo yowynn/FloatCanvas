@@ -58,7 +58,7 @@ internal sealed class InlineTextEdit : IDisposable
         bool billboardScreenFirst = false, Func<CanvasMapping>? canvasMapping = null)
     {
         this.session=session;this.renderer=renderer;isNew=existing is null;
-        this.canvasMapping = canvasMapping ?? (() => CanvasMapping.Create(session.Document));
+        this.canvasMapping = canvasMapping ?? (() => CanvasMapping.Create(session.Document, session.ActiveRootCanvas));
         screenFirst = isNew && billboardScreenFirst;
         ownerDocument = session.Document; scopeVersion = session.EditScopeVersion;
         creationProjection = CurrentCanvasMapping.PlaneToScreen;
@@ -75,7 +75,7 @@ internal sealed class InlineTextEdit : IDisposable
             BillboardGeometry.TryPlaceFromScreen(draft, CurrentCanvasMapping, depth,
                 Projective2D.FromAffine(Affine2D.Scale(depth.Scale, depth.Scale).Compose(creationTransform)));
         session.BeginTransaction(L.Get(isNew?"History.AddElement":"History.EditText"));transaction=session.TransactionId;
-        Target = isNew && !screenFirst ? graph.InsertElement(draft, session.EditScopeId) : draft;
+        Target = isNew && !screenFirst ? graph.InsertElement(draft, session.EditScopeId, rootCanvas: session.ActiveRootCanvas) : draft;
         parentPlacement = graph.ScopeWorldPlacement(screenFirst ? session.EditScopeId : Target.GroupId);
         parentVisible = Target.GroupId is not { } parent || graph.IsVisible(parent);
         parentLocked = Target.GroupId is { } owner && graph.IsLocked(owner);
@@ -226,7 +226,7 @@ internal sealed class InlineTextEdit : IDisposable
             if(!commit||unsafePlacement||isNew&&string.IsNullOrWhiteSpace(Target.Text))session.Cancel();
             else
             {
-                if (screenFirst && screenCandidate is not null) new SceneGraph(session.Document).InsertElement(screenCandidate, session.EditScopeId);
+                if (screenFirst && screenCandidate is not null) new SceneGraph(session.Document).InsertElement(screenCandidate, session.EditScopeId, rootCanvas: session.ActiveRootCanvas);
                 if(Target.Text.Length==0) new SceneGraph(session.Document).RemoveNodes([Target.Id]);
                 session.Commit();
                 if(selectEdited&&session.Document.Elements.Any(element => element.Id == Target.Id))session.SetSelection([Target.Id]);

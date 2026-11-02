@@ -139,7 +139,8 @@ public sealed class PresentationInputObserver : IPresentationInputSource
         long now = ExpandMessageTime(unchecked((uint)Native.GetMessageTime()), Environment.TickCount64);
         if (keyboard && PresentationRawInputDecoder.TryKeyboard(bytes, IntPtr.Size, out var key))
             Add(new(key.Released ? PresentationObservedKind.KeyUp : PresentationObservedKind.KeyDown, now,
-                key.Device, key.VirtualKey, key.ScanCode, key.Flags, KeyName(key.VirtualKey, key.ScanCode, key.Flags)));
+                key.Device, key.VirtualKey, key.ScanCode, key.Flags, KeyName(key.VirtualKey, key.ScanCode, key.Flags),
+                InputOwner: ForegroundInputOwner()));
         else if (PresentationRawInputDecoder.TryMouse(bytes, IntPtr.Size, out long device, out ushort buttons) && buttons != 0)
         {
             bool located = Native.GetPhysicalCursorPos(out var point);
@@ -151,6 +152,12 @@ public sealed class PresentationInputObserver : IPresentationInputSource
         }
     }
     private void Add(PresentationObservedInput packet) { if (buffer.Add(packet)) Signal(); }
+    private static PresentationInputOwner ForegroundInputOwner()
+    {
+        nint foreground = Native.GetForegroundWindow();
+        if (foreground == 0 || Native.GetWindowThreadProcessId(foreground, out uint process) == 0) return PresentationInputOwner.Unknown;
+        return process == Environment.ProcessId ? PresentationInputOwner.FloatCanvas : PresentationInputOwner.OtherApplication;
+    }
     internal static long ExpandMessageTime(uint messageTime, long now) =>
         Math.Max(0, now - unchecked((uint)now - messageTime));
     private void Signal() { try { Available?.Invoke(); } catch { /* A detached UI subscriber cannot change input delivery. */ } }
@@ -212,6 +219,8 @@ public sealed class PresentationInputObserver : IPresentationInputSource
         [DllImport("user32.dll", EntryPoint = "DispatchMessageW")] internal static extern nint DispatchMessage(ref Message message);
         [DllImport("user32.dll")] internal static extern void PostQuitMessage(int code);
         [DllImport("user32.dll")] internal static extern int GetMessageTime();
+        [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
+        [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint process);
         [DllImport("user32.dll", SetLastError = true)] internal static extern nuint SetTimer(nint window, nuint id, uint elapsed, nint procedure);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool KillTimer(nint window, nuint timer);
         [DllImport("user32.dll", EntryPoint = "UnregisterClassW", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool UnregisterClass(string name, nint module);

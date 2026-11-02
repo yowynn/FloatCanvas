@@ -408,7 +408,6 @@ internal sealed partial class DesktopSession
     private async Task OpenProjectPathCoreAsync(string? projectPath, bool enterEditing)
     {
         if (DocumentOperationBusy) return;
-        if (!await CompletePrefabEditingBeforeDocumentChangeAsync()) return;
         EditorSession? openedPrefabOwner = null;
         _inspector?.CompletePendingEdit();
         CloseImageDrop();
@@ -430,6 +429,9 @@ internal sealed partial class DesktopSession
                 if (enterEditing && importFocus == _host.ForegroundLossVersion) SetEditing(true);
                 RequestRender(); return;
             }
+            // A prefab is inserted into the current editing context. Only a full
+            // project replaces that context and asks to finish pending subprojects.
+            if (!await CompletePrefabEditingBeforeDocumentChangeAsync()) return;
             _editor.Cancel(); var previous = Active;
             if (!await ConfirmReplaceAsync(previous, L.Get("Project.ReplaceCurrent"))) return;
             long previousContent = previous.PreviewRevision;
@@ -539,7 +541,7 @@ internal sealed partial class DesktopSession
     }
     private async Task<bool> ConfirmReplaceAsync(EditorSession session, string description)
     {
-        if (FileState(session).Path is null || !IsDirty(session)) return true;
+        if (!IsDirty(session)) return true;
         var result = AppDialog.Show(_toolbar, description + L.Get("Project.ReplaceQuestion"), L.Get("App.Name"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question, "History.SaveLeave", "History.KeepLeave");
         return result == MessageBoxResult.No || result == MessageBoxResult.Yes && await SaveSessionAsync(session, false);
     }
@@ -780,7 +782,8 @@ internal sealed partial class DesktopSession
         if (!IsCurrentPlacement()) { UpdateStatus(L.Get("Image.ImportChanged")); return; }
         if (!replaceSelected && paths.Any(CanvasContentImport.IsProjectPath))
         {
-            var prepared = await _prepareCanvasContent(target, paths, [], VisibleDocumentArea(), null,
+            var placement = VisibleDocumentArea();
+            var prepared = await _prepareCanvasContent(target, paths, [], placement, VisibleDocumentInsertionCenter(placement),
                 imageOpacity, FileState(target).Path, _documentLifetime.Token);
             if (!IsCurrentPlacement() || !prepared.TryCommit(target)) { UpdateStatus(L.Get("Image.ImportChanged")); return; }
             SwitchToolState(EditorTool.Select); RequestRender(); UpdateStatus(L.Format("Placement.Imported", prepared.NodeCount)); return;
@@ -816,7 +819,8 @@ internal sealed partial class DesktopSession
             RequestRender();
             return true;
         }
-        ImageImportCommand.Insert(target, images, VisibleDocumentArea(), replace, opacity: imageOpacity);
+        var placement = VisibleDocumentArea();
+        ImageImportCommand.Insert(target, images, placement, replace, dropCenter: VisibleDocumentInsertionCenter(placement), opacity: imageOpacity);
         UpdateStatus(replace ? L.Get("Image.Replaced") : L.Format("Image.Imported", images.Count));
         return false;
     }
@@ -867,17 +871,30 @@ internal sealed partial class DesktopSession
         var cursor = System.Windows.Forms.Cursor.Position;
         return _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(new(cursor.X, cursor.Y))) ?? _host.PrimaryMonitor;
     }
-    private RectD VisibleDocumentArea()
+    private RectD VisibleCanvasScreenArea()
     {
         var b = CurrentMonitor().WorkArea;
         var view = CurrentGroupCanvasView();
         var visible = new RectD(b.Left - _editor.CanvasOrigin.X, b.Top - _editor.CanvasOrigin.Y, b.Width, b.Height).Intersect(view.Document.Viewport);
-        if (visible.IsEmpty) visible = view.Document.Viewport;
+        return visible.IsEmpty ? view.Document.Viewport : visible;
+    }
+    private RectD VisibleDocumentArea()
+    {
+        var visible = VisibleCanvasScreenArea();
         var mapping = _editor.CurrentCanvasMapping;
         if (mapping.ScreenToPlane.TryTransformBounds(visible, out var plane)) return plane;
         return mapping.TryToPlane(visible.Center, out var center)
             ? new(center.X - 320, center.Y - 240, 640, 480) : Active.Document.Viewport;
     }
+    private PointD VisibleDocumentInsertionCenter(RectD planePlacement)
+    {
+        var visible = VisibleCanvasScreenArea();
+        return ResolveImageInsertionCenter(_editor.CurrentCanvasMapping, visible, planePlacement);
+    }
+    // Perspective does not preserve bounding-box centers. Keep the existing logical
+    // fit area while placing new content at the inverse of the visible screen center.
+    internal static PointD ResolveImageInsertionCenter(CanvasMapping mapping, RectD visibleScreenArea, RectD planePlacement) =>
+        mapping.TryToPlane(visibleScreenArea.Center, out var center) ? center : planePlacement.Center;
     private static DesktopBackdrop? CreateScreenBackdrop(CapturedDesktop? capture, PointD origin = default) => capture is null ? null :
         DesktopBackdrop.FromEncoded(new(capture.Bounds.Left - origin.X, capture.Bounds.Top - origin.Y, capture.Bounds.Width, capture.Bounds.Height), capture.PngBytes);
     private PointD CenteredOrigin(RectD viewport)

@@ -57,5 +57,6 @@ public sealed partial class EditorSession
     private bool SettingsElementsUnchanged(SceneDocument before) =>
         SceneContent.Equal(before.Elements, Document.Elements) && SceneContent.Equal(before.Background, Document.Background) &&
         SceneContent.Equal(before.Instances, Document.Instances) && SceneContent.Equal(before.Definitions, Document.Definitions) &&
-        SceneContent.Equal(before.Groups, Document.Groups) && SceneContent.Equal(before.RootOrder, Document.RootOrder) && SceneContent.Equal(before.DisplayLayout, Document.DisplayLayout);
+        SceneContent.Equal(before.Groups, Document.Groups) && SceneContent.Equal(before.RootOrder, Document.RootOrder) &&
+        SceneContent.Equal(before.RootCanvasAssignments, Document.RootCanvasAssignments) && SceneContent.Equal(before.DisplayLayout, Document.DisplayLayout);
 }

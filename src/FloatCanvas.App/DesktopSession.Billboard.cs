@@ -1,4 +1,5 @@
 using System.Windows.Automation;
+using FloatCanvas.Core;
 using System.Windows.Media;
 using FloatCanvas.Localization;
 using Controls=System.Windows.Controls;
@@ -10,7 +11,7 @@ internal sealed partial class DesktopSession
     private bool? _billboardGlyphMode;
     private void ToggleBillboardMode()
     {
-        if(DocumentOperationBusy||!Active.Document.Canvas.Projection.Enabled)return;
+        if(DocumentOperationBusy||Active.ActiveRootCanvas != RootCanvasKind.Main||!Active.Document.Canvas.Projection.Enabled)return;
         EndCanvasCalibration();
         _editor.BillboardMode=!_editor.BillboardMode;
         SynchronizeCanvasTool();
@@ -19,7 +20,7 @@ internal sealed partial class DesktopSession
 
     private void RefreshBillboardState()
     {
-        bool perspective=Active.Document.Canvas.Projection.Enabled;
+        bool perspective=Active.ActiveRootCanvas == RootCanvasKind.Main && Active.Document.Canvas.Projection.Enabled;
         if(!perspective&&_editor.BillboardMode)_editor.BillboardMode=false;
         if(_billboardButton is not { } button)return;
         bool billboard=_editor.BillboardMode;

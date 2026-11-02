@@ -137,12 +137,18 @@ internal sealed partial class EditorController
     private PointD? viewOrigin;
     private object? viewEpoch;
     private LayerPlacement? viewPlacement;
+    private SceneDocument? viewDocument;
+    private RootCanvasKind viewRootCanvas;
+    private bool independentCanvasView;
+    private RootCanvasKind PickingRootCanvas => viewPlacement is not null ? RootCanvasKind.Main : Session.ActiveRootCanvas;
     internal PointD CanvasOrigin => viewOrigin ?? ScreenOrigin;
-    internal CanvasMapping CurrentCanvasMapping => viewMapping ?? CanvasMapping.Create(Session.Document);
-    internal void SetCanvasView(CanvasMapping? mapping, PointD? origin, object? epoch, LayerPlacement? placement = null)
+    internal CanvasMapping CurrentCanvasMapping => viewMapping ?? CanvasMapping.Create(Session.Document, Session.ActiveRootCanvas);
+    internal void SetCanvasView(CanvasMapping? mapping, PointD? origin, object? epoch, LayerPlacement? placement = null,
+        SceneDocument? displayDocument = null, RootCanvasKind displayRootCanvas = RootCanvasKind.Main, bool independent = false)
     {
         bool changed = !ReferenceEquals(viewEpoch, epoch);
-        viewMapping = mapping; viewOrigin = origin; viewEpoch = epoch; viewPlacement = placement;
+        viewMapping = mapping; viewOrigin = origin; viewEpoch = epoch; viewPlacement = placement; viewDocument = displayDocument; viewRootCanvas = displayRootCanvas;
+        independentCanvasView = independent;
         if (!changed) return;
         PlacementContextVersion++;
         ClearPresentedScene(); SuspendPresentedPicking();
@@ -226,10 +232,10 @@ internal sealed partial class EditorController
     }
     private void OnChanged(object? sender, EventArgs e)
     {
-        if (!Session.Document.Canvas.Projection.Enabled) billboardMode = false;
+        if (!CurrentCanvasMapping.IsPerspective) billboardMode = false;
         if ((screenBillboardDrawing || screenBillboardRegion) &&
-            (!Session.Document.Canvas.Projection.Enabled || !IsScreenDraftContextCurrent)) { Cancel(); return; }
-        if (!Session.Document.Canvas.Projection.Enabled) { billboardMode = false; ClearBillboardDepth(); }
+            (!CurrentCanvasMapping.IsPerspective || !IsScreenDraftContextCurrent)) { Cancel(); return; }
+        if (!CurrentCanvasMapping.IsPerspective) { billboardMode = false; ClearBillboardDepth(); }
         if (gesture == "image-crop" && !IsCurrentCropTarget()) Cancel();
         if (tool == EditorTool.Crop && !CanCropSelection) tool = EditorTool.Select;
         Changed?.Invoke();
@@ -241,7 +247,7 @@ internal sealed partial class EditorController
         ClearPresentedScene();
         Session.Changed -= OnChanged;
         Session = session;
-        viewMapping = null; viewOrigin = null; viewEpoch = null; viewPlacement = null;
+        viewMapping = null; viewOrigin = null; viewEpoch = null; viewPlacement = null; viewDocument = null; independentCanvasView = false;
         if (!session.Document.Canvas.Projection.Enabled) billboardMode = false;
         session.Changed += OnChanged;
         ScreenOrigin = origin;
@@ -517,7 +523,7 @@ internal sealed partial class EditorController
     internal bool IsSelectionFrameHit(PointD screen, bool includeInterior = false)
     {
         if (CanvasContentHidden) return false;
-        if (!Session.SelectedWorldElements(editableOnly: true).Any(element => element.Visible)) return false;
+        if (!SelectedEditingWorldElements(editableOnly: true).Any(element => element.Visible)) return false;
         if (SelectionScreenRotationHandle is { } rotation && screen.DistanceTo(rotation) < 14 ||
             BillboardSelectionGuide is { } guide && screen.DistanceTo(guide.Center) < 12 ||
             SelectionScreenEndpoints.Any(endpoint => screen.DistanceTo(endpoint) < 12)) return true;
@@ -598,7 +604,7 @@ internal sealed partial class EditorController
     {
         if (TryStartBillboardHeight()) return;
         var bounds = Session.SelectionBounds(editableOnly: true);
-        var selected = Session.SelectedWorldElements(editableOnly: true).ToArray();
+        var selected = SelectedEditingWorldElements(editableOnly: true).ToArray();
         if (bounds != null && selected.Length > 0)
         {
             selectionBounds = bounds.Value;

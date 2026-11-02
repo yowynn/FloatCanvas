@@ -16,6 +16,7 @@ internal sealed class BoundFileIndicator : Grid
         TextTrimming=TextTrimming.CharacterEllipsis, VerticalAlignment=VerticalAlignment.Center, MaxWidth=300 };
     private readonly Border unsaved;
     private string? shownPath;
+    internal event Action? DisplayChanged;
     internal BoundFileIndicator(Action revert,Action locate,Action detach,Func<bool> canRevert,Func<bool> canDetach)
     {
         HorizontalAlignment=HorizontalAlignment.Left;VerticalAlignment=VerticalAlignment.Top;
@@ -50,8 +51,18 @@ internal sealed class BoundFileIndicator : Grid
         var aligned=new Thickness(Math.Max(0,x-TextInset),TopInset,10,0);
         if(Margin!=aligned)Margin=aligned;
     }
+    protected override Size MeasureOverride(Size constraint)
+    {
+        unsaved.Measure(new Size(double.PositiveInfinity, constraint.Height));
+        // The horizontal row otherwise measures its filename with infinite width,
+        // even when a neighbouring toolbar action has reserved part of the header.
+        double width = double.IsFinite(constraint.Width) ? Math.Max(0, constraint.Width - 25 - unsaved.DesiredSize.Width) : 300;
+        label.MaxWidth = Math.Min(300, width);
+        return base.MeasureOverride(constraint);
+    }
     internal void Refresh(string? path,bool dirty,bool expanded)
     {
+        var previousVisibility = Visibility;
         Visibility=path is not null&&expanded?Visibility.Visible:Visibility.Collapsed;
         if(shownPath!=path)
         {
@@ -66,5 +77,6 @@ internal sealed class BoundFileIndicator : Grid
         unsaved.Visibility=dirty?Visibility.Visible:Visibility.Collapsed;ToolTip=path;
         System.Windows.Automation.AutomationProperties.SetName(this,path is null?"":Path.GetFileName(path));
         System.Windows.Automation.AutomationProperties.SetItemStatus(this,dirty?L.Get("Project.Unsaved"):"");
+        if (Visibility != previousVisibility) DisplayChanged?.Invoke();
     }
 }

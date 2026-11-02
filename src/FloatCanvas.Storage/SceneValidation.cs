@@ -6,13 +6,22 @@ namespace FloatCanvas.Storage;
 
 public static class SceneValidation
 {
-    public static void Validate(SceneDocument document)
+    public static void Validate(SceneDocument document) => ValidateDocument(document, allowMirroredCanvas: false);
+    private static void ValidateDocument(SceneDocument document, bool allowMirroredCanvas)
     {
         ArgumentNullException.ThrowIfNull(document);
         PrefabClosure.RequireSourceGraphs(document);
         if (!SceneFormatMigration.Supports(document.Version)) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
         Require(Enum.IsDefined(document.Kind), L.Get("Scene.InvalidDocumentKind"));
         Require(document.Elements is not null && document.DisplayLayout is not null && document.Groups is not null && document.Instances is not null && document.Definitions is not null && document.Provenance is not null, L.Get("Scene.MissingCollections"));
+        Require(document.RootCanvasAssignments is not null && (document.Version >= 16 || document.RootCanvasAssignments.Count == 0), "Root canvases require scene format 16.");
+        Require(document.RootPreviewCanvases is not null && (document.Version >= 17 || document.RootPreviewCanvases.Count == 0), "Subproject canvases require scene format 17.");
+        foreach (var pair in document.RootPreviewCanvases)
+        {
+            Require(pair.Key is RootCanvasKind.Foreground or RootCanvasKind.Background && pair.Value is not null, "Invalid root preview canvas.");
+            ValidatePreview(pair.Value);
+        }
+        ValidatePreviewVersion(document, document.Version);
         if (document.Version < 11) Require(document.Instances.Count == 0 && document.Definitions.Count == 0, L.Format("Scene.UnsupportedVersion", document.Version));
         if (document.Version < 13) Require(!document.Elements.Concat(document.Definitions.SelectMany(definition => definition.Graph.Elements)).Append(document.Background)
             .OfType<CanvasElement>().Any(element => element.Kind == ElementKind.Presentation || element.Presentation is not null), "Presentation content requires scene format 13.");
@@ -25,15 +34,20 @@ public static class SceneValidation
         Require(document.Groups!.Count <= SceneLimits.MaximumElements, L.Get("Scene.ElementCountExceeded"));
         Require(Unit(document.LayerOpacity), L.Get("Scene.InvalidLayerOpacity"));
         Require(Rect(document.Viewport) && document.Viewport.Width > 0 && document.Viewport.Height > 0, L.Get("Scene.InvalidViewport"));
-        ValidateCanvas(document);
+        ValidateCanvas(document, allowMirroredCanvas);
         var ids = new HashSet<Guid>();
         var graph = ValidateGraph(document, ids);
-        foreach (var definition in document.Definitions) ValidateGraph(definition.Graph, new());
+        foreach (var definition in document.Definitions)
+        {
+            if (definition.PreviewCanvas is { } preview) ValidatePreview(preview);
+            ValidateGraph(definition.Graph, new());
+        }
         if (document.Version < 10)
             Require(document.RootOrder is null && document.Groups.All(group => group.Transform == Affine2D.Identity && group.ElevationScale == 1 &&
                 group.Visible && !group.Locked && group.OrderMode == GroupOrderMode.LegacyPassThrough && group.ChildOrder is null),
                 L.Format("Scene.UnsupportedVersion", document.Version));
-        var rendered = document.Instances.Count == 0 ? document.Elements.Select(graph.ToWorld) : SceneEvaluation.Build(document).RenderDocument.Elements;
+        var evaluation = document.Instances.Count > 0 ? SceneEvaluation.Build(document) : null;
+        var rendered = evaluation is null ? document.Elements.Select(graph.ToWorld) : evaluation.RenderDocument.Elements;
         foreach (var placed in rendered)
         {
             Require(LayerPlacementFinite(placed.Transform) && Point(placed.BillboardAnchor) && double.IsFinite(placed.BillboardHeight) &&
@@ -45,6 +59,7 @@ public static class SceneValidation
             var mapping = CanvasMapping.Create(document);
             foreach (var element in rendered.Where(e => e.IsBillboard))
             {
+                if (SceneCanvasRoots.Resolve(evaluation?.RenderDocument ?? document, element.Id, evaluation is null ? graph : null) != RootCanvasKind.Main) continue;
                 // A retained layer can lie outside the current drawing domain. Its local
                 // geometry is still validated above; rendering hides unsafe anchors.
                 if (mapping.TryGetDepthScale(element.BillboardAnchor, out _))
@@ -84,8 +99,9 @@ public static class SceneValidation
                 state.ReturnScopeId != Guid.Empty && state.DraftScopeId != Guid.Empty, "Invalid prefab edit recovery selection.");
             Require(state.SourcePath is null || state.SourcePath.Length is > 0 and <= 32767 && !state.SourcePath.Any(char.IsControl), "Invalid prefab edit source path.");
             Require(state.SourceFileSha256 is null || state.SourceFileSha256.Length == 64 && state.SourceFileSha256.All(Uri.IsHexDigit), "Invalid prefab edit file identity.");
+            Require(state.PreviewOrigin is null || state.DraftDocument.Version >= 17 && Point(state.PreviewOrigin.Value), "Invalid prefab preview recovery origin.");
             Require(!state.IsSourceProject || state.SourcePath is not null && state.SourceFileSha256 is not null, "Missing source project recovery context.");
-            Validate(state.DraftDocument);
+            ValidateDocument(state.DraftDocument, allowMirroredCanvas: state.DraftDocument.Version >= 17);
         }
     }
     public static void Validate(PrefabPackage package)
@@ -99,7 +115,13 @@ public static class SceneValidation
         if (package.Version < 14) Require(!package.Definitions.SelectMany(definition => definition.Graph.Elements)
             .Any(element => element.WindowSource is not null), "Window sources require scene format 14.");
         _ = PrefabClosure.Validate(package);
-        foreach (var definition in package.Definitions) ValidateGraph(definition.Graph, new());
+        foreach (var definition in package.Definitions)
+        {
+            Require(package.Version >= 17 || definition.PreviewCanvas is null, "Subproject canvases require scene format 17.");
+            ValidatePreviewVersion(definition.Graph, package.Version);
+            if (definition.PreviewCanvas is { } preview) ValidatePreview(preview);
+            ValidateGraph(definition.Graph, new());
+        }
         var entry = new PrefabInstance { DefinitionId = package.EntryDefinitionId };
         var view = new SceneDocument { Instances = [entry], RootOrder = [entry.Id], Definitions = package.Definitions };
         foreach (var element in SceneEvaluation.Build(view).RenderDocument.Elements)
@@ -121,6 +143,26 @@ public static class SceneValidation
                 ElementGeometry.LocalToPlane(placed).TryTransformBounds(ElementGeometry.StrokedLocalBounds(placed), out var bounds) && Rect(bounds), L.Get("Scene.InvalidRenderedBounds"));
         }
         return graph;
+    }
+    private static void ValidatePreviewVersion(SceneNodeGraph graph, int version)
+    {
+        Require(version >= 17 || graph.Groups.All(group => group.PreviewCanvas is null), "Subproject canvases require scene format 17.");
+        if (graph is SceneDocument document)
+            foreach (var definition in document.Definitions)
+            {
+                Require(version >= 17 || definition.PreviewCanvas is null, "Subproject canvases require scene format 17.");
+                ValidatePreviewVersion(definition.Graph, version);
+            }
+    }
+    private static void ValidatePreview(SubprojectCanvasSettings preview)
+    {
+        Require(Point(preview.Origin) && Rect(preview.Viewport) && preview.Viewport.Width > 0 && preview.Viewport.Height > 0 && Unit(preview.LayerOpacity), "Invalid subproject canvas.");
+        ValidateCanvas(new SceneDocument { Canvas = preview.Canvas }, allowMirrored: true);
+        if (preview.Background is { } background)
+        {
+            Require(background.Kind == ElementKind.Image && background.WindowSource is null && background.GroupId is null, L.Get("Scene.BackgroundMustBeImage"));
+            ValidateElement(background, new());
+        }
     }
     private static void ValidateElement(CanvasElement element, HashSet<Guid> ids)
     {
@@ -169,7 +211,7 @@ public static class SceneValidation
         }
         Require(ElementGeometry.LocalToPlane(element).TryTransformBounds(ElementGeometry.StrokedLocalBounds(element), out var rendered) && Rect(rendered), L.Get("Scene.InvalidRenderedBounds"));
     }
-    private static void ValidateCanvas(SceneDocument document)
+    private static void ValidateCanvas(SceneDocument document, bool allowMirrored = false)
     {
         var canvas = document.Canvas;
         Require(canvas is not null && canvas.Projection is not null && canvas.Grid is not null, L.Get("Scene.InvalidCanvas"));
@@ -198,7 +240,7 @@ public static class SceneValidation
             Require(!projection.Enabled && projection.Matrix == Projective2D.Identity, L.Get("Scene.InvalidCanvas"));
             return;
         }
-        Require(CanvasCalibration.TryGridToScreen(projection.Columns, projection.Rows, projection.Quad, out _), L.Get("Scene.InvalidCanvas"));
+        Require(CanvasCalibration.TryGridToScreen(projection.Columns, projection.Rows, projection.Quad, out _, allowMirrored: allowMirrored), L.Get("Scene.InvalidCanvas"));
         var plane = CanvasProjectionGeometry.ResolvePlaneBounds(projection);
         PointD[] corners = [new(plane.Left, plane.Top), new(plane.Right, plane.Top), new(plane.Right, plane.Bottom), new(plane.Left, plane.Bottom)];
         for (int i = 0; i < corners.Length; i++)
@@ -215,6 +257,7 @@ public static class SceneValidation
             Require(group is not null && group.Id != Guid.Empty && ids.Add(group.Id) && group.Name is not null && group.Name.Length <= 1024,
                 L.Get("Scene.InvalidElementId"));
             groups.Add(group.Id, group);
+            if (group.PreviewCanvas is { } preview) ValidatePreview(preview);
         }
         return new SceneGraph(document);
     }

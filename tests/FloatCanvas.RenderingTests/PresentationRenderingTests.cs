@@ -39,7 +39,30 @@ internal static class PresentationRenderingTests
     internal static void Run(Action<string, bool> check)
     {
         PresentationKeyboardStylesTests.Run(check);
-        LegacyKeyboardFlags(check); InertAndPicking(check); LegacyPointerLayers(check); Keys(check); Instances(check); NestedRegion(check); Composition(check); Budget(check); InvalidRange(check);
+        LegacyKeyboardFlags(check); AuthoredScopes(check); InertAndPicking(check); LegacyPointerLayers(check); Keys(check); Instances(check); NestedRegion(check); Composition(check); Budget(check); InvalidRange(check);
+    }
+
+    private static void AuthoredScopes(Action<string, bool> check)
+    {
+        var region = Region(); region.Presentation!.KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys;
+        var scene = Scene(region); var now = TimeSpan.FromSeconds(1);
+        PresentationFrame Keys(int key) => new(1, 2, now, pressedKeys: [new(key, ((char)key).ToString())],
+            recentChords: [new([new(key, ((char)key).ToString())], now, true)]);
+        var all = Keys(0x41); var outside = Keys(0x42); var inside = Keys(0x43);
+        var partitioned = PresentationFrame.WithKeyboardScopes(all, outside, inside);
+        using var renderer = new SceneRenderer();
+        foreach (var style in Enum.GetValues<PresentationDisplayStyle>())
+            foreach (var (scope, expected) in new[] { (PresentationKeyboardScope.AllApplications, all), (PresentationKeyboardScope.OutsideFloatCanvas, outside), (PresentationKeyboardScope.FloatCanvasOnly, inside) })
+            {
+                region.Presentation!.DisplayStyle = style; region.Presentation.KeyboardScope = scope;
+                renderer.PresentationFrame = partitioned; using var scoped = Render(renderer, scene);
+                region.Presentation.KeyboardScope = PresentationKeyboardScope.AllApplications;
+                renderer.PresentationFrame = expected; using var direct = Render(renderer, scene);
+                check(style + " " + scope + " renders only its independently captured keyboard frame", scoped.Pixels.SequenceEqual(direct.Pixels) && scoped.Pixels.Any(pixel => pixel.Alpha > 0));
+            }
+        region.Presentation!.DisplayStyle = PresentationDisplayStyle.Log; region.Presentation.KeyboardScope = PresentationKeyboardScope.OutsideFloatCanvas;
+        renderer.PresentationFrame = all; using var unclassified = Render(renderer, scene);
+        check("restricted keyboard layers do not expose unclassified all-application history", unclassified.Pixels.All(pixel => pixel.Alpha == 0));
     }
 
     private static void LegacyKeyboardFlags(Action<string, bool> check)

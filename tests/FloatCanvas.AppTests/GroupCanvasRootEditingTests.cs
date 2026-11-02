@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Threading;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using SkiaSharp;
@@ -16,7 +17,11 @@ using SkiaSharp;
 internal static class GroupCanvasRootEditingTests
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
-    internal static void Run(Action<string, bool> check, string? output = null)
+    internal static void Run(Action<string, bool> check, string? output = null) => RunCases(check, output, false);
+    internal static void RunTemporaryRefresh(Action<string, bool> check, string? output = null) => RunCases(check, output, true);
+    internal static void RunPersistentRoots(Action<string, bool> check, string? output = null) => RunCases(check, output, false, true);
+
+    private static void RunCases(Action<string, bool> check, string? output, bool temporaryRefreshOnly, bool persistentRootsOnly = false)
     {
         if (!DesktopName().StartsWith("FloatCanvas.Tests.", StringComparison.Ordinal) || PresentationDesktopAvailability.IsCurrentInputDesktop())
             throw new InvalidOperationException("Use --isolated-ui-desktop --group-canvas-root-editing-only.");
@@ -28,11 +33,19 @@ internal static class GroupCanvasRootEditingTests
         var hotkeys = FreeHotkeys(); new UserSettings { Theme = "dark", Language = "en", Toggle = hotkeys.Item1, Hide = hotkeys.Item2,
             PreferGpuAcceleration = false, ShowFloatingLogo = false }.Save();
         var failures = new List<Exception>();
-        Case("ordinary nested group", () => Ordinary(check, app, root));
-        Case("shared nested group", () => Shared(check, app, root, false));
-        Case("shared nested billboard", () => Shared(check, app, root, true));
-        Case("external project source", () => External(check, app, root, false));
-        Case("external prefab source", () => External(check, app, root, true));
+        if (!temporaryRefreshOnly && !persistentRootsOnly) Case("independent 4K desktop extent", () => IndependentDesktopExtent(check, app, root));
+        if (!temporaryRefreshOnly && !persistentRootsOnly) Case("CU native independent pixels", () => CuNativeIndependentPixels(check, app, root));
+        if (!temporaryRefreshOnly && !persistentRootsOnly) Case("CU independent pixels", () => CuIndependentPixels(check, app, root));
+        if (!temporaryRefreshOnly) Case("persistent root selector and canvas targets", () => PersistentRoots(check, app, root));
+        if (!persistentRootsOnly) Case("ordinary temporary canvas refresh", () => TemporaryRefresh(check, app, root));
+        if (!temporaryRefreshOnly && !persistentRootsOnly)
+        {
+            Case("ordinary nested group", () => Ordinary(check, app, root));
+            Case("shared nested group", () => Shared(check, app, root, false));
+            Case("shared nested billboard", () => Shared(check, app, root, true));
+            Case("external project source", () => External(check, app, root, false));
+            Case("external prefab source", () => External(check, app, root, true));
+        }
         if (failures.Count > 0) throw new AggregateException("Root group canvas editing failures.", failures);
         Console.WriteLine("GROUP_CANVAS_ROOT_EDIT_EVIDENCE " + root);
         void Case(string name, Action action)
@@ -40,6 +53,194 @@ internal static class GroupCanvasRootEditingTests
             try { action(); }
             catch (Exception error) { failures.Add(error); Console.WriteLine("ROOT_CANVAS_EDIT_CASE_FAILED " + name + ": " + error.Message); }
         }
+    }
+
+    private static void IndependentDesktopExtent(Action<string, bool> check, Application app, string root)
+    {
+        using var fixture = new Fixture(app, Path.Combine(root, "independent-4k"), new(-24000, -23000, 3840, 2160));
+        var document = new SceneDocument();
+        var graph = new SceneGraph(document);
+        var group = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] });
+        graph.InsertElement(Box("Bottom right", 3500, 1900, 120, 100), group.Id, worldCoordinates: false);
+        fixture.Reset(document); fixture.Editor.Session.SetEditScope(group.Id);
+        typeof(DesktopSession).GetField("_groupCanvasMode", Hidden)!.SetValue(fixture.Desktop, GroupCanvasMode.Temporary);
+        var view = (GroupCanvasView)fixture.Call("CurrentGroupCanvasView")!;
+        var target = (CanvasSettingsTarget)fixture.Call("CaptureCanvasSettingsTarget")!;
+        var expected = new RectD(-24000 - fixture.Editor.ScreenOrigin.X, -23000 - fixture.Editor.ScreenOrigin.Y, 3840, 2160);
+        check("production desktop routes physical monitor bounds to independent rendering and canvas gestures",
+            view.Document.Viewport == expected && target.Viewport == expected && group.PreviewCanvas is null);
+    }
+
+    private static void PersistentRoots(Action<string, bool> check, Application app, string root)
+    {
+        using var fixture = new Fixture(app, Path.Combine(root, "persistent-roots"));
+        var main = Box("Main artwork", 60, 60, 60, 40); var foreground = Box("Foreground artwork", 60, 60, 60, 40); var background = Box("Background artwork", 60, 60, 60, 40);
+        var document = new SceneDocument { Viewport = new(0, 0, 800, 600), Elements = [main, foreground, background] };
+        SceneCanvasRoots.Assign(document, foreground.Id, RootCanvasKind.Foreground); SceneCanvasRoots.Assign(document, background.Id, RootCanvasKind.Background);
+        fixture.Reset(document); fixture.Call("OpenLayers"); Pump();
+        var layers = Field<LayersWindow>(fixture.Desktop, "_layers"); var session = fixture.Editor.Session;
+        var roots = Field<SegmentedChoice>(layers, "rootCanvasChoice"); var modes = Field<SegmentedChoice>(layers, "groupCanvasChoice");
+        check("root canvas view selector is present by default with RootProject selected and no group actions", layers.CurrentGroupContext is { IsRootContext: true, Mode: GroupCanvasMode.RootProject, Export: null, Detach: null });
+        int history = session.UndoCount;
+        foreach (var rootCanvas in Enum.GetValues<RootCanvasKind>())
+        {
+            roots.SelectedValue = rootCanvas; Pump(); modes.Items[0].IsChecked = true; Pump();
+            using (var isolated = (CanvasPreviewSnapshot)fixture.Call("CaptureCanvasPreview")!)
+                check(rootCanvas + " actual root selector command enters its independent canvas", layers.CurrentGroupContext is { IsRootContext: true, Mode: GroupCanvasMode.Temporary } &&
+                    session.ActiveRootCanvas == rootCanvas && SceneEvaluation.Build(isolated.Document).Leaves.Count == 1);
+            modes.Items[1].IsChecked = true; Pump();
+            using (var whole = (CanvasPreviewSnapshot)fixture.Call("CaptureCanvasPreview")!)
+                check(rootCanvas + " actual root selector command restores all roots without dirtying history", layers.CurrentGroupContext?.Mode == GroupCanvasMode.RootProject &&
+                    SceneEvaluation.Build(whole.Document).Leaves.Count == 3 && session.UndoCount == history);
+        }
+        roots.SelectedValue = RootCanvasKind.Foreground; Pump(); modes.Items[0].IsChecked = true; Pump();
+        fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff123456));
+        fixture.Call("SetCanvasProjection", true);
+        var opacity = Field<ToolbarOpacitySlider>(fixture.Desktop, "_opacitySlider"); opacity.Value = .45; Pump();
+        check("real foreground mode routes canvas callbacks and toolbar opacity to its independent header", session.Document.RootPreviewCanvases[RootCanvasKind.Foreground] is
+            { Canvas.BackgroundColor: 0xff123456, Canvas.Projection.Enabled: true, LayerOpacity: .45 } && session.Document.Canvas.BackgroundColor == 0 && session.Document.LayerOpacity == 1);
+        modes.Items[1].IsChecked = true; Pump(); roots.SelectedValue = RootCanvasKind.Main; Pump();
+        fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff345678)); opacity.Value = .8; Pump();
+        check("real root-project mode routes the same callbacks to Main while retaining foreground preview settings", session.Document.Canvas.BackgroundColor == 0xff345678 && session.Document.LayerOpacity == .8 &&
+            session.Document.RootPreviewCanvases[RootCanvasKind.Foreground].LayerOpacity == .45);
+        var group = session.CreateEmptyGroup("Independent group"); session.SetEditScope(group); session.Add(Box("Group artwork", 40, 50, 60, 40)); Pump();
+        modes.Items[0].IsChecked = true; Pump();
+        fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff56789a)); fixture.Call("SetCanvasProjection", true); opacity.Value = .3; Pump();
+        check("entered ordinary group routes real canvas and toolbar callbacks to its own independent header", session.Document.Groups.Single(item => item.Id == group).PreviewCanvas is
+            { Canvas.BackgroundColor: 0xff56789a, Canvas.Projection.Enabled: true, LayerOpacity: .3 } && session.Document.Canvas.BackgroundColor == 0xff345678 && session.Document.LayerOpacity == .8);
+        session.ChangeEditingSubprojectCanvas("mirrored independent view", header =>
+        {
+            var projection = header.Canvas.Projection;
+            projection.Matrix = Projective2D.FromAffine(Affine2D.Translation(700, 0).Compose(Affine2D.Scale(-1, 1)));
+            projection.Quad = EditorController.Corners(CanvasProjectionGeometry.ResolvePlaneBounds(projection)).Select(projection.Matrix.TransformPoint).ToList();
+        });
+        var camera = JsonSerializer.Serialize(session.GetEditingSubprojectCanvas()); history = session.UndoCount;
+        fixture.Call("ActivateTool", EditorTool.Canvas); Pump();
+        check("opening Canvas settings preserves an existing mirrored independent preview without authoring a reset", JsonSerializer.Serialize(session.GetEditingSubprojectCanvas()) == camera && session.UndoCount == history);
+    }
+
+    private static void CuIndependentPixels(Action<string, bool> check, Application app, string root)
+    {
+        using var fixture = new Fixture(app, Path.Combine(root, "cu-independent-pixels"));
+        fixture.Reset(CuIndependentDocument()); var session = fixture.Editor.Session;
+        fixture.Call("OpenLayers"); Pump(); var layers = Field<LayersWindow>(fixture.Desktop, "_layers");
+        var modes = Field<SegmentedChoice>(layers, "groupCanvasChoice"); var roots = Field<SegmentedChoice>(layers, "rootCanvasChoice");
+        using var initial = fixture.PresentRefresh("cu-root-project");
+        Sample("root-project", initial, "QA red child", 0xffe53e3e);
+        Sample("root-project", initial, "QA blue nested", 0xff2366dd); Sample("root-project", initial, "QA main outside", 0xff20ac65);
+        modes.Items[0].IsChecked = true; Pump(); using var main = fixture.PresentRefresh("cu-independent-main");
+        check("pure Main mode switch refreshes the keyboard display plan before capturing its frame", ReferenceEquals(
+            Field<SceneDocument>(fixture.Desktop, "_presentationDisplayDocument"), ((GroupCanvasView)fixture.Call("CurrentGroupCanvasView")!).Document));
+        Sample("independent Main", main, "QA red child", 0xffe53e3e);
+        Sample("independent Main", main, "QA blue nested", 0xff2366dd); Sample("independent Main", main, "QA main outside", 0xff20ac65);
+        roots.SelectedValue = RootCanvasKind.Foreground; Pump(); using var foreground = fixture.PresentRefresh("cu-independent-foreground");
+        Sample("independent Foreground", foreground, "QA foreground", 0xffffcc22);
+        check("independent Foreground omits the Main keyboard guide", Field<IReadOnlyList<ResolvedLeaf>>(fixture.Desktop, "_presentationLeaves").Count == 0);
+
+        void Sample(string name, RefreshRendered frame, string layer, uint color)
+        {
+            var element = SceneEvaluation.Build(frame.Content.Document).Leaves.Single(item => item.RenderElement.Name == layer).RenderElement;
+            var center = CanvasMapping.Create(frame.Content.Document).ElementToScreen(element).TransformPoint(new(element.Width / 2, element.Height / 2)) + frame.Content.Origin;
+            Console.WriteLine($"CU_QA_PIXEL {name} viewport={frame.Content.Document.Viewport} opacity={frame.Content.Document.LayerOpacity} point={center} direct={ColorAt(frame.Direct.Pixels, center)} worker={ColorAt(frame.Content.Pixels, center)} expected={new SKColor(color)}");
+            check(name + " keeps direct author pixels", ColorAt(frame.Direct.Pixels, center) == new SKColor(color));
+            check(name + " keeps worker author pixels", ColorAt(frame.Content.Pixels, center) == new SKColor(color));
+        }
+    }
+
+    private static SceneDocument CuIndependentDocument()
+    {
+        CanvasSettings Perspective()
+        {
+            var canvas = new CanvasSettings(); var projection = canvas.Projection;
+            projection.Enabled = true; projection.PlaneBounds = projection.ReferenceBounds = new RectD(0, 0, 1200, 800);
+            projection.Matrix = new(1, .12, 60, .03, 1, 90, 0, .0002, 1);
+            projection.Quad = EditorController.Corners(projection.PlaneBounds.Value).Select(projection.Matrix.TransformPoint).ToList(); return canvas;
+        }
+        CanvasElement Rectangle(string name, uint color, double x, double y, double width = 150, double height = 90) => new()
+        {
+            Name = name, Kind = ElementKind.Rectangle, Width = width, Height = height, Transform = Affine2D.Translation(x, y),
+            Style = new() { StrokeWidth = 0, Variant = "shape.independent", Background = color, Foreground = color }
+        };
+        var outer = new CanvasGroup { Name = "QA Outer", Transform = Affine2D.Translation(300, 180), OrderMode = GroupOrderMode.AtomicBlock,
+            ChildOrder = [], PreviewCanvas = new() { Viewport = new(0, 0, 1200, 800) } };
+        var inner = new CanvasGroup { Name = "QA Inner", ParentId = outer.Id, Transform = Affine2D.Translation(240, 60), OrderMode = GroupOrderMode.AtomicBlock,
+            ChildOrder = [], PreviewCanvas = new() { Viewport = new(0, 0, 1200, 800) } };
+        var red = Rectangle("QA red child", 0xffe53e3e, 160, 160); red.GroupId = outer.Id;
+        var blue = Rectangle("QA blue nested", 0xff2366dd, 150, 220, 120, 100); blue.GroupId = inner.Id;
+        var green = Rectangle("QA main outside", 0xff20ac65, 850, 400);
+        var foreground = Rectangle("QA foreground", 0xffffcc22, 800, 220, 190, 110); var background = Rectangle("QA background", 0xff7755cc, 100, 600, 220, 120);
+        var keyboard = new CanvasElement { Kind = ElementKind.Presentation, Width = 700, Height = 210, Transform = Affine2D.Translation(350, 680),
+            Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keyboard, KeyboardScope = PresentationKeyboardScope.OutsideFloatCanvas } };
+        outer.ChildOrder = [red.Id, inner.Id]; inner.ChildOrder = [blue.Id];
+        var document = new SceneDocument { Viewport = new(0, 0, 1920, 1080), Canvas = Perspective(), Groups = [outer, inner],
+            Elements = [red, blue, green, foreground, background, keyboard], RootOrder = [outer.Id, green.Id, foreground.Id, background.Id, keyboard.Id] };
+        SceneCanvasRoots.Assign(document, foreground.Id, RootCanvasKind.Foreground); SceneCanvasRoots.Assign(document, background.Id, RootCanvasKind.Background);
+        document.RootPreviewCanvases[RootCanvasKind.Foreground] = new() { Canvas = Perspective(), Viewport = document.Viewport };
+        return document;
+    }
+
+    private static void CuNativeIndependentPixels(Action<string, bool> check, Application app, string root)
+    {
+        using var fixture = new Fixture(app, Path.Combine(root, "cu-native-independent-pixels"));
+        Field<PresentationRuntimeBroker>(fixture.Desktop, "_presentationRuntime").Dispose();
+        var runtime = new PresentationRuntimeBroker(app.Dispatcher, () => fixture.Call("OnPresentationRuntimeChanged"),
+            (epoch, _, _, _) => Task.FromResult<IPresentationInputSource>(new CuInputSource(epoch)));
+        Set(fixture.Desktop, "_presentationRuntime", runtime); Set(fixture.Desktop, "_presentationDesktopAvailable", (Func<bool>)(() => true));
+        fixture.Reset(CuIndependentDocument()); fixture.Editor.Tool = EditorTool.Freehand; fixture.Editor.Session.SetSelection([]);
+        fixture.Call("InitializePresentation"); Pump();
+        check("native CU repro uses a running keyboard broker without observing the real input desktop", runtime.ObservingKeyboard);
+        fixture.Call("OpenLayers"); Pump(); var layers = Field<LayersWindow>(fixture.Desktop, "_layers");
+        var modes = Field<SegmentedChoice>(layers, "groupCanvasChoice");
+        using var initial = fixture.PresentNative("cu-native-root-project");
+        Sample("native RootProject", initial);
+        using var workerStarted = new ManualResetEventSlim(); using var workerRelease = new ManualResetEventSlim();
+        using var barrierRenderer = new CanvasPreviewRenderer();
+        var pump = Field<CanvasPreviewPump>(fixture.Desktop, "_canvasPreview"); int block = 1;
+        typeof(CanvasPreviewPump).GetField("renderOverride", Hidden)!.SetValue(pump, (Func<CanvasPreviewSnapshot, CanvasPreviewFrame>)(snapshot =>
+        {
+            if (Interlocked.Exchange(ref block, 0) == 1) { workerStarted.Set(); workerRelease.Wait(); }
+            return barrierRenderer.Render(snapshot);
+        }));
+        try
+        {
+            modes.Items[0].IsChecked = true;
+            var timeout = System.Diagnostics.Stopwatch.StartNew();
+            while (!workerStarted.IsSet || !Field<bool>(fixture.Desktop, "_presentationUncertain"))
+            {
+                if (timeout.ElapsedMilliseconds > 10000) throw new TimeoutException("Mode transition did not reach its pending native frame.");
+                Pump(); Thread.Yield();
+            }
+            var previousLifetime = runtime.Lifetime; long requested = pump.RequestedSequence;
+            runtime.ClearKeyboardForFocusChange();
+            check("the focus privacy transition changes keyboard lifetime while the native mode frame is unavailable", !ReferenceEquals(previousLifetime, runtime.Lifetime) &&
+                Field<bool>(fixture.Desktop, "_presentationUncertain") && pump.RequestedSequence == requested);
+        }
+        finally { workerRelease.Set(); }
+        using var isolated = fixture.PresentNative("cu-native-main-independent", requestRender: false);
+        Sample("native Main Independent", isolated);
+        check("native first Main Independent preserves Freehand and no selection", fixture.Editor.Tool == EditorTool.Freehand && fixture.Editor.Session.Selection.Count == 0);
+
+        void Sample(string name, Rendered frame)
+        {
+            foreach (var (layer, color) in new[] { ("QA red child", 0xffe53e3eU), ("QA blue nested", 0xff2366ddU), ("QA main outside", 0xff20ac65U) })
+            {
+                var center = Center(frame, layer);
+                Console.WriteLine($"CU_NATIVE_PIXEL {name} {layer} point={center} color={ColorAt(frame.Pixels, center)} expected={new SKColor(color)}");
+                check(name + " submits " + layer + " to the actual OverlayHost DIB", ColorAt(frame.Pixels, center) == new SKColor(color));
+            }
+        }
+    }
+
+    private sealed class CuInputSource(long epoch) : IPresentationInputSource
+    {
+        private readonly TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public long Epoch => epoch;
+        public bool IsRunning { get; private set; } = true;
+        public Task Completion => completion.Task;
+        public event Action? Available { add { } remove { } }
+        public PresentationObservedBatch Drain() => new(epoch, [], null, false);
+        public bool Stop() { IsRunning = false; completion.TrySetResult(); return true; }
+        public void Dispose() => Stop();
     }
 
     private static void Shared(Action<string, bool> check, Application app, string root, bool billboard)
@@ -64,19 +265,22 @@ internal static class GroupCanvasRootEditingTests
         Await((Task)fixture.Call("EditPrefabInstanceAsync", nestedInstance.Id)!);
         fixture.Editor.ScreenOrigin += new PointD(46, 63);
         var active = fixture.Editor.Session; active.SetEditScope(innerGroup.Id); active.SetSelection([leaf.Id]);
+        fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary);
         using var temporary = fixture.Present(kind + "-temporary");
         check(kind + " temporary control displays the current nested source selection", HasBlue(temporary.Pixels, Edge(temporary, kind)));
         fixture.Call("SetGroupCanvasMode", GroupCanvasMode.RootProject);
+        CanvasFeedback(check, fixture, owner, kind);
         using var before = fixture.Present(kind + "-root-selection");
         check(kind + " root selection frame uses the entered owner's nested placement and perspective", HasBlue(before.Pixels, Edge(before, kind, first.Id)));
         check(kind + " root view leaves its true nested editing session and scope active", !ReferenceEquals(active, owner) && ReferenceEquals(fixture.Editor.Session, active) && active.EditScopeId == innerGroup.Id);
         active.SetSelection([]); fixture.PresentAndDispose(kind + "-before-hit"); var center = Center(before, kind, first.Id);
-        fixture.Pointer(OverlayPointerKind.Down, center); fixture.Pointer(OverlayPointerKind.Up, center);
+        var grab = billboard ? Map(before, kind, .2, .5, first.Id) : center;
+        fixture.Pointer(OverlayPointerKind.Down, grab); fixture.Pointer(OverlayPointerKind.Up, grab);
         check(kind + " owner occurrence hit resolves the real source child rather than the host instance", active.Selection.SetEquals([leaf.Id]));
         string draftBefore = JsonSerializer.Serialize(active.Document); int history = active.UndoCount; var delta = new PointD(32, 17);
-        fixture.Pointer(OverlayPointerKind.Down, center); fixture.Pointer(OverlayPointerKind.Move, center + delta); fixture.Pointer(OverlayPointerKind.Up, center + delta);
+        fixture.Pointer(OverlayPointerKind.Down, grab); fixture.Pointer(OverlayPointerKind.Move, grab + delta); fixture.Pointer(OverlayPointerKind.Up, grab + delta);
         using var moved = fixture.Present(kind + "-root-moved");
-        check(kind + " drag follows the actual root screen point with parent scale and elevation exactly once", Center(moved, kind, first.Id).DistanceTo(center + delta) < 1e-5);
+        check(kind + " drag follows the grabbed root screen point with parent scale and elevation exactly once", (billboard ? Map(moved, kind, .2, .5, first.Id) : Center(moved, kind, first.Id)).DistanceTo(grab + delta) < 1e-5);
         check(kind + " draft drag is one exact source undo while the publication owner stays unchanged", active.UndoCount == history + 1 && JsonSerializer.Serialize(owner.Document) == ownerBefore &&
             owner.UndoCount == ownerHistory && active.Undo() && JsonSerializer.Serialize(active.Document) == draftBefore && active.Redo());
         var movedA = Center(moved, kind, first.Id); var movedB = Center(moved, kind, second.Id);
@@ -130,6 +334,7 @@ internal static class GroupCanvasRootEditingTests
         fixture.Editor.ScreenOrigin += new PointD(53, 28);
         var active = fixture.Editor.Session; active.SetEditScope(group.Id); active.SetSelection([leaf.Id]);
         fixture.Call("SetGroupCanvasMode", GroupCanvasMode.RootProject);
+        CanvasFeedback(check, fixture, owner, kind);
         using var before = fixture.Present(kind + "-root-selection");
         check(kind + " root frame compensates source origin or pivot and its active source group", candidate.Source.ImportOrigin != default && HasBlue(before.Pixels, Edge(before, "external-plane", imported.InstanceId)));
         active.SetSelection([]); fixture.PresentAndDispose(kind + "-before-hit"); var center = Center(before, "external-plane", imported.InstanceId);
@@ -182,6 +387,7 @@ internal static class GroupCanvasRootEditingTests
         graph.InsertElement(Box("Outside group", 620, 360, 80, 50), worldCoordinates: false);
         document.Canvas.Grid.FlatTranslation = new(12, -6);
         fixture.Reset(document); var owner = fixture.Editor.Session; owner.SetEditScope(inner.Id); owner.SetSelection([leaf.Id]);
+        fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary);
         using var temporary = fixture.Present("ordinary-temporary");
         var edge = Edge(temporary, leaf.Name!);
         check("temporary nested group control displays its selected child's real selection frame", HasBlue(temporary.Pixels, edge));
@@ -198,6 +404,78 @@ internal static class GroupCanvasRootEditingTests
         check("root canvas drag follows screen movement through nested parent placements", Center(moved, leaf.Name!).DistanceTo(center + delta) < 1e-6);
         check("root group drag is one exact undo with the same edit scope", owner.UndoCount == history + 1 && owner.Undo() && JsonSerializer.Serialize(owner.Document) == before && owner.EditScopeId == inner.Id && owner.Redo());
         TransformHandles(check, fixture, leaf.Name!);
+    }
+
+    private static void TemporaryRefresh(Action<string, bool> check, Application app, string root)
+    {
+        using var fixture = new Fixture(app, Path.Combine(root, "temporary-refresh"));
+        var document = new SceneDocument { Viewport = new(0, 0, 800, 600) };
+        document.Canvas.BackgroundColor = 0; document.Canvas.Grid.Visible = false;
+        var graph = new SceneGraph(document);
+        var group = graph.InsertGroup(new() { Name = "Ordinary temporary group", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] });
+        var leaf = graph.InsertElement(Box("Temporary editable rectangle", 120, 100, 80, 60), group.Id, worldCoordinates: false);
+        fixture.Reset(document); var session = fixture.Editor.Session;
+        session.SetEditScope(group.Id); session.SetSelection([leaf.Id]);
+        fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary);
+        fixture.PresentAndDispose("temporary-warm");
+        using var before = fixture.PresentRefresh("temporary-before");
+        var start = Center(before.Content, leaf.Name!); var delta = new PointD(180, 40); var destination = start + delta;
+        var fill = new SKColor(0xffbd4dba);
+        check("temporary refresh baseline contains the rectangle in both worker pixels and direct pixels", ColorAt(before.Content.Pixels, start) == fill && ColorAt(before.Direct.Pixels, start) == fill);
+        string original = JsonSerializer.Serialize(session.Document); int history = session.UndoCount;
+        fixture.Pointer(OverlayPointerKind.Down, start);
+        fixture.Pointer(OverlayPointerKind.Move, destination);
+        using (var preview = fixture.PresentRefresh("temporary-during-move"))
+        {
+            var authored = session.Document.Elements.Single(element => element.Id == leaf.Id);
+            check("temporary move changes the real author while the gesture is active", session.IsTransactionActive && authored.Transform.OffsetX == 300 && authored.Transform.OffsetY == 140);
+            CheckPixels("during the move", preview, destination, start);
+        }
+        fixture.Pointer(OverlayPointerKind.Up, destination);
+        using (var committed = fixture.PresentRefresh("temporary-move-committed"))
+        {
+            check("temporary move commits exactly one author edit without changing scope", !session.IsTransactionActive && session.UndoCount == history + 1 && session.EditScopeId == group.Id);
+            CheckPixels("after commit", committed, destination, start);
+        }
+        check("temporary move Undo restores the complete author and keeps its scope", session.Undo() && JsonSerializer.Serialize(session.Document) == original && session.EditScopeId == group.Id);
+        using var undone = fixture.PresentRefresh("temporary-move-undone");
+        CheckPixels("after Undo", undone, start, destination);
+
+        void CheckPixels(string stage, RefreshRendered frame, PointD painted, PointD erased)
+        {
+            check("temporary direct oracle responds " + stage, ColorAt(frame.Direct.Pixels, painted) == fill && ColorAt(frame.Direct.Pixels, erased).Alpha == 0);
+            check("temporary visible worker pixels respond " + stage, ColorAt(frame.Content.Pixels, painted) == fill && ColorAt(frame.Content.Pixels, erased).Alpha == 0);
+        }
+    }
+
+    private static void CanvasFeedback(Action<string, bool> check, Fixture fixture, EditorSession owner, string name)
+    {
+        var active = fixture.Editor.Session; var tool = fixture.Editor.Tool;
+        string language = FloatCanvas.Localization.AppText.Preference;
+        string unchangedOwner = JsonSerializer.Serialize(owner.Document), unchangedDraft = JsonSerializer.Serialize(active.Document);
+        int ownerHistory = owner.UndoCount, draftHistory = active.UndoCount;
+        try
+        {
+            foreach (string locale in new[] { "zh-CN", "en" })
+            {
+                FloatCanvas.Localization.AppText.Initialize(locale);
+                fixture.Editor.Tool = EditorTool.Select; fixture.Call("ActivateTool", EditorTool.Canvas);
+                var status = Field<System.Windows.Controls.TextBlock>(fixture.Desktop, "_status");
+                var panel = typeof(DesktopSession).GetField("_canvasSettingsWindow", Hidden)!.GetValue(fixture.Desktop) as CanvasSettingsWindow;
+                if (status.Text != FloatCanvas.Localization.AppText.Get("GroupCanvas.EditPreviewInIndependent") || panel?.IsVisible == true)
+                    Console.WriteLine($"CANVAS_FEEDBACK {name} {locale}: actual={status.Text}; tool={fixture.Editor.Tool}; panel={panel?.IsVisible}; mode={Field<GroupCanvasMode>(fixture.Desktop, "_groupCanvasMode")}; allowed={typeof(DesktopSession).GetProperty("CanEditDisplayedCanvas", Hidden)!.GetValue(fixture.Desktop)}");
+                check(name + " " + locale + " blocked Canvas command explains where to edit subproject preview without opening a panel or changing tool", status.Text == FloatCanvas.Localization.AppText.Get("GroupCanvas.EditPreviewInIndependent") && panel?.IsVisible != true && fixture.Editor.Tool == EditorTool.Select);
+                check(name + " " + locale + " Canvas feedback leaves both host and draft settings and history unchanged", JsonSerializer.Serialize(owner.Document) == unchangedOwner && JsonSerializer.Serialize(active.Document) == unchangedDraft && owner.UndoCount == ownerHistory && active.UndoCount == draftHistory);
+            }
+        }
+        finally { fixture.Editor.Tool = tool; FloatCanvas.Localization.AppText.Initialize(language); }
+    }
+
+    private static SKColor ColorAt(SKBitmap pixels, PointD point)
+    {
+        int x = (int)Math.Round(point.X), y = (int)Math.Round(point.Y);
+        if (x < 0 || y < 0 || x >= pixels.Width || y >= pixels.Height) throw new InvalidOperationException("Temporary refresh sample is outside the frame.");
+        return pixels.GetPixel(x, y);
     }
 
     private static void TransformHandles(Action<string, bool> check, Fixture fixture, string name, Guid? host = null)
@@ -243,9 +521,10 @@ internal static class GroupCanvasRootEditingTests
         internal readonly EditorController Editor;
         internal string? LastMessage;
         private readonly string output;
-        private readonly PixelBounds bounds = new(-24000, -23000, 800, 600);
-        internal Fixture(Application app, string output)
+        private readonly PixelBounds bounds;
+        internal Fixture(Application app, string output, PixelBounds? outputBounds = null)
         {
+            bounds = outputBounds ?? new(-24000, -23000, 800, 600);
             this.output = output; Directory.CreateDirectory(output);
             Func<IReadOnlyList<MonitorInfo>> monitors = () => [new("root-group-edit-private", bounds, bounds, 96, 96, true)];
             Host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), Hidden, null, [OverlayMonitorScope.PrimaryScreen, monitors, false], null)!;
@@ -265,6 +544,27 @@ internal static class GroupCanvasRootEditingTests
             Call("SynchronizeFlatGridOrigin"); Pump();
         }
         internal object? Call(string name, params object?[] arguments) => typeof(DesktopSession).GetMethod(name, Hidden)!.Invoke(Desktop, arguments);
+        internal Rendered PresentNative(string name, bool requestRender = true)
+        {
+            if (requestRender) Call("RequestRender"); var preview = Field<CanvasPreviewPump>(Desktop, "_canvasPreview");
+            var timeout = System.Diagnostics.Stopwatch.StartNew();
+            do
+            {
+                if (timeout.ElapsedMilliseconds > 10000)
+                    throw new TimeoutException($"Native presentation did not settle: busy={preview.Busy} frames={preview.CompletedFrames} submitted={Host.PresentedFrameCount} uncertain={Field<bool>(Desktop, "_presentationUncertain")} frameSequence={preview.Frame?.Sequence}.");
+                Pump(); Thread.Yield();
+            }
+            while (preview.Busy || Pending("_renderOperation") || Pending("_presentOperation") || preview.Frame is not { } current ||
+                current.Context != (CanvasPreviewContext)Call("CurrentPreviewContext")! ||
+                !Equals(typeof(DesktopSession).GetField("_presentedCanvasContext", Hidden)!.GetValue(Desktop), current.Context));
+            using var snapshot = (CanvasPreviewSnapshot)Call("CaptureCanvasPreview")!;
+            var outputs = (System.Collections.IEnumerable)typeof(OverlayHost).GetField("_windows", Hidden)!.GetValue(Host)!;
+            var output = outputs.Cast<object>().Single(); var buffer = output.GetType().GetProperty("Buffer")!.GetValue(output)!;
+            var surface = (SKSurface)buffer.GetType().GetProperty("Surface", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.GetValue(buffer)!;
+            using var image = surface.Snapshot(); var pixels = SKBitmap.FromImage(image);
+            using var encoded = image.Encode(SKEncodedImageFormat.Png, 100); File.WriteAllBytes(Path.Combine(this.output, name + ".png"), encoded.ToArray());
+            return new(snapshot.Document, snapshot.Context.Origin - new PointD(bounds.Left, bounds.Top), pixels);
+        }
         internal Rendered Present(string name)
         {
             // Use the same worker-owned frame as native presentation. A synthetic parallel
@@ -292,6 +592,30 @@ internal static class GroupCanvasRootEditingTests
         }
         private bool Pending(string name) => typeof(DesktopSession).GetField(name, Hidden)!.GetValue(Desktop) is DispatcherOperation { Status: DispatcherOperationStatus.Pending or DispatcherOperationStatus.Executing };
         internal void PresentAndDispose(string name) { using var frame = Present(name); }
+        internal RefreshRendered PresentRefresh(string name)
+        {
+            using var presented = Present(name);
+            using var snapshot = (CanvasPreviewSnapshot)Call("CaptureCanvasPreview")!;
+            using var frame = Field<CanvasPreviewPump>(Desktop, "_canvasPreview").Frame!.Retain();
+            using var contentSurface = SKSurface.Create(new SKImageInfo(bounds.Width, bounds.Height));
+            contentSurface.Canvas.Clear(SKColors.Transparent); contentSurface.Canvas.Translate(-bounds.Left, -bounds.Top);
+            frame.Pixels.Draw(contentSurface.Canvas);
+            using var contentImage = contentSurface.Snapshot(); var content = SKBitmap.FromImage(contentImage);
+            using var directSurface = SKSurface.Create(new SKImageInfo(bounds.Width, bounds.Height));
+            directSurface.Canvas.Clear(SKColors.Transparent); directSurface.Canvas.Translate(-bounds.Left, -bounds.Top);
+            directSurface.Canvas.Translate((float)snapshot.Context.Origin.X, (float)snapshot.Context.Origin.Y);
+            using var renderer = new SceneRenderer(); renderer.Draw(directSurface.Canvas, snapshot.Document, Editor.Session.Assets);
+            using var directImage = directSurface.Snapshot(); var direct = SKBitmap.FromImage(directImage);
+            Save(contentImage, name + "-worker-content.png"); Save(directImage, name + "-direct.png");
+            Console.WriteLine($"TEMPORARY_REFRESH_FRAME name={name} authorRevision={Editor.Session.PreviewRevision} frameRevision={frame.ContentRevision} builds={frame.Cache?.BuildCount} hits={frame.Cache?.HitCount}");
+            return new(new(snapshot.Document, presented.Origin, content), new(snapshot.Document, presented.Origin, direct));
+
+            void Save(SKImage image, string filename)
+            {
+                using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+                File.WriteAllBytes(Path.Combine(output, filename), encoded.ToArray());
+            }
+        }
         internal void Pointer(OverlayPointerKind kind, PointD localScreen)
         {
             var physical = localScreen + new PointD(bounds.Left, bounds.Top);
@@ -307,6 +631,10 @@ internal static class GroupCanvasRootEditingTests
         }
     }
     private sealed record Rendered(SceneDocument Document, PointD Origin, SKBitmap Pixels) : IDisposable { public void Dispose() => Pixels.Dispose(); }
+    private sealed record RefreshRendered(Rendered Content, Rendered Direct) : IDisposable
+    {
+        public void Dispose() { Content.Dispose(); Direct.Dispose(); }
+    }
     private static CanvasElement Box(string name, double x, double y, double width, double height) => new()
     { Name = name, Kind = ElementKind.Rectangle, Width = width, Height = height, Transform = Affine2D.Translation(x, y), Style = new() { Fill = 0xffbd4dba, StrokeWidth = 0 } };
     private static PointD Center(Rendered frame, string name, Guid? host = null) => Map(frame, name, .5, .5, host);

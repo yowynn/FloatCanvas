@@ -19,6 +19,11 @@ public static class CanvasDepthOrder
 
     public static int CompareAt(SceneDocument document, CanvasMapping mapping, PointD screen, int first, int second)
     {
+        var firstRoot = SceneCanvasRoots.Resolve(document, document.Elements[first].Id);
+        var secondRoot = SceneCanvasRoots.Resolve(document, document.Elements[second].Id);
+        int rootOrder = SceneCanvasRoots.PaintRank(firstRoot).CompareTo(SceneCanvasRoots.PaintRank(secondRoot));
+        if (rootOrder != 0) return rootOrder;
+        if (firstRoot != RootCanvasKind.Main) return first.CompareTo(second);
         if (!IsEnabled(document)) return first.CompareTo(second);
         double Depth(int index)
         {

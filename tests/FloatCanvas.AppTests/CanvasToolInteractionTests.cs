@@ -7,6 +7,7 @@ internal static class CanvasToolInteractionTests
 {
     internal static void Run(Action<string, bool> check)
     {
+        CanvasSettingsTargetTests.Run(check);
         check("Canvas appends to the existing serialized tool values", (int)EditorTool.Stamp == 21 && (int)EditorTool.Canvas == 22);
         check("C selects Canvas and Ctrl+C remains the copy command", ToolShortcutCatalog.TryGetTool(0x43, out var tool) &&
             tool == EditorTool.Canvas && EditorShortcutPolicy.IsCommand(0x43, OverlayModifiers.Control) &&

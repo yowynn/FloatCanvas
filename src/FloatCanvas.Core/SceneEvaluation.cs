@@ -11,7 +11,7 @@ public readonly record struct SourceNodeAddress(Guid? DefinitionId, Guid NodeId)
 /// <summary>Stable instance/definition path. Revisions and ordinary group ancestry do not change identity.</summary>
 public readonly record struct OccurrencePath(string Value);
 public sealed record ResolvedLeaf(OccurrencePath OccurrencePath, SourceNodeAddress Source,
-    CanvasElement RenderElement, LayerPlacement ParentWorld, Guid HostNodeId)
+    CanvasElement RenderElement, LayerPlacement ParentWorld, Guid HostNodeId, RootCanvasKind RootCanvas = RootCanvasKind.Main)
 {
     /// <summary>Compatibility only: a definition leaf may occur many times.</summary>
     public Guid SourceElementId => Source.NodeId;
@@ -73,8 +73,9 @@ public sealed class EvaluatedScene
     public IReadOnlyList<ResolvedLeaf> OccurrencesOfHostNode(Guid nodeId) => hostOccurrences.GetValueOrDefault(nodeId) ?? [];
     public SourceNodeAddress? SourceAddress(Guid runtimeElementId) => FindOccurrence(runtimeElementId)?.Source;
     public Guid? HostNodeOfOccurrence(Guid runtimeElementId) => FindOccurrence(runtimeElementId)?.HostNodeId;
+    public RootCanvasKind RootCanvasOf(Guid runtimeElementId) => RenderDocument.RootCanvasAssignments.GetValueOrDefault(runtimeElementId);
     /// <summary>Instances are selected as a whole; member locks apply when editing the definition's own graph.</summary>
-    public bool IsPickableOccurrence(Guid runtimeElementId) => FindOccurrence(runtimeElementId) is { } leaf && leaf.RenderElement.Visible &&
+    public bool IsPickableOccurrence(Guid runtimeElementId, bool? visibleOverride = null) => FindOccurrence(runtimeElementId) is { } leaf && (visibleOverride ?? leaf.RenderElement.Visible) &&
         (leaf.Source.DefinitionId is not null ? !locked[leaf.HostNodeId] : !leaf.RenderElement.Locked);
     public LayerPlacement GetWorldPlacement(Guid nodeId) => placements[nodeId];
     public Guid? ResolveSelectableNode(Guid runtimeElementId, Guid? editScopeId = null)
@@ -113,7 +114,7 @@ public static class SceneEvaluation
     /// borrowed, and only the inserted leaf is cloned. No source/occurrence map includes this draft.
     /// The runtime guard prevents publishing this view as an authored document.
     /// </summary>
-    public static SceneDocument WithTransientElement(SceneDocument runtimeWorld, CanvasElement worldElement, int insertionIndex)
+    public static SceneDocument WithTransientElement(SceneDocument runtimeWorld, CanvasElement worldElement, int insertionIndex, RootCanvasKind rootCanvas = RootCanvasKind.Main)
     {
         if (!runtimeWorld.IsRuntimeEvaluated || RuntimeView(runtimeWorld) is not { } baseScene || runtimeWorld.Groups.Count != 0 || runtimeWorld.Instances.Count != 0 ||
             runtimeWorld.Definitions.Count != 0 || runtimeWorld.RootOrder is not null)
@@ -129,9 +130,12 @@ public static class SceneEvaluation
         {
             Version = runtimeWorld.Version, Provenance = runtimeWorld.Provenance, IsRuntimeEvaluated = true,
             ResourceId = runtimeWorld.ResourceId, Kind = runtimeWorld.Kind, Elements = elements,
+            RootCanvasAssignments = new(runtimeWorld.RootCanvasAssignments),
             Background = runtimeWorld.Background, Canvas = runtimeWorld.Canvas, Viewport = runtimeWorld.Viewport,
             LayerOpacity = runtimeWorld.LayerOpacity, NextNumber = runtimeWorld.NextNumber, DisplayLayout = runtimeWorld.DisplayLayout
         };
+        SceneCanvasRoots.Assign(document, draft.Id, rootCanvas);
+        document.Elements = document.Elements.OrderBy(element => SceneCanvasRoots.PaintRank(document.RootCanvasAssignments.GetValueOrDefault(element.Id))).ToList();
         runtimeViews.Add(document, new(document, baseScene)); return document;
     }
     /// <summary>Builds once from a frozen source, or afresh for a mutable public render/export. Never reads external files.</summary>
@@ -140,6 +144,7 @@ public static class SceneEvaluation
         if (source.IsRuntimeEvaluated && RuntimeView(source) is { } existing) return existing;
         if (!source.IsRuntimeEvaluated && (source.Instances.Count > 0 || source.Definitions.Count > 0)) PrefabClosure.Validate(source);
         var graph = new SceneGraph(source);
+        SceneCanvasRoots.Validate(source);
         var parents = new Dictionary<Guid, Guid?>(); var placements = new Dictionary<Guid, LayerPlacement>();
         var visible = new Dictionary<Guid, bool>(); var locked = new Dictionary<Guid, bool>();
         foreach (var id in source.Elements.Select(element => element.Id).Concat(source.Groups.Select(group => group.Id)).Concat(source.Instances.Select(instance => instance.Id)))
@@ -151,11 +156,13 @@ public static class SceneEvaluation
         var definitionGraphs = new Dictionary<Guid, SceneGraph>();
         var leaves = new List<ResolvedLeaf>(source.Elements.Count);
         var usedRuntimeIds = new HashSet<Guid>();
-        Expand(graph, null, LayerPlacement.Identity, true, false, "", null);
+        Expand(graph, null, LayerPlacement.Identity, true, false, "", null, RootCanvasKind.Main);
+        leaves = leaves.OrderBy(leaf => SceneCanvasRoots.PaintRank(leaf.RootCanvas)).ToList();
         var renderDocument = new SceneDocument
         {
             Version = source.Version, Provenance = source.Provenance, IsRuntimeEvaluated = true, ResourceId = source.ResourceId,
             Kind = source.Kind, Elements = leaves.Select(leaf => leaf.RenderElement).ToList(),
+            RootCanvasAssignments = leaves.Where(leaf => leaf.RootCanvas != RootCanvasKind.Main).ToDictionary(leaf => leaf.RuntimeElementId, leaf => leaf.RootCanvas),
             Background = source.Background?.Clone(), Canvas = source.Canvas.Clone(), Viewport = source.Viewport,
             LayerOpacity = source.LayerOpacity, NextNumber = source.NextNumber,
             DisplayLayout = source.DisplayLayout.Select(display => display.Clone()).ToList()
@@ -164,10 +171,11 @@ public static class SceneEvaluation
         runtimeViews.Add(renderDocument, result); return result;
 
         void Expand(SceneGraph current, Guid? definitionId, LayerPlacement incoming, bool inheritedVisible,
-            bool inheritedLocked, string path, Guid? hostInstance)
+            bool inheritedLocked, string path, Guid? hostInstance, RootCanvasKind inheritedRoot)
         {
             foreach (var id in current.OrderedContentNodeIds)
             {
+                var rootCanvas = definitionId is null ? SceneCanvasRoots.Resolve(source, id, graph) : inheritedRoot;
                 if (current.FindElement(id) is { } element)
                 {
                     var occurrence = new OccurrencePath(path.Length == 0 ? id.ToString("N") : path + "/e:" + id.ToString("N"));
@@ -181,7 +189,7 @@ public static class SceneEvaluation
                         throw new InvalidDataException(L.Get("Scene.InvalidElementTransform"));
                     world.Id = runtimeId; world.GroupId = null;
                     world.Visible = inheritedVisible && current.IsVisible(id); world.Locked = inheritedLocked || current.IsLocked(id);
-                    leaves.Add(new(occurrence, new(definitionId, id), world, parent, hostInstance ?? id));
+                    leaves.Add(new(occurrence, new(definitionId, id), world, parent, hostInstance ?? id, rootCanvas));
                 }
                 else if (current.FindInstance(id) is { } instance)
                 {
@@ -191,7 +199,7 @@ public static class SceneEvaluation
                     string prefix = path.Length == 0 ? "i:" : path + "/i:";
                     prefix += id.ToString("N") + "/d:" + definition.Id.ToString("N");
                     Expand(nested, definition.Id, incoming.Compose(current.NodeWorldPlacement(id)),
-                        inheritedVisible && current.IsVisible(id), inheritedLocked || current.IsLocked(id), prefix, hostInstance ?? id);
+                        inheritedVisible && current.IsVisible(id), inheritedLocked || current.IsLocked(id), prefix, hostInstance ?? id, rootCanvas);
                 }
             }
         }

@@ -5,8 +5,8 @@ namespace FloatCanvas.App;
 
 internal sealed partial class DesktopSession
 {
-    private GroupCanvasMode _groupCanvasMode = GroupCanvasMode.Temporary;
-    private bool HasGroupCanvasContext => _prefabEditContext is not null || Active.EditScopeId is not null;
+    private GroupCanvasMode _groupCanvasMode = GroupCanvasMode.RootProject;
+    private bool HasGroupCanvasContext => _prefabEditContext is not null || Active.EditScopeId is not null || _groupCanvasMode == GroupCanvasMode.Temporary;
 
     private void RefreshGroupCanvasContext()
     {
@@ -16,14 +16,20 @@ internal sealed partial class DesktopSession
         var graph = new SceneGraph(document);
         Guid? node = scope;
         bool entered = scope is not null || context is not null;
-        if (!entered) { _layers.SetGroupContext(null); return; }
         bool Current() => !DocumentOperationBusy && !owner.IsTransactionActive && ReferenceEquals(Active, owner) &&
             ReferenceEquals(owner.Document, document) && owner.EditScopeId == scope && owner.EditScopeVersion == scopeVersion && ReferenceEquals(_prefabEditContext, context) &&
-            (entered || node is { } id && owner.Selection.SetEquals([id]));
+            (entered || node is null || owner.Selection.SetEquals([node.Value]));
         Action View(GroupCanvasMode mode) => () =>
         {
             if (Current()) _ = RunCommand(() => OpenGroupCanvasAsync(owner, entered ? null : node, mode));
         };
+        if (!entered)
+        {
+            _layers.SetGroupContext(new(L.Get("RootCanvas." + owner.ActiveRootCanvas), GroupStorageKind.Ordinary, null,
+                _groupCanvasMode, false, View(GroupCanvasMode.Temporary), View(GroupCanvasMode.RootProject),
+                IsReadOnly: owner.IsReadOnly, IsRootContext: true));
+            return;
+        }
         if (node is { } groupId && graph.FindGroup(groupId) is { } group)
         {
             string name = string.IsNullOrWhiteSpace(group.Name) ? L.Get("Layers.UntitledGroup") : group.Name;
@@ -89,20 +95,21 @@ internal sealed partial class DesktopSession
 
     private void SetGroupCanvasMode(GroupCanvasMode mode)
     {
-        if (DocumentOperationBusy || Active.IsTransactionActive || !HasGroupCanvasContext) return;
+        if (DocumentOperationBusy || Active.IsTransactionActive || mode == _groupCanvasMode) return;
         _inspector?.CompletePendingEdit(); FinishInlineText(); _editor.Cancel();
         EndCanvasCalibration(hidePanel: true); CancelLivePreparation(); ClearProjectionHover();
         _groupCanvasMode = mode;
         _propertiesClicks?.Reset();
         _editor.ClearPresentedScene(); _editor.SuspendPresentedPicking();
-        RefreshGroupCanvasContext(); RequestRender();
+        // A mode change replaces the displayed graph without changing the
+        // authored session. Refresh its runtime plans before capturing pixels.
+        RefreshGroupCanvasContext(); OnEditorChanged();
     }
 
     private void DetachGroupInstance(EditorSession owner, Guid instanceId)
     {
         if (DocumentOperationBusy || owner.IsReadOnly || owner.IsTransactionActive || !ReferenceEquals(owner, Active) || owner.IsNodeLocked(instanceId)) return;
         owner.DetachPrefab(instanceId); owner.SetEditScope(instanceId);
-        _groupCanvasMode = GroupCanvasMode.Temporary;
         RefreshGroupCanvasContext(); ScheduleRecovery(); RequestRender();
     }
 

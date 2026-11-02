@@ -92,6 +92,17 @@ internal static class WindowSourcePersistenceTests
         check("media-only source-file save keeps the latest successfully saved author revision", mediaOnly.Definitions.Single().Revision == savedRevision && mediaOnly.ResourceId == document.ResourceId);
         var authored = WindowSourcePersistence.CreateSourcePrefabPackage(sourceSnapshot, definition.Id, true, savedRevision);
         check("source author edits get a new prefab revision while leaving active definitions untouched", authored.Definitions[0].Revision != savedRevision && sourceSnapshot.Definitions[0].Revision == definition.Revision);
+        var threeRoots = sourceSnapshot.Clone();
+        var auxiliaryDefinition = new PrefabDefinition { Graph = new() { Elements = [new() { Kind = ElementKind.Ellipse, Width = 20, Height = 20 }] } };
+        var auxiliary = new PrefabInstance { DefinitionId = auxiliaryDefinition.Id };
+        new SceneGraph(threeRoots).InsertInstance(auxiliary, rootCanvas: RootCanvasKind.Foreground);
+        threeRoots.Definitions.Add(auxiliaryDefinition);
+        threeRoots.Canvas.BackgroundColor = 0xFF126644; threeRoots.Background = new() { Kind = ElementKind.Image, AssetId = oldImage, Width = 50, Height = 20 };
+        var mainOnly = WindowSourcePersistence.CreateSourcePrefabPackage(threeRoots, definition.Id, true, savedRevision);
+        check("saving prefab source keeps Main graph only and drops auxiliary-only definition dependencies", mainOnly.Definitions.Count == 1 &&
+            mainOnly.Definitions.Single().Graph.Instances.Count == 0 && mainOnly.Definitions.Single().Graph.Elements.Count == 1);
+        check("prefab source canvas properties remain preview-only and the complete source snapshot stays intact", mainOnly.Definitions.Single().PreviewCanvas?.Canvas.BackgroundColor == 0xFF126644 &&
+            mainOnly.Definitions.Single().PreviewCanvas?.Background?.AssetId == oldImage && threeRoots.Instances.Count == 1 && threeRoots.RootCanvasAssignments.Count == 1);
         var sourcePackage = WindowSourcePersistence.CreateSourcePrefabPackage(WithDefinitions(prepared.Document, definition), definition.Id, false, savedRevision);
         var prefabStore = new PrefabStore("0.4.0-m7-persistence-test"); string prefabPath = Path.Combine(root, "saved.floatprefab");
         await prefabStore.SaveAsync(prefabPath, sourcePackage, local).ConfigureAwait(false);

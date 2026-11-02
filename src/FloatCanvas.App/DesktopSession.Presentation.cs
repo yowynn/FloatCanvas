@@ -12,6 +12,8 @@ internal sealed partial class DesktopSession
     private object _presentationContext = new();
     private EditorSession? _presentationOwner;
     private SceneDocument? _presentationDocument;
+    private SceneDocument? _presentationDisplayDocument;
+    private object? _presentationViewEpoch;
     private long _presentationVersion = -1;
     private IReadOnlyList<ResolvedLeaf> _presentationLeaves = [];
     private EvaluatedScene? _presentationEvaluation;
@@ -75,19 +77,19 @@ internal sealed partial class DesktopSession
     private void BakePresentationTrail(Guid? hostId = null)
     {
         if (!TryGetPresentationBakeSource(hostId, out var paused, out var source) ||
-            !PresentationTrailBake.TryPrepare(source!.RenderElement, CanvasMapping.Create(Active.Document), Active.Document.Viewport,
+            !PresentationTrailBake.TryPrepare(source!.RenderElement, CanvasMapping.Create(Active.Document, source.RootCanvas), Active.Document.Viewport,
                 paused!.Frame, paused.Origin, out var candidate, out _) || candidate is null)
         { UpdateStatus(L.Get("Presentation.Bake.Unavailable")); return; }
         var strokes = candidate.CloneWorldStrokes(); var preview = Active.Document.Clone(); var graph = new SceneGraph(preview);
         try
         {
-            foreach (var stroke in strokes) graph.InsertElement(stroke, Active.EditScopeId);
+            foreach (var stroke in strokes) graph.InsertElement(stroke, Active.EditScopeId, rootCanvas: Active.ActiveRootCanvas);
             SceneValidation.Validate(preview);
             if (!TryGetPresentationBakeSource(hostId, out var current, out _) || !ReferenceEquals(current, paused)) return;
             Active.Execute(L.Get("History.AddElement"), document =>
             {
                 var target = new SceneGraph(document); Active.Selection.Clear();
-                foreach (var stroke in strokes) { target.InsertElement(stroke, Active.EditScopeId); Active.Selection.Add(stroke.Id); }
+                foreach (var stroke in strokes) { target.InsertElement(stroke, Active.EditScopeId, rootCanvas: Active.ActiveRootCanvas); Active.Selection.Add(stroke.Id); }
             });
             _presentationPause = null; _presentationRuntime?.ClearPausedTrail();
             ScheduleRecovery(); RequestRender(); RefreshPresentationRuntimeUi();
@@ -114,7 +116,6 @@ internal sealed partial class DesktopSession
     {
         panel.SetPresentationRuntimeUi(GetPresentationRuntimeUiState);
         panel.SetPresentationGlobalUi(() => _settings.PresentationGlobal.Clone());
-        panel.PresentationGlobalSettingsChanged += value => RunUiAction(() => ApplyPresentationGlobalSettings(value));
     }
     private void ConfigurePresentationUi(InspectorWindow panel)
     {
@@ -172,7 +173,9 @@ internal sealed partial class DesktopSession
     }
     private void UpdatePresentationRuntime()
     {
-        if (_disposed || _presentationRuntime is null) return;
+        if (_disposed || _presentationRuntime is null || _changingPrefabContext) return;
+        var view = CurrentGroupCanvasView();
+        var display = view.Document;
         bool rebuilt = false;
         if (!ReferenceEquals(_presentationOwner, Active) || !ReferenceEquals(_presentationDocument, Active.Document) || _presentationVersion != Active.ContentVersion)
         {
@@ -189,26 +192,32 @@ internal sealed partial class DesktopSession
         {
             _presentationResource = Active.Document.ResourceId;
         }
+        if (!ReferenceEquals(_presentationDisplayDocument, display) || !ReferenceEquals(_presentationViewEpoch, view.Epoch))
+        {
+            _presentationDisplayDocument = display; _presentationViewEpoch = view.Epoch;
+            _presentationContext = new(); _presentationPlanBuilt = false;
+        }
         if (!_presentationPlanBuilt)
         {
-            _presentationEvaluation = SceneEvaluation.Build(Active.Document); var mapping = CanvasMapping.Create(Active.Document);
-            var viewports = _host.Monitors.Select(monitor => new RectD(monitor.Bounds.Left - _editor.ScreenOrigin.X,
-                monitor.Bounds.Top - _editor.ScreenOrigin.Y, monitor.Bounds.Width, monitor.Bounds.Height).Intersect(Active.Document.Viewport)).ToArray();
+            _presentationEvaluation = SceneEvaluation.Build(display);
+            var viewports = _host.Monitors.Select(monitor => new RectD(monitor.Bounds.Left - view.Origin.X,
+                monitor.Bounds.Top - view.Origin.Y, monitor.Bounds.Width, monitor.Bounds.Height).Intersect(display.Viewport)).ToArray();
             _presentationLeaves = _presentationEvaluation.Leaves.Where(leaf =>
                 leaf.RenderElement is { Kind: ElementKind.Presentation, Visible: true, Style.Opacity: > 0, Presentation: not null } &&
-                viewports.Any(viewport => PresentationGeometry.TryScreenRegion(leaf.RenderElement, mapping, viewport, out _))).ToArray();
+                viewports.Any(viewport => PresentationGeometry.TryScreenRegion(leaf.RenderElement, CanvasMapping.Create(display, leaf.RootCanvas), viewport, out _))).ToArray();
             _presentationPlanBuilt = true;
             rebuilt = true;
         }
-        bool keyboard = false, all = false;
+        bool keyboard = false, all = false, scoped = false;
         double hold = 100;
-        if (_host.IsVisible && Active.Document.LayerOpacity > 0)
+        if (_host.IsVisible && display.LayerOpacity > 0)
             foreach (var leaf in _presentationLeaves)
             {
                 var settings = leaf.RenderElement.Presentation!;
                 // A visible keyboard layer records for its lifetime. Obsolete
                 // module/enable wire values remain readable but cannot pause it.
                 keyboard = true;
+                scoped |= settings.KeyboardScope != PresentationKeyboardScope.AllApplications;
                 all |= settings.DisplayStyle == PresentationDisplayStyle.Keyboard || settings.KeyDisplay == PresentationKeyDisplayMode.AllPhysicalKeys;
                 hold = Math.Max(hold, settings.KeyHoldMilliseconds);
             }
@@ -221,8 +230,7 @@ internal sealed partial class DesktopSession
         bool allowed = (_host.IsVisible || pointer.AnyEnabled) && !DocumentOperationBusy && _cleanCaptureDepth == 0 &&
             (_presentationDesktopAvailable?.Invoke() ?? PresentationDesktopAvailability.IsCurrentInputDesktop());
         string paused = !_host.IsVisible ? "Presentation.Status.PausedHidden" : "Presentation.Status.Unavailable";
-        _presentationRuntime.ConfigureKeyboardScope(global.KeyboardScope);
-        _presentationRuntime.Configure(new(keyboard, pointer.AnyEnabled, clicks, trail, all, hold, ripple, pointer.TrailMilliseconds),
+        _presentationRuntime.Configure(new(keyboard, pointer.AnyEnabled, clicks, trail, all, hold, ripple, pointer.TrailMilliseconds) { ScopedKeyboard = scoped },
             allowed, _presentationInputContext ??= new(), paused);
         if (rebuilt) _presentationRuntime.RetryIfFaulted();
         UpdatePresentationInputRoute();

@@ -19,7 +19,7 @@ internal static class PresentationCoreTests
         check(region.Width == 600 && region.Height == 600 && region.Kind == ElementKind.Presentation, "rectangle-region geometry resize preserves the presentation kind");
         foreach (var edit in new Action<PresentationSettings>[]
         {
-            s => s.Modules = (PresentationModules)16, s => s.KeyDisplay = (PresentationKeyDisplayMode)2, s => s.KeyPanelAlignment = (PresentationPanelAlignment)6,
+            s => s.Modules = (PresentationModules)16, s => s.KeyDisplay = (PresentationKeyDisplayMode)2, s => s.KeyboardScope = (PresentationKeyboardScope)3, s => s.KeyPanelAlignment = (PresentationPanelAlignment)6,
             s => s.RecentChordLimit = 0, s => s.RecentChordLimit = 9, s => s.KeyHoldMilliseconds = 99, s => s.KeyHoldMilliseconds = 5001,
             s => s.KeyPanelMaximumWidth = double.PositiveInfinity, s => s.CursorRadiusPixels = 1, s => s.CursorRadiusPixels = 129,
             s => s.RippleMilliseconds = 99, s => s.RippleMilliseconds = 2001, s => s.TrailMilliseconds = 99, s => s.TrailMilliseconds = 5001,
@@ -42,6 +42,11 @@ internal static class PresentationCoreTests
         }
         var clone = region.Clone(); clone.Presentation!.TrailWidthPixels = 19;
         check(region.Presentation.TrailWidthPixels == 3, "source snapshots deep-clone authored presentation settings");
+        check(JsonSerializer.Deserialize<PresentationSettings>("{}")!.KeyboardScope == PresentationKeyboardScope.AllApplications, "legacy layers without an authored scope use the explicit all-applications default");
+        region.Presentation.KeyboardScope = PresentationKeyboardScope.OutsideFloatCanvas;
+        var scopedSettings = JsonSerializer.Deserialize<PresentationSettings>(JsonSerializer.Serialize(region.Presentation))!;
+        clone.Presentation.KeyboardScope = PresentationKeyboardScope.FloatCanvasOnly;
+        check(scopedSettings.KeyboardScope == PresentationKeyboardScope.OutsideFloatCanvas && region.Presentation.KeyboardScope == PresentationKeyboardScope.OutsideFloatCanvas, "authored keyboard scope roundtrips and clone edits remain independent");
         region = Region(); var session = new EditorSession(new() { Elements = [region] }); session.SetSelection([region.Id]);
         session.UpdateSelection(element => element.Presentation!.Enabled = true);
         check(session.UndoCount == 0, "no-op presentation configuration creates no history");
@@ -57,6 +62,15 @@ internal static class PresentationCoreTests
         keys[0] = new(0x41, "A"); trail[0] = new(new(-999, -999), TimeSpan.Zero);
         check(frame.PressedKeys[0].Label == "Ctrl" && chord.Keys[0].Label == "Ctrl" && frame.Trail[0].ScreenPoint == new PointD(20, 30), "runtime frames and chords own their immutable input arrays");
         check(frame.PayloadBytes <= PresentationLimits.MaximumFramePayloadBytes && frame.Epoch == 7 && frame.Sequence == 8 && frame.CursorScreen == new PointD(100, 120), "runtime frame carries bounded monotonic identity and unshifted physical coordinates");
+        var outside = new PresentationFrame(7, 8, frame.Time, pressedKeys: [new(0x41, "A")]);
+        var inside = new PresentationFrame(7, 8, frame.Time, pressedKeys: [new(0x42, "B")]);
+        var scopedFrame = PresentationFrame.WithKeyboardScopes(frame, outside, inside);
+        check(scopedFrame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).PressedKeys.Single().Label == "A" &&
+            scopedFrame.ForKeyboardScope(PresentationKeyboardScope.FloatCanvasOnly).PressedKeys.Single().Label == "B" && scopedFrame.CursorScreen == frame.CursorScreen &&
+            scopedFrame.PayloadBytes <= PresentationLimits.MaximumScopedFramePayloadBytes,
+            "one bounded immutable runtime snapshot preserves independently partitioned keyboard sources and the global pointer");
+        check(frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).PressedKeys.Count == 0,
+            "unclassified legacy snapshots never leak all-applications input into a restricted layer");
         foreach (var create in new Func<object>[]
         {
             () => new PresentationFrame(-1,0,TimeSpan.Zero),
@@ -68,6 +82,9 @@ internal static class PresentationCoreTests
             () => new PresentationFrame(0,0,TimeSpan.Zero, trail:[new(new(),TimeSpan.FromSeconds(1))]),
             () => new PresentationFrame(0,0,TimeSpan.Zero, pressedKeys:[new(0,"unknown")]),
             () => new PresentationFrame(0,0,TimeSpan.Zero, pressedKeys:[new(1,new string('x',65))])
+            , () => PresentationFrame.WithKeyboardScopes(scopedFrame, outside, inside)
+            , () => PresentationFrame.WithKeyboardScopes(frame, new PresentationFrame(7, 9, frame.Time), inside)
+            , () => PresentationFrame.WithKeyboardScopes(frame, new PresentationFrame(7, 8, frame.Time, keyboardSuppressed:true), inside)
         })
         {
             bool rejected = false; try { create(); } catch (ArgumentException) { rejected = true; }

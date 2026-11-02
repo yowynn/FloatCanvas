@@ -104,8 +104,8 @@
     "en": "Canvas settings"
   },
   "Canvas.HelpText": {
-    "zh": "按 C 选择画布工具，再次点击画布按钮打开设置。非透视时可调整网格格长，从任意位置拖动，向外放大网格、向内缩小，网格固定围绕主屏中心部署；透视时拖动角点、边缘或中央手柄调整。“四点定位画布”会临时隐藏其他窗口，完成或取消后恢复。参考网格透明度仅在本次运行中保留，0% 隐藏参考线。Ctrl 暂停吸附，Shift 约束方向。Esc 取消当前拖动；空闲时切回选择工具。切换透视以钉点对齐，保留校准参数；主动修改非透视格长会建立新的平面参考。",
-    "en": "Press C to select Canvas; select it again to open settings. In flat mode, drag anywhere to enlarge or shrink cells around the fixed primary-screen grid center. In perspective mode, drag corners, edges or the center. Position canvas with four points temporarily hides other windows and restores them after completion or cancellation. Reference opacity lasts for this run only; 0% hides reference lines. Ctrl bypasses snapping; Shift constrains direction. Esc cancels a drag or returns to Select when idle. Toggling perspective retains its parameters; editing flat cell size creates a new flat reference."
+    "zh": "按 C 选择画布工具，再次点击画布按钮打开设置。非透视时可调整网格格长，从任意位置拖动，向外放大网格、向内缩小，网格固定围绕主屏中心部署；透视时拖动角点、边缘或中央手柄调整。“四点定位画布”会临时隐藏其他窗口，完成或取消后恢复。参考网格透明度仅在本次运行中保留，0% 隐藏参考线。Ctrl 暂停吸附，Shift 约束方向。Esc 取消当前拖动或关闭未固定设置，其余遵循通用取消顺序。切换透视以钉点对齐，保留校准参数；非透视格长独立保存，不重置透视标定。",
+    "en": "Press C to select Canvas; select it again to open settings. In flat mode, drag anywhere to enlarge or shrink cells around the fixed primary-screen grid center. In perspective mode, drag corners, edges or the center. Position canvas with four points temporarily hides other windows and restores them after completion or cancellation. Reference opacity lasts for this run only; 0% hides reference lines. Ctrl bypasses snapping; Shift constrains direction. Esc cancels the current drag or closes unpinned settings; otherwise it follows the normal cancellation order. Toggling perspective retains its parameters; flat cell spacing is saved independently without resetting perspective calibration."
   },
   "Canvas.InvalidGrid": {
     "zh": "列数和行数须为 1 至 256 的整数。",

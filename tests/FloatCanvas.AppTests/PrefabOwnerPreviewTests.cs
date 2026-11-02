@@ -92,8 +92,10 @@ internal static class PrefabOwnerPreviewTests
                 default, EditorTool.Select, sourcePath: metadata.Locator, sourceEntryDefinitionId: prefab ? package.EntryDefinitionId : null);
             string prior = JsonSerializer.Serialize(owner.Document); int undo = owner.UndoCount;
             session.BeginTransaction("source sample"); session.Document.Elements.Single().Width = 73; session.NotifyChanged();
+            var foreground = new CanvasElement { Name = "Preview-only foreground", Kind = ElementKind.Rectangle, Width = 40, Height = 30 };
+            new SceneGraph(session.Document).InsertElement(foreground, rootCanvas: RootCanvasKind.Foreground); session.NotifyChanged();
             var input = PrefabPreviewComposer.Capture(context, owner.Assets);
-            check((prefab ? "prefab" : "project") + " source preview uses current source content without reading its locator", SceneEvaluation.Build(input.Document).Leaves.Count == 2 && SceneEvaluation.Build(input.Document).Leaves.All(leaf => leaf.RenderElement.Width == 73));
+            check((prefab ? "prefab" : "project") + " source preview uses current Main content and excludes auxiliary roots without reading its locator", SceneEvaluation.Build(input.Document).Leaves.Count == 2 && SceneEvaluation.Build(input.Document).Leaves.All(leaf => leaf.RenderElement.Width == 73));
             check((prefab ? "prefab" : "project") + " source preview does not publish its candidate", JsonSerializer.Serialize(owner.Document) == prior && owner.UndoCount == undo);
             session.Cancel();
         }

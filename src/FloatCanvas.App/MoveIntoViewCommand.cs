@@ -14,7 +14,6 @@ internal static class MoveIntoViewCommand
         var frames = displays.Select(display => (Bounds: Local(display.Bounds), Work: Local(display.WorkArea))).Where(display => !display.Bounds.IsEmpty).ToArray();
         var targets = frames.Select(display => display.Work).Where(area => !area.IsEmpty).ToArray();
         if (targets.Length == 0) return false;
-        var mapping = CanvasMapping.Create(document);
         var graph = new SceneGraph(document);
         var world = SceneEvaluation.Build(document);
         bool Visible(RectD bounds) => !bounds.IsEmpty && frames.Any(frame => !frame.Bounds.Intersect(bounds).IsEmpty);
@@ -28,6 +27,7 @@ internal static class MoveIntoViewCommand
         var groupMoves = new List<(Guid NodeId, Affine2D Transform)>();
         foreach (var unit in units)
         {
+            var mapping = CanvasMapping.Create(document, unit.First().RootCanvas);
             var items = unit.Select(leaf => leaf.RenderElement).ToArray();
             var bounds = items.Select(e => mapping.ProjectedBounds(e)).ToArray();
             if (bounds.Any(Visible)) continue;

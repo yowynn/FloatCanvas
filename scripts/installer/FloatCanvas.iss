@@ -1,4 +1,4 @@
-; Built only from a ZIP that passed Smoke-Package.ps1 -RequireRelease.
+﻿; Built only from a ZIP that passed Smoke-Package.ps1 -RequireRelease.
 #ifndef AppVersion
   #error Use scripts/Publish-Installer.ps1 to compile this installer.
 #endif
@@ -66,17 +66,24 @@ Filename: "{app}\FloatCanvas.exe"; Parameters: "{code:LaunchArguments}"; Descrip
 ; Machine installations register a shared file type. Each user's default choice
 ; and optional login-start preference remain under that user's control.
 Root: HKLM; Subkey: "Software\Classes\FloatCanvas.Project"; ValueType: string; ValueData: "FloatCanvas project"; Check: IsAdminInstallMode
+Root: HKLM; Subkey: "Software\Classes\FloatCanvas.Prefab"; ValueType: string; ValueData: "FloatCanvas prefab"; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\Classes\FloatCanvas.Project\DefaultIcon"; ValueType: string; ValueData: """{app}\FloatCanvas.exe"",0"; Check: IsAdminInstallMode
+Root: HKLM; Subkey: "Software\Classes\FloatCanvas.Prefab\DefaultIcon"; ValueType: string; ValueData: """{app}\FloatCanvas.exe"",0"; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\Classes\FloatCanvas.Project\shell\open\command"; ValueType: string; ValueData: """{app}\FloatCanvas.exe"" --open ""%1"""; Check: IsAdminInstallMode
+Root: HKLM; Subkey: "Software\Classes\FloatCanvas.Prefab\shell\open\command"; ValueType: string; ValueData: """{app}\FloatCanvas.exe"" --open ""%1"""; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\Classes\.floatcanvas"; ValueType: string; ValueData: "FloatCanvas.Project"; Flags: createvalueifdoesntexist; Check: IsAdminInstallMode
+Root: HKLM; Subkey: "Software\Classes\.floatprefab"; ValueType: string; ValueData: "FloatCanvas.Prefab"; Flags: createvalueifdoesntexist; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\Classes\.floatcanvas\OpenWithProgids"; ValueType: string; ValueName: "FloatCanvas.Project"; ValueData: ""; Check: IsAdminInstallMode
+Root: HKLM; Subkey: "Software\Classes\.floatprefab\OpenWithProgids"; ValueType: string; ValueName: "FloatCanvas.Prefab"; ValueData: ""; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\Classes\Applications\FloatCanvas.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "FloatCanvas"; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\Classes\Applications\FloatCanvas.exe\shell\open\command"; ValueType: string; ValueData: """{app}\FloatCanvas.exe"" --open ""%1"""; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\Classes\Applications\FloatCanvas.exe\SupportedTypes"; ValueType: string; ValueName: ".floatcanvas"; ValueData: ""; Check: IsAdminInstallMode
+Root: HKLM; Subkey: "Software\Classes\Applications\FloatCanvas.exe\SupportedTypes"; ValueType: string; ValueName: ".floatprefab"; ValueData: ""; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\FloatCanvas\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "FloatCanvas"; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\FloatCanvas\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "FloatCanvas project"; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\FloatCanvas\Capabilities"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}\FloatCanvas.exe"; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\FloatCanvas\Capabilities\FileAssociations"; ValueType: string; ValueName: ".floatcanvas"; ValueData: "FloatCanvas.Project"; Check: IsAdminInstallMode
+Root: HKLM; Subkey: "Software\FloatCanvas\Capabilities\FileAssociations"; ValueType: string; ValueName: ".floatprefab"; ValueData: "FloatCanvas.Prefab"; Check: IsAdminInstallMode
 Root: HKLM; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "FloatCanvas"; ValueData: "Software\FloatCanvas\Capabilities"; Check: IsAdminInstallMode
 
 [Code]

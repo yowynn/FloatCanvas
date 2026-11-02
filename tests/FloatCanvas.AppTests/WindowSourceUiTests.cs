@@ -56,6 +56,12 @@ internal static class WindowSourceUiTests
         Finish(unavailable.RefreshCandidatesAsync()); Field<ListBox>(unavailable, "candidates").SelectedIndex = 0;
         check("unavailable metadata cannot be accepted as a capture target", !Field<Button>(unavailable, "select").IsEnabled && Field<TextBlock>(unavailable, "status").Text == L.Get("WindowSource.Status.Unavailable")); SessionWindowCoordinator.Close(unavailable);
 
+        var mixed = new WindowSourcePickerWindow(_ => Task.FromResult<IReadOnlyList<WindowSourceCandidate>>([Candidate(reason: "WindowSource.Status.Unavailable"), second]));
+        Finish(mixed.RefreshCandidatesAsync()); var mixedList = Field<ListBox>(mixed, "candidates"); mixedList.SelectedIndex = 0; mixedList.SelectedIndex = 1;
+        check("choosing an available source clears a previous candidate's failure instead of displaying a stale warning", Field<Button>(mixed, "select").IsEnabled &&
+            Field<TextBlock>(mixed, "status").Text == "" && Field<TextBlock>(mixed, "status").Visibility == Visibility.Collapsed);
+        SessionWindowCoordinator.Close(mixed);
+
         var old = new TaskCompletionSource<IReadOnlyList<WindowSourceCandidate>>(TaskCreationOptions.RunContinuationsAsynchronously);
         var latest = new TaskCompletionSource<IReadOnlyList<WindowSourceCandidate>>(TaskCreationOptions.RunContinuationsAsynchronously); calls = 0; CancellationToken oldToken = default;
         var racing = new WindowSourcePickerWindow(token => { if (++calls == 1) { oldToken = token; return old.Task; } return latest.Task; });
@@ -155,8 +161,20 @@ internal static class WindowSourceUiTests
         {
             L.Initialize(locale); AppTheme.Apply(theme);
             var picker = new WindowSourcePickerWindow(_ => Task.FromResult<IReadOnlyList<WindowSourceCandidate>>([Candidate(), Candidate("A second synthetic window for source selection", "document.exe")])); Finish(picker.RefreshCandidatesAsync());
+            Save((FrameworkElement)picker.Content, picker.MinWidth - 2, picker.MinHeight - 38, Path.Combine(output, $"window-source-picker-min-{locale}-{theme}.png"));
+            var sourceList = Field<ListBox>(picker, "candidates");
+            var sourceItem = (ListBoxItem)sourceList.ItemContainerGenerator.ContainerFromIndex(0);
+            check(locale + " " + theme + " narrow picker keeps standard search height and application list item template", Field<TextBox>(picker, "search").ActualHeight == PropertyPanelLayout.ControlHeight &&
+                ReferenceEquals(sourceList.ItemContainerStyle.BasedOn, picker.FindResource(typeof(ListBoxItem))) &&
+                ReferenceEquals(sourceItem.Template, ((Style)picker.FindResource(typeof(ListBoxItem))).Setters.OfType<Setter>().Single(setter => setter.Property == Control.TemplateProperty).Value));
+            check(locale + " " + theme + " narrow picker retains a usable result viewport", sourceList.ActualHeight >= 72);
             Save((FrameworkElement)picker.Content, 560, 390, Path.Combine(output, $"window-source-picker-{locale}-{theme}.png"));
-            var crop = new WindowSourceCropWindow(Png(), new(.15, .2, .7, .6)); Save((FrameworkElement)crop.Content, 560, 390, Path.Combine(output, $"window-source-crop-{locale}-{theme}.png"));
+            var crop = new WindowSourceCropWindow(Png(), new(.15, .2, .7, .6));
+            var cropBody = (FrameworkElement)crop.Content;
+            Save(cropBody, crop.MinWidth - 2, crop.MinHeight - 38, Path.Combine(output, $"window-source-crop-min-{locale}-{theme}.png"));
+            check(locale + " " + theme + " narrow crop keeps all footer actions inside its content bounds", Buttons(cropBody).All(button =>
+                button.MinHeight == PropertyPanelLayout.ControlHeight && button.TransformToAncestor(cropBody).TransformBounds(new Rect(button.RenderSize)).Right <= crop.MinWidth - 2 + .1));
+            Save(cropBody, 560, 390, Path.Combine(output, $"window-source-crop-{locale}-{theme}.png"));
             var session = ImageSession(); var inspector = new InspectorWindow(() => session); inspector.SetWindowSourcesUi(_ => new(SourceCount: 1, DisplayName: "Synthetic viewer", StatusKey: "WindowSource.Status.SourceClosed", CanRebind: true, CanCrop: true, CanFreeze: true, EditableImageId: session.Document.Elements[0].Id, OccurrenceCount: 3)); inspector.PrepareForShow();
             Save((FrameworkElement)inspector.Content, 300, 650, Path.Combine(output, $"window-source-inspector-{locale}-{theme}.png")); var panel = Field<WindowSourceControls>(inspector, "windowSources");
             check(locale + " " + theme + " window source actions fit a 300-wide Inspector", panel.ActualWidth is > 0 and <= 300 && Buttons(panel).All(button => button.ActualWidth is > 0 and <= 300));

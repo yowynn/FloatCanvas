@@ -67,7 +67,7 @@ internal sealed class KeyboardLayoutEditorWindow : Window
         AutomationProperties.SetName(enabled, L.Get("Presentation.Layout.Enabled"));
         label.MaxLength = 64; label.Height = PropertyPanelLayout.ControlHeight; AutomationProperties.SetName(label, L.Get("Presentation.Layout.KeyLabel"));
         label.TextChanged += (_, _) => { if (!refreshing) UpdateSelected(key => key.Label = label.Text, "Label"); };
-        properties.Children.Add(PropertyPanelLayout.Row(new TextBlock { Text = L.Get("Presentation.Layout.KeyLabel") }, label));
+        properties.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Presentation.Layout.KeyLabel")), label));
         Coordinate(properties, "X", 0, 63.75, 0, 24); Coordinate(properties, "Y", 0, 63.75, 0, 8);
         Coordinate(properties, "Width", .25, 16, .25, 4); Coordinate(properties, "Height", .25, 16, .25, 4);
         var all = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 12, 0, 0) };
@@ -92,9 +92,11 @@ internal sealed class KeyboardLayoutEditorWindow : Window
     {
         var input = new TextBox(); AutomationProperties.SetName(input, L.Get("Presentation.Layout." + key));
         var field = new NumericValueField(input, minimum, maximum, railMinimum, railMaximum, .25) { Unit = L.Get("Presentation.Layout.Unit") };
+        field.SetScrubAnchor(key switch { "X" => NumericPropertyKind.X, "Y" => NumericPropertyKind.Y, "Width" => NumericPropertyKind.Width, _ => NumericPropertyKind.Height }, L.Get("Presentation.Layout." + key));
         field.ValueChanged += _ => { if (!refreshing) UpdateCoordinates(); };
         field.InvalidInput += () => { if (!refreshing) { invalidFields.Add(key); RefreshStatus(); } };
-        coordinates.Add(key, field); body.Children.Add(PropertyPanelLayout.Row(new TextBlock { Text = L.Get("Presentation.Layout." + key) }, field));
+        var caption = new PropertyLabel(L.Get("Presentation.Layout." + key)); field.SetLabel(caption);
+        coordinates.Add(key, field); body.Children.Add(PropertyPanelLayout.Row(caption, field));
     }
     private static void SetCoordinate(PresentationKeyboardKey key, string field, double value)
     {

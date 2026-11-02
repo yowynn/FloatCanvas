@@ -46,7 +46,7 @@ internal static class LayersWorkflowQaTests
         Invoke("OpenLayers"); var layers = Field<LayersWindow>(desktop, "_layers"); layers.Width = 280; layers.Height = 600; layers.UpdateLayout();
         Select(outer);
         SaveCardState("selected-at-root");
-        Observe("selecting a root group does not expose a group configuration card", layers.CurrentGroupContext is null && Field<Border>(layers, "groupContextSite").Visibility == Visibility.Collapsed);
+        Observe("selecting a root group retains only the persistent canvas-view choice", layers.CurrentGroupContext is { IsRootContext: true, IsEntered: false, Export: null, Detach: null } && Field<Border>(layers, "groupContextSite").Visibility == Visibility.Visible && Field<TextBlock>(layers, "groupStorage").Visibility == Visibility.Collapsed);
         Row(outer).EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
         Observe("row entry reaches ordinary group's actual child list", owner.EditScopeId == outer && layers.VisibleNodes.Select(row => row.Id).SequenceEqual([inner]) && layers.CurrentGroupContext is { Storage: GroupStorageKind.Ordinary, IsEntered: true });
         Select(inner);
@@ -57,9 +57,10 @@ internal static class LayersWorkflowQaTests
         Observe("returning to the parent restores its card even with the child selected", owner.EditScopeId == outer && owner.Selection.SetEquals([inner]) && layers.CurrentGroupContext?.Name == "Outer");
         Field<Button>(layers, "parentScope").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
         SaveCardState("returned-to-root");
-        Observe("returning to root removes the card although the group left remains selected", owner.EditScopeId is null && owner.Selection.SetEquals([outer]) && layers.CurrentGroupContext is null && Field<Border>(layers, "groupContextSite").Visibility == Visibility.Collapsed);
+        Observe("returning to root removes entered-group actions and retains the canvas-view choice", owner.EditScopeId is null && owner.Selection.SetEquals([outer]) && layers.CurrentGroupContext is { IsRootContext: true, IsEntered: false, Export: null, Detach: null } && Field<Border>(layers, "groupContextSite").Visibility == Visibility.Visible);
         Row(outer).EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout(); Select(inner);
         var choice = Field<SegmentedChoice>(layers, "groupCanvasChoice");
+        Invoke("SetGroupCanvasMode", GroupCanvasMode.Temporary); Layout();
         SendKey(choice.Items[0], Key.Right); Pump();
         Observe("Right on canvas selector changes view without entering selected child", owner.EditScopeId == outer && layers.CurrentGroupContext?.Mode == GroupCanvasMode.RootProject);
         Snapshot("ordinary");

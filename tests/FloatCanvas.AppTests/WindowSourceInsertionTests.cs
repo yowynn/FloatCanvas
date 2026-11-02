@@ -1,6 +1,8 @@
 using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
+using SkiaSharp;
 
 internal static class WindowSourceInsertionTests
 {
@@ -41,8 +43,51 @@ internal static class WindowSourceInsertionTests
         descriptor.Fit = WindowSourceFit.Stretch; var stretch = WindowSourceInsertion.Prepare(target, descriptor, 4000, 2000, crop, new(100, 200, 1000, 600));
         check("explicit Stretch intent survives while the initial frame still follows cropped source aspect", stretch.WindowSource!.Fit == WindowSourceFit.Stretch && Near(ElementGeometry.Bounds(stretch, false), new(200, 300, 800, 400)));
         Scope(check, target, descriptor);
+        VisibleCenter(check);
         Billboards(check);
         Invalid(check);
+    }
+    private static void VisibleCenter(Action<string, bool> check)
+    {
+        var document = new SceneDocument { Viewport = new(-640, -360, 3840, 2160) };
+        var projection = new CanvasProjectionSettings { PlaneBounds = new(0, 0, 900, 600), PinPlanePoint = new(0, 600) };
+        check("01b placement fixture calibrates the real reference quad", CanvasProjectionGeometry.TryCalibrate(projection,
+            [new(290, 200), new(990, 150), new(1050, 760), new(190, 710)], out projection, out _));
+        document.Canvas.Projection = projection;
+        var visible = new RectD(-640, -360, 3840, 2052);
+        var mapping = CanvasMapping.Create(document); var placement = mapping.ScreenToPlane.TransformBounds(visible);
+        var center = DesktopSession.ResolveImageInsertionCenter(mapping, visible, placement);
+        check("01b inserts at the visible screen center rather than the inverse-view bounding-box center", mapping.ToScreen(center).DistanceTo(visible.Center) < 1e-6 &&
+            mapping.ToScreen(placement.Center).DistanceTo(visible.Center) > 1000);
+        using var pixels = new SKBitmap(924, 637); pixels.Erase(SKColors.Blue); using var source = SKImage.FromBitmap(pixels);
+        using var png = source.Encode(SKEncodedImageFormat.Png, 100); var normalized = AssetImport.Normalize(png.ToArray());
+        var regular = new EditorSession(document.Clone()); ImageImportCommand.Insert(regular, [normalized], placement, dropCenter: center);
+        var image = regular.Document.Elements.Single();
+        var window = WindowSourceInsertion.Prepare(new(document.Clone()), Descriptor(), 924, 637, null, placement, planeCenter: center);
+        var legacy = WindowSourceInsertion.Prepare(new(document.Clone()), Descriptor(), 924, 637, null, placement);
+        check("01b ordinary images and window sources share the same centered plane geometry without changing fit dimensions", image.Transform == window.Transform &&
+            image.Width == window.Width && image.Height == window.Height && window.Width == legacy.Width && window.Height == legacy.Height &&
+            mapping.ElementToScreen(window).TransformPoint(new(window.Width / 2, window.Height / 2)).DistanceTo(visible.Center) < 1e-6);
+        foreach (var root in new[] { RootCanvasKind.Main, RootCanvasKind.Foreground, RootCanvasKind.Background })
+        {
+            var flat = document.Clone(); flat.Canvas.Projection.Enabled = root != RootCanvasKind.Main;
+            flat.Canvas.Grid.FlatTranslation = new(37, -19); var flatMapping = CanvasMapping.Create(flat, root);
+            var area = flatMapping.ScreenToPlane.TransformBounds(visible);
+            var flatCenter = DesktopSession.ResolveImageInsertionCenter(flatMapping, visible, area);
+            var owner = new EditorSession(flat); owner.SetRootCanvas(root);
+            var old = WindowSourceInsertion.Prepare(owner, Descriptor(), 924, 637, null, area);
+            var current = WindowSourceInsertion.Prepare(owner, Descriptor(), 924, 637, null, area, planeCenter: flatCenter);
+            check(root + " flat insertion keeps its existing position and dimensions", flatCenter.DistanceTo(area.Center) < 1e-6 &&
+                old.Transform == current.Transform && old.Width == current.Width && old.Height == current.Height);
+        }
+        var view = CanvasMapping.CreateView(document, new(Affine2D.Translation(50, 80).Compose(Affine2D.Rotation(.3)).Compose(Affine2D.Scale(2, .7)), 1.5));
+        var viewArea = view.ScreenToPlane.TransformBounds(visible);
+        var viewCenter = DesktopSession.ResolveImageInsertionCenter(view, visible, viewArea);
+        var local = WindowSourceInsertion.Prepare(new(), Descriptor(), 100, 60, null, viewArea, planeCenter: viewCenter);
+        check("root-project group view converts the visible center to source-plane coordinates exactly once", view.ElementToScreen(local).TransformPoint(new(local.Width / 2, local.Height / 2)).DistanceTo(visible.Center) < 1e-6);
+        var unsafeMapping = CanvasMapping.Create(Perspective().Document); var fallback = new RectD(20, 40, 80, 60);
+        check("an unsafe screen center retains the existing logical placement fallback", !unsafeMapping.TryToPlane(new(200, 100), out _) &&
+            DesktopSession.ResolveImageInsertionCenter(unsafeMapping, new(0, 0, 400, 200), fallback) == fallback.Center);
     }
     private static void Scope(Action<string, bool> check, EditorSession target, WindowSourceDescriptor descriptor)
     {
@@ -90,6 +135,7 @@ internal static class WindowSourceInsertionTests
             Reject("invalid or unsafe placement is rejected " + bounds, () => WindowSourceInsertion.Prepare(target, descriptor, 100, 100, null, bounds));
         foreach (double opacity in new[] { -.1, 1.1, double.NaN })
             Reject("invalid source opacity is rejected " + opacity, () => WindowSourceInsertion.Prepare(target, descriptor, 100, 100, null, placement, opacity: opacity));
+        Reject("a nonfinite explicit plane center is rejected without mutation", () => WindowSourceInsertion.Prepare(target, descriptor, 100, 100, null, placement, planeCenter: new(double.NaN, 0)));
         target.BeginTransaction("foreign"); Reject("preparation cannot write or interfere with an active foreign transaction", () => WindowSourceInsertion.Prepare(target, descriptor, 100, 100, null, placement)); target.Cancel();
         target = Perspective();
         Reject("a planar source beyond the safe plane is rejected without mutation", () => WindowSourceInsertion.Prepare(target, descriptor, 100, 100, null, new(0, 600, 500, 500)));

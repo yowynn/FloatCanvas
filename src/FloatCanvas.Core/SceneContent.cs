@@ -14,6 +14,7 @@ internal static class SceneContent
         if (ReferenceEquals(left, right)) return true;
         if (left is null || right is null || left.GetType() != right.GetType()) return false;
         if (left is PointCollection points) return points.ContentEquals((PointCollection)right);
+        if (left is SceneDocument scene && scene.IndependentCanvasOrigin != ((SceneDocument)right).IndependentCanvasOrigin) return false;
         var type = left.GetType();
         if (type.IsValueType || left is string) return left.Equals(right);
         if (left is IDictionary leftMap && right is IDictionary rightMap)

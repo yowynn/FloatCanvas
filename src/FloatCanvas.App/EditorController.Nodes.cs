@@ -15,7 +15,7 @@ internal sealed partial class EditorController
         if (drawing is null) return;
         AppearanceMigration.NormalizeElement(drawing);
         if (screenBillboardDrawing) return;
-        new SceneGraph(Session.Document).InsertElement(drawing, Session.EditScopeId);
+        new SceneGraph(Session.Document).InsertElement(drawing, Session.EditScopeId, rootCanvas: Session.ActiveRootCanvas);
         drawingParents[drawing.Id] = Session.EditScopeId;
     }
     private void BeginWorldEndpoint(CanvasElement source)
@@ -56,7 +56,7 @@ internal sealed partial class EditorController
         nodeTransform = null; nodeOriginalElements.Clear();
         if (!UsesHierarchicalSelection || gesture is not ("move" or "rotate" or "resize")) return;
         nodeTransform = Session.CaptureSelectionTransform();
-        nodeOriginalElements = Session.SelectedWorldElements(editableOnly: true).ToDictionary(element => element.Id, element => element);
+        nodeOriginalElements = SelectedEditingWorldElements(editableOnly: true).ToDictionary(element => element.Id, element => element);
     }
     private bool WriteWorldElement(CanvasElement candidate)
     {

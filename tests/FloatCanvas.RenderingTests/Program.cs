@@ -10,6 +10,8 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--root-cache-only")) { RootCanvasCacheTests.Run(Assert); Console.WriteLine($"PASS {_checks} root canvas cache checks."); return 0; }
+            if (args.Contains("--root-canvases-only")) { RootCanvasRenderingTests.Run(Assert, args.SkipWhile(a => a != "--root-canvases-only").Skip(1).FirstOrDefault()); Console.WriteLine($"PASS {_checks} root canvas rendering checks."); return 0; }
             if (args.Contains("--window-sources-only")) { WindowSourceRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} window source rendering checks."); return 0; }
             if (args.Contains("--window-evidence")) { WindowSourceRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--window-evidence") + 1]); return 0; }
             if (args.Contains("--presentation-only")) { PresentationRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} presentation rendering checks."); return 0; }
@@ -75,6 +77,8 @@ internal static class Program
             if (args.Contains("--live-effects-only")) { LivePixelateRenderingTests.Run(Assert); return 0; }
             if (args.Contains("--capture-selection-only")) { CaptureSelectionRenderingTests.Run(Assert); return 0; }
             PickingConsistencyTests.Run(Assert);
+            RootCanvasRenderingTests.Run(Assert);
+            RootCanvasCacheTests.Run(Assert);
             ShapesAndCoordinates();
             InnerStrokeRenderingTests.Run(Assert);
             DashedFreehandPerformanceTests.Run(Assert);

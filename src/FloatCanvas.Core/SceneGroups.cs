@@ -16,10 +16,13 @@ public sealed class CanvasGroup
     public bool Locked { get; set; }
     public GroupOrderMode OrderMode { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SubprojectCanvasSettings? PreviewCanvas { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<Guid>? ChildOrder { get; set; }
-    public CanvasGroup Clone()
+    public CanvasGroup Clone(IReadOnlyDictionary<string, string>? assetIds = null)
     {
-        var result = (CanvasGroup)MemberwiseClone(); result.ChildOrder = ChildOrder?.ToList(); return result;
+        var result = (CanvasGroup)MemberwiseClone(); result.ChildOrder = ChildOrder?.ToList();
+        result.PreviewCanvas = PreviewCanvas?.Clone(assetIds); return result;
     }
 }
 
@@ -61,6 +64,7 @@ public sealed partial class SceneDocument
                 var copy = group.Clone(); copy.ChildOrder?.RemoveAll(id => !retained.Contains(id)); return copy;
             }).ToList(),
             RootOrder = RootOrder?.Where(retained.Contains).ToList(), Viewport = Viewport,
+            RootCanvasAssignments = RootCanvasAssignments.Where(pair => retained.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value),
             LayerOpacity = LayerOpacity, NextNumber = NextNumber
         };
         snapshot.resourceIdentity = resourceIdentity;

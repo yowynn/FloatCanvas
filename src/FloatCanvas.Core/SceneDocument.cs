@@ -164,13 +164,18 @@ public sealed class DisplayLayoutHint
 public sealed partial class SceneDocument : SceneNodeGraph
 {
     private SceneResourceIdentity resourceIdentity = new(Guid.NewGuid());
-    public const int CurrentVersion = 15;
+    public const int CurrentVersion = 17;
     public int Version { get; set; } = CurrentVersion;
     public Guid ResourceId { get => resourceIdentity.Id; set => resourceIdentity = new(value); }
     public List<PrefabDefinition> Definitions { get; set; } = [];
+    public Dictionary<Guid, RootCanvasKind> RootCanvasAssignments { get; set; } = [];
+    public Dictionary<RootCanvasKind, SubprojectCanvasSettings> RootPreviewCanvases { get; set; } = [];
     [JsonIgnore] public bool ResourceIdentityPersistent => resourceIdentity.Persistent;
     public void RecordResourceIdentityPersistence() => resourceIdentity.Persistent = true;
     [JsonIgnore] public DocumentProvenance Provenance { get; set; } = new();
+    // An entry definition's Origin accompanies its detached header in editor
+    // snapshots; package writers retain it on that definition, never on a scene.
+    [JsonIgnore] internal PointD IndependentCanvasOrigin { get; set; }
     public DocumentKind Kind { get; set; }
     public CanvasElement? Background { get; set; }
     public CanvasSettings Canvas { get; set; } = new();
@@ -179,16 +184,21 @@ public sealed partial class SceneDocument : SceneNodeGraph
     public int NextNumber { get; set; } = 1;
     public List<DisplayLayoutHint> DisplayLayout { get; set; } = [];
     [JsonIgnore] public IEnumerable<string> ReferencedAssets => ReferencedAssetIds.Concat(Background?.AssetId is { } asset ? [asset] : [])
-        .Concat(Definitions.SelectMany(definition => definition.Graph.ReferencedAssetIds)).Distinct(StringComparer.Ordinal);
+        .Concat(RootPreviewCanvases.Values.SelectMany(preview => preview.ReferencedAssetIds))
+        .Concat(Definitions.SelectMany(definition => definition.Graph.ReferencedAssetIds.Concat(definition.PreviewCanvas?.ReferencedAssetIds ?? [])))
+        .Distinct(StringComparer.Ordinal);
     public SceneDocument Clone(bool newIds = false, IReadOnlyDictionary<string, string>? assetIdMap = null)
     {
-        var graph = SceneGraphClone.CloneGraph(this, newIds ? GraphCloneIdentity.NewNodes : GraphCloneIdentity.Preserve, assetIds: assetIdMap).Graph;
+        var cloned = SceneGraphClone.CloneGraph(this, newIds ? GraphCloneIdentity.NewNodes : GraphCloneIdentity.Preserve, assetIds: assetIdMap);
+        var graph = cloned.Graph;
         var background = Background?.Clone(newIds);
         if (background?.AssetId is { } asset && assetIdMap is not null) background.AssetId = assetIdMap[asset];
         var result = new SceneDocument
         {
-            Version = Version, Provenance = Provenance, IsRuntimeEvaluated = graph.IsRuntimeEvaluated, Kind = Kind,
+            Version = Version, Provenance = Provenance, IsRuntimeEvaluated = graph.IsRuntimeEvaluated, Kind = Kind, IndependentCanvasOrigin = IndependentCanvasOrigin,
             Elements = graph.Elements, Groups = graph.Groups, Instances = graph.Instances, RootOrder = graph.RootOrder,
+            RootCanvasAssignments = RootCanvasAssignments.ToDictionary(pair => cloned.NodeIdMap[pair.Key], pair => pair.Value),
+            RootPreviewCanvases = RootPreviewCanvases.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(assetIdMap)),
             Definitions = Definitions.Select(definition => definition.Clone(assetIdMap)).ToList(), Background = background, Canvas = Canvas.Clone(),
             Viewport = Viewport, LayerOpacity = LayerOpacity, NextNumber = NextNumber, DisplayLayout = DisplayLayout.Select(d => d.Clone()).ToList()
         };

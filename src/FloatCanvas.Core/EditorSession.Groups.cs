@@ -17,6 +17,7 @@ public sealed partial class EditorSession
     {
         var graph = new SceneGraph(Document);
         var selected = graph.NormalizeSelection(Selection).Where(id => !graph.IsLocked(id)).ToArray();
+        if (selected.Any(id => !InActiveRoot(graph, id))) throw new InvalidOperationException("A group cannot span root canvases.");
         if (selected.Length == 0 || selected.Length == 1 && graph.FindGroup(selected[0]) is null && graph.FindInstance(selected[0]) is null) return null;
         EnsureWritableParent(EditScopeId);
         name = NormalizeInsertionName(name) ?? NextGroupName();
@@ -28,7 +29,7 @@ public sealed partial class EditorSession
             var order = current.PaintOrder(context);
             var moving = selected.ToHashSet();
             int index = Enumerable.Range(0, order.Count).Where(i => moving.Contains(order[i]) || current.AncestorIds(order[i]).Any(moving.Contains)).DefaultIfEmpty(order.Count - 1).Max() + 1;
-            current.InsertGroup(new() { Id = id, Name = name, OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] }, EditScopeId, index);
+            current.InsertGroup(new() { Id = id, Name = name, OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] }, EditScopeId, index, rootCanvas: ActiveRootCanvas);
             current.ReparentPreservingWorld(selected, id); SynchronizeElementOrder(document); SetSelectionCore([id]);
         });
         return id;
@@ -46,8 +47,10 @@ public sealed partial class EditorSession
             foreach (var saved in roots)
             {
                 var current = new SceneGraph(document); var root = current.FindGroup(saved.Id)!;
+                var canvasRoot = SceneCanvasRoots.Resolve(document, root.Id, current);
+                var children = current.EnumerateChildren(root.Id).ToArray();
                 var placement = new LayerPlacement(root.Transform, root.ElevationScale);
-                foreach (var child in current.EnumerateChildren(root.Id))
+                foreach (var child in children)
                 {
                     selected.Add(child);
                     if (current.FindGroup(child) is { } nested)
@@ -71,6 +74,12 @@ public sealed partial class EditorSession
                     int index = order.IndexOf(root.Id); order.RemoveAt(index); order.InsertRange(index, root.ChildOrder!);
                 }
                 document.Groups.Remove(root);
+                document.RootCanvasAssignments.Remove(root.Id);
+                if (root.ParentId is null)
+                {
+                    var ungrouped = new SceneGraph(document);
+                    foreach (var child in children) SceneCanvasRoots.Assign(document, child, canvasRoot, ungrouped);
+                }
             }
             SynchronizeElementOrder(document); SetSelectionCore(selected);
         });
@@ -137,17 +146,17 @@ public sealed partial class EditorSession
             else graph.FindElement(root)!.Name = groupName;
         }
         var candidate = Document.Clone();
-        AppendSnapshot(candidate, snapshot.Clone(), EditScopeId);
+        AppendSnapshot(candidate, snapshot.Clone(), EditScopeId, ActiveRootCanvas);
         SceneLimits.ValidateCapacity(candidate);
         // Publish resources only after the complete target hierarchy and capacity have been accepted.
         Execute(label ?? L.Get("History.InsertPreset"), document =>
         {
             foreach (var resource in resources) Assets.Add(resource);
-            SetSelectionCore(AppendSnapshot(document, snapshot, EditScopeId));
+            SetSelectionCore(AppendSnapshot(document, snapshot, EditScopeId, ActiveRootCanvas));
         });
     }
 
-    private static Guid[] AppendSnapshot(SceneDocument document, SceneDocument snapshot, Guid? scope)
+    private static Guid[] AppendSnapshot(SceneDocument document, SceneDocument snapshot, Guid? scope, RootCanvasKind rootCanvas)
     {
         var graph = new SceneGraph(document); graph.MaterializeOrder();
         var incoming = new SceneGraph(snapshot); incoming.MaterializeOrder();
@@ -164,6 +173,11 @@ public sealed partial class EditorSession
         foreach (var definition in snapshot.Definitions) if (retainedDefinitions.Add(definition.Id)) document.Definitions.Add(definition.Clone());
         foreach (var element in snapshot.Elements)
             if (element.Kind == ElementKind.Number) document.NextNumber = Math.Max(document.NextNumber, (int)Math.Min(int.MaxValue, (long)element.Number + 1));
+        if (scope is null)
+        {
+            var appended = new SceneGraph(document);
+            foreach (var id in roots) SceneCanvasRoots.Assign(document, id, rootCanvas, appended);
+        }
         SynchronizeElementOrder(document); return roots;
     }
 

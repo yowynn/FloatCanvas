@@ -5,6 +5,7 @@ namespace FloatCanvas.Rendering;
 
 public sealed partial class SceneRenderer
 {
+    private CanvasMapping? _screenRootMapping;
     /// <summary>Draws a transient editing hint in screen coordinates. Ordinary scene rendering and exports never call this.</summary>
     public static void DrawProjectionUnsafeRegion(SKCanvas canvas, SceneDocument document, RectD screenViewport)
     {
@@ -27,12 +28,13 @@ public sealed partial class SceneRenderer
         canvas.DrawPath(path, paint);
     }
 
-    private CanvasMapping MappingFor(SceneDocument document) =>
-        ReferenceEquals(document, _drawingDocument) && _mapping is not null ? _mapping : CanvasMapping.Create(document);
+    private CanvasMapping MappingFor(SceneDocument document, RootCanvasKind root = RootCanvasKind.Main) =>
+        root == RootCanvasKind.Main && ReferenceEquals(document, _drawingDocument) && _mapping is not null ? _mapping :
+        root != RootCanvasKind.Main && ReferenceEquals(document, _drawingDocument) ? (_screenRootMapping ??= CanvasMapping.Create(document, root)) : CanvasMapping.Create(document, root);
 
-    private bool ClipSafePlane(SKCanvas canvas, SceneDocument document)
+    private bool ClipSafePlane(SKCanvas canvas, SceneDocument document, RootCanvasKind root = RootCanvasKind.Main)
     {
-        if (_renderSpace == SceneRenderSpace.PlaneContent) return true;
+        if (_renderSpace == SceneRenderSpace.PlaneContent || root != RootCanvasKind.Main) return true;
         if (ReferenceEquals(document, _drawingDocument) && _mapping is not null && !_referenceOpacityAtHorizon) return true;
         var mapping = MappingFor(document);
         var bounds = document.Viewport;

@@ -1,0 +1,13 @@
+{
+  "RootCanvas.Select": { "zh": "创作画布", "en": "Drawing canvas" },
+  "RootCanvas.ReturnToMain": { "zh": "{0} · 返回主画布", "en": "{0} · Return to Main" },
+  "RootCanvas.ReturnUnavailable": { "zh": "当前操作结束后可返回主画布；共享内容编辑须先完成或取消。", "en": "Return to Main after the current operation finishes. Complete or cancel shared content editing first." },
+  "RootCanvas.PrefabSingleRootUnsupported": { "zh": "此工程包含多个根画布。请先在源工程中将需要的内容导出为预制体，再置入或链接。", "en": "This project contains multiple root canvases. Export the desired content as a prefab from the source project before placing or linking it." },
+  "RootCanvas.Main": { "zh": "主画布", "en": "Main" },
+  "RootCanvas.Foreground": { "zh": "前景画布", "en": "Foreground" },
+  "RootCanvas.Background": { "zh": "背景画布", "en": "Background" },
+  "RootCanvas.MainHint": { "zh": "在主画布中创作；跟随主画布的透视与网格设置", "en": "Draw on the main canvas with its perspective and grid" },
+  "RootCanvas.ForegroundHint": { "zh": "在屏幕平面创作，始终显示在主画布上方", "en": "Draw in screen space, above the main canvas" },
+  "RootCanvas.BackgroundHint": { "zh": "在屏幕平面创作，始终显示在主画布下方", "en": "Draw in screen space, below the main canvas" },
+  "RootCanvas.ScreenPlane": { "zh": "前景和背景画布固定在屏幕平面；透视和网格设置用于主画布。", "en": "Foreground and background stay in screen space. Perspective and grid settings belong to the main canvas." }
+}

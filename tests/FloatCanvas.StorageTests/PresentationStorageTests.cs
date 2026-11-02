@@ -23,9 +23,9 @@ internal static class PresentationStorageTests
         await Edit(old14,"manifest.json",n=>n["Version"]=14);
         await Edit(old14,"scene.json",n=>{n["Version"]=14;Settings(n).Remove("DisplayStyle");Settings(n).Remove("KeyboardLayout");});
         byte[] old14Bytes=await File.ReadAllBytesAsync(old14);var migrated14=(await store.LoadAsync(old14)).Document;
-        check(migrated14.Version==15&&JsonSerializer.Serialize(migrated14)==before&&
+        check(migrated14.Version==SceneDocument.CurrentVersion&&JsonSerializer.Serialize(migrated14)==before&&
             (await File.ReadAllBytesAsync(old14)).AsSpan().SequenceEqual(old14Bytes),
-            "v14 keyboard logs migrate to v15 Log and implicit full layout without changing placement colors identity or source bytes");
+            "v14 keyboard logs migrate to the current format with Log and implicit full layout without changing placement colors identity or source bytes");
         foreach(var style in Enum.GetValues<PresentationDisplayStyle>())
         {
             var styled=document.Clone();var settings=styled.Definitions[0].Graph.Elements[0].Presentation!;settings.DisplayStyle=style;
@@ -114,7 +114,7 @@ internal static class PresentationStorageTests
     private static async Task Edit(string path,string name,Action<JsonObject> edit)
     {
         using var zip=ZipFile.Open(path,ZipArchiveMode.Update);var entry=zip.GetEntry(name)!;JsonObject json;
-        using(var reader=new StreamReader(entry.Open()))json=JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();edit(json);entry.Delete();
+        using(var reader=new StreamReader(entry.Open()))json=JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();edit(json);LegacyFixtureSchema.RemoveFutureRootFields(json);entry.Delete();
         using var writer=new StreamWriter(zip.CreateEntry(name).Open());await writer.WriteAsync(json.ToJsonString());
     }
 }

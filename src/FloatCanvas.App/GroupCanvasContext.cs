@@ -14,4 +14,5 @@ internal sealed record GroupCanvasContext(
     Action? Root = null,
     Action? Export = null,
     Action? Detach = null,
-    bool IsReadOnly = false);
+    bool IsReadOnly = false,
+    bool IsRootContext = false);

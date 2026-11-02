@@ -10,6 +10,8 @@ public sealed class PrefabDraftState
     public Guid DefinitionId { get; set; }
     public Guid ExpectedRevision { get; set; }
     public SceneDocument DraftDocument { get; set; } = new();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PointD? PreviewOrigin { get; set; }
     public Guid? ReturnScopeId { get; set; }
     public List<Guid> ReturnSelection { get; set; } = [];
     public Guid? DraftScopeId { get; set; }
@@ -26,7 +28,7 @@ public sealed class PrefabDraftState
             parent = new()
             {
                 OwnerResourceId = state.OwnerResourceId, DefinitionId = state.DefinitionId, ExpectedRevision = state.ExpectedRevision,
-                DraftDocument = state.DraftDocument.Clone(), ReturnScopeId = state.ReturnScopeId, ReturnSelection = [.. state.ReturnSelection],
+                DraftDocument = state.DraftDocument.Clone(), PreviewOrigin = state.PreviewOrigin, ReturnScopeId = state.ReturnScopeId, ReturnSelection = [.. state.ReturnSelection],
                 DraftScopeId = state.DraftScopeId, DraftSelection = [.. state.DraftSelection], IsSourceProject = state.IsSourceProject,
                 SourcePath = state.SourcePath, SourceFileSha256 = state.SourceFileSha256, ParentEdit = parent
             };

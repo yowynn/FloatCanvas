@@ -189,6 +189,9 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
     {
         var input = new TextBox(); AutomationProperties.SetName(input, L.Get(labelKey));
         var control = new NumericValueField(input, min, max, railMin, railMax, step) { Unit = unit, CanBeginGesture = () => IsEnabled };
+        var kind = key is "CursorRadiusPixels" || key.EndsWith(".RadiusPixels", StringComparison.Ordinal) ? NumericPropertyKind.Length :
+            key is "TrailWidthPixels" || key.EndsWith(".StrokeWidthPixels", StringComparison.Ordinal) ? NumericPropertyKind.StrokeWidth : NumericPropertyKind.Number;
+        control.SetScrubAnchor(kind, L.Get(labelKey));
         AutomationProperties.SetName(control, L.Get(labelKey));
         control.ValueChanged += value => Commit(key, value); control.InvalidInput += Invalid;
         Add(key, control, Row(labelKey, control), value => control.Value = (double)value);

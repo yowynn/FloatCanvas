@@ -7,6 +7,7 @@ internal sealed record PresentationRuntimeDemand(bool Keyboard, bool Pointer, bo
     bool AllPhysicalKeys, double KeyHoldMilliseconds, double ClickMilliseconds, double TrailMilliseconds)
 {
     internal static PresentationRuntimeDemand Empty { get; } = new(false, false, false, false, false, 900, 450, 800);
+    internal bool ScopedKeyboard { get; init; }
     internal bool Any => Keyboard || Pointer;
 }
 

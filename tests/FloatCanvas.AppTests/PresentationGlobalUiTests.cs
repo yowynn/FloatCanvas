@@ -77,10 +77,8 @@ internal static class PresentationGlobalUiTests
         var panel = new ToolOptionsPanel(controller, library, new ColorLibrary(Path.Combine(folder, "colors.json")));
         var global = new PresentationGlobalSettings(); int edits = 0; PresentationPointerSettings? last = null;
         panel.ParametersChanged += () => { edits++; last = controller.Parameters.PointerPresentation!; global.Pointer = last.Clone(); panel.RefreshPresentationGlobalUi(); };
-        panel.PresentationGlobalSettingsChanged += value => { edits++; global = value.Clone(); panel.RefreshPresentationGlobalUi(); };
         panel.SetPresentationGlobalUi(() => global.Clone()); panel.PrepareForShow();
         var editor = Field<PresentationGlobalSettingsPanel>(panel, "presentationGlobalSettings");
-        var keyboardScope = Field<PresentationGlobalSettingsPanel>(panel, "presentationKeyboardScope");
         string document = JsonSerializer.Serialize(session.Document), recipes = JsonSerializer.Serialize(library.User);
         check("mouse tool refresh is silent and leaves its master disabled", edits == 0 && !global.Pointer.Enabled && !Control<CheckBox>(editor, "CursorEnabled").IsEnabled);
         check("mouse colors are visible swatches and have no second opacity controls", Field<Grid>(Control<ColorField>(editor, "CursorColor"), "swatch").Children.Count == 1 && !Entries(editor).Contains("CursorOpacity") && !Entries(editor).Contains("TrailOpacity") && !Entries(editor).Contains("RightClick.Opacity"));
@@ -104,8 +102,7 @@ internal static class PresentationGlobalUiTests
         panel.RefreshPresentationRuntimeUi();
         check("runtime status refresh leaves the user's mouse numeric draft untouched", radius.Input.Text == "9999" && edits == beforeInvalid);
         radius.Input.Text = "36"; last!.RightClick.Color = 0xff000000;
-        Control<SegmentedChoice>(keyboardScope, "KeyboardScope").SelectedValue = PresentationKeyboardScope.OutsideFloatCanvas;
-        check("scope edits preserve independently owned pointer tool parameters", global.Pointer.RightClick.Color == 0x8c2468ac && global.Pointer.CursorRadiusPixels == 36 && global.KeyboardScope == PresentationKeyboardScope.OutsideFloatCanvas);
+        check("pointer edits own their clones without altering unrelated personal settings", global.Pointer.RightClick.Color == 0x8c2468ac && global.Pointer.CursorRadiusPixels == 36 && global.KeyboardScope == PresentationKeyboardScope.AllApplications);
         Change(editor, "TrailEnabled", true); Control<NumericValueField>(editor, "TrailWidthPixels").Input.Text = "7";
         Control<NumericValueField>(editor, "TrailMilliseconds").Input.Text = "1200"; Control<ColorField>(editor, "TrailColor").SetUserValue(0xb3aabbcc);
         check("mouse trail exposes width lifetime and color alpha without opacity multiplier", global.Pointer.TrailEnabled && global.Pointer.TrailWidthPixels == 7 && global.Pointer.TrailMilliseconds == 1200 && global.Pointer.TrailOpacity == 1 && global.Pointer.TrailColor == 0xb3aabbcc);
@@ -113,8 +110,8 @@ internal static class PresentationGlobalUiTests
         string retained = JsonSerializer.Serialize(global.Pointer); int disabledEdits = edits;
         Control<NumericValueField>(editor, "TrailWidthPixels").Input.Text = "11";
         check("mouse master off retains styles and blocks hidden stale fields", !global.Pointer.AnyEnabled && edits == disabledEdits && JsonSerializer.Serialize(global.Pointer) == retained);
-        panel.SetPresentationGlobalUi(null); Control<SegmentedChoice>(keyboardScope, "KeyboardScope").SelectedValue = PresentationKeyboardScope.FloatCanvasOnly;
-        check("an unattached keyboard scope panel cannot publish personal preferences", edits == disabledEdits);
+        panel.SetPresentationGlobalUi(null);
+        check("mouse tool has no hidden global keyboard scope editor", !Field<Dictionary<string, FrameworkElement>>(panel, "rows").ContainsKey("PresentationKeyboardScope") && edits == disabledEdits);
         check("mouse parameters and keyboard scope edits leave authored source history and recipes unchanged", session.UndoCount == 0 && JsonSerializer.Serialize(session.Document) == document && JsonSerializer.Serialize(library.User) == recipes);
         check("keyboard runtime status has no global Start Stop or Bake button", !Descendants(Field<PresentationRuntimeControls>(panel, "presentationRuntime")).OfType<Button>().Any());
         controller.Tool = EditorTool.PointerPresentation; panel.PrepareForShow();

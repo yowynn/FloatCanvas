@@ -11,10 +11,15 @@ internal static class CanvasPreviewDamage
         SceneRenderer renderer, AssetLibrary assets, IReadOnlyList<RectD>? presentationDamage = null, IReadOnlyList<RectD>? windowDamage = null)
     {
         var next = after.Document;
+        // Projected group views retain the live owner for picking. Damage needs
+        // each frame's frozen author graph, not two aliases of that mutable owner.
+        var previousSource = before?.FrozenEvaluation?.SourceDocument ?? before?.SourceDocument ?? before?.Document;
+        var nextSource = after.FrozenEvaluation?.SourceDocument ?? after.SourceDocument ?? next;
         if (before is null || before.ScreenDraft is not null || after.ScreenDraft is not null || before.Context != after.Context || before.PreferGpu != after.PreferGpu ||
+            next.RootCanvasAssignments.Count > 0 || before.Document.RootCanvasAssignments.Count > 0 ||
             before.Document.Kind != next.Kind || before.Document.Viewport != next.Viewport || before.Document.LayerOpacity != next.LayerOpacity ||
             before.Context.Calibration || after.Context.Calibration || after.Context.Placing ||
-            !ReferenceEquals((before.SourceDocument ?? before.Document).Background, (after.SourceDocument ?? next).Background) ||
+            !ReferenceEquals(previousSource?.Background, nextSource.Background) ||
             JsonSerializer.Serialize(before.Document.Canvas) != JsonSerializer.Serialize(next.Canvas) ||
             next.Canvas.Projection.Enabled && next.Elements.Any(item => item.IsBillboard) || SceneRenderer.HasLiveEffects(next) ||
             SceneRenderer.HasLiveEffects(before.Document) || next.Elements.Any(item => item.Effects.Count > 0) ||
@@ -24,10 +29,10 @@ internal static class CanvasPreviewDamage
         {
             AddTransientDamage(); return damage;
         }
-        var oldSources = before.SourceDocument?.Elements.ToDictionary(item => item.Id);
-        if (JsonSerializer.Serialize(before.SourceDocument?.Definitions ?? before.Document.Definitions) !=
-            JsonSerializer.Serialize(after.SourceDocument?.Definitions ?? next.Definitions)) return null;
-        var newSources = after.SourceDocument?.Elements.ToDictionary(item => item.Id);
+        var oldSources = previousSource?.Elements.ToDictionary(item => item.Id);
+        if (JsonSerializer.Serialize(previousSource?.Definitions ?? before.Document.Definitions) !=
+            JsonSerializer.Serialize(nextSource.Definitions)) return null;
+        var newSources = nextSource.Elements.ToDictionary(item => item.Id);
         var oldLeaves = before.Evaluation?.Leaves.Select((leaf, index) => (leaf, index)).ToDictionary(pair => pair.leaf.RuntimeElementId);
         var newLeaves = after.Evaluation?.Leaves.Select((leaf, index) => (leaf, index)).ToDictionary(pair => pair.leaf.RuntimeElementId);
         var old = before.Document.Elements.ToDictionary(item => item.Id);

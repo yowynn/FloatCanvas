@@ -5,6 +5,7 @@
   "Shell.NoExecutable": { "zh": "无法确定当前程序路径。", "en": "The current executable path is unavailable." },
   "Shell.ForwardFailed": { "zh": "未能将工程交给正在运行的浮绘。请稍后重试，或从主菜单打开工程。", "en": "The running FloatCanvas could not receive the project. Try again, or open it from the main menu." },
   "Shell.ProjectType": { "zh": "浮绘工程", "en": "FloatCanvas project" },
+  "Shell.PrefabType": { "zh": "浮绘预制体", "en": "FloatCanvas prefab" },
   "Shell.RegistrationFailed": { "zh": "工程打开方式注册失败：", "en": "Project file registration failed: " },
   "Shell.StartWithWindows": { "zh": "开机启动", "en": "Start with Windows" },
   "Shell.StartupHint": { "zh": "登录 Windows 后在托盘中运行。", "en": "Start in the tray when you sign in to Windows." },

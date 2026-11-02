@@ -46,21 +46,21 @@ internal static class BillboardStampPreviewTests
             var actual = await StampPreviewTooltip.GetPreviewAsync(library, entry);
             check(label + " produces a frozen real hover bitmap", actual is { IsFrozen: true });
             if (actual is null) continue;
-            byte[] hover = Encode(actual), expected = ExpectedCanonical(loaded, entry);
+            byte[] hover = Encode(actual), expected = ExpectedPreview(loaded);
             await File.WriteAllBytesAsync(Path.Combine(output, label + "-thumbnail.png"), thumbnail);
             await File.WriteAllBytesAsync(Path.Combine(output, label + "-hover.png"), hover);
             await File.WriteAllBytesAsync(Path.Combine(output, label + "-expected.png"), expected);
             using var actualPixels = SKBitmap.Decode(hover);
             using var expectedPixels = SKBitmap.Decode(expected);
             using var smallPixels = SKBitmap.Decode(thumbnail);
-            check(label + " keeps the complete canonical output dimensions", actualPixels.Width == expectedPixels.Width && actualPixels.Height == expectedPixels.Height);
+            check(label + " keeps the complete independent-preview dimensions", actualPixels.Width == expectedPixels.Width && actualPixels.Height == expectedPixels.Height);
             var colors = shape == "surface" ? new[] { "blue" } : shape.StartsWith("billboard", StringComparison.Ordinal) ? new[] { "red" } : new[] { "blue", "red" };
             var colorRows = new List<object>();
             foreach (string color in colors)
             {
                 var observed = Bounds(actualPixels, color); var wanted = Bounds(expectedPixels, color); var small = Bounds(smallPixels, color);
                 bool close = Close(observed, wanted, 2) && wanted.Count > 0 && observed.Count > 0 && Math.Abs(observed.Count / (double)wanted.Count - 1) < .05;
-                check(label + " keeps the complete " + color + " artwork at its canonical relative position", close);
+                check(label + " keeps the complete " + color + " artwork in the prefab's own preview coordinates", close);
                 if (!perspective)
                     check(label + " agrees with its saved thumbnail for " + color + " visual placement",
                         NormalizedClose(observed, actualPixels, small, smallPixels));
@@ -74,7 +74,7 @@ internal static class BillboardStampPreviewTests
                 shape == "surface" ? face is null : face is not null && face.BillboardHeight == (shape.EndsWith("negative", StringComparison.Ordinal) ? -80 : 80));
             rows.Add(new { Label = label, Mode = mode.ToString(), Perspective = perspective, EntryWidth = entry.Width, EntryHeight = entry.Height,
                 ActualWidth = actualPixels.Width, ActualHeight = actualPixels.Height, ThumbnailWidth = smallPixels.Width, ThumbnailHeight = smallPixels.Height,
-                Colors = colorRows, Space = perspective ? "hover canonical normalized flat; saved thumbnail uses source screen projection" : "identity screen and canonical flat agree" });
+                Colors = colorRows, Space = "hover uses saved independent preview; raster appearance is already baked" });
         }
         await File.WriteAllTextAsync(Path.Combine(output, "pixel-bounds.json"), JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine("BILLBOARD_STAMP_PREVIEW_ARTIFACTS=" + Path.GetFullPath(output));
@@ -99,18 +99,24 @@ internal static class BillboardStampPreviewTests
         return new(document);
     }
 
-    private static byte[] ExpectedCanonical(LoadedProject stamp, StampEntry entry)
+    private static byte[] ExpectedPreview(LoadedProject stamp)
     {
-        // Independent oracle: bake the existing local-to-flat visual map into ordinary
-        // projective elements before fitting. This does not reproduce the preview's
-        // anchor/elevation mutation algorithm or rely on the saved thumbnail's projection.
-        double factor = 320 / Math.Max(stamp.Document.Viewport.Width, stamp.Document.Viewport.Height);
-        var fit = Projective2D.FromAffine(Affine2D.Scale(factor, factor).Compose(Affine2D.Translation(-stamp.Document.Viewport.X, -stamp.Document.Viewport.Y)));
-        var document = new SceneDocument { Viewport = new(0, 0, Math.Max(1, entry.Width * factor), Math.Max(1, entry.Height * factor)), LayerOpacity = stamp.Document.LayerOpacity };
+        // Independent oracle: bake projected corners and artwork into a flat image,
+        // rather than reproducing the preview's canvas-transform rendering path.
+        var mapping = CanvasMapping.Create(stamp.Document);
+        var points = stamp.Document.Elements.SelectMany(element =>
+        {
+            var b = ElementGeometry.LocalBounds(element); var matrix = mapping.ElementToScreen(element);
+            return new[] { new PointD(b.Left, b.Top), new(b.Right, b.Top), new(b.Right, b.Bottom), new(b.Left, b.Bottom) }.Select(matrix.TransformPoint);
+        }).ToArray();
+        var bounds = new RectD(points.Min(p => p.X), points.Min(p => p.Y), points.Max(p => p.X) - points.Min(p => p.X), points.Max(p => p.Y) - points.Min(p => p.Y));
+        double factor = 320 / Math.Max(bounds.Width, bounds.Height);
+        var fit = Projective2D.FromAffine(Affine2D.Scale(factor, factor).Compose(Affine2D.Translation(-bounds.X, -bounds.Y)));
+        var document = new SceneDocument { Viewport = new(0, 0, Math.Ceiling(bounds.Width * factor), Math.Ceiling(bounds.Height * factor)), LayerOpacity = stamp.Document.LayerOpacity };
         foreach (var source in stamp.Document.Elements)
         {
             var element = source.Clone();
-            element.ProjectivePlacement = fit.Compose(BillboardGeometry.ElementToTarget(source, Projective2D.Identity));
+            element.ProjectivePlacement = fit.Compose(mapping.ElementToScreen(source));
             element.Transform = Affine2D.Identity; element.IsBillboard = false;
             document.Elements.Add(element);
         }

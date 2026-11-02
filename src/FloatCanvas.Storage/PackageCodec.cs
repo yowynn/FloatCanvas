@@ -312,6 +312,11 @@ internal static class PackageCodec
                     if (++depth > SceneLimits.MaximumGroupDepth) throw new InvalidDataException("Nested prefab edit recovery is too deep.");
                     RequireProperties(pending, "OwnerResourceId", "DefinitionId", "ExpectedRevision", "DraftDocument", "ReturnScopeId", "ReturnSelection", "DraftScopeId", "DraftSelection", "IsSourceProject", "SourcePath", "SourceFileSha256");
                     RequireSceneProperties(pending.GetProperty("DraftDocument"));
+                    if (pending.TryGetProperty("PreviewOrigin", out var previewOrigin) && previewOrigin.ValueKind != JsonValueKind.Null)
+                    {
+                        if (ReadFormatVersion(pending.GetProperty("DraftDocument")) < 17) throw new InvalidDataException("Subproject preview origins require scene format 17.");
+                        RequireProperties(previewOrigin, "X", "Y");
+                    }
                     if (!pending.TryGetProperty("ParentEdit", out pending)) break;
                 }
             }
@@ -322,39 +327,36 @@ internal static class PackageCodec
     {
         if (json.ValueKind != JsonValueKind.Object || new[] { "Version", "Kind", "Elements", "Viewport", "LayerOpacity", "NextNumber" }.Any(p => !json.TryGetProperty(p, out _))) throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
         int version = ReadFormatVersion(json);
+        if (version >= 16)
+        {
+            RequireProperties(json, "RootCanvasAssignments");
+            var assignments = json.GetProperty("RootCanvasAssignments");
+            if (assignments.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Invalid root canvas assignments.");
+            var rootIds = new HashSet<Guid>();
+            foreach (var pair in assignments.EnumerateObject())
+                if (rootIds.Count >= SceneLimits.MaximumElements || !Guid.TryParse(pair.Name, out var id) || id == Guid.Empty || !rootIds.Add(id))
+                    throw new InvalidDataException("Invalid or repeated root canvas identity.");
+        }
+        else if (json.TryGetProperty("RootCanvasAssignments", out _)) throw new InvalidDataException("Root canvases require scene format 16.");
+        if (version >= 17)
+        {
+            RequireProperties(json, "RootPreviewCanvases");
+            var previews = json.GetProperty("RootPreviewCanvases");
+            if (previews.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Invalid root preview canvases.");
+            var roots = new HashSet<RootCanvasKind>();
+            foreach (var pair in previews.EnumerateObject())
+            {
+                if (!Enum.TryParse<RootCanvasKind>(pair.Name, out var root) || root is not (RootCanvasKind.Foreground or RootCanvasKind.Background) || !roots.Add(root))
+                    throw new InvalidDataException("Invalid or repeated root preview canvas.");
+                RequirePreviewProperties(pair.Value, version);
+            }
+        }
+        else if (json.TryGetProperty("RootPreviewCanvases", out _)) throw new InvalidDataException("Subproject canvases require scene format 17.");
         if (version >= 3)
         {
             RequireProperties(json, "Canvas");
             var canvas = json.GetProperty("Canvas");
-            RequireProperties(canvas, "BackgroundColor", "Projection", "Grid");
-            if (version >= 5) RequireProperties(canvas, "DepthPriorityOcclusion");
-            var projection = canvas.GetProperty("Projection");
-            RequireProperties(projection, "Enabled", "Columns", "Rows", "Origin", "CellSize", "Quad", "Matrix", "AlgorithmVersion");
-            if (version is 6 or 7) RequireProperties(projection, "LockedGridCellSize");
-            if (version >= 8)
-            {
-                RequireProperties(projection, "PinLocation", "PinPlanePoint", "ReferenceBounds");
-                if (projection.GetProperty("ReferenceBounds").ValueKind != JsonValueKind.Null)
-                    RequireProperties(projection.GetProperty("ReferenceBounds"), "X", "Y", "Width", "Height");
-                if (projection.GetProperty("PinPlanePoint").ValueKind != JsonValueKind.Null)
-                    RequireProperties(projection.GetProperty("PinPlanePoint"), "X", "Y");
-                RequireProperties(canvas.GetProperty("Grid"), "FlatTranslation");
-                RequireProperties(canvas.GetProperty("Grid").GetProperty("FlatTranslation"), "X", "Y");
-            }
-            RequireMatrixProperties(projection.GetProperty("Matrix"));
-            RequireProperties(projection.GetProperty("Origin"), "X", "Y");
-            if (projection.TryGetProperty("PlaneBounds", out var planeBounds) && planeBounds.ValueKind != JsonValueKind.Null)
-                RequireProperties(planeBounds, "X", "Y", "Width", "Height");
-            RequireProperties(canvas.GetProperty("Grid"), "Visible", "Color", "Width", "Pattern");
-            if (canvas.GetProperty("Grid").TryGetProperty("PlaneOrigin", out var planeOrigin) && planeOrigin.ValueKind != JsonValueKind.Null)
-                RequireProperties(planeOrigin, "X", "Y");
-            if (version >= 7)
-            {
-                var grid = canvas.GetProperty("Grid");
-                RequireProperties(grid, "FlatCellSize", "FlatOrigin");
-                if (grid.GetProperty("FlatOrigin").ValueKind != JsonValueKind.Null)
-                    RequireProperties(grid.GetProperty("FlatOrigin"), "X", "Y");
-            }
+            RequireCanvasProperties(canvas, version);
         }
         if (json.GetProperty("Elements").ValueKind == JsonValueKind.Array)
             foreach (var element in json.GetProperty("Elements").EnumerateArray()) { RequirePlacementProperties(element); RequireAppearanceProperties(element, version); }
@@ -367,6 +369,7 @@ internal static class PackageCodec
             {
                 RequireProperties(group, "Id", "ParentId", "Name", "Transform", "ElevationScale", "Visible", "Locked", "OrderMode");
                 RequireProperties(group.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
+                RequireOptionalPreview(group, version);
             }
         }
         if (graphVersion >= 11)
@@ -378,6 +381,38 @@ internal static class PackageCodec
         else if (json.TryGetProperty("Instances", out _) || json.TryGetProperty("Definitions", out _) || json.TryGetProperty("ResourceId", out _))
             throw new InvalidDataException("Prefab fields require scene format 11.");
         if (json.TryGetProperty("Background", out var background) && background.ValueKind != JsonValueKind.Null) { RequirePlacementProperties(background); RequireAppearanceProperties(background, version); }
+    }
+    private static void RequireCanvasProperties(JsonElement canvas, int version)
+    {
+        RequireProperties(canvas, "BackgroundColor", "Projection", "Grid");
+        if (version >= 5) RequireProperties(canvas, "DepthPriorityOcclusion");
+        var projection = canvas.GetProperty("Projection");
+        RequireProperties(projection, "Enabled", "Columns", "Rows", "Origin", "CellSize", "Quad", "Matrix", "AlgorithmVersion");
+        if (version is 6 or 7) RequireProperties(projection, "LockedGridCellSize");
+        if (version >= 8)
+        {
+            RequireProperties(projection, "PinLocation", "PinPlanePoint", "ReferenceBounds");
+            if (projection.GetProperty("ReferenceBounds").ValueKind != JsonValueKind.Null)
+                RequireProperties(projection.GetProperty("ReferenceBounds"), "X", "Y", "Width", "Height");
+            if (projection.GetProperty("PinPlanePoint").ValueKind != JsonValueKind.Null)
+                RequireProperties(projection.GetProperty("PinPlanePoint"), "X", "Y");
+            RequireProperties(canvas.GetProperty("Grid"), "FlatTranslation");
+            RequireProperties(canvas.GetProperty("Grid").GetProperty("FlatTranslation"), "X", "Y");
+        }
+        RequireMatrixProperties(projection.GetProperty("Matrix"));
+        RequireProperties(projection.GetProperty("Origin"), "X", "Y");
+        if (projection.TryGetProperty("PlaneBounds", out var planeBounds) && planeBounds.ValueKind != JsonValueKind.Null)
+            RequireProperties(planeBounds, "X", "Y", "Width", "Height");
+        RequireProperties(canvas.GetProperty("Grid"), "Visible", "Color", "Width", "Pattern");
+        if (canvas.GetProperty("Grid").TryGetProperty("PlaneOrigin", out var planeOrigin) && planeOrigin.ValueKind != JsonValueKind.Null)
+            RequireProperties(planeOrigin, "X", "Y");
+        if (version >= 7)
+        {
+            var grid = canvas.GetProperty("Grid");
+            RequireProperties(grid, "FlatCellSize", "FlatOrigin");
+            if (grid.GetProperty("FlatOrigin").ValueKind != JsonValueKind.Null)
+                RequireProperties(grid.GetProperty("FlatOrigin"), "X", "Y");
+        }
     }
     private static void RequirePrefabProperties(JsonElement json)
     {
@@ -393,6 +428,7 @@ internal static class PackageCodec
         {
             RequireProperties(definition, "Id", "Revision", "Name", "Pivot", "Graph", "Source");
             RequireProperties(definition.GetProperty("Pivot"), "X", "Y");
+            RequireOptionalPreview(definition, version);
             RequireGraphProperties(definition.GetProperty("Graph"), version);
             var source = definition.GetProperty("Source");
             if (source.ValueKind == JsonValueKind.Null) continue;
@@ -430,11 +466,31 @@ internal static class PackageCodec
         {
             RequireProperties(group, "Id", "ParentId", "Name", "Transform", "ElevationScale", "Visible", "Locked", "OrderMode");
             RequireProperties(group.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
+            RequireOptionalPreview(group, version);
         }
         foreach (var instance in graph.GetProperty("Instances").EnumerateArray())
         {
             RequireProperties(instance, "Id", "ParentId", "DefinitionId", "Name", "Transform", "ElevationScale", "Visible", "Locked");
             RequireProperties(instance.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
+        }
+    }
+    private static void RequireOptionalPreview(JsonElement owner, int version)
+    {
+        if (!owner.TryGetProperty("PreviewCanvas", out var preview)) return;
+        if (version < 17) throw new InvalidDataException("Subproject canvases require scene format 17.");
+        if (preview.ValueKind != JsonValueKind.Null) RequirePreviewProperties(preview, version);
+    }
+    private static void RequirePreviewProperties(JsonElement preview, int version)
+    {
+        RequireProperties(preview, "Origin", "Viewport", "Canvas", "LayerOpacity");
+        RequireProperties(preview.GetProperty("Origin"), "X", "Y");
+        RequireProperties(preview.GetProperty("Viewport"), "X", "Y", "Width", "Height");
+        RequireCanvasProperties(preview.GetProperty("Canvas"), version);
+        if (preview.TryGetProperty("Background", out var background) && background.ValueKind != JsonValueKind.Null)
+        {
+            RequireProperties(background, "Id", "Kind", "GroupId", "Transform", "Points", "Width", "Height", "Style", "Text", "Effects", "Visible", "Locked");
+            RequireProperties(background.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
+            RequirePlacementProperties(background); RequireAppearanceProperties(background, version);
         }
     }
     private static void RequireAppearanceProperties(JsonElement element, int version)
@@ -498,6 +554,10 @@ internal static class PackageCodec
         RequireProperties(element, "Presentation");
         RequireProperties(settings, "Enabled", "Modules", "KeyDisplay", "RecentChordLimit", "KeyHoldMilliseconds", "KeyPanelAlignment",
             "KeyPanelMaximumWidth", "CursorRadiusPixels", "RippleMilliseconds", "TrailMilliseconds", "TrailWidthPixels");
+        if (version >= 17) RequireProperties(settings, "KeyboardScope");
+        else if (settings.TryGetProperty("KeyboardScope", out var legacyScope) &&
+            (legacyScope.ValueKind != JsonValueKind.Number || !legacyScope.TryGetInt32(out int scope) || scope != 0))
+            throw new InvalidDataException("Per-layer keyboard scope requires scene format 17.");
         if (version >= 15) RequireProperties(settings, "DisplayStyle");
         else if (settings.TryGetProperty("DisplayStyle", out var legacyStyle) &&
             (legacyStyle.ValueKind != JsonValueKind.Number || !legacyStyle.TryGetInt32(out int style) || style != 0) ||

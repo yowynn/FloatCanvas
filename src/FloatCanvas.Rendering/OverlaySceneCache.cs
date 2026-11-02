@@ -14,6 +14,8 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
 {
     private readonly Dictionary<TileKey, TileEntry> tiles = [];
     private ContentKey? content;
+    private RootContentKey? rootContent;
+    private Dictionary<Guid, RootCanvasKind>? rootAssignments;
     private long clock, byteLimit = 128L * 1024 * 1024;
     private bool disposed;
     private static readonly SKSamplingOptions Nearest = new(SKFilterMode.Nearest);
@@ -56,13 +58,16 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         bool eligible = document.Kind == DocumentKind.LiveOverlay && document.Background is null &&
             (document.Canvas.BackgroundColor >> 24) == 0 && renderer.ScreenBackdrop is null &&
             document.LayerOpacity > 0 && document.LayerOpacity < 1;
-        if (eligible)
+        bool rootTarget = SceneRenderer.HasAuxiliaryRoots(document);
+        if (eligible || rootTarget)
         {
             using var format = surface.PeekPixels();
-            eligible = format is not null &&
+            bool supported = format is not null &&
                 format.ColorType == SKColorType.Bgra8888 && format.AlphaType == SKAlphaType.Premul;
+            eligible &= supported;
+            rootTarget &= supported && format!.ColorSpace is null;
         }
-        if (!DrawCore(surface.Canvas, document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, bypassCache, eligible, sceneIdentity)) return;
+        if (!DrawCore(surface.Canvas, document, assets, sceneRevision, transactionId, dynamicFirst, dynamicLast, bypassCache, eligible, sceneIdentity, clearedRaster: rootTarget)) return;
         surface.Canvas.Flush();
         using var pixels = surface.PeekPixels() ?? throw new InvalidOperationException(L.Get("Overlay.RasterTargetUnreadable"));
         // The preceding caller Clear and scene draw have already detached any older snapshots.
@@ -86,7 +91,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
 
     // Returns true only when the cache composed raw annotation alpha for the raster caller.
     private bool DrawCore(SKCanvas canvas, SceneDocument document, AssetLibrary assets, long sceneRevision,
-        long transactionId, int dynamicFirst, int dynamicLast, bool bypassCache, bool inPlaceOpacity, object? sceneIdentity = null)
+        long transactionId, int dynamicFirst, int dynamicLast, bool bypassCache, bool inPlaceOpacity, object? sceneIdentity = null, bool clearedRaster = false)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(canvas); ArgumentNullException.ThrowIfNull(document); ArgumentNullException.ThrowIfNull(assets);
@@ -118,6 +123,23 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         }
         bool dynamic = dynamicFirst >= 0 && dynamicLast >= dynamicFirst && dynamicLast < document.Elements.Count;
         bool invalidRange = suppliedRangeInvalid || !dynamic && (dynamicFirst != -1 || dynamicLast != -1);
+        if (SceneRenderer.HasAuxiliaryRoots(document))
+        {
+            // Static screen roots need their complete B/Main/F composition, rather
+            // than the main-plane prefix/suffix rasterizer below. Dynamic content
+            // continues to use the renderer until its own invalidation is cacheable.
+            if (!clearedRaster || canvas.Context is not null || bypassCache || invalidRange || dynamic || byteLimit == 0 ||
+                renderer.ScreenBackdrop is not null || renderer.LiveEffectContext is not null || renderer.PresentedImages is not null ||
+                renderer.PresentationFrame is not null || renderer.WindowFrames is not null || SceneRenderer.HasLiveEffects(document) ||
+                document.Elements.Any(element => element.Kind == ElementKind.Presentation || element.WindowSource is not null) ||
+                renderer.HasAnimatedImages(document, assets) || !TryTile(canvas, out var rootTile))
+            {
+                Invalidate(); renderer.Draw(canvas, document, assets); return false;
+            }
+            DrawRootComposite(canvas, document, assets, sceneIdentity ?? document, sceneRevision, transactionId, rootTile, source.Background);
+            // A complete composite already owns its single final opacity pass.
+            return false;
+        }
         if (canvas.Context is not null || bypassCache || invalidRange || renderer.UsesDepthComposition(document) || SceneRenderer.HasLiveEffects(document) ||
             !TryTile(canvas, out var tile) || byteLimit == 0)
         {
@@ -210,6 +232,45 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
         BuildCount++; return surface.Snapshot();
     }
 
+    private void DrawRootComposite(SKCanvas canvas, SceneDocument document, AssetLibrary assets, object sceneIdentity,
+        long revision, long transaction, TileKey tile, CanvasElement? backgroundIdentity)
+    {
+        var mapping = CanvasMapping.Create(document); var grid = document.Canvas.Grid;
+        var appearance = new CanvasKey(mapping.PlaneToScreen, mapping.GridOrigin, mapping.GridCellSize,
+            document.Canvas.BackgroundColor, grid.Visible, grid.Color, grid.Width, grid.Pattern);
+        var key = new RootContentKey(sceneIdentity, assets, assets.Count, revision, transaction, document.Elements.Count,
+            document.Viewport, document.LayerOpacity, document.Kind, appearance, document.Canvas.Projection.Enabled,
+            document.Canvas.DepthPriorityOcclusion, CanvasProjectionGeometry.ResolvePlaneBounds(document.Canvas.Projection), backgroundIdentity);
+        bool sameRoots = rootAssignments is not null && rootAssignments.Count == document.RootCanvasAssignments.Count &&
+            rootAssignments.All(pair => document.RootCanvasAssignments.TryGetValue(pair.Key, out var root) && root == pair.Value);
+        if (rootContent != key || !sameRoots)
+        {
+            Invalidate(); rootContent = key; rootAssignments = new(document.RootCanvasAssignments);
+        }
+        long required = checked((long)tile.Bounds.Width * tile.Bounds.Height * 4);
+        if (required > byteLimit) { Invalidate(); renderer.Draw(canvas, document, assets); return; }
+        clock++;
+        if (!tiles.TryGetValue(tile, out var entry))
+        {
+            EvictUntilFits(required);
+            try
+            {
+                using var surface = SKSurface.Create(new SKImageInfo(tile.Bounds.Width, tile.Bounds.Height, SKColorType.Bgra8888, SKAlphaType.Premul))
+                    ?? throw new OutOfMemoryException(L.Get("Overlay.CacheAllocationFailed"));
+                surface.Canvas.Clear(SKColors.Transparent);
+                surface.Canvas.Translate(tile.TranslateX - tile.Bounds.Left, tile.TranslateY - tile.Bounds.Top);
+                renderer.Draw(surface.Canvas, document, assets);
+                entry = new(surface.Snapshot(), null, required, clock); tiles.Add(tile, entry); CachedRasterBytes += required; BuildCount++;
+            }
+            catch (OutOfMemoryException)
+            {
+                Invalidate(); renderer.Draw(canvas, document, assets); return;
+            }
+        }
+        else { entry.Used = clock; HitCount++; }
+        DrawSegment(canvas, entry.Prefix, tile);
+    }
+
     private static void DrawSegment(SKCanvas canvas, SKImage? image, TileKey tile)
     {
         if (image is null) return;
@@ -243,7 +304,7 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         foreach (var entry in tiles.Values) entry.Dispose();
-        tiles.Clear(); content = null; CachedRasterBytes = 0;
+        tiles.Clear(); content = null; rootContent = null; rootAssignments = null; CachedRasterBytes = 0;
     }
     public void Dispose()
     {
@@ -253,6 +314,9 @@ public sealed class OverlaySceneCache(SceneRenderer renderer) : IDisposable
     private readonly record struct ContentKey(object Document, AssetLibrary Assets, long Revision, long Transaction, int First, int Last, int Count, RectD Viewport, CanvasKey Canvas);
     private readonly record struct CanvasKey(Projective2D Projection, PointD Origin, double CellSize, uint Background,
         bool GridVisible, uint GridColor, double GridWidth, StrokePattern Pattern);
+    private readonly record struct RootContentKey(object Document, AssetLibrary Assets, int AssetCount, long Revision, long Transaction,
+        int Count, RectD Viewport, double Opacity, DocumentKind Kind, CanvasKey Canvas, bool ProjectionEnabled,
+        bool DepthPriority, RectD PlaneBounds, CanvasElement? Background);
     private readonly record struct TileKey(SKRectI Bounds, float TranslateX, float TranslateY);
     private sealed class TileEntry(SKImage? prefix, SKImage? suffix, long bytes, long used) : IDisposable
     {

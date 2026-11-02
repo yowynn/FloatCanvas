@@ -130,7 +130,10 @@ internal static class ToolbarAcceptanceTests
             }
             var moreMenu=Field<Controls.ContextMenu>(session,"_moreToolsMenu");
             Invoke(session,"RefreshMoreToolPreviews");
-            check("more menu uses live neutral tool previews for both blur and pixelate",moreMenu.Items.OfType<Controls.MenuItem>().All(item=>item.Icon is Wpf.DependencyObject icon&&Descendants(icon).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasText"]));
+            var effectEntries=moreMenu.Items.OfType<Controls.MenuItem>().Where(item=>item.Tag is EditorTool.Blur or EditorTool.Pixelate).ToArray();
+            check("more menu contains both blur and pixelate exactly once",effectEntries.Length==2&&effectEntries.Select(item=>(EditorTool)item.Tag).Distinct().Count()==2);
+            check("more menu uses live neutral tool previews for both blur and pixelate",effectEntries.All(item=>item.Icon is Wpf.DependencyObject icon&&Descendants(icon).OfType<Shapes.Path>().Single().Stroke==app.Resources["CanvasText"]));
+            CheckPresentationMenuPreviews(check,session,moreMenu);
             CheckMorePreviewLifecycle(check,session,editor,(OverlayContextMenu)moreMenu,shell.Dispatcher);
             var parametersBefore=System.Text.Json.JsonSerializer.Serialize(editor.Parameters);
             billboard.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
@@ -375,6 +378,35 @@ internal static class ToolbarAcceptanceTests
     }
 
     private static bool Near(double a,double b)=>Math.Abs(a-b)<.05;
+    private static void CheckPresentationMenuPreviews(Action<string,bool> check,DesktopSession session,Controls.ContextMenu menu)
+    {
+        var memory=Field<Dictionary<EditorTool,ToolParameters>>(session,"_toolbarToolMemory");
+        foreach(var tool in new[]{EditorTool.Presentation,EditorTool.PointerPresentation})
+        {
+            var entries=menu.Items.OfType<Controls.MenuItem>().Where(item=>Equals(item.Tag,tool)).ToArray();
+            check("more menu contains one "+tool+" preview",entries.Length==1);
+            bool hadPrevious=memory.TryGetValue(tool,out var previous);
+            try
+            {
+                var parameters=previous?.Clone()??new ToolParameters {Tool=tool};
+                parameters.Style.Opacity=1;parameters.Style.Background=0;
+                parameters.PointerPresentation=new() {CursorEnabled=true,ClicksEnabled=false,TrailEnabled=false,CursorColor=0xFF168F69};
+                parameters.Style.Foreground=0xFF168F69;memory[tool]=parameters;
+                Invoke(session,"RefreshMoreToolPreviews");
+                var icon=(Wpf.FrameworkElement)entries[0].Icon;Measure(icon);var green=Raster(icon,4);
+                parameters=parameters.Clone();parameters.Style.Foreground=0xFF8B4CCF;parameters.PointerPresentation!.CursorColor=0xFF8B4CCF;memory[tool]=parameters;
+                Invoke(session,"RefreshMoreToolPreviews");
+                icon=(Wpf.FrameworkElement)entries[0].Icon;Measure(icon);var purple=Raster(icon,4);
+                check(tool+" menu preview follows its remembered color and refreshes when that color changes",
+                    ContainsColor(green,Media.Color.FromRgb(0x16,0x8F,0x69))&&ContainsColor(purple,Media.Color.FromRgb(0x8B,0x4C,0xCF))&&Fingerprint(green)!=Fingerprint(purple));
+            }
+            finally
+            {
+                if(hadPrevious)memory[tool]=previous!;else memory.Remove(tool);
+                Invoke(session,"RefreshMoreToolPreviews");
+            }
+        }
+    }
     private static void CheckMorePreviewLifecycle(Action<string,bool> check,DesktopSession session,EditorController editor,OverlayContextMenu menu,Threading.Dispatcher dispatcher)
     {
         var previous=editor.Parameters;

@@ -8,6 +8,9 @@ namespace FloatCanvas.App;
 internal sealed class WindowsShellIntegration
 {
     internal const string ProgId = "FloatCanvas.Project";
+    internal const string PrefabProgId = "FloatCanvas.Prefab";
+    private static readonly (string Extension, string ProgId, string Label)[] FileTypes =
+        [(".floatcanvas", ProgId, "Shell.ProjectType"), (".floatprefab", PrefabProgId, "Shell.PrefabType")];
     private readonly RegistryKey _root;
     private readonly string _executable;
     private readonly bool _notifyShell;
@@ -46,24 +49,25 @@ internal sealed class WindowsShellIntegration
             key.SetValue(name, value, RegistryValueKind.String);
         }
         const string classes = @"Software\Classes\";
-        Set(classes + ProgId, "", L.Get("Shell.ProjectType"));
-        Set(classes + ProgId + @"\DefaultIcon", "", $"\"{_executable}\",0");
-        Set(classes + ProgId + @"\shell\open\command", "", OpenCommand);
-        using (var extension = _root.CreateSubKey(classes + ".floatcanvas", true))
+        foreach (var type in FileTypes)
         {
+            Set(classes + type.ProgId, "", L.Get(type.Label));
+            Set(classes + type.ProgId + @"\DefaultIcon", "", $"\"{_executable}\",0");
+            Set(classes + type.ProgId + @"\shell\open\command", "", OpenCommand);
+            using var extension = _root.CreateSubKey(classes + type.Extension, true);
             // Existing file associations and Windows UserChoice remain under the user's control.
-            if (extension.GetValue("") is not string current || string.IsNullOrWhiteSpace(current)) extension.SetValue("", ProgId);
+            if (extension.GetValue("") is not string current || string.IsNullOrWhiteSpace(current)) extension.SetValue("", type.ProgId);
+            Set(classes + type.Extension + @"\OpenWithProgids", type.ProgId, "");
         }
-        Set(classes + @".floatcanvas\OpenWithProgids", ProgId, "");
         const string app = classes + @"Applications\FloatCanvas.exe";
         Set(app, "FriendlyAppName", L.Get("App.Name"));
         Set(app + @"\shell\open\command", "", OpenCommand);
-        Set(app + @"\SupportedTypes", ".floatcanvas", "");
+        foreach (var type in FileTypes) Set(app + @"\SupportedTypes", type.Extension, "");
         const string capabilities = @"Software\FloatCanvas\Capabilities";
         Set(capabilities, "ApplicationName", "FloatCanvas");
         Set(capabilities, "ApplicationDescription", L.Get("Shell.ProjectType"));
         Set(capabilities, "InstallPath", _executable);
-        Set(capabilities + @"\FileAssociations", ".floatcanvas", ProgId);
+        foreach (var type in FileTypes) Set(capabilities + @"\FileAssociations", type.Extension, type.ProgId);
         Set(@"Software\RegisteredApplications", "FloatCanvas", capabilities);
         if (_notifyShell) SHChangeNotify(0x08000000, 0, 0, 0);
     }
@@ -83,27 +87,31 @@ internal sealed class WindowsShellIntegration
             if (empty) _root.DeleteSubKey(key, false);
         }
         void Empty(string key) { Remove(key, "__FloatCanvasNoSuchValue__"); }
-        bool projectOwned = Owns(classes + ProgId + @"\shell\open\command", "", OpenCommand);
-        if (projectOwned)
+        bool projectOwned = false;
+        foreach (var type in FileTypes)
         {
-            Remove(classes + ProgId + @"\shell\open\command", "");
-            Empty(classes + ProgId + @"\shell\open"); Empty(classes + ProgId + @"\shell");
-            if (Owns(classes + ProgId + @"\DefaultIcon", "", $"\"{_executable}\",0")) Remove(classes + ProgId + @"\DefaultIcon", "");
-            Remove(classes + ProgId, "");
-            Remove(classes + @".floatcanvas\OpenWithProgids", ProgId);
-            if (Owns(classes + ".floatcanvas", "", ProgId)) Remove(classes + ".floatcanvas", "");
+            if (!Owns(classes + type.ProgId + @"\shell\open\command", "", OpenCommand)) continue;
+            projectOwned = true;
+            Remove(classes + type.ProgId + @"\shell\open\command", "");
+            Empty(classes + type.ProgId + @"\shell\open"); Empty(classes + type.ProgId + @"\shell");
+            if (Owns(classes + type.ProgId + @"\DefaultIcon", "", $"\"{_executable}\",0")) Remove(classes + type.ProgId + @"\DefaultIcon", "");
+            Remove(classes + type.ProgId, "");
+            Remove(classes + type.Extension + @"\OpenWithProgids", type.ProgId);
+            if (Owns(classes + type.Extension, "", type.ProgId)) Remove(classes + type.Extension, "");
         }
         const string app = classes + @"Applications\FloatCanvas.exe";
         if (Owns(app + @"\shell\open\command", "", OpenCommand))
         {
             Remove(app + @"\shell\open\command", ""); Empty(app + @"\shell\open"); Empty(app + @"\shell");
-            Remove(app + @"\SupportedTypes", ".floatcanvas"); Remove(app, "FriendlyAppName");
+            foreach (var type in FileTypes) Remove(app + @"\SupportedTypes", type.Extension);
+            Remove(app, "FriendlyAppName");
         }
         const string capabilities = @"Software\FloatCanvas\Capabilities";
         if (Owns(capabilities, "InstallPath", _executable) || (projectOwned && !HasValue(capabilities, "InstallPath")))
         {
             if (Owns(@"Software\RegisteredApplications", "FloatCanvas", capabilities)) Remove(@"Software\RegisteredApplications", "FloatCanvas");
-            Remove(capabilities + @"\FileAssociations", ".floatcanvas");
+            foreach (var type in FileTypes)
+                if (Owns(capabilities + @"\FileAssociations", type.Extension, type.ProgId)) Remove(capabilities + @"\FileAssociations", type.Extension);
             Remove(capabilities, "ApplicationName"); Remove(capabilities, "ApplicationDescription"); Remove(capabilities, "InstallPath");
             Empty(@"Software\FloatCanvas");
         }

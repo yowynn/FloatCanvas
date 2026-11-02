@@ -46,11 +46,13 @@ public sealed class PrefabDefinition
     public string Name { get; set; } = "";
     public PointD Pivot { get; set; }
     public SceneNodeGraph Graph { get; set; } = new();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SubprojectCanvasSettings? PreviewCanvas { get; set; }
     public ExternalPrefabSource? Source { get; set; }
     public PrefabDefinition Clone(IReadOnlyDictionary<string, string>? assetIds = null) => new()
     {
         Id = Id, Revision = Revision, Name = Name, Pivot = Pivot,
-        Graph = SceneGraphClone.CloneGraph(Graph, assetIds: assetIds).Graph, Source = Source?.Clone()
+        Graph = SceneGraphClone.CloneGraph(Graph, assetIds: assetIds).Graph, Source = Source?.Clone(), PreviewCanvas = PreviewCanvas?.Clone(assetIds)
     };
 }
 
@@ -70,7 +72,8 @@ public sealed class PrefabPackage
     public List<PrefabDefinition> Definitions { get; set; } = [];
     [JsonIgnore] public DocumentProvenance Provenance { get; set; } = new();
     [JsonIgnore] public bool ResourceIdentityPersistent => identity.Persistent;
-    [JsonIgnore] public IEnumerable<string> ReferencedAssets => Definitions.SelectMany(definition => definition.Graph.ReferencedAssetIds).Distinct(StringComparer.Ordinal);
+    [JsonIgnore] public IEnumerable<string> ReferencedAssets => Definitions.SelectMany(definition => definition.Graph.ReferencedAssetIds
+        .Concat(definition.PreviewCanvas?.ReferencedAssetIds ?? [])).Distinct(StringComparer.Ordinal);
     public void RecordResourceIdentityPersistence() => identity.Persistent = true;
     public PrefabPackage Clone()
     {

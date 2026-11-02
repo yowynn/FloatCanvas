@@ -25,14 +25,16 @@ internal static class LiveEffectStampTests
             var context = new StampRenderContext(document.Clone(), assets);
             var entry = await library.SaveSelectionAsync(session, "Frozen-source live mask", StampSaveMode.RasterMerge, renderContext: context);
             var merged = await library.LoadStampAsync(entry.Id);
-            check("a merged live-region stamp becomes one portable image at its original region dimensions", merged.Document.Elements is [{ Kind: ElementKind.Image, Width: 80, Height: 60 }] && merged.Assets.Count == 1);
+            check("a merged live-region stamp keeps original image dimensions and retains its preview-only background", merged.Document.Elements is [{ Kind: ElementKind.Image, Width: 80, Height: 60 }] &&
+                merged.ContentBounds == new RectD(0, 0, 80, 60) && merged.Assets.Count == 2 && merged.Document.Background?.AssetId == blue && !merged.Assets.TryGet(lime, out _));
             using (var pixels = SKBitmap.Decode(merged.Assets.Get(merged.Document.Elements[0].AssetId!).Data.ToArray()))
                 check("merged live-region pixels include the lower image and frozen background while excluding upper objects", pixels.GetPixel(pixels.Width / 4, pixels.Height / 2) == SKColors.Lime && pixels.GetPixel(pixels.Width * 3 / 4, pixels.Height / 2) == SKColors.Blue);
             using (var thumbnail = SKBitmap.Decode(await library.GetThumbnailAsync(entry.Id)))
                 check("live-region stamp thumbnails use the same full-scene context", thumbnail.GetPixel(thumbnail.Width / 4, thumbnail.Height / 2) == SKColors.Lime && thumbnail.GetPixel(thumbnail.Width * 3 / 4, thumbnail.Height / 2) == SKColors.Blue);
             var source = await library.LoadSourceAsync(entry.Id);
             check("a merged stamp retains an independently editable live-region source", source.Document.Elements is [{ Kind: ElementKind.LivePixelate }] && source.Document.Elements[0].Effects.Single().Amount == 20);
-            check("the editable source excludes both frozen desktop and unselected image resources", source.Assets.Count == 0 && source.Document.Background is null && !source.Document.ReferencedAssets.Any());
+            check("the editable source retains its independent preview background without importing unselected author images", source.Assets.Count == 1 && source.Document.Background?.AssetId == blue &&
+                source.Document.Elements.All(element => element.AssetId is null) && !source.Assets.TryGet(lime, out _));
             check("rendering a live-region stamp does not mutate the source canvas or its background", JsonSerializer.Serialize(document) == original && session.Selection.SetEquals([mask.Id]) && assets.Count == 2);
             var vectorEntry = await library.SaveSelectionAsync(session, "Editable live region", renderContext: context);
             var hover = await StampPreviewTooltip.GetPreviewAsync(library, vectorEntry);
@@ -70,8 +72,8 @@ internal static class LiveEffectStampTests
             var blurContext = new StampRenderContext(document.Clone(), assets);
             var blurEntry = await library.SaveSelectionAsync(session, "Editable blur", renderContext: blurContext);
             var blurStamp = await library.LoadStampAsync(blurEntry.Id);
-            check("a combination stamp retains editable live blur without screenshot assets", blurStamp.Document.Elements is [{ Kind: ElementKind.LiveBlur }] &&
-                blurStamp.Document.Elements[0].Effects is [{ Kind: ImageEffectKind.Blur, Amount: 6 }] && blurStamp.Assets.Count == 0);
+            check("a combination stamp retains editable live blur and separates its preview-only background", blurStamp.Document.Elements is [{ Kind: ElementKind.LiveBlur }] &&
+                blurStamp.Document.Elements[0].Effects is [{ Kind: ImageEffectKind.Blur, Amount: 6 }] && blurStamp.Assets.Count == 1 && blurStamp.Document.Background?.AssetId == blue);
             var blurTarget = new EditorSession(); StampLibrary.Place(blurStamp, blurTarget, new(200, 150));
             check("stamping a blur region keeps its dynamic source and one-step undo", blurTarget.Document.Elements.Single().Kind == ElementKind.LiveBlur &&
                 blurTarget.Document.Elements[0].AssetId is null && blurTarget.UndoCount == 1 && blurTarget.Undo());

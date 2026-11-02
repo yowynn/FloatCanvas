@@ -16,9 +16,9 @@ internal sealed class PrefabResourcesWindow : Window
 {
     private readonly Func<EditorSession> getOwner;
     private readonly Func<bool> canMutate;
-    private readonly Func<EditorSession, Guid, string?>? getLinkStatus;
+    private readonly Func<EditorSession, PrefabDefinition, string?>? getLinkStatus;
     private readonly ObservableCollection<PrefabResourceRow> rows = [];
-    private readonly ListBox list = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, BorderThickness = new(0) };
+    private readonly ListBox list = new() { MinHeight = 72, HorizontalContentAlignment = HorizontalAlignment.Stretch, BorderThickness = new(0) };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 0) };
     private readonly Dictionary<PrefabResourceAction, Button> buttons = [];
     private EditorSession? displayedOwner;
@@ -31,7 +31,7 @@ internal sealed class PrefabResourcesWindow : Window
     public event Action? Dismissed;
     public event Action<int>? CommandKey;
 
-    internal PrefabResourcesWindow(Func<EditorSession> getOwner, Func<bool>? canMutate = null, Func<EditorSession, Guid, string?>? getLinkStatus = null)
+    internal PrefabResourcesWindow(Func<EditorSession> getOwner, Func<bool>? canMutate = null, Func<EditorSession, PrefabDefinition, string?>? getLinkStatus = null)
     {
         this.getOwner = getOwner; this.canMutate = canMutate ?? (() => true); this.getLinkStatus = getLinkStatus;
         Title = L.Get("Prefab.Resources"); Width = 440; Height = 540; MinWidth = 330; MinHeight = 300;
@@ -41,18 +41,20 @@ internal sealed class PrefabResourcesWindow : Window
         var actions = new WrapPanel { Margin = new(0, 0, 0, 8) };
         void Add(PrefabResourceAction action, string key)
         {
-            var button = new Button { Content = L.Get(key), MinHeight = 30, Padding = new(9, 3, 9, 3), Margin = new(0, 0, 6, 6), Tag = action };
+            var button = new Button { Content = L.Get(key), MinHeight = PropertyPanelLayout.ControlHeight, Padding = new(9, 3, 9, 3), Margin = new(0, 0, 6, 6), Tag = action };
             button.Click += async (_, _) => await PerformAsync(action);
             buttons.Add(action, button); actions.Children.Add(button);
         }
         Add(PrefabResourceAction.Create, "Prefab.CreateFromSelection"); Add(PrefabResourceAction.Import, "Prefab.Import");
         Add(PrefabResourceAction.Link, "Prefab.LinkFile"); Add(PrefabResourceAction.RemoveUnused, "Prefab.RemoveUnused");
         DockPanel.SetDock(actions, Dock.Top); body.Children.Add(actions);
-        DockPanel.SetDock(status, Dock.Bottom); body.Children.Add(status);
+        var statusViewport = new ScrollViewer { Content = status, MaxHeight = 40,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        DockPanel.SetDock(statusViewport, Dock.Bottom); body.Children.Add(statusViewport);
         var selectionActions = new WrapPanel { Margin = new(0, 6, 0, 0) };
         void SelectionButton(PrefabResourceAction action, string key)
         {
-            var button = new Button { Content = L.Get(key), MinHeight = 30, Padding = new(9, 3, 9, 3), Margin = new(0, 0, 6, 6), Tag = action };
+            var button = new Button { Content = L.Get(key), MinHeight = PropertyPanelLayout.ControlHeight, Padding = new(9, 3, 9, 3), Margin = new(0, 0, 6, 6), Tag = action };
             button.Click += async (_, _) => await PerformAsync(action);
             buttons.Add(action, button); selectionActions.Children.Add(button);
         }
@@ -61,7 +63,16 @@ internal sealed class PrefabResourcesWindow : Window
         SelectionButton(PrefabResourceAction.Export, "Prefab.Export"); SelectionButton(PrefabResourceAction.Refresh, "Prefab.Refresh");
         SelectionButton(PrefabResourceAction.Relink, "Prefab.Relink"); SelectionButton(PrefabResourceAction.Embed, "Prefab.Embed");
         SelectionButton(PrefabResourceAction.EditSource, "Prefab.EditSource"); SelectionButton(PrefabResourceAction.Check, "Prefab.Check");
-        DockPanel.SetDock(selectionActions, Dock.Bottom); body.Children.Add(selectionActions);
+        var actionViewport = new ScrollViewer { Content = selectionActions, MaxHeight = 180,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        DockPanel.SetDock(actionViewport, Dock.Bottom); body.Children.Add(actionViewport);
+        void ResizeActions()
+        {
+            if (body.ActualHeight <= 0) return;
+            actionViewport.MaxHeight = Math.Max(PropertyPanelLayout.ControlHeight,
+                (body.ActualHeight - actions.ActualHeight - actions.Margin.Top - actions.Margin.Bottom - statusViewport.ActualHeight) * .4);
+        }
+        body.SizeChanged += (_, _) => ResizeActions(); actions.SizeChanged += (_, _) => ResizeActions(); statusViewport.SizeChanged += (_, _) => ResizeActions();
         list.SetResourceReference(Control.BackgroundProperty, "CanvasSurface"); list.SetResourceReference(Control.ForegroundProperty, "CanvasText");
         VirtualizingPanel.SetIsVirtualizing(list, true); VirtualizingPanel.SetVirtualizationMode(list, VirtualizationMode.Recycling);
         ScrollViewer.SetCanContentScroll(list, true); list.ItemsPanel = new ItemsPanelTemplate(new FrameworkElementFactory(typeof(VirtualizingStackPanel)));
@@ -71,7 +82,8 @@ internal sealed class PrefabResourcesWindow : Window
         var summary = new FrameworkElementFactory(typeof(TextBlock)); summary.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(PrefabResourceRow.Summary)));
         summary.SetBinding(FrameworkElement.ToolTipProperty, new System.Windows.Data.Binding(nameof(PrefabResourceRow.Summary)));
         summary.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap); summary.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 4, 0, 0)); item.AppendChild(summary);
-        list.ItemTemplate = new DataTemplate { VisualTree = item }; list.ItemsSource = rows; list.SelectionChanged += (_, _) => RefreshActions();
+        list.ItemTemplate = new DataTemplate { VisualTree = item }; list.ItemsSource = rows;
+        list.SelectionChanged += (_, _) => { status.Text = ""; RefreshActions(); };
         ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
         list.MouseDoubleClick += async (_, e) => { if (list.SelectedItem is not null) { e.Handled = true; await PerformAsync(PrefabResourceAction.Edit); } };
         body.Children.Add(list); Content = body;
@@ -100,13 +112,14 @@ internal sealed class PrefabResourcesWindow : Window
         if (busy) return;
         var owner = getOwner(); var selected = ReferenceEquals(owner, displayedOwner) ? SelectedDefinitionId : null;
         if (ReferenceEquals(owner, displayedOwner) && displayedRevision == owner.PreviewRevision) { RefreshActions(); return; }
+        status.Text = "";
         var references = owner.Document.Instances.Concat(owner.Document.Definitions.SelectMany(definition => definition.Graph.Instances))
             .GroupBy(instance => instance.DefinitionId).ToDictionary(group => group.Key, group => group.Count());
         var next = owner.Document.Definitions.Select(definition => new PrefabResourceRow(definition.Id,
             string.IsNullOrWhiteSpace(definition.Name) ? L.Get("Prefab.DefaultName") : definition.Name,
             L.Format("Prefab.ResourceSummary", L.Get(definition.Source?.IsLinked == true ? "Prefab.Linked" : "Prefab.Embedded"), references.GetValueOrDefault(definition.Id)) +
                 (definition.Source?.IsLinked == true ? "\n" + L.Format(definition.Source.IsRelative ? "GroupCanvas.RelativeSource" : "GroupCanvas.AbsoluteSource", definition.Source.Locator) : "") +
-                (getLinkStatus?.Invoke(owner, definition.Id) is { Length: > 0 } state ? "\n" + state : ""),
+                (definition.Source?.IsLinked == true && getLinkStatus?.Invoke(owner, definition) is { Length: > 0 } state ? "\n" + state : ""),
             definition.Source?.IsLinked == true)).ToArray();
         if (!rows.SequenceEqual(next)) { rows.Clear(); foreach (var row in next) rows.Add(row); }
         displayedOwner = owner; displayedRevision = owner.PreviewRevision; if (selected is { } id) Select(id);
@@ -134,12 +147,16 @@ internal sealed class PrefabResourcesWindow : Window
         if (!ReferenceEquals(owner, displayedOwner)) { Refresh(); return; }
         definitionId ??= SelectedDefinitionId;
         if (action is not (PrefabResourceAction.Create or PrefabResourceAction.Import or PrefabResourceAction.Link or PrefabResourceAction.RemoveUnused) && definitionId is null) return;
-        busy = true; RefreshActions();
+        status.Text = ""; busy = true; RefreshActions();
         try { await Execute(new(action, definitionId, owner, owner.SceneRevision)); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { status.Text = ex.Message; }
+        catch (Exception ex) when (ex is not OperationCanceledException) { SetStatus(ex.Message, owner, definitionId); }
         catch (OperationCanceledException) { }
         finally { busy = false; Refresh(); }
     }
-    internal void SetStatus(string message) => status.Text = message;
+    internal void SetStatus(string message, EditorSession? owner = null, Guid? definitionId = null)
+    {
+        if (owner is not null && !ReferenceEquals(owner, getOwner()) || definitionId is { } id && SelectedDefinitionId != id) return;
+        status.Text = message;
+    }
     internal void InvalidateResourceStatus() { displayedRevision = -1; Refresh(); }
 }

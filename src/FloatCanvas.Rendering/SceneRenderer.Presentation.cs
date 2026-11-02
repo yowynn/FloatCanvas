@@ -38,7 +38,7 @@ public sealed partial class SceneRenderer
             foreach (var region in presentationPlan.Regions)
             {
                 if (PresentationFrame is null && region.Element.Presentation!.DisplayStyle != PresentationDisplayStyle.Keyboard) continue;
-                var frame = PresentationFrame ?? PresentationFrame.Empty;
+                var frame = (PresentationFrame ?? PresentationFrame.Empty).ForKeyboardScope(region.Element.Presentation!.KeyboardScope);
                 var drawing = CreatePresentationDrawing(region, frame, ref primitives, out exceeded);
                 if (exceeded) { drawings.Clear(); damage.Clear(); break; }
                 if (drawing.Rows.Count == 0 && drawing.Cells.Count == 0) continue;
@@ -51,11 +51,11 @@ public sealed partial class SceneRenderer
     private PresentationPlan CreatePresentationPlan(SceneDocument document, SceneRenderSpace space)
     {
         var regions = new List<PresentationRegion>(); int first = -1, last = -1;
-        var mapping = CanvasMapping.Create(document);
         if (document.LayerOpacity > 0)
             for (int index = 0; index < document.Elements.Count; index++)
             {
                 var element = document.Elements[index];
+                var mapping = ElementMapping(document, element);
                 if (SceneEvaluation.RuntimeView(document) is { } runtime && runtime.FindElement(element.Id) is null) continue;
                 if (element.Kind != ElementKind.Presentation || element.Presentation is null ||
                     !element.Visible || element.Style.Opacity <= 0) continue;
@@ -324,7 +324,7 @@ public sealed partial class SceneRenderer
 
     private static bool PresentationIntersects(SceneDocument document, CanvasElement element, RectD rectangle)
     {
-        var mapping = CanvasMapping.Create(document); var transform = mapping.ElementToScreen(element);
+        var mapping = ElementMapping(document, element); var transform = mapping.ElementToScreen(element);
         var local = PresentationLocalPolygon(document, element, mapping, transform, SceneRenderSpace.ScreenComposite);
         if (local.Count < 3) return false;
         var screen = local.Select(transform.TransformPoint).ToArray();

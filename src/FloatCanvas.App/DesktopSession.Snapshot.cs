@@ -184,7 +184,7 @@ internal sealed partial class DesktopSession
             var result = await Task.Run(() => SnapshotImageCommand.Render(snapshot, resources, selection, desktop, displays, animationTime, screenOrigin, presentation, windows), _documentLifetime.Token);
             if (!CanInsert()) return;
             if (!result.HasVisiblePixels) { LogSnapshot(request, "Empty"); UpdateStatus(L.Get("Snapshot.Empty")); return; }
-            SnapshotImageCommand.Insert(request.Target, result, CanvasMapping.Create(snapshot).PlaneToScreen,
+            SnapshotImageCommand.Insert(request.Target, result, CanvasMapping.Create(snapshot, request.Target.ActiveRootCanvas).PlaneToScreen,
                 selection.BillboardDepthLine, selection.BillboardScreenFirst);
             LogSnapshot(request, "Inserted");
             UpdateStatus(WithCaptureWarning(L.Get("Snapshot.Inserted"), desktop is null ? null : CaptureWarning(desktop)));

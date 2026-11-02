@@ -19,12 +19,13 @@ internal sealed partial class EditorController
     private PointD pendingBillboardOrigin;
     private Projective2D pendingBillboardProjection;
     internal bool HasPendingBillboardInsertion => pendingBillboardInsertion is not null;
+    internal bool HasPendingBillboardOperation => billboardDepth is not null || HasPendingBillboardInsertion;
     private Dictionary<Guid, CanvasElement> billboardSources = [];
     private PointD? billboardMoveDelta;
     public bool BillboardMode
     {
-        get => billboardMode && Session.Document.Canvas.Projection.Enabled;
-        set { bool next = value && Session.Document.Canvas.Projection.Enabled; if (billboardMode != next) PlacementContextVersion++; Cancel(); billboardMode = next; if (billboardMode) Message?.Invoke(L.Get(UsesScreenBillboardCreation ? "Billboard.DrawDirect" : "Billboard.ChooseDepth")); Changed?.Invoke(); }
+        get => billboardMode && CurrentCanvasMapping.IsPerspective;
+        set { bool next = value && CurrentCanvasMapping.IsPerspective; if (billboardMode != next) PlacementContextVersion++; Cancel(); billboardMode = next; if (billboardMode) Message?.Invoke(L.Get(UsesScreenBillboardCreation ? "Billboard.DrawDirect" : "Billboard.ChooseDepth")); Changed?.Invoke(); }
     }
     internal BillboardDepthLine? ActiveBillboardDepthLine => billboardDepth;
     internal BillboardDepthLine? VisibleBillboardDepthLine => billboardDepth ?? billboardPreviewDepth;
@@ -32,9 +33,9 @@ internal sealed partial class EditorController
     {
         get
         {
-            if (!Session.Document.Canvas.Projection.Enabled) return null;
+            if (!CurrentCanvasMapping.IsPerspective) return null;
             if (HasNodeSelection) return null;
-            var elements = Session.SelectedWorldElements().Where(e => e.Visible && !e.Locked).ToArray();
+            var elements = SelectedEditingWorldElements().Where(e => e.Visible && !e.Locked).ToArray();
             if (elements is not [var item] || !item.IsBillboard) return null;
             return BillboardGuide(item);
         }
@@ -95,16 +96,16 @@ internal sealed partial class EditorController
         pendingBillboardDocument = Session.Document; pendingBillboardRevision = Session.SceneRevision;
         pendingBillboardScopeVersion = Session.EditScopeVersion; pendingBillboardOrigin = CanvasOrigin;
         pendingBillboardScreenFirst = screenFirst;
-        pendingBillboardProjection = Session.Document.Canvas.Projection.Matrix;
+        pendingBillboardProjection = CurrentCanvasMapping.PlaneToScreen;
         Message?.Invoke(L.Get(screenFirst ? "Billboard.PlaceDirect" : "Billboard.ChooseDepth")); Changed?.Invoke(); return true;
     }
     private bool HandleBillboardDepthInput(OverlayPointerEvent e)
     {
         if (pendingBillboardInsertion is not null && (!ReferenceEquals(pendingBillboardDocument, Session.Document) ||
-            pendingBillboardRevision != Session.SceneRevision || pendingBillboardProjection != Session.Document.Canvas.Projection.Matrix ||
+            pendingBillboardRevision != Session.SceneRevision || pendingBillboardProjection != CurrentCanvasMapping.PlaneToScreen ||
             pendingBillboardScopeVersion != Session.EditScopeVersion || pendingBillboardOrigin != CanvasOrigin))
         { Cancel(); return true; }
-        if (!Session.Document.Canvas.Projection.Enabled)
+        if (!CurrentCanvasMapping.IsPerspective)
         { billboardMode = false; ClearBillboardDepth(); pendingBillboardInsertion = null; return false; }
         if (!BillboardMode || gesture is not null || !(IsBillboardCreationTool || pendingBillboardInsertion is not null)) return false;
         if (UsesScreenBillboardCreation && pendingBillboardInsertion is null) return false;
@@ -192,7 +193,7 @@ internal sealed partial class EditorController
     private bool TryStartBillboardHeight()
     {
         if (BillboardSelectionGuide is not { } guide || pointerScreen.DistanceTo(guide.Center) >= 12) return false;
-        billboardSources = Session.SelectedWorldElements().ToDictionary(e => e.Id, e => e.Clone());
+        billboardSources = SelectedEditingWorldElements().ToDictionary(e => e.Id, e => e.Clone());
         transforms = billboardSources.ToDictionary(e => e.Key, e => e.Value.Transform);
         gesture = "billboard-height"; BeginPointerTransaction(L.Get("Editor.History.Transform")); return true;
     }

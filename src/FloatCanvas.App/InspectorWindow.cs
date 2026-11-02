@@ -101,6 +101,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         fieldContainers.Add("ConstrainAspect",keepAspect);
         keepAspect.Click += (_,_) => ChangeField("ConstrainAspect");
         propertyPanel.Children.Add(SectionHeading("Inspector.AppearanceSection"));
+        InitializeWindowSourceFitControl();
         propertyPanel.Children.Add(FieldPair("StrokeWidth", L.Get("Inspector.StrokeWidth"), null, null));
         propertyPanel.Children.Add(FieldPair("CornerRadius", L.Get("Inspector.CornerRadius"), null, null));
         foreach (var value in Enum.GetValues<SymbolKind>())
@@ -217,9 +218,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
         Automation.AutomationProperties.SetName(placement,L.Get("Billboard.Placement"));
         placement.SelectionChanged+=(_,_)=>{if(!refreshing)ChangeField("Placement");};
         placementSection.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Billboard.Placement")), placement));fieldContainers.Add("Placement",placementSection);
-        preservePlacementAppearance.Content = L.Get("Billboard.PreserveAppearance");
         preservePlacementAppearance.IsChecked = true;
-        placementSection.Children.Add(preservePlacementAppearance);
+        placementSection.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Billboard.PreserveAppearance"), preservePlacementAppearance));
         propertyPanel.Children.Add(placementSection);
         placementSection.Children.Add(FieldPair("BillboardHeight",L.Get("Billboard.Height"),null,null));
         placementSection.ToolTip=L.Get("Billboard.AnchorHint");
@@ -424,6 +424,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (IsFieldVisible("EndArrowHead")) endArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element);
             if (IsFieldVisible("StrokePattern")) strokePattern.SelectedIndex = (int)element.Style.StrokePattern;
             if (IsFieldVisible("Symbol")) symbolChoice.SelectedValue = PropertyValue(element, "Symbol");
+            if (IsFieldVisible("WindowSourceFit")) windowSourceFit.SelectedValue = element.WindowSource!.Fit;
             if (IsFieldVisible("EffectSelection")) RefreshEffectChoices(element);
             SetField("CornerRadius", ElementGeometry.CornerRadius(element));
             if (IsFieldVisible("EffectStrength")) SetField("EffectStrength", SelectedEffect(element)!.Amount);
@@ -444,7 +445,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
                 foreach (var key in fields.Keys)
                     if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) SetMixedField(key, PropertyValue(element, key));
                 if (IsFieldVisible("FontFamily") && selected.Skip(1).Any(other => other.Style.FontFamily != element.Style.FontFamily)) ToolOptionPreviews.ClearFontSelection(fontPicker);
-                foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("TextAlignment", alignment) })
+                foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("TextAlignment", alignment), ("WindowSourceFit", windowSourceFit) })
                     if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) picker.SelectedIndex = -1;
                 if (IsFieldVisible("Symbol") && selected.Skip(1).Any(other => !Equals(PropertyValue(element, "Symbol"), PropertyValue(other, "Symbol")))) symbolChoice.SelectedIndex = -1;
                 foreach (var (key, color) in colorFields)
@@ -513,7 +514,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             var changedKey = dirtyFields.Single();
             validatingDraft=true;
             var changes = selected.Select(source => (Source: source, Edited: EditElement(source))).ToArray();
-            var mapping = CanvasMapping.Create(session.Document);
+            var mapping = CanvasMapping.Create(session.Document, session.ActiveRootCanvas);
             var graph = new SceneGraph(session.Document);
             if (changes.Any(change => !mapping.IsElementSafe(graph.ToWorld(change.Edited))))
                 throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
@@ -536,6 +537,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
                     source.ConstrainAspect = edited.ConstrainAspect; source.TextFrameFixed = edited.TextFrameFixed;
                     source.NumberTextSizeMode = edited.NumberTextSizeMode;
                     source.Presentation = edited.Presentation;
+                    source.WindowSource = edited.WindowSource;
                     source.IsBillboard=edited.IsBillboard;source.BillboardAnchor=edited.BillboardAnchor;source.BillboardHeight=edited.BillboardHeight;
                     source.ProjectivePlacement=edited.ProjectivePlacement;
                 }
@@ -597,8 +599,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
         {
             var graph = new SceneGraph(getSession().Document);
             var world = graph.ToWorld(edited);
-            var mapping = CanvasMapping.Create(getSession().Document);
-            if(!getSession().Document.Canvas.Projection.Enabled||placement.SelectedIndex is <0 or >1||
+            var mapping = CanvasMapping.Create(getSession().Document, getSession().ActiveRootCanvas);
+            if(getSession().ActiveRootCanvas != RootCanvasKind.Main || !getSession().Document.Canvas.Projection.Enabled||placement.SelectedIndex is <0 or >1||
                 !(preservePlacementAppearance.IsChecked == true
                     ? BillboardPlacementConversion.TryPreserveScreen(world, placement.SelectedIndex == 1, mapping)
                     : BillboardGeometry.TrySetBillboard(world,placement.SelectedIndex==1,mapping)))
@@ -623,6 +625,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
             redaction.Color = colorFields["EffectColor"].Value;
         if (dirtyFields.Contains("Symbol") && symbolChoice.SelectedValue is SymbolKind symbol)
         { edited.Kind = ElementKind.Symbol; edited.Symbol = symbol; }
+        if (dirtyFields.Contains("WindowSourceFit") && edited.WindowSource is { } windowSource && windowSourceFit.SelectedValue is WindowSourceFit fit)
+            windowSource.Fit = fit;
         if (source.Kind is ElementKind.Arrow or ElementKind.DoubleArrow)
         {
             if (dirtyFields.Contains("ArrowHeadStyle"))
@@ -910,7 +914,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             changes.Add((target, edited));
             if (source.Id == scrubSources[0].Id) displayValue = value;
         }
-        var mapping = CanvasMapping.Create(session.Document);
+        var mapping = CanvasMapping.Create(session.Document, session.ActiveRootCanvas);
         var graph = new SceneGraph(session.Document);
         scrubUnsafe = changes.Any(change => !mapping.IsElementSafe(graph.ToWorld(change.Edited)));
         if (scrubCaption is not null) scrubCaption.Cursor = scrubUnsafe ? Input.Cursors.No : Input.Cursors.SizeWE;
@@ -1016,6 +1020,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             "FontFamily" => text || number || element.Kind == ElementKind.Presentation,
             "FontSize" => text || number || element.Kind == ElementKind.Presentation,
             "PresentationSettings" => element.Kind == ElementKind.Presentation,
+            "WindowSourceFit" => element.WindowSource is not null,
             "Text" or "TextAlignment" => text,
             "Number" => number,
             "Symbol" => element.Kind is ElementKind.Symbol or ElementKind.Triangle,
@@ -1044,6 +1049,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         "StrokePattern" => e.Style.StrokePattern, "FontFamily" => e.Style.FontFamily,
         "FontSize" => e.Style.FontSize, "Number" => e.Number, "Text" => e.Text, "TextAlignment" => e.Style.TextAlignment,
         "Symbol" => e.Kind == ElementKind.Triangle ? SymbolKind.Triangle : e.Symbol,
+        "WindowSourceFit" => e.WindowSource?.Fit,
         "EffectStrength" => SelectedEffect(e)?.Amount, "EffectColor" => SelectedEffect(e)?.Color,
         _ => null
     };
@@ -1071,7 +1077,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["Stroke"]).Children[0]).Text = L.Get(presentation ? "Presentation.Foreground" : number ? selected.All(e => AppearanceRegistry.Resolve(e).NumberTextRole == AppearanceColorRole.Foreground) ? "Color.Unified" : "Color.NumberShape" : images ? "Snapshot.BorderColor" : shape ? selected.All(e => !AppearanceRegistry.Resolve(e).BackgroundActive) ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["StrokeWidth"]).Children[0]).Text = L.Get(images ? "Property.BorderWidth" : "Inspector.StrokeWidth");
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["Fill"]).Children[0]).Text = L.Get(presentation ? "Presentation.Background" : number ? "Color.NumberText" : shape ? "Color.Interior" : "Color.Background");
-        bool perspective=getSession().Document.Canvas.Projection.Enabled;
+        bool perspective=getSession().ActiveRootCanvas == RootCanvasKind.Main && getSession().Document.Canvas.Projection.Enabled;
         if(!perspective){fieldContainers["Placement"].Visibility=Wpf.Visibility.Collapsed;fieldContainers["BillboardHeight"].Visibility=Wpf.Visibility.Collapsed;}
         foreach(var key in new[]{"X","Y"})fieldContainers[key].ToolTip=selected.Any(e=>e.IsBillboard)?L.Get("Billboard.AnchorHint"):null;
         foreach (var row in propertyPanel.Children.OfType<Controls.Grid>().Where(row => !fieldContainers.Values.Contains(row)))
@@ -1199,6 +1205,14 @@ internal sealed partial class InspectorWindow : Wpf.Window
     internal static string ElementName(CanvasElement element)
     {
         if (!string.IsNullOrWhiteSpace(element.Name)) return element.Name;
+        if (element.WindowSource is not null) return L.Get("WindowSource.DefaultName");
+        if (element.Kind == ElementKind.Presentation)
+            return L.Get(element.Presentation?.DisplayStyle switch
+            {
+                PresentationDisplayStyle.Keyboard => "Editor.ElementKind.Presentation.Keyboard",
+                PresentationDisplayStyle.Keycaps => "Editor.ElementKind.Presentation.Keycaps",
+                _ => "Editor.ElementKind.Presentation.Log"
+            });
         var name = element.Kind switch
         {
             ElementKind.Freehand => L.Get("Editor.ElementKind.Freehand"), ElementKind.Highlighter => L.Get("Editor.ElementKind.Highlighter"), ElementKind.Line => L.Get("Editor.ElementKind.Line"), ElementKind.Arrow => L.Get("Editor.ElementKind.Arrow"),

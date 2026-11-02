@@ -76,6 +76,8 @@ public sealed partial class SceneRenderer
             sampling.Canvas.Scale((float)(width / sampleBounds.Width), (float)(height / sampleBounds.Height));
             sampling.Canvas.Translate(-(float)sampleBounds.X, -(float)sampleBounds.Y);
             if (_depthSamplePainter is not null) _depthSamplePainter(sampling.Canvas);
+            else if (sourceDocument is not null && HasAuxiliaryRoots(sourceDocument))
+                DrawRootPrefix(sampling.Canvas, sourceDocument, assets, index);
             else if (sourceDocument is not null)
             {
                 DrawBackground(sampling.Canvas, sourceDocument, assets, sampling: true);
@@ -84,7 +86,8 @@ public sealed partial class SceneRenderer
             else (ScreenBackdrop ?? LiveBackdrop)?.Draw(sampling.Canvas);
             // A filter samples only its lower scene, including earlier live filters. It never
             // samples the final display or its own output. Prefix images are cached per frame.
-            if (_depthSamplePainter is null) DrawElements(sampling.Canvas, elements, assets, 0, index, sourceDocument);
+            if (_depthSamplePainter is null && (sourceDocument is null || !HasAuxiliaryRoots(sourceDocument)))
+                DrawElements(sampling.Canvas, elements, assets, 0, index, sourceDocument);
             if (blur)
             {
                 using var raw = sampling.Snapshot();
@@ -128,7 +131,7 @@ public sealed partial class SceneRenderer
     {
         if (effect.IsBillboard && space == SceneRenderSpace.ScreenComposite)
         {
-            var billboardMapping = CanvasMapping.Create(document);
+            var billboardMapping = ElementMapping(document, effect);
             if (!billboardMapping.IsElementSafe(effect)) return [];
             var billboardTransform = billboardMapping.ElementToScreen(effect);
             return ClipPolygon(ElementGeometry.Outline(effect).Select(billboardTransform.TransformPoint).ToArray(),
@@ -137,7 +140,7 @@ public sealed partial class SceneRenderer
         }
         var local = ElementGeometry.LocalToPlane(effect);
         IReadOnlyList<PointD> polygon = ElementGeometry.Outline(effect).Select(local.TransformPoint).ToArray();
-        var mapping = CanvasMapping.Create(document);
+        var mapping = ElementMapping(document, effect);
         if (space == SceneRenderSpace.PlaneContent) return polygon;
         // Clip in the plane before division. The inverse viewport polygon selects the visible
         // branch and keeps near-horizon values out of integer capture dimensions.

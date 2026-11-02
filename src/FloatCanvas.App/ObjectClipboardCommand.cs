@@ -103,7 +103,7 @@ internal static class ObjectClipboardCommand
         var shiftedBounds = new RectD(bounds.X + offset.X, bounds.Y + offset.Y, bounds.Width, bounds.Height);
         // Keep the normal paste offset unless the entire selection would be off the current screen.
         if (!shiftedBounds.Intersects(visibleArea)) offset += visibleArea.Center - shiftedBounds.Center;
-        var mapping = CanvasMapping.Create(target.Document);
+        var mapping = CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
         foreach (var element in world.Elements)
         {
             var candidate = element.Clone();

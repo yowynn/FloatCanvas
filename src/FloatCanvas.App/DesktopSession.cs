@@ -79,10 +79,11 @@ internal sealed partial class DesktopSession : IDisposable
         L.Initialize(_settings.Language);
         _presetHistorySession = () => Active;
         _toolPresets = new() { HistorySession = _presetHistorySession };
-        _toolStateStore = new();
+        _toolStateStore = new(legacyKeyboardScope: _settings.PresentationGlobal.KeyboardScope);
         _toolbarToolMemory = _toolStateStore.Tools;
         _toolbarButtonMemory = _toolStateStore.Buttons;
         _toolStateStore.Changed += ScheduleToolStateSave;
+        if (_toolStateStore.LegacyKeyboardScopeMigrated) ScheduleToolStateSave();
         _colorLibrary = ColorLibrary.Shared;
         _colorLibrary.HistorySession = _presetHistorySession;
         _stampLibrary = new(ApplicationPaths.ProfileDirectory);
@@ -130,22 +131,7 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.NumberStep = Math.Clamp(savedNumber?.NumberStep ?? _settings.NumberStep,-999999,999999);
         _settings.NumberStart = _editor.NumberStart; _settings.NumberStep = _editor.NumberStep;
         document.NextNumber = _editor.NumberStart;
-        _editor.Changed += () =>
-        {
-            ApplyPointerToolPreferences();
-            ValidatePendingWindowInsertion();
-            InvalidateScreenDraftPreview();
-            UpdatePresentationRuntime();
-            RefreshPresentationRuntimeUi();
-            UpdateWindowSourceRuntime();
-            RefreshWindowSourcesUi();
-            OnPrefabEditorChanged();
-            UpdateHiddenCanvasState();
-            if (_eyedropper is null) _host.SetPointerCursor(_editor.IsPointerBlocked ? Forms.Cursors.No.Handle : 0);
-            ValidateCanvasCalibrationSession();
-            if (_liveEffectPreparation is { } pending && pending.Tool != _editor.Tool) CancelLivePreparation();
-            RequestRender(); ScheduleRecovery();
-        };
+        _editor.Changed += OnEditorChanged;
         _editor.Message += UpdateStatus;
         _editor.EditText += ShowTextEditor;
         _editor.PropertiesRequested += ShowInspectorNear;
@@ -462,8 +448,29 @@ internal sealed partial class DesktopSession : IDisposable
                 OverlayCoordinates.RaiseToolWindow(handle);
         OverlayPopupWindow.RaiseOpenPopups();
     }
+    private void OnEditorChanged()
+    {
+        if (_changingPrefabContext) return;
+        ApplyPointerToolPreferences();
+        ValidatePendingWindowInsertion();
+        InvalidateScreenDraftPreview();
+        UpdatePresentationRuntime();
+        RefreshPresentationRuntimeUi();
+        UpdateWindowSourceRuntime();
+        RefreshWindowSourcesUi();
+        OnPrefabEditorChanged();
+        UpdateHiddenCanvasState();
+        if (_eyedropper is null) _host.SetPointerCursor(_editor.IsPointerBlocked ? Forms.Cursors.No.Handle : 0);
+        ValidateCanvasCalibrationSession();
+        if (_liveEffectPreparation is { } pending && pending.Tool != _editor.Tool) CancelLivePreparation();
+        RequestRender(); ScheduleRecovery();
+    }
+
     private void RequestRender()
     {
+        // Session replacement raises Changed before the prefab context stack is
+        // switched. The transition schedules its complete frame after both agree.
+        if (_changingPrefabContext) return;
         SynchronizeLiveDisplayLayout();
         // Observe transitions when requested, even if A -> B -> A changes are
         // coalesced before the next draw. An old A frame must not regain its epoch.
@@ -524,7 +531,7 @@ internal sealed partial class DesktopSession : IDisposable
             try
             {
                 RefreshToolbarState();
-                if (!Active.IsTransactionActive) _opacitySlider.Value = Active.Document.LayerOpacity;
+                if (!Active.IsTransactionActive) _opacitySlider.Value = CurrentCanvasLayerOpacity;
             }
             finally { _syncingControls = false; }
             if (!Active.IsTransactionActive)
@@ -532,7 +539,7 @@ internal sealed partial class DesktopSession : IDisposable
                 if(_inspector is {IsVisible:true})_inspector.Refresh();
                 if(_layers is {IsVisible:true})_layers.Refresh();
                 RefreshPrefabWindows();
-                if(_canvasSettingsWindow is {IsVisible:true})_canvasSettingsWindow.Refresh(Active.Document.Canvas);
+                if(_canvasSettingsWindow is {IsVisible:true})RefreshCanvasSettingsTarget();
                 if (IsToolOptionsOpen) _toolOptionsPanel.RefreshDocumentState();
             }
         }
@@ -641,7 +648,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (_eyedropper is not null) { EndEyedropper(); UpdateStatus(L.Get("Color.SampleCancelled")); }
             else if (_toolOptionsPanel.CloseColorPicker()) { }
             else if (IsToolOptionsOpen && !_toolOptionsPinned) CloseToolOptions();
-            else if (Active.IsTransactionActive || _editor.Marquee != null) _editor.Cancel();
+            else if (Active.IsTransactionActive || _editor.Marquee != null || _editor.HasPendingBillboardOperation) _editor.Cancel();
             else if (Active.EditScopeId is not null) { _editor.Cancel(); Active.LeaveScope(); }
             else if (TryHandlePrefabEscape()) { }
             else SetEditing(false);
@@ -656,8 +663,7 @@ internal sealed partial class DesktopSession : IDisposable
                 case 0x54: OpenCurrentToolOptions(); return;
                 case 0x21: case 0x22:
                     _editor.Cancel();
-                    Active.ExecuteSettings(L.Get("History.LayerOpacity"), document => document.LayerOpacity =
-                        Math.Clamp(Math.Round(document.LayerOpacity + (key == 0x21 ? .05 : -.05), 10), 0, 1));
+                    ChangeCurrentCanvasOpacity(Math.Clamp(Math.Round(CurrentCanvasLayerOpacity + (key == 0x21 ? .05 : -.05), 10), 0, 1));
                     return;
             }
             // Modifiers (including a repeated or delayed Ctrl packet) are not editor
@@ -717,7 +723,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (redo) Active.Redo(); else Active.Undo();
             SynchronizeCanvasTool();
             _toolOptionsPanel.RefreshPresets();
-            _canvasSettingsWindow?.Refresh(Active.Document.Canvas);
+            RefreshCanvasSettingsTarget();
             foreach (var window in new Window?[] { _toolOptionsWindow, _canvasSettingsWindow, _inspector })
                 if (window is { IsVisible: true }) RefreshColorPresets(window);
         }
@@ -919,7 +925,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (_inspector is not null) _inspector.IsEnabled = enabled;
         if (_layers is not null) _layers.IsEnabled = enabled;
         if (_canvasSettingsWindow is not null) _canvasSettingsWindow.IsEnabled = enabled;
-        if (_editor is not null) { SynchronizeCanvasTool(); UpdateWindowSourceRuntime(); RefreshWindowSourcesUi(); }
+        if (_editor is not null) { RefreshHistoryCommandState(); SynchronizeCanvasTool(); UpdateWindowSourceRuntime(); RefreshWindowSourcesUi(); }
         if (enabled) RestoreToolbarKeyboardFocus();
     }
     private void RestoreToolbarKeyboardFocus()

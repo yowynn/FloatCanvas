@@ -74,6 +74,7 @@ public sealed class PresentationPointerSettings
 public sealed class PresentationGlobalSettings
 {
     public PresentationPointerSettings Pointer { get; set; } = new();
+    /// <summary>Legacy profile preference, migrated into the keyboard tool default. It never overrides authored layers.</summary>
     public PresentationKeyboardScope KeyboardScope { get; set; }
     public PresentationGlobalSettings Clone() => new() { Pointer = Pointer?.Clone()!, KeyboardScope = KeyboardScope };
     public bool IsValid() => Pointer?.IsValid() == true && Enum.IsDefined(KeyboardScope);

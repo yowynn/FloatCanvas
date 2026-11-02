@@ -11,21 +11,24 @@ using L = FloatCanvas.Localization.AppText;
 namespace FloatCanvas.App;
 
 internal enum StampSaveMode { EditableGroup, RasterMerge, SharedPrefab }
-internal sealed record LoadedStamp(SceneDocument Document, AssetLibrary Assets, PrefabPackage? SharedPrefab = null, string? Name = null)
+internal enum StampPackageFormat { LegacyProject, Prefab }
+internal sealed record LoadedStamp(SceneDocument Document, AssetLibrary Assets, PrefabPackage? SharedPrefab = null, string? Name = null,
+    RectD? ContentBounds = null)
 {
     public static implicit operator LoadedStamp(LoadedProject project) => new(project.Document, project.Assets);
     public static implicit operator LoadedProject(LoadedStamp stamp) => new(stamp.Document, stamp.Assets);
 }
 internal sealed record StampRenderContext(SceneDocument Document, AssetLibrary Assets, TimeSpan AnimationTime = default,
     CapturedDesktop? ScreenCapture = null, PointD ScreenOrigin = default, bool WindowFallbacksPrepared = false);
-internal sealed record StampEntry(Guid Id, string Name, StampSaveMode Mode, double Width, double Height, DateTime UpdatedAtUtc, Guid Revision);
+internal sealed record StampEntry(Guid Id, string Name, StampSaveMode Mode, double Width, double Height, DateTime UpdatedAtUtc, Guid Revision,
+    StampPackageFormat? Format = null);
 
 /// <summary>Immutable, self-contained stamp revisions published by one atomic catalog replacement.</summary>
 internal sealed class StampLibrary(string profileDirectory)
 {
     private sealed class Catalog
     {
-        public int Version { get; set; } = 2;
+        public int Version { get; set; } = 3;
         public List<StampEntry> Items { get; set; } = [];
         public Guid?[] Pins { get; set; } = new Guid?[10];
         public List<Guid>? Order { get; set; }
@@ -57,9 +60,10 @@ internal sealed class StampLibrary(string profileDirectory)
                 {
                     if (new FileInfo(CatalogPath).Length > 32 * 1024 * 1024) throw new InvalidDataException();
                     var content = JsonSerializer.Deserialize<Catalog>(await File.ReadAllBytesAsync(CatalogPath, ct), JsonOptions);
-                    if (content is null || content.Version is not (1 or 2) || content.Items is null || content.Pins is not { Length: 10 } ||
+                    if (content is null || content.Version is not (1 or 2 or 3) || content.Items is null || content.Pins is not { Length: 10 } ||
                         content.Items.Any(item => item is null || item.Id == Guid.Empty || item.Revision == Guid.Empty ||
                             string.IsNullOrWhiteSpace(item.Name) || item.Name.Length > 120 || !Enum.IsDefined(item.Mode) || content.Version == 1 && item.Mode == StampSaveMode.SharedPrefab ||
+                            item.Format is { } format && (content.Version < 3 || !Enum.IsDefined(format) || format == StampPackageFormat.LegacyProject && item.Mode == StampSaveMode.SharedPrefab) ||
                             !double.IsFinite(item.Width) || !double.IsFinite(item.Height) || item.Width <= 0 || item.Height <= 0) ||
                         content.Items.Select(item => item.Id).Distinct().Count() != content.Items.Count ||
                         content.Pins.Any(id => id.HasValue && content.Items.All(item => item.Id != id.Value)) ||
@@ -88,6 +92,7 @@ internal sealed class StampLibrary(string profileDirectory)
         if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
         var source = session.CreateSelectionSnapshot(normalizeOrigin: true);
         var original = session.CreateSelectionSnapshot(normalizeOrigin: false);
+        var previewCanvas = session.BuildSelectionPreviewSettings(source);
         var preparedAssets = session.Assets;
         if (renderContext is { WindowFallbacksPrepared: true })
         {
@@ -102,14 +107,14 @@ internal sealed class StampLibrary(string profileDirectory)
         }
         if (source.Elements.Count == 0 && (mode != StampSaveMode.SharedPrefab || source.Groups.Count == 0 && source.Instances.Count == 0)) throw new InvalidOperationException(L.Get("Stamp.NoSelection"));
         var originalBounds = original.Viewport;
-        var mapping = CanvasMapping.Create(session.Document);
+        var mapping = CanvasMapping.Create(session.Document, session.ActiveRootCanvas);
         var worldSource = SceneEvaluation.Build(source).RenderDocument;
         var worldOriginal = SceneEvaluation.Build(original).RenderDocument;
         bool live = worldSource.Elements.Any(e => ElementGeometry.IsLiveEffect(e.Kind));
         bool hasBillboards = worldOriginal.Elements.Any(element => element.IsBillboard);
         bool projectedLive = hasBillboards || live && mapping.PlaneToScreen != Projective2D.Identity;
         SceneDocument? screenSource = null;
-        if (projectedLive)
+        if (projectedLive && (live || mode == StampSaveMode.RasterMerge))
         {
             screenSource = worldOriginal; screenSource.Canvas = session.Document.Canvas.Clone();
             screenSource.Canvas.Grid.Visible = false; screenSource.Canvas.BackgroundColor = 0;
@@ -132,7 +137,7 @@ internal sealed class StampLibrary(string profileDirectory)
         }
         // Capture original encoded bytes before yielding; UI pruning cannot invalidate this save.
         var sourceAssets = new AssetLibrary();
-        foreach (string id in source.ReferencedAssets)
+        foreach (string id in source.ReferencedAssets.Concat(previewCanvas.ReferencedAssetIds).Distinct())
         {
             var resource = preparedAssets.Get(id);
             sourceAssets.Add(resource);
@@ -146,7 +151,7 @@ internal sealed class StampLibrary(string profileDirectory)
         {
             EnsureLoaded();
             if (replaceId is { } replace) previous = Find(replace);
-            entry = new(replaceId ?? Guid.NewGuid(), name, mode, source.Viewport.Width, source.Viewport.Height, DateTime.UtcNow, Guid.NewGuid());
+            entry = new(replaceId ?? Guid.NewGuid(), name, mode, source.Viewport.Width, source.Viewport.Height, DateTime.UtcNow, Guid.NewGuid(), StampPackageFormat.Prefab);
             publication = PublicationCleanup.Begin(DirectoryPath, new[] { PackagePath(entry), SourcePath(entry), ThumbnailPath(entry) });
             var rendered = await Task.Run(() =>
             {
@@ -165,10 +170,13 @@ internal sealed class StampLibrary(string profileDirectory)
                     using var backdrop = StampBackdrop(renderContext?.ScreenCapture,
                         new PointD(originalBounds.X, originalBounds.Y) + (renderContext?.ScreenOrigin ?? default), scale);
                     renderer.ScreenBackdrop = backdrop;
-                    return renderer.ExportPng(Scaled(source,scale),renderAssets,transparent:true,
+                    var local = Scaled(source, scale);
+                    // A stamp preview owns local ink, independent of the author's screen-root slot.
+                    local.RootCanvasAssignments.Clear();
+                    return renderer.ExportPng(local,renderAssets,transparent:true,
                         live ? SceneRenderSpace.ScreenComposite : SceneRenderSpace.PlaneContent);
                 }
-                byte[] preview = Render(160 / Math.Max(source.Viewport.Width, source.Viewport.Height));
+                byte[] preview = live ? Render(160 / Math.Max(source.Viewport.Width, source.Viewport.Height)) : [];
                 byte[]? merged = mode == StampSaveMode.RasterMerge
                     ? Render(Math.Min(2, 4096 / Math.Max(source.Viewport.Width, source.Viewport.Height)))
                     : null;
@@ -200,14 +208,18 @@ internal sealed class StampLibrary(string profileDirectory)
                     ? new(0, 0, screen.Width, screen.Height) : source.Viewport, Elements = [image] };
                 if (hasBillboards) entry = entry with { Width = document.Viewport.Width, Height = document.Viewport.Height };
                 // A raster stamp still retains the original editable project and encoded image bytes.
-                await projects.SaveAsync(SourcePath(entry), source, sourceAssets, ct);
+                await prefabs.SaveAsync(SourcePath(entry), SharedPackage(source, sourceAssets, name, entry.Id, previewCanvas), sourceAssets, ct);
                 PublicationCheckpoint?.Invoke("source");
             }
-            if (mode == StampSaveMode.SharedPrefab)
-                await prefabs.SaveAsync(PackagePath(entry), SharedPackage(source, sourceAssets, name, entry.Id), sourceAssets, ct);
-            else await projects.SaveAsync(PackagePath(entry), document, assets, ct);
+            var packagePreview = hasBillboards && rendered.merged is not null
+                ? new SubprojectCanvasSettings { Viewport = document.Viewport }
+                : previewCanvas;
+            if (!ReferenceEquals(assets, sourceAssets))
+                foreach (string id in packagePreview.ReferencedAssetIds) assets.Add(sourceAssets.Get(id));
+            await prefabs.SaveAsync(PackagePath(entry), SharedPackage(document, assets, name, entry.Id, packagePreview), assets, ct);
             PublicationCheckpoint?.Invoke("package");
-            await WriteAtomicallyAsync(ThumbnailPath(entry), rendered.preview, ct);
+            byte[] thumbnail = live ? rendered.preview : await Task.Run(() => RenderPreview(document, assets, packagePreview), ct);
+            await WriteAtomicallyAsync(ThumbnailPath(entry), thumbnail, ct);
             PublicationCheckpoint?.Invoke("thumbnail");
             var next = catalog.Clone();
             if (previous is null)
@@ -236,11 +248,11 @@ internal sealed class StampLibrary(string profileDirectory)
             var entry = Find(id);
             try
             {
-                if (entry.Mode == StampSaveMode.SharedPrefab) return SharedView(await prefabs.LoadAsync(PackagePath(entry), ct), entry);
+                if (UsesPrefab(entry)) return PrefabView(await prefabs.LoadAsync(PackagePath(entry), ct), entry, shared: entry.Mode == StampSaveMode.SharedPrefab);
                 var stamp = await projects.LoadAsync(PackagePath(entry), ct);
                 ImageImportBudget.ValidateResources(stamp.Assets.Resources);
                 if (stamp.Document.Elements.Count == 0) throw new InvalidDataException();
-                return new(stamp.Document, stamp.Assets, Name: entry.Name);
+                return new(stamp.Document, stamp.Assets, Name: entry.Name, ContentBounds: stamp.Document.Viewport);
             }
             catch (Exception ex) when (ex is InvalidDataException or IOException or JsonException or NotSupportedException)
             { throw new InvalidDataException(L.Get("Stamp.Corrupt") + entry.Name, ex); }
@@ -257,9 +269,11 @@ internal sealed class StampLibrary(string profileDirectory)
             var entry = Find(id);
             try
             {
-                if (entry.Mode == StampSaveMode.SharedPrefab) return SharedView(await prefabs.LoadAsync(PackagePath(entry), ct), entry);
+                if (UsesPrefab(entry))
+                    return PrefabView(await prefabs.LoadAsync(entry.Mode == StampSaveMode.RasterMerge ? SourcePath(entry) : PackagePath(entry), ct),
+                        entry, shared: entry.Mode == StampSaveMode.SharedPrefab);
                 var stamp = await projects.LoadAsync(entry.Mode == StampSaveMode.RasterMerge ? SourcePath(entry) : PackagePath(entry), ct);
-                ImageImportBudget.ValidateResources(stamp.Assets.Resources); return new(stamp.Document, stamp.Assets, Name: entry.Name);
+                ImageImportBudget.ValidateResources(stamp.Assets.Resources); return new(stamp.Document, stamp.Assets, Name: entry.Name, ContentBounds: stamp.Document.Viewport);
             }
             catch (Exception ex) when (ex is InvalidDataException or IOException or JsonException or NotSupportedException)
             { throw new InvalidDataException(L.Get("Stamp.Corrupt") + entry.Name, ex); }
@@ -274,7 +288,7 @@ internal sealed class StampLibrary(string profileDirectory)
     {
         if (!double.IsFinite(center.X) || !double.IsFinite(center.Y)) throw new ArgumentOutOfRangeException(nameof(center));
         string? placementName = name ?? stamp.Name;
-        var origin = stamp.Document.Viewport.Center;
+        var origin = (stamp.ContentBounds ?? stamp.Document.Viewport).Center;
         var transform = Affine2D.Translation(center.X - origin.X, center.Y - origin.Y);
         if (stamp.SharedPrefab is { } package)
         {
@@ -289,7 +303,7 @@ internal sealed class StampLibrary(string profileDirectory)
             }, select: false, name: placementName);
             target.SetSelection([]); return;
         }
-        var mapping = CanvasMapping.Create(target.Document);
+        var mapping = CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
         foreach (var source in SceneEvaluation.Build(stamp.Document).RenderDocument.Elements)
         {
             var candidate = source.Clone(); BillboardGeometry.ApplyPlaneTransform(candidate, transform);
@@ -308,7 +322,7 @@ internal sealed class StampLibrary(string profileDirectory)
         var bounds = new RectD(screenCenter.X - source.Width / 2, screenCenter.Y - source.Height / 2,
             source.Width, source.Height);
         var element = SnapshotImageCommand.CreateBillboardElement(target.Assets,
-            new(stamp.Assets.Get(assetId).Data.ToArray(), bounds, true), CanvasMapping.Create(target.Document), depth);
+            new(stamp.Assets.Get(assetId).Data.ToArray(), bounds, true), CanvasMapping.Create(target.Document, target.ActiveRootCanvas), depth);
         element.Name = name ?? stamp.Name;
         target.Add(element, L.Get("History.InsertPreset"));
         target.SetSelection([]);
@@ -365,7 +379,7 @@ internal sealed class StampLibrary(string profileDirectory)
 
     private async Task PublishAsync(Catalog next, CancellationToken ct)
     {
-        next.Version = 2;
+        next.Version = 3;
         next.Order = next.Items.Select(item => item.Id).ToList();
         await WriteAtomicallyAsync(CatalogPath, JsonSerializer.SerializeToUtf8Bytes(next, JsonOptions), ct);
         catalog = next;
@@ -452,22 +466,43 @@ internal sealed class StampLibrary(string profileDirectory)
                 .Concat(document.Definitions.SelectMany(definition => definition.Graph.Elements.Where(element => element.WindowSource is not null)
                     .Select(element => (new SourceNodeAddress(definition.Id, element.Id), element))));
     }
-    private static PrefabPackage SharedPackage(SceneDocument document, AssetLibrary assets, string name, Guid resourceId)
+    private static byte[] RenderPreview(SceneDocument document, AssetLibrary assets, SubprojectCanvasSettings settings)
     {
-        var session = new EditorSession(document.Clone(), assets);
-        session.SetSelection(new SceneGraph(session.Document).EnumerateChildren(null));
-        var created = session.CreatePrefabFromSelection(name); var package = session.ExportPrefab(created.DefinitionId);
+        var preview = document.Clone(); preview.RootCanvasAssignments.Clear(); settings.ApplyTo(preview);
+        using var renderer = new SceneRenderer();
+        return StampPreviewScene.Render(renderer, StampPreviewScene.Prepare(preview), assets, 160);
+    }
+
+    private static PrefabPackage SharedPackage(SceneDocument document, AssetLibrary assets, string name, Guid resourceId,
+        SubprojectCanvasSettings preview)
+    {
+        var local = document.Clone(); local.RootCanvasAssignments.Clear();
+        var entry = new PrefabDefinition { Name = name, Graph = SceneGraphClone.CloneGraph(local).Graph, PreviewCanvas = preview.Clone() };
+        local.Definitions.Add(entry);
+        var session = new EditorSession(local, assets);
+        var package = session.ExportPrefab(entry.Id);
         package.ResourceId = resourceId; return package;
     }
-    private static LoadedStamp SharedView(LoadedPrefab loaded, StampEntry entry)
+    private static LoadedStamp PrefabView(LoadedPrefab loaded, StampEntry entry, bool shared)
     {
         ImageImportBudget.ValidateResources(loaded.Assets.Resources);
-        var document = new SceneDocument { Definitions = loaded.Package.Definitions.Select(definition => definition.Clone()).ToList(), Viewport = new(0, 0, entry.Width, entry.Height) };
-        new SceneGraph(document).InsertInstance(new() { DefinitionId = loaded.Package.EntryDefinitionId });
-        return new(document, loaded.Assets, loaded.Package, entry.Name);
+        var definition = loaded.Package.Definitions.Single(item => item.Id == loaded.Package.EntryDefinitionId);
+        var content = SceneGraphClone.CloneGraph(definition.Graph).Graph;
+        var bounds = new RectD(0, 0, entry.Width, entry.Height);
+        var document = new SceneDocument
+        {
+            ResourceId = loaded.Package.ResourceId, Elements = shared ? [] : content.Elements,
+            Groups = shared ? [] : content.Groups, Instances = shared ? [] : content.Instances,
+            RootOrder = shared ? null : content.RootOrder, Viewport = bounds,
+            Definitions = loaded.Package.Definitions.Where(item => shared || item.Id != definition.Id).Select(item => item.Clone()).ToList()
+        };
+        if (shared) new SceneGraph(document).InsertInstance(new() { DefinitionId = definition.Id });
+        definition.PreviewCanvas?.ApplyTo(document);
+        return new(document, loaded.Assets, shared ? loaded.Package : null, entry.Name, bounds);
     }
-    private string PackagePath(StampEntry entry) => ResourceBase(entry) + (entry.Mode == StampSaveMode.SharedPrefab ? ".floatprefab" : ".floatcanvas");
-    private string SourcePath(StampEntry entry) => ResourceBase(entry) + ".source.floatcanvas";
+    private static bool UsesPrefab(StampEntry entry) => entry.Format == StampPackageFormat.Prefab || entry.Format is null && entry.Mode == StampSaveMode.SharedPrefab;
+    private string PackagePath(StampEntry entry) => ResourceBase(entry) + (UsesPrefab(entry) ? ".floatprefab" : ".floatcanvas");
+    private string SourcePath(StampEntry entry) => ResourceBase(entry) + (entry.Format == StampPackageFormat.Prefab ? ".source.floatprefab" : ".source.floatcanvas");
     private string ThumbnailPath(StampEntry entry) => ResourceBase(entry) + ".png";
     private void DeleteRevision(StampEntry entry)
     {

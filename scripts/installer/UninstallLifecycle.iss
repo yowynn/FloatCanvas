@@ -1,4 +1,4 @@
-type
+﻿type
   TUserProfile = record
     Sid: String;
     Home: String;
@@ -46,33 +46,42 @@ begin
   RegDeleteKeyIfEmpty(Root, Key);
 end;
 
-function RemoveOwnedClasses(Root: Integer; Classes, Executable: String): Boolean;
-var Prog, AppKey, Command: String; ProjectOwned: Boolean;
+function RemoveOwnedFileType(Root: Integer; Classes, Executable, TypeId, Extension: String): Boolean;
+var Prog, Command: String;
 begin
-  Prog := Classes + 'FloatCanvas.Project';
-  AppKey := Classes + 'Applications\FloatCanvas.exe';
+  Prog := Classes + TypeId;
   Command := '"' + Executable + '" --open "%1"';
-  ProjectOwned := RegistryOwns(Root, Prog + '\shell\open\command', '', Command);
-  if ProjectOwned then begin
+  Result := RegistryOwns(Root, Prog + '\shell\open\command', '', Command);
+  if Result then begin
     RemoveRegistryValue(Root, Prog + '\shell\open\command', '');
     RegDeleteKeyIfEmpty(Root, Prog + '\shell\open');
     RegDeleteKeyIfEmpty(Root, Prog + '\shell');
     if RegistryOwns(Root, Prog + '\DefaultIcon', '', '"' + Executable + '",0') then
       RemoveRegistryValue(Root, Prog + '\DefaultIcon', '');
     RemoveRegistryValue(Root, Prog, '');
-    RemoveRegistryValue(Root, Classes + '.floatcanvas\OpenWithProgids', 'FloatCanvas.Project');
-    if RegistryOwns(Root, Classes + '.floatcanvas', '', 'FloatCanvas.Project') then
-      RemoveRegistryValue(Root, Classes + '.floatcanvas', '');
-    RegDeleteKeyIfEmpty(Root, Classes + '.floatcanvas');
+    RemoveRegistryValue(Root, Classes + Extension + '\OpenWithProgids', TypeId);
+    if RegistryOwns(Root, Classes + Extension, '', TypeId) then
+      RemoveRegistryValue(Root, Classes + Extension, '');
+    RegDeleteKeyIfEmpty(Root, Classes + Extension);
   end;
+end;
+
+function RemoveOwnedClasses(Root: Integer; Classes, Executable: String): Boolean;
+var AppKey, Command: String; ProjectOwned, PrefabOwned: Boolean;
+begin
+  ProjectOwned := RemoveOwnedFileType(Root, Classes, Executable, 'FloatCanvas.Project', '.floatcanvas');
+  PrefabOwned := RemoveOwnedFileType(Root, Classes, Executable, 'FloatCanvas.Prefab', '.floatprefab');
+  AppKey := Classes + 'Applications\FloatCanvas.exe';
+  Command := '"' + Executable + '" --open "%1"';
   if RegistryOwns(Root, AppKey + '\shell\open\command', '', Command) then begin
     RemoveRegistryValue(Root, AppKey + '\shell\open\command', '');
     RegDeleteKeyIfEmpty(Root, AppKey + '\shell\open');
     RegDeleteKeyIfEmpty(Root, AppKey + '\shell');
     RemoveRegistryValue(Root, AppKey + '\SupportedTypes', '.floatcanvas');
+    RemoveRegistryValue(Root, AppKey + '\SupportedTypes', '.floatprefab');
     RemoveRegistryValue(Root, AppKey, 'FriendlyAppName');
   end;
-  Result := ProjectOwned;
+  Result := ProjectOwned or PrefabOwned;
 end;
 
 procedure RemoveOwnedIntegration(Root: Integer; Prefix, Executable: String);
@@ -84,7 +93,10 @@ begin
     (ProjectOwned and not RegValueExists(Root, Capabilities, 'InstallPath')) then begin
     if RegistryOwns(Root, Prefix + 'Software\RegisteredApplications', 'FloatCanvas', 'Software\FloatCanvas\Capabilities') then
       RemoveRegistryValue(Root, Prefix + 'Software\RegisteredApplications', 'FloatCanvas');
-    RemoveRegistryValue(Root, Capabilities + '\FileAssociations', '.floatcanvas');
+    if RegistryOwns(Root, Capabilities + '\FileAssociations', '.floatcanvas', 'FloatCanvas.Project') then
+      RemoveRegistryValue(Root, Capabilities + '\FileAssociations', '.floatcanvas');
+    if RegistryOwns(Root, Capabilities + '\FileAssociations', '.floatprefab', 'FloatCanvas.Prefab') then
+      RemoveRegistryValue(Root, Capabilities + '\FileAssociations', '.floatprefab');
     RemoveRegistryValue(Root, Capabilities, 'ApplicationName');
     RemoveRegistryValue(Root, Capabilities, 'ApplicationDescription');
     RemoveRegistryValue(Root, Capabilities, 'InstallPath');

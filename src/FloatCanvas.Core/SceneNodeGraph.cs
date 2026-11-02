@@ -14,7 +14,7 @@ public class SceneNodeGraph
     [JsonIgnore] public bool IsRuntimeEvaluated { get; internal set; }
     /// <summary>Only this graph's source leaves; definition dependencies are resolved separately.</summary>
     [JsonIgnore] public IEnumerable<string> ReferencedAssetIds => Elements.OfType<CanvasElement>().Where(element => element.AssetId is not null)
-        .Select(element => element.AssetId!).Distinct(StringComparer.Ordinal);
+        .Select(element => element.AssetId!).Concat(Groups.SelectMany(group => group.PreviewCanvas?.ReferencedAssetIds ?? [])).Distinct(StringComparer.Ordinal);
 }
 
 public enum GraphCloneIdentity { Preserve, NewNodes }
@@ -41,7 +41,7 @@ public static class SceneGraphClone
             }).ToList(),
             Groups = source.Groups.Select(group =>
             {
-                var copy = group.Clone(); copy.Id = map[group.Id]; copy.ParentId = Parent(group.ParentId);
+                var copy = group.Clone(assetIds); copy.Id = map[group.Id]; copy.ParentId = Parent(group.ParentId);
                 copy.ChildOrder = group.ChildOrder?.Select(id => map[id]).ToList(); return copy;
             }).ToList(),
             Instances = source.Instances.Select(instance =>

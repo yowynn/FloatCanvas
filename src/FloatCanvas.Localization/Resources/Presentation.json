@@ -15,6 +15,10 @@
     "zh": "按键显示区",
     "en": "Key display region"
   },
+  "Editor.ElementKind.Presentation.Log": { "zh": "按键记录", "en": "Key log" },
+  "Editor.ElementKind.Presentation.Keycaps": { "zh": "键帽记录", "en": "Keycap log" },
+  "Editor.ElementKind.Presentation.Keyboard": { "zh": "实时键盘", "en": "Live keyboard" },
+  "Presentation.KeyboardScope": { "zh": "此图层采集范围", "en": "Layer input scope" },
   "Recipe.PresentationKeys": {
     "zh": "按键记录 · 简洁",
     "en": "Key recording · Simple"

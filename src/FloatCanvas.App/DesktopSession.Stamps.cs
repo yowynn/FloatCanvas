@@ -272,6 +272,7 @@ internal sealed partial class DesktopSession
             _layers = new LayersWindow(() => Active, () => !DocumentOperationBusy && _host.IsVisible);
             ConfigureAppWindow(_layers);
             _layers.CommandKey += OnKey;
+            _layers.RootCanvasRequested += SwitchRootCanvas;
             _windowCoordinator?.Register(_layers, () => true);
             _layers.Dismissed += () => _layersWanted = false;
             ConnectPrefabLayers(_layers);

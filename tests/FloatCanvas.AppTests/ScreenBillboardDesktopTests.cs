@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Threading;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using FloatCanvas.Windows;
 
 /// <summary>Actual DesktopSession snapshot wiring on a never displayed private desktop; no input lease or physical input.</summary>
@@ -41,6 +42,7 @@ internal static class ScreenBillboardDesktopTests
         document.Canvas.Projection.Quad = [new(0, 0), new(800, 0), new(800, 700), new(0, 700)];
         session.NotifyChanged(); host.SetVisible(true); editor.Tool = EditorTool.Rectangle; editor.BillboardMode = true;
         using var renderer = new CanvasPreviewRenderer();
+        EscapePriority(desktop, host, editor, check, Acknowledge);
         using var initial = Capture(); using var baseFrame = renderer.Render(initial);
         Complete(baseFrame, initial.Context, [new("screen-billboard", bounds, 0, 0, 0, 0)]);
         string untouched = JsonSerializer.Serialize(document); int history = session.UndoCount;
@@ -66,6 +68,8 @@ internal static class ScreenBillboardDesktopTests
         editor.Cancel(); using var cancelled = Capture();
         check("cancelled actual snapshot drops draft and clears its lifetime", cancelled.ScreenDraft is null && cancelled.Context.ScreenDraftEpoch is null && !session.IsTransactionActive);
         check("late draft frame cannot become visible after cancellation", !DesktopSession.CanPresentCanvasFrame(draftFrame, cancelled.Context));
+        using var cancelledFrame = renderer.Render(cancelled);
+        Complete(cancelledFrame, cancelled.Context, [new("screen-billboard", bounds, 0, 0, 0, 0)]);
         Send(OverlayPointerKind.Down, 100, 100); using var restarted = Capture();
         check("a new draft cannot reuse pixels belonging to the cancelled lifetime", restarted.Context.ScreenDraftEpoch is not null &&
             !ReferenceEquals(restarted.Context.ScreenDraftEpoch, valid.Context.ScreenDraftEpoch) && !DesktopSession.CanPresentCanvasFrame(draftFrame, restarted.Context));
@@ -76,6 +80,7 @@ internal static class ScreenBillboardDesktopTests
 
         document = session.Document;
         var group = new SceneGraph(document).InsertGroup(new CanvasGroup { Name = "scope", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] }); session.EnterScope(group.Id);
+        Acknowledge();
         Send(OverlayPointerKind.Down, 100, 100); Send(OverlayPointerKind.Move, 300, 400);
         using var scoped = Capture();
         check("actual capture freezes the editing scope with the private screen draft", scoped.ScreenDraftScopeId == group.Id && scoped.ScreenDraft is not null);
@@ -85,6 +90,11 @@ internal static class ScreenBillboardDesktopTests
         Console.WriteLine("SCREEN_BILLBOARD_DESKTOP " + output);
 
         CanvasPreviewSnapshot Capture() => (CanvasPreviewSnapshot)typeof(DesktopSession).GetMethod("CaptureCanvasPreview", Hidden)!.Invoke(desktop, null)!;
+        void Acknowledge()
+        {
+            using var snapshot = Capture(); using var frame = renderer.Render(snapshot);
+            Complete(frame, snapshot.Context, [new("screen-billboard", bounds, 0, 0, 0, 0)]);
+        }
         void Complete(CanvasPreviewFrame frame, CanvasPreviewContext context, OverlayOutputTiming[] outputs)
         {
             typeof(DesktopSession).GetField("_submittingCanvasContext", Hidden)!.SetValue(desktop, context);
@@ -97,6 +107,63 @@ internal static class ScreenBillboardDesktopTests
             var p = new PointD(x, y) + editor.ScreenOrigin;
             editor.Pointer(new(kind, new(p.X, p.Y), OverlayMouseButton.Left, OverlayModifiers.None));
         }
+    }
+    private static void EscapePriority(DesktopSession desktop, OverlayHost host, EditorController editor, Action<string, bool> check, Action acknowledge)
+    {
+        var session = editor.Session; session.LeaveScope();
+        var document = session.Document;
+        var originalProjection = document.Canvas.Projection.Matrix;
+        var originalTool = editor.Tool; var originalWorkflow = editor.BillboardWorkflow; bool originalMode = editor.BillboardMode;
+        document.Canvas.Projection.Matrix = Projective2D.Identity;
+        session.NotifyChanged(); editor.Tool = EditorTool.Rectangle;
+        editor.BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine; editor.BillboardMode = true;
+        string authored = JsonSerializer.Serialize(document); int history = session.UndoCount, assets = session.Assets.Count;
+        var results = new List<(string Name, bool Passed)>();
+        var depthPoint = document.Viewport.Center;
+        SetEditing(); acknowledge(); Send(OverlayPointerKind.Down); Send(OverlayPointerKind.Up);
+        Console.WriteLine("BILLBOARD_ESC_SETUP " + JsonSerializer.Serialize(new { editor.Tool, editor.BillboardMode, editor.BillboardWorkflow,
+            Depth = editor.ActiveBillboardDepthLine is not null, Preview = editor.VisibleBillboardDepthLine is not null, session.IsTransactionActive,
+            AuthorEqual = JsonSerializer.Serialize(document) == authored, UndoEqual = session.UndoCount == history, editor.ScreenOrigin, document.Viewport }));
+        check("fixed depth setup creates no author edit or transaction", editor.ActiveBillboardDepthLine is not null && !session.IsTransactionActive && Unchanged());
+        Escape();
+        Console.WriteLine("BILLBOARD_ESC_FIXED " + JsonSerializer.Serialize(new { host.IsEditing, Depth = editor.ActiveBillboardDepthLine is not null, Unchanged = Unchanged() }));
+        results.Add(("Esc cancels fixed billboard depth before leaving editing", host.IsEditing && editor.ActiveBillboardDepthLine is null && Unchanged()));
+        acknowledge(); Send(OverlayPointerKind.Move);
+        results.Add(("an idle hover depth preview is not a fixed placement operation", editor.ActiveBillboardDepthLine is null && editor.VisibleBillboardDepthLine is not null));
+        bool editingBeforeIdle = host.IsEditing; Escape();
+        results.Add(("a second idle Esc after fixed depth cancellation returns to pass-through", editingBeforeIdle && !host.IsEditing && Unchanged()));
+
+        using var bitmap = new SkiaSharp.SKBitmap(4, 3); bitmap.Erase(SkiaSharp.SKColors.CornflowerBlue);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap); using var png = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        var pixels = AssetImport.Normalize(png.ToArray());
+        foreach (var workflow in new[] { BillboardCreationWorkflow.ScreenFirst, BillboardCreationWorkflow.FixedDepthLine })
+        {
+            editor.Tool = EditorTool.Image; editor.BillboardWorkflow = workflow; editor.BillboardMode = true; SetEditing();
+            int inserted = 0;
+            bool began = editor.BeginBillboardPlacement((depth, center) =>
+            { inserted++; ImageImportCommand.InsertBillboard(session, [pixels], document.Viewport, depth, center); });
+            acknowledge();
+            if (workflow == BillboardCreationWorkflow.FixedDepthLine)
+            { Send(OverlayPointerKind.Down); Send(OverlayPointerKind.Up); }
+            check(workflow + " pending image setup adds no pixels, asset or Undo", began && editor.HasPendingBillboardInsertion && session.Assets.Count == assets && Unchanged());
+            Escape();
+            Console.WriteLine("BILLBOARD_ESC_IMAGE " + JsonSerializer.Serialize(new { Workflow = workflow.ToString(), host.IsEditing,
+                Pending = editor.HasPendingBillboardInsertion, Depth = editor.ActiveBillboardDepthLine is not null, inserted, Assets = session.Assets.Count, Unchanged = Unchanged() }));
+            results.Add((workflow + " Esc cancels image placement while preserving editing and author state", host.IsEditing && !editor.HasPendingBillboardInsertion &&
+                editor.ActiveBillboardDepthLine is null && inserted == 0 && session.Assets.Count == assets && Unchanged()));
+            editingBeforeIdle = host.IsEditing; Escape();
+            results.Add((workflow + " a second idle Esc still returns to pass-through", editingBeforeIdle && !host.IsEditing && Unchanged()));
+        }
+        results.Add(("Esc routing fixture never acquires keyboard isolation or displays the toolbar", !host.IsKeyboardIsolationActive && !Field<Window>(desktop, "_toolbar").IsVisible));
+        editor.Cancel(); document.Canvas.Projection.Matrix = originalProjection;
+        editor.Tool = originalTool; editor.BillboardWorkflow = originalWorkflow; editor.BillboardMode = originalMode; session.NotifyChanged();
+        foreach (var result in results) check(result.Name, result.Passed);
+
+        bool Unchanged() => JsonSerializer.Serialize(session.Document) == authored && session.UndoCount == history && !session.IsTransactionActive;
+        void SetEditing() => typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, true);
+        void Escape() => typeof(DesktopSession).GetMethod("OnCanvasKeyInput", Hidden)!.Invoke(desktop, [new OverlayKeyEvent(0x1B, OverlayModifiers.None, false)]);
+        void Send(OverlayPointerKind kind)
+        { var point = depthPoint + editor.ScreenOrigin; editor.Pointer(new(kind, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None)); }
     }
     private static T Field<T>(object instance, string name) => (T)instance.GetType().GetField(name, Hidden)!.GetValue(instance)!;
     private static (HotkeyBinding, HotkeyBinding) FreeHotkeys()

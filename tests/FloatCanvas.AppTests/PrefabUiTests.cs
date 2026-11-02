@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,7 +27,7 @@ internal static class PrefabUiTests
                 L.Initialize(locale);
                 foreach (string theme in new[] { "light", "dark" }) { AppTheme.Apply(theme); Rows(check, locale, theme, root); }
             }
-            Contexts(check); Await(Stamps(check, root)); Await(Links(check, root));
+            ResourceStatuses(check); Contexts(check); Await(Stamps(check, root)); Await(Links(check, root));
         }
         finally { L.Initialize(language); SynchronizationContext.SetSynchronizationContext(previousContext); }
     }
@@ -76,9 +77,73 @@ internal static class PrefabUiTests
         session.Document.Definitions.Single().Source = new() { SourceResourceId = Guid.NewGuid(), EntryKind = PrefabSourceKind.PrefabDefinition };
         resources.Refresh(); layers.PrepareForShow();
         check(prefix + "portable origin metadata does not masquerade as an external link", !resources.Rows.Single().Linked && layers.VisibleNodes.All(row => !row.IsLinked));
+        session.Document.Definitions.Single().Source!.Locator = "sample.floatprefab";
+        resources.InvalidateResourceStatus(); resources.Refresh(); resources.Select(created.DefinitionId);
+        var resourceBody = (FrameworkElement)resources.Content;
+        Save(resourceBody, Path.Combine(root, $"resources-min-{locale}-{theme}.png"), resources.MinWidth - 2, resources.MinHeight - 38);
+        var resourceList = (ListBox)typeof(PrefabResourcesWindow).GetField("list", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(resources)!;
+        var actionScroll = ((DockPanel)resourceBody).Children.OfType<ScrollViewer>().Single(scroll => scroll.Content is WrapPanel);
+        check(prefix + "linked actions at the minimum window cannot consume the resource list viewport", resourceList.ActualHeight >= 72 && actionScroll.ActualHeight >= PropertyPanelLayout.ControlHeight && actionScroll.ScrollableHeight > 0);
+        actionScroll.ScrollToEnd(); resourceBody.UpdateLayout();
+        var lastAction = ((WrapPanel)actionScroll.Content).Children.OfType<Button>().Last();
+        var lastBounds = lastAction.TransformToAncestor(actionScroll).TransformBounds(new Rect(lastAction.RenderSize));
+        check(prefix + "all linked resource actions remain reachable through the bounded action scroller", actionScroll.VerticalOffset > 0 && lastBounds.Bottom <= actionScroll.ActualHeight + .1 &&
+            ((WrapPanel)actionScroll.Content).Children.OfType<Button>().All(button => button.MinHeight == PropertyPanelLayout.ControlHeight));
         Save((FrameworkElement)resources.Content, Path.Combine(root, $"resources-{locale}-{theme}.png"), 440, 500);
         Save((FrameworkElement)layers.Content, Path.Combine(root, $"layers-{locale}-{theme}.png"), 370, 360);
         SessionWindowCoordinator.Close(resources); SessionWindowCoordinator.Close(layers);
+    }
+    private static void ResourceStatuses(Action<string, bool> check)
+    {
+        var session = Source(); var created = session.CreatePrefabFromSelection("Offline");
+        var definition = session.Document.Definitions.Single();
+        definition.Source = new() { Locator = "missing.floatprefab", IsRelative = true, SourceResourceId = Guid.NewGuid(),
+            EntryKind = PrefabSourceKind.PrefabDefinition, EntryDefinitionId = definition.Id, LastAcceptedContentRevision = definition.Revision, LastAcceptedFileSha256 = new string('B', 64) };
+        var observedBinding = PrefabLinkStatusBinding.Capture(definition.Source);
+        var other = new PrefabDefinition { Name = "Other" }; session.Document.Definitions.Add(other);
+        string missing = L.Get("Prefab.SourceMissing");
+        var owner = session; var statuses = new Dictionary<Guid, string> { [definition.Id] = missing };
+        var resources = new PrefabResourcesWindow(() => owner, getLinkStatus: (_, item) => statuses.GetValueOrDefault(item.Id));
+        var footer = (TextBlock)typeof(PrefabResourcesWindow).GetField("status", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(resources)!;
+        resources.Execute = request =>
+        {
+            if (request.Action == PrefabResourceAction.Embed) request.Owner.ConvertPrefabToEmbedded(request.DefinitionId!.Value);
+            return Task.CompletedTask;
+        };
+        try
+        {
+            resources.Refresh(); resources.Select(created.DefinitionId); resources.SetStatus(missing);
+            check("resource status regression starts with the actual missing-source footer", footer.Text == missing);
+            Await(resources.PerformAsync(PrefabResourceAction.Embed));
+            check("embedding a missing source clears the no-longer-applicable resource footer", footer.Text.Length == 0);
+            check("embedded resource summaries do not reuse cached external-link errors", !resources.Rows.Single(row => row.Id == created.DefinitionId).Linked &&
+                !resources.Rows.Single(row => row.Id == created.DefinitionId).Summary.Contains(missing, StringComparison.Ordinal));
+            check("an external observation cannot apply to an embedded definition", !observedBinding.Matches(session.Document.Definitions.Single(item => item.Id == created.DefinitionId).Source));
+            session.Undo(); resources.Refresh();
+            check("undo embedding restores the linked row and its source status without restoring an old action footer", resources.Rows.Single(row => row.Id == created.DefinitionId).Linked &&
+                resources.Rows.Single(row => row.Id == created.DefinitionId).Summary.Contains(missing, StringComparison.Ordinal) && footer.Text.Length == 0);
+            check("undo can reuse a source observation only after restoring the exact binding", observedBinding.Matches(session.Document.Definitions.Single(item => item.Id == created.DefinitionId).Source));
+            session.Redo(); resources.Refresh();
+            check("redo embedding drops cached link errors again", !resources.Rows.Single(row => row.Id == created.DefinitionId).Summary.Contains(missing, StringComparison.Ordinal) && footer.Text.Length == 0);
+            resources.SetStatus("failure on current definition"); resources.Select(other.Id);
+            check("switching resource selection clears the previous definition action status", footer.Text.Length == 0);
+            resources.SetStatus("failure in previous project"); owner = Source(); resources.Refresh();
+            check("switching to an empty project replaces old action status with the actual empty-resource hint", footer.Text == L.Get("Prefab.EmptyResources") && resources.Rows.Count == 0);
+            owner = session; resources.Refresh(); resources.Select(other.Id);
+            var delayed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            resources.Execute = async _ => { await delayed.Task; throw new IOException("late error on other resource"); };
+            var pending = resources.PerformAsync(PrefabResourceAction.Export);
+            resources.Select(created.DefinitionId); delayed.SetResult(); Await(pending);
+            check("a delayed resource failure cannot replace the current different selection footer", footer.Text.Length == 0);
+            var changed = definition.Source.Clone();
+            foreach (var mutation in new Action<ExternalPrefabSource>[] { source => source.Locator = "relinked.floatprefab", source => source.SourceResourceId = Guid.NewGuid(),
+                source => source.LastAcceptedFileSha256 = new string('A', 64), source => source.LastAcceptedContentRevision = Guid.NewGuid() })
+            {
+                var replacement = changed.Clone(); mutation(replacement);
+                check("cached source status rejects a changed locator resource or accepted snapshot", !observedBinding.Matches(replacement));
+            }
+        }
+        finally { SessionWindowCoordinator.Close(resources); }
     }
     private static void Contexts(Action<string, bool> check)
     {
@@ -107,7 +172,7 @@ internal static class PrefabUiTests
         var loaded = await library.LoadStampAsync(entry.Id); var target = new EditorSession();
         StampLibrary.Place(loaded, target, new(100, 80)); StampLibrary.Place(loaded, target, new(200, 80));
         check("shared stamp stores an explicit typed prefab and imports content once", loaded.SharedPrefab is not null && target.Document.Definitions.Count == 1 && target.Document.Instances.Count == 2 && target.Document.Elements.Count == 0);
-        using (var json = JsonDocument.Parse(await File.ReadAllTextAsync(catalog))) check("first shared save upgrades the catalog to version 2", json.RootElement.GetProperty("Version").GetInt32() == 2);
+        using (var json = JsonDocument.Parse(await File.ReadAllTextAsync(catalog))) check("first shared save upgrades the catalog to version 3 with explicit prefab storage", json.RootElement.GetProperty("Version").GetInt32() == 3 && entry.Format == StampPackageFormat.Prefab);
         var definitionId = target.Document.Definitions.Single().Id; var draft = target.BeginPrefabEdit(definitionId);
         draft.Session.Execute("local definition", document => document.Elements.Single().Width = 75); target.ApplyPrefabEdit(target.PreparePrefabEdit(draft));
         StampLibrary.Place(loaded, target, new(300, 80));

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using FloatCanvas.Core;
@@ -13,8 +14,8 @@ internal sealed class NodeTransformPanel : StackPanel
     private readonly Func<bool> canMutate;
     private readonly Dictionary<string, NumericValueField> fields = [];
     private readonly SegmentedChoice mode = new();
-    private readonly CheckBox aspect = new() { IsChecked = true };
-    private readonly Button enter = new() { MinHeight = 30, Margin = new(0, 3, 0, 8) };
+    private readonly AspectRatioButton aspect = new() { IsChecked = true };
+    private readonly Button enter = new() { MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 3, 0, 8) };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11 };
     private EditorSession? editingSession;
     private SelectionTransformSnapshot? original;
@@ -43,8 +44,12 @@ internal sealed class NodeTransformPanel : StackPanel
                 new NumericValueField(-100_000_000, 100_000_000, sliderMinimum: -1000, sliderMaximum: 1000);
             fields.Add(key, field); field.Unit = key == "Angle" ? "°" : "px";
             field.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), label);
-            var caption = new PropertyLabel(label); field.SetLabel(caption);
-            Children.Add(PropertyPanelLayout.Row(caption, field));
+            AutomationProperties.SetName(field.Input, label); AutomationProperties.SetName(field.Slider, label);
+            if (key == "Angle")
+            {
+                var caption = new PropertyLabel(label); field.SetLabel(caption);
+                Children.Add(PropertyPanelLayout.Row(caption, field));
+            }
             field.CanBeginGesture = BeginEdit;
             field.ValueChanged += _ => { if (!refreshing && field.IsInteracting) Publish(key); };
             field.GestureCompleted += commit => { if (commit) CompletePendingEdit(); else CancelEditing(); };
@@ -56,7 +61,8 @@ internal sealed class NodeTransformPanel : StackPanel
                 else if (e.Key == Key.Escape && IsEditing) { CancelEditing(); Refresh(); e.Handled = true; }
             };
         }
-        aspect.Content = L.Get("Inspector.KeepAspect"); Children.Add(aspect);
+        Children.Insert(1, PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Position")), PropertyPanelLayout.Pair(fields["X"], fields["Y"])));
+        Children.Insert(2, PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Size")), PropertyPanelLayout.Pair(fields["W"], fields["H"], aspect)));
         enter.Content = L.Get("GroupTransform.Enter");
         enter.Click += (_, _) =>
         {

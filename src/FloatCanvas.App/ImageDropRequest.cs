@@ -33,7 +33,7 @@ internal sealed class ImageDropRequest : IDisposable
         Target = target; document = target.Document; Placement = placement; Opacity = opacity;
         contentVersion = target.ContentVersion; scopeVersion = target.EditScopeVersion;
         initiallyWritable = !target.IsTransactionActive && target.CanInsertInEditScope;
-        this.mapping = mapping ?? (() => CanvasMapping.Create(Target.Document));
+        this.mapping = mapping ?? (() => CanvasMapping.Create(Target.Document, Target.ActiveRootCanvas));
         this.viewEpoch = viewEpoch; initialViewEpoch = viewEpoch?.Invoke();
         placementMapping = this.mapping(); planeToScreen = placementMapping.PlaneToScreen;
         cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); Token = cancellation.Token;

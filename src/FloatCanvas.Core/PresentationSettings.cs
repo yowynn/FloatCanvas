@@ -15,6 +15,8 @@ public sealed class PresentationSettings
     /// <summary>Legacy wire value only; it neither disables keyboard display nor enables scene-bound mouse effects.</summary>
     public PresentationModules Modules { get; set; } = PresentationModules.Keys;
     public PresentationKeyDisplayMode KeyDisplay { get; set; } = PresentationKeyDisplayMode.AllPhysicalKeys;
+    /// <summary>Authored input scope for this keyboard layer, independent of other layers.</summary>
+    public PresentationKeyboardScope KeyboardScope { get; set; } = PresentationKeyboardScope.AllApplications;
     public PresentationDisplayStyle DisplayStyle { get; set; } = PresentationDisplayStyle.Log;
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PresentationKeyboardLayout? KeyboardLayout { get; set; }
@@ -31,7 +33,7 @@ public sealed class PresentationSettings
         var copy = (PresentationSettings)MemberwiseClone(); copy.KeyboardLayout = KeyboardLayout?.Clone(); return copy;
     }
     public bool IsValid() => (Modules & ~(PresentationModules.Keys | PresentationModules.Cursor | PresentationModules.Clicks | PresentationModules.Trail)) == 0 &&
-        Enum.IsDefined(KeyDisplay) && Enum.IsDefined(DisplayStyle) && (KeyboardLayout?.IsValid() ?? true) && Enum.IsDefined(KeyPanelAlignment) && RecentChordLimit is >= 1 and <= PresentationLimits.MaximumChords &&
+        Enum.IsDefined(KeyDisplay) && Enum.IsDefined(KeyboardScope) && Enum.IsDefined(DisplayStyle) && (KeyboardLayout?.IsValid() ?? true) && Enum.IsDefined(KeyPanelAlignment) && RecentChordLimit is >= 1 and <= PresentationLimits.MaximumChords &&
         Range(KeyHoldMilliseconds, 100, 5000) && Range(KeyPanelMaximumWidth, 1, 1_000_000) &&
         Range(CursorRadiusPixels, 2, 128) && Range(RippleMilliseconds, 100, 2000) &&
         Range(TrailMilliseconds, 100, 5000) && Range(TrailWidthPixels, 1, 64);
@@ -42,6 +44,7 @@ public static class PresentationLimits
 {
     public const int MaximumHeldKeys = 128, MaximumChordKeys = 16, MaximumChords = 8, MaximumClicks = 32, MaximumTrailPoints = 512;
     public const int MaximumFramePayloadBytes = 65536, MaximumPrimitives = 8192, MaximumBakePoints = 512, MaximumBakeSegments = 32;
+    public const int MaximumScopedFramePayloadBytes = MaximumFramePayloadBytes * 3;
     public const int MaximumKeyLabelLength = 64;
     public static bool IsValidElement(CanvasElement element) => element.Kind == ElementKind.Presentation
         ? element.Presentation?.IsValid() == true && double.IsFinite(element.Width) && element.Width > 0 && double.IsFinite(element.Height) && element.Height > 0 &&

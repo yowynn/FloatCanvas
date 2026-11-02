@@ -69,6 +69,10 @@ internal static class GroupControllerTests
                 var session = new EditorSession(new() { Elements = [first, second] }); session.SetSelection([first.Id, second.Id]);
                 var panel = new NodeTransformPanel(() => session, () => true); panel.Refresh();
                 var fields = Field<Dictionary<string, NumericValueField>>(panel, "fields");
+                var chain = Field<AspectRatioButton>(panel, "aspect");
+                check(language + " group transform reuses position and size pairs with the standard aspect chain", ReferenceEquals(fields["X"].Parent, fields["Y"].Parent) &&
+                    ReferenceEquals(fields["W"].Parent, fields["H"].Parent) && ReferenceEquals(chain.Parent, fields["W"].Parent) &&
+                    ((System.Windows.Controls.Grid)fields["W"].Parent).ColumnDefinitions[1].Width.Value == PropertyPanelLayout.PairGap);
                 fields["Angle"].Input.Text = "90"; Invoke(panel, "Publish", "Angle"); panel.CompletePendingEdit();
                 var centers = session.SelectedWorldElements().Select(element => ElementGeometry.Bounds(element).Center).ToArray();
                 check(language + " overall property rotation changes the pair's layout around one pivot", Near(centers[0].X, 60) && Near(centers[1].X, 60) && Math.Abs(centers[0].Y - centers[1].Y) > 99);

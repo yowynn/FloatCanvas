@@ -18,17 +18,21 @@ public static class SceneLimits
     public static void ValidateCapacity(SceneDocument document)
     {
         _ = PrefabClosure.Validate(document);
+        SceneCanvasRoots.Validate(document);
         var graphs = new SceneNodeGraph[] { document }.Concat(document.Definitions.Select(definition => definition.Graph));
-        var elements = graphs.SelectMany(graph => graph.Elements).Append(document.Background).OfType<CanvasElement>();
+        var previews = document.RootPreviewCanvases.Values.Concat(document.Definitions.Select(definition => definition.PreviewCanvas)
+            .OfType<SubprojectCanvasSettings>()).Concat(graphs.SelectMany(graph => graph.Groups).Select(group => group.PreviewCanvas).OfType<SubprojectCanvasSettings>()).ToArray();
+        var elements = graphs.SelectMany(graph => graph.Elements).Concat(previews.Select(preview => preview.Background)).Append(document.Background).OfType<CanvasElement>();
         if (elements.Any(e => e.Points is null || e.Points.Count > MaximumPathPoints || e.ImageFrame?.Count > MaximumPathPoints))
             throw new InvalidDataException(L.Get("Scene.PathCapacityExceeded"));
         if (elements.Any(element => element.Style is null || !AppearanceRegistry.IsValidColorRoles(element.Style.AdditionalColors) ||
             !ElementAppearance.IsValidVariant(element.Kind, element.Style.Variant) || !Enum.IsDefined(element.NumberTextSizeMode) || !PresentationLimits.IsValidElement(element) || !WindowSourceLimits.IsValidElement(element)))
             throw new InvalidDataException(L.Get("Scene.InvalidElementStyle"));
-        if (document.Background?.WindowSource is not null) throw new InvalidDataException("A canvas background cannot be a live window source.");
+        if (document.Background?.WindowSource is not null || previews.Any(preview => preview.Background?.WindowSource is not null)) throw new InvalidDataException("A canvas background cannot be a live window source.");
         // An inexpensive upper bound keeps ordinary commits independent of unchanged
         // path size. Only documents near the package JSON ceiling need a streaming count.
-        long upperBound = 4096L + (document.Canvas?.Projection?.Quad?.Count ?? 0) * 96L;
+        long upperBound = 4096L + document.RootCanvasAssignments.Count * 96L + (document.Canvas?.Projection?.Quad?.Count ?? 0) * 96L;
+        upperBound += previews.Sum(preview => 4096L + (preview.Canvas?.Projection?.Quad?.Count ?? 0) * 96L);
         foreach (var element in elements)
             upperBound += 2048L + (element.Points.Count + (element.ImageFrame?.Count ?? 0)) * 96L + (element.Effects?.Count ?? 0) * 512L +
                 6L * ((element.Name?.Length ?? 0) + (element.Text?.Length ?? 0) + (element.AssetId?.Length ?? 0) + (element.Style?.FontFamily?.Length ?? 0)) +

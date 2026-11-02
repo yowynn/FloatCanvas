@@ -12,7 +12,7 @@ public sealed partial class SceneRenderer
     {
         CanvasMapping? mapping = null;
         foreach (var item in document.Elements)
-            if (item is { IsBillboard: true, Visible: true } && item.Style.Opacity > 0 && HasPresentationInk(item) &&
+            if (RootOf(document, item) == RootCanvasKind.Main && item is { IsBillboard: true, Visible: true } && item.Style.Opacity > 0 && HasPresentationInk(item) &&
                 CanvasDepthOrder.TryAnchorDepth(mapping ??= CanvasMapping.Create(document), item.BillboardAnchor, out _)) return true;
         return false;
     }
@@ -23,11 +23,11 @@ public sealed partial class SceneRenderer
     /// One working image is retained, rather than one full-size image for every depth band.
     /// </summary>
     private void DrawDepthScene(SKCanvas canvas, SceneDocument document, AssetLibrary assets,
-        bool includeBackground, bool includeCanvasBackground, bool includeGrid)
+        bool includeBackground, bool includeCanvasBackground, bool includeGrid, bool annotationsOnly = false)
     {
-        double opacity = Math.Clamp(document.LayerOpacity, 0, 1);
+        double opacity = annotationsOnly ? 1 : Math.Clamp(document.LayerOpacity, 0, 1);
         bool photograph = includeBackground && document.Background is { Visible: true };
-        DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground && photograph, canvasOpacity: opacity);
+        if (!annotationsOnly) DrawBackground(canvas, document, assets, includeBackground, includeCanvasBackground && photograph, canvasOpacity: opacity);
         if (!(opacity > 0)) return;
         var source = EffectiveLiveEffectContext is { } context && CanvasDepthOrder.IsEnabled(context) ? context : document;
         var mapping = ReferenceEquals(source, document) ? _mapping! : CanvasMapping.Create(source);
@@ -50,7 +50,7 @@ public sealed partial class SceneRenderer
         // Transparent exports omit the canvas color from their output, while live filters still
         // sample the original colored canvas, just as they sample an omitted desktop background.
         bool separateSampling = !ReferenceEquals(source, document) || !includeCanvasBackground &&
-            (source.Canvas.BackgroundColor >> 24) != 0 && HasLiveEffects(source);
+                (source.Canvas.BackgroundColor >> 24) != 0 && HasLiveEffects(source);
         using var selectedBuffer = !separateSampling ? null : RentDepthSurface(canvas, info, "Cannot allocate the selected depth composition surface.");
         var selected = selectedBuffer?.Surface;
         if (selected is not null) { selected.Canvas.Clear(SKColors.Transparent); selected.Canvas.Translate(-(float)viewport.X, -(float)viewport.Y); }
@@ -61,10 +61,11 @@ public sealed partial class SceneRenderer
         // clips of that one image, rather than rerasterizing every path/text/image for every billboard.
         // A planar live filter must retain the finite event sequence because its lower source changes.
         using var planeBuffer = selected is null && (mapping.PlaneToScreen.M31 != 0 || mapping.PlaneToScreen.M32 != 0) &&
-            !source.Elements.Any(e => e.Visible && e.Style.Opacity > 0 && !e.IsBillboard && ElementGeometry.IsLiveEffect(e.Kind))
+            !source.Elements.Any(e => RootOf(source, e) == RootCanvasKind.Main && e.Visible && e.Style.Opacity > 0 && !e.IsBillboard && ElementGeometry.IsLiveEffect(e.Kind))
             ? RentDepthSurface(canvas, info, "Cannot allocate the shared plane composition surface.") : null;
         using var plane = planeBuffer is null ? null : BuildDepthPlane(planeBuffer.Surface, source, assets,
             imageBounds, sourceColor, includeGrid);
+        var previousSamplePainter = _depthSamplePainter;
         try
         {
             foreach (var entry in DepthEvents(source, mapping, boundarySamples))
@@ -89,11 +90,20 @@ public sealed partial class SceneRenderer
                     _depthSamplePainter = target =>
                     {
                         DrawBackground(target, source, assets, includeCanvasBackground: false, sampling: true);
+                        if (HasAuxiliaryRoots(source))
+                        {
+                            // A lower-root filter has its own earlier prefix. It must not
+                            // recursively sample this main-depth callback, which includes it.
+                            var mainPrefixPainter = _depthSamplePainter;
+                            _depthSamplePainter = null;
+                            try { DrawRootElements(target, source, assets, RootCanvasKind.Background, source.Elements.Count); }
+                            finally { _depthSamplePainter = mainPrefixPainter; }
+                        }
                         target.DrawImage(prefix, ToRect(imageBounds), Nearest);
                     };
                     DrawDepthElement(working.Canvas, source, assets, entry);
                     if (selected is not null && chosen!.Contains(element.Id)) DrawDepthElement(selected.Canvas, source, assets, entry);
-                    _depthSamplePainter = null;
+                    _depthSamplePainter = previousSamplePainter;
                     ClearLiveEffectImages();
                 }
                 else
@@ -110,7 +120,7 @@ public sealed partial class SceneRenderer
                 canvas.DrawImage(image, ToRect(imageBounds), Nearest, alpha);
             }
         }
-        finally { _depthSamplePainter = null; ClearLiveEffectImages(); }
+        finally { _depthSamplePainter = previousSamplePainter; ClearLiveEffectImages(); }
     }
 
     private static RectD DepthOutputBounds(SKCanvas canvas, RectD viewport)
@@ -138,7 +148,7 @@ public sealed partial class SceneRenderer
         if (includeGrid) DrawGrid(surface.Canvas, document);
         var transform = TransformFor(document);
         foreach (var element in document.Elements)
-            if (!element.IsBillboard && element.Visible && element.Style.Opacity > 0) DrawElement(surface.Canvas, element, assets, transform, document);
+            if (RootOf(document, element) == RootCanvasKind.Main && !element.IsBillboard && element.Visible && element.Style.Opacity > 0) DrawElement(surface.Canvas, element, assets, transform, document);
         return surface.Snapshot();
     }
 
@@ -225,11 +235,11 @@ public sealed partial class SceneRenderer
         {
             yield return new(-1, null);
             for (int index = 0; index < document.Elements.Count; index++)
-                if (document.Elements[index].Visible && document.Elements[index].Style.Opacity > 0) yield return new(index, null);
+                if (RootOf(document, document.Elements[index]) == RootCanvasKind.Main && document.Elements[index].Visible && document.Elements[index].Style.Opacity > 0) yield return new(index, null);
             yield break;
         }
         var billboards = Enumerable.Range(0, document.Elements.Count)
-            .Where(i => document.Elements[i] is { IsBillboard: true, Visible: true } e && e.Style.Opacity > 0 && HasPresentationInk(e) && CanvasDepthOrder.TryAnchorDepth(mapping, e.BillboardAnchor, out _))
+            .Where(i => document.Elements[i] is { IsBillboard: true, Visible: true } e && RootOf(document, e) == RootCanvasKind.Main && e.Style.Opacity > 0 && HasPresentationInk(e) && CanvasDepthOrder.TryAnchorDepth(mapping, e.BillboardAnchor, out _))
             .OrderByDescending(i => projection.Denominator(document.Elements[i].BillboardAnchor)).ThenBy(i => i).ToArray();
         double far = double.PositiveInfinity;
         foreach (var group in billboards.GroupBy(i => projection.Denominator(document.Elements[i].BillboardAnchor)))
@@ -260,7 +270,7 @@ public sealed partial class SceneRenderer
             using var correctionSamples = boundaries.ForRange(near, farDepth);
             yield return new(-1, polygon, boundaries.All, CorrectionSamples: correctionSamples);
             for (int index = 0; index < document.Elements.Count; index++)
-                if (document.Elements[index] is { IsBillboard: false, Visible: true } e && e.Style.Opacity > 0)
+                if (document.Elements[index] is { IsBillboard: false, Visible: true } e && RootOf(document, e) == RootCanvasKind.Main && e.Style.Opacity > 0)
                     yield return new(index, polygon, boundaries.All, CorrectionSamples: correctionSamples);
         }
 
@@ -268,7 +278,7 @@ public sealed partial class SceneRenderer
         {
             if (samples is null || samples.IsEmpty) yield break;
             for (int i = first; i < end; i++)
-                if (document.Elements[i] is { IsBillboard: false, Visible: true } e && e.Style.Opacity > 0)
+                if (document.Elements[i] is { IsBillboard: false, Visible: true } e && RootOf(document, e) == RootCanvasKind.Main && e.Style.Opacity > 0)
                     yield return new(i, null, samples, true);
         }
     }
@@ -289,7 +299,7 @@ public sealed partial class SceneRenderer
             this.bounds = bounds;
             if (mapping.PlaneToScreen.M31 == 0 && mapping.PlaneToScreen.M32 == 0) { All = new(); return; }
             var inverse = mapping.ScreenToPlane;
-            var depths = document.Elements.Where(e => e.IsBillboard && e.Visible && e.Style.Opacity > 0 && include(e))
+            var depths = document.Elements.Where(e => RootOf(document, e) == RootCanvasKind.Main && e.IsBillboard && e.Visible && e.Style.Opacity > 0 && include(e))
                 .Select(e => mapping.PlaneToScreen.Denominator(e.BillboardAnchor)).Where(d => double.IsFinite(d) && d > 0).Distinct().ToArray();
             // Filters and isolated contexts already share one full-source raster phase.
             // Preserve their exact equality masks and lower-prefix sampling unchanged.

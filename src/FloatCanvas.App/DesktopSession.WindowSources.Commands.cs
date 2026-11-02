@@ -111,14 +111,15 @@ internal sealed partial class DesktopSession
         bool billboard, BillboardDepthLine? depth, PointD? center)
     {
         if (!IsCurrentWindowOperation(guard) || !source.IsCurrent || _windowRuntime is null) return;
+        var placement = billboard ? owner.Document.Viewport : VisibleDocumentArea();
         var element = WindowSourceInsertion.Prepare(owner, source.Descriptor, source.Content.Width, source.Content.Height, source.Crop,
-            billboard ? owner.Document.Viewport : VisibleDocumentArea(), billboard, depth, center, ImageInsertionOpacity());
+            placement, billboard, depth, center, ImageInsertionOpacity(), planeCenter: billboard ? null : VisibleDocumentInsertionCenter(placement));
         AppearanceMigration.NormalizeElement(element);
         var staging = new AssetLibrary(); element.AssetId = staging.Add(source.Png, "image/png");
-        var candidate = owner.Document.Clone(); new SceneGraph(candidate).InsertElement(element.Clone(), owner.EditScopeId); SceneValidation.Validate(candidate);
+        var candidate = owner.Document.Clone(); new SceneGraph(candidate).InsertElement(element.Clone(), owner.EditScopeId, rootCanvas: owner.ActiveRootCanvas); SceneValidation.Validate(candidate);
         if (!IsCurrentWindowOperation(guard) || !source.IsCurrent) return;
         owner.Assets.Add(source.Png, "image/png");
-        owner.Execute(L.Get("Image.ImportTitle"), document => new SceneGraph(document).InsertElement(element, owner.EditScopeId));
+        owner.Execute(L.Get("Image.ImportTitle"), document => new SceneGraph(document).InsertElement(element, owner.EditScopeId, rootCanvas: owner.ActiveRootCanvas));
         _windowRuntime.Bind(WindowOwnerToken(owner), owner.Document.ResourceId, new(null, element.Id), source.Descriptor.BindingIntent, source.Capture);
         source.Transferred = true; owner.SetSelection([element.Id]); SwitchToolState(EditorTool.Select);
         UpdateWindowSourceRuntime(); RefreshWindowSourcesUi(); ScheduleRecovery(); RequestRender();

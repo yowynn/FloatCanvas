@@ -20,6 +20,7 @@ internal sealed partial class FrozenSceneEvaluation
             built?.Invoke(); return (scene, indices);
         }, LazyThreadSafetyMode.ExecutionAndPublication);
     }
+    internal SceneDocument SourceDocument => source;
     internal EvaluatedScene Scene => value.Value.Scene;
     internal (int First, int Last) RenderRange(int first, int last)
     {
@@ -230,6 +231,7 @@ internal sealed class CanvasPreviewScene
         {
             Version = document.Version, Kind = document.Kind, Elements = nodes,
             Provenance = document.Provenance, ResourceId = document.ResourceId, RootOrder = document.RootOrder?.ToList(),
+            RootCanvasAssignments = new(document.RootCanvasAssignments),
             Instances = instances ?? document.Instances.Select(instance => instance.Clone()).ToList(),
             Definitions = definitions ?? document.Definitions.Select(definition => definition.Clone()).ToList(),
             Background = background, Canvas = document.Canvas.Clone(), Groups = groups,
@@ -240,6 +242,7 @@ internal sealed class CanvasPreviewScene
     private void Publish(SceneDocument document, SceneDocument next, long revision, long elementRevision, long transactionId)
     {
         GraphChanged = frozen is null || JsonSerializer.Serialize(frozen.Groups) != JsonSerializer.Serialize(next.Groups) ||
+            JsonSerializer.Serialize(frozen.RootCanvasAssignments) != JsonSerializer.Serialize(next.RootCanvasAssignments) ||
             JsonSerializer.Serialize(frozen.Instances) != JsonSerializer.Serialize(next.Instances) ||
             JsonSerializer.Serialize(frozen.Definitions) != JsonSerializer.Serialize(next.Definitions) ||
             !(frozen.RootOrder is null && next.RootOrder is null || frozen.RootOrder is not null && next.RootOrder is not null && frozen.RootOrder.SequenceEqual(next.RootOrder));

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -26,10 +27,10 @@ internal sealed class CanvasRectificationPreviewWindow : Window
         source = raster.PngBytes; sourceBounds = raster.Bounds; Projection = projection.Clone();
         Title = L.Get("Canvas.RectificationPreview"); Owner = owner; Topmost = true; ShowInTaskbar = false;
         Width = 940; Height = 650; MinWidth = 600; MinHeight = 420; WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
-        var body = new DockPanel { Margin = new(18) };
+        var body = new DockPanel { Margin = WindowLayout.ContentMargin() };
         var controls = new StackPanel(); DockPanel.SetDock(controls, Dock.Top); body.Children.Add(controls);
         controls.Children.Add(new TextBlock { Text = L.Get("Canvas.RectificationHelp"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
-        var choices = new ComboBox { MinHeight = 28, Margin = new(0, 0, 0, 8) };
+        var choices = new ComboBox();
         foreach (var preset in CanvasAspectPresets.All) choices.Items.Add(new ComboBoxItem { Content = L.Get(preset.Key), Tag = preset });
         choices.SelectedIndex = 0;
         choices.SelectionChanged += (_, _) =>
@@ -37,11 +38,13 @@ internal sealed class CanvasRectificationPreviewWindow : Window
             if (choices.SelectedItem is ComboBoxItem { Tag: CanvasAspectPreset { Aspect: { } ratio } } &&
                 CanvasProjectionGeometry.TrySetAspect(Projection, ratio, out var next, out _)) { Projection = next; RefreshImage(); }
         };
-        controls.Children.Add(choices);
-        var sizes = new Grid(); sizes.ColumnDefinitions.Add(new()); sizes.ColumnDefinitions.Add(new());
-        var widthPanel = new StackPanel(); widthPanel.Children.Add(new TextBlock { Text = L.Get("Canvas.PlaneWidth") }); widthPanel.Children.Add(width);
-        var heightPanel = new StackPanel(); heightPanel.Children.Add(new TextBlock { Text = L.Get("Canvas.PlaneHeight") }); heightPanel.Children.Add(height);
-        sizes.Children.Add(widthPanel); Grid.SetColumn(heightPanel, 1); sizes.Children.Add(heightPanel); controls.Children.Add(sizes);
+        AutomationProperties.SetName(choices, L.Get("Canvas.TargetAspect"));
+        controls.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Canvas.TargetAspect")), choices));
+        foreach (var (field, key, kind) in new[] { (width, "Canvas.PlaneWidth", NumericPropertyKind.Width), (height, "Canvas.PlaneHeight", NumericPropertyKind.Height) })
+        {
+            field.SetScrubAnchor(kind, L.Get(key)); AutomationProperties.SetName(field.Input, L.Get(key)); AutomationProperties.SetName(field.Slider, L.Get(key));
+        }
+        controls.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Size")), PropertyPanelLayout.Pair(width, height)));
         width.Unit = height.Unit = "px"; width.ToolTip = L.Get("Canvas.PlaneWidth"); height.ToolTip = L.Get("Canvas.PlaneHeight");
         bool Commit()
         {
@@ -52,6 +55,7 @@ internal sealed class CanvasRectificationPreviewWindow : Window
         }
         foreach (var field in new[] { width, height })
         {
+            field.ValueChanged += _ => { if (field.IsInteracting) Commit(); };
             field.Input.LostKeyboardFocus += (_, _) => Commit();
             field.Input.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); e.Handled = true; } };
             field.SliderValueCommitted += () => Commit();
@@ -60,7 +64,8 @@ internal sealed class CanvasRectificationPreviewWindow : Window
         DockPanel.SetDock(buttons, Dock.Bottom); body.Children.Add(buttons);
         void Button(string key, Action action)
         {
-            var button = new Button { Content = L.Get(key), Padding = new(12, 5, 12, 5), Margin = new(6, 0, 0, 0) };
+            var button = new Button { Content = L.Get(key), MinHeight = PropertyPanelLayout.ControlHeight,
+                IsDefault = key == "Canvas.ApplyPlane", IsCancel = key == "Dialog.Cancel", Margin = new(6, 0, 0, 0) };
             button.Click += (_, _) => action(); buttons.Children.Add(button);
         }
         Button("Canvas.SwapOrientation", () => { var bounds = CanvasProjectionGeometry.ResolvePlaneBounds(Projection); if (CanvasProjectionGeometry.TryResize(Projection, bounds.Height, bounds.Width, out var next, out _)) { Projection = next; RefreshImage(); } });
@@ -69,7 +74,14 @@ internal sealed class CanvasRectificationPreviewWindow : Window
         Button("Dialog.Cancel", () => SessionWindowCoordinator.Close(this));
         DockPanel.SetDock(status, Dock.Bottom); body.Children.Add(status);
         var images = new Grid(); images.ColumnDefinitions.Add(new()); images.ColumnDefinitions.Add(new());
-        FrameworkElement Frame(string key, Image image) => new GroupBox { Header = L.Get(key), Content = image, Margin = new(4) };
+        FrameworkElement Frame(string key, Image image)
+        {
+            var frame = new DockPanel { Margin = new(4) };
+            var title = PropertyPanelLayout.SectionTitle(L.Get(key)); title.Margin = new(0, 0, 0, 6); DockPanel.SetDock(title, Dock.Top); frame.Children.Add(title);
+            var border = new Border { Child = image, BorderThickness = new(1), CornerRadius = new(6), Padding = new(4) };
+            border.SetResourceReference(Border.BackgroundProperty, "CanvasInput"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
+            frame.Children.Add(border); return frame;
+        }
         images.Children.Add(Frame("Canvas.SourcePreview", new Image { Source = Decode(source), Stretch = Stretch.Uniform }));
         var correctedFrame = Frame("Canvas.CorrectedPreview", rectified); Grid.SetColumn(correctedFrame, 1); images.Children.Add(correctedFrame);
         body.Children.Add(images); Content = body;

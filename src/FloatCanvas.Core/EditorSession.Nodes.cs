@@ -49,6 +49,7 @@ public sealed partial class EditorSession
         var graph = new SceneGraph(Document);
         if (groupId is { } id && (graph.FindGroup(id) is null || !IsReadOnly && graph.IsLocked(id))) throw new InvalidOperationException(L.Get("Inspector.LayerMissing"));
         if (editScopeId == groupId) return;
+        if (groupId is { } rootScope) ActiveRootCanvas = SceneCanvasRoots.Resolve(Document, rootScope, graph);
         editScopeId = groupId;
         EditScopeVersion++;
         editScopeAncestors = groupId is { } value ? graph.AncestorIds(value).ToArray() : [];
@@ -58,7 +59,7 @@ public sealed partial class EditorSession
     {
         if (editScopeId is not { } scope) return;
         var parents = Document.Groups.ToDictionary(group => group.Id, group => group.ParentId);
-        if (parents.ContainsKey(scope))
+        if (parents.ContainsKey(scope) && SceneCanvasRoots.Resolve(Document, scope) == ActiveRootCanvas)
         {
             var ancestors = new List<Guid>(); var visited = new HashSet<Guid>(); Guid? parent = parents[scope];
             while (parent is { } ancestorId)
@@ -69,7 +70,7 @@ public sealed partial class EditorSession
             editScopeAncestors = ancestors.ToArray(); return;
         }
         var existing = Document.Groups.Select(group => group.Id).ToHashSet();
-        editScopeId = editScopeAncestors.Where(existing.Contains).Cast<Guid?>().FirstOrDefault();
+        editScopeId = editScopeAncestors.Where(id => existing.Contains(id) && SceneCanvasRoots.Resolve(Document, id) == ActiveRootCanvas).Cast<Guid?>().FirstOrDefault();
         EditScopeVersion++;
         editScopeAncestors = editScopeId is { } id ? new SceneGraph(Document).AncestorIds(id).ToArray() : [];
     }
@@ -136,7 +137,7 @@ public sealed partial class EditorSession
         var group = new CanvasGroup { Name = NormalizeInsertionName(name) ?? NextGroupName(), OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] };
         Execute(L.Get("History.GroupElements"), document =>
         {
-            new SceneGraph(document).InsertGroup(group, EditScopeId); SetSelectionCore([group.Id]);
+            new SceneGraph(document).InsertGroup(group, EditScopeId, rootCanvas: ActiveRootCanvas); SetSelectionCore([group.Id]);
         });
         return group.Id;
     }
@@ -146,6 +147,11 @@ public sealed partial class EditorSession
         EnsureWritableParent(parentId);
         var requested = ids.ToArray();
         var initial = new SceneGraph(Document); var normalized = initial.NormalizeSelection(requested).Where(id => !initial.IsLocked(id)).ToArray();
+        var destinationRoot = parentId is { } destination ? SceneCanvasRoots.Resolve(Document, destination, initial) : ActiveRootCanvas;
+        if (normalized.Any(id => SceneCanvasRoots.Resolve(Document, id, initial) != destinationRoot))
+            throw new InvalidOperationException("Use an explicit root canvas transfer to move between coordinate spaces.");
+        if (beforeNodeId is { } beforeTarget && SceneCanvasRoots.Resolve(Document, beforeTarget, initial) != destinationRoot)
+            throw new InvalidOperationException("The destination slot belongs to another root canvas.");
         if (normalized.Length == 0 || beforeNodeId is { } own && normalized.Contains(own)) return;
         if (normalized.All(id => initial.ParentId(id) == parentId && initial.FindGroup(id)?.OrderMode != GroupOrderMode.LegacyPassThrough))
         {
@@ -202,7 +208,7 @@ public sealed partial class EditorSession
         {
             var order = bucket.Key is { } parent ? graph.FindGroup(parent)!.ChildOrder! : document.RootOrder!;
             var moving = bucket.ToHashSet();
-            ReorderTokens(order, moving, direction);
+            ReorderRootTokens(document, graph, order, moving, direction);
         }
         SynchronizeElementOrder(document);
     }
@@ -213,7 +219,7 @@ public sealed partial class EditorSession
         foreach (var bucket in selected.GroupBy(graph.PaintContext))
         {
             var before = graph.PaintOrder(bucket.Key); var after = before.ToList();
-            ReorderTokens(after, bucket.ToHashSet(), direction);
+            ReorderRootTokens(Document, graph, after, bucket.ToHashSet(), direction);
             if (!before.SequenceEqual(after)) return true;
         }
         return false;
@@ -230,6 +236,16 @@ public sealed partial class EditorSession
             for (int i = order.Count - 2; i >= 0; i--) if (moving.Contains(order[i]) && !moving.Contains(order[i + 1])) (order[i], order[i + 1]) = (order[i + 1], order[i]);
         }
         else for (int i = 1; i < order.Count; i++) if (moving.Contains(order[i]) && !moving.Contains(order[i - 1])) (order[i], order[i - 1]) = (order[i - 1], order[i]);
+    }
+
+    private static void ReorderRootTokens(SceneDocument document, SceneGraph graph, List<Guid> order, HashSet<Guid> moving, LayerOrder direction)
+    {
+        if (moving.Count == 0) return;
+        var root = SceneCanvasRoots.Resolve(document, moving.First(), graph);
+        var slots = Enumerable.Range(0, order.Count).Where(index => SceneCanvasRoots.Resolve(document, order[index], graph) == root).ToArray();
+        var sameRoot = slots.Select(index => order[index]).ToList();
+        ReorderTokens(sameRoot, moving, direction);
+        for (int index = 0; index < slots.Length; index++) order[slots[index]] = sameRoot[index];
     }
 
     public SelectionTransformSnapshot CaptureSelectionTransform()
@@ -313,14 +329,14 @@ public sealed partial class EditorSession
                     SceneGraph.ApplyPlacement(world, operation); CopyPlacement(element, graph.ToLocal(world, element.GroupId));
                 }
             }
-            graph = new(Document); var mapping = displayMapping ?? CanvasMapping.Create(Document);
+            graph = new(Document); var mapping = displayMapping ?? CanvasMapping.Create(Document, ActiveRootCanvas);
             var worlds = Document.Instances.Count > 0
                 ? SceneEvaluation.Build(Document).Leaves.Where(leaf => ids.Contains(leaf.HostNodeId) || graph.AncestorIds(leaf.HostNodeId).Any(ids.Contains)).Select(leaf => leaf.RenderElement)
                 : graph.OrderedLeafIds.Where(id => ids.Contains(id) || graph.AncestorIds(id).Any(ids.Contains)).Select(id => graph.ToWorld(graph.FindElement(id)!));
             foreach (var world in worlds)
             {
                 if (!LayerPlacement.Finite(world.Transform) || !world.Transform.TryInverse(out _) || !double.IsFinite(world.BillboardHeight) ||
-                    (displayMapping is not null || Document.Canvas.Projection.Enabled) && !mapping.IsElementSafe(world)) throw new InvalidOperationException();
+                    (displayMapping is not null || ActiveRootCanvas == RootCanvasKind.Main && Document.Canvas.Projection.Enabled) && !mapping.IsElementSafe(world)) throw new InvalidOperationException();
             }
         }
         catch (Exception error) when (error is InvalidOperationException or InvalidDataException or ArgumentException)

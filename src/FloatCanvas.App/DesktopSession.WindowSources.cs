@@ -91,12 +91,11 @@ internal sealed partial class DesktopSession
                 {
                     _windowEvaluation = SceneEvaluation.Build(document);
                     _windowSourceLeaves = _windowEvaluation.Leaves.Where(leaf => leaf.RenderElement.WindowSource is not null).ToArray();
-                    var mapping = CanvasMapping.Create(document);
                     var viewports = _host.Monitors.Select(monitor => new RectD(monitor.Bounds.Left - _editor.ScreenOrigin.X,
                         monitor.Bounds.Top - _editor.ScreenOrigin.Y, monitor.Bounds.Width, monitor.Bounds.Height).Intersect(document.Viewport)).ToArray();
                     if (document.LayerOpacity > 0)
                         _windowDemands = _windowSourceLeaves.Where(leaf => leaf.RenderElement.Visible && leaf.RenderElement.Style.Opacity > 0 &&
-                                viewports.Any(viewport => WindowRegionVisible(leaf.RenderElement, mapping, viewport)))
+                                viewports.Any(viewport => WindowRegionVisible(leaf.RenderElement, CanvasMapping.Create(document, leaf.RootCanvas), viewport)))
                             .Select(leaf => new WindowRuntimeDemand(leaf.Source, leaf.RenderElement.WindowSource!.BindingIntent)).Distinct().ToArray();
                 }
             }

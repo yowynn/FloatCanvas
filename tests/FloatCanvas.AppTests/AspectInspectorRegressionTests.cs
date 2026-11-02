@@ -22,7 +22,7 @@ internal static class AspectInspectorRegressionTests
             var inspector = new InspectorWindow(() => session); using var surface = new InspectorTestSurface(inspector);
             var panel = Field<NodeTransformPanel>(inspector, "nodeTransforms");
             var fields = Field<Dictionary<string, NumericValueField>>(panel, "fields");
-            Field<CheckBox>(panel, "aspect").IsChecked = constrained;
+            Field<AspectRatioButton>(panel, "aspect").IsChecked = constrained;
             string label = $"{dimension} selection aspect={constrained}, individual={individually}";
             string original = JsonSerializer.Serialize(session.Document.Elements);
             var before = session.SelectedWorldElements().ToDictionary(element => element.Id, element => ElementGeometry.Bounds(element));

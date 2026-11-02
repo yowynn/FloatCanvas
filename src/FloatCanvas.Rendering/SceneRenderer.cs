@@ -47,6 +47,12 @@ public sealed partial class SceneRenderer : IDisposable
         try
         {
             canvas.ClipRect(ToRect(document.Viewport));
+            if (space == SceneRenderSpace.ScreenComposite && HasAuxiliaryRoots(document))
+            {
+                DrawRootScene(canvas, document, assets, includeBackground, includeCanvasBackground, includeGrid);
+                if (includeGrid && calibrationReference) DrawGridCore(canvas, document, true);
+                return;
+            }
             if (space == SceneRenderSpace.ScreenComposite && UsesDepthComposition(document))
             {
                 DrawDepthScene(canvas, document, assets, includeBackground, includeCanvasBackground, includeGrid);
@@ -89,9 +95,9 @@ public sealed partial class SceneRenderer : IDisposable
         GridCandidateCount = GridLineCount = 0;
         GridDashIntervalCount = 0;
         UnresolvedGridDashIntervalCount = 0;
-        if (space == SceneRenderSpace.PlaneContent && document.Elements.Any(e => e.Visible && ElementGeometry.IsLiveEffect(e.Kind)))
+        if (space == SceneRenderSpace.PlaneContent && document.Elements.Any(e => e.Visible && RootOf(document, e) == RootCanvasKind.Main && ElementGeometry.IsLiveEffect(e.Kind)))
             throw new InvalidOperationException("Live desktop filters require screen composition before being placed back on the plane.");
-        _drawingDocument = document; _renderSpace = space; _mapping = CanvasMapping.Create(document);
+        _drawingDocument = document; _renderSpace = space; _mapping = CanvasMapping.Create(document); _screenRootMapping = null;
         _frameLiveEffectContext = LiveEffectContext is { } context
             ? ReferenceEquals(context, source) ? document : WorldDocument(context) : null;
         PreparePresentation(document, space);
@@ -104,7 +110,7 @@ public sealed partial class SceneRenderer : IDisposable
     }
     internal void EndFrame()
     {
-        ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); _drawingDocument = null; _frameLiveEffectContext = null; _mapping = null; _referenceOpacityAtHorizon = false;
+        ClearGpuEffectImages(); TrimCaches(); ClearLiveEffectImages(); _drawingDocument = null; _frameLiveEffectContext = null; _mapping = null; _screenRootMapping = null; _referenceOpacityAtHorizon = false;
     }
     internal void DrawBackground(SKCanvas canvas, SceneDocument document, AssetLibrary assets,
         bool includeBackground = true, bool includeCanvasBackground = true, bool sampling = false, double canvasOpacity = 1)
@@ -125,7 +131,7 @@ public sealed partial class SceneRenderer : IDisposable
         var document = sourceDocument ?? _drawingDocument;
         var transform = TransformFor(document);
         for (int i = first; i < endExclusive; i++)
-            if (elements[i].Visible)
+            if (elements[i].Visible && (_renderSpace != SceneRenderSpace.PlaneContent || document is null || RootOf(document, elements[i]) == RootCanvasKind.Main))
             {
                 if (ElementGeometry.IsLiveEffect(elements[i].Kind)) DrawLivePixelate(canvas, elements, i, assets);
                 else DrawElement(canvas, elements[i], assets, transform, document);
@@ -172,6 +178,9 @@ public sealed partial class SceneRenderer : IDisposable
     private void DrawElement(SKCanvas canvas, CanvasElement element, AssetLibrary assets, Projective2D planeToTarget, SceneDocument? document, bool knownHardClip = false)
     {
         if (element.Style.Opacity <= 0) return;
+        var root = document is null ? RootCanvasKind.Main : RootOf(document, element);
+        if (_renderSpace == SceneRenderSpace.PlaneContent && root != RootCanvasKind.Main) return;
+        if (root != RootCanvasKind.Main) planeToTarget = Projective2D.Identity;
         if (element.Kind == ElementKind.Presentation) { DrawPresentation(canvas, element); return; }
         int saved = canvas.Save();
         try
@@ -183,14 +192,14 @@ public sealed partial class SceneRenderer : IDisposable
             var transform = BillboardGeometry.ElementToTarget(element, screenDraft ? Projective2D.Identity : planeToTarget);
             if (!screenDraft && _renderSpace == SceneRenderSpace.ScreenComposite && document is not null)
             {
-                var mapping = MappingFor(document);
+                var mapping = MappingFor(document, root);
                 if (element.IsBillboard)
                 {
                     if (!mapping.IsElementSafe(element)) return;
                 }
                 else
                 {
-                    if (!ClipSafePlane(canvas, document)) return;
+                    if (!ClipSafePlane(canvas, document, root)) return;
                     var localBounds = DrawLocalBounds(element);
                     if (!transform.TryTransformBounds(localBounds, out _))
                     {

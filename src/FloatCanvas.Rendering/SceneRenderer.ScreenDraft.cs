@@ -4,7 +4,8 @@ using SkiaSharp;
 namespace FloatCanvas.Rendering;
 
 /// <summary>Detached screen content and its world candidate, if its ground has become safe.</summary>
-public sealed record TransientScreenElement(CanvasElement ScreenElement, int InsertionIndex, CanvasElement? ResolvedWorldElement = null);
+public sealed record TransientScreenElement(CanvasElement ScreenElement, int InsertionIndex, CanvasElement? ResolvedWorldElement = null,
+    RootCanvasKind RootCanvas = RootCanvasKind.Main);
 
 public sealed partial class SceneRenderer
 {
@@ -23,12 +24,12 @@ public sealed partial class SceneRenderer
     {
         if (draft.ResolvedWorldElement is { } resolved)
         {
-            var world = SceneEvaluation.WithTransientElement(runtimeWorld, resolved, draft.InsertionIndex);
+            var world = SceneEvaluation.WithTransientElement(runtimeWorld, resolved, draft.InsertionIndex, draft.RootCanvas);
             Draw(canvas, world, assets); return;
         }
         var pending = draft.ScreenElement.Clone(); pending.IsBillboard = false;
         pending.Style.Opacity *= .5;
-        var document = SceneEvaluation.WithTransientElement(runtimeWorld, pending, draft.InsertionIndex);
+        var document = SceneEvaluation.WithTransientElement(runtimeWorld, pending, draft.InsertionIndex, draft.RootCanvas);
         transientScreenDocument = document; transientScreenId = pending.Id;
         try
         {
@@ -44,7 +45,8 @@ public sealed partial class SceneRenderer
                 canvas.ClipRect(ToRect(document.Viewport));
                 using var opacity = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(document.LayerOpacity)) };
                 canvas.SaveLayer(ToRect(document.Viewport), opacity);
-                DrawElements(canvas, document.Elements, assets, draft.InsertionIndex, draft.InsertionIndex + 1);
+                int pendingIndex = document.Elements.FindIndex(element => element.Id == pending.Id);
+                DrawElements(canvas, document.Elements, assets, pendingIndex, pendingIndex + 1);
             }
             finally { canvas.RestoreToCount(saved); EndFrame(); }
         }

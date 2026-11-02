@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using FloatCanvas.Core;
@@ -14,15 +15,21 @@ internal sealed class CanvasGridCalibrationWindow : Window
     {
         Title = L.Get("Canvas.GridCalibration"); Owner = owner; Topmost = true; ShowInTaskbar = false;
         Width = 420; SizeToContent = SizeToContent.Height; WindowStartupLocation = WindowStartupLocation.CenterOwner; ResizeMode = ResizeMode.NoResize;
-        var panel = new StackPanel { Margin = new(18) };
+        var panel = new StackPanel { Margin = WindowLayout.ContentMargin() };
         panel.Children.Add(new TextBlock { Text = L.Get("Canvas.GridCalibrationSpans"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
         var columns = new NumericValueField(1, 256, integerOnly: true) { Value = 1 };
         var rows = new NumericValueField(1, 256, integerOnly: true) { Value = 1 };
-        panel.Children.Add(new TextBlock { Text = L.Get("Canvas.Columns") }); panel.Children.Add(columns);
-        panel.Children.Add(new TextBlock { Text = L.Get("Canvas.Rows") }); panel.Children.Add(rows);
+        foreach (var (field, key, kind) in new[] { (columns, "Canvas.Columns", NumericPropertyKind.Columns), (rows, "Canvas.Rows", NumericPropertyKind.Rows) })
+        {
+            var label = new PropertyLabel(L.Get(key)); field.SetScrubAnchor(kind, label.Text); field.SetLabel(label);
+            AutomationProperties.SetName(field.Input, label.Text); AutomationProperties.SetName(field.Slider, label.Text);
+            panel.Children.Add(PropertyPanelLayout.Row(label, field));
+        }
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new(0, 10, 0, 10) }; panel.Children.Add(status);
-        var apply = new Button { Content = L.Get("Canvas.ApplyPlane"), MinHeight = 32, Margin = new(0, 0, 0, 6) };
-        var cancel = new Button { Content = L.Get("Dialog.Cancel"), MinHeight = 32 }; panel.Children.Add(apply); panel.Children.Add(cancel);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var apply = new Button { Content = L.Get("Canvas.ApplyPlane"), MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 96, IsDefault = true };
+        var cancel = new Button { Content = L.Get("Dialog.Cancel"), MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 96, IsCancel = true, Margin = new(0, 0, 8, 0) };
+        actions.Children.Add(cancel); actions.Children.Add(apply); panel.Children.Add(actions);
         CanvasSettings? candidate = null;
         void Refresh()
         {
@@ -38,6 +45,7 @@ internal sealed class CanvasGridCalibrationWindow : Window
         }
         foreach (var field in new[] { columns, rows })
         {
+            field.ValueChanged += _ => { if (field.IsInteracting) Refresh(); };
             field.Input.LostKeyboardFocus += (_, _) => Refresh(); field.SliderValueCommitted += Refresh;
             field.Input.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Refresh(); e.Handled = true; } };
         }

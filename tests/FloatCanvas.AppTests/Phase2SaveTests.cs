@@ -48,7 +48,7 @@ internal static class Phase2SaveTests
         target.Execute("unsaved content and canvas settings", document =>
         {
             document.Elements[0].Width = 90;
-            document.Elements.Add(new CanvasElement { Kind = ElementKind.Image, AssetId = asset, Width = 20, Height = 20 });
+            new SceneGraph(document).InsertElement(new CanvasElement { Kind = ElementKind.Image, AssetId = asset, Width = 20, Height = 20 });
             document.LayerOpacity = .42;
         });
         target.SelectAll();
@@ -92,6 +92,7 @@ internal static class Phase2SaveTests
             SameContent(disk.Document, before) && disk.Assets.TryGet(asset, out _));
         RefreshMenu();
         check("a subsequent successful save disables revert", !revert.IsEnabled);
+        HistoryAvailability(check, session, target, path);
 
         void RefreshMenu() => menu.RaiseEvent(new RoutedEventArgs(ContextMenu.OpenedEvent));
         void Shortcut(int key)
@@ -107,6 +108,59 @@ internal static class Phase2SaveTests
             finally { SetKeyboardState(original); }
             Pump();
         }
+    }
+    private static void HistoryAvailability(Action<string, bool> check, DesktopSession desktop, EditorSession target, string path)
+    {
+        var editor = Field<EditorController>(desktop, "_editor");
+        editor.Tool = EditorTool.Select;
+        target.ReplaceDocument(new SceneDocument());
+        target.ExecuteSettings("first history availability edit", document => document.LayerOpacity = .9);
+        target.ExecuteSettings("second history availability edit", document => document.LayerOpacity = .8);
+        target.Undo();
+        Pump();
+        var buttons = Field<Dictionary<string, Button>>(desktop, "_commandStateButtons");
+        var undo = buttons["undo"]; var redo = buttons["redo"];
+        var busy = typeof(DesktopSession).GetProperty("_documentBusy", Private)!;
+        void Refresh() => typeof(DesktopSession).GetMethod("RefreshToolbarState", Private)!.Invoke(desktop, null);
+        string Hint(Button button) => button.ToolTip?.ToString() ?? "";
+        Refresh();
+        check("history availability fixture has both real toolbar actions enabled", target.CanUndo && target.CanRedo && undo.IsEnabled && redo.IsEnabled);
+        int undoCount = target.UndoCount, redoCount = target.RedoCount;
+        string document = JsonSerializer.Serialize(target.Document);
+        busy.SetValue(desktop, true);
+        Refresh();
+        check("busy document disables real Undo and Redo buttons with the operation hint", !undo.IsEnabled && !redo.IsEnabled &&
+            Hint(undo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal) && Hint(redo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal));
+        busy.SetValue(desktop, false);
+        // No Dispatcher pump, full render or explicit toolbar refresh may repair this transition.
+        check("ending a document operation immediately restores real history buttons and hints without another render", undo.IsEnabled && redo.IsEnabled &&
+            !Hint(undo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal) && !Hint(redo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal) &&
+            Hint(undo).Contains(target.UndoLabel!, StringComparison.Ordinal) && Hint(redo).Contains(target.RedoLabel!, StringComparison.Ordinal));
+        check("busy availability transitions preserve document content and both history stacks", target.UndoCount == undoCount && target.RedoCount == redoCount &&
+            JsonSerializer.Serialize(target.Document) == document);
+
+        target.BeginTransaction("active history availability gesture");
+        busy.SetValue(desktop, true); Refresh(); busy.SetValue(desktop, false);
+        check("ending document busy does not enable history while an editing transaction remains active", target.IsTransactionActive && !undo.IsEnabled && !redo.IsEnabled &&
+            Hint(undo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal) && Hint(redo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal));
+        target.Cancel(); Pump();
+
+        var save = (Task)typeof(DesktopSession).GetMethod("SaveProjectAsync", Private)!.Invoke(desktop, [false])!;
+        check("the real save command enters its document busy guard", (bool)busy.GetValue(desktop)!);
+        Refresh();
+        while (!save.IsCompleted) Pump();
+        save.GetAwaiter().GetResult();
+        check("the real save command releases busy and restores available history actions", !(bool)busy.GetValue(desktop)! && undo.IsEnabled && redo.IsEnabled &&
+            !Hint(undo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal) && !Hint(redo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal));
+        var disk = new ProjectStore().LoadAsync(path).GetAwaiter().GetResult();
+        check("saving with history available writes the current document and retains undo and redo", SameContent(disk.Document, target.Document) &&
+            target.UndoCount == undoCount && target.RedoCount == redoCount);
+
+        target.ReplaceDocument(new SceneDocument()); Pump();
+        busy.SetValue(desktop, true); Refresh(); busy.SetValue(desktop, false);
+        check("ending busy keeps empty history disabled and replaces the obsolete busy hint", !undo.IsEnabled && !redo.IsEnabled &&
+            Hint(undo).Contains(L.Get("Audit.NoUndo"), StringComparison.Ordinal) && Hint(redo).Contains(L.Get("Audit.NoRedo"), StringComparison.Ordinal) &&
+            !Hint(undo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal) && !Hint(redo).Contains(L.Get("Audit.CommandBusy"), StringComparison.Ordinal));
     }
     [DllImport("user32.dll")] private static extern bool GetKeyboardState(byte[] state);
     [DllImport("user32.dll")] private static extern bool SetKeyboardState(byte[] state);

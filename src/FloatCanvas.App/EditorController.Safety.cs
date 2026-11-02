@@ -41,7 +41,7 @@ internal sealed partial class EditorController
             if (source?.IsBillboard != true)
             {
                 source = null;
-                var selected = Session.SelectedWorldElements().Where(e => e.IsBillboard && e.Visible && !e.Locked).ToArray();
+                var selected = SelectedEditingWorldElements().Where(e => e.IsBillboard && e.Visible && !e.Locked).ToArray();
                 if (selected.Length > 0 && IsSelectionFrameHit(pointerScreen, includeInterior: true)) source = selected[0];
             }
         }

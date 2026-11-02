@@ -14,6 +14,7 @@
   "Canvas.SwapOrientation": { "zh": "交换横竖方向", "en": "Swap orientation" },
   "Canvas.PlaneSizeHelp": { "zh": "宽高使用逻辑像素，决定关闭透视后的比例和尺寸。纸张选项只设置比例，并保留较长边；网格大小与原点可单独调整。钉点只锚定后续的尺寸调整。", "en": "Logical-pixel dimensions determine the size and aspect ratio with perspective off. Paper options set only the ratio and preserve the longer edge. Grid size and origin are independent. The pin anchors subsequent size changes." },
   "Canvas.InvalidPlaneSize": { "zh": "请输入有效的平面宽高。", "en": "Enter valid plane dimensions." },
+  "Canvas.GridOrigin": { "zh": "网格原点", "en": "Grid origin" },
   "Canvas.GridOriginX": { "zh": "网格原点 X", "en": "Grid origin X" },
   "Canvas.GridOriginY": { "zh": "网格原点 Y", "en": "Grid origin Y" },
   "Canvas.GridOriginToPin": { "zh": "网格原点对齐钉点", "en": "Align grid origin to pin" },

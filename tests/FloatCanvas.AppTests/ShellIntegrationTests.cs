@@ -70,10 +70,46 @@ internal static class ShellIntegrationTests
             using (var applications = root.OpenSubKey(@"Software\Classes\Applications\FloatCanvas.exe\SupportedTypes")!)
                 check("executable supports Always use this app for floatcanvas", applications.GetValueNames().Contains(".floatcanvas"));
             check("file registration leaves startup preference off", !shell.StartupEnabled);
+            VerifyPrefabAssociation(check, root, shell, exe);
         }
         finally { Registry.CurrentUser.DeleteSubKeyTree(sandbox, false); }
         ActivationAsync(check, path).GetAwaiter().GetResult();
         RecoveredStartup(check, path);
+    }
+
+    private static void VerifyPrefabAssociation(Action<string, bool> check, RegistryKey root, WindowsShellIntegration shell, string exe)
+    {
+        const string extensionPath = @"Software\Classes\.floatprefab";
+        const string typePath = @"Software\Classes\FloatCanvas.Prefab";
+        const string choicePath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.floatprefab\UserChoice";
+        using (var command = root.OpenSubKey(typePath + @"\shell\open\command")!)
+            check("prefab association forwards a quoted path to the current-instance dispatcher", Equals(command.GetValue(""), $"\"{exe}\" --open \"%1\""));
+        using (var extension = root.OpenSubKey(extensionPath, true)!)
+        {
+            check("unclaimed prefab extension receives its own file type", Equals(extension.GetValue(""), WindowsShellIntegration.PrefabProgId));
+            extension.SetValue("", "OtherApp.Prefab"); extension.SetValue("Unrelated", "keep");
+        }
+        using (var choice = root.CreateSubKey(choicePath)) { choice.SetValue("ProgId", "Chosen.Prefab"); choice.SetValue("Hash", "untouched"); }
+        shell.RegisterProjectType();
+        using (var extension = root.OpenSubKey(extensionPath)!)
+            check("prefab repeat registration preserves a foreign default", Equals(extension.GetValue(""), "OtherApp.Prefab"));
+        using (var candidates = root.OpenSubKey(extensionPath + @"\OpenWithProgids")!)
+            check("prefab appears in Open with", candidates.GetValueNames().Contains(WindowsShellIntegration.PrefabProgId));
+        using (var capabilities = root.OpenSubKey(@"Software\FloatCanvas\Capabilities\FileAssociations")!)
+            check("Default Apps advertises both file formats", Equals(capabilities.GetValue(".floatcanvas"), WindowsShellIntegration.ProgId) && Equals(capabilities.GetValue(".floatprefab"), WindowsShellIntegration.PrefabProgId));
+        using (var applications = root.OpenSubKey(@"Software\Classes\Applications\FloatCanvas.exe\SupportedTypes")!)
+            check("executable supports the prefab format", applications.GetValueNames().Contains(".floatprefab"));
+        shell.UnregisterOwnedIntegration();
+        using (var extension = root.OpenSubKey(extensionPath)!)
+            check("prefab unregister preserves foreign extension data", Equals(extension.GetValue(""), "OtherApp.Prefab") && Equals(extension.GetValue("Unrelated"), "keep"));
+        using (var choice = root.OpenSubKey(choicePath)!)
+            check("prefab registration and unregister preserve Windows UserChoice", Equals(choice.GetValue("ProgId"), "Chosen.Prefab") && Equals(choice.GetValue("Hash"), "untouched"));
+        check("unregister removes the owned prefab open command", root.OpenSubKey(typePath + @"\shell\open\command") is null);
+        shell.RegisterProjectType();
+        using (var command = root.OpenSubKey(typePath + @"\shell\open\command", true)!) command.SetValue("", "foreign command");
+        shell.UnregisterOwnedIntegration();
+        using (var command = root.OpenSubKey(typePath + @"\shell\open\command")!)
+            check("unregister preserves another installation's prefab command", Equals(command.GetValue(""), "foreign command"));
     }
 
     private static void RecoveredStartup(Action<string, bool> check, string path)

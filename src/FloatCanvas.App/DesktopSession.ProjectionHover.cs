@@ -35,7 +35,7 @@ internal sealed partial class DesktopSession
     {
         if (!_host.IsEditing || !_host.IsVisible || _canvasCalibration.IsActive || DocumentOperationBusy ||
             _cleanCaptureDepth != 0 || _host.IsReceivingDrop || _eyedropper is not null || _projectionHoverPoint is not { } pointer ||
-            _projectionHoverSession != _host.EditingSessionVersion || !Active.Document.Canvas.Projection.Enabled) return false;
+            _projectionHoverSession != _host.EditingSessionVersion || Active.ActiveRootCanvas != RootCanvasKind.Main || !Active.Document.Canvas.Projection.Enabled) return false;
         var point = new PointD(pointer.X - _editor.ScreenOrigin.X, pointer.Y - _editor.ScreenOrigin.Y);
         return Active.Document.Viewport.Contains(point) && !CanvasMapping.Create(Active.Document).IsScreenSafe(point);
     }

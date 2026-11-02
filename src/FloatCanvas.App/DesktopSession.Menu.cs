@@ -87,7 +87,7 @@ internal sealed partial class DesktopSession
         canvas.Items.Add(fixedDepth);
         menu.Opened+=(_,_)=>
         {
-            RefreshBillboardState();billboard.IsEnabled=Active.Document.Canvas.Projection.Enabled&&!DocumentOperationBusy;
+            RefreshBillboardState();billboard.IsEnabled=Active.ActiveRootCanvas==RootCanvasKind.Main&&Active.Document.Canvas.Projection.Enabled&&!DocumentOperationBusy;
             billboard.IsChecked=_editor.BillboardMode;billboard.Icon=CommandGlyphs.Create(CommandGlyphs.Placement(_editor.BillboardMode));
             fixedDepth.IsChecked = _editor.BillboardWorkflow == BillboardCreationWorkflow.FixedDepthLine;
             fixedDepth.IsEnabled = !DocumentOperationBusy;

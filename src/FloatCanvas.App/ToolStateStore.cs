@@ -34,8 +34,9 @@ internal sealed class ToolStateStore
     public Dictionary<string, ToolParameters> OfficialBaselines { get; }
     public Dictionary<EditorTool, ToolParameters> PreviewSources { get; }
     internal event Action? Changed;
+    internal bool LegacyKeyboardScopeMigrated { get; }
 
-    public ToolStateStore(string? path = null)
+    public ToolStateStore(string? path = null, PresentationKeyboardScope legacyKeyboardScope = PresentationKeyboardScope.AllApplications)
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(ApplicationPaths.ProfileDirectory, "tool-state.json"));
         compatibility = new(this.path);
@@ -62,6 +63,23 @@ internal sealed class ToolStateStore
         Tools = state.Tools; Buttons = state.Buttons; Selections = state.Selections;
         OfficialBaselines = state.OfficialBaselines; PreviewSources = state.PreviewSources;
         savedFingerprint = JsonSerializer.Serialize(state, JsonOptions);
+        if (legacyKeyboardScope != PresentationKeyboardScope.AllApplications && Enum.IsDefined(legacyKeyboardScope) && !HasAuthoredKeyboardScope(this.path))
+        {
+            if (!Tools.TryGetValue(EditorTool.Presentation, out var keyboard))
+                Tools[EditorTool.Presentation] = keyboard = ToolPresetLibrary.OfficialDefault(EditorTool.Presentation);
+            (keyboard.Presentation ??= new()).KeyboardScope = legacyKeyboardScope;
+            LegacyKeyboardScopeMigrated = true;
+        }
+    }
+
+    private static bool HasAuthoredKeyboardScope(string path)
+    {
+        if (!File.Exists(path)) return false;
+        using var source = JsonDocument.Parse(File.ReadAllText(path), new() { MaxDepth = 128 });
+        return source.RootElement.TryGetProperty("Tools", out var tools) && tools.ValueKind == JsonValueKind.Object &&
+            tools.TryGetProperty(nameof(EditorTool.Presentation), out var keyboard) && keyboard.ValueKind == JsonValueKind.Object &&
+            keyboard.TryGetProperty(nameof(ToolParameters.Presentation), out var settings) && settings.ValueKind == JsonValueKind.Object &&
+            settings.TryGetProperty(nameof(PresentationSettings.KeyboardScope), out _);
     }
 
     internal void MarkChanged() => Changed?.Invoke();

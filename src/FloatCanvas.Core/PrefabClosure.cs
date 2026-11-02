@@ -52,7 +52,8 @@ public static class PrefabClosure
             }
         var clone = SceneGraphClone.CloneGraph(graph, GraphCloneIdentity.NewNodes, map);
         var retained = identity == PrefabImportIdentity.WithinOwner ? ReachableDefinitions(clone.Graph, destination.Definitions) : additions;
-        var assets = clone.Graph.ReferencedAssetIds.Concat(retained.SelectMany(definition => definition.Graph.ReferencedAssetIds)).ToHashSet(StringComparer.Ordinal);
+        var assets = clone.Graph.ReferencedAssetIds.Concat(retained.SelectMany(definition => definition.Graph.ReferencedAssetIds
+            .Concat(definition.PreviewCanvas?.ReferencedAssetIds ?? []))).ToHashSet(StringComparer.Ordinal);
         return new(clone.Graph, additions.AsReadOnly(), clone.NodeIdMap, map, assets);
     }
 

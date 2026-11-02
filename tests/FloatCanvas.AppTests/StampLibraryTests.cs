@@ -10,6 +10,8 @@ internal static class StampLibraryTests
     public static async Task RunAsync(Action<string, bool> assert)
     {
         string profile = Path.Combine(Path.GetTempPath(), "FloatCanvas-StampLibraryTests", Guid.NewGuid().ToString("N"));
+        await RootCanvasThumbnailsAsync(profile + "-roots", assert);
+        await StampPrefabFormatTests.RunAsync(profile + "-formats", assert);
         var library = new StampLibrary(profile);
         await library.LoadAsync();
         assert("new stamp library has ten empty shortcut slots and no files until a mutation", library.Items.Count == 0 && library.Pins.Count == 10 && library.Pins.All(id => id is null) && !Directory.Exists(library.DirectoryPath));
@@ -34,7 +36,7 @@ internal static class StampLibraryTests
         var normalized = session.CreateSelectionSnapshot();
         assert("saving selected entities leaves the source canvas and its unselected object unchanged", JsonSerializer.Serialize(session.Document) == before && session.Document.Elements.Count == 5);
         assert("editable preset contains only the chosen symbol, rotated rectangle, cropped image and text", loaded.Document.Elements.Count == 4 && loaded.Document.Elements.All(element => element.Id != excluded.Id));
-        assert("editable preset retains complete object styles, crop, rotation and group metadata", JsonSerializer.Serialize(loaded.Document) == JsonSerializer.Serialize(normalized));
+        assert("editable preset retains complete object styles, crop, rotation and group metadata", SameContent(loaded.Document, normalized));
         assert("self-contained vector preset retains original encoded image bytes", loaded.Assets.Get(assetId).Data.Span.SequenceEqual(originalPng));
         using (var thumbnail = SKBitmap.Decode(await library.GetThumbnailAsync(vector.Id)))
             assert("thumbnail renders selected content within a bounded inventory tile", Math.Max(thumbnail.Width, thumbnail.Height) <= 160 && thumbnail.Width > 0 && thumbnail.Height > 0);
@@ -99,7 +101,7 @@ internal static class StampLibraryTests
         try { await library.PinAsync(2, raster.Id, cancelled.Token); } catch (OperationCanceledException) { cancelledWrite = true; }
         assert("cancelled catalog edits cannot change assignments", cancelledWrite && library.Pins[2] is null);
 
-        string package = Path.Combine(library.DirectoryPath, raster.Id.ToString("N") + "-" + raster.Revision.ToString("N") + ".floatcanvas");
+        string package = Path.Combine(library.DirectoryPath, raster.Id.ToString("N") + "-" + raster.Revision.ToString("N") + ".floatprefab");
         await File.WriteAllBytesAsync(package, [1, 2, 3]);
         var damaged = new StampLibrary(profile); await damaged.LoadAsync();
         bool explained = false;
@@ -113,6 +115,57 @@ internal static class StampLibraryTests
         try { await broken.PinAsync(0, null); } catch (InvalidOperationException) { refusedMutation = true; }
         assert("malformed catalog blocks mutation and remains byte-for-byte available for repair", refused && refusedMutation && await File.ReadAllTextAsync(brokenIndex) == "{broken catalog");
         await BillboardStampsAsync(profile + "-billboard", assert);
+    }
+
+    private static async Task RootCanvasThumbnailsAsync(string profile, Action<string, bool> check)
+    {
+        var outer = new CanvasGroup { Transform = Affine2D.Translation(10, 20), OrderMode = GroupOrderMode.AtomicBlock };
+        var shear = new CanvasGroup { ParentId = outer.Id, Transform = new(1, .15, .3, 1, 70, 5), OrderMode = GroupOrderMode.AtomicBlock };
+        var red = new CanvasElement { Kind = ElementKind.Rectangle, Width = 60, Height = 40, GroupId = outer.Id,
+            Style = new() { Foreground = 0, Background = 0xFFE53935, Variant = "shape.independent", StrokeWidth = 0 } };
+        var blue = new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 30, GroupId = shear.Id,
+            Style = new() { Foreground = 0, Background = 0xFF1565C0, Variant = "shape.independent", StrokeWidth = 0 } };
+        outer.ChildOrder = [red.Id, shear.Id]; shear.ChildOrder = [blue.Id];
+        var definition = new PrefabDefinition { Name = "nested sheared stamp", Graph = new()
+            { Groups = [outer, shear], Elements = [red, blue], RootOrder = [outer.Id] } };
+        var source = new SceneDocument { Definitions = [definition], LayerOpacity = .35, Viewport = new(0, 0, 1000, 800) };
+        var instance = new PrefabInstance { DefinitionId = definition.Id, Transform = Affine2D.Translation(320, 180) };
+        new SceneGraph(source).InsertInstance(instance);
+        var library = new StampLibrary(profile); await library.LoadAsync();
+        var results = new List<(string Name, bool Passed)>();
+        foreach (var mode in new[] { StampSaveMode.EditableGroup, StampSaveMode.SharedPrefab })
+        {
+            byte[]? mainPreview = null;
+            foreach (var root in new[] { RootCanvasKind.Main, RootCanvasKind.Foreground, RootCanvasKind.Background })
+            {
+                var document = source.Clone(); SceneCanvasRoots.Assign(document, instance.Id, root);
+                if (root != RootCanvasKind.Main) document.RootPreviewCanvases[root] = SubprojectCanvasSettings.FromDocument(source);
+                var session = new EditorSession(document); session.SetRootCanvas(root); session.SetSelection([instance.Id]);
+                string before = JsonSerializer.Serialize(document); var selection = session.Selection.ToHashSet();
+                int undo = session.UndoCount; long revision = session.SceneRevision;
+                var normalized = session.CreateSelectionSnapshot();
+                var world = SceneEvaluation.Build(normalized).RenderDocument.Elements;
+                double scale = 160 / Math.Max(normalized.Viewport.Width, normalized.Viewport.Height);
+                var entry = await library.SaveSelectionAsync(session, root + " " + mode, mode);
+                byte[] png = await library.GetThumbnailAsync(entry.Id); using var bitmap = SKBitmap.Decode(png);
+                int alpha = bitmap.Pixels.Count(pixel => pixel.Alpha > 0);
+                bool shapePixels = world.All(element =>
+                {
+                    var center = ElementGeometry.Bounds(element).Center * scale;
+                    var pixel = bitmap.GetPixel(Math.Clamp((int)center.X, 0, bitmap.Width - 1), Math.Clamp((int)center.Y, 0, bitmap.Height - 1));
+                    var expected = new SKColor(element.Style.Background);
+                    return Math.Abs(pixel.Alpha - (int)Math.Round(source.LayerOpacity * 255)) <= 1 &&
+                        Math.Abs(pixel.Red - expected.Red) <= 2 && Math.Abs(pixel.Green - expected.Green) <= 2 && Math.Abs(pixel.Blue - expected.Blue) <= 2;
+                });
+                Console.WriteLine($"STAMP_ROOT_PNG root={root} mode={mode} alpha={alpha} shapes={shapePixels} path={library.DirectoryPath}");
+                results.Add(($"{root} {mode} thumbnail contains both colored affine-group bodies", alpha > 0 && shapePixels && Math.Max(bitmap.Width, bitmap.Height) == 160));
+                results.Add(($"{root} {mode} thumbnail save preserves source roots, author state and history", before == JsonSerializer.Serialize(session.Document) &&
+                    session.Selection.SetEquals(selection) && session.UndoCount == undo && session.SceneRevision == revision && session.Assets.Count == 0));
+                if (mainPreview is null) mainPreview = png;
+                else results.Add(($"{root} {mode} thumbnail pixels match the same local Main asset", png.AsSpan().SequenceEqual(mainPreview)));
+            }
+        }
+        foreach (var result in results) check(result.Name, result.Passed);
     }
 
     private static async Task BillboardStampsAsync(string profile, Action<string, bool> check)
@@ -131,7 +184,7 @@ internal static class StampLibraryTests
         var editable = await library.SaveSelectionAsync(session,"Mixed modes");
         var retained = await library.LoadStampAsync(editable.Id);
         var original = session.CreateSelectionSnapshot();
-        check("editable mixed stamp preserves every member mode, anchor, height and geometry", JsonSerializer.Serialize(retained.Document) == JsonSerializer.Serialize(original) &&
+        check("editable mixed stamp preserves every member mode, anchor, height and geometry", SameContent(retained.Document, original) &&
             retained.Document.Elements.Single(e=>e.IsBillboard).BillboardHeight == 90 && retained.Document.Elements.Any(e=>!e.IsBillboard));
         var target = new EditorSession(document.Clone()); target.Document.Elements.Clear();
         StampLibrary.Place(retained,target,new(400,350));
@@ -152,7 +205,7 @@ internal static class StampLibraryTests
             merged.Assets.Get(rasterImage.AssetId!).Data.Span.SequenceEqual(expectedPng));
         var editableSource = await library.LoadSourceAsync(mergedEntry.Id);
         check("merged mixed stamp retains an editable source with complete placement metadata",
-            JsonSerializer.Serialize(editableSource.Document) == JsonSerializer.Serialize(original));
+            SameContent(editableSource.Document, original));
         var billboardTarget = new EditorSession(document.Clone()); billboardTarget.Document.Elements.Clear();
         var mapping = CanvasMapping.Create(billboardTarget.Document);
         check("raster stamp can choose a fresh insertion depth",mapping.TryGetEqualDepthLine(new(300,300),out var depth));
@@ -163,4 +216,7 @@ internal static class StampLibraryTests
             mapping.ElementToScreen(inserted).TransformPoint(ElementGeometry.LocalBounds(inserted).Center).DistanceTo(new(350,200)) < 1e-7 &&
             billboardTarget.Assets.Get(inserted.AssetId!).Data.Span.SequenceEqual(expectedPng));
     }
+
+    private static bool SameContent(SceneDocument actual, SceneDocument expected) =>
+        JsonSerializer.Serialize(SceneGraphClone.CloneGraph(actual).Graph) == JsonSerializer.Serialize(SceneGraphClone.CloneGraph(expected).Graph);
 }

@@ -3,6 +3,20 @@ using FloatCanvas.Core;
 
 internal static class LegacyFixtureSchema
 {
+    internal static void RemoveFutureRootFields(JsonNode? node)
+    {
+        if (node is JsonObject item)
+        {
+            if (item["Version"] is JsonValue version && version.TryGetValue<int>(out int value))
+            {
+                if (value < 16) item.Remove("RootCanvasAssignments");
+                if (value < 17) item.Remove("RootPreviewCanvases");
+            }
+            foreach (var child in item.ToArray()) RemoveFutureRootFields(child.Value);
+        }
+        else if (node is JsonArray array) foreach (var child in array) RemoveFutureRootFields(child);
+    }
+
     internal static void RemovePrefabFields(JsonObject scene)
     {
         scene.Remove("ResourceId"); scene.Remove("Instances"); scene.Remove("Definitions");
@@ -10,6 +24,7 @@ internal static class LegacyFixtureSchema
     }
     internal static void UseLegacyAppearance(JsonObject graph)
     {
+        graph.Remove("RootCanvasAssignments"); graph.Remove("RootPreviewCanvases");
         foreach (var element in (graph["Elements"]?.AsArray() ?? []).Append(graph["Background"]).Where(item => item is not null))
         {
             var item = element!.AsObject();

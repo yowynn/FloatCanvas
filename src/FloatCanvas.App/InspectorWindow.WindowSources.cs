@@ -1,11 +1,14 @@
 using FloatCanvas.Core;
 using System.Windows.Controls;
+using System.Windows.Automation;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
 internal sealed partial class InspectorWindow
 {
     private readonly WindowSourceControls windowSources = new();
+    private readonly SegmentedChoice windowSourceFit = new();
     private Func<IReadOnlyList<Guid>, WindowSourcesUiState>? windowSourcesProvider;
     private EditorSession? windowSourcesOwner;
     private SceneDocument? windowSourcesDocument;
@@ -15,6 +18,17 @@ internal sealed partial class InspectorWindow
     internal event Action<Guid>? WindowSourceRebindRequested;
     internal event Action<Guid>? WindowSourceCropRequested;
     internal event Action<IReadOnlyList<Guid>>? WindowSourcesFreezeRequested;
+
+    private void InitializeWindowSourceFitControl()
+    {
+        foreach (var fit in Enum.GetValues<WindowSourceFit>())
+            windowSourceFit.Add(L.Get("WindowSource.Fit." + fit), fit, CommandGlyphs.Create(fit == WindowSourceFit.Contain
+                ? "M1,2 H15 V14 H1 Z M2,5 H14 V11 H2 Z" : "M1,2 H15 V14 H1 Z M4,5 L1,2 M12,5 L15,2 M4,11 L1,14 M12,11 L15,14"));
+        AutomationProperties.SetName(windowSourceFit, L.Get("WindowSource.Fit"));
+        var row = PropertyPanelLayout.Row(new PropertyLabel(L.Get("WindowSource.Fit")), windowSourceFit);
+        fieldContainers.Add("WindowSourceFit", row); propertyPanel.Children.Add(row);
+        windowSourceFit.SelectionChanged += (_, _) => { if (!refreshing && windowSourceFit.SelectedValue is WindowSourceFit) ChangeField("WindowSourceFit"); };
+    }
 
     internal void SetWindowSourcesUi(Func<IReadOnlyList<Guid>, WindowSourcesUiState>? provider)
     { windowSourcesProvider = provider; RefreshWindowSourcesUi(); }

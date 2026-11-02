@@ -43,7 +43,7 @@ internal static class ImageImportCommand
         var elements = new List<CanvasElement>();
         if (!replace)
         {
-            var mapping = CanvasMapping.Create(target.Document);
+            var mapping = CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
             int index = 0;
             foreach (var image in images)
             {
@@ -72,7 +72,7 @@ internal static class ImageImportCommand
             for (int index = 0; index < elements.Count; index++)
             {
                 var element = elements[index]; element.AssetId = resources[index].Id;
-                graph.InsertElement(element, target.EditScopeId); target.Selection.Add(element.Id);
+                graph.InsertElement(element, target.EditScopeId, rootCanvas: target.ActiveRootCanvas); target.Selection.Add(element.Id);
             }
         });
     }
@@ -83,7 +83,7 @@ internal static class ImageImportCommand
     {
         ValidateOpacity(opacity);
         RequireWritableScope(target);
-        var mapping = CanvasMapping.Create(target.Document);
+        var mapping = CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
         var elements = new List<CanvasElement>();
         int index = 0;
         foreach (var image in images)
@@ -105,7 +105,7 @@ internal static class ImageImportCommand
             for (int i = 0; i < elements.Count; i++)
             {
                 var element = elements[i]; element.AssetId = target.Assets.Add(images[i].PngBytes, images[i].MediaType);
-                graph.InsertElement(element, target.EditScopeId); target.Selection.Add(element.Id);
+                graph.InsertElement(element, target.EditScopeId, rootCanvas: target.ActiveRootCanvas); target.Selection.Add(element.Id);
             }
         });
     }

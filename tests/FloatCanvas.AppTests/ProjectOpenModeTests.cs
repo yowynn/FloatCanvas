@@ -17,7 +17,7 @@ internal static class ProjectOpenModeTests
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    internal static void Run(Action<string, bool> check)
+    internal static void Run(Action<string, bool> check, bool startWithPrefab = false)
     {
         if (!DesktopName().StartsWith("FloatCanvas.Tests.", StringComparison.Ordinal))
             throw new InvalidOperationException("Run --isolated-ui-desktop --project-open-mode-only; this fixture acquires input only on its separate desktop.");
@@ -39,6 +39,11 @@ internal static class ProjectOpenModeTests
             string first = SaveProject(folder, "first", DocumentKind.LiveOverlay);
             string second = SaveProject(folder, "second", DocumentKind.LiveOverlay);
             string capture = SaveProject(folder, "capture", DocumentKind.FrozenCapture);
+            var prefabDefinition = new PrefabDefinition { Name = "opened prefab", Graph = new() { Elements = [new() { Kind = ElementKind.Text, Text = "prefab content", Width = 120, Height = 30 }] },
+                PreviewCanvas = new() { Viewport = new(-900, -800, 2000, 1500), LayerOpacity = .21 } };
+            prefabDefinition.PreviewCanvas.Canvas.BackgroundColor = 0xFF124578;
+            string prefabPath = Path.Combine(folder, "opened.floatprefab");
+            new PrefabStore().SaveAsync(prefabPath, new() { EntryDefinitionId = prefabDefinition.Id, Definitions = [prefabDefinition] }, new AssetLibrary()).GetAwaiter().GetResult();
             var bounds = new PixelBounds(-20000, -20000, 640, 360);
             Func<IReadOnlyList<MonitorInfo>> monitors = () => [new("project-open", bounds, bounds, 96, 96, true)];
             using var host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), Private, null,
@@ -54,10 +59,21 @@ internal static class ProjectOpenModeTests
             toolbar.Opacity = 0;
             using var entry = new EntryStatusObserver(Field<TextBlock>(session, "_status"));
             long beforeEntry = host.EditingSessionVersion;
-            session.Start(["--profile", folder, "--primary-screen", "--open", first]);
+            session.Start(["--profile", folder, "--primary-screen", "--open", startWithPrefab ? prefabPath : first]);
             Wait(() => Field<bool>(session, "_shellReady") && !Field<bool>(session, "_openingShellProject") &&
                 !Field<bool>(session, "_documentBusyValue"), "cold project startup");
             Observe("cold-startup");
+            if (startWithPrefab)
+            {
+                var cold = Editor().Session;
+                check("cold prefab startup inserts Main content into the default untitled project and requests editing", cold.Document.Instances.Count == 1 &&
+                    SceneEvaluation.Build(cold.Document).Leaves.Single().RenderElement.Text == "prefab content" &&
+                    cold.Document.Canvas.BackgroundColor != 0xFF124578 && Revealed() && EntryRequested());
+                using var response = new DialogResponse(app, "History.KeepLeave");
+                Await((Task)Invoke("OpenProjectPathAsync", first)!);
+                check("opening a full project asks before replacing dirty untitled prefab placement", response.Count == 1 && Marker() == "first");
+                return;
+            }
             // A non-input desktop cannot grant ordinary foreground ownership. Observe
             // the actual entry path's success/failure feedback instead of claiming an
             // editing lease that Windows cannot grant to this unattended fixture.
@@ -94,6 +110,25 @@ internal static class ProjectOpenModeTests
             Hide(); entry.Reset(); Await((Task)Invoke("OpenProjectPathAsync", first)!);
             check("direct project opening from passive mode also preserves input mode and reveals the canvas",
                 Marker() == "first" && Passive() && Revealed() && host.EditingSessionVersion == passiveVersion && entry.Count == 0);
+
+            var insertionOwner = Editor().Session; Guid insertionScope = insertionOwner.CreateEmptyGroup("prefab destination"); insertionOwner.SetEditScope(insertionScope);
+            int insertionUndo = insertionOwner.UndoCount; string insertionSettings = System.Text.Json.JsonSerializer.Serialize(insertionOwner.Document.Canvas);
+            Await((Task)Invoke("OpenProjectPathAsync", prefabPath)!);
+            check("warm prefab opening inserts into the current root and group without replacing project settings or input mode", ReferenceEquals(Editor().Session, insertionOwner) &&
+                insertionOwner.Document.Instances.Single().ParentId == insertionScope && insertionOwner.UndoCount == insertionUndo + 1 &&
+                System.Text.Json.JsonSerializer.Serialize(insertionOwner.Document.Canvas) == insertionSettings && Passive());
+            insertionOwner.Undo(); insertionOwner.SetEditScope(null);
+            var mainNode = insertionOwner.Document.Elements.Single(); insertionOwner.SetSelection([mainNode.Id]);
+            var editingDefinition = insertionOwner.CreatePrefabFromSelection("editing context");
+            Await((Task)Invoke("EditPrefabDefinitionCoreAsync", editingDefinition.DefinitionId, editingDefinition.InstanceId)!);
+            var editContext = Field<object>(session, "_prefabEditContext"); var editingOwner = Editor().Session;
+            editingOwner.Execute("pending nested edit", document => document.NextNumber++);
+            Await((Task)Invoke("OpenProjectPathAsync", prefabPath)!);
+            check("opening a prefab while editing a dirty subproject preserves that editing context and inserts there", ReferenceEquals(Field<object>(session, "_prefabEditContext"), editContext) &&
+                ReferenceEquals(Editor().Session, editingOwner) && editingOwner.Document.Instances.Count == 1 && editingOwner.Document.NextNumber > 1);
+            // Reset to a saved full project for the existing failure/cancel checks.
+            using (var response = new DialogResponse(app, "Prefab.Discard")) Await((Task)Invoke("LeaveCurrentPrefabAsync")!);
+            using (var response = new DialogResponse(app, "History.KeepLeave")) Await((Task)Invoke("OpenProjectPathAsync", first)!);
 
             var beforeFailure = Editor().Session;
             Hide();

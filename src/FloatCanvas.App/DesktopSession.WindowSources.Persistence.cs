@@ -134,8 +134,12 @@ internal static class WindowSourcePersistence
         var package = new PrefabPackage { ResourceId = snapshot.ResourceId, EntryDefinitionId = entryId,
             Definitions = snapshot.Definitions.Select(definition => definition.Clone()).ToList(), Provenance = snapshot.Provenance };
         var entry = package.Definitions.Single(definition => definition.Id == entryId);
-        entry.Graph = SceneGraphClone.CloneGraph(snapshot).Graph;
+        var main = SceneCanvasRoots.ExtractRootContent(snapshot, RootCanvasKind.Main);
+        entry.Graph = SceneGraphClone.CloneGraph(main).Graph;
+        entry.PreviewCanvas = SubprojectCanvasSettings.FromDocument(main, entry.PreviewCanvas?.Origin ?? entry.Pivot);
         entry.Revision = authoredChanged ? Guid.NewGuid() : savedRevision ?? entry.Revision;
+        var root = new PrefabInstance { DefinitionId = entryId };
+        package.Definitions = PrefabClosure.ReachableDefinitions(new() { Instances = [root], RootOrder = [root.Id] }, package.Definitions).ToList();
         return package;
     }
 }

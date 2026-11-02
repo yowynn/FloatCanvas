@@ -29,8 +29,18 @@ internal sealed partial class EditorController
             return SceneEvaluation.Build(Session.Document);
         }
     }
-    private SceneDocument PickingDocument => presentedScene ?? CurrentPickingEvaluation.RenderDocument;
+    private SceneDocument PickingDocument => presentedScene ?? (viewDocument is { } display && viewPlacement is { } placement
+        ? CanvasPreviewRenderer.EditingDocument(CurrentPickingEvaluation, display, placement,
+            viewRootCanvas, Session.ActiveRootCanvas, Session.EditScopeId, independentCanvasView)
+        : CurrentPickingEvaluation.RenderDocument);
     private AssetLibrary PickingAssets => presentedAssets ?? Session.Assets;
+    private IEnumerable<CanvasElement> SelectedEditingWorldElements(bool editableOnly = false)
+    {
+        var selected = Session.SelectedWorldElements(editableOnly);
+        if (!independentCanvasView) return selected;
+        var visible = PickingDocument.Elements.Where(element => element.Visible).Select(element => element.Id).ToHashSet();
+        return selected.Select(element => { element.Visible = visible.Contains(element.Id); return element; });
+    }
     internal bool BackgroundPickingEnabled { get; set; }
     internal Task PendingPicking { get; private set; } = Task.CompletedTask;
 
@@ -107,6 +117,8 @@ internal sealed partial class EditorController
         var token = cancellation.Token;
         var session = Session;
         long revision = session.PreviewRevision;
+        long scopeVersion = session.EditScopeVersion;
+        var rootCanvas = PickingRootCanvas;
         var selected = session.Selection.ToArray();
         var document = PickingDocument;
         var resources = PickingAssets.Resources.ToArray();
@@ -125,13 +137,13 @@ internal sealed partial class EditorController
                     var assets = new AssetLibrary(); foreach (var resource in resources) assets.Add(resource);
                     using var renderer = new SceneRenderer { AnimationTime = time, PresentedImages = images,
                         WindowFrames = windowFrames, WindowOwnerContext = windowOwnerContext, CacheByteLimit = 64L * 1024 * 1024 };
-                    return ScreenRectangleHits(document, assets, renderer, rectangle, token);
+                    return ScreenRectangleHits(document, assets, renderer, rectangle, token, rootCanvas);
                 }
                 finally { pickingWorker.Release(); }
             }, token).ConfigureAwait(false);
             await dispatcher.InvokeAsync(() =>
             {
-                if (!token.IsCancellationRequested && ReferenceEquals(Session, session) && session.PreviewRevision == revision &&
+                if (!token.IsCancellationRequested && ReferenceEquals(Session, session) && session.PreviewRevision == revision && session.EditScopeVersion == scopeVersion &&
                     session.Selection.SetEquals(selected)) ApplyRectangleHits(hits, additive, selected);
             }, DispatcherPriority.Input);
         }

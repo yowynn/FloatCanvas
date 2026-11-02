@@ -90,12 +90,11 @@ internal sealed class PrefabLinkResolver
 
     internal static (PrefabPackage Package, PointD Origin) ProjectContent(LoadedProject project, string name)
     {
-        var document = project.Document.Clone(); var graph = new SceneGraph(document); graph.MaterializeOrder();
-        if (document.Background is { } background)
-        {
-            document.Background = null; var image = background.Clone(); image.GroupId = null;
-            graph.InsertElement(image, null, 0, worldCoordinates: false); graph = new(document);
-        }
+        // Keep SourceProject intact for editing/saving the original complete file.
+        // The placed definition contains authored Main nodes only; the canvas
+        // header remains preview metadata and is never turned into host content.
+        var document = SceneCanvasRoots.ExtractRootContent(project.Document, RootCanvasKind.Main);
+        var graph = new SceneGraph(document); graph.MaterializeOrder();
         // An unlocked wrapper includes hidden/locked roots without changing their flags.
         var roots = graph.EnumerateChildren(null).ToArray();
         var wrapper = graph.InsertGroup(new() { Name = name, OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] });

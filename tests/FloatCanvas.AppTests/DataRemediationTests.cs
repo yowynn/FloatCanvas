@@ -24,6 +24,13 @@ internal static class DataRemediationTests
         journal = PublicationCleanup.Begin(root, [thumbnail]); File.WriteAllText(thumbnail, "partial");
         PublicationCleanup.Sweep(root, [output], DateTime.UtcNow.AddDays(2));
         check("stale uncommitted publication is reclaimed", !File.Exists(thumbnail) && File.Exists(output) && File.Exists(unknown));
+        string prefab = Path.Combine(root, prefix + ".floatprefab"), prefabSource = Path.Combine(root, prefix + ".source.floatprefab");
+        journal = PublicationCleanup.Begin(root, [prefab, prefabSource]); File.WriteAllText(prefab, "partial"); File.WriteAllText(prefabSource, "partial source");
+        PublicationCleanup.Finish(journal, false);
+        check("failed prefab publication reclaims both the main package and editable raster source", !File.Exists(prefab) && !File.Exists(prefabSource) && File.Exists(unknown));
+        journal = PublicationCleanup.Begin(root, [prefab, prefabSource]); File.WriteAllText(prefab, "published prefab"); File.WriteAllText(prefabSource, "partial source");
+        PublicationCleanup.Sweep(root, [prefab], DateTime.UtcNow.AddDays(2));
+        check("prefab crash cleanup preserves committed packages while removing only unreferenced owned source files", File.ReadAllText(prefab) == "published prefab" && !File.Exists(prefabSource) && File.Exists(unknown));
         string pending = Path.Combine(root, ".pending-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmssfff") + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(pending); File.WriteAllText(Path.Combine(pending, "workspace.floatcanvas"), "partial"); File.WriteAllText(Path.Combine(pending, "unknown.txt"), "keep");
         PublicationCleanup.RemovePendingDirectory(pending);
@@ -103,13 +110,14 @@ internal static class DataRemediationTests
         var session = new EditorSession(new() { Elements = [new() { Kind = ElementKind.Rectangle, Width = 20, Height = 20, Style = new() { Fill = 0xFFFF0000 } }] }); session.SelectAll();
         var original = await library.SaveSelectionAsync(session, "original", StampSaveMode.RasterMerge);
         var before = Directory.GetFiles(library.DirectoryPath).Select(Path.GetFileName).Order().ToArray();
-        foreach (string stage in new[] { "source", "package", "thumbnail", "before-catalog" })
+        foreach (var mode in Enum.GetValues<StampSaveMode>())
+        foreach (string stage in mode == StampSaveMode.RasterMerge ? new[] { "source", "package", "thumbnail", "before-catalog" } : new[] { "package", "thumbnail", "before-catalog" })
         {
             library.PublicationCheckpoint = reached => { if (reached == stage) throw new IOException("injected " + stage); };
             bool failed = false;
-            try { await library.SaveSelectionAsync(session, "replacement", StampSaveMode.RasterMerge, original.Id); } catch (IOException) { failed = true; }
+            try { await library.SaveSelectionAsync(session, "replacement", mode, original.Id); } catch (IOException) { failed = true; }
             var after = Directory.GetFiles(library.DirectoryPath).Select(Path.GetFileName).Order().ToArray();
-            check("real stamp failure at " + stage + " preserves catalog and leaves no new revision", failed && before.SequenceEqual(after) && library.Items.Single().Revision == original.Revision);
+            check("real " + mode + " stamp failure at " + stage + " preserves catalog and leaves no new revision", failed && before.SequenceEqual(after) && library.Items.Single().Revision == original.Revision);
         }
         library.PublicationCheckpoint = null;
         var reopened = new StampLibrary(Path.Combine(root, "stamp-faults")); await reopened.LoadAsync();

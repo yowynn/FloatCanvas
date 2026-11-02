@@ -38,6 +38,8 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--root-canvases-only")) { RootCanvasIntegrationTests.Run(Assert); return 0; }
+            if (args.Contains("--root-canvas-indicator-only")) { RootCanvasIndicatorTests.Run(Assert, args.SkipWhile(a => a != "--root-canvas-indicator-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--presentation-chords-only")) { PresentationChordSequenceTests.Run(Assert); return 0; }
             if (args.Contains("--presentation-physical-state-only")) { PresentationPhysicalStateTests.Run(Assert); return 0; }
             if (args.Contains("--presentation-tools-desktop-only")) { PresentationToolsDesktopTests.Run(Assert); return 0; }
@@ -56,6 +58,7 @@ internal static class Program
             if (args.Contains("--prefab-boundaries-only")) { PrefabInstanceBoundaryTests.Run(Assert); return 0; }
             if (args.Contains("--prefab-preview-only")) { PrefabPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--group-canvas-scene-only")) { GroupCanvasSceneTests.Run(Assert); return 0; }
+            if (args.Contains("--group-canvas-refresh-only")) { GroupCanvasRootEditingTests.RunTemporaryRefresh(Assert, args.SkipWhile(a => a != "--group-canvas-refresh-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--group-canvas-root-editing-only")) { GroupCanvasRootEditingTests.Run(Assert, args.SkipWhile(a => a != "--group-canvas-root-editing-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--inline-text-view-mapping-only")) { InlineTextViewMappingTests.Run(Assert); return 0; }
             if (args.Contains("--layers-workflow-qa-only")) { LayersWorkflowQaTests.Run(Assert, args.SkipWhile(a => a != "--layers-workflow-qa-only").Skip(1).FirstOrDefault()); return 0; }
@@ -132,6 +135,7 @@ internal static class Program
             if (args.Contains("--projection-hover-runtime-preview")) { ProjectionHoverRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--projection-hover-only")) { ProjectionUnsafeHoverTests.Run(Assert); RetainedBillboardInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-tool-only")) { CanvasToolInteractionTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-settings-target-only")) { CanvasSettingsTargetTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-pin-only")) { CanvasPinCalibrationTests.Run(Assert); CanvasSettingsControlTests.Run(Assert); return 0; }
             if (args.Contains("--new-canvas-settings-only")) { NewCanvasSettingsTests.Run(Assert); return 0; }
             if (args.Contains("--new-canvas-escape-only")) { NewCanvasEscapeRuntimeTests.Run(Assert); return 0; }
@@ -150,6 +154,10 @@ internal static class Program
             if (args.Contains("--startup-dialog-only")) { StartupDialogTests.Run(Assert); return 0; }
             if (args.Contains("--project-open-dispatch-only")) { ProjectOpenDispatchTests.Run(Assert); return 0; }
             if (args.Contains("--project-open-mode-only")) { ProjectOpenModeTests.Run(Assert); return 0; }
+            if (args.Contains("--prefab-open-mode-only")) { ProjectOpenModeTests.Run(Assert, startWithPrefab: true); return 0; }
+            if (args.Contains("--subproject-canvas-view-only")) { SubprojectCanvasViewTests.Run(Assert); return 0; }
+            if (args.Contains("--independent-canvas-extent-only")) { IndependentCanvasExtentTests.Run(Assert); return 0; }
+            if (args.Contains("--persistent-root-selector-only")) { GroupCanvasRootEditingTests.RunPersistentRoots(Assert, args.SkipWhile(a => a != "--persistent-root-selector-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--depth-occlusion-ui-only")) { DepthOcclusionUiRuntimeTests.Run(Assert); return 0; }
             if (args.Contains("--depth-occlusion-only")) { DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-only")) { BillboardControllerTests.Run(Assert); return 0; }
@@ -378,9 +386,14 @@ internal static class Program
             if (args.Contains("--complete-presets-only")) { CompletePresetContractTests.Run(Assert); return 0; }
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--data-remediation-only")) { DataRemediationTests.Run(Assert); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
             StyleVariantTests.Run(Assert);
             GroupControllerTests.Run(Assert);
+            SubprojectCanvasViewTests.Run(Assert);
+            IndependentCanvasExtentTests.Run(Assert);
+            RootCanvasIntegrationTests.Run(Assert);
+            RootCanvasIndicatorTests.Run(Assert);
             NodeControllerAuditTests.Run(Assert);
             OfficialPresetDesignTests.Run(Assert);
             SymbolStylePresetTests.Run(Assert);
@@ -455,6 +468,7 @@ internal static class Program
             PerspectiveSafetyInputTests.Run(Assert); CanvasSafetyResolutionTests.Run(Assert);
             ProjectionUnsafeHoverTests.Run(Assert);
             CanvasToolInteractionTests.Run(Assert);
+            CanvasAnchorCaptureTests.Run(Assert, geometryOnly: true);
             CanvasGuideUiTests.Run(Assert);
             CanvasToolRenderingTests.Run(Assert);
             RetainedBillboardInteractionTests.Run(Assert);

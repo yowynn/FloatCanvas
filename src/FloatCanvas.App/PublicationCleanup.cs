@@ -46,7 +46,7 @@ internal static class PublicationCleanup
         foreach (string name in value.Files)
         {
             if (string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) ||
-                !System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-f0-9]{32}-[a-f0-9]{32}(\.source)?\.(floatcanvas|png)$")) return false;
+                !System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-f0-9]{32}-[a-f0-9]{32}(\.source)?\.(floatcanvas|floatprefab|png)$")) return false;
             string path = Path.Combine(root, name);
             if (!retained.Contains(path) && File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0) File.Delete(path);
         }

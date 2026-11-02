@@ -138,7 +138,8 @@ internal sealed partial class DesktopSession
         _inspector?.CompletePendingEdit();
         _editor.Cancel();
         var target = Active;
-        if (target.Document.Elements.Count == 0 && target.Document.Groups.Count == 0 && target.Document.Instances.Count == 0) return;
+        var graph = new SceneGraph(target.Document);
+        if (!graph.EnumerateChildren(null).Any(id => SceneCanvasRoots.Resolve(target.Document, id, graph) == target.ActiveRootCanvas)) return;
         _documentBusy = true;
         try
         {
@@ -146,7 +147,7 @@ internal sealed partial class DesktopSession
             _documentRecoveryTimer?.Stop();
             await _documentRecoveryTask;
             await RecoveryHistory.PrepareClearAsync(_documentLifetime.Token);
-            target.Execute(L.Get("Feedback4.Toolbar.ClearCanvas"), document => { document.Elements.Clear(); document.Groups.Clear(); document.Instances.Clear(); document.RootOrder?.Clear(); target.Selection.Clear(); });
+            target.ClearRootCanvas(L.Get("Feedback4.Toolbar.ClearCanvas"));
             await FlushRecoveryAsync();
             UpdateStatus(L.Get("History.Cleared"));
             RequestRender();

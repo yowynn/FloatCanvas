@@ -36,6 +36,7 @@ internal sealed partial class DesktopSession
     private readonly Dictionary<EditorTool,Controls.ContentPresenter> _toolbarGlyphHosts=[];
     private NewCanvasButton? _newCanvasButton;
     private BoundFileIndicator? _boundFileIndicator;
+    private RootCanvasToolbarHeader? _rootCanvasHeader;
     private Controls.Button? _stampLibraryButton;
     private Controls.ContentPresenter? _stampLibraryGlyph;
     private object? _stampLibraryDefaultGlyph;
@@ -152,7 +153,9 @@ internal sealed partial class DesktopSession
         var shell = _toolbarLauncher.CreateSurface(_toolbarExpandedContent);
         _boundFileIndicator=new BoundFileIndicator(()=>_ = RunCommand(RevertActiveFileAsync),LocateActiveFile,DetachActiveFile,
             CanRevertActiveFile,()=>!DocumentOperationBusy);
-        shell.Children.Add(_boundFileIndicator);
+        _rootCanvasHeader = new(_boundFileIndicator, () => SwitchRootCanvas(RootCanvasKind.Main),
+            () => !DocumentOperationBusy && _host.IsVisible && !Active.IsTransactionActive && _prefabEditContext is null);
+        shell.Children.Add(_rootCanvasHeader);
         shell.LayoutUpdated+=(_,_)=>
         {
             if(_toolbarExpandedContent.Visibility!=Visibility.Visible)return;
@@ -163,7 +166,7 @@ internal sealed partial class DesktopSession
             if(icon?.IsLoaded==true)
             {
                 var ink=VisualTreeHelper.GetDescendantBounds(icon);
-                _boundFileIndicator.AlignTextLeft(icon.TranslatePoint(new Point(ink.IsEmpty?0:ink.Left,0),shell).X);
+                _rootCanvasHeader.AlignFileTextLeft(icon.TranslatePoint(new Point(ink.IsEmpty?0:ink.Left,0),_rootCanvasHeader).X);
             }
         };
         var window = new Window { Title = L.Get("Toolbar.Title"), Content = shell, WindowStyle = WindowStyle.None, AllowsTransparency = true,
@@ -237,6 +240,7 @@ internal sealed partial class DesktopSession
         _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;
         RefreshToolbarExpansionMenuItem();
         RefreshBoundFileIndicator();
+        _rootCanvasHeader?.Refresh(Active.ActiveRootCanvas);
         if (_settings.ToolbarExpanded)
             _toolbar.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_toolbar.IsVisible) { PlaceToolbar(); SaveToolbarPosition(); } });
     }
@@ -253,6 +257,8 @@ internal sealed partial class DesktopSession
     private void ActivateTool(EditorTool tool)
     {
         if (DocumentOperationBusy) return;
+        if (tool == EditorTool.Canvas && !CanEditDisplayedCanvas)
+        { UpdateStatus(L.Get("GroupCanvas.EditPreviewInIndependent")); return; }
         if (tool == EditorTool.Crop && _editor.TryRedirectWindowSourceCrop()) return;
         if (tool != _editor.Tool) EndCanvasCalibration(hidePanel: true);
         if (tool == EditorTool.Crop && !_editor.CanCropSelection) return;
@@ -294,7 +300,7 @@ internal sealed partial class DesktopSession
     private void RefreshCanvasStateGlyph()
     {
         if (_canvasStateButton is null) return;
-        var canvas = Active.Document.Canvas;
+        var canvas = CurrentCanvasSettings;
         var fingerprint = (canvas.BackgroundColor, canvas.Projection.Enabled, canvas.Grid.Visible, canvas.Grid.Color, canvas.Grid.Width, canvas.Grid.Pattern);
         if (_canvasPreviewFingerprint == fingerprint) return;
         _canvasPreviewFingerprint = fingerprint;
@@ -304,13 +310,8 @@ internal sealed partial class DesktopSession
         if (_toolbarGlyphHosts.TryGetValue(EditorTool.Canvas, out var presenter)) presenter.Content = content;
         else _canvasStateButton.Content = content;
     }
-    private void RefreshToolbarState()
+    private void RefreshHistoryCommandState()
     {
-        RefreshBoundFileIndicator();
-        RefreshCanvasVisibilityButton();
-        RefreshCanvasStateGlyph();
-        RefreshBillboardState();
-        if (_toolbarToolButtons.Count == 0) return;
         foreach (var (key, button) in _commandStateButtons.Where(pair => pair.Key is "undo" or "redo"))
         {
             button.IsEnabled = CanExecuteUiCommand(key);
@@ -320,6 +321,16 @@ internal sealed partial class DesktopSession
             button.ToolTip = button.IsEnabled ? label : label + "\n" + UiCommandDisabledHint(key);
             Controls.ToolTipService.SetShowOnDisabled(button, true);
         }
+    }
+    private void RefreshToolbarState()
+    {
+        RefreshBoundFileIndicator();
+        _rootCanvasHeader?.Refresh(Active.ActiveRootCanvas);
+        RefreshCanvasVisibilityButton();
+        RefreshCanvasStateGlyph();
+        RefreshBillboardState();
+        if (_toolbarToolButtons.Count == 0) return;
+        RefreshHistoryCommandState();
         ValidateSelectedStamp();
         _toolbarStatusDisplay?.Refresh();
         // Crop is a dedicated entry with no remembered aliases. Keep legacy shared
@@ -327,7 +338,7 @@ internal sealed partial class DesktopSession
         RefreshToolbarToolSelection();
         foreach (var item in _cropMenuItems) item.IsEnabled = _editor.CanCropSelection;
         _syncingControls = true;
-        try { if (!Active.IsTransactionActive) _opacitySlider.Value = Active.Document.LayerOpacity; }
+        try { if (!Active.IsTransactionActive) _opacitySlider.Value = CurrentCanvasLayerOpacity; _opacitySlider.IsEnabled = CanEditDisplayedCanvas && !Active.IsReadOnly; }
         finally { _syncingControls = false; }
         var parameters = _editor.Parameters;
         string fingerprint = JsonSerializer.Serialize(parameters);
@@ -454,23 +465,23 @@ internal sealed partial class DesktopSession
         System.Windows.Automation.AutomationProperties.SetName(opacity,L.Get("Feedback3.Toolbar.Opacity"));
         void RefreshOpacityTooltip() => opacity.ToolTip = L.Get("Feedback3.Toolbar.Opacity") + $" · {opacity.Value * 100:0.#}% · Ctrl+PageUp / Ctrl+PageDown";
         RefreshOpacityTooltip();
-        EditorSession? pointerSession=null; long pointerTransaction=0;
-        bool OwnsPointerTransaction()=>pointerSession is {IsTransactionActive:true}&&ReferenceEquals(pointerSession,Active)&&pointerSession.TransactionId==pointerTransaction;
-        opacity.PointerGestureStarted+=()=>{pointerSession=null;if(!DocumentOperationBusy){_editor.Cancel();pointerSession=Active;pointerSession.BeginTransaction(L.Get("History.LayerOpacity"));pointerTransaction=pointerSession.TransactionId;}};
+        EditorSession? pointerSession=null; CanvasSettingsTarget? pointerTarget=null; long pointerTransaction=0;
+        bool OwnsPointerTransaction()=>pointerSession is {IsTransactionActive:true}&&ReferenceEquals(pointerSession,Active)&&pointerSession.TransactionId==pointerTransaction&&pointerTarget?.IsCurrent==true;
+        opacity.PointerGestureStarted+=()=>{pointerSession=null;pointerTarget=null;if(!DocumentOperationBusy&&CanEditDisplayedCanvas&&!Active.IsReadOnly){_editor.Cancel();pointerSession=Active;pointerTarget=CaptureCanvasSettingsTarget();pointerSession.BeginTransaction(L.Get("History.LayerOpacity"));pointerTransaction=pointerSession.TransactionId;}};
         opacity.ValueChanged+=(_,_)=>
         {
-            RefreshOpacityTooltip();if(_syncingControls||DocumentOperationBusy)return;
+            RefreshOpacityTooltip();if(_syncingControls||DocumentOperationBusy||!CanEditDisplayedCanvas||Active.IsReadOnly)return;
             if(opacity.IsPointerInteracting&&!OwnsPointerTransaction())
             {
                 // Escape or a document command can end this gesture's transaction.
                 // Late pointer input must not turn the cancelled preview into new edits.
                 opacity.EndPointerGesture();
-                _syncingControls=true;try{opacity.Value=Active.Document.LayerOpacity;}finally{_syncingControls=false;}
+                _syncingControls=true;try{opacity.Value=CurrentCanvasLayerOpacity;}finally{_syncingControls=false;}
                 return;
             }
-            if(Active.IsTransactionActive){Active.Document.LayerOpacity=opacity.Value;Active.NotifySettingsChanged();}else Active.ExecuteSettings(L.Get("History.LayerOpacity"),document=>document.LayerOpacity=opacity.Value);
+            if(opacity.IsPointerInteracting)pointerTarget!.ChangeOpacity(opacity.Value);else ChangeCurrentCanvasOpacity(opacity.Value);
         };
-        opacity.PointerGestureCompleted+=()=>{if(OwnsPointerTransaction())pointerSession!.CommitSettings();pointerSession=null;};return opacity;
+        opacity.PointerGestureCompleted+=()=>{if(OwnsPointerTransaction())pointerSession!.CommitSettings();else if(pointerSession is {IsTransactionActive:true}&&pointerSession.TransactionId==pointerTransaction)pointerSession.Cancel();pointerSession=null;pointerTarget=null;};return opacity;
     }
     private static Controls.Border Surface(UIElement child, double radius, Thickness padding)
     {

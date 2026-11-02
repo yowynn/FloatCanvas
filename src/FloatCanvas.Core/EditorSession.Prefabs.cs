@@ -33,8 +33,9 @@ public sealed class PrefabEditPlan
     {
         Owner = owner; OwnerDocument = owner.Document; OwnerContentVersion = owner.ContentVersion; OwnerScopeVersion = owner.EditScopeVersion;
         Candidate = candidate; Resources = resources;
-        var graph = new SceneGraph(candidate); var mapping = CanvasMapping.Create(candidate);
-        UnsafeRootIds = SceneEvaluation.Build(candidate).Leaves.Where(leaf => !mapping.IsElementSafe(leaf.RenderElement))
+        var graph = new SceneGraph(candidate);
+        var mappings = Enum.GetValues<RootCanvasKind>().ToDictionary(root => root, root => CanvasMapping.Create(candidate, root));
+        UnsafeRootIds = SceneEvaluation.Build(candidate).Leaves.Where(leaf => !mappings[leaf.RootCanvas].IsElementSafe(leaf.RenderElement))
             .Select(leaf => graph.AncestorIds(leaf.HostNodeId).LastOrDefault() is var root && root != Guid.Empty ? root : leaf.HostNodeId)
             .Distinct().ToArray();
     }
@@ -55,6 +56,7 @@ public sealed partial class EditorSession
         RequireWritableScope();
         var graph = new SceneGraph(Document);
         var roots = graph.NormalizeSelection(Selection).Where(id => !graph.IsLocked(id)).ToArray();
+        if (roots.Any(id => !InActiveRoot(graph, id))) throw new InvalidOperationException("A shared definition must come from the active root canvas.");
         if (roots.Length == 0) throw new InvalidOperationException(L.Get("Stamp.NoSelection"));
         // Build the selected forest without temporarily changing the user's selection.
         var selected = Selection.ToArray(); SceneDocument snapshot;
@@ -62,14 +64,15 @@ public sealed partial class EditorSession
         finally { SetSelectionCore(selected); }
         var evaluated = Document.Instances.Count > 0 ? SceneEvaluation.Build(Document) : null;
         var bounds = roots.Select(id => NodeBounds(graph, id, evaluated)).OfType<RectD>().Aggregate(RectD.Union);
-        var definition = new PrefabDefinition { Name = name.Trim(), Graph = SceneGraphClone.CloneGraph(snapshot).Graph, Pivot = default };
+        var definition = new PrefabDefinition { Name = name.Trim(), Graph = SceneGraphClone.CloneGraph(snapshot).Graph, Pivot = default,
+            PreviewCanvas = BuildSelectionPreviewSettings(snapshot) };
         var instance = new PrefabInstance { DefinitionId = definition.Id, Name = definition.Name,
             Transform = Affine2D.Translation(bounds.Left, bounds.Top) };
         var candidate = Document.Clone(); var target = new SceneGraph(candidate); target.MaterializeOrder();
         var moving = roots.ToHashSet(); var order = target.PaintOrder(ScopePaintContext(target, EditScopeId));
         int index = Enumerable.Range(0, order.Count).Where(i => moving.Contains(order[i]) || target.AncestorIds(order[i]).Any(moving.Contains))
             .DefaultIfEmpty(order.Count - 1).Max() + 1;
-        candidate.Definitions.Add(definition); target.InsertInstance(instance, EditScopeId, index);
+        candidate.Definitions.Add(definition); target.InsertInstance(instance, EditScopeId, index, rootCanvas: ActiveRootCanvas);
         target.RemoveNodes(roots); SceneLimits.ValidateCapacity(candidate);
         Execute(L.Get("Prefab.History.Create"), _ => { Document = candidate; SetSelectionCore([instance.Id]); });
         return new(definition.Id, instance.Id);
@@ -83,7 +86,7 @@ public sealed partial class EditorSession
         if (!worldPlacement.IsValid) throw new ArgumentException(nameof(worldPlacement));
         var candidate = Document.Clone(); var instance = new PrefabInstance { DefinitionId = definitionId, Name = name ?? definition.Name,
             Transform = worldPlacement.PlaneTransform, ElevationScale = worldPlacement.ElevationScale };
-        new SceneGraph(candidate).InsertInstance(instance, EditScopeId);
+        new SceneGraph(candidate).InsertInstance(instance, EditScopeId, rootCanvas: ActiveRootCanvas);
         SceneLimits.ValidateCapacity(candidate); EnsureSafeInsertion(SceneEvaluation.Build(candidate).OccurrencesOfHostNode(instance.Id).Select(leaf => leaf.RenderElement));
         Execute(L.Get("Prefab.History.Place"), _ => { Document = candidate; if (select) SetSelectionCore([instance.Id]); });
         return instance.Id;
@@ -112,9 +115,12 @@ public sealed partial class EditorSession
         {
             Elements = content.Elements, Groups = content.Groups, Instances = content.Instances, RootOrder = content.RootOrder,
             Definitions = Document.Definitions.Where(definition => !forbidden.Contains(definition.Id)).Select(definition => definition.Clone()).ToList(),
-            ResourceId = Document.ResourceId, Viewport = Document.Viewport, Kind = Document.Kind
+            ResourceId = Document.ResourceId, Kind = Document.Kind
         };
-        return new(this, definition, new EditorSession(document, Assets, readOnly: IsReadOnly || readOnly));
+        var preview = definition.PreviewCanvas?.Clone() ?? new SubprojectCanvasSettings { Origin = definition.Pivot };
+        preview.ApplyTo(document);
+        return new(this, definition, new EditorSession(document, Assets, readOnly: IsReadOnly || readOnly)
+            { IndependentCanvasOrigin = preview.Origin });
     }
 
     public PrefabEditPlan PreparePrefabEdit(PrefabEditDraft draft)
@@ -140,6 +146,8 @@ public sealed partial class EditorSession
         var existing = Document.Definitions.Single(definition => definition.Id == draft.DefinitionId);
         var replacement = candidate.Definitions.Single(definition => definition.Id == draft.DefinitionId);
         replacement.Graph = SceneGraphClone.CloneGraph(edited).Graph;
+        var preview = SubprojectCanvasSettings.FromDocument(edited, draft.Session.IndependentCanvasOrigin);
+        replacement.PreviewCanvas = existing.PreviewCanvas is null && SceneContent.Equal(preview, new SubprojectCanvasSettings { Origin = existing.Pivot }) ? null : preview;
         if (publishRevision && (!SceneContent.Equal(existing.Graph, replacement.Graph) || !SceneContent.Equal(Document.Definitions, candidate.Definitions))) replacement.Revision = Guid.NewGuid();
         SceneLimits.ValidateCapacity(candidate);
         return candidate;
@@ -152,8 +160,8 @@ public sealed partial class EditorSession
         // UI safety choices may edit the candidate. Materialize the complete owned
         // document before publishing any resources, including unused definitions.
         var candidate = plan.Candidate.Clone(); SceneLimits.ValidateCapacity(candidate);
-        var mapping = CanvasMapping.Create(candidate);
-        if (!allowUnsafe && SceneEvaluation.Build(candidate).Leaves.Any(leaf => !mapping.IsElementSafe(leaf.RenderElement)))
+        var mappings = Enum.GetValues<RootCanvasKind>().ToDictionary(root => root, root => CanvasMapping.Create(candidate, root));
+        if (!allowUnsafe && SceneEvaluation.Build(candidate).Leaves.Any(leaf => !mappings[leaf.RootCanvas].IsElementSafe(leaf.RenderElement)))
             throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
         // Resolve every byte before publishing a resource or starting the owner transaction.
         var resources = plan.Resources.ToDictionary(resource => resource.Id, StringComparer.Ordinal);
@@ -200,7 +208,7 @@ public sealed partial class EditorSession
         foreach (var element in content.Elements.Where(element => element.GroupId == groupId)) element.GroupId = null;
         foreach (var child in content.Groups.Where(child => child.ParentId == groupId)) child.ParentId = null;
         foreach (var instance in content.Instances.Where(instance => instance.ParentId == groupId)) instance.ParentId = null;
-        var entry = new PrefabDefinition { Name = group.Name, Graph = content };
+        var entry = new PrefabDefinition { Name = group.Name, Graph = content, PreviewCanvas = group.PreviewCanvas?.Clone() ?? new() };
         var definitions = PrefabClosure.ReachableDefinitions(content, Document.Definitions).Select(definition => definition.Clone()).ToList();
         definitions.Add(entry);
         var package = new PrefabPackage { EntryDefinitionId = entry.Id, Definitions = definitions };
@@ -215,7 +223,8 @@ public sealed partial class EditorSession
         if (!ReferenceEquals(draft.Owner, this)) throw new InvalidOperationException(L.Get("Prefab.EditConflict"));
         PrefabClosure.RequireSourceGraphs(draft.Session.Document);
         var entry = new PrefabDefinition { Id = draft.DefinitionId, Name = draft.Name, Pivot = draft.Pivot,
-            Graph = SceneGraphClone.CloneGraph(draft.Session.Document).Graph, Source = draft.Source?.Clone() };
+            Graph = SceneGraphClone.CloneGraph(draft.Session.Document).Graph, Source = draft.Source?.Clone(),
+            PreviewCanvas = SubprojectCanvasSettings.FromDocument(draft.Session.Document, draft.Session.IndependentCanvasOrigin) };
         var definitions = draft.Session.Document.Definitions.Where(definition => definition.Id != entry.Id).Select(definition => definition.Clone()).Append(entry).ToList();
         var instance = new PrefabInstance { DefinitionId = entry.Id };
         var graph = new SceneNodeGraph { Instances = [instance], RootOrder = [instance.Id] };
@@ -249,7 +258,7 @@ public sealed partial class EditorSession
         definition.Source.ImportedDefinitionIds = imported.DefinitionIdMap.ToDictionary(pair => pair.Key, pair => pair.Value);
         var instance = imported.Graph.Instances.Single(); instance.Transform = worldPlacement.PlaneTransform;
         instance.ElevationScale = worldPlacement.ElevationScale; instance.Name = name ?? definition.Name;
-        new SceneGraph(candidate).InsertInstance(instance, EditScopeId);
+        new SceneGraph(candidate).InsertInstance(instance, EditScopeId, rootCanvas: ActiveRootCanvas);
         SceneLimits.ValidateCapacity(candidate); EnsureSafeInsertion(SceneEvaluation.Build(candidate).OccurrencesOfHostNode(instance.Id).Select(leaf => leaf.RenderElement));
         var resources = imported.ReferencedAssetIds.Select(sourceAssets.Get).ToArray();
         Execute(L.Get("Prefab.History.Import"), _ =>
@@ -297,7 +306,11 @@ public sealed partial class EditorSession
             (source.EntryKind != PrefabSourceKind.PrefabDefinition || accepted.EntryDefinitionId == source.EntryDefinitionId);
         var offset = sameSource ? source.ImportOrigin - current.Source!.ImportOrigin : default;
         if (sameSource) replacement.Source.ImportOrigin = current.Source!.ImportOrigin;
-        if (offset != default) TransformGraphRoots(replacement.Graph, new(Affine2D.Translation(offset.X, offset.Y), 1));
+        if (offset != default)
+        {
+            TransformGraphRoots(replacement.Graph, new(Affine2D.Translation(offset.X, offset.Y), 1));
+            if (replacement.PreviewCanvas is { } preview) preview.Origin += offset;
+        }
         SceneLimits.ValidateCapacity(candidate);
         var resources = candidate.ReferencedAssets.Select(id => Assets.TryGet(id, out var retained) ? retained : sourceAssets.Get(id)).ToArray();
         return new(this, candidate, resources);

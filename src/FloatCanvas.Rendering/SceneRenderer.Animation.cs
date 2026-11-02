@@ -46,7 +46,7 @@ public sealed partial class SceneRenderer
         {
             hasAnimations = true;
             if (timeline.Locate(time).Delay is { } delay && (next is null || delay < next)) next = delay;
-            var projected = mapping.ProjectedBounds(element, includeStroke: true).Intersect(document.Viewport);
+            var projected = ElementMapping(document, element).ProjectedBounds(element, includeStroke: true).Intersect(document.Viewport);
             if (!projected.IsEmpty) bounds.Add(projected);
         }
         // The animation can alter a filter whose sampling halo reaches another output.
@@ -84,6 +84,7 @@ public sealed partial class SceneRenderer
     private AnimationTimeline? VisibleAnimation(CanvasElement element, SceneDocument document, AssetLibrary assets, CanvasMapping mapping)
     {
         if (element.Kind != ElementKind.Image || element.WindowSource is not null || !element.Visible || !(element.Style.Opacity > 0) || element.AssetId is not { } id) return null;
+        if (RootOf(document, element) != RootCanvasKind.Main) mapping = ElementMapping(document, element);
         if (element.IsBillboard && !mapping.IsElementSafe(element)) return null;
         if (!mapping.ProjectedBounds(element, includeStroke: true).Intersects(document.Viewport)) return null;
         if (_animationMetadata.TryGetValue(id, out var cached)) return cached;

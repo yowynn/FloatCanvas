@@ -61,9 +61,46 @@ internal static class CanvasIndependentUiTests
             }
             finally { window.CloseForDispose(); }
             PreviewInput(check, locale);
+            DialogStandards(check, locale);
             PresetRoundtrip(check, locale);
         }
         L.Initialize(language);
+    }
+
+    private static void DialogStandards(Action<string, bool> check, string locale)
+    {
+        foreach (string theme in new[] { "light", "dark" })
+        {
+            AppTheme.Apply(theme); string prefix = locale + "/" + theme + " ";
+            var canvas = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 800, 600)) };
+            canvas.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(canvas);
+            CanvasSettings? lastPreview = null;
+            var calibration = new CanvasGridCalibrationWindow(null!, canvas, [new(0, 0), new(100, 0), new(0, 100)], value => lastPreview = value);
+            var calibrationBody = (FrameworkElement)calibration.Content;
+            calibrationBody.Measure(new(418, 400)); calibrationBody.Arrange(new Rect(0, 0, 418, 400)); calibrationBody.UpdateLayout();
+            var numeric = Descendants(calibrationBody).OfType<NumericValueField>().ToArray();
+            check(prefix + "grid calibration shares window insets numeric row sizes and column-row icons", calibrationBody.Margin.Left == WindowLayout.ContentInset &&
+                numeric.All(field => field.Height == PropertyPanelLayout.ControlHeight) && numeric.Select(field => ((NumericPropertyIcon)field.DragAnchor.Child).Kind).SequenceEqual(new[] { NumericPropertyKind.Columns, NumericPropertyKind.Rows }));
+            check(prefix + "grid calibration exposes consistent default and cancel actions", Descendants(calibrationBody).OfType<Button>().Count(button => button.IsDefault) == 1 &&
+                Descendants(calibrationBody).OfType<Button>().Count(button => button.IsCancel) == 1 && Descendants(calibrationBody).OfType<Button>().All(button => button.MinHeight == PropertyPanelLayout.ControlHeight));
+            double beforeSpacing = lastPreview!.Grid.PlaneCellSize!.Value;
+            numeric[0].BeginGesture(); numeric[0].Input.Text = "2";
+            check(prefix + "grid calibration numeric gestures preview before release", numeric[0].IsInteracting && lastPreview!.Grid.PlaneCellSize != beforeSpacing);
+            numeric[0].EndGesture(false);
+            check(prefix + "canceling grid calibration numeric gestures restores the previous preview", lastPreview!.Grid.PlaneCellSize == beforeSpacing);
+            calibration.Close();
+            var settings = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()); settings.Refresh(canvas); settings.PrepareForShow();
+            var planeWidth = Field<NumericValueField>(settings, "planeWidth"); var planeHeight = Field<NumericValueField>(settings, "planeHeight");
+            check(prefix + "canvas dimensions share the historical size pair and aspect chain", ReferenceEquals(planeWidth.Parent, planeHeight.Parent) &&
+                ReferenceEquals(Field<AspectRatioButton>(settings, "aspectLock").Parent, planeWidth.Parent));
+            settings.CloseForDispose();
+            var keyboard = new KeyboardLayoutEditorWindow(null); var fields = Field<Dictionary<string, NumericValueField>>(keyboard, "coordinates");
+            check(prefix + "keyboard layout numbers use the same coordinate and dimension icons as other property panels", fields.Select(pair => ((NumericPropertyIcon)pair.Value.DragAnchor.Child).Kind)
+                .SequenceEqual(new[] { NumericPropertyKind.X, NumericPropertyKind.Y, NumericPropertyKind.Width, NumericPropertyKind.Height }) &&
+                ReferenceEquals(Field<CheckBox>(keyboard, "enabled").Style, keyboard.FindResource("CanvasPropertySwitch")));
+            keyboard.Close();
+        }
+        AppTheme.Apply("light");
     }
 
     private static void PreviewInput(Action<string, bool> check, string locale)
@@ -77,6 +114,10 @@ internal static class CanvasIndependentUiTests
         try
         {
             var width = Field<NumericValueField>(preview, "width");
+            var height = Field<NumericValueField>(preview, "height");
+            check(locale + " rectification uses shared insets a standard ratio editor and a spaced dimension pair", ((FrameworkElement)preview.Content).Margin.Left == WindowLayout.ContentInset &&
+                Descendants(preview).OfType<ComboBox>().Single().Height == PropertyPanelLayout.ControlHeight && ReferenceEquals(width.Parent, height.Parent) &&
+                ((Grid)width.Parent).ColumnDefinitions[1].Width.Value == PropertyPanelLayout.PairGap && !Descendants(preview).OfType<GroupBox>().Any());
             foreach (string key in new[] { "Canvas.ApplyPlane", "Canvas.InsertRectifiedCapture" })
             {
                 width.Input.Text = "invalid";
@@ -85,6 +126,10 @@ internal static class CanvasIndependentUiTests
                 check(locale + " invalid preview dimensions block " + key, !preview.Applied && !preview.InsertScreenshot &&
                     preview.Projection.PlaneBounds == projection.PlaneBounds && Field<TextBlock>(preview, "status").Text == L.Get("Canvas.InvalidPlaneSize"));
             }
+            width.SetModelValue(64); height.SetModelValue(96); width.BeginGesture(); width.Input.Text = "80";
+            check(locale + "rectification numeric gestures update the bounded preview before release", width.IsInteracting && preview.Projection.PlaneBounds!.Value.Width == 80);
+            width.EndGesture(false);
+            check(locale + "rectification canceled gestures restore the previous plane without applying", preview.Projection.PlaneBounds!.Value.Width == 64 && !preview.Applied);
             check(locale + " preview cancellation and invalid input create no native window", !preview.IsVisible && new System.Windows.Interop.WindowInteropHelper(preview).Handle == 0);
             var assets = new AssetLibrary(); var captured = SnapshotImageCommand.CreateElement(assets, source, projection.Matrix);
             using var small = SKBitmap.Decode(CanvasRectificationRenderer.Render(source.PngBytes, source.Bounds, projection, 16));

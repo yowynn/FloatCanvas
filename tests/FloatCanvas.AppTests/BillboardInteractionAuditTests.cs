@@ -251,6 +251,17 @@ internal static class BillboardInteractionAuditTests
                 projection.Enabled = true; projection.Matrix = new(1, 0, 0, 0, 1, 0, 0, .0025, 1);
                 projection.Quad = projection.Quad.Select(projection.Matrix.TransformPoint).ToList(); document.Canvas.Projection = projection;
                 editor.Tool = EditorTool.Rectangle; editor.BillboardWorkflow = BillboardCreationWorkflow.FixedDepthLine; editor.BillboardMode = true;
+                // A changed desktop view resumes picking only after its real frame is accepted.
+                using (var renderer = new CanvasPreviewRenderer())
+                using (var snapshot = (CanvasPreviewSnapshot)typeof(DesktopSession).GetMethod("CaptureCanvasPreview", Private)!.Invoke(desktop, null)!)
+                using (var frame = renderer.Render(snapshot))
+                {
+                    typeof(DesktopSession).GetField("_submittingCanvasContext", Private)!.SetValue(desktop, snapshot.Context);
+                    typeof(DesktopSession).GetField("_submittingCanvasFrame", Private)!.SetValue(desktop, frame with
+                    { Pixels = frame.Pixels.Retain(), PickingImages = frame.PickingImages?.Retain() });
+                    typeof(DesktopSession).GetMethod("CompleteCanvasSubmission", Private)!.Invoke(desktop,
+                        [new OverlayFrameTiming(0, 0, true, [new(bounded.DeviceName, bounds, 0, 0, 0, 0)])]);
+                }
                 Send(editor, OverlayPointerKind.Down, new(64, 70)); Send(editor, OverlayPointerKind.Up, new(64, 70));
                 var depth = editor.ActiveBillboardDepthLine!.Value; var screenRegion = new RectD(20, 20, 50, 25);
                 var logicalRegion = new RectD(screenRegion.X / depth.Scale, screenRegion.Y / depth.Scale, screenRegion.Width / depth.Scale, screenRegion.Height / depth.Scale);

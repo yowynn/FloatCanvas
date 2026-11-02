@@ -195,7 +195,7 @@ public static class CanvasCalibration
         // A linear denominator has no interior extremum: same signs at all corners exclude a horizon through the viewport.
         return corners.All(p => inverse.Denominator(p) > 0) || corners.All(p => inverse.Denominator(p) < 0);
     }
-    public static bool TryGridToScreen(int columns, int rows, IReadOnlyList<PointD> quad, out Projective2D matrix)
+    public static bool TryGridToScreen(int columns, int rows, IReadOnlyList<PointD> quad, out Projective2D matrix, bool allowMirrored = false)
     {
         matrix = default;
         if (columns < 1 || rows < 1 || quad.Count != 4 || quad.Any(p => !double.IsFinite(p.X) || !double.IsFinite(p.Y))) return false;
@@ -208,7 +208,7 @@ public static class CanvasCalibration
             sign = cross;
         }
         // Clockwise screen corners preserve the orientation of the source plane.
-        if (sign <= 0) return false;
+        if (!allowMirrored && sign <= 0) return false;
         // Solve in centered, scaled screen coordinates to retain accuracy on negative/mixed-monitor desktops.
         var center = new PointD(quad.Average(p => p.X), quad.Average(p => p.Y));
         double scale = quad.Max(p => p.DistanceTo(center));
@@ -255,18 +255,21 @@ public sealed class CanvasMapping
     public PointD GridOrigin { get; }
     public double GridCellSize { get; }
     public CanvasProjectionSafety Safety { get; }
+    public bool IsPerspective { get; }
     public IReadOnlyList<PointD> SafeScreenPolygon { get; }
     public IReadOnlyList<PointD> VisiblePlanePolygon { get; }
-    private CanvasMapping(SceneDocument document)
+    private CanvasMapping(SceneDocument document, RootCanvasKind root)
     {
+        _ = SceneCanvasRoots.PaintRank(root);
         viewport = document.Viewport;
         var settings = document.Canvas.Projection;
+        IsPerspective = root == RootCanvasKind.Main && settings.Enabled;
         var reference = settings;
         if (settings.Quad.Count == 0)
         {
             reference = CanvasCalibration.CreateInitial(viewport, settings.Columns, settings.Rows);
         }
-        PlaneToScreen = settings.Enabled ? reference.Matrix : Projective2D.FromAffine(
+        PlaneToScreen = root != RootCanvasKind.Main ? Projective2D.Identity : settings.Enabled ? reference.Matrix : Projective2D.FromAffine(
             Affine2D.Translation(document.Canvas.Grid.FlatTranslation.X, document.Canvas.Grid.FlatTranslation.Y));
         ScreenToPlane = PlaneToScreen.Inverse();
         GridCellSize = CanvasGridGeometry.ResolveCellSize(document.Canvas, viewport);
@@ -278,19 +281,19 @@ public sealed class CanvasMapping
     }
     private CanvasMapping(CanvasMapping root, LayerPlacement placement)
     {
-        ViewRoot = root; ViewPlacement = placement; viewInverse = placement.Inverse(); viewport = root.viewport;
+        ViewRoot = root; ViewPlacement = placement; viewInverse = placement.Inverse(); viewport = root.viewport; IsPerspective = root.IsPerspective;
         PlaneToScreen = root.PlaneToScreen.Compose(Projective2D.FromAffine(placement.PlaneTransform));
         ScreenToPlane = PlaneToScreen.Inverse(); GridOrigin = viewInverse.PlaneTransform.TransformPoint(root.GridOrigin); GridCellSize = root.GridCellSize;
         Safety = new(PlaneToScreen); SafeScreenPolygon = root.SafeScreenPolygon;
         VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();
     }
-    public static CanvasMapping Create(SceneDocument document) => new(document);
+    public static CanvasMapping Create(SceneDocument document, RootCanvasKind root = RootCanvasKind.Main) => new(document, root);
     /// <summary>Maps an editable source plane through its placement in the displayed root canvas without changing either document.</summary>
-    public static CanvasMapping CreateView(SceneDocument rootDisplay, LayerPlacement sourceToRoot)
+    public static CanvasMapping CreateView(SceneDocument rootDisplay, LayerPlacement sourceToRoot, RootCanvasKind root = RootCanvasKind.Main)
     {
         ArgumentNullException.ThrowIfNull(rootDisplay);
         if (!sourceToRoot.IsValid) throw new ArgumentException("The editing view requires an invertible source placement.", nameof(sourceToRoot));
-        return new(Create(rootDisplay), sourceToRoot);
+        return new(Create(rootDisplay, root), sourceToRoot);
     }
     public PointD ToScreen(PointD point) => PlaneToScreen.TransformPoint(point);
     public bool IsVisible(PointD plane) => ViewRoot is { } root ? root.IsVisible(ViewPlacement.PlaneTransform.TransformPoint(plane)) : Safety.IsPlaneSafe(plane);

@@ -12,8 +12,8 @@ internal sealed partial class CanvasSettingsWindow
         planeHeight = new(.01, 256_000_000, sliderMinimum: 1, sliderMaximum: 2000) { Unit = "px" },
         gridOriginX = new(-100_000_000, 100_000_000, sliderMinimum: -1000, sliderMaximum: 1000) { Unit = "px" },
         gridOriginY = new(-100_000_000, 100_000_000, sliderMinimum: -1000, sliderMaximum: 1000) { Unit = "px" };
-    private readonly ComboBox aspectPreset = new() { MinHeight = 28 };
-    private readonly CheckBox aspectLock = new();
+    private readonly ComboBox aspectPreset = new();
+    private readonly AspectRatioButton aspectLock = new();
     private readonly TextBlock coverage = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 4, 0, 8) };
     public event Action<double, double>? PlaneSizeChanged;
     public event Action<double>? PlaneAspectChanged;
@@ -25,18 +25,21 @@ internal sealed partial class CanvasSettingsWindow
 
     private FrameworkElement BuildPlaneFields()
     {
-        AddField(planeFields, "Canvas.PlaneWidth", planeWidth);
-        AddField(planeFields, "Canvas.PlaneHeight", planeHeight);
-        aspectLock.Content = L.Get("Canvas.AspectLock"); aspectLock.Margin = new(0, 0, 0, 8);
-        planeFields.Children.Add(aspectLock);
+        foreach (var (field, key) in new[] { (planeWidth, "Canvas.PlaneWidth"), (planeHeight, "Canvas.PlaneHeight") })
+        {
+            field.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), L.Get(key));
+            System.Windows.Automation.AutomationProperties.SetName(field.Input, L.Get(key));
+            System.Windows.Automation.AutomationProperties.SetName(field.Slider, L.Get(key));
+        }
+        planeFields.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Size")), PropertyPanelLayout.Pair(planeWidth, planeHeight, aspectLock)));
         foreach (var preset in CanvasAspectPresets.All)
             aspectPreset.Items.Add(new ComboBoxItem { Content = L.Get(preset.Key), Tag = preset });
         AddField(planeFields, "Canvas.TargetAspect", aspectPreset);
-        var swap = new Button { Content = L.Get("Canvas.SwapOrientation"), MinHeight = 28, Margin = new(0, 0, 0, 6) };
+        var swap = new Button { Content = L.Get("Canvas.SwapOrientation"), MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 0, 0, 6) };
         swap.Click += (_, _) => { if (!refreshing && current.Projection.Enabled) PlaneAspectChanged?.Invoke(planeHeight.Value / planeWidth.Value); };
         planeFields.Children.Add(swap);
         planeFields.Children.Add(new TextBlock { Text = L.Get("Canvas.PlaneSizeHelp"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 8) });
-        var preview = new Button { Content = L.Get("Canvas.RectificationPreview"), MinHeight = 30, Margin = new(0, 0, 0, 8) };
+        var preview = new Button { Content = L.Get("Canvas.RectificationPreview"), MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 0, 0, 8) };
         preview.Click += (_, _) => RectificationPreviewRequested?.Invoke(); planeFields.Children.Add(preview);
         aspectPreset.SelectionChanged += (_, _) =>
         {
@@ -64,11 +67,17 @@ internal sealed partial class CanvasSettingsWindow
 
     private FrameworkElement BuildGridOriginFields()
     {
-        AddField(originFields, "Canvas.GridOriginX", gridOriginX); AddField(originFields, "Canvas.GridOriginY", gridOriginY);
-        var align = new Button { Content = L.Get("Canvas.GridOriginToPin"), MinHeight = 28 };
+        foreach (var (field, key) in new[] { (gridOriginX, "Canvas.GridOriginX"), (gridOriginY, "Canvas.GridOriginY") })
+        {
+            field.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), L.Get(key));
+            System.Windows.Automation.AutomationProperties.SetName(field.Input, L.Get(key));
+            System.Windows.Automation.AutomationProperties.SetName(field.Slider, L.Get(key));
+        }
+        originFields.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Canvas.GridOrigin")), PropertyPanelLayout.Pair(gridOriginX, gridOriginY)));
+        var align = new Button { Content = L.Get("Canvas.GridOriginToPin"), MinHeight = PropertyPanelLayout.ControlHeight };
         align.Click += (_, _) => GridOriginToPinRequested?.Invoke(); originFields.Children.Add(align);
         originFields.Children.Add(coverage);
-        var calibrate = new Button { Content = L.Get("Canvas.GridCalibration"), MinHeight = 30, Margin = new(0, 0, 0, 8) };
+        var calibrate = new Button { Content = L.Get("Canvas.GridCalibration"), MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 0, 0, 8) };
         calibrate.Click += (_, _) => GridCalibrationRequested?.Invoke(); originFields.Children.Add(calibrate);
         void CommitOrigin()
         {

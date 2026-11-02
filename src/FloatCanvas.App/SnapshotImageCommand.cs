@@ -29,6 +29,7 @@ internal static class SnapshotImageCommand
         {
             scene.Elements.Clear(); scene.Groups.Clear(); scene.Instances.Clear(); scene.Definitions.Clear();
             scene.RootOrder = null; scene.Background = null;
+            scene.RootCanvasAssignments.Clear();
             scene.Canvas.BackgroundColor = 0; scene.Canvas.Grid.Visible = false;
         }
         using var renderer = new SceneRenderer { AnimationTime = animationTime, ScreenBackdrop = backdrop };
@@ -57,7 +58,7 @@ internal static class SnapshotImageCommand
     {
         session.RequireWritableScope();
         if (session.IsTransactionActive) throw new InvalidOperationException(L.Get("Text.ActionInProgress"));
-        var mapping = CanvasMapping.Create(session.Document);
+        var mapping = CanvasMapping.Create(session.Document, session.ActiveRootCanvas);
         var image = billboardScreenFirst || billboardDepth is not null
             ? CreateBillboardElement(session.Assets, raster, mapping, billboardDepth)
             : CreateElement(session.Assets, raster, capturedPlaneToScreen ?? mapping.PlaneToScreen);

@@ -75,12 +75,12 @@ internal static class PresentationFollowupWindowTests
             check(locale + " " + theme + " native keyboard window keeps standard columns within the DPI-adjusted work area", window.IsVisible && new WindowInteropHelper(window).Handle != 0 && window.MinWidth == PropertyPanelLayout.TwoColumnMinimumWidth && window.ActualWidth >= 640 && window.ActualHeight * actualDpi.DpiScaleY <= monitor.Height && editor.Tool != EditorTool.PointerPresentation);
             var columns = Field<Grid>(panel, "parameterColumns"); var parameters = Field<Grid>(panel, "parameterGrid");
             var keyboard = Field<PresentationSettingsPanel>(panel, "presentationSettings");
-            var scope = Field<PresentationGlobalSettingsPanel>(panel, "presentationKeyboardScope");
+            var scope = Field<Dictionary<string, FrameworkElement>>(keyboard, "rows")["KeyboardScope"];
             var pointer = Field<PresentationGlobalSettingsPanel>(panel, "presentationGlobalSettings");
             void CheckSharedOrder(string state)
             {
                 var toolRows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
-                string[] shared = ["PresentationKeyboardScope", "Colors", "Opacity", "FontFamily", "FontSize", "Size"];
+                string[] shared = ["Colors", "Opacity", "FontFamily", "FontSize", "Size"];
                 check(locale + " " + theme + " " + state + " tool mode and exclusive fields precede every shared property", shared.All(key => toolRows[key].IsVisible && Grid.GetRow(toolRows[key]) > Grid.GetRow(toolRows["PresentationSettings"])) && Field<Dictionary<string, FrameworkElement>>(keyboard, "rows")["KeyPanelAlignment"].IsVisible);
                 var element = new CanvasElement { Kind = ElementKind.Presentation, Width = 760, Height = 260, Presentation = editor.Parameters.Presentation!.Clone(), Style = editor.Parameters.Style.Clone() };
                 var inspected = new EditorSession(new() { Elements = [element] }); inspected.SetSelection([element.Id]);

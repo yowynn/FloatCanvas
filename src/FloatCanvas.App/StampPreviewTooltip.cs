@@ -170,7 +170,6 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
     {
         private readonly SceneDocument? source;
         private readonly AssetLibrary? assets;
-        private readonly StampEntry? expected;
         private readonly Imaging.BitmapSource? still;
         private readonly Func<TimeSpan, Imaging.BitmapSource?>? renderOverride;
         private readonly object gate = new();
@@ -194,24 +193,13 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
         {
             source = stamp.Document;
             assets = stamp.Assets;
-            this.expected = expected;
         }
         // The same worker seam permits a deterministic blocked-render/close regression.
         internal PreviewPlayback(Func<TimeSpan, Imaging.BitmapSource?> renderOverride) => this.renderOverride = renderOverride;
 
         private SceneDocument PrepareDocument()
         {
-            var document = SceneEvaluation.Build(source!).RenderDocument;
-            double factor = 320 / Math.Max(document.Viewport.Width, document.Viewport.Height);
-            var transform = Affine2D.Scale(factor, factor).Compose(Affine2D.Translation(-document.Viewport.X, -document.Viewport.Y));
-            foreach (var element in document.Elements)
-            {
-                BillboardGeometry.ApplyPlaneTransform(element, transform);
-                if (element.IsBillboard) element.BillboardHeight *= factor;
-            }
-            if (document.Background is { } background) background.Transform = transform.Compose(background.Transform);
-            document.Viewport = new(0, 0, Math.Max(1, expected!.Width * factor), Math.Max(1, expected.Height * factor));
-            return document;
+            return StampPreviewScene.Prepare(source!);
         }
 
         internal Task<Imaging.BitmapSource?> RenderAsync(TimeSpan time, CancellationToken token = default)
@@ -267,7 +255,7 @@ internal sealed class StampPreviewTooltip : Controls.ToolTip
                         {
                             renderer ??= new(); document ??= PrepareDocument();
                             renderer.AnimationTime = request.Time;
-                            bitmap = Decode(renderer.ExportPng(document, assets!, transparent: true));
+                            bitmap = Decode(StampPreviewScene.Render(renderer, document, assets!, 320));
                             next = renderer.CaptureAnimationSchedule(document, assets!, request.Time);
                         }
                         lock (gate)

@@ -48,7 +48,7 @@ internal sealed partial class DesktopSession
         var settings = _settings.PresentationGlobal.Pointer;
         var before = _pointerPresentationFrame;
         var priorSettings = _pointerPresentationSettings;
-        _pointerPresentationFrame = settings.AnyEnabled ? frame : null;
+        _pointerPresentationFrame = settings.AnyEnabled ? _presentationRuntime?.PointerFrame : null;
         _pointerPresentationSettings = settings;
         var damage = new List<PixelBounds>();
         foreach (var monitor in _host.Monitors)
@@ -76,7 +76,14 @@ internal sealed partial class DesktopSession
     private static bool SameKeyboardPresentation(PresentationFrame? first, PresentationFrame? second)
     {
         if (ReferenceEquals(first, second)) return true;
-        if (first is null || second is null || first.KeyboardSuppressed != second.KeyboardSuppressed || first.RecentChords.Count != second.RecentChords.Count) return false;
+        return first is not null && second is not null && SameKeyboardScope(first, second) &&
+            SameKeyboardScope(first.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas), second.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas)) &&
+            SameKeyboardScope(first.ForKeyboardScope(PresentationKeyboardScope.FloatCanvasOnly), second.ForKeyboardScope(PresentationKeyboardScope.FloatCanvasOnly));
+    }
+    private static bool SameKeyboardScope(PresentationFrame first, PresentationFrame second)
+    {
+        if (ReferenceEquals(first, second)) return true;
+        if (first.KeyboardSuppressed != second.KeyboardSuppressed || first.RecentChords.Count != second.RecentChords.Count) return false;
         if (!first.PressedKeys.SequenceEqual(second.PressedKeys)) return false;
         for (int i = 0; i < first.RecentChords.Count; i++)
         {
@@ -99,7 +106,6 @@ internal sealed partial class DesktopSession
     private void DrawPresentationLayerGuides(SKCanvas canvas)
     {
         if (!HasPresentationLayerGuides) return;
-        var mapping = CanvasMapping.Create(Active.Document);
         using var dash = SKPathEffect.CreateDash([5, 4], 0);
         using var outline = new SKPaint { Color = new SKColor(90, 167, 245, 170), Style = SKPaintStyle.Stroke,
             StrokeWidth = 1, IsAntialias = true, PathEffect = dash };
@@ -107,7 +113,9 @@ internal sealed partial class DesktopSession
         // Guides are editing adorners, never scene content or capture pixels.
         foreach (var leaf in _presentationLeaves.Take(PresentationLimits.MaximumPrimitives / 8))
         {
-            if (!PresentationGeometry.TryScreenRegion(leaf.RenderElement, mapping, Active.Document.Viewport, out var polygon)) continue;
+            var display = _presentationDisplayDocument ?? Active.Document;
+            var mapping = CanvasMapping.Create(display, leaf.RootCanvas);
+            if (!PresentationGeometry.TryScreenRegion(leaf.RenderElement, mapping, display.Viewport, out var polygon)) continue;
             using var builder = new SKPathBuilder(); builder.MoveTo((float)polygon[0].X, (float)polygon[0].Y);
             foreach (var point in polygon.Skip(1)) builder.LineTo((float)point.X, (float)point.Y);
             builder.Close(); using var path = builder.Detach();

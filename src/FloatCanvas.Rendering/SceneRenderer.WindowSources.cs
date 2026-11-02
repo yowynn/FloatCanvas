@@ -33,9 +33,10 @@ public sealed partial class SceneRenderer
                 for (int index = 0; index < document.Elements.Count; index++)
                 {
                     var element = document.Elements[index];
+                    var elementMapping = RootOf(document, element) == RootCanvasKind.Main ? mapping : ElementMapping(document, element);
                     if (element.Kind != ElementKind.Image || element.WindowSource is null || !element.Visible || element.Style.Opacity <= 0 ||
-                        element.IsBillboard && !mapping.IsElementSafe(element)) continue;
-                    var transform = mapping.ElementToScreen(element);
+                        element.IsBillboard && !elementMapping.IsElementSafe(element)) continue;
+                    var transform = elementMapping.ElementToScreen(element);
                     var bounds = transform.TryTransformBounds(ElementGeometry.StrokedLocalBounds(element), out var projected) ? projected : document.Viewport;
                     bounds = bounds.Intersect(document.Viewport); if (bounds.IsEmpty) continue;
                     var address = SceneEvaluation.RuntimeView(document)?.SourceAddress(element.Id);

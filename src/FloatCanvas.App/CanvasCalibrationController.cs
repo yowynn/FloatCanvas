@@ -18,6 +18,8 @@ internal sealed class CanvasCalibrationController
     private PointD? hover;
     private bool placementGesture;
     private bool resolutionRequested;
+    private CanvasSettingsTarget? target;
+    private bool explicitTarget;
     public bool IsPlacing { get; private set; }
     public IReadOnlyList<PointD> PlacementPreview => hover is { } point ? [..placed,point] : placed.ToArray();
     public bool IsActive => session is not null;
@@ -29,21 +31,22 @@ internal sealed class CanvasCalibrationController
     public event Action<string>? Error;
     public event Action? ResolutionRequired;
 
-    public void Begin(EditorSession value)
+    public void Begin(EditorSession value, CanvasSettingsTarget? canvasTarget = null)
     {
-        if (ReferenceEquals(session, value)) return;
-        End(); session = value; Changed?.Invoke();
+        if (ReferenceEquals(session, value) && target?.IsCurrent == true && target.Independent == (canvasTarget?.Independent ?? false) && explicitTarget == (canvasTarget is not null)) return;
+        End(); session = value; target = canvasTarget ?? new(value); explicitTarget = canvasTarget is not null; Changed?.Invoke();
     }
-    public void BeginPlacement(EditorSession value)
+    public void BeginPlacement(EditorSession value, CanvasSettingsTarget? canvasTarget = null)
     {
-        End();session=value;IsPlacing=true;Changed?.Invoke();
+        End();session=value;target=canvasTarget ?? new(value);explicitTarget=canvasTarget is not null;IsPlacing=true;Changed?.Invoke();
     }
-    public void End() { CancelDrag(); IsPlacing=false;placed.Clear();hover=null;session = null; Changed?.Invoke(); }
+    public void End() { CancelDrag(); IsPlacing=false;placed.Clear();hover=null;session = null;target=null; Changed?.Invoke(); }
     public bool Down(PointD point)
     {
         if(IsPlacing)return Place(point);
-        if (session is null || IsDragging || session.IsTransactionActive) return false;
-        var quad = session.Document.Canvas.Projection.Quad;
+        if (!explicitTarget && session is not null && !session.IsTransactionActive && target?.IsCurrent != true) target = new(session);
+        if (session is null || session.IsReadOnly || target?.IsCurrent != true || IsDragging || session.IsTransactionActive) return false;
+        var quad = target.Settings.Projection.Quad;
         if (quad.Count != 4) return false;
         corner = -1; edge = -1;
         double closest = 12;
@@ -52,7 +55,7 @@ internal sealed class CanvasCalibrationController
             double distance = quad[i].DistanceTo(point);
             if (distance <= closest) { closest = distance; corner = i; }
         }
-        var center = CanvasGridGeometry.ReferenceCenter(session.Document.Canvas.Projection);
+        var center = CanvasGridGeometry.ReferenceCenter(target.Settings.Projection);
         bool centerHandle = Math.Abs(point.X - center.X) <= CenterHandleHalfSize && Math.Abs(point.Y - center.Y) <= CenterHandleHalfSize;
         if (corner < 0 && !centerHandle)
         {
@@ -101,12 +104,12 @@ internal sealed class CanvasCalibrationController
         }
         else if (edge >= 0) { candidate[edge] += delta; candidate[(edge + 1) % 4] += delta; }
         else for (int i = 0; i < 4; i++) candidate[i] += delta;
-        var current = session!.Document.Canvas.Projection;
+        var current = target!.Settings.Projection;
         bool wasConstrained = IsDragConstrained;
         bool translating = corner < 0 && edge < 0;
         CanvasProjectionSettings settings;
         string? error;
-        IsDragConstrained = !CanvasCalibration.TryCalibrate(current, candidate, session.Document.Viewport, out settings, out error);
+        IsDragConstrained = !CanvasCalibration.TryCalibrate(current, candidate, target.Viewport, out settings, out error);
         if (IsDragConstrained)
         {
             if (!wasConstrained) Error?.Invoke(error!);
@@ -120,7 +123,7 @@ internal sealed class CanvasCalibrationController
             {
                 double amount = (lower + upper) / 2;
                 var clipped = candidate.Select((p, i) => previous[i] + (p - previous[i]) * amount).ToArray();
-                if (CanvasCalibration.TryCalibrate(current, clipped, session.Document.Viewport, out var valid, out _))
+                if (CanvasCalibration.TryCalibrate(current, clipped, target.Viewport, out var valid, out _))
                 { lower = amount; settings = valid; advanced = true; }
                 else upper = amount;
             }
@@ -130,9 +133,8 @@ internal sealed class CanvasCalibrationController
                 return false;
             }
         }
-        session.Document.Canvas.Projection = settings;
-        if (settings.PlaneBounds is null) session.Document.Canvas.Grid.FlatCellSize = settings.GridCellSize;
-        session.NotifySettingsChanged(); Changed?.Invoke(); return true;
+        target.Change(canvas => { canvas.Projection = settings; if (settings.PlaneBounds is null) canvas.Grid.FlatCellSize = settings.GridCellSize; });
+        Changed?.Invoke(); return true;
     }
     public void Up(bool requestResolution = true)
     {
@@ -142,7 +144,7 @@ internal sealed class CanvasCalibrationController
             if (requestResolution && !resolutionRequested) { resolutionRequested = true; ResolutionRequired?.Invoke(); }
             return;
         }
-        AffectedLayerIds = CanvasSafetyResolution.AffectedIds(session!.Document);
+        AffectedLayerIds = CanvasSafetyResolution.AffectedIds(target!.CreateDisplayDocument());
         if (AffectedLayerIds.Count > 0)
         {
             IsAwaitingResolution = true; IsDragConstrained = false;
@@ -157,12 +159,10 @@ internal sealed class CanvasCalibrationController
         if (!IsAwaitingResolution || !ValidateDrag()) return false;
         if (action == CanvasSafetyAction.Cancel) { CancelDrag(); return true; }
         if (action == CanvasSafetyAction.Keep) { CommitDrag(); return true; }
-        if (action == CanvasSafetyAction.Relocate && !CanvasSafetyResolution.TryRelocate(session!.Document, AffectedLayerIds))
+        var resolved = target!.CreateDisplayDocument();
+        if (action == CanvasSafetyAction.Relocate && !CanvasSafetyResolution.TryRelocate(resolved, AffectedLayerIds))
         { Error?.Invoke("Canvas.RelocateFailed"); return false; }
-        if (action == CanvasSafetyAction.Delete)
-        {
-            new SceneGraph(session!.Document).RemoveNodes(CanvasSafetyResolution.RootNodes(session.Document, AffectedLayerIds));
-        }
+        if (!target.ResolveGeometry(resolved, AffectedLayerIds, action)) return false;
         CommitDrag(); return true;
     }
     private void CommitDrag()
@@ -183,28 +183,26 @@ internal sealed class CanvasCalibrationController
     public void Escape() { if (IsDragging) CancelDrag(); else End(); }
     private bool Place(PointD point)
     {
-        if(session is null||session.IsTransactionActive||!double.IsFinite(point.X)||!double.IsFinite(point.Y))return false;
+        if (!explicitTarget && session is not null && !session.IsTransactionActive && target?.IsCurrent != true) target = new(session);
+        if(session is null||session.IsReadOnly||target?.IsCurrent!=true||session.IsTransactionActive||!double.IsFinite(point.X)||!double.IsFinite(point.Y))return false;
         if(placed.Any(p=>p.DistanceTo(point)<2))return false;
         if(placed.Count<3){placed.Add(point);hover=null;Changed?.Invoke();return true;}
         PointD[] candidate=[..placed,point];
         string? error="Canvas.InvalidQuad";
         if(!CanvasCalibration.TryOrderCorners(candidate,out var quad)||
-            !CanvasCalibration.TryCalibrate(session.Document.Canvas.Projection,quad,session.Document.Viewport,out var projection,out error))
+            !CanvasCalibration.TryCalibrate(target.Settings.Projection,quad,target.Viewport,out var projection,out error))
         {Error?.Invoke(error??"Canvas.InvalidQuad");return false;}
         session.BeginTransaction(L.Get("Canvas.CalibrationHistory")); transactionId = session.TransactionId;
         dragDocument = session.Document; placementGesture = true; IsPlacing = false;
-        session.Document.Canvas.Projection = projection;
-        if (projection.PlaneBounds is null) session.Document.Canvas.Grid.FlatCellSize = projection.GridCellSize;
-        session.NotifySettingsChanged();
+        target.Change(canvas => { canvas.Projection = projection; if (projection.PlaneBounds is null) canvas.Grid.FlatCellSize = projection.GridCellSize; });
         // The fourth point is selected on Down. Wait for the physical Up before opening a modal.
         Up(requestResolution: false); Changed?.Invoke(); return true;
     }
     private bool ValidateDrag()
     {
         if (dragDocument is null) return false;
-        if (session is not null && ReferenceEquals(session.Document, dragDocument) && session.IsTransactionActive && session.TransactionId == transactionId) return true;
-        dragDocument = null; IsDragConstrained = false; IsAwaitingResolution = false; resolutionRequested = false; AffectedLayerIds = []; placementGesture = false;
-        Changed?.Invoke(); return false;
+        if (session is not null && target?.IsCurrent == true && ReferenceEquals(session.Document, dragDocument) && session.IsTransactionActive && session.TransactionId == transactionId) return true;
+        CancelDrag(); return false;
     }
     private static double SegmentDistance(PointD p, PointD a, PointD b)
     {

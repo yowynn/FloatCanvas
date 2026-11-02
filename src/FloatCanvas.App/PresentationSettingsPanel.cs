@@ -47,6 +47,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
         Add(keyboardOptions, "KeyboardLayout", "Presentation.Layout.Label", layout, _ => { });
         var options = new StackPanel(); options.Children.Add(recordOptions); options.Children.Add(keyboardOptions);
         modeOptions = new(options); Children.Add(modeOptions);
+        Choice(this, "KeyboardScope", "Presentation.KeyboardScope", Enum.GetValues<PresentationKeyboardScope>().Select(value => (L.Get("Presentation.Scope." + value), (object)value)));
         // Alignment affects both logs and the fitted live keyboard, so it follows the exclusive options.
         Choice(this, "KeyPanelAlignment", "Presentation.Alignment", Enum.GetValues<PresentationPanelAlignment>().Select(value => (L.Get("Presentation.Alignment." + value), (object)value)));
         var hint = new TextBlock { Text = L.Get("Presentation.RegionHint"), FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 6, 0, 4) };
@@ -146,7 +147,14 @@ internal sealed class PresentationSettingsPanel : StackPanel
         {
             var choice = new SegmentedChoice();
             foreach (var (label, value) in values)
-                choice.Add(label, value, CommandGlyphs.Create(value is PresentationKeyDisplayMode.ShortcutChords ? CommandGlyphs.Shortcuts : CommandGlyphs.Presentation));
+                choice.Add(label, value, CommandGlyphs.Create(value switch
+                {
+                    PresentationKeyboardScope.AllApplications => CommandGlyphs.Windows,
+                    PresentationKeyboardScope.OutsideFloatCanvas => CommandGlyphs.Exit,
+                    PresentationKeyboardScope.FloatCanvasOnly => CommandGlyphs.FloatingLogo,
+                    PresentationKeyDisplayMode.ShortcutChords => CommandGlyphs.Shortcuts,
+                    _ => CommandGlyphs.Presentation
+                }));
             choice.SelectionChanged += (_, _) => { if (choice.SelectedValue is { } value) Commit(key, value); };
             Add(parent, key, labelKey, choice, value => choice.SelectedValue = value); return;
         }
@@ -159,6 +167,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
     {
         var input = new TextBox(); AutomationProperties.SetName(input, L.Get(labelKey));
         var control = new NumericValueField(input, min, max, railMin, railMax, integerOnly: integer) { Unit = unit, CanBeginGesture = () => IsEnabled && CanBeginGesture?.Invoke() != false };
+        control.SetScrubAnchor(key == "KeyPanelMaximumWidth" ? NumericPropertyKind.Width : NumericPropertyKind.Number, L.Get(labelKey));
         control.ValueChanged += value => Commit(key, integer ? (object)(int)value : value); control.InvalidInput += Invalid;
         control.GestureStarted += () => GestureStarted?.Invoke(); control.GestureCompleted += value => GestureCompleted?.Invoke(value);
         Add(parent, key, labelKey, control, value => { if (value is null) control.ShowPlaceholder("—"); else control.Value = Convert.ToDouble(value); });
@@ -171,7 +180,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
     }
     private static object? Get(PresentationSettings value, string key) => key switch
     {
-        "KeyboardLayout" => value.KeyboardLayout, "KeyDisplay" => value.KeyDisplay, "KeyPanelAlignment" => value.KeyPanelAlignment,
+        "KeyboardLayout" => value.KeyboardLayout, "KeyDisplay" => value.KeyDisplay, "KeyboardScope" => value.KeyboardScope, "KeyPanelAlignment" => value.KeyPanelAlignment,
         "RecentChordLimit" => value.RecentChordLimit, "KeyHoldMilliseconds" => value.KeyHoldMilliseconds, "KeyPanelMaximumWidth" => value.KeyPanelMaximumWidth,
         _ => throw new ArgumentOutOfRangeException(nameof(key))
     };
@@ -182,6 +191,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
             case "DisplayStyle": target.DisplayStyle = value is RestoredLogStyles restored ? restored.Values.GetValueOrDefault(sourceId, PresentationDisplayStyle.Log) : (PresentationDisplayStyle)value!; break;
             case "KeyboardLayout": target.KeyboardLayout = (value as PresentationKeyboardLayout)?.Clone(); break;
             case "KeyDisplay": target.KeyDisplay = (PresentationKeyDisplayMode)value!; break;
+            case "KeyboardScope": target.KeyboardScope = (PresentationKeyboardScope)value!; break;
             case "KeyPanelAlignment": target.KeyPanelAlignment = (PresentationPanelAlignment)value!; break;
             case "RecentChordLimit": target.RecentChordLimit = (int)value!; break;
             case "KeyHoldMilliseconds": target.KeyHoldMilliseconds = (double)value!; break;

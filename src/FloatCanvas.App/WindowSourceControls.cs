@@ -47,7 +47,7 @@ internal sealed class WindowSourceControls : StackPanel
     {
         string label = L.Get("WindowSource." + action);
         var button = new Button { Content = new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center },
-            MinHeight = 30, Margin = new(0, 3, 0, 3), Padding = new(6, 4, 6, 4) };
+            MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 3, 0, 3), Padding = new(6, 4, 6, 4) };
         AutomationProperties.SetName(button, label);
         button.Click += (_, _) => { if (button.IsEnabled) Requested?.Invoke(action); };
         actions.Add(action, button); return button;

@@ -15,8 +15,8 @@ internal sealed partial class LayersWindow
     private readonly ScrollViewer groupSourceViewport = new() { MaxHeight = 42, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new(0, 3, 0, 3) };
     private readonly TextBlock groupCanvasNotice = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 4, 0, 0) };
     private readonly SegmentedChoice groupCanvasChoice = new() { Margin = new(0, 5, 0, 0) };
-    private readonly Button groupExport = new() { MinHeight = 28, MinWidth = 0, Margin = new(0, 4, 6, 0), Padding = new(6, 3, 6, 3) };
-    private readonly Button groupDetach = new() { MinHeight = 28, MinWidth = 0, Margin = new(0, 4, 0, 0), Padding = new(6, 3, 6, 3) };
+    private readonly Button groupExport = new() { MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 0, Margin = new(0, 4, 6, 0), Padding = new(6, 3, 6, 3) };
+    private readonly Button groupDetach = new() { MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 0, Margin = new(0, 4, 0, 0), Padding = new(6, 3, 6, 3) };
     private Border? groupContextSite;
     internal GroupCanvasContext? CurrentGroupContext => groupContext;
 
@@ -46,7 +46,7 @@ internal sealed partial class LayersWindow
     internal void SetGroupContext(GroupCanvasContext? context)
     {
         // This card configures the entered scope, never a merely selected child.
-        if (context is not { IsEntered: true }) context = null;
+        if (context is not { IsEntered: true } and not { IsRootContext: true }) context = null;
         // Replace callbacks even when the displayed values are unchanged.
         groupContext = context;
         if (groupContextSite is null) return;
@@ -61,6 +61,7 @@ internal sealed partial class LayersWindow
             SynchronizeGroupCanvasMode(); return;
         }
         groupName.Text = context.Name; groupName.ToolTip = context.Name;
+        groupStorage.Visibility = context.IsRootContext ? Visibility.Collapsed : Visibility.Visible;
         groupStorage.Text = L.Get(context.Storage switch
         {
             GroupStorageKind.Embedded => "GroupCanvas.Embedded",
@@ -72,8 +73,8 @@ internal sealed partial class LayersWindow
         groupSource.ToolTip = groupSource.Text;
         AutomationProperties.SetName(groupSourceViewport, groupSource.Text);
         groupSourceViewport.Visibility = external ? Visibility.Visible : Visibility.Collapsed;
-        groupExport.Visibility = context.Storage is GroupStorageKind.Ordinary or GroupStorageKind.Embedded ? Visibility.Visible : Visibility.Collapsed;
-        groupDetach.Visibility = context.Storage is GroupStorageKind.Embedded or GroupStorageKind.ExternalFile ? Visibility.Visible : Visibility.Collapsed;
+        groupExport.Visibility = !context.IsRootContext && context.Storage is GroupStorageKind.Ordinary or GroupStorageKind.Embedded ? Visibility.Visible : Visibility.Collapsed;
+        groupDetach.Visibility = !context.IsRootContext && context.Storage is GroupStorageKind.Embedded or GroupStorageKind.ExternalFile ? Visibility.Visible : Visibility.Collapsed;
         groupExport.IsEnabled = context.Export is not null; groupDetach.IsEnabled = context.Detach is not null;
         groupCanvasNotice.Text = L.Get(context.IsReadOnly ? "GroupCanvas.ReadOnlyNotice" : context.Mode == GroupCanvasMode.RootProject ? "GroupCanvas.RootNotice" : "GroupCanvas.TemporaryNotice");
         SynchronizeGroupCanvasMode();

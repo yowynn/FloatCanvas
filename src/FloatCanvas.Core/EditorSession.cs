@@ -14,10 +14,12 @@ public sealed partial class EditorSession
     public long ContentVersion { get; private set; }
     public bool HasPendingChanges { get; private set; }
 
-    public EditorSession(SceneDocument? document = null, AssetLibrary? assets = null, int historyLimit = 100, long historyByteLimit = 256L * 1024 * 1024, bool readOnly = false)
+    public EditorSession(SceneDocument? document = null, AssetLibrary? assets = null, int historyLimit = 100, long historyByteLimit = 256L * 1024 * 1024, bool readOnly = false,
+        PointD independentCanvasOrigin = default)
     {
         if (historyLimit < 0 || historyByteLimit < 0) throw new ArgumentOutOfRangeException(nameof(historyLimit));
         Document = document ?? new(); Assets = assets ?? new(); HistoryLimit = historyLimit; HistoryByteLimit = historyByteLimit;
+        Document.IndependentCanvasOrigin = independentCanvasOrigin;
         IsReadOnly = readOnly;
     }
     public SceneDocument Document { get; private set; }
@@ -143,6 +145,7 @@ public sealed partial class EditorSession
         if (item.UndoOperation is not null) item.UndoOperation();
         else { Document = item.Before!.Clone(); ContentVersion = item.BeforeVersion; SetSelectionCore(item.SelectionBefore!); }
         undo.RemoveAt(undo.Count - 1); redo.Add(item);
+        PruneSelection();
         OnChanged(contentChanged: item.UndoOperation is null, preserveContentVersion: true); return true;
     }
     public bool Redo()
@@ -153,13 +156,15 @@ public sealed partial class EditorSession
         if (item.RedoOperation is not null) item.RedoOperation();
         else { Document = item.After!.Clone(); ContentVersion = item.AfterVersion; SetSelectionCore(item.SelectionAfter!); }
         redo.RemoveAt(redo.Count - 1); undo.Add(item);
+        PruneSelection();
         OnChanged(contentChanged: item.RedoOperation is null, preserveContentVersion: true); return true;
     }
     public void ReplaceDocument(SceneDocument document)
     {
         if (IsReadOnly) throw new InvalidOperationException(L.Get("GroupCanvas.ReadOnly"));
         ArgumentNullException.ThrowIfNull(document);
-        transactionBefore = null; transactionSelection = null; Document = document; undo.Clear(); redo.Clear(); Selection.Clear(); OnChanged(contentChanged: true);
+        transactionBefore = null; transactionSelection = null; Document = document; undo.Clear(); redo.Clear(); Selection.Clear();
+        ActiveRootCanvas = RootCanvasKind.Main; editScopeId = null; editScopeAncestors = []; EditScopeVersion++; OnChanged(contentChanged: true);
     }
     /// <summary>Restore a snapshot as one undoable edit. A known version must identify that exact saved content.</summary>
     public void RestoreDocument(string label, SceneDocument document, long? knownContentVersion = null)
@@ -177,7 +182,7 @@ public sealed partial class EditorSession
     public void SelectAll()
     {
         var graph = new SceneGraph(Document);
-        SetSelection(graph.EnumerateChildren(EditScopeId).Where(id => graph.IsVisible(id) && !graph.IsLocked(id)));
+        SetSelection(graph.EnumerateChildren(EditScopeId).Where(id => InActiveRoot(graph, id) && graph.IsVisible(id) && !graph.IsLocked(id)));
     }
     public CanvasElement? HitTest(PointD point, double tolerance = 4)
     {
@@ -185,11 +190,11 @@ public sealed partial class EditorSession
         if (Document.Instances.Count > 0)
         {
             var evaluated = SceneEvaluation.Build(Document);
-            var hit = evaluated.Leaves.Reverse().FirstOrDefault(leaf => leaf.RenderElement.Visible && !graph.IsLocked(leaf.HostNodeId) &&
+            var hit = evaluated.Leaves.Reverse().FirstOrDefault(leaf => leaf.RootCanvas == ActiveRootCanvas && leaf.RenderElement.Visible && !graph.IsLocked(leaf.HostNodeId) &&
                 evaluated.ResolveSelectableNode(leaf.RuntimeElementId, EditScopeId) is not null && ElementGeometry.HitTest(leaf.RenderElement, point, tolerance));
             return hit is null ? null : graph.FindElement(hit.RuntimeElementId) ?? hit.RenderElement.Clone();
         }
-        var id = graph.OrderedLeafIds.Reverse().FirstOrDefault(id => graph.IsVisible(id) && !graph.IsLocked(id) &&
+        var id = graph.OrderedLeafIds.Reverse().FirstOrDefault(id => InActiveRoot(graph, id) && graph.IsVisible(id) && !graph.IsLocked(id) &&
             graph.ResolveSelectableNode(id, EditScopeId) is not null && ElementGeometry.HitTest(graph.ToWorld(graph.FindElement(id)!), point, tolerance));
         return graph.FindElement(id);
     }
@@ -215,11 +220,11 @@ public sealed partial class EditorSession
         {
             var evaluated = SceneEvaluation.Build(Document);
             foreach (var leaf in evaluated.Leaves)
-                if (leaf.RenderElement.Visible && !graph.IsLocked(leaf.HostNodeId) && WorldBounds(leaf.RenderElement).Intersects(bounds) &&
+                if (leaf.RootCanvas == ActiveRootCanvas && leaf.RenderElement.Visible && !graph.IsLocked(leaf.HostNodeId) && WorldBounds(leaf.RenderElement).Intersects(bounds) &&
                     evaluated.ResolveSelectableNode(leaf.RuntimeElementId, EditScopeId) is { } node) Selection.Add(node);
         }
         else foreach (var id in graph.OrderedLeafIds)
-                if (graph.IsVisible(id) && !graph.IsLocked(id) && WorldBounds(graph.ToWorld(graph.FindElement(id)!)).Intersects(bounds) && graph.ResolveSelectableNode(id, EditScopeId) is { } node) Selection.Add(node);
+                if (InActiveRoot(graph, id) && graph.IsVisible(id) && !graph.IsLocked(id) && WorldBounds(graph.ToWorld(graph.FindElement(id)!)).Intersects(bounds) && graph.ResolveSelectableNode(id, EditScopeId) is { } node) Selection.Add(node);
         SetSelectionCore(graph.NormalizeSelection(Selection));
         OnChanged();
     }
@@ -239,7 +244,7 @@ public sealed partial class EditorSession
         {
             EnsureWritableParent(EditScopeId);
             if (d.Elements.Any(e => e.Id == element.Id)) throw new ArgumentException(L.Get("History.DuplicateElementId"), nameof(element));
-            new SceneGraph(d).InsertElement(element, EditScopeId); Selection.Clear(); Selection.Add(element.Id);
+            new SceneGraph(d).InsertElement(element, EditScopeId, rootCanvas: ActiveRootCanvas); Selection.Clear(); Selection.Add(element.Id);
             if (element.Kind == ElementKind.Number) d.NextNumber = NumberSequence.Advance(d.NextNumber, element.Number, numberStep);
         });
     }
@@ -268,8 +273,8 @@ public sealed partial class EditorSession
     }
     private void EnsureSafeInsertion(IEnumerable<CanvasElement> elements)
     {
-        if (!Document.Canvas.Projection.Enabled) return;
-        var mapping = CanvasMapping.Create(Document);
+        if (ActiveRootCanvas != RootCanvasKind.Main || !Document.Canvas.Projection.Enabled) return;
+        var mapping = CanvasMapping.Create(Document, ActiveRootCanvas);
         if (elements.Any(e => !mapping.IsElementSafe(e))) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
     }
     public void ReorderSelection(LayerOrder order)
@@ -285,7 +290,8 @@ public sealed partial class EditorSession
     private void PruneSelection()
     {
         ValidateEditScope();
-        SetSelectionCore(new SceneGraph(Document).NormalizeSelection(Selection));
+        var graph = new SceneGraph(Document);
+        SetSelectionCore(graph.NormalizeSelection(Selection).Where(id => InActiveRoot(graph, id)));
     }
     private void TrimHistory()
     {
@@ -298,7 +304,13 @@ public sealed partial class EditorSession
     }
     public static long EstimateBytes(SceneDocument document)
     {
-        long size = 256 + document.DisplayLayout.Count * 128;
+        long size = 256 + document.DisplayLayout.Count * 128 + document.RootCanvasAssignments.Count * 64L;
+        var previews = document.RootPreviewCanvases.Values.Concat(document.Definitions.Select(definition => definition.PreviewCanvas)
+            .OfType<SubprojectCanvasSettings>()).Concat(document.Definitions.Select(definition => definition.Graph).Prepend(document)
+                .SelectMany(graph => graph.Groups).Select(group => group.PreviewCanvas).OfType<SubprojectCanvasSettings>());
+        foreach (var preview in previews)
+            size += 2048L + preview.Canvas.Projection.Quad.Count * 16L + (preview.Background is { } image ?
+                512L + (image.Points.Count + (long)(image.ImageFrame?.Count ?? 0)) * 16L + (image.AssetId?.Length ?? 0) * 2L : 0);
         foreach (var graph in document.Definitions.Select(definition => definition.Graph).Prepend(document))
         {
             size += graph.Groups.Sum(group => 128L + group.Name.Length * 2L + (group.ChildOrder?.Count ?? 0) * 16L) +

@@ -40,6 +40,7 @@ internal static class PrefabDesktopContextTests
         var box = new CanvasElement { Kind = ElementKind.Rectangle, Width = 30, Height = 20,
             Transform = Affine2D.Translation(owner.Document.Viewport.Left + 30, owner.Document.Viewport.Top + 40), Style = new() { Fill = 0xff7799cc, StrokeWidth = 0 } };
         owner.Add(box); owner.SetSelection([box.Id]); var created = owner.CreatePrefabFromSelection("Badge");
+        ResourceStatusCache(desktop, owner, created.DefinitionId, check);
         owner.ExecuteSettings("custom camera", document => { document.Canvas.Grid.FlatOrigin = new(13, 27); document.Canvas.Grid.FlatCellSize = 17; });
         string ownerCamera = JsonSerializer.Serialize(owner.Document.Canvas);
         int before = owner.UndoCount;
@@ -79,6 +80,7 @@ internal static class PrefabDesktopContextTests
         var outer = Field<PrefabEditContext>(desktop, "_prefabEditContext");
         editor.Session.SetSelection(editor.Session.Document.Elements.Select(element => element.Id));
         var nested = editor.Session.CreatePrefabFromSelection("Nested"); Await((Task)Invoke("EditPrefabDefinitionAsync", nested.DefinitionId)!);
+        editor.Session.ChangeEditingSubprojectCanvas("local origin", settings => settings.Origin = new(13, -19));
         editor.Session.Execute("nested width", document => document.Elements.Single().Width = 88);
         var snapshot = (WorkspaceState)Invoke("SnapshotWorkspace")!;
         check("actual workspace snapshot includes both pending edit contexts and committed root content", PrefabDraftState.Enumerate(snapshot.PendingPrefabEdit).Count == 2 && SceneEvaluation.Build(snapshot.LiveDocument).Leaves.Single().RenderElement.Width == 30);
@@ -88,11 +90,17 @@ internal static class PrefabDesktopContextTests
         Invoke("ReturnFromPrefabContext", Field<PrefabEditContext>(desktop, "_prefabEditContext"));
         Invoke("RestorePrefabRecoveryState", loaded.State.PendingPrefabEdit!);
         check("actual recovery hook resumes the inner real source graph and parent editing context", Field<PrefabEditContext>(desktop, "_prefabEditContext").Parent is not null && editor.Session.Document.Elements.Single().Width == 88);
+        check("recovery restores the detached entry origin from its draft envelope", editor.Session.GetRootSubprojectCanvas().Origin == new PointD(13, -19));
         Await((Task)Invoke("CompleteCurrentPrefabAsync")!); Await((Task)Invoke("CompleteCurrentPrefabAsync")!);
         check("finishing recovered nested contexts publishes once to the root owner", ReferenceEquals(editor.Session, owner) && owner.UndoCount == before + 1 && SceneEvaluation.Build(owner.Document).Leaves.Single().RenderElement.Width == 88);
 
         var source = new SceneDocument { Kind = DocumentKind.FrozenCapture, Viewport = new(0, 0, 320, 240), Elements = [new() { Kind = ElementKind.Rectangle, Width = 18, Height = 21 }] };
         source.Canvas.Grid.PlaneCellSize = 37; source.Background = new() { Kind = ElementKind.Image, AssetId = owner.Assets.Add(Png()), Width = 320, Height = 240, Locked = true };
+        var auxiliaryDefinition = new PrefabDefinition { Graph = new() { Elements = [new() { Kind = ElementKind.Ellipse, Width = 20, Height = 30 }] } };
+        source.Definitions.Add(auxiliaryDefinition);
+        var sourceGraph = new SceneGraph(source);
+        sourceGraph.InsertInstance(new() { DefinitionId = auxiliaryDefinition.Id, Name = "foreground retained" }, rootCanvas: RootCanvasKind.Foreground);
+        sourceGraph.InsertInstance(new() { DefinitionId = auxiliaryDefinition.Id, Name = "background retained" }, rootCanvas: RootCanvasKind.Background);
         string path = Path.Combine(root, "source.floatcanvas"); var projects = new ProjectStore(); Await(projects.SaveAsync(path, source, owner.Assets));
         string camera = JsonSerializer.Serialize(source.Canvas), background = JsonSerializer.Serialize(source.Background);
         var resolver = new PrefabLinkResolver(); var prepared = Await(resolver.PrepareAsync(owner, path, null));
@@ -114,6 +122,8 @@ internal static class PrefabDesktopContextTests
         Invoke("SetGroupCanvasMode", GroupCanvasMode.Temporary);
         Await((Task)Invoke("TryHandlePrefabSaveAsync", false)!);
         var written = Await(projects.LoadAsync(path));
+        check("editing a linked full project and saving preserves all source root planes", written.Document.RootCanvasAssignments.Count == 2 && written.Document.Instances.Count == 2 &&
+            written.Document.Instances.All(instance => SceneCanvasRoots.Resolve(written.Document, instance.Id) != RootCanvasKind.Main));
         check("source save routes to its original project rather than a pure definition payload", JsonSerializer.Serialize(written.Document.Canvas) == camera && JsonSerializer.Serialize(written.Document.Background) == background && written.Document.Elements.Single().Width == 66);
         Await((Task)Invoke("CompleteCurrentPrefabAsync")!);
         check("returning from source editing updates the owner's linked content", ReferenceEquals(editor.Session, owner) && SceneEvaluation.Build(owner.Document).OccurrencesOfHostNode(imported.InstanceId).Any(leaf => leaf.RenderElement.Kind == ElementKind.Rectangle && leaf.RenderElement.Width == 66));
@@ -135,6 +145,9 @@ internal static class PrefabDesktopContextTests
         var dependency = new PrefabInstance { DefinitionId = imageDefinition.Id, Transform = Affine2D.Translation(55, 0) };
         var packageBox = new CanvasElement { Kind = ElementKind.Rectangle, Width = 45, Height = 26 };
         var packageEntry = new PrefabDefinition { Name = "Source prefab", Pivot = new(9, 14), Graph = new() { Elements = [packageBox], Instances = [dependency], RootOrder = [dependency.Id, packageBox.Id] } };
+        packageEntry.PreviewCanvas = new() { Origin = new(29, -17), Viewport = new(-20, -30, 720, 480), LayerOpacity = .71,
+            Background = new() { Kind = ElementKind.Image, AssetId = oldImage, Width = 720, Height = 480 } };
+        packageEntry.PreviewCanvas.Canvas.BackgroundColor = 0xFF123678;
         var sourcePackage = new PrefabPackage { EntryDefinitionId = packageEntry.Id, Definitions = [packageEntry, imageDefinition] };
         Guid sourceIdentity = sourcePackage.ResourceId, sourceEntry = sourcePackage.EntryDefinitionId; PointD sourcePivot = packageEntry.Pivot;
         Await(prefabStore.SaveAsync(prefabPath, sourcePackage, owner.Assets));
@@ -145,6 +158,8 @@ internal static class PrefabDesktopContextTests
         var prefabContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
         check("linked prefab enters its real source entry with the complete dependency table", prefabContext.IsPrefabSource && prefabContext.SourceEntryDefinitionId == sourceEntry &&
             editor.Session.Document.ResourceId == sourceIdentity && editor.Session.Document.Definitions.Count == 2 && editor.Session.Document.Instances.Single().DefinitionId == imageDefinition.Id);
+        check("linked prefab opens using its own preview canvas and origin", JsonSerializer.Serialize(editor.Session.GetRootSubprojectCanvas()) == JsonSerializer.Serialize(packageEntry.PreviewCanvas));
+        editor.Session.ChangeEditingSubprojectCanvas("source preview origin", settings => settings.Origin = new(-41, 23));
         string newImage = owner.Assets.Add(Png(SKColors.Fuchsia));
         editor.Session.Execute("edit prefab source", document => document.Elements.Single().Width = 81);
         editor.Session.Add(new() { Kind = ElementKind.Image, AssetId = newImage, Width = 7, Height = 8, Transform = Affine2D.Translation(90, 0) });
@@ -152,6 +167,8 @@ internal static class PrefabDesktopContextTests
         check("editing a linked prefab retains original dependency image bytes alongside new draft resources", owner.Assets.Get(oldImage).Data.Span.SequenceEqual(oldImageBytes) && owner.Assets.TryGet(newImage, out _));
         Await((Task)Invoke("TryHandlePrefabSaveAsync", false)!);
         var savedPrefab = Await(prefabStore.LoadAsync(prefabPath));
+        check("saving source writes its changed independent origin and preview background", savedPrefab.Package.Definitions.Single(definition => definition.Id == sourceEntry).PreviewCanvas is { Origin: var savedOrigin, Background.AssetId: var savedBackground } &&
+            savedOrigin == new PointD(-41, 23) && savedBackground == oldImage);
         check("prefab source save preserves package identity entry pivot and definition closure", savedPrefab.Package.ResourceId == sourceIdentity && savedPrefab.Package.EntryDefinitionId == sourceEntry &&
             savedPrefab.Package.Definitions.Single(definition => definition.Id == sourceEntry).Pivot == sourcePivot && savedPrefab.Package.Definitions.Count == 2 &&
             savedPrefab.Package.Definitions.Any(definition => definition.Id == imageDefinition.Id) && savedPrefab.Package.ReferencedAssets.ToHashSet().SetEquals([oldImage, newImage]));
@@ -203,9 +220,118 @@ internal static class PrefabDesktopContextTests
         check("draft Save As retains its editing context and never publishes the conflicted owner", ReferenceEquals(editor.Session, conflictDraft.Session) && owner.UndoCount == changedHistory && JsonSerializer.Serialize(owner.Document) == changedOwner);
         using (var answer = new Answer(app, "Prefab.Discard")) Await((Task)Invoke("LeaveCurrentPrefabAsync")!);
         OrdinaryAndDetach();
+        SourceCopyPublication();
         check("desktop context fixture never exposes overlay HWNDs on the user's desktop", host.Diagnostics.All(pair => pair.Bounds == bounds) && !host.IsKeyboardIsolationActive);
         Console.WriteLine("PREFAB_DESKTOP_EVIDENCE " + root);
         object? Invoke(string method, params object?[] arguments) => typeof(DesktopSession).GetMethod(method, Hidden)!.Invoke(desktop, arguments);
+
+        void SourceCopyPublication()
+        {
+            bool Busy() => (bool)typeof(DesktopSession).GetProperty("_documentBusy", Hidden)!.GetValue(desktop)!;
+            void SetBusy(bool value) => typeof(DesktopSession).GetProperty("_documentBusy", Hidden)!.SetValue(desktop, value);
+            Task<bool> Complete(Func<string?> chooseCopyPath) => (Task<bool>)Invoke("CompleteCurrentPrefabWithCopyPathAsync", chooseCopyPath)!;
+            owner.ReplaceDocument(new SceneDocument { Viewport = new(0, 0, 640, 360) });
+            string origin = Path.Combine(root, "cas-origin.floatprefab"), copy = Path.Combine(root, "cas-saved-copy.floatprefab");
+            var sourceBox = new CanvasElement { Kind = ElementKind.Rectangle, Width = 245, Height = 140 };
+            var sourceLabel = new CanvasElement { Kind = ElementKind.Text, Text = "Source", Width = 200, Height = 40 };
+            var entry = new PrefabDefinition { Name = "CAS orange", Graph = new() { Elements = [sourceBox, sourceLabel] } };
+            var package = new PrefabPackage { EntryDefinitionId = entry.Id, Definitions = [entry] };
+            var store = new PrefabStore(); Await(store.SaveAsync(origin, package, owner.Assets));
+            var candidate = Await(resolver.PrepareAsync(owner, origin, null));
+            var imported = owner.ImportPrefab(candidate.Package, candidate.Assets, new(Affine2D.Translation(20, 20), 1), candidate.Source);
+            Guid second = owner.PlacePrefab(imported.DefinitionId, new(Affine2D.Translation(370, 20), 1));
+            Await((Task)Invoke("EditPrefabSourceAsync", imported.DefinitionId)!);
+            var context = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+            context.Session.Add(new() { Kind = ElementKind.Rectangle, Width = 128, Height = 74, Transform = Affine2D.Translation(93, 178) });
+            string draft = JsonSerializer.Serialize(context.Session.Document);
+            byte[] original = File.ReadAllBytes(origin);
+            if (original[^22] != 0x50 || original[^21] != 0x4b || original[^2] != 0 || original[^1] != 0)
+                throw new InvalidDataException("CAS fixture requires a generated ZIP without an existing comment.");
+            byte[] comment = Encoding.UTF8.GetBytes("private desktop CAS comment only");
+            byte[] external = original[..^2].Concat(BitConverter.GetBytes((ushort)comment.Length)).Concat(comment).ToArray();
+            File.WriteAllBytes(origin, external);
+            string conflictHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(external));
+            bool canceled;
+            using (var answer = new Answer(app, "Project.SaveCopy"))
+                canceled = Await(Complete(() => null));
+            check("CAS SaveCopy cancel retains the real three-node draft original source path and previous busy state", !canceled &&
+                ReferenceEquals(editor.Session, context.Session) && Path.GetFullPath(context.SourcePath!) == Path.GetFullPath(origin) &&
+                JsonSerializer.Serialize(context.Session.Document) == draft && !Busy() &&
+                File.ReadAllBytes(origin).SequenceEqual(external) && !File.Exists(copy));
+            SetBusy(true);
+            try
+            {
+                using var answer = new Answer(app, "Project.SaveCopy");
+                check("CAS SaveCopy cancellation preserves an already busy enclosing operation", !Await(Complete(() => null)) && Busy() &&
+                    ReferenceEquals(editor.Session, context.Session) && JsonSerializer.Serialize(context.Session.Document) == draft);
+            }
+            finally { SetBusy(false); }
+            bool failedChoice = false;
+            try
+            {
+                using var answer = new Answer(app, "Project.SaveCopy");
+                Await(Complete(() => throw new IOException("CAS fixture copy-path failure")));
+            }
+            catch (IOException ex) when (ex.Message == "CAS fixture copy-path failure") { failedChoice = true; }
+            check("CAS SaveCopy failure releases busy state and retains its unsaved source draft", failedChoice && !Busy() &&
+                ReferenceEquals(editor.Session, context.Session) && JsonSerializer.Serialize(context.Session.Document) == draft && File.ReadAllBytes(origin).SequenceEqual(external));
+            string ownerBefore = JsonSerializer.Serialize(owner.Document); int undoBefore = owner.UndoCount;
+            var copyRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var backgroundRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            bool explicitHeld = false; int backgroundReads = 0; long explicitRevision = -1;
+            var liveResolver = Field<PrefabLinkResolver>(desktop, "_prefabLinkResolver");
+            var previousRead = liveResolver.BeforeReadAsync;
+            Task<bool>? completing = null;
+            liveResolver.BeforeReadAsync = _ =>
+            {
+                var callers = new System.Diagnostics.StackTrace().GetFrames().Select(frame => frame.GetMethod()?.DeclaringType?.Name + "." + frame.GetMethod()?.Name).ToArray();
+                if (callers.Any(name => name.Contains("RefreshPrefabLinkAsync", StringComparison.Ordinal)))
+                {
+                    explicitHeld = true; explicitRevision = owner.SceneRevision; backgroundRead.TrySetResult(); return copyRead.Task;
+                }
+                if (callers.Any(name => name.Contains("CheckOpenedPrefabLinksAsync", StringComparison.Ordinal)))
+                { backgroundReads++; return explicitHeld ? Task.CompletedTask : backgroundRead.Task; }
+                throw new InvalidOperationException("Unexpected caller reached the CAS publication read gate.");
+            };
+            try
+            {
+                // A genuine old-source notification is queued while the source draft is retained.
+                Await((Task)Invoke("OnPrefabSourceSavedAsync", origin)!);
+                using var answer = new Answer(app, "Project.SaveCopy");
+                completing = Complete(() => copy);
+                Wait(() => explicitHeld);
+                check("CAS publication repro holds the actual explicit copy Prepare after returning to its owner", explicitHeld &&
+                    ReferenceEquals(editor.Session, owner) && context.SourcePath == copy);
+                check("CAS SaveCopy writes a real three-node package before owner publication", Await(store.LoadAsync(copy)).Package.Definitions.Single(definition => definition.Id == entry.Id).Graph.Elements.Count == 3);
+                Await((Task)Invoke("CheckOpenedPrefabLinksAsync", owner)!);
+                var beforeRelease = owner.Document.Definitions.Single(definition => definition.Id == imported.DefinitionId);
+                check("source completion blocks the old background candidate until explicit publication", Busy() &&
+                    owner.SceneRevision == explicitRevision && backgroundReads == 0 && beforeRelease.Graph.Elements.Count == 2);
+                copyRead.TrySetResult();
+                check("CAS copy publication completes successfully", Await(completing));
+                string copyHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(copy)));
+                var published = owner.Document.Definitions.Single(definition => definition.Id == imported.DefinitionId);
+                check("CAS SaveCopy completion binds its new path revision hash and all three source nodes", Path.GetFullPath(published.Source!.Locator!) == Path.GetFullPath(copy) &&
+                    published.Source.LastAcceptedFileSha256 == copyHash && published.Source.LastAcceptedContentRevision == Await(store.LoadAsync(copy)).Package.Definitions.Single(definition => definition.Id == entry.Id).Revision &&
+                    published.Graph.Elements.Count == 3 && new[] { imported.InstanceId, second }.All(id => SceneEvaluation.Build(owner.Document).OccurrencesOfHostNode(id).Count == 3));
+                Await((Task)Invoke("DrainPrefabSourcesAsync")!);
+                Wait(() => !Field<bool>(desktop, "_drainingPrefabSources"));
+                published = owner.Document.Definitions.Single(definition => definition.Id == imported.DefinitionId);
+                check("queued old-source notifications drain against the new binding without reverting it", !Field<bool>(desktop, "_drainingPrefabSources") &&
+                    Field<HashSet<string>>(desktop, "_prefabPendingSources").Count == 0 && Path.GetFullPath(published.Source!.Locator!) == Path.GetFullPath(copy) &&
+                    published.Source.LastAcceptedFileSha256 == copyHash && published.Graph.Elements.Count == 3 && owner.UndoCount == undoBefore + 1);
+                check("CAS completion never replaces the external conflicting source generation", File.ReadAllBytes(origin).SequenceEqual(external) &&
+                    Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(origin))) == conflictHash);
+                check("CAS copy publication is one undoable owner update and releases its busy gate", owner.UndoCount == undoBefore + 1 && !Busy() && owner.Undo() &&
+                    JsonSerializer.Serialize(owner.Document) == ownerBefore);
+            }
+            finally
+            {
+                copyRead.TrySetResult(); backgroundRead.TrySetResult();
+                liveResolver.BeforeReadAsync = previousRead;
+                if (completing is not null) Await(completing);
+            }
+        }
 
         void OrdinaryAndDetach()
         {
@@ -213,11 +339,12 @@ internal static class PrefabDesktopContextTests
             Guid ordinary = owner.CreateEmptyGroup("Ordinary badge"); owner.SetEditScope(ordinary);
             var child = new CanvasElement { Kind = ElementKind.Ellipse, Width = 14, Height = 11 };
             owner.Add(child); owner.SetEditScope(null); owner.SetSelection([ordinary]); Invoke("RefreshGroupCanvasContext");
-            check("a selected ordinary group does not expose entered-group configuration", layers.CurrentGroupContext is null);
+            check("a selected ordinary group exposes only the persistent root-view choice", layers.CurrentGroupContext is { IsRootContext: true, IsEntered: false, Export: null, Detach: null });
             layers.PrepareForShow(); layers.EnterGroup(ordinary); layers.PrepareForShow();
             var card = layers.CurrentGroupContext!;
             check("entering an ordinary group offers both editable views and direct prefab export", card is { Storage: GroupStorageKind.Ordinary, IsEntered: true, Temporary: not null, Root: not null, Export: not null, Detach: null });
             var childRows = layers.VisibleNodes.Select(row => row.Id).ToArray(); int history = owner.UndoCount;
+            Invoke("SetGroupCanvasMode", GroupCanvasMode.Temporary);
             using (var isolated = (CanvasPreviewSnapshot)Invoke("CaptureCanvasPreview")!)
                 check("ordinary temporary canvas renders only that group's actual children", SceneEvaluation.Build(isolated.Document).Leaves.Select(leaf => leaf.HostNodeId).SequenceEqual([child.Id]) && owner.EditScopeId == ordinary);
             Invoke("SetGroupCanvasMode", GroupCanvasMode.RootProject);
@@ -307,6 +434,34 @@ internal static class PrefabDesktopContextTests
             finally { UnregisterHotKey(0, 0x5d01); }
         }
         throw new InvalidOperationException("No test hotkeys available.");
+    }
+    private static void ResourceStatusCache(DesktopSession desktop, EditorSession owner, Guid definitionId, Action<string, bool> check)
+    {
+        object? Invoke(string name, params object?[] values) => typeof(DesktopSession).GetMethod(name, Hidden)!.Invoke(desktop, values);
+        var source = new ExternalPrefabSource { Locator = "missing-status-source.floatprefab", IsRelative = false,
+            SourceResourceId = Guid.NewGuid(), EntryKind = PrefabSourceKind.PrefabDefinition, EntryDefinitionId = Guid.NewGuid(), LastAcceptedFileSha256 = new string('B', 64) };
+        owner.Execute("Link fixture", document => document.Definitions.Single(definition => definition.Id == definitionId).Source = source.Clone());
+        Invoke("ShowPrefabResources");
+        var resources = Field<PrefabResourcesWindow>(desktop, "_prefabResources"); resources.Select(definitionId);
+        var footer = Field<TextBlock>(resources, "status"); string missing = L.Get("Prefab.SourceMissing");
+        Invoke("SetPrefabLinkStatus", owner, definitionId, "Prefab.SourceMissing"); resources.SetStatus(missing);
+        check("actual Desktop resource provider shows the bound missing-source observation", resources.Rows.Single(row => row.Id == definitionId).Summary.Contains(missing, StringComparison.Ordinal));
+        Await(resources.PerformAsync(PrefabResourceAction.Embed));
+        check("actual Desktop embed command clears footer and external-link row status", footer.Text.Length == 0 && !resources.Rows.Single(row => row.Id == definitionId).Linked &&
+            !resources.Rows.Single(row => row.Id == definitionId).Summary.Contains(missing, StringComparison.Ordinal));
+        owner.Undo(); resources.Refresh();
+        check("actual Desktop undo restores only the matching old link observation", resources.Rows.Single(row => row.Id == definitionId).Linked &&
+            resources.Rows.Single(row => row.Id == definitionId).Summary.Contains(missing, StringComparison.Ordinal) && footer.Text.Length == 0);
+        owner.Redo(); resources.Refresh();
+        check("actual Desktop redo hides the preserved external-link observation", !resources.Rows.Single(row => row.Id == definitionId).Summary.Contains(missing, StringComparison.Ordinal));
+        var relinked = source.Clone(); relinked.Locator = "different-status-source.floatprefab";
+        owner.Execute("Relink fixture", document => document.Definitions.Single(definition => definition.Id == definitionId).Source = relinked);
+        resources.Refresh();
+        check("actual Desktop resource cache cannot label a new locator with an old error", resources.Rows.Single(row => row.Id == definitionId).Linked &&
+            !resources.Rows.Single(row => row.Id == definitionId).Summary.Contains(missing, StringComparison.Ordinal));
+        owner.Undo(); owner.Undo(); owner.Undo(); resources.Refresh();
+        check("status fixture restores the original embedded source metadata", owner.Document.Definitions.Single(definition => definition.Id == definitionId).Source?.IsLinked != true);
+        SessionWindowCoordinator.Hide(resources);
     }
     private static string DesktopName()
     {

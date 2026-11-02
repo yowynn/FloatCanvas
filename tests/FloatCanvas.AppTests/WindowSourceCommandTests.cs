@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Threading;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using FloatCanvas.Windows;
 using SkiaSharp;
 
@@ -41,6 +42,7 @@ internal static class WindowSourceCommandTests
         var fixture = new Fixture(desktop, editor, owner, target.Target);
         check("command fixture reads only its own undisplayed HWND identity without source enumeration", target.Target.IsCurrent && target.Target.ProcessId == Environment.ProcessId);
         AddAndRebind(fixture, check);
+        CenteredInsertion(fixture, check);
         Freeze(fixture, check, root);
         Stale(fixture, check);
         Pending(fixture, check);
@@ -68,11 +70,12 @@ internal static class WindowSourceCommandTests
             // ReplaceDocument is a fixture shortcut; settle the same display/camera setup as the real document-open path.
             Invoke(Desktop, "SynchronizeFlatGridOrigin");
         }
-        internal DesktopSession.PreparedWindowSource Prepare(SKColor? color = null, RectD? crop = null, WindowSourceFit fit = WindowSourceFit.Contain)
+        internal DesktopSession.PreparedWindowSource Prepare(SKColor? color = null, RectD? crop = null, WindowSourceFit fit = WindowSourceFit.Contain,
+            WindowCaptureSize? contentSize = null)
         {
             var source = new FakeSource(target); Sources.Add(source);
             return new(source, new() { BindingIntent = Guid.NewGuid(), TitleHint = "Owned synthetic source", ProcessNameHint = "fixture", WindowClassHint = "STATIC", Fit = fit },
-                Png(color ?? SKColors.Crimson), new(4000, 2000), crop);
+                Png(color ?? SKColors.Crimson), contentSize ?? new(4000, 2000), crop);
         }
         internal void SetPrepare(Func<WindowSourceOperationGuard, RectD?, WindowSourceFit, CancellationToken, Task<DesktopSession.PreparedWindowSource?>> prepare)
             => typeof(DesktopSession).GetField("_prepareWindowSource", Hidden)!.SetValue(Desktop, prepare);
@@ -80,6 +83,44 @@ internal static class WindowSourceCommandTests
         internal Task Rebind(Guid id) => (Task)Invoke(Desktop, "RebindWindowSourceAsync", id)!;
         internal Task Freeze(params Guid[] ids) => (Task)Invoke(Desktop, "FreezeWindowSourcesAsync", (object)ids)!;
         internal Task Crop(Guid id) => (Task)Invoke(Desktop, "CropWindowSourceAsync", id)!;
+    }
+
+    private static void CenteredInsertion(Fixture f, Action<string, bool> check)
+    {
+        foreach (var mode in new[] { "perspective", "flat", "foreground", "background", "perspective-scope" })
+        {
+            var document = new SceneDocument { Viewport = new(0, 0, 640, 360) };
+            var projection = document.Canvas.Projection; projection.Enabled = mode != "flat";
+            projection.PlaneBounds = document.Viewport;
+            projection.Matrix = new(1, .05, 80, .02, 1, 35, .0002, .0005, 1);
+            projection.Quad = EditorController.Corners(document.Viewport).Select(projection.Matrix.TransformPoint).ToList();
+            Guid? scope = null;
+            if (mode == "perspective-scope")
+            {
+                var group = new CanvasGroup { OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [],
+                    Transform = Affine2D.Translation(20, 30).Compose(Affine2D.Scale(2, .5)) };
+                document.Groups.Add(group); document.RootOrder = [group.Id]; scope = group.Id;
+            }
+            f.Reset(document);
+            var root = mode == "foreground" ? RootCanvasKind.Foreground : mode == "background" ? RootCanvasKind.Background : RootCanvasKind.Main;
+            f.Owner.SetRootCanvas(root); if (scope is { } id) f.Owner.EnterScope(id);
+            var prepared = f.Prepare(contentSize: new(32, 24));
+            f.SetPrepare((_, _, _, _) => Task.FromResult<DesktopSession.PreparedWindowSource?>(prepared));
+            Await(f.Add());
+            var source = f.Owner.Document.Elements.Single(); var sourceWorld = new SceneGraph(f.Owner.Document).ToWorld(source);
+            var monitor = Field<OverlayHost>(f.Desktop, "_host").PrimaryMonitor;
+            var visible = new RectD(monitor.WorkArea.Left - f.Editor.CanvasOrigin.X, monitor.WorkArea.Top - f.Editor.CanvasOrigin.Y,
+                monitor.WorkArea.Width, monitor.WorkArea.Height).Intersect(f.Owner.Document.Viewport);
+            var mapping = f.Editor.CurrentCanvasMapping;
+            check(mode + " actual window-source command centers its image on the visible screen area", mapping.ElementToScreen(sourceWorld)
+                .TransformPoint(new(sourceWorld.Width / 2, sourceWorld.Height / 2)).DistanceTo(visible.Center) < 1e-6 && source.GroupId == scope);
+            Invoke(f.Desktop, "InsertImages", f.Owner, new NormalizedImage[] { new(prepared.Png, 32, 24) }, false, 1d);
+            var ordinary = f.Owner.Document.Elements.Last(); var ordinaryWorld = new SceneGraph(f.Owner.Document).ToWorld(ordinary);
+            check(mode + " actual ordinary image and window-source commands share geometry and root without double scope conversion",
+                ordinary.GroupId == scope && sourceWorld.Transform == ordinaryWorld.Transform && sourceWorld.Width == ordinaryWorld.Width &&
+                sourceWorld.Height == ordinaryWorld.Height && SceneCanvasRoots.Resolve(f.Owner.Document, source.Id) == root &&
+                SceneCanvasRoots.Resolve(f.Owner.Document, ordinary.Id) == root);
+        }
     }
 
     private static void AddAndRebind(Fixture f, Action<string, bool> check)

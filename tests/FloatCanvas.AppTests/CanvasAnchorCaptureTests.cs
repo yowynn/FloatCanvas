@@ -16,6 +16,19 @@ internal static class CanvasAnchorCaptureTests
 
     internal static void Run(Action<string, bool> check, bool geometryOnly = false)
     {
+        var previousContext = SynchronizationContext.Current;
+        try { RunFixture(check, geometryOnly); }
+        finally
+        {
+            var fixtureContext = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+            Console.WriteLine($"CANVAS_SYNC_CONTEXT caller={previousContext?.GetType().Name ?? "none"} fixture={fixtureContext?.GetType().Name ?? "none"} restored={SynchronizationContext.Current?.GetType().Name ?? "none"}");
+        }
+        check("canvas anchor fixture restores the caller's synchronization context before subsequent async tests", ReferenceEquals(previousContext, SynchronizationContext.Current));
+    }
+
+    private static void RunFixture(Action<string, bool> check, bool geometryOnly)
+    {
         var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         string originalProfile = ApplicationPaths.ProfileDirectory, originalLanguage = L.Preference;
         var originalScope = ApplicationPaths.RequestedMonitorScope;
@@ -67,10 +80,37 @@ internal static class CanvasAnchorCaptureTests
         fixture.Invoke("OnKey", 0x1B);
         check("Escape clears known-cell state without a history entry", typeof(DesktopSession).GetField("_canvasGridCalibrationSession", Private)!.GetValue(fixture.Session) is null && target.UndoCount == undo);
         fixture.Invoke("BeginCanvasGridCalibration");
+        var cancelledTarget = Field<CanvasSettingsTarget>(fixture.Session, "_canvasGridCalibrationTarget");
         fixture.Invoke("EndCanvasCalibration", false, true);
-        fixture.Invoke("FinishCanvasGridCalibration", target, new PointD[] { new(0, 0), new(100, 0), new(0, 100) });
+        fixture.Invoke("FinishCanvasGridCalibration", target, new PointD[] { new(0, 0), new(100, 0), new(0, 100) }, cancelledTarget);
         check("late known-cell completion after cancellation never opens a dialog or commits a fit", typeof(DesktopSession).GetField("_canvasGridCalibrationSession", Private)!.GetValue(fixture.Session) is null && target.UndoCount == undo);
+        fixture.Invoke("BeginCanvasGridCalibration");
+        var staleTarget = Field<CanvasSettingsTarget>(fixture.Session, "_canvasGridCalibrationTarget");
+        fixture.Invoke("EndCanvasCalibration", false, true);
+        fixture.Invoke("SetGroupCanvasMode", GroupCanvasMode.Temporary);
+        fixture.Invoke("BeginCanvasGridCalibration");
+        var freshTarget = Field<CanvasSettingsTarget>(fixture.Session, "_canvasGridCalibrationTarget");
+        long revision = target.SceneRevision;
+        fixture.Invoke("FinishCanvasGridCalibration", target, new PointD[] { new(0, 0), new(100, 0), new(0, 100) }, staleTarget);
+        check("a queued calibration A cannot borrow a fresh same-session B target after a view-mode change", !ReferenceEquals(staleTarget, freshTarget) && ReferenceEquals(Field<CanvasSettingsTarget>(fixture.Session, "_canvasGridCalibrationTarget"), freshTarget) && freshTarget.IsCurrent && target.SceneRevision == revision && target.UndoCount == undo);
+        fixture.Invoke("EndCanvasCalibration", false, true);
+        fixture.Invoke("SetGroupCanvasMode", GroupCanvasMode.RootProject);
         check("cancellation paths preserve the complete document and history", System.Text.Json.JsonSerializer.Serialize(target.Document) == before && target.UndoCount == undo);
+        foreach (var root in new[] { RootCanvasKind.Foreground, RootCanvasKind.Background })
+        {
+            target.SetRootCanvas(root);
+            target.ChangeEditingSubprojectCanvas("prepare calibration canvas", header => header.Canvas.Projection = target.Document.Canvas.Projection.Clone());
+        }
+        fixture.Invoke("SetGroupCanvasMode", GroupCanvasMode.Temporary); target.SetRootCanvas(RootCanvasKind.Foreground);
+        fixture.Invoke("BeginCanvasGridCalibration");
+        var oldRootTarget = Field<CanvasSettingsTarget>(fixture.Session, "_canvasGridCalibrationTarget");
+        fixture.Invoke("EndCanvasCalibration", false, true); target.SetRootCanvas(RootCanvasKind.Background);
+        fixture.Invoke("BeginCanvasGridCalibration");
+        var newRootTarget = Field<CanvasSettingsTarget>(fixture.Session, "_canvasGridCalibrationTarget");
+        revision = target.SceneRevision; undo = target.UndoCount;
+        fixture.Invoke("FinishCanvasGridCalibration", target, new PointD[] { new(0, 0), new(100, 0), new(0, 100) }, oldRootTarget);
+        check("a queued foreground calibration cannot overwrite or cancel a new background calibration at the same content revision", ReferenceEquals(Field<CanvasSettingsTarget>(fixture.Session, "_canvasGridCalibrationTarget"), newRootTarget) && newRootTarget.IsCurrent && !oldRootTarget.IsCurrent && target.SceneRevision == revision && target.UndoCount == undo);
+        fixture.Invoke("EndCanvasCalibration", false, true); target.SetRootCanvas(RootCanvasKind.Main); fixture.Invoke("SetGroupCanvasMode", GroupCanvasMode.RootProject);
         fixture.Host.SetPreviewVisible(false);
         check("geometry lifecycle fixture never leaves a native input HWND visible", fixture.Host.Diagnostics.All(w => !IsWindowVisible(w.InputHandle)));
         check("geometry lifecycle fixture preserves the actual foreground window", GetForegroundWindow() == foreground);

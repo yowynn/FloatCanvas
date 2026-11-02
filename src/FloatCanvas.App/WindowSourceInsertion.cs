@@ -7,7 +7,8 @@ namespace FloatCanvas.App;
 internal static class WindowSourceInsertion
 {
     internal static CanvasElement Prepare(EditorSession target, WindowSourceDescriptor descriptor, int contentWidth, int contentHeight,
-        RectD? crop, RectD placement, bool billboard = false, BillboardDepthLine? depth = null, PointD? screenCenter = null, double opacity = 1)
+        RectD? crop, RectD placement, bool billboard = false, BillboardDepthLine? depth = null, PointD? screenCenter = null, double opacity = 1,
+        PointD? planeCenter = null)
     {
         ArgumentNullException.ThrowIfNull(target); ArgumentNullException.ThrowIfNull(descriptor);
         var source = descriptor.Clone();
@@ -15,6 +16,7 @@ internal static class WindowSourceInsertion
         if (contentWidth <= 0) throw new ArgumentOutOfRangeException(nameof(contentWidth));
         if (contentHeight <= 0) throw new ArgumentOutOfRangeException(nameof(contentHeight));
         if (!double.IsFinite(opacity) || opacity is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(opacity));
+        if (planeCenter is { } point && (!double.IsFinite(point.X) || !double.IsFinite(point.Y))) throw new ArgumentOutOfRangeException(nameof(planeCenter));
         if (!FiniteRectangle(placement)) throw new ArgumentOutOfRangeException(nameof(placement));
         var sourceCrop = crop ?? new RectD(0, 0, 1, 1);
         if (!double.IsFinite(sourceCrop.X) || !double.IsFinite(sourceCrop.Y) || !double.IsFinite(sourceCrop.Width) || !double.IsFinite(sourceCrop.Height) ||
@@ -27,7 +29,7 @@ internal static class WindowSourceInsertion
         double croppedWidth = contentWidth * sourceCrop.Width, croppedHeight = contentHeight * sourceCrop.Height;
         double fit = Math.Min(1, Math.Min(placement.Width * .8 / croppedWidth, placement.Height * .8 / croppedHeight));
         double width = croppedWidth * fit, height = croppedHeight * fit;
-        var mapping = CanvasMapping.Create(target.Document);
+        var mapping = CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
         CanvasElement image;
         if (billboard)
         {
@@ -39,8 +41,9 @@ internal static class WindowSourceInsertion
         }
         else
         {
+            var center = planeCenter ?? placement.Center;
             image = new CanvasElement { Kind = ElementKind.Image, Width = width, Height = height,
-                Transform = Affine2D.Translation(placement.Center.X - width / 2, placement.Center.Y - height / 2), Style = new() { StrokeWidth = 0 } };
+                Transform = Affine2D.Translation(center.X - width / 2, center.Y - height / 2), Style = new() { StrokeWidth = 0 } };
         }
         image.WindowSource = source; image.ImageCrop = crop; image.Style.Opacity = opacity;
         if (!mapping.IsElementSafe(image)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));

@@ -14,7 +14,7 @@ public sealed partial class SceneRenderer
     public static RectD ProjectedBounds(SceneDocument document, CanvasElement element, bool includeStroke = false)
     {
         (document, element) = WorldElement(document, element);
-        return CanvasMapping.Create(document).ProjectedBounds(element, includeStroke);
+        return ElementMapping(document, element).ProjectedBounds(element, includeStroke);
     }
 
     private Projective2D TransformFor(SceneDocument? document) =>

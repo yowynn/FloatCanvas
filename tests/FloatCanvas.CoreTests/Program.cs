@@ -3,6 +3,10 @@ using System.Text.Json;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+if (args.Contains("--subproject-canvas-only")) { SubprojectCanvasTests.Run(Check); Console.WriteLine($"PASS {checks} subproject canvas checks"); return; }
+SubprojectCanvasTests.Run(Check);
+if (args.Contains("--root-canvases-only")) { RootCanvasTests.Run(Check); Console.WriteLine($"PASS {checks} root canvas checks"); return; }
+RootCanvasTests.Run(Check);
 if (args.Contains("--canvas-view-mapping-only")) { CanvasViewMappingTests.Run(Check); Console.WriteLine($"PASS {checks} canvas view mapping checks"); return; }
 CanvasViewMappingTests.Run(Check);
 if (args.Contains("--group-prefab-export-only")) { GroupPrefabExportTests.Run(Check); Console.WriteLine($"PASS {checks} ordinary group prefab export checks"); return; }

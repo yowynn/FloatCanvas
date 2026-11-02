@@ -21,6 +21,12 @@ internal static class CanvasContentImportTests
             Elements = [new() { Kind = ElementKind.Rectangle, Name = "project rectangle", Width = 60, Height = 40, Transform = Affine2D.Translation(160, 90) }],
             Background = new() { Kind = ElementKind.Image, AssetId = asset, Width = 80, Height = 60, Transform = Affine2D.Translation(150, 80) }, Viewport = new(0, 0, 640, 480)
         };
+        var foreground = new CanvasElement { Kind = ElementKind.Text, Text = "foreground omitted", Width = 90, Height = 30 };
+        var backgroundLayer = new CanvasElement { Kind = ElementKind.Ellipse, Name = "background omitted", Width = 80, Height = 40 };
+        sourceDocument.Elements.AddRange([foreground, backgroundLayer]);
+        sourceDocument.RootCanvasAssignments[foreground.Id] = RootCanvasKind.Foreground;
+        sourceDocument.RootCanvasAssignments[backgroundLayer.Id] = RootCanvasKind.Background;
+        sourceDocument.Canvas.BackgroundColor = 0xFF228866;
         var projects = new ProjectStore("0.4.0"); string projectPath = Path.Combine(root, "画布A.floatcanvas");
         await projects.SaveAsync(projectPath, sourceDocument, sourceAssets);
         var child = new PrefabDefinition { Name = "nested original", Graph = new() { Elements = [new() { Kind = ElementKind.Ellipse, Width = 30, Height = 20 }] } };
@@ -48,7 +54,11 @@ internal static class CanvasContentImportTests
         check("project and prefab sources retain explicit disk links and accepted file identities", owner.Document.Definitions.Where(definition => definition.Source?.IsLinked == true).Count() == 2 &&
             owner.Document.Definitions.Where(definition => definition.Source?.IsLinked == true).All(definition => definition.Source!.Locator is not null && !definition.Source.IsRelative && definition.Source.LastAcceptedFileSha256 == Hash(definition.Source.Locator!)));
         var placedProject = owner.Document.Instances.Single(instance => instance.Name == "画布A"); var placedPrefab = owner.Document.Instances.Single(instance => instance.Name == "预制体A");
-        check("project background is preserved inside the imported definition closure", SceneEvaluation.Build(owner.Document).OccurrencesOfHostNode(placedProject.Id).Any(leaf => leaf.RenderElement.AssetId == asset) && owner.Assets.TryGet(asset, out _));
+        var projectLeaves = SceneEvaluation.Build(owner.Document).OccurrencesOfHostNode(placedProject.Id).ToArray();
+        check("project placement includes Main author content and ignores foreground background and canvas backdrops", projectLeaves.Length == 1 && projectLeaves.Single().RenderElement.Kind == ElementKind.Rectangle);
+        var importedProject = owner.Document.Definitions.Single(definition => definition.Id == placedProject.DefinitionId);
+        check("project canvas configuration and backdrop survive solely as independent preview metadata", importedProject.PreviewCanvas?.Canvas.BackgroundColor == 0xFF228866 &&
+            importedProject.PreviewCanvas.Background?.AssetId == asset && owner.Document.Canvas.BackgroundColor != 0xFF228866);
         check("nested prefab definitions are preserved and remapped", SceneEvaluation.Build(owner.Document).OccurrencesOfHostNode(placedPrefab.Id).Single().RenderElement.Kind == ElementKind.Ellipse && owner.Document.Definitions.Count == 3);
         check("project roots are centered at their requested plane drop positions", Near(owner.NodeBounds(placedProject.Id)!.Value.Center, new(400, 300)) && Near(owner.NodeBounds(placedPrefab.Id)!.Value.Center, new(440, 340)));
         check("image opacity and authored document settings retain their own contracts", owner.Document.Elements.Where(element => prepared.SelectedIds.Contains(element.Id)).All(element => element.Style.Opacity == .65) && owner.Document.LayerOpacity == .8 && owner.Document.NextNumber == 9);
@@ -96,7 +106,7 @@ internal static class CanvasContentImportTests
     private static async Task Legacy(string path)
     {
         var json = JsonSerializer.SerializeToNode(new SceneDocument())!.AsObject(); json["Version"] = 10;
-        json.Remove("ResourceId"); json.Remove("Definitions"); json.Remove("Instances");
+        json.Remove("ResourceId"); json.Remove("Definitions"); json.Remove("Instances"); json.Remove("RootCanvasAssignments"); json.Remove("RootPreviewCanvases");
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
         var manifest = new JsonObject { ["Format"] = "FloatCanvas.project", ["Version"] = 10, ["Payload"] = "scene.json", ["CreatedWith"] = "0.4.0-m3", ["LastSavedWith"] = "0.4.0-m3", ["Assets"] = new JsonArray() };
         using (var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open())) await writer.WriteAsync(manifest.ToJsonString());

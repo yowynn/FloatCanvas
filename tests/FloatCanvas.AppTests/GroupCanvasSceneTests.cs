@@ -1,13 +1,14 @@
 using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
+using FloatCanvas.Rendering;
 using SkiaSharp;
 
 internal static class GroupCanvasSceneTests
 {
     internal static void Run(Action<string, bool> check)
     {
-        OrdinaryGroups(check); SharedDrafts(check); ExternalDrafts(check); FullCanvasFrames(check);
+        OrdinaryGroups(check); SharedDrafts(check); ExternalDrafts(check); FullCanvasFrames(check); TemporaryRefreshPixels(check);
     }
 
     private static void OrdinaryGroups(Action<string, bool> check)
@@ -31,13 +32,17 @@ internal static class GroupCanvasSceneTests
         string before = JsonSerializer.Serialize(document); int undo = session.UndoCount, assets = session.Assets.Count;
         var isolated = cache.Capture(session, null, GroupCanvasMode.Temporary, origin, session.Assets);
         var wholeWorld = SceneEvaluation.Build(document); var isolatedWorld = SceneEvaluation.Build(isolated.Document);
-        check("temporary group canvas contains only its subtree and placement ancestors", isolated.IsProjected && !isolated.IsRootPreview &&
-            isolated.Document.Elements.Count == 2 && isolated.Document.Groups.Count == 2 && isolated.Document.Elements.All(element => element.GroupId == group.Id) &&
+        check("independent group canvas exposes its own local subtree without scope or placement ancestors", isolated.IsProjected && !isolated.IsRootPreview &&
+            isolated.Document.Elements.Count == 2 && isolated.Document.Groups.Count == 0 && isolated.Document.Elements.All(element => element.GroupId is null) &&
             isolatedWorld.Leaves.Select(leaf => leaf.Source).SequenceEqual(wholeWorld.OccurrencesOfHostNode(group.Id).Select(leaf => leaf.Source)));
-        check("temporary group canvas keeps flat geometry and billboard elevation in the owner's coordinates", isolatedWorld.Leaves.All(leaf =>
-            JsonSerializer.Serialize(leaf.RenderElement) == JsonSerializer.Serialize(wholeWorld.FindElement(leaf.RuntimeElementId))) && isolated.Origin == origin);
-        check("temporary group canvas copies canvas settings without the root background layer", isolated.Document.Background is null && isolated.Document.Kind == document.Kind &&
-            isolated.Document.Canvas.Grid.FlatTranslation == document.Canvas.Grid.FlatTranslation && !ReferenceEquals(isolated.Document.Canvas, document.Canvas) && isolated.Document.Viewport == document.Viewport);
+        check("independent group canvas strips host placement while source editing mapping reconstructs local geometry", isolated.EditingPlacement is { } local && isolatedWorld.Leaves.All(leaf =>
+        {
+            var placed = wholeWorld.FindElement(leaf.RuntimeElementId)!.Clone(); SceneGraph.ApplyPlacement(placed, local);
+            return new[] { default(PointD), new PointD(20, 10) }.All(point => placed.Transform.TransformPoint(point).DistanceTo(leaf.RenderElement.Transform.TransformPoint(point)) < 1e-7) &&
+                placed.BillboardAnchor.DistanceTo(leaf.RenderElement.BillboardAnchor) < 1e-7 && Math.Abs(placed.BillboardHeight - leaf.RenderElement.BillboardHeight) < 1e-7;
+        }) && isolated.Origin == origin);
+        check("independent group defaults are neutral and never inherit the host canvas or background", isolated.Document.Background is null && isolated.Document.Kind == document.Kind &&
+            isolated.Document.Canvas.Grid.FlatTranslation == default && isolated.Document.Canvas.BackgroundColor == 0 && isolated.Document.Viewport == document.Viewport);
         check("temporary canvas capture leaves authored content assets history and edit scope unchanged", JsonSerializer.Serialize(document) == before && session.UndoCount == undo &&
             session.Assets.Count == assets && session.EditScopeId == group.Id);
         var unchanged = cache.Capture(session, null, GroupCanvasMode.Temporary, origin, session.Assets);
@@ -64,8 +69,8 @@ internal static class GroupCanvasSceneTests
         session.Document.Canvas.Projection.Enabled = true; session.NotifyChanged();
         var perspective = cache.Capture(session, null, GroupCanvasMode.Temporary, origin, session.Assets);
         var mapping = CanvasMapping.Create(session.Document); var isolatedMapping = CanvasMapping.Create(perspective.Document);
-        check("temporary canvas retains perspective projection for plane and billboard screen geometry", SceneEvaluation.Build(perspective.Document).Leaves.All(leaf =>
-            mapping.ElementToScreen(leaf.RenderElement) == isolatedMapping.ElementToScreen(leaf.RenderElement)));
+        check("host perspective changes do not alter an independent group's neutral projection", mapping.IsPerspective && !isolatedMapping.IsPerspective &&
+            perspective.Document.Canvas.Grid.FlatTranslation == default);
     }
 
     private static void SharedDrafts(Action<string, bool> check)
@@ -141,7 +146,98 @@ internal static class GroupCanvasSceneTests
             var freezer = new CanvasPreviewScene(); var frozen = freezer.Capture(view.Document, session.PreviewRevision, session.PreviewElementsRevision, session.TransactionId, -1, -1, false);
             return new() { Context = new(session, monitors, view.Origin, false, false, false, GroupEpoch: view.Epoch), SceneIdentity = view.Document,
                 Document = frozen, SourceDocument = view.IsRootPreview ? frozen : session.Document, FrozenEvaluation = freezer.EvaluationFor(frozen),
+                EditingEvaluation = view.EditingPlacement is null ? null : new FrozenSceneEvaluation(session.Document),
+                EditingPlacement = view.EditingPlacement, EditingRootCanvas = view.EditingRootCanvas, AuthorRootCanvas = session.ActiveRootCanvas, EditingScopeId = session.EditScopeId,
                 Resources = [], Outputs = [new(-800, 50, 1500, 950)], ContentRevision = session.PreviewRevision, Revision = session.SceneRevision };
+        }
+    }
+
+    private static void TemporaryRefreshPixels(Action<string, bool> check)
+    {
+        // Keep the actual temporary-view caller contract: SourceDocument is the live
+        // owning graph for picking, while Document/Evaluation are detached snapshots.
+        foreach (bool shared in new[] { true, false })
+        {
+            string kind = shared ? "shared definition" : "ordinary child";
+            var group = new CanvasGroup { OrderMode = GroupOrderMode.AtomicBlock };
+            var child = Box(0xffff2040, 40, 50); child.Width = 60; child.Height = 50;
+            var document = new SceneDocument { Viewport = new(0, 0, 320, 240), Groups = [group], RootOrder = [group.Id] };
+            PrefabDefinition? definition = null;
+            if (shared)
+            {
+                definition = new() { Name = "temporary shared", Graph = new() { Elements = [child], RootOrder = [child.Id] } };
+                var instance = new PrefabInstance { DefinitionId = definition.Id, ParentId = group.Id };
+                document.Definitions.Add(definition); document.Instances.Add(instance); group.ChildOrder = [instance.Id];
+            }
+            else
+            {
+                child.GroupId = group.Id; document.Elements.Add(child); group.ChildOrder = [child.Id];
+            }
+            document.Canvas.Grid.Visible = false;
+            var session = new EditorSession(document); session.SetEditScope(group.Id);
+            var scene = new GroupCanvasScene(); var freezer = new CanvasPreviewScene(); var monitors = new object();
+            using var renderer = new CanvasPreviewRenderer();
+            using var initial = Snapshot(); using var first = renderer.Render(initial); using var firstPixels = SmallPixels(first);
+            var initialLeaf = initial.FrozenEvaluation!.Scene.RenderDocument.Elements.Single();
+            var initialDefinitionRevision = definition?.Revision;
+            check($"temporary {kind} starts with nonempty colored pixels and live owner picking identity",
+                firstPixels.GetPixel(60, 70) == new SKColor(0xffff2040) && firstPixels.GetPixel(180, 70).Alpha == 0 &&
+                ReferenceEquals(first.PickingSourceDocument, session.Document));
+            session.BeginTransaction("temporary pixel refresh");
+            if (shared)
+            {
+                child.Style.Fill = 0xff22cc77; definition!.Revision = Guid.NewGuid();
+            }
+            else child.Transform = Affine2D.Translation(160, 50);
+            session.NotifyChanged();
+            using var changed = Snapshot(); using var next = renderer.Render(changed); using var nextPixels = SmallPixels(next);
+            using var direct = DirectPixels(changed.Document);
+            check($"temporary {kind} change freezes new content without mutating the published old snapshot",
+                initialLeaf.Transform.OffsetX == 40 && initialLeaf.Style.Fill == 0xffff2040 &&
+                initial.Document.Definitions.SingleOrDefault()?.Revision == initialDefinitionRevision &&
+                changed.FrozenEvaluation!.Scene.RenderDocument.Elements.Single().Style.Fill == child.Style.Fill &&
+                ReferenceEquals(initial.Context.GroupEpoch, changed.Context.GroupEpoch) && session.IsTransactionActive &&
+                changed.Revision == session.SceneRevision && changed.Transaction == session.TransactionId &&
+                changed.ContentRevision == session.PreviewRevision && changed.ContentRevision != initial.ContentRevision);
+            bool expectedChanged = shared ? nextPixels.GetPixel(60, 70) == new SKColor(0xff22cc77)
+                : nextPixels.GetPixel(60, 70).Alpha == 0 && nextPixels.GetPixel(180, 70) == new SKColor(0xffff2040);
+            check($"temporary {kind} edit refreshes the same worker pixels exactly like fresh direct rendering",
+                expectedChanged && !nextPixels.Bytes.SequenceEqual(firstPixels.Bytes) && nextPixels.Bytes.SequenceEqual(direct.Bytes));
+            if (!shared)
+            {
+                child.Style.Fill = 0xff22cc77; session.NotifyChanged();
+                using var recolored = Snapshot(); using var colorFrame = renderer.Render(recolored); using var colorPixels = SmallPixels(colorFrame);
+                using var colorDirect = DirectPixels(recolored.Document);
+                check("temporary ordinary child color edit refreshes after a prior geometry edit without replacing the worker",
+                    colorPixels.GetPixel(60, 70).Alpha == 0 && colorPixels.GetPixel(180, 70) == new SKColor(0xff22cc77) &&
+                    !colorPixels.Bytes.SequenceEqual(nextPixels.Bytes) && colorPixels.Bytes.SequenceEqual(colorDirect.Bytes) &&
+                    initialLeaf.Style.Fill == 0xffff2040 && ReferenceEquals(colorFrame.PickingSourceDocument, session.Document));
+            }
+
+            CanvasPreviewSnapshot Snapshot()
+            {
+                var view = scene.Capture(session, null, GroupCanvasMode.Temporary, default, session.Assets);
+                var frozen = freezer.Capture(view.Document, session.PreviewRevision, session.PreviewElementsRevision,
+                    session.TransactionId, -1, -1, false);
+                return new() { Context = new(session, monitors, view.Origin, false, false, false,
+                        DocumentEpoch: session.Document, GroupEpoch: view.Epoch),
+                    SceneIdentity = view.Document, Document = frozen, SourceDocument = session.Document,
+                    FrozenEvaluation = freezer.EvaluationFor(frozen), Resources = [], Outputs = [new(0, 0, 320, 240)],
+                    Revision = session.SceneRevision, Transaction = session.TransactionId, ContentRevision = session.PreviewRevision,
+                    GraphChanged = freezer.GraphChanged, PreferGpu = false };
+            }
+        }
+
+        static SKBitmap SmallPixels(CanvasPreviewFrame frame)
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(320, 240)); surface.Canvas.Clear(SKColors.Transparent);
+            frame.Pixels.Draw(surface.Canvas); using var image = surface.Snapshot(); return SKBitmap.FromImage(image);
+        }
+        static SKBitmap DirectPixels(SceneDocument frozen)
+        {
+            using var renderer = new SceneRenderer(); using var surface = SKSurface.Create(new SKImageInfo(320, 240));
+            surface.Canvas.Clear(SKColors.Transparent); renderer.Draw(surface.Canvas, SceneEvaluation.Build(frozen).RenderDocument, new AssetLibrary());
+            using var image = surface.Snapshot(); return SKBitmap.FromImage(image);
         }
     }
 

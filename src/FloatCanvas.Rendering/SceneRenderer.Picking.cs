@@ -37,7 +37,7 @@ public sealed partial class SceneRenderer
             var canvas = surface.Canvas;
             canvas.RestoreToCount(1); canvas.ResetMatrix(); canvas.Clear(SKColors.Transparent);
             canvas.Save(); canvas.Translate((float)-left, (float)-top); canvas.ClipRect(ToRect(bounds));
-            DrawElement(canvas, element, assets, MappingFor(document).PlaneToScreen, document);
+            DrawElement(canvas, element, assets, ElementMapping(document, element).PlaneToScreen, document);
             using var pixels = surface.PeekPixels();
             var bytes = pixels.GetPixelSpan();
             for (int y = 0; y < height; y++)
@@ -49,7 +49,7 @@ public sealed partial class SceneRenderer
 
     /// <summary>Spatial picking with the same element transforms and plane ink as screen composition.</summary>
     public CanvasElement? PickDepth(SceneDocument document, AssetLibrary assets, PointD point, double tolerance = 4,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, RootCanvasKind? rootCanvas = null)
     {
         document = WorldDocument(document);
         if (!(document.LayerOpacity > 0)) return null;
@@ -72,38 +72,42 @@ public sealed partial class SceneRenderer
                 return pixels.GetPixelColor(0, 0).Alpha;
             }
             byte? groundAlpha = null;
+            byte GroundAlpha() => groundAlpha ??= Sample(canvas =>
+            {
+                int saved = canvas.Save();
+                try
+                {
+                    canvas.ClipRect(ToRect(document.Viewport));
+                    DrawPlaneColor(canvas, document, document.Background is not { Visible: true });
+                    DrawGrid(canvas, document);
+                }
+                finally { canvas.RestoreToCount(saved); }
+            });
             foreach (int index in CanvasDepthOrder.BackToFrontAt(document, mapping, point).Reverse())
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var item = document.Elements[index];
+                var root = RootOf(document, item);
+                if (rootCanvas is { } activeRoot && root != activeRoot) continue;
+                if (rootCanvas is null && root == RootCanvasKind.Background && planeSafe && GroundAlpha() == 255) return null;
+                var itemMapping = root == RootCanvasKind.Main ? mapping : ElementMapping(document, item);
                 if (!item.Visible || item.Style.Opacity <= 0) continue;
-                if (!item.IsBillboard && !planeSafe) continue;
-                if (item.IsBillboard && !mapping.IsElementSafe(item)) continue;
+                if (root == RootCanvasKind.Main && !item.IsBillboard && !planeSafe) continue;
+                if (item.IsBillboard && !itemMapping.IsElementSafe(item)) continue;
                 double depth = planeDepth;
-                if (item.IsBillboard && !CanvasDepthOrder.TryAnchorDepth(mapping, item.BillboardAnchor, out depth)) continue;
-                if (CanvasDepthOrder.IsEnabled(document) && planeSafe && depth > planeDepth)
+                if (item.IsBillboard && !CanvasDepthOrder.TryAnchorDepth(itemMapping, item.BillboardAnchor, out depth)) continue;
+                if (root == RootCanvasKind.Main && CanvasDepthOrder.IsEnabled(document) && planeSafe && depth > planeDepth)
                 {
                     // Ground is the lowest plane ink. Crossing its depth in this front-to-back
                     // walk must stop at opaque ground even when every nearer object missed.
-                    groundAlpha ??= Sample(canvas =>
-                    {
-                        int saved = canvas.Save();
-                        try
-                        {
-                            canvas.ClipRect(ToRect(document.Viewport));
-                            DrawPlaneColor(canvas, document, document.Background is not { Visible: true });
-                            DrawGrid(canvas, document);
-                        }
-                        finally { canvas.RestoreToCount(saved); }
-                    });
-                    if (groundAlpha == 255) return null;
+                    if (GroundAlpha() == 255) return null;
                 }
-                bool hit = ElementGeometry.HitTestProjected(item, point, mapping.PlaneToScreen, tolerance);
+                bool hit = ElementGeometry.HitTestProjected(item, point, itemMapping.PlaneToScreen, tolerance);
                 if (!hit) continue;
                 byte alpha = ElementGeometry.IsLiveEffect(item.Kind)
-                    ? ElementGeometry.HitTestProjected(item, point, mapping.PlaneToScreen, 0)
+                    ? ElementGeometry.HitTestProjected(item, point, itemMapping.PlaneToScreen, 0)
                         ? Alpha(item.Style.Opacity) : (byte)0
-                    : Sample(canvas => DrawElement(canvas, item, assets, mapping.PlaneToScreen, document));
+                    : Sample(canvas => DrawElement(canvas, item, assets, itemMapping.PlaneToScreen, document));
                 // A presentation's empty authored region is an editing target. Its
                 // locked region is not imaginary opaque ink covering lower objects.
                 bool ink = item.Kind == ElementKind.Presentation || alpha > 0 || tolerance > 0 && IntersectsElementInkCore(document, assets, item,

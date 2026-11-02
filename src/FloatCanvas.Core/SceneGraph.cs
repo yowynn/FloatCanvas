@@ -150,14 +150,18 @@ public sealed class SceneGraph
         ? groups[id].ChildOrder ?? throw InvalidGraph()
         : (IReadOnlyList<Guid>?)document.RootOrder ?? document.Elements.Select(element => element.Id).ToArray();
 
-    public CanvasElement InsertElement(CanvasElement element, Guid? parentId = null, int index = -1, bool worldCoordinates = true)
+    public CanvasElement InsertElement(CanvasElement element, Guid? parentId = null, int index = -1, bool worldCoordinates = true, RootCanvasKind rootCanvas = RootCanvasKind.Main)
     {
+        _ = SceneCanvasRoots.PaintRank(rootCanvas);
         RequireParent(parentId); RequireNewId(element.Id); MaterializeOrder();
         var inserted = worldCoordinates ? ToLocal(element, parentId) : element.Clone(); inserted.GroupId = parentId;
-        document.Elements.Add(inserted); InsertTokens(MutableOrder(PaintContextForParent(parentId)), [inserted.Id], index); Refresh(); return inserted;
+        document.Elements.Add(inserted); InsertTokens(MutableOrder(PaintContextForParent(parentId)), [inserted.Id], index); Refresh();
+        if (document is SceneDocument scene && parentId is null) SceneCanvasRoots.Assign(scene, inserted.Id, rootCanvas, this);
+        return inserted;
     }
-    public CanvasGroup InsertGroup(CanvasGroup group, Guid? parentId = null, int index = -1, bool worldCoordinates = false)
+    public CanvasGroup InsertGroup(CanvasGroup group, Guid? parentId = null, int index = -1, bool worldCoordinates = false, RootCanvasKind rootCanvas = RootCanvasKind.Main)
     {
+        _ = SceneCanvasRoots.PaintRank(rootCanvas);
         RequireParent(parentId); RequireNewId(group.Id); MaterializeOrder();
         var inserted = group.Clone(); inserted.ParentId = parentId;
         if (inserted.OrderMode != GroupOrderMode.AtomicBlock || inserted.ChildOrder is { Count: > 0 }) throw InvalidGraph();
@@ -167,10 +171,13 @@ public sealed class SceneGraph
             var local = ScopeWorldPlacement(parentId).Inverse().Compose(new(inserted.Transform, inserted.ElevationScale));
             inserted.Transform = local.PlaneTransform; inserted.ElevationScale = local.ElevationScale;
         }
-        document.Groups.Add(inserted); InsertTokens(MutableOrder(PaintContextForParent(parentId)), [inserted.Id], index); Refresh(); return inserted;
+        document.Groups.Add(inserted); InsertTokens(MutableOrder(PaintContextForParent(parentId)), [inserted.Id], index); Refresh();
+        if (document is SceneDocument scene && parentId is null) SceneCanvasRoots.Assign(scene, inserted.Id, rootCanvas, this);
+        return inserted;
     }
-    public PrefabInstance InsertInstance(PrefabInstance instance, Guid? parentId = null, int index = -1, bool worldCoordinates = true)
+    public PrefabInstance InsertInstance(PrefabInstance instance, Guid? parentId = null, int index = -1, bool worldCoordinates = true, RootCanvasKind rootCanvas = RootCanvasKind.Main)
     {
+        _ = SceneCanvasRoots.PaintRank(rootCanvas);
         RequireParent(parentId); RequireNewId(instance.Id); MaterializeOrder();
         var inserted = instance.Clone(); inserted.ParentId = parentId;
         if (worldCoordinates)
@@ -178,7 +185,9 @@ public sealed class SceneGraph
             var local = ScopeWorldPlacement(parentId).Inverse().Compose(new(inserted.Transform, inserted.ElevationScale));
             inserted.Transform = local.PlaneTransform; inserted.ElevationScale = local.ElevationScale;
         }
-        document.Instances.Add(inserted); InsertTokens(MutableOrder(PaintContextForParent(parentId)), [inserted.Id], index); Refresh(); return inserted;
+        document.Instances.Add(inserted); InsertTokens(MutableOrder(PaintContextForParent(parentId)), [inserted.Id], index); Refresh();
+        if (document is SceneDocument scene && parentId is null) SceneCanvasRoots.Assign(scene, inserted.Id, rootCanvas, this);
+        return inserted;
     }
     /// <summary>Moves complete ownership subtrees. Moving a legacy interleaved group explicitly gathers its paint slots.</summary>
     public void ReparentPreservingWorld(IEnumerable<Guid> nodeIds, Guid? parentId, int index = -1)
@@ -186,6 +195,8 @@ public sealed class SceneGraph
         RequireParent(parentId);
         var selected = NormalizeSelection(nodeIds);
         if (selected.Count == 0) return;
+        var sourceRoots = document is SceneDocument sourceDocument
+            ? selected.ToDictionary(id => id, id => SceneCanvasRoots.Resolve(sourceDocument, id, this)) : null;
         if (parentId is { } parent && selected.Any(id => id == parent || IsAncestor(id, parent))) throw InvalidGraph();
         var changes = selected.ToDictionary(id => id, id => ScopeWorldPlacement(parentId).Inverse().Compose(ParentWorldPlacement(id)));
         var tokens = SelectedPaintTokens(selected);
@@ -205,6 +216,13 @@ public sealed class SceneGraph
             else { ApplyPlacement(elements[id], changes[id]); elements[id].GroupId = parentId; }
         }
         InsertTokens(MutableOrder(PaintContextForParent(parentId)), tokens, index); Refresh();
+        if (document is SceneDocument scene)
+        {
+            foreach (var id in selected)
+                if (parentId is null) SceneCanvasRoots.Assign(scene, id, sourceRoots![id], this);
+                else scene.RootCanvasAssignments.Remove(id);
+            SceneCanvasRoots.Prune(scene);
+        }
     }
     public void RemoveNodes(IEnumerable<Guid> nodeIds)
     {
@@ -215,6 +233,7 @@ public sealed class SceneGraph
         RemoveTokens(removed);
         document.Elements.RemoveAll(element => removed.Contains(element.Id)); document.Groups.RemoveAll(group => removed.Contains(group.Id));
         document.Instances.RemoveAll(instance => removed.Contains(instance.Id)); Refresh();
+        if (document is SceneDocument scene) SceneCanvasRoots.Prune(scene);
     }
     public void CollectLegacyGroup(Guid groupId)
     {

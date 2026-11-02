@@ -52,6 +52,36 @@ public sealed class PresentationFrame
     public IReadOnlyList<PresentationTrailSample> Trail { get; }
     public bool KeyboardSuppressed { get; }
     public long PayloadBytes { get; }
+    private readonly PresentationFrame? outsideFloatCanvas, floatCanvasOnly;
+
+    /// <summary>Combine three independently captured keyboard histories with one shared pointer snapshot.</summary>
+    public static PresentationFrame WithKeyboardScopes(PresentationFrame allApplications,
+        PresentationFrame outsideFloatCanvas, PresentationFrame floatCanvasOnly)
+    {
+        ArgumentNullException.ThrowIfNull(allApplications); ArgumentNullException.ThrowIfNull(outsideFloatCanvas); ArgumentNullException.ThrowIfNull(floatCanvasOnly);
+        if (new[] { allApplications, outsideFloatCanvas, floatCanvasOnly }.Any(frame => frame.outsideFloatCanvas is not null ||
+            frame.Epoch != allApplications.Epoch || frame.Sequence != allApplications.Sequence || frame.Time != allApplications.Time ||
+            frame.KeyboardSuppressed != allApplications.KeyboardSuppressed)) throw new ArgumentException("Inconsistent presentation keyboard snapshots.");
+        return new(allApplications, outsideFloatCanvas, floatCanvasOnly);
+    }
+
+    private PresentationFrame(PresentationFrame all, PresentationFrame outside, PresentationFrame inside)
+    {
+        Epoch = all.Epoch; Sequence = all.Sequence; Time = all.Time; CursorScreen = all.CursorScreen;
+        KeyboardSuppressed = all.KeyboardSuppressed; PressedKeys = all.PressedKeys; RecentChords = all.RecentChords;
+        Clicks = all.Clicks; Trail = all.Trail; outsideFloatCanvas = outside; floatCanvasOnly = inside;
+        PayloadBytes = all.PayloadBytes + outside.PayloadBytes + inside.PayloadBytes;
+        if (PayloadBytes > PresentationLimits.MaximumScopedFramePayloadBytes) throw new ArgumentException("Presentation scoped frame capacity exceeded.");
+    }
+
+    /// <summary>Restricted layers never reuse an unclassified all-application history.</summary>
+    public PresentationFrame ForKeyboardScope(PresentationKeyboardScope scope) => scope switch
+    {
+        PresentationKeyboardScope.AllApplications => this,
+        PresentationKeyboardScope.OutsideFloatCanvas => outsideFloatCanvas ?? Empty,
+        PresentationKeyboardScope.FloatCanvasOnly => floatCanvasOnly ?? Empty,
+        _ => throw new ArgumentOutOfRangeException(nameof(scope))
+    };
     internal static T[] Freeze<T>(IEnumerable<T>? source, int maximum)
     {
         var result = source?.Take(maximum + 1).ToArray() ?? [];

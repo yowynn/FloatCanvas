@@ -42,7 +42,7 @@ internal sealed class WindowSourceCropWindow : Window
     private readonly Canvas overlay = new() { Background = Brushes.Transparent, ClipToBounds = true };
     private readonly System.Windows.Shapes.Rectangle selection = new() { StrokeThickness = 2, IsHitTestVisible = false };
     private readonly BitmapImage bitmap;
-    private readonly Button apply = new() { Content = L.Get("WindowSource.ApplyCrop"), IsDefault = true, MinHeight = 30, MinWidth = 96 };
+    private readonly Button apply = new() { Content = L.Get("WindowSource.ApplyCrop"), IsDefault = true, MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 96 };
     private PointD? dragStart;
     private RectD crop;
     internal bool Accepted { get; private set; }
@@ -67,9 +67,11 @@ internal sealed class WindowSourceCropWindow : Window
         var hint = new TextBlock { Text = L.Get("WindowSource.CropHint"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) };
         DockPanel.SetDock(hint, Dock.Top); body.Children.Add(hint);
         var buttons = new StackPanel { Margin = new(0, 10, 0, 0) };
-        var reset = new Button { Content = L.Get("WindowSource.ResetCrop"), MinHeight = 30, HorizontalAlignment = HorizontalAlignment.Left, Padding = new(8, 4, 8, 4) };
-        var cancel = new Button { Content = L.Get("Dialog.Cancel"), IsCancel = true, MinHeight = 30, MinWidth = 70, Margin = new(8, 0, 8, 0) };
-        buttons.Children.Add(reset); buttons.Children.Add(PropertyPanelLayout.Pair(cancel, apply));
+        var reset = new Button { Content = L.Get("WindowSource.ResetCrop"), MinHeight = PropertyPanelLayout.ControlHeight,
+            HorizontalAlignment = HorizontalAlignment.Left, Margin = new(0, 0, 0, 6), Padding = new(8, 4, 8, 4) };
+        var cancel = new Button { Content = L.Get("Dialog.Cancel"), IsCancel = true, MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 96, Margin = new(0, 0, 8, 0) };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; actions.Children.Add(cancel); actions.Children.Add(apply);
+        buttons.Children.Add(reset); buttons.Children.Add(actions);
         DockPanel.SetDock(buttons, Dock.Bottom); body.Children.Add(buttons);
         image.Source = bitmap; var preview = new Grid { ClipToBounds = true }; preview.SetResourceReference(Panel.BackgroundProperty, "CanvasButton");
         preview.Children.Add(image); preview.Children.Add(overlay); overlay.Children.Add(selection); body.Children.Add(preview); Content = body;

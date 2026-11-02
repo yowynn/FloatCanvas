@@ -30,6 +30,10 @@ internal sealed class CanvasPreviewSnapshot : IDisposable
     internal FrozenSceneEvaluation? FrozenEvaluation { get; init; }
     internal FrozenSceneEvaluation? EditingEvaluation { get; init; }
     internal LayerPlacement? EditingPlacement { get; init; }
+    internal RootCanvasKind EditingRootCanvas { get; init; } = RootCanvasKind.Main;
+    internal RootCanvasKind? AuthorRootCanvas { get; init; }
+    internal Guid? EditingScopeId { get; init; }
+    internal bool IndependentCanvas { get; init; }
     internal TransientScreenElement? ScreenDraft { get; init; }
     internal Guid? ScreenDraftScopeId { get; init; }
     internal PresentationFrame? PresentationFrame { get; init; }
@@ -178,7 +182,7 @@ internal sealed class CanvasPreviewRenderer : IDisposable
             var animation = renderer.CaptureAnimationSchedule(document, assets, snapshot.AnimationTime);
             var editing = snapshot.EditingEvaluation?.Scene;
             var picking = editing is not null && snapshot.EditingPlacement is { } placement
-                ? EditingDocument(editing, document, placement) : snapshot.Document;
+                ? EditingDocument(editing, document, placement, snapshot.EditingRootCanvas, snapshot.AuthorRootCanvas, snapshot.EditingScopeId, snapshot.IndependentCanvas) : snapshot.Document;
             return new(snapshot.Context, pixels, targets.Backend, gpuWorkload,
                 targets.GpuDetails, targets.GpuFailure, timer.Elapsed.TotalMilliseconds,
                 new(cache.BuildCount, cache.HitCount, cache.CachedRasterBytes, cache.RasterCacheByteLimit, cache.InPlaceOpacityFrameCount,
@@ -201,16 +205,22 @@ internal sealed class CanvasPreviewRenderer : IDisposable
         finally { renderer.LiveBackdrop = null; renderer.PresentationFrame = null; renderer.WindowFrames = null; renderer.WindowOwnerContext = null; }
     }
 
-    private static SceneDocument EditingDocument(EvaluatedScene editing, SceneDocument display, LayerPlacement placement)
+    internal static SceneDocument EditingDocument(EvaluatedScene editing, SceneDocument display, LayerPlacement placement,
+        RootCanvasKind rootCanvas = RootCanvasKind.Main, RootCanvasKind? authorRootCanvas = null, Guid? scopeId = null, bool independent = false)
     {
         var source = editing.RenderDocument;
+        var visible = independent ? SceneEvaluation.Build(display).Leaves.ToDictionary(leaf => leaf.RuntimeElementId, leaf => leaf.RenderElement.Visible) : null;
         return new()
         {
             ResourceId = source.ResourceId, Kind = source.Kind, Viewport = display.Viewport,
-            Canvas = display.Canvas.Clone(), LayerOpacity = source.LayerOpacity,
-            Elements = source.Elements.Select(element =>
+            Canvas = rootCanvas == RootCanvasKind.Main ? display.Canvas.Clone() : new(), LayerOpacity = source.LayerOpacity,
+            Elements = source.Elements.Where(element => authorRootCanvas is null || editing.RootCanvasOf(element.Id) == authorRootCanvas &&
+                editing.ResolveSelectableNode(element.Id, scopeId) is not null).Select(element =>
             {
-                var result = element.Clone(); SceneGraph.ApplyPlacement(result, placement); return result;
+                var result = element.Clone(); SceneGraph.ApplyPlacement(result, placement);
+                if (visible is not null) result.Visible = visible.GetValueOrDefault(element.Id);
+                result.Locked = !editing.IsPickableOccurrence(element.Id, visibleOverride: true);
+                return result;
             }).ToList()
         };
     }
@@ -239,14 +249,16 @@ internal sealed class CanvasPreviewRenderer : IDisposable
             {
                 var raw = screenDraft.ScreenElement.Clone(); raw.Visible &= visible;
                 var candidate = screenDraft.ResolvedWorldElement?.Clone(); if (candidate is not null) candidate.Visible &= visible;
-                screenDraft = new(raw, insertionIndex, candidate);
+                screenDraft = new(raw, insertionIndex, candidate, screenDraft.RootCanvas);
             }
         }
         return new()
         {
             Context = source.Context, SceneIdentity = source.SceneIdentity, Document = evaluation.RenderDocument,
             SourceDocument = source.SourceDocument ?? source.Document, Evaluation = evaluation, FrozenEvaluation = frozen,
-            EditingEvaluation = source.EditingEvaluation, EditingPlacement = source.EditingPlacement,
+            EditingEvaluation = source.EditingEvaluation, EditingPlacement = source.EditingPlacement, EditingRootCanvas = source.EditingRootCanvas,
+            AuthorRootCanvas = source.AuthorRootCanvas, EditingScopeId = source.EditingScopeId,
+            IndependentCanvas = source.IndependentCanvas,
             ScreenDraft = screenDraft, ScreenDraftScopeId = source.ScreenDraftScopeId,
             PresentationFrame = source.PresentationFrame, PresentationOrigin = source.PresentationOrigin,
             PresentationPlanIdentity = source.PresentationPlanIdentity,

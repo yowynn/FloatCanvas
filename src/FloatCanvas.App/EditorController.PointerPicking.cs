@@ -98,6 +98,7 @@ internal sealed partial class EditorController
             {
                 var (input, properties) = _pendingPointerEvents[0]; _pendingPointerEvents.RemoveAt(0);
                 var session = Session; long revision = session.PreviewRevision;
+                long scopeVersion = session.EditScopeVersion; var rootCanvas = PickingRootCanvas;
                 var selection = session.Selection.ToArray(); var selectedTool = Tool;
                 var origin = CanvasOrigin;
                 if (PointerNeedsPicking(input))
@@ -112,11 +113,11 @@ internal sealed partial class EditorController
                     _pointPreflight = await Task.Run(async () =>
                     {
                         await pickingWorker.WaitAsync(token).ConfigureAwait(false);
-                        try { return PreflightPoint(document, resources, images, time, point, token, windowFrames, windowOwnerContext); }
+                        try { return PreflightPoint(document, resources, images, time, point, token, windowFrames, windowOwnerContext, rootCanvas); }
                         finally { pickingWorker.Release(); }
                     }, token);
                     if (token.IsCancellationRequested) break;
-                    if (!ReferenceEquals(session, Session) || session.PreviewRevision != revision || CanvasOrigin != origin ||
+                    if (!ReferenceEquals(session, Session) || session.PreviewRevision != revision || session.EditScopeVersion != scopeVersion || CanvasOrigin != origin ||
                         Tool != selectedTool || !session.Selection.SetEquals(selection))
                     { AbortPointerPicking(); Message?.Invoke(L.Get("Editor.PickingCancelled")); break; }
                 }
@@ -144,7 +145,7 @@ internal sealed partial class EditorController
     }
 
     private static PointPreflight PreflightPoint(SceneDocument document, AssetResource[] resources, SceneImageSnapshot? images,
-        TimeSpan time, PointD point, CancellationToken token, WindowFrameSet? windowFrames = null, object? windowOwnerContext = null)
+        TimeSpan time, PointD point, CancellationToken token, WindowFrameSet? windowFrames = null, object? windowOwnerContext = null, RootCanvasKind rootCanvas = RootCanvasKind.Main)
     {
         var assets = new AssetLibrary(); foreach (var resource in resources) assets.Add(resource);
         using var renderer = new SceneRenderer { AnimationTime = time, PresentedImages = images,
@@ -153,12 +154,13 @@ internal sealed partial class EditorController
         foreach (double tolerance in new double[] { 4, 7, 10 })
         {
             token.ThrowIfCancellationRequested();
-            if (CanvasDepthOrder.IsEnabled(document)) hits[tolerance] = renderer.PickDepth(document, assets, point, tolerance, token)?.Id;
+            if (CanvasDepthOrder.IsEnabled(document)) hits[tolerance] = renderer.PickDepth(document, assets, point, tolerance, token, rootCanvas)?.Id;
             else
             {
                 Guid? top = null;
                 foreach (var element in document.Elements)
                 {
+                    if (SceneCanvasRoots.Resolve(document, element.Id) != rootCanvas) continue;
                     token.ThrowIfCancellationRequested();
                     bool hit = IsShownInkSelectable(document, element) && ElementHitTestScreenCore(document, assets, renderer, element, point, tolerance, token);
                     ink[(element.Id, tolerance)] = hit;

@@ -50,6 +50,7 @@ internal sealed class PreparedCanvasContentBatch
             foreach (var resource in resources) target.Assets.Add(resource);
             live.Elements = document.Elements; live.Groups = document.Groups; live.Instances = document.Instances;
             live.Definitions = document.Definitions; live.RootOrder = document.RootOrder;
+            live.RootCanvasAssignments = new(document.RootCanvasAssignments);
             target.Selection.Clear(); target.Selection.UnionWith(selectedIds);
         });
         consumed = true; return true;
@@ -74,7 +75,8 @@ internal static class CanvasContentImport
             dropCenter is { } point && (!double.IsFinite(point.X) || !double.IsFinite(point.Y))) throw new ArgumentOutOfRangeException(nameof(placement));
         var original = target.Document; var snapshot = original.Clone(); var assets = target.Assets.Resources.ToArray();
         long revision = target.SceneRevision, contentVersion = target.ContentVersion, scopeVersion = target.EditScopeVersion, transactionId = target.TransactionId;
-        Guid? scope = target.EditScopeId; var pathSnapshot = paths.Select(Path.GetFullPath).ToArray(); var extras = extraImages.ToArray();
+        Guid? scope = target.EditScopeId; var rootCanvas = target.ActiveRootCanvas;
+        var pathSnapshot = paths.Select(Path.GetFullPath).ToArray(); var extras = extraImages.ToArray();
         return Task.Run(async () =>
         {
             token.ThrowIfCancellationRequested(); long fileBytes = extras.Sum(image => (long)image.PngBytes.Length);
@@ -86,7 +88,8 @@ internal static class CanvasContentImport
                 fileBytes += length;
             }
             var library = new AssetLibrary(); foreach (var resource in assets) library.Add(resource);
-            var staging = new EditorSession(snapshot, library, historyLimit: 0, historyByteLimit: 0); staging.SetEditScope(scope);
+            var staging = new EditorSession(snapshot, library, historyLimit: 0, historyByteLimit: 0);
+            staging.SetRootCanvas(rootCanvas); staging.SetEditScope(scope);
             var resolver = new PrefabLinkResolver(); var selected = new List<Guid>();
             int imageCount = 0, projectCount = 0, index = 0; long imageBytes = 0, imagePixels = 0;
             var center = dropCenter ?? placement.Center;

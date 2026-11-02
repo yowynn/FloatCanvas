@@ -30,7 +30,7 @@ internal sealed class PresentationInputTap
         uint physicalFlags = (flags & 1) != 0 ? 2u : 0u;
         return buffer.Add(new(up ? PresentationObservedKind.KeyUp : PresentationObservedKind.KeyDown,
             now, Device: 0, VirtualKey: key, ScanCode: (int)scan, KeyFlags: physicalFlags,
-            KeyLabel: Label(key, (int)scan, physicalFlags))) ? Generation : 0;
+            KeyLabel: Label(key, (int)scan, physicalFlags), InputOwner: PresentationInputOwner.FloatCanvas)) ? Generation : 0;
     }
     internal uint Pointer(uint message, int x, int y, long now, bool active)
     {

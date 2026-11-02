@@ -18,7 +18,7 @@ internal sealed partial class DesktopSession
     private LayersWindow? _shownPrefabLayers;
     private long _shownPrefabOwnerRevision = -1;
     private readonly HashSet<string> _prefabPendingSources = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<(EditorSession Owner, Guid Definition), string> _prefabLinkStates = [];
+    private readonly Dictionary<(EditorSession Owner, Guid Definition), (PrefabLinkStatusBinding Binding, string Message)> _prefabLinkStates = [];
     private readonly Dictionary<EditorSession, long> _prefabBackgroundChecks = [];
     private bool _drainingPrefabSources;
     private bool HasPrefabEditContext => _prefabEditContext is not null;
@@ -42,7 +42,9 @@ internal sealed partial class DesktopSession
         if (_prefabResources is null)
         {
             _prefabResources = new(() => Active, () => !DocumentOperationBusy && _host.IsVisible && !Active.IsReadOnly,
-                (owner, id) => _prefabLinkStates.GetValueOrDefault((owner, id))) { Execute = ExecutePrefabResourceAsync };
+                (owner, definition) => _prefabLinkStates.TryGetValue((owner, definition.Id), out var state) &&
+                    state.Binding.Matches(definition.Source) ? state.Message : null)
+                { Execute = ExecutePrefabResourceAsync };
             ConfigureAppWindow(_prefabResources); _windowCoordinator?.Register(_prefabResources, () => true);
             _prefabResources.CommandKey += OnKey;
         }
@@ -108,11 +110,10 @@ internal sealed partial class DesktopSession
     private void SwitchPrefabContext(EditorSession session)
     {
         ++_prefabRequest;
-        _groupCanvasMode = GroupCanvasMode.Temporary;
         _changingPrefabContext = true;
         try { EndCanvasCalibration(hidePanel: true); _canvasOriginDocument = session.Document; _editor.ReplaceSession(session, _editor.ScreenOrigin); SwitchToolState(EditorTool.Select); }
         finally { _changingPrefabContext = false; }
-        EnsurePrefabLayersVisible(); RefreshPrefabWindows(); ScheduleRecovery(); RequestRender();
+        EnsurePrefabLayersVisible(); OnEditorChanged(); RefreshPrefabWindows();
     }
     private void EnsurePrefabLayersVisible()
     {
@@ -159,19 +160,25 @@ internal sealed partial class DesktopSession
         if (answer == MessageBoxResult.Yes) return await CompleteCurrentPrefabAsync();
         ReturnFromPrefabContext(context); return true;
     }
-    private async Task<bool> CompleteCurrentPrefabAsync()
+    private Task<bool> CompleteCurrentPrefabAsync() => CompleteCurrentPrefabWithCopyPathAsync(null);
+    private async Task<bool> CompleteCurrentPrefabWithCopyPathAsync(Func<string?>? chooseCopyPath)
     {
         if (_prefabEditContext is not { } context) return true;
         _inspector?.CompletePendingEdit(); FinishInlineText(); _editor.Cancel();
         if (context.IsOfflineSnapshot) { ReturnFromPrefabContext(context); return true; }
         if (context.IsSource)
         {
-            if (!await SavePrefabSourceAsync(context, saveAs: false)) return false;
-            QueueWindowSourceHandoff(CaptureWindowSourceHandoff(context));
-            ReturnFromPrefabContext(context);
-            try { await RefreshPrefabLinkAsync(context.DefinitionId, context.SourcePath); }
-            catch { UpdateStatus(L.Get("Prefab.SourceSavedRefreshPending")); throw; }
-            return true;
+            bool previousBusy = _documentBusy; _documentBusy = true;
+            try
+            {
+                if (!await SavePrefabSourceWithCopyPathAsync(context, saveAs: false, chooseCopyPath)) return false;
+                QueueWindowSourceHandoff(CaptureWindowSourceHandoff(context));
+                ReturnFromPrefabContext(context);
+                try { await RefreshPrefabLinkAsync(context.DefinitionId, context.SourcePath); }
+                catch { UpdateStatus(L.Get("Prefab.SourceSavedRefreshPending")); throw; }
+                return true;
+            }
+            finally { _documentBusy = previousBusy; RefreshPrefabWindows(); }
         }
         var plan = context.Owner.PreparePrefabEdit(context.Draft!);
         if (!ApplyPrefabPlan(context.Owner, plan)) return false;
@@ -183,7 +190,6 @@ internal sealed partial class DesktopSession
     {
         if (!ReferenceEquals(_prefabEditContext, context)) throw new InvalidOperationException(L.Get("Prefab.NotCurrent"));
         ++_prefabRequest;
-        _groupCanvasMode = GroupCanvasMode.Temporary;
         _changingPrefabContext = true;
         try
         {
@@ -194,7 +200,7 @@ internal sealed partial class DesktopSession
         }
         finally { _changingPrefabContext = false; }
         ForgetPrefabWindowSources(context);
-        UpdateWindowSourceRuntime(); RefreshWindowSourcesUi();
+        OnEditorChanged();
         RefreshPrefabWindows(); PruneDocumentResources(); ScheduleRecovery(); RequestRender();
     }
     private bool ApplyPrefabPlan(EditorSession owner, PrefabEditPlan plan)
@@ -289,10 +295,12 @@ internal sealed partial class DesktopSession
     private async Task CheckPrefabLinkAsync(Guid definitionId)
     {
         var owner = Active; var source = owner.Document.Definitions.Single(definition => definition.Id == definitionId).Source!;
+        var binding = PrefabLinkStatusBinding.Capture(source);
         var state = await _prefabLinkResolver.CheckAsync(source, FileState(owner).Path, _documentLifetime.Token);
-        if (!ReferenceEquals(owner, Active)) return;
-        var message = L.Get(state == PrefabLinkStatus.Missing ? "Prefab.SourceMissing" : state == PrefabLinkStatus.Changed ? "Prefab.SourceChanged" : "Prefab.SourceUpToDate");
-        _prefabResources?.SetStatus(message); UpdateStatus(message);
+        if (!ReferenceEquals(owner, Active) || !HasCurrentPrefabLink(owner, definitionId, binding)) return;
+        string key = state == PrefabLinkStatus.Missing ? "Prefab.SourceMissing" : state == PrefabLinkStatus.Changed ? "Prefab.SourceChanged" : "Prefab.SourceUpToDate";
+        SetPrefabLinkStatus(owner, definitionId, key);
+        var message = L.Get(key); _prefabResources?.SetStatus(message, owner, definitionId); UpdateStatus(message);
     }
     private async Task RefreshPrefabLinkAsync(Guid definitionId, string? newPath = null)
     {
@@ -350,29 +358,33 @@ internal sealed partial class DesktopSession
         }
         if (!Current() || !PrefabLinkResolver.IsCurrent(candidate, owner)) return;
         MergeAssets(candidate.Assets);
-        SceneDocument document; Guid? sourceEntry = null;
+        SceneDocument document; Guid? sourceEntry = null; PointD previewOrigin = default;
         if (candidate.SourceProject is { } project) document = project.Document.Clone();
         else
         {
             var entry = candidate.Package.Definitions.Single(definition => definition.Id == candidate.Package.EntryDefinitionId);
             var graph = SceneGraphClone.CloneGraph(entry.Graph).Graph; sourceEntry = entry.Id;
             document = new() { ResourceId = candidate.Package.ResourceId, Elements = graph.Elements, Groups = graph.Groups, Instances = graph.Instances, RootOrder = graph.RootOrder,
-                Definitions = candidate.Package.Definitions.Select(definition => definition.Clone()).ToList(), Provenance = candidate.Package.Provenance, Viewport = owner.Document.Viewport };
+                Definitions = candidate.Package.Definitions.Select(definition => definition.Clone()).ToList(), Provenance = candidate.Package.Provenance };
+            entry.PreviewCanvas?.ApplyTo(document);
+            previewOrigin = entry.PreviewCanvas?.Origin ?? entry.Pivot;
         }
         NormalizePrefabLinkPaths(document, candidate.Path);
-        var session = new EditorSession(document, _assets);
+        var session = new EditorSession(document, _assets, independentCanvasOrigin: previewOrigin);
         _documentFiles[session] = new() { Path = candidate.Path, DiskVersion = candidate.FileVersion, SavedContentVersion = session.ContentVersion };
         _prefabEditContext = new(owner, session, definitionId, definition.Revision, _editor.ScreenOrigin, _editor.Tool, _prefabEditContext, candidate.Path, sourceEntry) { EnteredInstanceId = instanceId };
         SwitchPrefabContext(session);
     }
-    private async Task<bool> SavePrefabSourceAsync(PrefabEditContext context, bool saveAs)
+    private Task<bool> SavePrefabSourceAsync(PrefabEditContext context, bool saveAs)
+        => SavePrefabSourceWithCopyPathAsync(context, saveAs, null);
+    private async Task<bool> SavePrefabSourceWithCopyPathAsync(PrefabEditContext context, bool saveAs, Func<string?>? chooseCopyPath)
     {
         if (!saveAs && !IsDirty(context.Session) && !HasWindowMediaPending(context.Session)) return true;
         bool previousBusy = _documentBusy; _documentBusy = true;
-        try { return await SavePrefabSourceCoreAsync(context, saveAs); }
+        try { return await SavePrefabSourceCoreAsync(context, saveAs, chooseCopyPath); }
         finally { _documentBusy = previousBusy; }
     }
-    private async Task<bool> SavePrefabSourceCoreAsync(PrefabEditContext context, bool saveAs)
+    private async Task<bool> SavePrefabSourceCoreAsync(PrefabEditContext context, bool saveAs, Func<string?>? chooseCopyPath)
     {
         if (!context.IsPrefabSource)
         {
@@ -383,15 +395,24 @@ internal sealed partial class DesktopSession
         var file = FileState(context.Session); string path = context.SourcePath!;
         if (saveAs)
         {
-            var dialog = new Microsoft.Win32.SaveFileDialog { Title = L.Get("Prefab.Export"), Filter = L.Get("Prefab.Filter"), DefaultExt = ".floatprefab", AddExtension = true, FileName = Path.GetFileName(path) };
-            if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return false;
-            path = dialog.FileName;
+            if (chooseCopyPath is not null)
+            {
+                var selectedPath = chooseCopyPath(); if (selectedPath is null) return false;
+                path = selectedPath;
+            }
+            else
+            {
+                var dialog = new Microsoft.Win32.SaveFileDialog { Title = L.Get("Prefab.Export"), Filter = L.Get("Prefab.Filter"), DefaultExt = ".floatprefab", AddExtension = true, FileName = Path.GetFileName(path) };
+                if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return false;
+                path = dialog.FileName;
+            }
         }
         long savedContentVersion = context.Session.ContentVersion, savedMediaVersion = _windowMediaCheckpoint.ForOwner(context.Session);
         bool authoredChanged = IsDirty(context.Session) || context.Restored;
         var snapshot = context.Session.Document.Clone(); string fingerprint = Fingerprint(snapshot);
         var package = WindowSourcePersistence.CreateSourcePrefabPackage(snapshot, context.SourceEntryDefinitionId!.Value, authoredChanged, file.SavedPrefabRevision);
         var entry = package.Definitions.Single(definition => definition.Id == package.EntryDefinitionId);
+        entry.PreviewCanvas = context.Session.GetRootSubprojectCanvas();
         var prepared = await PrepareWindowPrefabPackageAsync(context.Session, package, package.EntryDefinitionId, snapshot);
         package = prepared.Package;
         RebasePrefabSources(package.Definitions, context.SourcePath, path);
@@ -404,7 +425,7 @@ internal sealed partial class DesktopSession
         catch (ProjectFileConflictException ex)
         {
             var answer = AppDialog.Show(_toolbar, ex.Message + "\n" + L.Get("Project.SaveConflictChoice"), L.Get("App.Name"), MessageBoxButton.YesNo, MessageBoxImage.Warning, "Project.SaveCopy", "Project.KeepCurrent");
-            return answer == MessageBoxResult.Yes && await SavePrefabSourceAsync(context, saveAs: true);
+            return answer == MessageBoxResult.Yes && await SavePrefabSourceWithCopyPathAsync(context, saveAs: true, chooseCopyPath);
         }
         file.Path = path; file.SavedContentVersion = savedContentVersion; file.SavedMediaVersion = savedMediaVersion;
         file.SavedFingerprint = fingerprint; file.SavedPrefabRevision = entry.Revision; context.SourcePath = path; context.Restored = false;
@@ -417,6 +438,7 @@ internal sealed partial class DesktopSession
         {
             OwnerResourceId = context.Owner.Document.ResourceId, DefinitionId = context.DefinitionId, ExpectedRevision = context.ExpectedRevision,
             DraftDocument = context.Session.CreateCommittedSnapshot(), ReturnScopeId = context.ReturnScopeId, ReturnSelection = [.. context.ReturnSelection],
+            PreviewOrigin = context.Session.GetRootSubprojectCanvas().Origin,
             DraftScopeId = context.Session.EditScopeId, DraftSelection = [.. context.Session.Selection], ParentEdit = Capture(context.Parent),
             IsSourceProject = context.IsSource, SourcePath = context.SourcePath, SourceFileSha256 = context.IsSource ? FileState(context.Session).DiskVersion?.Sha256 : null
         };
@@ -434,13 +456,15 @@ internal sealed partial class DesktopSession
             PrefabEditContext context;
             if (item.IsSourceProject)
             {
-                var session = new EditorSession(item.DraftDocument.Clone(), _assets); var entry = owner.Document.Definitions.Single(definition => definition.Id == item.DefinitionId).Source?.EntryDefinitionId;
+                var session = new EditorSession(item.DraftDocument.Clone(), _assets, independentCanvasOrigin: item.PreviewOrigin ?? default); var entry = owner.Document.Definitions.Single(definition => definition.Id == item.DefinitionId).Source?.EntryDefinitionId;
                 context = new(owner, session, item.DefinitionId, item.ExpectedRevision, _editor.ScreenOrigin, _editor.Tool, _prefabEditContext, item.SourcePath, entry) { Restored = true };
                 _documentFiles[session] = new() { Path = item.SourcePath, DiskVersion = new(item.SourceFileSha256), SavedContentVersion = -1 };
             }
             else
             {
                 var draft = owner.BeginPrefabEdit(item.DefinitionId); draft.Session.RestoreDocument(L.Get("Prefab.DraftRestored"), item.DraftDocument.Clone());
+                if (item.PreviewOrigin is { } origin)
+                    draft.Session.ChangeEditingSubprojectCanvas(L.Get("Prefab.DraftRestored"), settings => settings.Origin = origin);
                 context = new(owner, draft, _editor.ScreenOrigin, _editor.Tool, _prefabEditContext) { Restored = true };
             }
             context.Session.SetEditScope(item.DraftScopeId); context.Session.SetSelection(item.DraftSelection);
@@ -490,11 +514,15 @@ internal sealed partial class DesktopSession
     private bool IsOpenPrefabOwner(EditorSession owner) => OpenPrefabOwners().Any(current => ReferenceEquals(current, owner));
     private void SetPrefabLinkStatus(EditorSession owner, Guid definitionId, string key)
     {
-        string message = L.Get(key);
-        if (_prefabLinkStates.GetValueOrDefault((owner, definitionId)) == message) return;
-        _prefabLinkStates[(owner, definitionId)] = message;
+        var source = owner.Document.Definitions.FirstOrDefault(definition => definition.Id == definitionId)?.Source;
+        if (source is not { IsLinked: true }) return;
+        var state = (PrefabLinkStatusBinding.Capture(source), L.Get(key));
+        if (_prefabLinkStates.TryGetValue((owner, definitionId), out var previous) && previous == state) return;
+        _prefabLinkStates[(owner, definitionId)] = state;
         if (ReferenceEquals(owner, Active)) _prefabResources?.InvalidateResourceStatus();
     }
+    private static bool HasCurrentPrefabLink(EditorSession owner, Guid definitionId, PrefabLinkStatusBinding binding) =>
+        binding.Matches(owner.Document.Definitions.FirstOrDefault(definition => definition.Id == definitionId)?.Source);
     private async Task DrainPrefabSourcesAsync()
     {
         if (_drainingPrefabSources || DocumentOperationBusy || HasPrefabEditContext || _disposed || _documentStopped) return;
@@ -524,6 +552,7 @@ internal sealed partial class DesktopSession
             if (_disposed || _documentStopped || !IsOpenPrefabOwner(owner)) return;
             var definition = owner.Document.Definitions.FirstOrDefault(definition => definition.Id == id);
             if (definition?.Source?.IsLinked != true) continue;
+            var binding = PrefabLinkStatusBinding.Capture(definition.Source);
             long scopeVersion = owner.EditScopeVersion;
             if (DocumentOperationBusy || owner.IsTransactionActive || IsPrefabRetainedSession(owner)) { SetPrefabLinkStatus(owner, id, "Prefab.SourceChanged"); continue; }
             try
@@ -531,8 +560,10 @@ internal sealed partial class DesktopSession
                 string path = PrefabLinkResolver.ResolvePath(definition.Source, FileState(owner).Path);
                 var state = await _prefabLinkResolver.CheckAsync(definition.Source, FileState(owner).Path, _documentLifetime.Token);
                 if (_prefabBackgroundChecks.GetValueOrDefault(owner) != request || !IsOpenPrefabOwner(owner) || owner.EditScopeVersion != scopeVersion) return;
+                if (!HasCurrentPrefabLink(owner, id, binding)) continue;
                 if (state != PrefabLinkStatus.Changed) { SetPrefabLinkStatus(owner, id, state == PrefabLinkStatus.Missing ? "Prefab.SourceMissing" : "Prefab.SourceUpToDate"); continue; }
                 var candidate = await _prefabLinkResolver.PrepareAsync(owner, path, FileState(owner).Path, id, ct: _documentLifetime.Token);
+                if (!HasCurrentPrefabLink(owner, id, binding)) continue;
                 if (_prefabBackgroundChecks.GetValueOrDefault(owner) != request || !IsOpenPrefabOwner(owner) || owner.EditScopeVersion != scopeVersion ||
                     DocumentOperationBusy || IsPrefabRetainedSession(owner) || !PrefabLinkResolver.IsCurrent(candidate, owner)) { SetPrefabLinkStatus(owner, id, "Prefab.SourceChanged"); continue; }
                 candidate.Source.Locator = candidate.Path; candidate.Source.IsRelative = false;
@@ -544,8 +575,9 @@ internal sealed partial class DesktopSession
             catch (OperationCanceledException) when (_documentLifetime.IsCancellationRequested) { return; }
             catch (Exception ex)
             {
+                if (!HasCurrentPrefabLink(owner, id, binding)) continue;
                 SetPrefabLinkStatus(owner, id, "Prefab.SourceChanged");
-                if (ReferenceEquals(owner, Active)) { _prefabResources?.SetStatus(ex.Message); UpdateStatus(ex.Message); }
+                if (ReferenceEquals(owner, Active)) { _prefabResources?.SetStatus(ex.Message, owner, id); UpdateStatus(ex.Message); }
             }
         }
     }

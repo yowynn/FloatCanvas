@@ -55,11 +55,11 @@ internal sealed partial class DesktopSession
         var view = CurrentGroupCanvasView();
         bool foreignSource = view.IsRootPreview && _prefabEditContext is not null;
         var context = new CanvasPreviewContext(Active, _host.Monitors, view.Origin,
-            !_host.IsVisible, !view.IsRootPreview && _host.IsEditing && (_editor.Tool == EditorTool.Canvas || _canvasCalibration.IsActive),
-            !view.IsRootPreview && _canvasCalibration.IsPlacing, Active.Document, _host.IsVisible ? null : _hiddenCanvasElements,
-            GuideOpacity: _canvasGuideOpacity, ScreenDraftEpoch: view.IsRootPreview ? null : _screenDraftEpoch,
-            PresentationEpoch: !foreignSource && _presentationRuntime?.ObservingKeyboard == true ? _presentationRuntime.Lifetime : null,
-            WindowEpoch: foreignSource ? null : CurrentWindowRenderEpoch(), GroupEpoch: HasGroupCanvasContext ? view.Epoch : null);
+            !_host.IsVisible, !foreignSource && _host.IsEditing && (_editor.Tool == EditorTool.Canvas || _canvasCalibration.IsActive),
+            !foreignSource && _canvasCalibration.IsPlacing, Active.Document, _host.IsVisible ? null : _hiddenCanvasElements,
+            GuideOpacity: _canvasGuideOpacity, ScreenDraftEpoch: foreignSource ? null : _screenDraftEpoch,
+            PresentationEpoch: _presentationRuntime?.ObservingKeyboard == true ? _presentationRuntime.Lifetime : null,
+            WindowEpoch: foreignSource ? null : CurrentWindowRenderEpoch(), GroupEpoch: view.Epoch);
         if (_currentCanvasContext is { } current && current with { Epoch = 0 } == context) return current;
         long epoch = _currentCanvasContext is { } prior && prior.HasSameContent(context with { Epoch = prior.Epoch })
             ? prior.Epoch : ++_canvasContextEpoch;
@@ -69,10 +69,11 @@ internal sealed partial class DesktopSession
     private GroupCanvasView CurrentGroupCanvasView()
     {
         var view = (_groupCanvasScene ??= new()).Capture(Active, _prefabEditContext,
-            _groupCanvasMode, _editor.ScreenOrigin, _assets);
+            _groupCanvasMode, _editor.ScreenOrigin, _assets, IndependentEditingViewport);
         _hasEditableCanvasOccurrence = !view.IsRootPreview || _prefabEditContext is null || view.EditingPlacement is not null;
-        _editor.SetCanvasView(view.EditingPlacement is { } placement ? CanvasMapping.CreateView(view.Document, placement) : null,
-            view.EditingPlacement is not null ? view.Origin : null, HasGroupCanvasContext ? view.Epoch : null, view.EditingPlacement);
+        _editor.SetCanvasView(view.EditingPlacement is { } placement ? CanvasMapping.CreateView(view.Document, placement, view.EditingRootCanvas) : null,
+            view.EditingPlacement is not null ? view.Origin : null, view.Epoch, view.EditingPlacement, view.Document, view.EditingRootCanvas,
+            _groupCanvasMode == GroupCanvasMode.Temporary);
         return view;
     }
 
@@ -327,6 +328,7 @@ internal sealed partial class DesktopSession
     {
         var context = CurrentPreviewContext();
         var view = CurrentGroupCanvasView();
+        bool foreignSource = view.IsRootPreview && _prefabEditContext is not null;
         var source = context.Hidden ? _preparedHiddenPreview ?? PreviewSource(true) : view.Document;
         _preparedHiddenPreview = null;
         var preview = _editor.RasterPreview;
@@ -335,7 +337,7 @@ internal sealed partial class DesktopSession
         IReadOnlySet<Guid>? changedIds = !view.IsProjected && Active.TryGetPreviewChangedElements(_previewScene.CapturedRevision, out var known) ? known : null;
         var frozen = _previewScene.Capture(source, Active.PreviewRevision, Active.PreviewElementsRevision,
             Active.TransactionId, first, last, bypass, changedIds, Active.TransactionPreviewRevision);
-        var canvasOverride = !view.IsRootPreview && ReferenceEquals(_canvasGridCalibrationSession, Active) ? _canvasGridCalibrationPreview : null;
+        var canvasOverride = !foreignSource && ReferenceEquals(_canvasGridCalibrationSession, Active) ? _canvasGridCalibrationPreview : null;
         var evaluation = _previewScene.EvaluationFor(frozen, canvasOverride);
         var document = frozen;
         FrozenSceneEvaluation? editingEvaluation = null;
@@ -348,7 +350,7 @@ internal sealed partial class DesktopSession
         var pixelDamage = _previewPixelDamage.ToArray(); _previewPixelDamage.Clear();
         SceneDocument? placement = null; IReadOnlyList<PointD>? clip = null;
         var points = _canvasCalibration.PlacementPreview;
-        if (!view.IsRootPreview && points.Count == 4 && CanvasCalibration.TryOrderCorners(points, out var quad) &&
+        if (!foreignSource && points.Count == 4 && CanvasCalibration.TryOrderCorners(points, out var quad) &&
             CanvasCalibration.TryCalibrate(document.Canvas.Projection, quad, document.Viewport, out var projection, out _))
         {
             placement = new() { Viewport = document.Viewport, Canvas = new CanvasSettings { Projection = projection } };
@@ -358,16 +360,19 @@ internal sealed partial class DesktopSession
         {
             Context = context, SceneIdentity = source, Document = document,
             SourceDocument = view.IsProjected && !view.IsRootPreview ? Active.Document : frozen, FrozenEvaluation = evaluation,
-            EditingEvaluation = editingEvaluation, EditingPlacement = view.EditingPlacement,
+            EditingEvaluation = editingEvaluation, EditingPlacement = view.EditingPlacement, EditingRootCanvas = view.EditingRootCanvas,
+            AuthorRootCanvas = Active.ActiveRootCanvas, EditingScopeId = Active.EditScopeId,
+            IndependentCanvas = _groupCanvasMode == GroupCanvasMode.Temporary,
             Resources = _assets.Resources.ToArray(),
             Outputs = _host.Monitors.Select(monitor => monitor.Bounds).ToArray(),
             Revision = Active.SceneRevision, Transaction = Active.TransactionId,
             First = first, Last = last,
-            BypassCache = bypass || !view.IsRootPreview && _canvasCalibration.IsDragging, GraphChanged = _previewScene.GraphChanged,
+            BypassCache = bypass || !foreignSource && _canvasCalibration.IsDragging, GraphChanged = _previewScene.GraphChanged,
             PreferGpu = _settings.PreferGpuAcceleration, AnimationTime = _animationClock.Elapsed,
             Backdrop = _desktopBackdrop?.Retain(), PlacementScene = placement, PlacementClip = clip,
             ContentRevision = Active.PreviewRevision, InputSequence = _canvasInputSequence, PixelDamage = pixelDamage,
-            ScreenDraft = view.IsRootPreview ? null : CaptureScreenBillboardDraft(), ScreenDraftScopeId = Active.EditScopeId,
+            ScreenDraft = foreignSource ? null : CaptureScreenBillboardDraft(view),
+            ScreenDraftScopeId = view.IsProjected && !view.IsRootPreview ? null : Active.EditScopeId,
             PresentationFrame = context.PresentationEpoch is not null ? _presentationRuntime?.Frame : null,
             PresentationPlanIdentity = context.PresentationEpoch is not null ? _presentationContext : null,
             PresentationOrigin = view.Origin,
@@ -376,14 +381,19 @@ internal sealed partial class DesktopSession
         };
     }
 
-    private TransientScreenElement? CaptureScreenBillboardDraft()
+    private TransientScreenElement? CaptureScreenBillboardDraft(GroupCanvasView view)
     {
         // The editor cancels its private drafts on mode, scope, visibility and session
         // changes. Capturing that state does not acquire or inspect an input lease.
         var raw = _editor.ScreenBillboardDraft ?? _inlineText?.ScreenDraft;
         if (raw is null) return null;
         var world = _editor.HasScreenBillboardDraft ? _editor.ScreenBillboardCandidate : _inlineText?.ResolvedScreenDraft;
-        return new(raw, 0, world);
+        if (view.EditingPlacement is { } placement)
+        {
+            world = world?.Clone(); if (world is not null) SceneGraph.ApplyPlacement(world, placement);
+            return new(raw, 0, world, RootCanvasKind.Main);
+        }
+        return new(raw, 0, world, Active.ActiveRootCanvas);
     }
 
     private SceneDocument PreviewSource(bool hidden)
@@ -430,6 +440,15 @@ internal sealed partial class DesktopSession
                 QueueCanvasPresentation(_presentedCanvasContext == frame.Context
                     ? frame.Pixels.DamageComparedTo(_presentedPixels)
                     : _host.Monitors.Select(monitor => monitor.Bounds));
+        }
+        else
+        {
+            // Focus privacy or another view epoch can change while its first
+            // frame is rendering. Pixel-only requests are paused until native
+            // presentation is certain, so rejecting that old frame must also
+            // reserve a frame for the current context. The request key dedupes
+            // an already queued replacement.
+            RequestCanvasPreview(false, null);
         }
         PreviewBackendChanged?.Invoke();
     }

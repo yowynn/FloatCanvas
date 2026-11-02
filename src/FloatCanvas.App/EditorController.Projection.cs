@@ -11,7 +11,7 @@ internal sealed partial class EditorController
         get
         {
             if (Session.SelectionBounds(editableOnly: true) is not { } bounds) return [];
-            var selected = Session.SelectedWorldElements(editableOnly: true).Where(e => e.Visible).ToArray();
+            var selected = SelectedEditingWorldElements(editableOnly: true).Where(e => e.Visible).ToArray();
             var mapping = CurrentCanvasMapping;
             if (selected is [var billboard] && billboard.IsBillboard)
             {
@@ -58,7 +58,7 @@ internal sealed partial class EditorController
     {
         get
         {
-            if (HasNodeSelection || Session.SelectedWorldElements().ToArray() is not [var line] || !ElementGeometry.IsLine(line.Kind)) return [];
+            if (HasNodeSelection || SelectedEditingWorldElements().ToArray() is not [var line] || !ElementGeometry.IsLine(line.Kind)) return [];
             var mapping = CurrentCanvasMapping;
             if (line.IsBillboard && !mapping.IsElementSafe(line)) return [];
             return line.Points.Select(mapping.ElementToScreen(line).TransformPoint).ToArray();
@@ -92,15 +92,15 @@ internal sealed partial class EditorController
             return id is null ? null : CurrentEditableLeaf(id.Value);
         var document = PickingDocument;
         var hit = !CanvasDepthOrder.IsEnabled(document) ? document.Elements
-            .LastOrDefault(element => IsShownInkSelectable(document, element) && ElementHitTestScreenCore(document, element, point, tolerance)) :
-            SelectionRenderer.PickDepth(document, PickingAssets, point, tolerance);
+            .LastOrDefault(element => SceneCanvasRoots.Resolve(document, element.Id) == PickingRootCanvas && IsShownInkSelectable(document, element) && ElementHitTestScreenCore(document, element, point, tolerance)) :
+            SelectionRenderer.PickDepth(document, PickingAssets, point, tolerance, rootCanvas: PickingRootCanvas);
         // The shown snapshot may lag a removal. Never resurrect or mutate its frozen nodes.
         return hit is null ? null : CurrentEditableLeaf(hit.Id);
     }
     private CanvasElement? CurrentEditableLeaf(Guid id)
     {
         var evaluation = CurrentPickingEvaluation;
-        if (evaluation.FindOccurrence(id) is not { } occurrence || !evaluation.IsPickableOccurrence(id) || ResolveHitSelectableNode(id) is null) return null;
+        if (evaluation.FindOccurrence(id) is not { } occurrence || !IsPickingOccurrenceSelectable(evaluation, id) || ResolveHitSelectableNode(id) is null) return null;
         var graph = new SceneGraph(Session.Document);
         return occurrence.Source.DefinitionId is null ? graph.FindElement(occurrence.HostNodeId) : occurrence.RenderElement;
     }
@@ -111,9 +111,11 @@ internal sealed partial class EditorController
     private Guid? ResolveHitSelectableNode(Guid runtimeId, bool individual = false)
     {
         var evaluation = CurrentPickingEvaluation;
-        if (!evaluation.IsPickableOccurrence(runtimeId) || evaluation.ResolveSelectableNode(runtimeId, Session.EditScopeId) is not { } selectable) return null;
+        if (evaluation.RootCanvasOf(runtimeId) != Session.ActiveRootCanvas || !IsPickingOccurrenceSelectable(evaluation, runtimeId) || evaluation.ResolveSelectableNode(runtimeId, Session.EditScopeId) is not { } selectable) return null;
         return individual ? evaluation.HostNodeOfOccurrence(runtimeId) : selectable;
     }
+    private bool IsPickingOccurrenceSelectable(EvaluatedScene evaluation, Guid id) => evaluation.IsPickableOccurrence(id,
+        independentCanvasView ? PickingDocument.Elements.FirstOrDefault(element => element.Id == id)?.Visible == true : null);
     private static bool IsShownInkSelectable(SceneDocument document, CanvasElement element) =>
         SceneEvaluation.RuntimeView(document)?.IsPickableOccurrence(element.Id) ?? (element.Visible && !element.Locked);
 
@@ -131,7 +133,7 @@ internal sealed partial class EditorController
     private static bool ElementHitTestScreenCore(SceneDocument document, AssetLibrary assets, SceneRenderer renderer,
         CanvasElement element, PointD point, double tolerance, CancellationToken cancellationToken = default)
     {
-        var mapping = CanvasMapping.Create(document);
+        var mapping = CanvasMapping.Create(document, SceneCanvasRoots.Resolve(document, element.Id));
         return (!element.IsBillboard || mapping.IsElementSafe(element)) &&
             ElementGeometry.HitTestProjected(element, point, mapping.PlaneToScreen, tolerance) &&
             renderer.IntersectsElementInk(document, assets, element,
@@ -146,7 +148,7 @@ internal sealed partial class EditorController
             PendingPicking = SelectScreenRectangleAsync(rectangle, additive);
             return;
         }
-        ApplyRectangleHits(ScreenRectangleHits(PickingDocument, PickingAssets, SelectionRenderer, rectangle), additive, Session.Selection.ToArray());
+        ApplyRectangleHits(ScreenRectangleHits(PickingDocument, PickingAssets, SelectionRenderer, rectangle, rootCanvas: PickingRootCanvas), additive, Session.Selection.ToArray());
     }
 
     private void ApplyRectangleHits(IEnumerable<Guid> hits, bool additive, IEnumerable<Guid> previous)
@@ -158,12 +160,13 @@ internal sealed partial class EditorController
     }
 
     private static IReadOnlyList<Guid> ScreenRectangleHits(SceneDocument document, AssetLibrary assets, SceneRenderer renderer,
-        RectD rectangle, CancellationToken cancellationToken = default)
+        RectD rectangle, CancellationToken cancellationToken = default, RootCanvasKind rootCanvas = RootCanvasKind.Main)
     {
-        var mapping = CanvasMapping.Create(document);
+        var mapping = CanvasMapping.Create(document, rootCanvas);
         var selected = new List<Guid>();
         foreach (var element in document.Elements.Where(e => IsShownInkSelectable(document, e)))
         {
+            if (SceneCanvasRoots.Resolve(document, element.Id) != rootCanvas) continue;
             cancellationToken.ThrowIfCancellationRequested();
             if (element.IsBillboard && !mapping.IsElementSafe(element)) continue;
             if (!mapping.ProjectedBounds(element).Intersects(rectangle)) continue;

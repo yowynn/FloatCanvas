@@ -24,6 +24,9 @@ internal static class PresentationScopeRuntimeTests
             ScopePollWithoutInput(dispatcher, check);
             SuppressionAndBeforeInput(dispatcher, check);
             FaultAndUnknownScope(dispatcher, check);
+            AuthoredScopes(dispatcher, check);
+            ModifierOnlyScopeDamage(dispatcher, check);
+            PointerContinuityDuringKeyboardSubscription(dispatcher, check);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
@@ -154,7 +157,7 @@ internal static class PresentationScopeRuntimeTests
         broker.Configure(Both, true, new object(), "paused"); broker.SetArmed(true);
         var source = factory.Requests.Single().Source;
         source.Queue([Key(0x11), Key(0x43)], Cursor(10, 20)); Pump(dispatcher);
-        check("all-applications recording does not depend on internal-owner detection", broker.Frame.RecentChords.Count == 1 && predicateCalls == 0);
+        check("all-applications recording survives unavailable internal-owner detection", broker.Frame.RecentChords.Count == 1 && predicateCalls > 0 && broker.Frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).RecentChords.Count == 0);
         broker.ConfigureKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas);
         source.Queue([Key(0x11), Key(0x43)], Cursor(30, 40)); Pump(dispatcher);
         check("an unknown scoped owner fails keyboard recording closed rather than accidentally treating it as outside",
@@ -177,16 +180,101 @@ internal static class PresentationScopeRuntimeTests
         check("a source that never becomes running cannot publish keyboard events", !stopped.Observing && !stopped.ObservingKeyboard && stopped.Frame.PressedKeys.Count == 0 && dead.StopCount > 0 && dead.DisposeCount > 0);
     }
 
+    private static void AuthoredScopes(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        var factory = new FakeFactory(); var clock = new FakeClock(); bool internalInput = false;
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => { }, factory.Start, () => clock.Time, () => internalInput);
+        broker.Configure(Both with { ScopedKeyboard = true }, true, new object(), "paused"); broker.SetArmed(true);
+        var source = factory.Requests.Single().Source;
+        PresentationObservedInput Event(int vk, bool inside, bool down, long time) => Key(vk, down, time) with
+        { InputOwner = inside ? PresentationInputOwner.FloatCanvas : PresentationInputOwner.OtherApplication };
+        // Foreground has already moved back by drain time: event ownership must survive batching.
+        source.Queue([Event(0x41, false, true, 990), Event(0x41, false, false, 991), Event(0x42, true, true, 992), Event(0x42, true, false, 993)]);
+        Pump(dispatcher);
+        var all = broker.Frame; var outside = all.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas); var inside = all.ForKeyboardScope(PresentationKeyboardScope.FloatCanvasOnly);
+        check("one source batch retains separate internal and external keyboard histories", all.RecentChords.Count == 2 && outside.RecentChords.Single().Keys.Single().VirtualKey == 0x41 && inside.RecentChords.Single().Keys.Single().VirtualKey == 0x42);
+        check("authored scoped snapshots share one atomic identity and bounded aggregate payload", all.Epoch == outside.Epoch && all.Sequence == inside.Sequence && all.Time == inside.Time && all.PayloadBytes <= PresentationLimits.MaximumScopedFramePayloadBytes && factory.Requests.Count == 1);
+        internalInput = true; clock.Time += TimeSpan.FromMilliseconds(10);
+        source.Queue([Event(0x11, true, true, 1001), Event(0x43, false, true, 1002)]); Pump(dispatcher);
+        outside = broker.Frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas);
+        check("cross-scope focus transitions cannot combine one app's modifier with another app's chord", outside.RecentChords.Last().Keys.Count == 1 && outside.RecentChords.Last().Keys.Single().VirtualKey == 0x43);
+        int outsideCount = outside.RecentChords.Count, insideCount = broker.Frame.ForKeyboardScope(PresentationKeyboardScope.FloatCanvasOnly).RecentChords.Count;
+        source.Queue([Key(0x5A, time: 1003) with { InputOwner = PresentationInputOwner.Unknown }]); Pump(dispatcher);
+        check("an explicitly unknown sampled owner cannot fall back to the later foreground application", broker.Frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).RecentChords.Count == outsideCount && broker.Frame.ForKeyboardScope(PresentationKeyboardScope.FloatCanvasOnly).RecentChords.Count == insideCount && broker.Frame.RecentChords.Last().Keys.Last().VirtualKey == 0x5A);
+        broker.SuppressKeyboard(true); source.Queue([Event(0x44, false, true, 1003), Event(0x45, true, true, 1004)], Cursor(80, 90)); Pump(dispatcher);
+        check("privacy suppression erases and blocks every scoped keyboard history while preserving pointer pixels", Enum.GetValues<PresentationKeyboardScope>().All(scope => broker.Frame.ForKeyboardScope(scope) is { KeyboardSuppressed: true, PressedKeys.Count: 0, RecentChords.Count: 0 }) && broker.Frame.CursorScreen == new PointD(80, 90));
+        broker.SuppressKeyboard(false); source.Queue([Event(0x46, false, true, 1005)]); Pump(dispatcher);
+        check("privacy release accepts only fresh events in their authored scope", broker.Frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).RecentChords.Count == 1 && broker.Frame.ForKeyboardScope(PresentationKeyboardScope.FloatCanvasOnly).RecentChords.Count == 0);
+        broker.SetArmed(false);
+        check("the global stop clears all authored scopes and closes the single input source", !broker.Observing && source.StopCount == 1 && Enum.GetValues<PresentationKeyboardScope>().All(scope => broker.Frame.ForKeyboardScope(scope).RecentChords.Count == 0));
+    }
+
+    private static void PointerContinuityDuringKeyboardSubscription(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        var factory = new FakeFactory(); var clock = new FakeClock(); var identity = new object();
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => { }, factory.Start, () => clock.Time);
+        var pointerOnly = Both with { Keyboard = false, AllPhysicalKeys = false };
+        broker.Configure(Both, true, identity, "paused"); broker.SetArmed(true);
+        var source = factory.Requests.Single().Source;
+        source.Queue([Key(0x11), Key(0x43), new(PresentationObservedKind.ButtonDown, 1000, X: 10, Y: 20, HasPosition: true)], Cursor(10, 20)); Pump(dispatcher);
+        source.Queue(cursor: Cursor(20, 30)); Pump(dispatcher);
+        var before = broker.Frame; var lifetime = broker.Lifetime;
+        check("pointer continuity fixture begins with live keyboard clicks and a two-point trail", before.RecentChords.Count == 1 && before.Clicks.Count == 1 && before.Trail.Count == 2);
+        factory.DeferNextStart = true; broker.Configure(pointerOnly, true, identity, "paused");
+        check("removing only the keyboard subscription preserves global pointer clicks trail and cursor across native restart", broker.Frame.Clicks.SequenceEqual(before.Clicks) && broker.Frame.Trail.SequenceEqual(before.Trail) && broker.Frame.CursorScreen == before.CursorScreen && factory.Requests.Count == 2 && source.StopCount == 1 && source.DisposeCount == 1);
+        check("global pointer pixels remain available while the replacement observer is still starting", !broker.Observing && broker.PointerFrame is { } retained && retained.Clicks.SequenceEqual(before.Clicks) && retained.Trail.SequenceEqual(before.Trail));
+        factory.CompleteStart(); PumpUntil(dispatcher, () => broker.Observing);
+        check("keyboard role restart retires every keyboard scope and its privacy lifetime", !ReferenceEquals(lifetime, broker.Lifetime) && Enum.GetValues<PresentationKeyboardScope>().All(scope => broker.Frame.ForKeyboardScope(scope).PressedKeys.Count == 0 && broker.Frame.ForKeyboardScope(scope).RecentChords.Count == 0));
+        clock.Time = TimeSpan.FromMilliseconds(1100); factory.Requests.Last().Source.Queue(cursor: new(30, 40, 1100)); Pump(dispatcher);
+        check("new observer motion continues the original bounded trail with original timestamps", broker.Frame.Trail.Count == 3 && broker.Frame.Trail.Take(2).SequenceEqual(before.Trail) && broker.Frame.Clicks.Single().Timestamp == TimeSpan.FromMilliseconds(1000));
+        before = broker.Frame; broker.SuppressKeyboard(true); broker.Configure(Both, true, identity, "paused");
+        check("adding keyboard observation preserves pointer state and known privacy suppression", broker.Frame.Clicks.SequenceEqual(before.Clicks) && broker.Frame.Trail.SequenceEqual(before.Trail) && Enum.GetValues<PresentationKeyboardScope>().All(scope => broker.Frame.ForKeyboardScope(scope) is { KeyboardSuppressed: true, PressedKeys.Count: 0, RecentChords.Count: 0 }));
+        broker.SuppressKeyboard(false); factory.Requests.Last().Source.Queue([Key(0x41, time: 1100)]); Pump(dispatcher);
+        check("restarted keyboard observation accepts only fresh events without resurrecting old modifiers or chords", broker.Frame.PressedKeys.Single().VirtualKey == 0x41 && broker.Frame.RecentChords.Single().Keys.Single().VirtualKey == 0x41);
+        clock.Time = TimeSpan.FromMilliseconds(2000); factory.Requests.Last().Source.Queue(); Pump(dispatcher);
+        check("retained pointer transients still expire by their original event times", broker.Frame.Clicks.Count == 0 && broker.Frame.Trail.Count == 0);
+        clock.Time = TimeSpan.FromMilliseconds(2100); factory.Requests.Last().Source.Queue([new(PresentationObservedKind.ButtonDown, 2100, X: 40, Y: 50, HasPosition: true)], new(40, 50, 2100)); Pump(dispatcher);
+        var nextContext = new object(); broker.Configure(pointerOnly, true, nextContext, "paused");
+        check("a new document context still clears global pointer state instead of importing the previous context", broker.Frame.Clicks.Count == 0 && broker.Frame.Trail.Count == 0 && broker.Frame.CursorScreen is null);
+        factory.Requests.Last().Source.Queue([new(PresentationObservedKind.ButtonDown, 2100, X: 50, Y: 60, HasPosition: true)], new(50, 60, 2100)); Pump(dispatcher);
+        broker.Configure(Keyboard, true, nextContext, "paused");
+        check("changing the pointer master alongside keyboard subscription does not retain its old mouse state", broker.Frame.Clicks.Count == 0 && broker.Frame.Trail.Count == 0 && broker.Frame.CursorScreen is null && broker.PointerFrame is null);
+        broker.Configure(Both, true, nextContext, "paused");
+        factory.Requests.Last().Source.Queue([new(PresentationObservedKind.ButtonDown, 2100, X: 60, Y: 70, HasPosition: true)], new(60, 70, 2100)); Pump(dispatcher);
+        broker.Configure(pointerOnly, false, nextContext, "paused");
+        check("disallowed observation still clears the pointer instead of using restart retention", !broker.Observing && broker.Frame.Clicks.Count == 0 && broker.Frame.Trail.Count == 0 && broker.Frame.CursorScreen is null);
+    }
+
     private sealed class FakeClock { internal TimeSpan Time = TimeSpan.FromMilliseconds(1000); }
+    private static void ModifierOnlyScopeDamage(Dispatcher dispatcher, Action<string, bool> check)
+    {
+        var factory = new FakeFactory(); var clock = new FakeClock(); bool inside = false;
+        using var broker = new PresentationRuntimeBroker(dispatcher, () => { }, factory.Start, () => clock.Time, () => inside);
+        broker.Configure(Keyboard with { ScopedKeyboard = true }, true, new object(), "paused"); broker.SetArmed(true);
+        factory.Requests.Single().Source.Queue([Key(0x11) with { InputOwner = PresentationInputOwner.OtherApplication }]); Pump(dispatcher);
+        var before = broker.Frame; inside = true; clock.Time += TimeSpan.FromMilliseconds(10);
+        PumpUntil(dispatcher, () => broker.Frame.ForKeyboardScope(PresentationKeyboardScope.OutsideFloatCanvas).PressedKeys.Count == 0);
+        var same = typeof(DesktopSession).GetMethod("SameKeyboardPresentation", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        check("scope-only modifier release repaints restricted live keyboards even when the all-applications keys and chord animation stay unchanged",
+            before.PressedKeys.SequenceEqual(broker.Frame.PressedKeys) && !broker.HasKeyboardAnimation && !(bool)same.Invoke(null, [before, broker.Frame])!);
+    }
     private sealed class FakeFactory
     {
         internal sealed record Request(long Epoch, bool Keyboard, bool Pointer, FakeSource Source);
         internal readonly List<Request> Requests = [];
         internal bool InitiallyRunning = true;
+        internal bool DeferNextStart;
+        private TaskCompletionSource<IPresentationInputSource>? pendingStart;
+        internal void CompleteStart() => pendingStart!.SetResult(Requests.Last().Source);
         internal Task<IPresentationInputSource> Start(long epoch, bool keyboard, bool pointer, CancellationToken token)
         {
             var source = new FakeSource(epoch, InitiallyRunning);
             Requests.Add(new(epoch, keyboard, pointer, source));
+            if (DeferNextStart)
+            {
+                DeferNextStart = false; pendingStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                return pendingStart.Task;
+            }
             return Task.FromResult<IPresentationInputSource>(source);
         }
     }

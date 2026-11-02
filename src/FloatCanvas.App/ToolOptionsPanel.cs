@@ -270,9 +270,9 @@ internal sealed partial class ToolOptionsPanel : UserControl
         parameterGrid.RowDefinitions.Clear();
         string[][] groups = [ ["PresentationRuntime"], ["Size"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["StyleVariant"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
             ["FontFamily"], ["FontSize"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
-            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Emoji"], ["PresentationKeyboardScope"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
+            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
         if (controller.Tool == EditorTool.Presentation)
-            groups = [["PresentationSettings"], ["PresentationKeyboardScope"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"], ["PresentationRuntime"]];
+            groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"], ["PresentationRuntime"]];
         foreach (var group in groups)
         {
             var visible = group.Select(key => rows[key]).Where(row => row.Visibility == Visibility.Visible).ToArray();

@@ -23,6 +23,7 @@ internal static class PresentationUiTests
         {
             Presets(folder, check); Configuration(folder, check); Creation(folder, check); Runtime(check); Tools(folder, check); Inspector(check); Modes(check);
             PresentationGlobalUiTests.Run(check, output is null ? null : Path.Combine(output, "global"));
+            PresentationLayerParityTests.Run(check, folder);
             if (output is not null) Visuals(folder, output, check);
         }
         finally { L.Initialize(locale); AppTheme.Apply("light"); Directory.Delete(folder, true); }

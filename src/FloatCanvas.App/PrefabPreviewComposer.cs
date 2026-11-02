@@ -20,10 +20,10 @@ internal static class PrefabPreviewComposer
                 PrefabPackage package; PointD origin;
                 if (context.SourceEntryDefinitionId is { } entryId)
                 {
-                    package = new() { ResourceId = edited.ResourceId, EntryDefinitionId = entryId,
-                        Definitions = edited.Definitions.Select(definition => definition.Clone()).ToList(), Provenance = edited.Provenance };
+                    package = WindowSourcePersistence.CreateSourcePrefabPackage(edited, entryId, authoredChanged: false, savedRevision: null);
                     var entry = package.Definitions.Single(definition => definition.Id == entryId);
-                    entry.Graph = SceneGraphClone.CloneGraph(edited).Graph; origin = entry.Pivot;
+                    entry.PreviewCanvas = SubprojectCanvasSettings.FromDocument(edited, context.Session.GetRootSubprojectCanvas().Origin);
+                    origin = entry.Pivot;
                 }
                 else (package, origin) = PrefabLinkResolver.ProjectContent(new LoadedProject(edited, assets), context.Name);
                 var source = context.Owner.Document.Definitions.Single(definition => definition.Id == context.DefinitionId).Source!.Clone();

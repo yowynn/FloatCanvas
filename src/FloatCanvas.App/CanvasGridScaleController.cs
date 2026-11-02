@@ -13,15 +13,18 @@ internal sealed class CanvasGridScaleController
     private double startRadius, startSize;
     private CanvasSettings? initialCanvas;
     private bool previewChanged;
+    private CanvasSettingsTarget? target;
     public bool IsDragging => document is not null;
 
-    public bool Down(EditorSession value, PointD point, RectD referenceViewport)
+    public bool Down(EditorSession value, PointD point, RectD referenceViewport, CanvasSettingsTarget? canvasTarget = null)
     {
-        if (IsDragging || value.IsTransactionActive || value.Document.Canvas.Projection.Enabled ||
-            !double.IsFinite(point.X) || !double.IsFinite(point.Y) || !value.Document.Viewport.Contains(point)) return false;
+        var nextTarget = canvasTarget ?? new(value);
+        if (IsDragging || value.IsReadOnly || value.IsTransactionActive || !nextTarget.IsCurrent || nextTarget.Settings.Projection.Enabled ||
+            !double.IsFinite(point.X) || !double.IsFinite(point.Y) || !nextTarget.Viewport.Contains(point)) return false;
+        target = nextTarget;
         session = value; document = value.Document; reference = referenceViewport;
-        initialCanvas = document.Canvas.Clone(); previewChanged = false;
-        startSize = CanvasGridGeometry.ResolveCellSize(document.Canvas, reference);
+        initialCanvas = target.Settings.Clone(); previewChanged = false;
+        startSize = CanvasGridGeometry.ResolveCellSize(initialCanvas, reference);
         startRadius = point.DistanceTo(reference.Center);
         session.BeginTransaction(L.Get("Canvas.Title")); transaction = session.TransactionId;
         return true;
@@ -34,14 +37,13 @@ internal sealed class CanvasGridScaleController
         if (ratio == 1)
         {
             if (!previewChanged) return false;
-            document!.Canvas = initialCanvas!.Clone(); previewChanged = false;
-            session!.NotifySettingsChanged(); return true;
+            target!.Replace(initialCanvas!); previewChanged = false; return true;
         }
         double size = Math.Clamp(startSize * ratio, CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize);
-        if (CanvasGridGeometry.ResolveCellSize(document!.Canvas, reference) == size) return false;
-        ApplyGridSize(document.Canvas, reference, size);
+        if (CanvasGridGeometry.ResolveCellSize(target!.Settings, reference) == size) return false;
+        target.Change(canvas => ApplyGridSize(canvas, reference, size));
         previewChanged = true;
-        session!.NotifySettingsChanged(); return true;
+        return true;
     }
 
     internal static void ApplyGridSize(CanvasSettings settings, RectD reference, double size)
@@ -65,7 +67,7 @@ internal sealed class CanvasGridScaleController
     {
         if (!Validate()) return;
         document = null;
-        session!.CommitSettings(); session = null; initialCanvas = null;
+        session!.CommitSettings(); session = null; initialCanvas = null; target = null;
     }
 
     public void Cancel()
@@ -73,7 +75,7 @@ internal sealed class CanvasGridScaleController
         bool owns = OwnsTransaction();
         document = null;
         if (owns) session!.Cancel();
-        session = null; initialCanvas = null;
+        session = null; initialCanvas = null; target = null;
     }
 
     private bool OwnsTransaction() => session is not null && document is not null &&
@@ -81,7 +83,7 @@ internal sealed class CanvasGridScaleController
 
     private bool Validate()
     {
-        if (OwnsTransaction() && !document!.Canvas.Projection.Enabled) return true;
+        if (OwnsTransaction() && target?.IsCurrent == true && !target.Settings.Projection.Enabled) return true;
         Cancel(); return false;
     }
 }

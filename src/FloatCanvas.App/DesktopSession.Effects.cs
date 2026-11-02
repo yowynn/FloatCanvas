@@ -77,7 +77,7 @@ internal sealed partial class DesktopSession
         var request = BeginEffectRender(target);
         var animationTime = _renderer.AnimationTime;
         if (region.IsEmpty) return;
-        var mapping = CanvasMapping.Create(target.Document);
+        var mapping = _editor.CurrentCanvasMapping;
         // Snapshot placement and the tool's layer defaults before the input gesture ends
         // or asynchronous capture yields. The region is already logical screen/s here.
         var billboardDepth = _editor.ActiveBillboardDepthLine;

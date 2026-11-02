@@ -16,10 +16,10 @@ internal sealed record WindowSourceCandidate(object Target, string Title, string
 internal sealed class WindowSourcePickerWindow : Window
 {
     private readonly Func<CancellationToken, Task<IReadOnlyList<WindowSourceCandidate>>> refresh;
-    private readonly TextBox search = new() { MinHeight = 30, Margin = new(0, 0, 8, 0) };
-    private readonly ListBox candidates = new() { MinHeight = 180 };
+    private readonly TextBox search = new() { Height = PropertyPanelLayout.ControlHeight, MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 0, 8, 0) };
+    private readonly ListBox candidates = new();
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) };
-    private readonly Button select = new() { Content = L.Get("WindowSource.Select"), IsDefault = true, MinHeight = 30, MinWidth = 100, IsEnabled = false };
+    private readonly Button select = new() { Content = L.Get("WindowSource.Select"), IsDefault = true, MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 100, IsEnabled = false };
     private WindowSourceCandidate[] catalog = [];
     private CancellationTokenSource? request;
     private long generation;
@@ -37,10 +37,10 @@ internal sealed class WindowSourcePickerWindow : Window
         var hint = new TextBlock { Text = L.Get("WindowSource.PickerHint"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) };
         DockPanel.SetDock(hint, Dock.Top); body.Children.Add(hint);
         var header = new Grid { Margin = new(0, 0, 0, 8) }; header.ColumnDefinitions.Add(new()); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var reload = new Button { Content = L.Get("WindowSource.Refresh"), MinHeight = 30, Padding = new(10, 4, 10, 4) };
+        var reload = new Button { Content = L.Get("WindowSource.Refresh"), MinHeight = PropertyPanelLayout.ControlHeight };
         header.Children.Add(search); header.Children.Add(reload); Grid.SetColumn(reload, 1); DockPanel.SetDock(header, Dock.Top); body.Children.Add(header);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        var cancel = new Button { Content = L.Get("Dialog.Cancel"), IsCancel = true, MinHeight = 30, MinWidth = 70, Margin = new(0, 0, 8, 0) };
+        var cancel = new Button { Content = L.Get("Dialog.Cancel"), IsCancel = true, MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 96, Margin = new(0, 0, 8, 0) };
         buttons.Children.Add(cancel); buttons.Children.Add(select); DockPanel.SetDock(buttons, Dock.Bottom); body.Children.Add(buttons);
         DockPanel.SetDock(status, Dock.Bottom); body.Children.Add(status); body.Children.Add(candidates); Content = body;
         status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
@@ -48,7 +48,7 @@ internal sealed class WindowSourcePickerWindow : Window
         ScrollViewer.SetHorizontalScrollBarVisibility(candidates, ScrollBarVisibility.Disabled);
         var text = new FrameworkElementFactory(typeof(TextBlock)); text.SetBinding(TextBlock.TextProperty, new Binding(nameof(WindowSourceCandidate.Display)));
         text.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap); candidates.ItemTemplate = new DataTemplate { VisualTree = text };
-        var itemStyle = new Style(typeof(ListBoxItem)); itemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(7)));
+        var itemStyle = new Style(typeof(ListBoxItem), (Style)FindResource(typeof(ListBoxItem))); itemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(7)));
         itemStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
         itemStyle.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(nameof(WindowSourceCandidate.WindowClass)))); candidates.ItemContainerStyle = itemStyle;
         AutomationProperties.SetName(search, L.Get("WindowSource.Search")); AutomationProperties.SetName(candidates, L.Get("WindowSource.PickerTitle"));
@@ -96,12 +96,13 @@ internal sealed class WindowSourcePickerWindow : Window
         var visible = catalog.Where(item => query.Length == 0 || item.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
             item.ProcessName.Contains(query, StringComparison.CurrentCultureIgnoreCase) || item.WindowClass.Contains(query, StringComparison.CurrentCultureIgnoreCase)).ToArray();
         candidates.ItemsSource = visible; RefreshSelection();
-        status.Text = L.Get(loading ? "WindowSource.Loading" : queryError ?? (catalog.Length == 0 ? "WindowSource.NoWindows" : visible.Length == 0 ? "WindowSource.NoMatches" : "WindowSource.PickerHint"));
     }
     private void RefreshSelection()
     {
         SelectedCandidate = candidates.SelectedItem as WindowSourceCandidate;
         select.IsEnabled = !loading && SelectedCandidate is { UnavailableReasonKey: null };
-        if (SelectedCandidate?.UnavailableReasonKey is { } reason) status.Text = L.Get(reason);
+        string? key = loading ? "WindowSource.Loading" : queryError ?? SelectedCandidate?.UnavailableReasonKey ??
+            (catalog.Length == 0 ? "WindowSource.NoWindows" : candidates.Items.Count == 0 ? "WindowSource.NoMatches" : null);
+        status.Text = key is null ? "" : L.Get(key); status.Visibility = key is null ? Visibility.Collapsed : Visibility.Visible;
     }
 }
