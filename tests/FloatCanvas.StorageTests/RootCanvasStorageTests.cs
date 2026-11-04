@@ -19,7 +19,7 @@ internal static class RootCanvasStorageTests
         var document = owner.Document; string original = JsonSerializer.Serialize(document);
         string path = Path.Combine(root, "three.floatcanvas");
         await store.SaveAsync(path, document, owner.Assets); var loaded = await store.LoadAsync(path);
-        check(SceneDocument.CurrentVersion == 17 && JsonSerializer.Serialize(loaded.Document) == original, "v17 stores all three root assignments including empty groups exactly");
+        check(SceneDocument.CurrentVersion >= 17 && JsonSerializer.Serialize(loaded.Document) == original, "current format retains v17 root assignments including empty groups exactly");
         var reopened = new EditorSession(loaded.Document, loaded.Assets);
         check(reopened.ActiveRootCanvas == RootCanvasKind.Main && reopened.EditScopeId is null, "reopening starts editing Main while preserving every root's contents");
         check(SceneEvaluation.Build(loaded.Document).Leaves.Select(leaf => leaf.RootCanvas).SequenceEqual([
@@ -41,7 +41,7 @@ internal static class RootCanvasStorageTests
             string legacy = Path.Combine(root, "v" + version + ".floatcanvas");
             await WritePackage(legacy, version, old); byte[] before = await File.ReadAllBytesAsync(legacy);
             var migrated = await store.LoadAsync(legacy);
-            check(migrated.Document.Version == 17 && migrated.Document.RootCanvasAssignments.Count == 0 &&
+            check(migrated.Document.Version == SceneDocument.CurrentVersion && migrated.Document.RootCanvasAssignments.Count == 0 &&
                 SceneCanvasRoots.Resolve(migrated.Document, migrated.Document.Elements.Single().Id) == RootCanvasKind.Main,
                 $"historical v{version} defaults to Main without inventing root groups");
             check((await File.ReadAllBytesAsync(legacy)).AsSpan().SequenceEqual(before) &&

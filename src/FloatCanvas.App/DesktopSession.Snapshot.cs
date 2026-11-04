@@ -120,17 +120,26 @@ internal sealed partial class DesktopSession
             _diagnostics.Write("Snapshot.BeginRejected", new { _host.IsEditing, _host.IsVisible, Kind = Active.Document.Kind });
             return;
         }
-        var request = new SnapshotCaptureRequest(Active, _host.EditingSessionVersion);
-        var screenOrigin = _editor.ScreenOrigin;
+        var display = CurrentGroupCanvasView();
+        var capturedMapping = _editor.CurrentCanvasMapping;
+        var viewing = EditingCanvasView; var viewEpoch = _canvasViewEpoch;
+        var screenOrigin = _editor.CanvasOrigin;
+        var prefab = _prefabEditContext; var mode = _groupCanvasMode;
+        var owners = prefab?.Chain().Select(item => (Context: item, Document: item.Owner.Document, Revision: item.Owner.PreviewRevision,
+            Scope: item.Owner.EditScopeVersion, Path: item.SourcePath, Instance: item.EnteredInstanceId)).ToArray();
+        bool ContextCurrent() => ReferenceEquals(prefab, _prefabEditContext) && mode == _groupCanvasMode &&
+            (owners is null || owners.All(item => ReferenceEquals(item.Document, item.Context.Owner.Document) && item.Revision == item.Context.Owner.PreviewRevision &&
+                item.Scope == item.Context.Owner.EditScopeVersion && item.Path == item.Context.SourcePath && item.Instance == item.Context.EnteredInstanceId));
+        var request = new SnapshotCaptureRequest(Active, _host.EditingSessionVersion, viewEpoch, screenOrigin, ContextCurrent);
         var presentation = FreezePresentationCapture(request.Target);
         using var windows = FreezeWindowSourceCapture(request.Target);
         _snapshotCaptureRequest = request;
         bool ContentCurrent() => !_disposed && !_documentStopped && !_documentExitRequested &&
-            ReferenceEquals(_snapshotCaptureRequest, request) && request.MatchesContent(Active) && screenOrigin == _editor.ScreenOrigin;
+            ReferenceEquals(_snapshotCaptureRequest, request) && request.MatchesContent(Active, _canvasViewEpoch, _editor.CanvasOrigin);
         bool CanInsert()
         {
             string? rejection = _disposed ? "Disposed" : _documentStopped ? "Stopped" : _documentExitRequested ? "ApplicationExit" :
-                !ReferenceEquals(_snapshotCaptureRequest, request) ? "Superseded" : screenOrigin != _editor.ScreenOrigin ? "ScreenOriginChanged" : request.ContentRejection(Active) ??
+                !ReferenceEquals(_snapshotCaptureRequest, request) ? "Superseded" : request.ContentRejection(Active, _canvasViewEpoch, _editor.CanvasOrigin) ??
                 (!_host.IsEditing ? "NotEditing" :
                 _windowCoordinator?.CanContinue(new(request.EditingVersion, true, Active.Document), Active.Document) != true ? "SessionOrForegroundChanged" : null);
             if (rejection is null) return true;
@@ -143,14 +152,16 @@ internal sealed partial class DesktopSession
         LogSnapshot(request, "Begin", selection: selection);
         try
         {
+            if (!CanInsert()) return;
+            var snapshot = _host.IsVisible ? display.Document.Clone() : HiddenCanvasPreview().Clone();
+            // Freeze the displayed graph before yielding; parent drafts can have
+            // their own revisions even when the active child's content is unchanged.
+            snapshot.LayerOpacity = 1;
+            var resources = ResourceSnapshot(snapshot);
             // Bind the request before yielding, but let the original pointer-up handler
             // release its gesture capture before a clean-capture carrier acquires it.
             await Dispatcher.Yield(DispatcherPriority.Input);
             if (!CanInsert()) return;
-            var snapshot = _host.IsVisible ? Active.CreateCommittedSnapshot() : HiddenCanvasPreview().Clone();
-            // Capture and rendering use the same raw opacity, including invisible live effects.
-            snapshot.LayerOpacity = 1;
-            var resources = ResourceSnapshot(snapshot);
             var displays = _host.Monitors.Select(m => new RectD(m.Bounds.Left - screenOrigin.X, m.Bounds.Top - screenOrigin.Y, m.Bounds.Width, m.Bounds.Height)).ToArray();
             CapturedDesktop? desktop = null;
             if (selection.Source != CaptureSource.CanvasOnly || SceneRenderer.HasLiveEffects(snapshot))
@@ -181,11 +192,11 @@ internal sealed partial class DesktopSession
             }
             if (!CanInsert()) return;
             LogSnapshot(request, "RenderBegin");
-            var result = await Task.Run(() => SnapshotImageCommand.Render(snapshot, resources, selection, desktop, displays, animationTime, screenOrigin, presentation, windows), _documentLifetime.Token);
+            var result = await Task.Run(() => SnapshotImageCommand.Render(snapshot, resources, selection, desktop, displays, animationTime, screenOrigin, presentation, windows, viewing), _documentLifetime.Token);
             if (!CanInsert()) return;
             if (!result.HasVisiblePixels) { LogSnapshot(request, "Empty"); UpdateStatus(L.Get("Snapshot.Empty")); return; }
-            SnapshotImageCommand.Insert(request.Target, result, CanvasMapping.Create(snapshot, request.Target.ActiveRootCanvas).PlaneToScreen,
-                selection.BillboardDepthLine, selection.BillboardScreenFirst);
+            SnapshotImageCommand.Insert(request.Target, result, capturedMapping.PlaneToScreen,
+                selection.BillboardDepthLine, selection.BillboardScreenFirst, capturedMapping);
             LogSnapshot(request, "Inserted");
             UpdateStatus(WithCaptureWarning(L.Get("Snapshot.Inserted"), desktop is null ? null : CaptureWarning(desktop)));
             ScheduleRecovery();

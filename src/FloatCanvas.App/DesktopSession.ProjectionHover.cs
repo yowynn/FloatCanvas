@@ -35,14 +35,15 @@ internal sealed partial class DesktopSession
     {
         if (!_host.IsEditing || !_host.IsVisible || _canvasCalibration.IsActive || DocumentOperationBusy ||
             _cleanCaptureDepth != 0 || _host.IsReceivingDrop || _eyedropper is not null || _projectionHoverPoint is not { } pointer ||
-            _projectionHoverSession != _host.EditingSessionVersion || Active.ActiveRootCanvas != RootCanvasKind.Main || !Active.Document.Canvas.Projection.Enabled) return false;
-        var point = new PointD(pointer.X - _editor.ScreenOrigin.X, pointer.Y - _editor.ScreenOrigin.Y);
-        return Active.Document.Viewport.Contains(point) && !CanvasMapping.Create(Active.Document).IsScreenSafe(point);
+            _projectionHoverSession != _host.EditingSessionVersion) return false;
+        var display = CurrentGroupCanvasView();
+        var point = new PointD(pointer.X - _editor.CanvasOrigin.X, pointer.Y - _editor.CanvasOrigin.Y);
+        return _editor.CurrentCanvasMapping.IsPerspective && display.Document.Viewport.Contains(point) && !_editor.CurrentCanvasMapping.IsScreenSafe(point);
     }
 
     private void DrawProjectionHover(SKCanvas canvas)
     {
         _unsafeHoverVisible = ShouldShowProjectionUnsafeHover();
-        if (_unsafeHoverVisible) SceneRenderer.DrawProjectionUnsafeRegion(canvas, Active.Document, Active.Document.Viewport);
+        if (_unsafeHoverVisible) SceneRenderer.DrawProjectionUnsafeRegion(canvas, _editor.CurrentCanvasMapping, CurrentGroupCanvasView().Document.Viewport);
     }
 }

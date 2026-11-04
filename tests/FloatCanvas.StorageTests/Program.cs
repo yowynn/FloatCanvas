@@ -7,6 +7,10 @@ using System.Text.Json.Nodes;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+await CanvasViewStateStoreTests.RunAsync(Check);
+if (args.Contains("--canvas-view-state-only")) { Console.WriteLine($"PASS {checks} canvas view state checks"); return; }
+await CanvasAuthoringReferenceTests.RunAsync(Check);
+if (args.Contains("--canvas-reference-only")) { Console.WriteLine($"PASS {checks} canvas reference checks"); return; }
 await SubprojectCanvasStorageTests.RunAsync(Check);
 if (args.Contains("--subproject-canvases-only")) { Console.WriteLine($"PASS {checks} subproject canvas storage checks"); return; }
 if (args.Contains("--root-canvases-only")) { await RootCanvasStorageTests.RunAsync(Check); Console.WriteLine($"PASS {checks} root canvas storage checks"); return; }

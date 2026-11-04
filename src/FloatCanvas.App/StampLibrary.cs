@@ -160,7 +160,7 @@ internal sealed class StampLibrary(string profileDirectory)
                 {
                     using var screenBackdrop = StampBackdrop(renderContext?.ScreenCapture, renderContext?.ScreenOrigin ?? default, 1);
                     renderer.ScreenBackdrop = screenBackdrop; renderer.LiveEffectContext = context;
-                    byte[] screenPixels = renderer.ExportPng(screenSource, renderAssets, transparent: true);
+                    byte[] screenPixels = renderer.ExportPng(screenSource, renderAssets, transparent: true, useAuthoredFrame: false);
                     return (preview: Thumbnail(screenPixels), merged: mode == StampSaveMode.RasterMerge ? screenPixels : null,
                         screenBounds: (RectD?)screenSource.Viewport);
                 }
@@ -174,7 +174,7 @@ internal sealed class StampLibrary(string profileDirectory)
                     // A stamp preview owns local ink, independent of the author's screen-root slot.
                     local.RootCanvasAssignments.Clear();
                     return renderer.ExportPng(local,renderAssets,transparent:true,
-                        live ? SceneRenderSpace.ScreenComposite : SceneRenderSpace.PlaneContent);
+                        live ? SceneRenderSpace.ScreenComposite : SceneRenderSpace.PlaneContent, useAuthoredFrame: false);
                 }
                 byte[] preview = live ? Render(160 / Math.Max(source.Viewport.Width, source.Viewport.Height)) : [];
                 byte[]? merged = mode == StampSaveMode.RasterMerge

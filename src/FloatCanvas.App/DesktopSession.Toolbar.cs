@@ -60,7 +60,7 @@ internal sealed partial class DesktopSession
         // Match the two-DIP inner padding above and below the rows.
         content.RowDefinitions.Add(new Controls.RowDefinition { Height = new GridLength(2) });
         content.RowDefinitions.Add(new Controls.RowDefinition { Height = new GridLength(26) });
-        for (int i = 0; i < 32; i++) content.ColumnDefinitions.Add(new Controls.ColumnDefinition { Width = new GridLength(i is 2 or 13 or 16 or 20 or 23 ? 10 : 30) });
+        for (int i = 0; i < 33; i++) content.ColumnDefinitions.Add(new Controls.ColumnDefinition { Width = new GridLength(i is 2 or 13 or 17 or 21 or 24 ? 10 : 30) });
         int toolColumn = 0;
         void Cell(UIElement element, int column, int row = 0, int span = 1)
         { Controls.Grid.SetColumn(element, column); Controls.Grid.SetRow(element, row==0?0:2); Controls.Grid.SetColumnSpan(element, span); content.Children.Add(element); }
@@ -108,6 +108,7 @@ internal sealed partial class DesktopSession
         _billboardButton.Tag="billboard";Cell(_billboardButton,toolColumn++);
         Controls.ToolTipService.SetShowOnDisabled(_billboardButton,true);
         RefreshBillboardState();
+        Cell(CreateCanvasNavigationButton(), toolColumn++);
         Cell(Separator(), toolColumn++);
         Action("import", L.Get("Toolbar.Image"), CommandGlyphs.Image, () => _ = RunCommand(() => ImportImagesAsync()), "I");
         AddShortcutHint(content.Children.OfType<Controls.Button>().Last(), "I");
@@ -150,7 +151,7 @@ internal sealed partial class DesktopSession
         {
             EnsureStampWindow();return _stampWindow!.CreateToolbarMenu(id,slot,_toolbar);
         };
-        _status.Text = L.Get("Preset.Freehand"); _toolbarStatusDisplay = new(_status); Cell(_toolbarStatusDisplay, 14, 1, 18);
+        _status.Text = L.Get("Preset.Freehand"); _toolbarStatusDisplay = new(_status); Cell(_toolbarStatusDisplay, 14, 1, 19);
         RefreshToolShortcutHints();
         _toolbarExpandedContent = Surface(content, ToolbarUpperRow.OuterCornerRadius, new Thickness(20, 2, 4, 2));
         _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;

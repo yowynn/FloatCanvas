@@ -93,7 +93,7 @@ internal sealed partial class EditorController
         var document = PickingDocument;
         var hit = !CanvasDepthOrder.IsEnabled(document) ? document.Elements
             .LastOrDefault(element => SceneCanvasRoots.Resolve(document, element.Id) == PickingRootCanvas && IsShownInkSelectable(document, element) && ElementHitTestScreenCore(document, element, point, tolerance)) :
-            SelectionRenderer.PickDepth(document, PickingAssets, point, tolerance, rootCanvas: PickingRootCanvas);
+            SelectionRenderer.PickDepth(document, PickingAssets, canvasView.ToCanvas(point), tolerance / canvasView.Zoom, rootCanvas: PickingRootCanvas);
         // The shown snapshot may lag a removal. Never resurrect or mutate its frozen nodes.
         return hit is null ? null : CurrentEditableLeaf(hit.Id);
     }
@@ -128,7 +128,7 @@ internal sealed partial class EditorController
     }
 
     private bool ElementHitTestScreenCore(SceneDocument document, CanvasElement element, PointD point, double tolerance)
-        => ElementHitTestScreenCore(document, PickingAssets, SelectionRenderer, element, point, tolerance);
+        => ElementHitTestScreenCore(document, PickingAssets, SelectionRenderer, element, canvasView.ToCanvas(point), tolerance / canvasView.Zoom);
 
     private static bool ElementHitTestScreenCore(SceneDocument document, AssetLibrary assets, SceneRenderer renderer,
         CanvasElement element, PointD point, double tolerance, CancellationToken cancellationToken = default)
@@ -148,7 +148,8 @@ internal sealed partial class EditorController
             PendingPicking = SelectScreenRectangleAsync(rectangle, additive);
             return;
         }
-        ApplyRectangleHits(ScreenRectangleHits(PickingDocument, PickingAssets, SelectionRenderer, rectangle, rootCanvas: PickingRootCanvas), additive, Session.Selection.ToArray());
+        ApplyRectangleHits(ScreenRectangleHits(PickingDocument, PickingAssets, SelectionRenderer,
+            canvasView.Matrix.Inverse().TransformBounds(rectangle), rootCanvas: PickingRootCanvas), additive, Session.Selection.ToArray());
     }
 
     private void ApplyRectangleHits(IEnumerable<Guid> hits, bool additive, IEnumerable<Guid> previous)

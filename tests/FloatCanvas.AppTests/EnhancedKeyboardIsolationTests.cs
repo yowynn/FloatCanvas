@@ -31,7 +31,7 @@ internal static class EnhancedKeyboardIsolationTests
         Observer(directory); return true;
     }
 
-    internal static void Run(Action<string, bool> check)
+    internal static void Run(Action<string, bool> check, bool monitorMessagesOnly = false)
     {
         if (Application.Current is not null) throw new InvalidOperationException("Run the enhanced keyboard gate in a fresh process.");
         var desktop = new StringBuilder(256);
@@ -70,10 +70,13 @@ internal static class EnhancedKeyboardIsolationTests
             Activate((nint)identity.Primary, child.Id, child);
             RequireForeground((nint)identity.Primary, child.Id);
             Command("reset", preview: false);
-            PulseSpace((nint)identity.Primary, child.Id);
-            Wait(() => Read(run) is { LlDown: >= 1, LlUp: >= 1, WmDown: >= 1, WmUp: >= 1 }, "normal Space positive control");
-            Finding("pass-through delivers one balanced Space pair to the independent WM and LL observer",
-                Read(run) is { LlDown: 1, LlUp: 1, WmDown: 1, WmUp: 1 });
+            if (!monitorMessagesOnly)
+            {
+                PulseSpace((nint)identity.Primary, child.Id);
+                Wait(() => Read(run) is { LlDown: >= 1, LlUp: >= 1, WmDown: >= 1, WmUp: >= 1 }, "normal Space positive control");
+                Finding("pass-through delivers one balanced Space pair to the independent WM and LL observer",
+                    Read(run) is { LlDown: 1, LlUp: 1, WmDown: 1, WmUp: 1 });
+            }
 
             ApplicationPaths.Configure(["--profile", Path.Combine(run, "profile"), "--primary-screen"]);
             new UserSettings { Language = "en", ShowFloatingLogo = false, Theme = "light" }.Save();
@@ -92,6 +95,42 @@ internal static class EnhancedKeyboardIsolationTests
             host.EditingFocusLost += () => Snapshot("editing-focus-lost");
             Command("reset", preview: true);
             Enter();
+            if (monitorMessagesOnly)
+            {
+                int changes = 0; host.MonitorsChanged += () => changes++;
+                foreach (uint message in new uint[] { 0x7e, 0x2e0 })
+                {
+                    int before = changes;
+                    long version = host.EditingSessionVersion, loss = host.ForegroundLossVersion;
+                    var previousInput = host.Diagnostics.Single().InputHandle;
+                    var receiver = message == 0x2e0 ? previousInput : host.ControlHandle;
+                    Console.WriteLine("MONITOR_MESSAGE_BEFORE " + JsonSerializer.Serialize(new { message, Receiver = (long)receiver,
+                        Refresh = Field<bool>(host, "_refreshPosted"), Geometry = (long)Field<nint>(host, "_captureGeometryWindow") }));
+                    nint rectangle = Marshal.AllocHGlobal(16);
+                    try
+                    {
+                        var monitor = host.Monitors.Single(); var outputBounds = monitor.Bounds;
+                        Marshal.Copy(new[] { outputBounds.Left, outputBounds.Top, outputBounds.Right, outputBounds.Bottom }, 0, rectangle, 4);
+                        SendMessage(receiver, message, message == 0x2e0 ? (nuint)(monitor.DpiX | monitor.DpiY << 16) : 32,
+                            message == 0x2e0 ? rectangle : (nint)(outputBounds.Width | outputBounds.Height << 16));
+                    }
+                    finally { Marshal.FreeHGlobal(rectangle); }
+                    Console.WriteLine("MONITOR_MESSAGE_AFTER " + JsonSerializer.Serialize(new { message,
+                        Refresh = Field<bool>(host, "_refreshPosted"), Geometry = (long)Field<nint>(host, "_captureGeometryWindow") }));
+                    Finding($"display message {message:X} retains acknowledged external enhanced input before rebuilding",
+                        host.IsEditing && host.HasEditingInput && host.EditingSessionVersion == version && host.ForegroundLossVersion == loss);
+                    Wait(() => changes > before, "display notification rebuild");
+                    Finding($"display message {message:X} transfers its existing external lease to the replacement receiver",
+                        host.IsEditing && host.HasEditingInput && host.EditingSessionVersion == version && host.ForegroundLossVersion == loss &&
+                        host.Diagnostics.Single().InputHandle != previousInput && GetForegroundWindow() == (nint)identity.Primary);
+                }
+                Command("activate-peer", preview: false);
+                Wait(() => !host.IsEditing, "actual external focus transfer still releases editing");
+                Finding("an explicit external-window switch still releases editing after monitor rebuilds", GetForegroundWindow() == (nint)identity.Peer && !host.HasEditingInput);
+                Snapshot("monitor-messages-finished");
+                foreach (var outcome in outcomes) check(outcome.Name, outcome.Passed);
+                return;
+            }
             int beforeSpace = localSpace;
             if (physicalSpace)
             {
@@ -251,7 +290,7 @@ internal static class EnhancedKeyboardIsolationTests
                 SetForegroundWindow(originalForeground);
             Write(run, "result.json", new { Passed = failure is null && outcomes.All(x => x.Passed), Failure = failure, PhysicalSpaceRequested = physicalSpace,
                 Findings = outcomes.Select(x => new { x.Name, x.Passed }), Observations = observations,
-                Limitations = "Guarded SendInput proves input-stream routing, not physical HID equivalence. The automatic gate does not inject Alt+Tab; use --manual-alt-tab for that real chord." });
+                Limitations = monitorMessagesOnly ? "Own control-window display/DPI messages and real external input delegation; no keyboard input injected and no physical monitor hotplug." : "Guarded SendInput proves input-stream routing, not physical HID equivalence. The automatic gate does not inject Alt+Tab; use --manual-alt-tab for that real chord." });
             Console.WriteLine("ENHANCED_KEYBOARD_RESULT " + Path.Combine(run, "result.json"));
         }
     }
@@ -420,6 +459,7 @@ internal static class EnhancedKeyboardIsolationTests
     [DllImport("user32.dll")] private static extern nint GetThreadDesktop(uint thread);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool GetUserObjectInformation(nint handle, int index, StringBuilder name, int length, out int needed);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
+    [DllImport("user32.dll", EntryPoint = "SendMessageW", SetLastError = true)] private static extern nint SendMessage(nint window, uint message, nuint wParam, nint lParam);
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint from, uint to, bool attach);
     [DllImport("user32.dll")] private static extern bool IsWindow(nint window);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);

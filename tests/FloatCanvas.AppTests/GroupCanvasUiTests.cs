@@ -96,7 +96,10 @@ internal static class GroupCanvasUiTests
             layers.SetGroupContext(accepted); host.Layout();
             check(prefix + storage + " correct group operations are visible", export.Visibility == (storage == GroupStorageKind.ExternalFile ? Visibility.Collapsed : Visibility.Visible) && detach.Visibility == (storage == GroupStorageKind.Ordinary ? Visibility.Collapsed : Visibility.Visible));
             var sourceViewport = Field<ScrollViewer>(layers, "groupSourceViewport"); var sourceText = Field<TextBlock>(layers, "groupSource");
-            check(prefix + storage + " full external path is retained and other groups omit it", sourceViewport.Visibility == (storage == GroupStorageKind.ExternalFile ? Visibility.Visible : Visibility.Collapsed) && (storage != GroupStorageKind.ExternalFile || sourceText.Text == source && Equals(sourceText.ToolTip, source) && sourceViewport.ViewportWidth > 0 && sourceViewport.ExtentHeight > sourceViewport.ViewportHeight));
+            check(prefix + storage + " external path is available in compact status tooltip", sourceViewport.Visibility == Visibility.Collapsed &&
+                (storage != GroupStorageKind.ExternalFile || sourceText.Text == source && Field<TextBlock>(layers, "groupStorage").ToolTip.ToString()!.Contains(source)));
+            check(prefix + storage + " shared navigation has no separate complete or cancel controls", Field<WrapPanel>(layers, "editContext").Children.Count == 0);
+            check(prefix + storage + " auxiliary canvases stay in a closed icon menu", Field<Button>(layers, "rootCanvasMenu").ContextMenu?.IsOpen == false);
             if (storage != GroupStorageKind.Ordinary) { detach.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); check(prefix + storage + " detach invokes the current operation once", detached == 1); }
             var controls = new FrameworkElement[] { site, choice, choice.Items[0], choice.Items[1], export, detach }.Where(control => control.Visibility == Visibility.Visible);
             check(prefix + storage + " group controls fit the narrow native viewport", controls.All(control => Within(control, host.Root)) && choice.Items.All(item => item.ActualHeight >= 26) && Bounds(Field<ListBox>(layers, "layers"), host.Root).Height > 90);
@@ -159,7 +162,12 @@ internal static class GroupCanvasUiTests
         internal NativeHost(LayersWindow window, int width, int height)
         {
             this.window = window; this.width = width; this.height = height; content = (FrameworkElement)window.Content; window.Content = null;
-            Root = new Border { Width = width, Height = height, Child = content }; Root.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
+            var surface = new Grid(); surface.RowDefinitions.Add(new() { Height = new GridLength(AppWindowChrome.CaptionHeight) });
+            surface.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+            var headerActions = (FrameworkElement)window.Resources["CanvasWindowActions"];
+            headerActions.HorizontalAlignment = HorizontalAlignment.Right; surface.Children.Add(headerActions);
+            Grid.SetRow(content, 1); surface.Children.Add(content);
+            Root = new Border { Width = width, Height = height, Child = surface }; Root.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
             Root.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "CanvasText");
             source = new(new HwndSourceParameters("FloatCanvas group operation UI") { Width = width, Height = height, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x08000080 }); source.RootVisual = Root;
             var dpi = VisualTreeHelper.GetDpi(Root); SetWindowPos(source.Handle, 0, 0, 0, (int)Math.Ceiling(width * dpi.DpiScaleX), (int)Math.Ceiling(height * dpi.DpiScaleY), 0x16); Layout();
@@ -172,7 +180,7 @@ internal static class GroupCanvasUiTests
             try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
             Layout();
         }
-        public void Dispose() { Root.Child = null; source.RootVisual = null; source.Dispose(); window.Content = content; }
+        public void Dispose() { ((Grid)Root.Child).Children.Clear(); Root.Child = null; source.RootVisual = null; source.Dispose(); window.Content = content; }
     }
     [DllImport("user32.dll")] private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);

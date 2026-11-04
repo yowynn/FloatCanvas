@@ -40,7 +40,7 @@ internal sealed class GroupCanvasScene
 
         SceneDocument source;
         if (root && editContext is not null) source = PrefabPreviewComposer.Capture(editContext, assets).Document;
-        else if (canvasMode == GroupCanvasMode.Temporary) source = Isolate(active);
+        else if (canvasMode == GroupCanvasMode.Temporary) source = Isolate(active, editContext is not null);
         else source = active.Document;
         if (extent is { } bounds && source.Viewport != bounds)
         {
@@ -49,8 +49,8 @@ internal sealed class GroupCanvasScene
             source.Viewport = bounds;
         }
         var placement = root && editContext is not null ? EditingPlacement(chain) :
-            canvasMode == GroupCanvasMode.Temporary ? active.GetEditingSubprojectPlacement() : (LayerPlacement?)null;
-        var editingRoot = canvasMode == GroupCanvasMode.Temporary ? RootCanvasKind.Main : root && chain.Length > 0 && EditingInstance(chain[^1]) is { } host
+            canvasMode == GroupCanvasMode.Temporary && (active.EditScopeId is not null || editContext is not null) ? active.GetEditingSubprojectPlacement() : (LayerPlacement?)null;
+        var editingRoot = canvasMode == GroupCanvasMode.Temporary && (active.EditScopeId is not null || editContext is not null) ? RootCanvasKind.Main : root && chain.Length > 0 && EditingInstance(chain[^1]) is { } host
             ? SceneCanvasRoots.Resolve(chain[^1].Owner.Document, host) : active.ActiveRootCanvas;
         var result = new GroupCanvasView(source, currentOrigin, epoch, root, !ReferenceEquals(source, active.Document), placement, editingRoot);
         session = active; document = active.Document; context = editContext; mode = canvasMode;
@@ -62,23 +62,7 @@ internal sealed class GroupCanvasScene
 
     // The saved viewport defines implicit calibration, not the extent of the editor's screen.
     internal static CanvasSettings ResolveEditingCanvas(CanvasSettings settings, RectD reference)
-    {
-        var result = settings.Clone();
-        double cell = CanvasGridGeometry.ResolveCellSize(settings, reference);
-        result.Grid.FlatOrigin ??= reference.Center;
-        result.Grid.FlatCellSize ??= cell;
-        if (settings.Projection.Enabled)
-        {
-            if (settings.Projection.Quad.Count == 0)
-            {
-                result.Projection = CanvasCalibration.CreateInitial(reference, settings.Projection.Columns, settings.Projection.Rows);
-                result.Projection.Enabled = true;
-            }
-            result.Grid.PlaneOrigin ??= result.Projection.PinPoint;
-            result.Grid.PlaneCellSize ??= cell;
-        }
-        return result;
-    }
+        => settings.ResolveReference(reference);
 
     private static Guid? EditingInstance(PrefabEditContext context)
     {
@@ -96,6 +80,7 @@ internal sealed class GroupCanvasScene
         var result = LayerPlacement.Identity;
         foreach (var context in chain)
         {
+            if (context.Draft is { } draft && !context.Owner.IsPrefabEditCurrent(draft)) return null;
             if (EditingInstance(context) is not { } id) return null;
             var owner = context.Owner.Document;
             var graph = new SceneGraph(owner);
@@ -111,9 +96,18 @@ internal sealed class GroupCanvasScene
         return result;
     }
 
-    private static SceneDocument Isolate(EditorSession session)
+    private static SceneDocument Isolate(EditorSession session, bool sourceHeader)
     {
         var source = session.Document;
+        if (session.EditScopeId is null && !sourceHeader)
+        {
+            var graph = new SceneGraph(source);
+            var excluded = graph.EnumerateChildren(null).Where(id => SceneCanvasRoots.Resolve(source, id, graph) != session.ActiveRootCanvas).ToArray();
+            if (excluded.Length == 0) return source;
+            var result = source.Clone();
+            new SceneGraph(result).RemoveNodes(excluded);
+            return result;
+        }
         if (session.EditScopeId is null && session.ActiveRootCanvas == RootCanvasKind.Main && source.RootCanvasAssignments.Count == 0 &&
             session.GetEditingSubprojectCanvas().Origin == default) return source;
         var isolated = session.EditScopeId is { } scope ? Isolate(source, scope) : SceneCanvasRoots.ExtractRootContent(source, session.ActiveRootCanvas);

@@ -39,8 +39,8 @@ internal static class NewCanvasSettingsTests
                 Json(fixture.Live.Document.Canvas) == Json(startupDefault));
             fixture.Live.Document.Canvas.Grid.FlatOrigin = new(-111, -222);
             fixture.Invoke("SynchronizeFlatGridOrigin");
-            check("flat-grid screen reference is the current primary center rather than a saved movable point",
-                fixture.Live.Document.Canvas.Grid.FlatOrigin == reference.Center);
+            check("monitor synchronization preserves an explicitly authored flat-grid origin",
+                fixture.Live.Document.Canvas.Grid.FlatOrigin == new PointD(-111, -222));
             var changed = CanvasPresetLibrary.Apply(new CanvasPresetParameters
             { BackgroundColor = 0xFF123456, ProjectionEnabled = true, GridVisible = true, GridColor = 0xFF3155AA,
                 GridWidth = 3.5, Columns = 12, Rows = 9, DepthPriorityOcclusion = true }, new(), reference, fixture.Live.Document.Viewport);
@@ -120,6 +120,17 @@ internal static class NewCanvasSettingsTests
         internal object? Invoke(string method, params object[] arguments) => typeof(DesktopSession).GetMethod(method, Private)!.Invoke(Session, arguments);
         internal void Run(string method, params object[] arguments)
         {
+            if (method == "StartNewCanvasAsync")
+            {
+                // This fixture covers canvas recipes and retention. Save/leave
+                // protection is exercised separately by CanvasFeedbackTests.
+                foreach (string field in new[] { "_live", "_capture" })
+                    if (typeof(DesktopSession).GetField(field, Private)!.GetValue(Session) is EditorSession owner)
+                    {
+                        var state = Invoke("FileState", owner)!;
+                        state.GetType().GetField("SavedContentVersion")!.SetValue(state, owner.ContentVersion);
+                    }
+            }
             var task = (Task)Invoke(method, arguments)!; var timer = Stopwatch.StartNew();
             while (!task.IsCompleted && timer.Elapsed < TimeSpan.FromSeconds(30))
             {

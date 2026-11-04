@@ -42,9 +42,7 @@ internal sealed partial class DesktopSession
 
     private void OpenCanvasSettings()
     {
-        if (_groupCanvasMode != GroupCanvasMode.Temporary && Active.ActiveRootCanvas != RootCanvasKind.Main) SwitchRootCanvas(RootCanvasKind.Main);
         if (!CanEditDisplayedCanvas) { UpdateStatus(L.Get("GroupCanvas.EditPreviewInIndependent")); return; }
-        if (Active.IsReadOnly) { UpdateStatus(L.Get("GroupCanvas.ReadOnly")); return; }
         if (DocumentOperationBusy || !_host.IsEditing || _editor.Tool != EditorTool.Canvas) return;
         bool alreadyOpen = IsCanvasSettingsOpen;
         SynchronizeFlatGridOrigin();
@@ -168,7 +166,7 @@ internal sealed partial class DesktopSession
         if (HasPrefabEditContext || _groupCanvasMode == GroupCanvasMode.Temporary) { _canvasOriginDocument = Active.Document; return; }
         if (_host.Monitors.Count == 0) return;
         var primary = _host.PrimaryMonitor.Bounds;
-        Active.Document.Canvas.Grid.FlatOrigin = new PointD(primary.Left + primary.Width / 2d, primary.Top + primary.Height / 2d) - _editor.ScreenOrigin;
+        Active.Document.Canvas.Grid.FlatOrigin ??= new PointD(primary.Left + primary.Width / 2d, primary.Top + primary.Height / 2d) - _editor.ScreenOrigin;
         Active.Document.Canvas.Grid.FlatCellSize ??= CanvasGridGeometry.ResolveCellSize(Active.Document.Canvas, Active.Document.Viewport);
         _canvasOriginDocument = Active.Document;
     }
@@ -386,6 +384,7 @@ internal sealed partial class DesktopSession
 
     private void EndCanvasCalibration(bool hidePanel = false, bool restoreWindows = true)
     {
+        _canvasCalibrationRequested = false;
         ClearCanvasGridCalibration();
         _canvasGridScale?.Cancel();
         _calibrationSession = null;
@@ -395,6 +394,16 @@ internal sealed partial class DesktopSession
             _windowCoordinator?.RememberPinnedForResume(_canvasPlacementWindows);
         RestoreCanvasPlacementWindows(restoreWindows, restoreToolWindows: !hidePanel);
         if (hidePanel) DismissCanvasSettings();
+    }
+
+    private bool _canvasCalibrationRequested;
+    private void BeginCanvasCalibrationTool()
+    {
+        if (Active.IsReadOnly || DocumentOperationBusy || !_host.IsEditing || !CanEditDisplayedCanvas) return;
+        _editor.Cancel();
+        if (_editor.Tool != EditorTool.Canvas) SwitchToolState(EditorTool.Canvas);
+        _canvasCalibrationRequested = true;
+        SynchronizeCanvasTool(); RequestRender();
     }
 
     private void BeginCanvasFourPoints()
@@ -460,7 +469,7 @@ internal sealed partial class DesktopSession
         try
         {
             bool selected = _editor.Tool == EditorTool.Canvas && _host.IsEditing &&
-                !_disposed && !_editor.IsTemporaryMove && CanEditDisplayedCanvas && (!DocumentOperationBusy || _canvasCalibration.IsAwaitingResolution);
+                !_disposed && !Active.IsReadOnly && !_editor.IsTemporaryMove && CanEditDisplayedCanvas && (!DocumentOperationBusy || _canvasCalibration.IsAwaitingResolution);
             if (!selected)
             {
                 _canvasGridScale?.Cancel();
@@ -498,20 +507,30 @@ internal sealed partial class DesktopSession
         }
         SynchronizeCanvasTool();
         if (HandleCalibrationPointer(e)) return true;
-        var point = new PointD(e.Position.X - _editor.ScreenOrigin.X, e.Position.Y - _editor.ScreenOrigin.Y);
+        var point = EditingCanvasView.ToCanvas(new(e.Position.X - _editor.CanvasOrigin.X, e.Position.Y - _editor.CanvasOrigin.Y));
         if (e.Kind == OverlayPointerKind.Cancel) _canvasGridScale.Cancel();
-        else if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
-            _canvasGridScale.Down(Active, point, CanvasReferenceViewport(), CaptureCanvasSettingsTarget());
-        else if (e.Kind == OverlayPointerKind.Move) _canvasGridScale.Move(point);
-        else if (e.Kind == OverlayPointerKind.Up && e.Button == OverlayMouseButton.Left)
+        else if (_canvasGridScale.IsDragging && e.Kind == OverlayPointerKind.Move) _canvasGridScale.Move(point);
+        else if (_canvasGridScale.IsDragging && e.Kind == OverlayPointerKind.Up && e.Button == OverlayMouseButton.Left)
         { _canvasGridScale.Move(point); _canvasGridScale.Up(); }
+        else if (!CurrentCanvasSettings.Projection.Enabled)
+        {
+            if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
+                _canvasGridScale.DownPan(Active, point, CanvasReferenceViewport(), CaptureCanvasSettingsTarget());
+            else if (e.Kind == OverlayPointerKind.Wheel && !Active.IsTransactionActive)
+            {
+                double size = Math.Clamp(CanvasGridGeometry.ResolveCellSize(CurrentCanvasSettings, CanvasReferenceViewport()) *
+                    Math.Pow(1.1, e.WheelDelta / 120d), CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize);
+                SetCanvasGridSize(size);
+            }
+        }
         return true;
     }
 
     private bool HandleCalibrationPointer(OverlayPointerEvent e)
     {
         if (!_canvasCalibration.IsActive) return false;
-        var point = new PointD(e.Position.X - _editor.ScreenOrigin.X, e.Position.Y - _editor.ScreenOrigin.Y);
+        _canvasCalibration.ViewZoom = EditingCanvasView.Zoom;
+        var point = EditingCanvasView.ToCanvas(new(e.Position.X - _editor.CanvasOrigin.X, e.Position.Y - _editor.CanvasOrigin.Y));
         if (e.Kind == OverlayPointerKind.Cancel) _canvasCalibration.CancelDrag();
         else if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left) _canvasCalibration.Down(point);
         else if (e.Kind == OverlayPointerKind.Move) _canvasCalibration.Move(point, e.Modifiers);
@@ -565,23 +584,24 @@ internal sealed partial class DesktopSession
         if(_canvasCalibration.IsPlacing){DrawCanvasFourPoints(canvas);return;}
         var settings = CurrentCanvasSettings.Projection;
         if (settings.Quad.Count != 4) return;
+        var quad = settings.Quad.Select(EditingCanvasView.ToView).ToArray();
         using var line = new SKPaint { Color = SKColors.Black.WithAlpha(210), StrokeWidth = 3, IsAntialias = true, Style = SKPaintStyle.Stroke };
-        DrawScreenPolygon(canvas, settings.Quad, line);
+        DrawScreenPolygon(canvas, quad, line);
         line.Color = _canvasCalibration.IsDragConstrained ? new(190, 120, 0) : new(35,131,226); line.StrokeWidth = 1.5f;
-        DrawScreenPolygon(canvas, settings.Quad, line);
+        DrawScreenPolygon(canvas, quad, line);
         using var fill = new SKPaint { Color = SKColors.White, IsAntialias = true };
-        foreach (var p in settings.Quad)
+        foreach (var p in quad)
         {
             canvas.DrawCircle((float)p.X, (float)p.Y, 7, fill);
             canvas.DrawCircle((float)p.X, (float)p.Y, 7, line);
         }
         for (int i = 0; i < 4; i++)
         {
-            var p = (settings.Quad[i] + settings.Quad[(i+1)%4]) * .5;
+            var p = (quad[i] + quad[(i+1)%4]) * .5;
             canvas.DrawRect((float)p.X-4,(float)p.Y-4,8,8,fill);
             canvas.DrawRect((float)p.X-4,(float)p.Y-4,8,8,line);
         }
-        var center = CanvasGridGeometry.ReferenceCenter(settings);
+        var center = EditingCanvasView.ToView(CanvasGridGeometry.ReferenceCenter(settings));
         float x = (float)center.X, y = (float)center.Y;
         float halfSize = (float)CanvasCalibrationController.CenterHandleHalfSize;
         canvas.DrawRoundRect(x - halfSize, y - halfSize, halfSize * 2, halfSize * 2, 6, 6, fill);
@@ -592,13 +612,13 @@ internal sealed partial class DesktopSession
             canvas.DrawLine(x + sign * 10, y, x + sign * 6, y - 4, line); canvas.DrawLine(x + sign * 10, y, x + sign * 6, y + 4, line);
             canvas.DrawLine(x, y + sign * 10, x - 4, y + sign * 6, line); canvas.DrawLine(x, y + sign * 10, x + 4, y + sign * 6, line);
         }
-        DrawCanvasOriginMarker(canvas, settings.Matrix.TransformPoint(default), CurrentCanvasViewport, false);
-        DrawCanvasOriginMarker(canvas, settings.Matrix.TransformPoint(settings.PinPoint), CurrentCanvasViewport, true);
+        DrawCanvasOriginMarker(canvas, EditingCanvasView.ToView(settings.Matrix.TransformPoint(default)), _canvasViewViewport, false);
+        DrawCanvasOriginMarker(canvas, EditingCanvasView.ToView(settings.Matrix.TransformPoint(settings.PinPoint)), _canvasViewViewport, true);
     }
 
     private void DrawCanvasSafetyBoundary(SKCanvas canvas)
     {
-        var mapping = CanvasMapping.Create(new SceneDocument { Canvas = CurrentCanvasSettings, Viewport = CurrentCanvasViewport });
+        var mapping = CanvasMapping.CreateViewing(new SceneDocument { Canvas = CurrentCanvasSettings, Viewport = _canvasViewViewport }, EditingCanvasView);
         var inverse = mapping.ScreenToPlane;
         double normal = Math.Sqrt(inverse.M31 * inverse.M31 + inverse.M32 * inverse.M32);
         if (normal < 1e-15) return;
@@ -609,8 +629,8 @@ internal sealed partial class DesktopSession
         for (int i = 0; i < polygon.Count; i++)
         {
             var a = polygon[i]; var b = polygon[(i + 1) % polygon.Count];
-            if (Math.Abs(inverse.Denominator(a) / normal - CanvasProjectionSafety.HorizonMargin) > .01 ||
-                Math.Abs(inverse.Denominator(b) / normal - CanvasProjectionSafety.HorizonMargin) > .01) continue;
+            if (Math.Abs(inverse.Denominator(a) / normal - CanvasProjectionSafety.HorizonMargin * EditingCanvasView.Zoom) > .01 ||
+                Math.Abs(inverse.Denominator(b) / normal - CanvasProjectionSafety.HorizonMargin * EditingCanvasView.Zoom) > .01) continue;
             canvas.DrawLine((float)a.X, (float)a.Y, (float)b.X, (float)b.Y, paint);
         }
     }
@@ -659,12 +679,13 @@ internal sealed partial class DesktopSession
                 line.StrokeWidth=2;line.Color=new(35,131,226);
             }
         }
+        contour = contour.Select(EditingCanvasView.ToView).ToArray();
         if(contour.Count==2)canvas.DrawLine((float)contour[0].X,(float)contour[0].Y,(float)contour[1].X,(float)contour[1].Y,line);
         else if(contour.Count>2)DrawScreenPolygon(canvas,contour,line);
-        foreach(var point in points)
+        foreach(var point in points.Select(EditingCanvasView.ToView))
         {canvas.DrawCircle((float)point.X,(float)point.Y,5,fill);canvas.DrawCircle((float)point.X,(float)point.Y,5,line);}
         if(previewOrigin is { } origin)
-            DrawCanvasOriginMarker(canvas,origin,CurrentCanvasViewport,true);
+            DrawCanvasOriginMarker(canvas,EditingCanvasView.ToView(origin),_canvasViewViewport,true);
     }
 
     private static void DrawScreenPolygon(SKCanvas canvas, IReadOnlyList<PointD> points, SKPaint paint)

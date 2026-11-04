@@ -20,6 +20,7 @@ internal static class Program
         if (args is ["--overlay-probe-wait"]) { Thread.Sleep(10000); return 0; }
         try
         {
+            if (args is ["--canvas-cold-recovery-child", var recoveryProfile]) { CanvasApplyTests.RunColdRecoveryChild(Assert, recoveryProfile); return 0; }
             if (args.Contains("--isolated-ui-desktop")) return IsolatedUiDesktop.Run(args);
             if (args is ["--screenshot-peer", var peerMode]) { ScreenshotPeerFixture.Run(peerMode); return 0; }
             if (args.Contains("--panel-review-only")) { PanelReviewRegressionTests.Run(Assert, args.SkipWhile(a => a != "--panel-review-only").Skip(1).FirstOrDefault()); return 0; }
@@ -33,6 +34,22 @@ internal static class Program
             if (args.Contains("--toolbar-opacity-pointer-only")) { ToolbarOpacitySliderTests.RunPointer(Assert); return 0; }
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
+            if (args.Contains("--canvas-feedback-only")) { CanvasFeedbackTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-text-exit-only")) { CanvasTextExitTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-feedback-native-only")) { CanvasFeedbackNativeTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-feedback-native-preview")) { CanvasFeedbackNativeTests.Run(Assert, true); return 0; }
+            if (args.Contains("--canvas-ime-feedback-preview")) { CanvasFeedbackNativeTests.Run(Assert, true, true); return 0; }
+            if (args.Contains("--canvas-ime-packets-preview")) { CanvasFeedbackNativeTests.Run(Assert, true, probeIme: true); return 0; }
+            if (args.Contains("--canvas-ime-candidate-preview")) { CanvasFeedbackNativeTests.Run(Assert, true, probeIme: true, reviewCandidate: true); return 0; }
+            if (args.Contains("--canvas-monitor-message-preview")) { CanvasFeedbackNativeTests.Run(Assert, true, probeDisplayMessages: true); return 0; }
+            if (args.Contains("--canvas-toolbar-space-preview")) { CanvasFeedbackNativeTests.Run(Assert, true, probeToolbarSpace: true); return 0; }
+            if (args.Contains("--canvas-monitor-enhanced-preview")) { CanvasFeedbackNativeTests.Run(Assert, true, probeDisplayMessages: true, enhanced: true); return 0; }
+            if (args.Contains("--canvas-viewing-only")) { CanvasViewingTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-navigation-benchmark")) { CanvasViewingTests.Benchmark(Assert); return 0; }
+            if (args.Contains("--raster-preview-ranges-only")) { RasterPreviewRanges(); return 0; }
+            if (args.Contains("--canvas-apply-only")) { CanvasApplyTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-physical-monitors-only")) { InlineTextViewMappingTests.RunPhysical(Assert); CanvasPhysicalMonitorTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-resolution-workflow-only")) { CanvasResolutionWorkflowTests.Run(Assert); return 0; }
             if (args is ["--numeric-pointer-preview", var pointerOutput]) { NumericPointerFixture.Preview(pointerOutput); return 0; }
             if (args is ["--numeric-pointer-system-preview", var systemPointerOutput]) { NumericPointerFixture.Preview(systemPointerOutput, true); return 0; }
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
@@ -78,6 +95,7 @@ internal static class Program
             if (args.Contains("--canvas-geometry-lifecycle-only")) { CanvasAnchorCaptureTests.Run(Assert, geometryOnly: true); return 0; }
             if (args.Contains("--appearance-only")) { StyleVariantTests.Run(Assert); return 0; }
             if (args.Contains("--enhanced-keyboard-isolation-only")) { EnhancedKeyboardIsolationTests.Run(Assert); return 0; }
+            if (args.Contains("--enhanced-monitor-messages-only")) { EnhancedKeyboardIsolationTests.Run(Assert, monitorMessagesOnly: true); return 0; }
             if (args.Contains("--private-keyboard-bridge-state-only")) { PrivateKeyboardBridgeStateTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-opacity-gesture-only")) { ToolbarOpacityGestureTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-screen-bounds-only")) { ToolbarScreenBoundsTests.Run(Assert); return 0; }
@@ -90,7 +108,7 @@ internal static class Program
             if (args.Contains("--inspector-color-menu-only")) { InspectorColorMenuLifecycleTests.Run(Assert, args.SkipWhile(a => a != "--inspector-color-menu-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-robustness-only")) { WindowRobustnessTests.RunNative(Assert); return 0; }
             if (args.Contains("--native-presentation-lifecycle-only")) { NativePresentationLifecycleTests.Run(Assert); return 0; }
-            if (args.Contains("--archive-worker-only")) { ArchiveWorkerTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--archive-worker-only")) { Task.Run(() => ArchiveWorkerTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--preview-request-recovery-only")) { PreviewRequestRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--presented-picking-only")) { PresentedPickingTests.Run(Assert); return 0; }
             if (args.Contains("--segmented-choices-only")) { SegmentedChoiceTests.Run(Assert, args.SkipWhile(a => a != "--segmented-choices-only").Skip(1).FirstOrDefault()); return 0; }
@@ -263,8 +281,8 @@ internal static class Program
             if (args.Contains("--canvas-presets-only")) { CanvasPresetTests.Run(Assert); CanvasSettingsControlTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-shelf-only")) { Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult(); StampLibraryUiTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-shelf-native-geometry-only")) { StampLibraryUiTests.RunNativeGeometry(Assert); return 0; }
-            if (args.Contains("--shell-integration-only")) { ShellIntegrationTests.Run(Assert); return 0; }
-            if (args.Contains("--installer-registration-only")) { InstallerRegistrationTests.Run(Assert); return 0; }
+            if (args.Contains("--shell-integration-only")) { Task.Run(() => ShellIntegrationTests.Run(Assert)).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--installer-registration-only")) { Task.Run(() => InstallerRegistrationTests.Run(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--shell-runtime-only")) { ShellRuntimeFixture.Run(Assert); return 0; }
             if (args.Contains("--menu-acceptance-only")) { MenuAcceptanceTests.Run(Assert); return 0; }
             if (args.Contains("--avatar-menu-only")) { AvatarMenuGestureTests.Run(Assert); LauncherGestureStateTests.Run(Assert); return 0; }
@@ -292,8 +310,8 @@ internal static class Program
             if (args.Contains("--tool-state-store-only")) { ToolStateStoreTests.Run(Assert); return 0; }
             if (args.Contains("--tool-state-only")) { ToolStateStoreTests.Run(Assert); ToolWorkingStateTests.Run(Assert); return 0; }
             if (args.Contains("--clear-canvas-only")) { NewCanvasButtonTests.Run(Assert); return 0; }
-            if (args.Contains("--updates-client-only")) { GitHubUpdateClientTests.Run(Assert); return 0; }
-            if (args.Contains("--updates-recovery-only")) { UpdateRecoveryTests.Run(Assert); return 0; }
+            if (args.Contains("--updates-client-only")) { Task.Run(() => GitHubUpdateClientTests.Run(Assert)).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--updates-recovery-only")) { Task.Run(() => UpdateRecoveryTests.Run(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--update-installer-only")) { UpdateInstallerTests.Run(Assert); return 0; }
             if (args.Contains("--update-window-only")) { AppUpdateWindowTests.Run(Assert); return 0; }
             if (args.Contains("--update-startup-process-only")) { UpdateStartupProcessTests.Run(Assert); return 0; }
@@ -371,7 +389,7 @@ internal static class Program
             {
                 WindowChromeTests.Run(Assert); InspectorTests.Run(Assert); ThemeTests.Run(Assert); return 0;
             }
-            if (args.Contains("--recovery-only")) { WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--recovery-only")) { Task.Run(() => WorkspaceRecoveryHistoryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--workspace-preview-only")) { WorkspacePreviewTests.RunAsync(Assert).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--clipboard-only")) { ObjectClipboardTests.Run(Assert); return 0; }
             if (args.Contains("--tool-options-input-only")) { ToolOptionsInputFixture.Run(Assert); return 0; }
@@ -392,6 +410,9 @@ internal static class Program
             GroupControllerTests.Run(Assert);
             SubprojectCanvasViewTests.Run(Assert);
             IndependentCanvasExtentTests.Run(Assert);
+            CanvasViewingTests.Run(Assert);
+            CanvasFeedbackTests.Run(Assert);
+            CanvasApplyTests.Run(Assert);
             RootCanvasIntegrationTests.Run(Assert);
             RootCanvasIndicatorTests.Run(Assert);
             NodeControllerAuditTests.Run(Assert);
@@ -419,7 +440,9 @@ internal static class Program
             WindowRobustnessTests.Run(Assert);
             PreviewRequestRecoveryTests.Run(Assert);
             PresentedPickingTests.Run(Assert);
-            ArchiveWorkerTests.RunAsync(Assert).GetAwaiter().GetResult();
+            // Earlier HWND fixtures may leave a Dispatcher synchronization context.
+            // This storage-only async suite must not capture the UI thread which waits for it.
+            Task.Run(() => ArchiveWorkerTests.RunAsync(Assert)).GetAwaiter().GetResult();
             if (args.Contains("--background-regression"))
                 Console.WriteLine("SKIP desktop-composition cue fixture on the isolated desktop; verify separately with --property-changes-only.");
             else PropertyChangeRegionTests.Run(Assert);
@@ -443,8 +466,8 @@ internal static class Program
             PrefabPreviewTests.Run(Assert);
             EffectScopeRequestTests.Run(Assert);
             Task.Run(() => StampShelfOrderingTests.RunAsync(Assert)).GetAwaiter().GetResult();
-            ShellIntegrationTests.Run(Assert);
-            InstallerRegistrationTests.Run(Assert);
+            Task.Run(() => ShellIntegrationTests.Run(Assert)).GetAwaiter().GetResult();
+            Task.Run(() => InstallerRegistrationTests.Run(Assert)).GetAwaiter().GetResult();
             OverlayProtectionTests.Run(Assert);
             LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert);
             BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert); BillboardScreenCreationTests.Run(Assert); ScreenDraftPreviewTests.Run(Assert);
@@ -482,12 +505,12 @@ internal static class Program
             EngineeringAuditTests.Run(Assert);
             NewCanvasButtonTests.Run(Assert);
             WelcomeSessionTests.Run(Assert);
-            GitHubUpdateClientTests.Run(Assert);
+            Task.Run(() => GitHubUpdateClientTests.Run(Assert)).GetAwaiter().GetResult();
             UpdateInstallerTests.Run(Assert);
             UpdateStartupProcessTests.Run(Assert);
             UpdateCacheTests.Run(Assert);
             UpdateProcessRecoveryTests.Run(Assert);
-            UpdateRecoveryTests.Run(Assert);
+            Task.Run(() => UpdateRecoveryTests.Run(Assert)).GetAwaiter().GetResult();
             AppUpdateWindowTests.Run(Assert);
             LayerRenameTests.Run(Assert);
             PrefabUiTests.Run(Assert);
@@ -546,7 +569,7 @@ internal static class Program
             TypeSpecificInspectorTests.Run(Assert);
             AppIconTests.Run(Assert);
             WindowChromeTests.Run(Assert);
-            WorkspaceRecoveryHistoryTests.RunAsync(Assert).GetAwaiter().GetResult();
+            Task.Run(() => WorkspaceRecoveryHistoryTests.RunAsync(Assert)).GetAwaiter().GetResult();
             WorkspacePreviewTests.RunAsync(Assert).GetAwaiter().GetResult();
             NumericControlTests.Run(Assert);
             NumericRailRangeTests.Run(Assert);
@@ -802,6 +825,7 @@ internal static class Program
         session.Add(new() { Kind = ElementKind.Rectangle, Width = 40, Height = 40, Transform = Affine2D.Translation(220, 30) });
         session.SetSelection([session.Document.Elements[0].Id, session.Document.Elements[2].Id]);
         controller.Tool = EditorTool.Select; Down(controller, new(40, 40));
+        Console.WriteLine($"RASTER_SELECTION_RANGE actual={controller.RasterPreview} transaction={session.IsTransactionActive} selection={session.Selection.Count}");
         Assert("noncontiguous selection keeps intervening z-order in dynamic span", controller.RasterPreview == (0, 2, false));
         controller.Cancel();
         controller.Tool = EditorTool.Eraser; Down(controller, new(30, 30));

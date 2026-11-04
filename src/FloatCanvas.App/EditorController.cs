@@ -140,18 +140,24 @@ internal sealed partial class EditorController
     private SceneDocument? viewDocument;
     private RootCanvasKind viewRootCanvas;
     private bool independentCanvasView;
+    private CanvasViewTransform canvasView = CanvasViewTransform.Identity;
+    internal bool HasPointerGesture => gesture is not null || temporaryMove || _pointerPickingRunning;
+    internal bool IsMovingCanvasSelection => gesture == "move" && OwnsPointerTransaction;
     private RootCanvasKind PickingRootCanvas => viewPlacement is not null ? RootCanvasKind.Main : Session.ActiveRootCanvas;
     internal PointD CanvasOrigin => viewOrigin ?? ScreenOrigin;
     internal CanvasMapping CurrentCanvasMapping => viewMapping ?? CanvasMapping.Create(Session.Document, Session.ActiveRootCanvas);
     internal void SetCanvasView(CanvasMapping? mapping, PointD? origin, object? epoch, LayerPlacement? placement = null,
-        SceneDocument? displayDocument = null, RootCanvasKind displayRootCanvas = RootCanvasKind.Main, bool independent = false)
+        SceneDocument? displayDocument = null, RootCanvasKind displayRootCanvas = RootCanvasKind.Main, bool independent = false,
+        CanvasViewTransform? viewing = null, bool preserveMoveGesture = false)
     {
-        bool changed = !ReferenceEquals(viewEpoch, epoch);
+        bool changed = !ReferenceEquals(viewEpoch, epoch) || canvasView != (viewing ?? CanvasViewTransform.Identity);
         viewMapping = mapping; viewOrigin = origin; viewEpoch = epoch; viewPlacement = placement; viewDocument = displayDocument; viewRootCanvas = displayRootCanvas;
         independentCanvasView = independent;
+        canvasView = viewing ?? CanvasViewTransform.Identity;
         if (!changed) return;
         PlacementContextVersion++;
-        ClearPresentedScene(); SuspendPresentedPicking();
+        ClearPresentedScene();
+        if (!preserveMoveGesture || !IsMovingCanvasSelection) SuspendPresentedPicking();
     }
     internal TimeSpan AnimationTime { get; set; }
     public RectD? Marquee { get; private set; }
@@ -206,7 +212,9 @@ internal sealed partial class EditorController
         get
         {
             if (!Session.IsTransactionActive) return (-1, -1, false);
-            if (nodeTransform is not null) return (-1, -1, true);
+            // Flat leaf moves also capture the original grab for edge panning;
+            // they still have an exact contiguous leaf span for raster reuse.
+            if (nodeTransform is not null && UsesHierarchicalSelection) return (-1, -1, true);
             // Erasure changes the element list. Unknown transactions may mutate any content.
             // Both use the reference draw path rather than reuse potentially stale surfaces.
             if (gesture is not ("draw" or "endpoint" or "move" or "rotate" or "resize")) return (-1, -1, true);

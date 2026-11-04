@@ -41,6 +41,9 @@ internal static class SceneFormatMigration
         // v17 adds optional independent preview headers. Missing metadata stays
         // neutral; copying the enclosing project's perspective would change legacy
         // prefab editing semantics and leak host state into reusable content.
+        // v18 adds a stable authored frame. A missing reference remains readable:
+        // the consumer freezes FromSavedDocument before synchronizing live displays.
+        // Merely reading an old file never guesses a frame from the current screen.
         document.Version = SceneDocument.CurrentVersion;
     }
     internal static void Upgrade(PrefabPackage package)

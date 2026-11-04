@@ -12,10 +12,11 @@ internal sealed partial class DesktopSession
     {
         var owner = Active; var mode = _groupCanvasMode; var prefab = _prefabEditContext;
         var viewport = IndependentEditingViewport;
-        return new(owner, mode == GroupCanvasMode.Temporary,
+        bool independent = mode == GroupCanvasMode.Temporary && (owner.EditScopeId is not null || prefab is not null);
+        return new(owner, independent,
             () => ReferenceEquals(Active, owner) && _groupCanvasMode == mode && ReferenceEquals(_prefabEditContext, prefab) &&
                 (mode != GroupCanvasMode.Temporary || IndependentEditingViewport == viewport),
-            mode == GroupCanvasMode.Temporary ? viewport : null);
+            independent ? viewport : null);
     }
     private CanvasSettings CurrentCanvasSettings => !CanEditDisplayedCanvas && _prefabEditContext is { } context
         ? context.Chain().Last().Owner.Document.Canvas : CaptureCanvasSettingsTarget().Settings;
@@ -24,13 +25,15 @@ internal sealed partial class DesktopSession
     private double CurrentCanvasLayerOpacity => !CanEditDisplayedCanvas && _prefabEditContext is { } context
         ? context.Chain().Last().Owner.Document.LayerOpacity : CaptureCanvasSettingsTarget().LayerOpacity;
     private bool CanEditDisplayedCanvas => !HasPrefabEditContext || _groupCanvasMode == GroupCanvasMode.Temporary;
-    private bool IsCanvasWindowTargetCurrent => _canvasWindowTarget?.IsCurrent == true && CanEditDisplayedCanvas;
+    private bool IsCanvasWindowTargetCurrent => _canvasWindowTarget?.IsCurrent == true && CanEditDisplayedCanvas && !Active.IsReadOnly;
 
     private void RefreshCanvasSettingsTarget()
     {
         if (_canvasSettingsWindow is null) return;
         _canvasWindowTarget = CaptureCanvasSettingsTarget();
         _canvasSettingsWindow.Refresh(_canvasWindowTarget.Settings);
+        _canvasSettingsWindow.SetAuthoringAllowed(!Active.IsReadOnly);
+        RefreshCanvasNavigationButton();
     }
     private void ChangeCurrentCanvasOpacity(double opacity)
     {

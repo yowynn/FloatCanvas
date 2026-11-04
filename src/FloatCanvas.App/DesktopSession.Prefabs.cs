@@ -102,7 +102,7 @@ internal sealed partial class DesktopSession
         if (definition.Source?.IsLinked == true && !owner.IsReadOnly) return EditPrefabSourceCoreAsync(definitionId, instanceId);
         if (_prefabEditContext?.Contains(owner, definitionId) == true) return Task.CompletedTask;
         _inspector?.CompletePendingEdit(); FinishInlineText(); _editor.Cancel();
-        var draft = owner.BeginPrefabEdit(definitionId);
+        var draft = owner.BeginPrefabEdit(definitionId, readOnly: owner.IsReadOnly || definition.Source?.IsLinked == true);
         _prefabEditContext = new(owner, draft, _editor.ScreenOrigin, _editor.Tool, _prefabEditContext)
         { EnteredInstanceId = instanceId, SourcePath = definition.Source?.IsLinked == true ? GroupSourcePath(definition.Source, owner) : null };
         SwitchPrefabContext(draft.Session); return Task.CompletedTask;
@@ -132,6 +132,31 @@ internal sealed partial class DesktopSession
         _layers?.SetEditContext(context?.DisplayName,
             context is null ? null : () => _ = RunCommand(() => CompleteCurrentPrefabAsync()),
             context is null ? null : () => _ = RunCommand(() => LeaveCurrentPrefabAsync()), context?.IsSource == true || context?.IsOfflineSnapshot == true);
+        var path = new List<(string Name, Action Navigate)>();
+        if (context is not null)
+        {
+            foreach (var item in context.Chain().Reverse())
+            {
+                var owner = item.Owner;
+                path.Add((item.Parent?.DisplayName ?? L.Get("RootCanvas." + owner.ActiveRootCanvas),
+                    () => _ = RunCommand(() => NavigatePrefabAncestorAsync(owner, null))));
+                foreach (var group in owner.EditScopePath)
+                {
+                    var id = group.Id;
+                    path.Add((group.Name, () => _ = RunCommand(() => NavigatePrefabAncestorAsync(owner, id))));
+                }
+            }
+        }
+        _layers?.SetAncestorPath(path);
+    }
+
+    private async Task NavigatePrefabAncestorAsync(EditorSession owner, Guid? scope)
+    {
+        if (DocumentOperationBusy || Active.IsTransactionActive) return;
+        if (_prefabEditContext?.Chain().Any(item => ReferenceEquals(item.Owner, owner)) != true) return;
+        while (!ReferenceEquals(Active, owner))
+            if (!await CompleteCurrentPrefabAsync()) return;
+        owner.SetEditScope(scope); OnEditorChanged(); RefreshPrefabWindows();
     }
     private void OnPrefabEditorChanged()
     {
@@ -148,6 +173,7 @@ internal sealed partial class DesktopSession
     private async Task<bool> LeaveCurrentPrefabAsync()
     {
         if (_prefabEditContext is not { } context) return true;
+        if (!context.IsSource) return await CompleteCurrentPrefabAsync();
         _inspector?.CompletePendingEdit(); FinishInlineText(); _editor.Cancel();
         if (!(context.IsSource ? IsDirty(context.Session) : context.HasChanges))
         {
@@ -166,6 +192,7 @@ internal sealed partial class DesktopSession
         if (_prefabEditContext is not { } context) return true;
         _inspector?.CompletePendingEdit(); FinishInlineText(); _editor.Cancel();
         if (context.IsOfflineSnapshot) { ReturnFromPrefabContext(context); return true; }
+        if (!context.IsSource && !context.HasChanges) { ReturnFromPrefabContext(context); return true; }
         if (context.IsSource)
         {
             bool previousBusy = _documentBusy; _documentBusy = true;
@@ -370,7 +397,7 @@ internal sealed partial class DesktopSession
             previewOrigin = entry.PreviewCanvas?.Origin ?? entry.Pivot;
         }
         NormalizePrefabLinkPaths(document, candidate.Path);
-        var session = new EditorSession(document, _assets, independentCanvasOrigin: previewOrigin);
+        var session = new EditorSession(document, _assets, readOnly: true, independentCanvasOrigin: previewOrigin);
         _documentFiles[session] = new() { Path = candidate.Path, DiskVersion = candidate.FileVersion, SavedContentVersion = session.ContentVersion };
         _prefabEditContext = new(owner, session, definitionId, definition.Revision, _editor.ScreenOrigin, _editor.Tool, _prefabEditContext, candidate.Path, sourceEntry) { EnteredInstanceId = instanceId };
         SwitchPrefabContext(session);
@@ -388,8 +415,9 @@ internal sealed partial class DesktopSession
     {
         if (!context.IsPrefabSource)
         {
+            var previousPath = context.SourcePath!;
             bool saved = await SaveSessionAsync(context.Session, saveAs);
-            if (saved) { context.SourcePath = FileState(context.Session).Path; context.Restored = false; await OnPrefabSourceSavedAsync(context.SourcePath!); }
+            if (saved) { context.SourcePath = FileState(context.Session).Path; CopySourceCanvasViews(context, previousPath, context.SourcePath!); context.Restored = false; await OnPrefabSourceSavedAsync(context.SourcePath!); }
             return saved;
         }
         var file = FileState(context.Session); string path = context.SourcePath!;
@@ -427,6 +455,7 @@ internal sealed partial class DesktopSession
             var answer = AppDialog.Show(_toolbar, ex.Message + "\n" + L.Get("Project.SaveConflictChoice"), L.Get("App.Name"), MessageBoxButton.YesNo, MessageBoxImage.Warning, "Project.SaveCopy", "Project.KeepCurrent");
             return answer == MessageBoxResult.Yes && await SavePrefabSourceWithCopyPathAsync(context, saveAs: true, chooseCopyPath);
         }
+        CopySourceCanvasViews(context, context.SourcePath!, path);
         file.Path = path; file.SavedContentVersion = savedContentVersion; file.SavedMediaVersion = savedMediaVersion;
         file.SavedFingerprint = fingerprint; file.SavedPrefabRevision = entry.Revision; context.SourcePath = path; context.Restored = false;
         await OnPrefabSourceSavedAsync(path); return true;

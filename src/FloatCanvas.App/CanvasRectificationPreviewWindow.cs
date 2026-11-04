@@ -15,6 +15,7 @@ internal sealed class CanvasRectificationPreviewWindow : Window
 {
     private readonly byte[] source;
     private readonly RectD sourceBounds;
+    private readonly CanvasViewTransform viewing;
     private readonly Image rectified = new() { Stretch = Stretch.Uniform };
     private readonly NumericValueField width = new(.01, 256_000_000, sliderMaximum: 2000), height = new(.01, 256_000_000, sliderMaximum: 2000);
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 6, 0, 6) };
@@ -22,9 +23,11 @@ internal sealed class CanvasRectificationPreviewWindow : Window
     internal CanvasProjectionSettings Projection { get; private set; }
     internal bool Applied { get; private set; }
     internal bool InsertScreenshot { get; private set; }
-    internal CanvasRectificationPreviewWindow(Window? owner, CaptureRasterResult raster, CanvasProjectionSettings projection)
+    internal CanvasRectificationPreviewWindow(Window? owner, CaptureRasterResult raster, CanvasProjectionSettings projection,
+        CanvasViewTransform? viewing = null)
     {
         source = raster.PngBytes; sourceBounds = raster.Bounds; Projection = projection.Clone();
+        this.viewing = viewing ?? CanvasViewTransform.Identity;
         Title = L.Get("Canvas.RectificationPreview"); Owner = owner; Topmost = true; ShowInTaskbar = false;
         Width = 940; Height = 650; MinWidth = 600; MinHeight = 420; WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
         var body = new DockPanel { Margin = WindowLayout.ContentMargin() };
@@ -96,10 +99,18 @@ internal sealed class CanvasRectificationPreviewWindow : Window
         {
             var bounds = CanvasProjectionGeometry.ResolvePlaneBounds(Projection);
             width.SetModelValue(bounds.Width); height.SetModelValue(bounds.Height);
-            rectified.Source = Decode(CanvasRectificationRenderer.Render(source, sourceBounds, Projection));
+            rectified.Source = Decode(CanvasRectificationRenderer.Render(source, sourceBounds, ViewingProjection(Projection, viewing)));
             status.Text = L.Format("Canvas.RectificationDimensions", bounds.Width, bounds.Height, bounds.Width / bounds.Height);
         }
         finally { refreshing = false; }
+    }
+    internal static CanvasProjectionSettings ViewingProjection(CanvasProjectionSettings projection, CanvasViewTransform viewing)
+    {
+        var result = projection.Clone();
+        result.Matrix = Projective2D.FromAffine(viewing.Matrix).Compose(viewing.ProjectPlane(result.Matrix));
+        var originalInverse = projection.Matrix.Inverse();
+        result.Quad = result.Quad.Select(point => result.Matrix.TransformPoint(originalInverse.TransformPoint(point))).ToList();
+        return result;
     }
     internal static BitmapSource Decode(byte[] bytes)
     {

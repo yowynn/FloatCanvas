@@ -71,14 +71,14 @@ internal static class SubprojectCanvasStorageTests
         string historicalProject = Path.Combine(root, "v16.floatcanvas"); await Write(historicalProject, "project", "scene.json", oldProject);
         byte[] original = await File.ReadAllBytesAsync(historicalProject);
         var migrated = await projects.LoadAsync(historicalProject);
-        check(migrated.Document.Version == 17 && migrated.Document.RootPreviewCanvases.Count == 0 && (await File.ReadAllBytesAsync(historicalProject)).SequenceEqual(original),
+        check(migrated.Document.Version == SceneDocument.CurrentVersion && migrated.Document.RootPreviewCanvases.Count == 0 && (await File.ReadAllBytesAsync(historicalProject)).SequenceEqual(original),
             "v16 project migration keeps neutral preview defaults and leaves source bytes intact");
         var historicalDefinition = new PrefabDefinition { Graph = new() { Elements = [new() { Kind = ElementKind.Rectangle, Width = 15, Height = 20 }] } };
         var historicalPackage = new PrefabPackage { EntryDefinitionId = historicalDefinition.Id, Definitions = [historicalDefinition] };
         var oldPrefab = JsonSerializer.SerializeToNode(historicalPackage)!.AsObject(); oldPrefab["Version"] = 16;
         string historicalPrefab = Path.Combine(root, "v16.floatprefab"); await Write(historicalPrefab, "prefab", "prefab.json", oldPrefab);
         var migratedPrefab = await prefabs.LoadAsync(historicalPrefab);
-        check(migratedPrefab.Package.Version == 17 && migratedPrefab.Package.Definitions.Single().PreviewCanvas is null,
+        check(migratedPrefab.Package.Version == SceneDocument.CurrentVersion && migratedPrefab.Package.Definitions.Single().PreviewCanvas is null,
             "legacy prefab has a neutral independent preview instead of inheriting a host camera");
         oldPrefab["Definitions"]![0]!["PreviewCanvas"] = JsonSerializer.SerializeToNode(preview);
         string smuggled = Path.Combine(root, "future-in-v16.floatprefab"); await Write(smuggled, "prefab", "prefab.json", oldPrefab);

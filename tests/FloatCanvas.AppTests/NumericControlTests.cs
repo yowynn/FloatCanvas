@@ -235,7 +235,7 @@ internal static class NumericControlTests
         canvas.Refresh(new()); canvas.PrepareForShow(); Measure((Wpf.FrameworkElement)canvas.Content, canvas.Width - 2, 540);
         var canvasWidth = Field<NumericValueField>(canvas, "width");
         var canvasBody = (Wpf.FrameworkElement)((Wpf.FrameworkElement)canvasWidth.Parent).Parent;
-        check(name + " canvas parameter column uses the shared width", Math.Abs(canvasBody.ActualWidth - properties.ActualWidth) < 1);
+        check(name + $" canvas parameter column uses the shared width ({canvasBody.ActualWidth:0.##}/{properties.ActualWidth:0.##})", Math.Abs(canvasBody.ActualWidth - properties.ActualWidth) < 1);
         check(name + " width and height share the same row", Controls.Grid.GetRow(rows["DefaultWidth"]) == Controls.Grid.GetRow(rows["DefaultHeight"]));
         var captions = Field<Dictionary<string, Controls.TextBlock>>(panel, "captions");
         var aspect = Field<AspectRatioButton>(panel, "aspect");

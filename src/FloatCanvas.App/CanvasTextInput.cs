@@ -63,20 +63,30 @@ internal sealed class CanvasTextInput : IDisposable
     private void UpdatePlacement()
     {
         if(disposed||!edit.IsActive)return;
-        var dpi=VisualTreeHelper.GetDpi(window);
         var caret=edit.Caret;
         var matrix=edit.LocalToScreen;
         if(!matrix.TryTransformPoint(new(caret.X,caret.Y),out var position))return;
         var jacobian=matrix.Jacobian(new(caret.X,caret.Y));
-        double scale=Math.Sqrt(jacobian.M11*jacobian.M11+jacobian.M21*jacobian.M21)/dpi.DpiScaleX;
-        edit.Input.FontSize=Math.Clamp(edit.Target.Style.FontSize*scale,1,2048);
-        edit.Input.FontFamily=new FontFamily(edit.Target.Style.FontFamily);
-        edit.Input.Width=Math.Clamp(edit.Target.Width*scale,40,1000);
-        edit.Input.UpdateLayout();
-        Rect native=edit.Input.GetRectFromCharacterIndex(edit.Input.CaretIndex);
-        var origin=screenOrigin();
-        OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(window).Handle,
-            new(position.X+origin.X-(native.IsEmpty?0:native.X*dpi.DpiScaleX),position.Y+origin.Y-(native.IsEmpty?0:native.Y*dpi.DpiScaleY)));
+        // Moving the carrier between monitors can synchronously change its DPI
+        // and rearrange its content. Recompute once in the destination's layout.
+        for(int pass=0;pass<2;pass++)
+        {
+            var dpi=VisualTreeHelper.GetDpi(window);
+            double scale=Math.Sqrt(jacobian.M11*jacobian.M11+jacobian.M21*jacobian.M21)/dpi.DpiScaleX;
+            edit.Input.FontSize=Math.Clamp(edit.Target.Style.FontSize*scale,1,2048);
+            edit.Input.FontFamily=new FontFamily(edit.Target.Style.FontFamily);
+            edit.Input.Width=Math.Clamp(edit.Target.Width*scale,40,1000);
+            window.UpdateLayout();
+            Rect native=edit.Input.GetRectFromCharacterIndex(edit.Input.CaretIndex);
+            // The TextBox can be narrower than its transparent carrier and is then
+            // centered by WPF. TSF includes that content offset in its screen extent.
+            var nativeInWindow=edit.Input.TranslatePoint(native.IsEmpty?new Point():native.TopLeft,window);
+            var origin=screenOrigin();
+            OverlayCoordinates.PositionToolWindow(new WindowInteropHelper(window).Handle,
+                new(position.X+origin.X-nativeInWindow.X*dpi.DpiScaleX,position.Y+origin.Y-nativeInWindow.Y*dpi.DpiScaleY));
+            var destinationDpi=VisualTreeHelper.GetDpi(window);
+            if(destinationDpi.DpiScaleX==dpi.DpiScaleX&&destinationDpi.DpiScaleY==dpi.DpiScaleY)break;
+        }
     }
     public void Dispose()
     {

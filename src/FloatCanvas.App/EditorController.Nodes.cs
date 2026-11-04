@@ -8,6 +8,7 @@ internal sealed partial class EditorController
 {
     private SelectionTransformSnapshot? nodeTransform;
     private Dictionary<Guid, CanvasElement> nodeOriginalElements = [];
+    private CanvasMapping? nodeStartMapping;
     private readonly Dictionary<Guid, Guid?> drawingParents = [];
 
     private void InsertWorldDrawing()
@@ -54,9 +55,10 @@ internal sealed partial class EditorController
     private void PrepareNodeTransform()
     {
         nodeTransform = null; nodeOriginalElements.Clear();
-        if (!UsesHierarchicalSelection || gesture is not ("move" or "rotate" or "resize")) return;
+        if (gesture != "move" && (!UsesHierarchicalSelection || gesture is not ("rotate" or "resize"))) return;
         nodeTransform = Session.CaptureSelectionTransform();
         nodeOriginalElements = SelectedEditingWorldElements(editableOnly: true).ToDictionary(element => element.Id, element => element);
+        nodeStartMapping = CurrentCanvasMapping;
     }
     private bool WriteWorldElement(CanvasElement candidate)
     {
@@ -83,7 +85,7 @@ internal sealed partial class EditorController
             var candidate = billboard.Clone();
             if (gesture == "move")
             {
-                if (!mapping.ElementToScreen(billboard).TryInverse(out var inverse) ||
+                if (!(nodeStartMapping ?? mapping).ElementToScreen(billboard).TryInverse(out var inverse) ||
                     !BillboardGeometry.TryMoveAnchor(billboard, mapping, inverse.TransformPoint(startScreen), pointerScreen, out var anchor)) { RejectPointer(); return true; }
                 candidate.BillboardAnchor = billboard.BillboardAnchor + ConstrainViewMove(anchor - billboard.BillboardAnchor, modifiers);
             }
@@ -125,8 +127,8 @@ internal sealed partial class EditorController
         {
             var displacement = ConstrainViewMove(point - start, modifiers);
             var grabbed = nodeOriginalElements.Values.FirstOrDefault(element => element.IsBillboard &&
-                ElementGeometry.PointInPolygon(startScreen, Corners(ElementGeometry.LocalBounds(element)).Select(mapping.ElementToScreen(element).TransformPoint).ToArray()));
-            if (grabbed is not null && mapping.ElementToScreen(grabbed).TryInverse(out var inverse) &&
+                ElementGeometry.PointInPolygon(startScreen, Corners(ElementGeometry.LocalBounds(element)).Select((nodeStartMapping ?? mapping).ElementToScreen(element).TransformPoint).ToArray()));
+            if (grabbed is not null && (nodeStartMapping ?? mapping).ElementToScreen(grabbed).TryInverse(out var inverse) &&
                 BillboardGeometry.TryMoveAnchor(grabbed, mapping, inverse.TransformPoint(startScreen), pointerScreen, out var moved))
                 displacement = ConstrainViewMove(moved - grabbed.BillboardAnchor, modifiers);
             delta = Affine2D.Translation(displacement.X, displacement.Y);

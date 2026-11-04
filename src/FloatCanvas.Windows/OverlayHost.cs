@@ -42,6 +42,7 @@ public sealed partial class OverlayHost : IDisposable
     public event Action<OverlayPointerEvent>? Pointer;
     public event Action<int>? KeyPressed;
     public event Action<OverlayKeyEvent>? KeyInput;
+    public event Action<int>? KeyReleased;
     public event Action<OverlayModifiers,OverlayPoint,uint>? ModifierKeysChanged;
     public event Action? ToggleRequested;
     public event Action? HideRequested;
@@ -417,6 +418,7 @@ public sealed partial class OverlayHost : IDisposable
         {
             request = new OverlayFrameRequest(dirtyRegions);
             FrameRendering?.Invoke(request);
+            if (request.Deferred) return false;
             dirtyRegions = request.DirtyRegions;
             stamp = _presentationStamp;
             using var dpi = new ThreadDpiAwarenessScope(Capabilities);
@@ -451,7 +453,7 @@ public sealed partial class OverlayHost : IDisposable
             LastRenderMilliseconds = Stopwatch.GetElapsedTime(started, completed).TotalMilliseconds;
             try
             {
-                if (observer is not null) observer(new(started, completed, succeeded, outputs!.AsReadOnly(), stamp.Content, stamp.Input, stamp.Controls));
+                if (observer is not null && request?.Deferred != true) observer(new(started, completed, succeeded, outputs!.AsReadOnly(), stamp.Content, stamp.Input, stamp.Controls));
             }
             finally { _rendering = false; }
         }
@@ -589,6 +591,7 @@ public sealed partial class OverlayHost : IDisposable
         if (_captureActive) CancelPendingCapture();
         var foreground = _systemInput is not null?GetFocus():GetForegroundWindow();
         bool preserveToolFocus = IsEditing && OwnsEditingInput() && !OwnsWindow(foreground);
+        bool restoredCanvasFocus = !IsEditing || preserveToolFocus || _nativeDialogDepth != 0;
         EndDropReceptionCore();
         CancelPointer();
         var previousWindows = _windows.ToArray();
@@ -635,6 +638,10 @@ public sealed partial class OverlayHost : IDisposable
                 if (IsVisible) ShowWindowPreservingZOrder(pair.Display.Handle);
                 if (IsEditing && _nativeDialogDepth==0) ShowWindowPreservingZOrder(pair.Input.Handle);
             }
+            // Transfer focus while the previous input HWND still owns foreground.
+            // Destroying it first creates an artificial external-focus gap on hotplug.
+            if (IsEditing && _nativeDialogDepth == 0 && !preserveToolFocus)
+                restoredCanvasFocus = ActivateInputAtCursor();
         }
         catch
         {
@@ -648,7 +655,7 @@ public sealed partial class OverlayHost : IDisposable
         _availableMonitors = available;
         foreach (var pair in previousWindows) DestroyMonitorPair(pair);
         TryBeginSystemScreenshot();
-        if (IsEditing && _nativeDialogDepth==0 && !preserveToolFocus && !ActivateInputAtCursor()) EndEditingAfterFocusLoss();
+        if (IsEditing && _nativeDialogDepth==0 && !restoredCanvasFocus) EndEditingAfterFocusLoss();
     }
 
     private void DestroyPairs()
@@ -843,7 +850,8 @@ public sealed partial class OverlayHost : IDisposable
         if (message == WmDpiChanged && state.Handle == _captureGeometryWindow) return 0;
         if (message == WmDisplayChange || message == WmDpiChanged)
         {
-            if(_systemInput is not null && IsEditing)EndEditingAfterFocusLoss();
+            // Rebuilding hands the existing lease to the replacement receiver.
+            // A display notification alone does not revoke editing intent.
             if (!_refreshPosted && !_disposed)
             {
                 _refreshPosted = true;
@@ -892,6 +900,7 @@ public sealed partial class OverlayHost : IDisposable
             KeyPressed?.Invoke((int)wParam);
             return 0;
         }
+        if (message is 0x101 or 0x105) KeyReleased?.Invoke((int)wParam);
         if (message == WmMouseMove) { RaisePointer(OverlayPointerKind.Move, _pressedButton, position: MessagePosition(state, message, lParam)); TrackPointerWindow(state); return 0; }
         if (message == WmMouseWheel) { RaisePointer(OverlayPointerKind.Wheel, OverlayMouseButton.None, (short)((long)wParam >> 16), MessagePosition(state, message, lParam)); return 0; }
         var button = message switch

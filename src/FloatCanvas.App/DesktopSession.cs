@@ -109,6 +109,9 @@ internal sealed partial class DesktopSession : IDisposable
             () => _host.UsesSystemInput && _host.HasEditingInput && _host.IsKeyboardIsolationActive);
         _host.EnableKeyboardIsolation((packet, complete) =>
         {
+            if (packet.VirtualKey == 0x20 && !packet.IsLocalBalance && _inlineText is null)
+                _canvasNavigationSpaceHeld = !packet.IsKeyUp && (packet.Modifiers & (OverlayModifiers.Windows | OverlayModifiers.Alt)) == 0 &&
+                    !Ancestors(System.Windows.Input.Keyboard.FocusedElement as DependencyObject).Any(value => value is System.Windows.Controls.Primitives.TextBoxBase);
             if(packet.VirtualKey is 0x10 or 0xA0 or 0xA1&&!packet.IsLocalBalance)
                 _editor?.ModifiersChanged(packet.Modifiers,packet.PointerPosition,packet.Time,packet.PointerLeftDown);
             keyboardBridge.Process(packet, complete);
@@ -122,7 +125,12 @@ internal sealed partial class DesktopSession : IDisposable
         var document = new SceneDocument { Viewport = bounds, DisplayLayout = _host.Monitors.Select(m => new DisplayLayoutHint
         { DeviceName = m.DeviceName, Bounds = new(m.Bounds.Left, m.Bounds.Top, m.Bounds.Width, m.Bounds.Height), DpiX = m.DpiX, DpiY = m.DpiY }).ToList() };
         document.Canvas = CreateDefaultCanvasSettings(document.Viewport);
+        var reference = _host.PrimaryMonitor.Bounds;
+        var authoringFrame = new RectD(reference.Left, reference.Top, reference.Width, reference.Height);
+        document.AuthoringReference = new(authoringFrame, authoringFrame);
         _live = new(document, _assets);
+        FileState(_live).SavedContentVersion = _live.ContentVersion;
+        FileState(_live).SavedFingerprint = Fingerprint(document);
         _editor = new(_live) { BillboardWorkflow = _settings.BillboardWorkflow };
         _editor.BackgroundPickingEnabled = true;
         if (_toolbarToolMemory.TryGetValue(EditorTool.Freehand, out var savedPen)) _editor.ApplyParameters(savedPen);
@@ -158,8 +166,11 @@ internal sealed partial class DesktopSession : IDisposable
             HandleCanvasPointer(pointer);
         };
         _host.PointerLeft += ClearProjectionHover;
+        _host.PointerLeft += StopCanvasEdgePan;
+        _editor.Cancelling += CancelCanvasNavigationGesture;
         _editor.DesktopEffectRequested += (region, kind, amount, color) => _ = RunCommand(() => AddDesktopEffectAsync(region, kind, amount, color));
         _host.KeyInput += OnCanvasKeyInput;
+        _host.KeyReleased += key => { if (key == 0x20) _canvasNavigationSpaceHeld = false; };
         _host.ModifierKeysChanged += (modifiers,point,time)=>
         {
             _editor.ModifiersChanged(modifiers,point,time);
@@ -184,6 +195,7 @@ internal sealed partial class DesktopSession : IDisposable
         _host.InputActivated += ()=>{ClearSystemInputEntryHint();if(_host.UsesSystemInput)ShowEditingWindows();RaiseVisibleToolWindows();};
         _host.EditingFocusLost += () =>
         {
+            _canvasNavigationSpaceHeld = false;
             CloseEditingDialogs();
             _overlayWindows?.ClosePopups();
             ClearProjectionHover();
@@ -388,6 +400,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (editing && _desktopFallbackPending) return false;
         ClearProjectionHover();
         if (!editing) { CloseEditingDialogs(); _windowCoordinator?.SuspendEditingWindows(); EndCanvasCalibration(restoreWindows: false); }
+        if (!editing) { _canvasNavigationSpaceHeld = false; CancelCanvasNavigationGesture(); }
         CancelSnapshotCapture(editing ? "ExplicitEntry" : "ModeExit");
         using var destination = editing ? null : _windowCoordinator?.DirectTransfer(WindowDismissReason.ModeExit);
         _newCanvasButton?.CancelConfirmation();
@@ -554,6 +567,16 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (_disposed) return;
         _host.NotifyInputProgress();
+        if (e.StagingItem.Input is System.Windows.Input.KeyEventArgs { Key: System.Windows.Input.Key.Space } space && _inlineText is null &&
+            !Ancestors(space.OriginalSource as DependencyObject).Any(value => value is System.Windows.Controls.Primitives.TextBoxBase))
+        {
+            _canvasNavigationSpaceHeld = space.IsDown && (System.Windows.Input.Keyboard.Modifiers & (System.Windows.Input.ModifierKeys.Windows | System.Windows.Input.ModifierKeys.Alt)) == 0;
+            var source = space.OriginalSource as DependencyObject ?? System.Windows.Input.Keyboard.FocusedElement as DependencyObject;
+            if (_host.IsEditing && source is not null && ReferenceEquals(Window.GetWindow(source), _toolbar) &&
+                Ancestors(source).Any(value => value is System.Windows.Controls.Primitives.ButtonBase) &&
+                (System.Windows.Input.Keyboard.Modifiers & (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Alt | System.Windows.Input.ModifierKeys.Windows)) == 0)
+                space.Handled = true;
+        }
         if (e.StagingItem.Input is System.Windows.Input.MouseEventArgs) ClearProjectionHover();
         if (e.StagingItem.Input is System.Windows.Input.MouseButtonEventArgs { ButtonState: System.Windows.Input.MouseButtonState.Pressed } mouse)
         {
@@ -596,6 +619,8 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnCanvasKeyInput(OverlayKeyEvent key)
     {
+        if (key.VirtualKey == 0x20 && _inlineText is null)
+        { _canvasNavigationSpaceHeld = (key.Modifiers & (OverlayModifiers.Control | OverlayModifiers.Alt | OverlayModifiers.Windows)) == 0; return; }
         if (!EditorShortcutPolicy.IsCommand(key.VirtualKey, key.Modifiers) ||
             key.IsRepeat && !EditorShortcutPolicy.AllowsRepeat(key.VirtualKey, key.Modifiers)) return;
         OnKey(key.VirtualKey);
@@ -765,6 +790,7 @@ internal sealed partial class DesktopSession : IDisposable
             DrawInlineText(canvas);
         }
         canvas.Restore();
+        DrawCanvasViewingBadge(canvas);
         DrawPresentationPointer(canvas);
         if (_host.IsEditing) DrawEyedropperPreview(canvas);
         if (_host.IsReceivingDrop) DrawImageDropHint(canvas);
@@ -859,16 +885,18 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (_live is null || _host is null || _host.Monitors.Count == 0) return;
         var document = _live.Document;
+        document.AuthoringReference ??= CanvasAuthoringReference.FromSavedDocument(document);
         if (ReferenceEquals(_liveLayoutDocument, document) && ReferenceEquals(_liveLayoutMonitors, _host.Monitors))
         {
             if (ReferenceEquals(_editor?.Session, _live)) _editor.ScreenOrigin = _liveOrigin;
             return;
         }
         var reference = _host.PrimaryMonitor.Bounds;
-        var savedCenter = document.DisplayLayout.FirstOrDefault()?.Bounds.Center ?? document.Viewport.Center;
+        var savedCenter = document.AuthoringReference.ReferenceScreenBounds.Center;
         _liveOrigin = new PointD(reference.Left + reference.Width / 2d, reference.Top + reference.Height / 2d) - savedCenter;
         RectD Local(MonitorInfo monitor) => new(monitor.Bounds.Left - _liveOrigin.X, monitor.Bounds.Top - _liveOrigin.Y,
             monitor.Bounds.Width, monitor.Bounds.Height);
+        document.Canvas = document.Canvas.ResolveReference(document.Viewport);
         document.Viewport = _host.Monitors.Select(Local).Aggregate(RectD.Union);
         document.DisplayLayout = _host.Monitors.Select(m => new DisplayLayoutHint { DeviceName = m.DeviceName,
             Bounds = Local(m), DpiX = m.DpiX, DpiY = m.DpiY }).ToList();
@@ -1228,6 +1256,11 @@ internal sealed partial class DesktopSession : IDisposable
         LogExitStage("Dispose.OverlayWindows.Begin");
         _overlayWindows?.Dispose();
         _toolStateSaveTimer?.Stop();
+        StopCanvasEdgePan();
+        if (_canvasViewHistorySession is not null) _canvasViewHistorySession.CanvasViewRestored -= OnCanvasViewHistoryRestored;
+        RememberCanvasViewing();
+        _canvasViewSaveTimer?.Stop();
+        SaveCanvasViewingAsync().GetAwaiter().GetResult();
         _animationTimer?.Stop();
         _animationClock.Stop();
         LogExitStage("Dispose.LiveCapture.Begin");

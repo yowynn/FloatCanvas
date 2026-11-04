@@ -22,6 +22,7 @@ internal sealed partial class CanvasSettingsWindow : Window
     private readonly NumericValueField guideOpacity = new(0, 100, integerOnly: true) { Unit = "%" };
     private readonly Grid countPair = new();
     private readonly StackPanel flatSizePanel = new();
+    private readonly StackPanel authoringControls = new();
     private readonly PropertyChangeRegion projectionOptions, gridCountsRegion;
     private readonly Button pin;
     private readonly CanvasPinSelector pinSelector = new();
@@ -78,7 +79,7 @@ internal sealed partial class CanvasSettingsWindow : Window
 
     public CanvasSettingsWindow(CanvasPresetLibrary? library = null, Func<EditorSession>? historySession = null)
     {
-        double preferredWidth = PropertyPanelLayout.ContentWidth + WindowLayout.ContentInset * 2 + 2 + 25 + 196 + WindowLayout.ScrollBarWidth;
+        double preferredWidth = PropertyPanelLayout.ContentWidth + WindowLayout.ContentInset * 2 + 2 + 25 + 196 + WindowLayout.ScrollBarWidth * 2;
         Title = L.Get("Canvas.Title"); Width = preferredWidth;
         Height = 590; MinWidth = PropertyPanelLayout.TwoColumnMinimumWidth; MinHeight = PropertyPanelLayout.TwoColumnMinimumHeight;
         Topmost = true; ShowInTaskbar = false; Icon = AppIcon.WindowImage;
@@ -95,8 +96,9 @@ internal sealed partial class CanvasSettingsWindow : Window
         DockPanel.SetDock(status, Dock.Bottom); layout.Children.Add(status);
         var content = new Grid(); content.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var body = new StackPanel();
-        AddField(body, "Canvas.Background", background);
-        AddField(body, "Canvas.Mode", projection);
+        body.Children.Add(authoringControls);
+        AddField(authoringControls, "Canvas.Background", background);
+        AddField(authoringControls, "Canvas.Mode", projection);
         System.Windows.Automation.AutomationProperties.SetName(projection, L.Get("Canvas.Mode"));
         var projectionBody = new StackPanel();
         depthPriorityOcclusion.Content = L.Get("Canvas.DepthPriorityOcclusion"); depthPriorityOcclusion.Margin = new(0, 0, 0, 8);
@@ -146,7 +148,7 @@ internal sealed partial class CanvasSettingsWindow : Window
         resetOutline.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         Grid.SetColumnSpan(resetOutline, 2); resetActions.Children.Add(resetOutline);
         perspectiveActions.Children.Add(actions);perspectiveActions.Children.Add(resetActions); projectionBody.Children.Add(perspectiveActions);
-        projectionOptions = new(projectionBody); body.Children.Add(projectionOptions);
+        projectionOptions = new(projectionBody); authoringControls.Children.Add(projectionOptions);
         var gridBody = new StackPanel();
         gridBody.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.GridVisible"), gridVisible));
         AddField(gridBody, "Canvas.GridColor", gridColor); AddField(gridBody, "Canvas.GridWidth", width);
@@ -154,11 +156,11 @@ internal sealed partial class CanvasSettingsWindow : Window
             SegmentedChoicePreviews.Add(pattern, L.Get("Canvas." + value), value);
         System.Windows.Automation.AutomationProperties.SetName(pattern, L.Get("Canvas.GridPattern"));
         AddField(gridBody, "Canvas.GridPattern", pattern);
-        body.Children.Add(gridBody);
-        body.Children.Add(BuildGridOriginFields());
-        AddField(body, "Canvas.GuideOpacity", guideOpacity);
+        authoringControls.Children.Add(gridBody);
+        authoringControls.Children.Add(BuildGridOriginFields());
+        AddField(authoringControls, "Canvas.GuideOpacity", guideOpacity);
         guideOpacity.ToolTip = L.Get("Canvas.GuideOpacityHint");
-        content.Children.Add(PropertyChangeRegion.ReserveHighlightSpace(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }));
+        content.Children.Add(PropertyChangeRegion.ReserveHighlightSpace(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Visible, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }));
         presets = new CanvasPresetGallery(library);
         presets.Applied += parameters => PresetApplied?.Invoke(parameters);
         presets.Failed += message => status.Text = message;

@@ -17,6 +17,11 @@ internal sealed partial class DesktopSession
     private object _windowPlanIdentity = new();
     private EvaluatedScene? _windowEvaluation;
     private IReadOnlyList<ResolvedLeaf> _windowSourceLeaves = [];
+    private SceneDocument? _windowDisplayDocument;
+    private IReadOnlyList<ResolvedLeaf> _windowDisplayLeaves = [];
+    private object? _windowPlanViewEpoch;
+    private CanvasViewTransform _windowPlanViewing;
+    private bool _windowPlanMoving;
     private WindowRuntimeDemand[] _windowDemands = [];
     private bool _updatingWindowSources, _windowPixelsDirty;
     private WindowFrameSet? _presentedWindowFrames;
@@ -87,23 +92,49 @@ internal sealed partial class DesktopSession
                 _windowPlanSession = owner; _windowPlanDocument = document; _windowPlanVersion = owner.ContentVersion;
                 _windowPlanScope = owner.EditScopeVersion; _windowPlanOrigin = _editor.ScreenOrigin; _windowPlanMonitors = _host.Monitors;
                 _windowPlanIdentity = new(); _windowEvaluation = null; _windowSourceLeaves = []; _windowDemands = [];
+                _windowDisplayDocument = null; _windowDisplayLeaves = []; _windowPlanViewEpoch = null;
                 if (document.Elements.Any(element => element.WindowSource is not null) || document.Definitions.Any(definition => definition.Graph.Elements.Any(element => element.WindowSource is not null)))
                 {
                     _windowEvaluation = SceneEvaluation.Build(document);
                     _windowSourceLeaves = _windowEvaluation.Leaves.Where(leaf => leaf.RenderElement.WindowSource is not null).ToArray();
-                    var viewports = _host.Monitors.Select(monitor => new RectD(monitor.Bounds.Left - _editor.ScreenOrigin.X,
-                        monitor.Bounds.Top - _editor.ScreenOrigin.Y, monitor.Bounds.Width, monitor.Bounds.Height).Intersect(document.Viewport)).ToArray();
-                    if (document.LayerOpacity > 0)
-                        _windowDemands = _windowSourceLeaves.Where(leaf => leaf.RenderElement.Visible && leaf.RenderElement.Style.Opacity > 0 &&
-                                viewports.Any(viewport => WindowRegionVisible(leaf.RenderElement, CanvasMapping.Create(document, leaf.RootCanvas), viewport)))
-                            .Select(leaf => new WindowRuntimeDemand(leaf.Source, leaf.RenderElement.WindowSource!.BindingIntent)).Distinct().ToArray();
                 }
             }
+            if (_windowSourceLeaves.Count > 0) UpdateCanvasWindowDemands(document);
             bool allowed = _host.IsVisible && !DocumentOperationBusy && _cleanCaptureDepth == 0 && !HasPrefabEditContext &&
                 PresentationDesktopAvailability.IsCurrentInputDesktop();
             _windowRuntime.Configure(WindowOwnerToken(owner), document.ResourceId, _windowDemands, allowed, _windowPlanIdentity);
         }
         finally { _updatingWindowSources = false; }
+    }
+    private void UpdateCanvasWindowDemands(SceneDocument ownerDocument)
+    {
+        var display = CurrentGroupCanvasView();
+        var camera = EditingCanvasView; bool moving = _editor.IsMovingCanvasSelection;
+        if (ReferenceEquals(_windowPlanViewEpoch, display.Epoch) && ReferenceEquals(_windowDisplayDocument, display.Document) &&
+            _windowPlanViewing == camera && _windowPlanMoving == moving) return;
+        _windowPlanViewEpoch = display.Epoch;
+        _windowPlanViewing = camera; _windowPlanMoving = moving;
+        if (!ReferenceEquals(_windowDisplayDocument, display.Document))
+        {
+            _windowDisplayDocument = display.Document;
+            // Navigation only changes the final mapping. Reevaluate ownership
+            // only when the displayed graph/scope changes, never on each pan.
+            _windowDisplayLeaves = ReferenceEquals(display.Document, ownerDocument) ? _windowSourceLeaves :
+                SceneEvaluation.Build(display.Document).Leaves.Where(leaf => leaf.RenderElement.WindowSource is not null).ToArray();
+        }
+        var viewports = _host.Monitors.Select(monitor => new RectD(monitor.Bounds.Left - display.Origin.X,
+            monitor.Bounds.Top - display.Origin.Y, monitor.Bounds.Width, monitor.Bounds.Height).Intersect(display.Document.Viewport)).ToArray();
+        var visible = display.Document.LayerOpacity <= 0 ? [] : _windowDisplayLeaves.Where(leaf => leaf.RenderElement.Visible && leaf.RenderElement.Style.Opacity > 0 &&
+                viewports.Any(viewport => WindowRegionVisible(leaf.RenderElement, CanvasMapping.CreateViewing(display.Document, camera, leaf.RootCanvas), viewport)))
+            .Select(leaf => new WindowRuntimeDemand(leaf.Source, leaf.RenderElement.WindowSource!.BindingIntent)).Distinct().ToArray();
+        // The frozen ownership graph may precede this drag's placement preview.
+        // Keep the grabbed sources alive through edge panning without rebuilding
+        // a potentially large graph for every pointer sample.
+        var grabbed = moving && display.Document.LayerOpacity > 0 && _windowEvaluation is { } evaluation
+            ? Active.Selection.SelectMany(evaluation.OccurrencesOfHostNode).Where(leaf => leaf.RenderElement.WindowSource is not null)
+                .Select(leaf => new WindowRuntimeDemand(leaf.Source, leaf.RenderElement.WindowSource!.BindingIntent)) : [];
+        _windowDemands = visible.Concat(grabbed).Distinct().ToArray();
+        _windowPlanIdentity = new();
     }
     private static bool WindowRegionVisible(CanvasElement source, CanvasMapping mapping, RectD viewport)
     {

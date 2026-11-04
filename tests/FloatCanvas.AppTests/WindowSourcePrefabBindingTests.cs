@@ -1,4 +1,4 @@
-using FloatCanvas.App;
+﻿using FloatCanvas.App;
 using FloatCanvas.Core;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
@@ -126,20 +126,20 @@ internal static class WindowSourcePrefabBindingTests
             if (project) Await(new ProjectStore().SaveAsync(path, new() { Elements = [leaf], Viewport = new(0, 0, 320, 180) }, Owner.Assets));
             else { var entry = new PrefabDefinition { Graph = new() { Elements = [leaf] } }; Await(new PrefabStore().SaveAsync(path, new() { EntryDefinitionId = entry.Id, Definitions = [entry] }, Owner.Assets)); }
             Await((Task)Invoke("ImportPrefabFileAsync", true, path)!); var definition = Owner.Document.Definitions.Single(d => d.Source?.IsLinked == true);
-            Await((Task)Invoke("EditPrefabSourceAsync", definition.Id)!); var context = Context; var bound = Bind(context.Session); Guid intent = bound.Image.WindowSource!.BindingIntent;
-            check("source editor creates an isolated explicit service owner project=" + project, context.IsSource && runtime.State(bound.Token, intent).Connected && !runtime.State(Token(Owner), intent).Connected);
-            check("real source Save plus Refresh completes project=" + project, Await((Task<bool>)Invoke("CompleteCurrentPrefabAsync")!));
-            Console.WriteLine("WINDOW_SOURCE_FILE_HANDOFF " + System.Text.Json.JsonSerializer.Serialize(new { Project = project,
-                AcceptedResource = Owner.Document.Definitions.Single(d => d.Id == definition.Id).Source!.SourceResourceId,
-                DraftResource = context.Session.Document.ResourceId, AcceptedSha = Owner.Document.Definitions.Single(d => d.Id == definition.Id).Source!.LastAcceptedFileSha256,
-                DiskSha = Await(ProjectFileVersion.ReadAsync(path)).Sha256, PendingCount,
-                ParentConnected = runtime.State(Token(Owner), intent).Connected, SourceConnected = runtime.State(bound.Token, intent).Connected,
-                RealAddresses = Owner.Document.Definitions.SelectMany(d => d.Graph.Elements.Where(e => e.WindowSource?.BindingIntent == intent).Select(e => new SourceNodeAddress(d.Id, e.Id))).ToArray() }));
+            byte[] original = File.ReadAllBytes(path);
+            Await((Task)Invoke("EditPrefabSourceAsync", definition.Id)!);
+            check("linked source is read-only before internal conversion project=" + project, Context.Session.IsReadOnly);
+            Await((Task)Invoke("EmbedEditingGroupAsync", Context)!);
+            var context = Context; var bound = Bind(context.Session); Guid intent = bound.Image.WindowSource!.BindingIntent;
+            check("internal conversion permits a new isolated window service project=" + project,
+                !context.Session.IsReadOnly && runtime.State(bound.Token, intent).Connected);
+            check("returning publishes converted internal content project=" + project, Await((Task<bool>)Invoke("CompleteCurrentPrefabAsync")!));
             Wait(() => runtime.State(Token(Owner), intent).Connected);
-            var accepted = Owner.Document.Definitions.Single(d => d.Id == definition.Id).Source!; var disk = Await(ProjectFileVersion.ReadAsync(path));
-            check("source handoff follows actual accepted file SHA and published intent project=" + project, accepted.LastAcceptedFileSha256 == disk!.Sha256 &&
-                runtime.State(Token(Owner), intent).Connected && !runtime.State(bound.Token, intent).Connected && Registered(Token(Owner), intent) == Published(intent) && bound.Source.DisposeCount == 0 && PendingCount == 0);
+            check("converted source keeps window binding and never writes external bytes project=" + project,
+                runtime.State(Token(Owner), intent).Connected && bound.Source.DisposeCount == 0 &&
+                File.ReadAllBytes(path).SequenceEqual(original) && Owner.Document.Definitions.Single(d => d.Id == definition.Id).Source?.IsLinked != true);
         }
+
         internal void PendingSourceGuards()
         {
             Reset(); string path = Path.Combine(root, "pending.floatprefab"); var entry = new PrefabDefinition { Graph = new() { Elements = [new() { Kind = ElementKind.Rectangle, Width = 40, Height = 24 }] } };

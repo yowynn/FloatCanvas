@@ -20,6 +20,8 @@ internal sealed partial class LayersWindow : Wpf.Window
     private readonly Dictionary<Guid, LayerTreeRow> rows = [];
     private readonly Controls.StackPanel breadcrumbs = new() { Orientation = Controls.Orientation.Horizontal };
     private readonly SegmentedChoice rootCanvasChoice = new() { Margin = new(0, 0, 0, 6) };
+    private readonly Controls.Button rootCanvasMenu = new() { Width = 28, Height = 28, MinWidth = 0, Padding = new(0), Margin = new(0, 0, 4, 0) };
+    private IReadOnlyList<(string Name, Action Navigate)> ancestorPath = [];
     private readonly Controls.ScrollViewer breadcrumbViewport;
     private readonly Controls.Button parentScope;
     private readonly Controls.ScrollViewer headerViewport = new() { VerticalScrollBarVisibility = Controls.ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = Controls.ScrollBarVisibility.Disabled };
@@ -79,26 +81,40 @@ internal sealed partial class LayersWindow : Wpf.Window
         }
         Automation.AutomationProperties.SetName(rootCanvasChoice, L.Get("RootCanvas.Select"));
         rootCanvasChoice.SelectionChanged += (_, _) => ChangeRootCanvas();
-        header.Children.Add(rootCanvasChoice);
-        header.Children.Add(editContext);
+        var rootMenu = new OverlayContextMenu();
+        foreach (var root in new[] { RootCanvasKind.Main, RootCanvasKind.Foreground, RootCanvasKind.Background })
+        {
+            var item = new Controls.MenuItem { Header = L.Get("RootCanvas." + root), Icon = RootIcon(root) };
+            item.Click += (_, _) => { rootCanvasChoice.SelectedValue = root; };
+            rootMenu.Items.Add(item);
+        }
+        rootCanvasMenu.ContextMenu = rootMenu;
+        rootCanvasMenu.Click += (_, _) => { rootMenu.PlacementTarget = rootCanvasMenu; rootMenu.IsOpen = true; };
+        rootCanvasMenu.Content = RootIcon(RootCanvasKind.Main);
         var navigation = new Controls.DockPanel();
         parentScope = new Controls.Button { Content = IconPath("M11,3 L6,8 L11,13"), Width = 30, Height = 30, MinWidth = 0, MinHeight = 0,
             Padding = new(0), ToolTip = L.Get("Layers.ParentScope"), Margin = new(0, 0, 4, 0) };
         Automation.AutomationProperties.SetName(parentScope, L.Get("Layers.ParentScope"));
         parentScope.Click += (_, _) => LeaveGroup();
-        Controls.DockPanel.SetDock(parentScope, Controls.Dock.Left); navigation.Children.Add(parentScope);
+        Controls.DockPanel.SetDock(rootCanvasMenu, Controls.Dock.Left); navigation.Children.Add(rootCanvasMenu);
         breadcrumbViewport = new Controls.ScrollViewer { Content = breadcrumbs, VerticalScrollBarVisibility = Controls.ScrollBarVisibility.Disabled,
-            HorizontalScrollBarVisibility = Controls.ScrollBarVisibility.Auto };
+            HorizontalScrollBarVisibility = Controls.ScrollBarVisibility.Hidden, Height = 30, ClipToBounds = true };
+        breadcrumbViewport.SizeChanged += (_, _) => SizeBreadcrumbs();
         navigation.Children.Add(breadcrumbViewport); header.Children.Add(navigation);
-        var actions = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = Wpf.HorizontalAlignment.Right, Margin = new(0, 4, 0, 0) };
+        var actions = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal, HorizontalAlignment = Wpf.HorizontalAlignment.Right };
         var add = new Controls.Button { Content = "+", Width = 30, Height = 30, MinWidth = 0, MinHeight = 0, Padding = new(0), ToolTip = L.Get("Layers.NewGroup"), Margin = new(6, 0, 0, 0) };
         addGroup = add;
         Automation.AutomationProperties.SetName(add, L.Get("Layers.NewGroup"));
         add.Click += (_, _) => CreateGroup();
         var resources = new Controls.Button { Content = IconPath(Instance), Width = 30, Height = 30, MinWidth = 0, MinHeight = 0, Padding = new(0), ToolTip = L.Get("Prefab.Resources"), Margin = new(6, 0, 0, 0) };
         Automation.AutomationProperties.SetName(resources, L.Get("Prefab.Resources"));
-        resources.Click += (_, _) => PrefabResourcesRequested?.Invoke(); actions.Children.Add(resources); actions.Children.Add(add); header.Children.Add(actions);
-        header.Children.Add(CreateGroupContextSite()); headerViewport.Content = header; body.Children.Add(headerViewport);
+        resources.Click += (_, _) => PrefabResourcesRequested?.Invoke(); actions.Children.Add(resources); actions.Children.Add(add);
+        var details = new Controls.DockPanel { Margin = new(0, 4, 0, 0), Height = 30 };
+        Controls.DockPanel.SetDock(actions, Controls.Dock.Right); details.Children.Add(actions);
+        details.Children.Add(CreateGroupContextSite()); header.Children.Add(details);
+        groupCanvasChoice.Width = 64; groupCanvasChoice.Height = 28; groupCanvasChoice.Margin = new(0, 0, 6, 0);
+        AppWindowChrome.SetHeaderActions(this, groupCanvasChoice);
+        headerViewport.Content = header; body.Children.Add(headerViewport);
         // Short windows scroll their controls instead of pushing the layer list out.
         void SizeHeader() => headerViewport.MaxHeight = Math.Max(40, body.ActualHeight - status.ActualHeight - 110);
         body.SizeChanged += (_, _) => SizeHeader(); status.SizeChanged += (_, _) => SizeHeader();
@@ -141,6 +157,9 @@ internal sealed partial class LayersWindow : Wpf.Window
             shownRootCanvas = session.ActiveRootCanvas;
             shownScopePath = scopePath;
             rootCanvasChoice.SelectedValue = session.ActiveRootCanvas;
+            rootCanvasMenu.ToolTip = L.Get("RootCanvas." + session.ActiveRootCanvas);
+            rootCanvasMenu.Content = RootIcon(session.ActiveRootCanvas);
+            rootCanvasMenu.IsEnabled = editContextName is null;
             rootCanvasChoice.Visibility = editContextName is null ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
             rootCanvasChoice.IsEnabled = canMutate() && !session.IsTransactionActive && editContextName is null;
             if (renameId is { } editing && (!ReferenceEquals(renameSession, session) || !ReferenceEquals(renameDocument, session.Document) ||
@@ -168,9 +187,9 @@ internal sealed partial class LayersWindow : Wpf.Window
             foreach (var row in visibleRows.Where(r => session.Selection.Contains(r.Id))) layers.SelectedItems.Add(row);
             empty.Visibility = desired.Count == 0 ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
             RefreshBreadcrumbs(session);
-            parentScope.IsEnabled = session.EditScopeId is not null;
+            parentScope.IsEnabled = session.EditScopeId is not null || completeContextAction is not null;
             if (addGroup is not null) addGroup.IsEnabled = CanWrite && !session.IsTransactionActive;
-            if (scopeChanged) { if (visibleRows.Count > 0) layers.ScrollIntoView(visibleRows[0]); breadcrumbViewport.ScrollToRightEnd(); }
+            if (scopeChanged) { if (visibleRows.Count > 0) layers.ScrollIntoView(visibleRows[0]); breadcrumbViewport.ScrollToLeftEnd(); }
         }
         finally { refreshing = false; }
     }
@@ -181,15 +200,42 @@ internal sealed partial class LayersWindow : Wpf.Window
         void Add(string name, Guid? scope)
         {
             if (breadcrumbs.Children.Count > 0) breadcrumbs.Children.Add(new Controls.TextBlock { Text = "›", Margin = new(3, 0, 3, 0), VerticalAlignment = Wpf.VerticalAlignment.Center });
-            var button = new Controls.Button { Content = name, Tag = new ScopeTarget(scope), Padding = new(5, 3, 5, 3), MinWidth = 0, MinHeight = 28,
+            var button = new Controls.Button { Content = new Controls.TextBlock { Text = name, TextTrimming = Wpf.TextTrimming.CharacterEllipsis }, Tag = new ScopeTarget(scope), Padding = new(5, 3, 5, 3), MinWidth = 0, MinHeight = 28,
                 IsEnabled = scope != session.EditScopeId && (scope is null || session.IsReadOnly || !session.IsNodeLocked(scope.Value)), ToolTip = name + "\n" + L.Get("Layers.ScopeHint") };
             Automation.AutomationProperties.SetName(button, name);
             button.Click += (_, _) => ChangeScope(scope); breadcrumbs.Children.Add(button);
         }
-        Add(L.Get(session.ActiveRootCanvas == RootCanvasKind.Main ? "Layers.RootScope" : "RootCanvas." + session.ActiveRootCanvas), null);
+        foreach (var ancestor in ancestorPath)
+        {
+            if (breadcrumbs.Children.Count > 0) breadcrumbs.Children.Add(new Controls.TextBlock { Text = "›", VerticalAlignment = Wpf.VerticalAlignment.Center });
+            var button = new Controls.Button { Content = new Controls.TextBlock { Text = ancestor.Name, TextTrimming = Wpf.TextTrimming.CharacterEllipsis }, ToolTip = ancestor.Name, Padding = new(5, 3, 5, 3), MinWidth = 0, MinHeight = 28 };
+            Automation.AutomationProperties.SetName(button, ancestor.Name);
+            button.Click += (_, _) => { CommitRename(); ancestor.Navigate(); };
+            breadcrumbs.Children.Add(button);
+        }
+        Add(editContextName ?? L.Get(session.ActiveRootCanvas == RootCanvasKind.Main ? "Layers.RootScope" : "RootCanvas." + session.ActiveRootCanvas), null);
         foreach (var group in session.EditScopePath) Add(GroupName(group), group.Id);
+        SizeBreadcrumbs();
+    }
+    private void SizeBreadcrumbs()
+    {
+        var buttons = breadcrumbs.Children.OfType<Controls.Button>().ToArray();
+        if (buttons.Length == 0 || breadcrumbViewport.ActualWidth <= 0) return;
+        double width = Math.Max(16, (breadcrumbViewport.ActualWidth - (buttons.Length - 1) * 14 - 4) / buttons.Length);
+        foreach (var button in buttons)
+        {
+            button.MaxWidth = width;
+            if (button.Content is Controls.TextBlock label) label.MaxWidth = Math.Max(1, width - 14);
+        }
+        breadcrumbViewport.ScrollToLeftEnd();
     }
     private static string GroupName(CanvasGroup group) => string.IsNullOrWhiteSpace(group.Name) ? L.Get("Layers.UntitledGroup") : group.Name;
+    private static Wpf.FrameworkElement RootIcon(RootCanvasKind root) => IconPath(root switch
+    {
+        RootCanvasKind.Foreground => "M2,2 H12 V12 H2 Z M5,14 H14 V5",
+        RootCanvasKind.Background => "M4,4 H14 V14 H4 Z M2,11 V2 H11",
+        _ => "M2,3 H14 V13 H2 Z M5,6 H11 V10 H5 Z"
+    });
     private static string InstanceName(PrefabInstance instance, PrefabDefinition? definition) => !string.IsNullOrWhiteSpace(instance.Name) ? instance.Name :
         !string.IsNullOrWhiteSpace(definition?.Name) ? definition.Name : L.Get("Prefab.DefaultName");
     internal LayerTreeRow? FindNode(Guid id) => rows.GetValueOrDefault(id);
@@ -207,20 +253,21 @@ internal sealed partial class LayersWindow : Wpf.Window
         if (same) return;
         editContextName = name; editContextSource = source;
         editContext.Children.Clear();
-        if (name is null) return;
-        editContext.Children.Add(new Controls.TextBlock { Text = L.Format(source ? "Prefab.EditingSource" : "Prefab.Editing", name), TextWrapping = Wpf.TextWrapping.Wrap, MaxWidth = 200, VerticalAlignment = Wpf.VerticalAlignment.Center });
-        void Add(string key, bool finish)
-        {
-            var button = new Controls.Button { Content = L.Get(key), MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(5, 3, 0, 3), IsEnabled = (finish ? completeContextAction : cancelContextAction) is not null };
-            button.Click += (_, _) => { if (finish) completeContextAction?.Invoke(); else cancelContextAction?.Invoke(); }; editContext.Children.Add(button);
-        }
-        Add("Prefab.Complete", true); Add("Prefab.Cancel", false);
+        RefreshRows(getSession());
     }
+    internal void SetAncestorPath(IReadOnlyList<(string Name, Action Navigate)> path)
+    { ancestorPath = path; RefreshBreadcrumbs(getSession()); }
     private void ChangeScope(Guid? id)
     {
         if (!canMutate() || getSession().IsTransactionActive) return;
         CommitRename(); CancelDrag();
-        try { getSession().SetEditScope(id); RefreshRows(getSession()); }
+        try
+        {
+            var session = getSession();
+            var returningChild = session.EditScopePath.FirstOrDefault(group => group.ParentId == id)?.Id;
+            session.SetEditScope(id); RefreshRows(session);
+            if (returningChild is { } child && FindNode(child) is not null) SelectNode(child);
+        }
         catch (Exception ex) { status.Text = ex.Message; }
     }
     private void ChangeRootCanvas()
@@ -240,6 +287,8 @@ internal sealed partial class LayersWindow : Wpf.Window
     private void LeaveGroup()
     {
         var session = getSession();
+        if (session.EditScopeId is null && canMutate() && !session.IsTransactionActive)
+        { CommitRename(); completeContextAction?.Invoke(); return; }
         if (session.EditScopeId is not { } current || !canMutate() || session.IsTransactionActive) return;
         var graph = new SceneGraph(session.Document); Guid? parent = graph.ParentId(current);
         while (!session.IsReadOnly && parent is { } locked && graph.IsLocked(locked)) parent = graph.ParentId(locked);

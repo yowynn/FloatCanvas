@@ -31,8 +31,20 @@ public sealed partial class EditorSession
             int index = Enumerable.Range(0, order.Count).Where(i => moving.Contains(order[i]) || current.AncestorIds(order[i]).Any(moving.Contains)).DefaultIfEmpty(order.Count - 1).Max() + 1;
             current.InsertGroup(new() { Id = id, Name = name, OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] }, EditScopeId, index, rootCanvas: ActiveRootCanvas);
             current.ReparentPreservingWorld(selected, id); SynchronizeElementOrder(document); SetSelectionCore([id]);
+            InitializeGroupPreview(id);
         });
         return id;
+    }
+
+    private void InitializeGroupPreview(Guid id)
+    {
+        var graph = new SceneGraph(Document);
+        var group = graph.FindGroup(id)!;
+        if (group.PreviewCanvas is not null || NodeBounds(id) is not { } bounds) return;
+        var reference = EditScopeId is null ? Document.AuthoringReference?.ReferenceScreenBounds ?? Document.Viewport : GetEditingSubprojectCanvas().Viewport;
+        var viewport = new RectD(0, 0, reference.Width, reference.Height);
+        var localCenter = graph.NodeWorldPlacement(id).PlaneTransform.Inverse().TransformPoint(bounds.Center);
+        group.PreviewCanvas = new() { Viewport = viewport, Origin = bounds.IsEmpty ? default : localCenter - viewport.Center };
     }
 
     /// <summary>Removes one outer grouping level and preserves any nested groups and all element transforms.</summary>
@@ -152,7 +164,10 @@ public sealed partial class EditorSession
         Execute(label ?? L.Get("History.InsertPreset"), document =>
         {
             foreach (var resource in resources) Assets.Add(resource);
-            SetSelectionCore(AppendSnapshot(document, snapshot, EditScopeId, ActiveRootCanvas));
+            var inserted = AppendSnapshot(document, snapshot, EditScopeId, ActiveRootCanvas);
+            foreach (var id in inserted)
+                if (new SceneGraph(document).FindGroup(id) is { PreviewCanvas: null }) InitializeGroupPreview(id);
+            SetSelectionCore(inserted);
         });
     }
 

@@ -4,6 +4,8 @@ namespace FloatCanvas.Windows;
 public sealed class OverlayFrameRequest
 {
     public IReadOnlyList<PixelBounds>? DirtyRegions { get; set; }
+    /// <summary>Retain all existing output pixels while the presenter awaits a replacement frame.</summary>
+    public bool Deferred { get; set; }
     /// <summary>When supplied, observes a failed batch and prevents a second application-level error dialog.</summary>
     public Action<Exception>? FailureHandler { get; set; }
     internal OverlayFrameRequest(IReadOnlyList<PixelBounds>? dirtyRegions) => DirtyRegions = dirtyRegions;

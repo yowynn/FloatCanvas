@@ -45,7 +45,7 @@ internal sealed partial class DesktopSession
     }
     private EditorTool _documentLiveTool = EditorTool.Freehand;
     private bool DocumentOperationBusy => _documentBusy || _documentExitRequested || _canvasCalibration?.IsAwaitingResolution == true;
-    private sealed class DocumentFileState { public string? Path; public string? SavedFingerprint; public long SavedContentVersion = -1; public long SavedMediaVersion; public Guid? SavedPrefabRevision; public ProjectFileVersion? DiskVersion; }
+    private sealed class DocumentFileState { public string? Path; public string? SuggestedSaveAsPath; public string? SavedFingerprint; public long SavedContentVersion = -1; public long SavedMediaVersion; public Guid? SavedPrefabRevision; public ProjectFileVersion? DiskVersion; }
     private sealed class ClipboardObjects
     {
         public int Version { get; set; } = 1;
@@ -287,6 +287,8 @@ internal sealed partial class DesktopSession
             _documentFiles.Clear();
             _live = new(restored.State.LiveDocument, _assets);
             _capture = restored.State.CaptureDocument is { } capture ? new(capture, _assets) : null;
+            BindCanvasIdentity(_live, $"history:{Path.GetFullPath(selected.DirectoryPath).ToUpperInvariant()}#{CanvasDocumentIdentity(_live)}", copyViews: true, overwriteViews: false);
+            if (_capture is not null) BindCanvasIdentity(_capture, $"history:{Path.GetFullPath(selected.DirectoryPath).ToUpperInvariant()}#{CanvasDocumentIdentity(_capture)}", copyViews: true, overwriteViews: false);
             _captureOrigin = restored.State.CaptureOrigin;
             _documentFrozenCaptureWarning = null;
             SynchronizeLiveDisplayLayout();
@@ -431,25 +433,43 @@ internal sealed partial class DesktopSession
             }
             // A prefab is inserted into the current editing context. Only a full
             // project replaces that context and asks to finish pending subprojects.
+            var openingOwner = Active; long openingRevision = openingOwner.PreviewRevision;
+            var loaded = await _projectStore.LoadAsync(projectPath, _documentLifetime.Token);
+            NormalizePrefabLinkPaths(loaded.Document, projectPath);
+            if (!ReferenceEquals(Active, openingOwner) || openingOwner.PreviewRevision != openingRevision)
+            { UpdateStatus(L.Get("Project.OpenChanged")); return; }
+            var resolution = ChooseCanvasResolution(loaded.Document);
+            if (resolution == CanvasResolutionChoice.Cancel) return;
+            var openDocument = loaded.Document;
+            if (resolution == CanvasResolutionChoice.Convert)
+            {
+                var target = ConversionTargetScreen;
+                openDocument = await Task.Run(() => CanvasResolutionConversion.Prepare(loaded.Document, target).Document, _documentLifetime.Token);
+                SceneValidation.Validate(openDocument);
+                if (ConversionTargetScreen != target) { UpdateStatus(L.Get("Project.OpenChanged")); return; }
+            }
+            if (!ReferenceEquals(Active, openingOwner) || openingOwner.PreviewRevision != openingRevision)
+            { UpdateStatus(L.Get("Project.OpenChanged")); return; }
             if (!await CompletePrefabEditingBeforeDocumentChangeAsync()) return;
             _editor.Cancel(); var previous = Active;
             if (!await ConfirmReplaceAsync(previous, L.Get("Project.ReplaceCurrent"))) return;
             long previousContent = previous.PreviewRevision;
             long focusVersion = _host.ForegroundLossVersion;
-            var loaded = await _projectStore.LoadAsync(projectPath, _documentLifetime.Token);
-            NormalizePrefabLinkPaths(loaded.Document, projectPath);
+            if (loaded.FileVersion != await ProjectFileVersion.ReadAsync(projectPath, _documentLifetime.Token))
+            { UpdateStatus(L.Get("Project.OpenChanged")); return; }
             if (!ReferenceEquals(Active, previous) || previous.PreviewRevision != previousContent)
             { UpdateStatus(L.Get("Project.OpenChanged")); return; }
             ImageImportBudget.ValidateResources(loaded.Assets.Resources);
             MergeAssets(loaded.Assets);
-            var session = new EditorSession(loaded.Document, _assets);
-            if (loaded.Document.Kind == DocumentKind.FrozenCapture)
+            var session = new EditorSession(openDocument, _assets);
+            if (openDocument.Kind == DocumentKind.FrozenCapture)
             {
                 if (_capture is not null && !ReferenceEquals(previous, _capture) && !await ConfirmReplaceAsync(_capture, L.Get("Project.ReplaceCapture"))) return;
                 await FlushRecoveryAsync(); await ArchiveWorkspaceAsync();
                 if (ReferenceEquals(previous, _live)) _documentLiveTool = _editor.Tool;
                 if (_capture is not null) { ForgetWindowSourceBindings(_capture); _documentFiles.Remove(_capture); }
-                _capture = session; _captureOrigin = CenteredOrigin(loaded.Document.Viewport);
+                _capture = session; _captureOrigin = CenteredOrigin(openDocument.Viewport);
+                BindCanvasIdentity(session, CanvasFileNamespace(session, projectPath), copyViews: false);
                 _documentFrozenCaptureWarning = null;
                 _editor.ReplaceSession(session, _captureOrigin);
             }
@@ -460,12 +480,14 @@ internal sealed partial class DesktopSession
                 ForgetWindowSourceBindings(_live);
                 _documentFiles.Remove(_live);
                 _live = session; SynchronizeLiveDisplayLayout();
+                BindCanvasIdentity(session, resolution == CanvasResolutionChoice.Convert ? $"workspace:{CanvasDocumentIdentity(session)}" : CanvasFileNamespace(session, projectPath), copyViews: false);
                 _editor.ReplaceSession(session, _liveOrigin); SwitchToolState(_documentLiveTool);
                 OnMonitorsChanged();
             }
             var openedSnapshot = session.Document.Clone();
             string openedFingerprint = await Task.Run(() => Fingerprint(openedSnapshot), _documentLifetime.Token);
-            _documentFiles[session] = new() { Path = projectPath, SavedFingerprint = openedFingerprint, SavedContentVersion = session.ContentVersion, DiskVersion = loaded.FileVersion };
+            _documentFiles[session] = resolution == CanvasResolutionChoice.Convert ? new() { SuggestedSaveAsPath = ConvertedSuggestedPath(projectPath) } :
+                new() { Path = projectPath, SavedFingerprint = openedFingerprint, SavedContentVersion = session.ContentVersion, DiskVersion = loaded.FileVersion };
             openedPrefabOwner = session;
             RecoveryHistory.WorkspaceRestored();
             await RecoveryHistory.EnterWorkspaceAsync(SnapshotWorkspace(), _documentLifetime.Token);
@@ -481,7 +503,8 @@ internal sealed partial class DesktopSession
                 else editing = SetEditing(true);
             }
             ScheduleRecovery();
-            if (editing) UpdateStatus(L.Get("Project.OpenedPrefix") + Path.GetFileName(projectPath));
+            if (resolution == CanvasResolutionChoice.Convert) UpdateStatus(L.Get("Canvas.ConvertedWorkingCopy"));
+            else if (editing) UpdateStatus(L.Get("Project.OpenedPrefix") + Path.GetFileName(projectPath));
             else if (!enterEditing || focusLost) UpdateStatus(L.Get("Project.OpenedPassThrough"));
             RequestRender();
         }
@@ -510,7 +533,7 @@ internal sealed partial class DesktopSession
             var dialog = new Microsoft.Win32.SaveFileDialog
             {
                 Title = WindowTitles.Format(L.Get("Project.SaveTitle"), !_host.IsEditing), Filter = L.Get("Project.Filter"), DefaultExt = ".floatcanvas", AddExtension = true,
-                FileName = path is null ? L.Get("Project.FilePrefix") + DateTime.Now.ToString("yyyyMMdd-HHmmss") : Path.GetFileName(path)
+                FileName = path is null ? state.SuggestedSaveAsPath ?? L.Get("Project.FilePrefix") + DateTime.Now.ToString("yyyyMMdd-HHmmss") : Path.GetFileName(path)
             };
             if (SessionWindowCoordinator.ShowNativeModal(_toolbar, () => dialog.ShowDialog(_toolbar)) != true) return false;
             path = dialog.FileName;
@@ -533,6 +556,7 @@ internal sealed partial class DesktopSession
             return answer == MessageBoxResult.Yes && await SaveSessionAsync(session, true);
         }
         state.DiskVersion = writtenVersion;
+        BindCanvasIdentity(session, CanvasFileNamespace(session, path), copyViews: true);
         state.Path = path; state.SavedFingerprint = fingerprint; state.SavedContentVersion = savedContentVersion;
         state.SavedMediaVersion = savedMediaVersion;
         await OnPrefabSourceSavedAsync(path);
@@ -642,7 +666,7 @@ internal sealed partial class DesktopSession
                 using var backdrop = CreateScreenBackdrop(screenCapture, screenOrigin);
                 var assets = ResourceLibrary(rasterResources); using var renderer = new SceneRenderer { LiveEffectContext = effectContext, AnimationTime = animationTime, ScreenBackdrop = backdrop };
                 windowRaster?.ApplyTo(renderer);
-                byte[] png = renderer.ExportPng(snapshot, assets, objects);
+                byte[] png = renderer.ExportPng(snapshot, assets, objects, useAuthoredFrame: false);
                 string? internalObjects = objects ? JsonSerializer.Serialize(new ClipboardObjects
                 {
                     Document = selected, OwnerTransfer = ownerTransfer, Assets = resources.Select(r => new ClipboardAsset { Id = r.Id, MediaType = r.MediaType, Bytes = r.Data.ToArray() }).ToList()

@@ -23,7 +23,7 @@ internal static class LayerRenameTests
         string language = L.Preference;
         try { foreach (string locale in new[] { "zh-CN", "en" }) { L.Initialize(locale); Panel(check); } }
         finally { L.Initialize(language); }
-        Storage(check).GetAwaiter().GetResult();
+        Task.Run(() => Storage(check)).GetAwaiter().GetResult();
         LayersWindowTests.Run(check);
         InspectorLayerPanelTests.Run(check);
         LayerTreeTests.Run(check);

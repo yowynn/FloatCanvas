@@ -45,21 +45,22 @@ internal sealed partial class DesktopSession
         _editor.Cancel(); _canvasCalibration.CancelDrag(); _canvasGridScale.Cancel();
         var target = Active;
         var canvasTarget = CaptureCanvasSettingsTarget();
-        var request = new SnapshotCaptureRequest(target, _host.EditingSessionVersion);
+        var viewing = EditingCanvasView; var viewEpoch = _canvasViewEpoch;
+        var origin = _editor.CanvasOrigin;
+        var request = new SnapshotCaptureRequest(target, _host.EditingSessionVersion, viewEpoch, origin);
         _canvasRectificationRequest = request;
-        var origin = _editor.ScreenOrigin;
+        var frozen = canvasTarget.CreateDisplayDocument(); var resources = ResourceSnapshot(frozen);
         var presentation = FreezePresentationCapture(target);
         using var windows = FreezeWindowSourceCapture(target);
         bool Current() => !_disposed && !_documentStopped && !_documentExitRequested && _host.IsEditing && _host.IsVisible &&
-            ReferenceEquals(_canvasRectificationRequest, request) && request.MatchesContent(Active) &&
-            _host.EditingSessionVersion == request.EditingVersion && _editor.ScreenOrigin == origin && canvasTarget.IsCurrent;
+            ReferenceEquals(_canvasRectificationRequest, request) && request.MatchesContent(Active, _canvasViewEpoch, _editor.CanvasOrigin) &&
+            _host.EditingSessionVersion == request.EditingVersion && canvasTarget.IsCurrent;
         _documentBusy = true;
         try
         {
             await Dispatcher.Yield(DispatcherPriority.Input);
             if (!Current()) return;
-            var frozen = canvasTarget.CreateDisplayDocument(); var resources = ResourceSnapshot(frozen);
-            var quad = frozen.Canvas.Projection.Quad.ToArray();
+            var quad = frozen.Canvas.Projection.Quad.Select(viewing.ToView).ToArray();
             var bounds = new RectD(quad.Min(p => p.X), quad.Min(p => p.Y), quad.Max(p => p.X) - quad.Min(p => p.X), quad.Max(p => p.Y) - quad.Min(p => p.Y));
             if (bounds.Width * bounds.Height > 64_000_000) { UpdateStatus(L.Get("Export.BufferTooLarge")); return; }
             var selection = new CaptureSelection(CaptureShape.PolygonLasso, CaptureSource.BackgroundAndCanvas, bounds, quad, 0, 0);
@@ -68,16 +69,17 @@ internal sealed partial class DesktopSession
             if (!Current()) return;
             var displays = _host.Monitors.Select(m => new RectD(m.Bounds.Left - origin.X, m.Bounds.Top - origin.Y, m.Bounds.Width, m.Bounds.Height)).ToArray();
             var animationTime = _renderer.AnimationTime;
-            var raster = await Task.Run(() => SnapshotImageCommand.Render(frozen, resources, selection, desktop, displays, animationTime, origin, presentation, windows), _documentLifetime.Token);
+            var raster = await Task.Run(() => SnapshotImageCommand.Render(frozen, resources, selection, desktop, displays, animationTime, origin, presentation, windows, viewing), _documentLifetime.Token);
             if (!Current()) return;
             var window = new CanvasRectificationPreviewWindow(_canvasSettingsWindow is { IsVisible: true } ? _canvasSettingsWindow : _toolbar,
-                raster, frozen.Canvas.Projection);
+                raster, frozen.Canvas.Projection, viewing);
             _canvasRectificationWindow = window;
             ConfigureAppWindow(window); SessionWindowCoordinator.ShowModal(window);
             if (!window.Applied || !Current()) return;
             var next = window.Projection.Clone();
             if (window.InsertScreenshot && !target.CanInsertInEditScope) { UpdateStatus(L.Get("Inspector.LockedSuffix")); return; }
-            CanvasElement? image = window.InsertScreenshot ? SnapshotImageCommand.CreateElement(target.Assets, raster, next.Matrix) : null;
+            CanvasElement? image = window.InsertScreenshot ? SnapshotImageCommand.CreateElement(target.Assets, raster,
+                CanvasRectificationPreviewWindow.ViewingProjection(next, viewing).Matrix) : null;
             if (image is not null && canvasTarget.Independent) SceneGraph.ApplyPlacement(image, target.GetEditingSubprojectPlacement().Inverse());
             target.Execute(L.Get("Canvas.RectificationPreview"), scene =>
             {
@@ -134,8 +136,8 @@ internal sealed partial class DesktopSession
         { CancelCanvasGridCalibration(); return true; }
         if (input.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && input.Button == OverlayMouseButton.Left && _canvasGridCalibrationPoints.Count < 3)
         {
-            var point = new PointD(input.Position.X - _editor.ScreenOrigin.X, input.Position.Y - _editor.ScreenOrigin.Y);
-            if (_canvasGridCalibrationPoints.Any(p => p.DistanceTo(point) < 8)) return true;
+            var point = EditingCanvasView.ToCanvas(new(input.Position.X - _editor.CanvasOrigin.X, input.Position.Y - _editor.CanvasOrigin.Y));
+            if (_canvasGridCalibrationPoints.Any(p => p.DistanceTo(point) * EditingCanvasView.Zoom < 8)) return true;
             _canvasGridCalibrationPoints.Add(point);
             UpdateStatus(L.Get(_canvasGridCalibrationPoints.Count == 1 ? "Canvas.GridCalibrationPickX" : "Canvas.GridCalibrationPickY"));
             RequestRender();
@@ -183,9 +185,9 @@ internal sealed partial class DesktopSession
     private void DrawCanvasGridCalibration(SKCanvas canvas)
     {
         using var paint = new SKPaint { Color = new(255, 170, 30), StrokeWidth = 2, IsAntialias = true, Style = SKPaintStyle.Stroke };
-        foreach (var point in _canvasGridCalibrationPoints) canvas.DrawCircle((float)point.X, (float)point.Y, 7, paint);
-        for (int i = 1; i < _canvasGridCalibrationPoints.Count; i++)
-            canvas.DrawLine((float)_canvasGridCalibrationPoints[0].X, (float)_canvasGridCalibrationPoints[0].Y,
-                (float)_canvasGridCalibrationPoints[i].X, (float)_canvasGridCalibrationPoints[i].Y, paint);
+        var points = _canvasGridCalibrationPoints.Select(EditingCanvasView.ToView).ToArray();
+        foreach (var point in points) canvas.DrawCircle((float)point.X, (float)point.Y, 7, paint);
+        for (int i = 1; i < points.Length; i++)
+            canvas.DrawLine((float)points[0].X, (float)points[0].Y, (float)points[i].X, (float)points[i].Y, paint);
     }
 }

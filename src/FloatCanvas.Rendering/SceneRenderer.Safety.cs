@@ -10,11 +10,16 @@ public sealed partial class SceneRenderer
     public static void DrawProjectionUnsafeRegion(SKCanvas canvas, SceneDocument document, RectD screenViewport)
     {
         var bounds = screenViewport.Intersect(document.Viewport);
-        if (!document.Canvas.Projection.Enabled || bounds.IsEmpty || !Finite(bounds)) return;
-        var mapping = CanvasMapping.Create(document);
+        DrawProjectionUnsafeRegion(canvas, CanvasMapping.Create(document), bounds);
+    }
+
+    /// <summary>Editing overlay using the same final mapping as pointer input, including the local camera.</summary>
+    public static void DrawProjectionUnsafeRegion(SKCanvas canvas, CanvasMapping mapping, RectD bounds)
+    {
+        if (!mapping.IsPerspective || bounds.IsEmpty || !Finite(bounds)) return;
         if (mapping.IsScreenSafe(new(bounds.Left, bounds.Top)) && mapping.IsScreenSafe(new(bounds.Right, bounds.Top)) &&
             mapping.IsScreenSafe(new(bounds.Right, bounds.Bottom)) && mapping.IsScreenSafe(new(bounds.Left, bounds.Bottom))) return;
-        var safe = bounds == document.Viewport ? mapping.SafeScreenPolygon : mapping.Safety.ClipScreen(bounds);
+        var safe = mapping.SafeScreenPolygon;
         using var builder = new SKPathBuilder { FillType = SKPathFillType.EvenOdd };
         builder.AddRect(ToRect(bounds));
         if (safe.Count >= 3)
@@ -25,7 +30,9 @@ public sealed partial class SceneRenderer
         }
         using var path = builder.Detach();
         using var paint = new SKPaint { Color = new SKColor(220, 72, 72, 24), IsAntialias = true };
-        canvas.DrawPath(path, paint);
+        int saved = canvas.Save();
+        try { canvas.ClipRect(ToRect(bounds)); canvas.DrawPath(path, paint); }
+        finally { canvas.RestoreToCount(saved); }
     }
 
     private CanvasMapping MappingFor(SceneDocument document, RootCanvasKind root = RootCanvasKind.Main) =>

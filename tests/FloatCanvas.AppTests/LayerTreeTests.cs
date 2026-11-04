@@ -45,7 +45,7 @@ internal static class LayerTreeTests
         groupPresenter.EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.PrepareForShow();
         check(locale + " group arrow replaces root rows with only that group's direct children", session.EditScopeId == group && window.VisibleNodes.Select(r => r.Id).ToHashSet().SetEquals([a.Id, b.Id]) &&
             window.VisibleNodes.All(r => r.Depth == 0 && r.ParentId == group) && window.FindNode(group) is null && window.FindNode(c.Id) is null);
-        check(locale + " entering group changes only scope and exposes its full breadcrumb path", Crumbs().Select(button => button.Content).SequenceEqual(new object[] { L.Get("Layers.RootScope"), locale == "zh-CN" ? "组1" : "Group 1" }) &&
+        check(locale + " entering group changes only scope and exposes its full breadcrumb path", Crumbs().Select(button => (object)System.Windows.Automation.AutomationProperties.GetName(button)).SequenceEqual(new object[] { L.Get("Layers.RootScope"), locale == "zh-CN" ? "组1" : "Group 1" }) &&
             session.UndoCount == history && session.SceneRevision == revision);
         Invoke(window, "CreateGroup"); var emptyGroup = session.Selection.Single();
         string defaultGroupName = session.Document.Groups.Single(g => g.Id == emptyGroup).Name;
@@ -56,7 +56,7 @@ internal static class LayerTreeTests
             session.Document.Groups.Single(g => g.Id == group).ChildOrder!.Contains(emptyGroup) && session.UndoCount == history + 1 + (defaultGroupName == chosenGroupName ? 0 : 1));
         window.EnterGroup(emptyGroup); window.PrepareForShow();
         check(locale + " nested group uses root to group1 to group2 breadcrumbs and an empty current list", session.EditScopeId == emptyGroup && window.VisibleNodes.Count == 0 &&
-            Crumbs().Select(button => button.Content).SequenceEqual(new object[] { L.Get("Layers.RootScope"), locale == "zh-CN" ? "组1" : "Group 1", locale == "zh-CN" ? "组2" : "Group 2" }) &&
+            Crumbs().Select(button => (object)System.Windows.Automation.AutomationProperties.GetName(button)).SequenceEqual(new object[] { L.Get("Layers.RootScope"), locale == "zh-CN" ? "组1" : "Group 1", locale == "zh-CN" ? "组2" : "Group 2" }) &&
             Field<TextBlock>(window, "empty").Visibility == Visibility.Visible && !Crumbs().Last().IsEnabled);
         var beforeNavigation = JsonSerializer.Serialize(session.Document); int beforeNavigationUndo = session.UndoCount;
         Field<Button>(window, "parentScope").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.PrepareForShow();
@@ -103,7 +103,7 @@ internal static class LayerTreeTests
                 window.TryFindResource("CanvasSurface") is SolidColorBrush expectedSurface && listSurface.Color == expectedSurface.Color);
         }
         check(locale + " actual nested panel renders only group2 direct children with all three breadcrumbs and no author edits", window.VisibleNodes.Select(r => r.Id).ToHashSet().SetEquals([local1.Id, local2.Id]) &&
-            Crumbs().Select(button => button.Content).SequenceEqual(new object[] { L.Get("Layers.RootScope"), locale == "zh-CN" ? "组1" : "Group 1", locale == "zh-CN" ? "组2" : "Group 2" }) &&
+            Crumbs().Select(button => (object)System.Windows.Automation.AutomationProperties.GetName(button)).SequenceEqual(new object[] { L.Get("Layers.RootScope"), locale == "zh-CN" ? "组1" : "Group 1", locale == "zh-CN" ? "组2" : "Group 2" }) &&
             session.UndoCount == visualHistory && JsonSerializer.Serialize(session.Document) == visualDocument);
         var visualSession = session;
         Root(); AppTheme.Apply("light");

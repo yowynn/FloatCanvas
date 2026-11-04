@@ -25,7 +25,7 @@ internal static class WindowSourceStorageTests
         document.Canvas.Projection.PlaneBounds = new(5, 8, 1200, 800);
         string before = JsonSerializer.Serialize(document), path = Path.Combine(root, "live.floatcanvas");
         await store.SaveAsync(path, document, assets); var loaded = await store.LoadAsync(path);
-        check(SceneDocument.CurrentVersion == 17 && JsonSerializer.Serialize(loaded.Document) == before && loaded.Assets.Count == 1,
+        check(SceneDocument.CurrentVersion >= 17 && JsonSerializer.Serialize(loaded.Document) == before && loaded.Assets.Count == 1,
             "format14 preserves host/definition window descriptors, nullable first fallback, crop/effects/frame/group and presentation source values");
         check(document.Elements[0].AssetId is null && document.Version == SceneDocument.CurrentVersion && loaded.Document.ResourceIdentityPersistent,
             "saving offline live images never inserts an active fallback and retains persistent owner identity");

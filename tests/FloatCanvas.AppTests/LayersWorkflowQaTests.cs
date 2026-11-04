@@ -53,9 +53,9 @@ internal static class LayersWorkflowQaTests
         Observe("selecting a child group keeps the card bound to the entered parent", layers.CurrentGroupContext?.Name == "Outer" && owner.EditScopeId == outer && Field<TextBlock>(layers, "groupName").Text == "Outer");
         Row(inner).EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
         Observe("entering the child replaces the card with the entered child", owner.EditScopeId == inner && layers.CurrentGroupContext?.Name == "Inner" && Field<TextBlock>(layers, "groupName").Text == "Inner");
-        Field<Button>(layers, "parentScope").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
+        Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
         Observe("returning to the parent restores its card even with the child selected", owner.EditScopeId == outer && owner.Selection.SetEquals([inner]) && layers.CurrentGroupContext?.Name == "Outer");
-        Field<Button>(layers, "parentScope").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
+        Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
         SaveCardState("returned-to-root");
         Observe("returning to root removes entered-group actions and retains the canvas-view choice", owner.EditScopeId is null && owner.Selection.SetEquals([outer]) && layers.CurrentGroupContext is { IsRootContext: true, IsEntered: false, Export: null, Detach: null } && Field<Border>(layers, "groupContextSite").Visibility == Visibility.Visible);
         Row(outer).EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout(); Select(inner);
@@ -85,28 +85,22 @@ internal static class LayersWorkflowQaTests
         Observe("shared draft child rename stays detached from the owner", draft.Document.Groups.Single(group => group.Id == draftGroup).Name == "Edited shared group" && owner.Document.Definitions.Single(definition => definition.Id == shared.DefinitionId).Graph.Groups.All(group => group.Name != "Edited shared group"));
         Snapshot("embedded");
         layers.Width = 280; layers.Height = 280; Layout();
-        var done = ContextButton("Prefab.Complete"); SendKey(done, Key.Enter); Pump();
+        var done = Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled); SendKey(done, Key.Enter); Pump();
         Observe("Enter on Done publishes rather than entering the selected child group", ReferenceEquals(editor.Session, owner) && owner.Document.Definitions.Single(definition => definition.Id == shared.DefinitionId).Graph.Groups.Any(group => group.Name == "Edited shared group"));
         if (!ReferenceEquals(editor.Session, owner)) Await((Task)Invoke("CompleteCurrentPrefabAsync")!);
         Layout(); Select(shared.InstanceId); Row(shared.InstanceId).EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Pump();
         draft = editor.Session; draftGroup = draft.Document.Groups.Single(group => group.ParentId is null).Id; Select(draftGroup);
-        SendKey(ContextButton("Prefab.Cancel"), Key.Enter); Pump();
+        SendKey(Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled), Key.Enter); Pump();
         Observe("Enter on Cancel returns an unchanged shared draft instead of entering a child", ReferenceEquals(editor.Session, owner));
         if (!ReferenceEquals(editor.Session, owner)) Await((Task)Invoke("LeaveCurrentPrefabAsync")!);
 
         Layout(); Select(shared.InstanceId); Row(shared.InstanceId).EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Pump();
         draft = editor.Session; draftGroup = draft.Document.Groups.Single(group => group.ParentId is null).Id; Select(draftGroup);
         SendKey(Field<ListBox>(layers, "layers"), Key.F2); Layout(); Row(draftGroup).Editor.Text = "Discard this draft"; SendKey(Row(draftGroup).Editor, Key.Enter); Pump();
-        using (var answer = new DialogAnswer(app, "Dialog.Cancel"))
-        {
-            SendKey(ContextButton("Prefab.Cancel"), Key.Enter); Pump();
-            Observe("cancelling the shared leave question retains the detached edit and child list", answer.Count == 1 && ReferenceEquals(editor.Session, draft) && layers.VisibleNodes.Any(row => row.Id == draftGroup) && draft.Document.Groups.Single(group => group.Id == draftGroup).Name == "Discard this draft");
-        }
-        using (var answer = new DialogAnswer(app, "Prefab.Discard"))
-        {
-            SendKey(ContextButton("Prefab.Cancel"), Key.Enter); Pump();
-            Observe("discard from actual Cancel button returns without publishing shared draft changes", answer.Count == 1 && ReferenceEquals(editor.Session, owner) && owner.Document.Definitions.Single(definition => definition.Id == shared.DefinitionId).Graph.Groups.All(group => group.Name != "Discard this draft"));
-        }
+        SendKey(Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled), Key.Enter); Pump();
+        Observe("returning through shared navigation commits the edited definition without a dialog",
+            ReferenceEquals(editor.Session, owner) && owner.Document.Definitions.Single(definition => definition.Id == shared.DefinitionId)
+                .Graph.Groups.Any(group => group.Name == "Discard this draft"));
 
         string sourcePath = Path.Combine(root, "external.floatcanvas"); var source = new SceneDocument { Viewport = new(0, 0, 320, 240), Elements = [new() { Kind = ElementKind.Rectangle, Name = "External content", Width = 20, Height = 25 }] };
         var projects = new ProjectStore(); Await(projects.SaveAsync(sourcePath, source, owner.Assets)); string sourceHash = Hash(sourcePath); DateTime sourceWriteTime = File.GetLastWriteTimeUtc(sourcePath);
@@ -115,9 +109,9 @@ internal static class LayersWorkflowQaTests
         Row(external.InstanceId).Editor.Text = "Renamed external instance"; SendKey(Row(external.InstanceId).Editor, Key.Enter); Pump();
         Observe("F2 and Enter rename external instance before any source navigation", ReferenceEquals(editor.Session, owner) && owner.Document.Instances.Single(instance => instance.Id == external.InstanceId).Name == "Renamed external instance");
         Select(external.InstanceId); SendKey(Field<ListBox>(layers, "layers"), Key.Enter); Wait(() => !ReferenceEquals(editor.Session, owner)); Layout();
-        Observe("list Enter opens external file's actual contents and source path", !ReferenceEquals(editor.Session, owner) && layers.VisibleNodes.Single().Name == "External content" && layers.CurrentGroupContext is { Storage: GroupStorageKind.ExternalFile, IsEntered: true } context && Path.GetFullPath(context.SourcePath!) == Path.GetFullPath(sourcePath));
+        Observe("list Enter opens external file's actual contents and source path", editor.Session.IsReadOnly && !ReferenceEquals(editor.Session, owner) && layers.VisibleNodes.Single().Name == "External content" && layers.CurrentGroupContext is { Storage: GroupStorageKind.ExternalFile, IsEntered: true } context && Path.GetFullPath(context.SourcePath!) == Path.GetFullPath(sourcePath));
         Snapshot("external");
-        SendKey(ContextButton("Prefab.Cancel"), Key.Enter); Wait(() => ReferenceEquals(editor.Session, owner));
+        SendKey(Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled), Key.Enter); Wait(() => ReferenceEquals(editor.Session, owner));
         Observe("Enter on Cancel returns an unchanged external source without rewriting it", ReferenceEquals(editor.Session, owner) && Await(projects.LoadAsync(sourcePath)).Document.Elements.Single().Name == "External content");
         Observe("Cancel on an untouched external source preserves the exact source file bytes", Hash(sourcePath) == sourceHash);
         Observe("Cancel on an untouched external source does not write the file", File.GetLastWriteTimeUtc(sourcePath) == sourceWriteTime);
@@ -136,7 +130,7 @@ internal static class LayersWorkflowQaTests
         Field<Button>(layers, "groupDetach").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Wait(() => ReferenceEquals(editor.Session, owner)); Layout();
         Observe("actual offline Detach action returns an editable ordinary group in one owner history entry", ReferenceEquals(editor.Session, owner) && !owner.IsReadOnly && owner.EditScopeId == external.InstanceId && new SceneGraph(owner.Document).FindGroup(external.InstanceId) is not null && layers.CurrentGroupContext is { Storage: GroupStorageKind.Ordinary, IsReadOnly: false } && owner.UndoCount == beforeOffline + 1);
         Observe("offline browsing and detaching preserve the unavailable source bytes", !File.Exists(sourcePath) && Hash(offlineSource) == sourceHash);
-        Field<Button>(layers, "parentScope").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
+        Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
         var missing = owner.ImportPrefab(prepared.Package, prepared.Assets, LayerPlacement.Identity, prepared.Source); Layout(); Select(missing.InstanceId);
         var beforeMissingRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseMissingRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -148,7 +142,7 @@ internal static class LayersWorkflowQaTests
             var pendingMissingEdit = (Task)Invoke("EditPrefabInstanceAsync", missing.InstanceId)!; Await(beforeMissingRead.Task);
             Select(external.InstanceId); Row(external.InstanceId).EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
             bool enteredB = owner.EditScopeId == external.InstanceId;
-            Field<Button>(layers, "parentScope").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
+            Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Layout();
             Observe("pending missing-source read allows actual layer scope A to B to A navigation without history", enteredB && owner.EditScopeId is null && owner.EditScopeVersion == beforeAbaVersion + 2 && owner.UndoCount == beforeAbaHistory);
             releaseMissingRead.TrySetResult(); Await(pendingMissingEdit); Layout();
             Console.WriteLine($"LAYERS_ABA_RESULT sameOwner={ReferenceEquals(editor.Session, owner)} activeReadOnly={editor.Session.IsReadOnly} scopeBefore={beforeAbaVersion} scopeAfter={owner.EditScopeVersion} currentScope={owner.EditScopeId} currentContext={layers.CurrentGroupContext?.Name}");
@@ -164,14 +158,14 @@ internal static class LayersWorkflowQaTests
             var pendingSharedBoundary = (Task)Invoke("EditPrefabInstanceAsync", missing.InstanceId)!; Await(beforeSharedRead.Task);
             Select(shared.InstanceId); Row(shared.InstanceId).EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Pump();
             bool enteredShared = !ReferenceEquals(editor.Session, owner) && !editor.Session.IsReadOnly;
-            SendKey(ContextButton("Prefab.Cancel"), Key.Enter); Wait(() => ReferenceEquals(editor.Session, owner)); Layout();
+            SendKey(Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled), Key.Enter); Wait(() => ReferenceEquals(editor.Session, owner)); Layout();
             Observe("pending missing-source read permits a real shared entry and unchanged Cancel without changing owner scope or history", enteredShared && ReferenceEquals(editor.Session, owner) && owner.EditScopeId is null && owner.EditScopeVersion == beforeSharedScope && owner.SceneRevision == beforeSharedRevision && owner.UndoCount == beforeSharedHistory);
             releaseSharedRead.TrySetResult(); Await(pendingSharedBoundary); Layout();
             Console.WriteLine($"LAYERS_SHARED_ABA_RESULT sameOwner={ReferenceEquals(editor.Session, owner)} activeReadOnly={editor.Session.IsReadOnly} scopeBefore={beforeSharedScope} scopeAfter={owner.EditScopeVersion} revisionBefore={beforeSharedRevision} revisionAfter={owner.SceneRevision} currentContext={layers.CurrentGroupContext?.Name}");
             Observe("a stale missing-source request cannot replace the editor after a shared context round trip", ReferenceEquals(editor.Session, owner) && !editor.Session.IsReadOnly && owner.EditScopeId is null && owner.UndoCount == beforeSharedHistory && layers.CurrentGroupContext?.IsEntered != true);
         }
         finally { productionResolver.BeforeReadAsync = null; releaseSharedRead.TrySetResult(); }
-        if (!ReferenceEquals(editor.Session, owner)) { SendKey(ContextButton("Prefab.Cancel"), Key.Enter); Wait(() => ReferenceEquals(editor.Session, owner)); Layout(); }
+        if (!ReferenceEquals(editor.Session, owner)) { SendKey(Field<StackPanel>(layers, "breadcrumbs").Children.OfType<Button>().Last(button => button.IsEnabled), Key.Enter); Wait(() => ReferenceEquals(editor.Session, owner)); Layout(); }
         // This private desktop has no acquired input lease. Stage the established
         // logical host state, then exercise the real production exit/epoch boundary.
         typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, true);
@@ -196,7 +190,6 @@ internal static class LayersWorkflowQaTests
         void Layout() { layers.PrepareForShow(); layers.UpdateLayout(); Pump(); }
         void Select(Guid id) { Layout(); var list = Field<ListBox>(layers, "layers"); list.SelectedItem = layers.FindNode(id); list.ScrollIntoView(list.SelectedItem); layers.UpdateLayout(); Pump(); }
         LayerTreeRowPresenter Row(Guid id) => LayerTreeRowPresenter.Find(layers.Container(id)) ?? throw new InvalidOperationException("Current row missing: " + id);
-        Button ContextButton(string key) => Field<WrapPanel>(layers, "editContext").Children.OfType<Button>().Single(button => Equals(button.Content, L.Get(key)));
         void SaveCardState(string name)
         {
             if (output is null) return;

@@ -44,6 +44,7 @@ internal sealed class SegmentedChoice : Grid
     private double optionWidth, targetX = double.NaN, targetWidth = double.NaN;
 
     internal IReadOnlyList<RadioButton> Items => items;
+    internal bool IconOnly { get; set; }
     internal double PreferredWidth => items.Count * optionWidth + 8;
     internal event EventHandler? SelectionChanged;
 
@@ -105,12 +106,13 @@ internal sealed class SegmentedChoice : Grid
 
     protected override Size MeasureOverride(Size constraint)
     {
-        bool vertical = constraint.Width < PreferredWidth - .5;
+        bool vertical = !IconOnly && constraint.Width < PreferredWidth - .5;
         foreach (var item in items)
         {
             var content = (StackPanel)item.Content;
+            ((TextBlock)content.Children[1]).Visibility = IconOnly ? Visibility.Collapsed : Visibility.Visible;
             content.Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal;
-            ((FrameworkElement)content.Children[0]).Margin = vertical ? new(0, 0, 0, 2) : new(0, 0, 5, 0);
+            ((FrameworkElement)content.Children[0]).Margin = IconOnly ? new(0) : vertical ? new(0, 0, 0, 2) : new(0, 0, 5, 0);
             ((TextBlock)content.Children[1]).TextAlignment = vertical ? System.Windows.TextAlignment.Center : System.Windows.TextAlignment.Left;
         }
         return base.MeasureOverride(constraint);

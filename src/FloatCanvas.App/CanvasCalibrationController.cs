@@ -8,6 +8,7 @@ namespace FloatCanvas.App;
 internal sealed class CanvasCalibrationController
 {
     public const double CenterHandleHalfSize = 17;
+    internal double ViewZoom { get; set; } = 1;
     private EditorSession? session;
     private SceneDocument? dragDocument;
     private PointD start;
@@ -49,17 +50,17 @@ internal sealed class CanvasCalibrationController
         var quad = target.Settings.Projection.Quad;
         if (quad.Count != 4) return false;
         corner = -1; edge = -1;
-        double closest = 12;
+        double closest = 12 / ViewZoom;
         for (int i = 0; i < 4; i++)
         {
             double distance = quad[i].DistanceTo(point);
             if (distance <= closest) { closest = distance; corner = i; }
         }
         var center = CanvasGridGeometry.ReferenceCenter(target.Settings.Projection);
-        bool centerHandle = Math.Abs(point.X - center.X) <= CenterHandleHalfSize && Math.Abs(point.Y - center.Y) <= CenterHandleHalfSize;
+        bool centerHandle = Math.Abs(point.X - center.X) <= CenterHandleHalfSize / ViewZoom && Math.Abs(point.Y - center.Y) <= CenterHandleHalfSize / ViewZoom;
         if (corner < 0 && !centerHandle)
         {
-            closest = 8;
+            closest = 8 / ViewZoom;
             for (int i = 0; i < 4; i++)
             {
                 double distance = SegmentDistance(point, quad[i], quad[(i + 1) % 4]);
@@ -88,7 +89,7 @@ internal sealed class CanvasCalibrationController
             if ((modifiers & OverlayModifiers.Control) == 0)
             {
                 var adjacent = new[] { initial[(corner + 3) % 4], initial[(corner + 1) % 4] };
-                const double threshold = 8;
+                double threshold = 8 / ViewZoom;
                 if (!shift || horizontal)
                 {
                     var x = adjacent.OrderBy(p => Math.Abs(p.X - target.X)).First().X;

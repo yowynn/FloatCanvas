@@ -77,8 +77,10 @@ internal static class WorkspacePreviewTests
         using (var bitmap = Decode(WorkspacePreview.Render(wideScene, assets)!))
             assert("scaled negative monitor coordinates map into the thumbnail", bitmap.GetPixel(50, 50) == SKColors.Red && bitmap.GetPixel(300, 200).Alpha == 0);
 
-        await LegacyHistoryAsync(Path.Combine(root, "legacy"), scene, assets, assert);
-        await CurrentAndArchiveAsync(Path.Combine(root, "current"), scene, assets, assert);
+        // The native history-window fixture above remains on the STA dispatcher.
+        // Its subsequent storage-only awaits must not capture that blocked UI context.
+        await Task.Run(() => LegacyHistoryAsync(Path.Combine(root, "legacy"), scene, assets, assert)).ConfigureAwait(false);
+        await CurrentAndArchiveAsync(Path.Combine(root, "current"), scene, assets, assert).ConfigureAwait(false);
         WriteRepresentativePreview(Path.Combine(root, "representative-overlay.png"));
         Console.WriteLine($"Workspace preview artifacts: {root}");
     }

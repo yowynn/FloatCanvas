@@ -235,7 +235,7 @@ internal sealed class CanvasPreviewScene
             Instances = instances ?? document.Instances.Select(instance => instance.Clone()).ToList(),
             Definitions = definitions ?? document.Definitions.Select(definition => definition.Clone()).ToList(),
             Background = background, Canvas = document.Canvas.Clone(), Groups = groups,
-            Viewport = document.Viewport, LayerOpacity = document.LayerOpacity, NextNumber = document.NextNumber,
+            Viewport = document.Viewport, AuthoringReference = document.AuthoringReference, LayerOpacity = document.LayerOpacity, NextNumber = document.NextNumber,
             DisplayLayout = layouts
         };
 

@@ -17,13 +17,15 @@ public sealed record CaptureRasterResult(byte[] PngBytes, RectD Bounds, bool Has
 
 public sealed partial class SceneRenderer
 {
+    private DesktopBackdrop? _captureViewingBackdrop;
     /// <summary>
     /// Renders a selection from a complete scene without changing its viewport or live-effect
     /// sampling context. The caller prepares the source scene, including its desired layer opacity.
     /// Display bounds are physical pixels; when provided, gaps between them remain transparent.
     /// </summary>
     public CaptureRasterResult ExportSelectionPng(SceneDocument document, AssetLibrary assets,
-        CaptureSelection selection, bool includeBackground, IReadOnlyList<RectD>? physicalDisplays = null)
+        CaptureSelection selection, bool includeBackground, IReadOnlyList<RectD>? physicalDisplays = null,
+        CanvasViewTransform? viewing = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(document);
@@ -58,7 +60,35 @@ public sealed partial class SceneRenderer
             ?? throw new InvalidOperationException(L.Get("Export.BufferTooLarge"));
         source.Canvas.Clear(SKColors.Transparent);
         source.Canvas.Translate(-(float)left, -(float)top);
-        Draw(source.Canvas, document, assets, includeBackground);
+        var camera = viewing ?? CanvasViewTransform.Identity;
+        if (camera == CanvasViewTransform.Identity) Draw(source.Canvas, document, assets, includeBackground);
+        else
+        {
+            var matrix = camera.Matrix;
+            var display = SceneEvaluation.WithViewport(SceneEvaluation.Build(document).RenderDocument,
+                matrix.Inverse().TransformBounds(document.Viewport), camera.ViewingSettings(document.Canvas, document.Viewport));
+            var originalBackdrop = ScreenBackdrop; var previousSampling = _captureViewingBackdrop;
+            var previousNavigation = NavigationSource;
+            if (camera.PlaneOffset != default) NavigationSource = WorldDocument(document);
+            int savedView = source.Canvas.Save();
+            try
+            {
+                // The desktop stays in physical screen pixels. Only authored
+                // canvas content receives the local viewing camera; live filters
+                // still sample their original authored desktop positions.
+                if (includeBackground) originalBackdrop?.Draw(source.Canvas);
+                ScreenBackdrop = null; _captureViewingBackdrop = originalBackdrop;
+                var transform = new SKMatrix((float)camera.Zoom, 0, (float)camera.Offset.X,
+                    0, (float)camera.Zoom, (float)camera.Offset.Y, 0, 0, 1);
+                source.Canvas.Concat(in transform);
+                Draw(source.Canvas, display, assets, includeBackground);
+            }
+            finally
+            {
+                source.Canvas.RestoreToCount(savedView);
+                ScreenBackdrop = originalBackdrop; _captureViewingBackdrop = previousSampling; NavigationSource = previousNavigation;
+            }
+        }
         using var composed = source.Snapshot();
         using var output = SKSurface.Create(info)
             ?? throw new InvalidOperationException(L.Get("Export.BufferTooLarge"));

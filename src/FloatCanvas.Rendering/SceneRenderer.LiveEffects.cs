@@ -18,6 +18,8 @@ public sealed partial class SceneRenderer
     public DesktopBackdrop? LiveBackdrop { get; set; }
     /// <summary>Full lower scene for exporting an editable selection, clipboard object, or stamp.</summary>
     public SceneDocument? LiveEffectContext { get; set; }
+    /// <summary>Authored sampling scene while a plane-navigation preview is displayed.</summary>
+    public SceneDocument? NavigationSource { get; set; }
     public static bool HasLiveEffects(SceneDocument document)
     {
         document = WorldDocument(document);
@@ -46,9 +48,28 @@ public sealed partial class SceneRenderer
     // Entry name is retained for the shared renderer dispatcher; both kinds compose the same lower prefix.
     private void DrawLivePixelate(SKCanvas canvas, IReadOnlyList<CanvasElement> elements, int index, AssetLibrary assets)
     {
+        if (NavigationSource is not { } source || _drawingDocument is not { } display || ReferenceEquals(source, display))
+        { DrawLivePixelateCore(canvas, elements, index, assets); return; }
+        var element = elements[index];
+        var original = source.Elements.FirstOrDefault(item => item.Id == element.Id);
+        if (original is null) return;
+        var transform = ElementMapping(display, element).ElementToScreen(element)
+            .Compose(ElementMapping(source, original).ElementToScreen(original).Inverse());
+        int saved = canvas.Save(); var depthPainter = _depthSamplePainter;
+        try
+        {
+            var matrix = ToMatrix(transform); canvas.Concat(in matrix);
+            _depthSamplePainter = null;
+            DrawLivePixelateCore(canvas, elements, index, assets);
+        }
+        finally { _depthSamplePainter = depthPainter; canvas.RestoreToCount(saved); }
+    }
+
+    private void DrawLivePixelateCore(SKCanvas canvas, IReadOnlyList<CanvasElement> elements, int index, AssetLibrary assets)
+    {
         var effect = elements[index];
-        var sourceDocument = EffectiveLiveEffectContext ?? _drawingDocument;
-        if (EffectiveLiveEffectContext is { } context)
+        var sourceDocument = NavigationSource ?? EffectiveLiveEffectContext ?? _drawingDocument;
+        if ((NavigationSource ?? EffectiveLiveEffectContext) is { } context)
         {
             int original = context.Elements.FindIndex(e => e.Id == effect.Id);
             if (original >= 0) { elements = context.Elements; index = original; }

@@ -14,6 +14,7 @@ internal sealed partial class DesktopSession
     private SceneDocument? _presentationDocument;
     private SceneDocument? _presentationDisplayDocument;
     private object? _presentationViewEpoch;
+    private CanvasViewTransform _presentationViewing;
     private long _presentationVersion = -1;
     private IReadOnlyList<ResolvedLeaf> _presentationLeaves = [];
     private EvaluatedScene? _presentationEvaluation;
@@ -192,19 +193,22 @@ internal sealed partial class DesktopSession
         {
             _presentationResource = Active.Document.ResourceId;
         }
-        if (!ReferenceEquals(_presentationDisplayDocument, display) || !ReferenceEquals(_presentationViewEpoch, view.Epoch))
+        var camera = EditingCanvasView;
+        if (!ReferenceEquals(_presentationDisplayDocument, display) || !ReferenceEquals(_presentationViewEpoch, view.Epoch) || _presentationViewing != camera)
         {
+            if (!ReferenceEquals(_presentationDisplayDocument, display)) _presentationEvaluation = null;
             _presentationDisplayDocument = display; _presentationViewEpoch = view.Epoch;
+            _presentationViewing = camera;
             _presentationContext = new(); _presentationPlanBuilt = false;
         }
         if (!_presentationPlanBuilt)
         {
-            _presentationEvaluation = SceneEvaluation.Build(display);
+            _presentationEvaluation ??= SceneEvaluation.Build(display);
             var viewports = _host.Monitors.Select(monitor => new RectD(monitor.Bounds.Left - view.Origin.X,
                 monitor.Bounds.Top - view.Origin.Y, monitor.Bounds.Width, monitor.Bounds.Height).Intersect(display.Viewport)).ToArray();
             _presentationLeaves = _presentationEvaluation.Leaves.Where(leaf =>
                 leaf.RenderElement is { Kind: ElementKind.Presentation, Visible: true, Style.Opacity: > 0, Presentation: not null } &&
-                viewports.Any(viewport => PresentationGeometry.TryScreenRegion(leaf.RenderElement, CanvasMapping.Create(display, leaf.RootCanvas), viewport, out _))).ToArray();
+                viewports.Any(viewport => PresentationGeometry.TryScreenRegion(leaf.RenderElement, CanvasMapping.CreateViewing(display, camera, leaf.RootCanvas), viewport, out _))).ToArray();
             _presentationPlanBuilt = true;
             rebuilt = true;
         }

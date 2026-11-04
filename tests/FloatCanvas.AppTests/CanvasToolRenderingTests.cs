@@ -103,13 +103,16 @@ internal static class CanvasToolRenderingTests
         Set(host, "_monitors", new List<MonitorInfo> { new("fixture", new(0, 0, 128, 96), new(0, 0, 128, 96), 96, 96, true) });
         HostFlag(nameof(OverlayHost.IsVisible), true); HostFlag(nameof(OverlayHost.IsEditing), true);
         Set(desktop, "_host", host); Set(desktop, "_editor", editor);
+        Set(desktop, "_toolbar", new System.Windows.Window());
         Set(desktop, "_canvasCalibration", new CanvasCalibrationController());
         Set(desktop, "_canvasGridCalibrationPoints", new List<PointD>());
         Set(desktop, "_windowSourceLeaves", Array.Empty<ResolvedLeaf>());
         Set(desktop, "_hiddenCanvasElements", new HashSet<Guid>()); Set(desktop, "_canvasGuideOpacity", 1d);
         CanvasPreviewContext Context() => (CanvasPreviewContext)typeof(DesktopSession).GetMethod("CurrentPreviewContext", flags)!.Invoke(desktop, null)!;
-        var normal = Context(); editor.Tool = EditorTool.Canvas; var selected = Context();
-        check("actual canvas tool transition reuses the matching base content epoch instead of blanking it", selected.Calibration && selected.HasSameContent(normal));
+        var normal = Context(); editor.Tool = EditorTool.Canvas; var navigation = Context();
+        check("selecting the canvas tool does not implicitly enter calibration", !navigation.Calibration && navigation.HasSameContent(normal));
+        Set(desktop, "_canvasCalibrationRequested", true); var selected = Context();
+        check("explicit calibration reuses the matching base content epoch instead of blanking it", selected.Calibration && selected.HasSameContent(normal));
         Set(desktop, "_canvasGuideOpacity", .25d); var dimmed = Context();
         check("changing guide opacity keeps the valid base frame while requesting a different auxiliary frame", dimmed.GuideOpacity == .25 && dimmed != selected && dimmed.HasSameContent(selected));
         HostFlag(nameof(OverlayHost.IsVisible), false); var hidden = Context();

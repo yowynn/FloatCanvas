@@ -14,6 +14,7 @@ internal sealed class CanvasGridScaleController
     private CanvasSettings? initialCanvas;
     private bool previewChanged;
     private CanvasSettingsTarget? target;
+    private PointD? panStart;
     public bool IsDragging => document is not null;
 
     public bool Down(EditorSession value, PointD point, RectD referenceViewport, CanvasSettingsTarget? canvasTarget = null)
@@ -23,7 +24,7 @@ internal sealed class CanvasGridScaleController
             !double.IsFinite(point.X) || !double.IsFinite(point.Y) || !nextTarget.Viewport.Contains(point)) return false;
         target = nextTarget;
         session = value; document = value.Document; reference = referenceViewport;
-        initialCanvas = target.Settings.Clone(); previewChanged = false;
+        initialCanvas = target.Settings.Clone(); previewChanged = false; panStart = null;
         startSize = CanvasGridGeometry.ResolveCellSize(initialCanvas, reference);
         startRadius = point.DistanceTo(reference.Center);
         session.BeginTransaction(L.Get("Canvas.Title")); transaction = session.TransactionId;
@@ -33,6 +34,13 @@ internal sealed class CanvasGridScaleController
     public bool Move(PointD point)
     {
         if (!Validate() || !double.IsFinite(point.X) || !double.IsFinite(point.Y)) return false;
+        if (panStart is { } start)
+        {
+            PointD? origin = point == start ? initialCanvas!.Grid.FlatOrigin : (initialCanvas!.Grid.FlatOrigin ?? reference.Center) + point - start;
+            if (target!.Settings.Grid.FlatOrigin == origin) return false;
+            target.Change(canvas => canvas.Grid.FlatOrigin = origin);
+            return true;
+        }
         double ratio = (point.DistanceTo(reference.Center) + 32) / (startRadius + 32);
         if (ratio == 1)
         {
@@ -44,6 +52,12 @@ internal sealed class CanvasGridScaleController
         target.Change(canvas => ApplyGridSize(canvas, reference, size));
         previewChanged = true;
         return true;
+    }
+
+    internal bool DownPan(EditorSession value, PointD point, RectD referenceViewport, CanvasSettingsTarget canvasTarget)
+    {
+        if (!Down(value, point, referenceViewport, canvasTarget)) return false;
+        panStart = point; return true;
     }
 
     internal static void ApplyGridSize(CanvasSettings settings, RectD reference, double size)

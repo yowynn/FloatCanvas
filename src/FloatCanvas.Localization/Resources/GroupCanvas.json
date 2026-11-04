@@ -1,9 +1,9 @@
-{
+﻿{
   "GroupCanvas.Context": { "zh": "组合与画布", "en": "Group and canvas" },
   "GroupCanvas.Display": { "zh": "画布显示方式", "en": "Canvas display" },
   "GroupCanvas.Ordinary": { "zh": "普通组", "en": "Ordinary group" },
   "GroupCanvas.Embedded": { "zh": "工程内共享组合", "en": "Shared within this project" },
-  "GroupCanvas.ExternalFile": { "zh": "链接外部文件", "en": "Linked external file" },
+  "GroupCanvas.ExternalFile": { "zh": "外部链接 · 只读", "en": "External link · read-only" },
   "GroupCanvas.UnknownSource": { "zh": "来源路径不可用", "en": "Source path unavailable" },
   "GroupCanvas.Temporary": { "zh": "独立画布", "en": "Independent canvas" },
   "GroupCanvas.RootProject": { "zh": "根工程画布", "en": "Root project canvas" },

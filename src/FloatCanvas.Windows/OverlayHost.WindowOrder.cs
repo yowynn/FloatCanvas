@@ -111,7 +111,7 @@ public sealed partial class OverlayHost
         // Repair a lost topmost flag or an ordinary-window inversion, but retain external
         // topmost peers ahead of the canvas. HWND_TOPMOST alone would leapfrog a snipping
         // overlay while restoring our own tools and displays.
-        var peer = rows.LastOrDefault(row => row.Process != Environment.ProcessId && row.Topmost &&
+        var peer = rows.LastOrDefault(row => row.Process != Environment.ProcessId && row.Topmost && !IsTaskbar(row.Handle) &&
             visibleDisplays.Any(display => row.Rank < display.Rank &&
                 (display.Band is null || row.Band is null || display.Band == row.Band)));
         _windowOrderRepairing = true;
@@ -137,11 +137,19 @@ public sealed partial class OverlayHost
 
     private static bool SameRepairableBand(WindowOrderRow display, WindowOrderRow above)
     {
+        if (IsTaskbar(above.Handle)) return display.Band is null || above.Band is null || display.Band == above.Band;
         // Peers such as screenshot tools may cover us; only ordinary windows are blockers.
         if (above.Topmost) return false;
         if (display.Band is { } band && above.Band is { } other) return band == other;
         // GetWindowBand is optional. Without it, do not contest an unknown higher-band topmost UI.
         return !above.Topmost;
+    }
+
+    private static bool IsTaskbar(nint handle)
+    {
+        var name = new System.Text.StringBuilder(128);
+        GetClassNameW(handle, name, name.Capacity);
+        return name.ToString() is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";
     }
 
     private static bool Intersects(PixelBounds a, PixelBounds b) =>

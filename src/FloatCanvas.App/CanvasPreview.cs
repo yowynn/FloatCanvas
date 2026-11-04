@@ -11,13 +11,20 @@ namespace FloatCanvas.App;
 // Contexts contain identity tokens only; the worker never reads live editor or window objects.
 internal sealed record CanvasPreviewContext(object Session, object Monitors, PointD Origin,
     bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1,
-    object? ScreenDraftEpoch = null, object? PresentationEpoch = null, object? WindowEpoch = null, object? GroupEpoch = null)
+    object? ScreenDraftEpoch = null, object? PresentationEpoch = null, object? WindowEpoch = null, object? GroupEpoch = null,
+    CanvasViewTransform? View = null)
 {
     // Editing guides may lag one worker frame; never discard the matching base
     // scene while they update. Epoch still rejects a completed A→B→A transition.
     internal bool HasSameContent(CanvasPreviewContext other) => Equals(Session, other.Session) && Equals(Monitors, other.Monitors) &&
         Origin == other.Origin && Hidden == other.Hidden && Equals(DocumentEpoch, other.DocumentEpoch) &&
-        Equals(VisibilityEpoch, other.VisibilityEpoch) && Equals(GroupEpoch, other.GroupEpoch) && Epoch == other.Epoch;
+        Equals(VisibilityEpoch, other.VisibilityEpoch) && Equals(GroupEpoch, other.GroupEpoch) && View == other.View && Epoch == other.Epoch;
+
+    // A completed navigation frame is useful even when input has advanced the
+    // camera. Keep lifecycle identity strict so scope/privacy transitions never
+    // display old content, including an A -> B -> A transition.
+    internal bool HasSameScene(CanvasPreviewContext other) =>
+        (this with { View = other.View }).HasSameContent(other);
 }
 
 internal sealed class CanvasPreviewSnapshot : IDisposable
@@ -120,6 +127,8 @@ internal sealed class CanvasPreviewRenderer : IDisposable
     private FrozenSceneEvaluation? fallbackEvaluation;
     private PresentationRenderInfo? previousPresentation;
     private WindowRenderInfo? previousWindows;
+    private SceneDocument? viewingSource, viewingDocument;
+    private CanvasViewTransform viewingTransform;
     internal CanvasPreviewRenderer() => cache = new(renderer);
 
     internal CanvasPreviewFrame Render(CanvasPreviewSnapshot snapshot)
@@ -137,10 +146,13 @@ internal sealed class CanvasPreviewRenderer : IDisposable
             ReferenceEquals(snapshot.WindowOwnerContext, snapshot.Context.WindowEpoch) ? snapshot.WindowFrames : null;
         renderer.WindowFrames = windowFrames; renderer.WindowOwnerContext = windowFrames?.OwnerContext;
         var document = snapshot.Document;
-        var presentation = renderer.PreparePresentation(document);
+        var view = snapshot.Context.View ?? CanvasViewTransform.Identity;
+        var display = ViewingDocument(document, view);
+        renderer.NavigationSource = view.PlaneOffset != default ? document : null;
+        var presentation = renderer.PreparePresentation(display);
         var presentationDamage = ReferenceEquals(previousPresentation, presentation) ? [] :
             (previousPresentation?.DirtyBounds ?? []).Concat(presentation.DirtyBounds).ToArray();
-        var windows = renderer.PrepareWindowFrames(document);
+        var windows = renderer.PrepareWindowFrames(display);
         var windowDamage = ReferenceEquals(previousWindows, windows) ? [] : (previousWindows?.DirtyBounds ?? []).Concat(windows.DirtyBounds).ToArray();
         // A graph revision invalidates static tiles once. Animation ticks reuse the
         // same immutable world view and must not permanently bypass those tiles.
@@ -152,7 +164,8 @@ internal sealed class CanvasPreviewRenderer : IDisposable
             document.LayerOpacity > 0 && document.Elements.Any(Filter);
         try
         {
-            var damage = CanvasPreviewDamage.Between(previous, snapshot, renderer, assets, presentationDamage, windowDamage);
+            var damage = view != CanvasViewTransform.Identity ? null :
+                CanvasPreviewDamage.Between(previous, snapshot, renderer, assets, presentationDamage, windowDamage);
             var pixels = targets.Render(snapshot.Outputs, snapshot.PreferGpu, gpuWorkload, surface =>
             {
                 var canvas = surface.Canvas;
@@ -160,11 +173,14 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                 try
                 {
                     canvas.Translate((float)snapshot.Context.Origin.X, (float)snapshot.Context.Origin.Y);
-                    if (snapshot.ScreenDraft is { } screenDraft) renderer.DrawWithScreenDraft(canvas, document, assets, screenDraft);
-                    else cache.DrawOnClearedRasterTarget(surface, document, assets, snapshot.Revision, snapshot.Transaction,
+                    var matrix = new SKMatrix((float)view.Zoom, 0, (float)view.Offset.X, 0, (float)view.Zoom, (float)view.Offset.Y, 0, 0, 1);
+                    canvas.Concat(in matrix);
+                    if (snapshot.ScreenDraft is { } screenDraft) renderer.DrawWithScreenDraft(canvas, display, assets, screenDraft);
+                    else if (view != CanvasViewTransform.Identity) renderer.Draw(canvas, display, assets);
+                    else cache.DrawOnClearedRasterTarget(surface, display, assets, snapshot.Revision, snapshot.Transaction,
                         snapshot.First, snapshot.Last, snapshot.BypassCache, snapshot.SceneIdentity);
                     if (snapshot.Context.Calibration && !snapshot.Context.Placing)
-                        renderer.DrawCalibrationGuides(canvas, document, snapshot.Context.GuideOpacity);
+                        renderer.DrawCalibrationGuides(canvas, display, snapshot.Context.GuideOpacity);
                     if (snapshot.PlacementScene is { } placement && snapshot.PlacementClip is { Count: 4 } quad)
                     {
                         using var builder = new SKPathBuilder();
@@ -202,7 +218,20 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                 PickingWindowFrames = windowFrames?.Retain(), WindowOwnerContext = windowFrames?.OwnerContext, WindowInfo = windows
             };
         }
-        finally { renderer.LiveBackdrop = null; renderer.PresentationFrame = null; renderer.WindowFrames = null; renderer.WindowOwnerContext = null; }
+        finally { renderer.LiveBackdrop = null; renderer.NavigationSource = null; renderer.PresentationFrame = null; renderer.WindowFrames = null; renderer.WindowOwnerContext = null; }
+    }
+
+    // Expand the source-visible rectangle BEFORE drawing, rather than magnifying a
+    // clipped raster. Share immutable evaluated nodes; freeze implicit calibration
+    // against its saved reference, never against the moving editor viewport.
+    private SceneDocument ViewingDocument(SceneDocument source, CanvasViewTransform view)
+    {
+        if (view == CanvasViewTransform.Identity) return source;
+        if (ReferenceEquals(viewingSource, source) && viewingTransform == view && viewingDocument is not null) return viewingDocument;
+        viewingSource = source; viewingTransform = view;
+        var settings = view.ViewingSettings(source.Canvas, source.Viewport);
+        return viewingDocument = SceneEvaluation.WithViewport(SceneEvaluation.Build(source).RenderDocument,
+            view.Matrix.Inverse().TransformBounds(source.Viewport), settings);
     }
 
     internal static SceneDocument EditingDocument(EvaluatedScene editing, SceneDocument display, LayerPlacement placement,
@@ -389,7 +418,7 @@ internal sealed class CanvasPreviewPump : IDisposable
                 }
                 if (snapshot is null) continue;
                 CanvasPreviewFrame? frame = null; Exception? error = null;
-                bool interactive = snapshot.Context.Calibration && !snapshot.Context.Hidden;
+                bool interactive = (snapshot.Context.Calibration || snapshot.Context.View is not null) && !snapshot.Context.Hidden;
                 try
                 {
                     if (interactive != interactivePolicy)

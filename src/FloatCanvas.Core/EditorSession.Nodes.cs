@@ -137,7 +137,8 @@ public sealed partial class EditorSession
         var group = new CanvasGroup { Name = NormalizeInsertionName(name) ?? NextGroupName(), OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] };
         Execute(L.Get("History.GroupElements"), document =>
         {
-            new SceneGraph(document).InsertGroup(group, EditScopeId, rootCanvas: ActiveRootCanvas); SetSelectionCore([group.Id]);
+            new SceneGraph(document).InsertGroup(group, EditScopeId, rootCanvas: ActiveRootCanvas);
+            InitializeGroupPreview(group.Id); SetSelectionCore([group.Id]);
         });
         return group.Id;
     }

@@ -114,7 +114,7 @@ internal sealed partial class DesktopSession
         foreach (var leaf in _presentationLeaves.Take(PresentationLimits.MaximumPrimitives / 8))
         {
             var display = _presentationDisplayDocument ?? Active.Document;
-            var mapping = CanvasMapping.Create(display, leaf.RootCanvas);
+            var mapping = CanvasMapping.CreateViewing(display, EditingCanvasView, leaf.RootCanvas);
             if (!PresentationGeometry.TryScreenRegion(leaf.RenderElement, mapping, display.Viewport, out var polygon)) continue;
             using var builder = new SKPathBuilder(); builder.MoveTo((float)polygon[0].X, (float)polygon[0].Y);
             foreach (var point in polygon.Skip(1)) builder.LineTo((float)point.X, (float)point.Y);

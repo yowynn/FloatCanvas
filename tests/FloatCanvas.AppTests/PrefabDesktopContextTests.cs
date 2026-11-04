@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -71,7 +71,7 @@ internal static class PrefabDesktopContextTests
         editor.Session.Add(new() { Kind = ElementKind.Image, AssetId = added, Width = 12, Height = 12, Visible = false });
         Invoke("PruneDocumentResources");
         check("normal resource pruning retains assets owned only by an unfinished draft", owner.Assets.TryGet(added, out _) && !owner.Document.ReferencedAssets.Contains(added));
-        using (var answer = new Answer(app, "Prefab.Discard")) Await((Task)Invoke("LeaveCurrentPrefabAsync")!);
+        Invoke("ReturnFromPrefabContext", Field<PrefabEditContext>(desktop, "_prefabEditContext"));
         check("discarding an actual definition context restores the owner without a host history change", ReferenceEquals(editor.Session, owner) && owner.UndoCount == before && !owner.Assets.TryGet(added, out _));
         check("returning from a discarded definition context retains the owner's camera", JsonSerializer.Serialize(owner.Document.Canvas) == ownerCamera);
         check("discarding the context returns the group toolbar to an unentered selection", layers.CurrentGroupContext?.IsEntered != true);
@@ -106,7 +106,7 @@ internal static class PrefabDesktopContextTests
         var resolver = new PrefabLinkResolver(); var prepared = Await(resolver.PrepareAsync(owner, path, null));
         var imported = owner.ImportPrefab(prepared.Package, prepared.Assets, LayerPlacement.Identity, prepared.Source);
         Await((Task)Invoke("EditPrefabInstanceAsync", imported.InstanceId)!);
-        var sourceContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+        var sourceContext = RestoreLegacyWritableSource();
         check("external group toolbar identifies its actual disk source", sourceContext.EnteredInstanceId == imported.InstanceId &&
             layers.CurrentGroupContext is { Storage: GroupStorageKind.ExternalFile, IsEntered: true } external && Path.GetFullPath(external.SourcePath!) == Path.GetFullPath(path) && external.Detach is not null);
         Console.WriteLine($"PREFAB_SOURCE_CONTEXT isSource={sourceContext.IsSource} kind={editor.Session.Document.Kind} camera={JsonSerializer.Serialize(editor.Session.Document.Canvas) == camera} background={JsonSerializer.Serialize(editor.Session.Document.Background) == background}");
@@ -155,7 +155,7 @@ internal static class PrefabDesktopContextTests
         var linkedPrefab = owner.ImportPrefab(prefabCandidate.Package, prefabCandidate.Assets, LayerPlacement.Identity, prefabCandidate.Source);
         Guid secondPrefab = owner.PlacePrefab(linkedPrefab.DefinitionId, new(Affine2D.Translation(160, 90), 1));
         Await((Task)Invoke("EditPrefabSourceAsync", linkedPrefab.DefinitionId)!);
-        var prefabContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+        var prefabContext = RestoreLegacyWritableSource();
         check("linked prefab enters its real source entry with the complete dependency table", prefabContext.IsPrefabSource && prefabContext.SourceEntryDefinitionId == sourceEntry &&
             editor.Session.Document.ResourceId == sourceIdentity && editor.Session.Document.Definitions.Count == 2 && editor.Session.Document.Instances.Single().DefinitionId == imageDefinition.Id);
         check("linked prefab opens using its own preview canvas and origin", JsonSerializer.Serialize(editor.Session.GetRootSubprojectCanvas()) == JsonSerializer.Serialize(packageEntry.PreviewCanvas));
@@ -180,7 +180,7 @@ internal static class PrefabDesktopContextTests
                 prefabWorld.OccurrencesOfHostNode(id).Single(leaf => leaf.RenderElement.Kind == ElementKind.Rectangle).RenderElement.Width == 81));
 
         Await((Task)Invoke("EditPrefabSourceAsync", linkedPrefab.DefinitionId)!);
-        prefabContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+        prefabContext = RestoreLegacyWritableSource();
         editor.Session.Execute("unpublished local source edit", document => document.Elements.Single(element => element.Kind == ElementKind.Rectangle).Width = 111);
         var externalPrefab = Await(prefabStore.LoadAsync(prefabPath));
         externalPrefab.Package.Definitions.Single(definition => definition.Id == sourceEntry).Graph.Elements.Single(element => element.Kind == ElementKind.Rectangle).Width = 123;
@@ -190,7 +190,7 @@ internal static class PrefabDesktopContextTests
         check("prefab expected-file-version conflict does not overwrite the external generation", !conflictSaved && conflictDialogs == 1 && File.ReadAllBytes(prefabPath).SequenceEqual(conflictVersion));
         check("prefab save conflict retains the user's source edit and all referenced images", ReferenceEquals(editor.Session, prefabContext.Session) &&
             editor.Session.Document.Elements.Single(element => element.Kind == ElementKind.Rectangle).Width == 111 && owner.Assets.Get(oldImage).Data.Span.SequenceEqual(oldImageBytes));
-        using (var answer = new Answer(app, "Prefab.Discard")) Await((Task)Invoke("LeaveCurrentPrefabAsync")!);
+        Invoke("ReturnFromPrefabContext", Field<PrefabEditContext>(desktop, "_prefabEditContext"));
 
         var existingInstanceIds = owner.Document.Instances.Select(instance => instance.Id).ToHashSet(); Guid rootIdentity = owner.Document.ResourceId;
         host.SetVisible(false); int passiveBefore = owner.Document.Instances.Count;
@@ -218,12 +218,34 @@ internal static class PrefabDesktopContextTests
         check("conflicted definition draft can be saved as an independent editable prefab", retainedDraft.Package.Definitions.Single(definition => definition.Id == retainedDraft.Package.EntryDefinitionId).Graph.Elements.Any(element => element.Width == 77) &&
             retainedDraft.Package.ReferencedAssets.Contains(draftImage) && retainedDraft.Assets.TryGet(draftImage, out _));
         check("draft Save As retains its editing context and never publishes the conflicted owner", ReferenceEquals(editor.Session, conflictDraft.Session) && owner.UndoCount == changedHistory && JsonSerializer.Serialize(owner.Document) == changedOwner);
-        using (var answer = new Answer(app, "Prefab.Discard")) Await((Task)Invoke("LeaveCurrentPrefabAsync")!);
+        Invoke("ReturnFromPrefabContext", Field<PrefabEditContext>(desktop, "_prefabEditContext"));
         OrdinaryAndDetach();
         SourceCopyPublication();
         check("desktop context fixture never exposes overlay HWNDs on the user's desktop", host.Diagnostics.All(pair => pair.Bounds == bounds) && !host.IsKeyboardIsolationActive);
         Console.WriteLine("PREFAB_DESKTOP_EVIDENCE " + root);
         object? Invoke(string method, params object?[] arguments) => typeof(DesktopSession).GetMethod(method, Hidden)!.Invoke(desktop, arguments);
+
+        // New linked navigation is read-only. Retain lower-level CAS/save coverage
+        // for writable source drafts restored from older recovery files.
+        PrefabEditContext RestoreLegacyWritableSource()
+        {
+            var previous = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+            check("new external navigation opens a read-only source", previous.Session.IsReadOnly);
+            bool rejected = false;
+            try { previous.Session.Execute("forbidden external edit", d => d.Elements.Clear()); }
+            catch (InvalidOperationException) { rejected = true; }
+            check("external source rejects content mutations", rejected);
+            var session = new EditorSession(previous.Session.Document.Clone(), owner.Assets,
+                independentCanvasOrigin: previous.Session.GetRootSubprojectCanvas().Origin);
+            var context = new PrefabEditContext(previous.Owner, session, previous.DefinitionId, previous.ExpectedRevision,
+                previous.ReturnOrigin, previous.ReturnTool, previous.Parent, previous.SourcePath, previous.SourceEntryDefinitionId)
+                { EnteredInstanceId = previous.EnteredInstanceId };
+            var files = (System.Collections.IDictionary)typeof(DesktopSession).GetField("_documentFiles", Hidden)!.GetValue(desktop)!;
+            files[session] = files[previous.Session];
+            typeof(DesktopSession).GetField("_prefabEditContext", Hidden)!.SetValue(desktop, context);
+            Invoke("SwitchPrefabContext", session);
+            return context;
+        }
 
         void SourceCopyPublication()
         {
@@ -241,7 +263,7 @@ internal static class PrefabDesktopContextTests
             var imported = owner.ImportPrefab(candidate.Package, candidate.Assets, new(Affine2D.Translation(20, 20), 1), candidate.Source);
             Guid second = owner.PlacePrefab(imported.DefinitionId, new(Affine2D.Translation(370, 20), 1));
             Await((Task)Invoke("EditPrefabSourceAsync", imported.DefinitionId)!);
-            var context = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+            var context = RestoreLegacyWritableSource();
             context.Session.Add(new() { Kind = ElementKind.Rectangle, Width = 128, Height = 74, Transform = Affine2D.Translation(93, 178) });
             string draft = JsonSerializer.Serialize(context.Session.Document);
             byte[] original = File.ReadAllBytes(origin);
@@ -335,6 +357,10 @@ internal static class PrefabDesktopContextTests
 
         void OrdinaryAndDetach()
         {
+            // The preceding passive-open fixture deliberately exited editing.
+            // This section tests editing geometry without acquiring real input.
+            typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, true);
+            typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!.SetValue(host, true);
             owner.SetEditScope(null);
             Guid ordinary = owner.CreateEmptyGroup("Ordinary badge"); owner.SetEditScope(ordinary);
             var child = new CanvasElement { Kind = ElementKind.Ellipse, Width = 14, Height = 11 };
@@ -371,14 +397,38 @@ internal static class PrefabDesktopContextTests
             check("unlinking one instance is reversible and leaves other copies shared", new SceneGraph(owner.Document).FindInstance(sharedCopy)?.DefinitionId == created.DefinitionId && new SceneGraph(owner.Document).FindInstance(created.InstanceId)?.DefinitionId == created.DefinitionId);
 
             Guid externalCopy = owner.PlacePrefab(imported.DefinitionId, LayerPlacement.Identity, "External copy");
+            // The source changes after the owner accepted its offline generation.
+            var retainedDefinition = JsonSerializer.Serialize(owner.Document.Definitions.Single(d => d.Id == imported.DefinitionId));
+            source.Elements.Single().Width = 137;
+            Await(projects.SaveAsync(path, source, owner.Assets));
             string diskBefore = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
             Await((Task)Invoke("EditPrefabInstanceAsync", externalCopy)!);
             var externalContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+            check("online source view sees the latest generation before detaching", externalContext.Session.Document.Elements.Single().Width == 137);
+            string viewedCanvas = JsonSerializer.Serialize(externalContext.Session.GetRootSubprojectCanvas());
+            history = owner.UndoCount;
             Await((Task)Invoke("DetachEditingGroupAsync", externalContext)!);
+            check("detaching online source retains the content currently being viewed",
+                SceneEvaluation.Build(owner.Document).Leaves.Any(leaf => leaf.RenderElement.Width == 137 &&
+                    new SceneGraph(owner.Document).AncestorIds(leaf.HostNodeId).Contains(externalCopy)));
+            check("detaching online source leaves the other linked instances on their accepted generation",
+                JsonSerializer.Serialize(owner.Document.Definitions.Single(d => d.Id == imported.DefinitionId)) == retainedDefinition);
+            check("detaching online source retains its independent canvas settings",
+                JsonSerializer.Serialize(new SceneGraph(owner.Document).FindGroup(externalCopy)!.PreviewCanvas) == viewedCanvas);
             check("unlinking an external group preserves its file and other file-linked instances", new SceneGraph(owner.Document).FindGroup(externalCopy) is not null && owner.EditScopeId == externalCopy &&
                 owner.Document.Definitions.Single(definition => definition.Id == imported.DefinitionId).Source?.IsLinked == true &&
                 new SceneGraph(owner.Document).FindInstance(imported.InstanceId) is not null && diskBefore == Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))));
             owner.SetEditScope(null);
+            check("detaching online source publishes exactly one undo step", owner.UndoCount == history + 1);
+            owner.Undo();
+            check("undo restores the original external instance and accepted source",
+                new SceneGraph(owner.Document).FindInstance(externalCopy)?.DefinitionId == imported.DefinitionId &&
+                JsonSerializer.Serialize(owner.Document.Definitions.Single(d => d.Id == imported.DefinitionId)) == retainedDefinition);
+            owner.Redo();
+            check("redo restores detached current content and its canvas",
+                JsonSerializer.Serialize(new SceneGraph(owner.Document).FindGroup(externalCopy)!.PreviewCanvas) == viewedCanvas &&
+                SceneEvaluation.Build(owner.Document).Leaves.Any(leaf => leaf.RenderElement.Width == 137 &&
+                    new SceneGraph(owner.Document).AncestorIds(leaf.HostNodeId).Contains(externalCopy)));
         }
     }
     private static byte[] Png(SKColor? color = null)

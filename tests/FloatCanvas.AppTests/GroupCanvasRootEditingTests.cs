@@ -26,7 +26,7 @@ internal static class GroupCanvasRootEditingTests
         if (!DesktopName().StartsWith("FloatCanvas.Tests.", StringComparison.Ordinal) || PresentationDesktopAvailability.IsCurrentInputDesktop())
             throw new InvalidOperationException("Use --isolated-ui-desktop --group-canvas-root-editing-only.");
         if (Application.Current is not null) throw new InvalidOperationException("Use a fresh private test process.");
-        string root = Path.Combine(output ?? Path.GetTempPath(), "group-canvas-root-edit-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        string root = Path.GetFullPath(Path.Combine(output ?? Path.GetTempPath(), "group-canvas-root-edit-" + Guid.NewGuid().ToString("N"))); Directory.CreateDirectory(root);
         ApplicationPaths.Configure(["--profile", Path.Combine(root, "profile"), "--primary-screen"]);
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(app.Dispatcher));
@@ -97,12 +97,12 @@ internal static class GroupCanvasRootEditingTests
         fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff123456));
         fixture.Call("SetCanvasProjection", true);
         var opacity = Field<ToolbarOpacitySlider>(fixture.Desktop, "_opacitySlider"); opacity.Value = .45; Pump();
-        check("real foreground mode routes canvas callbacks and toolbar opacity to its independent header", session.Document.RootPreviewCanvases[RootCanvasKind.Foreground] is
-            { Canvas.BackgroundColor: 0xff123456, Canvas.Projection.Enabled: true, LayerOpacity: .45 } && session.Document.Canvas.BackgroundColor == 0 && session.Document.LayerOpacity == 1);
+        check("root isolation routes canvas callbacks and opacity to the shared authored header", session.Document.Canvas is
+            { BackgroundColor: 0xff123456, Projection.Enabled: true } && session.Document.LayerOpacity == .45 && !session.Document.RootPreviewCanvases.ContainsKey(RootCanvasKind.Foreground));
         modes.Items[1].IsChecked = true; Pump(); roots.SelectedValue = RootCanvasKind.Main; Pump();
         fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff345678)); opacity.Value = .8; Pump();
-        check("real root-project mode routes the same callbacks to Main while retaining foreground preview settings", session.Document.Canvas.BackgroundColor == 0xff345678 && session.Document.LayerOpacity == .8 &&
-            session.Document.RootPreviewCanvases[RootCanvasKind.Foreground].LayerOpacity == .45);
+        check("real root-project mode uses the same authored header without a second foreground header", session.Document.Canvas.BackgroundColor == 0xff345678 && session.Document.LayerOpacity == .8 &&
+            !session.Document.RootPreviewCanvases.ContainsKey(RootCanvasKind.Foreground));
         var group = session.CreateEmptyGroup("Independent group"); session.SetEditScope(group); session.Add(Box("Group artwork", 40, 50, 60, 40)); Pump();
         modes.Items[0].IsChecked = true; Pump();
         fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff56789a)); fixture.Call("SetCanvasProjection", true); opacity.Value = .3; Pump();
@@ -139,8 +139,9 @@ internal static class GroupCanvasRootEditingTests
 
         void Sample(string name, RefreshRendered frame, string layer, uint color)
         {
-            var element = SceneEvaluation.Build(frame.Content.Document).Leaves.Single(item => item.RenderElement.Name == layer).RenderElement;
-            var center = CanvasMapping.Create(frame.Content.Document).ElementToScreen(element).TransformPoint(new(element.Width / 2, element.Height / 2)) + frame.Content.Origin;
+            var leaf = SceneEvaluation.Build(frame.Content.Document).Leaves.Single(item => item.RenderElement.Name == layer);
+            var element = leaf.RenderElement;
+            var center = CanvasMapping.CreateViewing(frame.Content.Document, frame.Content.View, leaf.RootCanvas).ElementToScreen(element).TransformPoint(new(element.Width / 2, element.Height / 2)) + frame.Content.Origin;
             Console.WriteLine($"CU_QA_PIXEL {name} viewport={frame.Content.Document.Viewport} opacity={frame.Content.Document.LayerOpacity} point={center} direct={ColorAt(frame.Direct.Pixels, center)} worker={ColorAt(frame.Content.Pixels, center)} expected={new SKColor(color)}");
             check(name + " keeps direct author pixels", ColorAt(frame.Direct.Pixels, center) == new SKColor(color));
             check(name + " keeps worker author pixels", ColorAt(frame.Content.Pixels, center) == new SKColor(color));
@@ -205,15 +206,17 @@ internal static class GroupCanvasRootEditingTests
         {
             modes.Items[0].IsChecked = true;
             var timeout = System.Diagnostics.Stopwatch.StartNew();
-            while (!workerStarted.IsSet || !Field<bool>(fixture.Desktop, "_presentationUncertain"))
+            while (!workerStarted.IsSet)
             {
                 if (timeout.ElapsedMilliseconds > 10000) throw new TimeoutException("Mode transition did not reach its pending native frame.");
                 Pump(); Thread.Yield();
             }
+            check("pending navigation retains the previously presented pixels without a presentation failure", !Field<bool>(fixture.Desktop, "_presentationUncertain"));
             var previousLifetime = runtime.Lifetime; long requested = pump.RequestedSequence;
             runtime.ClearKeyboardForFocusChange();
+            Pump();
             check("the focus privacy transition changes keyboard lifetime while the native mode frame is unavailable", !ReferenceEquals(previousLifetime, runtime.Lifetime) &&
-                Field<bool>(fixture.Desktop, "_presentationUncertain") && pump.RequestedSequence == requested);
+                pump.RequestedSequence > requested);
         }
         finally { workerRelease.Set(); }
         using var isolated = fixture.PresentNative("cu-native-main-independent", requestRender: false);
@@ -335,36 +338,67 @@ internal static class GroupCanvasRootEditingTests
         var active = fixture.Editor.Session; active.SetEditScope(group.Id); active.SetSelection([leaf.Id]);
         fixture.Call("SetGroupCanvasMode", GroupCanvasMode.RootProject);
         CanvasFeedback(check, fixture, owner, kind);
-        using var before = fixture.Present(kind + "-root-selection");
-        check(kind + " root frame compensates source origin or pivot and its active source group", candidate.Source.ImportOrigin != default && HasBlue(before.Pixels, Edge(before, "external-plane", imported.InstanceId)));
-        active.SetSelection([]); fixture.PresentAndDispose(kind + "-before-hit"); var center = Center(before, "external-plane", imported.InstanceId);
-        fixture.Pointer(OverlayPointerKind.Down, center); fixture.Pointer(OverlayPointerKind.Up, center);
-        check(kind + " root hit selects the real original source element", active.Selection.SetEquals([leaf.Id]));
-        string sourceBefore = JsonSerializer.Serialize(active.Document); int history = active.UndoCount; var delta = new PointD(28, 19);
-        fixture.Pointer(OverlayPointerKind.Down, center); fixture.Pointer(OverlayPointerKind.Move, center + delta); fixture.Pointer(OverlayPointerKind.Up, center + delta);
-        using var moved = fixture.Present(kind + "-root-moved");
-        check(kind + " root drag tracks the pointer through source coordinates and owner perspective", Center(moved, "external-plane", imported.InstanceId).DistanceTo(center + delta) < 1e-5 &&
-            Hash(path) == diskBefore && JsonSerializer.Serialize(owner.Document) == ownerBefore);
-        check(kind + " root drag is one exact source undo and redo", active.UndoCount == history + 1 && active.Undo() && JsonSerializer.Serialize(active.Document) == sourceBefore && active.Redo());
-        var movedA = Center(moved, "external-plane", imported.InstanceId); var movedB = Center(moved, "external-plane", second);
-        string savedSource = JsonSerializer.Serialize(active.Document);
-        string savedGraph = JsonSerializer.Serialize(SceneGraphClone.CloneGraph(active.Document).Graph);
-        Await((Task)fixture.Call("TryHandlePrefabSaveAsync", false)!);
-        if (prefab)
-        {
-            var written = Await(prefabStore.LoadAsync(path)); var entry = written.Package.Definitions.Single(definition => definition.Id == written.Package.EntryDefinitionId);
-            check(kind + " Ctrl S preserves the original source entry pivot and unprojected graph", entry.Pivot == pivot && JsonSerializer.Serialize(entry.Graph) == savedGraph && entry.Graph.Elements.Single().Id == leaf.Id);
-        }
-        else
-        {
-            var written = Await(store.LoadAsync(path));
-            check(kind + " Ctrl S saves the true source graph rather than a projected owner copy", JsonSerializer.Serialize(written.Document) == savedSource && written.Document.Elements.Single().Id == leaf.Id);
-        }
+        using var before = fixture.Present(kind + "-root-readonly");
+        var center = Center(before, "external-plane", imported.InstanceId);
+        string sourceBefore = JsonSerializer.Serialize(active.Document); int history = active.UndoCount;
+        check(kind + " source navigation is read-only with its imported origin retained", active.IsReadOnly && candidate.Source.ImportOrigin != default);
+        bool rejected = false;
+        try { active.Execute("forbidden source edit", document => document.Elements.Clear()); }
+        catch (InvalidOperationException) { rejected = true; }
+        check(kind + " source content commands reject authoring", rejected && JsonSerializer.Serialize(active.Document) == sourceBefore);
+        fixture.Pointer(OverlayPointerKind.Down, center);
+        fixture.Pointer(OverlayPointerKind.Move, center + new PointD(28, 19));
+        fixture.Pointer(OverlayPointerKind.Up, center + new PointD(28, 19));
+        using var afterDrag = fixture.Present(kind + "-readonly-after-drag");
+        check(kind + " source pointer drag preserves pixels content history host and disk", Center(afterDrag, "external-plane", imported.InstanceId).DistanceTo(center) < 1e-5 &&
+            JsonSerializer.Serialize(active.Document) == sourceBefore && active.UndoCount == history && Hash(path) == diskBefore && JsonSerializer.Serialize(owner.Document) == ownerBefore);
+        active.SetEditScope(null); active.SetSelection([]);
+        fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary);
+        var view = new CanvasViewTransform(.75, new(80, 60)); fixture.Call("ChangeCanvasViewing", view, false);
+        fixture.Call("ApplyCanvasViewing");
+        check(kind + " independent source navigation remains display-only and Apply is blocked", Field<CanvasViewTransform>(fixture.Desktop, "_canvasView") == view &&
+            JsonSerializer.Serialize(active.Document) == sourceBefore && active.UndoCount == history && Hash(path) == diskBefore);
         Await((Task)fixture.Call("CompleteCurrentPrefabAsync")!);
-        using var committed = fixture.Present(kind + "-root-published");
-        check(kind + " completion synchronizes both links without rebasing their visible positions again", ReferenceEquals(fixture.Editor.Session, owner) &&
-            Center(committed, "external-plane", imported.InstanceId).DistanceTo(movedA) < 1e-5 && Center(committed, "external-plane", second).DistanceTo(movedB) < 1e-5 &&
-            owner.Document.Definitions.Single(definition => definition.Id == imported.DefinitionId).Source!.LastAcceptedFileSha256 == Hash(path));
+        check(kind + " returning from source browsing writes neither host nor external file", ReferenceEquals(fixture.Editor.Session, owner) &&
+            JsonSerializer.Serialize(owner.Document) == ownerBefore && Hash(path) == diskBefore);
+        Await((Task)fixture.Call("EditPrefabInstanceAsync", imported.InstanceId)!);
+        {
+            fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary); fixture.PresentAndDispose(kind + "-online-view");
+            var onlineView = new CanvasViewTransform(.75, new(60, 45)); fixture.Call("ChangeCanvasViewing", onlineView, false);
+            string onlineKey = (string)fixture.Call("CanvasViewingKey")!;
+            fixture.Call("ReturnFromPrefabContext", Field<PrefabEditContext>(fixture.Desktop, "_prefabEditContext"));
+            string ownerBeforeOffline = JsonSerializer.Serialize(owner.Document);
+            string hiddenPath = path + ".temporarily-offline"; File.Move(path, hiddenPath);
+            try
+            {
+                Await((Task)fixture.Call("EditPrefabInstanceAsync", imported.InstanceId)!);
+                fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary);
+                fixture.PresentAndDispose(kind + "-offline-view");
+                var offlineView = Field<CanvasViewTransform>(fixture.Desktop, "_canvasView");
+                Console.WriteLine($"OFFLINE_VIEW kind={kind} readonly={fixture.Editor.Session.IsReadOnly} expectedKey={onlineKey} actualKey={fixture.Call("CanvasViewingKey")} expected={onlineView} actual={offlineView}");
+                check(kind + " missing source restores the same independent observation in a read-only snapshot", fixture.Editor.Session.IsReadOnly &&
+                    (string)fixture.Call("CanvasViewingKey")! == onlineKey && offlineView.Zoom == onlineView.Zoom && offlineView.Offset.DistanceTo(onlineView.Offset) < 1e-7);
+                string snapshot = JsonSerializer.Serialize(fixture.Editor.Session.Document); int undo = fixture.Editor.Session.UndoCount;
+                fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.CenterContent); fixture.Call("ApplyCanvasViewing");
+                check(kind + " offline navigation and blocked apply preserve both snapshot and host content", snapshot == JsonSerializer.Serialize(fixture.Editor.Session.Document) &&
+                    undo == fixture.Editor.Session.UndoCount && ownerBeforeOffline == JsonSerializer.Serialize(owner.Document));
+                Await((Task)fixture.Call("CompleteCurrentPrefabAsync")!);
+            }
+            finally { File.Move(hiddenPath, path); }
+            Await((Task)fixture.Call("EditPrefabInstanceAsync", imported.InstanceId)!);
+            fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary); fixture.PresentAndDispose(kind + "-online-return");
+            check(kind + " restored source keeps the observation last used in its offline snapshot", (string)fixture.Call("CanvasViewingKey")! == onlineKey &&
+                Field<CanvasViewTransform>(fixture.Desktop, "_canvasView").Zoom == onlineView.Zoom);
+        }
+        var externalContext = Field<PrefabEditContext>(fixture.Desktop, "_prefabEditContext");
+        Await((Task)fixture.Call("EmbedEditingGroupAsync", externalContext)!);
+        var embedded = fixture.Editor.Session;
+        check(kind + " explicit internal conversion enables editing without writing the external source", !embedded.IsReadOnly && Hash(path) == diskBefore);
+        embedded.Execute("edit embedded source", document => document.Elements.Single(element => element.Name == "external-plane").Width += 13);
+        Await((Task)fixture.Call("CompleteCurrentPrefabAsync")!);
+        check(kind + " internal edits publish to the owner while preserving the external file", ReferenceEquals(fixture.Editor.Session, owner) && Hash(path) == diskBefore &&
+            owner.Document.Definitions.Single(definition => definition.Id == imported.DefinitionId).Source?.IsLinked != true &&
+            SceneEvaluation.Build(owner.Document).Leaves.Any(item => item.RenderElement.Name == "external-plane" && item.RenderElement.Width == leaf.Width + 13));
     }
 
     private static void Perspective(SceneDocument document)
@@ -563,7 +597,7 @@ internal static class GroupCanvasRootEditingTests
             var surface = (SKSurface)buffer.GetType().GetProperty("Surface", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.GetValue(buffer)!;
             using var image = surface.Snapshot(); var pixels = SKBitmap.FromImage(image);
             using var encoded = image.Encode(SKEncodedImageFormat.Png, 100); File.WriteAllBytes(Path.Combine(this.output, name + ".png"), encoded.ToArray());
-            return new(snapshot.Document, snapshot.Context.Origin - new PointD(bounds.Left, bounds.Top), pixels);
+            return new(snapshot.Document, snapshot.Context.Origin - new PointD(bounds.Left, bounds.Top), pixels) { View = snapshot.Context.View ?? CanvasViewTransform.Identity };
         }
         internal Rendered Present(string name)
         {
@@ -588,7 +622,7 @@ internal static class GroupCanvasRootEditingTests
             Call("CompleteCanvasSubmission", new OverlayFrameTiming(now, now, true, [new("root-group-edit-private", bounds, now, now, 0, 0)]));
             using var image = surface.Snapshot(); var pixels = SKBitmap.FromImage(image);
             using var encoded = image.Encode(SKEncodedImageFormat.Png, 100); File.WriteAllBytes(Path.Combine(output, name + ".png"), encoded.ToArray());
-            return new(snapshot.Document, snapshot.Context.Origin - new PointD(bounds.Left, bounds.Top), pixels);
+            return new(snapshot.Document, snapshot.Context.Origin - new PointD(bounds.Left, bounds.Top), pixels) { View = snapshot.Context.View ?? CanvasViewTransform.Identity };
         }
         private bool Pending(string name) => typeof(DesktopSession).GetField(name, Hidden)!.GetValue(Desktop) is DispatcherOperation { Status: DispatcherOperationStatus.Pending or DispatcherOperationStatus.Executing };
         internal void PresentAndDispose(string name) { using var frame = Present(name); }
@@ -604,11 +638,17 @@ internal static class GroupCanvasRootEditingTests
             using var directSurface = SKSurface.Create(new SKImageInfo(bounds.Width, bounds.Height));
             directSurface.Canvas.Clear(SKColors.Transparent); directSurface.Canvas.Translate(-bounds.Left, -bounds.Top);
             directSurface.Canvas.Translate((float)snapshot.Context.Origin.X, (float)snapshot.Context.Origin.Y);
-            using var renderer = new SceneRenderer(); renderer.Draw(directSurface.Canvas, snapshot.Document, Editor.Session.Assets);
+            var camera = snapshot.Context.View ?? CanvasViewTransform.Identity;
+            directSurface.Canvas.Translate((float)camera.Offset.X, (float)camera.Offset.Y);
+            directSurface.Canvas.Scale((float)camera.Zoom);
+            var visible = camera.Matrix.Inverse().TransformBounds(snapshot.Document.Viewport);
+            var directDocument = SceneEvaluation.WithViewport(SceneEvaluation.Build(snapshot.Document).RenderDocument, visible,
+                GroupCanvasScene.ResolveEditingCanvas(snapshot.Document.Canvas, snapshot.Document.Viewport));
+            using var renderer = new SceneRenderer(); renderer.Draw(directSurface.Canvas, directDocument, Editor.Session.Assets);
             using var directImage = directSurface.Snapshot(); var direct = SKBitmap.FromImage(directImage);
             Save(contentImage, name + "-worker-content.png"); Save(directImage, name + "-direct.png");
-            Console.WriteLine($"TEMPORARY_REFRESH_FRAME name={name} authorRevision={Editor.Session.PreviewRevision} frameRevision={frame.ContentRevision} builds={frame.Cache?.BuildCount} hits={frame.Cache?.HitCount}");
-            return new(new(snapshot.Document, presented.Origin, content), new(snapshot.Document, presented.Origin, direct));
+            Console.WriteLine($"TEMPORARY_REFRESH_FRAME name={name} authorRevision={Editor.Session.PreviewRevision} frameRevision={frame.ContentRevision} builds={frame.Cache?.BuildCount} hits={frame.Cache?.HitCount} view={snapshot.Context.View}");
+            return new(new(snapshot.Document, presented.Origin, content) { View = camera }, new(snapshot.Document, presented.Origin, direct) { View = camera });
 
             void Save(SKImage image, string filename)
             {
@@ -630,7 +670,11 @@ internal static class GroupCanvasRootEditingTests
             Desktop.Dispose(); Host.Dispose();
         }
     }
-    private sealed record Rendered(SceneDocument Document, PointD Origin, SKBitmap Pixels) : IDisposable { public void Dispose() => Pixels.Dispose(); }
+    private sealed record Rendered(SceneDocument Document, PointD Origin, SKBitmap Pixels) : IDisposable
+    {
+        internal CanvasViewTransform View { get; init; } = CanvasViewTransform.Identity;
+        public void Dispose() => Pixels.Dispose();
+    }
     private sealed record RefreshRendered(Rendered Content, Rendered Direct) : IDisposable
     {
         public void Dispose() { Content.Dispose(); Direct.Dispose(); }
@@ -642,7 +686,7 @@ internal static class GroupCanvasRootEditingTests
     private static PointD Map(Rendered frame, string name, double x, double y, Guid? host)
     {
         var leaf = SceneEvaluation.Build(frame.Document).Leaves.Single(item => item.RenderElement.Name == name && (host is null || item.HostNodeId == host)).RenderElement;
-        return CanvasMapping.Create(frame.Document).ElementToScreen(leaf).TransformPoint(new(leaf.Width * x, leaf.Height * y)) + frame.Origin;
+        return CanvasMapping.CreateViewing(frame.Document, frame.View).ElementToScreen(leaf).TransformPoint(new(leaf.Width * x, leaf.Height * y)) + frame.Origin;
     }
     private static PointD[] PlaneCorners(Rendered frame, string name, Guid? host)
     {

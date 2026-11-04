@@ -47,10 +47,11 @@ internal static class SubprojectCanvasViewTests
         var session = new EditorSession(document); session.SetRootCanvas(RootCanvasKind.Foreground);
         var editor = new EditorController(session) { Tool = EditorTool.Select }; var scene = new GroupCanvasScene();
         var isolated = scene.Capture(session, null, GroupCanvasMode.Temporary, default, session.Assets); Configure(editor, isolated);
-        check("independent foreground displays only its author root through its own perspective", isolated.Document.Elements.Single().Id == foreground.Id && isolated.Document.RootCanvasAssignments.Count == 0 && editor.CurrentCanvasMapping.IsPerspective);
+        check("isolated foreground preserves its authored screen-plane mapping and only hides other roots", isolated.Document.Elements.Single().Id == foreground.Id &&
+            isolated.Document.RootCanvasAssignments.GetValueOrDefault(foreground.Id) == RootCanvasKind.Foreground && !editor.CurrentCanvasMapping.IsPerspective);
         var center = editor.CurrentCanvasMapping.ElementToScreen(foreground).TransformPoint(new(30, 20));
         Pointer(editor, OverlayPointerKind.Down, center); Pointer(editor, OverlayPointerKind.Up, center);
-        check("display Main picking preserves foreground author authorization and ignores overlapping Main/Background", session.Selection.SetEquals([foreground.Id]));
+        check("isolated picking preserves foreground author authorization and ignores overlapping Main/Background", session.Selection.SetEquals([foreground.Id]));
         var root = scene.Capture(session, null, GroupCanvasMode.RootProject, default, session.Assets); Configure(editor, root);
         check("root-project foreground display restores all roots and screen-plane mapping", root.Document.Elements.Count == 3 && !editor.CurrentCanvasMapping.IsPerspective && editor.CurrentCanvasMapping.ToScreen(new(60, 60)) == new PointD(60, 60));
         session.SetSelection([]); Pointer(editor, OverlayPointerKind.Down, new(90, 80)); Pointer(editor, OverlayPointerKind.Up, new(90, 80));

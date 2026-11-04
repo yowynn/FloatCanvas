@@ -36,8 +36,15 @@ internal sealed partial class DesktopSession
 
     private void HandleCanvasPointer(OverlayPointerEvent e)
     {
-        if (Active.IsReadOnly) return;
+        try { HandleCanvasPointerCore(e); }
+        finally { ObserveCanvasEdgePan(e); }
+    }
+
+    private void HandleCanvasPointerCore(OverlayPointerEvent e)
+    {
         _ = CurrentGroupCanvasView();
+        if (HandleCanvasViewingPointer(e)) return;
+        if (Active.IsReadOnly) return;
         if (!_hasEditableCanvasOccurrence) return;
         if (_editor.Tool == EditorTool.PointerPresentation)
         {

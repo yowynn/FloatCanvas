@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
@@ -60,7 +60,33 @@ internal sealed partial class DesktopSession
             {
                 if (!Current()) return;
                 _ = RunCommand(() => context is not null && node is null ? ExportPrefabDraftAsync(context) : ExportPrefabAsync(definition.Id));
-            }, locked ? null : detach, IsReadOnly: owner.IsReadOnly));
+            }, locked ? null : detach, IsReadOnly: owner.IsReadOnly,
+            Embed: external && context is not null && !context.Owner.IsReadOnly ? () =>
+            {
+                if (Current()) _ = RunCommand(() => EmbedEditingGroupAsync(context));
+            } : null));
+    }
+
+    private async Task EmbedEditingGroupAsync(PrefabEditContext context)
+    {
+        if (!ReferenceEquals(_prefabEditContext, context) || context.Owner.IsReadOnly || DocumentOperationBusy || Active.IsTransactionActive) return;
+        if (context.Draft is null)
+        {
+            // Convert exactly the source currently being viewed, not an older
+            // accepted offline snapshot, without writing the external file.
+            var plan = PrefabPreviewComposer.PrepareSource(context, context.Session.Document, _assets);
+            var source = plan.Candidate.Definitions.Single(item => item.Id == context.DefinitionId).Source!;
+            source.Locator = null; source.IsRelative = false;
+            if (!ApplyPrefabPlan(context.Owner, plan)) return;
+            ReturnFromPrefabContext(context);
+        }
+        else
+        {
+            if (!await CompleteCurrentPrefabAsync()) return;
+            context.Owner.ConvertPrefabToEmbedded(context.DefinitionId);
+        }
+        await EditPrefabDefinitionCoreAsync(context.DefinitionId, context.EnteredInstanceId);
+        ScheduleRecovery(); RequestRender();
     }
 
     private string GroupSourcePath(ExternalPrefabSource source, EditorSession owner)
@@ -116,8 +142,18 @@ internal sealed partial class DesktopSession
     private async Task DetachEditingGroupAsync(PrefabEditContext context)
     {
         if (!ReferenceEquals(_prefabEditContext, context) || context.EnteredInstanceId is not { } instanceId || DocumentOperationBusy || Active.IsTransactionActive) return;
-        // Leaving uses the existing save/discard/cancel flow; detaching never silently
-        // writes an unfinished source edit or applies it to other instances.
+        if (context.IsOfflineSnapshot && context.Draft is null)
+        {
+            var viewedSource = PrefabPreviewComposer.PrepareSource(context, context.Session.Document, _assets);
+            var detached = context.Owner.PreparePrefabDetach(instanceId, viewedSource);
+            if (!ApplyPrefabPlan(context.Owner, detached)) return;
+            ReturnFromPrefabContext(context);
+            context.Owner.SetEditScope(instanceId);
+            RefreshGroupCanvasContext(); ScheduleRecovery(); RequestRender();
+            return;
+        }
+        // Internal drafts publish on return; offline snapshots use their accepted
+        // generation. Neither path writes an external source file.
         if (!await LeaveCurrentPrefabAsync()) return;
         if (!ReferenceEquals(Active, context.Owner) || new SceneGraph(Active.Document).FindInstance(instanceId) is not { } instance || instance.DefinitionId != context.DefinitionId) return;
         DetachGroupInstance(context.Owner, instanceId);

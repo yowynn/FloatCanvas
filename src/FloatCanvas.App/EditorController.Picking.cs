@@ -29,10 +29,24 @@ internal sealed partial class EditorController
             return SceneEvaluation.Build(Session.Document);
         }
     }
-    private SceneDocument PickingDocument => presentedScene ?? (viewDocument is { } display && viewPlacement is { } placement
-        ? CanvasPreviewRenderer.EditingDocument(CurrentPickingEvaluation, display, placement,
-            viewRootCanvas, Session.ActiveRootCanvas, Session.EditScopeId, independentCanvasView)
-        : CurrentPickingEvaluation.RenderDocument);
+    private SceneDocument? pickingViewportSource, pickingViewportDocument;
+    private CanvasViewTransform pickingViewportView;
+    private SceneDocument PickingDocument
+    {
+        get
+        {
+            var source = presentedScene ?? (viewDocument is { } display && viewPlacement is { } placement
+                ? CanvasPreviewRenderer.EditingDocument(CurrentPickingEvaluation, display, placement,
+                    viewRootCanvas, Session.ActiveRootCanvas, Session.EditScopeId, independentCanvasView)
+                : CurrentPickingEvaluation.RenderDocument);
+            if (canvasView == CanvasViewTransform.Identity) return source;
+            if (ReferenceEquals(pickingViewportSource, source) && pickingViewportView == canvasView && pickingViewportDocument is not null)
+                return pickingViewportDocument;
+            pickingViewportSource = source; pickingViewportView = canvasView;
+            return pickingViewportDocument = SceneEvaluation.WithViewport(SceneEvaluation.Build(source).RenderDocument,
+                canvasView.Matrix.Inverse().TransformBounds(source.Viewport), canvasView.ViewingSettings(source.Canvas, source.Viewport));
+        }
+    }
     private AssetLibrary PickingAssets => presentedAssets ?? Session.Assets;
     private IEnumerable<CanvasElement> SelectedEditingWorldElements(bool editableOnly = false)
     {
@@ -119,6 +133,8 @@ internal sealed partial class EditorController
         long revision = session.PreviewRevision;
         long scopeVersion = session.EditScopeVersion;
         var rootCanvas = PickingRootCanvas;
+        rectangle = canvasView.Matrix.Inverse().TransformBounds(rectangle);
+        var viewing = canvasView;
         var selected = session.Selection.ToArray();
         var document = PickingDocument;
         var resources = PickingAssets.Resources.ToArray();
@@ -144,7 +160,7 @@ internal sealed partial class EditorController
             await dispatcher.InvokeAsync(() =>
             {
                 if (!token.IsCancellationRequested && ReferenceEquals(Session, session) && session.PreviewRevision == revision && session.EditScopeVersion == scopeVersion &&
-                    session.Selection.SetEquals(selected)) ApplyRectangleHits(hits, additive, selected);
+                    canvasView == viewing && session.Selection.SetEquals(selected)) ApplyRectangleHits(hits, additive, selected);
             }, DispatcherPriority.Input);
         }
         catch (OperationCanceledException) { }

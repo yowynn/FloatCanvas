@@ -12,6 +12,22 @@ public sealed class CanvasSettings
     public CanvasProjectionSettings Projection { get; set; } = new();
     public CanvasGridSettings Grid { get; set; } = new();
     public CanvasSettings Clone() => new() { BackgroundColor = BackgroundColor, DepthPriorityOcclusion = DepthPriorityOcclusion, Projection = Projection.Clone(), Grid = Grid.Clone() };
+    /// <summary>Freezes implicit grid/calibration values before a display-only viewport changes.</summary>
+    public CanvasSettings ResolveReference(RectD reference)
+    {
+        var result = Clone();
+        double cell = CanvasGridGeometry.ResolveCellSize(this, reference);
+        result.Grid.FlatOrigin ??= reference.Center;
+        result.Grid.FlatCellSize ??= cell;
+        if (Projection.Enabled)
+        {
+            if (Projection.Quad.Count == 0)
+            { result.Projection = CanvasCalibration.CreateInitial(reference, Projection.Columns, Projection.Rows); result.Projection.Enabled = true; }
+            result.Grid.PlaneOrigin ??= result.Projection.PinPoint;
+            result.Grid.PlaneCellSize ??= cell;
+        }
+        return result;
+    }
 }
 
 public sealed class CanvasProjectionSettings
@@ -247,6 +263,7 @@ public static class CanvasCalibration
 public sealed class CanvasMapping
 {
     private readonly RectD viewport;
+    private readonly CanvasViewTransform? outputView;
     internal CanvasMapping? ViewRoot { get; }
     internal LayerPlacement ViewPlacement { get; }
     private readonly LayerPlacement viewInverse;
@@ -258,7 +275,7 @@ public sealed class CanvasMapping
     public bool IsPerspective { get; }
     public IReadOnlyList<PointD> SafeScreenPolygon { get; }
     public IReadOnlyList<PointD> VisiblePlanePolygon { get; }
-    private CanvasMapping(SceneDocument document, RootCanvasKind root)
+    private CanvasMapping(SceneDocument document, RootCanvasKind root, CanvasViewTransform? view = null)
     {
         _ = SceneCanvasRoots.PaintRank(root);
         viewport = document.Viewport;
@@ -271,12 +288,20 @@ public sealed class CanvasMapping
         }
         PlaneToScreen = root != RootCanvasKind.Main ? Projective2D.Identity : settings.Enabled ? reference.Matrix : Projective2D.FromAffine(
             Affine2D.Translation(document.Canvas.Grid.FlatTranslation.X, document.Canvas.Grid.FlatTranslation.Y));
+        if (IsPerspective && view is { } planeView) PlaneToScreen = planeView.ProjectPlane(PlaneToScreen);
+        var authoredProjection = PlaneToScreen;
+        outputView = view;
+        if (view is { } camera) PlaneToScreen = Projective2D.FromAffine(camera.Matrix).Compose(PlaneToScreen);
         ScreenToPlane = PlaneToScreen.Inverse();
         GridCellSize = CanvasGridGeometry.ResolveCellSize(document.Canvas, viewport);
         GridOrigin = settings.Enabled ? document.Canvas.Grid.PlaneOrigin ?? reference.PinPoint :
             (document.Canvas.Grid.FlatOrigin ?? viewport.Center) - document.Canvas.Grid.FlatTranslation;
-        Safety = new(PlaneToScreen);
-        SafeScreenPolygon = Safety.ClipScreen(viewport);
+        // Navigation must not move the authored safe-domain boundary. Clip in
+        // authored output space, then present that same polygon through the camera.
+        Safety = new(authoredProjection);
+        var visible = view is { } framed ? framed.Matrix.Inverse().TransformBounds(viewport) : viewport;
+        SafeScreenPolygon = Safety.ClipScreen(visible);
+        if (view is { } displayed) SafeScreenPolygon = SafeScreenPolygon.Select(displayed.ToView).ToArray();
         VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();
     }
     private CanvasMapping(CanvasMapping root, LayerPlacement placement)
@@ -288,19 +313,23 @@ public sealed class CanvasMapping
         VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();
     }
     public static CanvasMapping Create(SceneDocument document, RootCanvasKind root = RootCanvasKind.Main) => new(document, root);
+    /// <summary>Post-projection editor camera. Source coordinates, including billboard heights, stay authored.</summary>
+    public static CanvasMapping CreateViewing(SceneDocument document, CanvasViewTransform view, RootCanvasKind root = RootCanvasKind.Main)
+        => new(document, root, view);
     /// <summary>Maps an editable source plane through its placement in the displayed root canvas without changing either document.</summary>
-    public static CanvasMapping CreateView(SceneDocument rootDisplay, LayerPlacement sourceToRoot, RootCanvasKind root = RootCanvasKind.Main)
+    public static CanvasMapping CreateView(SceneDocument rootDisplay, LayerPlacement sourceToRoot, RootCanvasKind root = RootCanvasKind.Main,
+        CanvasViewTransform? view = null)
     {
         ArgumentNullException.ThrowIfNull(rootDisplay);
         if (!sourceToRoot.IsValid) throw new ArgumentException("The editing view requires an invertible source placement.", nameof(sourceToRoot));
-        return new(Create(rootDisplay, root), sourceToRoot);
+        return new(new CanvasMapping(rootDisplay, root, view), sourceToRoot);
     }
     public PointD ToScreen(PointD point) => PlaneToScreen.TransformPoint(point);
     public bool IsVisible(PointD plane) => ViewRoot is { } root ? root.IsVisible(ViewPlacement.PlaneTransform.TransformPoint(plane)) : Safety.IsPlaneSafe(plane);
-    public bool IsScreenSafe(PointD point) => ViewRoot?.IsScreenSafe(point) ?? Safety.IsScreenSafe(point);
+    public bool IsScreenSafe(PointD point) => ViewRoot?.IsScreenSafe(point) ?? Safety.IsScreenSafe(outputView?.ToCanvas(point) ?? point);
     public bool TryToPlane(PointD point, out PointD plane)
     {
-        if (ViewRoot is not { } root) return Safety.TryToPlane(point, out plane);
+        if (ViewRoot is not { } root) return Safety.TryToPlane(outputView?.ToCanvas(point) ?? point, out plane);
         plane = default;
         if (!root.TryToPlane(point, out var rootPoint)) return false;
         plane = FromRootPoint(rootPoint); return double.IsFinite(plane.X) && double.IsFinite(plane.Y);

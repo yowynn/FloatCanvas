@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using FloatCanvas.App;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
+using FloatCanvas.Windows;
 using SkiaSharp;
 using L = FloatCanvas.Localization.AppText;
 
@@ -16,6 +17,7 @@ internal static class CanvasIndependentUiTests
     internal static void Run(Action<string, bool> check, string? evidenceDirectory = null)
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown }; AppTheme.Apply("light");
+        ViewedRectification(check);
         string language = L.Preference;
         foreach (string locale in new[] { "zh-CN", "en" })
         {
@@ -65,6 +67,35 @@ internal static class CanvasIndependentUiTests
             PresetRoundtrip(check, locale);
         }
         L.Initialize(language);
+    }
+    private static void ViewedRectification(Action<string, bool> check)
+    {
+        var projection = new CanvasProjectionSettings { Enabled = true, PlaneBounds = new(0, 0, 64, 96),
+            Matrix = new(1, .1, 20, .02, 1, 10, .0008, .0004, 1) };
+        projection.Quad = new[] { new PointD(0, 0), new(64, 0), new(64, 96), new(0, 96) }.Select(projection.Matrix.TransformPoint).ToList();
+        var viewing = new CanvasViewTransform(2, new(150, 100));
+        var viewed = CanvasRectificationPreviewWindow.ViewingProjection(projection, viewing);
+        var bounds = viewed.Matrix.TransformBounds(projection.PlaneBounds.Value);
+        var scene = new SceneDocument { Viewport = new(0, 0, 400, 400), Canvas = new() { Projection = projection },
+            Elements = [new() { Kind = ElementKind.Rectangle, Width = 64, Height = 96,
+                Style = new() { Fill = 0xFFFF0000, StrokeWidth = 0 } }] };
+        var selection = new CaptureSelection(CaptureShape.PolygonLasso, CaptureSource.CanvasOnly, bounds, viewed.Quad, 0, 0);
+        var raster = SnapshotImageCommand.Render(scene, [], selection, null, [scene.Viewport], viewing: viewing);
+        var window = new CanvasRectificationPreviewWindow(null, raster, projection, viewing);
+        try
+        {
+            var image = (BitmapSource)Field<Image>(window, "rectified").Source;
+            byte[] center = new byte[4]; image.CopyPixels(new Int32Rect(image.PixelWidth / 2, image.PixelHeight / 2, 1, 1), center, 4, 0);
+            check("viewed rectification samples the displayed perspective pixels through the viewing matrix", center[2] > 240 && center[3] > 240 && center[0] < 10);
+            var width = Field<NumericValueField>(window, "width"); width.BeginGesture(); width.Input.Text = "80"; width.EndGesture(true);
+            check("viewed rectification resizing retains authored quad and excludes the editor camera", window.Projection.Quad.SequenceEqual(projection.Quad) &&
+                window.Projection.PlaneBounds!.Value.Width == 80 && projection.PlaneBounds.Value.Width == 64);
+            var matrix = CanvasRectificationPreviewWindow.ViewingProjection(window.Projection, viewing).Matrix;
+            var capture = SnapshotImageCommand.CreateElement(new(), raster, matrix);
+            var placement = capture.ProjectivePlacement ?? Projective2D.FromAffine(capture.Transform);
+            check("viewed rectification inserted capture returns to its displayed screen position exactly once", matrix.Compose(placement).TransformPoint(default).DistanceTo(new(raster.Bounds.X, raster.Bounds.Y)) < 1e-6);
+        }
+        finally { window.Close(); }
     }
 
     private static void DialogStandards(Action<string, bool> check, string locale)

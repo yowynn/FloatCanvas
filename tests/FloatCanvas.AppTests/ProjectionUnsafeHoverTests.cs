@@ -38,6 +38,9 @@ internal static class ProjectionUnsafeHoverTests
         Set(session, "_app", app); Set(session, "_host", host); Set(session, "_editor", editor);
         Set(session, "_assets", state.Assets); Set(session, "_renderer", renderer);
         Set(session, "_canvasCalibration", calibration);
+        // Match the constructor's root-project default; a zeroed enum would now
+        // enter independent first framing and move calibration guides under this sample.
+        Set(session, "_groupCanvasMode", GroupCanvasMode.RootProject);
         Set(session, "_canvasGridCalibrationPoints", new List<PointD>());
         Set(session, "_windowSourceLeaves", Array.Empty<ResolvedLeaf>());
         Set(session, "_settings", new UserSettings());
@@ -87,6 +90,13 @@ internal static class ProjectionUnsafeHoverTests
             Observe(new(120, 50)); Abort();
             Invoke(session, "ObserveProjectionHover", new OverlayPointerEvent(OverlayPointerKind.Cancel, new(-380, 150), OverlayMouseButton.None, OverlayModifiers.None));
             check("cancel clears the hint without modifying the document or undo history", Alpha() == 0 && JsonSerializer.Serialize(document) == before && state.UndoCount == 0);
+            var camera = new CanvasViewTransform(.5, new(40, 50));
+            Invoke(session, "ChangeCanvasViewing", camera, false);
+            Observe(camera.ToView(new(120, 50)));
+            check("unsafe hover and its tint follow the same zoomed and panned mapping", Alpha(100, 75) is >= 18 and <= 28 && Alpha(100, 120) == 0);
+            Observe(camera.ToView(new(120, 140)));
+            check("viewed safe hover removes the tint without changing projection or history", Alpha(100, 75) == 0 && JsonSerializer.Serialize(document) == before && state.UndoCount == 0);
+            Invoke(session, "ExecuteCanvasViewing", CanvasViewingCommand.Reset);
             Abort();
             var local = new PixelBounds(-490, 110, 20, 20);
             Invoke(session, "RequestPixelRender", (object)new[] { local });

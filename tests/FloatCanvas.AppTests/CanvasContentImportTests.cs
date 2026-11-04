@@ -103,7 +103,7 @@ internal static class CanvasContentImportTests
         check("rejected legacy linking never migrates or rewrites the source file", Hash(legacy) == legacyHash && JsonSerializer.Serialize(owner.Document) == unchanged && owner.Assets.Count == unchangedAssets);
         Console.WriteLine("CANVAS_CONTENT_IMPORT_EVIDENCE " + root);
     }
-    private static async Task Legacy(string path)
+    internal static async Task Legacy(string path)
     {
         var json = JsonSerializer.SerializeToNode(new SceneDocument())!.AsObject(); json["Version"] = 10;
         json.Remove("ResourceId"); json.Remove("Definitions"); json.Remove("Instances"); json.Remove("RootCanvasAssignments"); json.Remove("RootPreviewCanvases");

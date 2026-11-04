@@ -11,7 +11,7 @@ using SkiaSharp;
 /// <summary>Exercises the production snapshot source, insertion and persistence seams without capturing the user's desktop.</summary>
 internal static class SnapshotImageTests
 {
-    internal static void Run(Action<string, bool> check) => RunAsync(check).GetAwaiter().GetResult();
+    internal static void Run(Action<string, bool> check) => Task.Run(() => RunAsync(check)).GetAwaiter().GetResult();
 
     private static async Task RunAsync(Action<string, bool> check)
     {
@@ -21,7 +21,80 @@ internal static class SnapshotImageTests
         RequestGuards(check);
         ProjectedCaptureShapes(check);
         BillboardSnapshots(check);
+        ViewedPixelsAndInsertion(check);
         await InsertAndPersistenceAsync(check);
+    }
+
+    private static void ViewedPixelsAndInsertion(Action<string, bool> check)
+    {
+        var camera = new CanvasViewTransform(.5, new(-100, 20));
+        var source = new SceneDocument { Viewport = new(0, 0, 320, 180), Elements = [Box(400, 40, 40, 30, 0xff00ff00)] };
+        source.Canvas.Grid.Visible = false;
+        source.Elements.Add(new() { Kind = ElementKind.LivePixelate, Width = 60, Height = 40, Transform = Affine2D.Translation(430, 100),
+            Effects = [new() { Kind = ImageEffectKind.Pixelate, Amount = 4 }], Style = new() { StrokeWidth = 0 } });
+        var desktop = Desktop(new(0, 0, 640, 360), (x, _) => x < 200 ? SKColors.Blue : SKColors.Red);
+        string before = JsonSerializer.Serialize(source);
+        foreach (var root in Enum.GetValues<RootCanvasKind>())
+        {
+            SceneCanvasRoots.Assign(source, source.Elements[0].Id, root);
+            foreach (var kind in Enum.GetValues<CaptureSource>())
+            {
+                var selection = Selection(kind, new(90, 30, 80, 80));
+                var raster = SnapshotImageCommand.Render(source, [], selection, desktop, [new(0, 0, 640, 360)], viewing: camera);
+                using var pixels = Decode(raster);
+                check($"viewed {kind}/{root} capture retains the physical selection allocation", raster.Bounds == selection.Bounds && pixels.Width == 80 && pixels.Height == 80);
+                check($"viewed {kind}/{root} draws moved canvas ink only when canvas is requested", pixels.GetPixel(20, 15) == (kind == CaptureSource.Background ? SKColors.Blue : SKColors.Lime));
+                check($"viewed {kind}/{root} keeps the actual desktop unscaled and CanvasOnly transparent", kind == CaptureSource.CanvasOnly ? pixels.GetPixel(65, 15).Alpha == 0 : pixels.GetPixel(65, 15) == SKColors.Blue);
+                check($"viewed {kind}/{root} filter samples its authored desktop position", pixels.GetPixel(40, 50) == (kind == CaptureSource.Background ? SKColors.Blue : SKColors.Red));
+            }
+        }
+        source.RootCanvasAssignments.Clear();
+        check("view capture preserves original scene and live filter parameters", before == JsonSerializer.Serialize(source));
+        var plain = new SceneDocument { Viewport = source.Viewport, Elements = [source.Elements[0].Clone()] }; plain.Canvas.Grid.Visible = false;
+        var snapshot = SnapshotImageCommand.Render(plain, [], Selection(CaptureSource.CanvasOnly, new(90, 30, 80, 80)), null, [new(0, 0, 640, 360)], viewing: camera);
+        var session = new EditorSession(plain); int history = session.UndoCount; var mapping = CanvasMapping.CreateViewing(plain, camera);
+        var inserted = SnapshotImageCommand.Insert(session, snapshot, mapping.PlaneToScreen, capturedMapping: mapping);
+        var world = new SceneGraph(session.Document).ToWorld(inserted);
+        var frame = CanvasMapping.CreateViewing(session.Document, camera).ElementToScreen(world);
+        check("viewed snapshot insertion preserves on-screen position and size without applying the camera twice", frame.TransformPoint(default).DistanceTo(new(90, 30)) < 1e-7 &&
+            frame.TransformPoint(new(inserted.Width, inserted.Height)).DistanceTo(new(170, 110)) < 1e-7 && session.UndoCount == history + 1);
+        check("viewed snapshot remains an ordinary image removable in one undo", inserted.Kind == ElementKind.Image && session.Undo() && session.Document.Elements.Count == 1);
+        ViewedGroupSnapshot(check);
+        foreach (bool perspective in new[] { false, true })
+        {
+            var billboardDocument = perspective ? ProjectedDocument() : new SceneDocument { Viewport = new(0, 0, 800, 600) };
+            var billboardSession = new EditorSession(billboardDocument); var billboardView = new CanvasViewTransform(.75, new(50, 20));
+            var billboardMapping = CanvasMapping.CreateViewing(billboardDocument, billboardView);
+            var image = SnapshotImageCommand.Insert(billboardSession, new(Png(80, 40, (_, _) => SKColors.Lime), new(150, 100, 80, 40), true),
+                billboardMapping.PlaneToScreen, billboardScreenFirst: true, capturedMapping: billboardMapping);
+            var transform = billboardMapping.ElementToScreen(image);
+            check("viewed screen-first billboard snapshot inserts at the captured pixel rectangle " + perspective, image.IsBillboard &&
+                transform.TransformPoint(default).DistanceTo(new(150, 100)) < 1e-7 && transform.TransformPoint(new(image.Width, image.Height)).DistanceTo(new(230, 140)) < 1e-7);
+        }
+    }
+
+    private static void ViewedGroupSnapshot(Action<string, bool> check)
+    {
+        var document = new SceneDocument { Viewport = new(0, 0, 640, 360) }; var graph = new SceneGraph(document);
+        var group = graph.InsertGroup(new() { Transform = Affine2D.Translation(100, 80).Compose(Affine2D.Scale(2, 2)), OrderMode = GroupOrderMode.AtomicBlock,
+            ChildOrder = [], PreviewCanvas = new() { Origin = new(30, 40), Viewport = document.Viewport } });
+        var leaf = graph.InsertElement(Box(100, 50, 40, 30, 0xff00ff00), group.Id, worldCoordinates: false);
+        var session = new EditorSession(document); session.SetEditScope(group.Id);
+        var display = new GroupCanvasScene().Capture(session, null, GroupCanvasMode.Temporary, default, session.Assets, document.Viewport);
+        var camera = new CanvasViewTransform(2, new(20, 10));
+        var mapping = CanvasMapping.CreateView(display.Document, display.EditingPlacement!.Value, display.EditingRootCanvas, camera);
+        var corner = mapping.ElementToScreen(graph.ToWorld(leaf)).TransformPoint(default);
+        var selection = Selection(CaptureSource.CanvasOnly, new(corner.X - 10, corner.Y - 10, 100, 100));
+        var raster = SnapshotImageCommand.Render(display.Document, [], selection, null, [document.Viewport], viewing: camera);
+        using var pixels = Decode(raster);
+        check("independent group snapshot samples its displayed contents despite host placement and nonzero origin", pixels.GetPixel(20, 20) == SKColors.Lime && pixels.GetPixel(5, 5).Alpha == 0);
+        int history = session.UndoCount; var added = SnapshotImageCommand.Insert(session, raster, mapping.PlaneToScreen, capturedMapping: mapping);
+        var stored = session.Document.Elements.Single(element => element.Id == added.Id);
+        var actual = mapping.ElementToScreen(new SceneGraph(session.Document).ToWorld(stored));
+        check("independent snapshot insertion converts displayed pixels back through the host into local group coordinates", stored.GroupId == group.Id &&
+            actual.TransformPoint(default).DistanceTo(new(selection.Bounds.X, selection.Bounds.Y)) < 1e-7 &&
+            actual.TransformPoint(new(stored.Width, stored.Height)).DistanceTo(new(selection.Bounds.Right, selection.Bounds.Bottom)) < 1e-7 && session.UndoCount == history + 1);
+        check("independent snapshot undo preserves the group placement and original child", session.Undo() && session.Document.Elements.Count == 1 && session.Document.Groups.Single().Transform == group.Transform);
     }
 
     private static SceneDocument ProjectedDocument() => new()
@@ -256,6 +329,15 @@ internal static class SnapshotImageTests
         request.Cancel();
         request.AcceptRestoredVersion(17);
         check("cancelled capture permission remains revoked after an obsolete continuation arrives", request.Cancelled && !request.MatchesContent(target));
+        object view = new(); var origin = new PointD(-120, 50);
+        request = new(target, 19, view, origin);
+        check("viewed capture permission accepts only its frozen viewing epoch and canvas origin", request.MatchesContent(target, view, origin) &&
+            request.ContentRejection(target, new object(), origin) == "ViewChanged" && request.ContentRejection(target, view, origin + new PointD(1, 0)) == "ScreenOriginChanged");
+        check("returning to the same numeric view under a new epoch cannot revive a delayed capture", !request.MatchesContent(target, new object(), origin));
+        var parent = new EditorSession(); long parentRevision = parent.PreviewRevision;
+        request = new(target, 21, view, origin, () => parent.PreviewRevision == parentRevision);
+        parent.Execute("parent placement", document => document.NextNumber++);
+        check("a parent draft change rejects capture even when the active child's document and camera remain unchanged", request.ContentRejection(target, view, origin) == "ContextChanged");
 
         var scopeDocument = new SceneDocument(); var graph = new SceneGraph(scopeDocument);
         var scope = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock });

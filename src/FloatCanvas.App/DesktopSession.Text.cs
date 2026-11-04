@@ -14,6 +14,7 @@ internal sealed partial class DesktopSession
     private DispatcherTimer? _inlineCaretTimer;
     private bool _inlineCaretVisible;
     private BillboardDepthLine? _inlineBillboardDepth;
+    private (CanvasPreviewContext From, CanvasPreviewContext To)? _textExitPresentation;
 
     private void ShowTextEditor(CanvasElement? existing,PointD point)
     {
@@ -28,6 +29,9 @@ internal sealed partial class DesktopSession
             return;
         }
         var edit=new InlineTextEdit(Active,existing,point,_editor.Style,_renderer,depth,screenFirst,()=>_editor.CurrentCanvasMapping);
+        var textOwner = Active;
+        long textScope = Active.EditScopeVersion;
+        var textMode = _groupCanvasMode;
         edit.PlacementRejected+=()=>UpdateStatus(FloatCanvas.Localization.AppText.Get("Perspective.InputOutsidePlane"));
         _inlineBillboardDepth = depth;
         _inlineText=edit;
@@ -47,6 +51,9 @@ internal sealed partial class DesktopSession
             InvalidateScreenDraftPreview();
             var input=_canvasTextInput;_canvasTextInput=null;input?.Dispose();
             UpdateHiddenCanvasState();
+            if (ReferenceEquals(Active, textOwner) && Active.EditScopeVersion == textScope && _groupCanvasMode == textMode &&
+                _host.IsEditing && _host.IsVisible && _presentedCanvasContext is { Hidden: false } shown && ReferenceEquals(shown.Session, Active))
+                _textExitPresentation = (shown, CurrentPreviewContext());
             RequestRender();
         };
         try
@@ -59,6 +66,14 @@ internal sealed partial class DesktopSession
             };
             _canvasTextInput.CommandKey += key => { FinishInlineText(); OnKey(key); };
             _canvasTextInput.Deactivated+=()=>QueueInlineTextFocusCheck(edit);
+            // Picking can finish after the original button-up has already passed
+            // through the desktop router. Focus the new carrier once that click
+            // has released capture; a still-held click focuses on its normal Up.
+            _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+            {
+                if (!_disposed && ReferenceEquals(_inlineText, edit) && _host.IsEditing && _host.HasEditingInput && _host.CaptureHandle == 0)
+                    _canvasTextInput?.Focus();
+            });
             _inlineCaretVisible=true;
             if(_inlineCaretTimer is null)
             {

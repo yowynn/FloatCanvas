@@ -9,7 +9,8 @@ internal static class SnapshotImageCommand
 {
     internal static CaptureRasterResult Render(SceneDocument committedScene, IEnumerable<AssetResource> resources,
         CaptureSelection selection, CapturedDesktop? desktop, IReadOnlyList<RectD> displays, TimeSpan animationTime = default,
-        PointD screenOrigin = default, PresentationCaptureSnapshot? presentation = null, WindowRasterCapture? windows = null)
+        PointD screenOrigin = default, PresentationCaptureSnapshot? presentation = null, WindowRasterCapture? windows = null,
+        CanvasViewTransform? viewing = null)
     {
         if (!double.IsFinite(selection.BorderWidth) || selection.BorderWidth < 0)
             throw new ArgumentException(L.Get("Capture.EmptyRegion"), nameof(selection));
@@ -39,7 +40,7 @@ internal static class SnapshotImageCommand
         // available to the dynamic mosaic's own sampling pass.
         // Keep the body unframed so later layer edits can change the border without
         // resampling pixels or painting over a previous baked border.
-        var raster = renderer.ExportSelectionPng(scene, assets, selection with { BorderWidth = 0 }, background, displays);
+        var raster = renderer.ExportSelectionPng(scene, assets, selection with { BorderWidth = 0 }, background, displays, viewing);
         // A perspective screenshot has transparent corners in its screen-aligned PNG.
         // Retain its actual contour separately so the plane edit frame excludes those corners,
         // while the original sampled pixels and their placement remain unchanged.
@@ -47,18 +48,19 @@ internal static class SnapshotImageCommand
         return raster with
         {
             ImageBorderWidth = selection.BorderWidth, ImageBorderColor = selection.BorderColor,
-            ImageFrame = !selection.BillboardScreenFirst && selection.BillboardDepthLine is null && CanvasMapping.Create(scene).PlaneToScreen != Projective2D.Identity
+            ImageFrame = !selection.BillboardScreenFirst && selection.BillboardDepthLine is null &&
+                (selection.PlaneToScreen ?? CanvasMapping.Create(scene).PlaneToScreen) != Projective2D.Identity
                 ? contour.Select(point => new PointD(Math.Clamp((point.X - raster.Bounds.X) / raster.Bounds.Width, 0, 1),
                     Math.Clamp((point.Y - raster.Bounds.Y) / raster.Bounds.Height, 0, 1))).ToArray() : null
         };
     }
 
     internal static CanvasElement Insert(EditorSession session, CaptureRasterResult raster, Projective2D? capturedPlaneToScreen = null,
-        BillboardDepthLine? billboardDepth = null, bool billboardScreenFirst = false)
+        BillboardDepthLine? billboardDepth = null, bool billboardScreenFirst = false, CanvasMapping? capturedMapping = null)
     {
         session.RequireWritableScope();
         if (session.IsTransactionActive) throw new InvalidOperationException(L.Get("Text.ActionInProgress"));
-        var mapping = CanvasMapping.Create(session.Document, session.ActiveRootCanvas);
+        var mapping = capturedMapping ?? CanvasMapping.Create(session.Document, session.ActiveRootCanvas);
         var image = billboardScreenFirst || billboardDepth is not null
             ? CreateBillboardElement(session.Assets, raster, mapping, billboardDepth)
             : CreateElement(session.Assets, raster, capturedPlaneToScreen ?? mapping.PlaneToScreen);

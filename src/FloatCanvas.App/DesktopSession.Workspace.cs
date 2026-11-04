@@ -17,7 +17,7 @@ internal sealed partial class DesktopSession
     private void ToggleCanvasVisibility()
     {
         if (_host.IsVisible) CancelCanvasRectification("CanvasHidden");
-        EndCanvasCalibration(hidePanel: true);
+        EndCanvasCalibration();
         // Preserve the hide intent even if a second toggle shows the canvas before the
         // dispatcher next synchronizes capture or resumes an asynchronous preparation.
         if (_host.IsVisible) CancelLivePreparation();
@@ -46,6 +46,7 @@ internal sealed partial class DesktopSession
     {
         if(DocumentOperationBusy)return;
         var file=FileState(Active);if(file.Path is null)return;
+        BindCanvasIdentity(Active, $"workspace:{CanvasDocumentIdentity(Active)}:{Guid.NewGuid():N}", copyViews: true);
         file.Path=null;file.SavedFingerprint=null;file.SavedContentVersion=-1;file.DiskVersion=null;
         RecoveryHistory.EnterWorkspace(new());
         _documentRecoveryFingerprint=null;ScheduleRecovery();RequestRender();
@@ -100,6 +101,7 @@ internal sealed partial class DesktopSession
         while (!_disposed)
         {
             var live = _live; var capture = _capture;
+            if (!IsDirty(live) && (capture is null || !IsDirty(capture))) return false;
             if (FileState(live).Path is not null || capture is not null && FileState(capture).Path is not null) return false;
             long liveRevision = live.PreviewRevision; long? captureRevision = capture?.PreviewRevision;
             var origin = _captureOrigin;
@@ -186,11 +188,17 @@ internal sealed partial class DesktopSession
             var canvas = _settings.PreserveCanvasSettingsOnNewCanvas ? previous.Canvas.Clone() :
                 CreateDefaultCanvasSettings(previous.Viewport);
             ForgetAllWindowSourceBindings();
+            var referenceScreen = _host.PrimaryMonitor.Bounds;
             _live = new(new SceneDocument { Viewport = previous.Viewport, LayerOpacity = previous.LayerOpacity,
                 Canvas = canvas,
+                AuthoringReference = new(new(referenceScreen.Left - _liveOrigin.X, referenceScreen.Top - _liveOrigin.Y, referenceScreen.Width, referenceScreen.Height),
+                    new(referenceScreen.Left - _liveOrigin.X, referenceScreen.Top - _liveOrigin.Y, referenceScreen.Width, referenceScreen.Height)),
                 DisplayLayout = previous.DisplayLayout.Select(m => m.Clone()).ToList(), NextNumber = first }, _assets);
             _capture = null; _captureOrigin = default; _documentFrozenCaptureWarning = null;
             _documentFiles.Clear();
+            var freshState = FileState(_live);
+            freshState.SavedContentVersion = _live.ContentVersion;
+            freshState.SavedFingerprint = Fingerprint(_live.Document);
             _editor.ReplaceSession(_live, _liveOrigin); _editor.Tool = tool;
             _documentRecoveryFingerprint = null;
             RecoveryHistory.WorkspaceRestored();

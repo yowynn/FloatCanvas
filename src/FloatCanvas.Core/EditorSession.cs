@@ -5,7 +5,7 @@ namespace FloatCanvas.Core;
 /// <summary>One editable document and atomic user operations. Assets are never copied into history.</summary>
 public sealed partial class EditorSession
 {
-    private sealed record HistoryEntry(string Label, SceneDocument? Before, SceneDocument? After, HashSet<Guid>? SelectionBefore, HashSet<Guid>? SelectionAfter, long Bytes, long Sequence, string[] AssetIds, long BeforeVersion, long AfterVersion, Action? UndoOperation = null, Action? RedoOperation = null);
+    private sealed record HistoryEntry(string Label, SceneDocument? Before, SceneDocument? After, HashSet<Guid>? SelectionBefore, HashSet<Guid>? SelectionAfter, long Bytes, long Sequence, string[] AssetIds, long BeforeVersion, long AfterVersion, Action? UndoOperation = null, Action? RedoOperation = null, CanvasViewHistoryChange? Viewing = null);
     private readonly List<HistoryEntry> undo = [], redo = [];
     private SceneDocument? transactionBefore;
     private HashSet<Guid>? transactionSelection;
@@ -62,7 +62,7 @@ public sealed partial class EditorSession
     /// A violated declaration conservatively invalidates preview nodes; undo semantics stay unchanged.
     /// </summary>
     public void CommitSettings() => CommitCore(settingsOnly: true);
-    private void CommitCore(bool settingsOnly, long? restoredContentVersion = null, bool restoringDocument = false)
+    private void CommitCore(bool settingsOnly, long? restoredContentVersion = null, bool restoringDocument = false, CanvasViewHistoryChange? viewing = null)
     {
         if (transactionBefore is null) throw new InvalidOperationException(L.Get("History.NoActiveTransaction"));
         var before = transactionBefore; var selectedBefore = transactionSelection!;
@@ -78,13 +78,15 @@ public sealed partial class EditorSession
             // Even a net-zero gesture may have published an intermediate preview before
             // its final unnotified mutation. Preserve history while invalidating that frame.
             if (PreviewRevision != transactionPreviewRevision) RecordPreviewChange(elementsChanged: !knownSettings);
+            if (viewing is not null) CanvasViewRestored?.Invoke(viewing.After);
             OnChanged(); return;
         }
         var after = Document.Clone();
         transactionBefore = null; transactionSelection = null; HasPendingChanges = false;
         ContentVersion = restoredContentVersion ?? ++nextContentVersion;
         redo.Clear();
-        undo.Add(new(transactionLabel, before, after, selectedBefore, [.. Selection], EstimateBytes(before) + EstimateBytes(after), ++sequence, before.ReferencedAssets.Concat(after.ReferencedAssets).Distinct(StringComparer.Ordinal).ToArray(), transactionContentVersion, ContentVersion));
+        undo.Add(new(transactionLabel, before, after, selectedBefore, [.. Selection], EstimateBytes(before) + EstimateBytes(after), ++sequence, before.ReferencedAssets.Concat(after.ReferencedAssets).Distinct(StringComparer.Ordinal).ToArray(), transactionContentVersion, ContentVersion, Viewing: viewing));
+        if (viewing is not null) CanvasViewRestored?.Invoke(viewing.After);
         TrimHistory(); OnChanged(contentChanged: true, preserveContentVersion: true, previewElementsChanged: !knownSettings);
     }
     public void Cancel()
@@ -146,6 +148,7 @@ public sealed partial class EditorSession
         else { Document = item.Before!.Clone(); ContentVersion = item.BeforeVersion; SetSelectionCore(item.SelectionBefore!); }
         undo.RemoveAt(undo.Count - 1); redo.Add(item);
         PruneSelection();
+        if (item.Viewing is { } viewing) CanvasViewRestored?.Invoke(viewing.Before);
         OnChanged(contentChanged: item.UndoOperation is null, preserveContentVersion: true); return true;
     }
     public bool Redo()
@@ -157,6 +160,7 @@ public sealed partial class EditorSession
         else { Document = item.After!.Clone(); ContentVersion = item.AfterVersion; SetSelectionCore(item.SelectionAfter!); }
         redo.RemoveAt(redo.Count - 1); undo.Add(item);
         PruneSelection();
+        if (item.Viewing is { } viewing) CanvasViewRestored?.Invoke(viewing.After);
         OnChanged(contentChanged: item.RedoOperation is null, preserveContentVersion: true); return true;
     }
     public void ReplaceDocument(SceneDocument document)

@@ -211,7 +211,7 @@ internal static class HistoryRestoreRoutingFixture
         var deadline = DateTime.UtcNow.AddSeconds(8);
         while (!done()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException(operation); Pump(25); }
     }
-    private static nint FindOwnNativeDialog()
+    internal static nint FindOwnNativeDialog()
     {
         nint found = 0;
         EnumWindows((handle, _) =>
@@ -223,7 +223,7 @@ internal static class HistoryRestoreRoutingFixture
         }, 0);
         return found;
     }
-    private static void FillOwnSaveDialog(nint dialog, string path)
+    internal static void FillOwnSaveDialog(nint dialog, string path, bool postCommand = false)
     {
         GetWindowThreadProcessId(dialog, out uint process);
         if (process != Environment.ProcessId) throw new InvalidOperationException("Native save target is not owned by this fixture.");
@@ -239,7 +239,13 @@ internal static class HistoryRestoreRoutingFixture
         ((ValuePattern)target.GetCurrentPattern(ValuePattern.Pattern)).SetValue(path);
         var save = root.FindFirst(TreeScope.Descendants, new AndCondition(new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button), new PropertyCondition(AutomationElement.AutomationIdProperty, "1")))
             ?? throw new InvalidOperationException("Could not identify own native save button.");
-        ((InvokePattern)save.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        while (!save.Current.IsEnabled && DateTime.UtcNow < deadline) Thread.Sleep(25);
+        if (postCommand)
+        {
+            if (!save.Current.IsEnabled || !PostMessage(dialog, 0x111, 1, 0)) throw new InvalidOperationException("Own native save command was not available.");
+        }
+        else ((InvokePattern)save.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
     }
     private static void Pump(int milliseconds)
     {

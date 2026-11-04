@@ -175,10 +175,13 @@ public sealed partial class EditorSession
 
     private void RequireDraftOwner(PrefabEditDraft draft)
     {
-        if (!ReferenceEquals(draft.Owner, this) || !ReferenceEquals(draft.OwnerDocument, Document) || draft.OwnerContentVersion != ContentVersion || draft.OwnerScopeVersion != EditScopeVersion ||
-            IsTransactionActive || Document.Definitions.SingleOrDefault(definition => definition.Id == draft.DefinitionId)?.Revision != draft.ExpectedRevision)
+        if (!IsPrefabEditCurrent(draft))
             throw new InvalidOperationException(L.Get("Prefab.EditConflict"));
     }
+    public bool IsPrefabEditCurrent(PrefabEditDraft draft) => ReferenceEquals(draft.Owner, this) &&
+        ReferenceEquals(draft.OwnerDocument, Document) && draft.OwnerContentVersion == ContentVersion &&
+        draft.OwnerScopeVersion == EditScopeVersion && !IsTransactionActive &&
+        Document.Definitions.SingleOrDefault(definition => definition.Id == draft.DefinitionId)?.Revision == draft.ExpectedRevision;
     private static AssetResource[] ResolvePrefabResources(SceneDocument document, AssetLibrary assets) => document.ReferencedAssets.Select(assets.Get).ToArray();
 
     public PrefabPackage ExportPrefab(Guid definitionId)
@@ -333,6 +336,31 @@ public sealed partial class EditorSession
         return instanceId;
     }
 
+    /// <summary>Detaches one occurrence from a prepared source view without
+    /// publishing that source generation to the other linked occurrences.</summary>
+    public PrefabEditPlan PreparePrefabDetach(Guid instanceId, PrefabEditPlan viewedSource)
+    {
+        RequireWritableScope();
+        if (!ReferenceEquals(viewedSource.Owner, this) || viewedSource.Consumed ||
+            !ReferenceEquals(viewedSource.OwnerDocument, Document) || viewedSource.OwnerContentVersion != ContentVersion ||
+            viewedSource.OwnerScopeVersion != EditScopeVersion || IsTransactionActive)
+            throw new InvalidOperationException(L.Get("Prefab.EditConflict"));
+        var graph = new SceneGraph(Document);
+        if (graph.FindInstance(instanceId) is null || graph.IsLocked(instanceId))
+            throw new InvalidOperationException(L.Get("Inspector.LockedSuffix"));
+        var expanded = viewedSource.Candidate.Clone();
+        ExpandPrefabInstance(expanded, instanceId);
+        var retained = new SceneGraph(expanded).DescendantNodeIds(instanceId).ToHashSet();
+        var candidate = Document.Clone();
+        candidate.Instances.RemoveAll(instance => instance.Id == instanceId);
+        candidate.Groups.AddRange(expanded.Groups.Where(group => retained.Contains(group.Id)));
+        candidate.Elements.AddRange(expanded.Elements.Where(element => retained.Contains(element.Id)));
+        SceneLimits.ValidateCapacity(candidate);
+        var resources = viewedSource.Resources.ToDictionary(resource => resource.Id, StringComparer.Ordinal);
+        return new(this, candidate, candidate.ReferencedAssets.Select(id =>
+            Assets.TryGet(id, out var asset) ? asset : resources[id]).ToArray());
+    }
+
     private static void ExpandPrefabInstance(SceneDocument document, Guid instanceId)
     {
         var instance = document.Instances.Single(instance => instance.Id == instanceId);
@@ -341,6 +369,7 @@ public sealed partial class EditorSession
         new SceneGraph(copy).MaterializeOrder();
         var root = new CanvasGroup { Id = instance.Id, ParentId = instance.ParentId, Name = instance.Name,
             Transform = instance.Transform, ElevationScale = instance.ElevationScale, Visible = instance.Visible, Locked = instance.Locked,
+            PreviewCanvas = definition.PreviewCanvas?.Clone() ?? new SubprojectCanvasSettings { Origin = definition.Pivot },
             OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = copy.RootOrder!.ToList() };
         foreach (var group in copy.Groups.Where(group => group.ParentId is null)) group.ParentId = root.Id;
         foreach (var element in copy.Elements.Where(element => element.GroupId is null)) element.GroupId = root.Id;

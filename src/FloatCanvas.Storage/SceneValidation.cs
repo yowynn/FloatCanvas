@@ -7,6 +7,8 @@ namespace FloatCanvas.Storage;
 public static class SceneValidation
 {
     public static void Validate(SceneDocument document) => ValidateDocument(document, allowMirroredCanvas: false);
+    /// <summary>A detached independent editing header permits the same mirrored calibration as persisted prefab previews.</summary>
+    public static void ValidateIndependentCanvas(SceneDocument document) => ValidateDocument(document, allowMirroredCanvas: true);
     private static void ValidateDocument(SceneDocument document, bool allowMirroredCanvas)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -34,6 +36,13 @@ public static class SceneValidation
         Require(document.Groups!.Count <= SceneLimits.MaximumElements, L.Get("Scene.ElementCountExceeded"));
         Require(Unit(document.LayerOpacity), L.Get("Scene.InvalidLayerOpacity"));
         Require(Rect(document.Viewport) && document.Viewport.Width > 0 && document.Viewport.Height > 0, L.Get("Scene.InvalidViewport"));
+        if (document.AuthoringReference is { } reference)
+        {
+            Require(document.Version >= 18, "Authored canvas references require scene format 18.");
+            Require(Rect(reference.Frame) && !reference.Frame.IsEmpty && Rect(reference.ReferenceScreenBounds) && !reference.ReferenceScreenBounds.IsEmpty,
+                "Invalid authored canvas reference.");
+            Require(reference.ContentReferenceBounds is not { } content || Rect(content) && !content.IsEmpty, "Invalid authored content reference.");
+        }
         ValidateCanvas(document, allowMirroredCanvas);
         var ids = new HashSet<Guid>();
         var graph = ValidateGraph(document, ids);

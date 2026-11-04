@@ -352,6 +352,15 @@ internal static class PackageCodec
             }
         }
         else if (json.TryGetProperty("RootPreviewCanvases", out _)) throw new InvalidDataException("Subproject canvases require scene format 17.");
+        if (json.TryGetProperty("AuthoringReference", out var authoring) && authoring.ValueKind != JsonValueKind.Null)
+        {
+            if (version < 18) throw new InvalidDataException("Authored canvas references require scene format 18.");
+            RequireProperties(authoring, "Frame", "ReferenceScreenBounds");
+            RequireProperties(authoring.GetProperty("Frame"), "X", "Y", "Width", "Height");
+            RequireProperties(authoring.GetProperty("ReferenceScreenBounds"), "X", "Y", "Width", "Height");
+            if (authoring.TryGetProperty("ContentReferenceBounds", out var contentReference) && contentReference.ValueKind != JsonValueKind.Null)
+                RequireProperties(contentReference, "X", "Y", "Width", "Height");
+        }
         if (version >= 3)
         {
             RequireProperties(json, "Canvas");

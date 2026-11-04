@@ -164,7 +164,7 @@ public sealed class DisplayLayoutHint
 public sealed partial class SceneDocument : SceneNodeGraph
 {
     private SceneResourceIdentity resourceIdentity = new(Guid.NewGuid());
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
     public int Version { get; set; } = CurrentVersion;
     public Guid ResourceId { get => resourceIdentity.Id; set => resourceIdentity = new(value); }
     public List<PrefabDefinition> Definitions { get; set; } = [];
@@ -180,6 +180,8 @@ public sealed partial class SceneDocument : SceneNodeGraph
     public CanvasElement? Background { get; set; }
     public CanvasSettings Canvas { get; set; } = new();
     public RectD Viewport { get; set; } = new(0, 0, 1920, 1080);
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CanvasAuthoringReference? AuthoringReference { get; set; }
     public double LayerOpacity { get; set; } = 1;
     public int NextNumber { get; set; } = 1;
     public List<DisplayLayoutHint> DisplayLayout { get; set; } = [];
@@ -200,7 +202,7 @@ public sealed partial class SceneDocument : SceneNodeGraph
             RootCanvasAssignments = RootCanvasAssignments.ToDictionary(pair => cloned.NodeIdMap[pair.Key], pair => pair.Value),
             RootPreviewCanvases = RootPreviewCanvases.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(assetIdMap)),
             Definitions = Definitions.Select(definition => definition.Clone(assetIdMap)).ToList(), Background = background, Canvas = Canvas.Clone(),
-            Viewport = Viewport, LayerOpacity = LayerOpacity, NextNumber = NextNumber, DisplayLayout = DisplayLayout.Select(d => d.Clone()).ToList()
+            Viewport = Viewport, AuthoringReference = AuthoringReference, LayerOpacity = LayerOpacity, NextNumber = NextNumber, DisplayLayout = DisplayLayout.Select(d => d.Clone()).ToList()
         };
         result.resourceIdentity = resourceIdentity; return result;
     }

@@ -131,11 +131,26 @@ public static class SceneEvaluation
             Version = runtimeWorld.Version, Provenance = runtimeWorld.Provenance, IsRuntimeEvaluated = true,
             ResourceId = runtimeWorld.ResourceId, Kind = runtimeWorld.Kind, Elements = elements,
             RootCanvasAssignments = new(runtimeWorld.RootCanvasAssignments),
-            Background = runtimeWorld.Background, Canvas = runtimeWorld.Canvas, Viewport = runtimeWorld.Viewport,
+            Background = runtimeWorld.Background, Canvas = runtimeWorld.Canvas, Viewport = runtimeWorld.Viewport, AuthoringReference = runtimeWorld.AuthoringReference,
             LayerOpacity = runtimeWorld.LayerOpacity, NextNumber = runtimeWorld.NextNumber, DisplayLayout = runtimeWorld.DisplayLayout
         };
         SceneCanvasRoots.Assign(document, draft.Id, rootCanvas);
         document.Elements = document.Elements.OrderBy(element => SceneCanvasRoots.PaintRank(document.RootCanvasAssignments.GetValueOrDefault(element.Id))).ToList();
+        runtimeViews.Add(document, new(document, baseScene)); return document;
+    }
+    /// <summary>Render-only header for another visible region. Borrows immutable leaves and their occurrence metadata.</summary>
+    public static SceneDocument WithViewport(SceneDocument runtimeWorld, RectD viewport, CanvasSettings canvas)
+    {
+        if (!runtimeWorld.IsRuntimeEvaluated || RuntimeView(runtimeWorld) is not { } baseScene)
+            throw new ArgumentException("A detached evaluated world view is required.", nameof(runtimeWorld));
+        var document = new SceneDocument
+        {
+            Version = runtimeWorld.Version, Provenance = runtimeWorld.Provenance, IsRuntimeEvaluated = true,
+            ResourceId = runtimeWorld.ResourceId, Kind = runtimeWorld.Kind, Elements = runtimeWorld.Elements,
+            RootCanvasAssignments = runtimeWorld.RootCanvasAssignments,
+            Background = runtimeWorld.Background, Canvas = canvas, Viewport = viewport, AuthoringReference = runtimeWorld.AuthoringReference,
+            LayerOpacity = runtimeWorld.LayerOpacity, NextNumber = runtimeWorld.NextNumber, DisplayLayout = runtimeWorld.DisplayLayout
+        };
         runtimeViews.Add(document, new(document, baseScene)); return document;
     }
     /// <summary>Builds once from a frozen source, or afresh for a mutable public render/export. Never reads external files.</summary>
@@ -163,7 +178,7 @@ public static class SceneEvaluation
             Version = source.Version, Provenance = source.Provenance, IsRuntimeEvaluated = true, ResourceId = source.ResourceId,
             Kind = source.Kind, Elements = leaves.Select(leaf => leaf.RenderElement).ToList(),
             RootCanvasAssignments = leaves.Where(leaf => leaf.RootCanvas != RootCanvasKind.Main).ToDictionary(leaf => leaf.RuntimeElementId, leaf => leaf.RootCanvas),
-            Background = source.Background?.Clone(), Canvas = source.Canvas.Clone(), Viewport = source.Viewport,
+            Background = source.Background?.Clone(), Canvas = source.Canvas.Clone(), Viewport = source.Viewport, AuthoringReference = source.AuthoringReference,
             LayerOpacity = source.LayerOpacity, NextNumber = source.NextNumber,
             DisplayLayout = source.DisplayLayout.Select(display => display.Clone()).ToList()
         };

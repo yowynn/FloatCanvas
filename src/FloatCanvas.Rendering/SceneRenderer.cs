@@ -117,7 +117,7 @@ public sealed partial class SceneRenderer : IDisposable
     {
         if (_renderSpace == SceneRenderSpace.ScreenComposite)
         {
-            if (includeBackground) (ScreenBackdrop ?? (sampling && document.Background is null ? LiveBackdrop : null))?.Draw(canvas);
+            if (includeBackground) (ScreenBackdrop ?? (sampling ? _captureViewingBackdrop ?? (document.Background is null ? LiveBackdrop : null) : null))?.Draw(canvas);
             if (includeCanvasBackground && (document.Canvas.BackgroundColor >> 24) != 0)
                 DrawPlaneColor(canvas, document, true, canvasOpacity);
         }
@@ -139,12 +139,12 @@ public sealed partial class SceneRenderer : IDisposable
     }
 
     public byte[] ExportPng(SceneDocument document, AssetLibrary assets, bool transparent = false,
-        SceneRenderSpace space = SceneRenderSpace.ScreenComposite) =>
-        Export(document, assets, SKEncodedImageFormat.Png, 100, !transparent, space);
+        SceneRenderSpace space = SceneRenderSpace.ScreenComposite, bool useAuthoredFrame = true) =>
+        Export(document, assets, SKEncodedImageFormat.Png, 100, !transparent, space, useAuthoredFrame);
 
     public byte[] ExportJpeg(SceneDocument document, AssetLibrary assets, int quality = 92,
-        SceneRenderSpace space = SceneRenderSpace.ScreenComposite) =>
-        Export(document, assets, SKEncodedImageFormat.Jpeg, Math.Clamp(quality, 1, 100), true, space);
+        SceneRenderSpace space = SceneRenderSpace.ScreenComposite, bool useAuthoredFrame = true) =>
+        Export(document, assets, SKEncodedImageFormat.Jpeg, Math.Clamp(quality, 1, 100), true, space, useAuthoredFrame);
 
     public TextMetrics MeasureText(string text, ElementStyle style, double maxWidth = 0)
     {
@@ -160,9 +160,11 @@ public sealed partial class SceneRenderer : IDisposable
         return new([new(0,metrics.Height,[new(0,0),new(text.Length,metrics.Width)])]);
     }
 
-    private byte[] Export(SceneDocument document, AssetLibrary assets, SKEncodedImageFormat format, int quality, bool background, SceneRenderSpace space)
+    private byte[] Export(SceneDocument document, AssetLibrary assets, SKEncodedImageFormat format, int quality, bool background, SceneRenderSpace space, bool useAuthoredFrame)
     {
-        var viewport = document.Viewport.Normalize();
+        var viewport = (useAuthoredFrame && space == SceneRenderSpace.ScreenComposite ? document.AuthoringReference?.Frame ?? document.Viewport : document.Viewport).Normalize();
+        if (document.Viewport != viewport)
+            document = SceneEvaluation.WithViewport(SceneEvaluation.Build(document).RenderDocument, viewport, document.Canvas.ResolveReference(document.Viewport));
         int width = checked((int)Math.Ceiling(viewport.Width)), height = checked((int)Math.Ceiling(viewport.Height));
         if (width < 1 || height < 1) throw new ArgumentException(L.Get("Export.EmptyRegion"), nameof(document));
         using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul))

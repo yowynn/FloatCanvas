@@ -3,6 +3,11 @@ using System.Text.Json;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+if (args.Contains("--canvas-navigation-only")) { CanvasViewTransformTests.Run(Check); CanvasRebaseTests.Run(Check); CanvasViewApplicationTests.Run(Check); CanvasResolutionConversionTests.Run(Check); Console.WriteLine($"PASS {checks} canvas navigation checks"); return; }
+CanvasViewTransformTests.Run(Check);
+CanvasRebaseTests.Run(Check);
+CanvasViewApplicationTests.Run(Check);
+CanvasResolutionConversionTests.Run(Check);
 if (args.Contains("--subproject-canvas-only")) { SubprojectCanvasTests.Run(Check); Console.WriteLine($"PASS {checks} subproject canvas checks"); return; }
 SubprojectCanvasTests.Run(Check);
 if (args.Contains("--root-canvases-only")) { RootCanvasTests.Run(Check); Console.WriteLine($"PASS {checks} root canvas checks"); return; }

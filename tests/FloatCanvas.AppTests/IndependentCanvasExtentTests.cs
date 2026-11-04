@@ -44,7 +44,8 @@ internal static class IndependentCanvasExtentTests
         {
             var scene = new GroupCanvasScene();
             var view = scene.Capture(session, null, GroupCanvasMode.Temporary, default, session.Assets);
-            editor.SetCanvasView(CanvasMapping.CreateView(view.Document, view.EditingPlacement!.Value, view.EditingRootCanvas),
+            editor.SetCanvasView(view.EditingPlacement is { } placement ? CanvasMapping.CreateView(view.Document, placement, view.EditingRootCanvas) :
+                    CanvasMapping.CreateViewing(view.Document, CanvasViewTransform.Identity, view.EditingRootCanvas),
                 view.Origin, view.Epoch, view.EditingPlacement, view.Document, view.EditingRootCanvas, independent: true);
             editor.ResumePresentedPicking();
             using var worker = new CanvasPreviewRenderer();

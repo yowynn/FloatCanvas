@@ -86,6 +86,7 @@ internal static class PointerPresentationBehaviorTests
         Set(host, "<IsVisible>k__BackingField", true);
         Set(host, "_monitors", (IReadOnlyList<MonitorInfo>)[new("synthetic", new(0, 0, 400, 300), new(0, 0, 400, 300), 96, 96, true)]);
         Set(desktop, "_editor", editor); Set(desktop, "_host", host);
+        Set(desktop, "_hasEditableCanvasOccurrence", true);
         Set(desktop, "_canvasCalibration", new CanvasCalibrationController());
         Set(desktop, "_canvasGridCalibrationPoints", new List<PointD>());
         Set(desktop, "_canvasPlacementWindows", Array.Empty<System.Windows.Window>());
