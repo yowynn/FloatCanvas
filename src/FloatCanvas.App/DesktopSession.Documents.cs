@@ -770,8 +770,7 @@ internal sealed partial class DesktopSession
             if (value is byte[] bytes) { ImageImportBudget.RequireBytes(bytes.LongLength); return bytes; }
             if (value is Stream stream) return ImageImportBudget.Read(stream);
         }
-        BitmapSource? bitmap = data.GetData(Wpf.DataFormats.Bitmap, autoConvert: true) as BitmapSource;
-        if (bitmap is null && Wpf.Clipboard.ContainsImage()) bitmap = Wpf.Clipboard.GetImage();
+        BitmapSource? bitmap = ReadClipboardBitmap(data);
         if (bitmap is null) return null;
         ImageDecodeBudget.ValidateDimensions(bitmap.PixelWidth, bitmap.PixelHeight);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));

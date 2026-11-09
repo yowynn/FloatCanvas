@@ -298,7 +298,8 @@ internal static class Program
             if (args.Contains("--focus-session-only")) { FocusSessionRoutingFixture.Run(Assert); return 0; }
             if (args.Contains("--capture-selection-only")) { CaptureSelectionTests.Run(Assert); return 0; }
             if (args.Contains("--image-tools-only")) { ImageToolEligibilityTests.Run(Assert); ImageToolTargetTests.Run(Assert); WorkspaceToolControllerTests.Run(Assert); ImageEffectsAndCrop(); DocumentRegions(); return 0; }
-            if (args.Contains("--image-import-only")) { EncodedPngImportTests.Run(Assert); ImageDropTests.Run(Assert); return 0; }
+            if (args.Contains("--clipboard-bitmap-only")) { ClipboardBitmapImportTests.Run(Assert, args.SkipWhile(a => a != "--clipboard-bitmap-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--image-import-only")) { ClipboardBitmapImportTests.Run(Assert); EncodedPngImportTests.Run(Assert); ImageDropTests.Run(Assert); return 0; }
             if (args.Contains("--image-drop-reader-only")) { ImageDropDataReaderTests.Run(Assert); return 0; }
             if (args.Contains("--gpu-settings-only")) { GpuSettingsTests.Run(Assert); LocalizationTests.Run(Assert); return 0; }
             if (args.Contains("--localization-only")) { LocalizationTests.Run(Assert); return 0; }
@@ -539,6 +540,7 @@ internal static class Program
             ImageDropDataReaderTests.Run((name, condition) => Assert(name, condition));
             AnimatedImageIntegrationTests.Run(Assert);
             ObjectClipboardTests.Run(Assert);
+            ClipboardBitmapImportTests.Run(Assert);
             LauncherGestureStateTests.Run(Assert);
             ToolbarInteractionTests.Run(Assert);
             ToolbarOpacitySliderTests.Run(Assert);

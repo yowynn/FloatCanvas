@@ -13,6 +13,9 @@ Each version lists changes by user impact and importance, combining development 
 - **画布编辑稳定性。** 修复副屏文字输入与候选定位、导航卡顿与闪烁、空格焦点冲突和靠边拖动回弹、显示器变化误退编辑，以及空白画布的新建误报；多屏取景参考主屏，穿透展示完整根工程，独立视图首次保留源构图。
 - **Canvas editing reliability.** Fix secondary-screen text input and candidate positioning, navigation stalls and flicker, Space focus conflicts, drag rollback during edge panning, unintended editing exits on display changes and false unsaved prompts on empty canvases. Multi-monitor framing uses the primary screen, pass-through shows the complete root project, and independent views first retain the authored composition.
 
+- **图片粘贴。** 修复从 Photoshop 等应用复制图片后，粘贴到画布只出现选框、图片不可见的问题。
+- **Image pasting.** Fix images copied from applications such as Photoshop appearing invisible with only a selection box when pasted onto the canvas.
+
 - **前景、主画布与背景。** 可选择三个根画布创作；前景与背景固定在屏幕平面，主画布独立透视，按固定顺序合成。旧工程保留原画面并可升级保存为新格式。
 - **Foreground, main and background canvases.** Draw on three selectable roots. Foreground and background stay in screen space while the main canvas uses its own perspective, with fixed composition order. Older projects preserve their appearance and can be saved in the new format.
 
