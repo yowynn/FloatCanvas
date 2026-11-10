@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -38,7 +38,7 @@ internal static class CanvasContentImportTests
 
         var old = new CanvasElement { Kind = ElementKind.Rectangle, Name = "old member", Width = 20, Height = 20 };
         var owner = new EditorSession(new() { Elements = [old], Viewport = new(0, 0, 1000, 800), LayerOpacity = .8, NextNumber = 9 });
-        Guid group = owner.CreateEmptyGroup("host group"); owner.MoveNodes([old.Id], group);
+        owner.SetSelection([old.Id]); Guid group = owner.GroupSelection("host group")!.Value;
         owner.Document.Groups.Single().Transform = Affine2D.Translation(45, 30).Compose(Affine2D.Rotation(17)); owner.SetEditScope(group);
         string before = JsonSerializer.Serialize(owner.Document); int beforeUndo = owner.UndoCount, beforeAssets = owner.Assets.Count; long beforeRevision = owner.SceneRevision;
         var prepared = await CanvasContentImport.PrepareAsync(owner, [projectPath, imagePath, prefabPath], [AssetImport.Normalize(png)],
@@ -97,9 +97,15 @@ internal static class CanvasContentImportTests
         using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
         check("cancelled preparation cannot publish author state", await Fails(() => CanvasContentImport.PrepareAsync(owner, [prefabPath], [], owner.Document.Viewport, null, 1, savedPath, cancelled.Token)) && JsonSerializer.Serialize(owner.Document) == unchanged);
 
+        string emptyProject = Path.Combine(root, "empty.floatcanvas"); var emptyDocument = new SceneDocument { Viewport = new(0, 0, 720, 480) };
+        await projects.SaveAsync(emptyProject, emptyDocument, new());
+        var emptyLink = await new PrefabLinkResolver().PrepareAsync(owner, emptyProject, null);
+        var emptyDefinition = emptyLink.Package.Definitions.Single();
+        check("empty linked projects retain their resource and preview without an ordinary empty wrapper", emptyDefinition.Graph.Groups.Count == 0 && emptyDefinition.Graph.Elements.Count == 0 && emptyDefinition.PreviewCanvas!.Viewport == emptyDocument.Viewport);
+        check("preparing an empty linked resource leaves its owner unchanged", JsonSerializer.Serialize(owner.Document) == unchanged && owner.Assets.Count == unchangedAssets);
         string legacy = Path.Combine(root, "legacy-v10.floatcanvas"); await Legacy(legacy); string legacyHash = Hash(legacy); Exception? legacyError = null;
         try { _ = await CanvasContentImport.PrepareAsync(owner, [legacy], [], owner.Document.Viewport, null, 1, null, CancellationToken.None); } catch (Exception error) { legacyError = error; }
-        check("legacy files without persistent identity request an explicit save before linking", legacyError?.Message == FloatCanvas.Localization.AppText.Get("Prefab.LinkNeedsIdentity"));
+        check("legacy files without persistent identity request an explicit save before linking (" + legacyError?.GetType().Name + ": " + legacyError?.Message + ")", legacyError?.Message == FloatCanvas.Localization.AppText.Get("Prefab.LinkNeedsIdentity"));
         check("rejected legacy linking never migrates or rewrites the source file", Hash(legacy) == legacyHash && JsonSerializer.Serialize(owner.Document) == unchanged && owner.Assets.Count == unchangedAssets);
         Console.WriteLine("CANVAS_CONTENT_IMPORT_EVIDENCE " + root);
     }

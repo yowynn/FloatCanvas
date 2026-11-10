@@ -157,7 +157,7 @@ internal sealed partial class DesktopSession
     {
         UpdateWindowSourceRuntime(); var leaves = SelectedWindowSources(ids);
         bool writable = !_disposed && !DocumentOperationBusy && !Active.IsTransactionActive && Active.CanInsertInEditScope;
-        var graph = new SceneGraph(Active.Document);
+        var graph = SceneGraph.Read(Active.Document);
         var real = ids.Select(graph.FindElement).Where(element => element?.WindowSource is not null).Cast<CanvasElement>().ToArray();
         bool editable = writable && ids.Count == 1 && real is [var single] && !graph.IsLocked(single.Id);
         var states = leaves.Select(leaf =>

@@ -18,7 +18,7 @@ public sealed partial class EditorSession
         var graph = new SceneGraph(Document);
         var selected = graph.NormalizeSelection(Selection).Where(id => !graph.IsLocked(id)).ToArray();
         if (selected.Any(id => !InActiveRoot(graph, id))) throw new InvalidOperationException("A group cannot span root canvases.");
-        if (selected.Length == 0 || selected.Length == 1 && graph.FindGroup(selected[0]) is null && graph.FindInstance(selected[0]) is null) return null;
+        if (selected.Length == 0) return null;
         EnsureWritableParent(EditScopeId);
         name = NormalizeInsertionName(name) ?? NextGroupName();
         Guid id = Guid.NewGuid();

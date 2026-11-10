@@ -91,6 +91,7 @@ internal static class CanvasSettingsTargetTests
         check("safety relocation converts independent display coordinates back to local authored coordinates", session.Document.Elements.Single().Transform == expected && session.Document.Elements.Single().GroupId == groupId && session.Document.Groups[0].Transform == Affine2D.Translation(300, 200));
         display = new CanvasSettingsTarget(session, true).CreateDisplayDocument(); session.BeginTransaction("delete");
         new CanvasSettingsTarget(session, true).ResolveGeometry(display, [leaf.Id], CanvasSafetyAction.Delete); session.Commit();
-        check("independent safety deletion removes only affected children and retains the containing group", session.Document.Elements.Count == 0 && session.Document.Groups.Single().Id == groupId);
+        check("independent safety deletion dissolves its now-empty group and normalizes the scope", session.Document.Elements.Count == 0 && session.Document.Groups.Count == 0 && session.EditScopeId is null);
+        check("one safety-deletion undo restores the containing group and artwork", session.Undo() && session.Document.Elements.Single().GroupId == groupId && session.Document.Groups.Single().Id == groupId);
     }
 }

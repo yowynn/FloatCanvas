@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -91,12 +91,77 @@ internal static class LinkedContentDesktopTests
         history = owner.UndoCount;
         check("completing an offline cache returns without publishing a new accepted definition", Await((Task<bool>)Call("CompleteCurrentPrefabAsync")!) && ReferenceEquals(editor.Session, owner) &&
             owner.UndoCount == history && JsonSerializer.Serialize(owner.Document) == offlineOwner && !File.Exists(pathA));
+        File.WriteAllText(pathA, "corrupted project fixture");
+        Await((Task)Call("EditPrefabInstanceAsync", offlineInstance)!);
+        var corruptContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+        check("corrupted source opens its valid accepted snapshot with a format reason", corruptContext.IsOfflineSnapshot && corruptContext.IsReadOnlyView && corruptContext.SnapshotReason == "LayerExperience.SnapshotFormat" && JsonSerializer.Serialize(owner.Document) == offlineOwner);
+        Await((Task<bool>)Call("CompleteCurrentPrefabAsync")!);
+        Await(projects.SaveAsync(pathA, source, owner.Assets));
+        using (var archive = System.IO.Compression.ZipFile.Open(pathA, System.IO.Compression.ZipArchiveMode.Update))
+        {
+            var manifest = archive.GetEntry("manifest.json")!;
+            System.Text.Json.Nodes.JsonObject json;
+            using (var input = manifest.Open()) json = System.Text.Json.Nodes.JsonNode.Parse(input)!.AsObject();
+            json["version"] = 99999; manifest.Delete();
+            using var outputManifest = archive.CreateEntry("manifest.json").Open();
+            JsonSerializer.Serialize(outputManifest, json);
+        }
+        Await((Task)Call("EditPrefabInstanceAsync", offlineInstance)!);
+        corruptContext = Field<PrefabEditContext>(desktop,"_prefabEditContext");
+        check("unsupported source version uses its saved snapshot with a format reason", corruptContext.IsOfflineSnapshot && corruptContext.SnapshotReason == "LayerExperience.SnapshotFormat" && JsonSerializer.Serialize(owner.Document) == offlineOwner);
+        Await(projects.SaveAsync(pathA, source, owner.Assets));
+        Await((Task)Call("EditPrefabSourceCoreAsync", definitionA, offlineInstance, corruptContext)!);
+        var retriedContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+        check("retry reads the recovered source without publishing the saved snapshot", retriedContext.ContentOrigin == PrefabContentOrigin.ExternalSource && retriedContext.Parent == corruptContext.Parent && JsonSerializer.Serialize(owner.Document) == offlineOwner);
+        Await((Task<bool>)Call("CompleteCurrentPrefabAsync")!);
+        var resolver = Field<PrefabLinkResolver>(desktop, "_prefabLinkResolver");
+        foreach (var failure in new Exception[] { new UnauthorizedAccessException("access fixture"), new IOException("read fixture") })
+        {
+            resolver.BeforeReadAsync = _ => Task.FromException(failure);
+            try
+            {
+                Await((Task)Call("EditPrefabInstanceAsync", offlineInstance)!);
+                var failedContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
+                check(failure.GetType().Name + " uses read-only snapshot without writing owner", failedContext.IsOfflineSnapshot && failedContext.SnapshotReason == "LayerExperience.SnapshotRead" && JsonSerializer.Serialize(owner.Document) == offlineOwner);
+                Await((Task<bool>)Call("CompleteCurrentPrefabAsync")!);
+            }
+            finally { resolver.BeforeReadAsync = null; }
+        }
+        foreach (var failure in new Exception[] { new OperationCanceledException("cancel fixture"), new InvalidOperationException("identity fixture") })
+        {
+            resolver.BeforeReadAsync = _ => Task.FromException(failure); bool rejected = false;
+            try { Await((Task)Call("EditPrefabInstanceAsync", offlineInstance)!); } catch (Exception) { rejected = true; }
+            finally { resolver.BeforeReadAsync = null; }
+            check(failure.GetType().Name + " does not silently open a snapshot", rejected && ReferenceEquals(editor.Session, owner) && JsonSerializer.Serialize(owner.Document) == offlineOwner);
+        }
+        File.Delete(pathA);
         Await((Task)Call("EditPrefabInstanceAsync", offlineInstance)!); offlineContext = Field<PrefabEditContext>(desktop, "_prefabEditContext");
         history = owner.UndoCount;
         Await((Task)Call("DetachEditingGroupAsync", offlineContext)!);
         check("offline internal browsing can detach its accepted contents without recreating the source file", ReferenceEquals(editor.Session, owner) &&
             new SceneGraph(owner.Document).FindGroup(offlineInstance) is not null && owner.EditScopeId == offlineInstance && owner.UndoCount == history + 1 && !File.Exists(pathA) &&
             owner.Document.Definitions.Single(item => item.Id == definitionA).Revision == acceptedRevision && owner.Document.Instances.Any(instance => instance.DefinitionId == definitionA));
+        owner.SetEditScope(null);
+        var nestedDefinition = new PrefabDefinition { Name = "Nested locked browser", Graph = new() { Elements = [new() { Kind = ElementKind.Rectangle, Width = 10, Height = 10 }] } };
+        var nestedInstance = new PrefabInstance { DefinitionId = nestedDefinition.Id };
+        var lockedDefinition = new PrefabDefinition { Name = "Locked browser", Graph = new() { Instances = [nestedInstance], RootOrder = [nestedInstance.Id] } };
+        owner.Document.Definitions.Add(nestedDefinition); owner.Document.Definitions.Add(lockedDefinition);
+        var lockedInstance = new SceneGraph(owner.Document).InsertInstance(new() { DefinitionId = lockedDefinition.Id }); owner.SetNodeLocked(lockedInstance.Id,true);
+        string beforeLockedBrowse = JsonSerializer.Serialize(owner.Document); history = owner.UndoCount;
+        Await((Task)Call("EditPrefabInstanceAsync", lockedInstance.Id)!);
+        var lockedContext = Field<PrefabEditContext>(desktop,"_prefabEditContext");
+        check("locked shared instance opens a read-only browsing session", lockedContext.LockedBrowsing && editor.Session.IsReadOnly);
+        var nestedId = editor.Session.Document.Instances.Single().Id;
+        Await((Task)Call("EditPrefabInstanceAsync", nestedId)!);
+        check("nested shared browsing inherits locked read-only protection", Field<PrefabEditContext>(desktop,"_prefabEditContext").LockedBrowsing && editor.Session.IsReadOnly);
+        Await((Task<bool>)Call("CompleteCurrentPrefabAsync")!); Await((Task<bool>)Call("CompleteCurrentPrefabAsync")!);
+        check("leaving locked shared browsing publishes no owner change or history", ReferenceEquals(editor.Session,owner) && owner.UndoCount == history && JsonSerializer.Serialize(owner.Document) == beforeLockedBrowse);
+        var lockedScopeGroup = owner.CreatePopulatedGroup("Locked resource browser"); owner.SetNodeLocked(lockedScopeGroup,true); owner.SetEditScope(lockedScopeGroup);
+        history = owner.UndoCount;
+        Await((Task)Call("EditPrefabDefinitionAsync", nestedDefinition.Id)!);
+        check("resource editor inside a locked ordinary scope also opens read-only", editor.Session.IsReadOnly && Field<PrefabEditContext>(desktop,"_prefabEditContext").LockedBrowsing);
+        Await((Task<bool>)Call("CompleteCurrentPrefabAsync")!);
+        check("resource browsing restores the locked ordinary scope without publishing", ReferenceEquals(editor.Session,owner) && owner.EditScopeId == lockedScopeGroup && owner.UndoCount == history);
         check("isolated resource lifecycle never exposes overlay HWNDs or editing input", host.Diagnostics.All(pair => pair.Bounds == bounds) && !host.HasEditingInput);
         Console.WriteLine("LINKED_CONTENT_DESKTOP_EVIDENCE " + root);
 

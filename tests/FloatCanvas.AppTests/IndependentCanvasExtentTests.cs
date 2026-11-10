@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using FloatCanvas.App;
 using FloatCanvas.Core;
 using FloatCanvas.Windows;
@@ -74,7 +74,8 @@ internal static class IndependentCanvasExtentTests
         {
             var group = new CanvasGroup { OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [], PreviewCanvas = new() { Viewport = new(0, 0, 640, 480), Origin = new(12, 34) } };
             group.PreviewCanvas.Canvas.Projection.Enabled = perspective;
-            var session = new EditorSession(new() { Viewport = Screen, Groups = [group], RootOrder = [group.Id] });
+            var content = new CanvasElement { Kind = ElementKind.Rectangle, Width = 8, Height = 8, GroupId = group.Id }; group.ChildOrder!.Add(content.Id);
+            var session = new EditorSession(new() { Viewport = Screen, Elements = [content], Groups = [group], RootOrder = [group.Id] });
             session.SetEditScope(group.Id);
             var original = new SceneDocument(); group.PreviewCanvas.ApplyTo(original);
             var reference = CanvasMapping.Create(original);

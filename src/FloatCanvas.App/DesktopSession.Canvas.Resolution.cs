@@ -25,7 +25,8 @@ internal sealed partial class DesktopSession
 
     private async Task ConvertCurrentCanvasResolutionAsync()
     {
-        if (DocumentOperationBusy || Active.IsReadOnly || !ReferenceEquals(Active, _live) || HasPrefabEditContext || Active.EditScopeId is not null || Active.IsTransactionActive) return;
+        if (DocumentOperationBusy || Active.IsReadOnly || !Active.CanInsertInEditScope || !ReferenceEquals(Active, _live) || HasPrefabEditContext ||
+            Active.EditScopeId is not null && _groupCanvasMode != GroupCanvasMode.RootProject || Active.IsTransactionActive) return;
         if (!CanvasResolutionConversion.NeedsConversion(Active.Document, ConversionTargetScreen)) return;
         var session = Active; long version = session.ContentVersion;
         if (ChooseCanvasResolution(session.Document) != CanvasResolutionChoice.Convert) return;

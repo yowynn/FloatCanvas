@@ -136,7 +136,7 @@ internal sealed partial class DesktopSession
         {
             Polygon(corners);
             foreach (var point in _editor.SelectionScreenEndpoints) Region(point, point);
-            if (_editor.SelectionScreenRotationAnchor is { } anchor && _editor.SelectionScreenRotationHandle is { } handle)
+            if (EditorController.RotationAnchor(corners) is { } anchor && EditorController.RotationHandle(corners) is { } handle)
                 Region(anchor, handle);
         }
         return regions;
@@ -163,6 +163,7 @@ internal sealed partial class DesktopSession
 
     private void PresentCanvas()
     {
+        using var sceneRead = SceneGraph.BeginReadScope();
         _presentOperation = null;
         if (_disposed) return;
         var context = CurrentPreviewContext();
@@ -260,6 +261,7 @@ internal sealed partial class DesktopSession
 
     private void CompleteCanvasSubmission(OverlayFrameTiming timing)
     {
+        using var sceneRead = SceneGraph.BeginReadScope();
         var frame = _submittingCanvasFrame;
         var context = _submittingCanvasContext;
         _submittingCanvasFrame = null; _submittingCanvasContext = null;

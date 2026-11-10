@@ -1,0 +1,198 @@
+{
+  "Layers.Statistics": {
+    "zh": "总计 {0:N0} · 本级 {1:N0} · 已选 {2:N0}",
+    "en": "Total {0:N0} · This level {1:N0} · Selected {2:N0}"
+  },
+  "Layers.StatisticsHint": {
+    "zh": "总计：当前编辑文档的三个画布中的图形、普通组和共享实例（实例计为一层）。本级：当前列表中的直接子层。已选：当前选中的图层。",
+    "en": "Total: shapes, groups and shared instances across the editing document's three canvases (each instance counts once). This level: direct children in this list. Selected: current layer selection."
+  },
+  "ScopeNavigation.Current": {
+    "zh": "当前位置",
+    "en": "Current location"
+  },
+  "ScopeNavigation.History": {
+    "zh": "已展开路径",
+    "en": "Explored path"
+  },
+  "ScopeNavigation.Ancestor": {
+    "zh": "父级路径",
+    "en": "Ancestor"
+  },
+  "ScopeNavigation.SwitchTo": {
+    "zh": "切换为{0}",
+    "en": "Switch to {0}"
+  },
+  "ScopeNavigation.CurrentMode": {
+    "zh": "当前：{0}",
+    "en": "Current: {0}"
+  },
+  "Layers.EmptyScope": {
+    "zh": "{0}暂无图层。使用上方路径或画布菜单切换范围。",
+    "en": "No layers in {0}. Use the path or canvas menu above to navigate."
+  },
+  "Layers.Processed": {
+    "zh": "已处理 {0} 项，跳过 {1} 项。",
+    "en": "Processed {0}; skipped {1}."
+  },
+  "Layers.HideSelected": {
+    "zh": "隐藏所选",
+    "en": "Hide selected"
+  },
+  "Layers.ShowSelected": {
+    "zh": "显示所选",
+    "en": "Show selected"
+  },
+  "Layers.LockSelected": {
+    "zh": "锁定所选",
+    "en": "Lock selected"
+  },
+  "Layers.UnlockSelected": {
+    "zh": "解锁所选",
+    "en": "Unlock selected"
+  },
+  "Layers.MoveTo": {
+    "zh": "移动到…",
+    "en": "Move to…"
+  },
+  "GroupCanvas.SwitchIndependent": {
+    "zh": "独立画布 · 点击切换工程预览\n仅显示当前编辑范围",
+    "en": "Independent canvas · Click for project preview\nShow only the current editing scope"
+  },
+  "GroupCanvas.SwitchProject": {
+    "zh": "工程预览 · 点击切换独立画布\n显示完整工程，仅编辑当前范围",
+    "en": "Project preview · Click for independent canvas\nShow the full project; edit only the current scope"
+  },
+  "GroupCanvas.LinkedNotice": {
+    "zh": "只读浏览。转为内嵌后保留工程内共享关系；解除后成为普通组。",
+    "en": "Read-only view. Embed to retain sharing within this project; detach to make an ordinary group."
+  },
+  "Layers.SearchTarget": {
+    "zh": "搜索目标名称或路径",
+    "en": "Search destination name or path"
+  },
+  "Layers.CurrentTarget": {
+    "zh": "已位于此层级",
+    "en": "Already in this level"
+  },
+  "Layers.InvalidTarget": {
+    "zh": "目标已锁定，或会形成循环层级。",
+    "en": "The destination is locked or would create a cycle."
+  },
+  "Layers.CrossCanvasNotice": {
+    "zh": "保留逻辑坐标；跨透视平面移动可能改变屏幕位置与外观。",
+    "en": "Logical coordinates are retained; moving between projection planes may change screen position and appearance."
+  },
+  "Layers.StaleMove": {
+    "zh": "内容或选择已改变，请关闭并重新打开移动窗口。",
+    "en": "Content or selection changed. Close and reopen Move to."
+  },
+  "Layers.Moved": {
+    "zh": "已移动 {0} 项至 {1}，跳过 {2} 项。",
+    "en": "Moved {0} to {1}; skipped {2}."
+  },
+  "Layers.ViewTarget": {
+    "zh": "查看目标",
+    "en": "View destination"
+  },
+  "EditingScope.IndependentSettings": {
+    "zh": "{0} · 独立预览设置",
+    "en": "{0} · Independent preview settings"
+  },
+  "EditingScope.MainSettings": {
+    "zh": "主画布设置",
+    "en": "Main canvas settings"
+  },
+  "EditingScope.ReadOnly": {
+    "zh": "只读",
+    "en": "Read-only"
+  },
+  "EditingScope.Shared": {
+    "zh": "共享编辑",
+    "en": "Shared editing"
+  },
+  "Layers.FlagProcessed": {
+    "zh": "已修改 {0} 项，跳过 {1} 项（祖先锁定或已是目标状态）。",
+    "en": "Changed {0}; skipped {1} (ancestor locked or already in this state)."
+  },
+  "EditingScope.DocumentSettingsHint": {
+    "zh": "背景、网格与透视设置作用于文档主画布；前景和背景画布使用屏幕平面。",
+    "en": "Background, grid and perspective settings affect the document main canvas; foreground and background canvases use the screen plane."
+  },
+  "Canvas.ClickAgainReset": {
+    "zh": "再次点击重置视图",
+    "en": "Click again to reset the view"
+  },
+  "GroupCanvas.LinkedStatus": {
+    "zh": "外部链接 · 只读",
+    "en": "External link · Read-only"
+  },
+  "GroupCanvas.SnapshotStatus": {
+    "zh": "源文件不可用 · 使用保存快照",
+    "en": "Source unavailable · Saved snapshot"
+  },
+  "GroupCanvas.SwitchUnavailable": {
+    "zh": "当前范围不可切换显示模式；请先解除锁定或返回可用范围。",
+    "en": "This scope cannot switch display mode. Unlock it or return to an available scope."
+  },
+  "GroupCanvas.EmbedHint": {
+    "zh": "转为内嵌 · 保留工程内共享关系",
+    "en": "Embed · Retain sharing within this project"
+  },
+  "GroupCanvas.DetachHint": {
+    "zh": "解除为普通组 · 此实例不再共享内容",
+    "en": "Detach as group · This instance stops sharing content"
+  },
+  "LayerExperience.RefreshTargets": {
+    "zh": "刷新目标",
+    "en": "Refresh targets"
+  },
+  "LayerExperience.LockedBrowse": {
+    "zh": "锁定 · 只读浏览",
+    "en": "Locked · read-only browsing"
+  },
+  "LayerExperience.NoOccurrence": {
+    "zh": "当前没有可用的显示实例，请切换独立画布以编辑。",
+    "en": "No display instance is available. Switch to independent canvas to edit."
+  },
+  "LayerExperience.SnapshotRead": {
+    "zh": "源文件无法读取 · 使用保存快照",
+    "en": "Source unreadable · using saved snapshot"
+  },
+  "LayerExperience.SnapshotFormat": {
+    "zh": "源文件格式不可用 · 使用保存快照",
+    "en": "Source format unavailable · using saved snapshot"
+  },
+  "LayerExperience.RetrySource": {
+    "zh": "重试源文件",
+    "en": "Retry source"
+  },
+  "LayerExperience.HiddenAncestor": {
+    "zh": "工程中被“{0}”隐藏",
+    "en": "Hidden in the project by “{0}”"
+  },
+  "LayerExperience.HiddenIndependent": {
+    "zh": "独立预览可见；工程中被“{0}”隐藏",
+    "en": "Visible independently; hidden in the project by “{0}”"
+  },
+  "LayerExperience.FlagResult": {
+    "zh": "已修改 {0} 项；{1} 项无需修改；{2} 项因权限跳过。",
+    "en": "Changed {0}; {1} already matched; {2} skipped due to permissions."
+  },
+  "LayerExperience.Unplaced": {
+    "zh": "此共享内容尚未放置到工程，请切换独立画布以编辑。",
+    "en": "This shared content has not been placed in the project. Switch to independent canvas to edit."
+  },
+  "LayerExperience.CyclicTarget": {
+    "zh": "不能移入自身或所选对象的子级。",
+    "en": "Cannot move into the selection or its descendants."
+  },
+  "LayerExperience.LockedTarget": {
+    "zh": "目标或其上级已锁定。",
+    "en": "The destination or its ancestor is locked."
+  },
+  "LayerExperience.AncestorLockedBrowse": {
+    "zh": "上级锁定 · 只读浏览",
+    "en": "Ancestor locked · read-only browsing"
+  }
+}

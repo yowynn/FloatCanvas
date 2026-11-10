@@ -75,7 +75,8 @@ internal sealed partial class DesktopSession
             void ColorChange(Action<CanvasSettings> update)
             {
                 if (!IsCanvasWindowTargetCurrent) return;
-                if (!_canvasColorEdit.Preview(update)) ChangeCanvas(update);
+                if (_canvasColorEdit.IsActive) { _canvasColorEdit.Preview(update); return; }
+                ChangeCanvas(update);
             }
             window.BackgroundChanged += color => ColorChange(c => c.BackgroundColor = color);
             window.EyedropperRequested += BeginEyedropper;

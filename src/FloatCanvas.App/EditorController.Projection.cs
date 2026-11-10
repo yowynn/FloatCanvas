@@ -10,8 +10,12 @@ internal sealed partial class EditorController
     {
         get
         {
-            if (Session.SelectionBounds(editableOnly: true) is not { } bounds) return [];
-            var selected = SelectedEditingWorldElements(editableOnly: true).Where(e => e.Visible).ToArray();
+            var elements = SelectedEditingWorldElements(editableOnly: true).ToArray();
+            if (elements.Length == 0) return [];
+            var bounds = elements.Select(element => element.IsBillboard
+                ? BillboardGeometry.ElementToTarget(element, Projective2D.Identity).TransformBounds(ElementGeometry.StrokedLocalBounds(element))
+                : ElementGeometry.Bounds(element)).Aggregate(RectD.Union);
+            var selected = elements.Where(e => e.Visible).ToArray();
             var mapping = CurrentCanvasMapping;
             if (selected is [var billboard] && billboard.IsBillboard)
             {
@@ -35,23 +39,25 @@ internal sealed partial class EditorController
         }
     }
 
-    internal PointD? SelectionScreenRotationAnchor => SelectionScreenCorners is { Count: 4 } points
+    internal PointD? SelectionScreenRotationAnchor => RotationAnchor(SelectionScreenCorners);
+    internal static PointD? RotationAnchor(IReadOnlyList<PointD> points) => points is { Count: 4 }
         ? (points[0] + points[1]) * .5 : null;
 
     internal PointD? SelectionScreenRotationHandle
     {
-        get
-        {
-            if (SelectionScreenCorners is not { Count: 4 } points) return null;
-            var anchor = (points[0] + points[1]) * .5;
-            var edge = points[1] - points[0];
-            double length = Math.Sqrt(edge.X * edge.X + edge.Y * edge.Y);
-            if (length < 1e-9) return null;
-            var normal = new PointD(edge.Y / length, -edge.X / length);
-            var center = (points[0] + points[1] + points[2] + points[3]) * .25;
-            if ((anchor.X - center.X) * normal.X + (anchor.Y - center.Y) * normal.Y < 0) normal *= -1;
-            return anchor + normal * 28;
-        }
+        get => RotationHandle(SelectionScreenCorners);
+    }
+    internal static PointD? RotationHandle(IReadOnlyList<PointD> points)
+    {
+        if (points.Count != 4) return null;
+        var anchor = (points[0] + points[1]) * .5;
+        var edge = points[1] - points[0];
+        double length = Math.Sqrt(edge.X * edge.X + edge.Y * edge.Y);
+        if (length < 1e-9) return null;
+        var normal = new PointD(edge.Y / length, -edge.X / length);
+        var center = (points[0] + points[1] + points[2] + points[3]) * .25;
+        if ((anchor.X - center.X) * normal.X + (anchor.Y - center.Y) * normal.Y < 0) normal *= -1;
+        return anchor + normal * 28;
     }
 
     internal IReadOnlyList<PointD> SelectionScreenEndpoints

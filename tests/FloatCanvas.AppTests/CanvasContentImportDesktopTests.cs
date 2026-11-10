@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -38,7 +38,7 @@ internal static class CanvasContentImportDesktopTests
         var source = new SceneDocument { Elements = [new() { Kind = ElementKind.Rectangle, Width = 70, Height = 40 }], Viewport = new(0, 0, 320, 180) };
         Await(store.SaveAsync(projectPath, source, assets));
 
-        Reset(); Guid scope = owner.CreateEmptyGroup("Nested target"); owner.SetEditScope(scope); Pump(); Call("SynchronizeFlatGridOrigin");
+        Reset(); Guid scope = owner.CreatePopulatedGroup("Nested target"); owner.SetEditScope(scope); Pump(); Call("SynchronizeFlatGridOrigin");
         int undo = owner.UndoCount; Guid resource = owner.Document.ResourceId;
         check("project placement starts in ordinary pass-through mode without editing input", !host.IsEditing && !host.HasEditingInput);
         Await(Import([projectPath]));
@@ -50,7 +50,7 @@ internal static class CanvasContentImportDesktopTests
         check("actual project placement is reversible without leaving the nested scope", owner.Undo() && owner.Document.Instances.Count == 0 && owner.EditScopeId == scope && owner.Redo() && owner.Document.Instances.Count == 1);
         var paths = new[] { projectPath, imagePath }; undo = owner.UndoCount;
         Await(Import(paths));
-        check("actual toolbar command accepts mixed project image selections as one edit", owner.UndoCount == undo + 1 && owner.Selection.Count == 2 && owner.Document.Instances.Count == 2 && owner.Document.Elements.Count == 1);
+        check("actual toolbar command accepts mixed project image selections as one edit", owner.UndoCount == undo + 1 && owner.Selection.Count == 2 && owner.Document.Instances.Count == 2 && owner.Document.Elements.Count == 2);
         check("same linked file is shared by actual repeated toolbar placement", owner.Document.Definitions.Count == 1 && owner.Document.Instances.Select(instance => instance.DefinitionId).Distinct().Count() == 1);
         var language = FloatCanvas.Localization.AppText.Preference;
         foreach (string locale in new[] { "zh-CN", "en" })
@@ -62,7 +62,7 @@ internal static class CanvasContentImportDesktopTests
         FloatCanvas.Localization.AppText.Initialize(language);
 
         Reset(); Pending("same-resource document replacement", () => owner.ReplaceDocument(owner.Document.Clone()), () => !owner.IsTransactionActive);
-        Reset(); scope = owner.CreateEmptyGroup("Scope"); owner.SetEditScope(scope); Pump(); Call("SynchronizeFlatGridOrigin");
+        Reset(); scope = owner.CreatePopulatedGroup("Scope"); owner.SetEditScope(scope); Pump(); Call("SynchronizeFlatGridOrigin");
         Pending("scope A B A", () => { owner.SetEditScope(null); owner.SetEditScope(scope); }, () => owner.EditScopeId == scope);
         Reset();
         Pending("mode A B A", () =>

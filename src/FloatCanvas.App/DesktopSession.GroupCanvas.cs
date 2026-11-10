@@ -6,6 +6,8 @@ namespace FloatCanvas.App;
 internal sealed partial class DesktopSession
 {
     private GroupCanvasMode _groupCanvasMode = GroupCanvasMode.RootProject;
+    private string MissingOccurrenceNotice => L.Get(_prefabEditContext is { } current && !current.Owner.Document.Instances.Any(i => i.DefinitionId == current.DefinitionId)
+        ? "LayerExperience.Unplaced" : "LayerExperience.NoOccurrence");
     private bool HasGroupCanvasContext => _prefabEditContext is not null || Active.EditScopeId is not null || _groupCanvasMode == GroupCanvasMode.Temporary;
 
     private void RefreshGroupCanvasContext()
@@ -13,7 +15,7 @@ internal sealed partial class DesktopSession
         if (_layers is null) return;
         var owner = Active; var document = owner.Document; var scope = owner.EditScopeId; var context = _prefabEditContext;
         long scopeVersion = owner.EditScopeVersion;
-        var graph = new SceneGraph(document);
+        var graph = SceneGraph.Read(document);
         Guid? node = scope;
         bool entered = scope is not null || context is not null;
         bool Current() => !DocumentOperationBusy && !owner.IsTransactionActive && ReferenceEquals(Active, owner) &&
@@ -34,8 +36,8 @@ internal sealed partial class DesktopSession
         {
             string name = string.IsNullOrWhiteSpace(group.Name) ? L.Get("Layers.UntitledGroup") : group.Name;
             _layers.SetGroupContext(new(name, GroupStorageKind.Ordinary, null, _groupCanvasMode, entered,
-                graph.IsLocked(groupId) ? null : View(GroupCanvasMode.Temporary), graph.IsLocked(groupId) ? null : View(GroupCanvasMode.RootProject),
-                () => { if (Current()) _ = RunCommand(() => ExportGroupAsync(owner, groupId)); }, IsReadOnly: owner.IsReadOnly));
+                View(GroupCanvasMode.Temporary), View(GroupCanvasMode.RootProject),
+                () => { if (Current()) _ = RunCommand(() => ExportGroupAsync(owner, groupId)); }, IsReadOnly: owner.IsReadOnly || graph.IsLocked(groupId), Notice: graph.IsLocked(groupId) ? L.Get(group.Locked ? "LayerExperience.LockedBrowse" : "LayerExperience.AncestorLockedBrowse") : null));
             return;
         }
         PrefabInstance? instance = node is { } instanceId ? graph.FindInstance(instanceId) : null;
@@ -55,7 +57,7 @@ internal sealed partial class DesktopSession
             if (Current()) _ = RunCommand(() => DetachEditingGroupAsync(context));
         } : null;
         _layers.SetGroupContext(new(displayName, external ? GroupStorageKind.ExternalFile : GroupStorageKind.Embedded, sourcePath,
-            _groupCanvasMode, entered, locked ? null : View(GroupCanvasMode.Temporary), locked ? null : View(GroupCanvasMode.RootProject),
+            _groupCanvasMode, entered, View(GroupCanvasMode.Temporary), View(GroupCanvasMode.RootProject),
             external ? null : () =>
             {
                 if (!Current()) return;
@@ -64,7 +66,10 @@ internal sealed partial class DesktopSession
             Embed: external && context is not null && !context.Owner.IsReadOnly ? () =>
             {
                 if (Current()) _ = RunCommand(() => EmbedEditingGroupAsync(context));
-            } : null));
+            } : null, IsOfflineSnapshot: context?.IsOfflineSnapshot == true,
+            Notice: context?.LockedBrowsing == true ? L.Get(context.InheritedLock ? "LayerExperience.AncestorLockedBrowse" : "LayerExperience.LockedBrowse") : context?.SnapshotReason is { } reason ? L.Get(reason) :
+                context is not null && _groupCanvasMode == GroupCanvasMode.RootProject && CurrentGroupCanvasView().EditingPlacement is null ? MissingOccurrenceNotice : null,
+            Retry: context?.IsOfflineSnapshot == true ? () => { if (Current()) _ = RunCommand(() => EditPrefabSourceCoreAsync(context.DefinitionId, context.EnteredInstanceId, context)); } : null, LockedBrowsing: context?.LockedBrowsing == true));
     }
 
     private async Task EmbedEditingGroupAsync(PrefabEditContext context)
@@ -107,7 +112,6 @@ internal sealed partial class DesktopSession
         if (enterNode is { } id)
         {
             var graph = new SceneGraph(owner.Document);
-            if (graph.IsLocked(id)) return;
             if (graph.FindGroup(id) is not null) owner.SetEditScope(id);
             else if (graph.FindInstance(id) is not null)
             {
@@ -142,7 +146,7 @@ internal sealed partial class DesktopSession
     private async Task DetachEditingGroupAsync(PrefabEditContext context)
     {
         if (!ReferenceEquals(_prefabEditContext, context) || context.EnteredInstanceId is not { } instanceId || DocumentOperationBusy || Active.IsTransactionActive) return;
-        if (context.IsOfflineSnapshot && context.Draft is null)
+        if (context.IsReadOnlyView && context.Draft is null)
         {
             var viewedSource = PrefabPreviewComposer.PrepareSource(context, context.Session.Document, _assets);
             var detached = context.Owner.PreparePrefabDetach(instanceId, viewedSource);

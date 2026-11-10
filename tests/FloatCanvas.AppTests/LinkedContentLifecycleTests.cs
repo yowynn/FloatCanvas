@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FloatCanvas.App;
@@ -59,9 +59,9 @@ internal static class LinkedContentLifecycleTests
         var projects = new ProjectStore(); var prefabs = new PrefabStore(); var assets = new AssetLibrary();
         byte[] png = Png(); string asset = assets.Add(png);
         var creator = new EditorSession(new() { Viewport = new(0, 0, 800, 600) }, assets);
-        Guid group = creator.CreateEmptyGroup("Lifecycle badge"); creator.SetEditScope(group);
-        creator.Add(Box(15, 20, 50)); creator.Add(new() { Kind = ElementKind.Image, AssetId = asset, Width = 24, Height = 18, Transform = Affine2D.Translation(80, 30) });
-        var inner = creator.CreateEmptyGroup("Inner"); creator.SetEditScope(inner); creator.Add(Box(40, 70, 20)); creator.SetEditScope(group);
+        creator.Add(Box(15, 20, 50)); Guid group = creator.GroupSelection("Lifecycle badge")!.Value; creator.SetEditScope(group);
+        creator.Add(new() { Kind = ElementKind.Image, AssetId = asset, Width = 24, Height = 18, Transform = Affine2D.Translation(80, 30) });
+        creator.Add(Box(40, 70, 20)); var inner = creator.GroupSelection("Inner")!.Value; creator.SetEditScope(group);
         string creatorBefore = JsonSerializer.Serialize(creator.Document); int creatorUndo = creator.UndoCount;
         string prefabPath = Path.Combine(root, "Lifecycle badge.floatprefab"); var package = creator.ExportGroupPrefab(group);
         await prefabs.SaveAsync(prefabPath, package, assets); string prefabHash = Hash(prefabPath);
@@ -70,7 +70,7 @@ internal static class LinkedContentLifecycleTests
 
         string imagePath = Path.Combine(root, "Lifecycle image.png"); await File.WriteAllBytesAsync(imagePath, png);
         string projectPath = Path.Combine(root, "Lifecycle canvas.floatcanvas"); await projects.SaveAsync(projectPath, creator.Document, assets); string projectHash = Hash(projectPath);
-        var owner = new EditorSession(new() { Viewport = new(0, 0, 1200, 850) }); Guid ownerScope = owner.CreateEmptyGroup("Import here"); owner.SetEditScope(ownerScope);
+        var owner = new EditorSession(new() { Viewport = new(0, 0, 1200, 850) }); Guid ownerScope = owner.CreatePopulatedGroup("Import here"); owner.SetEditScope(ownerScope);
         int history = owner.UndoCount; string before = JsonSerializer.Serialize(owner.Document);
         var mixed = await CanvasContentImport.PrepareAsync(owner, [imagePath, prefabPath, projectPath], [], owner.Document.Viewport, new(400, 300), .75, null, CancellationToken.None);
         check("ordinary exported prefab and project place atomically beside an image", mixed.TryCommit(owner) && mixed.ProjectCount == 2 && mixed.ImageCount == 1 &&

@@ -3,6 +3,9 @@ using System.Text.Json;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+SceneGraphReadTests.Run(Check);
+NonemptyGroupTests.Run(Check);
+if (args.Contains("--nonempty-groups-only")) { Console.WriteLine($"PASS {checks} nonempty group checks"); return; }
 if (args.Contains("--canvas-navigation-only")) { CanvasViewTransformTests.Run(Check); CanvasRebaseTests.Run(Check); CanvasViewApplicationTests.Run(Check); CanvasResolutionConversionTests.Run(Check); Console.WriteLine($"PASS {checks} canvas navigation checks"); return; }
 CanvasViewTransformTests.Run(Check);
 CanvasRebaseTests.Run(Check);

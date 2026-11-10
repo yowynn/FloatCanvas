@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -139,7 +139,7 @@ internal static class PresentationUiTests
         hold = Find<TextBox>(settings, "Presentation.KeyHold"); hold.Text = "1775";
         check("presentation controls cannot publish into a foreign transaction", session.IsTransactionActive && session.UndoCount == 0 && JsonSerializer.Serialize(session.Document) == unchanged);
         session.Cancel(); inspector.PrepareForShow();
-        var group = session.CreateEmptyGroup(); session.SetSelection([first.Id, second.Id]); inspector.PrepareForShow(); string scoped = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
+        var group = session.CreatePopulatedGroup(); session.SetSelection([first.Id, second.Id]); inspector.PrepareForShow(); string scoped = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
         session.EnterScope(group); session.LeaveScope(); session.SetSelection([first.Id, second.Id]);
         hold.Text = "1880";
         check("a stale hidden presentation form cannot publish after a scope round trip", session.UndoCount == undo && JsonSerializer.Serialize(session.Document) == scoped);

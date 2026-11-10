@@ -155,7 +155,7 @@ internal sealed partial class DesktopSession
         RefreshToolShortcutHints();
         _toolbarExpandedContent = Surface(content, ToolbarUpperRow.OuterCornerRadius, new Thickness(20, 2, 4, 2));
         _toolbarExpandedContent.Visibility = _settings.ToolbarExpanded ? Visibility.Visible : Visibility.Collapsed;
-        _toolbarExpandedContent.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 0, Opacity = .38, Color = Colors.Black };
+        _toolbarExpandedContent.SetResourceReference(UIElement.EffectProperty,"ToolbarEdgeEffect");
         var shell = _toolbarLauncher.CreateSurface(_toolbarExpandedContent);
         _boundFileIndicator=new BoundFileIndicator(()=>_ = RunCommand(RevertActiveFileAsync),LocateActiveFile,DetachActiveFile,
             CanRevertActiveFile,()=>!DocumentOperationBusy);
@@ -173,15 +173,6 @@ internal sealed partial class DesktopSession
             var upperMargin = new Thickness(contentLeft, 3, 0, 0);
             if (_toolbarUpperRow.Margin != upperMargin) _toolbarUpperRow.Margin = upperMargin;
             if (_toolbarUpperRow.Width != content.ActualWidth) _toolbarUpperRow.Width = content.ActualWidth;
-            var select=_toolbarToolButtons[EditorTool.Select];
-            var icon=select.Content is Controls.Grid shortcut
-                ? shortcut.Children.OfType<Controls.ContentPresenter>().Single().Content as FrameworkElement
-                : select.Content as FrameworkElement;
-            if(icon?.IsLoaded==true)
-            {
-                var ink=VisualTreeHelper.GetDescendantBounds(icon);
-                _rootCanvasHeader.AlignFileTextLeft(icon.TranslatePoint(new Point(ink.IsEmpty?0:ink.Left,0),_rootCanvasHeader).X);
-            }
         };
         var window = new Window { Title = L.Get("Toolbar.Title"), Content = shell, WindowStyle = WindowStyle.None, AllowsTransparency = true,
             Background = Brushes.Transparent, ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight,
@@ -256,6 +247,7 @@ internal sealed partial class DesktopSession
         RefreshToolbarExpansionMenuItem();
         RefreshBoundFileIndicator();
         _rootCanvasHeader?.Refresh(Active.ActiveRootCanvas);
+        RefreshEditingScope();
         if (_settings.ToolbarExpanded)
             _toolbar.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_toolbar.IsVisible) { PlaceToolbar(); SaveToolbarPosition(); } });
     }
@@ -341,6 +333,7 @@ internal sealed partial class DesktopSession
     {
         RefreshBoundFileIndicator();
         _rootCanvasHeader?.Refresh(Active.ActiveRootCanvas);
+        RefreshEditingScope();
         RefreshCanvasVisibilityButton();
         RefreshCanvasStateGlyph();
         RefreshBillboardState();

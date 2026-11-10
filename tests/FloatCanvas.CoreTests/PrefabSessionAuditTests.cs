@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using System.Text.Json;
 
 internal static class PrefabSessionAuditTests
@@ -140,7 +140,7 @@ internal static class PrefabSessionAuditTests
                 definitions.Add(new() { Graph = new() { Instances = [nested], RootOrder = [nested.Id] } });
             }
             var package = new PrefabPackage { EntryDefinitionId = definitions[^1].Id, Definitions = definitions };
-            var owner = new EditorSession(); Guid scope = owner.CreateEmptyGroup(); owner.EnterScope(scope);
+            var owner = new EditorSession(); Guid scope = owner.CreatePopulatedGroup(); owner.EnterScope(scope);
             string before = Json(owner.Document); int history = owner.UndoCount; bool rejected = false;
             try { owner.ImportPrefab(package, library, LayerPlacement.Identity); } catch (InvalidDataException) { rejected = true; }
             Record(rejected && Json(owner.Document) == before && owner.UndoCount == history && owner.Assets.Count == 0 && owner.EditScopeId == scope,

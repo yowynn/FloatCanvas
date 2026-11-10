@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -28,15 +28,22 @@ internal sealed class LayerTreeRow(LayersWindow owner, Guid id) : INotifyPropert
     public bool Locked { get; private set; }
     public bool EffectiveVisible { get; private set; }
     public bool EffectiveLocked { get; private set; }
+    public string? HiddenAncestor { get; private set; }
     public bool AncestorLocked { get; private set; }
+    private object? presentationStamp;
     private bool renaming;
     public bool Renaming { get => renaming; set { if (renaming == value) return; renaming = value; Changed(); } }
     public string DraftName { get; set; } = "";
     public event PropertyChangedEventHandler? PropertyChanged;
     internal void Update(string? sourceName, string name, Guid? parent, int depth, bool group, bool legacy,
         bool visible, bool locked, bool effectiveVisible, bool effectiveLocked, bool ancestorLocked, bool instance = false, bool linked = false,
-        ElementKind? kind = null, bool windowSource = false)
+        ElementKind? kind = null, bool windowSource = false, string? hiddenAncestor = null)
     {
+        object stamp = (L.Preference, Owner.IndependentPreview, Owner.CanWrite);
+        if (Equals(presentationStamp, stamp) && SourceName == sourceName && Name == name && ParentId == parent && Depth == depth && IsGroup == group && IsLegacy == legacy &&
+            Visible == visible && Locked == locked && EffectiveVisible == effectiveVisible && EffectiveLocked == effectiveLocked && AncestorLocked == ancestorLocked &&
+            IsInstance == instance && IsLinked == linked && Kind == kind && IsWindowSource == windowSource && HiddenAncestor == hiddenAncestor) return;
+        presentationStamp = stamp; HiddenAncestor = hiddenAncestor;
         SourceName = sourceName; Name = name; ParentId = parent; Depth = depth; IsGroup = group; IsLegacy = legacy;
         Visible = visible; Locked = locked; EffectiveVisible = effectiveVisible; EffectiveLocked = effectiveLocked; AncestorLocked = ancestorLocked;
         IsInstance = instance; IsLinked = linked; Kind = kind; IsWindowSource = windowSource;
@@ -71,7 +78,7 @@ internal sealed class LayerTreeListBox(LayersWindow owner) : ListBox
     { if (sender is ListBoxItem { DataContext: LayerTreeRow row }) owner.SelectForContext(row.Id); }
     private void EnterGroup(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton != MouseButton.Left) return;
+        if (e.ChangedButton != MouseButton.Left || Keyboard.Modifiers != ModifierKeys.None) return;
         for (DependencyObject? source = e.OriginalSource as DependencyObject; source is not null && source != sender;
             source = source is Visual ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source))
             if (source is ButtonBase or TextBoxBase or Thumb) return;
@@ -147,20 +154,23 @@ internal sealed class LayerTreeRowPresenter : Grid
             if (row.Renaming && Editor.Text != row.DraftName) { Editor.Text = row.DraftName; Editor.SelectAll(); }
             EnterButton.Visibility = row.IsGroup || row.IsInstance ? Visibility.Visible : Visibility.Hidden;
             var chevron = LayersWindow.IconPath("M5,3 L10,8 L5,13"); chevron.Width = chevron.Height = 10;
-            EnterButton.Content = chevron; EnterButton.IsEnabled = row.Owner.IsReadOnly || !row.EffectiveLocked;
+            EnterButton.Content = chevron; EnterButton.IsEnabled = true;
             EnterButton.ToolTip = L.Get(row.IsInstance ? "Prefab.EditDefinition" : "Layers.EnterGroup");
             kind.Content = LayerTypeIcon.Create(row.Kind, row.IsGroup, row.IsInstance, row.IsLinked, row.IsWindowSource);
             kind.ToolTip = row.IsInstance ? L.Get(row.IsLinked ? "Prefab.Linked" : "Prefab.DefaultName") : row.IsGroup ? L.Get("Layers.DefaultGroup") :
                 row.IsWindowSource ? L.Get("WindowSource.Menu") : row.Kind == ElementKind.Presentation ? L.Get("Tool.Presentation") : row.Kind is { } type ? InspectorWindow.ElementName(new() { Kind = type }) : "";
             System.Windows.Automation.AutomationProperties.SetName(kind, kind.ToolTip?.ToString() ?? "");
             legacy.Visibility = row.IsLegacy ? Visibility.Visible : Visibility.Hidden; legacy.ToolTip = L.Get("Layers.LegacyOrder");
-            VisibleButton.Content = LayersWindow.IconPath(row.Visible ? LayersWindow.Eye : LayersWindow.EyeOff);
+            var eye = new Grid(); eye.Children.Add(LayersWindow.IconPath(row.Visible ? LayersWindow.Eye : LayersWindow.EyeOff));
+            if (row.HiddenAncestor is not null) eye.Children.Add(new TextBlock { Text = "↳", FontSize = 9, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom });
+            VisibleButton.Content = row.HiddenAncestor is null ? LayersWindow.IconPath(row.Visible ? LayersWindow.Eye : LayersWindow.EyeOff) : eye;
             LockedButton.Content = LayersWindow.IconPath(row.Locked || row.AncestorLocked ? LayersWindow.Lock : LayersWindow.Unlock);
             VisibleButton.IsChecked = row.Visible; LockedButton.IsChecked = row.Locked;
             VisibleButton.Opacity = row.EffectiveVisible ? 1 : .5; LockedButton.Opacity = row.EffectiveLocked ? 1 : .5;
             VisibleButton.IsEnabled = LockedButton.IsEnabled = row.Owner.CanWrite && !row.AncestorLocked;
             Handle.IsEnabled = row.Owner.CanWrite && !row.EffectiveLocked;
             VisibleButton.ToolTip = L.Get(row.Visible ? "Inspector.HideLayer" : "Inspector.ShowLayer") + " " + row.Name;
+            if (row.HiddenAncestor is { } hidden) VisibleButton.ToolTip += "\n" + L.Format(row.Owner.IndependentPreview ? "LayerExperience.HiddenIndependent" : "LayerExperience.HiddenAncestor", hidden);
             LockedButton.ToolTip = L.Get(row.AncestorLocked ? "Layers.InheritedLock" : row.Locked ? "Inspector.UnlockLayer" : "Inspector.LockLayer") + " " + row.Name;
             foreach (var pair in new (DependencyObject Element, string Name)[] { (EnterButton, EnterButton.ToolTip.ToString()!),
                 ((DependencyObject)VisibleButton, VisibleButton.ToolTip.ToString()!), ((DependencyObject)LockedButton, LockedButton.ToolTip.ToString()!),
@@ -172,13 +182,13 @@ internal sealed class LayerTreeRowPresenter : Grid
     internal void FocusEditor() { Editor.Focus(); Editor.SelectAll(); }
     internal bool ActivateNameClick(Point point)
     {
-        if (row is not { } current || !LayerNameInkHit.Contains(Label, point) || FindList() is not { } list ||
+        if (Keyboard.Modifiers != ModifierKeys.None || row is not { } current || !LayerNameInkHit.Contains(Label, point) || FindList() is not { } list ||
             ItemsControl.ContainerFromElement(list, this) is not ListBoxItem { IsSelected: true }) return false;
         return current.Owner.BeginRename(current.Id);
     }
     internal bool ActivateDoubleClick(Point labelPoint)
     {
-        if (row is not { } current) return false;
+        if (Keyboard.Modifiers != ModifierKeys.None || row is not { } current) return false;
         if (LayerNameInkHit.Contains(Label, labelPoint)) return current.Owner.BeginRename(current.Id);
         if (!current.IsGroup && !current.IsInstance) return false;
         current.Owner.EnterGroup(current.Id); return true;

@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using System.Text.Json;
 
 internal static class NodeSessionTests
@@ -72,18 +72,18 @@ internal static class NodeSessionTests
             check(duplicate.Id != source.Id && duplicate.Width == source.Width && duplicate.Height == source.Height && duplicate.Points.SequenceEqual(source.Points) &&
                 duplicateGraph.FindElement(source.Id)!.Transform == source.Transform && session.UndoCount == before + 1,
                 "scope duplicate retains local vector dimensions, the original source placement and one undo operation");
-            var empty = session.CreateEmptyGroup("copied empty"); var graph = new SceneGraph(session.Document);
+            var empty = session.CreatePopulatedGroup("copied group"); var graph = new SceneGraph(session.Document);
             var emptyWorld = graph.NodeWorldPlacement(empty); string emptyBefore = Json(graph.FindGroup(empty)!);
             session.DuplicateSelection(9, 13); graph = new(session.Document);
-            var newEmpty = session.Document.Groups.Single(group => group.Name == "copied empty" && group.Id != empty);
-            Near(graph.NodeWorldPlacement(newEmpty.Id).PlaneTransform.TransformPoint(default), Affine2D.Translation(9, 13).Compose(emptyWorld.PlaneTransform).TransformPoint(default), "empty group duplicate preserves its world origin and explicit offset");
-            check(newEmpty.ChildOrder is { Count: 0 } && Json(graph.FindGroup(empty)!) == emptyBefore && session.Selection.Count > 0 && !session.SelectedElements().Any(),
-                "an empty selected graph remains copyable without inventing a leaf or changing the source group");
+            var newEmpty = session.Document.Groups.Single(group => group.Name == "copied group" && group.Id != empty);
+            Near(graph.NodeWorldPlacement(newEmpty.Id).PlaneTransform.TransformPoint(default), Affine2D.Translation(9, 13).Compose(emptyWorld.PlaneTransform).TransformPoint(default), "populated group duplicate preserves its world origin and explicit offset");
+            check(newEmpty.ChildOrder is { Count: 1 } && Json(graph.FindGroup(empty)!) == emptyBefore && session.Selection.Count > 0 && session.SelectedElements().Any(),
+                "a populated selected group remains copyable with its artwork or changing the source group");
             var snapshot = session.CreateSelectionSnapshot(); var copied = snapshot.Clone(true);
             var restored = JsonSerializer.Deserialize<SceneDocument>(Json(copied))!; SceneGraph.Validate(restored);
             var target = new EditorSession(); target.RestoreDocument("restore empty graph", restored);
-            check(target.Document.Groups.Any(group => group.Name == "copied empty" && group.ChildOrder is { Count: 0 }) && target.Undo() && target.Document.Groups.Count == 0 && target.Redo(),
-                "editable empty graph copy and document restore retain slots through JSON and undo/redo");
+            check(target.Document.Groups.Any(group => group.Name == "copied group" && group.ChildOrder is { Count: 1 }) && target.Undo() && target.Document.Groups.Count == 0 && target.Redo(),
+                "editable populated group copy and document restore retain slots through JSON and undo/redo");
         });
 
         Case("whole group gestures retain source child geometry", () =>
@@ -212,17 +212,18 @@ internal static class NodeSessionTests
         Case("invalidated edit scope falls back to its surviving ancestor", () =>
         {
             var fixture = Nested(); var session = new EditorSession(fixture.Document); session.EnterScope(fixture.Inner);
-            var empty = session.CreateEmptyGroup("temporary scope"); session.EnterScope(empty); int undo = session.UndoCount;
+            var empty = session.CreatePopulatedGroup("temporary scope"); session.EnterScope(empty); int undo = session.UndoCount;
             check(session.Undo() && session.EditScopeId == fixture.Inner && session.Document.Groups.All(group => group.Id != empty), "undo of the current scope's creation returns to its surviving parent");
             check(session.Redo() && session.EditScopeId == fixture.Inner && session.UndoCount == undo, "redo restores the graph without unexpectedly reentering a former scope");
             session.EnterScope(empty); session.SetSelection([fixture.Inner]); session.DeleteSelection();
-            check(session.EditScopeId == fixture.Outer && session.Document.Groups.All(group => group.Id != empty), "deleting an ancestor returns an active nested scope to the nearest surviving ancestor");
+            check(session.EditScopeId is null && session.Document.Groups.Count == 0, "deleting the last branch dissolves its empty ancestors and returns to root");
         });
 
         Case("scope ancestry follows an active group's reparenting", () =>
         {
             var fixture = TwoGroups(); var graph = new SceneGraph(fixture.Document);
             var inner = graph.InsertGroup(new() { Name = "active moved scope", OrderMode = GroupOrderMode.AtomicBlock }, fixture.Left);
+            graph.InsertElement(new() { Kind = ElementKind.Rectangle, Width = 8, Height = 8 }, inner.Id);
             var session = new EditorSession(fixture.Document); session.EnterScope(inner.Id); session.MoveNodes([inner.Id], fixture.Right);
             check(session.EditScopePath.Select(group => group.Id).SequenceEqual([fixture.Right, inner.Id]), "active breadcrumbs follow a group's new parent");
             session.SetSelection([inner.Id]); session.DeleteSelection();
@@ -246,6 +247,7 @@ internal static class NodeSessionTests
             var target = new SceneDocument(); var graph = new SceneGraph(target); Guid? parent = null;
             for (int depth = 0; depth < SceneLimits.MaximumGroupDepth; depth++)
                 parent = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock }, parent).Id;
+            graph.InsertElement(Box("depth boundary content", 0, 0), parent, worldCoordinates: false);
             var session = new EditorSession(target); session.EnterScope(parent!.Value);
             var resources = new AssetLibrary(); string asset = resources.Add([1, 2, 3, 4, 5]);
             var incoming = new SceneDocument(); var incomingGraph = new SceneGraph(incoming);
@@ -274,11 +276,11 @@ internal static class NodeSessionTests
             var before = graph.ToWorld(graph.FindElement(leaf)!); session.MoveNodes([leaf], fixture.Right);
             graph = new(session.Document); var moved = graph.FindElement(leaf)!;
             Near(graph.ToWorld(moved).Transform.TransformPoint(new(3, 4)), before.Transform.TransformPoint(new(3, 4)), "cross-parent movement retains world ink under different parent coordinates");
-            check(moved.GroupId == fixture.Right && moved.Transform != sourceLocal && graph.FindGroup(fixture.Left)!.ChildOrder is { Count: 0 }, "cross-parent movement updates source local coordinates and retains the emptied source group");
+            check(moved.GroupId == fixture.Right && moved.Transform != sourceLocal && graph.FindGroup(fixture.Left) is null, "cross-parent movement updates source local coordinates and dissolves the emptied source group");
             var snapshot = session.CreateCommittedSnapshot(); var restored = JsonSerializer.Deserialize<SceneDocument>(Json(snapshot))!;
             session.RestoreDocument("restore local graph", restored);
-            check(session.Document.Groups.Single(group => group.Id == fixture.Left).ChildOrder is { Count: 0 } && session.Undo() && session.Undo() &&
-                new SceneGraph(session.Document).FindElement(leaf)!.GroupId == fixture.Left, "source graph restoration and undo retain empty groups and previous parent identity");
+            check(session.Document.Groups.All(group => group.Id != fixture.Left) && session.Undo() && session.Undo() &&
+                new SceneGraph(session.Document).FindElement(leaf)!.GroupId == fixture.Left, "restoring an unchanged graph keeps no empty group; undo restores its previous parent");
         });
 
         Case("point selection never retains both an ancestor and its child", () =>

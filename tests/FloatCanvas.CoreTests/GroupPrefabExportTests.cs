@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using FloatCanvas.Core;
 
 internal static class GroupPrefabExportTests
@@ -6,7 +6,7 @@ internal static class GroupPrefabExportTests
     internal static void Run(Action<bool, string> check)
     {
         NestedLocalContents(check);
-        EmptyAndForeignTransaction(check);
+        SingleLayerAndForeignTransaction(check);
         LegacyOrder(check);
     }
 
@@ -85,14 +85,15 @@ internal static class GroupPrefabExportTests
         check(Json(owner.Document) == before, "mutating exported direct members and dependencies cannot mutate the owner");
     }
 
-    private static void EmptyAndForeignTransaction(Action<bool, string> check)
+    private static void SingleLayerAndForeignTransaction(Action<bool, string> check)
     {
-        var group = new CanvasGroup { Name = "Empty group", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [], Transform = Affine2D.Translation(80, 50) };
-        var owner = new EditorSession(new() { Groups = [group], RootOrder = [group.Id] }); owner.SetEditScope(group.Id);
+        var group = new CanvasGroup { Name = "Single-layer group", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [], Transform = Affine2D.Translation(80, 50) };
+        var content = new CanvasElement { Kind = ElementKind.Rectangle, Width = 8, Height = 8, GroupId = group.Id }; group.ChildOrder!.Add(content.Id);
+        var owner = new EditorSession(new() { Elements = [content], Groups = [group], RootOrder = [group.Id] }); owner.SetEditScope(group.Id);
         string before = Json(owner.Document); var package = owner.ExportGroupPrefab(group.Id); var entry = package.Definitions.Single();
-        check(entry.Name == group.Name && entry.Graph.Elements.Count == 0 && entry.Graph.Groups.Count == 0 && entry.Graph.Instances.Count == 0 && entry.Graph.RootOrder is { Count: 0 },
-            "an empty ordinary group exports a valid empty definition without creating a wrapper");
-        check(Json(owner.Document) == before && owner.EditScopeId == group.Id && owner.UndoCount == 0, "empty group export leaves the current group and author history unchanged");
+        check(entry.Name == group.Name && entry.Graph.Elements.Count == 1 && entry.Graph.Groups.Count == 0 && entry.Graph.Instances.Count == 0 && entry.Graph.RootOrder is { Count: 1 },
+            "a single-layer ordinary group exports a valid definition without creating a wrapper");
+        check(Json(owner.Document) == before && owner.EditScopeId == group.Id && owner.UndoCount == 0, "single-layer group export leaves the current group and author history unchanged");
         owner.BeginTransaction("foreign operation"); long transaction = owner.TransactionId;
         _ = owner.ExportGroupPrefab(group.Id);
         check(owner.IsTransactionActive && owner.TransactionId == transaction && Json(owner.Document) == before && owner.UndoCount == 0,

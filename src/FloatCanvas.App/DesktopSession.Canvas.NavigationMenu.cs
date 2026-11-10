@@ -13,12 +13,11 @@ internal sealed partial class DesktopSession
     private OverlayContextMenu? _canvasNavigationMenu;
     private MenuItem? _navigationApply, _navigationConvert;
     private (bool Open, bool Changed, double Zoom)? _navigationAppearance;
-    private const string NavigationGlyph = "M2,2 H6 M2,2 V6 M14,2 H10 M14,2 V6 M2,14 H6 M2,14 V10 M14,14 H10 M14,14 V10 M5,8 H11 M8,5 V11";
     private const string ResetNavigationGlyph = "M3,6 A6,6 0 1 1 3,11 M3,2 V6 H7";
 
     private Button CreateCanvasNavigationButton()
     {
-        var button = ToolbarIcon(L.Get("Canvas.Navigation"), NavigationGlyph, ToggleCanvasNavigationMenu);
+        var button = ToolbarIcon(L.Get("Canvas.Navigation"), CommandGlyphs.CanvasView, ToggleCanvasNavigationMenu);
         button.Tag = "canvas-navigation";
         _canvasNavigationButton = button;
         var menu = _canvasNavigationMenu = new OverlayContextMenu { PlacementTarget = button,
@@ -69,17 +68,21 @@ internal sealed partial class DesktopSession
         if (_navigationAppearance != (open, changed, _canvasView.Zoom))
         {
         _navigationAppearance = (open, changed, _canvasView.Zoom);
-        button.Content = CommandGlyphs.Create(open ? ResetNavigationGlyph : NavigationGlyph);
+        button.Content = CommandGlyphs.Create(open ? ResetNavigationGlyph : CommandGlyphs.CanvasView);
         button.SetResourceReference(Control.ForegroundProperty, changed ? "CanvasHiddenText" : "CanvasText");
+        button.SetResourceReference(Control.BackgroundProperty, changed ? "CanvasHiddenSurface" : "CanvasButton");
+        if (changed) button.SetResourceReference(Control.BorderBrushProperty, "CanvasHiddenBorder");
+        else button.BorderBrush = Brushes.Transparent;
         if (button.Content is Viewbox { Child: Canvas canvas })
             foreach (var path in canvas.Children.OfType<System.Windows.Shapes.Path>())
                 path.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, changed ? "CanvasHiddenText" : "CanvasText");
-        button.ToolTip = L.Get(open ? "Canvas.ResetView" : "Canvas.Navigation") + " · " + L.Format("Canvas.ViewScale", _canvasView.Zoom * 100);
+        button.ToolTip = L.Get(open ? "Canvas.ClickAgainReset" : "Canvas.Navigation") + " · " + L.Format("Canvas.ViewScale", _canvasView.Zoom * 100);
         System.Windows.Automation.AutomationProperties.SetName(button, L.Get(open ? "Canvas.ResetView" : "Canvas.Navigation"));
         }
         if (_navigationApply is not null) _navigationApply.IsEnabled = CanApplyCanvasViewing;
         if (_navigationConvert is not null) _navigationConvert.IsEnabled = !DocumentOperationBusy && !Active.IsTransactionActive &&
-            ReferenceEquals(Active, _live) && !HasPrefabEditContext && Active.EditScopeId is null && !Active.IsReadOnly &&
+            ReferenceEquals(Active, _live) && !HasPrefabEditContext && (Active.EditScopeId is null || _groupCanvasMode == GroupCanvasMode.RootProject) &&
+            !Active.IsReadOnly && Active.CanInsertInEditScope &&
             CanvasResolutionConversion.NeedsConversion(Active.Document, ConversionTargetScreen);
     }
 }

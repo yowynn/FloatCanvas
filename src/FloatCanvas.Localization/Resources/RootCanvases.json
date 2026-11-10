@@ -1,7 +1,7 @@
 {
   "RootCanvas.Select": { "zh": "创作画布", "en": "Drawing canvas" },
-  "RootCanvas.ReturnToMain": { "zh": "{0} · 返回主画布", "en": "{0} · Return to Main" },
-  "RootCanvas.ReturnUnavailable": { "zh": "当前操作结束后可返回主画布；共享内容编辑须先完成或取消。", "en": "Return to Main after the current operation finishes. Complete or cancel shared content editing first." },
+  "RootCanvas.ReturnAction": { "zh": "返回主画布", "en": "Return to Main" },
+  "RootCanvas.ReturnUnavailable": { "zh": "当前操作结束后可切换画布；共享编辑时请先通过路径返回所属工程。", "en": "Switch canvases after the current operation finishes. Use the path to return to the owning project from shared editing." },
   "RootCanvas.PrefabSingleRootUnsupported": { "zh": "此工程包含多个根画布。请先在源工程中将需要的内容导出为预制体，再置入或链接。", "en": "This project contains multiple root canvases. Export the desired content as a prefab from the source project before placing or linking it." },
   "RootCanvas.Main": { "zh": "主画布", "en": "Main" },
   "RootCanvas.Foreground": { "zh": "前景画布", "en": "Foreground" },

@@ -463,6 +463,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnEditorChanged()
     {
+        using var sceneRead = SceneGraph.BeginReadScope();
         if (_changingPrefabContext) return;
         ApplyPointerToolPreferences();
         ValidatePendingWindowInsertion();
@@ -472,6 +473,7 @@ internal sealed partial class DesktopSession : IDisposable
         UpdateWindowSourceRuntime();
         RefreshWindowSourcesUi();
         OnPrefabEditorChanged();
+        RefreshEditingScopeIfChanged();
         UpdateHiddenCanvasState();
         if (_eyedropper is null) _host.SetPointerCursor(_editor.IsPointerBlocked ? Forms.Cursors.No.Handle : 0);
         ValidateCanvasCalibrationSession();
@@ -516,6 +518,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void RenderFrame()
     {
+        using var sceneRead = SceneGraph.BeginReadScope();
         _renderOperation = null;
         if (_disposed) return;
         _renderingFrame = true;
@@ -763,6 +766,7 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void Draw(SKSurface surface)
     {
+        using var sceneRead = SceneGraph.BeginReadScope();
         var canvas = surface.Canvas;
         var context = CurrentPreviewContext();
         bool current = _submittingCanvasFrame is { } frame && CanPresentCanvasFrame(frame, context);
@@ -804,7 +808,7 @@ internal sealed partial class DesktopSession : IDisposable
             _editor.SelectionScreenCorners is not { Count: 4 } corners) return;
         DrawScreenPolygon(canvas, corners, paint);
         foreach(var p in corners) canvas.DrawRect((float)p.X-5,(float)p.Y-5,10,10,paint);
-        if (_editor.SelectionScreenRotationAnchor is { } anchor && _editor.SelectionScreenRotationHandle is { } handle)
+        if (EditorController.RotationAnchor(corners) is { } anchor && EditorController.RotationHandle(corners) is { } handle)
         {
             canvas.DrawLine((float)anchor.X,(float)anchor.Y,(float)handle.X,(float)handle.Y,paint);
             canvas.DrawCircle((float)handle.X,(float)handle.Y,6,paint);
@@ -955,6 +959,7 @@ internal sealed partial class DesktopSession : IDisposable
         if (_canvasSettingsWindow is not null) _canvasSettingsWindow.IsEnabled = enabled;
         if (_editor is not null) { RefreshHistoryCommandState(); SynchronizeCanvasTool(); UpdateWindowSourceRuntime(); RefreshWindowSourcesUi(); }
         if (enabled) RestoreToolbarKeyboardFocus();
+        if (enabled && _toolbar is not null && !_disposed) RequestRender();
     }
     private void RestoreToolbarKeyboardFocus()
     {

@@ -1,4 +1,5 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
@@ -32,7 +33,12 @@ internal sealed partial class DesktopSession
         if (_canvasSettingsWindow is null) return;
         _canvasWindowTarget = CaptureCanvasSettingsTarget();
         _canvasSettingsWindow.Refresh(_canvasWindowTarget.Settings);
-        _canvasSettingsWindow.SetAuthoringAllowed(!Active.IsReadOnly);
+        var scope = DescribeEditingScope();
+        string target = _canvasWindowTarget.Independent ? L.Format("EditingScope.IndependentSettings", scope.Path) : L.Get("EditingScope.MainSettings");
+        _canvasSettingsWindow.Title = target;
+        AppWindowChrome.SetHeaderDetail(_canvasSettingsWindow, _canvasWindowTarget.Independent ? L.Get("GroupCanvas.Temporary") : L.Get("RootCanvas.Main"));
+        _canvasSettingsWindow.SetTargetDescription(target + "\n" + L.Get(_canvasWindowTarget.Independent ? "GroupCanvas.TemporaryNotice" : "EditingScope.DocumentSettingsHint"));
+        _canvasSettingsWindow.SetAuthoringAllowed(!Active.IsReadOnly && Active.CanInsertInEditScope);
         RefreshCanvasNavigationButton();
     }
     private void ChangeCurrentCanvasOpacity(double opacity)

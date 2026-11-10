@@ -23,6 +23,8 @@ internal sealed partial class CanvasSettingsWindow : Window
     private readonly Grid countPair = new();
     private readonly StackPanel flatSizePanel = new();
     private readonly StackPanel authoringControls = new();
+    private readonly TextBlock targetDescription = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 8) };
+    internal void SetTargetDescription(string text) => targetDescription.Text = text;
     private readonly PropertyChangeRegion projectionOptions, gridCountsRegion;
     private readonly Button pin;
     private readonly CanvasPinSelector pinSelector = new();
@@ -92,6 +94,7 @@ internal sealed partial class CanvasSettingsWindow : Window
         if (historySession is not null) library.HistorySession = historySession;
         var layout = new DockPanel { Margin = WindowLayout.ContentMargin(4, 14) };
         var description = new TextBlock { Text = L.Get("CanvasPreset.Description"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 0, 0, 12) };
+        DockPanel.SetDock(targetDescription, Dock.Top); layout.Children.Add(targetDescription);
         DockPanel.SetDock(description, Dock.Top); layout.Children.Add(description);
         DockPanel.SetDock(status, Dock.Bottom); layout.Children.Add(status);
         var content = new Grid(); content.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });

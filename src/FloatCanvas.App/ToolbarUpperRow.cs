@@ -8,6 +8,8 @@ namespace FloatCanvas.App;
 internal sealed class ToolbarUpperRow : Grid
 {
     internal const double ExtensionHeight = 33;
+    internal const double ButtonSize = 26;
+    internal const double ButtonSlot = 30;
     internal const double SurfaceGap = 3;
     internal const double CornerRadiusValue = 3;
     internal const double OuterCornerRadius = CornerRadiusValue + 3;
@@ -15,13 +17,11 @@ internal sealed class ToolbarUpperRow : Grid
     private readonly Border strip;
     private readonly Border confirmation;
     private readonly RootCanvasToolbarHeader header;
-    private readonly System.Windows.Shapes.Path outline = new() { IsHitTestVisible = false, StrokeThickness = 1,
-        Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 0, Opacity = .38 } };
+    private readonly System.Windows.Shapes.Path outline = new() { IsHitTestVisible = false, StrokeThickness = 1 };
     private readonly System.Windows.Shapes.Path connector = new() { IsHitTestVisible = false, StrokeThickness = 1.25, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
     private Grid? shell;
     private Border? body;
     private ToolbarLauncher? launcher;
-    private System.Windows.Media.Effects.Effect? bodyEffect;
     private Rect lastBody, lastStrip;
     internal bool IsExpanded { get; private set; }
     internal event Action? ExpansionChanged;
@@ -29,11 +29,12 @@ internal sealed class ToolbarUpperRow : Grid
     internal ToolbarUpperRow(Grid main, RootCanvasToolbarHeader header, IReadOnlyList<Button> tools, NewCanvasButton create)
     {
         this.header = header;
+        outline.SetResourceReference(EffectProperty,"ToolbarEdgeEffect");
         Height = ExtensionHeight; HorizontalAlignment = HorizontalAlignment.Left; VerticalAlignment = VerticalAlignment.Top;
         Margin = new(103, 3, 0, 0);
         foreach (var column in main.ColumnDefinitions) ColumnDefinitions.Add(new() { Width = column.Width });
-        header.Margin = new(0); header.VerticalAlignment = VerticalAlignment.Top; header.Height = ExtensionHeight; header.MaxWidth = 330;
-        foreach (var file in header.Children.OfType<BoundFileIndicator>()) file.Height = ExtensionHeight;
+        header.Margin = new(-1,0,1,0); header.VerticalAlignment = VerticalAlignment.Top; header.Height = ExtensionHeight;
+        header.MaxWidth = main.ColumnDefinitions.Take(12).Sum(column => column.Width.Value);
         SetColumnSpan(header, 12); Children.Add(header);
         // Keep the buttons at their original top position; the extra DIP below
         // absorbs fractional-DPI border rounding without clipping their frames.
@@ -74,7 +75,7 @@ internal sealed class ToolbarUpperRow : Grid
 
     internal void AttachSurface(Grid surface, Border mainBody, ToolbarLauncher mainLauncher)
     {
-        shell = surface; body = mainBody; launcher = mainLauncher; bodyEffect = body.Effect;
+        shell = surface; body = mainBody; launcher = mainLauncher;
         shell.Children.Insert(0, outline);
         shell.Children.Add(connector);
         shell.LayoutUpdated += (_, _) => RefreshOutline();
@@ -88,7 +89,8 @@ internal sealed class ToolbarUpperRow : Grid
         bool expanded = IsExpanded && Visibility == Visibility.Visible;
         double offset = expanded ? Headroom : 0;
         Height = ExtensionHeight;
-        header.Margin = confirmation.Margin = new(0, offset, 0, 0);
+        header.Margin = new(-1, offset, 1, 0);
+        confirmation.Margin = new(0, offset, 0, 0);
         body.Margin = new(ToolbarLauncher.BodyLeft, ToolbarLauncher.BodyTop + offset, 3, 3);
         launcher.Margin = new(0, offset, 0, 0);
         outline.Visibility = connector.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
@@ -97,7 +99,7 @@ internal sealed class ToolbarUpperRow : Grid
         {
             body.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
             body.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
-            body.Effect = bodyEffect;
+            body.SetResourceReference(EffectProperty,"ToolbarEdgeEffect");
         }
     }
 

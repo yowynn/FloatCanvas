@@ -1,8 +1,10 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 
 namespace FloatCanvas.App;
 
 /// <summary>A real editable graph, with an explicit return location and one publishing owner.</summary>
+internal enum PrefabContentOrigin { Internal, ExternalSource, SavedSnapshot, InheritedReadOnly }
+
 internal sealed class PrefabEditContext
 {
     internal EditorSession Owner { get; }
@@ -12,8 +14,13 @@ internal sealed class PrefabEditContext
     internal PrefabEditDraft? Draft { get; }
     internal string? SourcePath { get; set; }
     internal Guid? SourceEntryDefinitionId { get; }
-    internal bool IsOfflineSnapshot => Session.IsReadOnly;
-    internal bool IsSource => SourcePath is not null && !IsOfflineSnapshot;
+    internal PrefabContentOrigin ContentOrigin { get; set; } = PrefabContentOrigin.Internal;
+    internal bool LockedBrowsing { get; set; }
+    internal bool InheritedLock { get; set; }
+    internal string? SnapshotReason { get; set; }
+    internal bool IsReadOnlyView => Session.IsReadOnly;
+    internal bool IsOfflineSnapshot => ContentOrigin == PrefabContentOrigin.SavedSnapshot;
+    internal bool IsSource => SourcePath is not null && !IsReadOnlyView;
     internal bool IsPrefabSource => SourceEntryDefinitionId is not null;
     internal PrefabEditContext? Parent { get; }
     internal Guid? EnteredInstanceId { get; set; }
@@ -34,6 +41,7 @@ internal sealed class PrefabEditContext
     internal PrefabEditContext(EditorSession owner, EditorSession session, Guid definitionId, Guid expectedRevision,
         PointD returnOrigin, EditorTool returnTool, PrefabEditContext? parent = null, string? sourcePath = null, Guid? sourceEntryDefinitionId = null)
     {
+        ContentOrigin = session.IsReadOnly ? PrefabContentOrigin.InheritedReadOnly : PrefabContentOrigin.Internal;
         Owner = owner; Session = session; DefinitionId = definitionId; ExpectedRevision = expectedRevision;
         ReturnOrigin = returnOrigin; ReturnTool = returnTool; Parent = parent; SourcePath = sourcePath; SourceEntryDefinitionId = sourceEntryDefinitionId;
         ReturnScopeId = owner.EditScopeId; ReturnSelection = owner.Selection.ToArray(); InitialContentVersion = session.ContentVersion;

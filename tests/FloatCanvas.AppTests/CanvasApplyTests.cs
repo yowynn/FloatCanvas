@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
@@ -102,8 +102,13 @@ internal static class CanvasApplyTests
         check("reentering after apply retains explicit identity and does not auto-frame again", fixture.View == CanvasViewTransform.Identity);
         fixture.Call("SetGroupCanvasMode", GroupCanvasMode.RootProject); fixture.Call("ChangeCanvasViewing", automatic, false);
         int history = session.UndoCount; string current = JsonSerializer.Serialize(session.Document);
+        var placedBefore = session.Document.Groups.Single().Transform;
+        var localBefore = session.Document.Elements.Single(item => item.Id == leaf.Id).Transform;
         fixture.Call("ApplyCanvasViewing");
-        check("group overview cannot apply an ambiguous view to its host", session.UndoCount == history && current == JsonSerializer.Serialize(session.Document) && fixture.View == automatic);
+        check("group project preview applies the root view without changing edit scope", session.UndoCount == history + 1 &&
+            fixture.View == CanvasViewTransform.Identity && session.EditScopeId == group.Id &&
+            session.Document.Groups.Single().Transform != placedBefore && session.Document.Elements.Single(item => item.Id == leaf.Id).Transform == localBefore);
+        check("root-view apply from a group undoes content and camera together", session.Undo() && current == JsonSerializer.Serialize(session.Document) && fixture.View == automatic);
     }
     private static void Failure(Action<string, bool> check)
     {
@@ -270,11 +275,12 @@ internal static class CanvasApplyTests
         using var fixture = new Fixture(); var session = fixture.Editor.Session;
         var document = new SceneDocument { Viewport = new(0, 0, 640, 360) }; var graph = new SceneGraph(document);
         var group = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [], PreviewCanvas = new() { Viewport = new(0, 0, 2000, 1000) } });
+        graph.InsertElement(new() { Kind = ElementKind.Rectangle, Width = 8, Height = 8, Visible = false }, group.Id);
         session.ReplaceDocument(document); session.SetEditScope(group.Id); fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary); fixture.Call("CurrentGroupCanvasView");
-        check("empty independent opening preserves the authored view", fixture.View == CanvasViewTransform.Identity);
+        check("hidden-content independent opening preserves the authored view", fixture.View == CanvasViewTransform.Identity);
         fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.FitContent);
         var expected = CanvasViewTransform.Fit(group.PreviewCanvas!.Viewport, new(0, 0, 640, 360), allowEnlarge: true);
-        check("empty independent framing uses its own saved canvas reference rather than the adjusted viewport", fixture.View == expected);
+        check("hidden-content independent framing uses its own saved canvas reference rather than the adjusted viewport", fixture.View == expected);
         using var imageSurface = SKSurface.Create(new SKImageInfo(2, 2)); imageSurface.Canvas.Clear(SKColors.Blue);
         using var image = imageSurface.Snapshot(); using var data = image.Encode(); string asset = session.Assets.Add(data.ToArray());
         group.PreviewCanvas.Background = new() { Kind = ElementKind.Image, AssetId = asset, Width = 800, Height = 600, Transform = Affine2D.Translation(200, 100) };
@@ -295,9 +301,23 @@ internal static class CanvasApplyTests
         fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.OriginalSize); fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.CenterContent);
         fixture.Call("ApplyCanvasViewing");
         check("read-only view commands do not mutate its project or create content history", before == JsonSerializer.Serialize(readOnly.Document) && readOnly.UndoCount == 0 && fixture.View.Zoom == 1);
-        using var badgeSurface = SKSurface.Create(new SKImageInfo(640, 360)); fixture.Call("DrawCanvasViewingBadge", badgeSurface.Canvas);
-        using var badgeImage = badgeSurface.Snapshot(); using var badgePixels = SKBitmap.FromImage(badgeImage);
-        check("scale badge stays visible even with no editable selection", badgePixels.Pixels.Any(pixel => pixel.Alpha > 0));
+        check("non-default scale badge stays visible even with no editable selection", BadgeHasPixels());
+        fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.Reset);
+        check("default view hides the scale badge", !BadgeHasPixels());
+        fixture.Call("ChangeCanvasViewing", new CanvasViewTransform(1, new(20, 10)), false);
+        check("panning at 100 percent still shows the non-default view badge", BadgeHasPixels());
+        fixture.Call("ChangeCanvasViewing", new CanvasViewTransform(2, default), false);
+        check("zooming shows the scale badge", BadgeHasPixels());
+        fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.Reset);
+        check("resetting a changed view hides the scale badge again", !BadgeHasPixels());
+
+        bool BadgeHasPixels()
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(640, 360)); surface.Canvas.Clear(SKColors.Transparent);
+            fixture.Call("DrawCanvasViewingBadge", surface.Canvas);
+            using var image = surface.Snapshot(); using var pixels = SKBitmap.FromImage(image);
+            return pixels.Pixels.Any(pixel => pixel.Alpha > 0);
+        }
     }
 
     private sealed class Fixture : IDisposable

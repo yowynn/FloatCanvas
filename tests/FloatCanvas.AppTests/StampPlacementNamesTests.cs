@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
@@ -65,10 +65,10 @@ internal static class StampPlacementNamesTests
                 StampLibrary.PlaceBillboardRaster(rasterLoaded, billboardTarget, null, new(300, 200), "立牌印章");
                 check(locale + " billboard image stamps also use the current stamp name in one undo", billboardTarget.Document.Elements.Single() is { Name: "立牌印章", IsBillboard: true } && billboardTarget.UndoCount == 1);
 
-                var defaults = Empty(); defaults.CreateEmptyGroup(L.Format("Layers.NumberedGroup", 1));
-                var next = defaults.CreateEmptyGroup();
+                var defaults = Empty(); defaults.CreatePopulatedGroup(L.Format("Layers.NumberedGroup", 1));
+                var next = defaults.CreatePopulatedGroup();
                 check(locale + " newly created groups get a numbered name avoiding existing group names", defaults.Document.Groups.Single(group => group.Id == next).Name == L.Format("Layers.NumberedGroup", 2));
-                defaults.SetEditScope(next); var nested = defaults.CreateEmptyGroup();
+                defaults.SetEditScope(next); var nested = defaults.CreatePopulatedGroup();
                 check(locale + " numbered defaults remain distinct inside a nested scope", defaults.Document.Groups.Single(group => group.Id == nested).Name == L.Format("Layers.NumberedGroup", 3) && defaults.Document.Groups.Single(group => group.Id == nested).ParentId == next);
             }
         }

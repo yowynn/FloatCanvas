@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Windows;
 using FloatCanvas.App;
@@ -20,15 +20,16 @@ internal static class GroupedCreationTests
         var inner = new CanvasGroup { ParentId = outer.Id, OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [], Transform = Affine2D.Scale(1.3, .8), ElevationScale = 1.6 };
         outer.ChildOrder = [inner.Id]; scope = inner.Id;
         var document = new SceneDocument { Viewport = new(0, 0, 800, 600), Groups = [outer, inner], RootOrder = [outer.Id] };
+        new SceneGraph(document).InsertElement(new() { Name = "Scope fixture content", Kind = ElementKind.Rectangle, Width = 1, Height = 1, Visible = false }, inner.Id, worldCoordinates: false);
         var session = new EditorSession(document); session.EnterScope(inner.Id); return session;
     }
     private static void Images(Action<string, bool> check)
     {
         var session = Session(out Guid scope); string before = JsonSerializer.Serialize(session.Document);
         var normalized = Image(); ImageImportCommand.Insert(session, [normalized], new(200, 100, 300, 240));
-        var source = session.Document.Elements.Single(); var world = new SceneGraph(session.Document).ToWorld(source);
+        var source = session.Document.Elements.Single(e => e.Name != "Scope fixture content"); var world = new SceneGraph(session.Document).ToWorld(source);
         check("image import writes the active scope's child slot and retains its intended world center", source.GroupId == scope &&
-            session.Document.Groups.Single(group => group.Id == scope).ChildOrder!.SequenceEqual([source.Id]) &&
+            session.Document.Groups.Single(group => group.Id == scope).ChildOrder!.Count == 2 && session.Document.Groups.Single(group => group.Id == scope).ChildOrder!.Contains(source.Id) &&
             ElementGeometry.Bounds(world).Center.DistanceTo(new(350, 220)) < 1e-6);
         SceneValidation.Validate(session.Document);
         session.SetEditScope(null); session.SetSelection([session.Document.Groups.Single(group => group.ParentId is null).Id]);
@@ -44,7 +45,7 @@ internal static class GroupedCreationTests
         session = Session(out scope); session.Document.Canvas.Projection = CanvasCalibration.CreateInitial(session.Document.Viewport); session.Document.Canvas.Projection.Enabled = true;
         var mapping = CanvasMapping.Create(session.Document); mapping.TryGetEqualDepthLine(new(350, 300), out var depth);
         ImageImportCommand.InsertBillboard(session, [normalized], new(0, 0, 800, 600), depth, new(350, 260));
-        source = session.Document.Elements.Single(); world = new SceneGraph(session.Document).ToWorld(source);
+        source = session.Document.Elements.Single(e => e.Name != "Scope fixture content"); world = new SceneGraph(session.Document).ToWorld(source);
         var center = mapping.ElementToScreen(world).TransformPoint(ElementGeometry.LocalBounds(world).Center);
         check("billboard import converts world anchors and elevation into scope-local data exactly once", source.GroupId == scope && world.IsBillboard &&
             center.DistanceTo(new(350, 260)) < 1e-6 && Math.Abs(world.BillboardHeight - source.BillboardHeight * 2) < 1e-6);
@@ -62,7 +63,7 @@ internal static class GroupedCreationTests
                 session.Document.Groups.Single(group => group.Id == scope).ChildOrder!.Contains(edit.Target.Id));
             edit.Finish(true);
         }
-        var text = session.Document.Elements.Single(); var local = text.Transform;
+        var text = session.Document.Elements.Single(e => e.Name != "Scope fixture content"); var local = text.Transform;
         var expectedWorld = new SceneGraph(session.Document).ToWorld(text);
         using (var edit = new InlineTextEdit(session, text, default, new(), renderer))
         {
@@ -71,13 +72,13 @@ internal static class GroupedCreationTests
                 CanvasMapping.Create(session.Document).ElementToScreen(expectedWorld).TransformPoint(new(12, 8))) < 1e-6 && text.Transform == local);
             edit.Finish(false);
         }
-        text = session.Document.Elements.Single();
+        text = session.Document.Elements.Single(e => e.Name != "Scope fixture content");
         using (var edit = new InlineTextEdit(session, text, default, new(), renderer)) { edit.Input.Text = ""; edit.Finish(true); }
-        check("deleting inline text removes its source slot without deleting the empty scope", session.Document.Elements.Count == 0 &&
-            session.Document.Groups.Single(group => group.Id == scope).ChildOrder!.Count == 0);
+        check("deleting inline text removes its source slot without deleting its populated scope", session.Document.Elements.Count == 1 &&
+            session.Document.Groups.Single(group => group.Id == scope).ChildOrder!.Count == 1);
         SceneValidation.Validate(session.Document);
-        check("inline deletion undo restores text and its exact scope slot", session.Undo() && session.Document.Elements.Count == 1 &&
-            session.Document.Groups.Single(group => group.Id == scope).ChildOrder!.Single() == session.Document.Elements.Single().Id);
+        check("inline deletion undo restores text and its exact scope slot", session.Undo() && session.Document.Elements.Count == 2 &&
+            session.Document.Groups.Single(group => group.Id == scope).ChildOrder!.Contains(session.Document.Elements.Single(e => e.Name != "Scope fixture content").Id));
         session.Undo();
         check("cancelling or undoing grouped inline creation preserves the original group graph", JsonSerializer.Serialize(session.Document) == original);
     }
@@ -88,16 +89,16 @@ internal static class GroupedCreationTests
         session.SetSelection([root.Id]);
         var snapshot = ObjectClipboardCommand.CreateSnapshot(session); var sourceWorld = SceneEvaluation.Build(snapshot).RenderDocument;
         var target = Session(out Guid targetScope); ObjectClipboardCommand.Insert(target, snapshot, session.Assets, new(0, 0, 800, 600));
-        var pasted = SceneEvaluation.Build(target.Document).RenderDocument.Elements.Single();
+        var pasted = SceneEvaluation.Build(target.Document).RenderDocument.Elements.Single(e => e.Kind == ElementKind.Image);
         check("clipboard insertion retains nested hierarchy while adding the standard world offset inside a new scope", target.Document.Groups.Count > 2 &&
-            ElementGeometry.Bounds(pasted).Center.DistanceTo(ElementGeometry.Bounds(sourceWorld.Elements.Single()).Center + new PointD(16, 16)) < 1e-6 &&
+            ElementGeometry.Bounds(pasted).Center.DistanceTo(ElementGeometry.Bounds(sourceWorld.Elements.Single(e => e.Kind == ElementKind.Image)).Center + new PointD(16, 16)) < 1e-6 &&
             target.Document.Groups.Count(group => group.ParentId == targetScope) > 0);
         SceneValidation.Validate(target.Document);
         var empty = new CanvasGroup { Name = "Empty legacy folder" }; session.Document.Groups.Add(empty); session.SetSelection([empty.Id]);
         var emptySnapshot = ObjectClipboardCommand.CreateSnapshot(session);
-        check("copying a selected empty legacy group preserves the source node", emptySnapshot.Elements.Count == 0 && emptySnapshot.Groups.Single().Name == empty.Name);
+        check("copying a legacy empty group does not propagate empty ordinary containers", emptySnapshot.Elements.Count == 0 && emptySnapshot.Groups.Count == 0 && session.Document.Groups.Any(g => g.Id == empty.Id));
         ObjectClipboardCommand.Insert(target, emptySnapshot, session.Assets, new(0, 0, 800, 600));
-        check("pasting an empty group keeps it editable in the active scope", target.Document.Groups.Any(group => group.Name == empty.Name && group.ParentId == targetScope));
+        check("pasting a legacy empty group cleans it instead of creating an empty editable container", target.Document.Groups.All(group => group.Name != empty.Name));
         SceneValidation.Validate(target.Document);
     }
     private static NormalizedImage Image()

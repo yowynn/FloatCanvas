@@ -19,6 +19,7 @@ internal static class WindowSourceOperationGuardTests
             var second = new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 30 };
             var group = new CanvasGroup { OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] };
             var document = new SceneDocument { Viewport = new(0, 0, 800, 700), Elements = [first, second], Groups = [group], RootOrder = [first.Id, second.Id, group.Id] };
+            new SceneGraph(document).InsertElement(new() { Kind = ElementKind.Rectangle, Width = 8, Height = 8 }, group.Id);
             document.Canvas.Projection.Enabled = true; document.Canvas.Projection.Matrix = new(1, 0, 0, 0, -.4, 700, 0, -.002, 1);
             document.Canvas.Projection.Quad = [new(0, 0), new(800, 0), new(800, 700), new(0, 700)];
             Owner = new(document); Owner.SetSelection([first.Id]); Editor = new(Owner); First = first.Id; Second = second.Id; Group = group.Id;

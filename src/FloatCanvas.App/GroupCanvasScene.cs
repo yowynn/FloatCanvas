@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 
 namespace FloatCanvas.App;
 
@@ -27,7 +27,7 @@ internal sealed class GroupCanvasScene
     {
         var chain = editContext?.Chain().ToArray() ?? [];
         var currentOwners = chain.Select(item => new OwnerState(item, item.Owner.Document,
-            item.Owner.PreviewRevision, item.Owner.EditScopeVersion, EditingInstance(item))).ToArray();
+            item.Owner.PreviewRevision, item.Owner.EditScopeVersion, item.EnteredInstanceId)).ToArray();
         var currentDrafts = chain.Select(item => new DraftState(item, item.Session.Document, item.Session.PreviewRevision)).ToArray();
         bool root = canvasMode == GroupCanvasMode.RootProject && (editContext is not null || active.EditScopeId is not null);
         var currentOrigin = root && chain.Length > 0 ? chain[^1].ReturnOrigin : screenOrigin;
@@ -38,6 +38,8 @@ internal sealed class GroupCanvasScene
         if (!sameView) epoch = new();
         if (sameView && revision == active.PreviewRevision && drafts.SequenceEqual(currentDrafts) && view is not null) return view;
 
+        var graphs = new Dictionary<SceneDocument, SceneGraph>();
+        SceneGraph Graph(PrefabEditContext item) { var doc = item.Owner.Document; if (!graphs.TryGetValue(doc, out var graph)) graphs.Add(doc, graph = new(doc)); return graph; }
         SceneDocument source;
         if (root && editContext is not null) source = PrefabPreviewComposer.Capture(editContext, assets).Document;
         else if (canvasMode == GroupCanvasMode.Temporary) source = Isolate(active, editContext is not null);
@@ -48,9 +50,9 @@ internal sealed class GroupCanvasScene
             source.Canvas = ResolveEditingCanvas(source.Canvas, source.Viewport);
             source.Viewport = bounds;
         }
-        var placement = root && editContext is not null ? EditingPlacement(chain) :
+        var placement = root && editContext is not null ? EditingPlacement(chain, Graph) :
             canvasMode == GroupCanvasMode.Temporary && (active.EditScopeId is not null || editContext is not null) ? active.GetEditingSubprojectPlacement() : (LayerPlacement?)null;
-        var editingRoot = canvasMode == GroupCanvasMode.Temporary && (active.EditScopeId is not null || editContext is not null) ? RootCanvasKind.Main : root && chain.Length > 0 && EditingInstance(chain[^1]) is { } host
+        var editingRoot = canvasMode == GroupCanvasMode.Temporary && (active.EditScopeId is not null || editContext is not null) ? RootCanvasKind.Main : root && chain.Length > 0 && EditingInstance(chain[^1], Graph(chain[^1])) is { } host
             ? SceneCanvasRoots.Resolve(chain[^1].Owner.Document, host) : active.ActiveRootCanvas;
         var result = new GroupCanvasView(source, currentOrigin, epoch, root, !ReferenceEquals(source, active.Document), placement, editingRoot);
         session = active; document = active.Document; context = editContext; mode = canvasMode;
@@ -64,9 +66,8 @@ internal sealed class GroupCanvasScene
     internal static CanvasSettings ResolveEditingCanvas(CanvasSettings settings, RectD reference)
         => settings.ResolveReference(reference);
 
-    private static Guid? EditingInstance(PrefabEditContext context)
+    private static Guid? EditingInstance(PrefabEditContext context, SceneGraph graph)
     {
-        var graph = new SceneGraph(context.Owner.Document);
         bool Matches(Guid id) => graph.FindInstance(id)?.DefinitionId == context.DefinitionId;
         if (context.EnteredInstanceId is { } entered) return Matches(entered) ? entered : null;
         // Resource editing has no clicked occurrence. Prefer its retained selection,
@@ -75,15 +76,16 @@ internal sealed class GroupCanvasScene
         return graph.OrderedContentNodeIds.Where(id => Matches(id) && graph.IsVisible(id)).Select(id => (Guid?)id).FirstOrDefault();
     }
 
-    private static LayerPlacement? EditingPlacement(IReadOnlyList<PrefabEditContext> chain)
+    private static LayerPlacement? EditingPlacement(IReadOnlyList<PrefabEditContext> chain, Func<PrefabEditContext, SceneGraph> getGraph)
     {
         var result = LayerPlacement.Identity;
         foreach (var context in chain)
         {
             if (context.Draft is { } draft && !context.Owner.IsPrefabEditCurrent(draft)) return null;
-            if (EditingInstance(context) is not { } id) return null;
+            if (EditingInstance(context, getGraph(context)) is not { } id) return null;
             var owner = context.Owner.Document;
-            var graph = new SceneGraph(owner);
+            var graph = getGraph(context);
+            if (!graph.IsVisible(id)) return null;
             var sourceOffset = default(PointD);
             if (context.Draft is null && owner.Definitions.Single(definition => definition.Id == context.DefinitionId).Source is { } source)
             {

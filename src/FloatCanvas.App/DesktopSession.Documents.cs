@@ -340,7 +340,8 @@ internal sealed partial class DesktopSession
             LogExitStage("ToolState.Flush.Begin");
             FlushToolState(commitDraft: true);
             LogExitStage("Documents.Confirm.Begin");
-            if (!await ConfirmLeaveWorkspaceAsync())
+            // Unbound workspaces are retained by recovery/history below, without a Save As prompt.
+            if (!await ConfirmLeaveWorkspaceAsync(requireFileBinding: true))
             {
                 LogExitStage("Cancelled", "UserDeclined");
                 _documentExitRequested = false; ScheduleRecovery(); return;

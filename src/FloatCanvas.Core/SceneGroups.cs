@@ -72,14 +72,11 @@ public sealed partial class SceneDocument
         return snapshot.Clone(newIds, assetIdMap);
     }
 
-    /// <summary>Removes orphaned legacy metadata. User-created atomic groups remain valid when empty.</summary>
+    /// <summary>Ordinary groups require content; clean complete empty chains and their paint slots.</summary>
     public void PruneGroups()
     {
-        var groups = Groups.ToDictionary(g => g.Id);
-        var used = Elements.SelectMany(e => Ancestors(e.GroupId, groups)).Concat(Instances.SelectMany(instance => Ancestors(instance.ParentId, groups)))
-            .Concat(Groups.Where(group => group.OrderMode == GroupOrderMode.AtomicBlock)
-                .SelectMany(group => new[] { group.Id }.Concat(Ancestors(group.ParentId, groups)))).ToHashSet();
-        Groups.RemoveAll(g => !used.Contains(g.Id));
+        SceneGraph.PruneEmptyGroups(this);
+        foreach (var definition in Definitions) SceneGraph.PruneEmptyGroups(definition.Graph);
     }
 
     private static IEnumerable<Guid> Ancestors(Guid? id, IReadOnlyDictionary<Guid, CanvasGroup> groups)

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>Exe</OutputType>
@@ -6,4 +6,5 @@
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/FloatCanvas.App/FloatCanvas.App.csproj" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Fixtures/Appearance/*.json" /></ItemGroup>
+  <ItemGroup><Compile Include="../Shared/GroupTestData.cs" Link="GroupTestData.cs" /></ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -105,8 +105,8 @@ internal static class AuditUxTests
         active.SetNodeLocked(groupId, true);
         check("audit inherited group lock disables destructive commands", !Can("delete") && !Can("duplicate") && !Can("group") && !Can("ungroup"));
         active.Undo(); active.Undo();
-        var empty = active.CreateEmptyGroup();
-        check("audit empty group remains an actionable layer node", active.Selection.SetEquals([empty]) && Can("delete") && Can("duplicate") && Can("group") && Can("ungroup"));
+        active.SetSelection([one.Id]); var empty = active.GroupSelection()!.Value;
+        check("audit single-layer group remains an actionable layer node", active.Selection.SetEquals([empty]) && Can("delete") && Can("duplicate") && Can("group") && Can("ungroup"));
         active.Undo();
         check("audit redo state follows editor history", Can("redo"));
         active.Document.Elements.ForEach(element => element.Locked = true); active.SetSelection(active.Document.Elements.Select(element => element.Id));

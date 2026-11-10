@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -12,16 +12,18 @@ using FloatCanvas.Rendering;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using SkiaSharp;
+using L = FloatCanvas.Localization.AppText;
 
 /// <summary>Real desktop composition, presented picking and pointer routes on an undisplayed private desktop.</summary>
-internal static class GroupCanvasRootEditingTests
+internal static partial class GroupCanvasRootEditingTests
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
     internal static void Run(Action<string, bool> check, string? output = null) => RunCases(check, output, false);
     internal static void RunTemporaryRefresh(Action<string, bool> check, string? output = null) => RunCases(check, output, true);
     internal static void RunPersistentRoots(Action<string, bool> check, string? output = null) => RunCases(check, output, false, true);
+    internal static void RunScopeRecovery(Action<string, bool> check, string? output = null) => RunCases(check, output, false, false, true);
 
-    private static void RunCases(Action<string, bool> check, string? output, bool temporaryRefreshOnly, bool persistentRootsOnly = false)
+    private static void RunCases(Action<string, bool> check, string? output, bool temporaryRefreshOnly, bool persistentRootsOnly = false, bool scopeRecoveryOnly = false)
     {
         if (!DesktopName().StartsWith("FloatCanvas.Tests.", StringComparison.Ordinal) || PresentationDesktopAvailability.IsCurrentInputDesktop())
             throw new InvalidOperationException("Use --isolated-ui-desktop --group-canvas-root-editing-only.");
@@ -33,6 +35,7 @@ internal static class GroupCanvasRootEditingTests
         var hotkeys = FreeHotkeys(); new UserSettings { Theme = "dark", Language = "en", Toggle = hotkeys.Item1, Hide = hotkeys.Item2,
             PreferGpuAcceleration = false, ShowFloatingLogo = false }.Save();
         var failures = new List<Exception>();
+        if (scopeRecoveryOnly) { InvalidScopeRecovery(check,app,root); Console.WriteLine("SCOPE_RECOVERY_EVIDENCE " + root); return; }
         if (!temporaryRefreshOnly && !persistentRootsOnly) Case("independent 4K desktop extent", () => IndependentDesktopExtent(check, app, root));
         if (!temporaryRefreshOnly && !persistentRootsOnly) Case("CU native independent pixels", () => CuNativeIndependentPixels(check, app, root));
         if (!temporaryRefreshOnly && !persistentRootsOnly) Case("CU independent pixels", () => CuIndependentPixels(check, app, root));
@@ -43,6 +46,7 @@ internal static class GroupCanvasRootEditingTests
             Case("ordinary nested group", () => Ordinary(check, app, root));
             Case("shared nested group", () => Shared(check, app, root, false));
             Case("shared nested billboard", () => Shared(check, app, root, true));
+            Case("invalid scope navigation recovery", () => InvalidScopeRecovery(check, app, root));
             Case("external project source", () => External(check, app, root, false));
             Case("external prefab source", () => External(check, app, root, true));
         }
@@ -71,6 +75,64 @@ internal static class GroupCanvasRootEditingTests
             view.Document.Viewport == expected && target.Viewport == expected && group.PreviewCanvas is null);
     }
 
+    private static void InvalidScopeRecovery(Action<string, bool> check, Application app, string root)
+    {
+        using var fixture = new Fixture(app, Path.Combine(root,"invalid-scope"));
+        var document = new SceneDocument { Viewport = new(0,0,800,600) }; var graph = new SceneGraph(document);
+        var a = graph.InsertGroup(new() { Name="Parent A",OrderMode=GroupOrderMode.AtomicBlock,ChildOrder=[] });
+        var b = graph.InsertGroup(new() { Name="Parent B",OrderMode=GroupOrderMode.AtomicBlock,ChildOrder=[] },a.Id);
+        var c = graph.InsertGroup(new() { Name="Current C",OrderMode=GroupOrderMode.AtomicBlock,ChildOrder=[] },b.Id);
+        var other = graph.InsertGroup(new() { Name="Other parent",OrderMode=GroupOrderMode.AtomicBlock,ChildOrder=[] });
+        foreach (var ownerId in new[] { b.Id, c.Id, other.Id })
+            graph.InsertElement(Box("Navigation fixture content", 10, 10, 8, 8), ownerId, worldCoordinates: false);
+        fixture.Reset(document); var session=fixture.Editor.Session;
+        var toolbar=Field<Window>(fixture.Desktop,"_toolbar"); toolbar.Show(); Pump();
+        fixture.Call("OpenLayers"); session.SetEditScope(c.Id); fixture.Call("SetGroupCanvasMode",GroupCanvasMode.Temporary);
+        fixture.Editor.Tool=EditorTool.Canvas; fixture.Call("OpenCanvasSettings"); Pump(); fixture.Call("RefreshEditingScope");
+        var layers=Field<LayersWindow>(fixture.Desktop,"_layers"); var header=Field<RootCanvasToolbarHeader>(fixture.Desktop,"_rootCanvasHeader");
+        var settings=Field<CanvasSettingsWindow>(fixture.Desktop,"_canvasSettingsWindow");
+        var oldSettingsTarget=(CanvasSettingsTarget)fixture.Call("CaptureCanvasSettingsTarget")!;
+        var currentCrumb=Field<System.Windows.Controls.StackPanel>(layers,"breadcrumbs").Children.OfType<System.Windows.Controls.Button>()
+            .Single(button=>System.Windows.Automation.AutomationProperties.GetItemStatus(button)==L.Get("ScopeNavigation.Current"));
+        var oldMenu=(OverlayContextMenu)currentCrumb.ContextMenu!;
+        oldMenu.PlacementTarget=currentCrumb; oldMenu.IsOpen=true;
+        session.SetSelection([c.Id]); session.DeleteSelection();
+        var afterDelete=((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
+        check("deleting the current scope immediately returns all path surfaces to its nearest live parent",session.EditScopeId==b.Id &&
+            Field<ScopeNavigationPath>(layers,"navigationPath").CurrentIndex==2 && afterDelete.Entries.Count==3 &&
+            Field<System.Windows.Controls.TextBlock>(header,"current").Text.Contains(b.Name,StringComparison.Ordinal) && settings.Title.Contains(b.Name,StringComparison.Ordinal));
+        check("scope deletion closes its old menu and invalidates the old settings gesture",!oldMenu.IsOpen && !oldSettingsTarget.IsCurrent);
+        long scopeVersion=session.EditScopeVersion;
+        session.MoveNodes([b.Id],other.Id);
+        var moved=((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
+        check("moving the current subtree refreshes its ancestry and invalidates old navigation epochs",session.EditScopeId==b.Id && session.EditScopeVersion>scopeVersion &&
+            moved.Entries.Select(e=>e.DisplayName).SequenceEqual(new[]{L.Get("RootCanvas.Main"),other.Name,b.Name}) &&
+            Field<ScopeNavigationPath>(layers,"navigationPath").Entries.Select(e=>e.Key).SequenceEqual(moved.Entries.Select(e=>e.Key)) && settings.Title.Contains(other.Name,StringComparison.Ordinal));
+        var busy=typeof(DesktopSession).GetProperty("_documentBusy",Hidden)!; busy.SetValue(fixture.Desktop,true);
+        try
+        {
+            session.ClearRootCanvas("Clear while document operation is busy");
+            var path=Field<ScopeNavigationPath>(layers,"navigationPath");
+            check("clearing while commands are busy refreshes read-only navigation instead of leaving a removed group",session.EditScopeId is null &&
+                path.CurrentIndex==0 && path.Entries.Count==1 && layers.VisibleNodes.Count==0 && header.Visibility==Visibility.Collapsed && settings.Title==L.Get("EditingScope.MainSettings"));
+        }
+        finally { busy.SetValue(fixture.Desktop,false); }
+        session.Undo(); session.SetEditScope(b.Id); Pump();
+        var stale=((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!.Entries[^1];
+        var fileState=fixture.Call("FileState",session)!;
+        fileState.GetType().GetField("Path")!.SetValue(fileState,Path.Combine(root,"previously-linked.floatcanvas"));
+        fixture.Call("RefreshBoundFileIndicator");
+        var file=Field<BoundFileIndicator>(fixture.Desktop,"_boundFileIndicator");
+        check("linked file is visible before replacing its canvas",file.Visibility==Visibility.Visible);
+        var fresh=new EditorSession(new SceneDocument { Viewport=new(0,0,800,600) });
+        typeof(DesktopSession).GetField("_live",Hidden)!.SetValue(fixture.Desktop,fresh);
+        fixture.Editor.ReplaceSession(fresh,fixture.Editor.ScreenOrigin);
+        var reset=Field<ScopeNavigationPath>(layers,"navigationPath");
+        check("new canvas session immediately clears every old path and historical descendant",!stale.Available && reset.CurrentIndex==0 && reset.Entries.Count==1 &&
+            layers.VisibleNodes.Count==0 && header.Visibility==Visibility.Collapsed && file.Visibility==Visibility.Collapsed && settings.Title==L.Get("EditingScope.MainSettings"));
+        Pump();
+    }
+
     private static void PersistentRoots(Action<string, bool> check, Application app, string root)
     {
         using var fixture = new Fixture(app, Path.Combine(root, "persistent-roots"));
@@ -79,32 +141,32 @@ internal static class GroupCanvasRootEditingTests
         SceneCanvasRoots.Assign(document, foreground.Id, RootCanvasKind.Foreground); SceneCanvasRoots.Assign(document, background.Id, RootCanvasKind.Background);
         fixture.Reset(document); fixture.Call("OpenLayers"); Pump();
         var layers = Field<LayersWindow>(fixture.Desktop, "_layers"); var session = fixture.Editor.Session;
-        var roots = Field<SegmentedChoice>(layers, "rootCanvasChoice"); var modes = Field<SegmentedChoice>(layers, "groupCanvasChoice");
+        var roots = Field<SegmentedChoice>(layers, "rootCanvasChoice"); var modes = Field<CanvasModeSwitch>(layers, "groupCanvasChoice");
         check("root canvas view selector is present by default with RootProject selected and no group actions", layers.CurrentGroupContext is { IsRootContext: true, Mode: GroupCanvasMode.RootProject, Export: null, Detach: null });
         int history = session.UndoCount;
         foreach (var rootCanvas in Enum.GetValues<RootCanvasKind>())
         {
-            roots.SelectedValue = rootCanvas; Pump(); modes.Items[0].IsChecked = true; Pump();
+            roots.SelectedValue = rootCanvas; Pump(); if (modes.Mode != GroupCanvasMode.Temporary) modes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); Pump();
             using (var isolated = (CanvasPreviewSnapshot)fixture.Call("CaptureCanvasPreview")!)
                 check(rootCanvas + " actual root selector command enters its independent canvas", layers.CurrentGroupContext is { IsRootContext: true, Mode: GroupCanvasMode.Temporary } &&
                     session.ActiveRootCanvas == rootCanvas && SceneEvaluation.Build(isolated.Document).Leaves.Count == 1);
-            modes.Items[1].IsChecked = true; Pump();
+            if (modes.Mode != GroupCanvasMode.RootProject) modes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); Pump();
             using (var whole = (CanvasPreviewSnapshot)fixture.Call("CaptureCanvasPreview")!)
                 check(rootCanvas + " actual root selector command restores all roots without dirtying history", layers.CurrentGroupContext?.Mode == GroupCanvasMode.RootProject &&
                     SceneEvaluation.Build(whole.Document).Leaves.Count == 3 && session.UndoCount == history);
         }
-        roots.SelectedValue = RootCanvasKind.Foreground; Pump(); modes.Items[0].IsChecked = true; Pump();
+        roots.SelectedValue = RootCanvasKind.Foreground; Pump(); if (modes.Mode != GroupCanvasMode.Temporary) modes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); Pump();
         fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff123456));
         fixture.Call("SetCanvasProjection", true);
         var opacity = Field<ToolbarOpacitySlider>(fixture.Desktop, "_opacitySlider"); opacity.Value = .45; Pump();
         check("root isolation routes canvas callbacks and opacity to the shared authored header", session.Document.Canvas is
             { BackgroundColor: 0xff123456, Projection.Enabled: true } && session.Document.LayerOpacity == .45 && !session.Document.RootPreviewCanvases.ContainsKey(RootCanvasKind.Foreground));
-        modes.Items[1].IsChecked = true; Pump(); roots.SelectedValue = RootCanvasKind.Main; Pump();
+        if (modes.Mode != GroupCanvasMode.RootProject) modes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); Pump(); roots.SelectedValue = RootCanvasKind.Main; Pump();
         fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff345678)); opacity.Value = .8; Pump();
         check("real root-project mode uses the same authored header without a second foreground header", session.Document.Canvas.BackgroundColor == 0xff345678 && session.Document.LayerOpacity == .8 &&
             !session.Document.RootPreviewCanvases.ContainsKey(RootCanvasKind.Foreground));
-        var group = session.CreateEmptyGroup("Independent group"); session.SetEditScope(group); session.Add(Box("Group artwork", 40, 50, 60, 40)); Pump();
-        modes.Items[0].IsChecked = true; Pump();
+        session.Add(Box("Group artwork", 40, 50, 60, 40)); var group = session.GroupSelection("Independent group")!.Value; session.SetEditScope(group); Pump();
+        if (modes.Mode != GroupCanvasMode.Temporary) modes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); Pump();
         fixture.Call("ChangeCanvas", (Action<CanvasSettings>)(settings => settings.BackgroundColor = 0xff56789a)); fixture.Call("SetCanvasProjection", true); opacity.Value = .3; Pump();
         check("entered ordinary group routes real canvas and toolbar callbacks to its own independent header", session.Document.Groups.Single(item => item.Id == group).PreviewCanvas is
             { Canvas.BackgroundColor: 0xff56789a, Canvas.Projection.Enabled: true, LayerOpacity: .3 } && session.Document.Canvas.BackgroundColor == 0xff345678 && session.Document.LayerOpacity == .8);
@@ -124,11 +186,11 @@ internal static class GroupCanvasRootEditingTests
         using var fixture = new Fixture(app, Path.Combine(root, "cu-independent-pixels"));
         fixture.Reset(CuIndependentDocument()); var session = fixture.Editor.Session;
         fixture.Call("OpenLayers"); Pump(); var layers = Field<LayersWindow>(fixture.Desktop, "_layers");
-        var modes = Field<SegmentedChoice>(layers, "groupCanvasChoice"); var roots = Field<SegmentedChoice>(layers, "rootCanvasChoice");
+        var modes = Field<CanvasModeSwitch>(layers, "groupCanvasChoice"); var roots = Field<SegmentedChoice>(layers, "rootCanvasChoice");
         using var initial = fixture.PresentRefresh("cu-root-project");
         Sample("root-project", initial, "QA red child", 0xffe53e3e);
         Sample("root-project", initial, "QA blue nested", 0xff2366dd); Sample("root-project", initial, "QA main outside", 0xff20ac65);
-        modes.Items[0].IsChecked = true; Pump(); using var main = fixture.PresentRefresh("cu-independent-main");
+        if (modes.Mode != GroupCanvasMode.Temporary) modes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); Pump(); using var main = fixture.PresentRefresh("cu-independent-main");
         check("pure Main mode switch refreshes the keyboard display plan before capturing its frame", ReferenceEquals(
             Field<SceneDocument>(fixture.Desktop, "_presentationDisplayDocument"), ((GroupCanvasView)fixture.Call("CurrentGroupCanvasView")!).Document));
         Sample("independent Main", main, "QA red child", 0xffe53e3e);
@@ -191,7 +253,7 @@ internal static class GroupCanvasRootEditingTests
         fixture.Call("InitializePresentation"); Pump();
         check("native CU repro uses a running keyboard broker without observing the real input desktop", runtime.ObservingKeyboard);
         fixture.Call("OpenLayers"); Pump(); var layers = Field<LayersWindow>(fixture.Desktop, "_layers");
-        var modes = Field<SegmentedChoice>(layers, "groupCanvasChoice");
+        var modes = Field<CanvasModeSwitch>(layers, "groupCanvasChoice");
         using var initial = fixture.PresentNative("cu-native-root-project");
         Sample("native RootProject", initial);
         using var workerStarted = new ManualResetEventSlim(); using var workerRelease = new ManualResetEventSlim();
@@ -204,7 +266,7 @@ internal static class GroupCanvasRootEditingTests
         }));
         try
         {
-            modes.Items[0].IsChecked = true;
+            if (modes.Mode != GroupCanvasMode.Temporary) modes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             var timeout = System.Diagnostics.Stopwatch.StartNew();
             while (!workerStarted.IsSet)
             {
@@ -268,6 +330,20 @@ internal static class GroupCanvasRootEditingTests
         Await((Task)fixture.Call("EditPrefabInstanceAsync", nestedInstance.Id)!);
         fixture.Editor.ScreenOrigin += new PointD(46, 63);
         var active = fixture.Editor.Session; active.SetEditScope(innerGroup.Id); active.SetSelection([leaf.Id]);
+          fixture.Call("RefreshEditingScope");
+          var enteredPath = ((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
+          enteredPath.Entries[0].Navigate(); Pump();
+          var returnedPath = ((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
+          check(kind + " navigation to the document root retains both shared boundaries and deeper scope", ReferenceEquals(fixture.Editor.Session, owner) &&
+              returnedPath.CurrentIndex == 0 && returnedPath.Entries.Select(e => e.Key).SequenceEqual(enteredPath.Entries.Select(e => e.Key)) &&
+              returnedPath.Entries.Skip(1).All(e => e.Available && !e.Local));
+          returnedPath.Entries[^1].Navigate(); Pump();
+          active = fixture.Editor.Session;
+          var resumedPath = ((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
+          check(kind + " forward navigation reopens nested shared contexts and restores the real local group", !ReferenceEquals(active, owner) && active.EditScopeId == innerGroup.Id &&
+              resumedPath.CurrentIndex == enteredPath.CurrentIndex && resumedPath.Entries[^1].Local);
+          check(kind + " shared branch navigation does not publish unchanged drafts or alter owner history", owner.UndoCount == ownerHistory && JsonSerializer.Serialize(owner.Document) == ownerBefore);
+          active.SetSelection([leaf.Id]);
         fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary);
         using var temporary = fixture.Present(kind + "-temporary");
         check(kind + " temporary control displays the current nested source selection", HasBlue(temporary.Pixels, Edge(temporary, kind)));
@@ -337,6 +413,19 @@ internal static class GroupCanvasRootEditingTests
         fixture.Editor.ScreenOrigin += new PointD(53, 28);
         var active = fixture.Editor.Session; active.SetEditScope(group.Id); active.SetSelection([leaf.Id]);
         fixture.Call("SetGroupCanvasMode", GroupCanvasMode.RootProject);
+        var externalBranch = ((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
+        externalBranch.Entries[0].Navigate(); Pump();
+        var returnedBranch = ((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
+        check(kind + " returning to root retains the available external group history", ReferenceEquals(fixture.Editor.Session, owner) &&
+            returnedBranch.CurrentIndex == 0 && returnedBranch.Entries.Count == externalBranch.Entries.Count && returnedBranch.Entries[^1].Available);
+        returnedBranch.Entries[^1].Navigate();
+        var navigationDeadline = DateTime.UtcNow.AddSeconds(10);
+        while ((ReferenceEquals(fixture.Editor.Session, owner) || fixture.Editor.Session.EditScopeId != group.Id) && DateTime.UtcNow < navigationDeadline)
+        { Pump(); Thread.Sleep(5); }
+        active = fixture.Editor.Session;
+        check(kind + " history reopens the read-only external group without changing host or source", !ReferenceEquals(active, owner) &&
+            active.IsReadOnly && active.EditScopeId == group.Id && JsonSerializer.Serialize(owner.Document) == ownerBefore && Hash(path) == diskBefore);
+        active.SetSelection([leaf.Id]);
         CanvasFeedback(check, fixture, owner, kind);
         using var before = fixture.Present(kind + "-root-readonly");
         var center = Center(before, "external-plane", imported.InstanceId);

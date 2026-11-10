@@ -1,4 +1,4 @@
-using L = FloatCanvas.Localization.AppText;
+﻿using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.Core;
 
@@ -19,7 +19,7 @@ public sealed partial class EditorSession
     private Guid[] editScopeAncestors = [];
     public Guid? EditScopeId => editScopeId;
     public long EditScopeVersion { get; private set; }
-    public bool CanInsertInEditScope => !IsReadOnly && (editScopeId is not { } scope || !IsNodeLocked(scope));
+    public bool CanInsertInEditScope => !IsReadOnly && !EditScopePath.Any(group => group.Locked);
     public void RequireWritableScope()
     {
         if (IsReadOnly) throw new InvalidOperationException(L.Get("GroupCanvas.ReadOnly"));
@@ -32,8 +32,18 @@ public sealed partial class EditorSession
         get
         {
             if (editScopeId is not { } scope) return [];
-            var graph = new SceneGraph(Document);
-            return graph.AncestorIds(scope).Reverse().Append(scope).Select(id => graph.FindGroup(id)!).ToArray();
+            // The entered path contains only groups. Resolving it must not index
+            // every drawing primitive for each toolbar permission query.
+            var groups = Document.Groups.ToDictionary(group => group.Id);
+            var path = new List<CanvasGroup>();
+            Guid? next = scope;
+            while (next is { } id)
+            {
+                if (path.Count > SceneLimits.MaximumGroupDepth || !groups.TryGetValue(id, out var group))
+                    throw new InvalidDataException(L.Get("Scene.InvalidElementId"));
+                path.Add(group); next = group.ParentId;
+            }
+            path.Reverse(); return path;
         }
     }
 
@@ -47,7 +57,7 @@ public sealed partial class EditorSession
     {
         if (IsTransactionActive) Cancel();
         var graph = new SceneGraph(Document);
-        if (groupId is { } id && (graph.FindGroup(id) is null || !IsReadOnly && graph.IsLocked(id))) throw new InvalidOperationException(L.Get("Inspector.LayerMissing"));
+        if (groupId is { } id && graph.FindGroup(id) is null) throw new InvalidOperationException(L.Get("Inspector.LayerMissing"));
         if (editScopeId == groupId) return;
         if (groupId is { } rootScope) ActiveRootCanvas = SceneCanvasRoots.Resolve(Document, rootScope, graph);
         editScopeId = groupId;
@@ -67,6 +77,7 @@ public sealed partial class EditorSession
                 if (!visited.Add(ancestorId) || ancestors.Count >= SceneLimits.MaximumGroupDepth || !parents.TryGetValue(ancestorId, out var next)) throw new InvalidDataException(L.Get("Scene.InvalidElementId"));
                 ancestors.Add(ancestorId); parent = next;
             }
+            if (!editScopeAncestors.SequenceEqual(ancestors)) EditScopeVersion++;
             editScopeAncestors = ancestors.ToArray(); return;
         }
         var existing = Document.Groups.Select(group => group.Id).ToHashSet();
@@ -80,7 +91,8 @@ public sealed partial class EditorSession
     public IReadOnlySet<Guid> SelectedElementIds() => ExpandedSelectionIds(new SceneGraph(Document));
     public IEnumerable<CanvasElement> SelectedWorldElements(bool editableOnly = false)
     {
-        var graph = new SceneGraph(Document);
+        if (Selection.Count == 0) return [];
+        var graph = SceneGraph.Read(Document);
         if (Document.Instances.Count > 0)
         {
             var evaluated = SceneEvaluation.Build(Document);
@@ -92,17 +104,17 @@ public sealed partial class EditorSession
     }
     public bool IsNodeVisible(Guid id, bool inherited = true)
     {
-        var graph = new SceneGraph(Document);
+        var graph = SceneGraph.Read(Document);
         return inherited ? graph.IsVisible(id) : graph.FindGroup(id)?.Visible ?? graph.FindInstance(id)?.Visible ?? graph.FindElement(id)?.Visible ?? false;
     }
     public bool IsNodeLocked(Guid id, bool inherited = true)
     {
-        var graph = new SceneGraph(Document);
+        var graph = SceneGraph.Read(Document);
         return inherited ? graph.IsLocked(id) : graph.FindGroup(id)?.Locked ?? graph.FindInstance(id)?.Locked ?? graph.FindElement(id)?.Locked ?? false;
     }
     public RectD? NodeBounds(Guid id)
     {
-        var graph = new SceneGraph(Document);
+        var graph = SceneGraph.Read(Document);
         return NodeBounds(graph, id, Document.Instances.Count > 0 ? SceneEvaluation.Build(Document) : null);
     }
     private static RectD? NodeBounds(SceneGraph graph, Guid id, EvaluatedScene? evaluated = null)
@@ -122,25 +134,13 @@ public sealed partial class EditorSession
     private static RectD WorldBounds(CanvasElement element) => element.IsBillboard
         ? BillboardGeometry.ElementToTarget(element, Projective2D.Identity).TransformBounds(ElementGeometry.StrokedLocalBounds(element))
         : ElementGeometry.Bounds(element);
-    public void SetNodeVisible(Guid id, bool value) => Execute(L.Get(value ? "History.ShowElements" : "History.HideElements"), _ => SetNodeFlag(id, value, locking: false));
-    public void SetNodeLocked(Guid id, bool value) => Execute(L.Get(value ? "History.LockElements" : "History.UnlockElements"), _ => SetNodeFlag(id, value, locking: true));
-    private void SetNodeFlag(Guid id, bool value, bool locking)
+    public void SetNodeVisible(Guid id, bool value) => SetNodesFlag([id], true, value);
+    public void SetNodeLocked(Guid id, bool value) => SetNodesFlag([id], false, value);
+    private static void SetNodeFlag(SceneGraph graph, Guid id, bool value, bool locking)
     {
-        var graph = new SceneGraph(Document);
         if (graph.FindGroup(id) is { } group) { if (locking) group.Locked = value; else group.Visible = value; }
         else if (graph.FindInstance(id) is { } instance) { if (locking) instance.Locked = value; else instance.Visible = value; }
         else if (graph.FindElement(id) is { } element) { if (locking) element.Locked = value; else element.Visible = value; }
-    }
-    public Guid CreateEmptyGroup(string? name = null)
-    {
-        EnsureWritableParent(EditScopeId);
-        var group = new CanvasGroup { Name = NormalizeInsertionName(name) ?? NextGroupName(), OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] };
-        Execute(L.Get("History.GroupElements"), document =>
-        {
-            new SceneGraph(document).InsertGroup(group, EditScopeId, rootCanvas: ActiveRootCanvas);
-            InitializeGroupPreview(group.Id); SetSelectionCore([group.Id]);
-        });
-        return group.Id;
     }
     public void CollectLegacyGroup(Guid groupId) => Execute(L.Get("History.ReorderElements"), document => new SceneGraph(document).CollectLegacyGroup(groupId));
     public void MoveNodes(IEnumerable<Guid> ids, Guid? parentId, Guid? beforeNodeId = null)

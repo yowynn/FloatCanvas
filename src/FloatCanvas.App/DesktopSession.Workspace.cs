@@ -113,10 +113,12 @@ internal sealed partial class DesktopSession
         return false;
     }
 
-    private async Task<bool> ConfirmLeaveWorkspaceAsync()
+    private async Task<bool> ConfirmLeaveWorkspaceAsync(bool requireFileBinding = false)
     {
-        if (!await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return false;
-        return _capture is null || await ConfirmReplaceAsync(_capture, L.Get("Project.ReplaceCapture"));
+        if ((!requireFileBinding || FileState(_live).Path is not null) &&
+            !await ConfirmReplaceAsync(_live, L.Get("Project.ReplaceLive"))) return false;
+        return _capture is null || requireFileBinding && FileState(_capture).Path is null ||
+            await ConfirmReplaceAsync(_capture, L.Get("Project.ReplaceCapture"));
     }
     private async Task ArchiveWorkspaceAsync(bool force = false)
     {

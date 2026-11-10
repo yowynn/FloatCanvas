@@ -19,7 +19,7 @@ internal static class ImageToolEligibility
         var selected = session.Document.Elements.FirstOrDefault(element => session.Selection.Contains(element.Id));
         if (selected is not { Kind: ElementKind.Image, Visible: true, Locked: false, Width: > 0, Height: > 0 } ||
             !session.IsNodeVisible(selected.Id) || session.IsNodeLocked(selected.Id) ||
-            !ElementGeometry.LocalToPlane(new SceneGraph(session.Document).ToWorld(selected)).TryInverse(out _)) return false;
+            !ElementGeometry.LocalToPlane(SceneGraph.Read(session.Document).ToWorld(selected)).TryInverse(out _)) return false;
         image = selected;
         return true;
     }

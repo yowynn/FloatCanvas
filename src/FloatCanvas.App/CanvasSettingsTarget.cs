@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
@@ -16,7 +16,7 @@ internal sealed class CanvasSettingsTarget
     internal bool Independent { get; }
     internal bool IsCurrent => ReferenceEquals(Session.Document, document) && Session.EditScopeVersion == scopeVersion &&
         Session.EditScopeId == scope && Session.ActiveRootCanvas == root && contextCurrent?.Invoke() != false;
-    internal bool IsWritable => !Session.IsReadOnly && (!Independent || Session.CanInsertInEditScope);
+    internal bool IsWritable => !Session.IsReadOnly && Session.CanInsertInEditScope;
     internal CanvasSettings Settings
     {
         get

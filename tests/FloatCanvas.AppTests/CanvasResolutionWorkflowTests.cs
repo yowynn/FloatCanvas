@@ -22,7 +22,8 @@ internal static class CanvasResolutionWorkflowTests
         string root = Path.Combine(AppContext.BaseDirectory, "canvas-resolution-workflow", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         ApplicationPaths.Configure(["--profile", Path.Combine(root, "profile")]);
         foreach (var choice in Enum.GetValues<CanvasResolutionChoice>()) Case(choice);
-        void Case(CanvasResolutionChoice choice)
+        Case(CanvasResolutionChoice.Preserve, nested: true);
+        void Case(CanvasResolutionChoice choice, bool nested = false)
         {
             var screen = new PixelBounds(-24000, -22000, 1920, 1080);
             Func<IReadOnlyList<MonitorInfo>> monitors = () => [new("conversion-private", screen, screen, 96, 96, true)];
@@ -35,7 +36,15 @@ internal static class CanvasResolutionWorkflowTests
             var previous = editor.Session; string oldDocument = JsonSerializer.Serialize(previous.Document);
             var source = new SceneDocument { Viewport = new(0, 0, 3840, 2160), AuthoringReference = new(new(0, 0, 3840, 2160), new(0, 0, 3840, 2160)),
                 Elements = [new() { Kind = ElementKind.Rectangle, Width = 400, Height = 200, Transform = Affine2D.Translation(1700, 900) }] };
-            string path = Path.Combine(root, choice + ".floatcanvas"); var store = new ProjectStore(); Await(store.SaveAsync(path, source, new()));
+            Guid? nestedScope = null;
+            if (nested)
+            {
+                var graph = new SceneGraph(source);
+                var outer = graph.InsertGroup(new() { Name = "Outer", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] });
+                var inner = graph.InsertGroup(new() { Name = "Inner", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] }, outer.Id);
+                graph.ReparentPreservingWorld([source.Elements.Single().Id], inner.Id); nestedScope = inner.Id;
+            }
+            string path = Path.Combine(root, choice + (nested ? "-nested" : "") + ".floatcanvas"); var store = new ProjectStore(); Await(store.SaveAsync(path, source, new()));
             byte[] originalBytes = File.ReadAllBytes(path); int dialogs = 0;
             using var driver = new DialogDriver(choice, () => dialogs++, check, Path.Combine(root, choice + "-compatibility.png"));
             Await((Task)Call("OpenProjectPathCoreAsync", path, false)!);
@@ -47,11 +56,16 @@ internal static class CanvasResolutionWorkflowTests
                 return;
             }
             var opened = editor.Session;
-            var width = ElementGeometry.Bounds(opened.Document.Elements.Single(), includeStroke: false).Width;
+            var width = ElementGeometry.Bounds(new SceneGraph(opened.Document).ToWorld(opened.Document.Elements.Single()), includeStroke: false).Width;
             check(choice + " uses the selected authored pixel scale", Math.Abs(width - (choice == CanvasResolutionChoice.Convert ? 200 : 400)) < 1e-7);
             if (choice == CanvasResolutionChoice.Preserve)
             {
                 check("preserve records the original 4K frame despite a smaller mutable viewport", opened.Document.AuthoringReference!.Frame.Width == 3840 && opened.Document.Viewport.Width == 1920);
+                if (nestedScope is { } scope)
+                {
+                    opened.SetEditScope(scope); Call("SetGroupCanvasMode", GroupCanvasMode.RootProject); Call("CurrentGroupCanvasView");
+                    check("deep project preview exposes root resolution conversion", Field<System.Windows.Controls.MenuItem>(desktop, "_navigationConvert").IsEnabled);
+                }
                 driver.Dispose();
                 using (var preserveCurrent = new DialogDriver(CanvasResolutionChoice.Preserve, () => dialogs++, check))
                     Await((Task)Call("ConvertCurrentCanvasResolutionAsync")!);
@@ -61,7 +75,7 @@ internal static class CanvasResolutionWorkflowTests
                 var converted = editor.Session; var convertedState = Call("FileState", converted)!;
                 check("explicit current-project conversion creates an unbound target-scale copy without rewriting the saved source", dialogs == 3 &&
                     !ReferenceEquals(converted, opened) && converted.Document.ResourceId != source.ResourceId &&
-                    Math.Abs(ElementGeometry.Bounds(converted.Document.Elements.Single(), includeStroke: false).Width - 200) < 1e-7 &&
+                    Math.Abs(ElementGeometry.Bounds(new SceneGraph(converted.Document).ToWorld(converted.Document.Elements.Single()), includeStroke: false).Width - 200) < 1e-7 &&
                     convertedState.GetType().GetField("Path")!.GetValue(convertedState) is null && File.ReadAllBytes(path).SequenceEqual(originalBytes));
                 return;
             }

@@ -104,8 +104,8 @@
     "zh": "当前画布没有可重做的操作。"
   },
   "Audit.GroupRequirement": {
-    "en": "Select at least two unlocked objects.",
-    "zh": "请选择至少两个未锁定的对象。"
+    "en": "Select at least one unlocked layer.",
+    "zh": "请选择至少一个未锁定的图层。"
   },
   "Audit.UngroupRequirement": {
     "en": "Select every member of a group.",

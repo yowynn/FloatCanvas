@@ -341,6 +341,7 @@ internal static class SnapshotImageTests
 
         var scopeDocument = new SceneDocument(); var graph = new SceneGraph(scopeDocument);
         var scope = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock });
+        graph.InsertElement(new() { Kind = ElementKind.Rectangle, Width = 8, Height = 8 }, scope.Id);
         var scoped = new EditorSession(scopeDocument); long revision = scoped.SceneRevision;
         var rootRequest = new SnapshotCaptureRequest(scoped, 19);
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

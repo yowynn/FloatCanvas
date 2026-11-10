@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
@@ -98,7 +98,7 @@ internal static class ImageDropTests
     {
         foreach (string change in new[] { "scope", "scope ABA", "author edit", "foreign transaction", "context callback", "context callback ABA" })
         {
-            var target = new EditorSession(); Guid group = target.CreateEmptyGroup("Target");
+            var target = new EditorSession(); Guid group = target.CreatePopulatedGroup("Target");
             using var request = new ImageDropRequest(target, new(0, 0, 500, 400), CancellationToken.None);
             bool context = true;
             request.BindCompletionGuard(() => context);

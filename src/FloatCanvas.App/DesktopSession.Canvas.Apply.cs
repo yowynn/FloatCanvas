@@ -9,7 +9,7 @@ internal sealed partial class DesktopSession
     private bool CanApplyCanvasViewing => _host.IsEditing && _host.IsVisible && !DocumentOperationBusy &&
         !Active.IsReadOnly && Active.CanInsertInEditScope && !Active.IsTransactionActive && !_editor.HasPointerGesture &&
         _inlineText is null && !_canvasCalibration.IsDragging && !_canvasCalibration.IsPlacing && _canvasGridCalibrationSession is null &&
-        (_groupCanvasMode == GroupCanvasMode.Temporary || _prefabEditContext is null && Active.EditScopeId is null) &&
+        (_groupCanvasMode == GroupCanvasMode.Temporary || _prefabEditContext is null) &&
         EditingCanvasView != CanvasViewTransform.Identity;
 
     private void ApplyCanvasViewing()

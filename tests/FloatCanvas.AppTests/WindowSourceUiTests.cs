@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -128,7 +128,7 @@ internal static class WindowSourceUiTests
         Guid target = Guid.NewGuid(); controls.Refresh(new(SourceCount: 1, DisplayName: "Synthetic", CanPause: true, CanRebind: true, CanCrop: true, CanFreeze: true, EditableImageId: target));
         foreach (var button in Buttons(controls)) button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check("source status controls emit only enabled commands without owning a session", events.SequenceEqual(new[] { WindowSourceAction.Pause, WindowSourceAction.Rebind, WindowSourceAction.Crop, WindowSourceAction.Freeze }));
-        var session = ImageSession(); var group = session.CreateEmptyGroup(); session.SetSelection([session.Document.Elements[0].Id]);
+        var session = ImageSession(); var group = session.CreatePopulatedGroup(); session.SetSelection([session.Document.Elements[0].Id]);
         string before = JsonSerializer.Serialize(session.Document); int history = session.UndoCount, freezes = 0, pauses = 0; var inspector = new InspectorWindow(() => session);
         inspector.SetWindowSourcesUi(_ => new(SourceCount: 1, CanPause: true, CanFreeze: true, CanRebind: true, CanCrop: true, EditableImageId: session.Document.Elements[0].Id)); inspector.PrepareForShow();
         inspector.WindowSourcesFreezeRequested += _ => freezes++; inspector.WindowSourcesPauseRequested += (_, _) => pauses++;

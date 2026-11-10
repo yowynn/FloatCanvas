@@ -108,9 +108,9 @@ internal static class ObjectClipboardTests
         var captureSession = new EditorSession(capture, assets);
         captureSession.Execute("crop", document => new SceneGraph(document).RemoveNodes(document.Elements.Where(element => element.Kind == ElementKind.Image).Select(element => element.Id).ToArray()));
         SceneValidation.Validate(captureSession.Document);
-        check("capture crop removes image slots while preserving editable empty nested group nodes", captureSession.Document.Groups.Count == 2 &&
+        check("capture crop removes image slots and dissolves their empty nested group", captureSession.Document.Groups.Count == 1 &&
             captureSession.Document.Elements.All(element => element.Kind != ElementKind.Image) &&
-            new SceneGraph(captureSession.Document).DescendantElementIds(captureSession.Document.Groups.Single(group => group.ParentId is not null).Id).Count() == 0 &&
+            captureSession.Document.Groups.All(group => group.ParentId is null) &&
             captureSession.Undo() && captureSession.Document.Groups.Count == 2 && captureSession.Document.Elements.Any(element => element.Kind == ElementKind.Image));
         check("clipboard and capture cloning leave the live document unchanged", JsonSerializer.Serialize(source.Document) == sourceBefore);
     }

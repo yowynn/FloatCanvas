@@ -1,4 +1,4 @@
-﻿{
+{
   "GroupCanvas.Context": { "zh": "组合与画布", "en": "Group and canvas" },
   "GroupCanvas.Display": { "zh": "画布显示方式", "en": "Canvas display" },
   "GroupCanvas.Ordinary": { "zh": "普通组", "en": "Ordinary group" },
@@ -6,7 +6,7 @@
   "GroupCanvas.ExternalFile": { "zh": "外部链接 · 只读", "en": "External link · read-only" },
   "GroupCanvas.UnknownSource": { "zh": "来源路径不可用", "en": "Source path unavailable" },
   "GroupCanvas.Temporary": { "zh": "独立画布", "en": "Independent canvas" },
-  "GroupCanvas.RootProject": { "zh": "根工程画布", "en": "Root project canvas" },
+  "GroupCanvas.RootProject": {"zh": "工程预览", "en": "Project preview"},
   "GroupCanvas.TemporaryHint": { "zh": "将当前组合或创作画布作为子工程，使用自己的原点与预览配置独立编辑", "en": "Edit the current group or drawing canvas independently, using its own origin and preview settings" },
   "GroupCanvas.RootHint": { "zh": "显示完整根工程，并仅编辑当前层级和创作画布", "en": "Show the complete root project while editing only the current level and drawing canvas" },
   "GroupCanvas.TemporaryNotice": { "zh": "独立预览当前层级；预览透视不会改变它在根工程中的放置。", "en": "Preview the current level independently. Preview perspective does not change its placement in the root project." },
@@ -16,6 +16,6 @@
   "GroupCanvas.Detach": { "zh": "解除为普通组", "en": "Detach as group" },
   "GroupCanvas.RelativeSource": { "zh": "来源：{0}（相对当前工程）", "en": "Source: {0} (relative to this project)" },
   "GroupCanvas.AbsoluteSource": { "zh": "来源：{0}", "en": "Source: {0}" },
-  "GroupCanvas.ReadOnly": { "zh": "正在只读浏览离线快照，不能修改内容。", "en": "This offline snapshot is read-only. Its content cannot be changed." },
-  "GroupCanvas.ReadOnlyNotice": { "zh": "源文件不可用，正在只读浏览离线快照；解除为普通组后可编辑。", "en": "The source file is unavailable. This offline snapshot is read-only; detach it as a group to edit." }
+  "GroupCanvas.ReadOnly": {"zh": "当前内容只读，不能修改。", "en": "The current content is read-only and cannot be changed."},
+  "GroupCanvas.ReadOnlyNotice": { "zh": "源文件不可用，使用保存快照只读浏览。转为内嵌保留共享关系；解除后成为普通组。", "en": "The source is unavailable; viewing its saved snapshot read-only. Embed retains project sharing; detach creates an ordinary group." }
 }

@@ -283,7 +283,7 @@ internal sealed class OverlayPopupWindow : IDisposable
         openWindows?.Remove(this);
         InputManager.Current.PreProcessInput-=BeforeInput;
         scope.Remove(this);content.RemoveHandler(Keyboard.PreviewGotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler(OverlayWindowScope.ConfigureInputMethod));
-        source.RootVisual=null;source.Dispose();
+        if (!source.IsDisposed) { source.RootVisual=null; source.Dispose(); }
         if(returnFocus && target is not null && PresentationSource.FromVisual(target) is HwndSource targetSource)
         {
             target.Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>

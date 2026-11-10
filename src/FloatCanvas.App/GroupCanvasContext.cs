@@ -1,4 +1,4 @@
-namespace FloatCanvas.App;
+﻿namespace FloatCanvas.App;
 
 internal enum GroupCanvasMode { Temporary, RootProject }
 internal enum GroupStorageKind { Ordinary, Embedded, ExternalFile }
@@ -16,4 +16,4 @@ internal sealed record GroupCanvasContext(
     Action? Detach = null,
     bool IsReadOnly = false,
     bool IsRootContext = false,
-    Action? Embed = null);
+    Action? Embed = null, bool IsOfflineSnapshot = false, string? Notice = null, Action? Retry = null, bool LockedBrowsing = false);

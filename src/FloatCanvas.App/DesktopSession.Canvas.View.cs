@@ -64,7 +64,16 @@ internal sealed partial class DesktopSession
     }
 
     private string CanvasViewingKey()
-        => $"{CanvasEditingNamespace()}/{Active.ActiveRootCanvas}/{Active.EditScopeId}/{(Active.EditScopeId is null && _prefabEditContext is null ? GroupCanvasMode.RootProject : _groupCanvasMode)}";
+    {
+        if (_groupCanvasMode == GroupCanvasMode.RootProject)
+        {
+            // Project preview has one camera owned by the displayed root project,
+            // including while editing a nested group or shared draft.
+            var owner = _prefabEditContext?.Chain().Last().Owner ?? Active;
+            return $"{CanvasIdentityFor(owner).Namespace}/{owner.ActiveRootCanvas}//{GroupCanvasMode.RootProject}";
+        }
+        return $"{CanvasEditingNamespace()}/{Active.ActiveRootCanvas}/{Active.EditScopeId}/{(Active.EditScopeId is null && _prefabEditContext is null ? GroupCanvasMode.RootProject : _groupCanvasMode)}";
+    }
 
     private RectD CanvasViewingReference(GroupCanvasView display) => _groupCanvasMode == GroupCanvasMode.RootProject
         ? display.Document.AuthoringReference?.Frame ?? display.Document.Viewport : Active.EditScopeId is null

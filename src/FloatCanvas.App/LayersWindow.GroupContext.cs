@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using L = FloatCanvas.Localization.AppText;
@@ -8,16 +8,20 @@ namespace FloatCanvas.App;
 internal sealed partial class LayersWindow
 {
     private GroupCanvasContext? groupContext;
-    private bool synchronizingGroupContext;
+
     private readonly TextBlock groupName = new() { FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock groupStorage = new() { FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock groupSource = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private readonly ScrollViewer groupSourceViewport = new() { MaxHeight = 42, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new(0, 3, 0, 3) };
     private readonly TextBlock groupCanvasNotice = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 4, 0, 0) };
-    private readonly SegmentedChoice groupCanvasChoice = new() { Margin = new(0, 5, 0, 0) };
+    private readonly CanvasModeSwitch groupCanvasChoice = new();
     private readonly Button groupExport = new() { MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 0, Margin = new(0, 4, 6, 0), Padding = new(6, 3, 6, 3) };
     private readonly Button groupDetach = new() { MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 0, Margin = new(0, 4, 0, 0), Padding = new(6, 3, 6, 3) };
     private readonly Button groupEmbed = new() { MinHeight = PropertyPanelLayout.ControlHeight, MinWidth = 0, Margin = new(0, 4, 6, 0), Padding = new(6, 3, 6, 3) };
+    private readonly Button retrySource = new() { MinHeight = 26, Margin = new(3,0,0,0) };
+    private readonly Button independentHint = new() { MinHeight = 26, Margin = new(3,0,0,0) };
+    private readonly TextBlock scopeNotice = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11 };
+    private readonly StackPanel scopeNoticeActions = new() { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed };
     private Border? groupContextSite;
     internal GroupCanvasContext? CurrentGroupContext => groupContext;
 
@@ -25,13 +29,7 @@ internal sealed partial class LayersWindow
     {
         var body = new DockPanel();
         groupSourceViewport.Content = groupSource;
-        groupCanvasChoice.IconOnly = true;
-        groupCanvasChoice.Add(L.Get("GroupCanvas.Temporary"), GroupCanvasMode.Temporary, SegmentedChoicePreviews.Icon("canvas"));
-        groupCanvasChoice.Add(L.Get("GroupCanvas.RootProject"), GroupCanvasMode.RootProject, SegmentedChoicePreviews.Icon("combined"));
-        groupCanvasChoice.Items[0].ToolTip = L.Get("GroupCanvas.TemporaryHint");
-        groupCanvasChoice.Items[1].ToolTip = L.Get("GroupCanvas.RootHint");
-        AutomationProperties.SetName(groupCanvasChoice, L.Get("GroupCanvas.Display"));
-        groupCanvasChoice.SelectionChanged += (_, _) => ChangeGroupCanvasMode();
+        groupCanvasChoice.Click += (_, _) => InvokeGroupAction(context => context.Mode == GroupCanvasMode.Temporary ? context.Root : context.Temporary);
         groupStorage.ToolTip = groupCanvasNotice;
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
         void ActionIcon(Button button, string label, string glyph)
@@ -43,12 +41,17 @@ internal sealed partial class LayersWindow
         ActionIcon(groupExport, "GroupCanvas.Export", "M8,11 V2 M4,6 L8,2 L12,6 M2,10 V14 H14 V10");
         ActionIcon(groupDetach, "GroupCanvas.Detach", "M6,3 H2 V7 M10,13 H14 V9 M2,3 L6,7 M14,13 L10,9");
         ActionIcon(groupEmbed, "Prefab.Embed", "M8,2 V10 M4,6 L8,10 L12,6 M2,10 V14 H14 V10");
+        groupEmbed.ToolTip = L.Get("GroupCanvas.EmbedHint");
+        groupDetach.ToolTip = L.Get("GroupCanvas.DetachHint");
         groupEmbed.Click += (_, _) => InvokeGroupAction(context => context.Embed);
         groupExport.Click += (_, _) => InvokeGroupAction(context => context.Export);
         groupDetach.Click += (_, _) => InvokeGroupAction(context => context.Detach);
+        retrySource.Content = L.Get("LayerExperience.RetrySource"); retrySource.Click += (_,_) => InvokeGroupAction(c => c.Retry);
+        independentHint.Content = L.Get("GroupCanvas.Temporary"); independentHint.Click += (_,_) => InvokeGroupAction(c => c.Temporary);
+        scopeNoticeActions.Children.Add(retrySource); scopeNoticeActions.Children.Add(independentHint);
         actions.Children.Add(groupEmbed); actions.Children.Add(groupExport); actions.Children.Add(groupDetach);
-        DockPanel.SetDock(actions, Dock.Right); body.Children.Add(actions); body.Children.Add(groupStorage);
-        foreach (var text in new[] { groupStorage, groupSource, groupCanvasNotice }) text.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
+        body.Children.Add(actions);
+        foreach (var text in new[] { groupStorage, groupSource, groupCanvasNotice, scopeNotice }) text.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
         groupContextSite = new Border { Child = body, Padding = new(0), Visibility = Visibility.Collapsed };
         groupContextSite.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         AutomationProperties.SetName(groupContextSite, L.Get("GroupCanvas.Context"));
@@ -65,6 +68,7 @@ internal sealed partial class LayersWindow
         groupContextSite.Visibility = context is null ? Visibility.Collapsed : Visibility.Visible;
         if (context is null)
         {
+            scopeNotice.Text = ""; scopeNotice.Visibility = scopeNoticeActions.Visibility = Visibility.Collapsed;
             groupName.Text = groupStorage.Text = groupSource.Text = groupCanvasNotice.Text = "";
             groupName.ToolTip = groupSource.ToolTip = null;
             groupSourceViewport.Visibility = Visibility.Collapsed;
@@ -72,6 +76,10 @@ internal sealed partial class LayersWindow
             groupExport.IsEnabled = groupDetach.IsEnabled = false;
             SynchronizeGroupCanvasMode(); return;
         }
+        scopeNotice.Text = context.Notice ?? ""; scopeNotice.Visibility = context.Notice is null ? Visibility.Collapsed : Visibility.Visible;
+        retrySource.Visibility = context.Retry is null ? Visibility.Collapsed : Visibility.Visible;
+        independentHint.Visibility = (context.Notice == L.Get("LayerExperience.NoOccurrence") || context.Notice == L.Get("LayerExperience.Unplaced")) ? Visibility.Visible : Visibility.Collapsed;
+        scopeNoticeActions.Visibility = retrySource.Visibility == Visibility.Visible || independentHint.Visibility == Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
         groupName.Text = context.Name; groupName.ToolTip = context.Name;
         groupStorage.Visibility = context.IsRootContext ? Visibility.Collapsed : Visibility.Visible;
         groupStorage.Text = L.Get(context.Storage switch
@@ -86,36 +94,25 @@ internal sealed partial class LayersWindow
         groupSource.ToolTip = groupSource.Text;
         AutomationProperties.SetName(groupSourceViewport, groupSource.Text);
         groupSourceViewport.Visibility = Visibility.Collapsed;
-        groupStorage.ToolTip = external ? groupSource.Text + "\n" + L.Get("GroupCanvas.ReadOnlyNotice") : groupCanvasNotice.Text;
+
+        groupEmbed.IsEnabled = !context.LockedBrowsing;
         groupEmbed.Visibility = context.Embed is null ? Visibility.Collapsed : Visibility.Visible;
         groupExport.Visibility = !context.IsRootContext && context.Storage is GroupStorageKind.Ordinary or GroupStorageKind.Embedded ? Visibility.Visible : Visibility.Collapsed;
         groupDetach.Visibility = !context.IsRootContext && context.Storage is GroupStorageKind.Embedded or GroupStorageKind.ExternalFile ? Visibility.Visible : Visibility.Collapsed;
-        groupExport.IsEnabled = context.Export is not null; groupDetach.IsEnabled = context.Detach is not null;
-        groupCanvasNotice.Text = L.Get(context.IsReadOnly ? "GroupCanvas.ReadOnlyNotice" : context.Mode == GroupCanvasMode.RootProject ? "GroupCanvas.RootNotice" : "GroupCanvas.TemporaryNotice");
+        groupExport.IsEnabled = context.Export is not null; groupDetach.IsEnabled = context.Detach is not null && !context.LockedBrowsing;
+        groupCanvasNotice.Text = context.Notice ?? L.Get(context.IsReadOnly ? context.IsOfflineSnapshot ? "GroupCanvas.ReadOnlyNotice" : "GroupCanvas.LinkedNotice" : context.Mode == GroupCanvasMode.RootProject ? "GroupCanvas.RootNotice" : "GroupCanvas.TemporaryNotice");
+        if (external) groupStorage.Text = L.Get(context.IsOfflineSnapshot ? "GroupCanvas.SnapshotStatus" : "GroupCanvas.LinkedStatus");
+        groupStorage.ToolTip = (external ? groupSource.Text + "\n" : "") + groupCanvasNotice.Text;
         SynchronizeGroupCanvasMode();
     }
 
     private void SynchronizeGroupCanvasMode()
     {
-        synchronizingGroupContext = true;
-        try
-        {
-            groupCanvasChoice.SelectedValue = groupContext?.Mode;
-            if (groupContext is not { } context) { foreach (var item in groupCanvasChoice.Items) item.IsEnabled = false; return; }
-            groupCanvasChoice.Items[0].IsEnabled = context.Mode == GroupCanvasMode.Temporary || context.Temporary is not null;
-            groupCanvasChoice.Items[1].IsEnabled = context.Mode == GroupCanvasMode.RootProject || context.Root is not null;
-        }
-        finally { synchronizingGroupContext = false; }
-    }
-
-    private void ChangeGroupCanvasMode()
-    {
-        if (synchronizingGroupContext) return;
-        if (groupContext is not { } context) { SynchronizeGroupCanvasMode(); return; }
-        if (groupCanvasChoice.SelectedValue is not GroupCanvasMode requested || requested == context.Mode) return;
-        // The owning session supplies the accepted mode after its pending-edit guards.
-        try { InvokeGroupAction(current => requested == GroupCanvasMode.Temporary ? current.Temporary : current.Root); }
-        finally { SynchronizeGroupCanvasMode(); }
+        var context = groupContext;
+        groupCanvasChoice.Synchronize(context?.Mode ?? GroupCanvasMode.RootProject,
+            canMutate() && !getSession().IsTransactionActive && context is not null &&
+            (context.Mode == GroupCanvasMode.Temporary ? context.Root : context.Temporary) is not null,
+            L.Get(getSession().IsTransactionActive || !canMutate() ? "Inspector.BusyLayersRetained" : "GroupCanvas.SwitchUnavailable"));
     }
 
     private void InvokeGroupAction(Func<GroupCanvasContext, Action?> action)

@@ -362,9 +362,8 @@ internal static class PrefabDesktopContextTests
             typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, true);
             typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsVisible))!.SetValue(host, true);
             owner.SetEditScope(null);
-            Guid ordinary = owner.CreateEmptyGroup("Ordinary badge"); owner.SetEditScope(ordinary);
             var child = new CanvasElement { Kind = ElementKind.Ellipse, Width = 14, Height = 11 };
-            owner.Add(child); owner.SetEditScope(null); owner.SetSelection([ordinary]); Invoke("RefreshGroupCanvasContext");
+            owner.Add(child); Guid ordinary = owner.GroupSelection("Ordinary badge")!.Value; owner.SetEditScope(null); owner.SetSelection([ordinary]); Invoke("RefreshGroupCanvasContext");
             check("a selected ordinary group exposes only the persistent root-view choice", layers.CurrentGroupContext is { IsRootContext: true, IsEntered: false, Export: null, Detach: null });
             layers.PrepareForShow(); layers.EnterGroup(ordinary); layers.PrepareForShow();
             var card = layers.CurrentGroupContext!;

@@ -20,6 +20,7 @@ internal static class MenuAcceptanceTests
         Set("_cropMenuItems", new List<MenuItem>());
         var menu = (ContextMenu)typeof(DesktopSession).GetMethod("CreateLauncherMenu", flags)!.Invoke(session, null)!;
         check("main menu places pass-through immediately after toolbar expansion", menu.Items[1] is MenuItem item && Equals(item.Header, L.Get("ToolbarV2.PassThrough")));
+        check("main menu omits the path navigation already available in its own bar", !menu.Items.OfType<MenuItem>().Any(item => Equals(item.Tag,"editing-scope")));
         var help = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, L.Get("Audit.Help")));
         check("welcome is the first Help item", help.Items[0] is MenuItem welcome && Equals(welcome.Header, L.Get("Welcome.Open")));
         check("diagnostic menu is integrated into report issue", !menu.Items.OfType<MenuItem>().Any(item => Equals(item.Header, L.Get("Menu.SystemDiagnostics"))));

@@ -7,37 +7,43 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>A filename speech bubble in the space above the expanded toolbar.</summary>
+/// <summary>The file entry inside the toolbar's shared file and scope strip.</summary>
 internal sealed class BoundFileIndicator : Grid
 {
-    private const double TextInset=15;
-    private const double TopInset=0;
     private readonly TextBlock label = new() { FontSize=12, FontWeight=FontWeights.SemiBold,
         TextTrimming=TextTrimming.CharacterEllipsis, VerticalAlignment=VerticalAlignment.Center, MaxWidth=300 };
     private readonly Border unsaved;
+    private readonly TextBlock state;
+    private readonly Button entry;
+    private readonly Grid projectIcon = new() { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center };
+    private readonly System.Windows.Shapes.Ellipse modifiedDot = new() { Width = 7, Height = 7, HorizontalAlignment = HorizontalAlignment.Right,
+        VerticalAlignment = VerticalAlignment.Top, StrokeThickness = 1, IsHitTestVisible = false };
+    private bool compact, modified;
     private string? shownPath;
     internal event Action? DisplayChanged;
     internal BoundFileIndicator(Action revert,Action locate,Action detach,Func<bool> canRevert,Func<bool> canDetach)
     {
-        HorizontalAlignment=HorizontalAlignment.Left;VerticalAlignment=VerticalAlignment.Top;
-        Margin=new Thickness(ToolbarLauncher.ArtworkSize,TopInset,10,0);Height=ToolbarUpperRow.ExtensionHeight;Visibility=Visibility.Collapsed;
+        HorizontalAlignment=HorizontalAlignment.Stretch;VerticalAlignment=VerticalAlignment.Top;
+        Height=ToolbarUpperRow.ExtensionHeight;Visibility=Visibility.Collapsed;
         TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);
-        label.FontFamily=new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI");
-        var tail=new System.Windows.Shapes.Path {Data=Geometry.Parse("M8 17 Q5 20 0 21 Q5 23 11 20 Z")};
-        tail.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"CanvasFileBubble");Children.Add(tail);
-        var row=new StackPanel {Orientation=Orientation.Horizontal};row.Children.Add(label);
+        label.FontFamily=new FontFamily("Segoe UI, Microsoft YaHei UI");
+        var row=new Grid(); row.ColumnDefinitions.Add(new() { Width=GridLength.Auto }); row.ColumnDefinitions.Add(new()); row.ColumnDefinitions.Add(new() { Width=GridLength.Auto });
+        projectIcon.Children.Add(CommandGlyphs.Create(CommandGlyphs.Project));
+        modifiedDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"CanvasFileModified");
+        modifiedDot.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"CanvasSurface"); projectIcon.Children.Add(modifiedDot);
+        projectIcon.Margin=new(0,0,6,0); row.Children.Add(projectIcon);
+        Grid.SetColumn(label,1); row.Children.Add(label);
         var status=new StackPanel {Orientation=Orientation.Horizontal};
         var dot=new System.Windows.Shapes.Ellipse {Width=4,Height=4,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,4,0)};
         dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"CanvasHiddenText");status.Children.Add(dot);
-        var state=new TextBlock {Text=L.Get("Project.Unsaved"),FontSize=10,FontWeight=FontWeights.Medium};
+        state=new TextBlock {Text=L.Get("Project.Unsaved"),FontSize=10,FontWeight=FontWeights.Medium};
         state.SetResourceReference(TextBlock.ForegroundProperty,"CanvasHiddenText");status.Children.Add(state);
         unsaved=new Border {Child=status,CornerRadius=new CornerRadius(5),Padding=new Thickness(5,2,5,2),
             Margin=new Thickness(9,0,0,0),VerticalAlignment=VerticalAlignment.Center,Visibility=Visibility.Collapsed};
-        unsaved.SetResourceReference(Border.BackgroundProperty,"CanvasHiddenSurface");row.Children.Add(unsaved);
-        var body=new Border {Child=row,Margin=new Thickness(5,0,0,0),Padding=new Thickness(10,4,10,4),CornerRadius=new CornerRadius(9)};
-        body.SetResourceReference(Border.BackgroundProperty,"CanvasFileBubble");
-        label.SetResourceReference(TextBlock.ForegroundProperty,"CanvasText");Children.Add(body);
-        Effect=new System.Windows.Media.Effects.DropShadowEffect {BlurRadius=5,ShadowDepth=1,Opacity=.12};
+        unsaved.SetResourceReference(Border.BackgroundProperty,"CanvasHiddenSurface");Grid.SetColumn(unsaved,2);row.Children.Add(unsaved);
+        entry=new Button { Content=row, Height=ToolbarUpperRow.ButtonSize, Margin=new(2,3,2,4), VerticalAlignment=VerticalAlignment.Top, HorizontalContentAlignment=HorizontalAlignment.Stretch };
+        entry.SetResourceReference(StyleProperty,"CanvasToolbarInlineButton");
+        label.SetResourceReference(TextBlock.ForegroundProperty,"CanvasText");Children.Add(entry);
         var menu=new OverlayContextMenu();
         var restore=new MenuItem {Header=L.Get("Project.Revert"),Icon=ActionIconButton.Glyph(PanelActionIcon.Refresh)};
         var unbind=new MenuItem {Header=L.Get("Project.Detach"),Icon=ActionIconButton.Glyph(PanelActionIcon.Unpin)};
@@ -45,24 +51,30 @@ internal sealed class BoundFileIndicator : Grid
         restore.Click+=(_,_)=>revert();unbind.Click+=(_,_)=>detach();reveal.Click+=(_,_)=>locate();
         menu.Items.Add(restore);menu.Items.Add(reveal);menu.Items.Add(new Separator());menu.Items.Add(unbind);
         menu.Opened+=(_,_)=>{restore.IsEnabled=canRevert();unbind.IsEnabled=canDetach();};ContextMenu=menu;
+        entry.Click+=(_,_)=>{menu.PlacementTarget=entry;menu.IsOpen=true;};
     }
-    internal void AlignTextLeft(double x)
+    internal void SetCompact(bool value)
     {
-        var aligned=new Thickness(Math.Max(0,x-TextInset),TopInset,10,0);
-        if(Margin!=aligned)Margin=aligned;
+        compact=value; Width=value?ToolbarUpperRow.ButtonSlot:double.NaN;
+        label.Visibility=state.Visibility=value?Visibility.Collapsed:Visibility.Visible;
+        projectIcon.Margin=value?new Thickness(0):new Thickness(0,0,6,0);
+        UpdateModificationIndicators();
+    }
+    private void UpdateModificationIndicators()
+    {
+        unsaved.Visibility=modified&&!compact?Visibility.Visible:Visibility.Collapsed;
+        modifiedDot.Visibility=modified&&compact?Visibility.Visible:Visibility.Collapsed;
     }
     protected override Size MeasureOverride(Size constraint)
     {
         unsaved.Measure(new Size(double.PositiveInfinity, constraint.Height));
-        // The horizontal row otherwise measures its filename with infinite width,
-        // even when a neighbouring toolbar action has reserved part of the header.
-        double width = double.IsFinite(constraint.Width) ? Math.Max(0, constraint.Width - 25 - unsaved.DesiredSize.Width) : 300;
+        // Reserve icon, padding and save status before trimming the filename.
+        double width = double.IsFinite(constraint.Width) ? Math.Max(0, constraint.Width - 40 - unsaved.DesiredSize.Width) : 300;
         label.MaxWidth = Math.Min(300, width);
         return base.MeasureOverride(constraint);
     }
     internal void Refresh(string? path,bool dirty,bool expanded)
     {
-        var previousVisibility = Visibility;
         Visibility=path is not null&&expanded?Visibility.Visible:Visibility.Collapsed;
         if(shownPath!=path)
         {
@@ -74,9 +86,12 @@ internal sealed class BoundFileIndicator : Grid
                 extension.SetResourceReference(TextElement.ForegroundProperty,"CanvasMuted");label.Inlines.Add(extension);
             }
         }
-        unsaved.Visibility=dirty?Visibility.Visible:Visibility.Collapsed;ToolTip=path;
+        state.Text=L.Get("Project.Unsaved");
+        modified=dirty; UpdateModificationIndicators();ToolTip=path;
         System.Windows.Automation.AutomationProperties.SetName(this,path is null?"":Path.GetFileName(path));
         System.Windows.Automation.AutomationProperties.SetItemStatus(this,dirty?L.Get("Project.Unsaved"):"");
-        if (Visibility != previousVisibility) DisplayChanged?.Invoke();
+        System.Windows.Automation.AutomationProperties.SetName(entry,path is null?"":Path.GetFileName(path));
+        System.Windows.Automation.AutomationProperties.SetItemStatus(entry,dirty?L.Get("Project.Unsaved"):"");
+        DisplayChanged?.Invoke();
     }
 }

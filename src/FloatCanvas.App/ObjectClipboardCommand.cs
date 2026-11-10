@@ -69,6 +69,7 @@ internal static class ObjectClipboardCommand
         var graph = new SceneGraph(snapshot);
         graph.RemoveNodes(snapshot.Elements.Select(element => element.Id).Concat(snapshot.Instances.Select(instance => instance.Id))
             .Where(id => !graph.IsVisible(id)).ToArray());
+        snapshot.PruneGroups();
         snapshot.Definitions = PrefabClosure.ReachableDefinitions(snapshot, snapshot.Definitions).ToList();
         var world = SceneEvaluation.Build(snapshot).RenderDocument;
         var visible = world.Elements.Where(element => element.Visible).ToArray();

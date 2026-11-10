@@ -1,4 +1,4 @@
-using L = FloatCanvas.Localization.AppText;
+﻿using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.Core;
 
@@ -12,6 +12,9 @@ public sealed partial class EditorSession
     private string transactionLabel = "";
     private long sequence, nextContentVersion, transactionContentVersion, transactionPreviewRevision;
     public long ContentVersion { get; private set; }
+    /// <summary>Runtime document replacement identity, unchanged by edits and undo.</summary>
+    public long DocumentGeneration { get; private set; }
+    public long HistoryNavigationVersion { get; private set; }
     public bool HasPendingChanges { get; private set; }
 
     public EditorSession(SceneDocument? document = null, AssetLibrary? assets = null, int historyLimit = 100, long historyByteLimit = 256L * 1024 * 1024, bool readOnly = false,
@@ -19,6 +22,7 @@ public sealed partial class EditorSession
     {
         if (historyLimit < 0 || historyByteLimit < 0) throw new ArgumentOutOfRangeException(nameof(historyLimit));
         Document = document ?? new(); Assets = assets ?? new(); HistoryLimit = historyLimit; HistoryByteLimit = historyByteLimit;
+        Document.PruneGroups();
         Document.IndependentCanvasOrigin = independentCanvasOrigin;
         IsReadOnly = readOnly;
     }
@@ -51,7 +55,9 @@ public sealed partial class EditorSession
 
     public void BeginTransaction(string label)
     {
+        SceneGraph.InvalidateReads(Document);
         if (IsReadOnly) throw new InvalidOperationException(L.Get("GroupCanvas.ReadOnly"));
+        EnsureWritableParent(EditScopeId);
         if (IsTransactionActive) throw new InvalidOperationException(L.Get("History.TransactionAlreadyActive"));
         transactionContentVersion = ContentVersion; transactionPreviewRevision = PreviewRevision; HasPendingChanges = false;
         transactionBefore = Document.Clone(); transactionSelection = [.. Selection]; transactionLabel = label; TransactionId++;
@@ -66,7 +72,7 @@ public sealed partial class EditorSession
     {
         if (transactionBefore is null) throw new InvalidOperationException(L.Get("History.NoActiveTransaction"));
         var before = transactionBefore; var selectedBefore = transactionSelection!;
-        try { SceneLimits.ValidateCapacity(Document); }
+        try { Document.PruneGroups(); SceneLimits.ValidateCapacity(Document); }
         catch { Cancel(); throw; }
         PruneSelection();
         bool knownSettings = settingsOnly && PreviewElementsRevision <= transactionPreviewRevision && SettingsElementsUnchanged(before);
@@ -146,7 +152,7 @@ public sealed partial class EditorSession
         var item = undo[^1];
         if (item.UndoOperation is not null) item.UndoOperation();
         else { Document = item.Before!.Clone(); ContentVersion = item.BeforeVersion; SetSelectionCore(item.SelectionBefore!); }
-        undo.RemoveAt(undo.Count - 1); redo.Add(item);
+        undo.RemoveAt(undo.Count - 1); redo.Add(item); HistoryNavigationVersion++;
         PruneSelection();
         if (item.Viewing is { } viewing) CanvasViewRestored?.Invoke(viewing.Before);
         OnChanged(contentChanged: item.UndoOperation is null, preserveContentVersion: true); return true;
@@ -158,7 +164,7 @@ public sealed partial class EditorSession
         var item = redo[^1];
         if (item.RedoOperation is not null) item.RedoOperation();
         else { Document = item.After!.Clone(); ContentVersion = item.AfterVersion; SetSelectionCore(item.SelectionAfter!); }
-        redo.RemoveAt(redo.Count - 1); undo.Add(item);
+        redo.RemoveAt(redo.Count - 1); undo.Add(item); HistoryNavigationVersion++;
         PruneSelection();
         if (item.Viewing is { } viewing) CanvasViewRestored?.Invoke(viewing.After);
         OnChanged(contentChanged: item.RedoOperation is null, preserveContentVersion: true); return true;
@@ -167,7 +173,8 @@ public sealed partial class EditorSession
     {
         if (IsReadOnly) throw new InvalidOperationException(L.Get("GroupCanvas.ReadOnly"));
         ArgumentNullException.ThrowIfNull(document);
-        transactionBefore = null; transactionSelection = null; Document = document; undo.Clear(); redo.Clear(); Selection.Clear();
+        document.PruneGroups();
+        transactionBefore = null; transactionSelection = null; Document = document; DocumentGeneration++; undo.Clear(); redo.Clear(); Selection.Clear();
         ActiveRootCanvas = RootCanvasKind.Main; editScopeId = null; editScopeAncestors = []; EditScopeVersion++; OnChanged(contentChanged: true);
     }
     /// <summary>Restore a snapshot as one undoable edit. A known version must identify that exact saved content.</summary>
@@ -239,7 +246,8 @@ public sealed partial class EditorSession
     }
     public IEnumerable<CanvasElement> SelectedElements()
     {
-        var graph = new SceneGraph(Document); var ids = ExpandedSelectionIds(graph);
+        if (Selection.Count == 0) return [];
+        var graph = SceneGraph.Read(Document); var ids = ExpandedSelectionIds(graph);
         return graph.OrderedLeafIds.Where(ids.Contains).Select(id => graph.FindElement(id)!);
     }
     public void Add(CanvasElement element, string? label = null, int numberStep = 1)
@@ -268,8 +276,8 @@ public sealed partial class EditorSession
         var graph = new SceneGraph(Document);
         foreach (var element in SelectedElements().Where(element => !graph.IsLocked(element.Id))) update(element);
     });
-    public void SetLocked(bool locked) => Execute(locked ? L.Get("History.LockElements") : L.Get("History.UnlockElements"), _ => { foreach (var id in Selection) SetNodeFlag(id, locked, locking: true); });
-    public void SetVisible(bool visible) => Execute(visible ? L.Get("History.ShowElements") : L.Get("History.HideElements"), _ => { foreach (var id in Selection) SetNodeFlag(id, visible, locking: false); });
+    public void SetLocked(bool locked) => SetNodesFlag(Selection, false, locked);
+    public void SetVisible(bool visible) => SetNodesFlag(Selection, true, visible);
     public void DuplicateSelection(double offsetX = 16, double offsetY = 16)
     {
         var snapshot = CreateSelectionSnapshot(normalizeOrigin: false);
@@ -332,6 +340,8 @@ public sealed partial class EditorSession
     private void OnChanged(bool contentChanged = false, bool preserveContentVersion = false, bool previewElementsChanged = true,
         IReadOnlySet<Guid>? previewChangedElements = null)
     {
+        SceneGraph.InvalidateReads(Document);
+        if (contentChanged && !IsTransactionActive) Document.PruneGroups();
         ValidateEditScope();
         if (contentChanged) RecordPreviewChange(previewElementsChanged, previewChangedElements);
         if (contentChanged && IsTransactionActive) HasPendingChanges = true;

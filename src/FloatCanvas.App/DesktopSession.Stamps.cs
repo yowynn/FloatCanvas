@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using L = FloatCanvas.Localization.AppText;
@@ -36,6 +36,7 @@ internal sealed partial class DesktopSession
 
     private void HandleCanvasPointer(OverlayPointerEvent e)
     {
+        using var sceneRead = SceneGraph.BeginReadScope();
         try { HandleCanvasPointerCore(e); }
         finally { ObserveCanvasEdgePan(e); }
     }
@@ -45,7 +46,16 @@ internal sealed partial class DesktopSession
         _ = CurrentGroupCanvasView();
         if (HandleCanvasViewingPointer(e)) return;
         if (Active.IsReadOnly) return;
-        if (!_hasEditableCanvasOccurrence) return;
+        if (!_hasEditableCanvasOccurrence)
+        {
+            if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) UpdateStatus(MissingOccurrenceNotice);
+            return;
+        }
+        if (Active.EditScopeId is { } scope && Active.IsNodeLocked(scope))
+        {
+            if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) UpdateStatus(L.Get("LayerExperience.LockedBrowse"));
+            return;
+        }
         if (_editor.Tool == EditorTool.PointerPresentation)
         {
             if (_eyedropper is not null)

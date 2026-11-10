@@ -1,4 +1,4 @@
-using FloatCanvas.App;
+﻿using FloatCanvas.App;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
 using FloatCanvas.Windows;
@@ -22,6 +22,7 @@ internal static class Program
         {
             if (args is ["--canvas-cold-recovery-child", var recoveryProfile]) { CanvasApplyTests.RunColdRecoveryChild(Assert, recoveryProfile); return 0; }
             if (args.Contains("--isolated-ui-desktop")) return IsolatedUiDesktop.Run(args);
+            if (args is ["--large-layer-project", var layerProject, var layerOutput]) { GroupCanvasRootEditingTests.RunLargeProject(Assert, layerProject, layerOutput); return 0; }
             if (args is ["--screenshot-peer", var peerMode]) { ScreenshotPeerFixture.Run(peerMode); return 0; }
             if (args.Contains("--panel-review-only")) { PanelReviewRegressionTests.Run(Assert, args.SkipWhile(a => a != "--panel-review-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-spacing-only")) { WindowSpacingTests.Run(Assert); return 0; }
@@ -34,6 +35,8 @@ internal static class Program
             if (args.Contains("--toolbar-opacity-pointer-only")) { ToolbarOpacitySliderTests.RunPointer(Assert); return 0; }
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
+            if (args.Contains("--exit-save-policy-only")) { ExitSavePolicyTests.Run(Assert); return 0; }
+            if (args.Contains("--project-preview-navigation-only")) { ProjectPreviewNavigationTests.Run(Assert, args.SkipWhile(a => a != "--project-preview-navigation-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--canvas-feedback-only")) { CanvasFeedbackTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-text-exit-only")) { CanvasTextExitTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-feedback-native-only")) { CanvasFeedbackNativeTests.Run(Assert); return 0; }
@@ -55,6 +58,12 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--layer-round-two-only")) { LayerRoundTwoTests.Run(Assert); return 0; }
+            if (args.Contains("--locate-selection-only")) { LocateSelectionTests.Run(Assert, args.SkipWhile(a => a != "--locate-selection-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--layer-experience-only")) { LayerExperienceTests.Run(Assert, args.SkipWhile(a => a != "--layer-experience-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--canvas-mode-switch-only")) { CanvasModeSwitchTests.Run(Assert, args.SkipWhile(a => a != "--canvas-mode-switch-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--scope-navigation-only")) { ScopeNavigationTests.Run(Assert, args.SkipWhile(a => a != "--scope-navigation-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--scope-recovery-only")) { GroupCanvasRootEditingTests.RunScopeRecovery(Assert, args.SkipWhile(a => a != "--scope-recovery-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--root-canvases-only")) { RootCanvasIntegrationTests.Run(Assert); return 0; }
             if (args.Contains("--root-canvas-indicator-only")) { RootCanvasIndicatorTests.Run(Assert, args.SkipWhile(a => a != "--root-canvas-indicator-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--presentation-chords-only")) { PresentationChordSequenceTests.Run(Assert); return 0; }
@@ -364,6 +373,7 @@ internal static class Program
             if (args.Contains("--number-bounds-only")) { NumberBoundsTests.Run(Assert); return 0; }
             if (args.Contains("--native-input-routing-only")) { NativeInputRoutingFixture.Run(Assert); return 0; }
             if (args.Contains("--stamp-selection-only")) { StampSelectionIntegrationTests.Run(Assert); return 0; }
+            if (args.Contains("--toolbar-header-only")) { ToolbarAcceptanceTests.Run(Assert, headerOnly: true); return 0; }
             if (args.Contains("--toolbar2-only")) { ToolbarAcceptanceTests.Run(Assert); return 0; }
             if (args.Contains("--creation-selection-only")) { CreationSelectionTests.Run(Assert); return 0; }
             if (args.Contains("--click-placement-threshold-only")) { ClickPlacementThresholdTests.Run(Assert); return 0; }
@@ -413,6 +423,7 @@ internal static class Program
             IndependentCanvasExtentTests.Run(Assert);
             CanvasViewingTests.Run(Assert);
             CanvasFeedbackTests.Run(Assert);
+            ProjectPreviewNavigationTests.Run(Assert);
             CanvasApplyTests.Run(Assert);
             RootCanvasIntegrationTests.Run(Assert);
             RootCanvasIndicatorTests.Run(Assert);
@@ -514,6 +525,11 @@ internal static class Program
             Task.Run(() => UpdateRecoveryTests.Run(Assert)).GetAwaiter().GetResult();
             AppUpdateWindowTests.Run(Assert);
             LayerRenameTests.Run(Assert);
+            LocateSelectionTests.Run(Assert);
+            LayerExperienceTests.Run(Assert);
+            LayerRoundTwoTests.Run(Assert);
+            CanvasModeSwitchTests.Run(Assert);
+            ScopeNavigationTests.Run(Assert);
             PrefabUiTests.Run(Assert);
             PrefabOwnerPreviewTests.Run(Assert);
             EmojiTests.Run(Assert);
@@ -572,6 +588,7 @@ internal static class Program
             AppIconTests.Run(Assert);
             WindowChromeTests.Run(Assert);
             Task.Run(() => WorkspaceRecoveryHistoryTests.RunAsync(Assert)).GetAwaiter().GetResult();
+            ExitSavePolicyTests.Run(Assert);
             WorkspacePreviewTests.RunAsync(Assert).GetAwaiter().GetResult();
             NumericControlTests.Run(Assert);
             NumericRailRangeTests.Run(Assert);

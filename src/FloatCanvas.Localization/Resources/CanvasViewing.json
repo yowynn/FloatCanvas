@@ -7,7 +7,7 @@
   "Canvas.ResetView": { "zh": "恢复默认视图", "en": "Reset view" },
   "Canvas.EditCalibration": { "zh": "编辑画布校准", "en": "Edit canvas calibration" },
   "Canvas.ApplyView": { "zh": "将当前取景应用到作品", "en": "Apply current view to artwork" },
-  "Canvas.ApplyViewHint": { "zh": "将当前平移和缩放写入真实内容及校准；影响导出与宿主，可一次撤销。组内总览请先切换独立视图或返回根工程。", "en": "Apply the current pan and zoom to authored content and calibration. Affects exports and hosts; undo in one step. From a group overview, enter its independent view or return to the project root." },
+  "Canvas.ApplyViewHint": { "zh": "将当前平移和缩放写入真实内容及校准，影响导出与宿主，可一次撤销。工程预览作用于整个根工程，独立画布作用于当前范围；共享内容须切换独立画布。", "en": "Apply pan and zoom to authored content and calibration, affecting exports and hosts; undo in one step. Project preview targets the whole root project; Independent canvas targets the current scope. Shared content requires Independent canvas." },
   "Canvas.ApplyViewFailed": { "zh": "无法应用当前取景，作品和视图保持原样：{0}", "en": "Could not apply the view; artwork and view are unchanged: {0}" },
   "Canvas.ResolutionTitle": { "zh": "工程与当前屏幕的分辨率不同", "en": "Project and screen resolutions differ" },
   "Canvas.ResolutionChoice": { "zh": "工程参考屏幕为 {0:0} × {1:0} 像素，当前屏幕为 {2:0} × {3:0} 像素。\n\n保留原尺寸：不改变作品尺寸，部分内容可能位于屏幕外。\n\n转换副本：等比适配并居中，改变作品的像素尺度；宽高比不同时保留留白。首次保存将另存为，原文件保持不变。", "en": "The project's reference screen is {0:0} × {1:0} pixels; the current screen is {2:0} × {3:0} pixels.\n\nKeep original size: preserve artwork dimensions; some content may remain offscreen.\n\nConvert a copy: fit proportionally and center, changing authored pixel sizes. Different aspect ratios retain empty margins. The first save uses Save As and leaves the original file unchanged." },

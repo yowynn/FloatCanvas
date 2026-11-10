@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using System.Windows;
@@ -31,12 +31,12 @@ internal static class NodeControllerAuditTests
 
         Case("nested world draft, stable sample and cancel", () =>
         {
-            var fixture = EmptyNested(); var session = new EditorSession(fixture.Document); session.EnterScope(fixture.Inner);
+            var fixture = PopulatedNested(); var session = CreateSession(fixture.Document); session.EnterScope(fixture.Inner);
             var editor = new EditorController(session) { ScreenOrigin = new(300, -100) };
             editor.ApplyParameters(new() { Tool = EditorTool.Rectangle, Style = new() { Fill = 0xFF2468AA, StrokeWidth = 0 } });
             string before = Json(session.Document); var a = new PointD(350, 260); var b = new PointD(420, 300);
             Pointer(editor, OverlayPointerKind.Down, a); Pointer(editor, OverlayPointerKind.Move, b);
-            var local = session.Document.Elements.Single(); var world = new SceneGraph(session.Document).ToWorld(local); var bounds = ElementGeometry.Bounds(world);
+            var local = session.Document.Elements.Single(e => e.Name != "Scope fixture content"); var world = new SceneGraph(session.Document).ToWorld(local); var bounds = ElementGeometry.Bounds(world);
             check("nested drawing draft is a local child in the active scope", local.GroupId == fixture.Inner && session.IsTransactionActive);
             Near(new(bounds.Left, bounds.Top), a, "two nontrivial parent placements cancel exactly once for the live rectangle");
             check("world draft dimensions remain the actual pointer rectangle", Math.Abs(bounds.Width - 70) < 1e-6 && Math.Abs(bounds.Height - 40) < 1e-6);
@@ -45,14 +45,14 @@ internal static class NodeControllerAuditTests
             Pointer(editor, OverlayPointerKind.Cancel, b);
             check("cancel removes the entire local draft without history or group loss", Json(session.Document) == before && session.UndoCount == 0 && !session.IsTransactionActive);
             Pointer(editor, OverlayPointerKind.Down, a); Pointer(editor, OverlayPointerKind.Move, b); Pointer(editor, OverlayPointerKind.Up, b);
-            world = new SceneGraph(session.Document).ToWorld(session.Document.Elements.Single()); bounds = ElementGeometry.Bounds(world);
+            world = new SceneGraph(session.Document).ToWorld(session.Document.Elements.Single(e => e.Name != "Scope fixture content")); bounds = ElementGeometry.Bounds(world);
             Near(new(bounds.Left, bounds.Top), a, "committing a nested drawing does not apply its parent inverse a second time");
-            check("nested drawing commit is a single reversible local graph operation", session.UndoCount == 1 && session.Undo() && session.Document.Elements.Count == 0 && session.Document.Groups.Count == 2);
+            check("nested drawing commit is a single reversible local graph operation", session.UndoCount == 1 && session.Undo() && session.Document.Elements.Count(e => e.Name != "Scope fixture content") == 0 && session.Document.Groups.Count == 2);
         });
 
         Case("nested freehand and modifier samples stay in one world draft", () =>
         {
-            var fixture = EmptyNested(); var session = new EditorSession(fixture.Document); session.EnterScope(fixture.Inner);
+            var fixture = PopulatedNested(); var session = CreateSession(fixture.Document); session.EnterScope(fixture.Inner);
             var editor = new EditorController(session) { Tool = EditorTool.Freehand, ScreenOrigin = new(-200, 70) };
             var a = new PointD(350, 220); var b = new PointD(370, 230); var c = new PointD(390, 270); var d = new PointD(420, 280);
             Pointer(editor, OverlayPointerKind.Down, a); Pointer(editor, OverlayPointerKind.Move, b); Pointer(editor, OverlayPointerKind.Move, c);
@@ -60,7 +60,7 @@ internal static class NodeControllerAuditTests
             check("a repeated freehand point does not dirty or append to the stroke", session.PreviewRevision == revision);
             editor.ModifiersChanged(OverlayModifiers.Shift, new(c.X + editor.ScreenOrigin.X, c.Y + editor.ScreenOrigin.Y), pointerLeftDown: true);
             Pointer(editor, OverlayPointerKind.Move, d, OverlayModifiers.Shift); Pointer(editor, OverlayPointerKind.Up, d, OverlayModifiers.Shift);
-            var stroke = session.Document.Elements.Single(); var world = new SceneGraph(session.Document).ToWorld(stroke); var mapping = ElementGeometry.LocalToPlane(world);
+            var stroke = session.Document.Elements.Single(e => e.Name != "Scope fixture content"); var world = new SceneGraph(session.Document).ToWorld(stroke); var mapping = ElementGeometry.LocalToPlane(world);
             Near(mapping.TransformPoint(world.Points[0]), a, "nested freehand keeps its first world point after modifier-boundary updates");
             Near(mapping.TransformPoint(world.Points[^1]), d, "nested freehand keeps its final world point after commit");
             check("freehand remains an editable local point collection owned by the active group", stroke.GroupId == fixture.Inner && stroke.Points[0] == default && session.UndoCount == 1);
@@ -68,10 +68,10 @@ internal static class NodeControllerAuditTests
 
         Case("endpoint editing resolves and publishes the parent once", () =>
         {
-            var fixture = EmptyNested(); var graph = new SceneGraph(fixture.Document);
+            var fixture = PopulatedNested(); var graph = new SceneGraph(fixture.Document);
             var line = graph.InsertElement(new() { Kind = ElementKind.Line, Points = [new(0, 0), new(90, 0)], Transform = Affine2D.Translation(20, 30),
                 Style = new() { StrokeWidth = 3 } }, fixture.Inner, worldCoordinates: false);
-            var session = new EditorSession(fixture.Document); session.EnterScope(fixture.Inner); session.SetSelection([line.Id]);
+            var session = CreateSession(fixture.Document); session.EnterScope(fixture.Inner); session.SetSelection([line.Id]);
             var editor = new EditorController(session) { Tool = EditorTool.Select }; var originalParent = graph.NodeWorldPlacement(fixture.Inner);
             var before = graph.ToWorld(line); var map = ElementGeometry.LocalToPlane(before); var start = map.TransformPoint(before.Points[0]); var end = map.TransformPoint(before.Points[^1]);
             var target = end + new PointD(15, 30);
@@ -89,10 +89,10 @@ internal static class NodeControllerAuditTests
 
         Case("selected group carries even an entirely locked set of children", () =>
         {
-            var fixture = EmptyNested(); var graph = new SceneGraph(fixture.Document);
+            var fixture = PopulatedNested(); var graph = new SceneGraph(fixture.Document);
             var a = Box("locked a", 20, 20); a.Locked = true; var b = Box("locked b", 100, 20); b.Locked = true;
             graph.InsertElement(a, fixture.Inner, worldCoordinates: false); graph.InsertElement(b, fixture.Inner, worldCoordinates: false);
-            var session = new EditorSession(fixture.Document); session.SetSelection([fixture.Inner]); var editor = new EditorController(session) { Tool = EditorTool.Select };
+            var session = CreateSession(fixture.Document); session.SetSelection([fixture.Inner]); var editor = new EditorController(session) { Tool = EditorTool.Select };
             var bounds = session.SelectionBounds()!.Value; var grab = bounds.Center; var offset = new PointD(28, -19);
             var localBefore = Json(session.Document.Elements); var placement = graph.FindGroup(fixture.Inner)!.Transform;
             Pointer(editor, OverlayPointerKind.Down, grab); Pointer(editor, OverlayPointerKind.Move, grab + offset); Pointer(editor, OverlayPointerKind.Up, grab + offset);
@@ -104,13 +104,13 @@ internal static class NodeControllerAuditTests
 
         Case("a late controller Up does not commit a foreign transaction", () =>
         {
-            var fixture = EmptyNested(); var session = new EditorSession(fixture.Document); session.EnterScope(fixture.Inner);
+            var fixture = PopulatedNested(); var session = CreateSession(fixture.Document); session.EnterScope(fixture.Inner);
             var editor = new EditorController(session) { Tool = EditorTool.Rectangle };
             Pointer(editor, OverlayPointerKind.Down, new(350, 220)); Pointer(editor, OverlayPointerKind.Move, new(400, 260));
             session.Cancel(); session.BeginTransaction("foreign owner"); long foreign = session.TransactionId;
             session.Document.NextNumber = 77; session.NotifySettingsChanged();
             Pointer(editor, OverlayPointerKind.Up, new(410, 270));
-            check("a stale pointer edge preserves the newer owner's active transaction", session.IsTransactionActive && session.TransactionId == foreign && session.Document.NextNumber == 77 && session.UndoCount == 0 && session.Document.Elements.Count == 0);
+            check("a stale pointer edge preserves the newer owner's active transaction", session.IsTransactionActive && session.TransactionId == foreign && session.Document.NextNumber == 77 && session.UndoCount == 0 && session.Document.Elements.Count(e => e.Name != "Scope fixture content") == 0);
             session.Cancel();
         });
 
@@ -135,7 +135,7 @@ internal static class NodeControllerAuditTests
                 else Pointer(editor, OverlayPointerKind.Move, new(390, 260));
                 Pointer(editor, OverlayPointerKind.Up, new(390, 260));
                 check("a stale " + (modifier ? "modifier boundary" : "move sample") + " cannot write or finish a foreign transaction", session.IsTransactionActive &&
-                    session.TransactionId == foreign && session.Document.NextNumber == 89 && session.Document.Elements.Count == 0 && session.UndoCount == 0);
+                    session.TransactionId == foreign && session.Document.NextNumber == 89 && session.Document.Elements.Count(e => e.Name != "Scope fixture content") == 0 && session.UndoCount == 0);
                 session.Cancel();
             }
         });
@@ -150,7 +150,7 @@ internal static class NodeControllerAuditTests
                 editor.Pointer(new(OverlayPointerKind.Move, new(390, 260), button, OverlayModifiers.None));
                 editor.Pointer(new(OverlayPointerKind.Up, new(390, 260), button, OverlayModifiers.None));
                 check("new " + button + " input cannot cancel or commit another UI owner's active transaction", session.IsTransactionActive && session.TransactionId == foreign &&
-                    session.Document.NextNumber == 90 && session.Document.Elements.Count == 0 && !editor.IsTemporaryMove);
+                    session.Document.NextNumber == 90 && session.Document.Elements.Count(e => e.Name != "Scope fixture content") == 0 && !editor.IsTemporaryMove);
                 session.Cancel();
             }
         });
@@ -196,19 +196,19 @@ internal static class NodeControllerAuditTests
         foreach (var tool in new[] { EditorTool.Rectangle, EditorTool.Freehand, EditorTool.Line, EditorTool.Number, EditorTool.Emoji })
             Case("a locked ancestor blocks new controller creation " + tool, () =>
             {
-                var fixture = EmptyNested(); var session = new EditorSession(fixture.Document); session.EnterScope(fixture.Inner);
+                var fixture = PopulatedNested(); var session = CreateSession(fixture.Document); session.EnterScope(fixture.Inner);
                 var parent = new SceneGraph(session.Document).ParentId(fixture.Inner)!.Value; session.SetNodeLocked(parent, true);
                 var editor = new EditorController(session) { Tool = tool }; string before = Json(session.Document); int history = session.UndoCount;
                 Pointer(editor, OverlayPointerKind.Down, new(350, 220));
                 check("locked-scope " + tool + " rejects before starting a transaction or inserting a draft", !session.IsTransactionActive &&
-                    Json(session.Document) == before && session.UndoCount == history && session.Document.Elements.Count == 0);
+                    Json(session.Document) == before && session.UndoCount == history && session.Document.Elements.Count(e => e.Name != "Scope fixture content") == 0);
                 Pointer(editor, OverlayPointerKind.Move, new(400, 260)); Pointer(editor, OverlayPointerKind.Up, new(400, 260));
                 check("locked-scope " + tool + " cannot publish later pointer samples or advance number state", Json(session.Document) == before && session.UndoCount == history && !session.IsTransactionActive);
             });
 
         Case("locked-scope snapshot insertion publishes no resource", () =>
         {
-            var fixture = EmptyNested(); var session = new EditorSession(fixture.Document); session.EnterScope(fixture.Inner);
+            var fixture = PopulatedNested(); var session = CreateSession(fixture.Document); session.EnterScope(fixture.Inner);
             session.SetNodeLocked(new SceneGraph(session.Document).ParentId(fixture.Inner)!.Value, true);
             using var surface = SKSurface.Create(new SKImageInfo(2, 2, SKColorType.Bgra8888, SKAlphaType.Premul)); surface.Canvas.Clear(SKColors.Red);
             using var image = surface.Snapshot(); using var bytes = image.Encode(SKEncodedImageFormat.Png, 100);
@@ -220,8 +220,8 @@ internal static class NodeControllerAuditTests
 
         Case("node property panel owns only its transaction", () =>
         {
-            var fixture = EmptyNested(); var graph = new SceneGraph(fixture.Document); graph.InsertElement(Box("panel child", 10, 20), fixture.Inner, worldCoordinates: false);
-            var session = new EditorSession(fixture.Document); session.SetSelection([fixture.Inner]); bool mutable = true;
+            var fixture = PopulatedNested(); var graph = new SceneGraph(fixture.Document); graph.InsertElement(Box("panel child", 10, 20), fixture.Inner, worldCoordinates: false);
+            var session = CreateSession(fixture.Document); session.SetSelection([fixture.Inner]); bool mutable = true;
             var panel = new NodeTransformPanel(() => session, () => mutable); panel.Refresh();
             var fields = Field<Dictionary<string, NumericValueField>>(panel, "fields"); var original = Json(session.Document);
             fields["X"].Input.Text = (session.SelectionBounds()!.Value.Left + 20).ToString(CultureInfo.CurrentCulture); Invoke(panel, "Publish", "X");
@@ -240,10 +240,10 @@ internal static class NodeControllerAuditTests
 
         Case("mixed group and leaf property pivots operate in world coordinates", () =>
         {
-            var fixture = EmptyNested(); var graph = new SceneGraph(fixture.Document);
+            var fixture = PopulatedNested(); var graph = new SceneGraph(fixture.Document);
             var child = graph.InsertElement(Box("pivot group child", 10, 20), fixture.Inner, worldCoordinates: false);
             var peer = graph.InsertElement(Box("pivot root peer", 450, 300));
-            var session = new EditorSession(fixture.Document); session.SetSelection([fixture.Inner, peer.Id]);
+            var session = CreateSession(fixture.Document); session.SetSelection([fixture.Inner, peer.Id]);
             var panel = new NodeTransformPanel(() => session, () => true); panel.Refresh(); var fields = Field<Dictionary<string, NumericValueField>>(panel, "fields");
             var initial = SceneEvaluation.Build(session.Document); var pivot = session.SelectionBounds()!.Value.Center; var delta = Affine2D.Around(pivot, Affine2D.Rotation(90));
             var childLocal = Json(graph.FindElement(child.Id)!);
@@ -262,8 +262,8 @@ internal static class NodeControllerAuditTests
 
         Case("single-leaf Inspector edits source-local geometry and validates world placement", () =>
         {
-            var fixture = EmptyNested(); var graph = new SceneGraph(fixture.Document); var leaf = graph.InsertElement(Box("inspector child", 20, 30), fixture.Inner, worldCoordinates: false);
-            var session = new EditorSession(fixture.Document); session.EnterScope(fixture.Inner); session.SetSelection([leaf.Id]);
+            var fixture = PopulatedNested(); var graph = new SceneGraph(fixture.Document); var leaf = graph.InsertElement(Box("inspector child", 20, 30), fixture.Inner, worldCoordinates: false);
+            var session = CreateSession(fixture.Document); session.EnterScope(fixture.Inner); session.SetSelection([leaf.Id]);
             var inspector = new InspectorWindow(() => session); using var surface = new InspectorTestSurface(inspector);
             var fields = Field<Dictionary<string, TextBox>>(inspector, "fields"); var parent = graph.NodeWorldPlacement(fixture.Inner); var before = graph.ToWorld(leaf);
             fields["X"].Text = "27"; inspector.CompletePendingEdit(); graph = new(session.Document);
@@ -299,12 +299,18 @@ internal static class NodeControllerAuditTests
         if (failures.Count > 0) throw new InvalidOperationException("Node controller audit failures:\n" + string.Join("\n", failures));
     }
 
-    private static (SceneDocument Document, Guid Inner) EmptyNested()
+    private static (SceneDocument Document, Guid Inner) PopulatedNested()
     {
         var document = new SceneDocument { Viewport = new(0, 0, 1000, 800) }; var graph = new SceneGraph(document);
         var outer = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock, Transform = Affine2D.Translation(80, 70).Compose(Affine2D.Rotation(25)).Compose(Affine2D.Scale(1.4, .8)) });
         var inner = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock, Transform = Affine2D.Translation(90, 50).Compose(Affine2D.Rotation(-15)) }, outer.Id);
         return (document, inner.Id);
+    }
+    private static EditorSession CreateSession(SceneDocument document)
+    {
+        if (document.Elements.Count == 0)
+            new SceneGraph(document).InsertElement(new() { Name = "Scope fixture content", Kind = ElementKind.Rectangle, Width = 1, Height = 1, Visible = false }, document.Groups[^1].Id, worldCoordinates: false);
+        return new(document);
     }
     private static CanvasElement Box(string name, double x, double y) => new()
     {

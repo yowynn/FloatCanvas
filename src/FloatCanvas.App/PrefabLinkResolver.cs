@@ -94,9 +94,19 @@ internal sealed class PrefabLinkResolver
         // The placed definition contains authored Main nodes only; the canvas
         // header remains preview metadata and is never turned into host content.
         var document = SceneCanvasRoots.ExtractRootContent(project.Document, RootCanvasKind.Main);
+        document.PruneGroups();
         var graph = new SceneGraph(document); graph.MaterializeOrder();
         // An unlocked wrapper includes hidden/locked roots without changing their flags.
         var roots = graph.EnumerateChildren(null).ToArray();
+        if (roots.Length == 0)
+        {
+            // An empty resource is valid; it must not rely on an empty ordinary
+            // group surviving editor-session normalization.
+            var empty = new PrefabDefinition { Name = name, Graph = new() { RootOrder = [] }, PreviewCanvas = SubprojectCanvasSettings.FromDocument(document) };
+            var emptyPackage = new PrefabPackage { ResourceId = project.Document.ResourceId, EntryDefinitionId = empty.Id, Definitions = [empty] };
+            if (project.Document.ResourceIdentityPersistent) emptyPackage.RecordResourceIdentityPersistence();
+            return (emptyPackage, default);
+        }
         var wrapper = graph.InsertGroup(new() { Name = name, OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] });
         graph.ReparentPreservingWorld(roots, wrapper.Id);
         var temporary = new EditorSession(document, project.Assets); temporary.SetSelection([wrapper.Id]);

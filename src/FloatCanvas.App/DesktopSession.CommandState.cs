@@ -15,7 +15,7 @@ internal sealed partial class DesktopSession
             var nodes = graph.NormalizeSelection(Active.Selection).Where(id => !graph.IsLocked(id)).ToArray();
             return command switch
             {
-                "group" => Active.CanInsertInEditScope && (nodes.Length >= 2 || nodes.Length == 1 && (graph.FindGroup(nodes[0]) is not null || graph.FindInstance(nodes[0]) is not null)),
+                "group" => Active.CanInsertInEditScope && nodes.Length > 0,
                 "duplicate" => nodes.Length > 0 && Active.CanInsertInEditScope,
                 "ungroup" => nodes.Any(id => graph.FindGroup(id) is not null),
                 _ => nodes.Length > 0

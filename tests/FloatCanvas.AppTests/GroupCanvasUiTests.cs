@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -44,22 +44,22 @@ internal static class GroupCanvasUiTests
         using var host = new NativeHost(layers, width, 540);
         layers.PrepareForShow(); host.Layout();
         var site = Field<Border>(layers, "groupContextSite");
-        var choice = Field<SegmentedChoice>(layers, "groupCanvasChoice");
+        var choice = Field<CanvasModeSwitch>(layers, "groupCanvasChoice");
         var export = Field<Button>(layers, "groupExport"); var detach = Field<Button>(layers, "groupDetach");
         check(prefix + "missing owner context hides the operation area", site.Visibility == Visibility.Collapsed && layers.CurrentGroupContext is null);
         int first = 0, replacement = 0, temporaryCalls = 0, rootCalls = 0;
         layers.SetGroupContext(new("Foreground", GroupStorageKind.Ordinary, null, GroupCanvasMode.RootProject, false,
             Temporary: () => temporaryCalls++, Root: () => rootCalls++, IsRootContext: true)); host.Layout();
         check(prefix + "root level keeps the view selector without exposing group storage or operations", site.Visibility == Visibility.Visible &&
-            choice.SelectedValue is GroupCanvasMode.RootProject && Field<TextBlock>(layers, "groupStorage").Visibility == Visibility.Collapsed &&
-            export.Visibility == Visibility.Collapsed && detach.Visibility == Visibility.Collapsed && choice.Items.All(item => item.IsEnabled));
+            choice.Mode is GroupCanvasMode.RootProject && Field<TextBlock>(layers, "groupStorage").Visibility == Visibility.Collapsed &&
+            export.Visibility == Visibility.Collapsed && detach.Visibility == Visibility.Collapsed && choice.IsEnabled);
         layers.SetGroupContext(null);
         var ordinary = new GroupCanvasContext("Stamp A", GroupStorageKind.Ordinary, null, GroupCanvasMode.Temporary, true, Export: () => first++);
         layers.SetGroupContext(ordinary with { IsEntered = false, Temporary = () => temporaryCalls++ });
-        check(prefix + "a selected but unentered group has no operation card or exposed callbacks", site.Visibility == Visibility.Collapsed && layers.CurrentGroupContext is null && choice.SelectedValue is null && choice.Items.All(item => !item.IsEnabled));
-        choice.SelectedValue = GroupCanvasMode.Temporary;
+        check(prefix + "a selected but unentered group has no operation card or exposed callbacks", site.Visibility == Visibility.Collapsed && layers.CurrentGroupContext is null && !choice.IsEnabled && !choice.IsEnabled);
+        choice.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
         export.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-        check(prefix + "hidden unentered card cannot activate entry or group operations", temporaryCalls == 0 && first == 0 && layers.CurrentGroupContext is null && choice.SelectedValue is null);
+        check(prefix + "hidden unentered card cannot activate entry or group operations", temporaryCalls == 0 && first == 0 && layers.CurrentGroupContext is null && !choice.IsEnabled);
         temporaryCalls = 0;
         layers.SetGroupContext(ordinary); host.Layout();
         check(prefix + "ordinary group exposes export and identifies its storage", site.Visibility == Visibility.Visible && export.Visibility == Visibility.Visible && export.IsEnabled && detach.Visibility == Visibility.Collapsed && Field<TextBlock>(layers, "groupStorage").Text == L.Get("GroupCanvas.Ordinary"));
@@ -71,21 +71,21 @@ internal static class GroupCanvasUiTests
         layers.SetGroupContext(ordinary with { Export = () => observedName = session.Document.Elements.Single().Name });
         export.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
         check(prefix + "group operations commit an active layer rename before invoking callbacks", !layers.IsRenaming && observedName == "Edited before export");
-        choice.SelectedValue = GroupCanvasMode.RootProject;
-        check(prefix + "unavailable radio target cannot change the accepted mode", Equals(choice.SelectedValue, GroupCanvasMode.Temporary) && !choice.Items[1].IsEnabled);
+        choice.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        check(prefix + "unavailable radio target cannot change the accepted mode", Equals(choice.Mode, GroupCanvasMode.Temporary) && !choice.IsEnabled);
         layers.SetGroupContext(ordinary with { Root = () => rootCalls++ });
-        choice.SelectedValue = GroupCanvasMode.RootProject;
-        check(prefix + "cancelled or pending canvas switch restores the authoritative mode", rootCalls == 1 && Equals(choice.SelectedValue, GroupCanvasMode.Temporary) && layers.CurrentGroupContext?.Mode == GroupCanvasMode.Temporary);
+        choice.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        check(prefix + "cancelled or pending canvas switch restores the authoritative mode", rootCalls == 1 && Equals(choice.Mode, GroupCanvasMode.Temporary) && layers.CurrentGroupContext?.Mode == GroupCanvasMode.Temporary);
         int history = session.UndoCount; var children = layers.VisibleNodes.Select(row => row.Id).ToArray();
         GroupCanvasContext? accepted = null;
         Action root = () => { rootCalls++; accepted = accepted! with { Mode = GroupCanvasMode.RootProject }; layers.SetGroupContext(accepted); };
         Action temporary = () => { temporaryCalls++; accepted = accepted! with { Mode = GroupCanvasMode.Temporary }; layers.SetGroupContext(accepted); };
         accepted = ordinary with { Root = root, Temporary = temporary };
-        layers.SetGroupContext(accepted); choice.SelectedValue = GroupCanvasMode.RootProject; host.Layout();
-        check(prefix + "accepted root canvas switch preserves the entered child list and history", rootCalls == 2 && Equals(choice.SelectedValue, GroupCanvasMode.RootProject) && session.EditScopeId == group.Id && session.UndoCount == history && children.SequenceEqual(layers.VisibleNodes.Select(row => row.Id)));
+        layers.SetGroupContext(accepted); choice.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); host.Layout();
+        check(prefix + "accepted root canvas switch preserves the entered child list and history", rootCalls == 2 && Equals(choice.Mode, GroupCanvasMode.RootProject) && session.EditScopeId == group.Id && session.UndoCount == history && children.SequenceEqual(layers.VisibleNodes.Select(row => row.Id)));
         check(prefix + "root mode explains full preview and current list scope", Field<TextBlock>(layers, "groupCanvasNotice").Text == L.Get("GroupCanvas.RootNotice"));
-        choice.SelectedValue = GroupCanvasMode.Temporary;
-        check(prefix + "temporary canvas switch uses current callback", temporaryCalls == 1 && Equals(choice.SelectedValue, GroupCanvasMode.Temporary));
+        choice.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        check(prefix + "temporary canvas switch uses current callback", temporaryCalls == 1 && Equals(choice.Mode, GroupCanvasMode.Temporary));
 
         foreach (var storage in Enum.GetValues<GroupStorageKind>())
         {
@@ -101,8 +101,8 @@ internal static class GroupCanvasUiTests
             check(prefix + storage + " shared navigation has no separate complete or cancel controls", Field<WrapPanel>(layers, "editContext").Children.Count == 0);
             check(prefix + storage + " auxiliary canvases stay in a closed icon menu", Field<Button>(layers, "rootCanvasMenu").ContextMenu?.IsOpen == false);
             if (storage != GroupStorageKind.Ordinary) { detach.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); check(prefix + storage + " detach invokes the current operation once", detached == 1); }
-            var controls = new FrameworkElement[] { site, choice, choice.Items[0], choice.Items[1], export, detach }.Where(control => control.Visibility == Visibility.Visible);
-            check(prefix + storage + " group controls fit the narrow native viewport", controls.All(control => Within(control, host.Root)) && choice.Items.All(item => item.ActualHeight >= 26) && Bounds(Field<ListBox>(layers, "layers"), host.Root).Height > 90);
+            var controls = new FrameworkElement[] { site, choice, export, detach }.Where(control => control.Visibility == Visibility.Visible);
+            check(prefix + storage + " group controls fit the narrow native viewport", controls.All(control => Within(control, host.Root)) && choice.ActualHeight >= 26 && Bounds(Field<ListBox>(layers, "layers"), host.Root).Height > 90);
             check(prefix + storage + " no thumbnail or separate preview button remains", !Descendants<Image>(site).Any() && !Descendants<Button>(site).Any(button => button.Content?.ToString() == L.Get("Prefab.PreviewAll")));
             if (output is not null)
             {
@@ -136,15 +136,15 @@ internal static class GroupCanvasUiTests
         var list = Field<ListBox>(window, "layers"); list.SelectedItem = window.FindNode(group.Id); host.Layout();
         var row = LayerTreeRowPresenter.Find(window.Container(group.Id))!;
         check(prefix + " offline snapshot still populates and selects its real group list", window.VisibleNodes.Single().Id == group.Id && session.Selection.SetEquals([group.Id]));
-        check(prefix + " offline snapshot disables row mutation controls and new group creation", !row.Handle.IsEnabled && !row.VisibleButton.IsEnabled && !row.LockedButton.IsEnabled && !Field<Button>(window, "addGroup").IsEnabled && !window.BeginRename(group.Id) && !window.BeginDrag(group.Id));
+        check(prefix + " offline snapshot disables row mutation controls without an empty-group action", !row.Handle.IsEnabled && !row.VisibleButton.IsEnabled && !row.LockedButton.IsEnabled && !window.BeginRename(group.Id) && !window.BeginDrag(group.Id));
         row.EnterButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.PrepareForShow(); host.Layout(); list.SelectedItem = window.FindNode(element.Id);
-        window.SetLayerFlag(element.Id, true, false); Field<Button>(window, "addGroup").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        window.SetLayerFlag(element.Id, true, false);
         check(prefix + " offline snapshot permits locked-group navigation and selection while mutations keep history unchanged", session.EditScopeId == group.Id && session.Selection.SetEquals([element.Id]) && window.VisibleNodes.Single().Id == element.Id && element.Visible && session.Document.Groups.Count == 1 && session.UndoCount == 0);
         int copied = 0, deleted = 0; window.CommandKey += key => { if (key == 0x43) copied++; if (key == 0x2e) deleted++; };
         var route = typeof(LayersWindow).GetMethod("RouteCommandKey", Hidden)!;
         route.Invoke(window, [0x43, true]); route.Invoke(window, [0x2e, false]);
         check(prefix + " offline snapshot routes Copy but blocks data editing shortcuts", copied == 1 && deleted == 0 && session.Document.Elements.Count == 1 && session.UndoCount == 0);
-        int detached = 0; window.SetGroupContext(new("Cached source", GroupStorageKind.ExternalFile, "C:/unavailable/source.floatcanvas", GroupCanvasMode.Temporary, true, Detach: () => detached++, IsReadOnly: true)); host.Layout();
+        int detached = 0; window.SetGroupContext(new("Cached source", GroupStorageKind.ExternalFile, "C:/unavailable/source.floatcanvas", GroupCanvasMode.Temporary, true, Detach: () => detached++, IsReadOnly: true, IsOfflineSnapshot: true)); host.Layout();
         Field<Button>(window, "groupDetach").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
         check(prefix + " offline snapshot explains its read-only state and keeps explicit detach available", Field<TextBlock>(window, "groupCanvasNotice").Text == L.Get("GroupCanvas.ReadOnlyNotice") && Field<Button>(window, "groupDetach").IsEnabled && detached == 1);
         SessionWindowCoordinator.Close(window);
@@ -155,7 +155,7 @@ internal static class GroupCanvasUiTests
     private static bool Within(FrameworkElement control, FrameworkElement root) { var bounds = Bounds(control, root); return bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= -.1 && bounds.Top >= -.1 && bounds.Right <= root.ActualWidth + .1 && bounds.Bottom <= root.ActualHeight + .1; }
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject { for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); if (child is T value) yield return value; foreach (var item in Descendants<T>(child)) yield return item; } }
     private static void Save(FrameworkElement root, string path) { var dpi = VisualTreeHelper.GetDpi(root); var bitmap = new RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth * dpi.DpiScaleX), (int)Math.Ceiling(root.ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32); bitmap.Render(root); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var stream = File.Create(path); encoder.Save(stream); }
-    private sealed class NativeHost : IDisposable
+    internal sealed class NativeHost : IDisposable
     {
         private readonly LayersWindow window; private readonly FrameworkElement content; private readonly HwndSource source; private readonly int width, height;
         internal Border Root { get; } internal nint Handle => source.Handle;
@@ -167,7 +167,7 @@ internal static class GroupCanvasUiTests
             var headerActions = (FrameworkElement)window.Resources["CanvasWindowActions"];
             headerActions.HorizontalAlignment = HorizontalAlignment.Right; surface.Children.Add(headerActions);
             Grid.SetRow(content, 1); surface.Children.Add(content);
-            Root = new Border { Width = width, Height = height, Child = surface }; Root.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
+            Root = new Border { Width = width, Height = height, Child = surface }; Root.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); AppTheme.UsePopupPalette(Root);
             Root.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "CanvasText");
             source = new(new HwndSourceParameters("FloatCanvas group operation UI") { Width = width, Height = height, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x08000080 }); source.RootVisual = Root;
             var dpi = VisualTreeHelper.GetDpi(Root); SetWindowPos(source.Handle, 0, 0, 0, (int)Math.Ceiling(width * dpi.DpiScaleX), (int)Math.Ceiling(height * dpi.DpiScaleY), 0x16); Layout();

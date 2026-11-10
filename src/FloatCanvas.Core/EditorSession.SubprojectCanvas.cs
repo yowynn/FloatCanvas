@@ -10,7 +10,7 @@ public sealed partial class EditorSession
     public SubprojectCanvasSettings GetEditingSubprojectCanvas()
     {
         if (EditScopeId is { } scope)
-            return new SceneGraph(Document).FindGroup(scope)?.PreviewCanvas?.Clone() ?? new();
+            return Document.Groups.FirstOrDefault(group => group.Id == scope)?.PreviewCanvas?.Clone() ?? new();
         return GetRootSubprojectCanvas(ActiveRootCanvas);
     }
 
@@ -27,7 +27,7 @@ public sealed partial class EditorSession
     {
         var settings = GetEditingSubprojectCanvas();
         return new LayerPlacement(Affine2D.Translation(-settings.Origin.X, -settings.Origin.Y), 1)
-            .Compose(new SceneGraph(Document).ScopeWorldPlacement(EditScopeId).Inverse());
+            .Compose(SceneGraph.Read(Document).ScopeWorldPlacement(EditScopeId).Inverse());
     }
 
     /// <summary>Mutates the current independent header inside an existing or new history operation.</summary>

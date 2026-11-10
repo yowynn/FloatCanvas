@@ -105,6 +105,7 @@ internal static class InlineTextViewMappingTests
             OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = text ? [element.Id] : [] };
         scope = group.Id; element.GroupId = scope;
         var document = new SceneDocument { Viewport = new(0, 0, 800, 600), Groups = [group], Elements = text ? [element] : [], RootOrder = [group.Id] };
+        if (!text) new SceneGraph(document).InsertElement(new() { Kind = ElementKind.Rectangle, Width = 8, Height = 8, Visible = false }, scope);
         document.Canvas.Grid.FlatTranslation = new(-75, 40);
         var session = new EditorSession(document); session.SetEditScope(scope); return session;
     }
@@ -158,8 +159,8 @@ internal static class InlineTextViewMappingTests
             check("mapped inline creation stores group-local coordinates while its frame follows the displayed view", edit.Target.GroupId == scope && edit.LocalToScreen.TransformPoint(default).DistanceTo(new(600, 110)) < 1e-7 && edit.Target.Transform == new Affine2D(.5, 0, 0, .5, 72.5, 67.5));
             edit.Finish(true);
         }
-        check("mapped inline creation commits as one source operation", session.UndoCount == 1 && new SceneGraph(session.Document).ToWorld(session.Document.Elements.Single()).Transform.OffsetX == 180);
-        check("mapped inline creation Undo restores the empty group and its exact source camera", session.Undo() && JsonSerializer.Serialize(session.Document) == before);
+        check("mapped inline creation commits as one source operation", session.UndoCount == 1 && new SceneGraph(session.Document).ToWorld(session.Document.Elements.Single(e => e.Kind == ElementKind.Text)).Transform.OffsetX == 180);
+        check("mapped inline creation Undo restores the populated group and its exact source camera", session.Undo() && JsonSerializer.Serialize(session.Document) == before);
     }
     private static void ScreenDraft(Action<string, bool> check, SceneRenderer renderer)
     {

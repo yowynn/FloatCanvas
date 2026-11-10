@@ -121,6 +121,11 @@ internal static class AppTheme
         SetBrush(resources, "CanvasButtonHover", dark ? "#46515F" : "#D7E2F2");
         SetBrush(resources, "CanvasAccent", dark ? "#66AEF5" : "#2383E2");
         SetBrush(resources, "CanvasMuted", dark ? "#A3ADBA" : "#697586");
+        SetBrush(resources, "CanvasFileModified", dark ? "#F4BD50" : "#D79818");
+        SetBrush(resources, "CanvasModeIndependent", "#087F78");
+        SetBrush(resources, "CanvasModeProject", "#365FC4");
+        SetBrush(resources, "CanvasModeInactive", dark ? "#7F8DA2" : "#738198");
+        SetBrush(resources, "CanvasModeSelectedBorder", dark ? "#A4BEDE" : "#406B94");
         SetBrush(resources, "CanvasInput", dark ? "#2D323B" : "#FFFFFF");
         SetBrush(resources, "CanvasLcdSurface", dark ? "#332E24" : "#C4CCAE");
         SetBrush(resources, "CanvasLcdText", dark ? "#E4DDC0" : "#30382B");
@@ -149,12 +154,16 @@ internal static class AppTheme
         {
             foreach (var key in resources.Keys.OfType<string>().Where(key => key.StartsWith("Canvas", StringComparison.Ordinal)).ToArray())
                 resources[key] = SystemColors.WindowBrush;
-            foreach (var key in new[] { "CanvasText", "CanvasMuted", "CanvasErrorText", "CanvasBorder", "CanvasSwatchBorder", "CanvasLcdText", "CanvasLcdBorder", "CanvasHiddenText", "CanvasHiddenBorder", "CanvasCodeText", "CanvasCloseForeground" })
+            foreach (var key in new[] { "CanvasText", "CanvasMuted", "CanvasErrorText", "CanvasBorder", "CanvasSwatchBorder", "CanvasLcdText", "CanvasLcdBorder", "CanvasHiddenText", "CanvasHiddenBorder", "CanvasCodeText", "CanvasCloseForeground", "CanvasFileModified", "CanvasModeSelectedBorder", "CanvasModeInactive" })
                 resources[key] = SystemColors.WindowTextBrush;
-            foreach (var key in new[] { "CanvasAccent", "CanvasPrimary", "CanvasPrimaryHover", "CanvasPrimaryPressed", "CanvasDanger", "CanvasDangerHover", "CanvasDangerPressed" })
+            foreach (var key in new[] { "CanvasAccent", "CanvasPrimary", "CanvasPrimaryHover", "CanvasPrimaryPressed", "CanvasDanger", "CanvasDangerHover", "CanvasDangerPressed", "CanvasModeIndependent", "CanvasModeProject" })
                 resources[key] = SystemColors.HighlightBrush;
             resources["CanvasOnAccent"] = SystemColors.HighlightTextBrush;
         }
+        var toolbarEdge = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 0,
+            Color = dark ? Color.FromRgb(0xD4,0xDA,0xE2) : Colors.Black,
+            Opacity = (highContrast ?? SystemParameters.HighContrast) ? 0 : dark ? .36 : .38 };
+        toolbarEdge.Freeze(); resources["ToolbarEdgeEffect"] = toolbarEdge;
 
         // Standard WPF popups, lists and checkboxes also use the same palette.
         resources[SystemColors.WindowBrushKey] = resources["CanvasInput"];
@@ -311,6 +320,29 @@ internal static class AppTheme
             <Setter Property="Template"><Setter.Value>
               <ControlTemplate TargetType="Button">
                 <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
+                  <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasToolbarInlineButton" TargetType="Button" BasedOn="{StaticResource CanvasCaptionButton}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="3"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template"><Setter.Value>
+              <ControlTemplate TargetType="Button">
+                <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+                  <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                </Border>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasButtonHover}"/></Trigger>
                   <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasPressed}"/></Trigger>
@@ -628,7 +660,7 @@ internal static class AppTheme
                     <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto" SharedSizeGroup="Gesture"/><ColumnDefinition Width="12"/></Grid.ColumnDefinitions>
                     <ContentPresenter x:Name="Icon" Content="{TemplateBinding Icon}" VerticalAlignment="Center"/>
                     <Path x:Name="Check" Visibility="Collapsed" Data="M 2 7 L 6 11 L 13 3" Stroke="{DynamicResource CanvasAccent}" StrokeThickness="1.8" VerticalAlignment="Center"/>
-                    <ContentPresenter Grid.Column="1" Margin="6,0,12,0" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                    <ContentPresenter x:Name="Header" Grid.Column="1" Margin="6,0,12,0" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
                     <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource CanvasMuted}" FontSize="12" VerticalAlignment="Center"/>
                     <Path x:Name="SubmenuArrow" Grid.Column="3" Data="M 0,0 L 4,4 L 0,8" Stroke="{DynamicResource CanvasMuted}" StrokeThickness="1.3" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"/>
                   </Grid>
@@ -644,6 +676,7 @@ internal static class AppTheme
                   <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
                   <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/><Setter TargetName="Icon" Property="Visibility" Value="Collapsed"/></Trigger>
+                  <Trigger Property="Tag" Value="scope-mode"><Setter TargetName="Header" Property="Grid.ColumnSpan" Value="3"/></Trigger>
                   <Trigger Property="HasItems" Value="True"><Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>

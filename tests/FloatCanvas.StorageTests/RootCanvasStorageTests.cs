@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using FloatCanvas.Storage;
 using System.IO.Compression;
 using System.Text.Json;
@@ -15,11 +15,11 @@ internal static class RootCanvasStorageTests
             Transform = Affine2D.Translation(55, 65), Style = new() { Fill = 0xFF225588 } };
         owner.Add(Box("main")); owner.SetRootCanvas(RootCanvasKind.Background); owner.Add(Box("background"));
         owner.SetRootCanvas(RootCanvasKind.Foreground); owner.Add(Box("foreground"));
-        Guid empty = owner.CreateEmptyGroup("empty foreground");
+        Guid empty = owner.GroupSelection("foreground group")!.Value;
         var document = owner.Document; string original = JsonSerializer.Serialize(document);
         string path = Path.Combine(root, "three.floatcanvas");
         await store.SaveAsync(path, document, owner.Assets); var loaded = await store.LoadAsync(path);
-        check(SceneDocument.CurrentVersion >= 17 && JsonSerializer.Serialize(loaded.Document) == original, "current format retains v17 root assignments including empty groups exactly");
+        check(SceneDocument.CurrentVersion >= 17 && JsonSerializer.Serialize(loaded.Document) == original, "current format retains v17 root assignments including populated groups exactly");
         var reopened = new EditorSession(loaded.Document, loaded.Assets);
         check(reopened.ActiveRootCanvas == RootCanvasKind.Main && reopened.EditScopeId is null, "reopening starts editing Main while preserving every root's contents");
         check(SceneEvaluation.Build(loaded.Document).Leaves.Select(leaf => leaf.RootCanvas).SequenceEqual([

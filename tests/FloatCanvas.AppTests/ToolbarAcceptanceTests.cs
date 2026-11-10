@@ -23,7 +23,7 @@ internal static class ToolbarAcceptanceTests
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    internal static void Run(Action<string, bool> check)
+    internal static void Run(Action<string, bool> check, bool headerOnly = false)
     {
         if (Wpf.Application.Current is not null) throw new InvalidOperationException("Run --toolbar2-only in a dedicated process.");
         string output = Environment.GetEnvironmentVariable("FLOATCANVAS_TOOLBAR2_PREVIEW_DIR") ?? Path.Combine(Path.GetTempPath(),"FloatCanvas-ToolbarAcceptance",Guid.NewGuid().ToString("N"));
@@ -50,6 +50,17 @@ internal static class ToolbarAcceptanceTests
             toolbar=Field<Wpf.Window>(session,"_toolbar"); shell=(Wpf.FrameworkElement)toolbar.Content;
             handles=host.Diagnostics.SelectMany(pair=>new[]{pair.DisplayHandle,pair.InputHandle}).Append(host.ControlHandle).ToArray();
             toolbar.Content=null;
+            if(headerOnly)
+            {
+                AppTheme.UsePopupPalette(shell);
+                using var native=new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("FloatCanvas header verification")
+                    {Width=1200,Height=180,PositionX=-22000,PositionY=-22000,WindowStyle=unchecked((int)0x80000000),ExtendedWindowStyle=0x08000088});
+                native.RootVisual=shell;
+                ShowWindow(native.Handle,4);
+                try {CheckHeaderStates(check,shell,Field<ToolbarUpperRow>(session,"_toolbarUpperRow"),Field<BoundFileIndicator>(session,"_boundFileIndicator"),Field<RootCanvasToolbarHeader>(session,"_rootCanvasHeader"),output);}
+                finally {native.RootVisual=null;}
+                return;
+            }
             var body=Field<Controls.Border>(session,"_toolbarExpandedContent");
             var grid=(Controls.Grid)body.Child;
             var editor=Field<EditorController>(session,"_editor");
@@ -101,6 +112,7 @@ internal static class ToolbarAcceptanceTests
             var fileBubble=Field<BoundFileIndicator>(session,"_boundFileIndicator");
             fileBubble.Refresh(@"C:\图标验收\示例画布.floatcanvas",true,true);Measure(shell);
             check("bound-file bubble matches the shared upper row height and clearance",fileBubble.ActualHeight==ToolbarUpperRow.ExtensionHeight&&Near(fileBubble.TranslatePoint(new Wpf.Point(0,fileBubble.ActualHeight),shell).Y+ToolbarUpperRow.SurfaceGap,body.TranslatePoint(new Wpf.Point(),shell).Y));
+            CheckHeaderStates(check,shell,Field<ToolbarUpperRow>(session,"_toolbarUpperRow"),fileBubble,Field<RootCanvasToolbarHeader>(session,"_rootCanvasHeader"),output);
             Save(shell,Path.Combine(output,"production-toolbar-bound-file-light.png"),1.5);
             fileBubble.Refresh(null,false,true);
             check("production lower row puts stamp actions under Select and Eraser",allButtons.Any(button=>Equals(button.Tag,"manage-stamps")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==0) && allButtons.Any(button=>Equals(button.Tag,"save-stamp")&&Controls.Grid.GetRow(button)==2&&Controls.Grid.GetColumn(button)==1));
@@ -348,7 +360,7 @@ internal static class ToolbarAcceptanceTests
                 upper.SetExpanded(true); fileBubble.Refresh(@"C:\图标验收\一个用来检查截断及上方整排同时显示的非常长的工程名称.floatcanvas",true,true);
                 typeof(NewCanvasButton).GetProperty(nameof(NewCanvasButton.IsConfirming),Private|BindingFlags.Public)!.SetValue(create,true);
                 typeof(NewCanvasButton).GetMethod("Refresh",Private)!.Invoke(create,null);Measure(shell);
-                check(theme+" filename and confirmation retain their offsets while the extension reserves headroom",Near(shell.ActualHeight,body.ActualHeight+ToolbarLauncher.BodyTop+ToolbarUpperRow.Headroom+3)&&fileBubble.ActualWidth<=330&&upper.ActualHeight==ToolbarUpperRow.ExtensionHeight&&!create.ConfirmationPopup.IsOpen);
+                check(theme+" filename and confirmation retain their offsets while the extension reserves headroom",Near(shell.ActualHeight,body.ActualHeight+ToolbarLauncher.BodyTop+ToolbarUpperRow.Headroom+3)&&fileBubble.ActualWidth<=Field<RootCanvasToolbarHeader>(session,"_rootCanvasHeader").MaxWidth&&upper.ActualHeight==ToolbarUpperRow.ExtensionHeight&&!create.ConfirmationPopup.IsOpen);
                 foreach(double scale in new[]{1d,1.5,2d}) Save(shell,Path.Combine(output,$"upper-row-{theme}-{scale*100:0}.png"),scale);
                 CheckUpperRowOverlap(check,shell,upper,fileBubble,theme,output);
                 create.CancelConfirmation(); fileBubble.Refresh(null,false,true); upper.SetExpanded(false);Measure(shell);
@@ -770,6 +782,166 @@ internal static class ToolbarAcceptanceTests
         try{source.GetType().GetMethod(name,Private)!.Invoke(source,arguments);}
         catch(TargetInvocationException ex)when(ex.InnerException is not null){System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();}
     }
+    private static void CheckHeaderStates(Action<string,bool> check,Wpf.FrameworkElement shell,ToolbarUpperRow upper,BoundFileIndicator file,RootCanvasToolbarHeader header,string output)
+    {
+        string language=L.Preference;
+        var strip=Field<Controls.Border>(upper,"strip");
+        var select=Descendants(shell).OfType<Controls.Button>().Single(button=>Equals(button.Tag,"tool:Select"));
+        var selectIcon=Descendants(select).OfType<Controls.Viewbox>().Single();
+        double CenterX(Wpf.FrameworkElement element)=>element.TranslatePoint(new(element.ActualWidth/2,element.ActualHeight/2),shell).X;
+        int navigated=0;
+        var empty=new EditingScopeDescription("主画布","工程预览","",[],"主画布");
+        void VerifyMenu(Controls.Button button,string prefix,bool invokeAncestor)
+        {
+            if(Wpf.PresentationSource.FromVisual(button) is not System.Windows.Interop.HwndSource owner)return;
+            button.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
+            var menu=(OverlayContextMenu)button.ContextMenu!;
+            check(prefix+" opens the shared overlay menu rather than the WPF popup",menu.IsOpen&&!((Controls.ContextMenu)menu).IsOpen&&menu.Placement==Controls.Primitives.PlacementMode.Bottom);
+            menu.UpdateLayout();
+            var popup=(System.Windows.Interop.HwndSource)Wpf.PresentationSource.FromVisual(menu)!;
+            check(prefix+" menu HWND stays above the topmost toolbar",IsWindowVisible(popup.Handle)&&WindowRank(popup.Handle)<WindowRank(owner.Handle));
+            Save(menu,Path.Combine(output,prefix.Replace(' ','-')+"-menu.png"),1.5);
+            if(invokeAncestor)menu.Items.OfType<Controls.MenuItem>().First(item=>!Equals(item.Tag,"scope-mode")).RaiseEvent(new Wpf.RoutedEventArgs(Controls.MenuItem.ClickEvent));
+            else menu.IsOpen=false;
+            check(prefix+" closes and releases its popup",!menu.IsOpen&&popup.IsDisposed);
+        }
+        try
+        {
+            foreach(string locale in new[]{"zh-CN","en"}) foreach(string theme in new[]{"light","dark"})
+            {
+                L.Initialize(locale); AppTheme.Apply(theme); upper.SetExpanded(true);
+                string root=locale=="en"?"Main":"主画布", group=locale=="en"?"Sketch":"草图组";
+                string mode=locale=="en"?"Project preview":"工程预览";
+                var scope=new EditingScopeDescription(root+" › "+group,mode,"",[(root,()=>navigated++)],group);
+                double filenameBaseline=double.NaN;
+                for(int state=1;state<=4;state++)
+                {
+                    bool linked=state>=3,entered=state is 2 or 4;
+                    file.Refresh(linked?@"C:\Projects\Sketch.floatcanvas":null,true,true);
+                    header.SetScope(entered?scope:empty,entered); Measure(shell);
+                    string prefix=$"header {locale} {theme} state {state}";
+                    check(prefix+" has the expected empty/file/path visibility",(header.Visibility==Wpf.Visibility.Visible)==(state!=1));
+                    if(state==1){Save(shell,Path.Combine(output,$"header-state1-{locale}-{theme}.png"),1.5);continue;}
+                    var frame=Field<Controls.Border>(header,"frame");
+                    var edge=(Media.Effects.DropShadowEffect)frame.Effect;
+                    check(prefix+" file and expanded toolbar share the current theme edge effect",ReferenceEquals(edge,Field<System.Windows.Shapes.Path>(upper,"outline").Effect)&&
+                        (Wpf.SystemParameters.HighContrast?edge.Opacity==0:theme=="dark"?edge.Color.R>150&&edge.Color.G>150&&edge.Color.B>150:edge.Color==Media.Colors.Black));
+                    Save(shell,Path.Combine(output,$"bubble-{locale}-{theme}-state{state}.png"),1);
+                    var outline=Media.VisualTreeHelper.GetDrawing(frame).Children.OfType<Media.GeometryDrawing>().Single();
+                    var geometry=outline.Geometry;
+                    var pen=outline.Pen;
+                    var selectedBounds=select.TransformToVisual(header).TransformBounds(new Wpf.Rect(select.RenderSize));
+                    var painted=Media.Geometry.Combine(geometry,geometry.GetWidenedPathGeometry(pen),Media.GeometryCombineMode.Union,null);
+                    var intersection=Media.Geometry.Combine(painted,new Media.RectangleGeometry(selectedBounds),Media.GeometryCombineMode.Intersect,null);
+                    check(prefix+" has one closed bubble contour with no internal join stroke",geometry.GetFlattenedPathGeometry().Figures.Count==1&&
+                        geometry.GetFlattenedPathGeometry().Figures[0].IsClosed&&geometry.FillContains(new Wpf.Point(.5,31))&&!geometry.StrokeContains(pen,new(.5,31))&&
+                        geometry.FillContains(new Wpf.Point(3,32.5))&&!geometry.StrokeContains(pen,new(3,32.5)));
+                    check(prefix+" tail avoids the Select frame and shares the surface shadow",geometry.Bounds.Left<0&&geometry.Bounds.Bottom>header.ActualHeight&&intersection.GetArea()<.001&&
+                        !frame.IsHitTestVisible&&frame.Effect is Media.Effects.DropShadowEffect);
+                    check(prefix+" has a fixed left edge and stays within the extension limit",header.ActualHeight==strip.ActualHeight&&header.ActualWidth<=header.MaxWidth&&frame.CornerRadius==new Wpf.CornerRadius(ToolbarUpperRow.OuterCornerRadius)&&
+                        Near(header.TranslatePoint(new(),shell).X,select.TranslatePoint(new(),shell).X-(ToolbarUpperRow.OuterCornerRadius-ToolbarUpperRow.CornerRadiusValue))&&header.TranslatePoint(new(header.ActualWidth,0),shell).X<=strip.TranslatePoint(new(),shell).X+.1&&Near(header.TranslatePoint(new(),shell).Y,strip.TranslatePoint(new(),shell).Y));
+                    check(prefix+" collapses the file only when showing navigation",!linked||(entered?file.ActualWidth==ToolbarUpperRow.ButtonSlot:Field<Controls.TextBlock>(file,"label").Visibility==Wpf.Visibility.Visible));
+                    if(linked)
+                    {
+                        var icon=Descendants(file).OfType<Controls.Viewbox>().Single();
+                        var entry=Field<Controls.Button>(file,"entry");
+                        var chrome=(Controls.Border)entry.Template.FindName("Chrome",entry);
+                        var selectedChrome=(Controls.Border)select.Template.FindName("Chrome",select);
+                        check(prefix+" file action shares the main toolbar button height and radius",Near(chrome.ActualHeight,selectedChrome.ActualHeight)&&chrome.CornerRadius==selectedChrome.CornerRadius&&(!entered||Near(chrome.ActualWidth,selectedChrome.ActualWidth)));
+                        var dot=Field<System.Windows.Shapes.Ellipse>(file,"modifiedDot");var capsule=Field<Controls.Border>(file,"unsaved");
+                        var projectIcon=Field<Controls.Grid>(file,"projectIcon");
+                        var iconBounds=icon.TransformToAncestor(projectIcon).TransformBounds(new Wpf.Rect(icon.RenderSize));
+                        var dotBounds=dot.TransformToAncestor(projectIcon).TransformBounds(new Wpf.Rect(dot.RenderSize));
+                        check(prefix+" compact modifications use a corner dot instead of a miniature capsule",entered?
+                            dot.Visibility==Wpf.Visibility.Visible&&capsule.Visibility==Wpf.Visibility.Collapsed&&dotBounds.Left>=iconBounds.Left+iconBounds.Width/2&&dotBounds.Top<iconBounds.Top+iconBounds.Height/2:
+                            dot.Visibility==Wpf.Visibility.Collapsed&&capsule.Visibility==Wpf.Visibility.Visible);
+                        var fileText=Field<Controls.TextBlock>(file,"label");
+                        if(state==3)filenameBaseline=fileText.TranslatePoint(new(0,fileText.BaselineOffset),header).Y;
+                        var corner=chrome.TranslatePoint(new(chrome.CornerRadius.TopLeft,chrome.CornerRadius.TopLeft),header);
+                        check(prefix+" aligns the first icon with Select and keeps the outer corner concentric",Near(CenterX(icon),CenterX(selectIcon))&&Near(corner.X,frame.CornerRadius.TopLeft)&&Near(corner.Y,frame.CornerRadius.TopLeft));
+                        file.Refresh(@"C:\Projects\Sketch.floatcanvas",false,true);Measure(shell);
+                        check(prefix+" saving clears both modification indicators",dot.Visibility==Wpf.Visibility.Collapsed&&capsule.Visibility==Wpf.Visibility.Collapsed);
+                        check(prefix+" saved state and hidden extra tools retain the same icon axis",Near(CenterX(icon),CenterX(selectIcon)));
+                        upper.SetExpanded(false);Measure(shell);
+                        check(prefix+" collapsed main body follows the current header edge effect",ReferenceEquals(Field<Controls.Border>(upper,"body").Effect,frame.Effect));
+                        check(prefix+" collapsed extra tools retain the same icon axis",Near(CenterX(icon),CenterX(selectIcon)));
+                        upper.SetExpanded(true);file.Refresh(@"C:\Projects\Sketch.floatcanvas",true,true);Measure(shell);
+                    }
+                    if(entered)
+                    {
+                        var parent=Field<Controls.Button>(header,"scopeParent");var current=Field<Controls.Button>(header,"scopeButton");
+                        var bounds=current.TransformToAncestor(header).TransformBounds(new Wpf.Rect(current.RenderSize));
+                        check(prefix+" keeps current location inside the shared frame with toolbar-sized hover frames",bounds.Right<=header.ActualWidth+.1&&parent.ActualHeight==select.ActualHeight&&current.ActualHeight==select.ActualHeight&&current.ContextMenu!.Items.OfType<Controls.MenuItem>().Count(i=>!Equals(i.Tag,"scope-mode"))==2);
+                        var parentText=(Controls.TextBlock)parent.Content; var currentText=Field<Controls.TextBlock>(header,"current");
+                        double baseline=parentText.TranslatePoint(new(0,parentText.BaselineOffset),header).Y;
+                        check(prefix+" ancestor and current text share a baseline with the expanded filename",Near(baseline,currentText.TranslatePoint(new(0,currentText.BaselineOffset),header).Y)&&(!linked||Near(baseline,filenameBaseline)));
+                        parent.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
+                        var dropdown=Field<Wpf.FrameworkElement>(header,"dropdown");
+                        check(prefix+" centers the dropdown icon independently of the text baseline",Near(dropdown.TranslatePoint(new(dropdown.ActualWidth/2,dropdown.ActualHeight/2),current).Y,current.ActualHeight/2));
+                        VerifyMenu(current,prefix,true);
+                        if(linked&&Wpf.PresentationSource.FromVisual(file) is not null)
+                        {
+                            var entry=Field<Controls.Button>(file,"entry");entry.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
+                            var menu=(OverlayContextMenu)file.ContextMenu!;
+                            check(prefix+" compact file opens its existing actions with full filename and save status",menu.IsOpen&&menu.Items.Count==4&&
+                                System.Windows.Automation.AutomationProperties.GetName(entry)=="Sketch.floatcanvas"&&System.Windows.Automation.AutomationProperties.GetItemStatus(entry)==L.Get("Project.Unsaved"));
+                            menu.IsOpen=false;
+                        }
+                    }
+                    if(state==4)CheckBubbleLayer(check,shell,upper,header,frame,geometry,prefix,output);
+                    foreach(double scale in new[]{1d,1.5,2})Save(shell,Path.Combine(output,$"header-state{state}-{locale}-{theme}-{scale}.png"),scale);
+                }
+                file.Refresh(@"C:\Projects\Sketch.floatcanvas",false,true);
+                header.SetScope(new("Main › One › Two › Three › Long current name",mode,"",[("Main",()=>{}),("One",()=>{}),("Two",()=>{}),("Three",()=>{})],"Long current name"),true);Measure(shell);
+                var overflow=Field<Controls.Button>(header,"overflow");
+                check(locale+theme+" deep path folds older ancestors and keeps direct parent",overflow.Visibility==Wpf.Visibility.Visible&&overflow.ContextMenu!.Items.OfType<Controls.MenuItem>().Count(i=>!Equals(i.Tag,"scope-mode"))==5&&Field<Controls.Button>(header,"scopeParent").Visibility==Wpf.Visibility.Visible);
+                VerifyMenu(overflow,$"header-deep-{locale}-{theme}",false);
+                Save(shell,Path.Combine(output,$"header-deep-{locale}-{theme}.png"),1.5);
+                header.SetScope(empty,false);file.Refresh(@"C:\Projects\S.floatcanvas",false,true);Measure(shell);double shortWidth=header.ActualWidth,shortLeft=header.TranslatePoint(new(),shell).X;
+                file.Refresh(@"C:\Projects\This is a deliberately long linked project filename.floatcanvas",true,true);Measure(shell);
+                check(locale+theme+" filename strip grows to the right while its left edge stays fixed",shortWidth<header.ActualWidth&&header.ActualWidth<=header.MaxWidth&&Near(shortLeft,header.TranslatePoint(new(),shell).X));
+            }
+            check("direct parent buttons and dropdown items both retain navigation",navigated==16);
+        }
+        finally {L.Initialize(language);AppTheme.Apply("light");header.SetScope(empty,false);file.Refresh(@"C:\图标验收\示例画布.floatcanvas",true,true);upper.SetExpanded(false);Measure(shell);}
+    }
+    private static void CheckBubbleLayer(Action<string,bool> check,Wpf.FrameworkElement shell,ToolbarUpperRow upper,RootCanvasToolbarHeader header,Controls.Border frame,Media.Geometry geometry,string prefix,string output)
+    {
+        var diagnostic=Media.Color.FromRgb(203,23,137);
+        var effect=frame.Effect;
+        var sample=Enumerable.Range(39,8).SelectMany(y=>Enumerable.Range(-9,11).Select(x=>new Wpf.Point(x+.5,y+.5)))
+            .First(point=>geometry.FillContains(point)&&!geometry.StrokeContains(new Media.Pen(Media.Brushes.Black,2.1),point));
+        var sampleOnShell=header.TranslatePoint(sample,shell);
+        try
+        {
+            frame.Background=new Media.SolidColorBrush(diagnostic);
+            PumpToIdle(frame.Dispatcher);
+            foreach(double scale in new[]{1d,1.5,2})
+            {
+                var bitmap=Save(shell,Path.Combine(output,prefix.Replace(' ','-')+$"-layer-{scale}.png"),scale);
+                var actual=ColorAt(bitmap,(int)(sampleOnShell.X*scale),(int)(sampleOnShell.Y*scale));
+                check(prefix+$" tail paints above the connected main toolbar at {scale*100:0}% ({sampleOnShell}: {actual})",actual.R==diagnostic.R&&actual.G==diagnostic.G&&actual.B==diagnostic.B);
+            }
+            var shadowed=Save(shell,Path.Combine(output,prefix.Replace(' ','-')+"-shadow.png"),2);
+            frame.Effect=null;
+            PumpToIdle(frame.Dispatcher);
+            var plain=Save(shell,Path.Combine(output,prefix.Replace(' ','-')+"-without-shadow.png"),2);
+            int shadowPixels=0;
+            for(int y=38;y<55;y++)for(int x=-15;x<2;x++)
+            {
+                var point=new Wpf.Point(x,y);if(geometry.FillContains(point))continue;
+                var onShell=header.TranslatePoint(point,shell);
+                var a=ColorAt(shadowed,(int)(onShell.X*2),(int)(onShell.Y*2));var b=ColorAt(plain,(int)(onShell.X*2),(int)(onShell.Y*2));
+                if(Math.Abs(a.R-b.R)+Math.Abs(a.G-b.G)+Math.Abs(a.B-b.B)>6)shadowPixels++;
+            }
+            check(prefix+" shadow extends around the tail below the rectangular body",shadowPixels>3);
+            frame.Effect=effect;upper.Visibility=Wpf.Visibility.Collapsed;Measure(shell);
+            var hidden=Save(shell,Path.Combine(output,prefix.Replace(' ','-')+"-hidden.png"),1);
+            var hiddenPixel=ColorAt(hidden,(int)sampleOnShell.X,(int)sampleOnShell.Y);
+            check(prefix+" hiding the toolbar header also hides the tail",hiddenPixel!=diagnostic&&!frame.IsVisible);
+        }
+        finally {upper.Visibility=Wpf.Visibility.Visible;frame.SetResourceReference(Controls.Border.BackgroundProperty,"CanvasSurface");frame.SetResourceReference(Wpf.UIElement.EffectProperty,"ToolbarEdgeEffect");Measure(shell);PumpToIdle(frame.Dispatcher);}
+    }
     private static void Measure(Wpf.FrameworkElement element)
     {element.Measure(new Wpf.Size(double.PositiveInfinity,double.PositiveInfinity));element.Arrange(new Wpf.Rect(new Wpf.Point(),element.DesiredSize));element.UpdateLayout();}
     private static void PumpToIdle(Threading.Dispatcher dispatcher)
@@ -820,6 +992,9 @@ internal static class ToolbarAcceptanceTests
     }
     private static Media.Color ColorAt(Imaging.BitmapSource bitmap,int x,int y)
     {byte[] pixel=new byte[4];bitmap.CopyPixels(new Wpf.Int32Rect(x,y,1,1),pixel,4,0);return Media.Color.FromArgb(pixel[3],pixel[2],pixel[1],pixel[0]);}
+    private static int WindowRank(nint handle){nint current=GetTopWindow(0);for(int i=0;i<8192&&current!=0;i++,current=GetWindow(current,2))if(current==handle)return i;return int.MaxValue;}
+    [DllImport("user32.dll")]private static extern nint GetTopWindow(nint window);
+    [DllImport("user32.dll")]private static extern nint GetWindow(nint window,uint relation);
     [DllImport("user32.dll")][return:MarshalAs(UnmanagedType.Bool)]private static extern bool IsWindow(nint window);
     [DllImport("user32.dll")][return:MarshalAs(UnmanagedType.Bool)]private static extern bool IsWindowVisible(nint window);
     [DllImport("user32.dll")]private static extern bool ShowWindow(nint window,int command);

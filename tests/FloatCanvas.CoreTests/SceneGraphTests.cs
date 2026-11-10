@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using System.Text.Json;
 
 internal static class SceneGraphTests
@@ -45,7 +45,10 @@ internal static class SceneGraphTests
         check(!ReferenceEquals(empty, ownedEmpty) && ownedEmpty.ChildOrder is { Count: 0 } && legacy.ChildOrder!.Last() == empty.Id,
             "an empty atomic group owns a stable draw slot and independent mutable metadata");
         document.PruneGroups();
-        check(document.Groups.Any(group => group.Id == empty.Id), "legacy metadata pruning never deletes a user atomic empty group");
+        check(document.Groups.All(group => group.Id != empty.Id) && !legacy.ChildOrder!.Contains(empty.Id), "completed graph cleanup removes empty atomic groups and their paint slots");
+        // Low-level graph construction may temporarily hold an empty container,
+        // before a command inserts its artwork and commits the editor transaction.
+        graph = new(document); ownedEmpty = graph.InsertGroup(empty, legacy.Id);
         var emptySnapshot = document.CloneElements([empty.Id], true);
         check(emptySnapshot.Elements.Count == 0 && emptySnapshot.Groups.Count == 2 && emptySnapshot.RootOrder!.Count == 1 &&
             emptySnapshot.Groups.Single(group => group.Name == "empty").ChildOrder is { Count: 0 }, "copying an empty group retains required ancestors and remaps its draw slots");
@@ -110,9 +113,8 @@ internal static class SceneGraphTests
 
         var oldEmpty = new CanvasGroup { Name = "legacy empty" };
         var emptyEditor = new EditorSession(new() { Groups = [oldEmpty] });
-        emptyEditor.Execute("rename retained empty", scene => scene.Groups[0].Name = "renamed empty");
-        check(emptyEditor.Document.Groups.Single().Id == oldEmpty.Id && emptyEditor.Undo() && emptyEditor.Document.Groups.Single().Name == "legacy empty",
-            "an ordinary commit and undo never prune a valid retained legacy empty group");
+        check(emptyEditor.Document.Groups.Count == 0 && emptyEditor.UndoCount == 0,
+            "legacy empty groups are normalized on opening without creating a user history entry");
         var hiddenEditor = new EditorSession(captureSource.Clone());
         hiddenEditor.SetSelection([captureGroup.Id]); hiddenEditor.SetVisible(false); hiddenEditor.UngroupSelection();
         check(hiddenEditor.Document.Groups.Count == 0 && !hiddenEditor.Document.Elements.Single().Visible,

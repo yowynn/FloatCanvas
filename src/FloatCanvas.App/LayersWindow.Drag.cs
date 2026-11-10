@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 using Wpf = System.Windows;
 using Controls = System.Windows.Controls;
@@ -27,7 +27,7 @@ internal sealed partial class LayersWindow
         var sourceGraph = new SceneGraph(session.Document);
         if (sourceGraph.FindElement(id) is null && sourceGraph.FindGroup(id) is null && sourceGraph.FindInstance(id) is null || sourceGraph.IsLocked(id)) return false;
         if (!session.Selection.Contains(id)) session.SetSelection([id]);
-        dragSession = session; dragIds = session.Selection.Where(node => !session.IsNodeLocked(node)).ToArray();
+        dragSession = session; dragIds = session.Selection.Where(node => !sourceGraph.IsLocked(node)).ToArray();
         dragRevision = session.SceneRevision; dragScopeVersion = session.EditScopeVersion; dragSource = id; dragRows.Clear();
         foreach (var node in dragIds) if (Container(node) is { } container) dragRows.Add(container);
         return dragIds.Length > 0;
@@ -43,13 +43,53 @@ internal sealed partial class LayersWindow
         if (!canceled) UpdateDropTarget(layers.PointFromScreen(dragStartScreen + new Wpf.Vector(horizontal, vertical)));
         FinishDrag(!canceled);
     }
-    internal void UpdateDrag() => UpdateDropTarget(Input.Mouse.GetPosition(layers));
+    private bool IsDragCurrent => dragSession is not null && CanWrite && ReferenceEquals(dragSession, getSession()) && !dragSession.IsTransactionActive && dragSession.SceneRevision == dragRevision && dragSession.EditScopeVersion == dragScopeVersion;
+    private System.Windows.Threading.DispatcherTimer? edgeScroll;
+    private DateTime edgeSince;
+    private int edgeDirection;
+    internal void UpdateDrag() => UpdateDragAt(Input.Mouse.GetPosition(layers), DateTime.UtcNow);
+    internal void UpdateDragAt(Wpf.Point point, DateTime now, bool advance = false)
+    {
+        if (dragIds is null || !IsDragCurrent) { CancelDrag(); return; }
+        int direction = point.X >= 0 && point.X <= layers.ActualWidth && point.Y >= 0 && point.Y <= layers.ActualHeight ? point.Y < 24 ? -1 : point.Y > layers.ActualHeight - 24 ? 1 : 0 : 0;
+        if (direction != edgeDirection) { edgeDirection = direction; edgeSince = now; }
+        if (direction == 0) edgeScroll?.Stop();
+        else
+        {
+            if (edgeScroll is null)
+            {
+                edgeScroll = new() { Interval = TimeSpan.FromMilliseconds(70) };
+                edgeScroll.Tick += (_, _) =>
+                {
+                    if (!IsVisible || !IsActive) { CancelDrag(); return; }
+                    UpdateDragAt(Input.Mouse.GetPosition(layers), DateTime.UtcNow, advance: true);
+                };
+            }
+            edgeScroll.Start();
+            if (advance && (now - edgeSince).TotalMilliseconds >= 250 && FindScroll(layers) is { } scroll)
+            {
+                double previous = scroll.VerticalOffset;
+                int steps = point.Y < 8 || point.Y > layers.ActualHeight - 8 ? 3 : 1;
+                for (int n = 0; n < steps; n++) { if (direction < 0) scroll.LineUp(); else scroll.LineDown(); }
+                layers.UpdateLayout();
+                if (scroll.VerticalOffset == previous) edgeScroll.Stop();
+            }
+        }
+        UpdateDropTarget(point);
+    }
+    private static Controls.ScrollViewer? FindScroll(Wpf.DependencyObject node)
+    {
+        if (node is Controls.ScrollViewer scroll) return scroll;
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(node); i++)
+            if (FindScroll(System.Windows.Media.VisualTreeHelper.GetChild(node, i)) is { } found) return found;
+        return null;
+    }
     private void UpdateDropTarget(Wpf.Point point)
     {
         if (dragIds is null) return;
         if (!CanWrite || !ReferenceEquals(dragSession, getSession()) || dragSession.IsTransactionActive || dragSession.SceneRevision != dragRevision || dragSession.EditScopeVersion != dragScopeVersion)
         { CancelDrag(); Refresh(); return; }
-        ClearDropIndicator();
+        ClearDropIndicator(); status.Text = "";
         if (dragFeedback is null && Math.Abs(point.X - dragStart.X) <= Wpf.SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(point.Y - dragStart.Y) <= Wpf.SystemParameters.MinimumVerticalDragDistance) return;
         if (dragFeedback is null && dragSource is { } source && Container(source) is { } item)
@@ -61,10 +101,11 @@ internal sealed partial class LayersWindow
             var crumbPoint = breadcrumbs.PointFromScreen(layers.PointToScreen(point));
             foreach (var button in breadcrumbs.Children.OfType<Controls.Button>())
             {
+                if (button.Visibility != Wpf.Visibility.Visible || !button.IsEnabled) continue;
                 var bounds = new Wpf.Rect(button.TranslatePoint(new(), breadcrumbs), button.RenderSize);
                 if (!bounds.Contains(crumbPoint) || button.Tag is not ScopeTarget target ||
                     target.Id is { } parent && dragIds.Any(id => id == parent || graph.IsAncestor(id, parent))) continue;
-                dropParent = target.Id; dropInto = true; status.Text = L.Format("Layers.DropInto", button.Content); return;
+                dropParent = target.Id; dropInto = true; status.Text = L.Format("Layers.DropInto", System.Windows.Automation.AutomationProperties.GetName(button)); return;
             }
         }
         if (point.X < 0 || point.X > layers.ActualWidth || point.Y < 0 || point.Y > layers.ActualHeight) return;
@@ -111,8 +152,9 @@ internal sealed partial class LayersWindow
     private void ReorderLayers(Guid[] ids, Guid targetId, bool before)
     {
         var session = getSession();
-        if (!CanWrite || session.IsTransactionActive || ids.Contains(targetId) || ids.Any(id => session.IsNodeLocked(id))) return;
-        var graph = new SceneGraph(session.Document); var parent = graph.ParentId(targetId);
+        if (!CanWrite || session.IsTransactionActive || ids.Contains(targetId)) return;
+        var graph = new SceneGraph(session.Document);
+        if (ids.Any(graph.IsLocked)) return; var parent = graph.ParentId(targetId);
         var siblings = graph.EnumerateChildren(parent); int index = siblings.ToList().IndexOf(targetId); if (index < 0) return;
         // The list is front-to-back; the source ledger is back-to-front.
         Guid? beforeNode = before ? siblings.Skip(index + 1).FirstOrDefault(id => !ids.Contains(id)) : targetId;
@@ -122,6 +164,7 @@ internal sealed partial class LayersWindow
     private void ClearDropIndicator() { dragFeedback?.ClearTarget(); dropTarget = dropParent = null; dropInto = false; }
     private void CancelDrag()
     {
+        edgeScroll?.Stop(); edgeDirection = 0; status.Text = "";
         ClearDropIndicator(); dragIds = null; dragSession = null; dragSource = null; dragRows.Clear();
         dragFeedback?.Dispose(); dragFeedback = null;
         var handle = activeHandle; activeHandle = null;

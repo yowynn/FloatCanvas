@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Windows;
@@ -198,7 +198,7 @@ internal static class PrefabUiTests
         var imported = owner.ImportPrefab(candidate.Package, candidate.Assets, LayerPlacement.Identity, candidate.Source);
         owner.PlacePrefab(imported.DefinitionId, new(Affine2D.Translation(150, 0), 1));
         check("one linked source drives multiple real instance nodes", owner.Document.Instances.Count == 2 && owner.Document.Definitions.Count == 1);
-        var scope = owner.CreateEmptyGroup("Scope"); var delay = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        owner.SetSelection([imported.InstanceId]); var scope = owner.GroupSelection("Scope")!.Value; var delay = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         resolver.BeforeReadAsync = ct => delay.Task.WaitAsync(ct); long beforeScope = owner.SceneRevision;
         var pendingScope = resolver.PrepareAsync(owner, path, Path.Combine(root, "owner.floatcanvas"), imported.DefinitionId);
         owner.EnterScope(scope); owner.LeaveScope(); delay.SetResult(); var staleScope = await pendingScope; resolver.BeforeReadAsync = null;

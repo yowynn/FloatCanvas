@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -111,7 +111,7 @@ internal static class ProjectOpenModeTests
             check("direct project opening from passive mode also preserves input mode and reveals the canvas",
                 Marker() == "first" && Passive() && Revealed() && host.EditingSessionVersion == passiveVersion && entry.Count == 0);
 
-            var insertionOwner = Editor().Session; Guid insertionScope = insertionOwner.CreateEmptyGroup("prefab destination"); insertionOwner.SetEditScope(insertionScope);
+            var insertionOwner = Editor().Session; Guid insertionScope = insertionOwner.CreatePopulatedGroup("prefab destination"); insertionOwner.SetEditScope(insertionScope);
             int insertionUndo = insertionOwner.UndoCount; string insertionSettings = System.Text.Json.JsonSerializer.Serialize(insertionOwner.Document.Canvas);
             Await((Task)Invoke("OpenProjectPathAsync", prefabPath)!);
             check("warm prefab opening inserts into the current root and group without replacing project settings or input mode", ReferenceEquals(Editor().Session, insertionOwner) &&

@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -74,7 +74,7 @@ internal static class PresentationStylesUiTests
         Entry<Button>(panel, "KeyboardLayout").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check("layout editor cannot enter a foreign author transaction", session.IsTransactionActive && JsonSerializer.Serialize(session.Document) == foreign && !app.Windows.OfType<KeyboardLayoutEditorWindow>().Any(window => window.IsVisible));
         session.Cancel(); inspector.PrepareForShow();
-        var group = session.CreateEmptyGroup(); session.SetSelection([layer.Id]); inspector.PrepareForShow(); string scoped = JsonSerializer.Serialize(session.Document); int scopedUndo = session.UndoCount;
+        var group = session.CreatePopulatedGroup(); session.SetSelection([layer.Id]); inspector.PrepareForShow(); string scoped = JsonSerializer.Serialize(session.Document); int scopedUndo = session.UndoCount;
         Edit(panel, dialog => { dialog.SelectKey(aId); Toggle(Field<CheckBox>(dialog, "enabled"), true); session.EnterScope(group); session.LeaveScope(); session.SetSelection([layer.Id]); dialog.Accept(); });
         check("a layout draft cannot publish after an author scope round trip", JsonSerializer.Serialize(session.Document) == scoped && session.UndoCount == scopedUndo);
         inspector.PrepareForShow(); Entry<SegmentedChoice>(panel, "DisplayStyle").SelectedValue = PresentationDisplayStyle.Log; inspector.CompletePendingEdit(); inspector.PrepareForShow();

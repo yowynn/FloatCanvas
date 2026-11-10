@@ -75,10 +75,18 @@ internal static class StampPrefabFormatTests
         await StampLegacyCatalogTests.RunAsync(profile + "-catalog-compat", check);
         var emptyGroup = new CanvasGroup { Name = "empty reusable group", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] };
         var emptySession = new EditorSession(new SceneDocument { Groups = [emptyGroup], RootOrder = [emptyGroup.Id] }); emptySession.SetSelection([emptyGroup.Id]);
-        var emptyEntry = await library.SaveSelectionAsync(emptySession, "empty reusable group", StampSaveMode.SharedPrefab);
+        bool rejectedEmpty = false;
+        try { await library.SaveSelectionAsync(emptySession, "empty reusable group", StampSaveMode.SharedPrefab); }
+        catch (InvalidOperationException error) { rejectedEmpty = error.Message == FloatCanvas.Localization.AppText.Get("Stamp.NoSelection"); }
+        check("legacy empty ordinary groups cannot become reusable stamps", rejectedEmpty && emptySession.Document.Groups.Count == 0);
+        var emptyDefinition = new PrefabDefinition { Name = "Empty shared resource" };
+        var emptyInstance = new PrefabInstance { DefinitionId = emptyDefinition.Id };
+        var resourceSession = new EditorSession(new() { Definitions = [emptyDefinition], Instances = [emptyInstance], RootOrder = [emptyInstance.Id] });
+        resourceSession.SetSelection([emptyInstance.Id]);
+        var emptyEntry = await library.SaveSelectionAsync(resourceSession, "empty reusable resource", StampSaveMode.SharedPrefab);
         var empty = await library.LoadStampAsync(emptyEntry.Id);
         using var emptyPreview = SKBitmap.Decode(await library.GetThumbnailAsync(emptyEntry.Id));
-        check("empty shared groups remain saveable with a bounded neutral preview",
+        check("existing empty shared resources remain saveable with a bounded neutral preview",
             empty.SharedPrefab is not null && emptyPreview.Width <= 160 && emptyPreview.Height <= 160);
         var dot = new CanvasElement { Kind = ElementKind.Rectangle, Width = 0, Height = 0, Style = new() { StrokeWidth = 0 } };
         var dotSession = new EditorSession(new SceneDocument { Elements = [dot] }); dotSession.SetSelection([dot.Id]);

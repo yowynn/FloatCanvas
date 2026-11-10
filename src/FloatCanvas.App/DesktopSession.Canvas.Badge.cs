@@ -1,3 +1,4 @@
+using FloatCanvas.Core;
 using FloatCanvas.Windows;
 using SkiaSharp;
 
@@ -5,7 +6,8 @@ namespace FloatCanvas.App;
 
 internal sealed partial class DesktopSession
 {
-    private bool HasCanvasViewingBadge => _host.IsEditing && _host.IsVisible && _editor.Tool != EditorTool.PointerPresentation;
+    private bool HasCanvasViewingBadge => _host.IsEditing && _host.IsVisible && _editor.Tool != EditorTool.PointerPresentation &&
+        _canvasView != CanvasViewTransform.Identity;
     private PixelBounds CanvasViewingBadgeBounds
     {
         get

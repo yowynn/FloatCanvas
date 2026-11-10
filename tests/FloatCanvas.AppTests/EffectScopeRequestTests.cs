@@ -12,6 +12,7 @@ internal static class EffectScopeRequestTests
     {
         var document = new SceneDocument(); var graph = new SceneGraph(document);
         var group = graph.InsertGroup(new() { OrderMode = GroupOrderMode.AtomicBlock });
+        graph.InsertElement(new() { Kind = ElementKind.Rectangle, Width = 8, Height = 8 }, group.Id);
         var target = new EditorSession(document); var editor = new EditorController(target);
         using var lifetime = new CancellationTokenSource();
         // These guard-only surfaces deliberately have no HWNDs or native input owners.
@@ -40,7 +41,7 @@ internal static class EffectScopeRequestTests
         target.SetEditScope(group.Id);
         check("effect guard keeps a no-op scope reaffirmation valid", Current(request, true));
         group.Locked = true;
-        check("effect insertion guard rejects a newly locked active scope before asset publication", Current(request) && !Current(request, true) && target.Assets.Count == 0 && target.Document.Elements.Count == 0);
+        check("effect insertion guard rejects a newly locked active scope before asset publication", Current(request) && !Current(request, true) && target.Assets.Count == 0 && target.Document.Elements.Count == 1);
         group.Locked = false; target.LeaveScope(); target.EnterScope(group.Id);
         check("an effect request cannot revive after leaving and reentering the same nested scope", !Current(request));
         request = Request(); lifetime.Cancel();

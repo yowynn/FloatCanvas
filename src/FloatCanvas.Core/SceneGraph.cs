@@ -22,7 +22,7 @@ public readonly record struct LayerPlacement(Affine2D PlaneTransform, double Ele
 }
 
 /// <summary>One source document's ownership, paint slots and local placements. Rebuild after external mutations.</summary>
-public sealed class SceneGraph
+public sealed partial class SceneGraph
 {
     private readonly SceneNodeGraph document;
     private Dictionary<Guid, CanvasElement> elements = [];
@@ -253,7 +253,8 @@ public sealed class SceneGraph
     {
         if (document.Elements is null || document.Groups is null || document.Instances is null || document.Elements.Count > SceneLimits.MaximumElements ||
             document.Groups.Count > SceneLimits.MaximumElements || document.Instances.Count > SceneLimits.MaximumElements) throw InvalidGraph();
-        elements = []; groups = []; instances = []; world.Clear(); visible.Clear(); locked.Clear(); children.Clear(); descendantLeaves.Clear();
+        elements = new(document.Elements.Count); groups = new(document.Groups.Count); instances = new(document.Instances.Count);
+        world.Clear(); visible.Clear(); locked.Clear(); children.Clear(); descendantLeaves.Clear();
         foreach (var element in document.Elements)
             if (element is null || element.Id == Guid.Empty || !elements.TryAdd(element.Id, element)) throw InvalidGraph();
         foreach (var group in document.Groups)
@@ -264,9 +265,12 @@ public sealed class SceneGraph
         foreach (var instance in document.Instances)
             if (instance is null || instance.Id == Guid.Empty || instance.DefinitionId == Guid.Empty || elements.ContainsKey(instance.Id) || groups.ContainsKey(instance.Id) ||
                 !instances.TryAdd(instance.Id, instance) || !new LayerPlacement(instance.Transform, instance.ElevationScale).IsValid) throw InvalidGraph();
+        // Reuse validation scratch storage; a large scene otherwise allocates a
+        // fresh hash set (and buckets) for every leaf on every read index build.
+        var visited = new HashSet<Guid>();
         foreach (var id in elements.Keys.Concat(groups.Keys).Concat(instances.Keys))
         {
-            Guid? parent = ParentId(id); var visited = new HashSet<Guid>();
+            Guid? parent = ParentId(id); visited.Clear();
             while (parent is { } value)
             {
                 if (value == id || !groups.ContainsKey(value) || !visited.Add(value) || visited.Count > SceneLimits.MaximumGroupDepth) throw InvalidGraph();
@@ -274,14 +278,17 @@ public sealed class SceneGraph
             }
         }
         if (document.RootOrder is null && (instances.Count > 0 || groups.Values.Any(group => group.OrderMode == GroupOrderMode.AtomicBlock))) throw InvalidGraph();
-        var seen = new HashSet<Guid>(); var leaves = new List<Guid>(); var content = new List<Guid>(); var ranks = new Dictionary<Guid, int>(); int rank = 0;
+        int contentCount = elements.Count + instances.Count;
+        var seen = new HashSet<Guid>(contentCount + groups.Count); var leaves = new List<Guid>(elements.Count);
+        var content = new List<Guid>(contentCount); var ranks = new Dictionary<Guid, int>(contentCount + groups.Count); int rank = 0;
         void Visit(Guid? contextId)
         {
             foreach (var id in PaintOrder(contextId))
             {
                 if (!seen.Add(id) || !elements.ContainsKey(id) && !instances.ContainsKey(id) && (!groups.TryGetValue(id, out var group) || group.OrderMode != GroupOrderMode.AtomicBlock) || PaintContext(id) != contextId) throw InvalidGraph();
                 ranks[id] = rank++;
-                foreach (var ancestor in AncestorIds(id)) ranks.TryAdd(ancestor, ranks[id]);
+                var ancestor = ParentId(id);
+                while (ancestor is { } parent) { ranks.TryAdd(parent, ranks[id]); ancestor = groups[parent].ParentId; }
                 if (elements.ContainsKey(id)) { leaves.Add(id); content.Add(id); }
                 else if (instances.ContainsKey(id)) content.Add(id); else Visit(id);
             }

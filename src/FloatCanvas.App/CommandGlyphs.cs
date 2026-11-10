@@ -13,6 +13,7 @@ internal static class CommandGlyphs
 {
     internal const string HideFloatingLogo = "M1,1 L15,15 M2,8 Q8,1 14,8 Q8,15 2,8 M6,6 L10,10";
     internal const string File = "M3,1 H10 L14,5 V15 H3 Z M10,1 V5 H14 M6,8 H11 M6,11 H10";
+    internal const string Project = "M4,1 H15 V12 M1,4 H12 V15 H1 Z M4,12 L6.5,8 L8.5,11 L10,7";
     internal const string EditObjects = "M1,1 H4 V4 H1 Z M12,1 H15 V4 H12 Z M1,12 H4 V15 H1 Z M12,12 H15 V15 H12 Z M4,2.5 H12 M2.5,4 V12 M13.5,4 V12 M4,13.5 H12 M6,6 H10 V10 H6 Z";
     internal const string DrawingTools = "M8,1 C3,1 1,4 1,8 C1,12 4,15 8,15 H10 C12,15 12,12 10,12 H9 C7,12 8,9 11,9 H13 C17,8 14,1 8,1 Z M5,4 H5.1 M10,4 H10.1 M4,8 H4.1";
     internal const string ImageTools = "M1,1 H12 V10 H1 Z M2,8 L5,5 L8,8 M9,4 H9.1 M8,15 L15,8 M12,8 H15 V11";
@@ -48,6 +49,10 @@ internal static class CommandGlyphs
     internal const string ReplaceImage = "M1,2 H11 V8 M1,2 V13 H7 M2,10 L5,7 L8,10 M9,11 H16 M13,8 L16,11 L13,14";
     internal const string Canvas = "M3,2 H13 L15,14 H1 Z M6,2 L5,14 M10,2 L11,14 M2,8 H14";
     internal const string CanvasFlat = "M1,2 H15 V14 H1 Z M5,2 V14 M11,2 V14 M1,8 H15";
+    // Layer rows paired with a focus reticle, distinct from canvas navigation.
+    internal const string LocateLayer = "M1,2 H9 M1,6 H6 M1,10 H4 M10.5,7 A3.5,3.5 0 1 1 10.49,7 M10.5,5.5 V8 M10.5,13 V15 M5.5,10.5 H8 M13,10.5 H15";
+    // A viewport containing artwork, with an offset frame showing the camera.
+    internal const string CanvasView = "M1,4 H12 V15 H1 Z M4,1 H15 V12 M3,12 L6,8 L8,10 L10,7";
     private const string PlacementPlane = "M8,1.5 L15,8 L8,14.5 L1,8 Z";
     private const string PlacementFigure = "M6.6,4.05 A1.75,1.75 0 1 1 9.4,4.05 Q11,4.5 11,6 V8 H5 V6 Q5,4.5 6.6,4.05 Z";
     internal static readonly string Surface = SurfacePlacementGlyph();

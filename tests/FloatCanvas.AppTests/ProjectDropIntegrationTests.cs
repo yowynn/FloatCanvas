@@ -1,4 +1,4 @@
-using System.Collections.Specialized;
+﻿using System.Collections.Specialized;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -32,7 +32,7 @@ internal static class ProjectDropIntegrationTests
         string projectSha = Hash(project), prefabSha = Hash(prefab);
 
         var target = new EditorSession(new() { Viewport = new(0, 0, 1000, 700) });
-        Guid group = target.CreateEmptyGroup("Drop target");
+        Guid group = target.CreatePopulatedGroup("Drop target");
         target.Document.Groups.Single().Transform = Affine2D.Translation(45, 30).Compose(Affine2D.Rotation(15));
         target.SetEditScope(group);
         var payload = ReadPaths([project, prefab, image], check);
@@ -45,7 +45,7 @@ internal static class ProjectDropIntegrationTests
         check("mixed image project and prefab drop commits through one guarded request", request.TryCommit(request, target, null, prepared) && request.Completed && target.UndoCount == undo + 1);
         var graph = new SceneGraph(target.Document);
         check("drop inserts selected siblings into the captured current group instead of replacing the canvas", target.Document.ResourceId == resource && target.EditScopeId == group &&
-            graph.EnumerateChildren(group).Count == 3 && target.Selection.SetEquals(prepared.SelectedIds) && target.Document.Instances.Count == 2 && target.Document.Elements.Count == 1);
+            graph.EnumerateChildren(group).Count == 4 && target.Selection.SetEquals(prepared.SelectedIds) && target.Document.Instances.Count == 2 && target.Document.Elements.Count == 2);
         check("project and prefab file names become the linked instance names", target.Document.Instances.Select(instance => instance.Name).ToHashSet().SetEquals(["Linked canvas", "Preset A"]));
         check("both project formats keep validated external source identity and offline definitions", target.Document.Definitions.Count >= 2 &&
             target.Document.Definitions.Where(item => item.Source?.IsLinked == true).Count() == 2 && target.Document.Definitions.Where(item => item.Source?.IsLinked == true).All(item =>
@@ -53,7 +53,7 @@ internal static class ProjectDropIntegrationTests
         check("source project and prefab bytes are never rewritten during the drop", Hash(project) == projectSha && Hash(prefab) == prefabSha);
         for (int i = 0; i < prepared.SelectedIds.Count; i++)
             check("mixed drop item " + i + " remains centered at the release point with its ordered offset", target.NodeBounds(prepared.SelectedIds[i])!.Value.Center.DistanceTo(request.DropCenter!.Value + new PointD(i * 20, i * 20)) < 1e-6);
-        check("mixed drop image retains image insertion opacity", Math.Abs(target.Document.Elements.Single().Style.Opacity - .65) < 1e-9);
+        check("mixed drop image retains image insertion opacity", Math.Abs(target.Document.Elements.Single(e => e.Kind == ElementKind.Image).Style.Opacity - .65) < 1e-9);
         string committed = JsonSerializer.Serialize(target.Document);
         check("one undo removes the complete mixed drop and exact redo restores its ids", target.Undo() && JsonSerializer.Serialize(target.Document) == before && target.Redo() && JsonSerializer.Serialize(target.Document) == committed);
         check("completed project request cannot place the same prepared graph twice", !request.TryCommit(request, target, null, prepared) && target.UndoCount == undo + 1);
@@ -63,7 +63,7 @@ internal static class ProjectDropIntegrationTests
 
         foreach (string change in new[] { "scope ABA", "foreign transaction", "cancel", "document replacement", "new owner" })
         {
-            var owner = new EditorSession(new() { Viewport = new(0, 0, 600, 400) }); Guid folder = owner.CreateEmptyGroup("Other");
+            var owner = new EditorSession(new() { Viewport = new(0, 0, 600, 400) }); Guid folder = owner.CreatePopulatedGroup("Other");
             using var delayed = new ImageDropRequest(owner, owner.Document.Viewport, CancellationToken.None);
             var batch = Prepare(owner, ReadPaths([project], check), delayed); var live = owner;
             switch (change)

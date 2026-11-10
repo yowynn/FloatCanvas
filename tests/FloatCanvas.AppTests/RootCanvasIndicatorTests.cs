@@ -41,7 +41,7 @@ internal static class RootCanvasIndicatorTests
                 foreach (double width in new[] { 420d, 480d, 800d })
                 {
                     var file = File(); file.Refresh(LongPath(locale), dirty, true);
-                    var header = new RootCanvasToolbarHeader(file, () => { }, () => true); header.Refresh(root);
+                    var header = new RootCanvasToolbarHeader(file, () => { }, () => true) { Margin = new(0) }; header.Refresh(root);
                     Layout(header, width, 32);
                     var button = Field<Button>(header, "returnToMain");
                     var fileBounds = file.TransformToAncestor(header).TransformBounds(new Rect(file.RenderSize));
@@ -49,7 +49,7 @@ internal static class RootCanvasIndicatorTests
                     var label = Field<TextBlock>(file, "label");
                     check(prefix + root + " header reserves separate filename and return bounds width=" + width + " dirty=" + dirty,
                         fileBounds.Right <= buttonBounds.Left + .1 && buttonBounds.Right <= header.ActualWidth + .1 &&
-                        buttonBounds.Height == ToolbarUpperRow.ExtensionHeight && label.ActualWidth <= label.MaxWidth + .1 && label.MaxWidth <= 300 &&
+                        buttonBounds.Height == ToolbarUpperRow.ButtonSize && label.ActualWidth <= label.MaxWidth + .1 && label.MaxWidth <= 300 &&
                         label.TextTrimming == TextTrimming.CharacterEllipsis && (string)file.ToolTip == LongPath(locale));
                     if (width == 420 && dirty)
                     {
@@ -57,11 +57,22 @@ internal static class RootCanvasIndicatorTests
                             AutomationProperties.GetName(button).Contains(L.Get("RootCanvas." + root), StringComparison.Ordinal) &&
                             Field<TextBlock>(header, "caption").ActualWidth > 0 && button.Visibility == Visibility.Visible);
                         if (output is not null) Save(header, width, 32, Path.Combine(output, $"header-{root}-{locale}-{theme}.png"));
+                        string rootName = L.Get("RootCanvas." + root), groupName = locale == "en" ? "Sketch" : "草图组";
+                        var description = new EditingScopeDescription(rootName + " › " + groupName, L.Get("GroupCanvas.Temporary"), "", [(rootName, () => { })], groupName);
+                        header.SetScope(description, true); Layout(header,width,ToolbarUpperRow.ExtensionHeight);
+                        var parent = Field<Button>(header,"scopeParent");
+                        check(prefix + root + " keeps a separate Main-return icon before the scoped path", button.Visibility == Visibility.Visible &&
+                            button.Content is Viewbox && button.TranslatePoint(new(button.ActualWidth,0),header).X <= parent.TranslatePoint(new(),header).X &&
+                            Field<TextBlock>(header,"current").Text == groupName && Field<TextBlock>(header,"modeLabel").Visibility == Visibility.Collapsed &&
+                            !Descendants(header).OfType<TextBlock>().Any(text => text.Text.Contains(" · ",StringComparison.Ordinal)));
+                        if (output is not null) Save(header,width,ToolbarUpperRow.ExtensionHeight,Path.Combine(output,$"header-scoped-{root}-{locale}-{theme}.png"));
+                        header.SetScope(description, false); Layout(header,width,32);
                     }
                     file.Refresh(LongPath(locale), dirty, false); header.Refresh(root); Layout(header, width, 32);
                     check(prefix + root + " remains readable with the expanded toolbar and filename hidden width=" + width + " dirty=" + dirty,
                         header.Visibility == Visibility.Visible && button.Visibility == Visibility.Visible && file.Visibility == Visibility.Collapsed);
                 }
+                InlineArtwork(check, prefix, output, locale, theme);
                 CommandGate(check, prefix);
             }
         }
@@ -134,10 +145,57 @@ internal static class RootCanvasIndicatorTests
         header.Refresh(session.ActiveRootCanvas);
         check(prefix + "returning to Main changes navigation without author edits or undo", returned == 1 && session.ActiveRootCanvas == RootCanvasKind.Main &&
             header.Visibility == Visibility.Collapsed && JsonSerializer.Serialize(session.Document) == authored && session.UndoCount == undo &&
-            ReferenceEquals(button.Style, Application.Current.FindResource("CanvasCaptionButton")));
+            ReferenceEquals(button.Style, Application.Current.FindResource("CanvasToolbarInlineButton")));
+    }
+
+    private static void InlineArtwork(Action<string, bool> check, string prefix, string? output, string locale, string theme)
+    {
+        var file = File(); file.Refresh(LongPath(locale), true, true);
+        var header = new RootCanvasToolbarHeader(file, () => { }, () => true) { Margin = new(0) };
+        foreach (var mode in new[] { "GroupCanvas.Temporary", "GroupCanvas.RootProject" })
+        {
+            header.SetScope(new("Main › Group", L.Get(mode), "", [("Main", () => { })], "Group"), true);
+            Layout(header,330,ToolbarUpperRow.ExtensionHeight);
+            var icon = Field<Grid>(file,"projectIcon"); var dot = Field<System.Windows.Shapes.Ellipse>(file,"modifiedDot");
+            Rect dotBounds = dot.TransformToAncestor(icon).TransformBounds(new Rect(dot.RenderSize));
+            check(prefix + mode + " unsaved dot stays fully inside the compact icon", dot.Visibility == Visibility.Visible && new Rect(icon.RenderSize).Contains(dotBounds));
+            var image = new RenderTargetBitmap(330,33,96,96,PixelFormats.Pbgra32); image.Render(header);
+            var yellow = ((SolidColorBrush)dot.Fill).Color;
+            var referenceVisual = new DrawingVisual();
+            using(var drawing = referenceVisual.RenderOpen()) drawing.DrawEllipse(dot.Fill,null,new(4,4),2,2);
+            var reference = new RenderTargetBitmap(8,8,96,96,PixelFormats.Pbgra32);reference.Render(referenceVisual);
+            check(prefix + mode + " compact dot retains at least the expanded dot's visible area", SystemParameters.HighContrast || CountInk(image) >= CountInk(reference));
+            int CountInk(BitmapSource bitmap)
+            {
+                var pixels = new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(pixels,bitmap.PixelWidth*4,0);int ink=0;
+                for(int i=0;i<pixels.Length;i+=4)
+                    if(pixels[i+3] == 255 && Math.Abs(pixels[i]-yellow.B)<12 && Math.Abs(pixels[i+1]-yellow.G)<12 && Math.Abs(pixels[i+2]-yellow.R)<12) ink++;
+                return ink;
+            }
+            var badge = Field<Border>(header,"modeBadge"); var modeIcon = (FrameworkElement)Field<ContentControl>(header,"modeIcon").Content;
+            Rect artwork = modeIcon.TransformToAncestor(badge).TransformBounds(new Rect(modeIcon.RenderSize));
+            check(prefix + mode + " mode glyph has vertical room inside its badge", artwork.Top >= 2 && artwork.Bottom <= badge.ActualHeight-2 && artwork.Height >= 12);
+            var area = Field<StackPanel>(header,"scopeArea");
+            var arrow = area.Children.OfType<System.Windows.Shapes.Path>().Single();
+            var current = Field<Button>(header,"scopeButton");
+            check(prefix + mode + " breadcrumb vector aligns with the button and text row", Math.Abs(arrow.TranslatePoint(new(arrow.ActualWidth/2,arrow.ActualHeight/2),header).Y-
+                current.TranslatePoint(new(current.ActualWidth/2,current.ActualHeight/2),header).Y) < .5);
+            if(output is not null)
+            foreach(double scale in new[] {1d,1.5,2d})
+            {
+                var bitmap = new RenderTargetBitmap((int)Math.Ceiling(330*scale),(int)Math.Ceiling(33*scale),96*scale,96*scale,PixelFormats.Pbgra32);bitmap.Render(header);
+                var encoder = new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var stream = System.IO.File.Create(Path.Combine(output,$"inline-{locale}-{theme}-{mode}-{scale}.png"));encoder.Save(stream);
+            }
+        }
     }
 
     private static BoundFileIndicator File() => new(() => { }, () => { }, () => { }, () => true, () => true);
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++)
+        { var child=VisualTreeHelper.GetChild(root,i); yield return child; foreach(var nested in Descendants(child)) yield return nested; }
+    }
     private static string LongPath(string locale) => Path.Combine(Path.GetTempPath(),
         string.Concat(Enumerable.Repeat(locale == "zh-CN" ? "一份用于验证文件名气泡和当前画布提示不重叠的长工程名称" : "A very long project name to verify filename truncation beside the root action ", 5)) + ".floatcanvas");
     private static Grid ToolbarSurface(bool expanded)

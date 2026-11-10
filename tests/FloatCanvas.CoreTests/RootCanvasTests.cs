@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using System.Text.Json;
 
 internal static class RootCanvasTests
@@ -36,7 +36,7 @@ internal static class RootCanvasTests
         check(owner.Document.RootCanvasAssignments.ContainsKey(group) && !owner.Document.RootCanvasAssignments.ContainsKey(front.Id) &&
             SceneCanvasRoots.Resolve(owner.Document, front.Id) == RootCanvasKind.Foreground, "grouping transfers root ownership to one top-level group");
         check(owner.Undo() && Json(owner.Document) == beforeGroup && owner.Redo(), "group root assignments undo and redo with exact ownership");
-        owner.SetEditScope(group); Guid empty = owner.CreateEmptyGroup("empty");
+        owner.SetEditScope(group); Guid empty = owner.CreatePopulatedGroup("empty");
         check(SceneCanvasRoots.Resolve(owner.Document, empty) == RootCanvasKind.Foreground && !owner.Document.RootCanvasAssignments.ContainsKey(empty),
             "new nested empty groups inherit the top-level root without redundant assignments");
         owner.SetEditScope(null); owner.SetSelection([group]);
