@@ -33,9 +33,10 @@ internal sealed class CanvasPinSelector : StackPanel
     public CanvasPinSelector()
     {
         Orientation = Orientation.Horizontal;
-        var grid = new Grid { Width = 96, Height = 96 };
+        var grid = new Grid { Width = 3 * PropertyPanelLayout.ControlHeight, Height = 3 * PropertyPanelLayout.ControlHeight };
         var pointStyle = (Style)XamlReader.Parse("""
-            <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="ToggleButton">
+            <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="ToggleButton">
+              <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
               <Setter Property="Template"><Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
                   <Border x:Name="Chrome" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="4">
@@ -44,7 +45,6 @@ internal sealed class CanvasPinSelector : StackPanel
                   <ControlTemplate.Triggers>
                     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
                     <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
-                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Chrome" Property="BorderThickness" Value="2"/></Trigger>
                     <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
                   </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -52,7 +52,7 @@ internal sealed class CanvasPinSelector : StackPanel
             </Style>
             """);
         for (int i = 0; i < 3; i++) { grid.RowDefinitions.Add(new()); grid.ColumnDefinitions.Add(new()); }
-        var outline = new Border { Margin = new(16), BorderThickness = new(1), IsHitTestVisible = false };
+        var outline = new Border { Margin = new(PropertyPanelLayout.ControlHeight / 2), BorderThickness = new(1), IsHitTestVisible = false };
         outline.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         Grid.SetRowSpan(outline, 3); Grid.SetColumnSpan(outline, 3); grid.Children.Add(outline);
         for (int i = 0; i < points.Length; i++)

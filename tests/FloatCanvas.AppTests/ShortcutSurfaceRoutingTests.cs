@@ -35,7 +35,7 @@ internal static class ShortcutSurfaceRoutingTests
         var commands = new[] { new List<int>(), new List<int>(), new List<int>() };
         inspector.CommandKey += commands[0].Add;
         layers.CommandKey += commands[1].Add;
-        ToolOptionsKeyboardRoute.Attach(options, () => true, () => false, commands[2].Add);
+        ToolOptionsKeyboardRoute.Attach(options, () => true, commands[2].Add);
         var sources = surfaces.Select(window =>
         {
             var panel = new StackPanel();
@@ -68,11 +68,7 @@ internal static class ShortcutSurfaceRoutingTests
                 {
                     int before = commands[surface].Count;
                     var args = Send(sources[surface].Button, key);
-                    bool keepListNavigation = surface == 1 && key is Key.Left or Key.Up or Key.Right or Key.Down;
-                    bool nativeButtonActivation = surface == 1 && key == Key.Enter;
-                    check($"{names[surface]} ordinary control {(nativeButtonActivation ? "retains native button activation" : keepListNavigation ? "retains list navigation" : "routes")} {key}",
-                        nativeButtonActivation ? !args.Handled && commands[surface].Count == before :
-                        keepListNavigation ? commands[surface].Count == before :
+                    check($"{names[surface]} ordinary control routes {key}",
                         args.Handled && commands[surface].Count == before + 1 && commands[surface][^1] == KeyInterop.VirtualKeyFromKey(key));
                 }
             }
@@ -87,8 +83,8 @@ internal static class ShortcutSurfaceRoutingTests
                     { RoutedEvent = Keyboard.KeyDownEvent };
                 InstallModifiers();
                 if (!preview.Handled) sources[1].Button.RaiseEvent(keyDown);
-                check("Layers Button Return invokes its native Click exactly once without a global command",
-                    !preview.Handled && keyDown.Handled && nativeClicks == 1 && commands[1].Count == nativeBefore);
+                check("Layers Button Return routes the editor command without another Click",
+                    preview.Handled && nativeClicks == 0 && commands[1].Count == nativeBefore + 1);
             }
             finally { sources[1].Button.Click -= countNativeClick; }
             ExpectRoute(1, sources[1].Panel, Key.Enter);
@@ -116,7 +112,7 @@ internal static class ShortcutSurfaceRoutingTests
 
             for (int surface = 0; surface < surfaces.Length; surface++)
             {
-                foreach (var control in new Control[] { new TextBox(), new PasswordBox(), new ComboBox(), new Slider() })
+                foreach (var control in new Control[] { new TextBox(), new PasswordBox() })
                 {
                     sources[surface].Panel.Children.Add(control);
                     SetModifiers(ModifierKeys.None);
@@ -124,6 +120,16 @@ internal static class ShortcutSurfaceRoutingTests
                     SetModifiers(ModifierKeys.Control);
                     foreach (var key in new[] { Key.Z, Key.Y, Key.A, Key.C, Key.V, Key.D, Key.G, Key.Back, Key.Delete }) ExpectLocal(surface, control, key);
                     foreach (var key in new[] { Key.S, Key.O, Key.N }) ExpectRoute(surface, control, key);
+                }
+                foreach (var control in new Control[] { new ComboBox(), new Slider() })
+                {
+                    sources[surface].Panel.Children.Add(control);
+                    SetModifiers(ModifierKeys.None);
+                    foreach (var key in new[] { Key.Space, Key.B, Key.Tab, Key.D4, Key.Enter, Key.Delete }) ExpectRoute(surface, control, key);
+                    if (control is Slider) ExpectLocal(surface, control, Key.Right);
+                    else ExpectRoute(surface, control, Key.Right);
+                    SetModifiers(ModifierKeys.Control);
+                    foreach (var key in new[] { Key.Z, Key.Y, Key.A, Key.C, Key.V, Key.D, Key.S, Key.O, Key.N }) ExpectRoute(surface, control, key);
                 }
             }
 

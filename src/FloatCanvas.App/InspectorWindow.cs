@@ -16,6 +16,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
 {
     private readonly Func<EditorSession> getSession;
     private readonly Func<bool> canMutate;
+    private readonly Func<bool> hasSharedCardContext;
     private readonly Dictionary<string, Controls.TextBox> fields = [];
     private readonly Dictionary<string, NumericValueField> numericFields = [];
     private readonly Dictionary<string, ColorField> colorFields = [];
@@ -24,6 +25,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private readonly HashSet<string> dirtyFields = [];
     private readonly Controls.StackPanel propertyPanel = new();
     private readonly NodeTransformPanel nodeTransforms;
+    private readonly Controls.TextBlock insideCardHint = new() { TextWrapping = Wpf.TextWrapping.Wrap, FontSize = 11, Visibility = Wpf.Visibility.Collapsed };
     private readonly Controls.TextBlock selectionLabel = new() { TextWrapping = Wpf.TextWrapping.Wrap, FontWeight = Wpf.FontWeights.SemiBold };
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, MinHeight = 28, FontSize = 11 };
     private readonly Controls.Border textSection;
@@ -70,10 +72,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
     public event Action<ColorField>? EyedropperRequested;
     internal event Action<Guid>? PrefabEditRequested;
 
-    public InspectorWindow(Func<EditorSession> getSession, Func<bool>? canMutate = null, ColorLibrary? colorLibrary = null)
+    public InspectorWindow(Func<EditorSession> getSession, Func<bool>? canMutate = null, ColorLibrary? colorLibrary = null, Func<bool>? hasSharedCardContext = null)
     {
         this.getSession = getSession;
         this.canMutate = canMutate ?? (() => true);
+        this.hasSharedCardContext = hasSharedCardContext ?? (() => false);
         Title = L.Get("Inspector.Heading");
         Width = PropertyPanelLayout.WindowWidth; Height = 700; MinWidth = 300; MinHeight = 420;
         FontSize = 14; FontFamily = new Media.FontFamily("Microsoft YaHei UI");
@@ -171,11 +174,9 @@ internal sealed partial class InspectorWindow : Wpf.Window
         effectChoice.SelectionChanged += (_, _) =>
         {
             if (refreshing || effectChoice.SelectedValue is not int requested) return;
-            if (colorFields.TryGetValue("EffectColor", out var color)) color.ClosePicker();
             CompleteEdit(); effectIndex = requested; LoadSelection(true);
         };
         propertyPanel.Children.Add(FieldPair("EffectStrength", L.Get("ToolOptions.EffectStrength"), null, null));
-        propertyPanel.Children.Add(CreateColorField("EffectColor", L.Get("Inspector.EffectColor"), ColorRole.Foreground, colorLibrary));
         textSection = SectionHeading("Inspector.TextSection",first:true);
         propertyPanel.Children.Add(textSection);
         propertyPanel.Children.Add(FieldPair("FontSize", L.Get("Inspector.FontSize"), null, null));
@@ -218,6 +219,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         Automation.AutomationProperties.SetName(placement,L.Get("Billboard.Placement"));
         placement.SelectionChanged+=(_,_)=>{if(!refreshing)ChangeField("Placement");};
         placementSection.Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("Billboard.Placement")), placement));fieldContainers.Add("Placement",placementSection);
+        insideCardHint.Text = L.Get("Billboard.InsideCard"); placementSection.Children.Add(insideCardHint);
         preservePlacementAppearance.IsChecked = true;
         placementSection.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Billboard.PreserveAppearance"), preservePlacementAppearance));
         propertyPanel.Children.Add(placementSection);
@@ -241,7 +243,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); else { ObserveSession(null); CancelNumericGestures(); CompleteEdit(); CloseColorPickers();
             if (SessionWindowCoordinator.Find(this)?.IsSuspendingWindows == true && IsPinned) return;
             IsPinned=false;UpdatePin();Dismissed?.Invoke(); } };
-        AppInputPolicy.AttachToolbarToggle(this, () => CommandKey?.Invoke(0x09), () => this.canMutate() && !colorFields.Values.Any(field => field.IsPickerOpen));
+        AppInputPolicy.AttachToolbarToggle(this, () => CommandKey?.Invoke(0x09));
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
@@ -250,8 +252,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (e.Handled || (modifiers & (Input.ModifierKeys.Alt | Input.ModifierKeys.Windows)) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
             if (key == Input.Key.Escape) { e.Handled = true; if (!AppInputPolicy.IsRepeat(e) && !FontPickerControl.TryCancelForInput(source) && !AppWindowChrome.TryCloseHelp(this)) HandleEscape(); return; }
             if (key == Input.Key.Enter && (modifiers & Input.ModifierKeys.Control) != 0) { e.Handled = true; if (!AppInputPolicy.IsRepeat(e)) Apply(); return; }
-            bool textInput = OwnsLocalEditingKeys(Input.Keyboard.FocusedElement as Wpf.DependencyObject) ||
-                OwnsLocalEditingKeys(e.OriginalSource as Wpf.DependencyObject);
+            bool textInput = OwnsLocalEditingKeys(source);
             int command = Input.KeyInterop.VirtualKeyFromKey(key);
             bool control = (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0;
             if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, localInput: textInput)) return;
@@ -598,14 +599,15 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if(dirtyFields.Contains("Placement"))
         {
             var graph = new SceneGraph(getSession().Document);
-            var world = graph.ToWorld(edited);
-            var mapping = CanvasMapping.Create(getSession().Document, getSession().ActiveRootCanvas);
-            if(getSession().ActiveRootCanvas != RootCanvasKind.Main || !getSession().Document.Canvas.Projection.Enabled||placement.SelectedIndex is <0 or >1||
+            bool withinCard = hasSharedCardContext() || graph.ScopeContainerPlacement(edited.GroupId).Surface is not null;
+            var world = withinCard ? edited.Clone() : graph.ToWorld(edited);
+            var mapping = CanvasMapping.Create(withinCard ? new SceneDocument() : getSession().Document, getSession().ActiveRootCanvas);
+            if(!withinCard && (getSession().ActiveRootCanvas != RootCanvasKind.Main || !getSession().Document.Canvas.Projection.Enabled)||placement.SelectedIndex is <0 or >1||
                 !(preservePlacementAppearance.IsChecked == true
                     ? BillboardPlacementConversion.TryPreserveScreen(world, placement.SelectedIndex == 1, mapping)
                     : BillboardGeometry.TrySetBillboard(world,placement.SelectedIndex==1,mapping)))
                 throw new InvalidOperationException(L.Get("Billboard.ConversionFailed"));
-            EditorSession.CopyPlacement(edited, graph.ToLocal(world, edited.GroupId));
+            EditorSession.CopyPlacement(edited, withinCard ? world : graph.ToLocal(world, edited.GroupId));
         }
         if(dirtyFields.Contains("BillboardHeight"))edited.BillboardHeight=Number("BillboardHeight",L.Get("Billboard.Height"),-10000000,10000000);
         if(dirtyFields.Contains("ConstrainAspect"))edited.ConstrainAspect=keepAspect.IsChecked==true;
@@ -621,8 +623,6 @@ internal sealed partial class InspectorWindow : Wpf.Window
         }
         if (dirtyFields.Contains("EffectStrength") && SelectedEffect(edited) is { } effect)
             effect.Amount = Number("EffectStrength", L.Get("ToolOptions.EffectStrength"), .01, 1024);
-        if (dirtyFields.Contains("EffectColor") && SelectedEffect(edited) is { Kind: ImageEffectKind.Redact } redaction)
-            redaction.Color = colorFields["EffectColor"].Value;
         if (dirtyFields.Contains("Symbol") && symbolChoice.SelectedValue is SymbolKind symbol)
         { edited.Kind = ElementKind.Symbol; edited.Symbol = symbol; }
         if (dirtyFields.Contains("WindowSourceFit") && edited.WindowSource is { } windowSource && windowSourceFit.SelectedValue is WindowSourceFit fit)
@@ -1000,7 +1000,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         {
             effectOptionsSignature = signature;
             effectChoice.ItemsSource = compatibleEffects.Select(index => new EffectOption(index, (index + 1) + ". " +
-                L.Get(element.Effects[index].Kind == ImageEffectKind.Redact ? "Inspector.Redaction" : "Tool." + element.Effects[index].Kind))).ToArray();
+                L.Get("Tool." + element.Effects[index].Kind))).ToArray();
         }
         effectChoice.SelectedValue = effectIndex;
     }
@@ -1027,7 +1027,6 @@ internal sealed partial class InspectorWindow : Wpf.Window
             "EffectsSection" => SelectedEffect(element) is not null,
             "EffectSelection" => compatibleEffects.Length > 1,
             "EffectStrength" => SelectedEffect(element)?.Kind is ImageEffectKind.Blur or ImageEffectKind.Pixelate,
-            "EffectColor" => SelectedEffect(element)?.Kind == ImageEffectKind.Redact,
             "BillboardHeight" => element.IsBillboard,
             "ArrowHeadStyle" => element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow,
             "ArrowHeadSize" or "ArrowHint" or "StartArrowHead" or "EndArrowHead" => element.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow,
@@ -1050,7 +1049,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         "FontSize" => e.Style.FontSize, "Number" => e.Number, "Text" => e.Text, "TextAlignment" => e.Style.TextAlignment,
         "Symbol" => e.Kind == ElementKind.Triangle ? SymbolKind.Triangle : e.Symbol,
         "WindowSourceFit" => e.WindowSource?.Fit,
-        "EffectStrength" => SelectedEffect(e)?.Amount, "EffectColor" => SelectedEffect(e)?.Color,
+        "EffectStrength" => SelectedEffect(e)?.Amount,
         _ => null
     };
 
@@ -1077,7 +1076,10 @@ internal sealed partial class InspectorWindow : Wpf.Window
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["Stroke"]).Children[0]).Text = L.Get(presentation ? "Presentation.Foreground" : number ? selected.All(e => AppearanceRegistry.Resolve(e).NumberTextRole == AppearanceColorRole.Foreground) ? "Color.Unified" : "Color.NumberShape" : images ? "Snapshot.BorderColor" : shape ? selected.All(e => !AppearanceRegistry.Resolve(e).BackgroundActive) ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["StrokeWidth"]).Children[0]).Text = L.Get(images ? "Property.BorderWidth" : "Inspector.StrokeWidth");
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["Fill"]).Children[0]).Text = L.Get(presentation ? "Presentation.Background" : number ? "Color.NumberText" : shape ? "Color.Interior" : "Color.Background");
-        bool perspective=getSession().ActiveRootCanvas == RootCanvasKind.Main && getSession().Document.Canvas.Projection.Enabled;
+        var placementGraph = SceneGraph.Read(getSession().Document);
+        bool insideCard = hasSharedCardContext() || selected.Any(element => placementGraph.ScopeContainerPlacement(element.GroupId).Surface is not null);
+        insideCardHint.Visibility = insideCard && selected.Any(element => element.IsBillboard) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        bool perspective=insideCard || getSession().ActiveRootCanvas == RootCanvasKind.Main && getSession().Document.Canvas.Projection.Enabled;
         if(!perspective){fieldContainers["Placement"].Visibility=Wpf.Visibility.Collapsed;fieldContainers["BillboardHeight"].Visibility=Wpf.Visibility.Collapsed;}
         foreach(var key in new[]{"X","Y"})fieldContainers[key].ToolTip=selected.Any(e=>e.IsBillboard)?L.Get("Billboard.AnchorHint"):null;
         foreach (var row in propertyPanel.Children.OfType<Controls.Grid>().Where(row => !fieldContainers.Values.Contains(row)))

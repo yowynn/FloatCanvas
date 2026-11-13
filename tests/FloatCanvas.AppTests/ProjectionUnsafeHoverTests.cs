@@ -41,7 +41,7 @@ internal static class ProjectionUnsafeHoverTests
         // Match the constructor's root-project default; a zeroed enum would now
         // enter independent first framing and move calibration guides under this sample.
         Set(session, "_groupCanvasMode", GroupCanvasMode.RootProject);
-        Set(session, "_canvasGridCalibrationPoints", new List<PointD>());
+        Set(session, "_canvasReferenceLines", new List<CanvasReferenceLine>());
         Set(session, "_windowSourceLeaves", Array.Empty<ResolvedLeaf>());
         Set(session, "_settings", new UserSettings());
         // This fixture verifies UI adorners only. The independent preview worker publishes empty tiles.

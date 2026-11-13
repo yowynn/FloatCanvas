@@ -14,7 +14,6 @@ internal sealed partial class DesktopSession
     private DispatcherTimer? _inlineCaretTimer;
     private bool _inlineCaretVisible;
     private BillboardDepthLine? _inlineBillboardDepth;
-    private (CanvasPreviewContext From, CanvasPreviewContext To)? _textExitPresentation;
 
     private void ShowTextEditor(CanvasElement? existing,PointD point)
     {
@@ -32,7 +31,7 @@ internal sealed partial class DesktopSession
         var textOwner = Active;
         long textScope = Active.EditScopeVersion;
         var textMode = _groupCanvasMode;
-        edit.PlacementRejected+=()=>UpdateStatus(FloatCanvas.Localization.AppText.Get("Perspective.InputOutsidePlane"));
+        edit.PlacementRejected+=()=>UpdateStatus(FloatCanvas.Localization.AppText.Get(screenFirst ? "Billboard.InvalidLogicalPlacement" : "Perspective.InputOutsidePlane"));
         _inlineBillboardDepth = depth;
         _inlineText=edit;
         InvalidateScreenDraftPreview();
@@ -53,7 +52,7 @@ internal sealed partial class DesktopSession
             UpdateHiddenCanvasState();
             if (ReferenceEquals(Active, textOwner) && Active.EditScopeVersion == textScope && _groupCanvasMode == textMode &&
                 _host.IsEditing && _host.IsVisible && _presentedCanvasContext is { Hidden: false } shown && ReferenceEquals(shown.Session, Active))
-                _textExitPresentation = (shown, CurrentPreviewContext());
+                _sceneExitPresentation = (shown, CurrentPreviewContext());
             RequestRender();
         };
         try

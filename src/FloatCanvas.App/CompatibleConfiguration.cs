@@ -12,6 +12,7 @@ namespace FloatCanvas.App;
 internal sealed class CompatibleConfiguration(string path)
 {
     internal static Func<string,IReadOnlyList<string>,bool>? ConfirmRepair { get; set; }
+    internal bool NeedsCleanup { get; private set; }
     private JsonObject? original;
     private JsonNode? baseline;
     private static readonly JsonSerializerOptions ReadOptions = new() { MaxDepth = 128 };
@@ -22,6 +23,7 @@ internal sealed class CompatibleConfiguration(string path)
         using var document = JsonDocument.Parse(File.ReadAllText(path), new() { MaxDepth = 128 });
         CheckDuplicates(document.RootElement);
         original = JsonNode.Parse(document.RootElement.GetRawText()) as JsonObject ?? throw new InvalidDataException("Configuration must be an object.");
+        NeedsCleanup = (typeof(T).DeclaringType == typeof(ToolStateStore) || typeof(T).DeclaringType == typeof(ToolPresetLibrary)) && FilterUnknownTools(original);
         var normalized = Normalize(original, typeof(T), Default(typeof(T)));
         var value = normalized!.Deserialize<T>(ReadOptions) ?? throw new InvalidDataException("Configuration is empty.");
         Capture(value, options);
@@ -49,9 +51,24 @@ internal sealed class CompatibleConfiguration(string path)
         try
         {
             File.WriteAllText(temporary, serialized); File.Move(temporary, path, true);
-            original = (JsonObject)merged; baseline = current;
+            original = (JsonObject)merged; baseline = current; NeedsCleanup = false;
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+
+    private static bool FilterUnknownTools(JsonObject root)
+    {
+        bool discarded = false;
+        bool Unknown(JsonNode? node) => node is JsonObject item && item["Tool"] is { } tool && !TryEnum(typeof(EditorTool), tool.ToString(), out _);
+        foreach (string key in new[] { "Tools", "Buttons", "Selections", "PreviewSources", "OfficialBaselines" })
+            if (root[key] is JsonObject values)
+                foreach (var (id, value) in values.ToArray())
+                    if (key != "OfficialBaselines" && !TryEnum(typeof(EditorTool), id, out _) || Unknown(value) ||
+                        key == "Buttons" && value is not null && !TryEnum(typeof(EditorTool), value.ToString(), out _)) { values.Remove(id); discarded = true; }
+        if (root["Presets"] is JsonArray presets)
+            foreach (var preset in presets.ToArray())
+                if (preset is JsonObject item && Unknown(item["Parameters"])) { presets.Remove(preset); discarded = true; }
+        return discarded;
     }
 
     private static JsonNode? Normalize(JsonNode? raw, Type type, object? fallback)

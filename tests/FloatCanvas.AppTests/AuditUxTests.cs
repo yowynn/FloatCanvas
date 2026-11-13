@@ -32,8 +32,8 @@ internal static class AuditUxTests
                 var args = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab)
                     { RoutedEvent = Keyboard.PreviewKeyDownEvent };
                 button.RaiseEvent(args);
-                check("audit Tab does not traverse controls without an editor command route", args.Handled && toggles == 0);
-                check("audit controls retain the application's disabled Tab traversal", KeyboardNavigation.GetTabNavigation(button) == KeyboardNavigationMode.None);
+                check("audit Tab remains local without an editor command route", !args.Handled && toggles == 0);
+                check("audit controls retain local Tab traversal outside an editor route", KeyboardNavigation.GetTabNavigation(button) == KeyboardNavigationMode.Continue);
                 check("audit buttons and sliders add no keyboard focus frames", button.FocusVisualStyle is null && slider.FocusVisualStyle is null);
                 AppInputPolicy.AttachToolbarToggle(window, () => toggles++);
                 var toolbarTab = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab) { RoutedEvent = Keyboard.PreviewKeyDownEvent };

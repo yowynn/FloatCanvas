@@ -9,7 +9,6 @@ namespace FloatCanvas.App;
 
 internal static class AppInputPolicy
 {
-    private static bool initialized;
     private static readonly object nativeMessageTag = new();
     [ThreadStatic] private static bool threadInitialized;
     [ThreadStatic] private static ConditionalWeakTable<InputEventArgs, NativeMessage>? inputMessages;
@@ -102,7 +101,7 @@ internal static class AppInputPolicy
         AttachKeyboardSource(window);
         window.AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler((_, e) =>
         {
-            if (e.Key != Key.Tab || canRoute?.Invoke() == false) return;
+            if (e.Handled || e.Key != Key.Tab || canRoute?.Invoke() == false || SessionKeyboardRouter.IsModal) return;
             var source = e.OriginalSource as DependencyObject ?? Keyboard.FocusedElement as DependencyObject;
             if (!EditorShortcutPolicy.ShouldRoute(0x09, Keyboard.Modifiers, source)) return;
             e.Handled = true;
@@ -113,14 +112,12 @@ internal static class AppInputPolicy
     {
         if (threadInitialized) return;
         threadInitialized = true;
+        WindowFocusLifecycle.Initialize();
+        TooltipLifecycle.Initialize();
         InputManager.Current.PreProcessInput += CaptureNativeMessage;
     }
     internal static void Initialize()
     {
         InitializeThread();
-        if (initialized) return;
-        initialized = true;
-        EventManager.RegisterClassHandler(typeof(UIElement), Keyboard.PreviewKeyDownEvent,
-            new KeyEventHandler((_, e) => { if (e.Key == Key.Tab) e.Handled = true; }), true);
     }
 }

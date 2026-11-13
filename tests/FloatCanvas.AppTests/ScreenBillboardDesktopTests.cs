@@ -14,7 +14,7 @@ using FloatCanvas.Windows;
 internal static class ScreenBillboardDesktopTests
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
-    internal static void Run(Action<string, bool> check)
+    internal static void Run(Action<string, bool> check, bool checkEscape = true, bool handoffOnly = false)
     {
         var name = new StringBuilder(256);
         if (!GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()), 2, name, 512, out _) ||
@@ -28,10 +28,11 @@ internal static class ScreenBillboardDesktopTests
         var hotkeys = FreeHotkeys();
         new UserSettings { Theme = "dark", Language = "en", Toggle = hotkeys.Item1, Hide = hotkeys.Item2,
             PreferGpuAcceleration = false, ShowFloatingLogo = false }.Save();
-        var bounds = new PixelBounds(-22000, -22000, 800, 700);
+        var bounds = handoffOnly ? new PixelBounds(0, 0, 800, 700) : new PixelBounds(-22000, -22000, 800, 700);
         Func<IReadOnlyList<MonitorInfo>> monitors = () => [new("screen-billboard", bounds, bounds, 96, 96, true)];
         using var host = (OverlayHost)Activator.CreateInstance(typeof(OverlayHost), Hidden, null, [OverlayMonitorScope.PrimaryScreen, monitors, false], null)!;
         using var desktop = new DesktopSession(app, host);
+        if (checkEscape) DesktopSyntheticKeyboard.Allow(desktop, host);
         Field<System.Windows.Forms.NotifyIcon>(desktop, "_tray").Visible = false;
         Field<Window>(desktop, "_toolbar").Opacity = 0;
         var editor = Field<EditorController>(desktop, "_editor"); editor.BackgroundPickingEnabled = false;
@@ -40,9 +41,62 @@ internal static class ScreenBillboardDesktopTests
         document.Canvas.Projection.Enabled = true;
         document.Canvas.Projection.Matrix = new(1, 0, 0, 0, -.4, 700, 0, -.002, 1);
         document.Canvas.Projection.Quad = [new(0, 0), new(800, 0), new(800, 700), new(0, 700)];
-        session.NotifyChanged(); host.SetVisible(true); editor.Tool = EditorTool.Rectangle; editor.BillboardMode = true;
+        session.NotifyChanged(); host.SetVisible(true);
+        editor.Tool = EditorTool.Rectangle; editor.BillboardMode = true;
         using var renderer = new CanvasPreviewRenderer();
-        EscapePriority(desktop, host, editor, check, Acknowledge);
+        if (handoffOnly)
+        {
+            session.Add(new CanvasElement { Kind = ElementKind.Rectangle, Width = 40, Height = 30,
+                Transform = Affine2D.Translation(50, -100) });
+            Acknowledge();
+            int cancellationCount = 0; editor.Cancelling += () => cancellationCount++;
+            Send(OverlayPointerKind.Down, 100, 100); Send(OverlayPointerKind.Move, 300, 400);
+            using var live = Capture(); using var liveFrame = renderer.Render(live);
+            Complete(liveFrame, live.Context, [new("screen-billboard", bounds, 0, 0, 0, 0)]);
+            typeof(DesktopSession).GetField("_presentedCanvasContext", Hidden)!.SetValue(desktop, live.Context);
+            cancellationCount = 0;
+            Send(OverlayPointerKind.Up, 300, 400);
+            var request = (OverlayFrameRequest)Activator.CreateInstance(typeof(OverlayFrameRequest), Hidden, null, [null], null)!;
+            typeof(DesktopSession).GetMethod("BeginCanvasSubmission", Hidden)!.Invoke(desktop, [request]);
+            check("billboard commit cannot submit an empty scene while its replacement frame is delayed", request.Deferred);
+            check("own billboard commit is not reported as cancellation", cancellationCount == 0);
+            check("billboard handoff commits exactly one new object", session.Document.Elements.Count == 2 && !session.IsTransactionActive);
+            using var committed = Capture(); using var committedFrame = renderer.Render(committed);
+            Complete(committedFrame, committed.Context, [new("screen-billboard", bounds, 0, 0, 0, 0)]);
+            Send(OverlayPointerKind.Down, 500, 100); Send(OverlayPointerKind.Move, 650, 400);
+            using var cancelling = Capture(); using var cancellingFrame = renderer.Render(cancelling);
+            Complete(cancellingFrame, cancelling.Context, [new("screen-billboard", bounds, 0, 0, 0, 0)]);
+            typeof(DesktopSession).GetField("_presentedCanvasContext", Hidden)!.SetValue(desktop, cancelling.Context);
+            editor.Cancel();
+            Complete(cancellingFrame, cancelling.Context, []);
+            var cancelRequest = (OverlayFrameRequest)Activator.CreateInstance(typeof(OverlayFrameRequest), Hidden, null, [null], null)!;
+            typeof(DesktopSession).GetMethod("BeginCanvasSubmission", Hidden)!.Invoke(desktop, [cancelRequest]);
+            var restored = Field<CanvasPreviewFrame?>(desktop, "_submittingCanvasFrame");
+            check("cancel submits the retained base rather than a blank or stale draft", !cancelRequest.Deferred && restored is { IsTransitionFallback: true });
+            using var expectedSurface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(800, 700));
+            using var actualSurface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(800, 700));
+            expectedSurface.Canvas.Translate(-bounds.Left, -bounds.Top); actualSurface.Canvas.Translate(-bounds.Left, -bounds.Top);
+            committedFrame.Pixels.Draw(expectedSurface.Canvas); restored!.Pixels.Draw(actualSurface.Canvas);
+            using var expectedImage = expectedSurface.Snapshot(); using var actualImage = actualSurface.Snapshot();
+            using var expectedPixels = SkiaSharp.SKBitmap.FromImage(expectedImage); using var actualPixels = SkiaSharp.SKBitmap.FromImage(actualImage);
+            check("cancel keeps every base pixel and removes the private draft", expectedPixels.Pixels.Any(pixel => pixel.Alpha > 0) && expectedPixels.Pixels.SequenceEqual(actualPixels.Pixels));
+            using var afterCancel = Capture(); using var afterCancelFrame = renderer.Render(afterCancel);
+            Complete(afterCancelFrame, afterCancel.Context, [new("screen-billboard", bounds, 0, 0, 0, 0)]);
+            check("replacement frame installs picking for the restored document", ReferenceEquals(Field<SceneDocument?>(editor, "presentedOwner"), session.Document));
+            var definition = new PrefabDefinition { Graph = new() { Elements = [new() { Width = 20, Height = 20 }] } };
+            session.Document.Definitions.Add(definition); session.NotifyChanged(); Acknowledge();
+            session.PlacePrefab(definition.Id, LayerPlacement.Identity);
+            var stampRequest = (OverlayFrameRequest)Activator.CreateInstance(typeof(OverlayFrameRequest), Hidden, null, [null], null)!;
+            typeof(DesktopSession).GetMethod("BeginCanvasSubmission", Hidden)!.Invoke(desktop, [stampRequest]);
+            check("shared insertion hands off a replacement document without blank pixels", stampRequest.Deferred);
+            typeof(OverlayHost).GetProperty("IsVisible")!.SetValue(host, false);
+            var hiddenRequest = (OverlayFrameRequest)Activator.CreateInstance(typeof(OverlayFrameRequest), Hidden, null, [null], null)!;
+            typeof(DesktopSession).GetMethod("BeginCanvasSubmission", Hidden)!.Invoke(desktop, [hiddenRequest]);
+            check("hiding the canvas never retains the old displayed scene", !hiddenRequest.Deferred);
+            return;
+        }
+        if (checkEscape) EscapePriority(desktop, host, editor, check, Acknowledge);
+        document = session.Document;
         using var initial = Capture(); using var baseFrame = renderer.Render(initial);
         Complete(baseFrame, initial.Context, [new("screen-billboard", bounds, 0, 0, 0, 0)]);
         string untouched = JsonSerializer.Serialize(document); int history = session.UndoCount;
@@ -79,13 +133,17 @@ internal static class ScreenBillboardDesktopTests
         editor.Cancel();
 
         document = session.Document;
-        var group = new SceneGraph(document).InsertGroup(new CanvasGroup { Name = "scope", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] }); session.EnterScope(group.Id);
+        var graph = new SceneGraph(document);
+        var group = graph.InsertGroup(new CanvasGroup { Name = "scope", OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] });
+        var retained = graph.InsertElement(new CanvasElement { Kind = ElementKind.Rectangle, Width = 10, Height = 10, Visible = false }, group.Id);
+        session.EnterScope(group.Id);
         Acknowledge();
         Send(OverlayPointerKind.Down, 100, 100); Send(OverlayPointerKind.Move, 300, 400);
         using var scoped = Capture();
         check("actual capture freezes the editing scope with the private screen draft", scoped.ScreenDraftScopeId == group.Id && scoped.ScreenDraft is not null);
         session.LeaveScope(); session.EnterScope(group.Id); using var stale = Capture();
-        check("scope out and back clears an actual desktop draft without publishing it", stale.ScreenDraft is null && document.Elements.Count == 0 && !session.IsTransactionActive);
+        check("scope out and back clears an actual desktop draft without publishing it", stale.ScreenDraft is null &&
+            session.Document.Elements.Count == 1 && session.Document.Elements[0].Id == retained.Id && !session.IsTransactionActive);
         check("snapshot wiring fixture never acquires an editing or keyboard isolation lease", !host.IsEditing && !host.IsKeyboardIsolationActive);
         Console.WriteLine("SCREEN_BILLBOARD_DESKTOP " + output);
 
@@ -155,7 +213,10 @@ internal static class ScreenBillboardDesktopTests
             results.Add((workflow + " a second idle Esc still returns to pass-through", editingBeforeIdle && !host.IsEditing && Unchanged()));
         }
         results.Add(("Esc routing fixture never acquires keyboard isolation or displays the toolbar", !host.IsKeyboardIsolationActive && !Field<Window>(desktop, "_toolbar").IsVisible));
-        editor.Cancel(); document.Canvas.Projection.Matrix = originalProjection;
+        editor.Cancel(); session.Document.Canvas.Projection.Matrix = originalProjection;
+        // The key tests deliberately leave editing; its last isolated-view mapping
+        // is not refreshed in pass-through. Start the capture-only phase unbound.
+        editor.SetCanvasView(null, null, null);
         editor.Tool = originalTool; editor.BillboardWorkflow = originalWorkflow; editor.BillboardMode = originalMode; session.NotifyChanged();
         foreach (var result in results) check(result.Name, result.Passed);
 

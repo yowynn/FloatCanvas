@@ -12,7 +12,7 @@ internal static class WindowSourceStorageTests
         var store = new ProjectStore("0.4.0-m7-test"); var prefabStore = new PrefabStore("0.4.0-m7-test");
         var assets = new AssetLibrary(); string fallback = assets.Add(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=="));
         var leaf = Live(fallback); leaf.WindowSource!.Fit = WindowSourceFit.Stretch; leaf.ImageCrop = new(.1, .2, .7, .6); leaf.ImageFrame = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
-        leaf.Effects = [new() { Kind = ImageEffectKind.Redact, Bounds = new(.1, .1, .2, .2) }];
+        leaf.Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(.1, .1, .2, .2) }];
         var group = new CanvasGroup { OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [leaf.Id], Transform = Affine2D.Translation(17, 29), ElevationScale = -2 };
         leaf.GroupId = group.Id;
         var definition = new PrefabDefinition { Graph = new() { Elements = [leaf], Groups = [group], RootOrder = [group.Id] } };

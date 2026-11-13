@@ -165,7 +165,7 @@ internal static class PerspectiveSafetyCommandTests
         Set(host, "<IsVisible>k__BackingField", true);
         Set(desktop, "_host", host); Set(desktop, "_editor", new EditorController(state));
         Set(desktop, "_canvasCalibration", new CanvasCalibrationController()); Set(desktop, "_status", new TextBlock());
-        Set(desktop, "_canvasGridCalibrationPoints", new List<PointD>());
+        Set(desktop, "_canvasReferenceLines", new List<CanvasReferenceLine>());
         return desktop;
     }
     private static void SetModifiers(bool control = false, bool shift = false)

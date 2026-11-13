@@ -33,8 +33,7 @@ internal sealed partial class DesktopSession
         RequestRender();
     }
 
-    private async Task StartNewCanvasAsync()
-        => await ReplaceCanvasAsync();
+    private Task StartNewCanvasAsync() => _newCanvasButton!.ActivateAsync();
 
     private void RefreshBoundFileIndicator()
     {
@@ -102,7 +101,8 @@ internal sealed partial class DesktopSession
         {
             var live = _live; var capture = _capture;
             if (!IsDirty(live) && (capture is null || !IsDirty(capture))) return false;
-            if (FileState(live).Path is not null || capture is not null && FileState(capture).Path is not null) return false;
+            if (FileState(live).Path is not null && IsDirty(live) ||
+                capture is not null && FileState(capture).Path is not null && IsDirty(capture)) return false;
             long liveRevision = live.PreviewRevision; long? captureRevision = capture?.PreviewRevision;
             var origin = _captureOrigin;
             var snapshot = new WorkspaceState { LiveDocument = live.Document.Clone(), CaptureDocument = capture?.Document.Clone(), CaptureOrigin = origin };
@@ -178,7 +178,7 @@ internal sealed partial class DesktopSession
         {
             _editor.Cancel();
             await _documentRecoveryTask;
-            if (!await ConfirmLeaveWorkspaceAsync()) return;
+            if (!await ConfirmLeaveWorkspaceAsync(requireFileBinding: true)) return;
             // Complete a self-contained archive before replacing any live document.
             await RecoveryHistory.PreserveBeforeFirstWriteAsync(_documentLifetime.Token);
             await FlushRecoveryAsync();

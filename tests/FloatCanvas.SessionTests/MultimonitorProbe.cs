@@ -143,7 +143,7 @@ internal static partial class Program
 
             Call(session, "ToggleCanvasSettings");
             await SettleOwnToolbarScene(app);
-            var canvasWindow = Field<Wpf.Window>(session, "_canvasSettingsWindow");
+            var canvasWindow = Field<Wpf.Window>(session, "_canvasToolOptions");
             Call(session, "SetCanvasProjection", true);
             var reference = (System.Windows.Controls.ContextMenu)canvasWindow.GetType().GetField("resetMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(canvasWindow)!;
             Check(reference.Items.Count == monitors.Length + 1, "Production reset menu lists the default and every actual scope monitor");

@@ -55,7 +55,7 @@ internal static class PanelAcceptanceTests
         ActionIconButton.UpdatePin(pin, true);
         Observe("active pin grows visually without changing its header allocation", pin.Width == idleSize && pin.RenderTransform is ScaleTransform scale && scale.ScaleX > 1 && scale.ScaleY > 1);
         Observe("header actions have room for active pin outlines", pin.Margin.Left + pin.Margin.Right >= 6);
-        var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+        var canvas = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
         try
         {
             canvas.ApplyTemplate();
@@ -110,5 +110,5 @@ internal static class PanelAcceptanceTests
         var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(milliseconds) };
         timer.Tick += (_, _) => frame.Continue = false; timer.Start(); try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
     }
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
 }

@@ -10,6 +10,62 @@ namespace FloatCanvas.App;
 /// <summary>Closing a reusable surface forgets its property editor, without changing live child-dialog focus.</summary>
 internal static class WindowFocusLifecycle
 {
+    private static bool watching;
+    [ThreadStatic] private static FrameworkElement? focused;
+    [ThreadStatic] private static long contextVersion;
+    [ThreadStatic] private static bool invalidating;
+    internal static long ContextVersion => contextVersion;
+
+    internal static void Initialize()
+    {
+        if (watching) return;
+        watching = true;
+        EventManager.RegisterClassHandler(typeof(FrameworkElement), Keyboard.GotKeyboardFocusEvent,
+            new KeyboardFocusChangedEventHandler((sender, e) =>
+            {
+                if (!ReferenceEquals(sender, e.NewFocus)) return;
+                if (!invalidating) contextVersion++;
+                if (focused is { } old)
+                {
+                    old.IsVisibleChanged -= OnAvailabilityChanged;
+                    old.IsEnabledChanged -= OnAvailabilityChanged;
+                    old.Unloaded -= OnUnloaded;
+                }
+                focused = e.NewFocus as FrameworkElement;
+                if (focused is not { } next) return;
+                next.IsVisibleChanged += OnAvailabilityChanged;
+                next.IsEnabledChanged += OnAvailabilityChanged;
+                next.Unloaded += OnUnloaded;
+            }), true);
+    }
+
+    private static void OnAvailabilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is FrameworkElement { IsVisible: true, IsEnabled: true }) return;
+        Forget((FrameworkElement)sender);
+    }
+    private static void OnUnloaded(object sender, RoutedEventArgs e) => Forget((FrameworkElement)sender);
+    private static void Forget(FrameworkElement target)
+    {
+        if (ReferenceEquals(focused, target))
+        {
+            target.IsVisibleChanged -= OnAvailabilityChanged;
+            target.IsEnabledChanged -= OnAvailabilityChanged;
+            target.Unloaded -= OnUnloaded;
+            focused = null;
+        }
+        var scope = FocusManager.GetFocusScope(target);
+        if (ReferenceEquals(FocusManager.GetFocusedElement(scope), target)) FocusManager.SetFocusedElement(scope, null);
+        if (!ReferenceEquals(Keyboard.FocusedElement, target)) return;
+        var window = Window.GetWindow(target);
+        invalidating = true;
+        try
+        {
+            if (window is { IsVisible: true, IsEnabled: true } && !ReferenceEquals(target, window)) Keyboard.Focus(window);
+            else Keyboard.ClearFocus();
+        }
+        finally { invalidating = false; }
+    }
     private static readonly DependencyProperty AttachedProperty = DependencyProperty.RegisterAttached(
         "Attached", typeof(bool), typeof(WindowFocusLifecycle), new PropertyMetadata(false));
     private static readonly DependencyProperty ResetPendingProperty = DependencyProperty.RegisterAttached(
@@ -17,6 +73,7 @@ internal static class WindowFocusLifecycle
 
     internal static void Attach(Window window)
     {
+        Initialize();
         if ((bool)window.GetValue(AttachedProperty)) return;
         window.SetValue(AttachedProperty, true);
         window.IsVisibleChanged += (_, _) => { if (!window.IsVisible) Reset(window); };

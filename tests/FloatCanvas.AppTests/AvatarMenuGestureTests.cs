@@ -21,10 +21,7 @@ internal static class AvatarMenuGestureTests
             WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle=0x08000080 });
         source.RootVisual = launcher;
         launcher.Measure(new Size(101, 101)); launcher.Arrange(new Rect(0, 0, 101, 101));launcher.UpdateLayout();
-        // CaptureMouse synchronously reports native input. Complete this source's
-        // Loaded/input initialization before driving its protected press handler;
-        // a hidden HWND with pending initialization can correctly lose capture
-        // and cancel the gesture being asserted here.
+        // Complete layout before activating this source's native mouse provider.
         var frame=new DispatcherFrame();
         source.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,()=>frame.Continue=false);
         Dispatcher.PushFrame(frame);
@@ -32,12 +29,17 @@ internal static class AvatarMenuGestureTests
         bool menuOpen = true; int closes = 0, opens = 0;
         launcher.CloseOpenMenu = () => { if (!menuOpen) return false; menuOpen = false; closes++; return true; };
         launcher.MenuRequested += () => opens++;
-        var down = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent };
-        typeof(ToolbarLauncher).GetMethod("OnPreviewMouseLeftButtonDown", Private)!.Invoke(launcher, [down]);
+        // A direct protected-handler invocation has no preceding native mouse
+        // stream. Initialize only our offscreen HWND without moving the user's
+        // cursor, then drive the same native down/up route as a real click.
+        SetCapture(source.Handle);
+        SendMessage(source.Handle, 0x0200, 0, (nint)0x00140014);
+        Press(source.Handle, down: true);
         var gestures = (LauncherGestureState)typeof(ToolbarLauncher).GetField("gestures", Private)!.GetValue(launcher)!;
-        Console.WriteLine($"AVATAR_PRESS closes={closes} menu={menuOpen} pointerDown={gestures.IsPointerDown} opens={opens} captured={Mouse.Captured?.GetType().Name ?? "none"} nativeCapture={GetCapture()==source.Handle} nativeVisible={IsWindowVisible(source.Handle)}");
         check("avatar gesture fixture captures only its own offscreen input surface",ReferenceEquals(Mouse.Captured,launcher)&&GetCapture()==source.Handle);
         check("closing an open menu retains the same press as a double-click or drag candidate", closes == 1 && !menuOpen && gestures.IsPointerDown && opens == 0);
+        Press(source.Handle, down: false);
+        check("native release ends the menu-dismissal press without reopening or retaining capture", !gestures.IsPointerDown && opens == 0 && Mouse.Captured is null && GetCapture() != source.Handle);
         launcher.CancelPendingGestures();
 
         var state = NewState();
@@ -77,7 +79,23 @@ internal static class AvatarMenuGestureTests
     }
 
     private static LauncherGestureState NewState() => new(650, 7, 11, 12, 20);
+    private static void Press(nint handle, bool down)
+    {
+        byte[] previous = new byte[256];
+        if (!GetKeyboardState(previous)) throw new InvalidOperationException("Cannot read the test thread's mouse-button state.");
+        try
+        {
+            var state = (byte[])previous.Clone(); state[1] = down ? (byte)0x80 : (byte)0;
+            if (!SetKeyboardState(state)) throw new InvalidOperationException("Cannot set the test thread's mouse-button state.");
+            SendMessage(handle, down ? 0x0201u : 0x0202u, down ? 1 : 0, (nint)0x00140014);
+        }
+        finally { SetKeyboardState(previous); }
+    }
     [DllImport("user32.dll")] private static extern nint GetCapture();
+    [DllImport("user32.dll")] private static extern nint SetCapture(nint handle);
+    [DllImport("user32.dll")] private static extern nint SendMessage(nint handle, uint message, nint wparam, nint lparam);
+    [DllImport("user32.dll")] private static extern bool GetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] private static extern bool SetKeyboardState(byte[] state);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint handle);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool IsWindow(nint handle);

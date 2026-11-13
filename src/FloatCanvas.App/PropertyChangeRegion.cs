@@ -14,7 +14,6 @@ internal sealed class PropertyChangeRegion : Decorator
         nameof(CueStrength), typeof(double), typeof(PropertyChangeRegion), new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
     private readonly StackPanel body;
     private readonly DispatcherTimer clearCue = new() { Interval = TimeSpan.FromSeconds(1) };
-    private int transition;
 
     internal double CueStrength => (double)GetValue(CueStrengthProperty);
 
@@ -43,27 +42,18 @@ internal sealed class PropertyChangeRegion : Decorator
 
     internal void Change(Action update)
     {
-        double previousHeight = ActualHeight;
         var previousRows = VisibleRows();
         Reset();
         update();
         if (!IsVisible || ActualWidth <= 0 || previousRows.SequenceEqual(VisibleRows())) return;
 
         body.Measure(new Size(ActualWidth, double.PositiveInfinity));
-        double nextHeight = body.DesiredSize.Height;
-        if (nextHeight <= 0) return;
-        int version = transition;
+        if (body.DesiredSize.Height <= 0) return;
+        // Layout belongs entirely to the new state. Animate only the cue so
+        // collapsed rows never leave an empty, highlighted intermediate frame.
+        InvalidateMeasure();
         if (SystemParameters.ClientAreaAnimation)
         {
-            Height = previousHeight;
-            var resize = new DoubleAnimation(previousHeight, nextHeight, TimeSpan.FromMilliseconds(210))
-            { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop };
-            resize.Completed += (_, _) =>
-            {
-                if (version != transition) return;
-                BeginAnimation(HeightProperty, null); ClearValue(HeightProperty);
-            };
-            BeginAnimation(HeightProperty, resize);
             var cue = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.Stop };
             cue.KeyFrames.Add(new DiscreteDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.Zero)));
             cue.KeyFrames.Add(new DiscreteDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(400))));
@@ -76,8 +66,7 @@ internal sealed class PropertyChangeRegion : Decorator
 
     internal void Reset()
     {
-        transition++; clearCue.Stop();
-        BeginAnimation(HeightProperty, null); ClearValue(HeightProperty);
+        clearCue.Stop();
         BeginAnimation(CueStrengthProperty, null); SetValue(CueStrengthProperty, 0d);
     }
 

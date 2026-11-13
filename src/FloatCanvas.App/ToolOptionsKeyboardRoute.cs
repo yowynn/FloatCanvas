@@ -9,24 +9,24 @@ namespace FloatCanvas.App;
 /// <summary>Application commands for a separate tool window, without consuming its editors' local keys.</summary>
 internal static class ToolOptionsKeyboardRoute
 {
-    internal static void Attach(Window window, Func<bool> dismissOneLevel, Func<bool> colorPickerOpen, Action<int> command)
+    internal static void Attach(Window window, Func<bool> dismissOneLevel, Action<int> command)
     {
-        AppInputPolicy.AttachToolbarToggle(window, () => command(0x09), () => !colorPickerOpen());
+        AppInputPolicy.AttachToolbarToggle(window, () => command(0x09));
         window.PreviewKeyDown += (_, e) =>
         {
             var source = e.OriginalSource as DependencyObject ?? Keyboard.FocusedElement as DependencyObject;
             var key = e.Key == Key.System ? e.SystemKey : e.Key;
-            if (e.Handled || (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
+            if (e.Handled || SessionKeyboardRouter.IsModal || (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
             if (key == Key.Escape)
             {
                 if (FontPickerControl.TryCancelForInput(source)) { e.Handled = true; return; }
                 if (NumericValueField.TryCancelForInput(source)) { e.Handled = true; return; }
+                if (Ancestors(source).OfType<ToolbarOpacitySlider>().FirstOrDefault()?.CancelPointerGesture() == true) { e.Handled = true; return; }
                 if (Ancestors(source).Any(value => value is MenuBase or MenuItem || value is ComboBox { IsDropDownOpen: true } || value is Thumb { IsDragging: true })) return;
                 e.Handled = true;
                 if (!AppInputPolicy.IsRepeat(e) && !AppWindowChrome.TryCloseHelp(window) && !dismissOneLevel()) command(0x1B);
                 return;
             }
-            if (colorPickerOpen()) return;
             int virtualKey = KeyInterop.VirtualKeyFromKey(key);
             if (!ShouldRoute(virtualKey, Keyboard.Modifiers, source)) return;
             // Commands may enter a nested modal loop before returning. Consume the

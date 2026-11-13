@@ -124,8 +124,8 @@ internal sealed class StampLibraryWindow : Wpf.Window
             // Ctrl+N belongs to this library even while search owns editing keys.
             if (key == Input.Key.N && modifiers == Input.ModifierKeys.Control) return;
             int command = Input.KeyInterop.VirtualKeyFromKey(key);
-            bool localInput = IsTextInput(source) || IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject);
-            if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: true, localInput: localInput)) return;
+            bool localInput = IsTextInput(source);
+            if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: EditorShortcutPolicy.OwnsList(source), localInput: localInput)) return;
             e.Handled = true;
             if (!closed && !busy && this.canMutate() && (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers))) CommandKey?.Invoke(command);
         };
@@ -167,8 +167,6 @@ internal sealed class StampLibraryWindow : Wpf.Window
         var host = new Wpf.FrameworkElementFactory(typeof(Controls.ScrollViewer), "PART_ContentHost");
         host.SetValue(Controls.ScrollViewer.FocusableProperty, false); chrome.AppendChild(host);
         var template = new Controls.ControlTemplate(typeof(Controls.TextBox)) { VisualTree = chrome };
-        var focus = new Wpf.Trigger { Property = Controls.TextBox.IsKeyboardFocusWithinProperty, Value = true };
-        focus.Setters.Add(new Wpf.Setter(Controls.Border.BorderBrushProperty, new Wpf.DynamicResourceExtension("CanvasAccent"), "SearchChrome")); template.Triggers.Add(focus);
         var disabled = new Wpf.Trigger { Property = Controls.TextBox.IsEnabledProperty, Value = false };
         disabled.Setters.Add(new Wpf.Setter(OpacityProperty, .45, "SearchChrome")); template.Triggers.Add(disabled);
         return template;
@@ -518,7 +516,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
         if (key == Input.Key.Escape && modifiers == Input.ModifierKeys.None && selectedSlot is not null) { selectedSlot = null; RefreshSlotSelection(); return true; }
         if (key == Input.Key.Escape && modifiers == Input.ModifierKeys.None) { SessionWindowCoordinator.Close(this); return true; }
         if (key == Input.Key.N && modifiers == Input.ModifierKeys.Control) { if (canMutate()) RunAsync(() => SaveAsync(overwrite: false)); return true; }
-        if (IsTextInput(source) || IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject) || !canMutate()) return false;
+        if (IsTextInput(source) || !canMutate()) return false;
         if (modifiers != Input.ModifierKeys.None || selected is null) return false;
         if (key == Input.Key.Enter) { UseSelected(); return true; }
         if (key == Input.Key.F2) { RunAsync(RenameAsync); return true; }
@@ -526,18 +524,16 @@ internal sealed class StampLibraryWindow : Wpf.Window
         return false;
     }
 
-    private bool OwnsShortcut(Input.Key key, Input.ModifierKeys modifiers, Wpf.DependencyObject? source)
+    internal bool OwnsShortcut(Input.Key key, Input.ModifierKeys modifiers, Wpf.DependencyObject? source)
     {
         if (key is Input.Key.F or Input.Key.N && modifiers == Input.ModifierKeys.Control || key == Input.Key.Escape && modifiers == Input.ModifierKeys.None) return true;
-        if (IsTextInput(source) || IsTextInput(Input.Keyboard.FocusedElement as Wpf.DependencyObject)) return false;
-        return modifiers == Input.ModifierKeys.None && key is Input.Key.Enter or Input.Key.F2 or Input.Key.Delete;
+        if (IsTextInput(source)) return false;
+        return EditorShortcutPolicy.OwnsList(source) && modifiers == Input.ModifierKeys.None && key is Input.Key.Enter or Input.Key.F2 or Input.Key.Delete;
     }
 
     private static bool IsTextInput(Wpf.DependencyObject? source)
     {
-        for (var current = source; current is not null; current = Wpf.LogicalTreeHelper.GetParent(current) ?? (current is Media.Visual ? Media.VisualTreeHelper.GetParent(current) : null))
-            if (current is Controls.Primitives.TextBoxBase or Controls.ComboBox or Controls.PasswordBox) return true;
-        return false;
+        return EditorShortcutPolicy.OwnsLocalEditingKeys(source);
     }
 
     private OverlayContextMenu TileContextMenu(Guid id) => EntryContextMenu(id,null,null);

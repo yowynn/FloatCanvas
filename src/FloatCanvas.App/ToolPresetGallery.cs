@@ -1,176 +1,39 @@
-using System.Windows;
-using System.Windows.Automation;
-using System.Windows.Controls;
-using System.Windows.Input;
 using System.Text.Json;
-using FloatCanvas.Core;
-using L = FloatCanvas.Localization.AppText;
-
+using System.Windows;
 namespace FloatCanvas.App;
 
-/// <summary>One selected recipe per tool, with identical compact official and personal tiles.</summary>
-internal sealed class ToolPresetGallery : UserControl
+internal sealed class ToolPresetGallery : PresetGallery<ToolPreset>
 {
     private readonly EditorController controller;
     private readonly ToolPresetLibrary library;
-    private readonly Dictionary<EditorTool, string> selections = [];
     private readonly ToolStateStore? stateStore;
-    internal readonly PixelTilePanel OfficialTiles = new(5, 36, 4), UserTiles = new(5, 36, 4);
-    private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
-    private readonly ScrollViewer userScroll;
-    private readonly StackPanel headings;
-    private readonly Grid userArea = new();
+    private readonly Dictionary<EditorTool, string> selections;
     private EditorTool? observedTool;
-    private bool selectedModified;
-    private bool refreshPending = true, revealPending;
-    internal string SelectedId => selections.GetValueOrDefault(ToolPresetLibrary.Family(controller.Tool)) ?? "";
-    internal event Action? Applied;
-    internal event Action<string>? Failed;
-
     internal ToolPresetGallery(EditorController controller, ToolPresetLibrary library, ToolStateStore? stateStore = null)
+    { this.controller = controller; this.library = library; this.stateStore = stateStore; selections = stateStore?.Selections ?? []; }
+    protected override IReadOnlyList<ToolPreset> Official => library.OfficialFor(controller.Tool);
+    protected override IReadOnlyList<ToolPreset> Users => library.UserFor(controller.Tool);
+    internal override string SelectedId => selections.GetValueOrDefault(ToolPresetLibrary.Family(controller.Tool)) ?? "";
+    protected override void Select(string id)
+    { if (SelectedId == id) return; selections[ToolPresetLibrary.Family(controller.Tool)] = id; stateStore?.MarkChanged(); }
+    protected override string Id(ToolPreset p) => p.Id;
+    protected override string Caption(ToolPreset p) => p.Name;
+    protected override FrameworkElement Preview(ToolPreset p) => (FrameworkElement)ToolParameterIcon.Create(p.Parameters, 24);
+    protected override string PreviewIdentity(ToolPreset p) => JsonSerializer.Serialize(p.Parameters);
+    protected override bool Modified(ToolPreset p) => JsonSerializer.Serialize(PreservePointerMaster(p.Parameters.Clone())) != JsonSerializer.Serialize(controller.Parameters);
+    protected override void ApplyPreset(ToolPreset p) => controller.ApplyParameters(PreservePointerMaster(library.Apply(p.Id)));
+    protected override void SavePreset(string name) => Select(library.Save(name, controller.Parameters).Id);
+    protected override void UpdatePreset(ToolPreset p) => library.Update(p.Id, controller.Parameters);
+    protected override void RenamePreset(ToolPreset p, string name) => library.Rename(p.Id, name);
+    protected override void DeletePreset(ToolPreset p) => library.Delete(p.Id);
+    protected override void MovePreset(ToolPreset p, ToolPreset target, bool after) => library.Move(p.Id, target.Id, after);
+    protected override string SuggestedName => ToolDisplayName.PresetName(controller.Tool);
+    internal override void PrepareForShow()
     {
-        this.controller = controller; this.library = library;
-        this.stateStore = stateStore;
-        if (stateStore is not null)
-        {
-            selections = stateStore.Selections;
-        }
-        var body = new DockPanel { MinWidth = 196 + WindowLayout.ScrollBarWidth, LastChildFill = true };
-        headings = new StackPanel();
-        var officialHeader = new DockPanel { Height = 34, Margin = new(0, 0, 0, 4) };
-        officialHeader.Children.Add(Heading("ToolOptions.Official"));
-        headings.Children.Add(officialHeader); headings.Children.Add(OfficialTiles);
-        DockPanel.SetDock(headings, Dock.Top); body.Children.Add(headings);
-        var userHeader = new DockPanel { Height = 34, Margin = new(0, 12, 0, 4) };
-        var save = ActionIconButton.Create(PanelActionIcon.Add, L.Get("ToolOptions.NewPresetHint"), Save);
-        DockPanel.SetDock(save, Dock.Right); userHeader.Children.Add(save); userHeader.Children.Add(Heading("ToolOptions.User")); headings.Children.Add(userHeader);
-        userArea.Children.Add(empty);
-        userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body;
-        IsVisibleChanged+=(_,_)=>{if(IsVisible&&refreshPending)PrepareForShow();else if(!IsVisible)refreshPending=true;};
+        var family = ToolPresetLibrary.Family(controller.Tool);
+        if (observedTool != family) { observedTool = family; revealPending = true; }
+        base.PrepareForShow();
     }
-
-    protected override Size MeasureOverride(Size constraint)
-    {
-        headings.Measure(new Size(constraint.Width, double.PositiveInfinity));
-        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleY;
-        double row = Math.Round(UserTiles.TileSize * dpi, MidpointRounding.AwayFromZero) / dpi;
-        double gap = Math.Round(UserTiles.Gap * dpi, MidpointRounding.AwayFromZero) / dpi;
-        // Four rows set the desired height. More recipes scroll rather than growing
-        // the window; Arrange can still stretch the viewport beside taller options.
-        userArea.MinHeight = 4 * row + 3 * gap;
-        return base.MeasureOverride(new Size(constraint.Width, headings.DesiredSize.Height + userArea.MinHeight));
-    }
-
-    internal void Refresh(bool revealSelection = false)
-    {
-        refreshPending=true;revealPending|=revealSelection;
-        if(IsVisible)PrepareForShow();
-    }
-
-    internal void PrepareForShow()
-    {
-        bool revealSelection=revealPending;revealPending=false;refreshPending=false;
-        var tool = ToolPresetLibrary.Family(controller.Tool); var official = library.OfficialFor(tool); var users = library.UserFor(tool);
-        bool changed = false;
-        var focus = TileCollection.Capture(this, Tiles());
-        bool toolChanged = observedTool != tool; observedTool = tool;
-        if (!official.Concat(users).Any(p => p.Id == SelectedId)) { selections[tool] = official.First().Id; changed = true; }
-        var selectedPreset = official.Concat(users).FirstOrDefault(p => p.Id == SelectedId);
-        selectedModified = selectedPreset is not null && JsonSerializer.Serialize(PreservePointerMaster(PreviewParameters(selectedPreset).Clone())) != JsonSerializer.Serialize(controller.Parameters);
-        TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)), (button, id) => UpdateTile(button, official.Single(p => p.Id == id)));
-        TileCollection.Synchronize(UserTiles, users.Select(p => p.Id), id =>
-        {
-            var preset = users.Single(p => p.Id == id);
-            var button = Tile(preset); button.ContextMenu = Menu(preset);
-            TileDragReorder.Attach(button, UserTiles, (target, after) => Run(() => { library.Move(preset.Id, (string)target.Tag, after); Refresh(); }));
-            button.PreviewKeyDown += (_, e) =>
-            {
-                if (Keyboard.Modifiers != ModifierKeys.None || e.Key is not (Key.F2 or Key.Delete)) return;
-                e.Handled = true; if (AppInputPolicy.IsRepeat(e)) return;
-                if (e.Key == Key.F2 && library.User.FirstOrDefault(item => item.Id == id) is { } current) Rename(current);
-                else if (e.Key == Key.Delete) Delete(preset);
-            };
-            return button;
-        }, (button, id) => { var preset = users.Single(p => p.Id == id); UpdateTile(button, preset); button.ContextMenu = Menu(preset); });
-        empty.Visibility = users.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        userScroll.Visibility = users.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        TileCollection.Restore(Tiles(), focus, SelectedId);
-        if (changed) stateStore?.MarkChanged();
-        if (revealSelection || toolChanged) RevealSelection();
-    }
-
-    internal void Apply(string id) => Run(() =>
-    {
-        var tool = ToolPresetLibrary.Family(controller.Tool);
-        var preset = library.OfficialFor(tool).Concat(library.UserFor(tool)).FirstOrDefault(p => p.Id == id);
-        if (preset is null) return;
-        selections[tool] = id;
-        controller.ApplyParameters(PreservePointerMaster(library.Apply(id)));
-        Refresh(revealSelection: true); stateStore?.MarkChanged(); Applied?.Invoke();
-    });
-    internal void SaveNamed(string name)
-    {
-        var saved = library.Save(name, controller.Parameters); selections[ToolPresetLibrary.Family(controller.Tool)] = saved.Id; Refresh(revealSelection: true); stateStore?.MarkChanged();
-    }
-    private void Save()
-    {
-        string? name = NamePrompt.Show(this, L.Get("ToolOptions.Name"), ToolDisplayName.PresetName(controller.Tool));
-        if (name is not null) Run(() => SaveNamed(name));
-    }
-    private void Rename(ToolPreset preset)
-    {
-        string? name = NamePrompt.Show(this, L.Get("ToolOptions.Rename"), preset.Name);
-        if (name is not null) Run(() => { library.Rename(preset.Id, name); Refresh(); });
-    }
-    internal void Delete(ToolPreset preset) => Run(() =>
-    {
-        bool selected = SelectedId == preset.Id; library.Delete(preset.Id);
-        if (selected)
-        {
-            selections[ToolPresetLibrary.Family(controller.Tool)] = library.OfficialFor(controller.Tool).First().Id;
-            stateStore?.MarkChanged();
-        }
-        Refresh(revealSelection: selected);
-    });
-    private Button Tile(ToolPreset preset)
-    {
-        var button = new SelectionTileButton { Tag = preset.Id, MinWidth = 0, MinHeight = 0, Padding = new(4), Margin = new(0),
-            BorderThickness = new(1),
-            ToolTip = preset.Name + (preset.Id == SelectedId && selectedModified ? "\n" + L.Get("Audit.SelectedModified") : ""), Content = ToolParameterIcon.Create(PreviewParameters(preset), 24) };
-        ((SelectionTileButton)button).SetSelected(preset.Id == SelectedId, selectedModified);
-        ToolTipService.SetInitialShowDelay(button, 600); AutomationProperties.SetName(button, preset.Name);
-        button.Click += (_, _) => Apply(preset.Id); return button;
-    }
-    private void UpdateTile(Button button, ToolPreset preset)
-    {
-        button.ToolTip = preset.Name + (preset.Id == SelectedId && selectedModified ? "\n" + L.Get("Audit.SelectedModified") : ""); AutomationProperties.SetName(button, preset.Name);
-        button.Content = ToolParameterIcon.Create(PreviewParameters(preset), 24);
-        ((SelectionTileButton)button).SetSelected(preset.Id == SelectedId, selectedModified);
-    }
-    private static ToolParameters PreviewParameters(ToolPreset preset) => preset.Parameters;
     private ToolParameters PreservePointerMaster(ToolParameters parameters)
-    {
-        if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer)
-            pointer.Enabled = controller.Parameters.PointerPresentation?.Enabled ?? false;
-        return parameters;
-    }
-    private IEnumerable<Button> Tiles() => OfficialTiles.Children.OfType<Button>().Concat(UserTiles.Children.OfType<Button>());
-    private void RevealSelection() => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
-    {
-        if (!IsVisible) return;
-        var selected = Tiles().FirstOrDefault(button => Equals(button.Tag, SelectedId));
-        selected?.BringIntoView();
-    }));
-    private OverlayContextMenu Menu(ToolPreset preset)
-    {
-        var menu = new OverlayContextMenu();
-        void Add(string key, PanelActionIcon icon, Action action, string shortcut = "")
-        { var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = shortcut }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-        Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => Run(() => { library.Update(preset.Id, controller.Parameters); Refresh(); }));
-        Add("ToolOptions.Rename", PanelActionIcon.Rename, () => Rename(preset), "F2");
-        Add("ToolOptions.Delete", PanelActionIcon.Delete, () => Delete(preset), "Delete"); return menu;
-    }
-    private void Run(Action action) { try { action(); } catch (Exception ex) { Failed?.Invoke(ex.Message); } }
-    private static TextBlock Heading(string key) => PropertyPanelLayout.SectionTitle(L.Get(key));
+    { if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer) pointer.Enabled = controller.Parameters.PointerPresentation?.Enabled ?? false; return parameters; }
 }

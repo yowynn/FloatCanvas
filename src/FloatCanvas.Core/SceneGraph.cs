@@ -79,14 +79,24 @@ public sealed partial class SceneGraph
         return selected.Where(id => !AncestorIds(id).Any(selected.Contains)).ToArray();
     }
     public LayerPlacement ScopeWorldPlacement(Guid? parentId) => parentId is { } id ? NodeWorldPlacement(id) : LayerPlacement.Identity;
+    private readonly Dictionary<Guid, ContainerPlacementContext> containerContexts = [];
+    public ContainerPlacementContext ScopeContainerPlacement(Guid? parentId)
+    {
+        if (parentId is not { } id) return ContainerPlacementContext.Identity;
+        if (containerContexts.TryGetValue(id, out var cached)) return cached;
+        var group = groups[id];
+        var result = ScopeContainerPlacement(group.ParentId).Enter(group.Transform, group.ElevationScale, group.Billboard);
+        containerContexts.Add(id, result); return result;
+    }
+    public ContainerBillboard? ContainerBillboard(Guid id) => groups.TryGetValue(id, out var group) ? group.Billboard : instances.GetValueOrDefault(id)?.Billboard;
     public LayerPlacement ParentWorldPlacement(Guid nodeId) => ScopeWorldPlacement(ParentId(nodeId));
     public LayerPlacement NodeWorldPlacement(Guid nodeId)
     {
         if (world.TryGetValue(nodeId, out var result)) return result;
         var parent = ParentWorldPlacement(nodeId);
         result = groups.TryGetValue(nodeId, out var group)
-            ? parent.Compose(new(group.Transform, group.ElevationScale))
-            : instances.TryGetValue(nodeId, out var instance) ? parent.Compose(new(instance.Transform, instance.ElevationScale))
+            ? parent.Compose(new(group.Billboard?.FlatPlacement(new(group.Transform, group.ElevationScale)) ?? group.Transform, group.ElevationScale))
+            : instances.TryGetValue(nodeId, out var instance) ? parent.Compose(new(instance.Billboard?.FlatPlacement(new(instance.Transform, instance.ElevationScale)) ?? instance.Transform, instance.ElevationScale))
             : parent.Compose(new(elements[nodeId].Transform, 1));
         if (!result.IsValid) throw new InvalidDataException(L.Get("Scene.InvalidElementTransform"));
         world.Add(nodeId, result); return result;
@@ -125,6 +135,12 @@ public sealed partial class SceneGraph
         if (!placement.IsValid) throw new InvalidDataException(L.Get("Scene.InvalidElementTransform"));
         BillboardGeometry.ApplyPlaneTransform(element, placement.PlaneTransform);
         if (element.IsBillboard) element.BillboardHeight *= placement.ElevationScale;
+    }
+    public CanvasElement ResolveElement(CanvasElement element)
+    {
+        var result = ScopeContainerPlacement(element.GroupId).Resolve(element);
+        result.Visible = IsVisible(element.Id); result.Locked = IsLocked(element.Id); result.GroupId = null;
+        return result;
     }
     public Guid? ResolveSelectableNode(Guid nodeId, Guid? scopeId = null)
     {
@@ -190,7 +206,7 @@ public sealed partial class SceneGraph
         return inserted;
     }
     /// <summary>Moves complete ownership subtrees. Moving a legacy interleaved group explicitly gathers its paint slots.</summary>
-    public void ReparentPreservingWorld(IEnumerable<Guid> nodeIds, Guid? parentId, int index = -1)
+    public void ReparentPreservingWorld(IEnumerable<Guid> nodeIds, Guid? parentId, int index = -1, bool preserveContainerAppearance = true)
     {
         RequireParent(parentId);
         var selected = NormalizeSelection(nodeIds);
@@ -198,6 +214,8 @@ public sealed partial class SceneGraph
         var sourceRoots = document is SceneDocument sourceDocument
             ? selected.ToDictionary(id => id, id => SceneCanvasRoots.Resolve(sourceDocument, id, this)) : null;
         if (parentId is { } parent && selected.Any(id => id == parent || IsAncestor(id, parent))) throw InvalidGraph();
+        var prepared = preserveContainerAppearance && document is SceneDocument sceneDocument
+            ? ContainerReparent.Prepare(sceneDocument, this, selected, parentId, index) : null;
         var changes = selected.ToDictionary(id => id, id => ScopeWorldPlacement(parentId).Inverse().Compose(ParentWorldPlacement(id)));
         var tokens = SelectedPaintTokens(selected);
         MaterializeOrder(); RemoveTokens(tokens);
@@ -214,6 +232,9 @@ public sealed partial class SceneGraph
                 instance.Transform = placement.PlaneTransform; instance.ElevationScale = placement.ElevationScale; instance.ParentId = parentId;
             }
             else { ApplyPlacement(elements[id], changes[id]); elements[id].GroupId = parentId; }
+            if (prepared?.FindElement(id) is { } preparedElement) EditorSession.CopyPlacement(elements[id], preparedElement);
+            else if (prepared?.FindGroup(id) is { } preparedGroup) { groups[id].Transform = preparedGroup.Transform; groups[id].ElevationScale = preparedGroup.ElevationScale; groups[id].Billboard = preparedGroup.Billboard; }
+            else if (prepared?.FindInstance(id) is { } preparedInstance) { instances[id].Transform = preparedInstance.Transform; instances[id].ElevationScale = preparedInstance.ElevationScale; instances[id].Billboard = preparedInstance.Billboard; }
         }
         InsertTokens(MutableOrder(PaintContextForParent(parentId)), tokens, index); Refresh();
         if (document is SceneDocument scene)
@@ -254,17 +275,18 @@ public sealed partial class SceneGraph
         if (document.Elements is null || document.Groups is null || document.Instances is null || document.Elements.Count > SceneLimits.MaximumElements ||
             document.Groups.Count > SceneLimits.MaximumElements || document.Instances.Count > SceneLimits.MaximumElements) throw InvalidGraph();
         elements = new(document.Elements.Count); groups = new(document.Groups.Count); instances = new(document.Instances.Count);
-        world.Clear(); visible.Clear(); locked.Clear(); children.Clear(); descendantLeaves.Clear();
+        world.Clear(); containerContexts.Clear(); visible.Clear(); locked.Clear(); children.Clear(); descendantLeaves.Clear();
         foreach (var element in document.Elements)
             if (element is null || element.Id == Guid.Empty || !elements.TryAdd(element.Id, element)) throw InvalidGraph();
         foreach (var group in document.Groups)
             if (group is null || group.Id == Guid.Empty || elements.ContainsKey(group.Id) || !groups.TryAdd(group.Id, group) ||
-                !Enum.IsDefined(group.OrderMode) || !new LayerPlacement(group.Transform, group.ElevationScale).IsValid ||
+                !Enum.IsDefined(group.OrderMode) || !new LayerPlacement(group.Transform, group.ElevationScale).IsValid || group.Billboard is { IsValid: false } ||
+                group.Billboard is not null && group.OrderMode != GroupOrderMode.AtomicBlock ||
                 group.OrderMode == GroupOrderMode.AtomicBlock && group.ChildOrder is null ||
                 group.OrderMode == GroupOrderMode.LegacyPassThrough && group.ChildOrder is { Count: > 0 }) throw InvalidGraph();
         foreach (var instance in document.Instances)
             if (instance is null || instance.Id == Guid.Empty || instance.DefinitionId == Guid.Empty || elements.ContainsKey(instance.Id) || groups.ContainsKey(instance.Id) ||
-                !instances.TryAdd(instance.Id, instance) || !new LayerPlacement(instance.Transform, instance.ElevationScale).IsValid) throw InvalidGraph();
+                !instances.TryAdd(instance.Id, instance) || !new LayerPlacement(instance.Transform, instance.ElevationScale).IsValid || instance.Billboard is { IsValid: false }) throw InvalidGraph();
         // Reuse validation scratch storage; a large scene otherwise allocates a
         // fresh hash set (and buckets) for every leaf on every read index build.
         var visited = new HashSet<Guid>();
@@ -318,12 +340,12 @@ public sealed partial class SceneGraph
     private List<Guid> MutableOrder(Guid? contextId) => contextId is { } id ? groups[id].ChildOrder ?? throw InvalidGraph() : document.RootOrder ?? throw InvalidGraph();
     private List<Guid> SelectedPaintTokens(IReadOnlyList<Guid> selected)
     {
-        var selectedSet = selected.ToHashSet(); var result = new List<Guid>();
+        var selectedSet = selected.SelectMany(DescendantNodeIds).ToHashSet(); var result = new List<Guid>();
         void Visit(Guid? context)
         {
             foreach (var id in PaintOrder(context))
             {
-                if (selectedSet.Contains(id) || AncestorIds(id).Any(selectedSet.Contains)) result.Add(id);
+                if (selectedSet.Contains(id)) result.Add(id);
                 else if (groups.ContainsKey(id)) Visit(id);
             }
         }

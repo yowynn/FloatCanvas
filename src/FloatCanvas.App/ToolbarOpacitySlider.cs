@@ -140,6 +140,14 @@ internal sealed class ToolbarOpacitySlider : Slider
         RefreshThumbHighlight();
     }
 
+    internal bool CancelPointerGesture()
+    {
+        if (!pointerActive) return false;
+        SetCurrentValue(ValueProperty, pointerValue);
+        EndPointerGesture();
+        return true;
+    }
+
     protected override void OnRender(DrawingContext drawing)
     {
         base.OnRender(drawing);

@@ -209,18 +209,17 @@ internal static class AppTheme
             <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
             <Style.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource CanvasMuted}"/></Trigger>
-              <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
               <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
             </Style.Triggers>
           </Style>
           <Style x:Key="CanvasControlBase" TargetType="Control">
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="KeyboardNavigation.TabNavigation" Value="None"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/>
             <Setter Property="Foreground" Value="{DynamicResource CanvasText}"/>
             <Setter Property="ToolTipService.InitialShowDelay" Value="700"/>
             <Setter Property="ToolTipService.ShowDuration" Value="8000"/>
+            <Setter Property="ToolTipService.ShowsToolTipOnKeyboardFocus" Value="False"/>
           </Style>
           <Style TargetType="Window" BasedOn="{StaticResource CanvasControlBase}">
             <Setter Property="Icon" Value="pack://application:,,,/FloatCanvas;component/Assets/FloatCanvas.ico"/>
@@ -378,11 +377,17 @@ internal static class AppTheme
                   <Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="Knob" Property="Fill" Value="{DynamicResource CanvasOnAccent}"/></Trigger>
                   <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Knob" Property="HorizontalAlignment" Value="Center"/><Setter TargetName="MixedMark" Property="Visibility" Value="Visible"/></Trigger>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
-                  <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderThickness" Value="2"/><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
             </Setter.Value></Setter>
+          </Style>
+          <Style x:Key="CanvasPropertyIconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Style.Resources><CornerRadius x:Key="CanvasButtonCornerRadius">5</CornerRadius></Style.Resources>
+            <Setter Property="Padding" Value="0"/>
+            <Style.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
+            </Style.Triggers>
           </Style>
           <Style x:Key="CanvasAspectButton" TargetType="ToggleButton" BasedOn="{StaticResource CanvasControlBase}">
             <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
@@ -400,7 +405,6 @@ internal static class AppTheme
                   <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chain" Property="Data" Value="M6 5 H4 A3 3 0 0 0 4 11 H6 M10 5 H12 A3 3 0 0 1 12 11 H10 M5 8 H11"/><Setter TargetName="Chain" Property="Stroke" Value="{DynamicResource CanvasOnAccent}"/><Setter TargetName="Frame" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Chain" Property="Visibility" Value="Collapsed"/><Setter TargetName="Mixed" Property="Visibility" Value="Visible"/></Trigger>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
-                  <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Frame" Property="BorderThickness" Value="2"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
@@ -428,7 +432,6 @@ internal static class AppTheme
                   <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/><Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Check" Property="Stroke" Value="{DynamicResource CanvasOnAccent}"/></Trigger>
                   <Trigger Property="IsChecked" Value="{x:Null}"><Setter TargetName="Mixed" Property="Visibility" Value="Visible"/><Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource CanvasAccent}"/><Setter TargetName="Mixed" Property="Background" Value="{DynamicResource CanvasOnAccent}"/></Trigger>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
-                  <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
@@ -588,7 +591,6 @@ internal static class AppTheme
                   <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}" VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
                 </Border>
                 <ControlTemplate.Triggers>
-                  <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
@@ -674,7 +676,6 @@ internal static class AppTheme
                 </Grid>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource CanvasHover}"/></Trigger>
-                  <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/><Setter TargetName="Icon" Property="Visibility" Value="Collapsed"/></Trigger>
                   <Trigger Property="Tag" Value="scope-mode"><Setter TargetName="Header" Property="Grid.ColumnSpan" Value="3"/></Trigger>
                   <Trigger Property="HasItems" Value="True"><Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible"/></Trigger>
@@ -741,7 +742,6 @@ internal static class AppTheme
                 </Grid>
                 <ControlTemplate.Triggers>
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasMuted}"/></Trigger>
-                  <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsDropDownOpen" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEditable" Value="True"><Setter TargetName="Selection" Property="Visibility" Value="Collapsed"/><Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/><Setter TargetName="DropDownToggle" Property="Width" Value="26"/><Setter TargetName="DropDownToggle" Property="HorizontalAlignment" Value="Right"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/><Setter TargetName="Selection" Property="Opacity" Value="0.45"/></Trigger>

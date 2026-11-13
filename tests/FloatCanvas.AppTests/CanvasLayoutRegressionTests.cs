@@ -31,7 +31,7 @@ internal static class CanvasLayoutRegressionTests
         {
             using var owner=new HwndSource(new HwndSourceParameters("Canvas layout owner") {Width=1,Height=1,WindowStyle=unchecked((int)0x80000000),ExtendedWindowStyle=0x08000080});
             using var scope=layered?new OverlayWindowScope(owner.Handle,()=>true):null;
-            var window=new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()) {ShowActivated=false,Opacity=0,IsHitTestVisible=false};
+            var window=new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()) {ShowActivated=false,Opacity=0,IsHitTestVisible=false};
             var layout=new SessionWindowLayout();layout.Track(window);
             window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}});
             double preferred=window.Width;
@@ -72,9 +72,9 @@ internal static class CanvasLayoutRegressionTests
                 void Snapshot(string name)
                 {
                     name="layered-"+layered+"-"+name;
-                    var presets=(CanvasPresetGallery)typeof(CanvasSettingsWindow).GetField("presets",Private)!.GetValue(window)!;
+                    var presets=(CanvasPresetGallery)typeof(CanvasToolOptions).GetField("presets",Private)!.GetValue(window.Options)!;
                     var parent=(Border)((ScrollViewer)presets.Parent).Parent;var grid=(Grid)parent.Parent;
-                    var fourPoints=(Button)typeof(CanvasSettingsWindow).GetField("fourPoints",Private)!.GetValue(window)!;
+                    var fourPoints=(Button)typeof(CanvasToolOptions).GetField("fourPoints",Private)!.GetValue(window.Options)!;
                     var slot=System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(parent);
                     var bounds=window.IsVisible?presets.TransformToAncestor(window).TransformBounds(new Rect(presets.RenderSize)):Rect.Empty;
                     Console.WriteLine($"CANVAS_LAYOUT name={name} requested={window.Width} actual={window.ActualWidth} desired={window.DesiredSize} gallery={presets.ActualWidth}x{presets.ActualHeight} row={Grid.GetRow(parent)} col={Grid.GetColumn(parent)} grid={grid.ActualWidth}x{grid.ActualHeight} columns={string.Join(',',grid.ColumnDefinitions.Select(c=>c.ActualWidth))} rows={string.Join(',',grid.RowDefinitions.Select(r=>r.ActualHeight))} slot={slot} bounds={bounds} actions={((Grid)fourPoints.Parent).ActualWidth}");
@@ -92,7 +92,7 @@ internal static class CanvasLayoutRegressionTests
                 }
             }
             finally {window.CloseForDispose();}
-            var restored=new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()) {ShowActivated=false,Opacity=0,IsHitTestVisible=false};
+            var restored=new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()) {ShowActivated=false,Opacity=0,IsHitTestVisible=false};
             try
             {
                 layout.Track(restored);restored.Show();Pump();

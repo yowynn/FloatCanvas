@@ -8,6 +8,7 @@ internal sealed partial class EditorController
 {
     private SelectionTransformSnapshot? nodeTransform;
     private Dictionary<Guid, CanvasElement> nodeOriginalElements = [];
+    private Dictionary<Guid, CanvasElement> nodeOriginalAuthoredElements = [];
     private CanvasMapping? nodeStartMapping;
     private readonly Dictionary<Guid, Guid?> drawingParents = [];
 
@@ -42,8 +43,16 @@ internal sealed partial class EditorController
     private void CommitPointerEdit()
     {
         if (!OwnsPointerTransaction) return;
-        if (screenBillboardDrawing) PublishScreenBillboard(); else PublishDrawing();
-        Session.Commit();
+        bool screenDraft = screenBillboardDrawing;
+        if (screenDraft) PublishScreenBillboard(); else PublishDrawing();
+        publishingScreenBillboard = screenDraft;
+        try { Session.Commit(); }
+        finally { publishingScreenBillboard = false; }
+        if (screenDraft)
+        {
+            ClearBillboardDepth();
+            ScreenBillboardCommitted?.Invoke();
+        }
     }
     private bool HasNodeSelection
     {
@@ -54,10 +63,11 @@ internal sealed partial class EditorController
 
     private void PrepareNodeTransform()
     {
-        nodeTransform = null; nodeOriginalElements.Clear();
+        nodeTransform = null; nodeOriginalElements.Clear(); nodeOriginalAuthoredElements.Clear();
         if (gesture != "move" && (!UsesHierarchicalSelection || gesture is not ("rotate" or "resize"))) return;
         nodeTransform = Session.CaptureSelectionTransform();
         nodeOriginalElements = SelectedEditingWorldElements(editableOnly: true).ToDictionary(element => element.Id, element => element);
+        nodeOriginalAuthoredElements = Session.Document.Elements.Where(element => nodeOriginalElements.ContainsKey(element.Id)).ToDictionary(element => element.Id, element => element.Clone());
         nodeStartMapping = CurrentCanvasMapping;
     }
     private bool WriteWorldElement(CanvasElement candidate)
@@ -80,6 +90,9 @@ internal sealed partial class EditorController
         if (nodeTransform is null || gesture is not ("move" or "rotate" or "resize")) return false;
         var mapping = CurrentCanvasMapping;
         bool directLeaf = Session.Selection.Count == 1 && !HasNodeSelection;
+        if (directLeaf && nodeOriginalElements.Values.Single() is { BillboardSurface: not null } surfaceMember &&
+            nodeOriginalAuthoredElements.TryGetValue(surfaceMember.Id, out var authored))
+            return MoveSurfaceMember(surfaceMember, authored, modifiers);
         if (directLeaf && nodeOriginalElements.Values.Single() is { IsBillboard: true } billboard)
         {
             var candidate = billboard.Clone();
@@ -146,6 +159,42 @@ internal sealed partial class EditorController
             delta = Affine2D.Around(pivot, Affine2D.Scale(sx, sy)); elevation = sy;
         }
         if (!Session.TryApplySelectionTransform(nodeTransform, delta, elevation, displayMapping: CurrentCanvasMapping)) RejectPointer();
+        return true;
+    }
+    private bool MoveSurfaceMember(CanvasElement displayed, CanvasElement authored, OverlayModifiers modifiers)
+    {
+        var mapping = nodeStartMapping ?? CurrentCanvasMapping;
+        if (!mapping.ElementToScreen(displayed).TryInverse(out var inverse)) { RejectPointer(); return true; }
+        var first = inverse.TransformPoint(startScreen); var last = inverse.TransformPoint(pointerScreen);
+        var candidate = authored.Clone(); var local = ElementGeometry.LocalToPlane(authored);
+        if (gesture == "move")
+        {
+            var shift = local.TransformPoint(last) - local.TransformPoint(first);
+            if ((modifiers & OverlayModifiers.Shift) != 0) shift = Math.Abs(shift.X) >= Math.Abs(shift.Y) ? new(shift.X, 0) : new(0, shift.Y);
+            BillboardGeometry.ApplyPlaneTransform(candidate, Affine2D.Translation(shift.X, shift.Y));
+        }
+        else
+        {
+            var center = ElementGeometry.LocalBounds(authored).Center;
+            var from = first - center; var to = last - center;
+            if (gesture == "rotate")
+            {
+                double angle = (Math.Atan2(to.Y, to.X) - Math.Atan2(from.Y, from.X)) * 180 / Math.PI;
+                if ((modifiers & OverlayModifiers.Shift) != 0) angle = Math.Round(angle / 15) * 15;
+                if (authored.IsBillboard) candidate.Transform = Affine2D.Rotation(angle).Compose(authored.Transform);
+                else BillboardGeometry.ApplyPlaneTransform(candidate, Affine2D.Around(local.TransformPoint(center), Affine2D.Rotation(angle)));
+            }
+            else
+            {
+                double sx = Math.Abs(from.X) < .001 ? 1 : Math.Max(.02, to.X / from.X);
+                double sy = Math.Abs(from.Y) < .001 ? 1 : Math.Max(.02, to.Y / from.Y);
+                if (ElementGeometry.PreservesAspect(authored) ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = UniformScale(from, to);
+                ResizeWorldLeaf(candidate, authored, sx, sy);
+            }
+        }
+        var graph = new SceneGraph(Session.Document);
+        if (!CurrentCanvasMapping.IsElementSafe(graph.ScopeContainerPlacement(candidate.GroupId).Resolve(candidate))) RejectPointer();
+        else { CopyGeometry(graph.FindElement(candidate.Id)!, candidate); Session.NotifyChanged(); }
         return true;
     }
     private Affine2D ViewDelta(Affine2D delta, bool linearOnly = false)

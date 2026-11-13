@@ -42,7 +42,7 @@ internal static class LocalizationTests
                 check(language + " line and circle tools have consistent plain display names", ToolDisplayName.Get(EditorTool.Line) == (english ? "Line" : "直线") &&
                     ToolDisplayName.Get(EditorTool.Ellipse) == (english ? "Circle" : "圆形"));
                 check(language + " every active tool has a localized preset name without shortcut legends", Enum.GetValues<EditorTool>()
-                    .Where(tool => tool != EditorTool.Redact).All(tool =>
+                    .Where(tool => Enum.IsDefined(tool)).All(tool =>
                     {
                         string display = ToolDisplayName.Get(tool), name = ToolDisplayName.PresetName(tool);
                         return !display.Contains("  ") && name == display + (english ? " preset" : "预设");

@@ -86,7 +86,7 @@ internal static class InspectorLiveTests
         var commandSession = (DesktopSession)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
         Set(commandSession, "_editor", new EditorController(session)); Set(commandSession, "_inspector", window);
         Set(commandSession, "_canvasCalibration", new CanvasCalibrationController());
-        Set(commandSession, "_canvasGridCalibrationPoints", new List<PointD>());
+        Set(commandSession, "_canvasReferenceLines", new List<CanvasReferenceLine>());
         fields["W"].Text = "245";
         bool commandSeesEdit = false;
         ((Task)Invoke(commandSession, "RunCommand", (Func<Task>)(() => { commandSeesEdit = !session.IsTransactionActive && Math.Abs(ElementGeometry.Bounds(session.Document.Elements.Single(e => e.Id == second), includeStroke: false).Width - 245) < 1e-8; return Task.CompletedTask; }))!).GetAwaiter().GetResult();

@@ -95,7 +95,7 @@ internal static class Phase2ColorWindowTests
             var library = new ColorLibrary(Path.Combine(directory, source + ".json"));
             if (source == "Canvas")
             {
-                owner = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+                owner = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
                 colors = new[] { "background", "gridColor" }.Select(name => KeyValuePair.Create(name, Field<ColorField>(owner, name))).ToArray();
             }
             else if (source == "Inspector")
@@ -195,7 +195,7 @@ internal static class Phase2ColorWindowTests
             finally { window.Close(); Pump(); }
         }
     }
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool IsWindowEnabled(nint handle);
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool IsWindowVisible(nint handle);
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]

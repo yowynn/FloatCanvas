@@ -47,7 +47,7 @@ internal static class ExitSavePolicyTests
                 foreach (var dialog in app.Windows.Cast<Window>().Where(w => w.IsVisible).ToArray())
                 {
                     var buttons = Descendants(dialog).OfType<Button>().ToArray();
-                    var leave = buttons.SingleOrDefault(b => Equals(b.Content, FloatCanvas.Localization.AppText.Get("History.KeepLeave")));
+                    var leave = buttons.SingleOrDefault(b => Equals(b.Content, FloatCanvas.Localization.AppText.Get("Dialog.No")));
                     if (leave is null) continue;
                     prompts++;
                     var button = cancel ? buttons.Single(b => b.IsCancel) : leave;

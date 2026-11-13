@@ -1,0 +1,14 @@
+{
+  "ToolOptions.Section.Display": {
+    "zh": "显示方式",
+    "en": "Display"
+  },
+  "ToolOptions.Section.Appearance": {
+    "zh": "样式与尺寸",
+    "en": "Appearance and size"
+  },
+  "ToolOptions.Section.Runtime": {
+    "zh": "运行状态",
+    "en": "Runtime"
+  }
+}

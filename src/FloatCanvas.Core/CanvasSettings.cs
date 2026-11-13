@@ -265,6 +265,8 @@ public sealed class CanvasMapping
     private readonly RectD viewport;
     private readonly CanvasViewTransform? outputView;
     internal CanvasMapping? ViewRoot { get; }
+    private readonly CanvasMapping? surfaceRoot;
+    public bool IsSurfaceView => surfaceRoot is not null;
     internal LayerPlacement ViewPlacement { get; }
     private readonly LayerPlacement viewInverse;
     public Projective2D PlaneToScreen { get; }
@@ -313,6 +315,18 @@ public sealed class CanvasMapping
         VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();
     }
     public static CanvasMapping Create(SceneDocument document, RootCanvasKind root = RootCanvasKind.Main) => new(document, root);
+    private ContainerPlacementContext? surfaceHost;
+    internal ContainerPlacementContext? SurfaceHost => surfaceHost;
+    private CanvasMapping(CanvasMapping root, ContainerPlacementContext context, LayerPlacement authoredScope, ContainerPlacementContext? host)
+    {
+        surfaceRoot = root; surfaceHost = host; viewport = root.viewport; IsPerspective = root.IsPerspective;
+        PlaneToScreen = context.PlaneToTarget(root.PlaneToScreen).Compose(Projective2D.FromAffine(authoredScope.PlaneTransform.Inverse()));
+        ScreenToPlane = PlaneToScreen.Inverse(); Safety = new(PlaneToScreen);
+        GridOrigin = root.GridOrigin; GridCellSize = root.GridCellSize;
+        SafeScreenPolygon = Safety.ClipScreen(viewport); VisiblePlanePolygon = SafeScreenPolygon.Select(ScreenToPlane.TransformPoint).ToArray();
+    }
+    public static CanvasMapping CreateSurfaceView(SceneDocument document, ContainerPlacementContext context, LayerPlacement authoredScope,
+        CanvasViewTransform view, RootCanvasKind root = RootCanvasKind.Main, ContainerPlacementContext? host = null) => new(new CanvasMapping(document, root, view), context, authoredScope, host);
     /// <summary>Post-projection editor camera. Source coordinates, including billboard heights, stay authored.</summary>
     public static CanvasMapping CreateViewing(SceneDocument document, CanvasViewTransform view, RootCanvasKind root = RootCanvasKind.Main)
         => new(document, root, view);
@@ -334,7 +348,8 @@ public sealed class CanvasMapping
         if (!root.TryToPlane(point, out var rootPoint)) return false;
         plane = FromRootPoint(rootPoint); return double.IsFinite(plane.X) && double.IsFinite(plane.Y);
     }
-    public Projective2D ElementToScreen(CanvasElement element) => ViewRoot is { } root
+    public Projective2D ElementToScreen(CanvasElement element) => surfaceRoot is { } surface
+        ? element.BillboardSurface is not null ? surface.ElementToScreen(surfaceHost?.ResolveWorld(element) ?? element) : PlaneToScreen.Compose(ElementGeometry.LocalToPlane(element)) : ViewRoot is { } root
         ? root.ElementToScreen(ToRootElement(element)) : BillboardGeometry.ElementToTarget(element, PlaneToScreen);
     public bool TryGetDepthScale(PointD anchor, out double scale)
     {
@@ -359,6 +374,10 @@ public sealed class CanvasMapping
     /// <summary>Tests the complete stroked local envelope. Billboards use their ground anchor, not their screen top.</summary>
     public bool IsElementSafe(CanvasElement element, bool includeStroke = true)
     {
+        if (surfaceRoot is not null)
+            return element.BillboardSurface is not null ? surfaceRoot.IsElementSafe(surfaceHost?.ResolveWorld(element) ?? element, includeStroke) :
+                ElementToScreen(element).TryTransformBounds(ElementGeometry.StrokedLocalBounds(element, includeStroke), out var surfaceBounds) &&
+                double.IsFinite(surfaceBounds.Width) && double.IsFinite(surfaceBounds.Height) && Math.Abs(surfaceBounds.X) < CanvasProjectionSafety.MaximumCoordinate && Math.Abs(surfaceBounds.Y) < CanvasProjectionSafety.MaximumCoordinate;
         if (ViewRoot is { } root) return root.IsElementSafe(ToRootElement(element), includeStroke);
         var local = ElementGeometry.StrokedLocalBounds(element, includeStroke);
         if (element.IsBillboard)
@@ -376,6 +395,7 @@ public sealed class CanvasMapping
         => BillboardGeometry.TryAnchor(this, line, screenCenter, out anchor, out height);
     public RectD ProjectedBounds(CanvasElement element, bool includeStroke = true)
     {
+        if (surfaceRoot is not null) return ElementToScreen(element).TransformBounds(ElementGeometry.StrokedLocalBounds(element, includeStroke));
         if (ViewRoot is { } root) return root.ProjectedBounds(ToRootElement(element), includeStroke);
         if (element.IsBillboard)
         {

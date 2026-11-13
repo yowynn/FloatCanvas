@@ -118,7 +118,7 @@ internal static class CommandGlyphs
         EditorTool.Emoji => "M8,1 A7,7 0 1 1 7.99,1 M5,6 L5.1,6 M11,6 L11.1,6 M4,9 Q8,15 12,9",
         EditorTool.Crop => "M4,1 L4,11 Q4,12 5,12 L15,12 M1,4 L11,4 Q12,4 12,5 L12,15",
         EditorTool.CaptureRegion => "M1,6 L1,2 L5,2 M11,2 L15,2 L15,6 M15,10 L15,14 L11,14 M5,14 L1,14 L1,10 M4,5 L12,5 L12,11 L4,11 Z",
-        EditorTool.Blur or EditorTool.Redact => "M1,1 L15,1 L15,15 L1,15 Z M5,5 L5.1,5 M11,5 L11.1,5 M8,8 L8.1,8 M5,11 L5.1,11 M11,11 L11.1,11",
+        EditorTool.Blur => "M1,1 L15,1 L15,15 L1,15 Z M5,5 L5.1,5 M11,5 L11.1,5 M8,8 L8.1,8 M5,11 L5.1,11 M11,11 L11.1,11",
         EditorTool.Pixelate => "M1,1 L15,1 L15,15 L1,15 Z M1,6 L15,6 M1,11 L15,11 M6,1 L6,15 M11,1 L11,15",
         EditorTool.Image => Image,
         EditorTool.Stamp => Stamp,

@@ -16,13 +16,13 @@ internal static class CanvasAuthoringReferenceTests
             Elements = [new() { Kind = ElementKind.Rectangle, Width = 50, Height = 40 }] };
         var assets = new AssetLibrary(); var store = new ProjectStore(); string path = Path.Combine(directory, "reference.floatcanvas");
         await store.SaveAsync(path, document, assets); var loaded = await store.LoadAsync(path);
-        check(SceneDocument.CurrentVersion == 18 && JsonSerializer.Serialize(loaded.Document) == JsonSerializer.Serialize(document),
-            "format18 round-trips authored extent, physical reference screen and effective content basis exactly");
+        check(JsonSerializer.Serialize(loaded.Document) == JsonSerializer.Serialize(document),
+            "current format round-trips authored extent, physical reference screen and effective content basis exactly");
         using (var zip = ZipFile.OpenRead(path))
         {
             using var reader = new StreamReader(zip.GetEntry("manifest.json")!.Open());
-            check(JsonNode.Parse(await reader.ReadToEndAsync())!["Version"]!.GetValue<int>() == 18,
-                "format18 is declared in the envelope so earlier readers reject the richer semantics");
+            check(JsonNode.Parse(await reader.ReadToEndAsync())!["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion,
+                "current format is declared in the envelope so earlier readers reject the richer semantics");
         }
         var clone = loaded.Document.Clone(); clone.Viewport = new(50, 20, 3840, 2160);
         check(clone.AuthoringReference == document.AuthoringReference && CanvasAuthoringReference.FromSavedDocument(clone).Frame == document.AuthoringReference.Frame,
@@ -37,7 +37,7 @@ internal static class CanvasAuthoringReferenceTests
         string legacyPath = Path.Combine(directory, "legacy17.floatcanvas"); File.Copy(path, legacyPath);
         await Mutate(legacyPath, scene => scene.Remove("AuthoringReference"));
         byte[] untouched = await File.ReadAllBytesAsync(legacyPath); var legacy = await store.LoadAsync(legacyPath);
-        check(legacy.Document.Version == 18 && legacy.Document.AuthoringReference is null && (await File.ReadAllBytesAsync(legacyPath)).SequenceEqual(untouched),
+        check(legacy.Document.Version == SceneDocument.CurrentVersion && legacy.Document.AuthoringReference is null && (await File.ReadAllBytesAsync(legacyPath)).SequenceEqual(untouched),
             "reading format17 upgrades only the owned DTO and never rewrites or guesses reference metadata");
         check(CanvasAuthoringReference.FromSavedDocument(legacy.Document).ReferenceScreenBounds == legacy.Document.DisplayLayout.Single().Bounds,
             "legacy inference uses the saved screen evidence before a runtime viewport synchronization");

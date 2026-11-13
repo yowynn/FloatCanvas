@@ -15,7 +15,8 @@ namespace FloatCanvas.App;
 internal sealed class SegmentedChoice : Grid
 {
     private static readonly Style OptionStyle = (Style)XamlReader.Parse("""
-        <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="RadioButton">
+        <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="RadioButton">
+          <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
           <Setter Property="Foreground" Value="{DynamicResource CanvasText}"/>
           <Setter Property="FontSize" Value="12"/><Setter Property="MinHeight" Value="26"/>
           <Setter Property="Padding" Value="2,3"/>
@@ -27,7 +28,6 @@ internal sealed class SegmentedChoice : Grid
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{DynamicResource CanvasAccent}"/></Trigger>
-              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
               <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate></Setter.Value></Setter>

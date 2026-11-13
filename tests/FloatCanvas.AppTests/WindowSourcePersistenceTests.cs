@@ -17,7 +17,7 @@ internal static class WindowSourcePersistenceTests
         string root = Path.Combine(AppContext.BaseDirectory, "window-persistence", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         var assets = new AssetLibrary(); string oldImage = assets.Add(Png(SKColors.Black)); string draftOnly = assets.Add(Png(SKColors.Lime));
         var image = Image(oldImage); image.ImageCrop = new(.5, 0, .5, 1); image.ImageFrame = [new(0, 0), new(1, 0), new(.5, 1)];
-        image.Style.Opacity = .37; image.Effects = [new() { Kind = ImageEffectKind.Redact, Bounds = new(0, 0, 1, 1) }];
+        image.Style.Opacity = .37; image.Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(0, 0, 1, 1) }];
         var document = new SceneDocument { Elements = [image] }; var session = new EditorSession(document, assets);
         var budget = new WindowFrameBudget(1024); using var pixels = new SKBitmap(8, 4); pixels.Erase(SKColors.Red);
         for (int x = 4; x < 8; x++) for (int y = 0; y < 4; y++) pixels.SetPixel(x, y, SKColors.Blue);

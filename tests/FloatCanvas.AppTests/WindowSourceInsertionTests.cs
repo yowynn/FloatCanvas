@@ -27,7 +27,8 @@ internal static class WindowSourceInsertionTests
     {
         var document = new SceneDocument { Viewport = new(0, 0, 800, 700), LayerOpacity = .6 };
         document.Canvas.Projection.Enabled = true; document.Canvas.Projection.Matrix = new(1, 0, 0, 0, -.4, 700, 0, -.002, 1);
-        document.Canvas.Projection.Quad = [new(0, 0), new(800, 0), new(800, 700), new(0, 700)]; return new(document);
+        document.Canvas.Projection.Quad = [new(0, 0), new(800, 0), new(800, 700), new(0, 700)];
+        document.Canvas.Projection.PlaneBounds = new(0, 0, 800, 700); return new(document);
     }
     internal static void Run(Action<string, bool> check)
     {
@@ -102,8 +103,11 @@ internal static class WindowSourceInsertionTests
     {
         var target = Perspective(); var descriptor = Descriptor(); var mapping = CanvasMapping.Create(target.Document); var before = Capture(target);
         var image = WindowSourceInsertion.Prepare(target, descriptor, 200, 300, null, new(0, 0, 500, 500), billboard: true, screenCenter: new(200, 250), opacity: .4);
-        check("screen-first window billboard preserves the intended screen frame even above the horizon", image.IsBillboard && Near(mapping.ProjectedBounds(image, false), new(100, 100, 200, 300)) && !mapping.IsScreenSafe(new(200, 100)) && mapping.IsElementSafe(image));
-        check("screen-first window billboard uses the existing bottom-center ground and logical elevation", Near(image.BillboardAnchor.X, 500) && Near(image.BillboardAnchor.Y, -750) && Near(image.BillboardHeight, 375) && image.Style.Opacity == .4 && image.AssetId is null);
+        var screen = mapping.ProjectedBounds(image, false);
+        check("screen-first window billboard preserves logical size and centers the depth-scaled frame", image.IsBillboard && image.Width == 200 && image.Height == 300 &&
+            screen.Center.DistanceTo(new(200, 250)) < .01 && screen.Width < 200 && mapping.IsElementSafe(image));
+        check("screen-first window billboard solves bottom-center ground and logical elevation", new PointD(screen.Center.X, screen.Bottom).DistanceTo(mapping.ToScreen(image.BillboardAnchor)) < .01 &&
+            Near(image.BillboardHeight, 150) && image.Transform == Affine2D.Identity && image.Style.Opacity == .4 && image.AssetId is null);
         check("billboard preparation has no authored or resource side effects", Same(target, before));
         check("fixed-depth fixture resolves an existing safe M5 depth line", mapping.TryGetEqualDepthLine(new(200, 400), out var depth));
         var fixedImage = WindowSourceInsertion.Prepare(target, descriptor, 200, 300, null, new(0, 0, 500, 500), billboard: true, depth: depth, screenCenter: new(200, 250));
@@ -112,7 +116,7 @@ internal static class WindowSourceInsertionTests
             Transform = Affine2D.Translation(25, -50).Compose(Affine2D.Scale(2, 3)), ElevationScale = 2.5 }); target.EnterScope(group.Id); before = Capture(target);
         var scoped = WindowSourceInsertion.Prepare(target, descriptor, 200, 300, null, new(0, 0, 500, 500), billboard: true, screenCenter: new(200, 250));
         var candidate = target.Document.Clone(); var localGraph = new SceneGraph(candidate); var local = localGraph.InsertElement(scoped, group.Id); var restored = localGraph.ToWorld(local);
-        check("nested billboard insertion divides parent placement and elevation once", local.GroupId == group.Id && Near(local.BillboardHeight, 150) && Near(restored.BillboardHeight, 375) && Near(mapping.ProjectedBounds(restored, false), new(100, 100, 200, 300)));
+        check("nested billboard insertion divides parent placement and elevation once", local.GroupId == group.Id && Near(local.BillboardHeight, 60) && Near(restored.BillboardHeight, 150) && Near(mapping.ProjectedBounds(restored, false), screen));
         check("nested billboard preparation and private materialization do not mutate the owner", Same(target, before));
     }
     private static void Invalid(Action<string, bool> check)

@@ -10,6 +10,8 @@ internal static class Program
     {
         try
         {
+            ContainerBillboardRenderingTests.Run(Assert);
+            if (args.Contains("--container-billboard-only")) { Console.WriteLine($"PASS {_checks} container billboard rendering checks."); return 0; }
             if (args.Contains("--root-cache-only")) { RootCanvasCacheTests.Run(Assert); Console.WriteLine($"PASS {_checks} root canvas cache checks."); return 0; }
             if (args.Contains("--root-canvases-only")) { RootCanvasRenderingTests.Run(Assert, args.SkipWhile(a => a != "--root-canvases-only").Skip(1).FirstOrDefault()); Console.WriteLine($"PASS {_checks} root canvas rendering checks."); return 0; }
             if (args.Contains("--window-sources-only")) { WindowSourceRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} window source rendering checks."); return 0; }
@@ -63,6 +65,7 @@ internal static class Program
             {
                 BillboardRenderingTests.Run(Assert);
                 BillboardRenderingTests.WriteEvidence(args[Array.IndexOf(args, "--billboard-evidence") + 1]);
+                BillboardLogicalRenderingTests.Run(Assert, args[Array.IndexOf(args, "--billboard-evidence") + 1]);
                 Console.WriteLine($"PASS {_checks} billboard render checks and evidence export."); return 0;
             }
             if (args.Contains("--billboard-only")) { BillboardRenderingTests.Run(Assert); Console.WriteLine($"PASS {_checks} billboard rendering checks."); return 0; }
@@ -205,12 +208,9 @@ internal static class Program
         using (var bitmap = Decode(renderer.ExportPng(document, assets, true)))
             Assert("normalized crop maps selected source area to object frame", bitmap.GetPixel(15, 20) == SKColors.Blue && bitmap.GetPixel(65, 30) == SKColors.Blue);
         image.ImageCrop = null;
-        image.Effects.Add(new() { Kind = ImageEffectKind.Redact, Bounds = new(.5, .25, .5, .5), Color = 0xFF00FF00 });
-        using (var bitmap = Decode(renderer.ExportPng(document, assets, true)))
-            Assert("redaction changes only target original-image coordinates", bitmap.GetPixel(60, 25) == SKColors.Lime && bitmap.GetPixel(60, 12) == SKColors.Blue);
         image.Transform = Affine2D.Translation(90, 10).Compose(Affine2D.Rotation(90));
         using (var bitmap = Decode(renderer.ExportPng(document, assets, true)))
-            Assert("effects rotate with target image", bitmap.GetPixel(75, 60) == SKColors.Lime);
+            Assert("image content rotates with target image", bitmap.GetPixel(75, 60) == SKColors.Blue);
         document.Elements.Add(Shape(ElementKind.Rectangle, 10, 10, 0xFFFFFF00, Affine2D.Translation(70, 55)));
         using (var bitmap = Decode(renderer.ExportPng(document, assets, true)))
             Assert("vector object above image effects follows z order", bitmap.GetPixel(75, 60) == SKColors.Yellow);
@@ -227,9 +227,7 @@ internal static class Program
         checker.Effects[0].Amount = 3;
         using (var bitmap = Decode(renderer.ExportPng(effectScene, assets, true)))
             Assert("blur smooths target region without touching rest", bitmap.GetPixel(12, 12).Red is > 70 and < 185 && bitmap.GetPixel(40, 1) == SKColors.Black);
-        checker.Effects.Add(new() { Kind = ImageEffectKind.Redact, Bounds = new(.1, .1, .2, .5), Color = 0xFFFF0000 });
-        using (var bitmap = Decode(renderer.ExportPng(effectScene, assets, true)))
-            Assert("effects applied in saved order", bitmap.GetPixel(10, 8) == SKColors.Red);
+
     }
 
     private static void TextAndNumbers()

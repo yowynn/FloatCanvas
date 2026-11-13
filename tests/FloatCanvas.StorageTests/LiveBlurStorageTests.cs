@@ -34,7 +34,7 @@ internal static class LiveBlurStorageTests
             "recovery retains both dynamic filter kinds without frozen assets");
         var legacy = scene.Clone(); legacy.Elements.RemoveAt(1); legacy.Version = 1; SceneValidation.Validate(legacy);
         check(legacy.Elements[0].Kind == ElementKind.LivePixelate, "legacy version-one pixelation documents remain readable");
-        foreach (var mismatch in new[] { ImageEffectKind.Pixelate, ImageEffectKind.Redact })
+        foreach (var mismatch in new[] { ImageEffectKind.Pixelate })
         { var invalid = scene.Clone(); invalid.Elements[1].Effects[0].Kind = mismatch; check(Rejected(invalid), "LiveBlur rejects a mismatched effect kind: " + mismatch); }
         var missing = scene.Clone(); missing.Elements[1].Effects.Clear(); check(Rejected(missing), "LiveBlur requires its blur effect contract");
         var nullEffect = scene.Clone(); nullEffect.Elements[1].Effects[0] = null!; check(Rejected(nullEffect), "null blur data is rejected before dereferencing");

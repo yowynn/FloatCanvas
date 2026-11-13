@@ -124,14 +124,17 @@ internal static class PresentationFollowupWindowTests
             string document = JsonSerializer.Serialize(editor.Session.Document); int undo = editor.Session.UndoCount;
             Call("ShowPresentationPointerSettings"); Pump();
             check(locale + " " + theme + " formal mouse tool uses the same properties and preset window bounds", editor.Tool == EditorTool.PointerPresentation && window.Title == L.Get("Tool.PointerPresentation") && Math.Abs(window.Width - keyboardWidth) < 1 && window.MinWidth == 640 && window.ActualHeight >= 420 && pointer.IsVisible && columns.IsVisible);
-            check(locale + " " + theme + " mouse master off exposes no dependent fields or keyboard scope while keeping mouse presets", Descendants(pointer).OfType<CheckBox>().Count(box => box.IsVisible) == 1 && !scope.IsVisible && Field<ToolPresetGallery>(panel, "presets").IsVisible);
+            var master = Control<CaptionModeSwitch>(pointer, "PointerEnabled");
+            check(locale + " " + theme + " mouse master occupies two caption slots outside the property column",
+                ReferenceEquals(panel.Header.Actions, master) && master.IsVisible && master.Width == 62 && master.Height == 28 && master.TranslatePoint(new(), window).Y < 45);
+            check(locale + " " + theme + " mouse master off keeps parameter sections editable and mouse presets visible", Control<CheckBox>(pointer, "CursorEnabled") is { IsVisible: true, IsEnabled: true } && Control<ColorField>(pointer, "CursorColor") is { IsVisible: true, IsEnabled: true } && new[] { "Presentation.Module.Cursor", "Presentation.Module.Clicks", "Presentation.Module.Trail" }.All(key => pointer.Children.OfType<TextBlock>().Any(text => text.Text == L.Get(key) && text.IsVisible)) && !scope.IsVisible && Field<ToolPresetGallery>(panel, "presets").IsVisible);
             Snapshot("mouse-off");
             window.SizeToContent = SizeToContent.Manual; window.Width = 640; window.Height = 420; Pump();
             check(locale + " " + theme + " minimum mouse window retains usable properties and its preset column", parameters.ActualWidth >= 340 && Field<ToolPresetGallery>(panel, "presets").ActualWidth >= 196);
             Snapshot("mouse-minimum"); window.SizeToContent = SizeToContent.Height; window.Width = keyboardWidth; window.Height = double.NaN;
             Toggle(pointer, "PointerEnabled", true); Pump();
             var conditions = Field<Dictionary<string, PropertyChangeRegion>>(pointer, "conditions");
-            check(locale + " " + theme + " mouse master immediately reveals its existing conditional option sections", conditions["PointerEnabled"].IsVisible && Control<CheckBox>(pointer, "CursorEnabled").IsVisible && Control<ColorField>(pointer, "CursorColor").IsVisible && Control<CheckBox>(pointer, "ClicksEnabled").IsVisible && !Control<ColorField>(pointer, "TrailColor").IsVisible);
+            check(locale + " " + theme + " mouse master leaves option visibility under each effect's own switch", !conditions.ContainsKey("PointerEnabled") && Control<CheckBox>(pointer, "CursorEnabled").IsVisible && Control<ColorField>(pointer, "CursorColor").IsVisible && Control<CheckBox>(pointer, "ClicksEnabled").IsVisible && !Control<ColorField>(pointer, "TrailColor").IsVisible);
             Snapshot("mouse-enabled");
             Control<SegmentedChoice>(pointer, "LeftClick.Shape").SelectedValue = PresentationClickShape.Disc;
             Settle();
@@ -147,9 +150,12 @@ internal static class PresentationFollowupWindowTests
             Field<Button>(trailColor, "button").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
             check(locale + " " + theme + " independent mouse color popup participates in existing tool input ownership", panel.IsColorPickerOpen && panel.OwnsColorPickerInput(Field<object>(trailColor, "picker") as DependencyObject) && panel.CloseColorPicker() && !panel.IsColorPickerOpen);
             string choices = JsonSerializer.Serialize(Field<UserSettings>(desktop, "_settings").PresentationGlobal.Pointer);
+            var rows = Field<Dictionary<string, FrameworkElement>>(pointer, "rows");
+            var visibleRows = rows.Where(pair => pair.Value.IsVisible).Select(pair => pair.Key).ToArray();
+            double contentHeight = pointer.ActualHeight;
             Toggle(pointer, "PointerEnabled", false); Pump();
             var retained = Field<UserSettings>(desktop, "_settings").PresentationGlobal.Pointer.Clone(); retained.Enabled = true;
-            check(locale + " " + theme + " mouse master collapse retains styles and changes no authored document or history", JsonSerializer.Serialize(retained) == choices && !Control<CheckBox>(pointer, "CursorEnabled").IsVisible && JsonSerializer.Serialize(editor.Session.Document) == document && editor.Session.UndoCount == undo);
+            check(locale + " " + theme + " mouse master off preserves visible rows layout styles and authored history", JsonSerializer.Serialize(retained) == choices && visibleRows.SequenceEqual(rows.Where(pair => pair.Value.IsVisible).Select(pair => pair.Key)) && Math.Abs(pointer.ActualHeight - contentHeight) < .01 && Control<CheckBox>(pointer, "CursorEnabled").IsEnabled && JsonSerializer.Serialize(editor.Session.Document) == document && editor.Session.UndoCount == undo);
             editor.Tool = EditorTool.Presentation; Call("OpenToolOptions"); Pump();
             check(locale + " " + theme + " returning to keyboard restores its original host width columns and title", editor.Tool != EditorTool.PointerPresentation && Math.Abs(window.Width - keyboardWidth) < 1 && columns.IsVisible && !pointer.IsVisible && window.MinWidth == 640 && window.Title == L.Get("Tool.Presentation"));
             editor.Tool = EditorTool.Rectangle; panel.PrepareForShow(); Call("AnchorToolOptions"); Pump();
@@ -167,7 +173,10 @@ internal static class PresentationFollowupWindowTests
         return LogicalTreeHelper.GetParent(row) is Panel parent && parent.Children.IndexOf(region) == parent.Children.IndexOf(row) + 1;
     }
     private static void Toggle(PresentationGlobalSettingsPanel panel, string key, bool value)
-    { var control = Control<CheckBox>(panel, key); control.IsChecked = value; control.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent)); }
+    {
+        if (key == "PointerEnabled") { var control = Control<CaptionModeSwitch>(panel, key); if (control.SelectedFirst != value) control.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+        else { var control = Control<CheckBox>(panel, key); control.IsChecked = value; control.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent)); }
+    }
     private static T Control<T>(PresentationGlobalSettingsPanel panel, string key) where T : FrameworkElement
     { var entries = Field<IDictionary>(panel, "entries"); var entry = entries[key]!; return (T)entry.GetType().GetProperty("Control")!.GetValue(entry)!; }
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Hidden)!.GetValue(target)!;

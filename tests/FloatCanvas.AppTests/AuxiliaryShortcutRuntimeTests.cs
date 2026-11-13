@@ -34,20 +34,21 @@ internal static class AuxiliaryShortcutRuntimeTests
             Invoke("CloseToolOptions");
             Invoke("ToggleCanvasSettings"); Pump();
             check("Canvas auxiliary command first selects its ordinary tool without opening settings", editor.Tool == EditorTool.Canvas &&
-                Field<CanvasSettingsWindow?>(session, "_canvasSettingsWindow")?.IsVisible != true);
+                Field<CanvasToolOptions?>(session, "_canvasToolOptions")?.IsVisible != true);
             Invoke("ToggleCanvasSettings"); Pump();
-            var canvas = Field<CanvasSettingsWindow>(session, "_canvasSettingsWindow");
+            var canvas = Field<CanvasToolOptions>(session, "_canvasToolOptions");
+            var canvasWindow = Field<Window>(session, "_toolOptionsWindow");
             check("Canvas auxiliary command opens settings when the tool is already selected", canvas.IsVisible && editor.Tool == EditorTool.Canvas);
             var gridVisible = Field<CheckBox>(canvas, "gridVisible");
             var original = CurrentElement().Transform;
             state.Execute("canvas settings undo marker", document => document.Elements.Single(item => item.Id == element.Id).Transform = Affine2D.Translation(17, 9).Compose(original));
             int undo = state.UndoCount;
-            Focus(canvas, gridVisible, "CanvasSettings ordinary checkbox");
+            Focus(canvasWindow, gridVisible, "CanvasSettings ordinary checkbox");
             Press(0x5A, OverlayModifiers.Control);
             check("CanvasSettings Ctrl+Z reaches the live DesktopSession undo command", state.UndoCount == undo - 1 && CurrentElement().Transform == original);
             Press(0x42);
             check("CanvasSettings B reaches the live tool command", editor.Tool == EditorTool.Freehand && host.IsEditing);
-            Invoke("CloseToolOptions"); SessionWindowCoordinator.Hide(canvas); Pump();
+            Invoke("CloseToolOptions"); SessionWindowCoordinator.Hide(canvasWindow); Pump();
 
             var opacity = Field<Slider>(session, "_opacitySlider");
             state.Execute("opacity keyboard fixture", document => document.LayerOpacity = .8);
@@ -152,7 +153,7 @@ internal static class AuxiliaryShortcutRuntimeTests
         }
     }
 
-    private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Private)!.GetValue(target)!;
+    private static T Field<T>(object target, string name) => (T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
     private static void Pump()
     { var frame = new DispatcherFrame(); Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () => frame.Continue = false); Dispatcher.PushFrame(frame); }
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();

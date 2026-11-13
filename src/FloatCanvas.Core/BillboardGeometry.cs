@@ -111,6 +111,7 @@ public static class BillboardGeometry
     /// <summary>Places content about its geometry center. The transform's linear part retains local rotation/resize.</summary>
     public static Projective2D LocalPlacement(CanvasElement element, PointD projectedAnchor, double scale)
     {
+        if (element.BillboardSurface is { } surface) return surface.ToTarget(projectedAnchor, scale);
         var center = ElementGeometry.LocalBounds(element).Center;
         return Projective2D.FromAffine(Affine2D.Translation(projectedAnchor.X, projectedAnchor.Y - element.BillboardHeight * scale)
             .Compose(Affine2D.Scale(scale, scale)).Compose(Linear(element.Transform))
@@ -295,7 +296,8 @@ public static class BillboardGeometry
             anchor = mapping.FromRootPoint(rootAnchor); return double.IsFinite(anchor.X) && double.IsFinite(anchor.Y);
         }
         if (!element.IsBillboard || !mapping.TryGetDepthScale(element.BillboardAnchor, out double scale)) return false;
-        var offset = Linear(element.Transform).TransformPoint(localGrab - ElementGeometry.LocalBounds(element).Center);
+        var offset = element.BillboardSurface is { } surface ? surface.ContentPlacement.TransformPoint(localGrab) :
+            Linear(element.Transform).TransformPoint(localGrab - ElementGeometry.LocalBounds(element).Center);
         offset = new(offset.X, offset.Y - element.BillboardHeight);
         var matrix = mapping.PlaneToScreen;
         double numerator = scale * matrix.Denominator(element.BillboardAnchor);

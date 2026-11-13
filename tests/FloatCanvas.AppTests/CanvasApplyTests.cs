@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
@@ -294,10 +294,10 @@ internal static class CanvasApplyTests
         toolbar.ShowActivated = false; toolbar.ShowInTaskbar = false; toolbar.Left = -24000; toolbar.Top = -22000; toolbar.Show(); toolbar.UpdateLayout();
         fixture.Call("OpenCanvasSettings");
         const BindingFlags hidden = BindingFlags.Instance | BindingFlags.NonPublic;
-        var window = (CanvasSettingsWindow)typeof(DesktopSession).GetField("_canvasSettingsWindow", hidden)!.GetValue(fixture.Desktop)!;
-        var controls = (System.Windows.Controls.StackPanel)typeof(CanvasSettingsWindow).GetField("authoringControls", hidden)!.GetValue(window)!;
+        var window = (CanvasToolOptions)typeof(DesktopSession).GetField("_canvasToolOptions", hidden)!.GetValue(fixture.Desktop)!;
+        var controls = (System.Windows.Controls.StackPanel)typeof(CanvasToolOptions).GetField("authoringControls", hidden)!.GetValue(window)!;
         check("read-only independent view exposes navigation while disabling all authored controls", window.IsVisible && !controls.IsEnabled);
-        CanvasResolutionWorkflowTests.SaveWindow(window, System.IO.Path.Combine(AppContext.BaseDirectory, "canvas-ui-review", "readonly-navigation.png"));
+        CanvasResolutionWorkflowTests.SaveWindow((Window)typeof(DesktopSession).GetField("_toolOptionsWindow", hidden)!.GetValue(fixture.Desktop)!, System.IO.Path.Combine(AppContext.BaseDirectory, "canvas-ui-review", "readonly-navigation.png"));
         fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.OriginalSize); fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.CenterContent);
         fixture.Call("ApplyCanvasViewing");
         check("read-only view commands do not mutate its project or create content history", before == JsonSerializer.Serialize(readOnly.Document) && readOnly.UndoCount == 0 && fixture.View.Zoom == 1);

@@ -7,6 +7,10 @@ using System.Text.Json.Nodes;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+await ContainerBillboardStorageTests.RunAsync(Check);
+if (args.Contains("--container-billboard-only")) { Console.WriteLine($"PASS {checks} container billboard storage checks"); return; }
+await UnknownContentStorageTests.RunAsync(Check);
+if (args.Contains("--unknown-content-only")) { Console.WriteLine($"PASS {checks} unknown content checks"); return; }
 await CanvasViewStateStoreTests.RunAsync(Check);
 if (args.Contains("--canvas-view-state-only")) { Console.WriteLine($"PASS {checks} canvas view state checks"); return; }
 await CanvasAuthoringReferenceTests.RunAsync(Check);
@@ -134,7 +138,8 @@ await Reject(() => store.LoadAsync(duplicate), "duplicate object IDs rejected");
 string nullCollection = await Mutated("null-elements", e => EditJson(e, "scene.json", n => n["Elements"] = null));
 await Reject(() => store.LoadAsync(nullCollection), "null collections rejected before replacing caller document");
 string invalidEnum = await Mutated("invalid-enum", e => EditJson(e, "scene.json", n => n["Elements"]![0]!["Kind"] = 999));
-await Reject(() => store.LoadAsync(invalidEnum), "undefined element kinds rejected");
+var skippedEnum = await store.LoadAsync(invalidEnum);
+Check(skippedEnum.Document.Elements.Count == document.Elements.Count - 1, "unknown element kinds are skipped without losing known content");
 string invalidTransform = await Mutated("singular-transform", e => EditJson(e, "scene.json", n => { n["Elements"]![0]!["Transform"]!["M11"] = 0; n["Elements"]![0]!["Transform"]!["M12"] = 0; }));
 await Reject(() => store.LoadAsync(invalidTransform), "singular transformation rejected");
 string invalidCrop = await Mutated("invalid-crop", e => EditJson(e, "scene.json", n => n["Elements"]![0]!["ImageCrop"]!["Width"] = 2));

@@ -6,7 +6,7 @@ namespace FloatCanvas.Core;
 public enum ElementKind { Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse, Triangle, Text, Number, Image, Symbol, LivePixelate, LiveBlur, Presentation }
 public enum DocumentKind { LiveOverlay, FrozenCapture }
 public enum TextAlignment { Left, Center, Right }
-public enum ImageEffectKind { Blur, Pixelate, Redact }
+public enum ImageEffectKind { Blur = 0, Pixelate = 1 }
 public enum LayerOrder { Forward, Backward, Front, Back }
 public enum ArrowHeadStyle { FilledTriangle, Open, Diamond, None }
 public enum StrokePattern { Solid, Dashed, Dotted }
@@ -101,6 +101,7 @@ public sealed class CanvasElement : IJsonOnDeserialized
     /// <summary>Screen-facing placement using the canvas's shared depth scale. Missing in older files means planar.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool IsBillboard { get; set; }
+    [JsonIgnore] public BillboardSurfacePlacement? BillboardSurface { get; set; }
     /// <summary>Ground position in canvas-plane coordinates. Independent of the content's local center.</summary>
     public PointD BillboardAnchor { get; set; }
     /// <summary>Logical height above the ground anchor; screen distance is height times the depth scale.</summary>
@@ -141,15 +142,17 @@ public sealed class CanvasElement : IJsonOnDeserialized
     public List<ImageEffect> Effects { get; set; } = [];
     public bool Visible { get; set; } = true;
     public bool Locked { get; set; }
-    public CanvasElement Clone(bool newId = false) => new()
+    public CanvasElement Clone(bool newId = false)
     {
-        Id = newId ? Guid.NewGuid() : Id, Name = Name, Kind = Kind, Points = Points.Snapshot(), Width = Width, Height = Height,
-        CornerRadius = CornerRadius, Symbol = Symbol, GroupId = GroupId, ConstrainAspect = ConstrainAspect, TextFrameFixed = TextFrameFixed,
-        Transform = Transform, ProjectivePlacement = ProjectivePlacement, IsBillboard = IsBillboard,
-        BillboardAnchor = BillboardAnchor, BillboardHeight = BillboardHeight, Style = Style.Clone(), Presentation = Presentation?.Clone(), Text = Text, Number = Number, AssetId = AssetId,
-        WindowSource = WindowSource?.Clone(), ImageCrop = ImageCrop, ImageFrame = ImageFrame?.ToList(), ImageBorderWidth = ImageBorderWidth, Effects = Effects.Select(effect => effect.Clone(newId)).ToList(), Visible = Visible, Locked = Locked,
-        NumberTextSizeMode = NumberTextSizeMode
-    };
+        // Preserve scalar state without generating a throwaway ID/style/point list for every history or preview copy.
+        // Mutable owned data remains detached; PointCollection.Snapshot retains its copy-on-write contract.
+        var copy = (CanvasElement)MemberwiseClone();
+        if (newId) copy.Id = Guid.NewGuid();
+        copy.Points = Points.Snapshot(); copy.Style = Style.Clone(); copy.Presentation = Presentation?.Clone();
+        copy.WindowSource = WindowSource?.Clone(); copy.ImageFrame = ImageFrame?.ToList();
+        copy.Effects = Effects.Select(effect => effect.Clone(newId)).ToList(); copy.LegacyNumberUsesForegroundInput = false;
+        return copy;
+    }
 }
 
 public sealed class DisplayLayoutHint
@@ -164,7 +167,7 @@ public sealed class DisplayLayoutHint
 public sealed partial class SceneDocument : SceneNodeGraph
 {
     private SceneResourceIdentity resourceIdentity = new(Guid.NewGuid());
-    public const int CurrentVersion = 18;
+    public const int CurrentVersion = 19;
     public int Version { get; set; } = CurrentVersion;
     public Guid ResourceId { get => resourceIdentity.Id; set => resourceIdentity = new(value); }
     public List<PrefabDefinition> Definitions { get; set; } = [];
@@ -205,6 +208,18 @@ public sealed partial class SceneDocument : SceneNodeGraph
             Viewport = Viewport, AuthoringReference = AuthoringReference, LayerOpacity = LayerOpacity, NextNumber = NextNumber, DisplayLayout = DisplayLayout.Select(d => d.Clone()).ToList()
         };
         result.resourceIdentity = resourceIdentity; return result;
+    }
+    /// <summary>Private topology workspace. Only supplied roots may have their element placement changed.
+    /// Unchanged geometry/resources are borrowed for synchronous preparation and never mutated.</summary>
+    internal SceneDocument CreatePlacementDraft(IReadOnlySet<Guid> roots)
+    {
+        var result = (SceneDocument)MemberwiseClone();
+        result.Elements = Elements.Select(element => roots.Contains(element.Id) ? element.Clone() : element).ToList();
+        result.Groups = Groups.Select(group => group.Clone()).ToList();
+        result.Instances = Instances.Select(instance => instance.Clone()).ToList();
+        result.RootOrder = RootOrder?.ToList();
+        result.RootCanvasAssignments = new(RootCanvasAssignments);
+        return result;
     }
     /// <summary>The supplied bitmap asset represents exactly the captured region.</summary>
     public SceneDocument CreateCapture(RectD region, string backgroundAssetId)

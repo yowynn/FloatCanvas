@@ -60,10 +60,20 @@ internal sealed partial class EditorController
             !(contour.Count > 0 ? contour : Corners(bounds)).All(safeMapping.IsScreenSafe))
         { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
         SetPointerBlocked(false);
+        double borderScale = ActiveBillboardDepthLine?.Scale ?? 1;
+        if (UsesScreenBillboardCreation && !bounds.IsEmpty)
+        {
+            var sample = new CanvasElement { Kind = ElementKind.Image, Width = bounds.Width, Height = bounds.Height,
+                ImageBorderWidth = CaptureBorderWidth, Style = new() { StrokeWidth = 0 } };
+            if (BillboardCreationGeometry.TryFromScreenContour(sample, safeMapping,
+                Projective2D.FromAffine(Affine2D.Translation(bounds.X, bounds.Y)), out var candidate, out _) &&
+                safeMapping.TryGetDepthScale(candidate.BillboardAnchor, out var depthScale)) borderScale = depthScale;
+        }
         CapturePreview = new(CaptureShape, CaptureSource, bounds, contour,
-            CaptureBorderWidth * (ActiveBillboardDepthLine?.Scale ?? 1), CaptureBorderColor)
+            CaptureBorderWidth * borderScale, CaptureBorderColor)
         { PlaneBounds = planeBounds, PlaneToScreen = projection, BillboardDepthLine = ActiveBillboardDepthLine,
-            BillboardScreenFirst = UsesScreenBillboardCreation };
+            BillboardScreenFirst = UsesScreenBillboardCreation,
+            BillboardLogicalBorderWidth = UsesScreenBillboardCreation ? CaptureBorderWidth : null };
         Changed?.Invoke();
     }
 
@@ -78,7 +88,7 @@ internal sealed partial class EditorController
         if (valid && selection!.BillboardScreenFirst)
         {
             var content = new CanvasElement { Kind = ElementKind.Image, Width = selection.Bounds.Width, Height = selection.Bounds.Height };
-            valid = BillboardGeometry.TryResolveScreenBottom(content, CurrentCanvasMapping,
+            valid = BillboardCreationGeometry.TryFromScreenContour(content, CurrentCanvasMapping,
                 Projective2D.FromAffine(Affine2D.Translation(selection.Bounds.X, selection.Bounds.Y)), out _, out _);
             if (!valid) Message?.Invoke(FloatCanvas.Localization.AppText.Get("Billboard.PendingGround"));
         }

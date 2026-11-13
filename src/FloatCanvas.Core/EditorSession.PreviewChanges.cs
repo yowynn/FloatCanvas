@@ -5,7 +5,7 @@ namespace FloatCanvas.Core;
 public sealed partial class EditorSession
 {
     private const int PreviewChangeHistoryLimit = 128;
-    private sealed record PreviewChange(long Revision, IReadOnlySet<Guid>? ElementIds);
+    private sealed record PreviewChange(long Revision, IReadOnlySet<Guid>? ElementIds, IReadOnlySet<Guid>? ContainerIds);
     private readonly Queue<PreviewChange> previewChanges = new();
 
     /// <summary>The preview version at the beginning of the most recent transaction.</summary>
@@ -20,6 +20,27 @@ public sealed partial class EditorSession
     {
         ArgumentNullException.ThrowIfNull(changedIds);
         OnChanged(contentChanged: true, previewChangedElements: changedIds.ToFrozenSet());
+    }
+
+    /// <summary>Placement-only edits: ownership, paint order, visibility and definitions must be unchanged.</summary>
+    public void NotifyContainerPlacementChanged(IEnumerable<Guid> containers, IEnumerable<Guid>? elements = null) =>
+        OnChanged(contentChanged: true, definitionsUnchanged: true, previewChangedElements: (elements ?? []).ToFrozenSet(),
+            previewChangedContainers: containers.ToFrozenSet(), topologyValidated: true);
+
+    public bool TryGetPreviewChanges(long sinceRevision, out IReadOnlySet<Guid> elements, out IReadOnlySet<Guid> containers)
+    {
+        elements = containers = FrozenSet<Guid>.Empty;
+        if (sinceRevision < 0 || sinceRevision > PreviewRevision || sinceRevision != PreviewRevision &&
+            (previewChanges.Count == 0 || sinceRevision < previewChanges.Peek().Revision - 1)) return false;
+        var leafIds = new HashSet<Guid>(); var containerIds = new HashSet<Guid>();
+        foreach (var change in previewChanges)
+        {
+            if (change.Revision <= sinceRevision) continue;
+            if (change.ElementIds is null) return false;
+            leafIds.UnionWith(change.ElementIds);
+            if (change.ContainerIds is not null) containerIds.UnionWith(change.ContainerIds);
+        }
+        elements = leafIds.ToFrozenSet(); containers = containerIds.ToFrozenSet(); return true;
     }
 
     /// <summary>
@@ -37,6 +58,7 @@ public sealed partial class EditorSession
         foreach (var change in previewChanges)
         {
             if (change.Revision <= sinceRevision) continue;
+            if (change.ContainerIds?.Count > 0) return false;
             if (change.ElementIds is null) return false;
             if (change.ElementIds.Count == 0) continue;
             union ??= [];
@@ -46,12 +68,12 @@ public sealed partial class EditorSession
         return true;
     }
 
-    private void RecordPreviewChange(bool elementsChanged, IReadOnlySet<Guid>? changedIds = null)
+    private void RecordPreviewChange(bool elementsChanged, IReadOnlySet<Guid>? changedIds = null, IReadOnlySet<Guid>? containers = null)
     {
         PreviewRevision++;
         if (elementsChanged) PreviewElementsRevision = PreviewRevision;
         if (previewChanges.Count == PreviewChangeHistoryLimit) previewChanges.Dequeue();
-        previewChanges.Enqueue(new(PreviewRevision, elementsChanged ? changedIds : FrozenSet<Guid>.Empty));
+        previewChanges.Enqueue(new(PreviewRevision, elementsChanged ? changedIds : FrozenSet<Guid>.Empty, containers));
     }
 
     private bool SettingsElementsUnchanged(SceneDocument before) =>

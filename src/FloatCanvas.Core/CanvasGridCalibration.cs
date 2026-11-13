@@ -1,32 +1,58 @@
 namespace FloatCanvas.Core;
 
-/// <summary>Fits square cells from a common grid intersection and one known span along each frame axis.</summary>
+public enum CanvasGridFitError { None, InvalidProjection, InvalidSample, InvalidCounts, CountOutOfRange, UnsafeResult }
+public sealed record CanvasGridFitResult(CanvasSettings Settings, double EstimatedColumns, double EstimatedRows,
+    int Columns, int Rows, double SampleDeviation);
+
+/// <summary>Fits a square lattice from a rectangle in a fixed normalized perspective plane.</summary>
 public static class CanvasGridCalibration
 {
-    public static bool TryFit(CanvasSettings current, IReadOnlyList<PointD> screenPoints, int columns, int rows,
-        out CanvasSettings result, out string? error)
+    public static bool TrySample(CanvasProjectionSettings projection, PointD first, PointD opposite,
+        out RectD sample, out PointD[] corners)
     {
-        result = current.Clone(); error = "Canvas.GridCalibrationInvalid";
-        if (screenPoints.Count != 3 || columns is < 1 or > 256 || rows is < 1 or > 256 ||
-            !CanvasCalibration.TryGridToScreen(1, 1, current.Projection.Quad, out var unit) || !unit.TryInverse(out var inverse)) return false;
-        var points = new PointD[3];
-        for (int i = 0; i < 3; i++)
-            if (!inverse.TryTransformPoint(screenPoints[i], out points[i])) return false;
-        var horizontal = points[1] - points[0]; var vertical = points[2] - points[0];
-        double dx = Math.Abs(horizontal.X), dy = Math.Abs(vertical.Y);
-        // A span must be visibly resolved and follow the calibrated rectangle's axes.
-        if (screenPoints[0].DistanceTo(screenPoints[1]) < 8 || screenPoints[0].DistanceTo(screenPoints[2]) < 8 ||
-            dx < 1e-5 || dy < 1e-5 || Math.Abs(horizontal.Y) > dx * .08 || Math.Abs(vertical.X) > dy * .08) return false;
-        double aspect = columns * dy / (rows * dx);
-        CanvasGeometryMigration.UpgradeLegacy(result);
-        if (!CanvasProjectionGeometry.TrySetAspect(result.Projection, aspect, out var projection, out error)) return false;
+        sample = default; corners = [];
+        if (!CanvasCalibration.TryGridToScreen(1, 1, projection.Quad, out var unit) || !unit.TryInverse(out var inverse) ||
+            !inverse.TryTransformPoint(first, out var a) || !inverse.TryTransformPoint(opposite, out var b)) return false;
+        sample = new(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
+        if (sample.Width < 1e-8 || sample.Height < 1e-8) return false;
+        PointD[] normalized = [new(sample.Left, sample.Top), new(sample.Right, sample.Top), new(sample.Right, sample.Bottom), new(sample.Left, sample.Bottom)];
+        if (normalized.Any(p => unit.Denominator(p) <= 0)) return false;
+        corners = new PointD[4];
+        for (int i = 0; i < 4; i++) if (!unit.TryTransformPoint(normalized[i], out corners[i])) return false;
+        return true;
+    }
+    public static bool TryFitRectangle(CanvasSettings current, RectD sample, int columns, int rows, bool alignBoundary,
+        int? candidateColumns, int? candidateRows, out CanvasGridFitResult? fit, out CanvasGridFitError error)
+    {
+        fit = null; error = CanvasGridFitError.InvalidSample;
+        if (!double.IsFinite(sample.X + sample.Y + sample.Width + sample.Height) || sample.Width < 1e-8 || sample.Height < 1e-8) return false;
+        error = CanvasGridFitError.InvalidCounts;
+        if (columns is < 1 or > CanvasCalibration.MaximumGridCount || rows is < 1 or > CanvasCalibration.MaximumGridCount) return false;
+        double nx = columns / sample.Width, ny = rows / sample.Height;
+        double cx = candidateColumns ?? Math.Max(1, Math.Round(nx, MidpointRounding.AwayFromZero));
+        double cy = candidateRows ?? Math.Max(1, Math.Round(ny, MidpointRounding.AwayFromZero));
+        error = CanvasGridFitError.CountOutOfRange;
+        if (alignBoundary && (cx is < 1 or > CanvasCalibration.MaximumGridCount || cy is < 1 or > CanvasCalibration.MaximumGridCount)) return false;
+        var result = current.Clone(); CanvasGeometryMigration.UpgradeLegacy(result);
+        error = CanvasGridFitError.UnsafeResult;
+        if (!CanvasProjectionGeometry.TrySetAspect(result.Projection, alignBoundary ? cx / cy : nx / ny, out var projection, out _)) return false;
         var plane = CanvasProjectionGeometry.ResolvePlaneBounds(projection);
-        double spacing = plane.Width * dx / columns;
-        if (!double.IsFinite(spacing) || spacing is < CanvasGridGeometry.MinimumCellSize or > CanvasGridGeometry.MaximumCellSize)
-        { error = "Canvas.GridCalibrationInvalid"; return false; }
-        result.Projection = projection;
-        result.Grid.PlaneCellSize = spacing;
-        result.Grid.PlaneOrigin = new(plane.X + points[0].X * plane.Width, plane.Y + points[0].Y * plane.Height);
-        error = null; return true;
+        double spacing = plane.Width / (alignBoundary ? cx : nx);
+        if (!double.IsFinite(spacing) || spacing is < CanvasGridGeometry.MinimumCellSize or > CanvasGridGeometry.MaximumCellSize) return false;
+        result.Projection = projection; result.Grid.PlaneCellSize = spacing;
+        if (projection.LockedGridCellSize.HasValue) projection.LockedGridCellSize = spacing;
+        result.Grid.PlaneOrigin = alignBoundary ? new(plane.Left, plane.Top) : new(plane.Left + sample.Left * plane.Width, plane.Top + sample.Top * plane.Height);
+        error = CanvasGridFitError.InvalidProjection;
+        if (!CanvasCalibration.TryGridToScreen(1, 1, projection.Quad, out var unit)) return false;
+        double deviation = 0;
+        if (alignBoundary)
+            foreach (var p in new PointD[] { new(sample.Left, sample.Top), new(sample.Right, sample.Top), new(sample.Right, sample.Bottom), new(sample.Left, sample.Bottom) })
+            {
+                var snapped = new PointD(Math.Round(p.X * cx) / cx, Math.Round(p.Y * cy) / cy);
+                if (!unit.TryTransformPoint(p, out var screen) || !unit.TryTransformPoint(snapped, out var match)) return false;
+                deviation = Math.Max(deviation, screen.DistanceTo(match));
+            }
+        fit = new(result, nx, ny, alignBoundary ? (int)cx : 0, alignBoundary ? (int)cy : 0, deviation);
+        error = CanvasGridFitError.None; return true;
     }
 }

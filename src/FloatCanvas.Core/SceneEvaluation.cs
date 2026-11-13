@@ -23,54 +23,76 @@ public sealed class EvaluatedScene
 {
     private readonly IReadOnlyDictionary<Guid, Guid?> parents;
     private readonly IReadOnlyDictionary<Guid, LayerPlacement> placements;
+    private readonly IReadOnlyDictionary<Guid, ContainerPlacementContext> containers;
     private readonly IReadOnlyDictionary<Guid, bool> visible, locked;
-    private readonly IReadOnlyDictionary<Guid, ResolvedLeaf> runtime;
-    private readonly IReadOnlyDictionary<OccurrencePath, ResolvedLeaf> occurrences;
-    private readonly IReadOnlyDictionary<SourceNodeAddress, IReadOnlyList<ResolvedLeaf>> sourceOccurrences;
-    private readonly IReadOnlyDictionary<Guid, IReadOnlyList<ResolvedLeaf>> hostOccurrences;
+    private readonly IReadOnlyDictionary<Guid, int> runtime;
+    private readonly IReadOnlyDictionary<OccurrencePath, int> occurrences;
+    private readonly IReadOnlyDictionary<SourceNodeAddress, IReadOnlyList<int>> sourceOccurrences;
+    private readonly IReadOnlyDictionary<Guid, IReadOnlyList<int>> hostOccurrences;
     internal EvaluatedScene(SceneDocument renderDocument, IReadOnlyList<ResolvedLeaf> leaves,
         Dictionary<Guid, Guid?> parents, Dictionary<Guid, LayerPlacement> placements,
-        Dictionary<Guid, bool> visible, Dictionary<Guid, bool> locked)
+        Dictionary<Guid, bool> visible, Dictionary<Guid, bool> locked, Dictionary<Guid, ContainerPlacementContext> containers)
     {
         RenderDocument = renderDocument; Leaves = leaves;
         this.parents = new ReadOnlyDictionary<Guid, Guid?>(parents);
         this.placements = new ReadOnlyDictionary<Guid, LayerPlacement>(placements);
+        this.containers = new ReadOnlyDictionary<Guid, ContainerPlacementContext>(containers);
         this.visible = new ReadOnlyDictionary<Guid, bool>(visible); this.locked = new ReadOnlyDictionary<Guid, bool>(locked);
-        runtime = new ReadOnlyDictionary<Guid, ResolvedLeaf>(leaves.ToDictionary(leaf => leaf.RuntimeElementId));
-        occurrences = new ReadOnlyDictionary<OccurrencePath, ResolvedLeaf>(leaves.ToDictionary(leaf => leaf.OccurrencePath));
-        var bySource = new Dictionary<SourceNodeAddress, List<ResolvedLeaf>>();
-        var byHost = new Dictionary<Guid, List<ResolvedLeaf>>();
-        foreach (var leaf in leaves)
+        runtime = leaves.Select((leaf, i) => (leaf, i)).ToDictionary(p => p.leaf.RuntimeElementId, p => p.i);
+        occurrences = leaves.Select((leaf, i) => (leaf, i)).ToDictionary(p => p.leaf.OccurrencePath, p => p.i);
+        var bySource = new Dictionary<SourceNodeAddress, List<int>>();
+        var byHost = new Dictionary<Guid, List<int>>();
+        for (int i = 0; i < leaves.Count; i++)
         {
+            var leaf = leaves[i];
             if (!bySource.TryGetValue(leaf.Source, out var sameSource)) bySource.Add(leaf.Source, sameSource = []);
-            sameSource.Add(leaf);
+            sameSource.Add(i);
             Guid? node = leaf.HostNodeId;
             while (node is { } id)
             {
                 if (!byHost.TryGetValue(id, out var sameHost)) byHost.Add(id, sameHost = []);
-                sameHost.Add(leaf); node = parents.GetValueOrDefault(id);
+                sameHost.Add(i); node = parents.GetValueOrDefault(id);
             }
         }
-        sourceOccurrences = new ReadOnlyDictionary<SourceNodeAddress, IReadOnlyList<ResolvedLeaf>>(
-            bySource.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<ResolvedLeaf>)pair.Value.AsReadOnly()));
-        hostOccurrences = new ReadOnlyDictionary<Guid, IReadOnlyList<ResolvedLeaf>>(
-            byHost.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<ResolvedLeaf>)pair.Value.AsReadOnly()));
+        sourceOccurrences = bySource.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<int>)pair.Value.AsReadOnly());
+        hostOccurrences = byHost.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<int>)pair.Value.AsReadOnly());
     }
     internal EvaluatedScene(SceneDocument renderDocument, EvaluatedScene baseScene)
     {
         RenderDocument = renderDocument; Leaves = baseScene.Leaves;
-        parents = baseScene.parents; placements = baseScene.placements; visible = baseScene.visible; locked = baseScene.locked;
+        parents = baseScene.parents; placements = baseScene.placements; containers = baseScene.containers; visible = baseScene.visible; locked = baseScene.locked;
         runtime = baseScene.runtime; occurrences = baseScene.occurrences;
         sourceOccurrences = baseScene.sourceOccurrences; hostOccurrences = baseScene.hostOccurrences;
     }
+    private sealed class IndexedLeaves(IReadOnlyList<ResolvedLeaf> leaves, IReadOnlyList<int> indices) : IReadOnlyList<ResolvedLeaf>
+    {
+        public int Count => indices.Count;
+        public ResolvedLeaf this[int index] => leaves[indices[index]];
+        public IEnumerator<ResolvedLeaf> GetEnumerator() { foreach (var i in indices) yield return leaves[i]; }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    internal EvaluatedScene(SceneDocument renderDocument, EvaluatedScene previous, IReadOnlyList<ResolvedLeaf> leaves,
+        SceneGraph graph, IEnumerable<Guid> changedNodes) : this(renderDocument, previous)
+    {
+        Leaves = leaves;
+        var nextPlacements = previous.placements.ToDictionary();
+        var nextContainers = previous.containers.ToDictionary();
+        foreach (var id in changedNodes)
+        {
+            nextPlacements[id] = graph.NodeWorldPlacement(id);
+            if (graph.FindGroup(id) is not null) nextContainers[id] = graph.ScopeContainerPlacement(id);
+        }
+        placements = nextPlacements; containers = nextContainers;
+    }
+    internal int IndexOf(Guid runtimeId) => runtime.GetValueOrDefault(runtimeId, -1);
     public SceneDocument RenderDocument { get; }
     public IReadOnlyList<ResolvedLeaf> Leaves { get; }
     /// <summary>Runtime identity, or a real host leaf's unchanged identity; never the first match of a definition source ID.</summary>
     public CanvasElement? FindElement(Guid runtimeElementId) => FindOccurrence(runtimeElementId)?.RenderElement;
-    public ResolvedLeaf? FindOccurrence(Guid runtimeElementId) => runtime.GetValueOrDefault(runtimeElementId);
-    public ResolvedLeaf? FindOccurrence(OccurrencePath path) => occurrences.GetValueOrDefault(path);
-    public IReadOnlyList<ResolvedLeaf> OccurrencesOf(SourceNodeAddress source) => sourceOccurrences.GetValueOrDefault(source) ?? [];
-    public IReadOnlyList<ResolvedLeaf> OccurrencesOfHostNode(Guid nodeId) => hostOccurrences.GetValueOrDefault(nodeId) ?? [];
+    public ResolvedLeaf? FindOccurrence(Guid runtimeElementId) => runtime.TryGetValue(runtimeElementId, out var index) ? Leaves[index] : null;
+    public ResolvedLeaf? FindOccurrence(OccurrencePath path) => occurrences.TryGetValue(path, out var index) ? Leaves[index] : null;
+    public IReadOnlyList<ResolvedLeaf> OccurrencesOf(SourceNodeAddress source) => sourceOccurrences.TryGetValue(source, out var indices) ? new IndexedLeaves(Leaves, indices) : [];
+    public IReadOnlyList<ResolvedLeaf> OccurrencesOfHostNode(Guid nodeId) => hostOccurrences.TryGetValue(nodeId, out var indices) ? new IndexedLeaves(Leaves, indices) : [];
     public SourceNodeAddress? SourceAddress(Guid runtimeElementId) => FindOccurrence(runtimeElementId)?.Source;
     public Guid? HostNodeOfOccurrence(Guid runtimeElementId) => FindOccurrence(runtimeElementId)?.HostNodeId;
     public RootCanvasKind RootCanvasOf(Guid runtimeElementId) => RenderDocument.RootCanvasAssignments.GetValueOrDefault(runtimeElementId);
@@ -98,13 +120,13 @@ public sealed class EvaluatedScene
         var result = draft.Clone();
         if (draft.GroupId is { } parent)
         {
-            SceneGraph.ApplyPlacement(result, placements[parent]); result.Visible &= visible[parent]; result.Locked |= locked[parent];
+            result = containers[parent].Resolve(draft); result.Visible &= visible[parent]; result.Locked |= locked[parent];
         }
         result.GroupId = null; return result;
     }
 }
 
-public static class SceneEvaluation
+public static partial class SceneEvaluation
 {
     // Only detached, published runtime views are memoized. Mutable source documents never enter this table.
     private static readonly ConditionalWeakTable<SceneDocument, EvaluatedScene> runtimeViews = new();
@@ -154,13 +176,14 @@ public static class SceneEvaluation
         runtimeViews.Add(document, new(document, baseScene)); return document;
     }
     /// <summary>Builds once from a frozen source, or afresh for a mutable public render/export. Never reads external files.</summary>
-    public static EvaluatedScene Build(SceneDocument source)
+    public static EvaluatedScene Build(SceneDocument source, SceneEvaluationCache? immutableDefinitions = null)
     {
         if (source.IsRuntimeEvaluated && RuntimeView(source) is { } existing) return existing;
         if (!source.IsRuntimeEvaluated && (source.Instances.Count > 0 || source.Definitions.Count > 0)) PrefabClosure.Validate(source);
         var graph = new SceneGraph(source);
         SceneCanvasRoots.Validate(source);
         var parents = new Dictionary<Guid, Guid?>(); var placements = new Dictionary<Guid, LayerPlacement>();
+        var containers = source.Groups.ToDictionary(group => group.Id, group => graph.ScopeContainerPlacement(group.Id));
         var visible = new Dictionary<Guid, bool>(); var locked = new Dictionary<Guid, bool>();
         foreach (var id in source.Elements.Select(element => element.Id).Concat(source.Groups.Select(group => group.Id)).Concat(source.Instances.Select(instance => instance.Id)))
         {
@@ -168,10 +191,10 @@ public static class SceneEvaluation
             visible.Add(id, graph.IsVisible(id)); locked.Add(id, graph.IsLocked(id));
         }
         var definitions = source.Definitions.ToDictionary(definition => definition.Id);
-        var definitionGraphs = new Dictionary<Guid, SceneGraph>();
+        var localDefinitions = immutableDefinitions ?? new SceneEvaluationCache();
         var leaves = new List<ResolvedLeaf>(source.Elements.Count);
         var usedRuntimeIds = new HashSet<Guid>();
-        Expand(graph, null, LayerPlacement.Identity, true, false, "", null, RootCanvasKind.Main);
+        Expand(graph, null, ContainerPlacementContext.Identity, true, false, "", null, RootCanvasKind.Main);
         leaves = leaves.OrderBy(leaf => SceneCanvasRoots.PaintRank(leaf.RootCanvas)).ToList();
         var renderDocument = new SceneDocument
         {
@@ -182,12 +205,21 @@ public static class SceneEvaluation
             LayerOpacity = source.LayerOpacity, NextNumber = source.NextNumber,
             DisplayLayout = source.DisplayLayout.Select(display => display.Clone()).ToList()
         };
-        var result = new EvaluatedScene(renderDocument, leaves.AsReadOnly(), parents, placements, visible, locked);
+        var result = new EvaluatedScene(renderDocument, leaves.AsReadOnly(), parents, placements, visible, locked, containers);
         runtimeViews.Add(renderDocument, result); return result;
 
-        void Expand(SceneGraph current, Guid? definitionId, LayerPlacement incoming, bool inheritedVisible,
+        void Expand(SceneGraph current, Guid? definitionId, ContainerPlacementContext incoming, bool inheritedVisible,
             bool inheritedLocked, string path, Guid? hostInstance, RootCanvasKind inheritedRoot)
         {
+            var contexts = new Dictionary<Guid, ContainerPlacementContext>();
+            ContainerPlacementContext Scope(Guid? parent)
+            {
+                if (parent is not { } groupId) return incoming;
+                if (contexts.TryGetValue(groupId, out var cached)) return cached;
+                var group = current.FindGroup(groupId)!;
+                var resolved = Scope(group.ParentId).Enter(group.Transform, group.ElevationScale, group.Billboard);
+                contexts.Add(groupId, resolved); return resolved;
+            }
             foreach (var id in current.OrderedContentNodeIds)
             {
                 var rootCanvas = definitionId is null ? SceneCanvasRoots.Resolve(source, id, graph) : inheritedRoot;
@@ -197,8 +229,9 @@ public static class SceneEvaluation
                     Guid runtimeId = definitionId is null ? id : RuntimeId(occurrence);
                     if ((definitionId is not null && parents.ContainsKey(runtimeId)) || !usedRuntimeIds.Add(runtimeId))
                         throw new InvalidDataException(L.Get("Scene.InvalidElementId"));
-                    var parent = incoming.Compose(current.ParentWorldPlacement(id));
-                    var world = element.Clone(); SceneGraph.ApplyPlacement(world, parent);
+                    var placement = Scope(element.GroupId);
+                    var parent = placement.Placement;
+                    var world = placement.Resolve(element);
                     if (!LayerPlacement.Finite(world.Transform) || !double.IsFinite(world.BillboardAnchor.X) ||
                         !double.IsFinite(world.BillboardAnchor.Y) || !double.IsFinite(world.BillboardHeight))
                         throw new InvalidDataException(L.Get("Scene.InvalidElementTransform"));
@@ -209,12 +242,26 @@ public static class SceneEvaluation
                 else if (current.FindInstance(id) is { } instance)
                 {
                     var definition = definitions[instance.DefinitionId];
-                    if (!definitionGraphs.TryGetValue(definition.Id, out var nested))
-                        definitionGraphs.Add(definition.Id, nested = new SceneGraph(definition.Graph));
                     string prefix = path.Length == 0 ? "i:" : path + "/i:";
                     prefix += id.ToString("N") + "/d:" + definition.Id.ToString("N");
-                    Expand(nested, definition.Id, incoming.Compose(current.NodeWorldPlacement(id)),
-                        inheritedVisible && current.IsVisible(id), inheritedLocked || current.IsLocked(id), prefix, hostInstance ?? id, rootCanvas);
+                    var container = Scope(instance.ParentId).Enter(instance.Transform, instance.ElevationScale, instance.Billboard);
+                    bool shown = inheritedVisible && current.IsVisible(id), blocked = inheritedLocked || current.IsLocked(id);
+                    var local = localDefinitions.Definition(definition, source.Definitions);
+                    foreach (var leaf in local.Leaves)
+                    {
+                        string relative = leaf.OccurrencePath.Value;
+                        var occurrence = new OccurrencePath(prefix + "/" + (leaf.Source.DefinitionId is null ? "e:" : "") + relative);
+                        var runtimeId = RuntimeId(occurrence);
+                        if (parents.ContainsKey(runtimeId) || !usedRuntimeIds.Add(runtimeId)) throw new InvalidDataException(L.Get("Scene.InvalidElementId"));
+                        var world = container.ResolveWorld(leaf.RenderElement);
+                        if (!LayerPlacement.Finite(world.Transform) || !double.IsFinite(world.BillboardAnchor.X) ||
+                            !double.IsFinite(world.BillboardAnchor.Y) || !double.IsFinite(world.BillboardHeight) ||
+                            world.BillboardSurface is { ContentPlacement.IsFinite: false })
+                            throw new InvalidDataException(L.Get("Scene.InvalidElementTransform"));
+                        world.Id = runtimeId; world.GroupId = null; world.Visible &= shown; world.Locked |= blocked;
+                        leaves.Add(new(occurrence, leaf.Source with { DefinitionId = leaf.Source.DefinitionId ?? definition.Id }, world,
+                            container.Placement.Compose(leaf.ParentWorld), hostInstance ?? id, rootCanvas));
+                    }
                 }
             }
         }
@@ -227,5 +274,5 @@ public static class SceneEvaluation
         return new Guid(digest.AsSpan(0, 16));
     }
     public static CanvasElement ResolveElement(SceneDocument source, CanvasElement element) =>
-        source.IsRuntimeEvaluated ? element.Clone() : new SceneGraph(source).ToWorld(element);
+        source.IsRuntimeEvaluated ? element.Clone() : SceneGraph.Read(source).ScopeContainerPlacement(element.GroupId).Resolve(element);
 }

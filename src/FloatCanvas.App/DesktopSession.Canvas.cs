@@ -12,7 +12,7 @@ internal sealed partial class DesktopSession
 {
     private readonly CanvasCalibrationController _canvasCalibration = new();
     private readonly CanvasGridScaleController _canvasGridScale = new();
-    private CanvasSettingsWindow? _canvasSettingsWindow;
+    private CanvasToolOptions? _canvasToolOptions;
     private CanvasColorEdit? _canvasColorEdit;
     private CanvasColorEdit? _canvasNumericEdit;
     private EditorSession? _calibrationSession;
@@ -20,17 +20,19 @@ internal sealed partial class DesktopSession
     private bool _synchronizingCanvasTool;
     private SceneDocument? _canvasOriginDocument;
     private double _canvasGuideOpacity = 1;
+    private CanvasPreviewAppearance? _canvasPreviewAppearance;
+    private CanvasPreviewAppearance PreviewAppearance => _canvasPreviewAppearance ??= new();
     private Window[] _canvasPlacementWindows = [];
     private EditorSession? _canvasPlacementSession;
     private long _canvasPlacementEditingVersion;
-    private bool IsCanvasSettingsOpen => _canvasSettingsWindow?.IsVisible == true;
+    private bool IsCanvasSettingsOpen => IsToolOptionsOpen && _editor.Tool == EditorTool.Canvas;
 
     private void InitializeCanvasTool()
     {
         _canvasCalibration.Changed += () =>
         {
             if (_canvasCalibration.IsPlacing) _canvasDraftRevision++;
-            _canvasSettingsWindow?.RefreshGridCounts(CurrentCanvasSettings.Projection);
+            _canvasToolOptions?.RefreshGridCounts(CurrentCanvasSettings.Projection);
             RequestRender(); ScheduleRecovery();
         };
         _canvasCalibration.Error += error => UpdateStatus(L.Get(error == "Canvas.RelocateFailed" || _canvasCalibration.IsPlacing ? error : "Canvas.DragBoundary"));
@@ -44,20 +46,22 @@ internal sealed partial class DesktopSession
     {
         if (!CanEditDisplayedCanvas) { UpdateStatus(L.Get("GroupCanvas.EditPreviewInIndependent")); return; }
         if (DocumentOperationBusy || !_host.IsEditing || _editor.Tool != EditorTool.Canvas) return;
-        bool alreadyOpen = IsCanvasSettingsOpen;
         SynchronizeFlatGridOrigin();
-        CloseToolOptions();
-        if (_canvasSettingsWindow is null)
+        EnsureCanvasToolOptions();
+        ShowCurrentToolOptions();
+    }
+
+    private CanvasToolOptions EnsureCanvasToolOptions()
+    {
+        if (_canvasToolOptions is null)
         {
-            var window = _canvasSettingsWindow = new(historySession: () => Active) { Owner = _toolbar };
-            ConfigureAppWindow(window);
+            var window = _canvasToolOptions = new(historySession: () => Active, stateStore: _toolStateStore);
+            _toolOptionsPanel.SetCanvasContent(window);
             window.ResetDisplaySelected += device =>
             {
                 try { RememberCanvasReferenceDisplay(_settings, device); }
                 finally { RefreshCanvasReferenceMonitors(); }
             };
-            _windowCoordinator?.Register(window, () => window.IsPinned, DismissCanvasSettings);
-            window.CommandKey += OnKey;
             _canvasColorEdit = new(() => Active, () => !DocumentOperationBusy && _host.IsEditing && IsCanvasWindowTargetCurrent,
                 () => { _canvasGridScale.Cancel(); _canvasCalibration.CancelDrag(); _editor.Cancel(); CancelSnapshotCapture("CanvasSettingsChanged"); CancelLivePreparation(); },
                 () => { SynchronizeCanvasTool(); RequestRender(); }, CaptureCanvasSettingsTarget);
@@ -83,84 +87,67 @@ internal sealed partial class DesktopSession
             window.ProjectionChanged += enabled => { if (IsCanvasWindowTargetCurrent) SetCanvasProjection(enabled); };
             window.DepthPriorityOcclusionChanged += enabled =>
             {
-                if (!IsCanvasWindowTargetCurrent || DocumentOperationBusy || !_host.IsEditing || Active.IsTransactionActive ||
-                    window.DisplayedSettings is not { Projection.Enabled: true } displayed || displayed.DepthPriorityOcclusion == enabled) return;
-                ChangeCanvas(settings => settings.DepthPriorityOcclusion = enabled);
-                RefreshCanvasSettingsTarget();
+                if (_canvasWindowTarget?.IsCurrent != true || DocumentOperationBusy || !_host.IsEditing || Active.IsTransactionActive ||
+                    window.DisplayedSettings is not { Projection.Enabled: true } || !PreviewAppearance.SetDepth(enabled)) return;
+                // Old pixels must not be picked using the new occlusion order.
+                // The next presented frame supplies both the image and its picking scene.
+                _editor.SuspendPresentedPicking();
+                window.RefreshPreviewControls(enabled, _canvasGuideOpacity);
+                RequestRender();
             };
             window.GridCountsChanged += (columns, rows) => { if (IsCanvasWindowTargetCurrent) SetCanvasGridCounts(columns, rows); };
             window.GridSizeChanged += size => { if (IsCanvasWindowTargetCurrent) SetCanvasGridSize(size); };
             window.PlaneSizeChanged += (width, height) => { if (IsCanvasWindowTargetCurrent) ResizeCanvasPlane(width, height); };
-            window.PlaneAspectChanged += aspect => { if (IsCanvasWindowTargetCurrent) SetCanvasPlaneAspect(aspect); };
-            window.GridOriginChanged += origin => { if (IsCanvasWindowTargetCurrent) ChangeCanvas(c => { EnsureCanvasReference(c); c.Grid.PlaneOrigin = origin; }); };
-            window.GridOriginToPinRequested += () => { if (IsCanvasWindowTargetCurrent) ChangeCanvas(c => { EnsureCanvasReference(c); c.Grid.PlaneOrigin = c.Projection.PinPoint; }); };
+            window.GridOriginChanged += origin => { if (IsCanvasWindowTargetCurrent) SetCanvasGridOrigin(origin); };
+            window.GridOriginToPinRequested += () => { if (IsCanvasWindowTargetCurrent) { AlignCanvasGridOriginToPin(); RefreshCanvasSettingsTarget(); } };
             window.RectificationPreviewRequested += () => { if (IsCanvasWindowTargetCurrent) _ = RunCommand(ShowCanvasRectificationPreviewAsync); };
             window.GridCalibrationRequested += () => { if (IsCanvasWindowTargetCurrent) BeginCanvasGridCalibration(); };
             window.PinLocationChanged += location => { if (IsCanvasWindowTargetCurrent) SetCanvasPinLocation(location); };
             window.GridSizeLockChanged += locked => { if (IsCanvasWindowTargetCurrent) SetCanvasGridSizeLock(locked); };
             window.ResetDisplayRequested += device => { if (IsCanvasWindowTargetCurrent) ResetCanvasProjectionOnDisplay(device); };
+            window.FourLinesRequested += () => { if (IsCanvasWindowTargetCurrent) BeginCanvasFourLines(); };
             window.FourPointsRequested += () => { if (IsCanvasWindowTargetCurrent) BeginCanvasFourPoints(); };
             window.GuideOpacityChanged += opacity => { _canvasGuideOpacity = opacity; RequestRender(); };
-            window.GridVisibilityChanged += visible => { if (IsCanvasWindowTargetCurrent) ChangeCanvas(c =>
+            window.GridVisibilityChanged += visible =>
             {
-                EnsureCanvasReference(c); c.Grid.Visible = visible;
-            }); };
+                if (!IsCanvasWindowTargetCurrent) return;
+                ChangeCanvas(c => { EnsureCanvasReference(c); c.Grid.Visible = visible; });
+                RefreshCanvasSettingsTarget();
+            };
             window.GridColorChanged += color => ColorChange(c => c.Grid.Color = color);
             window.GridWidthChanged += width => { if (IsCanvasWindowTargetCurrent) ChangeCanvas(c => c.Grid.Width = width); };
             window.GridPatternChanged += pattern => { if (IsCanvasWindowTargetCurrent) ChangeCanvas(c => c.Grid.Pattern = pattern); };
             window.PresetApplied += preset => { if (IsCanvasWindowTargetCurrent) ApplyCanvasPreset(preset); };
-            window.Deactivated += (_, _) => QueueCanvasSettingsFocusCheck();
-            var route = new ToolOptionsPointerRoute(() => IsCanvasSettingsOpen && !window.IsPinned,
-                source => IsCanvasSettingsInput(source) || IsToolbarInput(source),
-                () => DismissCanvasSettings(WindowDismissReason.ToolbarPress), window, _toolbar);
-            window.Closed += (_, _) => route.Dispose();
+
         }
         RefreshCanvasReferenceMonitors();
         RefreshCanvasSettingsTarget();
-        _canvasSettingsWindow.RefreshGuideOpacity(_canvasGuideOpacity);
-        _canvasSettingsWindow.PrepareForShow();
-        ShowAnchoredToolWindow(_canvasSettingsWindow, alreadyOpen, () => PositionToolOptions(_canvasSettingsWindow, _canvasStateButton));
+        return _canvasToolOptions;
     }
 
     private void DismissCanvasSettings(WindowDismissReason reason = WindowDismissReason.Close)
-    {
-        if (!IsCanvasSettingsOpen) return;
-        using var intent = reason == WindowDismissReason.Close ? null : _windowCoordinator?.DirectTransfer(reason);
-        _canvasSettingsWindow!.ClosePickers();
-        if (reason == WindowDismissReason.Close) _canvasSettingsWindow.ResetPin();
-        SessionWindowCoordinator.Hide(_canvasSettingsWindow, reason);
-    }
-
-    private bool IsCanvasSettingsInput(DependencyObject? source) => _canvasSettingsWindow is { } settings &&
-        Ancestors(source).Any(value => ReferenceEquals(value, settings) || settings.OwnsColorPickerInput(value) ||
-            value is Window window && OwnedBy(window, settings));
-
-    private static bool OwnedBy(Window window, Window owner)
-    {
-        for (var parent = window.Owner; parent is not null; parent = parent.Owner)
-            if (ReferenceEquals(parent, owner)) return true;
-        return false;
-    }
-
-    private void QueueCanvasSettingsFocusCheck()
-    {
-        if (_disposed || !_host.IsEditing || _canvasPlacementSession is not null) return;
-        long version = _host.EditingSessionVersion;
-        _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
-        {
-            if (_disposed || !_host.IsEditing || _canvasPlacementSession is not null || _host.EditingSessionVersion != version || _host.IsInputMethodSwitchPending ||
-                _canvasSettingsWindow is not { IsVisible: true, IsPinned: false, IsActive: false } settings) return;
-            if (!settings.IsColorPickerOpen && !IsCanvasSettingsInput(Keyboard.FocusedElement as DependencyObject) &&
-                !IsCanvasSettingsInput(Mouse.DirectlyOver as DependencyObject) && !_toolbar.IsActive &&
-                !_app.Windows.Cast<Window>().Any(window => window.IsActive && OwnedBy(window, settings))) DismissCanvasSettings();
-        });
-    }
+    { if (IsCanvasSettingsOpen) DismissToolOptions(reason); }
 
     private RectD PrimaryCanvasReferenceViewport()
     {
         var bounds = _host.PrimaryMonitor.Bounds;
         return new(bounds.Left - _editor.ScreenOrigin.X, bounds.Top - _editor.ScreenOrigin.Y, bounds.Width, bounds.Height);
     }
+
+    private PointD FlatCanvasPin => new PointD(_host.PrimaryMonitor.Bounds.Left + _host.PrimaryMonitor.Bounds.Width / 2d,
+        _host.PrimaryMonitor.Bounds.Top + _host.PrimaryMonitor.Bounds.Height / 2d) - _editor.CanvasOrigin;
+
+    private void SetCanvasGridOrigin(PointD origin) => ChangeCanvas(settings =>
+    {
+        if (settings.Projection.Enabled) { EnsureCanvasReference(settings); settings.Grid.PlaneOrigin = origin; }
+        else settings.Grid.FlatOrigin = origin;
+    });
+
+    private void AlignCanvasGridOriginToPin() => ChangeCanvas(settings =>
+    {
+        if (settings.Projection.Enabled) { EnsureCanvasReference(settings); settings.Grid.PlaneOrigin = settings.Projection.PinPoint; }
+        else settings.Grid.FlatOrigin = FlatCanvasPin;
+    });
 
     private void SynchronizeFlatGridOrigin()
     {
@@ -180,7 +167,7 @@ internal sealed partial class DesktopSession
 
     private void RefreshCanvasReferenceMonitors()
     {
-        _canvasSettingsWindow?.SetReferenceMonitors(_host.Monitors, _settings.CanvasReferenceDisplay);
+        _canvasToolOptions?.SetReferenceMonitors(_host.Monitors, _settings.CanvasReferenceDisplay);
     }
 
     private void ResetCanvasProjectionOnDisplay(string? device)
@@ -248,14 +235,6 @@ internal sealed partial class DesktopSession
         RequestRender();
     }
 
-    internal static void ApplyCanvasDepthPriorityOcclusion(EditorSession session, CanvasSettings? displayed, bool enabled,
-        bool canMutate, Action<Action<CanvasSettings>> change)
-    {
-        if (!canMutate || session.IsTransactionActive || !ReferenceEquals(session.Document.Canvas, displayed) ||
-            !session.Document.Canvas.Projection.Enabled || session.Document.Canvas.DepthPriorityOcclusion == enabled) return;
-        change(settings => settings.DepthPriorityOcclusion = enabled);
-    }
-
     private void SetCanvasProjection(bool enabled)
     {
         if (!enabled) EndCanvasCalibration();
@@ -303,6 +282,9 @@ internal sealed partial class DesktopSession
             settings.Grid = preset.Grid;
             settings.Projection = preset.Projection;
         });
+        // The gallery captures its applied baseline when this callback returns.
+        // Publish the committed target now, before the deferred render refresh.
+        RefreshCanvasSettingsTarget();
     }
 
     private void SetCanvasGridCounts(int columns, int rows)
@@ -447,10 +429,9 @@ internal sealed partial class DesktopSession
         {
             // A window can be closed, or its document replaced, while the canvas owns input.
             if (!_app.Windows.Cast<Window>().Contains(window)) continue;
-            if (!restoreToolWindows && (ReferenceEquals(window, _canvasSettingsWindow) || ReferenceEquals(window, _toolOptionsWindow))) continue;
+            if (!restoreToolWindows && ReferenceEquals(window, _toolOptionsWindow)) continue;
             if (ReferenceEquals(window, _toolOptionsWindow)) _toolOptionsPanel.PrepareForShow();
             else if (window is InspectorWindow inspector) inspector.PrepareForShow();
-            else if (window is CanvasSettingsWindow canvas) canvas.PrepareForShow();
             else if (window is LayersWindow layers) layers.PrepareForShow();
             SessionWindowCoordinator.Show(window);
         }
@@ -466,6 +447,8 @@ internal sealed partial class DesktopSession
     private void SynchronizeCanvasTool()
     {
         if (_synchronizingCanvasTool) return;
+        if (_canvasGridCalibrationSession is not null)
+        { if (!CanvasSamplingCurrent) CancelCanvasGridCalibration(); else return; }
         _synchronizingCanvasTool = true;
         try
         {
@@ -556,7 +539,7 @@ internal sealed partial class DesktopSession
             try
             {
                 bool canRelocate = _calibrationTarget?.IsCurrent == true && CanvasSafetyResolution.TryRelocate(_calibrationTarget.CreateDisplayDocument(), _canvasCalibration.AffectedLayerIds);
-                var dialog = CanvasSafetyDialog.Create(_canvasSettingsWindow is { IsVisible: true } ? _canvasSettingsWindow : _toolbar,
+                var dialog = CanvasSafetyDialog.Create(IsCanvasSettingsOpen ? _toolOptionsWindow : _toolbar,
                     _canvasCalibration.AffectedLayerIds.Count, canRelocate);
                 SessionWindowCoordinator.ShowModal(dialog.Window);
                 if (!_canvasCalibration.Resolve(dialog.Result()) && _canvasCalibration.IsAwaitingResolution)
@@ -580,7 +563,12 @@ internal sealed partial class DesktopSession
     private void DrawCanvasCalibration(SKCanvas canvas)
     {
         if (_canvasGridCalibrationSession is not null) { DrawCanvasGridCalibration(canvas); return; }
-        if (!_canvasCalibration.IsActive) return;
+        if (!_canvasCalibration.IsActive)
+        {
+            if (_editor.Tool == EditorTool.Canvas && !_editor.IsTemporaryMove && !CurrentCanvasSettings.Projection.Enabled)
+                DrawFlatCanvasReferenceMarkers(canvas, CurrentCanvasSettings, EditingCanvasView, CurrentCanvasViewport, FlatCanvasPin);
+            return;
+        }
         DrawCanvasSafetyBoundary(canvas);
         if(_canvasCalibration.IsPlacing){DrawCanvasFourPoints(canvas);return;}
         var settings = CurrentCanvasSettings.Projection;
@@ -658,6 +646,12 @@ internal sealed partial class DesktopSession
         canvas.DrawRoundRect(x, y, width, height, 5, 5, paint);
         paint.Color = color;
         canvas.DrawText(label, x + 6, y + (height - font.Metrics.Ascent - font.Metrics.Descent) / 2, SKTextAlign.Left, font, paint);
+    }
+
+    internal static void DrawFlatCanvasReferenceMarkers(SKCanvas canvas, CanvasSettings settings, CanvasViewTransform view, RectD viewport, PointD referencePin)
+    {
+        DrawCanvasOriginMarker(canvas, view.ToView(settings.Grid.FlatTranslation), viewport, false);
+        DrawCanvasOriginMarker(canvas, view.ToView(referencePin), viewport, true);
     }
 
     private void DrawCanvasFourPoints(SKCanvas canvas)

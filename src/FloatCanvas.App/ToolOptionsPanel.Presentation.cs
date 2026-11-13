@@ -33,6 +33,9 @@ internal sealed partial class ToolOptionsPanel
 
     private void InitializePresentationParameters()
     {
+        presentationSettings.ReportError = Error; presentationGlobalSettings.ReportError = Error;
+        foreach (var panel in new System.Windows.Controls.Panel[] { presentationSettings, presentationGlobalSettings, presentationRuntime })
+            foreach (var text in panel.Children.OfType<System.Windows.Controls.TextBlock>()) text.FontSize = PropertyPanelLayout.LabelFontSize;
         rows.Add("PresentationSettings", presentationSettings); parameterGrid.Children.Add(presentationSettings);
         rows.Add("PresentationRuntime", presentationRuntime); parameterGrid.Children.Add(presentationRuntime);
         rows.Add("PointerPresentationSettings", presentationGlobalSettings); parameterGrid.Children.Add(presentationGlobalSettings);

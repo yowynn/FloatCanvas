@@ -88,7 +88,7 @@ internal static class PointerPresentationBehaviorTests
         Set(desktop, "_editor", editor); Set(desktop, "_host", host);
         Set(desktop, "_hasEditableCanvasOccurrence", true);
         Set(desktop, "_canvasCalibration", new CanvasCalibrationController());
-        Set(desktop, "_canvasGridCalibrationPoints", new List<PointD>());
+        Set(desktop, "_canvasReferenceLines", new List<CanvasReferenceLine>());
         Set(desktop, "_canvasPlacementWindows", Array.Empty<System.Windows.Window>());
         Set(desktop, "_updatingHiddenCanvas", true);
         return desktop;

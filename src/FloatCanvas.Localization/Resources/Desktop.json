@@ -458,8 +458,8 @@
     "en": "Project saved · "
   },
   "Project.ReplaceQuestion": {
-    "zh": "。\n当前工程有未保存的修改。保存并离开会更新原文件；保留到历史并离开不会修改原文件。",
-    "en": ".\nThis project has unsaved changes. Save and leave updates the original file. Keep in history and leave preserves a separate snapshot."
+    "zh": "。\n是否保存当前工程的修改？选择“不保存”仍会按历史设置归档。",
+    "en": ".\nSave changes to the current project? Choosing Don't save still archives your work according to history settings."
   },
   "Export.TransparentTitle": {
     "zh": "导出透明标注 PNG",

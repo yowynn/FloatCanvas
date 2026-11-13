@@ -243,6 +243,10 @@
     "zh": "启用鼠标演示",
     "en": "Enable pointer effects"
   },
+  "Presentation.Global.PointerOn": { "zh": "鼠标演示已开启", "en": "Pointer effects on" },
+  "Presentation.Global.PointerOff": { "zh": "鼠标演示已关闭", "en": "Pointer effects off" },
+  "Presentation.Global.SwitchPointerOff": { "zh": "鼠标演示已开启 · 点击关闭", "en": "Pointer effects on · Click to turn off" },
+  "Presentation.Global.SwitchPointerOn": { "zh": "鼠标演示已关闭 · 点击开启", "en": "Pointer effects off · Click to turn on" },
   "Presentation.Global.EnablePointerHint": {
     "zh": "先启用鼠标演示；关闭时仍保留这些设置。",
     "en": "Enable pointer effects to use these settings. Switching them off preserves your choices."

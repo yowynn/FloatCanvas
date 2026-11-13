@@ -14,11 +14,13 @@ namespace FloatCanvas.App;
 internal sealed partial class DesktopSession
 {
     private Window _toolOptionsWindow = null!;
+    private ContentControl _toolOptionsHeaderContent = null!;
     private bool IsToolOptionsOpen => _toolOptionsWindow?.IsVisible == true;
 
     private void CreateToolOptionsPopup(Window toolbar)
     {
         _toolOptionsPanel = new(_editor, _toolPresets, _colorLibrary, _toolStateStore);
+        _toolOptionsPanel.CanvasContentFactory = EnsureCanvasToolOptions;
         ConfigurePresentationUi(_toolOptionsPanel);
         _toolOptionsFrame = new Border { Child = _toolOptionsPanel };
         _toolOptionsWindow = new Window { Content = _toolOptionsFrame, Width = ToolOptionsPanel.PreferredWidth + 2,
@@ -29,13 +31,17 @@ internal sealed partial class DesktopSession
         _windowLayout.Track(_toolOptionsWindow);
         _toolOptionsPin = ActionIconButton.Create(PanelActionIcon.Pin, L.Get("ToolbarV2.PinOptions"), () =>
         {
-            _toolOptionsPinned = !_toolOptionsPinned;
-            UpdateToolOptionsPin();
+            SetToolOptionsPinned(!_toolOptionsPinned);
         });
         _toolOptionsPin.Width = 28; _toolOptionsPin.Height = 28;
         _toolOptionsPin.Style = (Style)_app.FindResource("CanvasCaptionButton");
         System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(_toolOptionsPin, true);
-        AppWindowChrome.SetHeaderActions(_toolOptionsWindow, _toolOptionsPin);
+        _toolOptionsPin.Margin = new(3, 0, 3, 0);
+        _toolOptionsHeaderContent = new ContentControl();
+        var headerActions = new StackPanel { Orientation = Orientation.Horizontal };
+        headerActions.Children.Add(_toolOptionsHeaderContent); headerActions.Children.Add(_toolOptionsPin);
+        System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(headerActions, true);
+        AppWindowChrome.SetHeaderActions(_toolOptionsWindow, headerActions);
         UpdateToolOptionsPin();
         _toolOptionsWindow.Closing += (_, e) =>
         {
@@ -48,7 +54,7 @@ internal sealed partial class DesktopSession
             if (_toolOptionsPanel.CloseColorPicker()) return true;
             if (!_toolOptionsPinned) { CloseToolOptions(); return true; }
             return false;
-        }, () => _toolOptionsPanel.IsColorPickerOpen, OnKey);
+        }, OnKey);
         _toolOptionsWindow.Deactivated += (_, _) =>
             QueueToolOptionsFocusCheck();
         _toolOptionsPanel.ParametersChanged += () =>
@@ -61,6 +67,7 @@ internal sealed partial class DesktopSession
             RefreshToolbarState(); RequestRender();
         };
         _toolOptionsPanel.EyedropperRequested += BeginEyedropper;
+        _toolOptionsPanel.HeaderChanged += RefreshToolOptionsHeader;
         var pointerRoute = new ToolOptionsPointerRoute(() => IsToolOptionsOpen && !_toolOptionsPinned,
             source => IsOptionsInput(source) || IsToolbarInput(source), () => DismissToolOptions(WindowDismissReason.ToolbarPress), _toolOptionsWindow, toolbar);
         Action<OverlayPointerEvent> canvasPointer = e =>
@@ -86,6 +93,26 @@ internal sealed partial class DesktopSession
         ActionIconButton.UpdatePin(_toolOptionsPin,_toolOptionsPinned);
     }
 
+    private void SetToolOptionsPinned(bool value)
+    {
+        _toolOptionsPinned = value;
+        UpdateToolOptionsPin();
+    }
+
+    private ToolOptionsHeader? displayedToolHeader;
+    private void RefreshToolOptionsHeader()
+    {
+        var header = _toolOptionsPanel.Header;
+        if (header == displayedToolHeader) return;
+        displayedToolHeader = header;
+        _toolOptionsHeaderContent.Content = header.Actions;
+        _toolOptionsWindow.Title = header.Title;
+        System.Windows.Automation.AutomationProperties.SetName(_toolOptionsWindow, string.IsNullOrEmpty(header.Target) ? header.Title : header.Title + " · " + header.Target);
+        AppWindowChrome.SetHeaderDetail(_toolOptionsWindow, header.Target, besideTitle: true);
+        AppWindowChrome.TryCloseHelp(_toolOptionsWindow);
+        AppWindowChrome.SetHelp(_toolOptionsWindow, header.HelpTitle, header.HelpText);
+    }
+
     private void OpenCurrentToolOptions()
     {
         if (_editor.Tool is EditorTool.Select or EditorTool.Stamp) return;
@@ -96,9 +123,14 @@ internal sealed partial class DesktopSession
     private void OpenToolOptions()
     {
         if (_editor.Tool == EditorTool.Canvas) { OpenCanvasSettings(); return; }
+        ShowCurrentToolOptions();
+    }
+
+    private void ShowCurrentToolOptions()
+    {
         bool alreadyOpen = IsToolOptionsOpen;
         _toolOptionsPanel.PrepareForShow();
-        _toolOptionsWindow.Title = ToolName(_editor.Tool);
+        RefreshToolOptionsHeader();
         new WindowInteropHelper(_toolbar).EnsureHandle();
         _toolOptionsWindow.Owner ??= _toolbar;
         ConstrainToolOptions();
@@ -111,13 +143,15 @@ internal sealed partial class DesktopSession
         OpenToolOptions();
     }
 
-    private void CloseToolOptions() => DismissToolOptions(WindowDismissReason.Close);
+    private void CloseToolOptions()
+    {
+        DismissToolOptions(WindowDismissReason.Close);
+    }
 
     private void DismissToolOptions(WindowDismissReason reason)
     {
         if (!IsToolOptionsOpen) return;
-        _toolOptionsPinned = false;
-        UpdateToolOptionsPin();
+        SetToolOptionsPinned(false);
         using var intent = reason == WindowDismissReason.Close ? null : _windowCoordinator?.DirectTransfer(reason);
         _toolOptionsPanel.CloseColorPicker();
         SessionWindowCoordinator.Hide(_toolOptionsWindow, reason);
@@ -126,7 +160,7 @@ internal sealed partial class DesktopSession
     private void AnchorToolOptions()
     {
         if (!IsToolOptionsOpen) return;
-        _toolOptionsWindow.Title = ToolName(_editor.Tool);
+        RefreshToolOptionsHeader();
         ConstrainToolOptions();
         AppWindowChrome.EnsureVisibleBounds(_toolOptionsWindow);
     }
@@ -140,7 +174,7 @@ internal sealed partial class DesktopSession
             monitor = _host.Monitors.FirstOrDefault(m => m.Bounds.Contains(new(p.X,p.Y))) ?? monitor;
         }
         double scale = monitor.DpiY / 96d;
-        _toolOptionsPanel.MaxHeight = Math.Clamp(monitor.WorkArea.Height / scale - 64, 100, 740);
+        _toolOptionsPanel.InitialMaximumHeight = Math.Clamp(monitor.WorkArea.Height / scale - 64, 100, 740);
         double available = monitor.WorkArea.Width * 96d / monitor.DpiX - 24;
         _toolOptionsPanel.Width = double.NaN;
         _toolOptionsWindow.Width = Math.Clamp(_toolOptionsWindow.Width, _toolOptionsWindow.MinWidth, Math.Max(_toolOptionsWindow.MinWidth, available));
@@ -177,7 +211,9 @@ internal sealed partial class DesktopSession
         bool autoHeight=window.SizeToContent is SizeToContent.Height or SizeToContent.WidthAndHeight;
         double width=!autoWidth&&double.IsFinite(window.Width)?Math.Clamp(window.Width,window.MinWidth,window.MaxWidth):root?.DesiredSize.Width??window.ActualWidth;
         double height=!autoHeight&&double.IsFinite(window.Height)?Math.Clamp(window.Height,window.MinHeight,window.MaxHeight):root?.DesiredSize.Height??window.ActualHeight;
-        return new(width,height);
+        // Auto-sized content may be shorter than the native window's minimum.
+        // Anchor using the final window extent so its bottom still clears the bar.
+        return new(Math.Clamp(width, window.MinWidth, window.MaxWidth), Math.Clamp(height, window.MinHeight, window.MaxHeight));
     }
 
     private void PositionToolOptions(Window target, FrameworkElement? selectedButton = null)
@@ -229,11 +265,11 @@ internal sealed partial class DesktopSession
     }
     private void QueueToolOptionsFocusCheck()
     {
-        if (_disposed || !_host.IsEditing) return;
+        if (_disposed || !_host.IsEditing || _canvasPlacementSession is not null) return;
         long version = _host.EditingSessionVersion;
         _app.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
-            if (!_disposed && _host.EditingSessionVersion == version) CheckToolOptionsFocus();
+            if (!_disposed && _canvasPlacementSession is null && _host.EditingSessionVersion == version) CheckToolOptionsFocus();
         });
     }
     private bool HasActiveOptionsDialog() => _app.Windows.Cast<Window>().Any(window =>

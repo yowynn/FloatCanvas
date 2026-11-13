@@ -56,7 +56,7 @@ public static class SceneValidation
                 group.Visible && !group.Locked && group.OrderMode == GroupOrderMode.LegacyPassThrough && group.ChildOrder is null),
                 L.Format("Scene.UnsupportedVersion", document.Version));
         var evaluation = document.Instances.Count > 0 ? SceneEvaluation.Build(document) : null;
-        var rendered = evaluation is null ? document.Elements.Select(graph.ToWorld) : evaluation.RenderDocument.Elements;
+        var rendered = evaluation is null ? document.Elements.Select(graph.ResolveElement) : evaluation.RenderDocument.Elements;
         foreach (var placed in rendered)
         {
             Require(LayerPlacementFinite(placed.Transform) && Point(placed.BillboardAnchor) && double.IsFinite(placed.BillboardHeight) &&
@@ -155,6 +155,8 @@ public static class SceneValidation
     }
     private static void ValidatePreviewVersion(SceneNodeGraph graph, int version)
     {
+        Require(version >= 19 || graph.Groups.All(group => group.Billboard is null) && graph.Instances.All(instance => instance.Billboard is null),
+            "Container billboards require scene format 19.");
         Require(version >= 17 || graph.Groups.All(group => group.PreviewCanvas is null), "Subproject canvases require scene format 17.");
         if (graph is SceneDocument document)
             foreach (var definition in document.Definitions)

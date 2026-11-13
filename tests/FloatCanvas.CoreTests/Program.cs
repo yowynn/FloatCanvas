@@ -3,7 +3,13 @@ using System.Text.Json;
 
 int checks = 0;
 void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
+if (args.Contains("--shared-billboard-safety-only")) { SharedBillboardSafetyTests.Run(Check); Console.WriteLine($"PASS {checks} shared billboard safety checks"); return; }
+CanvasSystemsFixTests.Run(Check);
+if (args.Contains("--canvas-systems-fixes-only")) { Console.WriteLine($"PASS {checks} canvas systems fixes checks"); return; }
 SceneGraphReadTests.Run(Check);
+SharedBillboardSafetyTests.Run(Check);
+ContainerBillboardTests.Run(Check);
+if (args.Contains("--container-billboard-only")) { Console.WriteLine($"PASS {checks} container billboard checks"); return; }
 NonemptyGroupTests.Run(Check);
 if (args.Contains("--nonempty-groups-only")) { Console.WriteLine($"PASS {checks} nonempty group checks"); return; }
 if (args.Contains("--canvas-navigation-only")) { CanvasViewTransformTests.Run(Check); CanvasRebaseTests.Run(Check); CanvasViewApplicationTests.Run(Check); CanvasResolutionConversionTests.Run(Check); Console.WriteLine($"PASS {checks} canvas navigation checks"); return; }
@@ -138,7 +144,7 @@ var assetBytes = new byte[] { 1, 2, 3, 4, 5 };
 var assets = new AssetLibrary(); string assetId = assets.Add(assetBytes); assetBytes[0] = 9;
 Check(assets.Get(assetId).Data.Span[0] == 1, "asset input copied once to immutable resource");
 Check(assets.Add([1, 2, 3, 4, 5]) == assetId && assets.Count == 1, "identical assets deduplicated by hash");
-var image = new CanvasElement { Kind = ElementKind.Image, AssetId = assetId, Width = 200, Height = 200, Transform = Affine2D.Translation(-50, -50), Effects = [new() { Kind = ImageEffectKind.Redact, Bounds = new(.2, .3, .1, .2) }] };
+var image = new CanvasElement { Kind = ElementKind.Image, AssetId = assetId, Width = 200, Height = 200, Transform = Affine2D.Translation(-50, -50), Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(.2, .3, .1, .2) }] };
 var partialLine = new CanvasElement { Kind = ElementKind.Freehand, Points = [new(-100, 0), new(200, 100)] };
 var hidden = Box(); hidden.Visible = false;
 var source = new SceneDocument { Elements = [image, partialLine, Box(400, 400), hidden], Viewport = new(-1920, 0, 3840, 1080), NextNumber = 9 };

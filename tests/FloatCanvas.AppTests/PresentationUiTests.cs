@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -117,7 +117,7 @@ internal static class PresentationUiTests
         panel.SetPresentationRuntimeUi(_ => new(true, true, false, "Presentation.Status.Running"));
         check("keyboard tool has no recording checkbox and preserves authored data", !Descendants(settings).OfType<CheckBox>().Any() && controller.Presentation is { Modules: PresentationModules.Keys } && JsonSerializer.Serialize(session.Document) == document && session.UndoCount == 0);
         var hold = Find<TextBox>(settings, "Presentation.KeyHold"); hold.Text = "42";
-        check("out-of-range presentation text drafts cannot publish tool values", controller.Presentation!.KeyHoldMilliseconds == 900 && Field<TextBlock>(settings, "error").Visibility == Visibility.Visible);
+        check("out-of-range presentation text drafts cannot publish tool values", controller.Presentation!.KeyHoldMilliseconds == 900 && Field<TextBlock>(panel, "status").Visibility == Visibility.Visible && Field<TextBlock>(panel, "status").Text.StartsWith("⚠ ", StringComparison.Ordinal));
         panel.RefreshPresentationRuntimeUi();
         check("runtime-only tool refresh preserves a local numeric draft and leaves source history untouched", hold.Text == "42" && controller.Presentation.KeyHoldMilliseconds == 900 && session.UndoCount == 0 && JsonSerializer.Serialize(session.Document) == document);
         hold.Text = "1800"; panel.PrepareForShow(); check("valid presentation values publish without changing hidden module parameters", controller.Presentation.KeyHoldMilliseconds == 1800 && controller.Presentation.TrailMilliseconds == 800 && controller.Presentation.KeyDisplay == PresentationKeyDisplayMode.AllPhysicalKeys);

@@ -11,8 +11,9 @@ internal static class CanvasNumericPreviewTests
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
         var session = new EditorSession();
+        session.Document.Canvas.Grid.Visible = true;
         session.Document.Canvas.Grid.FlatCellSize = session.Document.Canvas.Projection.GridCellSize;
-        var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+        var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
         try
         {
             var edit = new CanvasColorEdit(() => session, () => true, () => { }, () => { });
@@ -26,7 +27,7 @@ internal static class CanvasNumericPreviewTests
             window.GridWidthChanged += value => Change(settings => settings.Grid.Width = value);
             window.GridSizeChanged += value => Change(settings => settings.Grid.FlatCellSize = value);
             window.GridCountsChanged += (columns, rows) => Change(settings => { settings.Projection.Columns = columns; settings.Projection.Rows = rows; });
-            window.PrepareForShow();
+            window.Refresh(session.Document.Canvas); window.PrepareForShow();
             var width = Field<NumericValueField>(window, "width");
             int previews = 0;
             window.GridWidthChanged += _ => previews++;
@@ -78,10 +79,11 @@ internal static class CanvasNumericPreviewTests
                 check(name + " typed out-of-rail value has an independent reversible history entry", session.Undo() && session.UndoCount == undo && System.Text.Json.JsonSerializer.Serialize(session.Document.Canvas) == before);
             }
             double guide = 1; window.GuideOpacityChanged += value => guide = value;
-            var opacity = Field<NumericValueField>(window, "guideOpacity");
-            opacity.BeginGesture(); opacity.Slider.Value = 45;
+            var opacity = Field<ToolbarOpacitySlider>(window, "guideOpacity");
+            opacity.Measure(new(62, 28)); opacity.Arrange(new(0, 0, 62, 28)); opacity.UpdateLayout();
+            opacity.StartPointerGesture(new(55, 14), () => true); opacity.Value = .45;
             check("reference opacity previews during drag without a document transaction", guide == .45 && !session.IsTransactionActive && session.UndoCount == 0);
-            opacity.CancelGesture();
+            opacity.CancelPointerGesture();
             check("cancelling reference opacity restores the live view without history", guide == 1 && session.UndoCount == 0);
             session.ExecuteSettings("previous width", document => document.Canvas.Grid.Width = 3);
             window.Refresh(session.Document.Canvas); window.PrepareForShow();
@@ -93,7 +95,7 @@ internal static class CanvasNumericPreviewTests
         finally { window.CloseForDispose(); }
     }
 
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
     private static void SendEnter(UIElement target) => target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Enter)
     { RoutedEvent = Keyboard.KeyDownEvent });
     private sealed class DetachedSource : PresentationSource

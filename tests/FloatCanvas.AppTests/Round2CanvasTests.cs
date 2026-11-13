@@ -33,23 +33,26 @@ internal static class Round2CanvasTests
         check("invalid fourth point retains three valid clicks",!controller.Down(new(350,150))&&controller.IsPlacing&&draft.UndoCount==0);
         controller.Escape();check("Escape discards the four-point preview without changing the canvas",!controller.IsActive&&draft.UndoCount==0&&!draft.Document.Canvas.Projection.Enabled);
         _=Application.Current??new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};AppTheme.Apply("light");
-        var window=new CanvasSettingsWindow();
+        var window=new CanvasOptionsTestWindow();
         try
         {
             window.Refresh(new CanvasSettings {Projection=new(){Enabled=true}});
             window.PrepareForShow();
             window.Measure(new(600,590));window.Arrange(new(0,0,600,590));window.UpdateLayout();
             var reset=Field<Button>(window,"reset");var four=Field<Button>(window,"fourPoints");var arrow=Field<Button>(window,"resetChoices");
-            check("four-point placement and reset occupy separate fixed-width rows",four.Parent is Grid first&&reset.Parent is Grid second&&!ReferenceEquals(first,second)&&first.Width==CanvasSettingsWindow.PerspectiveActionsWidth&&second.Width==first.Width);
-            check("four-point placement is the full-width primary action without a legacy finish button",((Grid)four.Parent).Children.Count==1&&Grid.GetColumn(four)==0&&double.IsNaN(four.Width)&&four.HorizontalAlignment==HorizontalAlignment.Stretch&&typeof(CanvasSettingsWindow).GetField("calibrate",BindingFlags.Instance|BindingFlags.NonPublic) is null);
+            check("frame creation and reset occupy separate rows",four.Parent is Grid first&&reset.Parent is Grid second&&!ReferenceEquals(first,second)&&double.IsNaN(second.Width));
+            check("four-point and four-line placement share a two-column row without a legacy finish button",((Grid)four.Parent).Children.Count==2&&Grid.GetColumn(four)==0&&double.IsNaN(four.Width)&&four.HorizontalAlignment==HorizontalAlignment.Stretch&&typeof(CanvasToolOptions).GetField("calibrate",BindingFlags.Instance|BindingFlags.NonPublic) is null);
             check("reset action and arrow are contiguous halves",reset.Margin==new Thickness(0)&&arrow.Margin==new Thickness(0)&&ReferenceEquals(reset.Parent,arrow.Parent));
             int requests=0;window.FourPointsRequested+=()=>requests++;four.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check("four-point button invokes its dedicated action",requests==1);
+            int lineRequests = 0; window.FourLinesRequested += () => lineRequests++;
+            ((Grid)four.Parent).Children.OfType<Button>().Single(b => !ReferenceEquals(b, four)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check("four-line button invokes its independent capture entry", lineRequests == 1 && requests == 1);
             var actionRow=(Grid)four.Parent;var resetRow=(Grid)reset.Parent;
             window.Measure(new(900,590));window.Arrange(new(0,0,900,590));window.UpdateLayout();
-            check("widening canvas settings keeps both action rows fixed",actionRow.Width==CanvasSettingsWindow.PerspectiveActionsWidth&&resetRow.Width==actionRow.Width);
+            check("frame methods and reset share the full responsive width",double.IsNaN(actionRow.Width)&&actionRow.ColumnDefinitions.Count==2&&double.IsNaN(resetRow.Width));
         }finally{window.CloseForDispose();}
     }
-    private static T Field<T>(object owner,string name)=>(T)owner.GetType().GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(owner)!;
+    private static T Field<T>(object owner,string name)=>(T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
     private static IEnumerable<PointD[]> Permutations(PointD[] points)=>points.Length==0?[Array.Empty<PointD>()]:points.SelectMany((p,i)=>Permutations(points.Where((_,j)=>j!=i).ToArray()).Select(tail=>new[]{p}.Concat(tail).ToArray()));
 }

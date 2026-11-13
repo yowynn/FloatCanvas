@@ -104,13 +104,16 @@ internal static class CanvasToolRenderingTests
         HostFlag(nameof(OverlayHost.IsVisible), true); HostFlag(nameof(OverlayHost.IsEditing), true);
         Set(desktop, "_host", host); Set(desktop, "_editor", editor);
         Set(desktop, "_toolbar", new System.Windows.Window());
-        Set(desktop, "_canvasCalibration", new CanvasCalibrationController());
-        Set(desktop, "_canvasGridCalibrationPoints", new List<PointD>());
+        var calibration = new CanvasCalibrationController();
+        Set(desktop, "_canvasCalibration", calibration);
+        Set(desktop, "_canvasReferenceLines", new List<CanvasReferenceLine>());
         Set(desktop, "_windowSourceLeaves", Array.Empty<ResolvedLeaf>());
         Set(desktop, "_hiddenCanvasElements", new HashSet<Guid>()); Set(desktop, "_canvasGuideOpacity", 1d);
         CanvasPreviewContext Context() => (CanvasPreviewContext)typeof(DesktopSession).GetMethod("CurrentPreviewContext", flags)!.Invoke(desktop, null)!;
         var normal = Context(); editor.Tool = EditorTool.Canvas; var navigation = Context();
-        check("selecting the canvas tool does not implicitly enter calibration", !navigation.Calibration && navigation.HasSameContent(normal));
+        check("selecting the flat canvas tool shows reference guides without starting a calibration gesture",
+            !normal.Calibration && navigation.Calibration && !calibration.IsActive && !calibration.IsPlacing);
+        check("flat canvas reference guides reuse the matching base content instead of blanking it", navigation.HasSameContent(normal));
         Set(desktop, "_canvasCalibrationRequested", true); var selected = Context();
         check("explicit calibration reuses the matching base content epoch instead of blanking it", selected.Calibration && selected.HasSameContent(normal));
         Set(desktop, "_canvasGuideOpacity", .25d); var dimmed = Context();

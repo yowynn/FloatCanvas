@@ -2,8 +2,8 @@ namespace FloatCanvas.App;
 
 internal enum CanvasViewingCommand { OriginalSize, CenterContent, FitContent, FullCanvas, Reset }
 
-internal sealed partial class CanvasSettingsWindow
+internal sealed partial class CanvasToolOptions
 {
     internal void SetAuthoringAllowed(bool allowed)
-    { authoringControls.IsEnabled = allowed; presets.IsEnabled = allowed; }
+    { if (!allowed) CancelEditing(); authoringControls.IsEnabled = allowed; presets.IsEnabled = allowed; }
 }

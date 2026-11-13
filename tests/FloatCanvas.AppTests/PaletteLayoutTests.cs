@@ -222,7 +222,12 @@ internal static class PaletteLayoutTests
     { for (var parent = VisualTreeHelper.GetParent(root); parent is not null; parent = VisualTreeHelper.GetParent(parent)) yield return parent; }
     private static int[] Rows(Panel panel) => panel.Children.OfType<FrameworkElement>().Where(tile => tile.Visibility == Visibility.Visible).GroupBy(tile => Math.Round(tile.TranslatePoint(new Point(), panel).Y, 5)).Select(row => row.Count()).ToArray();
     private static Rect Bounds(FrameworkElement element, Visual root) => new(element.TranslatePoint(new Point(), (UIElement)root), element.RenderSize);
-    private static T Field<T>(object source, string name) => (T)source.GetType().GetField(name, Private)!.GetValue(source)!;
+    private static T Field<T>(object source, string name)
+    {
+        for (Type? type = source.GetType(); type is not null; type = type.BaseType)
+            if (type.GetField(name, Private | BindingFlags.DeclaredOnly) is { } field) return (T)field.GetValue(source)!;
+        throw new MissingFieldException(source.GetType().Name, name);
+    }
     private static bool Near(double first, double second) => Math.Abs(first - second) < .01;
     private static IEnumerable<DependencyObject> Visuals(DependencyObject root)
     { yield return root; for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) foreach (var child in Visuals(VisualTreeHelper.GetChild(root, i))) yield return child; }

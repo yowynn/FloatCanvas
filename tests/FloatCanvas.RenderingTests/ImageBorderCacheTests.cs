@@ -45,7 +45,7 @@ internal static class ImageBorderCacheTests
         Change("displayed crop", () => image.ImageCrop = new(.1, .05, .8, .85), true);
         Change("body dimensions", () => { image.Width = 72; image.Height = 44; }, true);
         Change("source image", () => image.AssetId = assets.Add(Png(64, 48, (x, y) => x is >= 28 and < 56 && y is >= 7 and < 38 ? SKColors.Cyan : SKColors.Transparent)), true);
-        Change("image effect", () => image.Effects = [new() { Kind = ImageEffectKind.Redact, Bounds = new(.1, .1, .2, .4), Color = 0xFF102030 }], true);
+        Change("image effect", () => image.Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(.1, .1, .2, .4), Color = 0xFF102030 }], true);
         Change("effect parameters", () => image.Effects[0].Bounds = new(.4, .1, .2, .5), true);
         check("all border cache memory remains included in the image budget", renderer.CachedImageBytes >= Count(renderer, "CachedImageBorderBytes") && renderer.CachedImageBytes <= renderer.CacheByteLimit);
 

@@ -75,17 +75,18 @@ internal static class PopupInteractionAcceptanceTests
             Invoke("ToggleInspector");
             Invoke("ActivateTool",EditorTool.Canvas); Pump();
             Invoke("OpenCanvasSettings");
-            var canvasBeforePump=(CanvasSettingsWindow)typeof(DesktopSession).GetField("_canvasSettingsWindow",Private)!.GetValue(session)!;
-            Console.WriteLine($"CANVAS_OPEN_SYNC visible={canvasBeforePump.IsVisible} active={canvasBeforePump.IsActive} focus={Keyboard.FocusedElement?.GetType().Name}");
+            var canvasBeforePump=(CanvasToolOptions)typeof(DesktopSession).GetField("_canvasToolOptions",Private)!.GetValue(session)!;
+            Console.WriteLine($"CANVAS_OPEN_SYNC visible={canvasBeforePump.IsVisible} active={((Window)typeof(DesktopSession).GetField("_toolOptionsWindow",Private)!.GetValue(session)!).IsActive} focus={Keyboard.FocusedElement?.GetType().Name}");
             Pump();
-            var canvas=(CanvasSettingsWindow)typeof(DesktopSession).GetField("_canvasSettingsWindow",Private)!.GetValue(session)!;
-            Console.WriteLine($"CANVAS_OPEN_PUMP visible={canvas.IsVisible} active={canvas.IsActive} focus={Keyboard.FocusedElement?.GetType().Name}");
-            Preview4SettingsRuntimeFixture.Render(canvas,Path.Combine(output,"canvas-settings-actual.png"));
+            var canvasWindow=(Window)typeof(DesktopSession).GetField("_toolOptionsWindow",Private)!.GetValue(session)!;
+            var canvas=(CanvasToolOptions)typeof(DesktopSession).GetField("_canvasToolOptions",Private)!.GetValue(session)!;
+            Console.WriteLine($"CANVAS_OPEN_PUMP visible={canvas.IsVisible} active={canvasWindow.IsActive} focus={Keyboard.FocusedElement?.GetType().Name}");
+            Preview4SettingsRuntimeFixture.Render(canvasWindow,Path.Combine(output,"canvas-settings-actual.png"));
             Invoke("SetCanvasProjection",true); Pump();
-            Preview4SettingsRuntimeFixture.Render(canvas,Path.Combine(output,"canvas-perspective-settings-actual.png"));
+            Preview4SettingsRuntimeFixture.Render(canvasWindow,Path.Combine(output,"canvas-perspective-settings-actual.png"));
             foreach(string name in new[]{"background","gridColor"})
             {
-                var field=(ColorField)typeof(CanvasSettingsWindow).GetField(name,Private)!.GetValue(canvas)!;
+                var field=(ColorField)typeof(CanvasToolOptions).GetField(name,Private)!.GetValue(canvas)!;
                 field.OpenPicker(); Pump();
                 var picker=(ColorPickerPanel)typeof(ColorField).GetField("picker",Private)!.GetValue(field)!;
                 var sample=Descendants(picker).OfType<Button>().Single(button=>System.Windows.Automation.AutomationProperties.GetName(button)==FloatCanvas.Localization.AppText.Get("Color.Eyedropper"));
@@ -127,8 +128,8 @@ internal static class PopupInteractionAcceptanceTests
 
     private static ToolTipEventArgs OpenHint(FrameworkElement target)
     {
-        var args=(ToolTipEventArgs)Activator.CreateInstance(typeof(ToolTipEventArgs),BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public,null,[true],null)!;
-        target.RaiseEvent(args);return args;
+        TooltipLifecycleTests.SetHover(target, true);
+        return TooltipLifecycleTests.HintEvent(target);
     }
 
     private static void DetachedHintLifecycle(Action<string,bool> check)
@@ -140,7 +141,8 @@ internal static class PopupInteractionAcceptanceTests
         {
             OpenHint(active);var activeTip=(ToolTip)active.ToolTip;
             root.Children.Remove(stale);Pump();
-            var staleOpening=OpenHint(stale);
+            // Replay the pending request without moving the pointer off the valid active hint.
+            var staleOpening=TooltipLifecycleTests.HintEvent(stale);
             check("a delayed hint for a detached trigger is cancelled without a screen-coordinate exception",staleOpening.Handled&&!OverlayTransientControls.IsHintOpen((ToolTip)stale.ToolTip));
             check("a stale hint request does not close another valid hint",OverlayTransientControls.IsHintOpen(activeTip));
             scope.ClosePopups();
@@ -218,8 +220,7 @@ internal static class PopupInteractionAcceptanceTests
         var tooltip = StampPreviewTooltip.Create(library, entry, "1"); trigger.ToolTip = tooltip;
         try
         {
-            var args = (ToolTipEventArgs)Activator.CreateInstance(typeof(ToolTipEventArgs), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, [true], null)!;
-            trigger.RaiseEvent(args);
+            OpenHint(trigger);
             var image = (Image)typeof(StampPreviewTooltip).GetField("preview", Private)!.GetValue(tooltip)!;
             PumpUntil(() => image.Source is not null, TimeSpan.FromSeconds(8));
             var message = (TextBlock)typeof(StampPreviewTooltip).GetField("message", Private)!.GetValue(tooltip)!;
@@ -243,8 +244,7 @@ internal static class PopupInteractionAcceptanceTests
         trigger.ToolTip = tooltip;
         try
         {
-            var args = (ToolTipEventArgs)Activator.CreateInstance(typeof(ToolTipEventArgs), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, [true], null)!;
-            trigger.RaiseEvent(args);
+            OpenHint(trigger);
             check("enhanced hover preserves the actual tooltip Opened lifecycle", opened == 1);
             scope.ClosePopups();
             check("closing the enhanced hint preserves the actual tooltip Closed lifecycle", closed == 1);
@@ -283,9 +283,12 @@ internal static class PopupInteractionAcceptanceTests
             check("a passive hover hint does not consume the canvas's first Escape", !escape.Handled && outerEscapes == 1);
             check("the same Escape dismisses its passive hint", !OverlayTransientControls.IsHintOpen(tooltip));
 
-            var popup = new OverlayPopup { PlacementTarget = trigger, Child = new Button { Content = "Interactive popup" } };
+            var child = new Button { Content = "Interactive popup", ToolTip = new ToolTip { Content = "Popup child hint" } };
+            var popup = new OverlayPopup { PlacementTarget = trigger, Child = child };
             popup.IsOpen = true; OpenHint(trigger);
-            check("a passive hint can coexist above a real interactive popup", popup.IsOpen && OverlayTransientControls.IsHintOpen(tooltip));
+            check("an interactive popup suppresses its trigger's hint", popup.IsOpen && !OverlayTransientControls.IsHintOpen(tooltip));
+            OpenHint(child);
+            check("a child hint can coexist above a real interactive popup", popup.IsOpen && OverlayTransientControls.IsHintOpen((ToolTip)child.ToolTip));
             observed = false; outerEscapes = 0;
             escape = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Escape)
             { RoutedEvent = Keyboard.PreviewKeyDownEvent, Source = trigger };
@@ -318,8 +321,7 @@ internal static class PopupInteractionAcceptanceTests
             check("offscreen hover fixture starts with its sibling textbox focused",ReferenceEquals(Keyboard.FocusedElement,editor));
             foreach(bool leave in new[]{true,false})
             {
-                var opening=(ToolTipEventArgs)Activator.CreateInstance(typeof(ToolTipEventArgs),BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public,null,[true],null)!;
-                trigger.RaiseEvent(opening);
+                OpenHint(trigger);
                 check("opening a hosted tooltip preserves existing sibling text input",ReferenceEquals(Keyboard.FocusedElement,editor));
                 if(leave)trigger.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice,Environment.TickCount) {RoutedEvent=Mouse.MouseLeaveEvent});
                 else scope.ClosePopups();

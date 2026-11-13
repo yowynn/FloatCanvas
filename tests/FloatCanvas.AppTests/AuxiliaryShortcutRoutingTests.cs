@@ -17,7 +17,7 @@ internal static class AuxiliaryShortcutRoutingTests
     {
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
-        var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+        var canvas = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
         canvas.PrepareForShow();
         var state = new EditorSession();
         var library = new StampLibrary(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "FloatCanvas-AuxiliaryShortcut-" + Guid.NewGuid().ToString("N")));
@@ -50,7 +50,7 @@ internal static class AuxiliaryShortcutRoutingTests
             ExpectRoute("CanvasSettings", canvasSource, Key.G, canvasCommands);
 
             var counts = Field<NumericValueField>(canvas, "columns");
-            foreach (var control in new FrameworkElement[] { counts.Input, counts.Slider, Field<SegmentedChoice>(canvas, "pattern") })
+            foreach (var control in new FrameworkElement[] { counts.Input })
             {
                 SetModifiers(ModifierKeys.None);
                 foreach (var key in new[] { Key.B, Key.D4, Key.Enter, Key.Delete, Key.Right })
@@ -59,6 +59,15 @@ internal static class AuxiliaryShortcutRoutingTests
                 foreach (var key in new[] { Key.Z, Key.A, Key.V, Key.G, Key.Back, Key.Delete })
                     ExpectLocal("CanvasSettings", control, key, canvasCommands);
                 foreach (var key in new[] { Key.S, Key.O }) ExpectRoute("CanvasSettings", control, key, canvasCommands);
+            }
+            foreach (var control in new FrameworkElement[] { counts.Slider, Field<SegmentedChoice>(canvas, "pattern") })
+            {
+                SetModifiers(ModifierKeys.None);
+                foreach (var key in new[] { Key.B, Key.Tab, Key.D4, Key.Enter, Key.Delete }) ExpectRoute("CanvasSettings", control, key, canvasCommands);
+                if (control is Slider) ExpectLocal("CanvasSettings", control, Key.Right, canvasCommands);
+                else ExpectRoute("CanvasSettings", control, Key.Right, canvasCommands);
+                SetModifiers(ModifierKeys.Control);
+                foreach (var key in new[] { Key.Z, Key.A, Key.V, Key.G, Key.Back, Key.Delete, Key.S, Key.O }) ExpectRoute("CanvasSettings", control, key, canvasCommands);
             }
             var presets = Field<CanvasPresetGallery>(canvas, "presets");
             var presetTile = presets.OfficialTiles.Children.OfType<Button>().First();
@@ -158,8 +167,8 @@ internal static class AuxiliaryShortcutRoutingTests
         if (command?.EventHandlerType != typeof(Action<int>)) return false;
         command.AddEventHandler(window, observer); return true;
     }
-    private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Private)!.GetValue(target)!;
-    private static void Set(object target, string name, object? value) => target.GetType().GetField(name, Private)!.SetValue(target, value);
+    private static T Field<T>(object target, string name) => (T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
+    private static void Set(object target, string name, object? value) => CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name, Private)!.SetValue(target, value);
     private static void SetModifiers(ModifierKeys modifiers)
     {
         var keys = new byte[256];

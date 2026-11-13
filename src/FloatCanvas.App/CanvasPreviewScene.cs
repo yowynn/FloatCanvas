@@ -10,18 +10,19 @@ internal sealed partial class FrozenSceneEvaluation
 {
     private readonly SceneDocument source;
     private readonly Lazy<(EvaluatedScene Scene, Dictionary<Guid, int> Indices)> value;
-    internal FrozenSceneEvaluation(SceneDocument source, Action? built = null)
+    internal FrozenSceneEvaluation(SceneDocument source, Action? built = null, SceneEvaluationCache? definitions = null, Func<EvaluatedScene>? build = null)
     {
         this.source = source;
         value = new(() =>
         {
-            var scene = SceneEvaluation.Build(source);
+            var scene = build?.Invoke() ?? SceneEvaluation.Build(source, definitions);
             var indices = scene.Leaves.Select((leaf, index) => (leaf.RuntimeElementId, index)).ToDictionary(pair => pair.RuntimeElementId, pair => pair.index);
             built?.Invoke(); return (scene, indices);
         }, LazyThreadSafetyMode.ExecutionAndPublication);
     }
     internal SceneDocument SourceDocument => source;
     internal EvaluatedScene Scene => value.Value.Scene;
+    internal bool IsBuilt => value.IsValueCreated;
     internal (int First, int Last) RenderRange(int first, int last)
     {
         if (first < 0 || last < first || last >= source.Elements.Count) return (-1, -1);
@@ -40,9 +41,13 @@ internal sealed class CanvasPreviewScene
 {
     private SceneDocument? source, frozen;
     private long capturedRevision = -1, elementsRevision = -1, transaction = -1;
+    private long? capturedDefinitionsRevision;
+    private readonly SceneEvaluationCache definitionCache = new();
+    internal long DefinitionBuildCount => definitionCache.DefinitionBuildCount;
     private SceneDocument? evaluatedSnapshot;
     private CanvasSettings? evaluatedCanvasOverride;
     private FrozenSceneEvaluation? evaluated;
+    private HashSet<Guid>? pendingContainers;
     private long evaluationBuildCount;
     private int evaluationBuildThreadId;
     internal long CapturedRevision => capturedRevision;
@@ -59,7 +64,10 @@ internal sealed class CanvasPreviewScene
         if (ReferenceEquals(evaluatedSnapshot, snapshot) && ReferenceEquals(evaluatedCanvasOverride, canvasOverride) && evaluated is not null) return evaluated;
         var input = canvasOverride is null ? snapshot : Header(snapshot, snapshot.Elements, snapshot.Background, snapshot.Groups, snapshot.DisplayLayout);
         if (canvasOverride is not null) input.Canvas = canvasOverride.Clone();
-        evaluated = new(input, () => { Volatile.Write(ref evaluationBuildThreadId, Environment.CurrentManagedThreadId); Interlocked.Increment(ref evaluationBuildCount); });
+        var prior = pendingContainers is not null && evaluated is { IsBuilt: true } ? evaluated.Scene : null;
+        var delta = pendingContainers?.ToArray(); pendingContainers = null;
+        evaluated = new(input, () => { Volatile.Write(ref evaluationBuildThreadId, Environment.CurrentManagedThreadId); Interlocked.Increment(ref evaluationBuildCount); }, definitionCache,
+            prior is null ? null : () => SceneEvaluation.UpdatePlacements(input, prior, delta!, definitionCache));
         evaluatedSnapshot = snapshot; evaluatedCanvasOverride = canvasOverride;
         return evaluated;
     }
@@ -68,7 +76,7 @@ internal sealed class CanvasPreviewScene
     /// revision/context predicate; an invalidated attempt never replaces the published scene.</summary>
     internal async ValueTask<bool> PrepareAsync(SceneDocument document, long revision, long elementRevision,
         long transactionId, int first, int last, bool bypass, IReadOnlySet<Guid>? changedIds,
-        long transactionBaseRevision, Func<bool> isCurrent)
+        long transactionBaseRevision, Func<bool> isCurrent, long? definitionsRevision = null, IReadOnlySet<Guid>? changedContainers = null)
     {
         RequireSource(document);
         if (!isCurrent()) return false;
@@ -77,9 +85,10 @@ internal sealed class CanvasPreviewScene
         bool range = TrustedRange(document, transactionId, first, last, bypass, transactionBaseRevision);
         bool settingsOnly = same && !elementsChanged && frozen!.Elements.Count == document.Elements.Count;
         bool elementOnly = same && (changedIds is not null || range);
-        if (same && (revision == capturedRevision || settingsOnly && document.Definitions.Count == 0))
+        if (same && (revision == capturedRevision || settingsOnly && document.Definitions.Count == 0 ||
+            changedContainers is { Count: > 0 } && changedIds is { Count: 0 } && definitionsRevision is not null && definitionsRevision == capturedDefinitionsRevision))
         {
-            Capture(document, revision, elementRevision, transactionId, first, last, bypass, changedIds, transactionBaseRevision);
+            Capture(document, revision, elementRevision, transactionId, first, last, bypass, changedIds, transactionBaseRevision, definitionsRevision, changedContainers);
             return isCurrent();
         }
 
@@ -127,7 +136,9 @@ internal sealed class CanvasPreviewScene
             await Dispatcher.Yield(DispatcherPriority.Background);
             if (!isCurrent()) return false; slice.Restart();
         }
-        foreach (var definition in document.Definitions)
+        bool reuseDefinitions = same && definitionsRevision is not null && definitionsRevision == capturedDefinitionsRevision;
+        if (reuseDefinitions) definitions = previous!.Definitions;
+        foreach (var definition in reuseDefinitions ? Enumerable.Empty<PrefabDefinition>() : document.Definitions)
         {
             // Mutable DTOs cannot be shared solely because their revision is equal.
             // Freeze a definition once, independently of its number of occurrences.
@@ -165,18 +176,28 @@ internal sealed class CanvasPreviewScene
         var next = Header(document, nodes, elementOnly && BackgroundUnchanged(document, previous!, changedIds) ? previous!.Background : document.Background?.Clone(),
             groups, elementOnly ? previous!.DisplayLayout : layouts, instances, definitions);
         if (!isCurrent()) return false;
-        Publish(document, next, revision, elementRevision, transactionId);
+        Publish(document, next, revision, elementRevision, transactionId); capturedDefinitionsRevision = definitionsRevision;
         if (!elementOnly) FullBuildCount++;
         return true;
 
     }
 
     internal SceneDocument Capture(SceneDocument document, long revision, long elementRevision,
-        long transactionId, int first, int last, bool bypass, IReadOnlySet<Guid>? changedIds = null, long transactionBaseRevision = -1)
+        long transactionId, int first, int last, bool bypass, IReadOnlySet<Guid>? changedIds = null, long transactionBaseRevision = -1, long? definitionsRevision = null,
+        IReadOnlySet<Guid>? changedContainers = null)
     {
         RequireSource(document);
         bool same = ReferenceEquals(source, document) && frozen is not null;
         if (same && revision == capturedRevision) return frozen!;
+        if (same && changedContainers is { Count: > 0 } && changedIds is { Count: 0 } && definitionsRevision is not null && definitionsRevision == capturedDefinitionsRevision)
+        {
+            var previous = frozen!;
+            var nextPlacement = Header(document, previous.Elements, previous.Background,
+                document.Groups.Select((group, i) => changedContainers.Contains(group.Id) ? group.Clone() : previous.Groups[i]).ToList(), previous.DisplayLayout,
+                document.Instances.Select((instance, i) => changedContainers.Contains(instance.Id) ? instance.Clone() : previous.Instances[i]).ToList(), previous.Definitions);
+            Publish(document, nextPlacement, revision, elementRevision, transactionId, changedContainers);
+            return nextPlacement;
+        }
         bool elementsChanged = !same || elementRevision != elementsRevision;
         bool range = TrustedRange(document, transactionId, first, last, bypass, transactionBaseRevision);
         bool settingsOnly = same && !elementsChanged && frozen!.Elements.Count == document.Elements.Count;
@@ -204,11 +225,13 @@ internal sealed class CanvasPreviewScene
         // Only already frozen authored leaves may be shared. Mutable definition DTOs
         // are cloned once per revision, never once per placed instance.
         bool shareMetadata = settingsOnly || elementOnly;
+        bool reuseDefinitions = same && definitionsRevision is not null && definitionsRevision == capturedDefinitionsRevision;
         var next = Header(document, nodes, shareMetadata && BackgroundUnchanged(document, frozen!, changedIds) ? frozen!.Background : document.Background?.Clone(),
             document.Groups.Select(group => group.Clone()).ToList(),
-            shareMetadata ? frozen!.DisplayLayout : document.DisplayLayout.Select(layout => layout.Clone()).ToList());
-        ClonedElementCount += document.Definitions.Sum(definition => definition.Graph.Elements.Count);
-        Publish(document, next, revision, elementRevision, transactionId);
+            shareMetadata ? frozen!.DisplayLayout : document.DisplayLayout.Select(layout => layout.Clone()).ToList(),
+            definitions: reuseDefinitions ? frozen!.Definitions : null);
+        if (!reuseDefinitions) ClonedElementCount += document.Definitions.Sum(definition => definition.Graph.Elements.Count);
+        Publish(document, next, revision, elementRevision, transactionId); capturedDefinitionsRevision = definitionsRevision;
         return next;
     }
 
@@ -239,12 +262,15 @@ internal sealed class CanvasPreviewScene
             DisplayLayout = layouts
         };
 
-    private void Publish(SceneDocument document, SceneDocument next, long revision, long elementRevision, long transactionId)
+    private void Publish(SceneDocument document, SceneDocument next, long revision, long elementRevision, long transactionId, IReadOnlySet<Guid>? containers = null)
     {
-        GraphChanged = frozen is null || JsonSerializer.Serialize(frozen.Groups) != JsonSerializer.Serialize(next.Groups) ||
+        if (containers is not null && (ReferenceEquals(evaluatedSnapshot, frozen) || pendingContainers is not null))
+        { pendingContainers ??= []; pendingContainers.UnionWith(containers); }
+        else pendingContainers = null;
+        GraphChanged = containers is not null || frozen is null || JsonSerializer.Serialize(frozen.Groups) != JsonSerializer.Serialize(next.Groups) ||
             JsonSerializer.Serialize(frozen.RootCanvasAssignments) != JsonSerializer.Serialize(next.RootCanvasAssignments) ||
             JsonSerializer.Serialize(frozen.Instances) != JsonSerializer.Serialize(next.Instances) ||
-            JsonSerializer.Serialize(frozen.Definitions) != JsonSerializer.Serialize(next.Definitions) ||
+            !ReferenceEquals(frozen.Definitions, next.Definitions) ||
             !(frozen.RootOrder is null && next.RootOrder is null || frozen.RootOrder is not null && next.RootOrder is not null && frozen.RootOrder.SequenceEqual(next.RootOrder));
         frozen = next;
         source = document; capturedRevision = revision; elementsRevision = elementRevision; transaction = transactionId;

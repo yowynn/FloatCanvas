@@ -515,12 +515,6 @@ public sealed partial class SceneRenderer : IDisposable
             {
                 canvas.ClipRect(region, antialias: false);
                 using var paint = new SKPaint { Color = SKColors.White, BlendMode = SKBlendMode.Src };
-                if (effect.Kind == ImageEffectKind.Redact)
-                {
-                    paint.Color = new SKColor(effect.Color).WithAlpha(255);
-                    canvas.DrawRect(region, paint);
-                    continue;
-                }
                 using var before = surface.Snapshot();
                 if (effect.Kind == ImageEffectKind.Blur)
                 {
@@ -703,8 +697,8 @@ public sealed partial class SceneRenderer : IDisposable
         public RasterFrameKey SourceFrame { get; } = sourceFrame;
         public EffectSnapshot[] Effects { get; } = effects;
     }
-    private readonly record struct EffectSnapshot(ImageEffectKind Kind, RectD Bounds, double Amount, uint Color)
+    private readonly record struct EffectSnapshot(ImageEffectKind Kind, RectD Bounds, double Amount)
     {
-        public static EffectSnapshot From(ImageEffect effect) => new(effect.Kind, effect.Bounds, effect.Amount, effect.Color);
+        public static EffectSnapshot From(ImageEffect effect) => new(effect.Kind, effect.Bounds, effect.Amount);
     }
 }

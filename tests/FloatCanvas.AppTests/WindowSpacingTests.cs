@@ -29,11 +29,11 @@ internal static class WindowSpacingTests
                 foreach (double height in new[] { 620d, 220 })
                 {
                     Measure(tools, ToolOptionsPanel.PreferredWidth, height);
-                    var scroll = (ScrollViewer)tools.Content;
+                    var scroll = Field<ScrollViewer>(tools, "parameterScroll");
                     var gallery = Field<ToolPresetGallery>(tools, "presets");
                     double right = gallery.TranslatePoint(new(gallery.ActualWidth, 0), tools).X;
-                    double occupied = scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible ? WindowLayout.ScrollBarWidth : 0;
-                    Edges(prefix + " tool viewport " + height, tools, scroll, check);
+                    double occupied = 0;
+                    Edges(prefix + " tool viewport " + height, tools, (FrameworkElement)tools.Content, check);
                     check(prefix + " tool sidebar has no phantom right gutter " + height,
                         Math.Abs(tools.ActualWidth - right - WindowLayout.ContentInset - occupied) < .1);
                     check(prefix + " tool scrollbar responds to available height " + height,
@@ -51,13 +51,13 @@ internal static class WindowSpacingTests
                 var properties = Field<StackPanel>(inspector, "propertyPanel");
                 check(prefix + " inspector content fills its inset viewport", Math.Abs(properties.ActualWidth - (inspectorScroll.ViewportWidth - 2 * PropertyChangeRegion.HighlightInset)) < .1);
 
-                var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()); canvas.Refresh(new());
+                var canvas = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()); canvas.Refresh(new());
                 canvas.PrepareForShow();
                 var canvasRoot = (FrameworkElement)canvas.Content;
                 canvas.Content = null;
                 var canvasHost = new Border { Child = canvasRoot };
                 Measure(canvasHost, canvas.Width - 2, 540);
-                Edges(prefix + " canvas body", canvasHost, canvasRoot, check);
+                Edges(prefix + " canvas body", canvasHost, (FrameworkElement)((ToolOptionsPanel)canvasRoot).Content, check);
                 var canvasGallery = Field<CanvasPresetGallery>(canvas, "presets");
                 check(prefix + " canvas sidebar reaches its content edge", Math.Abs(canvasHost.ActualWidth - canvasGallery.TranslatePoint(new(canvasGallery.ActualWidth, 0), canvasHost).X - WindowLayout.ContentInset) < .1);
                 canvasHost.Child = null; canvas.Content = canvasRoot; canvas.CloseForDispose();
@@ -93,7 +93,7 @@ internal static class WindowSpacingTests
     }
     private static void Measure(FrameworkElement element, double width, double height)
     { element.Measure(new(width, height)); element.Arrange(new(0, 0, width, height)); element.UpdateLayout(); }
-    private static T Field<T>(object value, string name) => (T)value.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(value)!;
+    private static T Field<T>(object value, string name) => (T)CanvasOptionsTestWindow.Unwrap(value).GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(CanvasOptionsTestWindow.Unwrap(value))!;
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)

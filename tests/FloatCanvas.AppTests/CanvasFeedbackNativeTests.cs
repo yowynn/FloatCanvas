@@ -214,7 +214,7 @@ internal static class CanvasFeedbackNativeTests
             }
         }
         Call("ActivateTool", EditorTool.Canvas); Call("OpenCanvasSettings"); Pump();
-        var settings = Field<CanvasSettingsWindow?>("_canvasSettingsWindow");
+        var settings = Field<CanvasToolOptions?>("_canvasToolOptions");
         if (settings is not null)
         {
             Call("ToggleCanvasVisibility"); Pump();

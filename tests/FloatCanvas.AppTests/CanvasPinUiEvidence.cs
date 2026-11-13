@@ -24,7 +24,7 @@ internal static class CanvasPinUiEvidence
             foreach (string theme in new[] { "light", "dark" })
             {
                 L.Initialize(language); AppTheme.Apply(theme);
-                var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+                var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
                 window.SetReferenceMonitors([new MonitorInfo("primary", new(0, 0, 1920, 1080), new(0, 0, 1920, 1040), 96, 96, true),
                     new MonitorInfo("secondary", new(1920, 0, 1280, 720), new(1920, 0, 1280, 680), 96, 96, false)], null);
                 var content = (FrameworkElement)window.Content; window.Content = null;
@@ -78,7 +78,7 @@ internal static class CanvasPinUiEvidence
         finally { L.Initialize(preference); AppTheme.Apply("light"); }
         Console.WriteLine("GRID_LOCK_UI_NATIVE_RENDER " + output);
     }
-    private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
+    private static T Field<T>(object target, string name) => (T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
     private static void Layout(FrameworkElement root) { root.Measure(new Size(root.Width, root.Height)); root.Arrange(new Rect(0, 0, root.Width, root.Height)); root.UpdateLayout(); }
     private static void Render(FrameworkElement root, string path)
     {

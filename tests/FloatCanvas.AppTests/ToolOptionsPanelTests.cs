@@ -202,7 +202,7 @@ internal static class ToolOptionsPanelTests
         check("zero snapshot border width switches off without changing the retained border color", controller.CaptureBorderWidth == 0 && controller.CaptureBorderColor == 0xFFBB2233);
         gallery.Apply(gallery.SelectedId);
         check("snapshot user preset restores shape source and border", JsonSerializer.Serialize(controller.Parameters) == JsonSerializer.Serialize(parameters));
-        panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
+        panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(new Wpf.Size(ToolOptionsPanel.PreferredWidth, panel.DesiredSize.Height))); panel.UpdateLayout();
         check("snapshot parameters fit the normal bounded panel without folding", panel.ActualHeight <= 620 && rows.Values.Where(row => row.Visibility == Wpf.Visibility.Visible).All(row => row.ActualWidth > 0));
         check("changing snapshot controls creates no document edits or undo entries", controller.Session.Document.Elements.Count == 0 && controller.Session.UndoCount == 0);
     }
@@ -216,12 +216,12 @@ internal static class ToolOptionsPanelTests
         foreach (var tool in new[] { EditorTool.Line, EditorTool.Rectangle, EditorTool.Text, EditorTool.Number, EditorTool.Symbol, EditorTool.Emoji, EditorTool.Blur })
         {
             controller.Tool = tool; panel.PrepareForShow();
-            panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
+            panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(new Wpf.Size(ToolOptionsPanel.PreferredWidth, panel.DesiredSize.Height))); panel.UpdateLayout();
             check(tool + " options use a wide bounded panel without unnecessary folding", panel.ActualWidth == ToolOptionsPanel.PreferredWidth && panel.ActualHeight <= 620 &&
                 rows.Values.Where(row => row.Visibility == Wpf.Visibility.Visible).All(row => row.ActualWidth > 0));
         }
         controller.Tool = EditorTool.Line; panel.PrepareForShow();
-        panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(panel.DesiredSize)); panel.UpdateLayout();
+        panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(new Wpf.Size(ToolOptionsPanel.PreferredWidth, panel.DesiredSize.Height))); panel.UpdateLayout();
         foreach (var pair in new[] { ("StartArrowHead", "EndArrowHead"), ("StrokePattern", "ArrowHeadSize") })
             check(pair.Item1 + " and " + pair.Item2 + " retain full-width readable controls", Controls.Grid.GetRow(rows[pair.Item1]) != Controls.Grid.GetRow(rows[pair.Item2]) &&
                 Controls.Grid.GetColumnSpan(rows[pair.Item1]) == 3 && Controls.Grid.GetColumnSpan(rows[pair.Item2]) == 3);

@@ -37,7 +37,7 @@ internal sealed partial class EditorController
         {
             var source = presentedScene ?? (viewDocument is { } display && viewPlacement is { } placement
                 ? CanvasPreviewRenderer.EditingDocument(CurrentPickingEvaluation, display, placement,
-                    viewRootCanvas, Session.ActiveRootCanvas, Session.EditScopeId, independentCanvasView)
+                    viewRootCanvas, Session.ActiveRootCanvas, Session.EditScopeId, independentCanvasView, viewContainer)
                 : CurrentPickingEvaluation.RenderDocument);
             if (canvasView == CanvasViewTransform.Identity) return source;
             if (ReferenceEquals(pickingViewportSource, source) && pickingViewportView == canvasView && pickingViewportDocument is not null)
@@ -52,6 +52,8 @@ internal sealed partial class EditorController
     {
         var selected = Session.SelectedWorldElements(editableOnly);
         if (!independentCanvasView) return selected;
+        var graph = SceneGraph.Read(Session.Document);
+        selected = selected.Select(element => graph.FindElement(element.Id) is { } source ? graph.ToWorld(source) : element);
         var visible = PickingDocument.Elements.Where(element => element.Visible).Select(element => element.Id).ToHashSet();
         return selected.Select(element => { element.Visible = visible.Contains(element.Id); return element; });
     }

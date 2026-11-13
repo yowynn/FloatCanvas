@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="FloatCanvas.Storage" />
     <ProjectReference Include="../FloatCanvas.Localization/FloatCanvas.Localization.csproj" />
   </ItemGroup>
 </Project>

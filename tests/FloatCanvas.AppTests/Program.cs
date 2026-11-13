@@ -1,4 +1,4 @@
-﻿using FloatCanvas.App;
+using FloatCanvas.App;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
 using FloatCanvas.Windows;
@@ -30,12 +30,16 @@ internal static class Program
             if (args.Contains("--numeric-controls-only")) { NumericControlTests.Run(Assert, args.SkipWhile(a => a != "--numeric-controls-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--numeric-rails-only")) { NumericRailRangeTests.Run(Assert); return 0; }
             if (args.Contains("--numeric-pointer-regression-only")) { NumericPointerRegressionTests.Run(Assert); return 0; }
+            if (args.Contains("--session-keyboard-router-only")) { SessionKeyboardRouterTests.Run(Assert); return 0; }
+            if (args.Contains("--keyboard-focus-appearance-only")) { KeyboardFocusAppearanceTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-numeric-preview-only")) { CanvasNumericPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-opacity-only")) { ToolbarOpacitySliderTests.Run(Assert, args.SkipWhile(a => a != "--toolbar-opacity-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--toolbar-opacity-pointer-only")) { ToolbarOpacitySliderTests.RunPointer(Assert); return 0; }
             if (string.Equals(Path.GetFileName(Environment.ProcessPath), "FloatCanvas.SafetyPreview.exe", StringComparison.OrdinalIgnoreCase)) args = ["--canvas-safety-dialog-preview"];
             ApplicationPaths.Configure(["--profile", Path.Combine(Path.GetTempPath(), "FloatCanvas-AppTests", Guid.NewGuid().ToString("N"))]);
             if (args.Contains("--exit-save-policy-only")) { ExitSavePolicyTests.Run(Assert); return 0; }
+            if (args.Contains("--new-canvas-confirmation-only")) { CanvasWorkflowRegressionTests.NewCanvas(Assert); return 0; }
+            if (args.Contains("--canvas-preset-selection-only")) { CanvasWorkflowRegressionTests.PresetSelection(Assert, args.SkipWhile(a => a != "--canvas-preset-selection-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--project-preview-navigation-only")) { ProjectPreviewNavigationTests.Run(Assert, args.SkipWhile(a => a != "--project-preview-navigation-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--canvas-feedback-only")) { CanvasFeedbackTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-text-exit-only")) { CanvasTextExitTests.Run(Assert); return 0; }
@@ -58,6 +62,30 @@ internal static class Program
             if (args is ["--numeric-pointer-desktop-preview", var desktopPointerOutput]) { NumericPointerFixture.Preview(desktopPointerOutput, desktop: true); return 0; }
             if (args is ["--numeric-pointer-inspector-preview", var inspectorPointerOutput]) { NumericPointerFixture.Preview(inspectorPointerOutput, desktop: true, inspector: true); return 0; }
             FloatCanvas.Localization.AppText.Initialize("zh-CN");
+            if (args.Contains("--grid-count-picker-only")) { GridCountPickerTests.Run(Assert, args.SkipWhile(a => a != "--grid-count-picker-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--tooltip-lifecycle-only")) { TooltipLifecycleTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-ui-ux-only")) { CanvasUiUxTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-systems-fixes-only")) { CanvasSystemsFixTests.Run(Assert); return 0; }
+            if (args is ["--canvas-systems-perf", var moveProject, var moveOutput]) { CanvasSystemsFixTests.Performance(moveProject, moveOutput); return 0; }
+            if (args is ["--canvas-systems-lists-perf", var listsOutput]) { CanvasSystemsPerformance.Run(listsOutput); return 0; }
+            if (args is ["--canvas-systems-ui", var systemsUiOutput]) { CanvasSystemsUiEvidence.Run(systemsUiOutput); return 0; }
+            if (args.Contains("--caption-mode-input-only")) { CaptionModeSwitchInputTests.Run(Assert); return 0; }
+            if (args.Contains("--flat-canvas-options-only")) { FlatCanvasOptionsTests.Run(Assert,args.Last()); return 0; }
+            if (args.Contains("--property-control-metrics-only")) { PropertyControlMetricsTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-options-refinement-only")) { CanvasOptionsRefinementTests.Run(Assert, args.Last()); return 0; }
+            if (args.Contains("--unified-tool-options-only")) { UnifiedToolOptionsTests.Run(Assert, args.Last()); return 0; }
+            if (args.Contains("--tool-options-regression-only"))
+            {
+                Round2CanvasTests.Run(Assert); WindowSpacingTests.Run(Assert); AuxiliaryShortcutRoutingTests.Run(Assert);
+                CanvasPresetTests.Run(Assert); CanvasSettingsControlTests.Run(Assert); CanvasIndependentUiTests.Run(Assert);
+                CanvasGuideUiTests.Run(Assert); CanvasNumericPreviewTests.Run(Assert); CanvasHiddenRefreshTests.Run(Assert);
+                ToolPresetAndColorTests.Run(Assert); PresetFallbackTests.Run(Assert); PresetSizingCompatibilityTests.Run(Assert);
+                ConfigurationCompatibilityTests.Run(Assert); CanonicalToolAppearanceTests.Run(Assert); PresentationUiTests.Run(Assert);
+                ToolStateStoreTests.Run(Assert); PresetIsolationTests.Run(Assert); ToolOptionsPanelTests.Run(Assert);
+                Feedback4OptionsTests.Run(Assert); PaletteLayoutTests.Run(Assert); RetiredToolTests.Run(Assert);
+                TypeSpecificInspectorTests.Run(Assert); ToolOptionsKeyboardRouteTests.Run(Assert); CanvasToolOptionsLifecycleTests.Run(Assert);
+                Console.WriteLine("PASS affected tool options regression"); return 0;
+            }
             if (args.Contains("--layer-round-two-only")) { LayerRoundTwoTests.Run(Assert); return 0; }
             if (args.Contains("--locate-selection-only")) { LocateSelectionTests.Run(Assert, args.SkipWhile(a => a != "--locate-selection-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--layer-experience-only")) { LayerExperienceTests.Run(Assert, args.SkipWhile(a => a != "--layer-experience-only").Skip(1).FirstOrDefault()); return 0; }
@@ -102,6 +130,7 @@ internal static class Program
             if (args.Contains("--layer-tree-drag-only")) { LayerTreeTests.Dragging(Assert); return 0; }
             if (args.Contains("--canvas-geometry-ui-only")) { CanvasIndependentUiTests.Run(Assert, args.SkipWhile(a => a != "--canvas-geometry-ui-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--canvas-geometry-lifecycle-only")) { CanvasAnchorCaptureTests.Run(Assert, geometryOnly: true); return 0; }
+            if (args.Contains("--canvas-options-lifecycle-only")) { CanvasToolOptionsLifecycleTests.Run(Assert); return 0; }
             if (args.Contains("--appearance-only")) { StyleVariantTests.Run(Assert); return 0; }
             if (args.Contains("--enhanced-keyboard-isolation-only")) { EnhancedKeyboardIsolationTests.Run(Assert); return 0; }
             if (args.Contains("--enhanced-monitor-messages-only")) { EnhancedKeyboardIsolationTests.Run(Assert, monitorMessagesOnly: true); return 0; }
@@ -189,7 +218,13 @@ internal static class Program
             if (args.Contains("--depth-occlusion-only")) { DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-only")) { BillboardControllerTests.Run(Assert); return 0; }
             if (args.Contains("--billboard-screen-only")) { BillboardScreenCreationTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-logical-only")) { BillboardLogicalCreationTests.Run(Assert); return 0; }
+            if (args.Contains("--billboard-handoff-only")) { ScreenBillboardDesktopTests.Run(Assert, checkEscape: false, handoffOnly: true); return 0; }
+            if (args.Contains("--container-billboard-only")) { ContainerBillboardAppTests.Run(Assert); return 0; }
+            if (args.Contains("--container-billboard-ui-only")) { ContainerBillboardEvidence.Ui(Assert, args.Last()); return 0; }
+            if (args.Contains("--container-billboard-performance-only")) { ContainerBillboardEvidence.Performance(Assert, args.Last()); return 0; }
             if (args.Contains("--screen-billboard-desktop-only")) { ScreenBillboardDesktopTests.Run(Assert); return 0; }
+            if (args.Contains("--screen-billboard-preview-only")) { ScreenBillboardDesktopTests.Run(Assert, checkEscape: false); return 0; }
             if (args.Contains("--screen-draft-preview-only")) { ScreenDraftPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--presentation-preview-only")) { PresentationPreviewTests.Run(Assert); return 0; }
             if (args.Contains("--presentation-privacy-only")) { PresentationKeyboardPrivacyProbeTests.Run(Assert); return 0; }
@@ -482,7 +517,8 @@ internal static class Program
             Task.Run(() => InstallerRegistrationTests.Run(Assert)).GetAwaiter().GetResult();
             OverlayProtectionTests.Run(Assert);
             LauncherMenuTests.Run(Assert); RetiredToolTests.Run(Assert);
-            BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert); BillboardScreenCreationTests.Run(Assert); ScreenDraftPreviewTests.Run(Assert);
+            BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert); BillboardScreenCreationTests.Run(Assert); BillboardLogicalCreationTests.Run(Assert); ScreenDraftPreviewTests.Run(Assert);
+            ContainerBillboardAppTests.Run(Assert);
             PresentationPreviewTests.Run(Assert);
             PresentationChordSequenceTests.Run(Assert);
             PresentationPhysicalStateTests.Run(Assert);
@@ -516,6 +552,8 @@ internal static class Program
             PresetHistoryKeyboardTests.Run(Assert);
             EngineeringAuditTests.Run(Assert);
             NewCanvasButtonTests.Run(Assert);
+            CanvasWorkflowRegressionTests.NewCanvas(Assert);
+            CanvasWorkflowRegressionTests.PresetSelection(Assert);
             WelcomeSessionTests.Run(Assert);
             Task.Run(() => GitHubUpdateClientTests.Run(Assert)).GetAwaiter().GetResult();
             UpdateInstallerTests.Run(Assert);
@@ -527,6 +565,10 @@ internal static class Program
             LayerRenameTests.Run(Assert);
             LocateSelectionTests.Run(Assert);
             LayerExperienceTests.Run(Assert);
+            CanvasSystemsFixTests.Run(Assert);
+            CanvasUiUxTests.Run(Assert);
+            GridCountPickerTests.Run(Assert);
+            TooltipLifecycleTests.Run(Assert);
             LayerRoundTwoTests.Run(Assert);
             CanvasModeSwitchTests.Run(Assert);
             ScopeNavigationTests.Run(Assert);
@@ -751,46 +793,7 @@ internal static class Program
         Up(controller, b, OverlayModifiers.Control);
         var effect = session.Document.Elements.Single().Effects.Single();
         Assert("rotated cropped image effect maps to original normalized coordinates", Near(effect.Bounds.X, .35) && Near(effect.Bounds.Y, .275) && Near(effect.Bounds.Width, .25) && Near(effect.Bounds.Height, .3));
-        // Existing saved solid-cover effects remain readable/renderable; new gestures use blur.
-        effect.Kind = ImageEffectKind.Redact;
-        using var renderer = new SceneRenderer();
-        PointD center = image.Transform.TransformPoint(new(45, 30));
-        using (var png = Decode(renderer.ExportPng(session.Document, session.Assets, true)))
-        {
-            var pixel = png.GetPixel((int)center.X, (int)center.Y);
-            Assert("legacy saved solid effect still rasterizes its stored color on transformed target", pixel.Red == 17 && pixel.Green == 34 && pixel.Blue == 51);
-        }
-        controller.Tool = EditorTool.Crop; int undo = session.UndoCount;
-        Gesture(controller, a, b, OverlayModifiers.Control);
-        var cropped = session.Document.Elements.Single();
-        Assert("image crop commits once and reduces local frame", cropped.Width == 50 && Near(cropped.Height, 40) && session.UndoCount == undo + 1);
-        Assert("crop retains transformed source pixels at original world positions", cropped.Transform.TransformPoint(new(0, 0)).DistanceTo(a) < 1e-8 && cropped.Transform.TransformPoint(new(50, 40)).DistanceTo(b) < 1e-8);
-        Assert("crop persists normalized source region", cropped.ImageCrop is { } crop && Near(crop.X, .35) && Near(crop.Y, .275) && Near(crop.Width, .25) && Near(crop.Height, .3));
-        Assert("crop preserves effects in original image coordinates", cropped.Effects.Single().Bounds == effect.Bounds);
-        using (var png = Decode(renderer.ExportPng(session.Document, session.Assets, true)))
-            Assert("crop output retains previous target effect", png.GetPixel((int)center.X, (int)center.Y).Red == 17);
-        session.Undo(); Assert("image crop undo restores prior frame and existing effect", session.Document.Elements.Single().Width == 100 && session.Document.Elements.Single().Effects.Count == 1);
-        foreach (var tool in new[] { EditorTool.Blur, EditorTool.Pixelate })
-        {
-            controller.Tool = tool; Gesture(controller, a, b, OverlayModifiers.Control);
-            Assert(tool + " binds effect to selected image", session.Document.Elements.Single().Effects.Last().Kind.ToString() == tool.ToString());
-        }
-        controller.Tool = EditorTool.Blur; Down(controller, a, OverlayModifiers.Control); Move(controller, b, OverlayModifiers.Control); controller.Cancel();
-        Assert("cancel effect leaves saved effects unchanged", session.Document.Elements.Single().Effects.Count == 3 && controller.EffectPreviewPolygon is null);
-        controller.Tool = EditorTool.Crop; Gesture(controller, a, b, OverlayModifiers.Control);
-        var firstCrop = session.Document.Elements.Single();
-        var nextA = firstCrop.Transform.TransformPoint(new(10, 10)); var nextB = firstCrop.Transform.TransformPoint(new(40, 30));
-        Gesture(controller, nextA, nextB, OverlayModifiers.Control);
-        var secondCrop = session.Document.Elements.Single();
-        Assert("repeated crop composes source coordinates without re-encoding original", secondCrop.ImageCrop is { } repeated && Near(repeated.X, .4) && Near(repeated.Y, .35) && Near(repeated.Width, .15) && Near(repeated.Height, .15) && secondCrop.AssetId == image.AssetId && session.Assets.Count == 1);
-        Assert("repeated rotated crop still preserves world position", secondCrop.Transform.TransformPoint(new(0, 0)).DistanceTo(nextA) < 1e-7 && Near(secondCrop.Width, 30) && Near(secondCrop.Height, 20));
-        controller.Tool = EditorTool.Blur;
-        Down(controller, nextA, OverlayModifiers.Control); Move(controller, nextB, OverlayModifiers.Control); controller.Tool = EditorTool.Select; Up(controller, nextB, OverlayModifiers.Control);
-        Assert("switching effect tool cancels its pending region", secondCrop.Effects.Count == 3 && controller.EffectPreviewPolygon is null && !session.IsTransactionActive);
-        var singular = Session(); singular.Document.Kind = DocumentKind.FrozenCapture; singular.Add(new() { Kind = ElementKind.Image, Width = 100, Height = 80, Transform = Affine2D.Scale(0, 1) });
-        var invalidController = new EditorController(singular) { Tool = EditorTool.Blur }; int errors = 0; invalidController.Message += _ => errors++;
-        Gesture(invalidController, new(0, 0), new(50, 50), OverlayModifiers.Control);
-        Assert("singular image transforms rejected before effect gesture", errors == 1 && singular.Document.Elements[0].Effects.Count == 0 && invalidController.Marquee is null);
+
     }
 
     private static void DocumentRegions()

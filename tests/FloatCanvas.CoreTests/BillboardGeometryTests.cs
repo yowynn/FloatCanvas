@@ -5,6 +5,7 @@ internal static class BillboardGeometryTests
 {
     public static void Run(Action<bool, string> check)
     {
+        BillboardLogicalPlacementTests.Run(check);
         void Near(double actual, double expected, string name) => check(Math.Abs(actual - expected) < 1e-7, $"{name}: {actual} / {expected}");
         var document = Scene(); var mapping = CanvasMapping.Create(document);
         var anchor = new PointD(280, 600);

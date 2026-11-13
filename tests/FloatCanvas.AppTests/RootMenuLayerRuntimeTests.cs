@@ -31,7 +31,7 @@ internal static class RootMenuLayerRuntimeTests
         toolbar.Left=(work.Left+80)/dpi.DpiScaleX;
         toolbar.Top=(work.Bottom-toolbar.ActualHeight*dpi.DpiScaleY)/dpi.DpiScaleY;Pump();
         typeof(DesktopSession).GetMethod("SaveToolbarPosition",Private)!.Invoke(session,null);
-        CanvasSettingsWindow? panel=null;
+        CanvasOptionsTestWindow? panel=null;
         OverlayContextMenu? opened=null;
         bool rightHeld=false,leftHeld=false;
         try
@@ -40,7 +40,7 @@ internal static class RootMenuLayerRuntimeTests
             {
                 if(withPanel)
                 {
-                    panel=new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()){Owner=toolbar};
+                    panel=new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()){Owner=toolbar};
                     typeof(DesktopSession).GetMethod("ConfigureAppWindow",Private)!.Invoke(session,[panel,false,false]);
                     panel.ShowActivated=false;panel.WindowStartupLocation=WindowStartupLocation.Manual;
                     panel.Height=420;panel.Left=toolbar.Left+100;panel.Top=toolbar.Top-panel.Height-12;
@@ -99,7 +99,7 @@ internal static class RootMenuLayerRuntimeTests
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         bitmap.Save(path,System.Drawing.Imaging.ImageFormat.Png);
     }
-    private static T Field<T>(object target,string name)=>(T)target.GetType().GetField(name,Private)!.GetValue(target)!;
+    private static T Field<T>(object target,string name)=>(T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name,Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
     private static int Rank(nint handle){nint current=GetTopWindow(0);for(int i=0;i<8192&&current!=0;i++,current=GetWindow(current,2))if(current==handle)return i;return int.MaxValue;}
     private static void Pump(int milliseconds=30){var frame=new DispatcherFrame();var timer=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(milliseconds)};timer.Tick+=(_,_)=>frame.Continue=false;timer.Start();try{Dispatcher.PushFrame(frame);}finally{timer.Stop();}}
     private static void MouseInput(uint flags){var input=new NativeInput {Data=new(){Mouse=new(){Flags=flags}}};if(SendInput(1,[input],Marshal.SizeOf<NativeInput>())!=1)throw new InvalidOperationException("Could not inject into the guarded root-menu fixture.");}

@@ -3,7 +3,10 @@
 namespace FloatCanvas.App;
 
 internal sealed record GroupCanvasView(SceneDocument Document, PointD Origin, object Epoch,
-    bool IsRootPreview, bool IsProjected, LayerPlacement? EditingPlacement = null, RootCanvasKind EditingRootCanvas = RootCanvasKind.Main);
+    bool IsRootPreview, bool IsProjected, LayerPlacement? EditingPlacement = null, RootCanvasKind EditingRootCanvas = RootCanvasKind.Main)
+{
+    internal ContainerPlacementContext? EditingContainer { get; init; }
+}
 
 /// <summary>A presentation of the current editing graph. Changing the presentation never publishes a draft.</summary>
 internal sealed class GroupCanvasScene
@@ -54,7 +57,8 @@ internal sealed class GroupCanvasScene
             canvasMode == GroupCanvasMode.Temporary && (active.EditScopeId is not null || editContext is not null) ? active.GetEditingSubprojectPlacement() : (LayerPlacement?)null;
         var editingRoot = canvasMode == GroupCanvasMode.Temporary && (active.EditScopeId is not null || editContext is not null) ? RootCanvasKind.Main : root && chain.Length > 0 && EditingInstance(chain[^1], Graph(chain[^1])) is { } host
             ? SceneCanvasRoots.Resolve(chain[^1].Owner.Document, host) : active.ActiveRootCanvas;
-        var result = new GroupCanvasView(source, currentOrigin, epoch, root, !ReferenceEquals(source, active.Document), placement, editingRoot);
+        var result = new GroupCanvasView(source, currentOrigin, epoch, root, !ReferenceEquals(source, active.Document), placement, editingRoot)
+        { EditingContainer = root && editContext is not null && placement is not null ? EditingContainer(chain, Graph) : null };
         session = active; document = active.Document; context = editContext; mode = canvasMode;
         scopeVersion = active.EditScopeVersion; revision = active.PreviewRevision; origin = currentOrigin;
         this.editingViewport = extent;
@@ -76,6 +80,32 @@ internal sealed class GroupCanvasScene
         return graph.OrderedContentNodeIds.Where(id => Matches(id) && graph.IsVisible(id)).Select(id => (Guid?)id).FirstOrDefault();
     }
 
+    private static ContainerPlacementContext EditingContainer(IReadOnlyList<PrefabEditContext> chain, Func<PrefabEditContext, SceneGraph> getGraph)
+    {
+        var result = ContainerPlacementContext.Identity;
+        foreach (var context in chain.Reverse())
+        {
+            var graph = getGraph(context); var id = EditingInstance(context, graph)!.Value;
+            var instance = graph.FindInstance(id)!;
+            var local = graph.ScopeContainerPlacement(instance.ParentId).Enter(instance.Transform, instance.ElevationScale, instance.Billboard);
+            var offset = SourceOffset(context);
+            result = result.Compose(local).Enter(Affine2D.Translation(offset.X, offset.Y), 1, null);
+        }
+        return result;
+    }
+
+    private static PointD SourceOffset(PrefabEditContext context)
+    {
+        var offset = default(PointD);
+        if (context.Draft is null && context.Owner.Document.Definitions.Single(definition => definition.Id == context.DefinitionId).Source is { } source)
+        {
+            offset = new(-source.ImportOrigin.X, -source.ImportOrigin.Y);
+            if (context.SourceEntryDefinitionId is { } entry)
+                offset += context.Session.Document.Definitions.Single(definition => definition.Id == entry).Pivot;
+        }
+        return offset;
+    }
+
     private static LayerPlacement? EditingPlacement(IReadOnlyList<PrefabEditContext> chain, Func<PrefabEditContext, SceneGraph> getGraph)
     {
         var result = LayerPlacement.Identity;
@@ -86,13 +116,7 @@ internal sealed class GroupCanvasScene
             var owner = context.Owner.Document;
             var graph = getGraph(context);
             if (!graph.IsVisible(id)) return null;
-            var sourceOffset = default(PointD);
-            if (context.Draft is null && owner.Definitions.Single(definition => definition.Id == context.DefinitionId).Source is { } source)
-            {
-                sourceOffset = new(-source.ImportOrigin.X, -source.ImportOrigin.Y);
-                if (context.SourceEntryDefinitionId is { } entry)
-                    sourceOffset += context.Session.Document.Definitions.Single(definition => definition.Id == entry).Pivot;
-            }
+            var sourceOffset = SourceOffset(context);
             result = graph.NodeWorldPlacement(id).Compose(new(Affine2D.Translation(sourceOffset.X, sourceOffset.Y), 1)).Compose(result);
         }
         return result;

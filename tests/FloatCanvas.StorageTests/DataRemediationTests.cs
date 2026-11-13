@@ -81,6 +81,6 @@ internal static class DataRemediationTests
         check(rejected, "recovery JSON reader retains an enforced finite expanded-byte ceiling");
 
         byte[] Write<T>(string name, T value, long maximumScene) => (byte[])serialize.MakeGenericMethod(typeof(T)).Invoke(null, [name, value, maximumScene])!;
-        Task<T> Read<T>(string name, long maximum) => (Task<T>)read.MakeGenericMethod(typeof(T)).Invoke(null, [archive.GetEntry(name)!, maximum, CancellationToken.None])!;
+        Task<T> Read<T>(string name, long maximum) => (Task<T>)read.MakeGenericMethod(typeof(T)).Invoke(null, [archive.GetEntry(name)!, maximum, CancellationToken.None, null])!;
     }
 }

@@ -8,7 +8,7 @@ internal static class WindowSourceInsertion
 {
     internal static CanvasElement Prepare(EditorSession target, WindowSourceDescriptor descriptor, int contentWidth, int contentHeight,
         RectD? crop, RectD placement, bool billboard = false, BillboardDepthLine? depth = null, PointD? screenCenter = null, double opacity = 1,
-        PointD? planeCenter = null)
+        PointD? planeCenter = null, CanvasMapping? placementMapping = null, RectD? logicalCanvasBounds = null)
     {
         ArgumentNullException.ThrowIfNull(target); ArgumentNullException.ThrowIfNull(descriptor);
         var source = descriptor.Clone();
@@ -29,7 +29,7 @@ internal static class WindowSourceInsertion
         double croppedWidth = contentWidth * sourceCrop.Width, croppedHeight = contentHeight * sourceCrop.Height;
         double fit = Math.Min(1, Math.Min(placement.Width * .8 / croppedWidth, placement.Height * .8 / croppedHeight));
         double width = croppedWidth * fit, height = croppedHeight * fit;
-        var mapping = CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
+        var mapping = placementMapping ?? CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
         CanvasElement image;
         if (billboard)
         {
@@ -37,7 +37,8 @@ internal static class WindowSourceInsertion
             if (!double.IsFinite(center.X) || !double.IsFinite(center.Y)) throw new ArgumentOutOfRangeException(nameof(screenCenter));
             var bounds = new RectD(center.X - width / 2, center.Y - height / 2, width, height);
             // The existing M5 helper is pure: no PNG is decoded or attached until the caller commits.
-            image = SnapshotImageCommand.PrepareBillboardElement(new([], bounds, true), mapping, depth);
+            image = depth is null ? BillboardImagePlacement.Prepare(target, mapping, croppedWidth, croppedHeight, center, logicalCanvasBounds)
+                : SnapshotImageCommand.PrepareBillboardElement(new([], bounds, true), mapping, depth);
         }
         else
         {

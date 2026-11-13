@@ -9,6 +9,12 @@ internal sealed partial class DesktopSession
     {
         if (_canvasCalibration.IsActive) return;
         using var line = new SKPaint { Color = new(210,139,63), StrokeWidth = 1.5f, IsAntialias = true, Style = SKPaintStyle.Stroke };
+        if (_editor.PendingBillboardOutline is { Count: 4 } outline)
+        {
+            using var path = new SKPathBuilder(); path.MoveTo((float)outline[0].X, (float)outline[0].Y);
+            foreach (var corner in outline.Skip(1)) path.LineTo((float)corner.X, (float)corner.Y);
+            path.Close(); using var shape = path.Detach(); canvas.DrawPath(shape, line);
+        }
         var rawDraft = _editor.ScreenBillboardPending ? _editor.ScreenBillboardDraft :
             _inlineText is { ScreenDraft: { } textDraft, ResolvedScreenDraft: null } ? textDraft : null;
         if (rawDraft is not null)
@@ -28,6 +34,12 @@ internal sealed partial class DesktopSession
         }
         var guide = _editor.BillboardDrawingGuide ??
             ((_inlineText is not null || _editor.ShouldShowSelection(_host.InteractionModifiers)) ? _editor.BillboardSelectionGuide : null);
+        if (guide is null && _inlineText?.ResolvedScreenDraft is { } placedText)
+        {
+            var mapping = _editor.CurrentCanvasMapping;
+            guide = (mapping.ElementToScreen(placedText).TransformPoint(ElementGeometry.LocalBounds(placedText).Center),
+                mapping.ToScreen(placedText.BillboardAnchor));
+        }
         if (guide is null && _inlineText?.ScreenDraft is { } inlineDraft)
         {
             var box = ElementGeometry.LocalToPlane(inlineDraft).TransformBounds(ElementGeometry.LocalBounds(inlineDraft));

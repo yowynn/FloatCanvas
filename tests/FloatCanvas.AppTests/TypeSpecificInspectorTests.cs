@@ -52,7 +52,7 @@ internal static class TypeSpecificInspectorTests
     {
         var image = new CanvasElement { Kind = ElementKind.Image, Width = 120, Height = 90, Effects =
             [new() { Kind = ImageEffectKind.Blur, Amount = 8, Bounds = new(.1, .2, .3, .4) }, new() { Kind = ImageEffectKind.Pixelate, Amount = 19, Bounds = new(.2, .3, .4, .5) },
-                new() { Kind = ImageEffectKind.Redact, Color = 0xFF123456, Bounds = new(.25, .25, .5, .5) }] };
+                new() { Kind = ImageEffectKind.Blur, Color = 0xFF123456, Bounds = new(.25, .25, .5, .5) }] };
         var session = new EditorSession(new() { Elements = [image] }); session.Selection.Add(image.Id);
         using var fixture = new Fixture(session, folder);
         using var surface = new InspectorTestSurface(fixture.Window);
@@ -66,9 +66,8 @@ internal static class TypeSpecificInspectorTests
         check("editing one retained image effect preserves the others", image.Effects[0].Amount == 8 && image.Effects[1].Amount == 51 && image.Effects[2].Color == 0xFF123456);
         check("effect parameter edits preserve the original region and layer geometry", image.Effects[1].Bounds == new RectD(.2, .3, .4, .5) && image.Transform == Affine2D.Identity && image.Width == 120);
         choice.SelectedValue = 2;
-        var colors = Field<Dictionary<string, ColorField>>(fixture.Window, "colorFields");
-        colors["EffectColor"].SetUserValue(0xFFBADA55); fixture.Complete();
-        check("redaction exposes its own color rather than irrelevant strength", image.Effects[2].Color == 0xFFBADA55 && Field<Dictionary<string, FrameworkElement>>(fixture.Window, "fieldContainers")["EffectStrength"].Visibility == Visibility.Collapsed);
+        check("removed effect has no color editing entry", !Field<Dictionary<string, ColorField>>(fixture.Window, "colorFields").ContainsKey("EffectColor"));
+
     }
 
     private static void SymbolsAndTypeSizes(string folder, Action<string, bool> check)

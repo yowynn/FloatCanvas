@@ -22,7 +22,7 @@ internal static class ToolOptionsKeyboardRouteTests
             if (colorOpen) { colorOpen = false; dismissals++; return true; }
             if (!pinned) { dismissals++; return true; }
             return false;
-        }, () => colorOpen, commands.Add);
+        }, commands.Add);
         // WPF and control initialization can initialize their input providers.
         // Establish the controlled Win32 snapshot only after that work, so the
         // first production handler does not initialize KeyboardDevice mid-scope.
@@ -40,7 +40,7 @@ internal static class ToolOptionsKeyboardRouteTests
                     if(!args.Handled||commands.Count!=previous+1)Console.WriteLine($"OPTIONS_ROUTE requested={key} key={args.Key} systemKey={args.SystemKey} handled={args.Handled} repeat={args.IsRepeat} modifiers={Keyboard.Modifiers} native={ThreadModifierScope.Describe()} commands={previous}->{commands.Count} source={args.OriginalSource?.GetType().Name} current={args.Source?.GetType().Name}");
                     check("independent options window routes " + key + " from an ordinary control", args.Handled && commands.Count == previous + 1 && commands[^1] == KeyInterop.VirtualKeyFromKey(key));
                 }
-                int before = commands.Count; Send(text, Key.B); Send(text, Key.D3); Send(text, Key.D2); Send(slider, Key.Right); Send(combo, Key.B);
+                int before = commands.Count; Send(text, Key.B); Send(text, Key.D3); Send(text, Key.D2); Send(slider, Key.Right);
                 check("text, numeric, slider and font controls keep their local keys", commands.Count == before);
                 var tab = Send(button, Key.Tab);
                 check("Tab on an ordinary tool control routes exactly one toolbar command", tab.Handled && commands.Count == before + 1 && commands[^1] == 0x09);
@@ -48,11 +48,15 @@ internal static class ToolOptionsKeyboardRouteTests
                 var canvasTab = Send(window, Key.Tab);
                 check("Tab on the empty editor surface still routes one toolbar command", canvasTab.Handled && commands.Count == before + 1 && commands[^1] == 0x09);
                 before = commands.Count;
-                foreach(var source in new UIElement[]{text,slider,combo})
+                Send(text, Key.Tab);
+                check("Tab in a text editor stays local", commands.Count == before);
+                foreach(var source in new UIElement[]{slider,combo})
                 {
                     Send(source,Key.Tab);
-                    check("Tab in local " + source.GetType().Name + " does not fold the toolbar", commands.Count == before);
+                    check("Tab on non-text " + source.GetType().Name + " folds the toolbar", commands.Count == ++before);
                 }
+                Send(combo, Key.B);
+                check("collapsed combo forwards tool shortcuts", commands.Count == ++before && commands[^1] == 0x42);
                 foreach(var modifiers in new[] { ModifierKeys.Shift, ModifierKeys.Control, ModifierKeys.Alt, ModifierKeys.Windows })
                 {
                     check(modifiers + "+Tab does not become a toolbar command", !ToolOptionsKeyboardRoute.ShouldRoute(0x09, modifiers, button));
@@ -80,10 +84,11 @@ internal static class ToolOptionsKeyboardRouteTests
                 var modalSource = new Button(); var modalWindow = new Window { Content = modalSource };
                 var modalKey = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.OemPlus) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
                 bool consumedBeforeCommand = false;
-                ToolOptionsKeyboardRoute.Attach(modalWindow, () => false, () => false, _ => consumedBeforeCommand = modalKey.Handled);
+                ToolOptionsKeyboardRoute.Attach(modalWindow, () => false, _ => consumedBeforeCommand = modalKey.Handled);
                 try { modalSource.RaiseEvent(modalKey); check("a modal-capable command consumes its source key before invoking the command", consumedBeforeCommand); }
                 finally { modalWindow.Close(); }
-                colorOpen = true; Send(button, Key.L); Send(button, Key.Tab); check("a nested color editor prevents tool switching and toolbar folding", commands.Count == before);
+                colorOpen = true; Send(button, Key.L); Send(button, Key.Tab); before += 2;
+                check("a color property popup does not blanket-block ordinary editor shortcuts", commands.Count == before);
                 Send(button, Key.Escape); check("first Escape dismisses only the color level", !colorOpen && dismissals == 1 && commands.Count == before);
                 Send(button, Key.Escape); check("next Escape dismisses an unpinned tool window", dismissals == 2 && commands.Count == before);
                 pinned = true; Send(button, Key.Escape); check("Escape from a pinned window reaches the application mode policy", commands.Last() == 0x1B && dismissals == 2);

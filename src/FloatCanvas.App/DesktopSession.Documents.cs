@@ -567,7 +567,7 @@ internal sealed partial class DesktopSession
     private async Task<bool> ConfirmReplaceAsync(EditorSession session, string description)
     {
         if (!IsDirty(session)) return true;
-        var result = AppDialog.Show(_toolbar, description + L.Get("Project.ReplaceQuestion"), L.Get("App.Name"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question, "History.SaveLeave", "History.KeepLeave");
+        var result = AppDialog.Show(_toolbar, description + L.Get("Project.ReplaceQuestion"), L.Get("App.Name"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         return result == MessageBoxResult.No || result == MessageBoxResult.Yes && await SaveSessionAsync(session, false);
     }
 
@@ -835,7 +835,7 @@ internal sealed partial class DesktopSession
             if (_disposed || _documentStopped || !CanAddCanvasContent() || !ReferenceEquals(Active, target) ||
                 !ReferenceEquals(target.Document, document) || target.SceneRevision != revision ||
                 CanvasMapping.Create(document).PlaneToScreen != projection) return;
-            ImageImportCommand.InsertBillboard(target, images, document.Viewport, depth, screenCenter, imageOpacity);
+            ImageImportCommand.InsertBillboard(target, images, document.Viewport, depth, screenCenter, imageOpacity, _editor.CurrentCanvasMapping, NewBillboardImageBounds());
             SwitchToolState(EditorTool.Select);
             ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("Image.Imported", images.Count));
         }))

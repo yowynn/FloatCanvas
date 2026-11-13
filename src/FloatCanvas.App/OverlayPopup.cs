@@ -38,6 +38,7 @@ public sealed class OverlayPopup : FrameworkElement
     public CustomPopupPlacementCallback? CustomPopupPlacementCallback { get; set; }
     public event EventHandler? Opened,Closed;
     private OverlayPopupWindow? window;
+    private IDisposable? hintLease;
     internal void Close(bool returnFocus = true)
     {
         if (window is { } current) current.Close(returnFocus);
@@ -51,11 +52,16 @@ public sealed class OverlayPopup : FrameworkElement
         if(IsOpen && window is null && Child is { } child)
         {
             var target=PlacementTarget??TemplatedParent as UIElement;
-            window=new OverlayPopupWindow(child,target,Placement,HorizontalOffset,VerticalOffset,()=>SetCurrentValue(IsOpenProperty,false),CustomPopupPlacementCallback,()=>!PopupChildDialog.StaysOpenForOutsidePress(this,StaysOpen),IsHitTestVisible,TargetPressToggles);
-            window.Show(); Opened?.Invoke(this,EventArgs.Empty);
+            hintLease=TooltipLifecycle.Suppress(target);
+            try
+            {
+                window=new OverlayPopupWindow(child,target,Placement,HorizontalOffset,VerticalOffset,()=>SetCurrentValue(IsOpenProperty,false),CustomPopupPlacementCallback,()=>!PopupChildDialog.StaysOpenForOutsidePress(this,StaysOpen),IsHitTestVisible,TargetPressToggles);
+                window.Show(); Opened?.Invoke(this,EventArgs.Empty);
+            }
+            catch { window?.Dispose(); window=null; hintLease?.Dispose(); hintLease=null; throw; }
         }
         else if(!IsOpen && window is { } old)
-        { window=null; old.Dispose(); Closed?.Invoke(this,EventArgs.Empty); }
+        { window=null; old.Dispose(); hintLease?.Dispose(); hintLease=null; Closed?.Invoke(this,EventArgs.Empty); }
     }
 }
 
@@ -330,6 +336,7 @@ internal sealed class OverlayContextMenu : ContextMenu
     }
     [ThreadStatic] private static HashSet<OverlayContextMenu>? openMenus;
     internal static bool OwnsKeyboardFocus=>openMenus?.Any(menu=>menu.IsKeyboardFocusWithin)==true;
+    internal static bool HasOpenMenu => openMenus?.Any(menu => menu.IsOpen) == true;
     internal static void CloseAll(){foreach(var menu in openMenus?.ToArray()??[])menu.window?.Close(returnFocus:false);}
     internal bool TargetPressToggles { get; set; }
     private OverlayPopupWindow? window;

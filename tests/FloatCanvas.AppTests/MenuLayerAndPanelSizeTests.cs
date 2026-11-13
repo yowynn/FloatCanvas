@@ -29,7 +29,7 @@ internal static class MenuLayerAndPanelSizeTests
         var results=new List<(string Name,bool Pass)>();
         void Observe(string name,bool pass){results.Add((name,pass));Console.WriteLine($"OBSERVE {name}: {pass}");}
         bool enhanced=Environment.GetEnvironmentVariable("FLOATCANVAS_LAYER_BACKEND")=="enhanced";
-        OverlayHost? host=null;DesktopSession? session=null;CanvasSettingsWindow? canvas=null;Window? otherPanel=null;
+        OverlayHost? host=null;DesktopSession? session=null;CanvasOptionsTestWindow? canvas=null;Window? otherPanel=null;
         try
         {
             AppTheme.InitializeStartup();
@@ -42,7 +42,7 @@ internal static class MenuLayerAndPanelSizeTests
             var toolbar=Field<Window>(session,"_toolbar");HidePixels(toolbar);toolbar.Show();Pump();
             var tool=Field<Window>(session,"_toolOptionsWindow");
             var panel=Field<ToolOptionsPanel>(session,"_toolOptionsPanel");
-            canvas=new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()){Owner=toolbar};HidePixels(canvas);
+            canvas=new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()){Owner=toolbar};HidePixels(canvas);
             Invoke(session,"ConfigureAppWindow",canvas,false,false);canvas.Show();Pump();
             if(layout)
             {
@@ -117,7 +117,7 @@ internal static class MenuLayerAndPanelSizeTests
     }
     private static void HidePixels(Window window){var screen=System.Windows.Forms.SystemInformation.VirtualScreen;window.ShowActivated=false;window.Opacity=0;window.Left=screen.Left-10000;window.Top=screen.Top-10000;}
     private static int Rank(nint handle){nint current=GetTopWindow(0);for(int i=0;i<8192&&current!=0;i++,current=GetWindow(current,2))if(current==handle)return i;return int.MaxValue;}
-    private static T Field<T>(object target,string name)=>(T)target.GetType().GetField(name,Private)!.GetValue(target)!;
+    private static T Field<T>(object target,string name)=>(T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name,Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
     private static object? Invoke(object target,string name,params object[] args)=>target.GetType().GetMethod(name,Private)!.Invoke(target,args);
     private static void Pump(){var frame=new DispatcherFrame();Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,()=>frame.Continue=false);Dispatcher.PushFrame(frame);}
     private static void Render(Window window,string path){var root=(FrameworkElement)VisualTreeHelper.GetChild(window,0);var bitmap=new RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth),(int)Math.Ceiling(root.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(root);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(path);png.Save(file);}

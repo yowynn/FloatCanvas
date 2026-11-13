@@ -69,6 +69,12 @@ internal static class WindowFocusLifecycleTests
                 Set("_settings", new UserSettings { ToolbarExpanded = true }); Set("_windowLayout", new SessionWindowLayout());
                 Set("_editor", editor); Set("_windowCoordinator", coordinator);
                 Set("_toolbarToolButtons", new Dictionary<EditorTool, Button> { [EditorTool.Text] = tool });
+                var toolbarGrid = new Grid();
+                for (int column = 0; column < 16; column++) toolbarGrid.ColumnDefinitions.Add(new() { Width = new GridLength(30) });
+                var file = new BoundFileIndicator(() => { }, () => { }, () => { }, () => true, () => true);
+                Set("_toolbarUpperRow", new ToolbarUpperRow(toolbarGrid, new RootCanvasToolbarHeader(file, () => { }, () => true),
+                    [], new NewCanvasButton(() => true, () => Task.CompletedTask)));
+                Set("_extraToolButtons", new Dictionary<EditorTool, Button>());
                 Set("_toolPresets", new ToolPresetLibrary(Path.Combine(output, backend + "-presets.json")));
                 Set("_colorLibrary", new ColorLibrary(Path.Combine(output, backend + "-colors.json")));
                 InspectorWindow? inspector = null;

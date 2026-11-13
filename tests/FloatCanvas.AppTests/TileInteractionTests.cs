@@ -77,7 +77,7 @@ internal static class TileInteractionTests
 
             for (int i = 0; i < 35; i++) library.Save("Extra " + i, controller.Parameters);
             gallery.Refresh(); var last = library.User.Last(); gallery.Apply(last.Id); Pump();
-            var scroll = (ScrollViewer)typeof(ToolPresetGallery).GetField("userScroll", Private)!.GetValue(gallery)!;
+            var scroll = (ScrollViewer)typeof(PresetGallery<ToolPreset>).GetField("userScroll", Private)!.GetValue(gallery)!;
             var lastButton = gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, last.Id));
             var viewport = FindVisual<ScrollContentPresenter>(scroll)!; var top = lastButton.TranslatePoint(new Point(), viewport);
             check("applying a long-list recipe scrolls its selected tile into view", scroll.VerticalOffset > 0 && top.Y >= -.5 && top.Y + lastButton.ActualHeight <= viewport.ActualHeight + .5);

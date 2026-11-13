@@ -39,7 +39,7 @@ internal static class AuditUxPreview
         var actions = new StackPanel();
         void Open(string label, Action action) { var button = new Button { Content = label, Margin = new(0, 0, 0, 8) }; button.Click += (_, _) => action(); actions.Children.Add(button); }
         void Show(Window window, string title) { window.Owner = app.MainWindow; window.Title = "Audit UX · " + title; window.Topmost = false; window.WindowStartupLocation = WindowStartupLocation.CenterOwner; window.ShowDialog(); }
-        Open("Canvas settings · 320 DIP", () => Show(new CanvasSettingsWindow(canvases) { Width = 320, Height = 480 }, "Canvas settings 320 DIP"));
+        Open("Canvas settings · 320 DIP", () => Show(new CanvasOptionsTestWindow(canvases) { Width = 320, Height = 480 }, "Canvas settings 320 DIP"));
         Open("History · 384 DIP", () => Show(new WorkspaceHistoryWindow(new WorkspaceRecoveryHistory(new RecoveryStore(Path.Combine(root, "recovery"))),
             Enumerable.Range(1, 60).Select(index => new WorkspaceRecoveryEntry(Path.Combine(root, "preview-history", index.ToString()),
                 DateTime.UtcNow.AddMinutes(-index), false, $"Audit history {index:00}.floatcanvas")).ToArray()) { Height = 384 }, "History 384 DIP"));

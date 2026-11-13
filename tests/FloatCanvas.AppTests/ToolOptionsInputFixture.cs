@@ -46,6 +46,7 @@ internal static class ToolOptionsInputFixture
         var monitors = (IReadOnlyList<MonitorInfo>)typeof(OverlayHost).GetMethod("EnumerateMonitors", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!;
         typeof(OverlayHost).GetField("_monitors", PrivateInstance)!.SetValue(fixtureHost, monitors);
         Set("_host", fixtureHost); Set("_toolbar", toolbar); Set("_toolbarLauncher", launcher);
+        Set("_toolbarUpperRow", RuntimeHelpers.GetUninitializedObject(typeof(ToolbarUpperRow)));
         Set("_toolbarToolButtons", new Dictionary<EditorTool, Button> { [EditorTool.Rectangle] = toolButton });
         nint toolbarHandle = 0, popupHandle = 0;
         try
@@ -69,6 +70,7 @@ internal static class ToolOptionsInputFixture
             toolbar.Top = monitor.WorkArea.Bottom / dpiScale - toolbar.ActualHeight - 2;
             Invoke("CloseToolOptions"); Invoke("OpenToolOptions"); Pump();
             var frameBottom = popup.PointToScreen(new Point(0, popup.ActualHeight));
+            Console.WriteLine($"OPTIONS_POSITION toolbar={toolbar.PointToScreen(new Point())} bottom={frameBottom} height={popup.ActualHeight} desired={popup.DesiredSize} size={popup.SizeToContent} dpi={dpiScale}");
             check("a newly opened options window switches above a toolbar near the work area bottom", Math.Abs(toolbar.PointToScreen(new Point()).Y - frameBottom.Y - 8 * dpiScale) <= 2);
             toolbar.Top = 180; Invoke("CloseToolOptions"); Invoke("OpenToolOptions"); Pump();
             var panel = Get<ToolOptionsPanel>(session, "_toolOptionsPanel");
@@ -114,7 +116,7 @@ internal static class ToolOptionsInputFixture
 
             var foreground = Get<ColorField>(panel, "foreground");
             Get<Button>(foreground, "button").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
-            var colorPopup = Get<Popup>(foreground, "popup");
+            var colorPopup = Get<PopupHandle>(foreground, "popupDisplay");
             var color = Get<ColorPickerPanel>(foreground, "picker");
             var hex = Get<TextBox>(color, "hex");
             check("the options color picker opened in its own child popup", colorPopup.IsOpen);

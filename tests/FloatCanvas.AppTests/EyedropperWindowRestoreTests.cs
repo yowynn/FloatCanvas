@@ -119,7 +119,7 @@ internal static class EyedropperWindowRestoreTests
         internal readonly DesktopSession Session;
         internal readonly OverlayHost Host;
         internal readonly Window Toolbar;
-        internal readonly CanvasSettingsWindow Panel;
+        internal readonly CanvasOptionsTestWindow Panel;
         internal readonly ColorField Target;
         internal readonly LayersWindow Layers;
 
@@ -134,9 +134,9 @@ internal static class EyedropperWindowRestoreTests
             Field<System.Windows.Forms.NotifyIcon>(Session, "_tray").Visible = false;
             var editor = Field<EditorController>(Session, "_editor"); editor.Tool = EditorTool.Canvas;
             Toolbar = Field<Window>(Session, "_toolbar"); Offscreen(Toolbar); Toolbar.Show();
-            Panel = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly()) { Owner = Toolbar };
+            Panel = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()) { Owner = Toolbar };
             Field<Button>(Panel, "pin").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Offscreen(Panel); typeof(DesktopSession).GetField("_canvasSettingsWindow", Private)!.SetValue(Session, Panel);
+            Offscreen(Panel); typeof(DesktopSession).GetField("_canvasToolOptions", Private)!.SetValue(Session, Panel.Options);
             Target = Field<ColorField>(Panel, "background");
             Target.EyedropperRequested += () => Invoke("BeginEyedropper", Target);
             Layers = new LayersWindow(() => editor.Session, () => true) { Owner = Toolbar };
@@ -169,7 +169,7 @@ internal static class EyedropperWindowRestoreTests
             Session.Dispose(); Panel.CloseForDispose(); Pump();
         }
     }
-    private static T Field<T>(object source, string name) => (T)source.GetType().GetField(name, Private)!.GetValue(source)!;
+    private static T Field<T>(object source, string name) => (T)(CanvasOptionsTestWindow.Unwrap(source)).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(source))!;
     private static IEnumerable<DependencyObject> Descendants(DependencyObject source)
     {
         foreach (var child in LogicalTreeHelper.GetChildren(source).OfType<DependencyObject>())

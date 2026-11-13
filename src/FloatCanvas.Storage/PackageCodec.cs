@@ -141,14 +141,22 @@ internal static class PackageCodec
             var knownEntries = manifest.Assets.Select(a => "assets/" + a.Id).Append("manifest.json").Append(payload).ToHashSet(StringComparer.Ordinal);
             if (hasPreview) knownEntries.Add(RecoveryPreview.EntryName);
             if (!knownEntries.SetEquals(archive.Entries.Select(e => e.FullName))) throw new InvalidDataException(L.Get("Project.UnexpectedArchiveContents"));
-            T value = await ReadJsonAsync<T>(RequiredEntry(archive, payload), JsonCapacity(payload), ct).ConfigureAwait(false);
+            bool skippedNodes = false;
+            T value = await ReadJsonAsync<T>(RequiredEntry(archive, payload), JsonCapacity(payload), ct, skipped => skippedNodes = skipped).ConfigureAwait(false);
             Validate(value);
             RequirePayloadVersion(value, manifest.Version);
             if (UpgradeVersion(value)) ValidateCurrent(value);
+            if (skippedNodes)
+            {
+                NormalizeSkippedNavigation(value);
+                if (value is PrefabPackage compatiblePrefab)
+                    foreach (var definition in compatiblePrefab.Definitions) SceneGraph.PruneEmptyGroups(definition.Graph);
+                Validate(value);
+            }
             var provenance = new DocumentProvenance(manifest.CreatedWith, manifest.LastSavedWith);
             foreach (var document in Documents(value)) { document.Provenance = provenance; if (manifest.Version >= 11) document.RecordResourceIdentityPersistence(); }
             if (value is PrefabPackage prefab) { prefab.Provenance = provenance; prefab.RecordResourceIdentityPersistence(); }
-            if (!References(value).ToHashSet(StringComparer.Ordinal).SetEquals(manifest.Assets.Select(a => a.Id))) throw new InvalidDataException(L.Get("Project.AssetReferencesMismatch"));
+            if (!(skippedNodes ? References(value).ToHashSet(StringComparer.Ordinal).IsSubsetOf(manifest.Assets.Select(a => a.Id)) : References(value).ToHashSet(StringComparer.Ordinal).SetEquals(manifest.Assets.Select(a => a.Id)))) throw new InvalidDataException(L.Get("Project.AssetReferencesMismatch"));
             var assets = new AssetLibrary();
             foreach (var asset in manifest.Assets)
             {
@@ -160,6 +168,7 @@ internal static class PackageCodec
                 if (!StringComparer.Ordinal.Equals(actualId, asset.Id)) throw new InvalidDataException(L.Get("Project.AssetHashMismatch"));
             }
             ValidatedPackageCache.Remember(file.SafeFileHandle, kind);
+            if (skippedNodes) assets.Prune(References(value));
             return (value, assets);
         }
         catch (JsonException ex) { throw new InvalidDataException(L.Get("Project.InvalidJson"), ex); }
@@ -203,6 +212,28 @@ internal static class PackageCodec
         if (UpgradeVersion(copy)) ValidateCurrent(copy);
         return copy;
     }
+    private static void NormalizeSkippedNavigation<T>(T value)
+    {
+        var documents = Documents(value).ToArray();
+        var parents = documents.ToDictionary(document => document, document => document.Groups.ToDictionary(group => group.Id, group => group.ParentId));
+        foreach (var document in documents) document.PruneGroups();
+        if (value is not WorkspaceState workspace) return;
+        foreach (var state in PrefabDraftState.Enumerate(workspace.PendingPrefabEdit))
+        {
+            Normalize(state.DraftDocument, state.DraftScopeId, state.DraftSelection, out var draftScope); state.DraftScopeId = draftScope;
+            var owner = state.ParentEdit?.DraftDocument ?? documents.FirstOrDefault(document => document.ResourceId == state.OwnerResourceId);
+            if (owner is not null) { Normalize(owner, state.ReturnScopeId, state.ReturnSelection, out var returnScope); state.ReturnScopeId = returnScope; }
+        }
+        void Normalize(SceneDocument document, Guid? scope, List<Guid> selection, out Guid? resolved)
+        {
+            var graph = new SceneGraph(document);
+            while (scope is { } id && graph.FindGroup(id) is null)
+                scope = parents[document].GetValueOrDefault(id);
+            resolved = scope;
+            selection.RemoveAll(id => graph.FindElement(id) is null && graph.FindGroup(id) is null && graph.FindInstance(id) is null);
+        }
+    }
+
     private static IEnumerable<SceneDocument> Documents<T>(T value) => value switch
     {
         SceneDocument document => [document],
@@ -287,11 +318,21 @@ internal static class PackageCodec
         await using var stream = entry.Open();
         await stream.WriteAsync(bytes, ct).ConfigureAwait(false);
     }
-    private static async Task<T> ReadJsonAsync<T>(ZipArchiveEntry entry, long maximumBytes, CancellationToken ct)
+    private static async Task<T> ReadJsonAsync<T>(ZipArchiveEntry entry, long maximumBytes, CancellationToken ct, Action<bool>? contentFiltered = null)
     {
         byte[] bytes = await ReadBytesAsync(entry, maximumBytes, ct).ConfigureAwait(false);
-        using var json = JsonDocument.Parse(bytes, new() { MaxDepth = 128 });
-        RejectDuplicateProperties(json.RootElement);
+        using var sourceJson = JsonDocument.Parse(bytes, new() { MaxDepth = 128 });
+        RejectDuplicateProperties(sourceJson.RootElement);
+        using var filtered = typeof(T) != typeof(Manifest) && SceneContentCompatibility.RequiresFiltering(sourceJson.RootElement)
+            ? FilterContent() : null;
+        var json = filtered ?? sourceJson;
+        JsonDocument FilterContent()
+        {
+            var compatible = System.Text.Json.Nodes.JsonNode.Parse(bytes, documentOptions: new() { MaxDepth = 128 })!;
+            bool skipped = SceneContentCompatibility.Filter(compatible);
+            contentFiltered?.Invoke(skipped);
+            return JsonDocument.Parse(compatible.ToJsonString(new() { MaxDepth = 128 }), new() { MaxDepth = 128 });
+        }
         if (typeof(T) == typeof(Manifest) && json.RootElement.TryGetProperty("Version", out var packageVersion) && packageVersion.ValueKind == JsonValueKind.Number &&
             packageVersion.TryGetInt32(out int version) && version >= 9)
             RequireProperties(json.RootElement, "CreatedWith", "LastSavedWith");
@@ -481,13 +522,22 @@ internal static class PackageCodec
         {
             RequireProperties(instance, "Id", "ParentId", "DefinitionId", "Name", "Transform", "ElevationScale", "Visible", "Locked");
             RequireProperties(instance.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
+            RequireContainerPlacement(instance, version);
         }
     }
     private static void RequireOptionalPreview(JsonElement owner, int version)
     {
+        RequireContainerPlacement(owner, version);
         if (!owner.TryGetProperty("PreviewCanvas", out var preview)) return;
         if (version < 17) throw new InvalidDataException("Subproject canvases require scene format 17.");
         if (preview.ValueKind != JsonValueKind.Null) RequirePreviewProperties(preview, version);
+    }
+    private static void RequireContainerPlacement(JsonElement owner, int version)
+    {
+        if (!owner.TryGetProperty("Billboard", out var placement) || placement.ValueKind == JsonValueKind.Null) return;
+        if (version < 19) throw new InvalidDataException("Container billboards require scene format 19.");
+        RequireProperties(placement, "ReferencePoint", "Height");
+        RequireProperties(placement.GetProperty("ReferencePoint"), "X", "Y");
     }
     private static void RequirePreviewProperties(JsonElement preview, int version)
     {

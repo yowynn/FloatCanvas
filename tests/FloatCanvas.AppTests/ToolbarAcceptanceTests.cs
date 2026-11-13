@@ -170,7 +170,7 @@ internal static class ToolbarAcceptanceTests
             editor.Session.Document.Canvas.Projection.Enabled=false;Invoke(session,"RefreshToolbarState");Measure(shell);
             check("disabling perspective restores the surface artwork and leaves Canvas unselected",!editor.BillboardMode&&!billboard.IsEnabled&&Descendants(billboard).OfType<Shapes.Path>().Single().Data.ToString()==surfaceArtwork&&billboard.Background==app.Resources["CanvasButton"]&&canvasAction.Background==app.Resources["CanvasSurface"]&&canvasAction.BorderBrush==Media.Brushes.Transparent);
             canvasAction.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));Measure(shell);
-            check("Canvas joins the mutually exclusive selected tool frames without opening settings on first activation",editor.Tool==EditorTool.Canvas&&canvasAction.BorderBrush==app.Resources["CanvasAccent"]&&tools[EditorTool.Freehand].BorderBrush==Media.Brushes.Transparent&&Field<CanvasSettingsWindow?>(session,"_canvasSettingsWindow") is null);
+            check("Canvas joins the mutually exclusive selected tool frames without opening settings on first activation",editor.Tool==EditorTool.Canvas&&canvasAction.BorderBrush==app.Resources["CanvasAccent"]&&tools[EditorTool.Freehand].BorderBrush==Media.Brushes.Transparent&&Field<CanvasToolOptions?>(session,"_canvasToolOptions") is null);
             Invoke(session,"ActivateTool",EditorTool.Freehand);Measure(shell);
             check("returning to Freehand restores its saved style and releases the Canvas frame",editor.Tool==EditorTool.Freehand&&tools[EditorTool.Freehand].BorderBrush==app.Resources["CanvasAccent"]&&canvasAction.BorderBrush==Media.Brushes.Transparent);
             check("upper twelve tool order matches the requested Select Eraser then ten drawing entries",buttons.Where(button=>Controls.Grid.GetColumn(button)<13).OrderBy(Controls.Grid.GetColumn).Select(button=>button.Tag?.ToString()).SequenceEqual(new[]{"tool:Select","tool:Eraser","tool:Freehand","tool:Highlighter","tool:Line","tool:Rectangle","tool:Ellipse","tool:Text","tool:Number","tool:Symbol","tool:Emoji","more"}));
@@ -775,8 +775,8 @@ internal static class ToolbarAcceptanceTests
     {byte[] bytes=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(bytes,bitmap.PixelWidth*4,0);return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));}
     private static bool ContainsColor(Imaging.BitmapSource bitmap,Media.Color color)
     {byte[] bytes=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(bytes,bitmap.PixelWidth*4,0);for(int i=0;i<bytes.Length;i+=4)if(bytes[i+3]>250&&Math.Abs(bytes[i+2]-color.R)<4&&Math.Abs(bytes[i+1]-color.G)<4&&Math.Abs(bytes[i]-color.B)<4)return true;return false;}
-    private static T Field<T>(object source,string name)=>(T)source.GetType().GetField(name,Private)!.GetValue(source)!;
-    private static void Set(object source,string name,object? value)=>source.GetType().GetField(name,Private)!.SetValue(source,value);
+    private static T Field<T>(object source,string name)=>(T)(CanvasOptionsTestWindow.Unwrap(source)).GetType().GetField(name,Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(source))!;
+    private static void Set(object source,string name,object? value)=>(CanvasOptionsTestWindow.Unwrap(source)).GetType().GetField(name,Private)!.SetValue(source,value);
     private static void Invoke(object source,string name,params object[] arguments)
     {
         try{source.GetType().GetMethod(name,Private)!.Invoke(source,arguments);}

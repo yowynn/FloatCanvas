@@ -13,6 +13,11 @@ internal sealed partial class EditorController
     private Affine2D billboardDraftTransform;
     private Action<BillboardDepthLine?, PointD>? pendingBillboardInsertion;
     private bool pendingBillboardScreenFirst;
+    private Func<BillboardDepthLine?, PointD, CanvasElement?>? pendingBillboardPreview;
+    private CanvasElement? pendingBillboardCandidate;
+    private bool pendingBillboardPressed;
+    internal IReadOnlyList<PointD>? PendingBillboardOutline => pendingBillboardCandidate is { } candidate
+        ? Corners(ElementGeometry.LocalBounds(candidate)).Select(CurrentCanvasMapping.ElementToScreen(candidate).TransformPoint).ToArray() : null;
     private SceneDocument? pendingBillboardDocument;
     private long pendingBillboardRevision;
     private long pendingBillboardScopeVersion;
@@ -22,6 +27,9 @@ internal sealed partial class EditorController
     internal bool HasPendingBillboardOperation => billboardDepth is not null || HasPendingBillboardInsertion;
     private Dictionary<Guid, CanvasElement> billboardSources = [];
     private PointD? billboardMoveDelta;
+    private Guid? heightContainer;
+    private double heightContainerStart;
+    private Func<PointD, double>? heightContainerDelta;
     public bool BillboardMode
     {
         get => billboardMode && CurrentCanvasMapping.IsPerspective;
@@ -34,9 +42,30 @@ internal sealed partial class EditorController
         get
         {
             if (!CurrentCanvasMapping.IsPerspective) return null;
-            if (HasNodeSelection) return null;
+            if (HasNodeSelection)
+            {
+                if (Session.Selection.Count != 1) return null;
+                var graph = SceneGraph.Read(Session.Document); var id = Session.Selection.Single();
+                if (graph.IsLocked(id) || graph.ContainerBillboard(id) is not { } card) return null;
+                var group = graph.FindGroup(id); var instance = graph.FindInstance(id);
+                var transform = group?.Transform ?? instance!.Transform;
+                double elevation = group?.ElevationScale ?? instance!.ElevationScale;
+                var parent = (viewContainer ?? ContainerPlacementContext.Identity).Compose(graph.ScopeContainerPlacement(graph.ParentId(id)));
+                var root = CanvasMapping.CreateViewing(viewDocument ?? Session.Document, canvasView, viewRootCanvas);
+                var ground = new PointD(transform.OffsetX, transform.OffsetY);
+                return (parent.Enter(transform, elevation, card).PlaneToTarget(root.PlaneToScreen).TransformPoint(card.ReferencePoint),
+                    parent.PlaneToTarget(root.PlaneToScreen).TransformPoint(ground));
+            }
             var elements = SelectedEditingWorldElements().Where(e => e.Visible && !e.Locked).ToArray();
             if (elements is not [var item] || !item.IsBillboard) return null;
+            if (item.BillboardSurface is not null)
+            {
+                var graph = SceneGraph.Read(Session.Document);
+                if (graph.FindElement(item.Id) is not { IsBillboard: true } authored) return null;
+                var root = CanvasMapping.CreateViewing(viewDocument ?? Session.Document, canvasView, viewRootCanvas);
+                var plane = (viewContainer ?? ContainerPlacementContext.Identity).Compose(graph.ScopeContainerPlacement(authored.GroupId)).PlaneToTarget(root.PlaneToScreen);
+                return (CurrentCanvasMapping.ElementToScreen(item).TransformPoint(ElementGeometry.LocalBounds(item).Center), plane.TransformPoint(authored.BillboardAnchor));
+            }
             return BillboardGuide(item);
         }
     }
@@ -44,8 +73,10 @@ internal sealed partial class EditorController
     {
         get
         {
+            if (pendingBillboardCandidate is { } pending) return BillboardGuide(pending);
             if (screenBillboardDrawing && drawing is not null)
             {
+                if (TryScreenBillboardCandidate(out var candidate)) return BillboardGuide(candidate);
                 var bounds = ElementGeometry.LocalToPlane(drawing).TransformBounds(ElementGeometry.LocalBounds(drawing));
                 return (bounds.Center, new(bounds.Center.X, bounds.Bottom));
             }
@@ -73,19 +104,25 @@ internal sealed partial class EditorController
     }
     internal void ClearBillboardDepth()
     {
+        pendingBillboardPreview = null; pendingBillboardCandidate = null; pendingBillboardPressed = false;
         billboardDepth = billboardPreviewDepth = null;
         billboardDrawing = false;
         screenBillboardDrawing = false;
         screenBillboardRegion = false;
+        screenDraftDocument = null;
     }
     internal bool BeginBillboardInsertion(Action<BillboardDepthLine, PointD> insert)
         => BeginBillboardInsertionCore((depth, point) => insert(depth!.Value, point), screenFirst: false);
-    internal bool BeginBillboardPlacement(Action<BillboardDepthLine?, PointD> insert)
-        => BeginBillboardInsertionCore(insert, UsesScreenBillboardCreation);
+    internal bool BeginBillboardPlacement(Action<BillboardDepthLine?, PointD> insert, Func<BillboardDepthLine?, PointD, CanvasElement?>? preview = null)
+    {
+        if (!BeginBillboardInsertionCore(insert, UsesScreenBillboardCreation)) return false;
+        pendingBillboardPreview = preview; return true;
+    }
     internal bool CancelBillboardPlacement(Action<BillboardDepthLine?, PointD> expected)
     {
         if (!ReferenceEquals(pendingBillboardInsertion, expected)) return false;
         pendingBillboardInsertion = null; pendingBillboardDocument = null;
+        pendingBillboardPreview = null; pendingBillboardCandidate = null; pendingBillboardPressed = false;
         pendingBillboardScreenFirst = false; ClearBillboardDepth();
         IsPointerBlocked = false; Changed?.Invoke(); return true;
     }
@@ -111,6 +148,23 @@ internal sealed partial class EditorController
         if (UsesScreenBillboardCreation && pendingBillboardInsertion is null) return false;
         if (pendingBillboardScreenFirst && pendingBillboardInsertion is { } screenInsert)
         {
+            if (pendingBillboardPreview is { } preview)
+            {
+                pendingBillboardCandidate = preview(null, pointerScreen);
+                SetPointerBlocked(pendingBillboardCandidate is null);
+                if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left) pendingBillboardPressed = true;
+                if (e.Kind == OverlayPointerKind.Up && e.Button == OverlayMouseButton.Left && pendingBillboardPressed)
+                {
+                    pendingBillboardPressed = false;
+                    if (pendingBillboardCandidate is null) Message?.Invoke(L.Get("Billboard.InvalidLogicalPlacement"));
+                    else
+                    {
+                        pendingBillboardInsertion = null; pendingBillboardPreview = null; pendingBillboardCandidate = null; ClearBillboardDepth();
+                        screenInsert(null, pointerScreen);
+                    }
+                }
+                Changed?.Invoke(); return true;
+            }
             if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
             {
                 pendingBillboardInsertion = null; ClearBillboardDepth();
@@ -138,11 +192,16 @@ internal sealed partial class EditorController
             if (e.Kind == OverlayPointerKind.Move) { SetPointerBlocked(billboardPreviewDepth is null); Changed?.Invoke(); return true; }
             return e.Kind == OverlayPointerKind.Up;
         }
+        if (pendingBillboardPreview is { } fixedPreview)
+        {
+            pendingBillboardCandidate = fixedPreview(billboardDepth, pointerScreen);
+            SetPointerBlocked(pendingBillboardCandidate is null); Changed?.Invoke();
+        }
         if (pendingBillboardInsertion is { } insert &&
             e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
         {
             var fixedDepth = billboardDepth.Value;
-            if (!mapping.TryGetBillboardAnchor(fixedDepth, pointerScreen, out _, out _))
+            if (pendingBillboardPreview is not null && pendingBillboardCandidate is null || !mapping.TryGetBillboardAnchor(fixedDepth, pointerScreen, out _, out _))
             { Message?.Invoke(L.Get("Billboard.InvalidDepth")); return true; }
             pendingBillboardInsertion = null; ClearBillboardDepth(); insert(fixedDepth, pointerScreen); return true;
         }
@@ -159,8 +218,7 @@ internal sealed partial class EditorController
         billboardDrawing = screenBillboardDrawing || BillboardMode && billboardDepth is not null;
         if (screenBillboardDrawing)
         {
-            screenDraftProjection = CurrentCanvasMapping.PlaneToScreen;
-            screenDraftOrigin = CanvasOrigin; screenDraftScopeVersion = Session.EditScopeVersion;
+            CaptureScreenDraftContext();
         }
         billboardDraftValid = true;
         if (billboardDrawing && drawing is not null) RefreshBillboardDrawing();
@@ -176,7 +234,7 @@ internal sealed partial class EditorController
         {
             bool wasValid = billboardDraftValid;
             billboardDraftValid = TryScreenBillboardCandidate(out _);
-            if (wasValid && !billboardDraftValid) Message?.Invoke(L.Get("Billboard.PendingGround"));
+            if (wasValid && !billboardDraftValid) Message?.Invoke(L.Get("Billboard.InvalidLogicalPlacement"));
             return billboardDraftValid;
         }
         if (!billboardDrawing || drawing is null || billboardDepth is not { } line) return true;
@@ -193,7 +251,33 @@ internal sealed partial class EditorController
     private bool TryStartBillboardHeight()
     {
         if (BillboardSelectionGuide is not { } guide || pointerScreen.DistanceTo(guide.Center) >= 12) return false;
+        heightContainer = null; heightContainerDelta = null;
+        if (HasNodeSelection && Session.Selection.Count == 1)
+        {
+            var id = Session.Selection.Single(); var graph = SceneGraph.Read(Session.Document);
+            if (graph.ContainerBillboard(id) is not { } card) return false;
+            var group = graph.FindGroup(id); var instance = graph.FindInstance(id);
+            var transform = group?.Transform ?? instance!.Transform;
+            double elevation = group?.ElevationScale ?? instance!.ElevationScale;
+            var parent = (viewContainer ?? ContainerPlacementContext.Identity).Compose(graph.ScopeContainerPlacement(graph.ParentId(id)));
+            var root = CanvasMapping.CreateViewing(viewDocument ?? Session.Document, canvasView, viewRootCanvas);
+            if (parent.Surface is not null)
+            {
+                var inverse = parent.PlaneToTarget(root.PlaneToScreen).Inverse(); double initialY = inverse.TransformPoint(pointerScreen).Y;
+                heightContainerDelta = point => (inverse.TransformPoint(point).Y - initialY) / elevation;
+            }
+            else
+            {
+                var anchor = parent.Placement.PlaneTransform.TransformPoint(new(transform.OffsetX, transform.OffsetY));
+                if (!root.TryGetDepthScale(anchor, out double scale)) return false;
+                double initialY = pointerScreen.Y, factor = scale * elevation * parent.Placement.ElevationScale;
+                heightContainerDelta = point => (point.Y - initialY) / factor;
+            }
+            heightContainer = id; heightContainerStart = card.Height;
+            gesture = "billboard-height"; BeginPointerTransaction(L.Get("Editor.History.Transform")); return true;
+        }
         billboardSources = SelectedEditingWorldElements().ToDictionary(e => e.Id, e => e.Clone());
+        nodeOriginalAuthoredElements = Session.Document.Elements.Where(element => billboardSources.ContainsKey(element.Id)).ToDictionary(element => element.Id, element => element.Clone());
         transforms = billboardSources.ToDictionary(e => e.Key, e => e.Value.Transform);
         gesture = "billboard-height"; BeginPointerTransaction(L.Get("Editor.History.Transform")); return true;
     }
@@ -201,8 +285,26 @@ internal sealed partial class EditorController
     {
         if (gesture == "billboard-height")
         {
+            if (heightContainer is { } id && heightContainerDelta is { } delta)
+            {
+                if (!Session.TryUpdateContainerBillboardHeight(id, heightContainerStart - delta(pointerScreen))) RejectPointer();
+                return true;
+            }
             var mapping = CurrentCanvasMapping;
             foreach (var item in Session.SelectedElements())
+                if (billboardSources.TryGetValue(item.Id, out var displayed) && displayed.BillboardSurface is not null && nodeOriginalAuthoredElements.TryGetValue(item.Id, out var authored))
+                {
+                    var graph = SceneGraph.Read(Session.Document);
+                    var root = CanvasMapping.CreateViewing(viewDocument ?? Session.Document, canvasView, viewRootCanvas);
+                    var plane = (viewContainer ?? ContainerPlacementContext.Identity).Compose(graph.ScopeContainerPlacement(authored.GroupId)).PlaneToTarget(root.PlaneToScreen);
+                    if (plane.TryInverse(out var inverse))
+                    {
+                        var candidate = authored.Clone();
+                        candidate.BillboardHeight -= inverse.TransformPoint(pointerScreen).Y - inverse.TransformPoint(startScreen).Y;
+                        if (mapping.IsElementSafe(graph.ScopeContainerPlacement(candidate.GroupId).Resolve(candidate))) item.BillboardHeight = candidate.BillboardHeight;
+                    }
+                }
+                else
                 if (billboardSources.TryGetValue(item.Id, out var source) && mapping.TryGetDepthScale(source.BillboardAnchor, out var scale))
                 {
                     var candidate = source.Clone(); candidate.BillboardHeight -= (pointerScreen.Y - startScreen.Y) / scale;

@@ -11,6 +11,7 @@ internal sealed class ToolStateStore
 {
     private sealed class State
     {
+        public string CanvasPresetSelection { get; set; } = "";
         [JsonRequired] public int Version { get; set; } = 2;
         [JsonRequired] public Dictionary<EditorTool, ToolParameters> Tools { get; set; } = [];
         [JsonRequired] public Dictionary<EditorTool, EditorTool> Buttons { get; set; } = [];
@@ -26,6 +27,7 @@ internal sealed class ToolStateStore
     private readonly CompatibleConfiguration compatibility;
     private string savedFingerprint;
 
+    internal string CanvasPresetSelection { get; set; } = "";
     public Dictionary<EditorTool, ToolParameters> Tools { get; }
     public Dictionary<EditorTool, EditorTool> Buttons { get; }
     public Dictionary<EditorTool, string> Selections { get; }
@@ -52,14 +54,9 @@ internal sealed class ToolStateStore
             foreach(var key in state.OfficialBaselines.Where(p=>!ValidPresetId(p.Key,true)||!p.Value.IsValid()).Select(p=>p.Key).ToArray())state.OfficialBaselines.Remove(key);
             Validate(state);
             state.Version = 2;
-            // Retired solid-cover entries are compatibility input only. They must not
-            // restore an executable tool, family selection, preview, or toolbar alias.
-            state.Tools.Remove(EditorTool.Redact); state.PreviewSources.Remove(EditorTool.Redact);
-            state.Selections.Remove(EditorTool.Redact);
-            foreach (var key in state.Buttons.Where(entry => entry.Value == EditorTool.Redact).Select(entry => entry.Key).ToArray()) state.Buttons.Remove(key);
-            foreach (var key in state.OfficialBaselines.Where(entry => entry.Value.Tool == EditorTool.Redact).Select(entry => entry.Key).ToArray()) state.OfficialBaselines.Remove(key);
             compatibility.Capture(state,JsonOptions);
         }
+        CanvasPresetSelection = state.CanvasPresetSelection;
         Tools = state.Tools; Buttons = state.Buttons; Selections = state.Selections;
         OfficialBaselines = state.OfficialBaselines; PreviewSources = state.PreviewSources;
         savedFingerprint = JsonSerializer.Serialize(state, JsonOptions);
@@ -87,11 +84,11 @@ internal sealed class ToolStateStore
     public void Save()
     {
         foreach (var parameters in Tools.Values.Concat(OfficialBaselines.Values).Concat(PreviewSources.Values)) parameters.NormalizeAppearance();
-        var state = new State { Tools = Tools, Buttons = Buttons, Selections = Selections,
+        var state = new State { CanvasPresetSelection = CanvasPresetSelection, Tools = Tools, Buttons = Buttons, Selections = Selections,
             OfficialBaselines = OfficialBaselines, PreviewSources = PreviewSources };
         Validate(state);
         string serialized = JsonSerializer.Serialize(state, JsonOptions);
-        if (serialized == savedFingerprint) return;
+        if (serialized == savedFingerprint && !compatibility.NeedsCleanup) return;
         if (System.Text.Encoding.UTF8.GetByteCount(serialized) > MaximumBytes) throw Invalid();
         compatibility.Save(state,JsonOptions);
         savedFingerprint = serialized;
@@ -115,7 +112,7 @@ internal sealed class ToolStateStore
         IsFamily(key) && parameters is not null && parameters.IsValid() && ToolPresetLibrary.Family(parameters.Tool) == key;
     private static bool IsFamily(EditorTool tool) => Enum.IsDefined(tool) && ToolPresetLibrary.Family(tool) == tool;
     private static EditorTool ButtonFamily(EditorTool tool) => ToolPresetLibrary.Family(tool) switch
-    { EditorTool.Crop or EditorTool.Pixelate or EditorTool.Redact or EditorTool.Presentation or EditorTool.PointerPresentation => EditorTool.Blur, var family => family };
+    { EditorTool.Crop or EditorTool.Pixelate or EditorTool.Presentation or EditorTool.PointerPresentation => EditorTool.Blur, var family => family };
     private static bool ValidPresetId(string? id, bool officialOnly = false) => id is { Length: <= 80 } &&
         (id.StartsWith("official.", StringComparison.Ordinal) && id.Length > 9 || !officialOnly && id.StartsWith("user-", StringComparison.Ordinal) && id.Length > 5) &&
         id.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_');

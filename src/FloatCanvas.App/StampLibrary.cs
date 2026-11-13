@@ -284,7 +284,7 @@ internal sealed class StampLibrary(string profileDirectory)
     public async Task PlaceAsync(Guid id, EditorSession target, PointD center, CancellationToken ct = default) =>
         Place(await LoadStampAsync(id, ct), target, center);
 
-    public static void Place(LoadedStamp stamp, EditorSession target, PointD center, string? name = null)
+    public static void Place(LoadedStamp stamp, EditorSession target, PointD center, string? name = null, ContainerBillboardInsertion? billboard = null)
     {
         if (!double.IsFinite(center.X) || !double.IsFinite(center.Y)) throw new ArgumentOutOfRangeException(nameof(center));
         string? placementName = name ?? stamp.Name;
@@ -295,25 +295,26 @@ internal sealed class StampLibrary(string profileDirectory)
             var entry = package.Definitions.Single(definition => definition.Id == package.EntryDefinitionId);
             var existing = target.Document.Definitions.FirstOrDefault(definition => definition.Source is { IsLinked: false } source &&
                 source.SourceResourceId == package.ResourceId && source.EntryDefinitionId == package.EntryDefinitionId && source.LastAcceptedContentRevision == entry.Revision);
-            if (existing is not null) target.PlacePrefab(existing.Id, new(transform, 1), name: placementName, select: false);
+            if (existing is not null) target.PlacePrefab(existing.Id, new(transform, 1), name: placementName, select: false, billboard: billboard);
             else target.ImportPrefab(package, stamp.Assets, new(transform, 1), new ExternalPrefabSource
             {
                 SourceResourceId = package.ResourceId, EntryKind = PrefabSourceKind.PrefabDefinition,
                 EntryDefinitionId = package.EntryDefinitionId, LastAcceptedContentRevision = entry.Revision, ImportOrigin = entry.Pivot
-            }, select: false, name: placementName);
+            }, select: false, name: placementName, billboard: billboard);
             target.SetSelection([]); return;
         }
         var mapping = CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
-        foreach (var source in SceneEvaluation.Build(stamp.Document).RenderDocument.Elements)
+        foreach (var source in billboard is null ? SceneEvaluation.Build(stamp.Document).RenderDocument.Elements : [])
         {
             var candidate = source.Clone(); BillboardGeometry.ApplyPlaneTransform(candidate, transform);
             if (!mapping.IsElementSafe(candidate)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
         }
-        target.InsertDocument(stamp.Document, stamp.Assets, transform, group: true, groupName: placementName);
+        target.InsertDocument(stamp.Document, stamp.Assets, transform, group: true, groupName: placementName, billboard: billboard);
         target.SetSelection([]);
     }
 
-    public static void PlaceBillboardRaster(LoadedStamp stamp, EditorSession target, BillboardDepthLine? depth, PointD screenCenter, string? name = null)
+    public static void PlaceBillboardRaster(LoadedStamp stamp, EditorSession target, BillboardDepthLine? depth, PointD screenCenter, string? name = null,
+        CanvasMapping? placementMapping = null, RectD? logicalCanvasBounds = null)
     {
         target.RequireWritableScope();
         if (target.IsTransactionActive) throw new InvalidOperationException(L.Get("Text.ActionInProgress"));
@@ -321,8 +322,10 @@ internal sealed class StampLibrary(string profileDirectory)
             throw new InvalidDataException(L.Get("Stamp.InvalidLibrary"));
         var bounds = new RectD(screenCenter.X - source.Width / 2, screenCenter.Y - source.Height / 2,
             source.Width, source.Height);
-        var element = SnapshotImageCommand.CreateBillboardElement(target.Assets,
-            new(stamp.Assets.Get(assetId).Data.ToArray(), bounds, true), CanvasMapping.Create(target.Document, target.ActiveRootCanvas), depth);
+        var mapping = placementMapping ?? CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
+        var element = depth is null ? BillboardImagePlacement.Prepare(target, mapping, source.Width, source.Height, screenCenter, logicalCanvasBounds)
+            : SnapshotImageCommand.PrepareBillboardElement(new([], bounds, true), mapping, depth);
+        element.AssetId = target.Assets.Add(stamp.Assets.Get(assetId).Data.ToArray());
         element.Name = name ?? stamp.Name;
         target.Add(element, L.Get("History.InsertPreset"));
         target.SetSelection([]);

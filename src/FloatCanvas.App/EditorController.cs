@@ -7,10 +7,9 @@ namespace FloatCanvas.App;
 
 internal enum EditorTool
 {
-    Select, Freehand, Highlighter, Line, Arrow, DoubleArrow, Rectangle, RoundedRectangle, Ellipse,
-    Triangle, Text, Number, Image, Eraser, Crop, Blur, Pixelate,
-    // Retained numeric value for reading old tool caches and presets only. Never activates.
-    Redact, CaptureRegion, Symbol, Emoji, Stamp, Canvas, Presentation = 23, PointerPresentation = 24
+    Select = 0, Freehand = 1, Highlighter = 2, Line = 3, Arrow = 4, DoubleArrow = 5, Rectangle = 6, RoundedRectangle = 7, Ellipse = 8, Triangle = 9, Text = 10, Number = 11, Image = 12, Eraser = 13, Crop = 14, Blur = 15, Pixelate = 16,
+    CaptureRegion = 18, Symbol = 19, Emoji = 20, Stamp = 21, Canvas = 22, Presentation = 23, PointerPresentation = 24
+
 }
 
 /// <summary>Converts native pointer gestures into atomic document operations.</summary>
@@ -38,7 +37,7 @@ internal sealed partial class EditorController
         get => tool;
         set
         {
-            if (value == EditorTool.Redact) value = EditorTool.Blur;
+            if (!Enum.IsDefined(value)) return;
             if (value == EditorTool.Crop && !CanCropSelection) value = EditorTool.Select;
             if (value == EditorTool.Triangle)
             {
@@ -104,8 +103,7 @@ internal sealed partial class EditorController
         parameters = parameters.Clone(); parameters.NormalizeAppearance();
         if (!parameters.IsValid()) throw new ArgumentException(nameof(parameters));
         // Old presets retain their serialized enum; only future drawing uses the unified symbol tool.
-        var nextTool = parameters.Tool == EditorTool.Redact ? EditorTool.Blur :
-            parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol :
+        var nextTool = parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol :
             parameters.Tool == EditorTool.Crop && !CanCropSelection ? EditorTool.Select : parameters.Tool;
         if (tool != nextTool) PlacementContextVersion++;
         Cancel(); tool = nextTool;
@@ -137,6 +135,7 @@ internal sealed partial class EditorController
     private PointD? viewOrigin;
     private object? viewEpoch;
     private LayerPlacement? viewPlacement;
+    private ContainerPlacementContext? viewContainer;
     private SceneDocument? viewDocument;
     private RootCanvasKind viewRootCanvas;
     private bool independentCanvasView;
@@ -146,13 +145,14 @@ internal sealed partial class EditorController
     private RootCanvasKind PickingRootCanvas => viewPlacement is not null ? RootCanvasKind.Main : Session.ActiveRootCanvas;
     internal PointD CanvasOrigin => viewOrigin ?? ScreenOrigin;
     internal CanvasMapping CurrentCanvasMapping => viewMapping ?? CanvasMapping.Create(Session.Document, Session.ActiveRootCanvas);
+    internal bool HasSharedCardContext => !independentCanvasView && viewContainer?.Surface is not null;
     internal void SetCanvasView(CanvasMapping? mapping, PointD? origin, object? epoch, LayerPlacement? placement = null,
         SceneDocument? displayDocument = null, RootCanvasKind displayRootCanvas = RootCanvasKind.Main, bool independent = false,
-        CanvasViewTransform? viewing = null, bool preserveMoveGesture = false)
+        CanvasViewTransform? viewing = null, bool preserveMoveGesture = false, ContainerPlacementContext? container = null)
     {
         bool changed = !ReferenceEquals(viewEpoch, epoch) || canvasView != (viewing ?? CanvasViewTransform.Identity);
         viewMapping = mapping; viewOrigin = origin; viewEpoch = epoch; viewPlacement = placement; viewDocument = displayDocument; viewRootCanvas = displayRootCanvas;
-        independentCanvasView = independent;
+        independentCanvasView = independent; viewContainer = container;
         canvasView = viewing ?? CanvasViewTransform.Identity;
         if (!changed) return;
         PlacementContextVersion++;
@@ -229,8 +229,10 @@ internal sealed partial class EditorController
         }
     }
 
-    public EditorController(EditorSession session) { Session = session; session.Changed += OnChanged; }
-    internal void DetachSession() { CancelPicking(); ClearPresentedScene(); Session.Changed -= OnChanged; selectionRenderer?.Dispose(); selectionRenderer = null; }
+    internal event Action<SceneDocument, long>? SceneCommitted;
+    private void OnContentCommitted(SceneDocument document, long scope) => SceneCommitted?.Invoke(document, scope);
+    public EditorController(EditorSession session) { Session = session; session.Changed += OnChanged; session.ContentCommitted += OnContentCommitted; }
+    internal void DetachSession() { CancelPicking(); ClearPresentedScene(); Session.Changed -= OnChanged; Session.ContentCommitted -= OnContentCommitted; selectionRenderer?.Dispose(); selectionRenderer = null; }
     public bool CanCropSelection => ImageToolEligibility.TryGetCropTarget(Session, out _);
     internal bool TryRedirectWindowSourceCrop()
     {
@@ -241,7 +243,7 @@ internal sealed partial class EditorController
     private void OnChanged(object? sender, EventArgs e)
     {
         if (!CurrentCanvasMapping.IsPerspective) billboardMode = false;
-        if ((screenBillboardDrawing || screenBillboardRegion) &&
+        if (!publishingScreenBillboard && (screenBillboardDrawing || screenBillboardRegion) &&
             (!CurrentCanvasMapping.IsPerspective || !IsScreenDraftContextCurrent)) { Cancel(); return; }
         if (!CurrentCanvasMapping.IsPerspective) { billboardMode = false; ClearBillboardDepth(); }
         if (gesture == "image-crop" && !IsCurrentCropTarget()) Cancel();
@@ -254,10 +256,12 @@ internal sealed partial class EditorController
         Cancel();
         ClearPresentedScene();
         Session.Changed -= OnChanged;
+        Session.ContentCommitted -= OnContentCommitted;
         Session = session;
-        viewMapping = null; viewOrigin = null; viewEpoch = null; viewPlacement = null; viewDocument = null; independentCanvasView = false;
+        viewMapping = null; viewOrigin = null; viewEpoch = null; viewPlacement = null; viewContainer = null; viewDocument = null; independentCanvasView = false;
         if (!session.Document.Canvas.Projection.Enabled) billboardMode = false;
         session.Changed += OnChanged;
+        session.ContentCommitted += OnContentCommitted;
         ScreenOrigin = origin;
         if (tool == EditorTool.Crop && !CanCropSelection) tool = EditorTool.Select;
         Changed?.Invoke();
@@ -271,12 +275,14 @@ internal sealed partial class EditorController
 
     private void CancelGesture(bool rollback, bool notify)
     {
+        var cancelledDraft = rollback && HasScreenBillboardDraft && OwnsPointerTransaction && IsScreenDraftContextCurrent ? Session.Document : null;
+        long cancelledScope = Session.EditScopeVersion;
         CancelPicking();
         temporaryMove = false;
         if (notify && (_pointerOwnedSession is null || OwnsPointerTransaction)) Cancelling?.Invoke();
         resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
         resizeTextSources.Clear();
-        nodeTransform = null; nodeOriginalElements.Clear(); drawingParents.Clear();
+        nodeTransform = null; nodeOriginalElements.Clear(); nodeOriginalAuthoredElements.Clear(); drawingParents.Clear();
         gesture = null; drawing = effectTarget = resizeSource = billboardEndpointSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
         lastGestureMove = null;
         CapturePreview = null; capturePoints.Clear();
@@ -286,10 +292,12 @@ internal sealed partial class EditorController
         shiftDeselectTarget = null;
         selectionOnClick = null;
         ClearBillboardDepth(); pendingBillboardInsertion = null; billboardSources.Clear(); billboardMoveDelta = null;
+        pendingBillboardPreview = null; pendingBillboardCandidate = null; pendingBillboardPressed = false;
         IsPointerBlocked = false; strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
         if (rollback && OwnsPointerTransaction) Session.Cancel();
         _pointerOwnedSession = null; _pointerOwnedTransaction = 0;
         Changed?.Invoke();
+        if (cancelledDraft is not null) ScreenBillboardCancelled?.Invoke(cancelledDraft, cancelledScope);
     }
     public void Pointer(OverlayPointerEvent e) => PointerForCanvas(e, e.Kind == OverlayPointerKind.DoubleClick);
 
@@ -669,6 +677,9 @@ internal sealed partial class EditorController
     private void Move(PointD p, OverlayModifiers modifiers)
     {
         gestureModifiers=modifiers;
+        // A plain click must not round-trip an unchanged billboard anchor through
+        // the projection and turn floating-point noise into a document edit.
+        if (gesture == "move" && !gestureMoved && pointerScreen == startScreen) return;
         // An overlapping foreground layer wins a click, while dragging from the same
         // selected-frame body moves the current selection. Ignore click-sized jitter
         // until the existing physical movement threshold establishes that intent.

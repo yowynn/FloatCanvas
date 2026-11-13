@@ -79,11 +79,11 @@ internal static class ImageImportCommand
 
     /// <summary>Fresh image pixels remain encoded; screen placement is converted to shared logical units once.</summary>
     internal static void InsertBillboard(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD screenPlacement,
-        BillboardDepthLine? depth, PointD screenCenter, double opacity = 1)
+        BillboardDepthLine? depth, PointD screenCenter, double opacity = 1, CanvasMapping? placementMapping = null, RectD? logicalCanvasBounds = null)
     {
         ValidateOpacity(opacity);
         RequireWritableScope(target);
-        var mapping = CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
+        var mapping = placementMapping ?? CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
         var elements = new List<CanvasElement>();
         int index = 0;
         foreach (var image in images)
@@ -92,8 +92,9 @@ internal static class ImageImportCommand
             double screenWidth = image.Width * fit, screenHeight = image.Height * fit;
             var bounds = new RectD(screenCenter.X - screenWidth / 2 + index * 20,
                 screenCenter.Y - screenHeight / 2 + index * 20, screenWidth, screenHeight);
-            var element = SnapshotImageCommand.PrepareBillboardElement(
-                new(image.PngBytes, bounds, true), mapping, depth);
+            var element = depth is null
+                ? BillboardImagePlacement.Prepare(target, mapping, image.Width, image.Height, screenCenter + new PointD(index * 20, index * 20), logicalCanvasBounds)
+                : SnapshotImageCommand.PrepareBillboardElement(new(image.PngBytes, bounds, true), mapping, depth);
             element.Style.Opacity = opacity;
             elements.Add(element);
             index++;

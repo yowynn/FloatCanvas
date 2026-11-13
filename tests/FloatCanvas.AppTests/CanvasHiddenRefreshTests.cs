@@ -25,7 +25,7 @@ internal static class CanvasHiddenRefreshTests
             { Width = 1, Height = 1, PositionX = -10000, PositionY = -10000, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x080000A0 });
             using var scope = enhanced ? new OverlayWindowScope(owner.Handle, () => true) : null;
             AppTheme.Apply("dark");
-            var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly())
+            var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly())
             { Left = -10000, Top = -10000, ShowActivated = false, Opacity = 0, IsHitTestVisible = false, WindowStartupLocation = WindowStartupLocation.Manual };
             window.SourceInitialized += (_, _) =>
             {
@@ -75,7 +75,7 @@ internal static class CanvasHiddenRefreshTests
                     window.Show(); Pump();
                     findings.Add(($"{backend} canvas reopening applies only the newest queued state", background.Value == latest.BackgroundColor && gridColor.Value == latest.Grid.Color &&
                         columns.Value == 33 && rows.Value == 17 && width.Value == latest.Grid.Width && Equals((pattern.SelectedItem as RadioButton)?.Tag, latest.Grid.Pattern)));
-                    findings.Add(($"{backend} canvas reopening synchronizes presets once", presetRefreshes == 1));
+                    findings.Add(($"{backend} canvas reopening reuses unchanged preset artwork", presetRefreshes == 0));
                     findings.Add(($"{backend} canvas reopening applies queued display choices", Field<ContextMenu>(window, "resetMenu").Items.Count == 3 && Field<Button>(window, "resetChoices").Visibility == Visibility.Visible));
                 }
                 finally { descriptor.RemoveValueChanged(firstPreset, changed); }
@@ -88,7 +88,7 @@ internal static class CanvasHiddenRefreshTests
                 findings.Add(($"{backend} flat canvas refresh does not touch hidden perspective inputs", !columns.IsVisible && !rows.IsVisible &&
                     columns.Value == oldColumns && rows.Value == oldRows));
                 findings.Add(($"{backend} flat canvas refresh synchronizes its visible size field", size.IsVisible && size.Value == 73.75));
-                findings.Add(($"{backend} grid visibility off preserves and refreshes the still-visible grid property rows", gridColor.IsVisible && width.IsVisible && pattern.IsVisible && width.Value == 9));
+                findings.Add(($"{backend} grid visibility off hides appearance rows without refreshing their values", !gridColor.IsVisible && !width.IsVisible && !pattern.IsVisible && width.Value == 7));
 
                 var perspective = flat.Clone(); perspective.Projection.Enabled = true; perspective.Projection.Columns = 7; perspective.Projection.Rows = 9;
                 perspective.Projection.CellSize = 200; perspective.Grid.FlatCellSize = 999;
@@ -101,13 +101,11 @@ internal static class CanvasHiddenRefreshTests
                 findings.Add(($"{backend} live calibration refresh updates automatic coverage", Field<TextBox>(window, "lockedColumns").Text == "22" &&
                     Field<TextBox>(window, "lockedRows").Text == "26"));
 
-                var colorRow = (FrameworkElement)gridColor.Parent; var widthRow = (FrameworkElement)width.Parent; var patternRow = (FrameworkElement)pattern.Parent;
-                colorRow.Visibility = widthRow.Visibility = patternRow.Visibility = Visibility.Collapsed;
                 uint previousColor = gridColor.Value; double previousWidth = width.Value; object? previousPattern = pattern.SelectedItem;
                 perspective.Grid.Color = 0xFFABCDEF; perspective.Grid.Width = 17; perspective.Grid.Pattern = StrokePattern.Dashed;
                 window.Refresh(perspective); Pump();
                 findings.Add(($"{backend} actually hidden grid rows skip value and selection refresh", gridColor.Value == previousColor && width.Value == previousWidth && ReferenceEquals(pattern.SelectedItem, previousPattern)));
-                colorRow.Visibility = widthRow.Visibility = patternRow.Visibility = Visibility.Visible;
+                perspective.Grid.Visible = true;
                 window.Refresh(perspective); Pump();
                 findings.Add(($"{backend} revealed grid rows receive the latest pending values", gridColor.Value == 0xFFABCDEF && width.Value == 17 && Equals((pattern.SelectedItem as RadioButton)?.Tag, StrokePattern.Dashed)));
                 findings.Add(($"{backend} canvas refresh never activates a fixture window", !FixtureOwnsForeground()));
@@ -115,7 +113,7 @@ internal static class CanvasHiddenRefreshTests
                 string Snapshot() => JsonSerializer.Serialize(new { Background = background.Value, GridColor = gridColor.Value, Columns = columns.Input.Text, Rows = rows.Input.Text,
                     Size = size.Input.Text, Width = width.Input.Text, Projection = Field<SegmentedChoice>(window, "projection").SelectedValue,
                     Grid = Field<CheckBox>(window, "gridVisible").IsChecked, Pattern = (pattern.SelectedItem as RadioButton)?.Tag,
-                     Reset = Field<Button>(window, "reset").Content });
+                     Reset = System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window, "reset")) });
             }
             finally { window.CloseForDispose(); Pump(); }
         }
@@ -123,7 +121,7 @@ internal static class CanvasHiddenRefreshTests
         foreach (var finding in findings) check(finding.Name, finding.Pass);
     }
 
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
     private static void Pump()
     {
         var frame = new DispatcherFrame(); Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => frame.Continue = false); Dispatcher.PushFrame(frame);

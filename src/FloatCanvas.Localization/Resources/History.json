@@ -26,13 +26,5 @@
   "History.Cleared": {
     "zh": "已清空，可撤销。",
     "en": "Canvas cleared. Undo is available."
-  },
-  "History.SaveLeave": {
-    "zh": "保存并离开",
-    "en": "Save and leave"
-  },
-  "History.KeepLeave": {
-    "zh": "保留到历史并离开",
-    "en": "Keep in history and leave"
   }
 }

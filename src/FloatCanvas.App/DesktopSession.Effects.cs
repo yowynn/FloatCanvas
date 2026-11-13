@@ -98,10 +98,8 @@ internal sealed partial class DesktopSession
             { UpdateStatus(L.Get("Billboard.InvalidDepth")); return; }
             if (screenFirst)
             {
-                if (!BillboardGeometry.TryResolveScreenBottom(effect, mapping, ElementGeometry.LocalToPlane(effect), out var placement, out _))
+                if (!BillboardCreationGeometry.TryFromScreenContour(effect, mapping, ElementGeometry.LocalToPlane(effect), out effect, out _))
                 { UpdateStatus(L.Get("Billboard.PendingGround")); return; }
-                effect.IsBillboard = true; effect.BillboardAnchor = placement.Anchor;
-                effect.BillboardHeight = placement.Height; effect.Transform = placement.Linear;
             }
             if (!mapping.IsElementSafe(effect)) { UpdateStatus(L.Get("Perspective.InputOutsidePlane")); return; }
             if (!await PrepareLiveEffectAsync(request, effect) || !CanFinishEffectInsertion(request)) return;
@@ -227,7 +225,6 @@ internal sealed partial class DesktopSession
                     if (!_app.Windows.Cast<System.Windows.Window>().Contains(window)) continue;
                     if (ReferenceEquals(window, _toolOptionsWindow)) _toolOptionsPanel.PrepareForShow();
                     else if(window is InspectorWindow inspector)inspector.PrepareForShow();
-                    else if(window is CanvasSettingsWindow canvas)canvas.PrepareForShow();
                     else if(window is LayersWindow layers)layers.PrepareForShow();
                     SessionWindowCoordinator.Show(window);
                 }

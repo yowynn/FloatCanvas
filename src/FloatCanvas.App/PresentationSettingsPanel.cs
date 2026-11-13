@@ -18,6 +18,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
     private readonly SegmentedChoice displayMode = new(), logStyle = new();
     private readonly StackPanel recordOptions = new(), keyboardOptions = new();
     private readonly PropertyChangeRegion modeOptions;
+    internal Action<string>? ReportError { get; set; }
     private readonly TextBlock error = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
     private PresentationSettings sample = new();
     private Guid[] sourceIds = [];
@@ -122,7 +123,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
         if (refreshing || !IsEnabled || sourceIds.Length == 0) return;
         var candidate = sample.Clone(); Set(candidate, key, value, sourceIds.FirstOrDefault());
         if (!candidate.IsValid()) { Invalid(); return; }
-        sample = candidate; editedValues[key] = value; error.Text = ""; error.Visibility = Visibility.Collapsed;
+        sample = candidate; editedValues[key] = value; error.Text = ""; error.Visibility = Visibility.Collapsed; ReportError?.Invoke("");
         if (key == "DisplayStyle")
         {
             var styles = value is RestoredLogStyles recalled ? sourceIds.Select(id => recalled.Values.GetValueOrDefault(id, PresentationDisplayStyle.Log)).ToArray() : sourceIds.Select(_ => (PresentationDisplayStyle)value!).ToArray();
@@ -131,7 +132,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
         }
         ValueChanged?.Invoke(key);
     }
-    private void Invalid() { if (!refreshing) { error.Text = L.Get("Presentation.InvalidValue"); error.Visibility = Visibility.Visible; } }
+    private void Invalid() { if (!refreshing) { if (ReportError is { } report) report(L.Get("Presentation.InvalidValue")); else { error.Text = L.Get("Presentation.InvalidValue"); error.Visibility = Visibility.Visible; } } }
     private void OpenLayoutEditor()
     {
         if (!IsEnabled || CanBeginGesture?.Invoke() == false) return;

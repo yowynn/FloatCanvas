@@ -10,7 +10,7 @@ internal sealed class AspectRatioButton : ToggleButton
 {
     internal AspectRatioButton()
     {
-        Width = Height = 28; MinWidth = MinHeight = 0; Margin = new(4, 0, 4, 0);
+        Width = Height = PropertyPanelLayout.ControlHeight; MinWidth = MinHeight = 0; Margin = new(4, 0, 4, 0);
         HorizontalAlignment = HorizontalAlignment.Center; VerticalAlignment = VerticalAlignment.Center;
         SetResourceReference(StyleProperty, "CanvasAspectButton");
         AutomationProperties.SetName(this, L.Get("Inspector.KeepAspect"));

@@ -22,7 +22,13 @@ internal static class AppWindowChrome
 
     public static void Apply(Window window) => ApplyCore(window);
     public static void ApplyDialog(Window window) => ApplyCore(window);
-    public static void SetHeaderDetail(Window window, string detail) => window.Resources["CanvasWindowDetail"] = detail;
+    public static void SetHeaderDetail(Window window, string detail, bool besideTitle = false)
+    {
+        window.Resources["CanvasWindowDetail"] = detail;
+        window.Resources["CanvasWindowDetailDock"] = besideTitle ? Dock.Left : Dock.Right;
+        window.Resources["CanvasWindowDetailMaximum"] = besideTitle ? 300d : 160d;
+        window.Resources["CanvasWindowHeaderHitTesting"] = besideTitle;
+    }
     public static void SetHeaderActions(Window window, FrameworkElement actions) => window.Resources["CanvasWindowActions"] = actions;
     public static void SetHelp(Window window, string title, string text)
     {
@@ -77,6 +83,11 @@ internal static class AppWindowChrome
             popup.IsOpen = !popup.IsOpen;
             e.Handled = true;
         }));
+        window.MouseLeftButtonDown += (_, e) =>
+        {
+            if (ReferenceEquals(e.OriginalSource, window.Template.FindName("HeaderDetail", window)) && Mouse.LeftButton == MouseButtonState.Pressed)
+            { window.DragMove(); e.Handled = true; }
+        };
         window.PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape && TryCloseHelp(window)) e.Handled = true;
@@ -213,9 +224,10 @@ internal static class AppWindowChrome
               <Grid.RowDefinitions><RowDefinition Height="36"/><RowDefinition Height="*"/></Grid.RowDefinitions>
               <Grid x:Name="TitleBar" Margin="12,0,6,0" TextElement.Foreground="{TemplateBinding Foreground}">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <DockPanel Margin="0,0,4,0" IsHitTestVisible="False">
-                  <TextBlock x:Name="HeaderDetail" DockPanel.Dock="Right" MaxWidth="160" Text="{DynamicResource CanvasWindowDetail}" Margin="8,0,0,0" FontSize="11" Foreground="{DynamicResource CanvasMuted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Text="{TemplateBinding Title}" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <DockPanel Margin="0,0,4,0" IsHitTestVisible="{DynamicResource CanvasWindowHeaderHitTesting}">
+                  <TextBlock x:Name="LeadingTitle" DockPanel.Dock="Left" Text="{TemplateBinding Title}" MaxWidth="240" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Visibility="Collapsed"/>
+                  <TextBlock x:Name="HeaderDetail" shell:WindowChrome.IsHitTestVisibleInChrome="True" DockPanel.Dock="{DynamicResource CanvasWindowDetailDock}" MaxWidth="{DynamicResource CanvasWindowDetailMaximum}" HorizontalAlignment="Left" Text="{DynamicResource CanvasWindowDetail}" ToolTip="{DynamicResource CanvasWindowDetail}" Margin="8,0,0,0" FontSize="11" Foreground="{DynamicResource CanvasMuted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock x:Name="TrailingTitle" Text="{TemplateBinding Title}" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                   <ContentPresenter Content="{DynamicResource CanvasWindowActions}" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
@@ -247,6 +259,11 @@ internal static class AppWindowChrome
             <Trigger Property="ResizeMode" Value="NoResize"><Setter TargetName="ResizeGrip" Property="Visibility" Value="Collapsed"/></Trigger>
             <Trigger Property="ResizeMode" Value="CanMinimize"><Setter TargetName="ResizeGrip" Property="Visibility" Value="Collapsed"/></Trigger>
             <Trigger Property="IsActive" Value="False"><Setter TargetName="TitleBar" Property="TextElement.Foreground" Value="{DynamicResource CanvasMuted}"/></Trigger>
+
+            <Trigger SourceName="HeaderDetail" Property="DockPanel.Dock" Value="Left">
+              <Setter TargetName="LeadingTitle" Property="Visibility" Value="Visible"/>
+              <Setter TargetName="TrailingTitle" Property="Visibility" Value="Collapsed"/>
+            </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
         """;

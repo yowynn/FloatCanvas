@@ -31,6 +31,7 @@ internal sealed class InlineTextEdit : IDisposable
     private readonly bool screenFirst;
     private readonly SceneDocument ownerDocument;
     private readonly long scopeVersion;
+    private readonly long creationPreviewRevision;
     private readonly Projective2D creationProjection;
     private readonly Affine2D creationTransform;
     private readonly LayerPlacement parentPlacement;
@@ -46,7 +47,9 @@ internal sealed class InlineTextEdit : IDisposable
         }
     }
     private CanvasMapping CurrentCanvasMapping => canvasMapping();
-    internal Projective2D LocalToScreen => screenFirst ? ElementGeometry.LocalToPlane(Target) : CurrentCanvasMapping.ElementToScreen(WorldTarget);
+    internal Projective2D LocalToScreen => screenFirst
+        ? TryResolveScreenDraft(out var candidate) ? CurrentCanvasMapping.ElementToScreen(candidate) : ElementGeometry.LocalToPlane(Target)
+        : CurrentCanvasMapping.ElementToScreen(WorldTarget);
     internal CanvasElement? ScreenDraft => screenFirst && IsActive ? Target.Clone() : null;
     internal bool HasScreenDraft => screenFirst && IsActive;
     internal CanvasElement? ResolvedScreenDraft => screenFirst && TryResolveScreenDraft(out var candidate) ? candidate : null;
@@ -60,7 +63,7 @@ internal sealed class InlineTextEdit : IDisposable
         this.session=session;this.renderer=renderer;isNew=existing is null;
         this.canvasMapping = canvasMapping ?? (() => CanvasMapping.Create(session.Document, session.ActiveRootCanvas));
         screenFirst = isNew && billboardScreenFirst;
-        ownerDocument = session.Document; scopeVersion = session.EditScopeVersion;
+        ownerDocument = session.Document; scopeVersion = session.EditScopeVersion; creationPreviewRevision = session.PreviewRevision;
         creationProjection = CurrentCanvasMapping.PlaneToScreen;
         if(session.IsTransactionActive)throw new InvalidOperationException(L.Get("Text.ActionInProgress"));
         var graph = new SceneGraph(session.Document);
@@ -116,12 +119,10 @@ internal sealed class InlineTextEdit : IDisposable
     private bool TryResolveScreenDraft(out CanvasElement candidate)
     {
         candidate = Target.Clone();
-        if (!ReferenceEquals(ownerDocument, session.Document) || session.EditScopeVersion != scopeVersion ||
+        if (!ReferenceEquals(ownerDocument, session.Document) || session.EditScopeVersion != scopeVersion || session.PreviewRevision != creationPreviewRevision ||
             creationProjection != CurrentCanvasMapping.PlaneToScreen || !session.CanInsertInEditScope ||
-            !BillboardGeometry.TryResolveScreenBottom(candidate, CurrentCanvasMapping,
-                ElementGeometry.LocalToPlane(candidate), out var placement, out _)) return false;
-        candidate.IsBillboard = true; candidate.ProjectivePlacement = null;
-        candidate.BillboardAnchor = placement.Anchor; candidate.BillboardHeight = placement.Height; candidate.Transform = placement.Linear;
+            !BillboardCreationGeometry.TryPlaceLogical(Target, CurrentCanvasMapping, default,
+                creationTransform.TransformPoint(default), out candidate, out _)) return false;
         return true;
     }
     private void PlaceBillboardText()
@@ -141,7 +142,7 @@ internal sealed class InlineTextEdit : IDisposable
         {Detach();Finished?.Invoke();return;}
         if (screenFirst)
         {
-            if (!ReferenceEquals(ownerDocument, session.Document) || scopeVersion != session.EditScopeVersion ||
+            if (!ReferenceEquals(ownerDocument, session.Document) || scopeVersion != session.EditScopeVersion || creationPreviewRevision != session.PreviewRevision ||
                 creationProjection != CurrentCanvasMapping.PlaneToScreen || !session.CanInsertInEditScope)
                 Finish(commit: false);
             return;

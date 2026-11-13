@@ -53,13 +53,13 @@ internal static class SegmentedChoiceTests
         var peer = UIElementAutomationPeer.CreatePeerForElement(choice)!;
         check(name + " the group exposes a single-selection automation provider", peer.GetPattern(PatternInterface.Selection) is ISelectionProvider { CanSelectMultiple: false });
         check(name + " options expose named native radio peers", choice.Items.All(item => UIElementAutomationPeer.CreatePeerForElement(item) is { } option && option.GetAutomationControlType() == AutomationControlType.RadioButton && option.GetName() == (string)item.ToolTip));
-        check(name + " arrows remain local while project shortcuts still route", !EditorShortcutPolicy.ShouldRoute(0x27, ModifierKeys.None, choice.Items[0]) && EditorShortcutPolicy.ShouldRoute(0x53, ModifierKeys.Control, choice.Items[0]));
+        check(name + " editing routes arrows and project shortcuts past residual segment focus", EditorShortcutPolicy.ShouldRoute(0x27, ModifierKeys.None, choice.Items[0]) && EditorShortcutPolicy.ShouldRoute(0x53, ModifierKeys.Control, choice.Items[0]));
         using (var source = new HwndSource(new HwndSourceParameters("SegmentedChoiceKeys") { Width = 1, Height = 1, PositionX = -10000, PositionY = -10000, WindowStyle = unchecked((int)0x80000000), ExtendedWindowStyle = 0x08000080 }))
         {
             var device = new TestKeyboardDevice();
             var right = new KeyEventArgs(device, source, 0, Key.Right) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
             typeof(SegmentedChoice).GetMethod("OnPreviewKeyDown", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(choice, [right]);
-            check(name + " native-group keyboard navigation selects one adjacent option", right.Handled && choice.SelectedIndex == 1);
+            check(name + " outside the editor router local navigation selects one adjacent option", right.Handled && choice.SelectedIndex == 1);
             var controlRight = new KeyEventArgs(new TestKeyboardDevice(ModifierKeys.Control), source, 0, Key.Right) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
             typeof(SegmentedChoice).GetMethod("OnPreviewKeyDown", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(choice, [controlRight]);
             check(name + " modified navigation follows the routed event device", !controlRight.Handled && choice.SelectedIndex == 1);

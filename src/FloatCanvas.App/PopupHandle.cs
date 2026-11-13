@@ -13,6 +13,7 @@ internal sealed class PopupHandle
     private readonly Popup desktop;
     private readonly OverlayPopup? overlay;
     private readonly WindowPopup? panel;
+    private IDisposable? hintLease;
     internal PopupHandle(Popup desktop, string? windowTitle = null)
     {
         this.desktop=desktop;
@@ -20,23 +21,36 @@ internal sealed class PopupHandle
         {
             var content = desktop.Child!; desktop.Child = null;
             panel = new WindowPopup(content, desktop.PlacementTarget, windowTitle, desktop.VerticalOffset) { StaysOpen = desktop.StaysOpen };
-            return;
         }
-        if(OverlayWindowScope.Current is null) return;
-        var child=desktop.Child;desktop.Child=null;
-        overlay=new OverlayPopup {Child=child,PlacementTarget=desktop.PlacementTarget,Placement=desktop.Placement,
-            HorizontalOffset=desktop.HorizontalOffset,VerticalOffset=desktop.VerticalOffset,StaysOpen=desktop.StaysOpen,
-            IsHitTestVisible=desktop.IsHitTestVisible,Focusable=desktop.Focusable,
-            AllowsTransparency=desktop.AllowsTransparency,CustomPopupPlacementCallback=desktop.CustomPopupPlacementCallback};
-        if(desktop.PlacementTarget is FrameworkElement target)
+        else if(OverlayWindowScope.Current is not null)
         {
-            overlay.DataContext=desktop.DataContext??target.DataContext;
-            if(Window.GetWindow(target) is { } owner)overlay.Resources.MergedDictionaries.Add(owner.Resources);
+            var child=desktop.Child;desktop.Child=null;
+            overlay=new OverlayPopup {Child=child,PlacementTarget=desktop.PlacementTarget,Placement=desktop.Placement,
+                HorizontalOffset=desktop.HorizontalOffset,VerticalOffset=desktop.VerticalOffset,StaysOpen=desktop.StaysOpen,
+                IsHitTestVisible=desktop.IsHitTestVisible,Focusable=desktop.Focusable,
+                AllowsTransparency=desktop.AllowsTransparency,CustomPopupPlacementCallback=desktop.CustomPopupPlacementCallback};
+            if(desktop.PlacementTarget is FrameworkElement target)
+            {
+                overlay.DataContext=desktop.DataContext??target.DataContext;
+                if(Window.GetWindow(target) is { } owner)overlay.Resources.MergedDictionaries.Add(owner.Resources);
+            }
         }
+        OnOpened((_, _) => hintLease ??= TooltipLifecycle.Suppress(desktop.PlacementTarget));
+        OnClosed((_, _) => ReleaseHint());
     }
     internal object Key=>(object?)panel??overlay??(object)desktop;
     internal UIElement? Child=>panel?.Child??overlay?.Child??desktop.Child;
-    internal bool IsOpen {get=>panel?.IsOpen??overlay?.IsOpen??desktop.IsOpen;set{if(panel is not null)panel.IsOpen=value;else if(overlay is not null)overlay.IsOpen=value;else desktop.IsOpen=value;}}
+    internal bool IsOpen
+    {
+        get=>panel?.IsOpen??overlay?.IsOpen??desktop.IsOpen;
+        set
+        {
+            if(value) hintLease ??= TooltipLifecycle.Suppress(desktop.PlacementTarget);
+            try { if(panel is not null)panel.IsOpen=value;else if(overlay is not null)overlay.IsOpen=value;else desktop.IsOpen=value; }
+            finally { if(!IsOpen) ReleaseHint(); }
+        }
+    }
+    private void ReleaseHint(){var lease=hintLease;hintLease=null;lease?.Dispose();}
     internal bool StaysOpen {get=>panel?.StaysOpen??overlay?.StaysOpen??desktop.StaysOpen;set{if(panel is not null)panel.StaysOpen=value;else if(overlay is not null)overlay.StaysOpen=value;else desktop.StaysOpen=value;}}
     internal bool TargetPressToggles {set {if(panel is not null)panel.TargetPressToggles=value;else if(overlay is not null)overlay.TargetPressToggles=value;}}
     internal double VerticalOffset {get=>panel?.VerticalOffset??overlay?.VerticalOffset??desktop.VerticalOffset;set{if(panel is not null)panel.VerticalOffset=value;else if(overlay is not null)overlay.VerticalOffset=value;else desktop.VerticalOffset=value;}}

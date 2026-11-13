@@ -45,8 +45,10 @@ internal static class PresetHistoryKeyboardTests
             SetModifiers(original, ModifierKeys.Control);
             int count = commands.Count; current = Args(Key.Z); text.RaiseEvent(current);
             check("color hex editor retains its local Ctrl+Z", commands.Count == count);
-            foreach (var source in new DependencyObject[] { new TextBox(), new PasswordBox(), new ComboBox(), new Slider(), new System.Windows.Controls.Primitives.Thumb(), new MenuItem() })
+            foreach (var source in new DependencyObject[] { new TextBox(), new PasswordBox(), new MenuItem() })
                 check("color history preserves local " + source.GetType().Name + " editing", !PresetHistoryKeyboardRoute.ShouldRoute(Key.Z, ModifierKeys.Control, source));
+            foreach (var source in new DependencyObject[] { new ComboBox(), new Slider(), new System.Windows.Controls.Primitives.Thumb() })
+                check("color non-text control forwards history " + source.GetType().Name, PresetHistoryKeyboardRoute.ShouldRoute(Key.Z, ModifierKeys.Control, source));
             foreach (var modifiers in new[] { ModifierKeys.None, ModifierKeys.Shift, ModifierKeys.Alt | ModifierKeys.Control, ModifierKeys.Control | ModifierKeys.Windows })
                 check("color history excludes unrelated modifiers " + modifiers, !PresetHistoryKeyboardRoute.ShouldRoute(Key.Z, modifiers, tile));
             check("color history route excludes tool switching, save and toolbar commands", !PresetHistoryKeyboardRoute.ShouldRoute(Key.B, ModifierKeys.None, tile) && !PresetHistoryKeyboardRoute.ShouldRoute(Key.S, ModifierKeys.Control, tile) && !PresetHistoryKeyboardRoute.ShouldRoute(Key.Tab, ModifierKeys.None, tile));

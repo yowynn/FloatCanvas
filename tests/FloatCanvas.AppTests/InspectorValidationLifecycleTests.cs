@@ -76,12 +76,12 @@ internal static class InspectorValidationLifecycleTests
             finally{window.Hide();HwndSource.FromHwnd(handle)?.Dispose();}
             check("offscreen inspector lifecycle destroys its own native source",handle!=0&&!IsWindow(handle));
         }
-        var canvas=new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
-        canvas.Refresh(new() {Projection=new() {Enabled=true}});
+        var canvas=new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
+        canvas.Refresh(new() {Projection=new() {Enabled=true}, Grid=new() {Visible=true}});
         canvas.PrepareForShow();
         int canvasEdits=0;canvas.GridCountsChanged+=(_,_)=>canvasEdits++;canvas.GridWidthChanged+=_=>canvasEdits++;
         var columns=Field<NumericValueField>(canvas,"columns");string originalColumns=columns.Input.Text;columns.Input.Text="invalid";
-        typeof(CanvasSettingsWindow).GetMethod("CommitCounts",Private)!.Invoke(canvas,null);
+        typeof(CanvasToolOptions).GetMethod("CommitCounts",Private)!.Invoke(canvas.Options,null);
         canvas.Refresh(canvas.DisplayedSettings!);canvas.PrepareForShow();
         check("preparing hidden Canvas settings restores invalid counts without edits",columns.Input.Text==originalColumns&&canvasEdits==0);
         var width=Field<NumericValueField>(canvas,"width");string originalWidth=width.Input.Text;width.Input.Text="65";
@@ -99,7 +99,7 @@ internal static class InspectorValidationLifecycleTests
         var window=new InspectorWindow(()=>session); window.PrepareForShow();return(session,window,Field<Dictionary<string,TextBox>>(window,"fields"));
     }
     private static bool IsError(TextBlock status)=>status.Text.StartsWith("⚠ ",StringComparison.Ordinal)&&!string.IsNullOrWhiteSpace(status.Text[2..]);
-    private static T Field<T>(object target,string name)=>(T)target.GetType().GetField(name,Private)!.GetValue(target)!;
+    private static T Field<T>(object target,string name)=>(T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name,Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
     [DllImport("user32.dll")]private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")][return:MarshalAs(UnmanagedType.Bool)]private static extern bool IsWindow(nint window);
 }

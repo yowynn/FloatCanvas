@@ -45,7 +45,7 @@ internal static class CanvasSettingsControlTests
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
         ResetFitsChosenScreen(check);
-        var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+        var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
         try
         {
             var columns = Field<NumericValueField>(window, "columns");
@@ -60,12 +60,12 @@ internal static class CanvasSettingsControlTests
             int countEdits = 0, widthEdits = 0;
             window.GridCountsChanged += (_, _) => countEdits++;
             window.GridWidthChanged += _ => widthEdits++;
-            window.Refresh(new() { Projection = new() { Enabled = true } });
+            window.Refresh(new() { Projection = new() { Enabled = true }, Grid = new() { Visible = true } });
             window.PrepareForShow();
             check("canvas numeric refresh creates no semantic edits", countEdits == 0 && widthEdits == 0);
             columns.Input.Text = "9.5";
             check("fractional cell count draft is rejected without edits", !columns.TryGetValue(out _) && countEdits == 0);
-            typeof(CanvasSettingsWindow).GetMethod("CommitCounts", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
+            typeof(CanvasToolOptions).GetMethod("CommitCounts", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window.Options, null);
             check("invalid cell count commit restores current count", columns.Value == 8 && columns.Input.Text == "8" && countEdits == 0);
             columns.Slider.Value = 12.4;
             check("cell slider normalizes to integer and commits once", columns.Value == 12 && columns.Input.Text == "12" && countEdits == 1);
@@ -85,9 +85,9 @@ internal static class CanvasSettingsControlTests
         if (Environment.GetEnvironmentVariable("FLOATCANVAS_PIN_UI_OUTPUT") is { Length: > 0 } output)
             CanvasPinUiEvidence.Run(output, check);
     }
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
 
-    private static void PinSelection(CanvasSettingsWindow window, Action<string, bool> check)
+    private static void PinSelection(CanvasOptionsTestWindow window, Action<string, bool> check)
     {
         var selector = Field<CanvasPinSelector>(window, "pinSelector");
         var points = Field<System.Windows.Controls.Primitives.ToggleButton[]>(selector, "points");
@@ -102,10 +102,10 @@ internal static class CanvasSettingsControlTests
         check("selecting current pin is a no-op", edits == 1 && points[0].IsChecked == true);
         settings.Projection.PinLocation = CanvasPinLocation.Center;
         window.Refresh(settings); window.PrepareForShow();
-        check("center with odd counts explains half cells", Field<TextBlock>(window, "pinHint").Visibility == Visibility.Visible);
+        check("center with odd counts explains half cells on hover", selector.ToolTip!.ToString()!.Contains(FloatCanvas.Localization.AppText.Get("Canvas.PinHalfCells")));
         settings.Projection.Rows = settings.Projection.Columns = 8;
         window.Refresh(settings); window.PrepareForShow();
-        check("even center counts have no half-cell hint", Field<TextBlock>(window, "pinHint").Visibility == Visibility.Collapsed);
+        check("even center counts have no half-cell hint", selector.ToolTip!.ToString() == FloatCanvas.Localization.AppText.Get("Canvas.PinHelp"));
         var gridLock = Field<CheckBox>(window, "gridSizeLock"); int lockEdits = 0;
         window.GridSizeLockChanged += value => { lockEdits++; settings.Projection.LockedGridCellSize = value ? 73.1 : null; window.Refresh(settings); window.PrepareForShow(); };
         settings.Projection.CellSize = 100;
@@ -123,7 +123,7 @@ internal static class CanvasSettingsControlTests
         settings.Projection.Enabled = true; window.Refresh(settings); window.PrepareForShow();
     }
 
-    private static void ReferencePreference(CanvasSettingsWindow window, Action<string, bool> check)
+    private static void ReferencePreference(CanvasOptionsTestWindow window, Action<string, bool> check)
     {
         string originalProfile = ApplicationPaths.ProfileDirectory;
         var originalScope = ApplicationPaths.RequestedMonitorScope;
@@ -163,7 +163,7 @@ internal static class CanvasSettingsControlTests
             ApplicationPaths.Configure(args.ToArray());
         }
     }
-    private static void MonitorSelection(CanvasSettingsWindow window, Action<string, bool> check)
+    private static void MonitorSelection(CanvasOptionsTestWindow window, Action<string, bool> check)
     {
         MonitorInfo[] monitors = [
             new("main", new(0,0,3840,2160),new(0,0,3840,2052),144,144,true),
@@ -173,13 +173,13 @@ internal static class CanvasSettingsControlTests
         var menu = Field<ContextMenu>(window,"resetMenu");
         check("reset lists the default primary target separately from every active monitor", menu.Items.Count == 3 &&
             Field<Button>(window, "resetChoices").Visibility == Visibility.Visible && Field<Button>(window, "resetChoices").IsEnabled);
-        check("target-display dropdown was retired", typeof(CanvasSettingsWindow).GetField("referenceMonitor", BindingFlags.Instance|BindingFlags.NonPublic) is null);
+        check("target-display dropdown was retired", typeof(CanvasToolOptions).GetField("referenceMonitor", BindingFlags.Instance|BindingFlags.NonPublic) is null);
         int requests = 0, choices = 0; string? selected = null, preference = "pad";
         void Choose(string? device) { requests++; selected = device; }
         Action<string?> remember = device => { choices++; preference = device; };
-        var selectedEvent = typeof(CanvasSettingsWindow).GetEvent("ResetDisplaySelected");
+        var selectedEvent = typeof(CanvasToolOptions).GetEvent("ResetDisplaySelected");
         check("reset target selection has a separate preference-only notification", selectedEvent is not null);
-        selectedEvent?.AddEventHandler(window, remember);
+        selectedEvent?.AddEventHandler(window.Options, remember);
         window.ResetDisplayRequested += Choose;
         try
         {
@@ -190,7 +190,7 @@ internal static class CanvasSettingsControlTests
                 FloatCanvas.Localization.AppText.Get("Canvas.PrimaryDisplay")));
             defaultItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check("choosing the primary default changes only its target and unnumbered caption", requests == 1 && choices == 1 && preference is null &&
-                Equals(Field<Button>(window,"reset").Content, FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")) && defaultItem.IsChecked &&
+                Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")), FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")) && defaultItem.IsChecked &&
                 menu.Items.OfType<MenuItem>().Count(item => item.IsChecked) == 1);
             defaultItem.IsChecked = false;
             defaultItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -201,32 +201,32 @@ internal static class CanvasSettingsControlTests
             var primaryItem = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "main"));
             primaryItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check("the explicit primary monitor remains a numbered choice separate from the default", requests == 2 && choices == 2 && preference == "main" &&
-                primaryItem.IsChecked && !defaultItem.IsChecked && Equals(Field<Button>(window,"reset").Content,
+                primaryItem.IsChecked && !defaultItem.IsChecked && Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")),
                     FloatCanvas.Localization.AppText.Format("Canvas.ResetOnNumberedDisplay", 1)));
             var padItem = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "pad"));
             padItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check("choosing a secondary monitor does not execute a reset", requests == 2 && choices == 3 && preference == "pad" && padItem.IsChecked &&
-                menu.Items.OfType<MenuItem>().Count(item => item.IsChecked) == 1 && Equals(Field<Button>(window,"reset").Content,
+                menu.Items.OfType<MenuItem>().Count(item => item.IsChecked) == 1 && Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")),
                     FloatCanvas.Localization.AppText.Format("Canvas.ResetOnNumberedDisplay", 2)));
             Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check("a later main-button click executes the chosen secondary target once", requests == 3 && selected == "pad");
             window.SetReferenceMonitors([monitors[1], monitors[0]], preference);
             window.PrepareForShow();
             check("topology reordering retains the device choice and updates its numbered caption without resetting", requests == 3 && choices == 3 &&
-                menu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "pad")).IsChecked && Equals(Field<Button>(window,"reset").Content,
+                menu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "pad")).IsChecked && Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")),
                     FloatCanvas.Localization.AppText.Format("Canvas.ResetOnNumberedDisplay", 1)));
             window.SetReferenceMonitors(monitors, null);
             window.PrepareForShow();
             check("an unnumbered primary default remains the default across monitor reordering", requests == 3 && choices == 3 &&
-                menu.Items.OfType<MenuItem>().Single(item => item.Tag is null).IsChecked && Equals(Field<Button>(window,"reset").Content,
+                menu.Items.OfType<MenuItem>().Single(item => item.Tag is null).IsChecked && Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")),
                     FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")));
             window.SetReferenceMonitors(monitors, "missing");
             window.PrepareForShow();
             check("an unavailable reset device falls back to the distinct default without executing", requests == 3 &&
-                menu.Items.OfType<MenuItem>().Single(item => item.Tag is null).IsChecked && Equals(Field<Button>(window,"reset").Content,
+                menu.Items.OfType<MenuItem>().Single(item => item.Tag is null).IsChecked && Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")),
                     FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")));
         }
-        finally { window.ResetDisplayRequested -= Choose; selectedEvent?.RemoveEventHandler(window, remember); }
+        finally { window.ResetDisplayRequested -= Choose; selectedEvent?.RemoveEventHandler(window.Options, remember); }
         var bounds = DesktopSession.ResolveCanvasReferenceBounds(monitors,"pad",default,default,new(0,0,3840,3600));
         check("explicit reset uses physical secondary bounds", bounds == new RectD(307,2160,2160,1440));
         var initial = CanvasCalibration.CreateInitial(bounds);
@@ -238,6 +238,6 @@ internal static class CanvasSettingsControlTests
         window.PrepareForShow();
         check("a sole active display uses an unnumbered reset button with no dropdown", menu.Items.Count == 1 &&
             Field<Button>(window, "resetChoices").Visibility == Visibility.Collapsed && !Field<Button>(window, "resetChoices").IsEnabled &&
-            Field<Button>(window, "reset").IsEnabled && Equals(Field<Button>(window,"reset").Content, FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")));
+            Field<Button>(window, "reset").IsEnabled && Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")), FloatCanvas.Localization.AppText.Get("Canvas.ResetOnDisplay")));
     }
 }

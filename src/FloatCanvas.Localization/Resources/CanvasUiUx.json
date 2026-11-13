@@ -1,0 +1,21 @@
+{
+  "Layers.SelectionScope": { "zh": "已选 {0:N0} · 本层 {1:N0} · 其他层级 {2:N0}", "en": "Selected {0:N0} · this level {1:N0} · other levels {2:N0}" },
+  "Layers.CrossLevelStatistics": { "zh": "总计 {0:N0} · 本级 {1:N0}\n{2}", "en": "Total {0:N0} · This level {1:N0}\n{2}" },
+  "Layers.BatchScopeHint": { "zh": "批操作作用于完整选择；锁定项按操作规则跳过。", "en": "Batch commands use the entire selection; locked items are skipped where required." },
+  "Layers.TargetAncestor": { "zh": "路径", "en": "path" },
+  "Layers.NoTargetMatches": { "zh": "未找到匹配目标", "en": "No matching destinations" },
+  "Layers.ClearTargetSearch": { "zh": "清空搜索", "en": "Clear search" },
+  "Layers.MoveSourceChanged": { "zh": "来源选择或编辑状态已改变。请取消后重新打开移动窗口。", "en": "The source selection or editing state changed. Cancel and reopen Move to." },
+  "Layers.MoveNothingEligible": { "zh": "当前选择已没有可移动的对象。", "en": "No selected objects can be moved now." },
+  "Layers.MoveTargetUnavailable": { "zh": "原目标已不存在或不在搜索结果中，请重新选择。", "en": "The previous destination is missing or outside these search results. Choose another destination." },
+  "Canvas.GridSampleSection": { "zh": "取样格数", "en": "Sample counts" },
+  "Canvas.GridCandidateSection": { "zh": "整框推算", "en": "Full-frame estimate" },
+  "Canvas.GridCandidateManual": { "zh": "已手动调整", "en": "Manually adjusted" },
+  "Canvas.GridCandidateAutomatic": { "zh": "自动估计", "en": "Automatic" },
+  "Canvas.RectificationSummary": { "zh": "预览扭正比例；应用会调整画布逻辑尺寸，可撤销。", "en": "Preview the proportions. Applying changes the logical canvas size and can be undone." },
+  "Canvas.ApplyCanvasSize": { "zh": "应用画布尺寸", "en": "Apply canvas size" },
+  "Canvas.RectificationAspect": { "zh": "目标比例", "en": "Aspect ratio" },
+  "Canvas.GridIssueDetails": { "zh": "查看受影响对象（{0}）", "en": "Review affected objects ({0})" },
+  "Canvas.MarkGridIssue": { "zh": "在原画面标记", "en": "Mark in original view" },
+  "Canvas.MarkGridIssueHint": { "zh": "仅标记受影响区域，不改变选择、层级或画布视图。若对象在视野外，请取消校准后定位检查。可先调整取样或格数；仍失败时，取消后处理这些对象。", "en": "Marks the affected area without changing selection, scope or the canvas view. If it is off-screen, cancel calibration to locate it. Adjust the sample or counts first; if needed, cancel and inspect these objects." }
+}

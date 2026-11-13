@@ -14,9 +14,12 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
     private readonly Dictionary<string, FrameworkElement> rows = [];
     private readonly Dictionary<string, PropertyChangeRegion> conditions = [];
     private Panel target;
+    internal Action<string>? ReportError { get; set; }
     private readonly TextBlock error = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
     private PresentationGlobalSettings sample = new();
     private bool refreshing;
+    private readonly CaptionModeSwitch pointerMaster = new(PointerIcon);
+    internal FrameworkElement? HeaderActions { get; }
     internal event Action<PresentationGlobalSettings>? ValueChanged;
     internal event Action<ColorField>? EyedropperRequested;
 
@@ -32,30 +35,34 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
         }
         else
         {
-            Hint("Presentation.Global.PointerHint");
-            Check("PointerEnabled", "Presentation.Global.PointerEnabled");
-            Conditional("PointerEnabled", () =>
+            HeaderActions = pointerMaster;
+            System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(pointerMaster, true);
+            pointerMaster.Click += (_, _) => Commit("PointerEnabled", !sample.Pointer.Enabled);
+            entries.Add("PointerEnabled", new(pointerMaster, value => pointerMaster.Synchronize((bool)value, IsEnabled,
+                L.Get("Presentation.Global.PointerEnabled"), L.Get((bool)value ? "Presentation.Global.PointerOn" : "Presentation.Global.PointerOff"),
+                L.Get((bool)value ? "Presentation.Global.SwitchPointerOff" : "Presentation.Global.SwitchPointerOn"))));
+            PointerSection("Presentation.Module.Cursor", true);
+            Check("CursorEnabled", "Presentation.Module.Cursor");
+            Conditional("CursorEnabled", () =>
             {
-                Check("CursorEnabled", "Presentation.Module.Cursor");
-                Conditional("CursorEnabled", () =>
-                {
-                    Color("CursorColor", "Presentation.Global.CursorColor");
-                    Number("CursorRadiusPixels", "Presentation.CursorRadius", 2, 128, 2, 64, "px");
-                });
-                Check("ClicksEnabled", "Presentation.Module.Clicks");
-                Conditional("ClicksEnabled", () =>
-                {
-                    Click("LeftClick", "Presentation.Global.LeftClick");
-                    Click("RightClick", "Presentation.Global.RightClick");
-                    Click("MiddleClick", "Presentation.Global.MiddleClick");
-                });
-                Check("TrailEnabled", "Presentation.Module.Trail");
-                Conditional("TrailEnabled", () =>
-                {
-                    Color("TrailColor", "Presentation.Global.TrailColor");
-                    Number("TrailWidthPixels", "Presentation.TrailWidth", 1, 64, 1, 20, "px");
-                    Number("TrailMilliseconds", "Presentation.TrailDuration", 100, 5000, 100, 2000, "ms");
-                });
+                Color("CursorColor", "Presentation.Global.CursorColor");
+                Number("CursorRadiusPixels", "Presentation.CursorRadius", 2, 128, 2, 64, "px");
+            });
+            PointerSection("Presentation.Module.Clicks");
+            Check("ClicksEnabled", "Presentation.Module.Clicks");
+            Conditional("ClicksEnabled", () =>
+            {
+                Click("LeftClick", "Presentation.Global.LeftClick");
+                Click("RightClick", "Presentation.Global.RightClick");
+                Click("MiddleClick", "Presentation.Global.MiddleClick");
+            });
+            PointerSection("Presentation.Module.Trail");
+            Check("TrailEnabled", "Presentation.Module.Trail");
+            Conditional("TrailEnabled", () =>
+            {
+                Color("TrailColor", "Presentation.Global.TrailColor");
+                Number("TrailWidthPixels", "Presentation.TrailWidth", 1, 64, 1, 20, "px");
+                Number("TrailMilliseconds", "Presentation.TrailDuration", 100, 5000, 100, 2000, "ms");
             });
         }
         error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); Children.Add(error);
@@ -72,7 +79,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
             IsEnabled = canEdit;
             foreach (var (key, entry) in entries)
             {
-                if (entry.Control.IsKeyboardFocusWithin || entry.Control is NumericValueField { IsInteracting: true } ||
+                if ((entry.Control is not CaptionModeSwitch && entry.Control.IsKeyboardFocusWithin) || entry.Control is NumericValueField { IsInteracting: true } ||
                     entry.Control is ColorField { IsInteracting: true }) continue;
                 entry.Display(Get(sample, key));
                 if (entry.Control is ColorField color) color.PrepareForShow();
@@ -89,7 +96,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
         if (!candidate.IsValid()) { Invalid(); return; }
         void Update()
         {
-            sample = candidate; RefreshRows(); error.Visibility = Visibility.Collapsed; error.Text = "";
+            sample = candidate; RefreshRows(); error.Visibility = Visibility.Collapsed; error.Text = ""; ReportError?.Invoke("");
             ValueChanged?.Invoke(candidate.Clone());
         }
         string conditionKey = key.EndsWith(".Shape", StringComparison.Ordinal) ? key[..key.IndexOf('.')] + ".Enabled" : key;
@@ -105,10 +112,23 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
         }
     }
 
+    private void PointerSection(string key, bool first = false)
+    {
+        target.Children.Add(ToolOptionsLayout.Section(key, first));
+    }
+
+    private static FrameworkElement PointerIcon(bool enabled, string foreground)
+    {
+        var icon = (Viewbox)CommandGlyphs.Create(enabled ? CommandGlyphs.PresentationPointer :
+            "M5,1 L5,13 L8,10 L10,15 L12,14 L10,9 L14,9 Z M1,1 L15,15");
+        foreach (var path in ((Canvas)icon.Child).Children.OfType<System.Windows.Shapes.Path>())
+            path.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, foreground);
+        return icon;
+    }
+
     private bool FieldActive(string key)
     {
         if (key is "KeyboardScope" or "PointerEnabled") return true;
-        if (!sample.Pointer.Enabled) return false;
         if (key is "CursorEnabled" or "ClicksEnabled" or "TrailEnabled") return true;
         if (key.StartsWith("Cursor", StringComparison.Ordinal)) return sample.Pointer.CursorEnabled;
         if (key.StartsWith("Trail", StringComparison.Ordinal)) return sample.Pointer.TrailEnabled;
@@ -208,7 +228,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
     internal void ClosePickers() { foreach (var field in Colors) field.ClosePicker(); }
     internal bool OwnsColorPickerInput(DependencyObject? source) => Colors.Any(field => field.OwnsPickerInput(source));
     private void Invalid()
-    { if (!refreshing) { error.Text = L.Get("Presentation.InvalidValue"); error.Visibility = Visibility.Visible; } }
+    { if (!refreshing) { if (ReportError is { } report) report(L.Get("Presentation.InvalidValue")); else { error.Text = L.Get("Presentation.InvalidValue"); error.Visibility = Visibility.Visible; } } }
 
     private static PresentationClickStyle ClickSettings(PresentationPointerSettings value, string prefix) => prefix switch
     {

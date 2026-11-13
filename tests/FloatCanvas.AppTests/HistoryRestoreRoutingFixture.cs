@@ -119,7 +119,7 @@ internal static class HistoryRestoreRoutingFixture
                 if (stage == 1)
                 {
                     var confirmation = app.Windows.Cast<Window>().FirstOrDefault(w => w.IsVisible && w.Title == WindowTitles.Format(L.Get("App.Name"), !host.IsEditing) &&
-                        Descendants(w).OfType<Button>().Any(button => Equals(button.Content, L.Get("History.KeepLeave"))));
+                        Descendants(w).OfType<Button>().Any(button => Equals(button.Content, L.Get("Dialog.No"))));
                     if (confirmation is null) return;
                     snapshot("history-unsaved-confirmation-opened");
                     check("history replacement reaches the actual unsaved confirmation without changing its entry mode", host.IsEditing == entryEditing && host.IsKeyboardIsolationActive == entryEditing);
@@ -135,7 +135,7 @@ internal static class HistoryRestoreRoutingFixture
                         Wait(() => GetForegroundWindow() == externalHandle && !host.IsEditing, "external foreground release");
                         snapshot("history-external-foreground-before-late-confirmation");
                     }
-                    string key = scenario == "history-cancel" ? "Dialog.Cancel" : scenario == "history-save" ? "History.SaveLeave" : "History.KeepLeave";
+                    string key = scenario == "history-cancel" ? "Dialog.Cancel" : scenario == "history-save" ? "Dialog.Yes" : "Dialog.No";
                     stage = 2;
                     Click(Descendants(confirmation).OfType<Button>().Single(button => Equals(button.Content, L.Get(key))));
                     return;

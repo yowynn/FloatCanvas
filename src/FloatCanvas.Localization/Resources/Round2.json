@@ -8,8 +8,8 @@
     "en": "Project homepage"
   },
   "Canvas.FourPoints": {
-    "zh": "四点定位画布",
-    "en": "Position canvas with four points"
+    "zh": "4点确定透视",
+    "en": "4-point perspective"
   },
   "Canvas.FourPointsHint": {
     "zh": "临时隐藏工具条以外的窗口，依次点击四个角点。完成或按 Esc 取消后恢复窗口。",

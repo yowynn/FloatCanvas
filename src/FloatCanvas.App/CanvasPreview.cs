@@ -12,13 +12,14 @@ namespace FloatCanvas.App;
 internal sealed record CanvasPreviewContext(object Session, object Monitors, PointD Origin,
     bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1,
     object? ScreenDraftEpoch = null, object? PresentationEpoch = null, object? WindowEpoch = null, object? GroupEpoch = null,
-    CanvasViewTransform? View = null)
+    CanvasViewTransform? View = null, bool DepthPriorityOcclusion = false)
 {
     // Editing guides may lag one worker frame; never discard the matching base
     // scene while they update. Epoch still rejects a completed A→B→A transition.
     internal bool HasSameContent(CanvasPreviewContext other) => Equals(Session, other.Session) && Equals(Monitors, other.Monitors) &&
         Origin == other.Origin && Hidden == other.Hidden && Equals(DocumentEpoch, other.DocumentEpoch) &&
-        Equals(VisibilityEpoch, other.VisibilityEpoch) && Equals(GroupEpoch, other.GroupEpoch) && View == other.View && Epoch == other.Epoch;
+        Equals(VisibilityEpoch, other.VisibilityEpoch) && Equals(GroupEpoch, other.GroupEpoch) && View == other.View &&
+        DepthPriorityOcclusion == other.DepthPriorityOcclusion && Epoch == other.Epoch;
 
     // A completed navigation frame is useful even when input has advanced the
     // camera. Keep lifecycle identity strict so scope/privacy transitions never
@@ -37,6 +38,7 @@ internal sealed class CanvasPreviewSnapshot : IDisposable
     internal FrozenSceneEvaluation? FrozenEvaluation { get; init; }
     internal FrozenSceneEvaluation? EditingEvaluation { get; init; }
     internal LayerPlacement? EditingPlacement { get; init; }
+    internal ContainerPlacementContext? EditingContainer { get; init; }
     internal RootCanvasKind EditingRootCanvas { get; init; } = RootCanvasKind.Main;
     internal RootCanvasKind? AuthorRootCanvas { get; init; }
     internal Guid? EditingScopeId { get; init; }
@@ -74,6 +76,7 @@ internal sealed record CanvasPreviewFrame(CanvasPreviewContext Context, PreviewR
     OverlayRenderBackend Backend, bool GpuWorkload, string? GpuDetails, string? GpuFailure,
     double RenderMilliseconds, CanvasPreviewMetrics? Cache = null, SceneAnimationSchedule? Animation = null) : IDisposable
 {
+    internal bool IsTransitionFallback { get; init; }
     internal long Sequence { get; init; }
     internal long ContentRevision { get; init; }
     internal long InputSequence { get; init; }
@@ -198,7 +201,7 @@ internal sealed class CanvasPreviewRenderer : IDisposable
             var animation = renderer.CaptureAnimationSchedule(document, assets, snapshot.AnimationTime);
             var editing = snapshot.EditingEvaluation?.Scene;
             var picking = editing is not null && snapshot.EditingPlacement is { } placement
-                ? EditingDocument(editing, document, placement, snapshot.EditingRootCanvas, snapshot.AuthorRootCanvas, snapshot.EditingScopeId, snapshot.IndependentCanvas) : snapshot.Document;
+                ? EditingDocument(editing, document, placement, snapshot.EditingRootCanvas, snapshot.AuthorRootCanvas, snapshot.EditingScopeId, snapshot.IndependentCanvas, snapshot.EditingContainer) : snapshot.Document;
             return new(snapshot.Context, pixels, targets.Backend, gpuWorkload,
                 targets.GpuDetails, targets.GpuFailure, timer.Elapsed.TotalMilliseconds,
                 new(cache.BuildCount, cache.HitCount, cache.CachedRasterBytes, cache.RasterCacheByteLimit, cache.InPlaceOpacityFrameCount,
@@ -235,7 +238,8 @@ internal sealed class CanvasPreviewRenderer : IDisposable
     }
 
     internal static SceneDocument EditingDocument(EvaluatedScene editing, SceneDocument display, LayerPlacement placement,
-        RootCanvasKind rootCanvas = RootCanvasKind.Main, RootCanvasKind? authorRootCanvas = null, Guid? scopeId = null, bool independent = false)
+        RootCanvasKind rootCanvas = RootCanvasKind.Main, RootCanvasKind? authorRootCanvas = null, Guid? scopeId = null, bool independent = false,
+        ContainerPlacementContext? container = null)
     {
         var source = editing.RenderDocument;
         var visible = independent ? SceneEvaluation.Build(display).Leaves.ToDictionary(leaf => leaf.RuntimeElementId, leaf => leaf.RenderElement.Visible) : null;
@@ -246,7 +250,8 @@ internal sealed class CanvasPreviewRenderer : IDisposable
             Elements = source.Elements.Where(element => authorRootCanvas is null || editing.RootCanvasOf(element.Id) == authorRootCanvas &&
                 editing.ResolveSelectableNode(element.Id, scopeId) is not null).Select(element =>
             {
-                var result = element.Clone(); SceneGraph.ApplyPlacement(result, placement);
+                var result = container?.ResolveWorld(element) ?? element.Clone();
+                if (container is null) SceneGraph.ApplyPlacement(result, placement);
                 if (visible is not null) result.Visible = visible.GetValueOrDefault(element.Id);
                 result.Locked = !editing.IsPickableOccurrence(element.Id, visibleOverride: true);
                 return result;
@@ -285,7 +290,7 @@ internal sealed class CanvasPreviewRenderer : IDisposable
         {
             Context = source.Context, SceneIdentity = source.SceneIdentity, Document = evaluation.RenderDocument,
             SourceDocument = source.SourceDocument ?? source.Document, Evaluation = evaluation, FrozenEvaluation = frozen,
-            EditingEvaluation = source.EditingEvaluation, EditingPlacement = source.EditingPlacement, EditingRootCanvas = source.EditingRootCanvas,
+            EditingEvaluation = source.EditingEvaluation, EditingPlacement = source.EditingPlacement, EditingRootCanvas = source.EditingRootCanvas, EditingContainer = source.EditingContainer,
             AuthorRootCanvas = source.AuthorRootCanvas, EditingScopeId = source.EditingScopeId,
             IndependentCanvas = source.IndependentCanvas,
             ScreenDraft = screenDraft, ScreenDraftScopeId = source.ScreenDraftScopeId,

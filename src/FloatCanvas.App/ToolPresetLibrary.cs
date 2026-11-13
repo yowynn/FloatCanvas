@@ -53,8 +53,7 @@ internal sealed class ToolPresetLibrary
     public IReadOnlyList<ToolPreset> Official => CreateOfficial();
     internal static ToolParameters OfficialDefault(EditorTool tool) => CreateOfficial()
         .First(preset => Family(preset.Parameters.Tool) == Family(tool)).Parameters.Clone();
-    // Keep retired user records on disk while excluding them from executable recipes.
-    public IReadOnlyList<ToolPreset> User => presets.Where(p => p.Parameters.Tool != EditorTool.Redact && p.Parameters.IsValid()).Select(p => p.Clone()).ToArray();
+    public IReadOnlyList<ToolPreset> User => presets.Where(p => p.Parameters.IsValid()).Select(p => p.Clone()).ToArray();
     public IReadOnlyList<ToolPreset> All => Official.Concat(User).ToArray();
     internal static EditorTool Family(EditorTool tool) => tool switch
     {
@@ -128,7 +127,7 @@ internal sealed class ToolPresetLibrary
     {
         if (!ValidName(name)) throw new ArgumentException(L.Get("Preset.InvalidName"), nameof(name));
         ArgumentNullException.ThrowIfNull(parameters);
-        if (!parameters.IsValid() || parameters.Tool == EditorTool.Redact) throw new ArgumentException(L.Get("Preset.InvalidLibrary"), nameof(parameters));
+        if (!parameters.IsValid()) throw new ArgumentException(L.Get("Preset.InvalidLibrary"), nameof(parameters));
     }
 
     private static IReadOnlyList<ToolPreset> CreateOfficial()

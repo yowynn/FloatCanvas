@@ -27,6 +27,11 @@ internal sealed class SessionWindowCoordinator : IDisposable
     private readonly Dictionary<object, Action> popups = [];
     private readonly HashSet<Window> suspendedWindows = [];
     private readonly List<Window> modalWindows = [];
+    private int nativeModalDepth;
+    internal static bool HasModalInput => current is { disposed: false } value && (value.nativeModalDepth > 0 || value.modalWindows.Count > 0);
+    internal event Action? ModalEntering;
+    internal bool OwnsKeyboardSource(DependencyObject? source) => source is not null &&
+        EditorShortcutPolicy.Ancestors(source).Any(value => value is Window window && ReferenceEquals(Find(window), this));
     internal bool IsSuspendingWindows { get; private set; }
     private WindowDismissReason? destination;
     private long nextIntent, intentToken, intentSession;
@@ -177,6 +182,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
 
     private IDisposable EnterModal(Window window)
     {
+        ModalEntering?.Invoke();
         modalWindows.Add(window);
         return new Scope(() => modalWindows.Remove(window));
     }
@@ -266,6 +272,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         // failed. The active thread's coordinator still owns the input handoff.
         var coordinator = Find(owner) ?? (current is { disposed: false } ? current : null);
         long version = coordinator?.host.EditingSessionVersion ?? 0;
+        if (coordinator is not null) { coordinator.ModalEntering?.Invoke(); coordinator.nativeModalDepth++; }
         try
         {
             using var native = coordinator?.beginNativeDialog();
@@ -274,6 +281,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
         }
         finally
         {
+            if (coordinator is not null) coordinator.nativeModalDepth--;
             if (coordinator is not null && coordinator.host.EditingSessionVersion == version)
             {
                 using var returning = coordinator.BeginTransition();

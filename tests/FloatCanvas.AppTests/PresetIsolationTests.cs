@@ -125,7 +125,7 @@ internal static class PresetIsolationTests
     {
         var session = (DesktopSession)RuntimeHelpers.GetUninitializedObject(typeof(DesktopSession));
         Set(session, "_canvasCalibration", new CanvasCalibrationController());
-        Set(session, "_canvasGridCalibrationPoints", new List<PointD>());
+        Set(session, "_canvasReferenceLines", new List<CanvasReferenceLine>());
         Set(session, "_editor", controller); Set(session, "_toolPresets", library); Set(session, "_settings", new UserSettings());
         Set(session, "_status", new TextBlock()); Set(session, "_host", RuntimeHelpers.GetUninitializedObject(typeof(OverlayHost)));
         Set(session, "_toolbarToolButtons", new Dictionary<EditorTool, Button>());
@@ -140,8 +140,15 @@ internal static class PresetIsolationTests
     private static double FirstTop(Panel panel, UIElement root) => panel.Children.OfType<FrameworkElement>().First().TranslatePoint(new Point(), root).Y;
     private static double Bottom(FrameworkElement element, UIElement root) => element.TranslatePoint(new Point(0, element.ActualHeight), root).Y;
     private static int[] Rows(Panel panel) => panel.Children.OfType<FrameworkElement>().GroupBy(tile => Math.Round(tile.TranslatePoint(new Point(), panel).Y, 5)).Select(row => row.Count()).ToArray();
-    private static T Field<T>(object source, string name) => (T)source.GetType().GetField(name, Private)!.GetValue(source)!;
-    private static void Set(object source, string name, object value) => source.GetType().GetField(name, Private)!.SetValue(source, value);
+    private static T Field<T>(object source, string name)
+    {
+        source = CanvasOptionsTestWindow.Unwrap(source);
+        for (Type? type = source.GetType(); type is not null; type = type.BaseType)
+            if (type.GetField(name, Private | BindingFlags.DeclaredOnly) is { } field) return (T)field.GetValue(source)!;
+        throw new MissingFieldException(source.GetType().Name, name);
+    }
+
+    private static void Set(object source, string name, object value) => (CanvasOptionsTestWindow.Unwrap(source)).GetType().GetField(name, Private)!.SetValue(source, value);
     private static IEnumerable<DependencyObject> Visuals(DependencyObject root)
     { yield return root; for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) foreach (var child in Visuals(VisualTreeHelper.GetChild(root, i))) yield return child; }
     private static void Layout(FrameworkElement root, double scale)

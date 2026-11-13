@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
@@ -13,16 +13,21 @@ internal sealed partial class LayersWindow
         var session = getSession();
         if (!CanWrite || session.IsTransactionActive || session.Selection.Count == 0) return;
         var document = session.Document; long revision = session.SceneRevision, scope = session.EditScopeVersion;
-        var selected = session.Selection.ToArray(); var graph = new SceneGraph(document);
-        var moving = selected.Where(id => !graph.IsLocked(id)).ToArray();
+        var selected = session.Selection.ToArray(); SceneGraph graph; LayerOperationAnalysis analysis; LayerMoveTargets model;
+        using (SceneGraph.BeginReadScope())
+        {
+            graph = SceneGraph.Read(document);
+            analysis = session.AnalyzeLayerOperation(LayerOperation.Move, selected);
+            model = new LayerMoveTargets(session, analysis, editContextName is not null);
+        }
+        if (analysis.BlockReason is { } blocked) { status.Text = L.Get(blocked); return; }
+        var moving = analysis.Eligible.ToArray();
         if (moving.Length == 0) return;
         var dialog = new Window { Title = L.Get("Layers.MoveTo"), Width = 420, Height = 480, MinWidth = 300, MinHeight = 300, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var search = new TextBox { ToolTip = L.Get("Layers.SearchTarget"), Margin = new(0, 0, 0, 8) };
         System.Windows.Automation.AutomationProperties.SetName(search, L.Get("Layers.SearchTarget"));
-        var targets = new TreeView { BorderThickness = new(1) };
-        targets.SetResourceReference(Control.BackgroundProperty, "CanvasSurface");
-        targets.SetResourceReference(Control.ForegroundProperty, "CanvasText");
-        targets.SetResourceReference(Control.BorderBrushProperty, "CanvasBorder"); var notice = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) };
+        var targets = model.CreateList();
+        var notice = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) };
         var apply = new Button { Content = L.Get("Layers.MoveTo"), IsEnabled = false, MinHeight = 30, IsDefault = true };
         var body = new DockPanel { Margin = new(12) };
         var searchLabel = new TextBlock { Text = L.Get("Layers.SearchTarget"), Margin = new(0,0,0,4) };
@@ -30,98 +35,91 @@ internal sealed partial class LayersWindow
         DockPanel.SetDock(search, Dock.Top); body.Children.Add(search);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var refreshTargets = new Button { Content = L.Get("LayerExperience.RefreshTargets"), MinHeight = 30, Margin = new(0,0,8,0), Visibility = Visibility.Collapsed };
-        refreshTargets.Click += (_, _) => { dialog.Close(); Dispatcher.BeginInvoke((Action)ShowMoveDialog); };
         actions.Children.Add(refreshTargets);
         var cancel = new Button { Content = L.Get("Dialog.Cancel"), IsCancel = true, MinHeight = 30, Margin = new(0,0,8,0) };
         actions.Children.Add(cancel); actions.Children.Add(apply);
         DockPanel.SetDock(actions, Dock.Bottom); body.Children.Add(actions);
-        DockPanel.SetDock(notice, Dock.Bottom); body.Children.Add(notice); body.Children.Add(targets);
+        DockPanel.SetDock(notice, Dock.Bottom); body.Children.Add(notice);
+        var targetArea = new Grid(); targetArea.Children.Add(targets);
+        var noMatches = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Visibility = Visibility.Collapsed };
+        noMatches.Children.Add(new TextBlock { Text = L.Get("Layers.NoTargetMatches"), TextWrapping = TextWrapping.Wrap, Margin = new(8), MaxWidth = 250 });
+        var clearSearch = new Button { Content = L.Get("Layers.ClearTargetSearch"), MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(8) };
+        clearSearch.Click += (_, _) => search.Clear(); noMatches.Children.Add(clearSearch); targetArea.Children.Add(noMatches); body.Children.Add(targetArea);
         dialog.Content = body; AppWindowChrome.ApplyDialog(dialog);
-        var choices = new List<(RootCanvasKind Root, Guid? Parent, string Name, string? Reason)>();
-        foreach (var root in new[] { RootCanvasKind.Foreground, RootCanvasKind.Main, RootCanvasKind.Background })
+        bool stale = false, searching = false;
+        void UpdateTarget()
         {
-            string name = L.Get("RootCanvas." + root);
-            Add(root, null, name);
-            if (root != session.ActiveRootCanvas) continue;
-            foreach (var group in document.Groups.Where(g => SceneCanvasRoots.Resolve(document, g.Id, graph) == root))
-            {
-                var path = graph.AncestorIds(group.Id).Reverse().Select(id => GroupName(graph.FindGroup(id)!)).Append(GroupName(group));
-                Add(root, group.Id, name + " › " + string.Join(" › ", path));
-            }
+            apply.IsEnabled = !stale && !searching && targets.SelectedItem is LayerMoveTargets.Row { Reason: null };
+            if (stale) return;
+            notice.Text = targets.SelectedItem is LayerMoveTargets.Row row
+                ? row.Reason ?? ((row.Root != session.ActiveRootCanvas ? L.Get("Layers.CrossCanvasNotice") : "") +
+                    (moving.Any(id => graph.FindGroup(id)?.OrderMode == GroupOrderMode.LegacyPassThrough) ? "\n" + L.Get("Layers.CollectHint") : "")) : "";
         }
-        void Add(RootCanvasKind root, Guid? parent, string name)
-        {
-            string? reason = root != session.ActiveRootCanvas && editContextName is not null ? L.Get("RootCanvas.ReturnUnavailable") : parent == session.EditScopeId && root == session.ActiveRootCanvas ? L.Get("Layers.CurrentTarget") :
-                parent is { } id && (moving.Contains(id) || moving.Any(node => graph.IsAncestor(node, id))) ? L.Get("LayerExperience.CyclicTarget") : parent is { } locked && graph.IsLocked(locked) ? L.Get("LayerExperience.LockedTarget") : null;
-            choices.Add((root, parent, name, reason));
-        }
-        var children = choices.Where(c => c.Parent is not null).GroupBy(c => graph.ParentId(c.Parent!.Value) ?? Guid.Empty).ToDictionary(g => g.Key, g => g.ToArray());
-        var expanded = session.EditScopePath.Select(g => g.Id).ToHashSet();
-        System.Windows.Controls.VirtualizingPanel.SetIsVirtualizing(targets, true);
-        System.Windows.Controls.VirtualizingPanel.SetVirtualizationMode(targets, System.Windows.Controls.VirtualizationMode.Recycling);
-        System.Windows.Controls.ScrollViewer.SetCanContentScroll(targets, true);
         void Populate()
         {
-            var selectedTarget = (targets.SelectedItem as TreeViewItem)?.Tag;
-            targets.Items.Clear(); apply.IsEnabled = false;
-            bool filter = !string.IsNullOrWhiteSpace(search.Text);
-            var matches = new HashSet<Guid>();
-            if (filter) foreach (var choice in choices.Where(c => c.Parent is not null && c.Name.Contains(search.Text, StringComparison.CurrentCultureIgnoreCase)))
-            { var id = choice.Parent!.Value; matches.Add(id); foreach (var ancestor in graph.AncestorIds(id)) matches.Add(ancestor); }
-            TreeViewItem? Build((RootCanvasKind Root, Guid? Parent, string Name, string? Reason) choice)
-            {
-                if (filter && choice.Parent is { } match && !matches.Contains(match)) return null;
-                var item = new TreeViewItem { Tag = choice, IsExpanded = filter || choice.Parent is null || expanded.Contains(choice.Parent.Value) };
-                var label = choice.Parent is { } groupId ? GroupName(graph.FindGroup(groupId)!) : choice.Name;
-                var header = new DockPanel(); var icon = ScopeNavigation.Icon(choice.Parent is null ? ScopeNavigation.RootGlyphFor(choice.Root) : Folder, 0); icon.Margin = new(0,0,5,0); DockPanel.SetDock(icon, Dock.Left); header.Children.Add(icon);
-                header.Children.Add(new TextBlock { Text = search.Text.Length > 0 ? choice.Name : label, TextTrimming = TextTrimming.CharacterEllipsis, Opacity = choice.Reason is null ? 1 : .55 }); item.Header = header;
-                item.SetResourceReference(Control.ForegroundProperty, "CanvasText");
-                System.Windows.Automation.AutomationProperties.SetItemStatus(item, choice.Reason ?? "");
-                item.ToolTip = choice.Name + (choice.Reason is null ? "" : "\n" + choice.Reason);
-                item.Expanded += (_, e) => { if (!filter && choice.Parent is { } id) expanded.Add(id); e.Handled = true; };
-                item.Collapsed += (_, e) => { if (!filter && choice.Parent is { } id) expanded.Remove(id); e.Handled = true; };
-                if (Equals(selectedTarget, choice)) item.IsSelected = true;
-                if (choice.Root == session.ActiveRootCanvas && children.TryGetValue(choice.Parent ?? Guid.Empty, out var descendants))
-                {
-                    void Load() { item.Items.Clear(); foreach (var child in descendants) if (Build(child) is { } branch) item.Items.Add(branch); }
-                    if (item.IsExpanded) Load();
-                    else { var placeholder = new TreeViewItem(); item.Items.Add(placeholder); item.Expanded += (_,_) => { if (item.Items.Contains(placeholder)) Load(); }; }
-                }
-                return choice.Name.Contains(search.Text, StringComparison.CurrentCultureIgnoreCase) || item.Items.Count > 0 ? item : null;
-            }
-            foreach (var choice in choices.Where(c => c.Parent is null))
-                if (Build(choice) is { } item) targets.Items.Add(item);
+            var selectedTarget = targets.SelectedItem;
+            model.Filter(search.Text);
+            if (selectedTarget is LayerMoveTargets.Row row && model.Visible.Contains(row)) targets.SelectedItem = row;
+            noMatches.Visibility = model.Visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            UpdateTarget();
         }
         var searchTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-        searchTimer.Tick += (_, _) => { searchTimer.Stop(); Populate(); };
-        search.TextChanged += (_, _) => { apply.IsEnabled = false; searchTimer.Stop(); searchTimer.Start(); };
+        searchTimer.Tick += (_, _) => { searchTimer.Stop(); searching = false; Populate(); };
+        search.TextChanged += (_, _) => { searching = true; apply.IsEnabled = false; searchTimer.Stop(); searchTimer.Start(); };
         dialog.Closed += (_, _) => searchTimer.Stop();
-        targets.SelectedItemChanged += (_, _) =>
+        targets.SelectionChanged += (_, _) => UpdateTarget();
+        refreshTargets.Click += (_, _) =>
         {
-            apply.IsEnabled = targets.SelectedItem is TreeViewItem { Tag: ValueTuple<RootCanvasKind, Guid?, string, string?> { Item4: null } };
-            notice.Text = targets.SelectedItem is TreeViewItem { Tag: ValueTuple<RootCanvasKind, Guid?, string, string?> target }
-                ? target.Item4 ?? ((target.Item1 != session.ActiveRootCanvas ? L.Get("Layers.CrossCanvasNotice") : "") +
-                    (moving.Any(id => graph.FindGroup(id)?.OrderMode == GroupOrderMode.LegacyPassThrough) ? "\n" + L.Get("Layers.CollectHint") : "")) : "";
+            if (!CanWrite || !ReferenceEquals(session, getSession()) || !ReferenceEquals(document, session.Document) ||
+                !session.Selection.SetEquals(selected) || session.IsTransactionActive)
+            { notice.Text = L.Get("Layers.MoveSourceChanged"); return; }
+            searchTimer.Stop(); searching = false;
+            var previous = targets.SelectedItem as LayerMoveTargets.Row;
+            ScrollViewer? Scroll(DependencyObject node)
+            {
+                if (node is ScrollViewer viewer) return viewer;
+                for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(node); i++)
+                    if (Scroll(System.Windows.Media.VisualTreeHelper.GetChild(node, i)) is { } found) return found;
+                return null;
+            }
+            var scroll = Scroll(targets); double offset = scroll?.VerticalOffset ?? 0;
+            var top = model.Visible.ElementAtOrDefault((int)offset);
+            using (SceneGraph.BeginReadScope())
+            {
+                graph = SceneGraph.Read(document); analysis = session.AnalyzeLayerOperation(LayerOperation.Move, selected);
+                model.Reload(session, analysis, editContextName is not null);
+            }
+            moving = analysis.Eligible.ToArray(); revision = session.SceneRevision; scope = session.EditScopeVersion;
+            stale = analysis.BlockReason is not null || moving.Length == 0;
+            Populate();
+            targets.SelectedItem = previous is null ? null : model.Visible.FirstOrDefault(r => r.Id == previous.Id && r.Root == previous.Root);
+            UpdateTarget();
+            if (stale) notice.Text = L.Get(analysis.BlockReason ?? "Layers.MoveNothingEligible");
+            else if (previous is not null && targets.SelectedItem is null) notice.Text = L.Get("Layers.MoveTargetUnavailable");
+            refreshTargets.Visibility = stale ? Visibility.Visible : Visibility.Collapsed;
+            targets.UpdateLayout();
+            var newTop = top is null ? null : model.Visible.FirstOrDefault(r => r.Id == top.Id && r.Root == top.Root);
+            scroll?.ScrollToVerticalOffset(newTop is null ? offset : model.Visible.IndexOf(newTop));
         };
         apply.Click += (_, _) =>
         {
-            if (targets.SelectedItem is not TreeViewItem { Tag: ValueTuple<RootCanvasKind, Guid?, string, string?> target }) return;
-            if (target.Item4 is not null) return;
+            if (targets.SelectedItem is not LayerMoveTargets.Row target) return;
+            if (target.Reason is not null) return;
             if (!CanWrite || !ReferenceEquals(session, getSession()) || !ReferenceEquals(document, session.Document) || session.SceneRevision != revision || session.EditScopeVersion != scope || !session.Selection.SetEquals(selected) || session.IsTransactionActive)
-            { notice.Text = L.Get("Layers.StaleMove"); refreshTargets.Visibility = Visibility.Visible; apply.IsEnabled = false; return; }
+            { stale = true; notice.Text = L.Get("Layers.StaleMove"); refreshTargets.Visibility = Visibility.Visible; apply.IsEnabled = false; return; }
             try
             {
-                session.MoveLayerNodes(moving, target.Item1, target.Item2);
-                session.SetSelection(selected.Except(moving));
-                Refresh(); status.Text = L.Format("Layers.Moved", moving.Length, target.Item3, selected.Length - moving.Length);
+                var result = session.CommitLayerMove(session.PrepareLayerMove(selected, target.Root, target.Id));
+                Refresh(); status.Text = L.Format("Layers.Moved", result.Moved.Count, target.Path, result.Skipped.Count);
+                if (result.Moved.Count == 0) { dialog.Close(); return; }
                 long generation = session.DocumentGeneration, history = session.HistoryNavigationVersion;
-                var retained = moving.ToHashSet();
+                var retained = result.Moved.ToHashSet();
                 moveTargetValid = () =>
                 {
                     if (!ReferenceEquals(session, getSession()) || session.DocumentGeneration != generation || session.HistoryNavigationVersion != history) return false;
                     var current = new SceneGraph(session.Document);
-                    if (target.Item2 is { } parent && (current.FindGroup(parent) is null || SceneCanvasRoots.Resolve(session.Document, parent, current) != target.Item1)) return false;
-                    retained.RemoveWhere(id => current.FindElement(id) is null && current.FindGroup(id) is null && current.FindInstance(id) is null || current.ParentId(id) != target.Item2 || SceneCanvasRoots.Resolve(session.Document, id, current) != target.Item1);
+                    if (target.Id is { } parent && (current.FindGroup(parent) is null || SceneCanvasRoots.Resolve(session.Document, parent, current) != target.Root)) return false;
+                    retained.RemoveWhere(id => current.FindElement(id) is null && current.FindGroup(id) is null && current.FindInstance(id) is null || current.ParentId(id) != target.Id || SceneCanvasRoots.Resolve(session.Document, id, current) != target.Root);
                     return retained.Count > 0;
                 };
                 viewMoveTarget.Visibility = Visibility.Visible;
@@ -131,9 +129,9 @@ internal sealed partial class LayersWindow
                     if (!canMutate() || session.IsTransactionActive) { status.Text = L.Get("Inspector.BusyLayersRetained"); return; }
                     try
                     {
-                        if (target.Item1 != session.ActiveRootCanvas) { if (RootCanvasRequested is { } requested) requested(target.Item1); else session.SetRootCanvas(target.Item1); }
-                        if (session.ActiveRootCanvas != target.Item1) return;
-                        session.SetEditScope(target.Item2); session.SetSelection(retained); Refresh(); viewMoveTarget.Visibility = Visibility.Collapsed;
+                        if (target.Root != session.ActiveRootCanvas) { if (RootCanvasRequested is { } requested) requested(target.Root); else session.SetRootCanvas(target.Root); }
+                        if (session.ActiveRootCanvas != target.Root) return;
+                        session.SetEditScope(target.Id); session.SetSelection(retained); Refresh(); viewMoveTarget.Visibility = Visibility.Collapsed;
                     }
                     catch (Exception error) { status.Text = error.Message; }
                 });

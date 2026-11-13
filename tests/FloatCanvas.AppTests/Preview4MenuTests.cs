@@ -65,7 +65,7 @@ internal static class Preview4MenuTests
                 var layer = new CanvasElement { Kind = ElementKind.Rectangle, Width = 20, Height = 20 }; editor.Session.Add(layer);
                 var layers = new LayersWindow(() => editor.Session);
                 layers.PrepareForShow();
-                var canvasWindow = new CanvasSettingsWindow(canvases);
+                var canvasWindow = new CanvasOptionsTestWindow(canvases);
                 var stamps = new StampLibraryWindow(library, () => editor.Session, _ => { }, useSource: _ => { });
                 try
                 {
@@ -157,7 +157,7 @@ internal static class Preview4MenuTests
         var bitmap = new RenderTargetBitmap(1260, height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var file = File.Create(path); encoder.Save(file);
     }
-    private static void Set(object target, string field, object value) => target.GetType().GetField(field, Private)!.SetValue(target, value);
-    private static T Field<T>(object target, string field) => (T)target.GetType().GetField(field, Private)!.GetValue(target)!;
+    private static void Set(object target, string field, object value) => CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(field, Private)!.SetValue(target, value);
+    private static T Field<T>(object target, string field) => (T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(field, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
     private static object? Invoke(object target, string method, params object[] args) => target.GetType().GetMethod(method, Private)!.Invoke(target, args);
 }

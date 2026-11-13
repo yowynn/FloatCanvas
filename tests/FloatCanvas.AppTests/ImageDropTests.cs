@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using FloatCanvas.App;
 using FloatCanvas.Core;
@@ -136,7 +136,7 @@ internal static class ImageDropTests
         var live = new EditorSession(new(), assets);
         var capture = new EditorSession(new() { Kind = DocumentKind.FrozenCapture, Viewport = new(140, 90, 700, 500),
             Background = new() { Kind = ElementKind.Image, AssetId = original, Width = 1200, Height = 800, Locked = true,
-                Effects = [new() { Kind = ImageEffectKind.Redact, Bounds = new(.1, .2, .3, .4) }] } }, assets);
+                Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(.1, .2, .3, .4) }] } }, assets);
         capture.Add(new() { Kind = ElementKind.Image, AssetId = original, Width = 300, Height = 180,
             ImageCrop = new(.2, .1, .6, .7), Transform = Affine2D.Translation(250, 180).Compose(Affine2D.Rotation(37)),
             Effects = [new() { Kind = ImageEffectKind.Blur, Bounds = new(.25, .3, .4, .2) }] });

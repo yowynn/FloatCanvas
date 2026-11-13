@@ -658,7 +658,9 @@ internal static class NativeInputRoutingFixture
         string historyPath = Path.Combine(store.DirectoryPath, "history");
         File.WriteAllText(historyPath, "A fixture-owned file deliberately blocks archive directory creation.");
         bool rejected = false;
-        try { Await((Task)Invoke("StartNewCanvasAsync")!); }
+        // Exercise the post-confirmation replacement and its archive rollback directly.
+        // Toolbar/menu/Ctrl+N confirmation is covered by CanvasWorkflowRegressionTests.
+        try { Await((Task)Invoke("ReplaceCanvasAsync")!); }
         catch (IOException) { rejected = true; }
         check("archive failure rejects new canvas before replacing either live or screenshot session", rejected && ReferenceEquals(live, Field<EditorSession>(session, "_live")) &&
             ReferenceEquals(capture, Field<EditorSession>(session, "_capture")) && ReferenceEquals(editor.Session, capture));
@@ -667,7 +669,7 @@ internal static class NativeInputRoutingFixture
         check("archive failure releases busy state and preserves hidden editing", !Field<bool>(session, "_documentBusyValue") && host.IsEditing && !host.IsVisible);
 
         File.Delete(historyPath);
-        Await((Task)Invoke("StartNewCanvasAsync")!); Pump();
+        Await((Task)Invoke("ReplaceCanvasAsync")!); Pump();
         var replacement = Field<EditorSession>(session, "_live");
         check("new canvas uses configured first number and retains the active tool", !ReferenceEquals(live, replacement) && replacement.Document.Elements.Count == 0 &&
             replacement.Document.NextNumber == 7 && editor.Tool == EditorTool.Ellipse && ReferenceEquals(editor.Session, replacement));
@@ -773,7 +775,7 @@ internal static class NativeInputRoutingFixture
             timer.Start();try{Await(newButton.ActivateAsync());}finally{timer.Stop();}return prompted;
         }
         check("dirty bound file opens save prompt immediately and cancel preserves its session",RespondToNew("Dialog.Cancel")&&!newButton.IsConfirming&&ReferenceEquals(dirty,Field<EditorSession>(session,"_live"))&&BoundPath(dirty)==projectPath&&dirty.Document.Elements.Count==1);
-        check("save and leave writes the bound file before creating an unbound blank",RespondToNew("History.SaveLeave")&&Await(new ProjectStore().LoadAsync(projectPath)).Document.Elements.Count==1&&BoundPath(Field<EditorSession>(session,"_live")) is null&&Field<EditorSession>(session,"_live").Document.Elements.Count==0);
+        check("save and leave writes the bound file before creating an unbound blank",RespondToNew("Dialog.Yes")&&Await(new ProjectStore().LoadAsync(projectPath)).Document.Elements.Count==1&&BoundPath(Field<EditorSession>(session,"_live")) is null&&Field<EditorSession>(session,"_live").Document.Elements.Count==0);
 
         Await((Task)Invoke("OpenProjectPathAsync",projectPath)!);Pump();Invoke("RefreshBoundFileIndicator");
         var bubble=Field<BoundFileIndicator>(session,"_boundFileIndicator");

@@ -5,6 +5,7 @@ internal static class CanvasIndependentGeometryTests
 {
     internal static void Run(Action<bool, string> check)
     {
+        CanvasRectangleCalibrationTests.Run(check);
         void Near(PointD actual, PointD expected, string text) => check(actual.DistanceTo(expected) < 1e-6, text);
         var viewport = new RectD(-200, -100, 1800, 1200);
         var original = CanvasCalibration.CreateInitial(viewport, 13, 9);
@@ -64,15 +65,16 @@ internal static class CanvasIndependentGeometryTests
         var common = new PointD(b.Left + cell * 2, b.Top + cell * 3);
         foreach (var spans in new[] { (1, 1), (2, 5), (5, 2) })
         {
-            PointD[] samples = [a4.Matrix.TransformPoint(common), a4.Matrix.TransformPoint(common + new PointD(spans.Item1 * cell, 0)),
-                a4.Matrix.TransformPoint(common + new PointD(0, spans.Item2 * cell))];
-            check(CanvasGridCalibration.TryFit(known, samples, spans.Item1, spans.Item2, out var fit, out _), "known one/few-cell spans fit across perspective");
-            var fitted = fit.Projection.PlaneBounds!.Value;
-            check(Math.Abs(fitted.Width / fitted.Height - b.Width / b.Height) < 1e-9 && Math.Abs(fit.Grid.PlaneCellSize!.Value - cell) < 1e-6,
-                "known-cell fitting recovers target aspect and independent spacing");
-            Near(fit.Projection.Matrix.TransformPoint(fit.Grid.PlaneOrigin!.Value), samples[0], "known-cell fitting anchors the lattice to the sampled intersection");
+            PointD first = a4.Matrix.TransformPoint(common);
+            PointD last = a4.Matrix.TransformPoint(common + new PointD(spans.Item1 * cell, spans.Item2 * cell));
+            check(CanvasGridCalibration.TrySample(a4, first, last, out var sample, out _), "rectangle samples resolve through perspective");
+            check(CanvasGridCalibration.TryFitRectangle(known, sample, spans.Item1, spans.Item2, false, null, null, out var fit, out _), "local rectangle spans fit across perspective");
+            var fitted = fit!.Settings.Projection.PlaneBounds!.Value;
+            check(Math.Abs(fitted.Width / fitted.Height - b.Width / b.Height) < 1e-9 && Math.Abs(fit.Settings.Grid.PlaneCellSize!.Value - cell) < 1e-6,
+                "local rectangle recovers target aspect and independent spacing");
+            Near(fit.Settings.Projection.Matrix.TransformPoint(fit.Settings.Grid.PlaneOrigin!.Value), first, "unconstrained lattice anchors to sample corner");
         }
-        check(!CanvasGridCalibration.TryFit(known, [new(1, 1), new(2, 2), new(3, 3)], 1, 1, out _, out _), "unresolved or inconsistent samples are rejected");
+        check(!CanvasGridCalibration.TrySample(a4, new(1, 1), new(1, 1), out _, out _), "zero-area samples are rejected");
         check(!CanvasProjectionGeometry.TryResize(a4, double.NaN, 100, out _, out _) && !CanvasProjectionGeometry.TrySetAspect(a4, -1, out _, out _),
             "invalid plane dimensions cannot enter calibration");
         var session = new EditorSession(scene); string before = JsonSerializer.Serialize(scene.Canvas);

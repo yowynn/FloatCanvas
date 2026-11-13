@@ -39,7 +39,7 @@ internal static class WindowSourceCoreTests
         foreach (var change in new Action<CanvasElement>[] { e => e.WindowSource!.BindingIntent = Guid.NewGuid(), e => e.WindowSource!.TitleHint += " edited",
             e => e.WindowSource!.ProcessNameHint += "2", e => e.WindowSource!.WindowClassHint += "2", e => e.WindowSource!.Fit = WindowSourceFit.Stretch,
             e => e.ImageCrop = new(.1, .2, .7, .6), e => e.Width++, e => e.Transform = Affine2D.Translation(4, 5), e => e.Locked = true,
-            e => e.Style.Foreground++, e => e.Effects.Add(new() { Kind = ImageEffectKind.Redact, Bounds = new(0, 0, 1, 1) }), e => e.WindowSource = null })
+            e => e.Style.Foreground++, e => e.Effects.Add(new() { Kind = ImageEffectKind.Blur, Bounds = new(0, 0, 1, 1) }), e => e.WindowSource = null })
         {
             var edited = document.Clone(); change(edited.Elements[0]);
             check(!AuthoredSceneContent.Equal(document, edited) && AuthoredSceneContent.Fingerprint(edited) != originalHash,

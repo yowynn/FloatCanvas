@@ -8,6 +8,9 @@ public sealed partial class EditorSession
     private sealed record HistoryEntry(string Label, SceneDocument? Before, SceneDocument? After, HashSet<Guid>? SelectionBefore, HashSet<Guid>? SelectionAfter, long Bytes, long Sequence, string[] AssetIds, long BeforeVersion, long AfterVersion, Action? UndoOperation = null, Action? RedoOperation = null, CanvasViewHistoryChange? Viewing = null);
     private readonly List<HistoryEntry> undo = [], redo = [];
     private SceneDocument? transactionBefore;
+    private SceneDocument? transactionOwnerDocument;
+    private long transactionScopeVersion;
+    public event Action<SceneDocument, long>? ContentCommitted;
     private HashSet<Guid>? transactionSelection;
     private string transactionLabel = "";
     private long sequence, nextContentVersion, transactionContentVersion, transactionPreviewRevision;
@@ -44,6 +47,8 @@ public sealed partial class EditorSession
     public long PreviewRevision { get; private set; }
     /// <summary>Latest preview revision which can have changed elements rather than only scene settings.</summary>
     public long PreviewElementsRevision { get; private set; }
+    /// <summary>Last notification which may change shared content. Never inferred from a whole-graph hash.</summary>
+    public long PreviewDefinitionsRevision { get; private set; }
     /// <summary>Monotonic identity for a transaction, including a transaction later cancelled.</summary>
     public long TransactionId { get; private set; }
     public string? UndoLabel => undo.LastOrDefault()?.Label;
@@ -61,6 +66,7 @@ public sealed partial class EditorSession
         if (IsTransactionActive) throw new InvalidOperationException(L.Get("History.TransactionAlreadyActive"));
         transactionContentVersion = ContentVersion; transactionPreviewRevision = PreviewRevision; HasPendingChanges = false;
         transactionBefore = Document.Clone(); transactionSelection = [.. Selection]; transactionLabel = label; TransactionId++;
+        transactionOwnerDocument = Document; transactionScopeVersion = EditScopeVersion;
     }
     public void Commit() => CommitCore(settingsOnly: false);
     /// <summary>
@@ -68,7 +74,8 @@ public sealed partial class EditorSession
     /// A violated declaration conservatively invalidates preview nodes; undo semantics stay unchanged.
     /// </summary>
     public void CommitSettings() => CommitCore(settingsOnly: true);
-    private void CommitCore(bool settingsOnly, long? restoredContentVersion = null, bool restoringDocument = false, CanvasViewHistoryChange? viewing = null)
+    private void CommitCore(bool settingsOnly, long? restoredContentVersion = null, bool restoringDocument = false, CanvasViewHistoryChange? viewing = null,
+        bool knownContentChange = false, bool knownDefinitionsUnchanged = false)
     {
         if (transactionBefore is null) throw new InvalidOperationException(L.Get("History.NoActiveTransaction"));
         var before = transactionBefore; var selectedBefore = transactionSelection!;
@@ -78,9 +85,9 @@ public sealed partial class EditorSession
         bool knownSettings = settingsOnly && PreviewElementsRevision <= transactionPreviewRevision && SettingsElementsUnchanged(before);
         // Explicit restoration also restores save-point identity. Equal scene
         // content can still belong to a different, unsaved history version.
-        if (!restoringDocument && SceneContent.Equal(before, Document))
+        if (!restoringDocument && !knownContentChange && SceneContent.Equal(before, Document))
         {
-            transactionBefore = null; transactionSelection = null; HasPendingChanges = false;
+            transactionBefore = null; transactionOwnerDocument = null; transactionSelection = null; HasPendingChanges = false;
             // Even a net-zero gesture may have published an intermediate preview before
             // its final unnotified mutation. Preserve history while invalidating that frame.
             if (PreviewRevision != transactionPreviewRevision) RecordPreviewChange(elementsChanged: !knownSettings);
@@ -93,12 +100,15 @@ public sealed partial class EditorSession
         redo.Clear();
         undo.Add(new(transactionLabel, before, after, selectedBefore, [.. Selection], EstimateBytes(before) + EstimateBytes(after), ++sequence, before.ReferencedAssets.Concat(after.ReferencedAssets).Distinct(StringComparer.Ordinal).ToArray(), transactionContentVersion, ContentVersion, Viewing: viewing));
         if (viewing is not null) CanvasViewRestored?.Invoke(viewing.After);
-        TrimHistory(); OnChanged(contentChanged: true, preserveContentVersion: true, previewElementsChanged: !knownSettings);
+        TrimHistory(); OnChanged(contentChanged: true, preserveContentVersion: true, previewElementsChanged: !knownSettings,
+            definitionsUnchanged: knownDefinitionsUnchanged || SceneContent.Equal(before.Definitions, Document.Definitions), topologyValidated: true);
+        if (transactionOwnerDocument is { } owner) ContentCommitted?.Invoke(owner, transactionScopeVersion);
+        transactionOwnerDocument = null;
     }
     public void Cancel()
     {
         if (transactionBefore is null) return;
-        Document = transactionBefore; SetSelectionCore(transactionSelection!); transactionBefore = null; transactionSelection = null; HasPendingChanges = false; ContentVersion = transactionContentVersion; OnChanged(contentChanged: true, preserveContentVersion: true);
+        Document = transactionBefore; SetSelectionCore(transactionSelection!); transactionBefore = null; transactionOwnerDocument = null; transactionSelection = null; HasPendingChanges = false; ContentVersion = transactionContentVersion; OnChanged(contentChanged: true, preserveContentVersion: true);
     }
     public void Execute(string label, Action<SceneDocument> operation)
     {
@@ -141,6 +151,7 @@ public sealed partial class EditorSession
     /// Prefer Execute for user edits so changes also participate in undo and recovery.
     /// </summary>
     public void NotifyChanged() => OnChanged(contentChanged: true);
+    public void NotifyContainerPlacementChanged() => OnChanged(contentChanged: true, definitionsUnchanged: true);
     /// <summary>For a scene-wide setting edit which leaves every element unchanged.</summary>
     public void NotifySettingsChanged() => OnChanged(contentChanged: true, previewElementsChanged: false);
     /// <summary>Refresh output layout metadata without treating a screen change as a new user edit.</summary>
@@ -260,10 +271,13 @@ public sealed partial class EditorSession
             if (element.Kind == ElementKind.Number) d.NextNumber = NumberSequence.Advance(d.NextNumber, element.Number, numberStep);
         });
     }
-    public void DeleteSelection() => Execute(L.Get("History.DeleteElements"), d =>
+    public void DeleteSelection()
     {
-        var graph = new SceneGraph(d); graph.RemoveNodes(graph.NormalizeSelection(Selection).Where(id => !graph.IsLocked(id)).ToArray()); Selection.Clear();
-    });
+        var graph = new SceneGraph(Document); var analysis = AnalyzeLayerOperation(LayerOperation.Delete, Selection, graph);
+        if (analysis.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
+        if (analysis.Eligible.Count == 0) return;
+        Execute(L.Get("History.DeleteElements"), _ => { graph.RemoveNodes(analysis.Eligible); Selection.ExceptWith(analysis.Eligible); });
+    }
     public void TransformSelection(Affine2D transform, string? label = null) => Execute(label ?? L.Get("History.TransformElements"), _ => ApplySelectionTransform(transform));
     /// <summary>For live gesture updates inside an existing transaction; transform is relative to current positions.</summary>
     public void ApplySelectionTransform(Affine2D transform)
@@ -280,6 +294,9 @@ public sealed partial class EditorSession
     public void SetVisible(bool visible) => SetNodesFlag(Selection, true, visible);
     public void DuplicateSelection(double offsetX = 16, double offsetY = 16)
     {
+        var analysis = AnalyzeLayerOperation(LayerOperation.Duplicate);
+        if (analysis.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
+        if (!analysis.CanExecute) return;
         var snapshot = CreateSelectionSnapshot(normalizeOrigin: false);
         InsertDocument(snapshot, Assets, Affine2D.Translation(offsetX, offsetY), label: L.Get("History.DuplicateElements"), preserveDefinitions: true);
     }
@@ -291,6 +308,9 @@ public sealed partial class EditorSession
     }
     public void ReorderSelection(LayerOrder order)
     {
+        var analysis = AnalyzeLayerOperation(LayerOperation.Reorder);
+        if (analysis.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
+        if (!analysis.CanExecute) return;
         if (!WouldReorder(order)) return;
         Execute(L.Get("History.ReorderElements"), d =>
         {
@@ -302,6 +322,7 @@ public sealed partial class EditorSession
     private void PruneSelection()
     {
         ValidateEditScope();
+        if (Selection.Count == 0) return;
         var graph = new SceneGraph(Document);
         SetSelectionCore(graph.NormalizeSelection(Selection).Where(id => InActiveRoot(graph, id)));
     }
@@ -338,12 +359,15 @@ public sealed partial class EditorSession
         return size;
     }
     private void OnChanged(bool contentChanged = false, bool preserveContentVersion = false, bool previewElementsChanged = true,
-        IReadOnlySet<Guid>? previewChangedElements = null)
+        IReadOnlySet<Guid>? previewChangedElements = null, bool definitionsUnchanged = false,
+        IReadOnlySet<Guid>? previewChangedContainers = null, bool topologyValidated = false)
     {
         SceneGraph.InvalidateReads(Document);
-        if (contentChanged && !IsTransactionActive) Document.PruneGroups();
+        if (contentChanged && !IsTransactionActive && !topologyValidated) Document.PruneGroups();
         ValidateEditScope();
-        if (contentChanged) RecordPreviewChange(previewElementsChanged, previewChangedElements);
+        if (contentChanged) RecordPreviewChange(previewElementsChanged, previewChangedElements, previewChangedContainers);
+        if (contentChanged && previewElementsChanged && previewChangedElements is null && !definitionsUnchanged)
+        { PreviewDefinitionsRevision = PreviewRevision; placementDocument = null; placementDefinitions = new(); }
         if (contentChanged && IsTransactionActive) HasPendingChanges = true;
         if (contentChanged && !IsTransactionActive) { SceneRevision++; if (!preserveContentVersion) ContentVersion = ++nextContentVersion; }
         Changed?.Invoke(this, EventArgs.Empty);

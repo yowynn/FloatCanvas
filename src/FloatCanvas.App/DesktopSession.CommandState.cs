@@ -17,7 +17,7 @@ internal sealed partial class DesktopSession
             {
                 "group" => Active.CanInsertInEditScope && nodes.Length > 0,
                 "duplicate" => nodes.Length > 0 && Active.CanInsertInEditScope,
-                "ungroup" => nodes.Any(id => graph.FindGroup(id) is not null),
+                "ungroup" => nodes.Any(id => graph.FindGroup(id) is not null) && !nodes.Any(id => graph.FindGroup(id)?.Billboard is not null),
                 _ => nodes.Length > 0
             };
         }
@@ -38,6 +38,8 @@ internal sealed partial class DesktopSession
         if (CanExecuteUiCommand(command)) return "";
         if (DocumentOperationBusy || Active.IsTransactionActive) return L.Get("Audit.CommandBusy");
         if (Active.IsReadOnly) return L.Get("GroupCanvas.ReadOnly");
+        if (command == "ungroup" && Active.Selection.Any(id => SceneGraph.Read(Active.Document).FindGroup(id)?.Billboard is not null))
+            return L.Get("Billboard.UngroupFirstFlat");
         return L.Get(command switch
         {
             "undo" => "Audit.NoUndo", "redo" => "Audit.NoRedo",

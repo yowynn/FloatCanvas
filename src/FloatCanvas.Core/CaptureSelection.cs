@@ -14,6 +14,8 @@ public sealed record CaptureSelection(CaptureShape Shape, CaptureSource Source, 
     public BillboardDepthLine? BillboardDepthLine { get; init; }
     /// <summary>Screen-first billboard intent, frozen independently of the optional advanced depth line.</summary>
     public bool BillboardScreenFirst { get; init; }
+    /// <summary>Logical border preset, separate from the depth-scaled temporary screen preview.</summary>
+    public double? BillboardLogicalBorderWidth { get; init; }
     public CaptureSelection Translate(PointD offset) => this with
     {
         Bounds = Bounds with { X = Bounds.X + offset.X, Y = Bounds.Y + offset.Y },

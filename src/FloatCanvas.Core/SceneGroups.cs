@@ -12,6 +12,8 @@ public sealed class CanvasGroup
     public string Name { get; set; } = "";
     public Affine2D Transform { get; set; } = Affine2D.Identity;
     public double ElevationScale { get; set; } = 1;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ContainerBillboard? Billboard { get; set; }
     public bool Visible { get; set; } = true;
     public bool Locked { get; set; }
     public GroupOrderMode OrderMode { get; set; }

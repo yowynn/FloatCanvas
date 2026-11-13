@@ -1,4 +1,4 @@
-﻿using FloatCanvas.Core;
+using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
@@ -74,7 +74,7 @@ internal sealed partial class DesktopSession
         _rootCanvasHeader?.SetScope(scope, Active.EditScopeId is not null || _prefabEditContext is not null);
         if (changed) _layers?.PrepareForShow();
         _layers?.SetNavigation(scope);
-        if (changed && _canvasSettingsWindow is not null) RefreshCanvasSettingsTarget();
+        if (changed && _canvasToolOptions is not null) RefreshCanvasSettingsTarget();
         if (_toolbarLauncher is not null) _toolbarLauncher.ToolTip = scope.Caption + "\n" + L.Get("ToolbarV2.LauncherHint");
     }
     private static string ScopeGroupName(CanvasGroup group) => string.IsNullOrWhiteSpace(group.Name) ? L.Get("Layers.UntitledGroup") : group.Name;

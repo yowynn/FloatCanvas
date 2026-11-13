@@ -13,6 +13,7 @@ internal static class BillboardScreenCreationTests
         document.Canvas.Projection.Enabled = true;
         document.Canvas.Projection.Matrix = new(1, 0, 0, 0, -.4, 700, 0, -.002, 1);
         document.Canvas.Projection.Quad = [new(0,0), new(800,0), new(800,700), new(0,700)];
+        document.Canvas.Projection.PlaneBounds = new(0, 0, 800, 700);
         return new(document);
     }
     private static void Send(EditorController editor, OverlayPointerKind kind, double x, double y, OverlayModifiers modifiers = OverlayModifiers.None) =>
@@ -41,7 +42,8 @@ internal static class BillboardScreenCreationTests
         Send(editor, OverlayPointerKind.Down, 100, 100); Send(editor, OverlayPointerKind.Move, 130, 250);
         Send(editor, OverlayPointerKind.Move, 160, 120); Send(editor, OverlayPointerKind.Up, 180, 400);
         item = session.Document.Elements.Single();
-        check("screen stroke crosses horizon without clipping or splitting", item.IsBillboard && item.Points.Count == 4 && item.Points[2] == new PointD(60, 20) && session.UndoCount == 1);
+        check("screen stroke crosses horizon without clipping or splitting", item.IsBillboard && item.Points.Count == 4 &&
+            CanvasMapping.Create(session.Document).ElementToScreen(item).TransformPoint(item.Points[2]).DistanceTo(new(160, 120)) < .01 && session.UndoCount == 1);
 
         session = Session(); editor = new(session) { Tool = EditorTool.Rectangle, BillboardMode = true };
         Send(editor, OverlayPointerKind.Down, 100, 100); session.Cancel();
@@ -64,9 +66,9 @@ internal static class BillboardScreenCreationTests
 
         using var renderer = new SceneRenderer();
         session = Session();
-        var edit = new InlineTextEdit(session, null, new(100, 100), new ElementStyle { FontSize = 24 }, renderer, billboardScreenFirst: true);
+        var edit = new InlineTextEdit(session, null, new(100, 350), new ElementStyle { FontSize = 24 }, renderer, billboardScreenFirst: true);
         edit.Input.Text = string.Join('\n', Enumerable.Repeat("screen text", 8));
-        check("screen text stays detached while measuring lines across horizon", session.Document.Elements.Count == 0 && edit.ScreenDraft is not null && edit.ResolvedScreenDraft is not null);
+        check("screen text stays detached while measuring logical lines", session.Document.Elements.Count == 0 && edit.ScreenDraft is not null && edit.ResolvedScreenDraft is not null);
         var screenBox = edit.LocalToScreen.TransformPoint(new(0, 0)); edit.Finish(true);
         item = session.Document.Elements.Single(); var actualTop = CanvasMapping.Create(session.Document).ElementToScreen(item).TransformPoint(new(0, 0));
         check("text publishes measured screen placement in one undo", item.IsBillboard && Near(screenBox.X, actualTop.X) && Near(screenBox.Y, actualTop.Y) && session.UndoCount == 1);
@@ -109,7 +111,8 @@ internal static class BillboardScreenCreationTests
         check("batch screen insertion validates every ground before publishing any asset", rejected && !session.Assets.Resources.Any() && session.Document.Elements.Count == 0 && session.UndoCount == 0);
         ImageImportCommand.InsertBillboard(session, [small], session.Document.Viewport, null, new(200, 400), .7);
         item = session.Document.Elements.Single(); bounds = CanvasMapping.Create(session.Document).ProjectedBounds(item, false);
-        check("image center size opacity and asset survive screen-first insertion", item.IsBillboard && Near(bounds.X, 192) && Near(bounds.Y, 392) && Near(bounds.Width, 16) && item.Style.Opacity == .7 && session.Assets.Resources.Count() == 1);
+        check("image center logical size opacity and asset survive screen-first insertion", item.IsBillboard && bounds.Center.DistanceTo(new(200, 400)) < .01 &&
+            item.Width == 16 && item.Transform == Affine2D.Identity && item.Style.Opacity == .7 && session.Assets.Resources.Count() == 1);
 
         session = Session(); session.BeginTransaction("foreign"); rejected = false;
         try { SnapshotImageCommand.Insert(session, new(small.PngBytes, new RectD(100, 300, 16, 16), true), billboardScreenFirst: true); }

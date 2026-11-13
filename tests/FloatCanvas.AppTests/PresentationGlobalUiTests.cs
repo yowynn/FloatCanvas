@@ -80,7 +80,7 @@ internal static class PresentationGlobalUiTests
         panel.SetPresentationGlobalUi(() => global.Clone()); panel.PrepareForShow();
         var editor = Field<PresentationGlobalSettingsPanel>(panel, "presentationGlobalSettings");
         string document = JsonSerializer.Serialize(session.Document), recipes = JsonSerializer.Serialize(library.User);
-        check("mouse tool refresh is silent and leaves its master disabled", edits == 0 && !global.Pointer.Enabled && !Control<CheckBox>(editor, "CursorEnabled").IsEnabled);
+        check("mouse tool refresh is silent and leaves its master off with editable options", edits == 0 && !global.Pointer.Enabled && Control<CheckBox>(editor, "CursorEnabled").IsEnabled && Field<Dictionary<string, FrameworkElement>>(editor, "rows")["CursorColor"].Visibility == Visibility.Visible);
         check("mouse colors are visible swatches and have no second opacity controls", Field<Grid>(Control<ColorField>(editor, "CursorColor"), "swatch").Children.Count == 1 && !Entries(editor).Contains("CursorOpacity") && !Entries(editor).Contains("TrailOpacity") && !Entries(editor).Contains("RightClick.Opacity"));
         Change(editor, "PointerEnabled", true);
         check("mouse master publishes standard tool parameters without a scene edit", edits == 1 && global.Pointer.AnyEnabled && controller.Parameters.PointerPresentation!.Enabled && session.UndoCount == 0 && JsonSerializer.Serialize(session.Document) == document);
@@ -98,7 +98,7 @@ internal static class PresentationGlobalUiTests
             check(prefix + " reenable restores its independently retained style", Field<Dictionary<string, FrameworkElement>>(editor, "rows")[prefix + ".Color"].Visibility == Visibility.Visible && JsonSerializer.Serialize(global.Pointer) == retainedStyle);
         }
         var radius = Control<NumericValueField>(editor, "CursorRadiusPixels"); int beforeInvalid = edits; radius.Input.Text = "9999";
-        check("out-of-range mouse numeric drafts cannot publish tool values", edits == beforeInvalid && global.Pointer.CursorRadiusPixels == 18 && Field<TextBlock>(editor, "error").Visibility == Visibility.Visible);
+        check("out-of-range mouse numeric drafts cannot publish tool values", edits == beforeInvalid && global.Pointer.CursorRadiusPixels == 18 && Field<TextBlock>(panel, "status").Visibility == Visibility.Visible && Field<TextBlock>(panel, "status").Text.StartsWith("⚠ ", StringComparison.Ordinal));
         panel.RefreshPresentationRuntimeUi();
         check("runtime status refresh leaves the user's mouse numeric draft untouched", radius.Input.Text == "9999" && edits == beforeInvalid);
         radius.Input.Text = "36"; last!.RightClick.Color = 0xff000000;
@@ -107,11 +107,11 @@ internal static class PresentationGlobalUiTests
         Control<NumericValueField>(editor, "TrailMilliseconds").Input.Text = "1200"; Control<ColorField>(editor, "TrailColor").SetUserValue(0xb3aabbcc);
         check("mouse trail exposes width lifetime and color alpha without opacity multiplier", global.Pointer.TrailEnabled && global.Pointer.TrailWidthPixels == 7 && global.Pointer.TrailMilliseconds == 1200 && global.Pointer.TrailOpacity == 1 && global.Pointer.TrailColor == 0xb3aabbcc);
         Change(editor, "PointerEnabled", false);
-        string retained = JsonSerializer.Serialize(global.Pointer); int disabledEdits = edits;
+        var retained = global.Pointer.Clone(); retained.TrailWidthPixels = 11; int pausedEdits = edits;
         Control<NumericValueField>(editor, "TrailWidthPixels").Input.Text = "11";
-        check("mouse master off retains styles and blocks hidden stale fields", !global.Pointer.AnyEnabled && edits == disabledEdits && JsonSerializer.Serialize(global.Pointer) == retained);
+        check("mouse master off keeps options editable without enabling effects or altering other styles", !global.Pointer.AnyEnabled && edits == pausedEdits + 1 && JsonSerializer.Serialize(global.Pointer) == JsonSerializer.Serialize(retained));
         panel.SetPresentationGlobalUi(null);
-        check("mouse tool has no hidden global keyboard scope editor", !Field<Dictionary<string, FrameworkElement>>(panel, "rows").ContainsKey("PresentationKeyboardScope") && edits == disabledEdits);
+        check("mouse tool has no hidden global keyboard scope editor", !Field<Dictionary<string, FrameworkElement>>(panel, "rows").ContainsKey("PresentationKeyboardScope") && edits == pausedEdits + 1);
         check("mouse parameters and keyboard scope edits leave authored source history and recipes unchanged", session.UndoCount == 0 && JsonSerializer.Serialize(session.Document) == document && JsonSerializer.Serialize(library.User) == recipes);
         check("keyboard runtime status has no global Start Stop or Bake button", !Descendants(Field<PresentationRuntimeControls>(panel, "presentationRuntime")).OfType<Button>().Any());
         controller.Tool = EditorTool.PointerPresentation; panel.PrepareForShow();
@@ -146,7 +146,10 @@ internal static class PresentationGlobalUiTests
     }
 
     private static void Change(PresentationGlobalSettingsPanel panel, string key, bool value)
-    { var box = Control<CheckBox>(panel, key); box.IsChecked = value; box.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent)); }
+    {
+        if (key == "PointerEnabled") { var master = Control<CaptionModeSwitch>(panel, key); if (master.SelectedFirst != value) master.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+        else { var box = Control<CheckBox>(panel, key); box.IsChecked = value; box.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent)); }
+    }
     private static T Control<T>(PresentationGlobalSettingsPanel panel, string key) where T : FrameworkElement
     {
         var entries = (IDictionary)typeof(PresentationGlobalSettingsPanel).GetField("entries", Hidden)!.GetValue(panel)!;

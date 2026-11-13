@@ -1,0 +1,7 @@
+{
+  "Layers.TargetDepth": { "zh": "嵌套深度 {0}；左右方向键展开或收起", "en": "Nesting depth {0}; Left and Right collapse or expand" },
+  "Canvas.GridChecking": { "zh": "正在检查内容安全性…", "en": "Checking content safety…" },
+  "Canvas.GridUnsafeCount": { "zh": "此网格会使 {0} 个图层或组合超出安全范围。请调整取样或格数。", "en": "This grid places {0} layers or groups outside the safe area. Adjust the sample or counts." },
+  "Canvas.AspectPortrait": { "zh": "{0}（纵向）", "en": "{0} (portrait)" },
+  "Canvas.AspectLandscape": { "zh": "{0}（横向）", "en": "{0} (landscape)" }
+}

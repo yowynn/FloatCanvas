@@ -26,6 +26,7 @@ internal sealed class NumericValueField : UserControl
     private double railPointerOrigin;
     private bool railThumbPressed;
     private Window? owner;
+    private Button? increment, decrement;
     internal TextBox Input { get; }
     internal Slider Slider { get; }
     internal string Unit
@@ -94,7 +95,7 @@ internal sealed class NumericValueField : UserControl
             if (synchronizing) return;
             modelText = false;
             hasPlaceholder = false;
-            if (!TryGetValue(out double next)) { invalidDraft = true; InvalidInput?.Invoke(); return; }
+            if (!TryGetValue(out double next)) { invalidDraft = true; RefreshStepper(); InvalidInput?.Invoke(); return; }
             bool corrected = invalidDraft; invalidDraft = false;
             synchronizing = true;
             try { Slider.Value = Math.Clamp(next, Slider.Minimum, Slider.Maximum); }
@@ -156,6 +157,50 @@ internal sealed class NumericValueField : UserControl
         if (label is TextBlock caption) SetScrubAnchor(anchorKind, caption.Text);
         AutomationProperties.SetLabeledBy(Input, label); AutomationProperties.SetLabeledBy(Slider, label);
         label.PreviewMouseLeftButtonDown += (_, _) => Slider.Focus();
+    }
+
+    // Optional integer/fine adjustment stays inside the common frame. The entire
+    // existing editor and rail share the remaining width; ordinary fields are unchanged.
+    internal void EnableStepper()
+    {
+        if (increment is not null) return;
+        var frame = (Border)Content; var body = frame.Child; frame.Child = null;
+        var layout = new Grid(); layout.ColumnDefinitions.Add(new()); layout.ColumnDefinitions.Add(new() { Width = new(22) });
+        layout.Children.Add(body);
+        var steps = new Grid(); steps.RowDefinitions.Add(new()); steps.RowDefinitions.Add(new());
+        var separator = new Border { BorderThickness = new(1, 0, 0, 0), Child = steps };
+        var readOnlyStyle = new Style(typeof(Border));
+        var readOnly = new DataTrigger { Binding = new System.Windows.Data.Binding(nameof(TextBox.IsReadOnly)) { Source = Input }, Value = true };
+        readOnly.Setters.Add(new Setter(IsEnabledProperty, false)); readOnlyStyle.Triggers.Add(readOnly); separator.Style = readOnlyStyle;
+        separator.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
+        Grid.SetColumn(separator, 1); layout.Children.Add(separator); frame.Child = layout;
+        Button MakeStep(int direction)
+        {
+            var glyph = CommandGlyphs.Create(direction > 0 ? "M4,10 L8,6 L12,10" : "M4,6 L8,10 L12,6"); glyph.Width = glyph.Height = 12;
+            var button = new Button { MinWidth = 0, MinHeight = 0, Margin = new(0), Padding = new(0),
+                BorderThickness = new(0), Background = Brushes.Transparent, Focusable = false,
+                HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
+                Content = glyph };
+            button.Resources["CanvasButtonCornerRadius"] = direction > 0 ? new CornerRadius(0, 5, 0, 0) : new CornerRadius(0, 0, 5, 0);
+            string name = AutomationProperties.GetName(Input) + " " + L.Format(direction > 0 ? "Numeric.Increase" : "Numeric.Decrease", step);
+            button.ToolTip = name; AutomationProperties.SetName(button, name);
+            button.Click += (_, _) =>
+            {
+                if (!BeginGesture()) return;
+                Publish(gestureStart + direction * step); EndGesture(true);
+            };
+            Grid.SetRow(button, direction > 0 ? 0 : 1); steps.Children.Add(button); return button;
+        }
+        increment = MakeStep(1); decrement = MakeStep(-1);
+        RefreshStepper();
+    }
+
+    private void RefreshStepper()
+    {
+        if (increment is null || decrement is null) return;
+        bool valid = TryGetValue(out double current);
+        increment.IsEnabled = valid && current < maximum;
+        decrement.IsEnabled = valid && current > minimum;
     }
 
     // Mixed selections and automatic values are valid states, unlike an invalid
@@ -300,6 +345,7 @@ internal sealed class NumericValueField : UserControl
         outside.Text = next < Slider.Minimum ? "‹" : next > Slider.Maximum ? "›" : "";
         Slider.ToolTip = $"{Format(Slider.Minimum)} – {Format(Slider.Maximum)}{(Unit.Length == 0 ? "" : " " + Unit)}";
         AutomationProperties.SetItemStatus(Slider, outside.Text.Length == 0 ? "" : Format(next));
+        RefreshStepper();
     }
 
     // A common-range change only moves the rail's representative thumb. The

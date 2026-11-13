@@ -17,8 +17,10 @@ internal static class PropertyPanelLayout
     internal const double SectionFontSize = 13;
     internal static readonly FontFamily LabelFontFamily = new("Segoe UI, Microsoft YaHei UI");
     internal const double ControlHeight = 34;
+    internal const double RowGap = 8;
+    internal static readonly Thickness RowMargin = new(0, RowGap / 2, 0, RowGap / 2);
     internal const double LabelGap = 8;
-    internal const double PairGap = 36;
+    internal const double PairGap = ControlHeight + 8;
     internal const double PairMinimumWidth = 244;
     internal const double Padding = WindowLayout.ContentInset;
     internal static double WindowWidth => ContentWidth + Padding * 2 + 2;
@@ -32,7 +34,7 @@ internal static class PropertyPanelLayout
 
     internal static Grid Row(TextBlock label, FrameworkElement control)
     {
-        var row = new Grid { Margin = new(0, 4, 0, 4) };
+        var row = new Grid { Margin = RowMargin };
         if (control is ComboBox or ColorField or NumericValueField || control is TextBox { AcceptsReturn: false })
             control.Height = control.MinHeight = ControlHeight;
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto, SharedSizeGroup = "PropertyLabels" });
@@ -64,7 +66,7 @@ internal static class PropertyPanelLayout
 
     internal static Grid BooleanRow(string name, CheckBox control)
     {
-        var row = new Grid { Margin = new(0, 4, 0, 4), MinHeight = ControlHeight };
+        var row = new Grid { Margin = RowMargin, MinHeight = ControlHeight };
         row.ColumnDefinitions.Add(new()); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var label = new TextBlock { Text = name, TextWrapping = TextWrapping.Wrap, FontSize = LabelFontSize, FontFamily = LabelFontFamily, FontWeight = FontWeights.Normal, Margin = new(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
         control.Content = null; control.Padding = new(0); control.Margin = new(0); control.HorizontalAlignment = HorizontalAlignment.Right; control.VerticalAlignment = VerticalAlignment.Center;
@@ -89,8 +91,12 @@ internal static class PropertyPanelLayout
             bool stacked = pair.ActualWidth < PairMinimumWidth;
             Grid.SetRow(second, stacked ? 2 : 0); Grid.SetColumn(second, stacked ? 0 : 2);
             Grid.SetColumnSpan(first, stacked ? 3 : 1); Grid.SetColumnSpan(second, stacked ? 3 : 1);
+            pair.RowDefinitions[1].Height = middle is null && stacked ? new(RowGap) : GridLength.Auto;
             if (middle is not null)
-            { Grid.SetRow(middle, stacked ? 1 : 0); Grid.SetColumn(middle, stacked ? 0 : 1); Grid.SetColumnSpan(middle, stacked ? 3 : 1); }
+            {
+                Grid.SetRow(middle, stacked ? 1 : 0); Grid.SetColumn(middle, stacked ? 0 : 1); Grid.SetColumnSpan(middle, stacked ? 3 : 1);
+                middle.Margin = stacked ? new(0, RowGap, 0, RowGap) : new(4, 0, 4, 0);
+            }
         };
         return pair;
     }

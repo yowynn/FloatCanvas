@@ -31,11 +31,13 @@ internal static class NumericControlTests
             ToolGestures(root, check);
             AspectRatios(root, check);
             OverflowLabels(check);
-            var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+            var canvas = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
+            var canvasSettings = new CanvasSettings { Grid = new() { Visible = true } };
+            canvas.Refresh(canvasSettings);
             canvas.PrepareForShow();
             var canvasWidth = Field<NumericValueField>(canvas, "width");
             Measure(canvasWidth, 120, 34); canvasWidth.BeginGesture(); canvasWidth.UpdateRail(60);
-            double previewWidth = canvasWidth.Value; canvas.Refresh(new());
+            double previewWidth = canvasWidth.Value; canvas.Refresh(canvasSettings);
             check("canvas repaint preserves the active label or rail preview", canvasWidth.IsInteracting && canvasWidth.Value == previewWidth);
             canvasWidth.EndGesture(true); canvas.CloseForDispose();
             foreach (string language in new[] { "zh-CN", "en" })
@@ -229,13 +231,13 @@ internal static class NumericControlTests
         var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Rectangle };
         var panel = Panel(root, controller); Measure(panel, ToolOptionsPanel.PreferredWidth, 620);
         var grid = Field<Controls.Grid>(panel, "parameterGrid");
-        check(name + $" property and tool columns share the same default usable width ({properties.ActualWidth:0.##}/{grid.ActualWidth:0.##})", Math.Abs(properties.ActualWidth - PropertyPanelLayout.ContentWidth) < 1 && Math.Abs(grid.ActualWidth - properties.ActualWidth) < 1);
+        check(name + $" tool column reserves its cue and scrollbar space ({properties.ActualWidth:0.##}/{grid.ActualWidth:0.##})", Math.Abs(properties.ActualWidth - PropertyPanelLayout.ContentWidth) < 1 && Math.Abs(grid.ActualWidth + 2 * WindowLayout.ContentInset - properties.ActualWidth) < 1);
         var rows = Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows");
-        var canvas = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+        var canvas = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
         canvas.Refresh(new()); canvas.PrepareForShow(); Measure((Wpf.FrameworkElement)canvas.Content, canvas.Width - 2, 540);
         var canvasWidth = Field<NumericValueField>(canvas, "width");
         var canvasBody = (Wpf.FrameworkElement)((Wpf.FrameworkElement)canvasWidth.Parent).Parent;
-        check(name + $" canvas parameter column uses the shared width ({canvasBody.ActualWidth:0.##}/{properties.ActualWidth:0.##})", Math.Abs(canvasBody.ActualWidth - properties.ActualWidth) < 1);
+        check(name + $" canvas parameter column uses the shared tool width ({canvasBody.ActualWidth:0.##}/{grid.ActualWidth:0.##})", Math.Abs(canvasBody.ActualWidth - grid.ActualWidth) < 1);
         check(name + " width and height share the same row", Controls.Grid.GetRow(rows["DefaultWidth"]) == Controls.Grid.GetRow(rows["DefaultHeight"]));
         var captions = Field<Dictionary<string, Controls.TextBlock>>(panel, "captions");
         var aspect = Field<AspectRatioButton>(panel, "aspect");
@@ -421,7 +423,7 @@ internal static class NumericControlTests
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
     [DllImport("user32.dll")] private static extern nint GetWindowLongPtrW(nint window, int index);
     [DllImport("user32.dll")] private static extern nint SetWindowLongPtrW(nint window, int index, nint value);
-    private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
+    private static T Field<T>(object target, string name) => (T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
     private static void Measure(Wpf.FrameworkElement element, double width, double height)
     { element.Measure(new(width, height)); element.Arrange(new(0, 0, width, height)); element.UpdateLayout(); }
     private static void Render(Wpf.FrameworkElement element, string path, double dpi)

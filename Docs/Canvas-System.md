@@ -1,6 +1,16 @@
 # 画布坐标、查看与转换 / Canvas coordinates, viewing and conversion
 
-本规范说明工程格式18的画布边界及模块职责。操作说明见[用户指南](User-Guide.md#查看画布独立编辑与跨屏转换)。
+本规范说明工程格式19的画布边界及模块职责。操作说明见[用户指南](User-Guide.md#查看画布独立编辑与跨屏转换)。
+
+## 容器整体立牌
+
+格式19在普通组和共享实例上保存可选的 `ContainerBillboard`，包括稳定的局部参考点与高度；节点变换的平移表示父级中的接地点。缺省仍是普通平面容器，不改写成员模式或旧补偿变换。实例外层数据不属于共享定义。
+
+`ContainerPlacementContext` 统一解析嵌套容器：内部内容以无透视平面计算，最外层立牌拥有外部深度。渲染、拾取、工程内编辑和导出使用相同映射；`BillboardSurfacePlacement` 只存在于分离的运行时元素，不序列化。独立预览配置不参与外部牌面合成。整体立牌采用原子层序，切回平面后才能解除组合。
+
+跨容器边界移动先准备并验证完整候选，再一次提交；无法表达的保外观变换拒绝执行。固定尺寸新建仍使用逻辑尺寸求解，不调用此保外观补偿路径。共享定义的冻结局部解析结果按版本复用，实例位置变化只重新应用外层映射；动态内容继续由渲染资源更新。
+
+创建提交使用绑定会话、文档与编辑范围的帧交接：对应正式帧未就绪时保留已显示的有效画面，取消后恢复基础画面并拒绝迟到草稿。新画面和命中检测同步接替；隐藏或切换上下文不允许保留旧工程画面。
 
 ## 状态归属
 
@@ -54,7 +64,7 @@
 
 ## English contract
 
-Scene format18 separates authored geometry and canvas headers, the root authoring reference, local editor navigation, and runtime desktop placement. Pixel units remain unchanged. DPI, viewing zoom and authored resolution must never be conflated.
+Scene format19 separates authored geometry and canvas headers, the root authoring reference, local editor navigation, and runtime desktop placement. Pixel units remain unchanged. DPI, viewing zoom and authored resolution must never be conflated.
 
 `CanvasMapping` owns the composed forward/inverse mapping. Perspective navigation translates along canvas-plane axes before projection, followed by positive output zoom/translation; the mapping is VHT. It excludes the OS desktop origin. Projection safety is evaluated before division. Preview redraws vectors/text at output resolution; picking, IME placement and calibration use the same mapping. Global pointer presentation remains in actual screen coordinates. Dynamic window bindings and desktop sampling remain authored while navigating.
 

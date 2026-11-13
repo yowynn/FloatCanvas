@@ -119,9 +119,9 @@ internal static class CanvasModeSwitchTests
             check(prefix + "pointer focus fixture starts on the list", previous.IsKeyboardFocused);
             control.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
                 { RoutedEvent = UIElement.MouseLeftButtonDownEvent });
-            check(prefix + "pointer activation does not leave Space focused on the mode switch", previous.IsKeyboardFocused && !control.IsKeyboardFocused);
             control.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
                 { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
+            check(prefix + "pointer activation does not resurrect the previous input target", !previous.IsKeyboardFocused && control.IsKeyboardFocused);
             check(prefix + "mode remains reachable by keyboard", control.Focus() && control.IsKeyboardFocused);
             int requests = 0; control.Click += (_, _) => requests++;
             SendKey(control, Key.Space, Keyboard.PreviewKeyDownEvent);

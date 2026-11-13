@@ -13,7 +13,7 @@ internal static class CanvasGridSettingsControlsTests
         const double precise = 73.1234567890123;
         var current = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 1920, 1080)),
             Grid = new() { FlatCellSize = precise, FlatOrigin = new(960, 540) } };
-        var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+        var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
         try
         {
             var size = Field<NumericValueField>(window, "gridSize");
@@ -67,7 +67,7 @@ internal static class CanvasGridSettingsControlsTests
             check("opening or leaving a legacy sub-unit size preserves the saved value without silently clamping", current.Grid.FlatCellSize == .125 && edits.Count == 1 &&
                 size.Input.Text == .125.ToString("G", CultureInfo.CurrentCulture));
             check("canvas configuration starts with an unpinned tool-options policy", !window.IsPinned && pinEdits == 0);
-            var pin = Field<Button>(window, "pin"); pin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var pin = window.Pin; pin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check("canvas configuration exposes the shared pin action and one pin-state event", window.IsPinned && pinEdits == 1 && edits.Count == 1 && countEdits == 0);
             pin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check("unpinning canvas configuration restores the normal tool-panel policy", !window.IsPinned && pinEdits == 2);
@@ -76,7 +76,7 @@ internal static class CanvasGridSettingsControlsTests
         finally { window.CloseForDispose(); }
     }
 
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
     private static void SendEnter(UIElement target) => target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Enter)
     { RoutedEvent = Keyboard.KeyDownEvent });
     private sealed class DetachedSource : PresentationSource

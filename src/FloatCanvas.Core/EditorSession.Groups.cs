@@ -16,21 +16,27 @@ public sealed partial class EditorSession
     public Guid? GroupSelection(string? name = null)
     {
         var graph = new SceneGraph(Document);
-        var selected = graph.NormalizeSelection(Selection).Where(id => !graph.IsLocked(id)).ToArray();
+        var analysis = AnalyzeLayerOperation(LayerOperation.Group, Selection, graph);
+        if (analysis.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
+        var selected = analysis.Eligible.ToArray();
         if (selected.Any(id => !InActiveRoot(graph, id))) throw new InvalidOperationException("A group cannot span root canvases.");
         if (selected.Length == 0) return null;
         EnsureWritableParent(EditScopeId);
+        Guid? parent = graph.AncestorIds(selected[0]).Cast<Guid?>().Append(null)
+            .First(candidate => candidate is null || selected.All(node => graph.IsAncestor(candidate.Value, node)));
+        EnsureWritableParent(parent);
+        var retained = Selection.Except(selected).ToArray();
         name = NormalizeInsertionName(name) ?? NextGroupName();
         Guid id = Guid.NewGuid();
         Execute(L.Get("History.GroupElements"), document =>
         {
             var current = new SceneGraph(document); current.MaterializeOrder();
-            var context = ScopePaintContext(current, EditScopeId);
+            var context = ScopePaintContext(current, parent);
             var order = current.PaintOrder(context);
             var moving = selected.ToHashSet();
-            int index = Enumerable.Range(0, order.Count).Where(i => moving.Contains(order[i]) || current.AncestorIds(order[i]).Any(moving.Contains)).DefaultIfEmpty(order.Count - 1).Max() + 1;
-            current.InsertGroup(new() { Id = id, Name = name, OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] }, EditScopeId, index, rootCanvas: ActiveRootCanvas);
-            current.ReparentPreservingWorld(selected, id); SynchronizeElementOrder(document); SetSelectionCore([id]);
+            int index = Enumerable.Range(0, order.Count).Where(i => moving.Contains(order[i]) || current.AncestorIds(order[i]).Any(moving.Contains) || selected.Any(node => current.IsAncestor(order[i], node))).DefaultIfEmpty(order.Count - 1).Max() + 1;
+            current.InsertGroup(new() { Id = id, Name = name, OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] }, parent, index, rootCanvas: ActiveRootCanvas);
+            current.ReparentPreservingWorld(selected, id); SynchronizeElementOrder(document); SetSelectionCore(retained.Append(id));
             InitializeGroupPreview(id);
         });
         return id;
@@ -41,7 +47,8 @@ public sealed partial class EditorSession
         var graph = new SceneGraph(Document);
         var group = graph.FindGroup(id)!;
         if (group.PreviewCanvas is not null || NodeBounds(id) is not { } bounds) return;
-        var reference = EditScopeId is null ? Document.AuthoringReference?.ReferenceScreenBounds ?? Document.Viewport : GetEditingSubprojectCanvas().Viewport;
+        var reference = group.ParentId is { } parent && graph.FindGroup(parent)?.PreviewCanvas is { } preview
+            ? preview.Viewport : Document.AuthoringReference?.ReferenceScreenBounds ?? Document.Viewport;
         var viewport = new RectD(0, 0, reference.Width, reference.Height);
         var localCenter = graph.NodeWorldPlacement(id).PlaneTransform.Inverse().TransformPoint(bounds.Center);
         group.PreviewCanvas = new() { Viewport = viewport, Origin = bounds.IsEmpty ? default : localCenter - viewport.Center };
@@ -51,11 +58,14 @@ public sealed partial class EditorSession
     public void UngroupSelection()
     {
         var graph = new SceneGraph(Document);
-        var roots = graph.NormalizeSelection(Selection).Select(graph.FindGroup).Where(group => group is not null && !graph.IsLocked(group.Id)).Cast<CanvasGroup>().ToArray();
+        var analysis = AnalyzeLayerOperation(LayerOperation.Ungroup, Selection, graph);
+        if (analysis.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
+        var roots = analysis.Eligible.Select(id => graph.FindGroup(id)!).ToArray();
         if (roots.Length == 0) return;
+        if (roots.Any(group => group.Billboard is not null)) throw new InvalidOperationException(L.Get("Billboard.UngroupFirstFlat"));
         Execute(L.Get("History.UngroupElements"), document =>
         {
-            var selected = new List<Guid>();
+            var selected = Selection.Except(analysis.Eligible).ToList();
             foreach (var saved in roots)
             {
                 var current = new SceneGraph(document); var root = current.FindGroup(saved.Id)!;
@@ -124,7 +134,7 @@ public sealed partial class EditorSession
     }
 
     /// <summary>Imports editable entities, fresh element/effect/group IDs and immutable referenced resources atomically.</summary>
-    public void InsertDocument(SceneDocument source, AssetLibrary sourceAssets, Affine2D transform, bool group = false, string? label = null, bool preserveDefinitions = false, string? groupName = null)
+    public void InsertDocument(SceneDocument source, AssetLibrary sourceAssets, Affine2D transform, bool group = false, string? label = null, bool preserveDefinitions = false, string? groupName = null, ContainerBillboardInsertion? billboard = null)
     {
         EnsureWritableParent(EditScopeId);
         ArgumentNullException.ThrowIfNull(source);
@@ -143,8 +153,8 @@ public sealed partial class EditorSession
         var resources = snapshot.ReferencedAssets.Select(id => preserveDefinitions && Assets.TryGet(id, out var retained) ? retained : sourceAssets.Get(id)).ToArray();
         if (snapshot.Elements.Count == 0 && snapshot.Groups.Count == 0 && snapshot.Instances.Count == 0) return;
         TransformSnapshotRoots(snapshot, new(transform, 1));
-        EnsureSafeInsertion(SceneEvaluation.Build(snapshot).RenderDocument.Elements);
-        if (group && new SceneGraph(snapshot).EnumerateChildren(null).Count > 1)
+        if (billboard is null) EnsureSafeInsertion(SceneEvaluation.Build(snapshot).RenderDocument.Elements);
+        if (group && (new SceneGraph(snapshot).EnumerateChildren(null).Count > 1 || billboard is not null))
         {
             var graph = new SceneGraph(snapshot); var roots = graph.EnumerateChildren(null).ToArray();
             var outer = graph.InsertGroup(new() { Name = groupName ?? NextGroupName(), OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = [] });
@@ -157,9 +167,15 @@ public sealed partial class EditorSession
             else if (graph.FindInstance(root) is { } singleInstance) singleInstance.Name = groupName;
             else graph.FindElement(root)!.Name = groupName;
         }
+        if (billboard is not null)
+        {
+            billboard.Apply(snapshot, new SceneGraph(snapshot).EnumerateChildren(null).Single());
+            if (!billboard.Mapping.IsSurfaceView) EnsureSafeInsertion(SceneEvaluation.Build(snapshot).RenderDocument.Elements);
+        }
         var candidate = Document.Clone();
         AppendSnapshot(candidate, snapshot.Clone(), EditScopeId, ActiveRootCanvas);
         SceneLimits.ValidateCapacity(candidate);
+        if (billboard is not null) EnsureSafeInsertion(SceneEvaluation.Build(candidate).RenderDocument.Elements);
         // Publish resources only after the complete target hierarchy and capacity have been accepted.
         Execute(label ?? L.Get("History.InsertPreset"), document =>
         {

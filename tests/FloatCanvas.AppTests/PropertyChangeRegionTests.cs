@@ -21,16 +21,46 @@ internal static class PropertyChangeRegionTests
         foreach (string theme in new[] { "light", "dark" })
         {
             AppTheme.Apply(theme);
+            ImmediateLayout(check, theme);
             Canvas(check, output, theme);
             Colors(check, output, theme, inspector: false);
             Colors(check, output, theme, inspector: true);
         }
     }
 
+    private static void ImmediateLayout(Action<string, bool> check, string theme)
+    {
+        var body = new StackPanel();
+        var shortRows = new StackPanel { Visibility = Visibility.Collapsed };
+        var longRows = new StackPanel();
+        for (int i = 0; i < 10; i++) longRows.Children.Add(new Border { Height = 34 });
+        for (int i = 0; i < 2; i++) shortRows.Children.Add(new Border { Height = 34 });
+        body.Children.Add(shortRows); body.Children.Add(longRows);
+        var region = new PropertyChangeRegion(body);
+        var following = new Border { Height = 34 };
+        var root = new StackPanel { Margin = new(12), Children = { region, following } };
+        var window = new Window { Content = root, Width = 400, Height = 600 };
+        try
+        {
+            Show(window);
+            region.Change(() => { longRows.Visibility = Visibility.Collapsed; shortRows.Visibility = Visibility.Visible; });
+            window.UpdateLayout();
+            check(theme + " ten-to-two rows reflow before the first cue frame with no retained empty height",
+                Math.Abs(region.ActualHeight - 68) < .01 && Math.Abs(following.TranslatePoint(new(), root).Y - 68) < .01 && double.IsNaN(region.Height));
+            region.Change(() => { shortRows.Visibility = Visibility.Collapsed; longRows.Visibility = Visibility.Visible; });
+            window.UpdateLayout();
+            check(theme + " two-to-ten rows immediately reserve their complete layout before fading the cue",
+                Math.Abs(region.ActualHeight - 340) < .01 && Math.Abs(following.TranslatePoint(new(), root).Y - 340) < .01 && double.IsNaN(region.Height));
+            region.Change(() => longRows.Visibility = Visibility.Collapsed); window.UpdateLayout();
+            check(theme + " hiding every row leaves neither a cue nor reserved height", region.ActualHeight == 0 && region.CueStrength == 0 && following.TranslatePoint(new(), root).Y == 0);
+        }
+        finally { window.Close(); }
+    }
+
     private static void Canvas(Action<string, bool> check, string output, string theme)
     {
         var settings = new CanvasSettings();
-        var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+        var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
         window.ProjectionChanged += enabled => { settings.Projection.Enabled = enabled; window.Refresh(settings); };
         window.GridVisibilityChanged += visible => { settings.Grid.Visible = visible; window.Refresh(settings); };
         window.PinLocationChanged += location => { settings.Projection.PinLocation = location; window.Refresh(settings); };
@@ -57,9 +87,14 @@ internal static class PropertyChangeRegionTests
             var gridColor = Field<ColorField>(window, "gridColor");
             var gridRow = (FrameworkElement)gridColor.Parent;
             Toggle(Field<CheckBox>(window, "gridVisible")); Pump(40);
-            check(theme + " grid toggle keeps its fixed fields visible and ungrouped", gridRow.IsVisible && AncestorRegion(gridRow) is null && region.CueStrength == 0 && counts.CueStrength == 0);
+            var appearance = Field<PropertyChangeRegion>(window, "gridAppearanceRegion");
+            check(theme + " grid toggle reveals only its appearance fields with the common cue", gridRow.IsVisible && ReferenceEquals(AncestorRegion(gridRow), appearance) && appearance.CueStrength > 0 && region.CueStrength == 0 && counts.CueStrength == 0);
+            Toggle(Field<CheckBox>(window, "gridVisible")); Pump(40);
+            check(theme + " hiding all grid appearance rows leaves no empty animated block", !gridRow.IsVisible && appearance.CueStrength == 0);
+            Pump(300); SettleHeight(window, appearance);
+            check(theme + " hidden grid appearance leaves no reserved height", appearance.ActualHeight == 0 && double.IsNaN(appearance.Height));
             check(theme + " pin selector is directly available beside perspective options", Field<FrameworkElement>(window, "pinRow").IsVisible);
-            Toggle(projection); Pump(20); Toggle(projection); Pump(300);
+            Toggle(projection); Pump(20); Toggle(projection); Pump(300); SettleHeight(window, region);
             check(theme + " rapid perspective toggles settle at the latest layout", settings.Projection.Enabled && actions.IsVisible && !flat.IsVisible && double.IsNaN(region.Height) && Math.Abs(region.ActualHeight - region.Child.DesiredSize.Height) < 1);
             window.Hide(); Pump(20);
             check(theme + " hiding cancels both transient regions", region.CueStrength == 0 && counts.CueStrength == 0 && double.IsNaN(region.Height));
@@ -104,7 +139,7 @@ internal static class PropertyChangeRegionTests
             check(name + " link hides the independent color and cues the replacement", fill.Visibility == Visibility.Collapsed && region.CueStrength > 0);
             CheckBounds(check, name, region, (FrameworkElement)toggle.Parent);
             Save(window, Path.Combine(output, theme + (inspector ? "-inspector-linked.png" : "-tools-linked.png")));
-            Toggle(toggle); Pump(300);
+            Toggle(toggle); Pump(300); SettleHeight(window, region);
             check(name + " unlink reveals the full color block with no stranded height", fill.IsVisible && region.CueStrength > 0 && double.IsNaN(region.Height));
             check(name + " linking preserves the independent fill color", (inspector ? shape.Style.Fill : controller.Style.Fill) == savedFill);
             Pump(800);
@@ -176,8 +211,14 @@ internal static class PropertyChangeRegionTests
     }
 
     private static void Toggle(CheckBox toggle) { toggle.IsChecked = toggle.IsChecked != true; toggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); }
+    private static void SettleHeight(Window window, PropertyChangeRegion region)
+    {
+        // Animation frames may start later than the Dispatcher timer on an isolated desktop.
+        for (int frame = 0; frame < 25 && !double.IsNaN(region.Height); frame++) Pump(20);
+        window.UpdateLayout();
+    }
     private static void Toggle(SegmentedChoice choice) => choice.SelectedIndex = choice.SelectedIndex == 0 ? 1 : 0;
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
     private static void Pump(int milliseconds)
     {
         var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(milliseconds) };

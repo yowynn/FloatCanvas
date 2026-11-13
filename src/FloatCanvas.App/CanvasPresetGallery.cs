@@ -1,133 +1,38 @@
 using System.Windows;
-using System.Windows.Automation;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
+using System.Text.Json;
 using FloatCanvas.Core;
-using L = FloatCanvas.Localization.AppText;
-
 namespace FloatCanvas.App;
 
-internal sealed class CanvasPresetGallery : UserControl
+internal sealed class CanvasPresetGallery : PresetGallery<CanvasPreset>
 {
     private readonly CanvasPresetLibrary library;
-    internal readonly PixelTilePanel OfficialTiles = new(5, 36, 4), UserTiles = new(5, 36, 4);
-    private readonly TextBlock empty = new() { Text = L.Get("ToolOptions.EmptyUser"), FontSize = 11, Opacity = .7, Margin = new(2, 6, 0, 0) };
-    private readonly ScrollViewer userScroll;
+    private readonly ToolStateStore? stateStore;
     private CanvasSettings current = new();
-    private bool refreshPending;
-    // Session-only selection evidence; definitions, previews and application never use these snapshots.
-    private CanvasPresetParameters? selectedSnapshot, selectedDefinition;
-    internal string SelectedId { get; private set; } = "";
-    internal event Action<CanvasPresetParameters>? Applied;
-    internal event Action<string>? Failed;
-
-    internal CanvasPresetGallery(CanvasPresetLibrary library)
-    {
-        this.library = library;
-        var body = new DockPanel { MinWidth = 196 + WindowLayout.ScrollBarWidth, LastChildFill = true };
-        var headings = new StackPanel();
-        headings.Children.Add(Header("ToolOptions.Official")); headings.Children.Add(OfficialTiles);
-        var userHeader = Header("ToolOptions.User"); userHeader.Margin = new(0, 12, 0, 4);
-        var save = ActionIconButton.Create(PanelActionIcon.Add, L.Get("CanvasPreset.New"), Save);
-        save.IsEnabled = library.CanEdit;
-        if (!library.CanEdit) { save.ToolTip = L.Get("CanvasPreset.ReadOnly"); ToolTipService.SetShowOnDisabled(save, true); }
-        DockPanel.SetDock(save, Dock.Right); userHeader.Children.Insert(0, save); headings.Children.Add(userHeader);
-        DockPanel.SetDock(headings, Dock.Top); body.Children.Add(headings);
-        var userArea = new Grid { MinHeight = 156 }; userArea.Children.Add(empty);
-        userScroll = new ScrollViewer { Content = UserTiles, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        userArea.Children.Add(userScroll); body.Children.Add(userArea); Content = body;
-        IsVisibleChanged += (_, _) => { if (IsVisible) PrepareForShow(); };
-        Refresh(new());
-    }
-
-    internal void Refresh(CanvasSettings settings)
-    {
-        current = settings.Clone(); refreshPending = true;
-        if (IsVisible) PrepareForShow();
-    }
-    internal void PrepareForShow()
-    {
-        if (!refreshPending) return;
-        refreshPending = false;
-        var official = library.Official; var users = library.User;
-        var selected = library.All.FirstOrDefault(p => p.Id == SelectedId); var actual = CanvasPresetParameters.From(current);
-        if (selected is null || selectedDefinition is { } definition && (!definition.Matches(selected.Parameters) || !selected.Parameters.Matches(definition)) ||
-            !(selectedSnapshot ?? selected.Parameters).Matches(actual) || selectedSnapshot is { } applied && !actual.Matches(applied))
-        { SelectedId = ""; selectedSnapshot = selectedDefinition = null; }
-        var focus = TileCollection.Capture(this, Tiles());
-        TileCollection.Synchronize(OfficialTiles, official.Select(p => p.Id), id => Tile(official.Single(p => p.Id == id)),
-            (button, id) => UpdateTile(button, official.Single(p => p.Id == id)));
-        TileCollection.Synchronize(UserTiles, users.Select(p => p.Id), id =>
-        {
-            var preset = users.Single(p => p.Id == id); var button = Tile(preset); button.ContextMenu = Menu(preset);
-            TileDragReorder.Attach(button, UserTiles, (target, after) => Run(() => { library.Move(id, (string)target.Tag, after); Refresh(current); }));
-            button.PreviewKeyDown += (_, e) =>
-            {
-                if (Keyboard.Modifiers != ModifierKeys.None || e.Key is not (Key.F2 or Key.Delete)) return;
-                e.Handled = true; if (AppInputPolicy.IsRepeat(e)) return;
-                if (e.Key == Key.F2 && library.User.FirstOrDefault(item => item.Id == id) is { } latest) Rename(latest);
-                else if (e.Key == Key.Delete) Delete(id);
-            };
-            return button;
-        }, (button, id) => { var preset = users.Single(p => p.Id == id); UpdateTile(button, preset); button.ContextMenu = Menu(preset); });
-        empty.Visibility = users.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        userScroll.Visibility = users.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        TileCollection.Restore(Tiles(), focus, SelectedId);
-    }
-
-    internal void Apply(string id) => Run(() =>
-    {
-        var preset = library.All.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id);
-        SelectedId = id; selectedSnapshot = selectedDefinition = null;
-        if (IsVisible) foreach (var button in Tiles()) button.SetResourceReference(BorderBrushProperty, Equals(button.Tag, id) ? "CanvasAccent" : "CanvasBorder");
-        else refreshPending = true;
-        Applied?.Invoke(preset.Parameters.Clone());
-        if (SelectedId == id) { selectedSnapshot = CanvasPresetParameters.From(current); selectedDefinition = preset.Parameters.Clone(); }
-    });
-    internal void SaveNamed(string name)
-    {
-        var saved = library.Save(name, current); SelectedId = saved.Id; selectedSnapshot = selectedDefinition = saved.Parameters.Clone(); Refresh(current); if (IsVisible) RevealSelection();
-    }
-    internal void Delete(string id) => Run(() => { library.Delete(id); if (SelectedId == id) { SelectedId = ""; selectedSnapshot = selectedDefinition = null; } Refresh(current); });
-    private void Save()
-    {
-        string? name = NamePrompt.Show(this, L.Get("CanvasPreset.Name"), ToolDisplayName.PresetName(EditorTool.Canvas));
-        if (name is not null) Run(() => SaveNamed(name));
-    }
-    private void Rename(CanvasPreset preset)
-    {
-        string? name = NamePrompt.Show(this, L.Get("ToolOptions.Rename"), preset.Name);
-        if (name is not null) Run(() => { library.Rename(preset.Id, name); Refresh(current); });
-    }
-    private Button Tile(CanvasPreset preset)
-    {
-        var button = new SelectionTileButton { Tag = preset.Id, MinWidth = 0, MinHeight = 0, Padding = new(4), Margin = new(0), BorderThickness = new(1) };
-        ToolTipService.SetInitialShowDelay(button, 600); button.Click += (_, _) => Apply(preset.Id); UpdateTile(button, preset); return button;
-    }
-    private void UpdateTile(Button button, CanvasPreset preset)
-    {
-        button.ToolTip = preset.Name; AutomationProperties.SetName(button, preset.Name);
-        button.Content = Preview(preset.Parameters);
-        ((SelectionTileButton)button).SetSelected(preset.Id == SelectedId);
-    }
-    private OverlayContextMenu Menu(CanvasPreset preset)
-    {
-        var menu = new OverlayContextMenu();
-        void Add(string key, PanelActionIcon icon, Action action, string shortcut = "")
-        { var item = new MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = shortcut }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-        Add("ToolOptions.Overwrite", PanelActionIcon.Save, () => Run(() => { library.Update(preset.Id, current); SelectedId = preset.Id; selectedSnapshot = selectedDefinition = CanvasPresetParameters.From(current); Refresh(current); }));
-        Add("ToolOptions.Rename", PanelActionIcon.Rename, () => Rename(preset), "F2");
-        Add("ToolOptions.Delete", PanelActionIcon.Delete, () => Delete(preset.Id), "Delete"); return menu;
-    }
-    private IEnumerable<Button> Tiles() => OfficialTiles.Children.OfType<Button>().Concat(UserTiles.Children.OfType<Button>());
-    private void RevealSelection() => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
-    { if (IsVisible) Tiles().FirstOrDefault(button => Equals(button.Tag, SelectedId))?.BringIntoView(); }));
-    private void Run(Action action) { try { action(); } catch (Exception ex) { Failed?.Invoke(ex.Message); } }
-    private static DockPanel Header(string key)
-    {
-        var panel = new DockPanel { Height = 34, Margin = new(0, 0, 0, 4) };
-        panel.Children.Add(PropertyPanelLayout.SectionTitle(L.Get(key))); return panel;
-    }
-    private static FrameworkElement Preview(CanvasPresetParameters parameters) => new CanvasParameterIcon(parameters);
+    private string selectedId = "";
+    private CanvasPresetParameters? appliedSnapshot, appliedDefinition;
+    internal event Action<CanvasPresetParameters>? CanvasApplied;
+    internal CanvasPresetGallery(CanvasPresetLibrary library, ToolStateStore? stateStore = null)
+    { this.library = library; this.stateStore = stateStore; selectedId = stateStore?.CanvasPresetSelection ?? ""; }
+    protected override IReadOnlyList<CanvasPreset> Official => library.Official;
+    protected override IReadOnlyList<CanvasPreset> Users => library.User;
+    internal override string SelectedId => selectedId;
+    protected override void Select(string id)
+    { if (selectedId == id) return; selectedId = id; appliedSnapshot = appliedDefinition = null; if (stateStore is not null) { stateStore.CanvasPresetSelection = id; stateStore.MarkChanged(); } }
+    protected override string Id(CanvasPreset p) => p.Id;
+    protected override string Caption(CanvasPreset p) => p.Name;
+    protected override FrameworkElement Preview(CanvasPreset p) => new CanvasParameterIcon(p.Parameters);
+    protected override string PreviewIdentity(CanvasPreset p) => JsonSerializer.Serialize(p.Parameters);
+    protected override bool Modified(CanvasPreset p)
+    { var actual = CanvasPresetParameters.From(current); var expected = appliedSnapshot ?? p.Parameters; return !expected.Matches(actual) || !actual.Matches(expected) || appliedDefinition is { } definition && (!definition.Matches(p.Parameters) || !p.Parameters.Matches(definition)); }
+    protected override void ApplyPreset(CanvasPreset p)
+    { CanvasApplied?.Invoke(p.Parameters.Clone()); appliedSnapshot = CanvasPresetParameters.From(current); appliedDefinition = p.Parameters.Clone(); }
+    protected override void SavePreset(string name) { var saved = library.Save(name, current); Select(saved.Id); appliedSnapshot = CanvasPresetParameters.From(current); appliedDefinition = saved.Parameters.Clone(); }
+    protected override void UpdatePreset(CanvasPreset p) { library.Update(p.Id, current); Select(p.Id); appliedSnapshot = CanvasPresetParameters.From(current); appliedDefinition = CanvasPresetParameters.From(current); }
+    protected override void RenamePreset(CanvasPreset p, string name) => library.Rename(p.Id, name);
+    protected override void DeletePreset(CanvasPreset p) { library.Delete(p.Id); appliedSnapshot = null; }
+    protected override void MovePreset(CanvasPreset p, CanvasPreset target, bool after) => library.Move(p.Id, target.Id, after);
+    protected override string SuggestedName => ToolDisplayName.PresetName(EditorTool.Canvas);
+    protected override bool CanEdit => library.CanEdit;
+    internal void Refresh(CanvasSettings settings) { current = settings.Clone(); base.Refresh(); }
+    internal void Delete(string id) => Run(() => Delete(library.All.First(p => p.Id == id)));
 }

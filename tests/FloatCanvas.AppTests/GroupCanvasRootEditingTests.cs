@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -90,7 +90,7 @@ internal static partial class GroupCanvasRootEditingTests
         fixture.Call("OpenLayers"); session.SetEditScope(c.Id); fixture.Call("SetGroupCanvasMode",GroupCanvasMode.Temporary);
         fixture.Editor.Tool=EditorTool.Canvas; fixture.Call("OpenCanvasSettings"); Pump(); fixture.Call("RefreshEditingScope");
         var layers=Field<LayersWindow>(fixture.Desktop,"_layers"); var header=Field<RootCanvasToolbarHeader>(fixture.Desktop,"_rootCanvasHeader");
-        var settings=Field<CanvasSettingsWindow>(fixture.Desktop,"_canvasSettingsWindow");
+        var settings=Field<CanvasToolOptions>(fixture.Desktop,"_canvasToolOptions");
         var oldSettingsTarget=(CanvasSettingsTarget)fixture.Call("CaptureCanvasSettingsTarget")!;
         var currentCrumb=Field<System.Windows.Controls.StackPanel>(layers,"breadcrumbs").Children.OfType<System.Windows.Controls.Button>()
             .Single(button=>System.Windows.Automation.AutomationProperties.GetItemStatus(button)==L.Get("ScopeNavigation.Current"));
@@ -100,21 +100,21 @@ internal static partial class GroupCanvasRootEditingTests
         var afterDelete=((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
         check("deleting the current scope immediately returns all path surfaces to its nearest live parent",session.EditScopeId==b.Id &&
             Field<ScopeNavigationPath>(layers,"navigationPath").CurrentIndex==2 && afterDelete.Entries.Count==3 &&
-            Field<System.Windows.Controls.TextBlock>(header,"current").Text.Contains(b.Name,StringComparison.Ordinal) && settings.Title.Contains(b.Name,StringComparison.Ordinal));
+            Field<System.Windows.Controls.TextBlock>(header,"current").Text.Contains(b.Name,StringComparison.Ordinal) && settings.TargetLabel.Contains(b.Name,StringComparison.Ordinal));
         check("scope deletion closes its old menu and invalidates the old settings gesture",!oldMenu.IsOpen && !oldSettingsTarget.IsCurrent);
         long scopeVersion=session.EditScopeVersion;
         session.MoveNodes([b.Id],other.Id);
         var moved=((EditingScopeDescription)fixture.Call("DescribeEditingScope")!).Navigation!;
         check("moving the current subtree refreshes its ancestry and invalidates old navigation epochs",session.EditScopeId==b.Id && session.EditScopeVersion>scopeVersion &&
             moved.Entries.Select(e=>e.DisplayName).SequenceEqual(new[]{L.Get("RootCanvas.Main"),other.Name,b.Name}) &&
-            Field<ScopeNavigationPath>(layers,"navigationPath").Entries.Select(e=>e.Key).SequenceEqual(moved.Entries.Select(e=>e.Key)) && settings.Title.Contains(other.Name,StringComparison.Ordinal));
+            Field<ScopeNavigationPath>(layers,"navigationPath").Entries.Select(e=>e.Key).SequenceEqual(moved.Entries.Select(e=>e.Key)) && settings.TargetLabel.Contains(other.Name,StringComparison.Ordinal));
         var busy=typeof(DesktopSession).GetProperty("_documentBusy",Hidden)!; busy.SetValue(fixture.Desktop,true);
         try
         {
             session.ClearRootCanvas("Clear while document operation is busy");
             var path=Field<ScopeNavigationPath>(layers,"navigationPath");
             check("clearing while commands are busy refreshes read-only navigation instead of leaving a removed group",session.EditScopeId is null &&
-                path.CurrentIndex==0 && path.Entries.Count==1 && layers.VisibleNodes.Count==0 && header.Visibility==Visibility.Collapsed && settings.Title==L.Get("EditingScope.MainSettings"));
+                path.CurrentIndex==0 && path.Entries.Count==1 && layers.VisibleNodes.Count==0 && header.Visibility==Visibility.Collapsed && settings.TargetLabel==L.Get("RootCanvas.Main"));
         }
         finally { busy.SetValue(fixture.Desktop,false); }
         session.Undo(); session.SetEditScope(b.Id); Pump();
@@ -129,7 +129,7 @@ internal static partial class GroupCanvasRootEditingTests
         fixture.Editor.ReplaceSession(fresh,fixture.Editor.ScreenOrigin);
         var reset=Field<ScopeNavigationPath>(layers,"navigationPath");
         check("new canvas session immediately clears every old path and historical descendant",!stale.Available && reset.CurrentIndex==0 && reset.Entries.Count==1 &&
-            layers.VisibleNodes.Count==0 && header.Visibility==Visibility.Collapsed && file.Visibility==Visibility.Collapsed && settings.Title==L.Get("EditingScope.MainSettings"));
+            layers.VisibleNodes.Count==0 && header.Visibility==Visibility.Collapsed && file.Visibility==Visibility.Collapsed && settings.TargetLabel==L.Get("RootCanvas.Main"));
         Pump();
     }
 
@@ -584,7 +584,7 @@ internal static partial class GroupCanvasRootEditingTests
                 FloatCanvas.Localization.AppText.Initialize(locale);
                 fixture.Editor.Tool = EditorTool.Select; fixture.Call("ActivateTool", EditorTool.Canvas);
                 var status = Field<System.Windows.Controls.TextBlock>(fixture.Desktop, "_status");
-                var panel = typeof(DesktopSession).GetField("_canvasSettingsWindow", Hidden)!.GetValue(fixture.Desktop) as CanvasSettingsWindow;
+                var panel = typeof(DesktopSession).GetField("_canvasToolOptions", Hidden)!.GetValue(fixture.Desktop) as CanvasToolOptions;
                 if (status.Text != FloatCanvas.Localization.AppText.Get("GroupCanvas.EditPreviewInIndependent") || panel?.IsVisible == true)
                     Console.WriteLine($"CANVAS_FEEDBACK {name} {locale}: actual={status.Text}; tool={fixture.Editor.Tool}; panel={panel?.IsVisible}; mode={Field<GroupCanvasMode>(fixture.Desktop, "_groupCanvasMode")}; allowed={typeof(DesktopSession).GetProperty("CanEditDisplayedCanvas", Hidden)!.GetValue(fixture.Desktop)}");
                 check(name + " " + locale + " blocked Canvas command explains where to edit subproject preview without opening a panel or changing tool", status.Text == FloatCanvas.Localization.AppText.Get("GroupCanvas.EditPreviewInIndependent") && panel?.IsVisible != true && fixture.Editor.Tool == EditorTool.Select);
@@ -799,8 +799,8 @@ internal static partial class GroupCanvasRootEditingTests
     }
     private static T Await<T>(Task<T> task) { Await((Task)task); return task.GetAwaiter().GetResult(); }
     private static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
-    private static T Field<T>(object value, string name) => (T)value.GetType().GetField(name, Hidden)!.GetValue(value)!;
-    private static void Set(object value, string name, object? content) => value.GetType().GetField(name, Hidden)!.SetValue(value, content);
+    private static T Field<T>(object value, string name) => (T)CanvasOptionsTestWindow.Unwrap(value).GetType().GetField(name, Hidden)!.GetValue(CanvasOptionsTestWindow.Unwrap(value))!;
+    private static void Set(object value, string name, object? content) => CanvasOptionsTestWindow.Unwrap(value).GetType().GetField(name, Hidden)!.SetValue(value, content);
     private static (HotkeyBinding, HotkeyBinding) FreeHotkeys()
     {
         for (uint key = 0x7c; key < 0x87; key += 2)

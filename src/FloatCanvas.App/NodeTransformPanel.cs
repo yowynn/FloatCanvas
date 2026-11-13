@@ -14,8 +14,11 @@ internal sealed class NodeTransformPanel : StackPanel
     private readonly Func<bool> canMutate;
     private readonly Dictionary<string, NumericValueField> fields = [];
     private readonly SegmentedChoice mode = new();
+    private readonly SegmentedChoice placement = new();
+    private readonly FrameworkElement placementRow;
+    private readonly FrameworkElement heightRow;
     private readonly AspectRatioButton aspect = new() { IsChecked = true };
-    private readonly Button enter = new() { MinHeight = PropertyPanelLayout.ControlHeight, Margin = new(0, 3, 0, 8) };
+    private readonly Button enter = new() { Height = PropertyPanelLayout.ControlHeight, Margin = PropertyPanelLayout.RowMargin };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11 };
     private EditorSession? editingSession;
     private SelectionTransformSnapshot? original;
@@ -32,12 +35,23 @@ internal sealed class NodeTransformPanel : StackPanel
     internal NodeTransformPanel(Func<EditorSession> getSession, Func<bool> canMutate)
     {
         this.getSession = getSession; this.canMutate = canMutate;
+        placement.Add(L.Get("Billboard.GroupSurface"), false, SegmentedChoicePreviews.Icon("surface"));
+        placement.Add(L.Get("Billboard.Name"), true, SegmentedChoicePreviews.Icon("billboard"));
+        placement.ToolTip = L.Get("Billboard.GroupModeHint");
+        placementRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Billboard.Placement")), placement);
+        placement.SelectionChanged += (_, _) =>
+        {
+            if (refreshing || placement.SelectedValue is not bool enabled || getSession().Selection.Count != 1) return;
+            CompletePendingEdit();
+            try { getSession().SetContainerBillboard(getSession().Selection.Single(), enabled); Refresh(); }
+            catch (InvalidOperationException error) { Refresh(); status.Text = error.Message; }
+        };
         Visibility = Visibility.Collapsed;
         mode.Add(L.Get("GroupTransform.Overall"), false, SegmentedChoicePreviews.Icon("combined"));
         mode.Add(L.Get("GroupTransform.Individual"), true, SegmentedChoicePreviews.Icon("canvas"));
         Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("GroupTransform.Pivot")), mode));
         mode.SelectionChanged += (_, _) => { if (!refreshing && mode.SelectedValue is bool value) { CompletePendingEdit(); getSession().TransformIndividually = value; Refresh(); } };
-        foreach (var (key, label) in new[] { ("X", "X"), ("Y", "Y"), ("W", L.Get("Inspector.Width")), ("H", L.Get("Inspector.Height")), ("Angle", L.Get("GroupTransform.RotationDelta")) })
+        foreach (var (key, label) in new[] { ("X", "X"), ("Y", "Y"), ("W", L.Get("Inspector.Width")), ("H", L.Get("Inspector.Height")), ("Angle", L.Get("GroupTransform.RotationDelta")), ("CardHeight", L.Get("Billboard.Height")) })
         {
             var field = key == "Angle" ? new NumericValueField(-360000, 360000, sliderMinimum: -180, sliderMaximum: 180) :
                 key is "W" or "H" ? new NumericValueField(.01, 100_000_000, sliderMinimum: 1, sliderMaximum: 2000) :
@@ -63,10 +77,13 @@ internal sealed class NodeTransformPanel : StackPanel
         }
         Children.Insert(1, PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Position")), PropertyPanelLayout.Pair(fields["X"], fields["Y"])));
         Children.Insert(2, PropertyPanelLayout.Row(new PropertyLabel(L.Get("Property.Size")), PropertyPanelLayout.Pair(fields["W"], fields["H"], aspect)));
+        heightRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Billboard.Height")), fields["CardHeight"]);
+        Children.Add(placementRow); Children.Add(heightRow);
         enter.Content = L.Get("GroupTransform.Enter");
         enter.Click += (_, _) =>
         {
             CompletePendingEdit(); var session = getSession();
+            if (!canMutate() || session.Selection.Count != 1 || !session.CanBrowseNode(session.Selection.First())) return;
             if (session.Selection.Count == 1 && session.Document.Instances.Any(instance => instance.Id == session.Selection.First()))
             { EditPrefabRequested?.Invoke(session.Selection.First()); return; }
             if (session.Selection.Count == 1 && session.Document.Groups.Any(group => group.Id == session.Selection.First())) session.EnterScope(session.Selection.First());
@@ -85,6 +102,14 @@ internal sealed class NodeTransformPanel : StackPanel
         {
             var graph = new SceneGraph(session.Document);
             bool editable = canMutate() && session.Selection.All(id => !graph.IsLocked(id)) && !session.IsTransactionActive;
+            Guid? container = session.Selection.Count == 1 && (graph.FindGroup(session.Selection.First()) is not null || graph.FindInstance(session.Selection.First()) is not null) ? session.Selection.First() : null;
+            var card = container is { } node ? graph.ContainerBillboard(node) : null;
+            placementRow.Visibility = container is not null ? Visibility.Visible : Visibility.Collapsed;
+            heightRow.Visibility = card is not null ? Visibility.Visible : Visibility.Collapsed;
+            placement.SelectedValue = card is not null; placement.IsEnabled = editable;
+            placement.ToolTip = L.Get("Billboard.GroupModeHint") +
+                (container is { } legacy && graph.FindGroup(legacy)?.OrderMode == GroupOrderMode.LegacyPassThrough ? "\n" + L.Get("Layers.CollectHint") : "");
+            fields["CardHeight"].SetModelValue(card?.Height ?? 0);
             mode.SelectedValue = session.TransformIndividually;
             var current = Bounds(session);
             fields["X"].SetModelValue(current.X); fields["Y"].SetModelValue(current.Y);
@@ -92,7 +117,7 @@ internal sealed class NodeTransformPanel : StackPanel
             foreach (var field in fields.Values) field.IsEnabled = editable;
             fields["W"].IsEnabled = fields["H"].IsEnabled = editable && current.Width > 0 && current.Height > 0;
             enter.Visibility = session.Selection.Count == 1 && (graph.FindGroup(session.Selection.First()) is not null || graph.FindInstance(session.Selection.First()) is not null) ? Visibility.Visible : Visibility.Collapsed;
-            enter.IsEnabled = editable;
+            enter.IsEnabled = canMutate() && container is { } browse && session.CanBrowseNode(browse);
             status.Text = L.Get("GroupTransform.LayoutHelp");
         }
         finally { refreshing = false; }
@@ -123,6 +148,11 @@ internal sealed class NodeTransformPanel : StackPanel
         if (refreshing || !fields[key].TryGetValue(out double value) || !BeginEdit()) return;
         var session = editingSession!;
         if (!ReferenceEquals(session, getSession()) || !session.Selection.SetEquals(selection) || !session.IsTransactionActive || session.TransactionId != transaction) { CancelEditing(); return; }
+        if (key == "CardHeight")
+        {
+            if (selection is [var id] && !session.TryUpdateContainerBillboardHeight(id, value)) status.Text = L.Get("Perspective.InputOutsidePlane");
+            return;
+        }
         Affine2D delta; double elevation = 1;
         if (key == "X") delta = Affine2D.Translation(value - bounds.X, 0);
         else if (key == "Y") delta = Affine2D.Translation(0, value - bounds.Y);

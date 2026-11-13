@@ -22,6 +22,7 @@ internal static class OverlayTransientControls
     internal static void Initialize()
     {
         if(initialized)return;initialized=true;
+        TooltipLifecycle.Initialize();
         EventManager.RegisterClassHandler(typeof(TextBox),ContextMenuService.ContextMenuOpeningEvent,new ContextMenuEventHandler(TextMenu));
         EventManager.RegisterClassHandler(typeof(RichTextBox),ContextMenuService.ContextMenuOpeningEvent,new ContextMenuEventHandler(TextMenu));
         EventManager.RegisterClassHandler(typeof(FrameworkElement),ToolTipService.ToolTipOpeningEvent,new ToolTipEventHandler(Hint));
@@ -36,11 +37,11 @@ internal static class OverlayTransientControls
     }
     private static void Hint(object sender,ToolTipEventArgs args)
     {
-        if(OverlayWindowScope.Current is not { } scope || sender is not FrameworkElement {ToolTip: { } value} element)return;
+        if(args.Handled || OverlayWindowScope.Current is not { } scope || sender is not FrameworkElement {ToolTip: { } value} element)return;
         if (Window.GetWindow(element) is { } owner && OverlayWindowScope.IsRegularWindow(owner)) return;
         args.Handled=true;
         var anchorSource=PresentationSource.FromVisual(element) as HwndSource;
-        bool IsAnchored()=>ReferenceEquals(OverlayWindowScope.Current,scope)&&element.IsVisible&&
+        bool IsAnchored()=>ReferenceEquals(OverlayWindowScope.Current,scope)&&TooltipLifecycle.CanShow(element)&&
             anchorSource is {IsDisposed:false}&&ReferenceEquals(PresentationSource.FromVisual(element),anchorSource);
         if(!IsAnchored())return;
         hint?.Close();

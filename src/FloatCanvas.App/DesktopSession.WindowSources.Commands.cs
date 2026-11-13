@@ -113,7 +113,8 @@ internal sealed partial class DesktopSession
         if (!IsCurrentWindowOperation(guard) || !source.IsCurrent || _windowRuntime is null) return;
         var placement = billboard ? owner.Document.Viewport : VisibleDocumentArea();
         var element = WindowSourceInsertion.Prepare(owner, source.Descriptor, source.Content.Width, source.Content.Height, source.Crop,
-            placement, billboard, depth, center, ImageInsertionOpacity(), planeCenter: billboard ? null : VisibleDocumentInsertionCenter(placement));
+            placement, billboard, depth, center, ImageInsertionOpacity(), planeCenter: billboard ? null : VisibleDocumentInsertionCenter(placement),
+            placementMapping: _editor.CurrentCanvasMapping, logicalCanvasBounds: billboard ? NewBillboardImageBounds() : null);
         AppearanceMigration.NormalizeElement(element);
         var staging = new AssetLibrary(); element.AssetId = staging.Add(source.Png, "image/png");
         var candidate = owner.Document.Clone(); new SceneGraph(candidate).InsertElement(element.Clone(), owner.EditScopeId, rootCanvas: owner.ActiveRootCanvas); SceneValidation.Validate(candidate);

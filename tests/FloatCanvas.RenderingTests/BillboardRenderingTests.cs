@@ -7,6 +7,7 @@ internal static class BillboardRenderingTests
 {
     public static void Run(Action<string, bool> check)
     {
+        BillboardLogicalRenderingTests.Run(check);
         ScreenDraftRenderingTests.Run(check);
         using var renderer = new SceneRenderer(); var assets = new AssetLibrary();
         var h = new Projective2D(1, 0, 0, 0, 1, 0, 0, .005, 1);

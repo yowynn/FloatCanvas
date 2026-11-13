@@ -36,7 +36,7 @@ internal sealed partial class DesktopSession
             }
         }
         var file = Group("ToolbarV2.File", CommandGlyphs.File);
-        Item(file, L.Get("Feedback4.Toolbar.NewBlankCanvas"), CommandGlyphs.NewCanvas, () => _ = _newCanvasButton!.ActivateAsync(), "Ctrl+N");
+        Item(file, L.Get("Feedback4.Toolbar.NewBlankCanvas"), CommandGlyphs.NewCanvas, () => _ = StartNewCanvasAsync(), "Ctrl+N");
         Item(file, L.Get("ToolbarV2.Open"), CommandGlyphs.Open, () => _ = RunCommand(OpenProjectAsync), "Ctrl+O");
         Item(file, L.Get("ToolbarV2.Save"), CommandGlyphs.Save, () => _ = RunCommand(() => SaveProjectAsync()), "Ctrl+S");
         Item(file, L.Get("ToolbarV2.SaveAs"), CommandGlyphs.SaveAs, () => _ = RunCommand(() => SaveProjectAsync(true)), "Ctrl+Shift+S");
@@ -138,7 +138,7 @@ internal sealed partial class DesktopSession
     {
         string shortcut = ToolShortcutCatalog.Hint(tool);
         var item = new Controls.MenuItem { Header = ToolName(tool), Tag = tool, InputGestureText = shortcut, Icon = CommandGlyphs.Create(CommandGlyphs.Tool(tool)) };
-        if (tool != EditorTool.Select) item.ToolTip = L.Get("ToolOptions.Title") + " · Ctrl+T";
+        if (tool is not (EditorTool.Select or EditorTool.Stamp)) item.ToolTip = L.Get("ToolOptions.Title") + " · Ctrl+T";
         if (tool == EditorTool.Crop)
         {
             item.IsEnabled = _editor.CanCropSelection;

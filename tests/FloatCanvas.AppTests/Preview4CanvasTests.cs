@@ -26,7 +26,7 @@ internal static class Preview4CanvasTests
         }
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
-        var window = new CanvasSettingsWindow(library);
+        var window = new CanvasOptionsTestWindow(library);
         try
         {
             var rows = Field<NumericValueField>(window, "rows");
@@ -48,7 +48,7 @@ internal static class Preview4CanvasTests
             var menu = Field<ContextMenu>(window,"resetMenu");
             check("reset lists the default and active displays while retaining the selected secondary screen", menu.Items.Count == 3 &&
                 Field<Button>(window,"resetChoices").Visibility == Visibility.Visible && Field<Button>(window,"resetChoices").IsEnabled &&
-                Equals(Field<Button>(window,"reset").Content, L.Format("Canvas.ResetOnNumberedDisplay", 2)));
+                Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")), L.Format("Canvas.ResetOnNumberedDisplay", 2)));
             string? requestedDevice = "unrequested";
             window.ResetDisplayRequested += device => requestedDevice = device;
             Field<Button>(window,"reset").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -56,11 +56,11 @@ internal static class Preview4CanvasTests
             window.SetReferenceMonitors([main], "pad");
             window.PrepareForShow();
             check("single display retains reset and disables its display chooser", menu.Items.Count == 1 &&
-                !Field<Button>(window,"resetChoices").IsEnabled && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+                !Field<Button>(window,"resetChoices").IsEnabled && Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")), L.Get("Canvas.ResetOnDisplay")));
             window.SetReferenceMonitors([main,pad], "missing");
             window.PrepareForShow();
             check("missing display choices fall back to primary while retaining the active display menu", menu.Items.Count == 3 &&
-                Field<Button>(window,"resetChoices").IsEnabled && Equals(Field<Button>(window,"reset").Content, L.Get("Canvas.ResetOnDisplay")));
+                Field<Button>(window,"resetChoices").IsEnabled && Equals(System.Windows.Automation.AutomationProperties.GetName(Field<Button>(window,"reset")), L.Get("Canvas.ResetOnDisplay")));
             var resetSettings = new CanvasSettings { Projection = custom.Clone(), Grid = new() { FlatCellSize = 73.1, FlatOrigin = viewport.Center } };
             var reset = DesktopSession.CreateResetCanvasProjection(resetSettings, viewport);
             var fittedReset = CanvasCalibration.CreateInitial(viewport, custom.Columns, custom.Rows);
@@ -92,5 +92,5 @@ internal static class Preview4CanvasTests
         controller.Up();
         check("snapping and modifier changes remain one undoable calibration gesture", session.UndoCount == 1 && session.Undo() && session.Document.Canvas.Projection.Quad.SequenceEqual(settings.Quad));
     }
-    private static T Field<T>(object owner,string name) => (T)owner.GetType().GetField(name,Private)!.GetValue(owner)!;
+    private static T Field<T>(object owner,string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name,Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
 }

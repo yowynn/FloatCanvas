@@ -126,7 +126,7 @@ internal sealed partial class DesktopSession
         Cell(Separator(), toolColumn++);
         Action("undo", L.Get("ToolbarV2.Undo"), "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,13", Undo, "Ctrl+Z");
         Action("redo", L.Get("ToolbarV2.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13", Redo, "Ctrl+Y");
-        _newCanvasButton = new NewCanvasButton(() => !_disposed && !DocumentOperationBusy, () => RunCommand(StartNewCanvasAsync), NeedsNewCanvasConfirmationAsync);
+        _newCanvasButton = new NewCanvasButton(() => !_disposed && !DocumentOperationBusy, () => RunCommand(ReplaceCanvasAsync), NeedsNewCanvasConfirmationAsync);
         Cell(_newCanvasButton, toolColumn++);
         var clearCurrent=ToolbarIcon(L.Get("History.ClearCurrent"),CommandGlyphs.ClearCanvas,()=>_ = RunCommand(ClearCurrentCanvasAsync),"Ctrl+Backspace / Ctrl+Delete");
         clearCurrent.Tag="clear";clearCurrent.SetResourceReference(Controls.Control.StyleProperty,"CanvasDangerButton");
@@ -227,8 +227,7 @@ internal sealed partial class DesktopSession
         window.PreviewKeyDown += (_, e) =>
         {
             if(e.Handled)return;
-            if(IsOptionsInput(e.OriginalSource as DependencyObject))return;
-            if (e.OriginalSource is ToolbarLauncher && e.Key is Key.Space or Key.Apps) return;
+            if (e.OriginalSource is ToolbarLauncher && e.Key == Key.Apps) return;
             var key = KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key);
             if (!EditorShortcutPolicy.ShouldRoute(key, Keyboard.Modifiers, e.OriginalSource as DependencyObject)) return;
             e.Handled = true;
@@ -267,30 +266,23 @@ internal sealed partial class DesktopSession
         if (tool == EditorTool.Canvas && !CanEditDisplayedCanvas)
         { UpdateStatus(L.Get("GroupCanvas.EditPreviewInIndependent")); return; }
         if (tool == EditorTool.Crop && _editor.TryRedirectWindowSourceCrop()) return;
-        if (tool != _editor.Tool) EndCanvasCalibration(hidePanel: true);
+        bool wasOpen = IsToolOptionsOpen || _canvasPlacementWindows.Contains(_toolOptionsWindow) &&
+            ReferenceEquals(_canvasPlacementSession, Active) && _canvasPlacementTarget?.IsCurrent == true &&
+            _host.EditingSessionVersion == _canvasPlacementEditingVersion;
+        if (tool != _editor.Tool) EndCanvasCalibration(hidePanel: _canvasPlacementSession is not null);
         if (tool == EditorTool.Crop && !_editor.CanCropSelection) return;
         if (tool == EditorTool.CaptureRegion && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
         var family = ToolFamily(tool); var currentFamily = ToolFamily(_editor.Tool);
         bool same = currentFamily == family && (tool is not (EditorTool.Arrow or EditorTool.DoubleArrow or EditorTool.RoundedRectangle) || AliasMatches(tool));
-        bool wasOpen = IsToolOptionsOpen || IsCanvasSettingsOpen;
         if (!same)
         {
             SwitchToolState(tool, applyAlias: true);
         }
         SynchronizeCanvasTool();
         UpdateStatus(ToolName(_editor.Tool)); RefreshToolbarState();
-        if (!_host.IsEditing) { CloseToolOptions(); DismissCanvasSettings(); return; }
+        if (!_host.IsEditing) { CloseToolOptions(); return; }
         bool open = ShouldOpenToolOptions(same, wasOpen);
-        if (tool == EditorTool.Canvas)
-        {
-            CloseToolOptions();
-            if (open) OpenCanvasSettings(); else DismissCanvasSettings();
-        }
-        else
-        {
-            DismissCanvasSettings();
-            if (open) OpenToolOptions(); else CloseToolOptions();
-        }
+        if (open) OpenToolOptions(); else CloseToolOptions();
     }
 
     internal static bool ShouldOpenToolOptions(bool sameTool, bool wasOpen) => sameTool != wasOpen;

@@ -69,7 +69,7 @@ internal static class ProjectOpenModeTests
                 check("cold prefab startup inserts Main content into the default untitled project and requests editing", cold.Document.Instances.Count == 1 &&
                     SceneEvaluation.Build(cold.Document).Leaves.Single().RenderElement.Text == "prefab content" &&
                     cold.Document.Canvas.BackgroundColor != 0xFF124578 && Revealed() && EntryRequested());
-                using var response = new DialogResponse(app, "History.KeepLeave");
+                using var response = new DialogResponse(app, "Dialog.No");
                 Await((Task)Invoke("OpenProjectPathAsync", first)!);
                 check("opening a full project asks before replacing dirty untitled prefab placement", response.Count == 1 && Marker() == "first");
                 return;
@@ -111,14 +111,16 @@ internal static class ProjectOpenModeTests
             check("direct project opening from passive mode also preserves input mode and reveals the canvas",
                 Marker() == "first" && Passive() && Revealed() && host.EditingSessionVersion == passiveVersion && entry.Count == 0);
 
-            var insertionOwner = Editor().Session; Guid insertionScope = insertionOwner.CreatePopulatedGroup("prefab destination"); insertionOwner.SetEditScope(insertionScope);
+            var insertionOwner = Editor().Session; Guid mainNodeId = insertionOwner.Document.Elements.Single().Id;
+            Guid insertionScope = insertionOwner.CreatePopulatedGroup("prefab destination"); insertionOwner.SetEditScope(insertionScope);
             int insertionUndo = insertionOwner.UndoCount; string insertionSettings = System.Text.Json.JsonSerializer.Serialize(insertionOwner.Document.Canvas);
             Await((Task)Invoke("OpenProjectPathAsync", prefabPath)!);
             check("warm prefab opening inserts into the current root and group without replacing project settings or input mode", ReferenceEquals(Editor().Session, insertionOwner) &&
                 insertionOwner.Document.Instances.Single().ParentId == insertionScope && insertionOwner.UndoCount == insertionUndo + 1 &&
                 System.Text.Json.JsonSerializer.Serialize(insertionOwner.Document.Canvas) == insertionSettings && Passive());
             insertionOwner.Undo(); insertionOwner.SetEditScope(null);
-            var mainNode = insertionOwner.Document.Elements.Single(); insertionOwner.SetSelection([mainNode.Id]);
+            // The destination fixture contains artwork; undoing the insertion does not remove that group.
+            var mainNode = insertionOwner.Document.Elements.Single(e => e.Id == mainNodeId); insertionOwner.SetSelection([mainNode.Id]);
             var editingDefinition = insertionOwner.CreatePrefabFromSelection("editing context");
             Await((Task)Invoke("EditPrefabDefinitionCoreAsync", editingDefinition.DefinitionId, editingDefinition.InstanceId)!);
             var editContext = Field<object>(session, "_prefabEditContext"); var editingOwner = Editor().Session;
@@ -128,7 +130,7 @@ internal static class ProjectOpenModeTests
                 ReferenceEquals(Editor().Session, editingOwner) && editingOwner.Document.Instances.Count == 1 && editingOwner.Document.NextNumber > 1);
             // Reset to a saved full project for the existing failure/cancel checks.
             using (var response = new DialogResponse(app, "Prefab.Discard")) Await((Task)Invoke("LeaveCurrentPrefabAsync")!);
-            using (var response = new DialogResponse(app, "History.KeepLeave")) Await((Task)Invoke("OpenProjectPathAsync", first)!);
+            using (var response = new DialogResponse(app, "Dialog.No")) Await((Task)Invoke("OpenProjectPathAsync", first)!);
 
             var beforeFailure = Editor().Session;
             Hide();

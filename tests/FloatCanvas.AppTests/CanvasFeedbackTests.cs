@@ -85,6 +85,10 @@ internal static class CanvasFeedbackTests
         before = JsonSerializer.Serialize(editor.Session.Document);
         initial = Field<CanvasViewTransform>("_canvasView");
         Call("OnCanvasKeyInput", new OverlayKeyEvent(0x20, OverlayModifiers.None, false));
+        Expect("canvas key entry rejects an editing fixture without native input ownership", !host.HasEditingInput && !Field<bool>("_canvasNavigationSpaceHeld"));
+        // This fixture verifies camera geometry without activating an input surface.
+        // Owned key down/up routing is covered by SessionKeyboardRouterTests.
+        Set("_canvasNavigationSpaceHeld", true);
         Pointer(OverlayPointerKind.Down, 180, 140); Pointer(OverlayPointerKind.Move, 200, 150); Pointer(OverlayPointerKind.Up, 200, 150);
         Expect("held Space temporarily pans another tool without drawing or changing tools", editor.Tool == EditorTool.Rectangle &&
             Field<CanvasViewTransform>("_canvasView").Offset == initial.Offset + new PointD(20, 10) && before == JsonSerializer.Serialize(editor.Session.Document));

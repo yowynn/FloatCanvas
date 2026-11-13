@@ -23,6 +23,7 @@ internal static class ProjectPreviewNavigationTests
         Field<System.Windows.Forms.NotifyIcon>("_tray").Visible = false;
         typeof(OverlayHost).GetProperty("IsVisible")!.SetValue(host, true);
         typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
+        DesktopSyntheticKeyboard.Allow(desktop, host);
         var editor = Field<EditorController>("_editor");
         editor.BackgroundPickingEnabled = false;
         var element = new CanvasElement { Kind = ElementKind.Rectangle, Width = 30, Height = 20 };

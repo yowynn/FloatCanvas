@@ -39,9 +39,9 @@ internal static class CanvasProjectionRuntimeFixture
             var editor = Get<EditorController>(session, "_editor");
             Invoke("ToggleCanvasSettings"); Pump();
             check("first Canvas activation selects the tool without opening its settings", editor.Tool == EditorTool.Canvas &&
-                Get<CanvasSettingsWindow?>(session, "_canvasSettingsWindow")?.IsVisible != true);
+                Get<CanvasToolOptions?>(session, "_canvasToolOptions")?.IsVisible != true);
             Invoke("ToggleCanvasSettings"); Pump();
-            var panel = Get<Window>(session, "_canvasSettingsWindow");
+            var panel = Get<Window>(session, "_toolOptionsWindow");
             check("second Canvas activation opens settings through the production tool command", panel.IsVisible && panel.Owner == toolbar && editor.Tool == EditorTool.Canvas);
             ((Action<uint>)panel.GetType().GetField("BackgroundChanged", Private)!.GetValue(panel)!)(0x80123456);
             check("panel background event retains alpha in the active document", editor.Session.Document.Canvas.BackgroundColor == 0x80123456);
@@ -199,7 +199,7 @@ internal static class CanvasProjectionRuntimeFixture
             if (foreground != 0) SetForegroundWindow(foreground);
         }
     }
-    private static T Get<T>(object target, string name) => (T)target.GetType().GetField(name, Private)!.GetValue(target)!;
+    private static T Get<T>(object target, string name) => (T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
     [StructLayout(LayoutKind.Sequential)]private struct HookKey {public uint VirtualKey,ScanCode,Flags,Time;public nuint ExtraInfo;}
     [DllImport("user32.dll")]private static extern nint SendMessage(nint handle,int message,nint wParam,nint lParam);
     [DllImport("user32.dll")]private static extern nint GetCapture();

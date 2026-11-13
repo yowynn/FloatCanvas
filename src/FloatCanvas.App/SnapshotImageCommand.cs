@@ -47,7 +47,7 @@ internal static class SnapshotImageCommand
         var contour = selection.Points.Count > 0 ? selection.Points : EditorController.Corners(selection.Bounds);
         return raster with
         {
-            ImageBorderWidth = selection.BorderWidth, ImageBorderColor = selection.BorderColor,
+            ImageBorderWidth = selection.BillboardLogicalBorderWidth ?? selection.BorderWidth, ImageBorderColor = selection.BorderColor,
             ImageFrame = !selection.BillboardScreenFirst && selection.BillboardDepthLine is null &&
                 (selection.PlaneToScreen ?? CanvasMapping.Create(scene).PlaneToScreen) != Projective2D.Identity
                 ? contour.Select(point => new PointD(Math.Clamp((point.X - raster.Bounds.X) / raster.Bounds.Width, 0, 1),
@@ -91,12 +91,7 @@ internal static class SnapshotImageCommand
         if (depth is { } fixedDepth) placed = BillboardGeometry.TryPlaceFromScreen(image, mapping, fixedDepth, placement);
         else
         {
-            placed = BillboardGeometry.TryResolveScreenBottom(image, mapping, placement, out var resolved, out _);
-            if (placed)
-            {
-                image.IsBillboard = true; image.BillboardAnchor = resolved.Anchor;
-                image.BillboardHeight = resolved.Height; image.Transform = resolved.Linear;
-            }
+            placed = BillboardCreationGeometry.TryFromScreenContour(image, mapping, placement, out image, out _);
         }
         if (!placed || !mapping.IsElementSafe(image))
             throw new InvalidOperationException(L.Get("Perspective.SnapshotOutsidePlane"));

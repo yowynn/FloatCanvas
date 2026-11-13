@@ -78,7 +78,7 @@ public sealed partial class EditorSession
         return new(definition.Id, instance.Id);
     }
 
-    public Guid PlacePrefab(Guid definitionId, LayerPlacement worldPlacement, string? name = null, bool select = true)
+    public Guid PlacePrefab(Guid definitionId, LayerPlacement worldPlacement, string? name = null, bool select = true, ContainerBillboardInsertion? billboard = null)
     {
         RequireWritableScope();
         name = NormalizeInsertionName(name);
@@ -87,6 +87,7 @@ public sealed partial class EditorSession
         var candidate = Document.Clone(); var instance = new PrefabInstance { DefinitionId = definitionId, Name = name ?? definition.Name,
             Transform = worldPlacement.PlaneTransform, ElevationScale = worldPlacement.ElevationScale };
         new SceneGraph(candidate).InsertInstance(instance, EditScopeId, rootCanvas: ActiveRootCanvas);
+        billboard?.Apply(candidate, instance.Id);
         SceneLimits.ValidateCapacity(candidate); EnsureSafeInsertion(SceneEvaluation.Build(candidate).OccurrencesOfHostNode(instance.Id).Select(leaf => leaf.RenderElement));
         Execute(L.Get("Prefab.History.Place"), _ => { Document = candidate; if (select) SetSelectionCore([instance.Id]); });
         return instance.Id;
@@ -239,7 +240,7 @@ public sealed partial class EditorSession
     }
 
     public PrefabImportResult ImportPrefab(PrefabPackage package, AssetLibrary sourceAssets, LayerPlacement worldPlacement,
-        ExternalPrefabSource? source = null, bool select = true, string? name = null)
+        ExternalPrefabSource? source = null, bool select = true, string? name = null, ContainerBillboardInsertion? billboard = null)
     {
         RequireWritableScope();
         PrefabClosure.Validate(package); RequireExternalSource(source);
@@ -262,6 +263,7 @@ public sealed partial class EditorSession
         var instance = imported.Graph.Instances.Single(); instance.Transform = worldPlacement.PlaneTransform;
         instance.ElevationScale = worldPlacement.ElevationScale; instance.Name = name ?? definition.Name;
         new SceneGraph(candidate).InsertInstance(instance, EditScopeId, rootCanvas: ActiveRootCanvas);
+        billboard?.Apply(candidate, instance.Id);
         SceneLimits.ValidateCapacity(candidate); EnsureSafeInsertion(SceneEvaluation.Build(candidate).OccurrencesOfHostNode(instance.Id).Select(leaf => leaf.RenderElement));
         var resources = imported.ReferencedAssetIds.Select(sourceAssets.Get).ToArray();
         Execute(L.Get("Prefab.History.Import"), _ =>
@@ -368,6 +370,7 @@ public sealed partial class EditorSession
         var copy = SceneGraphClone.CloneGraph(definition.Graph, GraphCloneIdentity.NewNodes).Graph;
         new SceneGraph(copy).MaterializeOrder();
         var root = new CanvasGroup { Id = instance.Id, ParentId = instance.ParentId, Name = instance.Name,
+            Billboard = instance.Billboard,
             Transform = instance.Transform, ElevationScale = instance.ElevationScale, Visible = instance.Visible, Locked = instance.Locked,
             PreviewCanvas = definition.PreviewCanvas?.Clone() ?? new SubprojectCanvasSettings { Origin = definition.Pivot },
             OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = copy.RootOrder!.ToList() };

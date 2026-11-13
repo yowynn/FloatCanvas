@@ -40,20 +40,20 @@ internal static class Phase2WindowTests
         check("closed windows remain closed on reentry", host.IsEditing && !options.IsVisible && !inspector.IsVisible && !layers.IsVisible);
         Invoke("SwitchToolState", EditorTool.Canvas, false);
         Invoke("OpenCanvasSettings");
-        check("canvas settings can open in this editing session", host.IsEditing && Field<CanvasSettingsWindow?>(session, "_canvasSettingsWindow") is not null);
-        var canvas = Field<CanvasSettingsWindow>(session, "_canvasSettingsWindow");
-        Click(Field<Button>(canvas, "pin"));
+        check("canvas settings can open in this editing session", host.IsEditing && Field<CanvasToolOptions?>(session, "_canvasToolOptions") is not null);
+        var canvas = Field<Window>(session, "_toolOptionsWindow");
+        Click(Field<Button>(session, "_toolOptionsPin"));
         Invoke("SetEditing", false, false); toolbar.Show(); activate(() => Invoke("SetEditing", true, false)); Pump();
-        check("canvas settings preserve their open pinned state across edit sessions", canvas.IsVisible && canvas.IsPinned);
+        check("canvas settings preserve their open pinned state across edit sessions", canvas.IsVisible && Field<bool>(session, "_toolOptionsPinned"));
         canvas.Close(); Invoke("OpenCanvasSettings"); Pump();
-        check("manually closed canvas settings reopen unpinned", canvas.IsVisible && !canvas.IsPinned);
+        check("manually closed canvas settings reopen unpinned", canvas.IsVisible && !Field<bool>(session, "_toolOptionsPinned"));
         var help = (Button)canvas.Template.FindName("Help", canvas);
         var actions = (FrameworkElement)canvas.Resources["CanvasWindowActions"];
-        check("canvas caption orders help before pin", help.TranslatePoint(new(), canvas).X < actions.TranslatePoint(new(), canvas).X);
+        check("canvas caption shares the standard pin-before-help order", actions.TranslatePoint(new(), canvas).X < help.TranslatePoint(new(), canvas).X);
 
         object? Invoke(string method, params object[] args) => typeof(DesktopSession).GetMethod(method, Private)!.Invoke(session, args);
     }
-    private static T Field<T>(object value, string name) => (T)value.GetType().GetField(name, Private)!.GetValue(value)!;
+    private static T Field<T>(object value, string name) => (T)CanvasOptionsTestWindow.Unwrap(value).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(value))!;
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
     private static void Pump()
     {

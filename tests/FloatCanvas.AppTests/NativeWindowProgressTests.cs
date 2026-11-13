@@ -65,7 +65,7 @@ internal static class NativeWindowProgressTests
             Pump(app.Dispatcher);
             results.Add(("a completed canvas frame reports UI progress during a stationary native drag without control timers",
                 Environment.TickCount64 - (long)heartbeat.GetValue(isolation)! < 1200 && isolation.IsLeaseActive));
-            var panels = new Window[] { new InspectorWindow(() => editor.Session), new LayersWindow(() => editor.Session), new CanvasSettingsWindow() };
+            var panels = new Window[] { new InspectorWindow(() => editor.Session), new LayersWindow(() => editor.Session), new CanvasOptionsTestWindow() };
             try
             {
                 foreach (var panel in panels)
@@ -114,7 +114,7 @@ internal static class NativeWindowProgressTests
         foreach (var result in results) check(result.Name, result.Passed);
     }
 
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, Private)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;
     private static object? Invoke(object owner, string name, params object?[] args) => owner.GetType().GetMethod(name, Private)!.Invoke(owner, args);
     private static void Pump(Dispatcher dispatcher)
     {

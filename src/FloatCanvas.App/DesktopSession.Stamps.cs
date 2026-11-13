@@ -1,4 +1,4 @@
-﻿using FloatCanvas.Core;
+using FloatCanvas.Core;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using L = FloatCanvas.Localization.AppText;
@@ -124,29 +124,39 @@ internal sealed partial class DesktopSession
             return;
         }
         ValidateSelectedStamp();
-        if (_editor.Tool == EditorTool.Stamp && _editor.BillboardMode && !_selectedStampUsesSource &&
+        if (_editor.Tool == EditorTool.Stamp && _editor.BillboardMode &&
             _selectedStampId is { } billboardStampId &&
-            _stampLibrary.Items.FirstOrDefault(item => item.Id == billboardStampId) is { Mode: StampSaveMode.RasterMerge } rasterEntry)
+            _stampLibrary.Items.FirstOrDefault(item => item.Id == billboardStampId) is { } rasterEntry)
         {
             if (_selectedStamp is null || _stampSelectionPending) return;
             if (_selectedStampRevision != rasterEntry.Revision)
-            { SelectStamp(billboardStampId, useSource: false, fromSlot: _selectedStampFromSlot); return; }
+            { SelectStamp(billboardStampId, useSource: _selectedStampUsesSource, fromSlot: _selectedStampFromSlot); return; }
             if (!_editor.HasPendingBillboardInsertion)
             {
                 var loaded = _selectedStamp; var target = Active; var document = target.Document;
+                bool useSource = _selectedStampUsesSource;
                 long revision = target.SceneRevision;
+                RectD? previewBounds = null;
+                if (rasterEntry.Mode != StampSaveMode.RasterMerge || useSource)
+                    previewBounds = SceneEvaluation.Build(loaded.Document).Leaves.Select(leaf => ElementGeometry.Bounds(leaf.RenderElement)).DefaultIfEmpty().Aggregate(RectD.Union);
                 _editor.BeginBillboardPlacement((depth, center) =>
                 {
                     var current = _stampLibrary.Items.FirstOrDefault(item => item.Id == billboardStampId);
                     if (_disposed || _documentStopped || DocumentOperationBusy || !ReferenceEquals(Active, target) ||
                         !ReferenceEquals(target.Document, document) || target.SceneRevision != revision ||
-                        current?.Revision != rasterEntry.Revision || _selectedStampId != billboardStampId || _selectedStampUsesSource) return;
+                        current?.Revision != rasterEntry.Revision || _selectedStampId != billboardStampId || _selectedStampUsesSource != useSource) return;
                     PlaceStampSafely(() =>
                     {
-                        StampLibrary.PlaceBillboardRaster(loaded, target, depth, center, current.Name);
+                        if (current.Mode == StampSaveMode.RasterMerge && !useSource)
+                            StampLibrary.PlaceBillboardRaster(loaded, target, depth, center, current.Name, _editor.CurrentCanvasMapping, NewBillboardImageBounds());
+                        else StampLibrary.Place(loaded, target, default, current.Name, new(_editor.CurrentCanvasMapping, center, depth));
                         ScheduleRecovery(); RequestRender();
                     });
-                });
+                }, previewBounds is { } bounds ? (depth, center) =>
+                {
+                    try { return new ContainerBillboardInsertion(_editor.CurrentCanvasMapping, center, depth).ResolveCandidate(bounds); }
+                    catch (InvalidOperationException) { return null; }
+                } : null);
             }
             _editor.PointerForCanvas(e, propertiesDoubleClick);
             return;
@@ -188,7 +198,7 @@ internal sealed partial class DesktopSession
     {
         OverlayContextMenu.CloseAll();
         _toolOptionsPanel?.CloseColorPicker();
-        _canvasSettingsWindow?.ClosePickers();
+        _canvasToolOptions?.ClosePickers();
         _windowCoordinator?.DismissTransient(WindowDismissReason.CanvasPress);
         if (_toolbarMenu is not null) _toolbarMenu.IsOpen = false;
     }

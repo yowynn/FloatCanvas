@@ -15,5 +15,8 @@
   "Property.Size": { "zh": "大小", "en": "Size" },
   "Property.Position": { "zh": "位置", "en": "Position" },
   "Property.GridCounts": { "zh": "网格数量", "en": "Grid counts" },
-  "Numeric.Value": { "zh": "数值", "en": "Value" }
+  "Numeric.Value": { "zh": "数值", "en": "Value" },
+  "Numeric.Unit.Cell": { "zh": "格", "en": "cells" },
+  "Numeric.Increase": { "zh": "增加 {0}", "en": "Increase by {0}" },
+  "Numeric.Decrease": { "zh": "减少 {0}", "en": "Decrease by {0}" }
 }

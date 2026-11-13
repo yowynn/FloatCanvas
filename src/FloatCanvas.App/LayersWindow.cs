@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using FloatCanvas.Core;
 using L = FloatCanvas.Localization.AppText;
 using Wpf = System.Windows;
@@ -244,9 +244,19 @@ internal sealed partial class LayersWindow : Wpf.Window
         var document = session.Document;
         string text = L.Format("Layers.Statistics", document.Elements.Count + document.Groups.Count + document.Instances.Count,
             visibleRows.Count, session.Selection.Count);
+        if (SelectionOutsideList(session) > 0)
+            text = L.Format("Layers.CrossLevelStatistics", document.Elements.Count + document.Groups.Count + document.Instances.Count,
+                visibleRows.Count, SelectionScopeText(session));
         if (statistics.Text != text) statistics.Text = text;
         statistics.ToolTip = L.Get("Layers.StatisticsHint");
         Automation.AutomationProperties.SetName(statistics, text);
+    }
+
+    private int SelectionOutsideList(EditorSession session) => session.Selection.Count(id => !rows.ContainsKey(id));
+    private string SelectionScopeText(EditorSession session)
+    {
+        int outside = SelectionOutsideList(session);
+        return L.Format("Layers.SelectionScope", session.Selection.Count, session.Selection.Count - outside, outside);
     }
 
     private string breadcrumbsScopeName(EditorSession session) => session.EditScopePath.LastOrDefault() is { } group ? GroupName(group) : editContextName ?? L.Get("Layers.RootScope");
@@ -316,6 +326,11 @@ internal sealed partial class LayersWindow : Wpf.Window
     internal OverlayContextMenu CreateContextMenu(Guid id)
     {
         var menu = new OverlayContextMenu();
+        var scopeHint = new Controls.TextBlock { FontSize = 11, Margin = new(10, 5, 10, 5), ToolTip = L.Get("Layers.BatchScopeHint") };
+        scopeHint.SetResourceReference(Controls.TextBlock.ForegroundProperty, "CanvasMuted");
+        var scopeItem = new Controls.MenuItem { Header = scopeHint, Icon = IconPath("M2,4 L8,1 L14,4 L8,7 Z M2,8 L8,11 L14,8 M2,12 L8,15 L14,12"),
+            IsEnabled = false, IsHitTestVisible = false, Visibility = Wpf.Visibility.Collapsed };
+        menu.Items.Add(scopeItem);
         Controls.MenuItem Add(string key, string icon, string shortcut, Action action)
         {
             var item = new Controls.MenuItem { Header = L.Get(key), Icon = IconPath(icon), InputGestureText = shortcut, Tag = key };
@@ -329,7 +344,7 @@ internal sealed partial class LayersWindow : Wpf.Window
                 if (RunLayerCommand(s => result = s.SetNodesFlagDetailed(s.Selection, visible, value), flags: true))
                     status.Text = L.Format("LayerExperience.FlagResult", result.Changed, result.Unchanged, result.Skipped);
             });
-            menu.Opened += (_, _) => flag.IsEnabled = CanWrite && !getSession().IsTransactionActive && getSession().Selection.Any(node => new SceneGraph(getSession().Document).ParentId(node) is not { } parent || !getSession().IsNodeLocked(parent));
+            menu.Opened += (_, _) => flag.IsEnabled = CanRunSelectionCommand(key);
         }
         Add("Layers.MoveTo", Folder, "", ShowMoveDialog);
         var enter = Add("Layers.EnterGroup", Folder, "Enter", () => EnterGroup(id));
@@ -343,28 +358,28 @@ internal sealed partial class LayersWindow : Wpf.Window
             if (new SceneGraph(getSession().Document).FindInstance(id) is { } instance) ExportPrefabRequested?.Invoke(instance.DefinitionId);
         });
         menu.Items.Add(new Controls.Separator());
-        Add("Inspector.Duplicate", "M1,1 H10 V10 M5,5 H14 V14 H5 Z", "Ctrl+D", () => RunLayerCommand(s => s.DuplicateSelection(), flags: true));
-        Add("Inspector.Delete", "M3,4 H13 M5,4 V14 H11 V4 M6,1 H10", "Delete", () => RunLayerCommand(s => s.DeleteSelection()));
+        Add("Inspector.Duplicate", "M1,1 H10 V10 M5,5 H14 V14 H5 Z", "Ctrl+D", () => RunLayerCommand(s => s.DuplicateSelection(), operationKind: LayerOperation.Duplicate));
+        Add("Inspector.Delete", "M3,4 H13 M5,4 V14 H11 V4 M6,1 H10", "Delete", () => RunLayerCommand(s => s.DeleteSelection(), operationKind: LayerOperation.Delete));
         menu.Items.Add(new Controls.Separator());
         Add("Inspector.BringToFront", "M3,9 L8,4 L13,9 M8,4 V14 M2,1 H14", "", () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Front)));
         Add("Inspector.SendToBack", "M3,7 L8,12 L13,7 M8,2 V12 M2,15 H14", "", () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Back)));
         Add("Layers.MoveOut", "M3,8 H13 M7,3 L2,8 L7,13", "", () => MoveOut(id));
         menu.Items.Add(new Controls.Separator());
-        Add("Layers.Group", "M1,1 H8 V8 H1 Z M6,6 H14 V14 H6 Z", "Ctrl+G", () => RunLayerCommand(s => s.GroupSelection()));
-        Add("Layers.Ungroup", "M1,1 H6 V6 H1 Z M9,9 H14 V14 H9 Z", "Ctrl+Shift+G", () => RunLayerCommand(s => s.UngroupSelection()));
+        Add("Layers.Group", "M1,1 H8 V8 H1 Z M6,6 H14 V14 H6 Z", "Ctrl+G", () => RunLayerCommand(s => s.GroupSelection(), operationKind: LayerOperation.Group));
+        Add("Layers.Ungroup", "M1,1 H6 V6 H1 Z M9,9 H14 V14 H9 Z", "Ctrl+Shift+G", () => RunLayerCommand(s => s.UngroupSelection(), operationKind: LayerOperation.Ungroup));
         menu.Opened += (_, _) =>
         {
             var session = getSession();
             if (!session.Selection.Contains(id) && canMutate() && !session.IsTransactionActive) session.SetSelection([id]);
+            scopeHint.Text = SelectionScopeText(session);
+            scopeItem.Visibility = SelectionOutsideList(session) > 0 ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
             var row = FindNode(id); bool allowed = canMutate() && !session.IsTransactionActive && row is not null;
-            foreach (var item in menu.Items.OfType<Controls.MenuItem>()) item.IsEnabled = allowed && CanRunSelectionCommand(item.Tag as string);
-            foreach (var flag in menu.Items.OfType<Controls.MenuItem>().Where(i => i.Tag is string key && key is "Layers.HideSelected" or "Layers.ShowSelected" or "Layers.LockSelected" or "Layers.UnlockSelected"))
-                flag.IsEnabled = allowed && CanWrite && session.Selection.Any(node => new SceneGraph(session.Document).ParentId(node) is not { } parent || !session.IsNodeLocked(parent));
+            foreach (var item in menu.Items.OfType<Controls.MenuItem>().Where(item => item.Tag is string)) item.IsEnabled = allowed && CanRunSelectionCommand(item.Tag as string);
             rename.IsEnabled = allowed && CanWrite && !row!.AncestorLocked;
-            enter.Visibility = row?.IsGroup == true ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed; enter.IsEnabled = allowed && (true);
+            enter.Visibility = row?.IsGroup == true ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed; enter.IsEnabled = allowed && session.CanBrowseNode(id);
             collect.Visibility = row?.IsLegacy == true ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed; collect.ToolTip = L.Get("Layers.CollectHint"); collect.IsEnabled = allowed && CanWrite && !row!.EffectiveLocked;
             editPrefab.Visibility = detachPrefab.Visibility = exportPrefab.Visibility = row?.IsInstance == true ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-            editPrefab.IsEnabled = allowed && (true) && EditPrefabRequested is not null; detachPrefab.IsEnabled = allowed && CanWrite && !row!.EffectiveLocked && DetachPrefabRequested is not null; exportPrefab.IsEnabled = allowed && ExportPrefabRequested is not null;
+            editPrefab.IsEnabled = allowed && session.CanBrowseNode(id) && EditPrefabRequested is not null; detachPrefab.IsEnabled = allowed && CanWrite && !row!.EffectiveLocked && DetachPrefabRequested is not null; exportPrefab.IsEnabled = allowed && ExportPrefabRequested is not null;
             createPrefab.IsEnabled &= CreatePrefabRequested is not null;
             menu.Items.OfType<Controls.MenuItem>().Single(i => Equals(i.Tag, "Layers.MoveOut")).IsEnabled = allowed && CanWrite && session.EditScopeId is not null && session.Selection.Any(node => !session.IsNodeLocked(node));
         };
@@ -376,7 +391,7 @@ internal sealed partial class LayersWindow : Wpf.Window
         {
             var graph = new SceneGraph(session.Document); var parent = graph.ParentId(id);
             if (parent is not null) session.MoveNodes(session.Selection, graph.ParentId(parent.Value));
-        });
+        }, operationKind: LayerOperation.Move);
     }
     internal void SelectForContext(Guid id)
     {
@@ -409,20 +424,23 @@ internal sealed partial class LayersWindow : Wpf.Window
         catch (Exception ex) { status.Text = ex.Message; }
         Refresh();
     }
-    private bool RunLayerCommand(Action<EditorSession> operation, bool flags = false)
+    private bool RunLayerCommand(Action<EditorSession> operation, bool flags = false, LayerOperation operationKind = LayerOperation.Reorder)
     {
         try
         {
             var session = getSession();
             if (!CanWrite || session.IsTransactionActive || !ReferenceEquals(session, displayedSession)) throw new InvalidOperationException(L.Get(session.IsReadOnly ? "GroupCanvas.ReadOnly" : "Inspector.BusyLayersRetained"));
-            if (session.Selection.Any(id => !rows.TryGetValue(id, out var row) || row.ParentId != session.EditScopeId)) return false;
+            var before = new SceneGraph(session.Document);
+            if (session.Selection.Any(id => before.FindElement(id) is null && before.FindGroup(id) is null && before.FindInstance(id) is null))
+                throw new InvalidOperationException(L.Get("Layers.StaleMove"));
             if (session.Selection.Count == 0) return false;
             CommitRename();
-            var before = new SceneGraph(session.Document);
-            var skipped = session.Selection.Where(before.IsLocked).ToArray();
-            var requested = session.Selection.ToArray();
+            var analysis = flags ? null : session.AnalyzeLayerOperation(operationKind);
+            if (analysis?.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
+            long version = session.ContentVersion;
             operation(session); Refresh();
-            status.Text = !flags && skipped.Length > 0 ? L.Format("Layers.Processed", requested.Length - skipped.Length, skipped.Length) : "";
+            status.Text = flags ? "" : L.Format("LayerExperience.FlagResult", session.ContentVersion == version ? 0 : analysis!.Eligible.Count,
+                analysis!.Unchanged.Count + (session.ContentVersion == version ? analysis.Eligible.Count : 0), analysis.Skipped.Count);
             return true;
         }
         catch (Exception ex) { status.Text = ex.Message; return false; }
@@ -442,14 +460,13 @@ internal sealed partial class LayersWindow : Wpf.Window
             return;
         }
         var navigationSource = source ?? Input.Keyboard.FocusedElement as Wpf.DependencyObject;
-        bool localInput = EditorShortcutPolicy.OwnsLocalEditingKeys(source) || EditorShortcutPolicy.OwnsLocalEditingKeys(Input.Keyboard.FocusedElement as Wpf.DependencyObject);
-        // Window preview handlers run before a focused button or segmented choice.
-        // Let those controls receive their own activation and navigation keys.
+        bool localInput = EditorShortcutPolicy.OwnsLocalEditingKeys(navigationSource);
+        bool listInput = navigationSource is null || IsListSource(navigationSource);
         if (modifiers == Input.ModifierKeys.None && key is Input.Key.Enter or Input.Key.Left or Input.Key.Right or Input.Key.Back &&
-            (EditorShortcutPolicy.OwnsLocalEditingKeys(navigationSource) || IsButtonSource(navigationSource))) return;
-        if (key == Input.Key.F2 && modifiers == Input.ModifierKeys.None && layers.SelectedItem is LayerTreeRow rename)
+            (localInput || EditorShortcutPolicy.OwnsNumericKey(Input.KeyInterop.VirtualKeyFromKey(key), modifiers, navigationSource))) return;
+        if (listInput && key == Input.Key.F2 && modifiers == Input.ModifierKeys.None && layers.SelectedItem is LayerTreeRow rename)
         { e.Handled = true; if (!AppInputPolicy.IsRepeat(e)) BeginRename(rename.Id); return; }
-        if (modifiers == Input.ModifierKeys.None && layers.SelectedItem is LayerTreeRow selected)
+        if (listInput && modifiers == Input.ModifierKeys.None && layers.SelectedItem is LayerTreeRow selected)
         {
             if (key == Input.Key.Enter && (selected.IsGroup || selected.IsInstance)) { e.Handled = true; if (!AppInputPolicy.IsRepeat(e)) EnterGroup(selected.Id); return; }
             if (key == Input.Key.Right && (selected.IsGroup || selected.IsInstance))
@@ -469,26 +486,18 @@ internal sealed partial class LayersWindow : Wpf.Window
         }
         bool ctrl = (modifiers & Input.ModifierKeys.Control) != 0;
         if (ctrl && key == Input.Key.G && !localInput)
-        { e.Handled = true; if (!AppInputPolicy.IsRepeat(e) && CanRunSelectionCommand((modifiers & Input.ModifierKeys.Shift) != 0 ? "Layers.Ungroup" : "Layers.Group")) RunLayerCommand(s => { if ((modifiers & Input.ModifierKeys.Shift) != 0) s.UngroupSelection(); else s.GroupSelection(); }); return; }
+        { e.Handled = true; if (!AppInputPolicy.IsRepeat(e) && CanRunSelectionCommand((modifiers & Input.ModifierKeys.Shift) != 0 ? "Layers.Ungroup" : "Layers.Group")) RunLayerCommand(s => { if ((modifiers & Input.ModifierKeys.Shift) != 0) s.UngroupSelection(); else s.GroupSelection(); }, operationKind: (modifiers & Input.ModifierKeys.Shift) != 0 ? LayerOperation.Ungroup : LayerOperation.Group); return; }
         int command = Input.KeyInterop.VirtualKeyFromKey(key);
-        if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: true, localInput: localInput)) return;
+        if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: listInput, localInput: localInput)) return;
         e.Handled = true;
         if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, ctrl);
     }
     private bool IsListSource(Wpf.DependencyObject? source)
     {
+        if (!EditorShortcutPolicy.OwnsList(source)) return false;
         while (source is not null)
         {
             if (ReferenceEquals(source, layers)) return true;
-            source = source is Media.Visual or Media.Media3D.Visual3D ? Media.VisualTreeHelper.GetParent(source) ?? Wpf.LogicalTreeHelper.GetParent(source) : Wpf.LogicalTreeHelper.GetParent(source);
-        }
-        return false;
-    }
-    private static bool IsButtonSource(Wpf.DependencyObject? source)
-    {
-        while (source is not null)
-        {
-            if (source is Primitives.ButtonBase) return true;
             source = source is Media.Visual or Media.Media3D.Visual3D ? Media.VisualTreeHelper.GetParent(source) ?? Wpf.LogicalTreeHelper.GetParent(source) : Wpf.LogicalTreeHelper.GetParent(source);
         }
         return false;
@@ -497,9 +506,15 @@ internal sealed partial class LayersWindow : Wpf.Window
     {
         var session = getSession();
         if (!CanWrite || session.IsTransactionActive) return false;
-        if (command == "Inspector.Duplicate") return session.Selection.Count > 0;
-        var graph = new SceneGraph(session.Document);
-        return session.Selection.Any(id => !graph.IsLocked(id) && (command != "Layers.Ungroup" || graph.FindGroup(id) is not null));
+        var operation = command switch
+        {
+            "Inspector.Duplicate" => LayerOperation.Duplicate, "Layers.Group" => LayerOperation.Group,
+            "Layers.Ungroup" => LayerOperation.Ungroup, "Layers.HideSelected" => LayerOperation.Hide,
+            "Layers.ShowSelected" => LayerOperation.Show, "Layers.LockSelected" => LayerOperation.Lock,
+            "Layers.UnlockSelected" => LayerOperation.Unlock, "Layers.MoveTo" => LayerOperation.Move,
+            "Inspector.Delete" => LayerOperation.Delete, _ => LayerOperation.Reorder
+        };
+        return session.AnalyzeLayerOperation(operation).CanExecute;
     }
     private bool RouteCommandKey(int key, bool control)
     {
@@ -508,8 +523,8 @@ internal sealed partial class LayersWindow : Wpf.Window
         if (command is not null && !CanRunSelectionCommand(command)) return true;
         if (canMutate()) CommandKey?.Invoke(key); return true;
     }
-    private bool CanRouteCommandKey(int key, bool control) => !IsRenaming && (!getSession().IsReadOnly || control && key is 0x41 or 0x43) && EditorShortcutPolicy.ShouldRoute(key,
-        control ? Input.ModifierKeys.Control : Input.ModifierKeys.None, null, preserveListNavigation: true);
+    private bool CanRouteCommandKey(int key, bool control) => !IsRenaming && EditorShortcutPolicy.ShouldRoute(key,
+        control ? Input.ModifierKeys.Control : Input.ModifierKeys.None, null);
     private void SelectNode(Guid id)
     {
         getSession().SetSelection([id]); RefreshRows(getSession());

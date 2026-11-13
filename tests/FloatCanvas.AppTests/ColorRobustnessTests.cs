@@ -55,8 +55,10 @@ internal static class ColorRobustnessTests
             foreach (bool grid in new[] { false, true })
             {
                 var session = new EditorSession();
-                session.ExecuteSettings("previous", d => d.Canvas.BackgroundColor = 0xFF112233);
-                var window = new CanvasSettingsWindow(CanvasPresetLibrary.OfficialOnly());
+                // Grid appearance fields only exist in the user's flow while
+                // drawing the grid is enabled. Do not edit a collapsed field.
+                session.ExecuteSettings("previous", d => { d.Canvas.BackgroundColor = 0xFF112233; d.Canvas.Grid.Visible = grid; });
+                var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
                 try
                 {
                     var edit = new CanvasColorEdit(() => session, () => true, () => { }, () => { });
@@ -148,5 +150,5 @@ internal static class ColorRobustnessTests
         }
         finally { Directory.Delete(root, true); }
     }
-    private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
+    private static T Field<T>(object target, string name) => (T)CanvasOptionsTestWindow.Unwrap(target).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(target))!;
 }

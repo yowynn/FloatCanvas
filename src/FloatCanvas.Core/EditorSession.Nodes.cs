@@ -100,7 +100,7 @@ public sealed partial class EditorSession
                 .SelectMany(evaluated.OccurrencesOfHostNode).Select(leaf => leaf.RenderElement.Clone()).ToArray();
         }
         var ids = ExpandedSelectionIds(graph, editableOnly);
-        return graph.OrderedLeafIds.Where(ids.Contains).Select(id => graph.ToWorld(graph.FindElement(id)!));
+        return graph.OrderedLeafIds.Where(ids.Contains).Select(id => graph.ResolveElement(graph.FindElement(id)!));
     }
     public bool IsNodeVisible(Guid id, bool inherited = true)
     {
@@ -125,8 +125,8 @@ public sealed partial class EditorSession
             if (occurrences.Count > 0) return occurrences.Select(leaf => WorldBounds(leaf.RenderElement)).Aggregate(RectD.Union);
             var point = graph.NodeWorldPlacement(id).PlaneTransform.TransformPoint(default); return new(point.X, point.Y, 0, 0);
         }
-        if (graph.FindElement(id) is { } element) return WorldBounds(graph.ToWorld(element));
-        var leaves = graph.DescendantElementIds(id).Select(leaf => graph.ToWorld(graph.FindElement(leaf)!)).ToArray();
+        if (graph.FindElement(id) is { } element) return WorldBounds(graph.ResolveElement(element));
+        var leaves = graph.DescendantElementIds(id).Select(leaf => graph.ResolveElement(graph.FindElement(leaf)!)).ToArray();
         return leaves.Length == 0 ? graph.FindGroup(id) is not null
             ? new RectD(graph.NodeWorldPlacement(id).PlaneTransform.OffsetX, graph.NodeWorldPlacement(id).PlaneTransform.OffsetY, 0, 0) : null
             : leaves.Select(WorldBounds).Aggregate(RectD.Union);
@@ -146,8 +146,11 @@ public sealed partial class EditorSession
     public void MoveNodes(IEnumerable<Guid> ids, Guid? parentId, Guid? beforeNodeId = null)
     {
         EnsureWritableParent(parentId);
-        var requested = ids.ToArray();
-        var initial = new SceneGraph(Document); var normalized = initial.NormalizeSelection(requested).Where(id => !initial.IsLocked(id)).ToArray();
+        var initial = new SceneGraph(Document);
+        var analysis = AnalyzeLayerOperation(LayerOperation.Move, ids, initial);
+        if (analysis.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
+        var normalized = analysis.Eligible.ToArray();
+        var retainedSelection = Selection.Except(normalized).ToArray();
         var destinationRoot = parentId is { } destination ? SceneCanvasRoots.Resolve(Document, destination, initial) : ActiveRootCanvas;
         if (normalized.Any(id => SceneCanvasRoots.Resolve(Document, id, initial) != destinationRoot))
             throw new InvalidOperationException("Use an explicit root canvas transfer to move between coordinate spaces.");
@@ -166,7 +169,7 @@ public sealed partial class EditorSession
         Execute(L.Get("History.ReorderElements"), document =>
         {
             var graph = new SceneGraph(document);
-            var selected = graph.NormalizeSelection(requested).Where(id => !graph.IsLocked(id)).ToArray();
+            var selected = normalized;
             if (selected.Length == 0 || beforeNodeId is { } before && selected.Contains(before)) return;
             foreach (var id in selected)
                 if (graph.FindGroup(id)?.OrderMode == GroupOrderMode.LegacyPassThrough) graph.CollectLegacyGroup(id);
@@ -182,7 +185,7 @@ public sealed partial class EditorSession
                 if (index >= 0) index -= order.Take(index).Count(token => moving.Contains(token) || graph.AncestorIds(token).Any(moving.Contains));
             }
             graph.ReparentPreservingWorld(selected, parentId, index);
-            SynchronizeElementOrder(document); SetSelectionCore(selected);
+            SynchronizeElementOrder(document); SetSelectionCore(retainedSelection.Concat(selected));
         });
     }
     private void EnsureWritableParent(Guid? parentId)
@@ -331,9 +334,7 @@ public sealed partial class EditorSession
                 }
             }
             graph = new(Document); var mapping = displayMapping ?? CanvasMapping.Create(Document, ActiveRootCanvas);
-            var worlds = Document.Instances.Count > 0
-                ? SceneEvaluation.Build(Document).Leaves.Where(leaf => ids.Contains(leaf.HostNodeId) || graph.AncestorIds(leaf.HostNodeId).Any(ids.Contains)).Select(leaf => leaf.RenderElement)
-                : graph.OrderedLeafIds.Where(id => ids.Contains(id) || graph.AncestorIds(id).Any(ids.Contains)).Select(id => graph.ToWorld(graph.FindElement(id)!));
+            var worlds = SceneEvaluation.ResolveHostNodes(Document, ids, graph, PlacementDefinitions()).Select(leaf => leaf.RenderElement);
             foreach (var world in worlds)
             {
                 if (!LayerPlacement.Finite(world.Transform) || !world.Transform.TryInverse(out _) || !double.IsFinite(world.BillboardHeight) ||
@@ -342,6 +343,8 @@ public sealed partial class EditorSession
         }
         catch (Exception error) when (error is InvalidOperationException or InvalidDataException or ArgumentException)
         { RestorePlacements(current); return false; }
-        OnChanged(contentChanged: true); return true;
+        var affectedGraph = new SceneGraph(Document);
+        NotifyContainerPlacementChanged(original.Ids.Where(id => affectedGraph.FindElement(id) is null),
+            original.Ids.Where(id => affectedGraph.FindElement(id) is not null)); return true;
     }
 }

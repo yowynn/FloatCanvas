@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -186,10 +187,26 @@ internal static class NumericPointerRegressionTests
     private static void SendKey(Key key)
     {
         var target = (UIElement)Keyboard.FocusedElement;
-        target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(target), Environment.TickCount, key)
-            { RoutedEvent = Keyboard.KeyDownEvent });
-        Pump();
+        var source = (HwndSource)PresentationSource.FromVisual(target);
+        using var modifiers = new ThreadModifierScope(ModifierKeys.None);
+        int code = KeyInterop.VirtualKeyFromKey(key);
+        var original = ThreadModifierScope.Read();
+        try
+        {
+            foreach (bool down in new[] { true, false })
+            {
+                var state = (byte[])original.Clone(); state[code] = down ? (byte)0x80 : (byte)0;
+                SetKeyboardState(state);
+                var message = new MSG { hwnd = source.Handle, message = down ? 0x100 : 0x101,
+                    wParam = code, lParam = down ? 1 : unchecked((nint)0xC0000001), time = Environment.TickCount };
+                if (!ComponentDispatcher.RaiseThreadMessage(ref message)) DispatchMessage(ref message);
+                Pump();
+            }
+        }
+        finally { SetKeyboardState(original); }
     }
+    [DllImport("user32.dll")] private static extern bool SetKeyboardState(byte[] state);
+    [DllImport("user32.dll", EntryPoint = "DispatchMessageW")] private static extern nint DispatchMessage(ref MSG message);
 
     private static void Pump()
     {
