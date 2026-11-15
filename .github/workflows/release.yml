@@ -58,6 +58,12 @@ jobs:
           global-json-file: global.json
       - name: Restore locked dependencies
         run: dotnet restore FloatCanvas.slnx --locked-mode
+      - name: Validate changelog contract and dated release notes
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./scripts/Test-ReleaseNotes.ps1
+          ./scripts/Get-ReleaseNotes.ps1 -Version $env:PACKAGE_VERSION | Out-Null
       - name: Build Release
         run: dotnet build FloatCanvas.slnx --configuration Release --no-restore --nologo
       - name: Run default checks without UI or injected input
@@ -89,7 +95,7 @@ jobs:
         run: |
           ./scripts/Smoke-Installer.ps1 -ZipPath "dist/FloatCanvas-$env:PACKAGE_VERSION-win-x64.zip" -SetupPath "dist/FloatCanvas-$env:PACKAGE_VERSION-win-x64-Setup.exe"
           ./scripts/Smoke-Installer.ps1 -ZipPath "dist/FloatCanvas-$env:PACKAGE_VERSION-win-x64.zip" -SetupPath "dist/FloatCanvas-$env:PACKAGE_VERSION-win-x64-Setup.exe" -Language zhcn
-      - name: Extract bilingual release notes from the changelog
+      - name: Extract classified bilingual release notes with language markers
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |

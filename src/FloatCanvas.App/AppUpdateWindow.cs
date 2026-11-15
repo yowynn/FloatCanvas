@@ -30,6 +30,7 @@ internal sealed class AppUpdateWindow : Window
     private bool restoringPreviewPreference;
     private CancellationTokenSource? operation;
     private AvailableUpdate? available;
+    private Uri manualDownloadUrl = GitHubUpdateClient.ReleasesUrl;
     private bool closed, applying;
     private readonly Dictionary<string, Action> pendingDisplay = [];
     private string cancelCaption = "";
@@ -49,6 +50,8 @@ internal sealed class AppUpdateWindow : Window
     };
     internal Button CheckButton { get; } = new() { MinHeight = 34, Padding = new(12, 6, 12, 6) };
     internal Button ChangelogButton { get; } = new() { MinHeight = 28, Padding = new(8, 3, 8, 3), FontSize = 12 };
+    internal Button ManualDownloadButton { get; } = new() { MinHeight = 30, Padding = new(10, 4, 10, 4), FontSize = 12 };
+    internal TextBlock ManualUpdateHint { get; } = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 6, 0, 0), Visibility = Visibility.Collapsed };
     internal Button InstallButton { get; } = new() { MinHeight = 34, Padding = new(16, 6, 16, 6), IsEnabled = false };
     internal Button CancelButton { get; } = new() { MinHeight = 34, Padding = new(12, 6, 12, 6), Visibility = Visibility.Collapsed };
     internal ProgressBar DownloadProgress { get; } = new() { Height = 5, Minimum = 0, Maximum = 100, Margin = new(0, 14, 0, 0), Visibility = Visibility.Collapsed };
@@ -74,11 +77,15 @@ internal sealed class AppUpdateWindow : Window
         AutomationProperties.SetName(PreviewUpdates, L.Get("Updates.IncludePreviews"));
         PreviewUpdates.Checked += OnPreviewPreferenceChanged; PreviewUpdates.Unchecked += OnPreviewPreferenceChanged;
         this.cacheDirectory = cacheDirectory ?? Path.Combine(ApplicationPaths.ProfileDirectory, "updates", "downloads");
-        Title = L.Get("Updates.Title"); Width = 500; Height = 510; MinWidth = 410; MinHeight = 390; MaxHeight = 650;
+        Title = L.Get("Updates.Title"); Width = 640; Height = 640; MinWidth = 460; MinHeight = 510; MaxHeight = 850;
         ShowInTaskbar = true; Icon = AppIcon.WindowImage; ResizeMode = ResizeMode.CanResize;
         OverlayWindowScope.UseRegularWindow(this);
         CheckButton.Content = L.Get("Updates.CheckAgain"); InstallButton.Content = L.Get("Updates.Install");
         ChangelogButton.Content = L.Get("Updates.MoreLogs");
+        ManualDownloadButton.Content = L.Get("Updates.ManualDownload");
+        ManualDownloadButton.ToolTip = L.Get("Updates.ManualHint");
+        ManualUpdateHint.Text = L.Get("Updates.ManualHint");
+        ManualUpdateHint.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
         InstallButton.SetResourceReference(StyleProperty, "CanvasPrimaryButton");
         DetailText.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
         NotesText.Text = L.Get("Updates.NoNotes");
@@ -92,6 +99,7 @@ internal sealed class AppUpdateWindow : Window
         CancelButton.Click += (_, _) => operation?.Cancel();
         RepositoryLink.RequestNavigate += (_, e) => { OpenProjectLink(GitHubUpdateClient.ProjectUrl); e.Handled = true; };
         ChangelogButton.Click += (_, _) => OpenProjectLink(GitHubUpdateClient.ChangelogUrl);
+        ManualDownloadButton.Click += (_, _) => OpenProjectLink(manualDownloadUrl);
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;
@@ -134,7 +142,8 @@ internal sealed class AppUpdateWindow : Window
         Grid.SetColumn(ChangelogButton, 1); notesHeading.Children.Add(ChangelogButton); Add(notesHeading, 4);
         Add(NotesText, 5); Add(DownloadProgress, 6);
         installIssue.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
-        Add(installIssue, 7);
+        var guidance = new StackPanel(); guidance.Children.Add(installIssue); guidance.Children.Add(ManualUpdateHint);
+        Add(guidance, 7);
         var actions = new Grid { Margin = new(0, 16, 0, 0) };
         actions.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -143,7 +152,10 @@ internal sealed class AppUpdateWindow : Window
         CancelButton.Margin = new(0, 0, 8, 0); right.Children.Add(CancelButton); right.Children.Add(InstallButton);
         Grid.SetColumn(right, 1); actions.Children.Add(right); Add(actions, 8);
         RepositoryLink.Inlines.Add(L.Get("Updates.Repository")); RepositoryLink.SetResourceReference(Hyperlink.ForegroundProperty, "CanvasAccent");
-        var repository = new TextBlock { FontSize = 12, Margin = new(0, 16, 0, 0) }; repository.Inlines.Add(RepositoryLink); Add(repository, 9);
+        var footer = new Grid { Margin = new(0, 12, 0, 0) };
+        footer.ColumnDefinitions.Add(new()); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var repository = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center }; repository.Inlines.Add(RepositoryLink);
+        footer.Children.Add(repository); Grid.SetColumn(ManualDownloadButton, 1); footer.Children.Add(ManualDownloadButton); Add(footer, 9);
         return body;
 
         void Add(UIElement element, int row) { Grid.SetRow(element, row); body.Children.Add(element); }
@@ -168,7 +180,9 @@ internal sealed class AppUpdateWindow : Window
         if (closed || IsBusy) return;
         RefreshInstallDirectory();
         using var cancellation = BeginOperation(false);
-        available = null; UpdateDisplay("version", () => LatestVersionText.Text = "—");
+        available = null; manualDownloadUrl = GitHubUpdateClient.ReleasesUrl;
+        UpdateDisplay("manual", () => ManualUpdateHint.Visibility = canInstall ? Visibility.Collapsed : Visibility.Visible);
+        UpdateDisplay("version", () => LatestVersionText.Text = "—");
         UpdateDisplay("notes", () => NotesText.Text = L.Get("Updates.NoNotes"));
         SetStatus(L.Get("Updates.Checking")); SetDetail("");
         try
@@ -176,13 +190,19 @@ internal sealed class AppUpdateWindow : Window
             var result = await client.CheckAsync(currentVersion, cancellation.Token, PreviewUpdates.IsChecked == true, preferInstaller: applyInstallerUpdate is not null);
             if (closed) return;
             available = result.Update;
+            string target = result.LatestVersion ?? currentVersion;
+            manualDownloadUrl = result.LatestVersion is null ? GitHubUpdateClient.ReleasesUrl : GitHubUpdateClient.ReleaseUrl(target);
             if (applyInstallerUpdate is not null && available is not null)
                 SetDetail(L.Get(available.IsInstaller ? "InstallerUpdates.AllUsers" : "InstallerUpdates.NoSetup"));
-            SetStatus(L.Get(available is null ? "Updates.UpToDate" : "Updates.Available"));
-            string version = "v" + (available?.Version ?? currentVersion);
+            SetStatus(L.Get(result.LatestVersion is null ? (result.HistoryIncomplete ? "Updates.CheckIncomplete" : "Updates.UpToDate") :
+                available is null ? "Updates.ManualRequired" : "Updates.Available"));
+            if (result.LatestVersion is not null && available is null)
+                UpdateDisplay("manual", () => ManualUpdateHint.Visibility = Visibility.Visible);
+            string version = "v" + target;
             UpdateDisplay("version", () => LatestVersionText.Text = version);
-            string? notes = available?.Notes ?? result.CurrentNotes;
-            UpdateDisplay("notes", () => NotesText.Text = string.IsNullOrWhiteSpace(notes) ? L.Get("Updates.NoNotes") : notes);
+            var releases = result.LatestVersion is not null ? result.Releases :
+                new[] { new ReleaseNote(currentVersion, result.CurrentNotes ?? "") };
+            UpdateDisplay("notes", () => ShowNotes(ReleaseNotes.Format(releases, currentVersion, target, result.HistoryIncomplete)));
         }
         catch (OperationCanceledException) { if (!closed) SetStatus(L.Get("Updates.Cancelled")); }
         catch (Exception ex) { if (!closed) ShowFailure("Updates.CheckFailed", ex); }
@@ -268,6 +288,7 @@ internal sealed class AppUpdateWindow : Window
         {
             installIssue.Text = installDirectoryError is null ? L.Get("Updates.Development") : L.Format("Updates.InstallBlockedDetails", installDirectoryError);
             installIssue.Visibility = canInstall ? Visibility.Collapsed : Visibility.Visible;
+            if (!canInstall) ManualUpdateHint.Visibility = Visibility.Visible;
             PaintOperationControls();
         });
     }
@@ -298,7 +319,24 @@ internal sealed class AppUpdateWindow : Window
 
     private void SetStatus(string message) => UpdateDisplay("status", () => StatusText.Text = message);
     private void SetDetail(string message) => UpdateDisplay("detail", () => DetailText.Text = message);
-    private void ShowFailure(string key, Exception error) { SetStatus(L.Get(key)); SetDetail(error.Message); }
+    private void ShowNotes(string text)
+    {
+        NotesText.Text = text;
+        foreach (var list in NotesText.Document.Blocks.OfType<System.Windows.Documents.List>())
+        foreach (var item in list.ListItems)
+        {
+            if (item.Blocks.LastBlock is Paragraph paragraph && paragraph.Inlines.OfType<Bold>().LastOrDefault() is Bold version)
+            {
+                version.FontSize = 12; version.FontWeight = FontWeights.Normal;
+                version.SetResourceReference(TextElement.ForegroundProperty, "CanvasMuted");
+            }
+        }
+    }
+    private void ShowFailure(string key, Exception error)
+    {
+        SetStatus(L.Get(key)); SetDetail(error.Message);
+        UpdateDisplay("manual", () => ManualUpdateHint.Visibility = Visibility.Visible);
+    }
 
     private void ApplyLatestProgress()
     {

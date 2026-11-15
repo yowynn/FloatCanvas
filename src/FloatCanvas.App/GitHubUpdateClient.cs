@@ -15,7 +15,8 @@ using System.Threading.Tasks;
 namespace FloatCanvas.App;
 
 internal sealed record AvailableUpdate(string Version, string Notes, Uri ReleaseUrl, Uri PackageUrl, long Size, string? Sha256, Uri? ChecksumUrl, bool IsInstaller = false);
-internal sealed record UpdateCheckResult(AvailableUpdate? Update, string? CurrentNotes);
+internal sealed record UpdateCheckResult(AvailableUpdate? Update, string? CurrentNotes,
+    IReadOnlyList<ReleaseNote> Releases, bool HistoryIncomplete, string? LatestVersion);
 internal sealed record UpdateProgress(long ReceivedBytes, long TotalBytes);
 internal sealed record PreparedUpdate(string PackageDirectory, string Version, IReadOnlyList<string> Files);
 internal sealed record PreparedInstallerUpdate(string InstallerPath, string Version, string Sha256);
@@ -25,6 +26,8 @@ internal sealed class GitHubUpdateClient : IDisposable
 {
     internal static readonly Uri ProjectUrl = new("https://github.com/yowynn/FloatCanvas");
     internal static readonly Uri ChangelogUrl = new("https://github.com/yowynn/FloatCanvas/blob/main/CHANGELOG.md");
+    internal static readonly Uri ReleasesUrl = new("https://github.com/yowynn/FloatCanvas/releases");
+    internal static Uri ReleaseUrl(string version) => new(ProjectUrl + "/releases/tag/v" + Uri.EscapeDataString(version));
     private const long MaxPackageBytes = 128L * 1024 * 1024, MaxExpandedBytes = 512L * 1024 * 1024;
     private const int MaxMetadataBytes = 4 * 1024 * 1024, MaxEntries = 5000;
     private readonly HttpClient client;
@@ -43,12 +46,27 @@ internal sealed class GitHubUpdateClient : IDisposable
         try
         {
             AvailableUpdate? best = null; SemVersion? bestVersion = null; string? currentNotes = null;
+            var history = new Dictionary<string, (SemVersion Version, ReleaseNote Notes)>(StringComparer.Ordinal);
+            SemVersion? latestVersion = null; string? latest = null;
+            bool incomplete = false;
             for (int page = 1; page <= 10; page++)
             {
                 var uri = new Uri($"https://api.github.com/repos/yowynn/FloatCanvas/releases?per_page=100&page={page}");
-                byte[] bytes = await ReadSmallAsync(uri, MaxMetadataBytes, false, timeout.Token).ConfigureAwait(false);
-                using var json = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 32 });
-                if (json.RootElement.ValueKind != JsonValueKind.Array) throw new InvalidDataException("GitHub returned an invalid releases list.");
+                JsonDocument json;
+                try
+                {
+                    byte[] bytes = await ReadSmallAsync(uri, MaxMetadataBytes, false, timeout.Token).ConfigureAwait(false);
+                    json = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 32 });
+                }
+                catch (Exception ex) when (page > 1 && !cancellationToken.IsCancellationRequested &&
+                    ex is HttpRequestException or IOException or JsonException or OperationCanceledException)
+                { incomplete = true; break; }
+                using var pageDocument = json;
+                if (json.RootElement.ValueKind != JsonValueKind.Array)
+                {
+                    if (page > 1) { incomplete = true; break; }
+                    throw new InvalidDataException("GitHub returned an invalid releases list.");
+                }
                 int count = 0;
                 foreach (var release in json.RootElement.EnumerateArray())
                 {
@@ -58,8 +76,12 @@ internal sealed class GitHubUpdateClient : IDisposable
                     string value = tag.StartsWith('v') ? tag[1..] : tag;
                     if (!SemVersion.TryParse(value, out var version)) continue;
                     if (version!.CompareTo(current) == 0 && currentNotes is null) currentNotes = Text(release, "body");
-                    if (version.CompareTo(current) <= 0 || (!includePrereleases && (version.IsPrerelease || Boolean(release, "prerelease"))) ||
-                        version.CompareTo(bestVersion) <= 0) continue;
+                    if (version.CompareTo(current) <= 0 || (!includePrereleases && (version.IsPrerelease || Boolean(release, "prerelease")))) continue;
+                    if (version.CompareTo(latestVersion) > 0) { latestVersion = version; latest = value; }
+                    // SemVer ignores build metadata when deciding whether a version is new.
+                    string identity = value.Split('+')[0];
+                    history.TryAdd(identity, (version, new(value, Text(release, "body"))));
+                    if (version.CompareTo(bestVersion) <= 0) continue;
                     if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) continue;
                     bool installer = preferInstaller && assets.EnumerateArray().Any(a => Text(a, "name") == PackageName(value) + "-Setup.exe" && Text(a, "state") is "uploaded" or "");
                     string filename = PackageName(value) + (installer ? "-Setup.exe" : ".zip");
@@ -80,8 +102,12 @@ internal sealed class GitHubUpdateClient : IDisposable
                     bestVersion = version;
                 }
                 if (count < 100) break;
+                if (page == 10) incomplete = true;
             }
-            return new(best, currentNotes);
+            // Never silently offer an older package when the newest release needs manual installation.
+            if (bestVersion?.CompareTo(latestVersion) < 0) best = null;
+            var notes = history.Values.OrderByDescending(r => r.Version).Select(r => r.Notes).ToArray();
+            return new(best, currentNotes, notes, incomplete, latest);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested) { throw new TimeoutException("Checking GitHub releases timed out. Please try again.", ex); }
         catch (JsonException ex) { throw new InvalidDataException("GitHub returned invalid release metadata.", ex); }

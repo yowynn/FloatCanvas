@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
@@ -18,6 +19,49 @@ using L = FloatCanvas.Localization.AppText;
 /// <summary>Detached update UI and fake HTTP only; no visible windows, live GitHub or installed files.</summary>
 internal static class AppUpdateWindowTests
 {
+    // Interactive acceptance fixture only; the shipping application has no mock-feed switch.
+    internal static void ShowPreview(string[] args)
+    {
+        var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        bool english = args.Contains("en");
+        L.Initialize(english ? "en" : "zh-CN"); AppTheme.Apply(args.Contains("dark") ? "dark" : "light");
+        string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "CHANGELOG.md"));
+        string next = source.Split("## [Unreleased]", StringSplitOptions.None)[1].Split("\n## [", StringSplitOptions.None)[0];
+        var metadata = System.Text.Json.Nodes.JsonNode.Parse(ReleaseMetadata.Replace("0.3.0", "0.4.0"))!.AsArray();
+        metadata[0]!["body"] = next;
+        foreach (string version in new[] { "0.3.2", "0.3.1", "0.3.0" })
+        {
+            string notes = source.Split("## [" + version + "]", StringSplitOptions.None)[1];
+            notes = notes[(notes.IndexOf('\n') + 1)..].Split("\n## [", StringSplitOptions.None)[0];
+            metadata.Add(System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new { tag_name = "v" + version, body = notes })));
+        }
+        using var http = new HttpClient(new FakeHandler((request, _) =>
+        {
+            if (request.RequestUri!.Host == "api.github.com") return Task.FromResult(JsonResponse(metadata.ToJsonString()));
+            throw new HttpRequestException(english
+                ? "Simulated download failure. Use Download manually to visit the official releases page."
+                : "已模拟下载失败。请点击“手动下载安装包”前往官方发布页。");
+        }));
+        using var client = new GitHubUpdateClient(http);
+        var window = new AppUpdateWindow("0.2.1", client, _ => throw new InvalidOperationException(english
+                ? "This preview does not install updates." : "此预览不会安装更新。"),
+            true, Path.Combine(Path.GetTempPath(), "FloatCanvas-update-preview"),
+            checkInstallDirectory: () => args.Contains("blocked")
+                ? (english ? "Package metadata is missing (simulated)." : "缺少安装包元数据（模拟场景）。") : null,
+            openLink: uri =>
+            {
+                // The target release is simulated. Send users to real published downloads instead of a nonexistent tag.
+                Uri destination = uri == GitHubUpdateClient.ReleaseUrl("0.4.0") ? GitHubUpdateClient.ReleasesUrl : uri;
+                _ = Process.Start(new ProcessStartInfo(destination.AbsoluteUri) { UseShellExecute = true });
+            });
+        window.Title += english ? " · Preview (simulated releases)" : " · 预览（模拟版本）";
+        window.ManualDownloadButton.ToolTip = english
+            ? "Open the official releases page in your browser. The simulated v0.4.0 is not a published download."
+            : "在浏览器中打开官方发布列表。模拟的 v0.4.0 不代表已发布的下载包。";
+        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        window.ShowDialog();
+    }
+
     internal static void Run(Action<string, bool> check)
     {
         var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -43,7 +87,13 @@ internal static class AppUpdateWindowTests
                     Await(window.CheckAsync());
                     string context = language + " " + theme;
                     check(context + " update check enables installing and shows latest version", window.InstallButton.IsEnabled && window.LatestVersionText.Text == "v0.3.0" && window.StatusText.Text == L.Get("Updates.Available"));
-                    check(context + " release notes use a selectable formatted document", window.NotesText.Text == Notes && window.NotesText.Document.Blocks.Count > 0);
+                    check(context + " release notes use a classified single-language document with source versions",
+                        window.NotesText.Text.Contains(L.Get("Updates.Category.feature")) && window.NotesText.Text.Contains("**v0.3.0**") &&
+                        window.NotesText.Document.Blocks.Count > 0 &&
+                        (language == "en" ? !window.NotesText.Text.Contains("独立画布") : !window.NotesText.Text.Contains("Independent canvases")));
+                    var firstItem = window.NotesText.Document.Blocks.OfType<System.Windows.Documents.List>().First().ListItems.FirstListItem;
+                    var versionLabel = ((System.Windows.Documents.Paragraph)firstItem.Blocks.LastBlock).Inlines.OfType<System.Windows.Documents.Bold>().Last();
+                    check(context + " version attribution is visually secondary", versionLabel.FontSize == 12 && versionLabel.FontWeight == FontWeights.Normal);
                     check(context + " repository link is always available and points to this project", window.RepositoryLink.NavigateUri?.AbsoluteUri == "https://github.com/yowynn/FloatCanvas");
                     window.ChangelogButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     check(context + " full changelog action opens the GitHub changelog file", links.Single().AbsoluteUri == "https://github.com/yowynn/FloatCanvas/blob/main/CHANGELOG.md" && Equals(window.ChangelogButton.Content, L.Get("Updates.MoreLogs")));
@@ -66,6 +116,8 @@ internal static class AppUpdateWindowTests
             }
             L.Initialize("zh-CN"); AppTheme.Apply("light");
             NoUpdateAndError(output, check);
+            ManualFallbacks(output, check);
+            FullHistoryPreview(output, check);
             DirectoryRepairRecheck(output, check);
             PreviewChannelAndCurrentNotes(output, check);
             SingleCheckAndClose(output, check);
@@ -79,6 +131,80 @@ internal static class AppUpdateWindowTests
             foreach (var window in app.Windows.Cast<Window>().Where(w => !initialWindows.Contains(w)).ToArray()) window.Close();
             L.Initialize(priorLanguage); AppTheme.Apply("light"); SynchronizationContext.SetSynchronizationContext(priorContext);
         }
+    }
+
+    private static void FullHistoryPreview(string output, Action<string, bool> check)
+    {
+        string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "CHANGELOG.md"));
+        string unreleased = source.Split("## [Unreleased]", StringSplitOptions.None)[1].Split("\n## [", StringSplitOptions.None)[0];
+        var metadata = System.Text.Json.Nodes.JsonNode.Parse(ReleaseMetadata.Replace("0.3.0", "0.4.0"))!.AsArray();
+        metadata[0]!["body"] = unreleased;
+        metadata.Add(System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new {
+            tag_name = "v0.3.2", body = "- 修复旧版跨版本更新。\n- Fix upgrades from older versions." })));
+        foreach (string language in new[] { "zh-CN", "en" })
+        foreach (string theme in new[] { "light", "dark" })
+        {
+            L.Initialize(language); AppTheme.Apply(theme);
+            using var http = new HttpClient(new FakeHandler((_, _) => Task.FromResult(JsonResponse(metadata.ToJsonString()))));
+            using var client = new GitHubUpdateClient(http);
+            var window = new AppUpdateWindow("0.2.1", client, _ => Task.CompletedTask, true, output, autoCheck: false);
+            try
+            {
+                Await(window.CheckAsync());
+                var body = (FrameworkElement)window.Content; window.Content = null;
+                var host = new Border { Width = 638, Height = 580, Child = body };
+                host.SetResourceReference(Border.BackgroundProperty, "CanvasSurface");
+                host.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "CanvasText");
+                host.Measure(new(638, 580)); host.Arrange(new(0, 0, 638, 580)); host.UpdateLayout();
+                check(language + " " + theme + " full history keeps scroll space and manual action inside the surface",
+                    window.InstallButton.IsEnabled && window.NotesText.ActualHeight > 260 &&
+                    window.ManualDownloadButton.TranslatePoint(new Point(0, window.ManualDownloadButton.ActualHeight), host).Y <= 580);
+                var pixels = new RenderTargetBitmap(638, 580, 96, 96, PixelFormats.Pbgra32); pixels.Render(host);
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(pixels));
+                using (var file = File.Create(Path.Combine(output, "history-" + language + "-" + theme + ".png"))) encoder.Save(file);
+                host.Child = null; window.Content = body;
+            }
+            finally { window.Close(); }
+        }
+        L.Initialize("zh-CN"); AppTheme.Apply("light");
+    }
+
+    private static void ManualFallbacks(string output, Action<string, bool> check)
+    {
+        foreach (string language in new[] { "zh-CN", "en" })
+        foreach (string scenario in new[] { "missing-manifest", "http-failure", "download-failure", "no-package" })
+        {
+            L.Initialize(language);
+            var links = new List<Uri>();
+            string metadata = scenario == "no-package"
+                ? JsonSerializer.Serialize(new[] { new { tag_name = "v0.4.0", body = Notes, assets = Array.Empty<object>() } })
+                : ReleaseMetadata;
+            using var http = new HttpClient(new FakeHandler((request, _) => Task.FromResult(
+                scenario == "http-failure" || request.RequestUri!.Host != "api.github.com"
+                    ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : JsonResponse(metadata))));
+            using var client = new GitHubUpdateClient(http);
+            var window = new AppUpdateWindow("0.2.0", client, _ => throw new Exception("Must not install"),
+                true, output, autoCheck: false, openLink: links.Add,
+                checkInstallDirectory: () => scenario == "missing-manifest" ? "Missing PACKAGE-INFO.json" : null);
+            try
+            {
+                Await(window.CheckAsync());
+                if (scenario == "download-failure") Await(window.DownloadUpdateAsync());
+                window.ManualDownloadButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Uri expected = scenario == "http-failure" ? GitHubUpdateClient.ReleasesUrl :
+                    GitHubUpdateClient.ReleaseUrl(scenario == "no-package" ? "0.4.0" : "0.3.0");
+                check(language + " " + scenario + " retains a working official manual download and instructions",
+                    links.Single() == expected && window.ManualDownloadButton.IsEnabled &&
+                    window.ManualUpdateHint.Visibility == Visibility.Visible && window.ManualUpdateHint.Text.Contains("ZIP"));
+                if (scenario == "missing-manifest" || scenario == "no-package")
+                    check(scenario + " blocks automatic installation without hiding the newer release", !window.InstallButton.IsEnabled &&
+                        window.LatestVersionText.Text != "v0.2.0");
+                if (scenario == "missing-manifest")
+                    RenderCurrentNotes(window, Path.Combine(output, "updates-manual-" + language + ".png"));
+            }
+            finally { window.Close(); }
+        }
+        L.Initialize("zh-CN");
     }
 
     private static void DirectoryRepairRecheck(string output, Action<string, bool> check)
@@ -172,6 +298,7 @@ internal static class AppUpdateWindowTests
 
     private static void PreviewChannelAndCurrentNotes(string output, Action<string, bool> check)
     {
+        L.Initialize("en");
         string metadata = JsonSerializer.Serialize(new[] {
             new { tag_name = "v0.2.0-preview.1", draft = false, prerelease = true, body = "Current preview notes", assets = Array.Empty<object>(), html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v0.2.0-preview.1" },
             new { tag_name = "v0.4.0-preview.1", draft = false, prerelease = true, body = "Next preview notes", assets = new object[] { new { name = "FloatCanvas-0.4.0-preview.1-win-x64.zip", state = "uploaded", size = 1024, digest = "sha256:" + new string('a', 64), browser_download_url = "https://github.com/yowynn/FloatCanvas/releases/download/v0.4.0-preview.1/FloatCanvas-0.4.0-preview.1-win-x64.zip" } }, html_url = "https://github.com/yowynn/FloatCanvas/releases/tag/v0.4.0-preview.1" }
@@ -184,12 +311,12 @@ internal static class AppUpdateWindowTests
         try
         {
             Await(window.CheckAsync());
-            check("update window defaults to stable only while showing current preview notes", window.PreviewUpdates.IsChecked == false && !window.InstallButton.IsEnabled && window.NotesText.Text == "Current preview notes" && window.StatusText.Text == L.Get("Updates.UpToDate"));
+            check("update window defaults to stable only while showing current preview notes", window.PreviewUpdates.IsChecked == false && !window.InstallButton.IsEnabled && window.NotesText.Text.Contains("Current preview notes") && window.StatusText.Text == L.Get("Updates.UpToDate"));
             RenderCurrentNotes(window, Path.Combine(output, "updates-current-notes.png"));
             window.PreviewUpdates.IsChecked = true; PumpUntil(() => !window.IsBusy);
-            check("enabling previews saves the choice and refreshes the update offer", persisted.SequenceEqual(new[] { true }) && window.InstallButton.IsEnabled && window.LatestVersionText.Text == "v0.4.0-preview.1" && window.NotesText.Text == "Next preview notes");
+            check("enabling previews saves the choice and refreshes the update offer", persisted.SequenceEqual(new[] { true }) && window.InstallButton.IsEnabled && window.LatestVersionText.Text == "v0.4.0-preview.1" && window.NotesText.Text.Contains("Next preview notes"));
             window.PreviewUpdates.IsChecked = false; PumpUntil(() => !window.IsBusy);
-            check("disabling previews removes the preview offer and restores current notes", persisted.SequenceEqual(new[] { true, false }) && !window.InstallButton.IsEnabled && window.NotesText.Text == "Current preview notes");
+            check("disabling previews removes the preview offer and restores current notes", persisted.SequenceEqual(new[] { true, false }) && !window.InstallButton.IsEnabled && window.NotesText.Text.Contains("Current preview notes"));
         }
         finally { window.Close(); }
         var failing = new AppUpdateWindow("0.2.0-preview.1", client, _ => Task.CompletedTask, true, output, autoCheck: false, savePreviewPreference: _ => throw new IOException("fixture save failed"));
@@ -377,7 +504,7 @@ internal static class AppUpdateWindowTests
             finally { preparation.TrySetResult(); committedWork.TrySetResult(); window.Close(); }
         }
     }
-    private const string Notes = "## Clearer palettes\n<script>never execute this</script>\n[Project](https://github.com/yowynn/FloatCanvas)";
+    private const string Notes = ReleaseNotesTests.Notes;
     private static readonly string ReleaseMetadata = JsonSerializer.Serialize(new[] { new
     {
         tag_name = "v0.3.0", draft = false, prerelease = false, body = Notes,

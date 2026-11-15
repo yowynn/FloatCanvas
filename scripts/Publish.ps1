@@ -68,6 +68,7 @@ $newZipInstalled = $false
 $replacementCommitted = $false
 Push-Location $projectRoot
 try {
+    & (Join-Path $PSScriptRoot 'Test-Changelog.ps1')
     & (Join-Path $PSScriptRoot 'Test-PublishDependencies.ps1') -ProjectRoot $projectRoot
     # RID locks are reviewed alongside normal test locks; publishing cannot silently resolve a new graph.
     $publishArguments = @('publish', 'src/FloatCanvas.App/FloatCanvas.App.csproj', '-c', $Configuration,

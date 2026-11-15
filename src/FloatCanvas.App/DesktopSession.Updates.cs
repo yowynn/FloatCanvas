@@ -119,8 +119,17 @@ internal sealed partial class DesktopSession
         try
         {
             if (AppUpdateInstaller.ConsumeResult(ApplicationPaths.ProfileDirectory) is { Success: false } result)
-                AppDialog.Show(_welcomeWindow, L.Format("Updates.PreviousInstallFailed", result.Version) + "\n" + result.Error,
-                    L.Get("Updates.Title"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            {
+                var choice = AppDialog.Show(_welcomeWindow,
+                    L.Format("Updates.PreviousInstallFailed", result.Version) + "\n" + result.Error + "\n\n" + L.Get("Updates.OpenManualQuestion"),
+                    L.Get("Updates.Title"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (choice == MessageBoxResult.Yes)
+                {
+                    try { ExternalLink.Open((SemVersion.TryParse(result.Version, out _) ? GitHubUpdateClient.ReleaseUrl(result.Version) : GitHubUpdateClient.ReleasesUrl).AbsoluteUri); }
+                    catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+                    { UpdateStatus(L.Get("Updates.OpenLinkFailed") + ": " + error.Message); }
+                }
+            }
         }
         catch (IOException ex) { UpdateStatus(ex.Message); }
     }

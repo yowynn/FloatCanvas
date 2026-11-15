@@ -1,44 +1,69 @@
 # 更新日志 / Changelog
 
-每个版本按用户影响和重要程度排序；同一功能的开发迭代合并为最终变化。
-Each version lists changes by user impact and importance, combining development iterations into their final behavior.
+按用户影响归纳主要变化；新版本使用显式语言与分类标记。写作和发布格式见 [发布规范](Docs/Release-Trust.md)。
+Major user-facing changes, with explicit language and category markers. See the [release guide](Docs/Release-Trust.md).
 
 ## [Unreleased]
 
 当前开发版本：**0.4.0** / Current development version: **0.4.0**.
 
-- **画布查看与跨屏适配。** 平面、透视和独立分组支持平移、缩放、本机视角记忆及移动时靠边平移；查看与校准分开，可将取景应用到作品并撤销。跨分辨率打开可保留尺寸或转换副本另存，整幅导出保留创作范围。新工程格式18需要兼容版本读取。
-- **Canvas navigation and screen adaptation.** Pan, zoom, remember local views and auto-pan during moves across flat, perspective and independent canvases. Navigation is separate from calibration; applying a view edits artwork with undo. Keep dimensions or convert a copy when opening on another screen size. Full exports retain authored bounds. New scene format18 requires a compatible reader.
+<!-- floatcanvas-notes:1 -->
+### 简体中文
+<!-- lang:zh-CN -->
 
-- **画布编辑稳定性。** 修复副屏文字输入与候选定位、导航卡顿与闪烁、空格焦点冲突和靠边拖动回弹、显示器变化误退编辑，以及空白画布的新建误报；多屏取景参考主屏，穿透展示完整根工程，独立视图首次保留源构图。
-- **Canvas editing reliability.** Fix secondary-screen text input and candidate positioning, navigation stalls and flicker, Space focus conflicts, drag rollback during edge panning, unintended editing exits on display changes and false unsaved prompts on empty canvases. Multi-monitor framing uses the primary screen, pass-through shows the complete root project, and independent views first retain the authored composition.
+#### 新功能
+<!-- category:feature -->
+- **多画布创作。** 新增前景、主画布与背景三个根画布；前景和背景固定在屏幕平面，主画布可独立设置透视。普通组和子工程也可切换独立画布编辑。
+- **共享预制体与链接工程。** 从选择创建可重复放置的共享内容，修改后同步全部实例，也可解除链接。新增工程资源面板和自包含 `.floatprefab` 文件；外部工程支持离线预览、只读浏览、刷新来源及转为内部内容。
+- **画布浏览与分辨率转换。** 支持平移、缩放、居中、完整画布取景及本机视角记忆；也可将取景应用到作品并撤销。跨分辨率打开时可保持原尺寸或转换副本，整幅导出保留完整创作范围。
+- **窗口画面与演示工具。** 可把窗口的持续画面放到画布，裁剪、暂停或冻结为图片。键盘演示支持按键记录与可编辑的实时键盘；鼠标演示提供独立的高亮、点击反馈和轨迹。
 
-- **图片粘贴。** 修复从 Photoshop 等应用复制图片后，粘贴到画布只出现选框、图片不可见的问题。
-- **Image pasting.** Fix images copied from applications such as Photoshop appearing invisible with only a selection box when pasted onto the canvas.
+#### 改进
+<!-- category:improvement -->
+- **嵌套组合与图层。** 用面包屑和当前层级列表浏览组合，拖动调整层级，并可整体或分别旋转、缩放。组的变换保留内部坐标，旧工程的交错图层保持显示顺序。
+- **画布校准与立牌放置。** 画布尺寸、网格间距和原点可独立调整，提供纸张比例与三交点辅助标定。立牌默认直接在屏幕绘制或放置后调整高度；图片、截图与文字使用相同放置规则。
+- **样式与文件操作。** 统一前景色、背景色和样式预设；序号提供实心与两种空心样式。完整工程直接打开，预制体追加置入；置入内容保留宿主的画布设置。
+- **更新说明与手动更新。** 更新窗口按分类显示当前语言的日志，汇总当前版本到目标版本之间的变化，并标明每条来源版本。无法自动更新时可直接打开官方发布页，手动下载安装包。
 
-- **前景、主画布与背景。** 可选择三个根画布创作；前景与背景固定在屏幕平面，主画布独立透视，按固定顺序合成。旧工程保留原画面并可升级保存为新格式。
-- **Foreground, main and background canvases.** Draw on three selectable roots. Foreground and background stay in screen space while the main canvas uses its own perspective, with fixed composition order. Older projects preserve their appearance and can be saved in the new format.
+#### 修复
+<!-- category:fix -->
+- **画布编辑稳定性。** 修复导航卡顿与闪烁、靠边拖动回弹、空格焦点冲突和空白画布误报未保存的问题。
+- **多屏编辑。** 修复副屏文字输入与输入法定位、显示器变化导致意外退出编辑；多屏取景统一参考主屏，穿透展示保留完整根工程。
+- **图片粘贴。** 修复从 Photoshop 等应用复制图片后，画布只出现选框、图片不可见的问题。
 
-- **共享预制体与子工程。** 从选择创建共享定义，多次放置复用同一份内容，完成编辑后同步全部实例，也可解除链接为普通组。各级普通组、工程内共享与外部文件采用统一的内部列表和常驻独立／根工程画布切换；独立编辑使用自己的原点、透视、网格和背景，根工程中保留实例放置。新增工程资源面板和自包含 `.floatprefab` 文件，所有新印章采用此格式并保留自身预览；旧库仍可读取。链接工程保留离线快照，支持只读源浏览、转为内部工程、刷新、重新定位及文件冲突检查。
-- **Shared prefabs and subprojects.** Create shared definitions from selections, reuse their content across instances, publish edits to every instance, or detach a copy as an ordinary group. Ordinary, shared and external groups at every level use the same internal list and persistent independent/root canvas choices. Independent editing uses its own origin, perspective, grid and background while retaining instance placement in the root scene. Add project resources and self-contained `.floatprefab` files. All new stamps use this format and preserve their own preview; older libraries remain readable. Linked projects retain offline snapshots, with read-only source browsing, internal conversion, refresh and relocation.
+#### 兼容性提示
+<!-- category:compatibility -->
+- **工程格式升级至 v18。** 支持读取并迁移 v1–v17 工程，读取不会改写原文件；新保存的工程需要支持 v18 的版本打开。旧印章库继续可用，新印章使用 `.floatprefab` 格式。
 
-- **嵌套组合与图层管理。** 组合成为独立图层，采用面包屑路径和当前层级列表浏览，支持进入嵌套组合编辑、拖动调整层级，以及整体或各自旋转、缩放。组的移动与变换保留内部局部坐标；旧工程中交错排列的组合保持原显示顺序，可手动收拢为连续组。
-- **Nested groups and layers.** Groups become independent layers, browsed through breadcrumbs and a list of the current level, with nested group editing, drag-and-drop hierarchy changes, and whole-selection or individual transforms. Group movement preserves local member coordinates. Interleaved groups in older projects retain their original paint order and can be explicitly collected into a contiguous group.
+<!-- /lang -->
+### English
+<!-- lang:en -->
 
-- **画布比例与网格。** 平面尺寸与网格间距、原点独立设置，提供 A4 等纸张比例、横竖方向切换和扭正预览；改变网格密度不再拉伸透视内容。新增三交点辅助标定，只需指出两个方向各跨几格；保留旧工程原有投影与钉点，取消或切换工程不会迟到插图。
-- **Canvas proportions and grids.** Set plane dimensions independently from grid spacing and origin, with paper ratios such as A4, orientation switching and a rectification preview. Grid-density edits no longer stretch projected content. Calibrate from three intersections and a known cell span on each axis. Existing projections and pins are preserved, and cancellation or document changes cannot insert a late capture.
+#### New features
+<!-- category:feature -->
+- **Multiple canvases.** Draw on foreground, main and background roots. Foreground and background stay in screen space while the main canvas has independent perspective. Groups and subprojects can also be edited on their own canvases.
+- **Shared prefabs and linked projects.** Create reusable content from selections and publish edits to every instance, or detach a copy. A project resources panel and self-contained `.floatprefab` files support reuse; external projects offer offline previews, read-only browsing, source refresh and conversion to internal content.
+- **Canvas navigation and resolution conversion.** Pan, zoom, center, frame the full canvas and remember local views, or apply a view to artwork with undo. Keep original dimensions or convert a copy when opening on another resolution; full exports retain the entire authored area.
+- **Window sources and presentation tools.** Place a live window view on the canvas, crop it, pause it or freeze it as an image. Keyboard demonstration offers key recording and an editable live keyboard; mouse demonstration has independent highlights, click feedback and trails.
 
-- **立牌创建。** 默认直接在屏幕上绘制或放置立牌，再调整接地点与高度；支持从地平线上方起笔，保留高级等深线流程。图片、截图与文字共用放置规则，属性转换可选择保持当前画面。
-- **Billboard creation.** Draw or place billboards directly on screen, then adjust ground position and elevation. Strokes can start above the horizon, with the advanced fixed-depth workflow retained. Images, captures and text share placement rules, and placement conversion can preserve the current appearance.
+#### Improvements
+<!-- category:improvement -->
+- **Nested groups and layers.** Browse groups with breadcrumbs and a current-level list, drag to change hierarchy, and rotate or scale selections together or individually. Group transforms preserve local coordinates; interleaved layers in older projects retain their paint order.
+- **Canvas calibration and billboards.** Adjust canvas dimensions, grid spacing and origin independently, with paper ratios and three-intersection calibration. Draw or place billboards on screen before adjusting their height; images, captures and text share the same placement rules.
+- **Styles and file operations.** Share foreground, background and style presets across tools; number badges offer filled and two outline styles. Full projects open directly while prefabs append content, preserving the host canvas settings.
+- **Release notes and manual updates.** The update window groups notes in your application language, includes changes between your installed and target versions, and identifies each entry's release. If automatic updating is unavailable, open the official release page to download manually.
 
-- **窗口源。** 将选定窗口的持续画面放到画布，支持裁剪、重新绑定、暂停和冻结为普通图片，并在共享实例中复用来源。工程保留完整离线画面，重开后明确重新绑定；实时更新不增加撤销记录。
-- **Window sources.** Place a selected window's continuing output on the canvas, with cropping, rebinding, pause and freezing as an ordinary image. Shared instances reuse the source. Projects retain full offline images and require explicit rebinding after reopening; live updates add no undo steps.
+#### Fixes
+<!-- category:fix -->
+- **Canvas editing reliability.** Fix navigation stalls and flicker, drag rollback during edge panning, Space focus conflicts and false unsaved-work prompts on empty canvases.
+- **Multi-monitor editing.** Fix text input and IME positioning on secondary screens and unexpected exits from editing on display changes. Multi-monitor framing uses the primary screen, and pass-through retains the complete root project.
+- **Image pasting.** Fix images copied from applications such as Photoshop appearing invisible with only a selection box on the canvas.
 
-- **演示工具。** 键盘演示与鼠标演示采用标准参数／预设窗口。键盘分为按键记录和实时键盘，记录可选简洁或仿真键帽，实时 104 键布局可调整键位显隐、位置与尺寸；模式专属选项与共有属性分层，保留透视，可见即记录，隐藏或删除停止，编辑模式继续。修复编辑模式下键盘布局窗口的应用与取消。鼠标高亮、左右中键点击和轨迹独立全屏显示，以颜色 Alpha 控制透明度；个人效果偏好不修改画布图层，实时输入不进入工程。
-- **Presentation.** Keyboard and Mouse demonstration use standard parameter and preset windows. Choose Key recording with Simple or Realistic keycaps appearance, or Live keyboard with an editable 104-key layout, with mode-specific options followed by shared properties. Visible key layers record during editing and retain perspective; hide or delete them to stop. Fix applying and cancelling keyboard layouts in editing mode. Screen-wide mouse halos, left/right/middle clicks and trails use color Alpha for transparency. Personal mouse preferences leave canvas layers unchanged, and live input is not stored in projects.
+#### Compatibility
+<!-- category:compatibility -->
+- **Project format v18.** Read and migrate v1–v17 projects without rewriting their source files. Newly saved projects require a version that supports v18. Existing stamp libraries remain usable; new stamps use `.floatprefab` files.
 
-- **工程格式与样式。** 工程和恢复文件采用格式 v17，保留三根内容、子工程预览与逐层键盘采集范围，并迁移 v1～v16 工程；读取不改写旧原件，旧版应用不能读取新格式。注册两种文件打开方式：完整工程在当前实例打开并保护未保存内容，预制体追加置入；置入两种格式均只取主画布内容，不覆盖宿主画布设置。统一前景色、背景色与样式标识，序号提供实心、同色空心和双色空心三种样式；切换样式保留隐藏颜色，支持多选编辑及个人预设。
-- **Project format and styles.** Projects and recovery files use format v17, retaining three roots, subproject previews and per-layer keyboard capture scope, with migration from v1–v16. Reading leaves old source files untouched; older apps cannot read the new format. Register both file types: full projects open in the current instance with unsaved-work protection; prefabs append at the current editing location. Inserting either format takes main-canvas content without replacing host canvas settings. Foreground, background and named styles are shared across tools. Number badges offer filled, single-color outline and two-color outline styles, retaining hidden colors across style changes, multi-selection edits and personal presets.
+<!-- /lang -->
 
 ## [0.3.2] - 2026-10-31
 

@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/FloatCanvas.App/FloatCanvas.App.csproj" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Fixtures/Appearance/*.json" /></ItemGroup>
+  <ItemGroup><None Include="../../CHANGELOG.md" Link="Fixtures/CHANGELOG.md" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Compile Include="../Shared/GroupTestData.cs" Link="GroupTestData.cs" /></ItemGroup>
 </Project>

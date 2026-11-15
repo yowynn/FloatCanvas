@@ -36,6 +36,8 @@ jobs:
           global-json-file: global.json
       - name: Restore locked dependencies
         run: dotnet restore FloatCanvas.slnx --locked-mode
+      - name: Validate bilingual changelog and release-note extraction
+        run: ./scripts/Test-ReleaseNotes.ps1
       - name: Build Release
         run: dotnet build FloatCanvas.slnx --configuration Release --no-restore --nologo
       - name: Verify reviewed Windows publish dependency locks

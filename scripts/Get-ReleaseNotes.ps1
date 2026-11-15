@@ -4,6 +4,7 @@ param(
     [string]$ChangelogPath = (Join-Path $PSScriptRoot '../CHANGELOG.md')
 )
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'Test-Changelog.ps1') -ChangelogPath $ChangelogPath -Version $Version
 $changelog = Get-Content -LiteralPath $ChangelogPath -Raw
 $heading = '^## \[' + [regex]::Escape($Version) + '\] - \d{4}-\d{2}-\d{2}\r?$'
 $section = [regex]::Match($changelog, $heading, [Text.RegularExpressions.RegexOptions]::Multiline)

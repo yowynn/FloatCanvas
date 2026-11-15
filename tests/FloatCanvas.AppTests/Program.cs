@@ -22,6 +22,7 @@ internal static class Program
         {
             if (args is ["--canvas-cold-recovery-child", var recoveryProfile]) { CanvasApplyTests.RunColdRecoveryChild(Assert, recoveryProfile); return 0; }
             if (args.Contains("--isolated-ui-desktop")) return IsolatedUiDesktop.Run(args);
+            if (args.Contains("--update-preview")) { AppUpdateWindowTests.ShowPreview(args); return 0; }
             if (args is ["--large-layer-project", var layerProject, var layerOutput]) { GroupCanvasRootEditingTests.RunLargeProject(Assert, layerProject, layerOutput); return 0; }
             if (args is ["--screenshot-peer", var peerMode]) { ScreenshotPeerFixture.Run(peerMode); return 0; }
             if (args.Contains("--panel-review-only")) { PanelReviewRegressionTests.Run(Assert, args.SkipWhile(a => a != "--panel-review-only").Skip(1).FirstOrDefault()); return 0; }

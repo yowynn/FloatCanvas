@@ -6,6 +6,22 @@ FloatCanvas ships unsigned Windows ZIP and EXE installer packages containing the
 
 ## 更新日志写作 / Release-note style
 
+从 0.4.0 起，`CHANGELOG.md` 是更新说明的唯一维护源。每个版本的正文使用 `<!-- floatcanvas-notes:1 -->`，分别放置且关闭 `<!-- lang:zh-CN -->`、`<!-- lang:en -->` 区块（结束标记 `<!-- /lang -->`）。区块内以 `<!-- category:feature -->`、`improvement`、`fix`、`compatibility` 标记新功能、改进、修复、兼容性提示；可读标题不参与解析。每条使用单行 `- ` 列表，可含行内 Markdown；中英文分类顺序与条数对应，没有内容的分类省略。不要手工维护第二份 JSON 或 Release 正文。
+
+每条描述一个用户可辨认的能力或问题，用1–3句交代适用场景和最终行为；同一功能的开发迭代合并，不把整个模块全部改动塞进一条。兼容限制单列。例如“修复从 Photoshop 复制的图片粘贴后不可见”比“修复图片问题”明确，也无需附上 DIB 解码细节。普通标签或措辞调整无需单独列出。
+
+发布时把 `[Unreleased]` 改为 `[版本] - YYYY-MM-DD`，保留正文的标记，并在顶部保留空的 `[Unreleased]`。`Test-Changelog.ps1` 检查格式、重复版本、语言/分类和对应条数；`Test-ReleaseNotes.ps1` 验证抽取与错误拒绝。CI、打包和发布都执行相关校验，`Get-ReleaseNotes.ps1` 抽取指定日期段并保留语言标记。已经发布的历史段落及远端 Release 不追溯重写。
+
+客户端按语义版本聚合 `(当前版本, 目标版本]`，排除草稿，预览版是否纳入跟随更新频道；同类别内按版本倒序，每条注明来源版本。没有新版本时显示当前版日志。仅选择软件当前语言，缺少对应译文或遇到未知格式时显示缺失提示，不影响安装。旧正文按既有中英文段落做最低限度筛选，归入“历史更新”，不猜测类别。
+
+历史读取最多10页、每页100条，每页4 MiB；网络中断或到达上限必须提示不完整。显示最多2000条且正文总量不超过500,000字符，超过时显示提示并提供完整日志入口。此上限用于防止异常正文卡住界面；不静默丢弃内容，也不把已读取区间称为全部历史。
+
+手动下载入口常驻更新窗口，已知目标时打开对应官方 Release，检查失败时打开官方发布列表。缺清单、无权限、缺安装资产、下载或安装失败都保留入口与操作说明；重启后收到失败结果也可打开发布页。用户保存并退出后运行 Setup，或将完整 ZIP 解压到新目录，保留个人资料与作品。新日志格式不更改包命名、SHA256、PACKAGE-INFO、启动器或升级事务协议，因此历史客户端不依赖新日志解析即可升级。
+
+Since 0.4.0, `CHANGELOG.md` is the sole release-note source. A `floatcanvas-notes:1` marker introduces closed `lang:zh-CN` and `lang:en` blocks; `category:feature`, `improvement`, `fix` and `compatibility` markers classify single-line Markdown bullets. Translations must have matching category order and entry counts. CI, packaging and release extraction validate this contract; published history remains unchanged.
+
+Describe recognizable capabilities and concrete failure scenarios in 1–3 sentences per entry. Aggregate releases in `(installed, target]`, selecting the application's language and update channel, with each entry's source version visible. Legacy bilingual paragraphs receive minimal filtering under Earlier changes. Missing or invalid notes never block installation. Pagination and display limits disclose incomplete results. Manual download remains available for directory, network, package or installation failures, with explicit Setup/ZIP instructions. The package and update transaction protocols remain unchanged.
+
 从 0.3.2 开始，更新日志和 GitHub Release 说明以让用户快速看清本版主要变化为目标。按用户影响归纳主要功能、重要修复及必要兼容性说明，合并同类变化，使用简短、直接的条目。无需逐项列出提示气泡、控件反馈、细小交互分支、实现细节、测试数量或开发过程；详细用法留在用户指南。涉及数据兼容、升级操作或其他重要使用限制的信息仍需明确说明。
 
 此规则用于本次及后续版本；已经发布的历史更新日志保持原样，不追溯重写。中英文说明保持相同范围和重点。

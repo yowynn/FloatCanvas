@@ -14,11 +14,51 @@ internal static class GitHubUpdateClientTests
     private static async Task RunAsync(Action<string, bool> check)
     {
         SemVersionOrder(check);
+        ReleaseNotesTests.Run(check);
+        await ReleaseHistory(check);
         await UnsignedReleaseLifecycle(check);
         await MachineInstallerLifecycle(check);
         await ReleaseSelection(check);
         await HttpFailures(check);
         await PackageValidation(check);
+    }
+
+    private static async Task ReleaseHistory(Action<string, bool> check)
+    {
+        using var client = Client(_ => Response(JsonSerializer.Serialize(new[] {
+            Release("0.3.0"), Release("0.2.0"), Release("0.4.0"), Release("0.3.0"),
+            Release("0.4.1-preview.1"), Release("8.0.0", draft: true) })));
+        var result = await client.CheckAsync("0.2.0", default);
+        check("history includes the entire open-closed interval, descending and without duplicates",
+            result.Releases.Select(r => r.Version).SequenceEqual(new[] { "0.4.0", "0.3.0" }) && !result.HistoryIncomplete);
+        var preview = await client.CheckAsync("0.2.0", default, true);
+        check("preview history follows the same selected channel", preview.Releases[0].Version == "0.4.1-preview.1" && preview.Releases.Count == 3);
+        int pages = 0;
+        using var paged = Client(_ => Response(JsonSerializer.Serialize(++pages == 1
+            ? Enumerable.Repeat(Release("0.4.0"), 100).ToArray() : new[] { Release("0.3.0"), Release("0.2.0") })));
+        var all = await paged.CheckAsync("0.2.0", default);
+        check("history traverses pages even after finding the newest package", pages == 2 && all.Releases.Count == 2 && !all.HistoryIncomplete);
+        pages = 0;
+        using var interrupted = Client(_ => ++pages == 1
+            ? Response(JsonSerializer.Serialize(Enumerable.Repeat(Release("0.4.0"), 100)))
+            : new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var partial = await interrupted.CheckAsync("0.2.0", default);
+        check("history failure preserves a verified update offer and discloses incompleteness",
+            partial.Update?.Version == "0.4.0" && partial.HistoryIncomplete);
+        pages = 0;
+        using var capped = Client(_ => { pages++; return Response(JsonSerializer.Serialize(Enumerable.Repeat(Release("0.4.0"), 100))); });
+        var limited = await capped.CheckAsync("0.2.0", default);
+        check("history is bounded with explicit truncation", pages == 10 && limited.HistoryIncomplete);
+        using var unsupported = Client(_ => Response(JsonSerializer.Serialize(new object[] {
+            Release("0.3.0"), new { tag_name = "v0.4.0", body = "notes", assets = Array.Empty<object>() } })));
+        var manual = await unsupported.CheckAsync("0.2.0", default);
+        check("a newer release without an automatic package remains visible for manual installation",
+            manual.Update is null && manual.LatestVersion == "0.4.0" && manual.Releases.Count == 2);
+        string brokenNotes = JsonSerializer.Serialize(new[] { Release("0.4.0") }).Replace("Release notes", "<!-- floatcanvas-notes:9 -->");
+        using var malformed = Client(_ => Response(brokenNotes));
+        var broken = await malformed.CheckAsync("0.2.0", default);
+        check("unsupported notes cannot block selecting a valid package", broken.Update?.Version == "0.4.0" &&
+            ReleaseNotes.Parse(broken.Releases.Single(), "en").Unavailable);
     }
 
     private static async Task MachineInstallerLifecycle(Action<string, bool> check)
