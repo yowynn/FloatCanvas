@@ -143,7 +143,22 @@ internal static class CanvasIndependentUiTests
             check(prefix + "canvas actions have icons and the standard control height", actions.Length >= 5 && actions.All(button => button.Height == PropertyPanelLayout.ControlHeight && ((StackPanel)button.Content).Children[0] is Viewbox));
             var fourPoints = Field<Button>(settings, "fourPoints"); var methods = (Grid)fourPoints.Parent;
             var methodButtons = methods.Children.OfType<Button>().ToArray();
-            check(prefix + "perspective methods divide the full responsive action width equally", Math.Abs(methodButtons[0].ActualWidth - methodButtons[1].ActualWidth) < .1 && Math.Abs(methods.ActualWidth - authoring.ActualWidth) < .1);
+            check(prefix + "perspective methods use equal star columns", methods.ColumnDefinitions.Count == 2 &&
+                methods.ColumnDefinitions.All(column => column.Width.IsStar && column.Width.Value == 1));
+            var originalDpi = VisualTreeHelper.GetDpi(settings);
+            foreach (double scale in new[] { 1d, 1.25d, 1.5d, 2d })
+            foreach (double layoutWidth in new[] { settings.MinWidth, settings.MinWidth + 1, settings.MinWidth + 2 })
+            {
+                VisualTreeHelper.SetRootDpi(settings, new DpiScale(scale, scale));
+                settingsBody.Measure(new(layoutWidth, 850)); settingsBody.Arrange(new Rect(0, 0, layoutWidth, 850)); settingsBody.UpdateLayout();
+                // Equal star columns can differ by one physical pixel after layout rounding.
+                double pixel = 1 / VisualTreeHelper.GetDpi(methods).DpiScaleX;
+                check(prefix + $"perspective methods divide the full responsive action width equally (DPI {scale}, width {layoutWidth})",
+                    Math.Abs(methodButtons[0].ActualWidth - methodButtons[1].ActualWidth) <= pixel + .001 &&
+                    Math.Abs(methods.ActualWidth - authoring.ActualWidth) < .1 &&
+                    Math.Abs(methodButtons.Sum(button => button.ActualWidth + button.Margin.Left + button.Margin.Right) - methods.ActualWidth) <= pixel + .001);
+            }
+            VisualTreeHelper.SetRootDpi(settings, originalDpi);
             check(prefix + "reference opacity belongs to the shared caption", ReferenceEquals(Field<ToolbarOpacitySlider>(settings, "guideOpacity").Parent, settings.Options.Header.Actions));
             if (evidenceDirectory is not null)
                 foreach (double scale in new[] { 1d, 1.5d, 2d })
