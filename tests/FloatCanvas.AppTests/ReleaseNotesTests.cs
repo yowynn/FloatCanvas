@@ -28,10 +28,11 @@ internal static class ReleaseNotesTests
     internal static void Run(Action<string, bool> check)
     {
         string changelog = System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "Fixtures", "CHANGELOG.md"));
-        string unreleased = changelog.Split("## [Unreleased]", StringSplitOptions.None)[1].Split("\n## [", StringSplitOptions.None)[0];
+        string releaseSection = changelog.Split("## [0.4.0] - ", StringSplitOptions.None)[1].Split("\n## [", StringSplitOptions.None)[0];
+        string released = releaseSection[(releaseSection.IndexOf('\n') + 1)..];
         foreach (string language in new[] { "zh-CN", "en" })
         {
-            var actual = ReleaseNotes.Parse(new("0.4.0", unreleased), language);
+            var actual = ReleaseNotes.Parse(new("0.4.0", released), language);
             check(language + " shipped changelog source parses with all four categories", !actual.Unavailable &&
                 actual.Entries.Select(e => e.Category).Distinct().SequenceEqual(ReleaseNotes.Categories.Take(4)) && actual.Entries.Count >= 4);
         }
