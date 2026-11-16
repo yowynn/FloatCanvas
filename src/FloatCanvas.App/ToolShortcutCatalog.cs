@@ -4,24 +4,21 @@ namespace FloatCanvas.App;
 internal static class ToolShortcutCatalog
 {
     internal sealed record Shortcut(EditorTool? Tool, string Hint, int VirtualKey);
-    internal static IReadOnlyList<Shortcut> All { get; } = Array.AsReadOnly(new[]
-    {
-        new Shortcut(EditorTool.Select,"V",0x56),new(EditorTool.Eraser,"E",0x45),
-        new(EditorTool.Freehand,"B",0x42),new(EditorTool.Highlighter,"H",0x48),
-        new(EditorTool.Line,"L",0x4C),new(EditorTool.Rectangle,"R",0x52),new(EditorTool.Ellipse,"O",0x4F),
-        new(EditorTool.Text,"T",0x54),new(EditorTool.Number,"N",0x4E),new(EditorTool.Symbol,"S",0x53),
-        new(EditorTool.Emoji,"J",0x4A),new(null,"M",0x4D),new(EditorTool.Canvas,"C",0x43),
-        new(EditorTool.Image,"I",0x49),new(EditorTool.CaptureRegion,"P",0x50)
-    });
+    internal static IReadOnlyList<Shortcut> All => EditorCommandCatalog.All
+        .Where(c=>c.Tool is not null || c.Id is "Image.Import" or "Tools.More")
+        .Where(c=>EditorCommandCatalog.Bindings(c).Length>0)
+        .Select(c=>new Shortcut(c.Tool ?? (c.Id=="Image.Import"?EditorTool.Image:null),EditorCommandCatalog.Hint(c.Id),
+            EditorCommandCatalog.Bindings(c).FirstOrDefault().Key)).ToArray();
     internal const int MoreKey = 0x4D;
-    internal const int StampLibraryKey = 0xBD;
-    internal const int NewStampKey = 0xBB;
-    internal static string Hint(EditorTool tool) => All.FirstOrDefault(item=>item.Tool==tool)?.Hint ?? "";
+    internal const int StampLibraryKey = 0x77;
+    internal const int NewStampKey = 0x4B;
+    internal static string Hint(EditorTool tool) => EditorCommandCatalog.Hint(tool == EditorTool.Image ? "Image.Import" : EditorCommandCatalog.ToolId(tool));
     internal static bool IsReserved(int virtualKey) => virtualKey is MoreKey or StampLibraryKey or NewStampKey;
     internal static bool TryGetTool(int virtualKey,out EditorTool tool)
     {
-        var binding=All.FirstOrDefault(item=>item.VirtualKey==virtualKey);
-        if(binding?.Tool is { } value){tool=value;return true;}
+        var command=EditorCommandCatalog.Resolve(virtualKey,FloatCanvas.Windows.OverlayModifiers.None);
+        if(command?.Tool is { } value){tool=value;return true;}
+        if(command?.Id=="Image.Import") { tool=EditorTool.Image;return true; }
         tool=default;return false;
     }
 }

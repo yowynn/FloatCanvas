@@ -38,13 +38,15 @@ internal sealed partial class DesktopSession
     {
         using var sceneRead = SceneGraph.BeginReadScope();
         try { HandleCanvasPointerCore(e); }
-        finally { ObserveCanvasEdgePan(e); }
+        finally { ObserveCanvasEdgePan(e); TryRestoreBorrowedTool(); }
     }
 
     private void HandleCanvasPointerCore(OverlayPointerEvent e)
     {
         _ = CurrentGroupCanvasView();
+        if (_borrowedTool is {} borrowed && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) borrowed.Used = true;
         if (HandleCanvasViewingPointer(e)) return;
+        if (HandleCanvasContextMenu(e)) return;
         if (Active.IsReadOnly) return;
         if (!_hasEditableCanvasOccurrence)
         {
@@ -56,7 +58,7 @@ internal sealed partial class DesktopSession
             if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) UpdateStatus(L.Get("LayerExperience.LockedBrowse"));
             return;
         }
-        if (_editor.Tool == EditorTool.PointerPresentation)
+        if (_editor.Tool == EditorTool.PointerPresentation && !_editor.IsBorrowingSelection)
         {
             if (_eyedropper is not null)
             {
@@ -82,15 +84,6 @@ internal sealed partial class DesktopSession
         UpdateHiddenCanvasState();
         if (DocumentOperationBusy) { _propertiesClicks?.Reset(); return; }
         if (!_host.IsVisible && !EditorController.IsCreationTool(_editor.Tool) && _editor.Tool is not (EditorTool.Canvas or EditorTool.Stamp or EditorTool.Blur or EditorTool.Pixelate)) return;
-        if (e.Button == OverlayMouseButton.Middle && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && !_editor.IsTemporaryMove)
-        {
-            using var middleDestination = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
-            FinishInlineText();
-            _inspector?.CompletePendingEdit();
-            EndCanvasCalibration();
-            if (_eyedropper is not null) EndEyedropper(restore: false);
-            DismissPanelsForCanvasPress();
-        }
         if (_editor.HandleTemporaryMovePointer(e)) { SynchronizeCanvasTool(); _propertiesClicks?.Reset(); return; }
         if (HandleEyedropperPointer(e)) { _propertiesClicks?.Reset(); return; }
         if (HandleInlineTextPointer(e)) { _propertiesClicks?.Reset(); return; }
@@ -180,7 +173,7 @@ internal sealed partial class DesktopSession
             PlaceStampSafely(() => StampLibrary.Place(_selectedStamp, Active, stampPoint, current.Name));
             return;
         }
-        if (e.Kind == OverlayPointerKind.Down && e.Button == OverlayMouseButton.Right) SwitchToolState(EditorTool.Select);
+
         int elementCount = Active.Document.Elements.Count;
         _editor.PointerForCanvas(e, propertiesDoubleClick);
         if (Active.Document.Elements.Count > elementCount) _propertiesClicks.Reset();
@@ -223,6 +216,8 @@ internal sealed partial class DesktopSession
         CloseToolOptions();
         var expected = _stampLibrary.Items.FirstOrDefault(item => item.Id == id);
         if (expected is null) { UpdateStatus(L.Get("Stamp.Missing")); return; }
+        CancelBorrowedTool();ForgetBorrowedTool();
+        CompleteGlobalCapture(inserted:false,restoreMode:false);
         SwitchToolState(EditorTool.Stamp);
         _selectedStamp = null; _selectedStampId = id;
         _selectedStampFromSlot = fromSlot; _selectedStampUsesSource = useSource;

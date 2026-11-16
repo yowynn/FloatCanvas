@@ -134,7 +134,7 @@ public sealed partial class EditorSession
     }
 
     /// <summary>Imports editable entities, fresh element/effect/group IDs and immutable referenced resources atomically.</summary>
-    public void InsertDocument(SceneDocument source, AssetLibrary sourceAssets, Affine2D transform, bool group = false, string? label = null, bool preserveDefinitions = false, string? groupName = null, ContainerBillboardInsertion? billboard = null)
+    public void InsertDocument(SceneDocument source, AssetLibrary sourceAssets, Affine2D transform, bool group = false, string? label = null, bool preserveDefinitions = false, string? groupName = null, ContainerBillboardInsertion? billboard = null, bool withinTransaction = false)
     {
         EnsureWritableParent(EditScopeId);
         ArgumentNullException.ThrowIfNull(source);
@@ -177,14 +177,20 @@ public sealed partial class EditorSession
         SceneLimits.ValidateCapacity(candidate);
         if (billboard is not null) EnsureSafeInsertion(SceneEvaluation.Build(candidate).RenderDocument.Elements);
         // Publish resources only after the complete target hierarchy and capacity have been accepted.
-        Execute(label ?? L.Get("History.InsertPreset"), document =>
+        void Publish(SceneDocument document)
         {
             foreach (var resource in resources) Assets.Add(resource);
             var inserted = AppendSnapshot(document, snapshot, EditScopeId, ActiveRootCanvas);
             foreach (var id in inserted)
                 if (new SceneGraph(document).FindGroup(id) is { PreviewCanvas: null }) InitializeGroupPreview(id);
             SetSelectionCore(inserted);
-        });
+        }
+        if (withinTransaction)
+        {
+            if (!IsTransactionActive) throw new InvalidOperationException("Insertion requires an active gesture transaction.");
+            Publish(Document); NotifyChanged();
+        }
+        else Execute(label ?? L.Get("History.InsertPreset"), Publish);
     }
 
     private static Guid[] AppendSnapshot(SceneDocument document, SceneDocument snapshot, Guid? scope, RootCanvasKind rootCanvas)

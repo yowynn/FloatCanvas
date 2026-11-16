@@ -16,6 +16,7 @@ internal sealed partial class DesktopSession
 
     private void ToggleCanvasVisibility()
     {
+        if (_allOverlaysHidden is not null) { RestoreAllOverlays(); return; }
         if (_host.IsVisible) CancelCanvasRectification("CanvasHidden");
         EndCanvasCalibration();
         // Preserve the hide intent even if a second toggle shows the canvas before the

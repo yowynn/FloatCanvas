@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -32,13 +32,15 @@ internal static class AuditUxTests
                 var args = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab)
                     { RoutedEvent = Keyboard.PreviewKeyDownEvent };
                 button.RaiseEvent(args);
-                check("audit Tab remains local without an editor command route", !args.Handled && toggles == 0);
-                check("audit controls retain local Tab traversal outside an editor route", KeyboardNavigation.GetTabNavigation(button) == KeyboardNavigationMode.Continue);
+                check("audit preview leaves Tab available to an editor route", !args.Handled && toggles == 0);
+                var fallbackTab = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab) { RoutedEvent = Keyboard.KeyDownEvent };
+                button.RaiseEvent(fallbackTab);
+                check("audit ordinary controls suppress invisible Tab traversal without an editor route", fallbackTab.Handled && toggles == 0);
                 check("audit buttons and sliders add no keyboard focus frames", button.FocusVisualStyle is null && slider.FocusVisualStyle is null);
                 AppInputPolicy.AttachToolbarToggle(window, () => toggles++);
                 var toolbarTab = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Tab) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
                 button.RaiseEvent(toolbarTab);
-                check("audit ordinary editor controls retain the Tab collapse command", toolbarTab.Handled && toggles == 1);
+                check("audit ordinary editor controls toggle toolbar without traversal", toolbarTab.Handled && toggles == 1);
             }
             check("audit Tab fixture restores its exact thread keyboard snapshot",originalKeyboardState.SequenceEqual(ThreadModifierScope.Read()));
         }

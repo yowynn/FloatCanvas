@@ -244,9 +244,10 @@ public sealed class KeyboardInputIsolation : IDisposable
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         ValidateHotkey(toggle); ValidateHotkey(hide);
-        if (toggle == hide) throw new ArgumentException(L.Get("Hotkeys.DuplicateBindings"));
+        if (toggle.VirtualKey != 0 && toggle == hide) throw new ArgumentException(L.Get("Hotkeys.DuplicateBindings"));
         lock (gate) state.UpdateHotkeys(toggle, hide);
     }
+    internal void UpdateCommandHotkeys(Dictionary<int, HotkeyBinding> bindings) { lock(gate) state.CommandHotkeys = bindings; }
     internal void SuspendCommands(bool suspended) { lock (gate) state.CommandsSuspended = suspended; }
     /// <summary>Call regularly from the UI dispatcher, including while static and in modal loops.</summary>
     public void Heartbeat() => Volatile.Write(ref lastHeartbeat, Environment.TickCount64);

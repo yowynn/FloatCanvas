@@ -122,7 +122,7 @@ internal static class BillboardCreationTests
         session.Document.Elements.Add(element);session.SetSelection([element.Id]);var editor=new EditorController(session){Tool=EditorTool.Select};
         var mapping=CanvasMapping.Create(session.Document);var center=Center(element,mapping);var anchor=element.BillboardAnchor;
         var corner=editor.SelectionScreenCorners[2];var end=center+(corner-center)*1.5;
-        Send(editor,OverlayPointerKind.Down,corner);Send(editor,OverlayPointerKind.Move,end);Send(editor,OverlayPointerKind.Up,end);
+        Send(editor,OverlayPointerKind.Down,corner,OverlayModifiers.Alt);Send(editor,OverlayPointerKind.Move,end,OverlayModifiers.Alt);Send(editor,OverlayPointerKind.Up,end,OverlayModifiers.Alt);
         check((text?"text":"shape")+" corner resize changes logical dimensions around a fixed center and anchor",Near(element.Width,180)&&Near(element.Height,120)&&element.BillboardAnchor==anchor&&element.BillboardHeight==90&&Center(element,mapping).DistanceTo(center)<1e-6&&element.Style.StrokeWidth==5);
         check((text?"text":"shape")+" resize preserves own angle and commits once",Near(Math.Atan2(element.Transform.M21,element.Transform.M11)*180/Math.PI,30)&&session.UndoCount==1&&!session.IsTransactionActive);
     }

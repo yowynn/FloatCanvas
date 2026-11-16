@@ -115,7 +115,6 @@ internal sealed partial class DesktopSession
 
     private void OpenCurrentToolOptions()
     {
-        if (_editor.Tool is EditorTool.Select or EditorTool.Stamp) return;
         if (_editor.Tool == EditorTool.Canvas ? IsCanvasSettingsOpen : IsToolOptionsOpen) return;
         OpenToolOptions();
     }

@@ -131,6 +131,10 @@ public sealed partial class OverlayHost
                     if (packet.IsLocalBalance || (HasEditingInput && isolation.IsLeaseActive))
                         _dispatchPrivateKey?.Invoke(packet, CompleteOnce);
                     break;
+                case KeyboardInputPacketKind.Command:
+                    if (IsEditing && _commandHotkeyIds.TryGetValue((int)packet.VirtualKey, out var command) &&
+                        _commandHotkeys.TryGetValue(command,out var binding) && binding.VirtualKey==packet.ScanCode && binding.Modifiers==(uint)packet.Modifiers) CommandHotkeyRequested?.Invoke(command);
+                    break;
                 case KeyboardInputPacketKind.Toggle:
                     if (IsEditing) ToggleRequested?.Invoke();
                     break;

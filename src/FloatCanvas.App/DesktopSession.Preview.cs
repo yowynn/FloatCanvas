@@ -117,7 +117,7 @@ internal sealed partial class DesktopSession
         if (retry) RequestRender();
     }
 
-    private bool CanvasControlsVisible() => HasCanvasViewingBadge || _hasEditableCanvasOccurrence && !Active.IsReadOnly && _editor.Tool != EditorTool.PointerPresentation && (_host.IsReceivingDrop || _host.IsEditing &&
+    private bool CanvasControlsVisible() => HasCanvasViewingBadge || _hasEditableCanvasOccurrence && !Active.IsReadOnly && _editor.InteractionTool != EditorTool.PointerPresentation && (_host.IsReceivingDrop || _host.IsEditing &&
         (_inlineText is not null || _canvasCalibration.IsActive || _editor.Tool == EditorTool.Canvas ||
          _unsafeHoverVisible || _eyedropper is not null || _editor.CapturePreview is not null || HasPresentationLayerGuides ||
          _editor.EffectPreviewPolygon is { Count: > 0 } || _editor.Marquee is not null ||

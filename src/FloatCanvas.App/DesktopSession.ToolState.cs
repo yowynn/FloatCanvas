@@ -72,6 +72,7 @@ internal sealed partial class DesktopSession
         if (applyAlias && tool is EditorTool.Arrow or EditorTool.DoubleArrow)
             next = ApplyToolbarPreset(tool == EditorTool.Arrow ? "official.arrow" : "official.double-arrow", next);
         if (applyAlias && tool == EditorTool.RoundedRectangle) next = ApplyToolbarPreset("official.rounded-rectangle", next);
+        if (applyAlias && tool == EditorTool.Triangle) next = ApplyToolbarPreset("official.triangle", next);
         if (family == EditorTool.PointerPresentation) next.PointerPresentation = _settings.PresentationGlobal.Pointer.Clone();
         _editor.ApplyParameters(next);
         _toolStateStore?.MarkChanged();

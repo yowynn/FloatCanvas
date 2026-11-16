@@ -1,4 +1,4 @@
-﻿using FloatCanvas.Core;
+using FloatCanvas.Core;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using System.IO;
@@ -214,7 +214,7 @@ internal sealed partial class DesktopSession
         }
         bool keyboard = false, all = false, scoped = false;
         double hold = 100;
-        if (_host.IsVisible && display.LayerOpacity > 0)
+        if (_host.IsVisible && display.LayerOpacity > 0 && !_keyboardPresentationPaused && _allOverlaysHidden is null)
             foreach (var leaf in _presentationLeaves)
             {
                 var settings = leaf.RenderElement.Presentation!;
@@ -227,14 +227,15 @@ internal sealed partial class DesktopSession
             }
         var global = _settings.PresentationGlobal;
         var pointer = global.Pointer;
-        bool clicks = pointer.AnyEnabled && pointer.ClicksEnabled;
-        bool trail = pointer.AnyEnabled && pointer.TrailEnabled;
+        bool pointerAllowed = pointer.AnyEnabled && !_pointerPresentationPaused && _allOverlaysHidden is null;
+        bool clicks = pointerAllowed && pointer.ClicksEnabled;
+        bool trail = pointerAllowed && pointer.TrailEnabled;
         double ripple = new[] { pointer.LeftClick, pointer.RightClick, pointer.MiddleClick }
             .Where(style => style.Enabled).Select(style => style.DurationMilliseconds).DefaultIfEmpty(100).Max();
-        bool allowed = (_host.IsVisible || pointer.AnyEnabled) && !DocumentOperationBusy && _cleanCaptureDepth == 0 &&
+        bool allowed = (_host.IsVisible || pointerAllowed) && !DocumentOperationBusy && _cleanCaptureDepth == 0 &&
             (_presentationDesktopAvailable?.Invoke() ?? PresentationDesktopAvailability.IsCurrentInputDesktop());
         string paused = !_host.IsVisible ? "Presentation.Status.PausedHidden" : "Presentation.Status.Unavailable";
-        _presentationRuntime.Configure(new(keyboard, pointer.AnyEnabled, clicks, trail, all, hold, ripple, pointer.TrailMilliseconds) { ScopedKeyboard = scoped },
+        _presentationRuntime.Configure(new(keyboard, pointerAllowed, clicks, trail, all, hold, ripple, pointer.TrailMilliseconds) { ScopedKeyboard = scoped },
             allowed, _presentationInputContext ??= new(), paused);
         if (rebuilt) _presentationRuntime.RetryIfFaulted();
         UpdatePresentationInputRoute();

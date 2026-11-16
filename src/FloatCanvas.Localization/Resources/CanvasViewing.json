@@ -16,5 +16,5 @@
   "Canvas.ConvertProjectResolution": { "zh": "转换工程到当前屏幕", "en": "Convert project to screen" },
   "Canvas.ConvertedWorkingCopy": { "zh": "已创建分辨率转换副本。首次保存将另存为，原工程未修改。", "en": "Resolution-converted working copy created. The first save uses Save As; the original project is unchanged." },
   "Canvas.ViewScale": { "zh": "查看比例：{0:0.##}%", "en": "View: {0:0.##}%" },
-  "Canvas.NavigationHint": { "zh": "按住空格，左键拖动浏览、滚轮缩放。画布工具直接编辑网格和透视校准。浏览操作不修改作品。", "en": "Hold Space and drag to pan, or scroll to zoom. The Canvas tool edits the grid and perspective calibration directly. Navigation does not change the artwork." }
+  "Canvas.NavigationHint": { "zh": "中键拖动平移，Ctrl+滚轮缩放；Space+左键也可平移。画布工具直接编辑网格和透视校准。浏览操作不修改作品。", "en": "Middle-drag to pan or Ctrl+wheel to zoom; Space+left-drag also pans. The Canvas tool edits the grid and perspective calibration directly. Navigation does not change the artwork." }
 }

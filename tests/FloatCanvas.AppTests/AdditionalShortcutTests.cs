@@ -15,7 +15,7 @@ internal static class AdditionalShortcutTests
     {
         foreach (int key in new[] { 0x49, 0x50 })
             check("new single letter command is accepted: " + (char)key, EditorShortcutPolicy.IsCommand(key, OverlayModifiers.None));
-        foreach (int key in new[] { 0x21, 0x22, 0x4C, 0xBC, 0x54 })
+        foreach (int key in new[] { 0x21, 0x22, 0x4C, 0xBC })
         {
             check("new Ctrl command is accepted: " + key, EditorShortcutPolicy.IsCommand(key, OverlayModifiers.Control));
             check("new Ctrl command preserves text input: " + key, !EditorShortcutPolicy.ShouldRoute(key, System.Windows.Input.ModifierKeys.Control, new TextBox()));
@@ -54,10 +54,10 @@ internal static class AdditionalShortcutTests
                 if (item.Item2.Length == 1) check(item.Item1 + " has a visible single letter legend", Descendants(button).OfType<TextBlock>().Any(label => label.Text == item.Item2));
             }
             var slider = Field<Slider>(desktop, "_opacitySlider");
-            check("opacity tooltip discloses both commands", slider.ToolTip?.ToString()?.Contains("Ctrl+PageUp / Ctrl+PageDown", StringComparison.Ordinal) == true);
+            check("opacity tooltip discloses both commands", slider.ToolTip?.ToString()?.Contains("Ctrl+Page Up / Ctrl+Page Down", StringComparison.Ordinal) == true);
             var menu = Field<ContextMenu>(desktop, "_toolbarMenu");
             var entries = MenuItems(menu.Items).ToArray();
-            foreach (var item in new[] { ("Toolbar.Image", "I"), ("ToolbarV2.Properties", "Enter"), ("ToolbarV2.Layers", "Ctrl+L"), ("Menu.Settings", "Ctrl+,"), ("ToolOptions.Title", "Ctrl+T") })
+            foreach (var item in new[] { ("Toolbar.Image", "I"), ("ToolbarV2.Properties", "Enter"), ("ToolbarV2.Layers", "Ctrl+L"), ("Menu.Settings", "Ctrl+,"), ("ToolOptions.Title", "F4") })
                 check(item.Item1 + " menu discloses its command", entries.Any(entry => Equals(entry.Header, L.Get(item.Item1)) && entry.InputGestureText == item.Item2));
             check("capture menu discloses P", entries.Single(entry => Equals(entry.Tag, EditorTool.CaptureRegion)).InputGestureText == "P");
             foreach (string field in new[] { "_layers", "_settingsWindow", "_toolOptionsWindow" })
@@ -66,7 +66,7 @@ internal static class AdditionalShortcutTests
                 var panel = field == "_layers" ? new LayersWindow(() => state) : new Window();
                 panel.ShowActivated = false; panel.ShowInTaskbar = false; panel.Left = panel.Top = -20000; panel.Width = panel.Height = 80;
                 Set(desktop, field, panel); panel.Show();
-                SetControl(true); int key = field == "_layers" ? 0x4C : field == "_settingsWindow" ? 0xBC : 0x54;
+                SetControl(field != "_toolOptionsWindow"); int key = field == "_layers" ? 0x4C : field == "_settingsWindow" ? 0xBC : 0x73;
                 Invoke(desktop, "OnKey", key); Invoke(desktop, "OnKey", key);
                 check(field + " command keeps an already open window open", panel.IsVisible);
                 panel.Close();

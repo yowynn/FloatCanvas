@@ -58,7 +58,7 @@ internal sealed class StampShelfControl : Controls.UserControl
         for (int index = 0; index < 10; index++)
         {
             int slotIndex = index;
-            string digit = ((index + 1) % 10).ToString();
+            string digit = EditorCommandCatalog.Hint("Stamp.Slot"+index);
             var entry = library.Items.FirstOrDefault(item => item.Id == library.Pins[index]);
             var content = new Controls.Grid { Width = 26, Height = 26 };
             bool selected = active == entry?.Id && entry is not null;
@@ -69,7 +69,7 @@ internal sealed class StampShelfControl : Controls.UserControl
                 UseLayoutRounding = false, SnapsToDevicePixels = false,
                 HorizontalAlignment = Wpf.HorizontalAlignment.Center, VerticalAlignment = Wpf.VerticalAlignment.Center };
             content.Children.Add(image);
-            var number = ToolbarShortcutHint.Create(digit, lowerRow:true);
+            var number = ToolbarShortcutHint.Create(digit.Length==1?digit:"", lowerRow:true);
             number.Visibility=showShortcutHints?Wpf.Visibility.Visible:Wpf.Visibility.Collapsed;content.Children.Add(number);
             var button = new Controls.Button { Content = content, Width = 30, Height = 26, MinWidth = 30, MinHeight = 26,
                 Padding = new Wpf.Thickness(0), Margin = new Wpf.Thickness(0), Template = SlotTemplate,

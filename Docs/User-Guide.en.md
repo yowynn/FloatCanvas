@@ -84,40 +84,39 @@ With enhanced input, if keys are still reported as pressed after two seconds, th
 
 Text is edited directly on the canvas. Changing windows, layers or tools, or entering pass-through, commits it to the canvas. `Esc` cancels the current text edit.
 
+Every tool-switch command supports borrowing through its primary and alternate bindings. A tap without pointer interaction switches permanently; holding longer than 250 ms or using the pointer borrows the tool. The latest pressed tool key takes priority. Actions such as image import and opening windows remain ordinary commands.
+
 | Shortcut | Action |
 | --- | --- |
-| `` Ctrl+` `` | Switch between edit and pass-through |
-| `` Ctrl+Shift+` `` | Hide canvas / Show canvas; keep the current edit/pass-through mode |
-| `Tab` | Expand/collapse the toolbar while editing; this command is not triggered from input fields, menus or dialogs |
-| `Esc` | Cancel the operation or close the color child panel, then an unpinned panel; finally enter pass-through |
-| `Ctrl+Z` / `Ctrl+Y` | Undo/redo; `Ctrl+Shift+Z` also redoes |
-| `Ctrl+A` | Select all editable elements |
-| `Ctrl+C` / `Ctrl+V` | Copy/paste |
-| `Ctrl+D` | Duplicate selected elements with a small offset |
-| `I` / `P` | Import images / select the capture tool |
-| `Ctrl+PageUp` / `Ctrl+PageDown` | Increase / decrease canvas opacity by 5%; hold to repeat |
-| `Ctrl+L` / `Ctrl+,` / `Ctrl+T` | Open Layers / Settings / current tool options; keep an open window open |
+| `` Ctrl+` `` / `` Ctrl+Shift+` `` | Toggle edit/pass-through; toggle canvas visibility |
+| Tool keys (such as `V`, `B`, `H`, `E`) | Tap to switch; hold to borrow, then release to restore the original tool and parameters. Finish an active stroke, text edit or capture first |
+| `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo/redo |
+| `Ctrl+A` / `Ctrl+Shift+A` | Select all/deselect |
+| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy/cut/paste; cut deletes only after copying succeeds |
+| `Ctrl+D` / `Delete` | Duplicate/delete selection |
 | `Ctrl+G` / `Ctrl+Shift+G` | Group/ungroup |
-| `1`–`9`, `0` | Select the corresponding stamp from the ten-slot shelf, then click the canvas to place it |
-| `M` / `-` / `+` | More tools / open stamp library / save selection as a stamp; use main-keyboard `-` and `+` |
-| `Delete` | Delete selected, unlocked elements |
-| Arrow keys / `Shift` + arrow keys | Move selected elements by 1/10 document pixels |
-| `Ctrl+S` / `Ctrl+Shift+S` | Save/save the current project as another file |
-| `Ctrl+O` | Open a project |
-| `Enter` | Open Properties for one or more selected layers; retain text completion while editing text |
-| Hold the middle mouse button | Temporarily use Move; release to restore the previous tool |
-| `Ctrl+N` | Start a new canvas after archiving current content and checking bound-project saves |
-| `Ctrl+Backspace` / `Ctrl+Delete` | Clear the current canvas in one undo step; text fields retain their text-deletion keys |
+| `Ctrl+[` / `Ctrl+]` | Lower/raise one level; add Shift for bottom/top |
+| `Ctrl+S` / `Ctrl+Shift+S` / `Ctrl+O` / `Ctrl+N` | Save/save as/open/new canvas |
+| `Ctrl+0` / `Ctrl+1` / `Ctrl+2` / `Ctrl+Shift+0` | Fit content/100%/fit selection/reset view |
+| `F4` / `Ctrl+L` / `Ctrl+,` | Tool options/Layers/Settings |
+| `F8` / `Ctrl+Shift+K` | Stamp library/save selection as a stamp |
+| `Ctrl+Shift+P` | Search commands, including commands without a binding |
+| `Enter` / `F2` | Properties/rename for canvas selection |
+| `Tab` | Fold/unfold the toolbar during ordinary editing; does not traverse control focus |
+| Arrows / `Shift`+arrows | Move selection by 1/10 document pixels |
+| `Ctrl+PageUp` / `Ctrl+PageDown` | Increase/decrease canvas opacity by 5% |
+| `1`–`9`, `0` | Select a stamp slot; empty slots do nothing |
+| `Esc` | Cancel local editing, gestures, selection, editing scope, then leave editing |
 
-Holding `Ctrl` hides selection handles temporarily; releasing it restores them immediately without moving the mouse. Copy keeps the original selection; paste and duplicate select the new layers.
+Middle-drag pans the view; Ctrl+wheel zooms around the cursor; Ctrl+middle-drag zooms continuously. Space+left-drag also pans. The ordinary wheel and Shift+wheel leave the canvas view unchanged. Navigation does not change artwork or content undo history.
 
-During editing, clicking a button, mode switch, segmented choice, pin or closed dropdown leaves `Space` assigned to temporary view navigation and `Tab` to toolbar expansion. Other drawing shortcuts remain available. Numeric sliders retain their adjustment keys; layers and preset lists retain arrows and their existing Enter/F2/Delete commands. Active text, numeric text, search, rename and input-method composition retain text-editing keys. Read-only text supports selection and copying without blocking Space or Tab.
+In selection, Ctrl+click selects a member inside a group, Shift+click toggles selection and Alt+drag duplicates. Alt+click does not duplicate. Shift constrains movement and temporarily reverses aspect locking during box creation or resize. Resize fixes the opposite corner; Alt fixes the center. Alt creates boxes around the initial point. Right-click cancels an active gesture or opens a context menu while idle. Undefined combinations do not discard extra modifiers to trigger another action.
 
-Open menus, dropdown lists and modal dialogs own their keys and do not operate the canvas behind them. Release held keys before starting a new canvas command after closing them. Shift+Space permits navigation; Ctrl/Alt/Win+Space does not. Color-panel properties follow the same text/numeric rules. Existing `Ctrl+S`/`Ctrl+O`/`Ctrl+N` project commands remain available, committing inline text or a layer rename first; the stamp library retains Ctrl+N to save a stamp and Ctrl+F to search. Esc cancels one local operation at a time; closing Layers preserves the editing scope.
+On ordinary editor controls, Space temporarily pans, Tab folds/unfolds the toolbar, and Enter runs the editing command. Shift+Tab and F6 do not traverse hidden focus. Text, search, rename and IME own text-editing keys. Numeric sliders use property-specific steps: Shift fine, Ctrl coarse, Ctrl+Shift fine, with a minimum of 1 for counts. PageUp/PageDown use coarse adjustment; Home/End select the rail endpoints. Legal values outside the rail remain valid. Holding a numeric key until release is one operation; Esc rolls back. Layer/stamp lists retain local navigation, rename and deletion; the stamp library retains Ctrl+N to save a stamp and Ctrl+F to search. Menus, dropdowns and modal windows never pass commands to the canvas behind them.
 
-Tools, window commands, New, Save and grouping run once per press. Arrows, deletion and undo/redo support holding the key. Alt/Win system combinations are never treated as ordinary drawing shortcuts.
+The shortcut editor in Settings searches names or actual chords and supports primary/alternate recording, clearing, resetting and JSON import/export. There is one default scheme; saved overrides apply immediately and tooltips reflect actual bindings. Chords match exactly. Tool switches, deletion, copying and window opening do not repeat; movement and undo/redo do. Clear canvas has no default binding and remains available in menus and command search.
 
-Open **Main menu → Settings…** to change shortcuts or the light/dark theme. A registration conflict detected when saving displays a reason and preserves the previous working shortcut. Windows or another application may intercept a combination before the recorder receives it; choose another combination if the field does not change. The system tray also offers editing, visibility, settings and exit commands.
+The two global defaults remain. Optional, initially unbound commands enter editing, leave editing, pause keyboard capture, pause pointer effects, temporarily hide all overlays and enter region capture. Global recording supports clearing and conflict checks, restores the previous working set on registration failure and pauses ordinary global commands while recording. Ctrl+Alt+Esc is the fixed emergency release; Windows navigation and Win combinations remain reserved.
 
 **Start FloatCanvas when signing in to Windows** is off by default. Enable it and save to start in the tray for the current user without entering edit mode. Clear it and save to turn startup off.
 
@@ -216,7 +215,7 @@ The upper-right controls are grouped in this order: the Canvas tool; import, cap
 - **Drag the app icon:** move the toolbar and remember its position.
 - **Click a tool icon:** select the tool. Hover for its name and shortcut; the main menu's **Drawing tools** and **Images and effects** sections also offer tool commands.
 - **Select the current tool again:** click the same icon or press its shortcut again to open/close its options. Switching tools while options are open updates the panel for the new tool.
-- **Press `Ctrl+T`:** open the current tool's shared options window. An open window stays open; Select and Stamp have no options window. Canvas uses the same window, position, size and pin state. Parameters and presets scroll separately; errors stay below both columns. A target label follows the fixed tool name when needed.
+- **Press `F4`:** open the current tool's shared options window. An open window stays open; Select and Stamp follow the same rule. Canvas uses the same window, position, size and pin state. Parameters and presets scroll separately; errors stay below both columns. A target label follows the fixed tool name when needed.
 
 Dragging constrains the toolbar to the current drawing displays in real time. The expanded bar keeps both its icon and the full toolbar inside the actual display area; the collapsed bar keeps the whole icon inside. Primary-display or individual-display scope restricts it to that display. All screens allows it to cross continuous seams between adjacent displays, while excluding gaps between them. Expanding near an edge adjusts the position so the toolbar's right or bottom edge stays on screen. If the selected display area is smaller than the complete toolbar, the toolbar retains its size and keeps the icon accessible.
 
@@ -224,9 +223,9 @@ The options window uses the current tool name as its title, with a short descrip
 
 Lines share independent start/end arrowheads for plain, single-arrow and double-arrow combinations, with solid, dashed or dotted strokes. Set a rectangle's corner radius for rounded corners; lock the configured ratio, or choose a 1:1 square or circle preset. Symbols include triangles, stars, hearts, checks and crosses with editable colors. The emoji tool provides a gallery: click to insert at its configured Size, or drag to choose the size for that insertion. Size supports precise numeric entry and a larger slider range. Line-pattern and arrowhead choices include diagrams, and stroke width has a thickness preview. Closed shapes keep the full stroke width inside their outer contour. Fill and stroke occupy separate regions, so translucent colors do not stack there. Dashes cut gaps from the complete solid stroke; dotted strokes retain complete circles.
 
-Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` rectangle, `O` circle, `T` text, `N` numbered marker, `S` symbol, `J` emoji and `C` Canvas. `A` has no tool binding; `Ctrl+A` only selects all and keeps the current tool. `M` expands or collapses the extra tool row above the toolbar. Switching tools, opening options or clicking the canvas keeps it open; only More / `M` collapses it; the extra row has no separate close button. The default More icons depict a closed and open tool tray, with a fine connector in the expanded state. When collapsed, More retains the active extra tool icon. Extra tools have no individual shortcuts. Main-keyboard `-` opens the stamp library, and `+` (the `=/+` key) saves the selection as a stamp. While editing text, these letters are treated as text input.
+Tool keys: `V` select, `E` eraser, `B` freehand, `H` highlighter, `L` line, `R` rectangle, `O` circle, `T` text, `N` numbered marker, `S` symbol, `J` emoji and `C` Canvas. `A` has no tool binding; `Ctrl+A` only selects all and keeps the current tool. `M` expands or collapses the extra tool row above the toolbar. Switching tools, opening options or clicking the canvas keeps it open; only More / `M` collapses it; the extra row has no separate close button. The default More icons depict a closed and open tool tray, with a fine connector in the expanded state. When collapsed, More retains the active extra tool icon. Extra tools have no individual shortcuts. `F8` opens the stamp library and `Ctrl+Shift+K` saves the selection as a stamp. While editing text, these letters are treated as text input.
 
-Shortcut hints share the upper-right frame corner in the upper row and the lower-left frame corner in the lower row. Canvas `C`, image import `I` and capture `P` use the same layout as the other tools. Adjacent icons share a consistent size and line weight. Turn off **Show tool shortcut hints** in Settings to hide letters, stamp-slot numbers and the `-`/`+` hints together. Shortcuts still work, and the preference is saved across restarts.
+Shortcut hints share the upper-right frame corner in the upper row and the lower-left frame corner in the lower row. Canvas `C`, image import `I` and capture `P` use the same layout as the other tools. Adjacent icons share a consistent size and line weight. Turn off **Show tool shortcut hints** in Settings to hide letters, stamp-slot numbers and other key hints together. Shortcuts still work, and the preference is saved across restarts.
 
 Draw lines and arrows by dragging; they have no single-click default length or angle. Rectangles, ellipses and symbols have default width and height: click empty space to create one at that size, centered on the click, or drag to choose its size. Rectangles, ellipses, symbols, numbered markers and emoji use a **six-DIP** drag tolerance, converted using the starting monitor's display scale. Slight movement within that distance counts as a click; reaching it starts drag sizing. The aspect chain preserves the configured ratio; hold `Shift` to temporarily invert the constraint. Image crops and rectangular filter regions use a 1:1 constraint. Rectangle/Circle captures use a free aspect ratio by default and constrain it to 1:1 only while `Shift` is held; capture options have no persistent aspect switch. Enter numeric options directly or drag the corresponding slider. Keys used inside text fields, dropdowns, the color spectrum and sliders operate those controls without switching tools or selecting stamps.
 
@@ -369,7 +368,7 @@ If a display change leaves annotations wholly off screen, use **Main menu → Ca
 
 Projects retain pixel dimensions; there is no mandatory 1920×1080 canvas. New screen projects record their authored frame and reference screen size. Windows display scaling, editor zoom and authored pixel dimensions are separate.
 
-Hold Space and left-drag to pan, or scroll to zoom around the pointer, from 1% to 6400%. The separate Navigate view button after placement mode turns orange when the view differs from its default. Click to open its presets, reset and apply commands; while open, the button becomes Reset, and a second click resets and closes the menu. Middle drag retains temporary selection and object movement. A lower-left badge shows the viewing scale only while the view differs from its default; resetting the view hides it. View navigation changes no layers, projection, grid, content undo or save status. Pass-through always presents the complete authored root project; returning to editing restores the independent scope and view. Ordinary exports use the authored state.
+Middle-drag to pan, or Ctrl+wheel to zoom around the pointer, from 1% to 6400%. The separate Navigate view button after placement mode turns orange when the view differs from its default. Click to open its presets, reset and apply commands; while open, the button becomes Reset, and a second click resets and closes the menu. Hold V to temporarily select and edit objects. A lower-left badge shows the viewing scale only while the view differs from its default; resetting the view hides it. View navigation changes no layers, projection, grid, content undo or save status. Pass-through always presents the complete authored root project; returning to editing restores the independent scope and view. Ordinary exports use the authored state.
 
 The Canvas panel provides five viewing commands:
 
@@ -399,9 +398,9 @@ Canvas uses the ordinary `Esc` sequence: cancel an unfinished drag or four-point
 
 Click **Canvas** on the toolbar or press `C` to select it. It is exclusive with the drawing tools; a blue border marks the current tool. Its rectangle/trapezoid icon indicates perspective off/on. Select Canvas again to open or close its options. Initial placement, reopening and the top-right pin follow the other tool-options panels. Closing the panel leaves the Canvas tool selected. While entering text, `C` types a letter; `Ctrl+C` still copies.
 
-Selecting Canvas directly enters calibration editing. In flat mode, left-drag moves the grid origin and scrolling changes cell spacing without moving layers. Each drag is one undo step; `Esc` cancels it. Perspective calibration shows its frame and handles immediately. Hold Space for temporary navigation without changing calibration or preview mode. Panning and zooming in Project preview use the root project camera, retaining the view when entering or leaving ordinary groups. View commands live in the separate Navigate view menu.
+Selecting Canvas directly enters calibration editing. In flat mode, left-drag moves the grid origin and tool options change cell spacing without moving layers. Each drag is one undo step; `Esc` cancels it. Perspective calibration shows its frame and handles immediately. Hold Space for temporary navigation without changing calibration or preview mode. Panning and zooming in Project preview use the root project camera, retaining the view when entering or leaving ordinary groups. View commands live in the separate Navigate view menu.
 
-The panel provides independent canvas background color and opacity. The default is transparent. Canvas color and the configured grid form the lowest layer on the canvas plane and share the toolbar's global opacity with annotations. With depth-priority occlusion enabled, they participate in spatial occlusion with billboards. In flat mode, document (0,0) remains the upper-left logical zero. The grid is independently centered on the primary display: by default its center is a grid intersection. Explicitly set or applied grid origins are saved and are not reset by runtime display changes. Hold Shift and drag to move the grid; Shift+wheel changes its spacing without moving layers. Flat mode provides **Grid size** and **Grid origin X/Y**. Grid size is the side length of a square, in the same pixel units as rectangle width and height. Enter an exact decimal or use the slider. Manual values range from 1 to 1,000,000; smaller legal sizes in existing projects remain intact when opening the panel. New canvases restore the first official canvas preset by default. Turn on **Keep canvas settings when creating a canvas** under Settings → Canvas and history to retain the current background, grid, perspective and pin selection. Clearing annotations always retains the current canvas settings.
+The panel provides independent canvas background color and opacity. The default is transparent. Canvas color and the configured grid form the lowest layer on the canvas plane and share the toolbar's global opacity with annotations. With depth-priority occlusion enabled, they participate in spatial occlusion with billboards. In flat mode, document (0,0) remains the upper-left logical zero. The grid is independently centered on the primary display: by default its center is a grid intersection. Explicitly set or applied grid origins are saved and are not reset by runtime display changes. Hold Shift and drag to move the grid; change its spacing in Canvas options without moving layers. Flat mode provides **Grid size** and **Grid origin X/Y**. Grid size is the side length of a square, in the same pixel units as rectangle width and height. Enter an exact decimal or use the slider. Manual values range from 1 to 1,000,000; smaller legal sizes in existing projects remain intact when opening the panel. New canvases restore the first official canvas preset by default. Turn on **Keep canvas settings when creating a canvas** under Settings → Canvas and history to retain the current background, grid, perspective and pin selection. Clearing annotations always retains the current canvas settings.
 
 Canvas settings have two peer sections, in order: Background & grid appearance, then Perspective & grid calibration. Perspective setup, logical size and pin precede local calibration, spacing and origin, followed by rectification preview and reset. There are no extra internal section gaps. The icon between origin X and Y aligns the grid origin to the pin. Show grid reveals or hides its color, line width and pattern with the common change cue. Hiding these controls preserves their values; spacing and origin remain available in the second section. The caption contains a two-slot occlusion switch and a two-slot reference-opacity ribbon, followed by Pin, Help and Close. Canvas shares the tool configuration pin and window position with brush and shape tools. Switching tools replaces the configuration surface; closing it clears the shared pin.
 
@@ -522,7 +521,7 @@ Choose **Keyboard demonstration** or **Mouse demonstration** from **More tools**
 
 Pointer marks cover all displays served by FloatCanvas and stay at the cursor's physical screen position. They are independent of keyboard regions, canvas size, pan, perspective, groups and instances, and create no layer. Enabled pointer effects can continue while the canvas is hidden. Current pointer effects are personal preferences outside project files; changing their parameters neither modifies the layer being edited nor adds undo steps. Clicks and short trails never automatically become canvas ink.
 
-With Mouse demonstration selected, canvas clicks, drags and wheel input only preview the effects: layer selection frames stay hidden and uneditable, and temporary middle-button selection pauses until you switch to another tool.
+With Mouse demonstration selected, canvas clicks, drags and wheel input only preview the effects: layer selection frames stay hidden and uneditable, and holding V temporarily borrows selection.
 
 **Key display regions** record keyboard input immediately after creation and continue during editing. Key layers have no individual enable switch: a visible layer records input. Hide or delete a layer to stop its key display. **Input scope** belongs to each layer: choose **All apps**, **Other apps only** or **FloatCanvas only**. Tool options set the default for new layers; Properties changes existing layers, with undo and save/reopen support, without changing other keyboard layers. Keyboard observation stops when no key layer is visible or the whole canvas is hidden; pointer effects keep their separate master switch.
 
@@ -548,7 +547,7 @@ Stamps reuse artwork you create. Select one or more elements and choose **New st
 
 | Save mode | Placed content |
 | --- | --- |
-| Editable group | Copy shapes, text, cropped images, animation, nested groups, styles and transforms; adjust the group together, enter it or `Alt`-click a member to edit it |
+| Editable group | Copy shapes, text, cropped images, animation, nested groups, styles and transforms; adjust the group together, enter it or `Ctrl`-click a member to edit it |
 | Merge as image | Merge the current frame into one static image while retaining editable source objects in the library; choose **Use editable source** to place those original elements again |
 
 Editable groups retain the original GIF/animated WebP data. Animation still plays when the library is reopened and the stamp is placed again. Small toolbar and library thumbnails remain static; ordinary animated stamps play in the larger hover preview. Groups containing live desktop blur or pixelation use their saved static thumbnail for previews, even when they also contain animation; placed objects keep their normal behavior. Choosing a stamp from the library keeps the library button highlighted and shows the selected stamp on it. Clicking that button still opens the library.

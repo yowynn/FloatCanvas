@@ -60,12 +60,20 @@ internal static class SessionKeyboardRouterTests
                     string label = theme + " " + control.GetType().Name;
                     control.Focus(); Pump();
                     int before = commands.Count;
-                    Transition(Key.Space, true); check(label + " Space starts pan", pan);
+                    Transition(Key.Space, true); check(label + " Space starts temporary canvas pan", pan);
                     Transition(Key.Space, true, repeat: true); Transition(Key.Space, false);
-                    check(label + " Space release ends pan without clicking", !pan && clicks == 0 && commands.Count == before);
-                    Press(Key.Tab); check(label + " Tab dispatches once", commands.Count == before + 1 && commands[^1] == 9);
+                    check(label + " Space release does not issue a canvas command", !pan && commands.Count == before);
+                    Press(Key.Tab); check(label + " Tab toggles toolbar without moving focus", commands.Count == before + 1 && control.IsKeyboardFocused);
+                    control.Focus();
                     Press(Key.B); check(label + " B dispatches tool shortcut", commands.Count == before + 2 && commands[^1] == 0x42);
                 }
+                check(theme + " Space never activates stale ordinary button focus", clicks == 0);
+                ordinary.Focus();
+                using (new ThreadModifierScope(ModifierKeys.Shift)) Press(Key.Tab);
+                check(theme + " Shift Tab does not move invisible focus", ordinary.IsKeyboardFocused);
+                int beforeFocusKeys = commands.Count; Press(Key.F6);
+                using (new ThreadModifierScope(ModifierKeys.Shift)) Press(Key.F6);
+                check(theme + " F6 has no hidden focus traversal", ordinary.IsKeyboardFocused && commands.Count == beforeFocusKeys);
                 segment.Items[0].Focus(); Press(Key.Right);
                 check(theme + " segmented arrows do not change the selected mode", segment.SelectedIndex == 0 && commands[^1] == 0x27);
                 int beforeSettings = commands.Count;
@@ -84,8 +92,8 @@ internal static class SessionKeyboardRouterTests
                 check(theme + " returning to editing restores command ownership without switching segments", segment.SelectedIndex == 0 && commands.Count == beforeSettings + 1 && commands[^1] == 0x25);
                 var originalPin = pins.SelectedValue; pin.Focus(); Press(Key.Right);
                 check(theme + " pin arrows do not move the pin", pins.SelectedValue == originalPin && commands[^1] == 0x27);
-                combo.Focus(); Press(Key.Down); Press(Key.Enter);
-                check(theme + " collapsed combo ignores residual navigation", !combo.IsDropDownOpen && combo.SelectedIndex == 0 && commands[^1] == 0x0D);
+                combo.Focus(); Press(Key.Down); int comboBefore = commands.Count; Press(Key.Enter);
+                check(theme + " collapsed combo forwards Enter without opening dropdown", !combo.IsDropDownOpen && combo.SelectedIndex == 0 && commands.Count == comboBefore + 1);
                 numeric.Slider.Focus(); int n = commands.Count;
                 Press(Key.Right); check(theme + " numeric Right remains local and exact", numeric.Value == 51 && commands.Count == n);
                 Press(Key.Left); check(theme + " numeric Left remains local and exact", numeric.Value == 50 && commands.Count == n);
@@ -99,7 +107,7 @@ internal static class SessionKeyboardRouterTests
                 Press(Key.Tab); check(theme + " text Tab does not invoke toolbar command", commands.Count == n);
                 text.Focus(); text.Visibility = Visibility.Collapsed; Pump();
                 check(theme + " collapsed editor releases keyboard focus", !text.IsKeyboardFocused);
-                Press(Key.Tab); check(theme + " collapsed editor no longer blocks Tab", commands.Count == n + 1);
+                Press(Key.Tab); check(theme + " collapsed editor returns Tab to toolbar", commands.Count == n + 1);
                 text.Visibility = Visibility.Visible; Pump();
                 check(theme + " showing editor does not revive text focus", !text.IsKeyboardFocused);
                 text.Focus(); text.IsEnabled = false; Pump();
@@ -128,9 +136,9 @@ internal static class SessionKeyboardRouterTests
                 var picker = Field<ColorPickerPanel>(colors, "picker");
                 var alpha = Field<NumericValueField>(picker, "alphaField");
                 var hex = Field<TextBox>(picker, "hex");
-                alpha.Slider.Focus(); n = commands.Count; Press(Key.Tab); Press(Key.B);
+                alpha.Slider.Focus(); n = commands.Count; Press(Key.Tab); alpha.Slider.Focus(); Press(Key.B);
                 check(theme + " owned color popup forwards non-text editing shortcuts", commands.Count == n + 2 && commands[^1] == 0x42);
-                Transition(Key.Space, true); check(theme + " color numeric slider can start pan", pan); Transition(Key.Space, false);
+                Transition(Key.Space, true); check(theme + " color numeric slider permits temporary pan", pan); Transition(Key.Space, false);
                 hex.Focus(); n = commands.Count; Transition(Key.Space, true); Transition(Key.Space, false);
                 check(theme + " color hex text owns Space", !pan && commands.Count == n);
                 colors.TryClosePicker(); Pump();
@@ -153,9 +161,9 @@ internal static class SessionKeyboardRouterTests
                 Transition(Key.Space, true); check(theme + " open dropdown owns Space", !pan);
                 combo.IsDropDownOpen = false; ordinary.Focus(); Pump();
                 Transition(Key.Space, true, repeat: true);
-                check(theme + " closing dropdown cannot transfer a held Space", !pan && commands.Count == n && clicks == 0);
+                check(theme + " closing dropdown cannot transfer a held Space", !pan && commands.Count == n);
                 Transition(Key.Space, false);
-                Press(Key.Space); check(theme + " next Space has a balanced release", !pan && clicks == 0);
+                Press(Key.Space); check(theme + " next Space has a balanced release", !pan);
 
                 var menu = new OverlayContextMenu { PlacementTarget = ordinary };
                 menu.Items.Add(new MenuItem { Header = "Menu item" });
@@ -182,14 +190,14 @@ internal static class SessionKeyboardRouterTests
                 Transition(Key.Space, true, repeat: true);
                 check(theme + " modal close requires a fresh canvas press", !pan);
                 Transition(Key.Space, false);
-                Transition(Key.Space, true); check(theme + " new press after modal pans", pan);
+                Transition(Key.Space, true); check(theme + " new press after modal starts temporary pan", pan);
                 active = false; router.Cancel(); check(theme + " input ownership loss clears pan", !pan);
                 active = true; Transition(Key.Space, true, repeat: true); check(theme + " ownership return ignores held repeat", !pan);
                 Transition(Key.Space, false);
                 using (new ThreadModifierScope(ModifierKeys.Control))
                 { Transition(Key.Space, true); check(theme + " Ctrl Space never pans", !pan); Transition(Key.Space, false); }
                 using (new ThreadModifierScope(ModifierKeys.Shift))
-                { Transition(Key.Space, true); check(theme + " Shift Space still pans", pan); Transition(Key.Space, false); }
+                { Transition(Key.Space, true); check(theme + " Shift Space never starts an undeclared canvas gesture", !pan); Transition(Key.Space, false); }
             }
             finally { window.Close(); Pump(); routing = null; bridge = null; }
         }

@@ -1,0 +1,390 @@
+{
+  "Shortcuts.Command.Image.Import": {
+    "zh": "导入图像",
+    "en": "Import images"
+  },
+  "Shortcuts.Command.Tools.More": {
+    "zh": "更多工具",
+    "en": "More tools"
+  },
+  "Shortcuts.Command.Stamp.Library": {
+    "zh": "印章库",
+    "en": "Stamp library"
+  },
+  "Shortcuts.Command.Stamp.Create": {
+    "zh": "从选择新建印章",
+    "en": "Create stamp from selection"
+  },
+  "Shortcuts.Command.Edit.Undo": {
+    "zh": "撤销",
+    "en": "Undo"
+  },
+  "Shortcuts.Command.Edit.Redo": {
+    "zh": "重做",
+    "en": "Redo"
+  },
+  "Shortcuts.Command.Edit.SelectAll": {
+    "zh": "全选",
+    "en": "Select all"
+  },
+  "Shortcuts.Command.Edit.Deselect": {
+    "zh": "取消选择",
+    "en": "Deselect"
+  },
+  "Shortcuts.Command.Edit.Copy": {
+    "zh": "复制",
+    "en": "Copy"
+  },
+  "Shortcuts.Command.Edit.Cut": {
+    "zh": "剪切",
+    "en": "Cut"
+  },
+  "Shortcuts.Command.Edit.Paste": {
+    "zh": "粘贴",
+    "en": "Paste"
+  },
+  "Shortcuts.Command.Edit.Duplicate": {
+    "zh": "复制选中对象",
+    "en": "Duplicate selection"
+  },
+  "Shortcuts.Command.Edit.Group": {
+    "zh": "成组",
+    "en": "Group"
+  },
+  "Shortcuts.Command.Edit.Ungroup": {
+    "zh": "解组",
+    "en": "Ungroup"
+  },
+  "Shortcuts.Command.Edit.Delete": {
+    "zh": "删除",
+    "en": "Delete"
+  },
+  "Shortcuts.Command.Edit.Clear": {
+    "zh": "清空画布",
+    "en": "Clear canvas"
+  },
+  "Shortcuts.Command.File.Save": {
+    "zh": "保存",
+    "en": "Save"
+  },
+  "Shortcuts.Command.File.SaveAs": {
+    "zh": "另存为",
+    "en": "Save as"
+  },
+  "Shortcuts.Command.File.Open": {
+    "zh": "打开工程",
+    "en": "Open project"
+  },
+  "Shortcuts.Command.File.New": {
+    "zh": "新建画布",
+    "en": "New canvas"
+  },
+  "Shortcuts.Command.Layer.Down": {
+    "zh": "下移一层",
+    "en": "Send backward"
+  },
+  "Shortcuts.Command.Layer.Up": {
+    "zh": "上移一层",
+    "en": "Bring forward"
+  },
+  "Shortcuts.Command.Layer.Bottom": {
+    "zh": "置底",
+    "en": "Send to back"
+  },
+  "Shortcuts.Command.Layer.Top": {
+    "zh": "置顶",
+    "en": "Bring to front"
+  },
+  "Shortcuts.Command.View.Fit": {
+    "zh": "适配全部内容",
+    "en": "Fit content"
+  },
+  "Shortcuts.Command.View.Actual": {
+    "zh": "100%",
+    "en": "Actual size (100%)"
+  },
+  "Shortcuts.Command.View.Selection": {
+    "zh": "适配选择",
+    "en": "Fit selection"
+  },
+  "Shortcuts.Command.View.Reset": {
+    "zh": "重置视图",
+    "en": "Reset view"
+  },
+  "Shortcuts.Command.Canvas.OpacityUp": {
+    "zh": "增加画布透明度值",
+    "en": "Increase canvas opacity"
+  },
+  "Shortcuts.Command.Canvas.OpacityDown": {
+    "zh": "减少画布透明度值",
+    "en": "Decrease canvas opacity"
+  },
+  "Shortcuts.Command.Panel.Tools": {
+    "zh": "工具参数",
+    "en": "Tool settings"
+  },
+  "Shortcuts.Command.Panel.Layers": {
+    "zh": "图层",
+    "en": "Layers"
+  },
+  "Shortcuts.Command.Panel.Settings": {
+    "zh": "设置",
+    "en": "Settings"
+  },
+  "Shortcuts.Command.Commands.Search": {
+    "zh": "搜索命令",
+    "en": "Search commands"
+  },
+  "Shortcuts.Command.Selection.Properties": {
+    "zh": "图层属性",
+    "en": "Layer properties"
+  },
+  "Shortcuts.Command.Selection.Rename": {
+    "zh": "重命名",
+    "en": "Rename"
+  },
+  "Shortcuts.Command.UI.ToggleToolbar": {
+    "zh": "展开/收起工具条",
+    "en": "Expand/collapse toolbar"
+  },
+  "Shortcuts.Command.Interaction.Cancel": {
+    "zh": "取消",
+    "en": "Cancel"
+  },
+  "Shortcuts.Command.Interaction.Pan": {
+    "zh": "临时平移",
+    "en": "Temporary pan"
+  },
+  "Shortcuts.Command.Capture.Back": {
+    "zh": "删除截图顶点",
+    "en": "Remove capture vertex"
+  },
+  "Shortcuts.Command.Stamp.Slot0": {
+    "zh": "印章槽 1",
+    "en": "Stamp slot 1"
+  },
+  "Shortcuts.Command.Stamp.Slot1": {
+    "zh": "印章槽 2",
+    "en": "Stamp slot 2"
+  },
+  "Shortcuts.Command.Stamp.Slot2": {
+    "zh": "印章槽 3",
+    "en": "Stamp slot 3"
+  },
+  "Shortcuts.Command.Stamp.Slot3": {
+    "zh": "印章槽 4",
+    "en": "Stamp slot 4"
+  },
+  "Shortcuts.Command.Stamp.Slot4": {
+    "zh": "印章槽 5",
+    "en": "Stamp slot 5"
+  },
+  "Shortcuts.Command.Stamp.Slot5": {
+    "zh": "印章槽 6",
+    "en": "Stamp slot 6"
+  },
+  "Shortcuts.Command.Stamp.Slot6": {
+    "zh": "印章槽 7",
+    "en": "Stamp slot 7"
+  },
+  "Shortcuts.Command.Stamp.Slot7": {
+    "zh": "印章槽 8",
+    "en": "Stamp slot 8"
+  },
+  "Shortcuts.Command.Stamp.Slot8": {
+    "zh": "印章槽 9",
+    "en": "Stamp slot 9"
+  },
+  "Shortcuts.Command.Stamp.Slot9": {
+    "zh": "印章槽 10",
+    "en": "Stamp slot 10"
+  },
+  "Shortcuts.Command.Move.37": {
+    "zh": "向左移动",
+    "en": "Move left"
+  },
+  "Shortcuts.Command.Move.Fast37": {
+    "zh": "向左快速移动",
+    "en": "Move left (large step)"
+  },
+  "Shortcuts.Command.Move.38": {
+    "zh": "向上移动",
+    "en": "Move up"
+  },
+  "Shortcuts.Command.Move.Fast38": {
+    "zh": "向上快速移动",
+    "en": "Move up (large step)"
+  },
+  "Shortcuts.Command.Move.39": {
+    "zh": "向右移动",
+    "en": "Move right"
+  },
+  "Shortcuts.Command.Move.Fast39": {
+    "zh": "向右快速移动",
+    "en": "Move right (large step)"
+  },
+  "Shortcuts.Command.Move.40": {
+    "zh": "向下移动",
+    "en": "Move down"
+  },
+  "Shortcuts.Command.Move.Fast40": {
+    "zh": "向下快速移动",
+    "en": "Move down (large step)"
+  },
+  "Shortcuts.Title": {
+    "zh": "快捷键设置",
+    "en": "Shortcut settings"
+  },
+  "Shortcuts.Search": {
+    "zh": "搜索命令",
+    "en": "Search commands"
+  },
+  "Shortcuts.Custom": {
+    "zh": "  · 自定义",
+    "en": "  · Custom"
+  },
+  "Shortcuts.Unavailable": {
+    "zh": "  · 当前不可用",
+    "en": "  · Unavailable here"
+  },
+  "Shortcuts.Fixed": {
+    "zh": "此操作使用固定交互键。",
+    "en": "This interaction uses fixed keys."
+  },
+  "Shortcuts.RecordHint": {
+    "zh": "请按快捷键；Esc 取消录制。",
+    "en": "Press a shortcut; Esc cancels recording."
+  },
+  "Shortcuts.RecordPrimary": {
+    "zh": "录制主键",
+    "en": "Record primary"
+  },
+  "Shortcuts.RecordAlternate": {
+    "zh": "录制备用键",
+    "en": "Record alternate"
+  },
+  "Shortcuts.Clear": {
+    "zh": "清空",
+    "en": "Clear"
+  },
+  "Shortcuts.Reset": {
+    "zh": "恢复默认",
+    "en": "Reset default"
+  },
+  "Shortcuts.Export": {
+    "zh": "导出",
+    "en": "Export"
+  },
+  "Shortcuts.Import": {
+    "zh": "导入",
+    "en": "Import"
+  },
+  "Shortcuts.Save": {
+    "zh": "保存",
+    "en": "Save"
+  },
+  "Shortcuts.Execute": {
+    "zh": "执行",
+    "en": "Execute"
+  },
+  "Shortcuts.Configure": {
+    "zh": "编辑快捷键",
+    "en": "Edit shortcuts"
+  },
+  "Shortcuts.FileFilter": {
+    "zh": "快捷键配置|*.json",
+    "en": "Shortcut configuration|*.json"
+  },
+  "Shortcuts.Imported": {
+    "zh": "已载入预览；保存后生效。",
+    "en": "Loaded for review; save to apply."
+  },
+  "Shortcuts.Cancelled": {
+    "zh": "已取消录制。",
+    "en": "Recording cancelled."
+  },
+  "Shortcuts.EmptyStamp": {
+    "zh": "印章槽为空",
+    "en": "The stamp slot is empty."
+  },
+  "Shortcuts.ConfigureCommands": {
+    "zh": "编辑工具与命令快捷键",
+    "en": "Edit tool and command shortcuts"
+  },
+  "Shortcuts.Unbound": {
+    "zh": "未绑定",
+    "en": "Unbound"
+  },
+  "Shortcuts.GlobalHint": {
+    "zh": "聚焦后按组合键录制；Backspace 清空。Ctrl+Alt+Esc 为固定紧急释放键。",
+    "en": "Focus a field and press a shortcut; Backspace clears it. Ctrl+Alt+Esc always releases input."
+  },
+  "Shortcuts.Global.Enter": {
+    "zh": "显示画布并进入编辑",
+    "en": "Show canvas and enter editing"
+  },
+  "Shortcuts.Global.Exit": {
+    "zh": "退出编辑并恢复透传",
+    "en": "Exit editing and restore pass-through"
+  },
+  "Shortcuts.Global.Keyboard": {
+    "zh": "暂停/恢复键盘演示采集",
+    "en": "Pause/resume keyboard presentation capture"
+  },
+  "Shortcuts.Global.Pointer": {
+    "zh": "暂停/恢复鼠标演示",
+    "en": "Pause/resume pointer presentation"
+  },
+  "Shortcuts.Global.HideAll": {
+    "zh": "临时隐藏/恢复全部覆盖内容",
+    "en": "Temporarily hide/restore all overlays"
+  },
+  "Shortcuts.Global.Capture": {
+    "zh": "进入区域截图",
+    "en": "Enter region capture"
+  },
+  "Shortcuts.UnknownCommand": {
+    "zh": "未知或固定命令：",
+    "en": "Unknown or fixed command: "
+  },
+  "Shortcuts.TwoBindings": {
+    "zh": "最多两个快捷键",
+    "en": "At most two shortcuts"
+  },
+  "Shortcuts.Reserved": {
+    "zh": "保留快捷键：",
+    "en": "Reserved shortcut: "
+  },
+  "Shortcuts.ResetAll": {
+    "zh": "全部恢复默认",
+    "en": "Reset all"
+  },
+  "Shortcuts.Scope": {
+    "zh": "编辑模式命令。文字输入、输入法、列表和模态窗口优先使用自己的按键。全局快捷键在设置主页单独配置。",
+    "en": "Editing commands. Text, IME, lists and modal windows retain their local keys. Configure global shortcuts separately in Settings."
+  },
+  "Shortcuts.CommandColumn": {
+    "zh": "命令",
+    "en": "Command"
+  },
+  "Shortcuts.Command.Tool.Arrow": {
+    "zh": "单向箭头",
+    "en": "Arrow"
+  },
+  "Shortcuts.Command.Tool.DoubleArrow": {
+    "zh": "双向箭头",
+    "en": "Double arrow"
+  },
+  "Shortcuts.Command.Tool.RoundedRectangle": {
+    "zh": "圆角矩形",
+    "en": "Rounded rectangle"
+  },
+  "Shortcuts.Command.Tool.Triangle": {
+    "zh": "三角形",
+    "en": "Triangle"
+  },
+  "Shortcuts.GestureOnly": {
+    "zh": "此按键只在对应的画布手势中使用，不能从命令列表直接执行。",
+    "en": "This key belongs to its canvas gesture and cannot be run from the command list."
+  }
+}

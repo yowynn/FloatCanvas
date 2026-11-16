@@ -139,7 +139,7 @@ internal static class InspectorTests
     {
         bool allowed = true; var inspector = new InspectorWindow(() => new EditorSession(), () => allowed); inspector.PrepareForShow();
         var keys = new List<int>(); inspector.CommandKey += keys.Add;
-        bool Route(int key, bool ctrl, bool text) => (bool)inspector.GetType().GetMethod("RouteCommandKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(inspector, [key, ctrl, text])!;
+        bool Route(int key, bool ctrl, bool text) => (bool)inspector.GetType().GetMethod("RouteCommandKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(inspector, [key, ctrl ? System.Windows.Input.ModifierKeys.Control : System.Windows.Input.ModifierKeys.None, text])!;
         foreach (int key in new[] { 0x5A, 0x59, 0x41, 0x43, 0x56, 0x44 }) assert("layer context forwards Ctrl command " + key, Route(key, true, false) && keys[^1] == key);
         assert("layer context forwards Delete", Route(0x2E, false, false) && keys[^1] == 0x2E);
         int count = keys.Count;
@@ -153,7 +153,8 @@ internal static class InspectorTests
         foreach (var source in new Wpf.DependencyObject[] { new Controls.ComboBox(), new Controls.Slider(), new Controls.Primitives.Thumb() })
         {
             bool local = InspectorWindow.OwnsLocalEditingKeys(source);
-            assert(source.GetType().Name + " residual focus forwards Enter and deletion to editing commands", !local && Route(0x0D, false, local) && Route(0x08, true, local) && Route(0x2E, true, local));
+            assert(source.GetType().Name + " forwards editor Enter and rejects retired canvas clearing chords", !local &&
+                EditorShortcutPolicy.ShouldRoute(0x0D,System.Windows.Input.ModifierKeys.None,source) && !Route(0x08,true,local) && !Route(0x2E,true,local));
         }
         assert("numeric arrows remain local without blocking other inspector editing commands",
             !EditorShortcutPolicy.ShouldRoute(0x25, System.Windows.Input.ModifierKeys.None, new Controls.Slider()));

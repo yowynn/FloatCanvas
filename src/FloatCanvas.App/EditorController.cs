@@ -191,6 +191,7 @@ internal sealed partial class EditorController
     private RectD? imageRegion;
     private (PointD Position, OverlayModifiers Modifiers, OverlayMouseButton Button)? lastGestureMove;
     private bool deselectOnClick, gestureMoved;
+    private bool duplicateOnDrag, duplicatedOnDrag, centeredGesture, deepSelectionGesture;
     internal double ClickPlacementDragThreshold { get; set; } = 6;
     private double clickPlacementGestureThreshold = 6;
     private bool shiftDeselectOnClick;
@@ -204,7 +205,7 @@ internal sealed partial class EditorController
     internal static bool UsesDefaultSize(EditorTool value) => value is
         EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Triangle or EditorTool.Symbol or EditorTool.Presentation;
     internal bool ShouldShowSelection(OverlayModifiers modifiers) =>
-        !CanvasContentHidden && Tool != EditorTool.PointerPresentation && InteractionTool is not (EditorTool.Eraser or EditorTool.Canvas) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
+        !CanvasContentHidden && InteractionTool != EditorTool.PointerPresentation && InteractionTool is not (EditorTool.Eraser or EditorTool.Canvas) && (modifiers & OverlayModifiers.Control) == 0 && Session.Selection.Count > 0;
 
     /// <summary>The contiguous z-order span whose pixels can change during this pointer gesture.</summary>
     public (int First, int Last, bool BypassCache) RasterPreview
@@ -278,7 +279,7 @@ internal sealed partial class EditorController
         var cancelledDraft = rollback && HasScreenBillboardDraft && OwnsPointerTransaction && IsScreenDraftContextCurrent ? Session.Document : null;
         long cancelledScope = Session.EditScopeVersion;
         CancelPicking();
-        temporaryMove = false;
+        temporaryMove = false; temporarySelectionHeld = false;
         if (notify && (_pointerOwnedSession is null || OwnsPointerTransaction)) Cancelling?.Invoke();
         resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
         resizeTextSources.Clear();
@@ -287,7 +288,7 @@ internal sealed partial class EditorController
         lastGestureMove = null;
         CapturePreview = null; capturePoints.Clear();
         straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null;
-        deselectOnClick = gestureMoved = false;
+        deselectOnClick = gestureMoved = duplicateOnDrag = duplicatedOnDrag = centeredGesture = false;
         shiftDeselectOnClick = false;
         shiftDeselectTarget = null;
         selectionOnClick = null;
@@ -303,7 +304,7 @@ internal sealed partial class EditorController
 
     internal void PointerForCanvas(OverlayPointerEvent e, bool propertiesDoubleClick)
     {
-        if (Tool == EditorTool.PointerPresentation) { if (e.Kind == OverlayPointerKind.Cancel) Cancel(); return; }
+        if (Tool == EditorTool.PointerPresentation && !IsBorrowingSelection) { if (e.Kind == OverlayPointerKind.Cancel) Cancel(); return; }
         if (presentedPickingSuspended)
         {
             if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) Message?.Invoke(L.Get("Rendering.PresentationFailed"));
@@ -320,6 +321,15 @@ internal sealed partial class EditorController
     private void PointerCore(OverlayPointerEvent e, bool propertiesDoubleClick)
     {
         if (e.Kind == OverlayPointerKind.Cancel) { Cancel(); return; }
+        if (!IsBorrowingSelection && Tool is EditorTool.Freehand or EditorTool.Highlighter or EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow &&
+            (e.Modifiers & OverlayModifiers.Alt) != 0)
+        {
+            if (gesture is null && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick &&
+                !IsSelectionFrameHit(new(e.Position.X-CanvasOrigin.X,e.Position.Y-CanvasOrigin.Y),includeInterior:true)) return;
+            if (drawing is not null && e.Kind == OverlayPointerKind.Move) return;
+            if (drawing is not null && e.Kind == OverlayPointerKind.Up)
+                e=e with { Position=new(pointerScreen.X+CanvasOrigin.X,pointerScreen.Y+CanvasOrigin.Y), Modifiers=gestureModifiers };
+        }
         // External cancellation, scope changes or a new owner can end a gesture's
         // transaction before its queued pointer edges arrive.
         if (gesture is not null && _pointerOwnedSession is not null && !OwnsPointerTransaction)
@@ -330,7 +340,7 @@ internal sealed partial class EditorController
         if(e.Kind==OverlayPointerKind.Move&&gesture is not null&&e.Time is { } inputTime&&modifierTime is { } boundary&&unchecked((int)(inputTime-boundary))<0)return;
         pointerScreen = new(e.Position.X - CanvasOrigin.X, e.Position.Y - CanvasOrigin.Y);
         if (!IsScreenDraftContextCurrent) { Cancel(); return; }
-        if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); Tool = EditorTool.Select; return; }
+        if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); return; }
         if (HandleBillboardDepthInput(e)) return;
         bool screenGesture = HasCaptureGesture || Tool == EditorTool.CaptureRegion && gesture is null || UsesScreenCreationInput(e.Modifiers);
         PointD p;
@@ -349,7 +359,7 @@ internal sealed partial class EditorController
         }
         if (gesture is null || e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) SetPointerBlocked(false);
         if (gesture == "image-crop" && !IsCurrentCropTarget()) { Cancel(); return; }
-        if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); Tool = EditorTool.Select; return; }
+        if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); return; }
         if (gesture == "capture-polygon" && e.Button == OverlayMouseButton.Left &&
             e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
         {
@@ -364,15 +374,7 @@ internal sealed partial class EditorController
         }
         if (propertiesDoubleClick && e.Button == OverlayMouseButton.Left && Tool != EditorTool.Text)
         {
-            Cancel();
-            var hit = HitTestScreen(pointerScreen, 4);
-            if (hit is not null)
-            {
-                var node = ResolveHitSelectableNode(hit.Id);
-                if (node is { } group && Session.Document.Groups.Any(item => item.Id == group)) { Session.EnterScope(group); return; }
-                if (node is { } instance && Session.Document.Instances.Any(item => item.Id == instance)) { PrefabEditRequested?.Invoke(instance); return; }
-                Session.SetSelection([hit.Id]);PropertiesRequested?.Invoke(pointerScreen);return;
-            }
+            if (OpenSelectionTarget(pointerScreen)) return;
         }
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
         {
@@ -384,6 +386,7 @@ internal sealed partial class EditorController
             clickPlacementGestureThreshold = double.IsFinite(ClickPlacementDragThreshold) && ClickPlacementDragThreshold > 0
                 ? ClickPlacementDragThreshold : 6;
             gestureModifiers=e.Modifiers;
+            centeredGesture = (e.Modifiers & OverlayModifiers.Alt) != 0;
             bool creating = IsCreationTool(Tool);
             bool forceCreate = (e.Modifiers & OverlayModifiers.Control) != 0;
             if (Tool == EditorTool.Text && e.Kind == OverlayPointerKind.DoubleClick && !forceCreate &&
@@ -519,7 +522,7 @@ internal sealed partial class EditorController
                 else if (completed == "draw" && deselectOnClick && !gestureMoved)
                 { Session.Cancel(); Session.SetSelection([]); }
                 else if (completed == "move" && shiftDeselectOnClick && !gestureMoved)
-                { var ids = shiftDeselectTarget is { } id && ResolveHitSelectableNode(id) is { } node ? new[] { node } : []; Session.Cancel(); Session.SetSelection(Session.Selection.Except(ids)); }
+                { var ids = shiftDeselectTarget is { } id && ResolveHitSelectableNode(id,deepSelectionGesture) is { } node ? new[] { node } : []; Session.Cancel(); Session.SetSelection(Session.Selection.Except(ids)); }
                 else if (completed == "move" && !gestureMoved && selectionOnClick is { } clicked)
                 { CommitPointerEdit(); Session.SetSelection(clicked); }
                 else CommitPointerEdit();
@@ -624,10 +627,13 @@ internal sealed partial class EditorController
 
     private void StartSelect(PointD p, OverlayModifiers modifiers, bool selectedOnly = false)
     {
+        centeredGesture = (modifiers & OverlayModifiers.Alt) != 0;
+        deepSelectionGesture = (modifiers & OverlayModifiers.Control) != 0;
+        duplicateOnDrag = centeredGesture; duplicatedOnDrag = false;
         if (TryStartBillboardHeight()) return;
         var bounds = Session.SelectionBounds(editableOnly: true);
         var selected = SelectedEditingWorldElements(editableOnly: true).ToArray();
-        if (bounds != null && selected.Length > 0)
+        if (bounds != null && selected.Length > 0 && (modifiers & OverlayModifiers.Control)==0)
         {
             selectionBounds = bounds.Value;
             if (!HasNodeSelection && selected.Length == 1 && selected[0].Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow && selected[0].Points.Count > 1)
@@ -639,12 +645,12 @@ internal sealed partial class EditorController
             }
             if (SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14) gesture = "rotate";
             else if (SelectionScreenCorners.Any(c => pointerScreen.DistanceTo(c) < 12)) gesture = "resize";
-            else if ((modifiers & OverlayModifiers.Alt) == 0 && SelectionScreenCorners is { Count: 4 } screenCorners &&
+            else if ((modifiers & OverlayModifiers.Control) == 0 && SelectionScreenCorners is { Count: 4 } screenCorners &&
                 ElementGeometry.PointInPolygon(pointerScreen, screenCorners)) gesture = "move";
         }
         if (gesture == null && selectedOnly && bounds is not null)
         { selectionBounds = bounds.Value; gesture = "move"; }
-        if (gesture == "move" && !temporaryMove && !selectedOnly && modifiers is OverlayModifiers.None or OverlayModifiers.Shift &&
+        if (gesture == "move" && !selectedOnly && modifiers is OverlayModifiers.None or OverlayModifiers.Shift &&
             HitTestScreen(pointerScreen, 7) is { } foreground)
         {
             var unit = ResolveHitSelectableNode(foreground.Id) is { } foregroundNode ? new[] { foregroundNode } : [];
@@ -659,7 +665,7 @@ internal sealed partial class EditorController
         {
             var hit = HitTestScreen(pointerScreen, 7);
             if (hit == null) { gesture = "marquee"; Marquee = new(pointerScreen.X, pointerScreen.Y, 0, 0); return; }
-            bool individual = (modifiers & OverlayModifiers.Alt) != 0;
+            bool individual = (modifiers & OverlayModifiers.Control) != 0;
             if ((modifiers & OverlayModifiers.Shift) != 0)
             {
                 var ids = ResolveHitSelectableNode(hit.Id, individual) is { } additiveNode ? new[] { additiveNode } : [];
@@ -667,7 +673,7 @@ internal sealed partial class EditorController
                 else { Session.SetSelection(Session.Selection.Union(ids)); return; }
             }
             var unit = ResolveHitSelectableNode(hit.Id, individual) is { } selectedNode ? new[] { selectedNode } : [];
-            if (individual || !unit.All(Session.Selection.Contains)) Session.SetSelection(unit);
+            if (individual && !shiftDeselectOnClick || !unit.All(Session.Selection.Contains)) Session.SetSelection(unit);
             selectionBounds = Session.SelectionBounds(editableOnly: true)!.Value;
             gesture = "move";
         }
@@ -683,6 +689,15 @@ internal sealed partial class EditorController
     private void Move(PointD p, OverlayModifiers modifiers)
     {
         gestureModifiers=modifiers;
+        if (gesture == "move" && duplicateOnDrag && !duplicatedOnDrag)
+        {
+            if (!gestureMoved) return;
+            Session.DuplicateSelection(0, 0, withinTransaction: true);
+            duplicatedOnDrag = true; selectionOnClick = null; shiftDeselectOnClick = false;
+            transforms = Session.SelectedElements().Where(x=>!x.Locked).ToDictionary(x=>x.Id,x=>x.Transform);
+            billboardSources = Session.SelectedElements().Where(x=>!x.Locked && x.IsBillboard).ToDictionary(x=>x.Id,x=>x.Clone());
+            PrepareNodeTransform();
+        }
         // A plain click must not round-trip an unchanged billboard anchor through
         // the projection and turn floating-point noise into a document edit.
         if (gesture == "move" && !gestureMoved && pointerScreen == startScreen) return;
@@ -751,7 +766,7 @@ internal sealed partial class EditorController
                     drawing.Style.FontSize = Math.Clamp(Style.FontSize * height / natural.Y, 1, 4096);
                 }
                 else if (ConstrainBox(modifiers)) p = ConstrainAspect && UsesDefaultSize(Tool) ? DefaultRatioEnd(start, p) : SquareEnd(start, p);
-                var rect = RectD.FromPoints(start, p);
+                var rect = RectD.FromPoints(centeredGesture ? start - (p - start) : start, p);
                 drawing.Width = Math.Max(1, rect.Width); drawing.Height = Math.Max(1, rect.Height);
                 drawing.Transform = Affine2D.Translation(rect.X, rect.Y); drawing.Points.Clear();
             }
@@ -771,7 +786,7 @@ internal sealed partial class EditorController
             {
                 var element = single[0]; var original = transforms[element.Id];
                 if (!ElementGeometry.LocalToPlane(source).TryInverse(out var inverse)) return;
-                var localCenter = ElementGeometry.LocalBounds(source).Center;
+                var localCenter = ResizePivot(ElementGeometry.LocalBounds(source), inverse.TransformPoint(start));
                 var fromLocal = inverse.TransformPoint(start) - localCenter;
                 var toLocal = inverse.TransformPoint(p) - localCenter;
                 double scaleX = Math.Abs(fromLocal.X) < .001 ? 1 : Math.Max(.02, toLocal.X / fromLocal.X);
@@ -780,6 +795,7 @@ internal sealed partial class EditorController
                 if (source.Kind == ElementKind.Text)
                 {
                     TextFrameLayout.Resize(element, source, scaleX, scaleY, resizeTextRenderer!);
+                    PreserveResizePivot(source, element, localCenter);
                     NotifyGeometryChanged(); return;
                 }
                 if (source.Kind == ElementKind.Presentation) PresentationFrameLayout.Resize(element, source, scaleX, scaleY);
@@ -788,9 +804,10 @@ internal sealed partial class EditorController
                     element.Width = source.Width; element.Height = source.Height; element.CornerRadius = source.CornerRadius; element.Transform = original;
                     ElementGeometry.ResizeShapeGeometry(element, scaleX, scaleY);
                 }
+                PreserveResizePivot(source, element, localCenter);
                 NotifyGeometryChanged(); return;
             }
-            var center = selectionBounds.Center;
+            var center = ResizePivot(selectionBounds, start);
             var from = start - center; var to = p - center;
             var sx = Math.Abs(from.X) < 1 ? 1 : Math.Max(.02, to.X / from.X);
             var sy = Math.Abs(from.Y) < 1 ? 1 : Math.Max(.02, to.Y / from.Y);

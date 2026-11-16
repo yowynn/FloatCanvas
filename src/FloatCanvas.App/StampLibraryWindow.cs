@@ -114,7 +114,7 @@ internal sealed class StampLibraryWindow : Wpf.Window
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
             var modifiers = Input.Keyboard.Modifiers;
             var source = e.OriginalSource as Wpf.DependencyObject;
-            if (e.Handled || (modifiers & (Input.ModifierKeys.Alt | Input.ModifierKeys.Windows)) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
+            if (e.Handled || (modifiers & Input.ModifierKeys.Windows) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
             if (OwnsShortcut(key, modifiers, source))
             {
                 e.Handled = true;

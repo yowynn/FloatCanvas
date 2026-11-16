@@ -17,6 +17,10 @@ internal sealed class SessionKeyboardRouter : IDisposable
     private readonly Func<DependencyObject?, bool> owns;
     private readonly Action<int> command;
     private readonly Action<bool> pan;
+    internal Action<OverlayKeyEvent>? CommandInput { get; set; }
+    internal Action<int>? KeyReleased { get; set; }
+    internal Action? Cancelled { get; set; }
+    private void Dispatch(OverlayKeyEvent input) { if (CommandInput is { } dispatch) dispatch(input); else command(input.VirtualKey); }
     private readonly Dictionary<int, Owner> presses = [];
     private bool disposed;
     private IInputElement? pointerText;
@@ -53,6 +57,7 @@ internal sealed class SessionKeyboardRouter : IDisposable
         if (!down)
         {
             if (router.presses.Remove(code, out var released) && released != Owner.Local) e.Handled = true;
+            router.KeyReleased?.Invoke(code);
             return;
         }
         bool local = !router.active() || IsModal || OverlayContextMenu.HasOpenMenu || router.localText() ||
@@ -71,7 +76,7 @@ internal sealed class SessionKeyboardRouter : IDisposable
         router.presses[code] = local ? Owner.Local : Owner.Editor;
         if (local) return;
         e.Handled = true;
-        if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(code, (OverlayModifiers)Keyboard.Modifiers)) router.command(code);
+        if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(code, (OverlayModifiers)Keyboard.Modifiers)) router.Dispatch(new(code, modifiers, AppInputPolicy.IsRepeat(e)));
     }
 
     // The bridge observes Space before dispatch, including native HWNDs which do
@@ -107,20 +112,28 @@ internal sealed class SessionKeyboardRouter : IDisposable
         if (!EditorShortcutPolicy.IsCommand(key.VirtualKey, key.Modifiers) ||
             key.IsRepeat && !EditorShortcutPolicy.AllowsRepeat(key.VirtualKey, key.Modifiers)) return;
         presses[key.VirtualKey] = Owner.Editor;
-        command(key.VirtualKey);
+        Dispatch(key);
     }
 
     internal void Release(int key)
     {
         presses.Remove(key);
+        KeyReleased?.Invoke(key);
         if (key == 0x20) pan(false);
     }
 
     internal void Cancel()
+        => CancelOwnership(notify:true);
+
+    // Controller gesture resets also run at the start of a new stroke. They do
+    // not end the lifetime of a held tool key; focus/modal loss still does.
+    internal void CancelGesture() => CancelOwnership(notify:false);
+
+    private void CancelOwnership(bool notify)
     {
         pointerText = null;
         foreach (var key in presses.Where(pair => pair.Value == Owner.Editor).Select(pair => pair.Key).ToArray()) presses[key] = Owner.Suppressed;
-        pan(false);
+        pan(false); if(notify) Cancelled?.Invoke();
     }
     private void EnterModal(object? sender, EventArgs e) => Cancel();
 

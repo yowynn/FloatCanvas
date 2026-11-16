@@ -16,6 +16,9 @@ internal sealed partial class DesktopSession
     private PointD? _canvasViewPanLast;
     private DispatcherTimer? _canvasViewSaveTimer;
     private bool _canvasViewDuringMove;
+    private OverlayMouseButton _canvasNavigationMouseButton;
+    private bool _canvasNavigationZoom;
+    private PointD _canvasNavigationAnchor;
     private bool _canvasNavigationSpaceHeld;
     private EditorSession? _canvasViewHistorySession;
     private CanvasViewTransform EditingCanvasView => _host.IsEditing && _host.IsVisible ? _canvasView : CanvasViewTransform.Identity;
@@ -126,6 +129,7 @@ internal sealed partial class DesktopSession
         if (!_host.IsEditing || DocumentOperationBusy || _editor.HasPointerGesture || Active.IsTransactionActive ||
             _canvasCalibration.IsDragging || _canvasCalibration.IsPlacing || _canvasGridCalibrationSession is not null) return;
         var display = CurrentGroupCanvasView();
+        if (command == CanvasViewingCommand.FitContent && CanvasViewingBounds(display.Document,default(RectD)).IsEmpty) return;
         var view = _canvasView;
         ChangeCanvasViewing(command switch
         {
@@ -140,7 +144,7 @@ internal sealed partial class DesktopSession
 
     private bool HandleCanvasViewingPointer(OverlayPointerEvent input)
     {
-        if (_editor.Tool == EditorTool.PointerPresentation && !_canvasNavigationSpaceHeld)
+        if (_editor.InteractionTool == EditorTool.PointerPresentation && !_canvasNavigationSpaceHeld)
         { _canvasViewPanLast = null; return false; }
         if (input.Kind == OverlayPointerKind.Cancel)
         { bool panning = _canvasViewPanLast is not null; _canvasViewPanLast = null; return panning; }
@@ -152,24 +156,34 @@ internal sealed partial class DesktopSession
             if (input.Kind == OverlayPointerKind.Move)
             {
                 _canvasViewPanLast = point;
-                ChangeCanvasViewing(_editor.CurrentCanvasMapping.IsPerspective
-                    ? _canvasView.PanPlane(point - previous) : _canvasView.Pan(point - previous));
+                ChangeCanvasViewing(_canvasNavigationZoom
+                    ? _canvasView.ZoomAt(_canvasView.Zoom * Math.Exp((previous.Y - point.Y) * .01), _canvasNavigationAnchor)
+                    : _editor.CurrentCanvasMapping.IsPerspective ? _canvasView.PanPlane(point - previous) : _canvasView.Pan(point - previous));
             }
-            else if (input.Kind == OverlayPointerKind.Up && input.Button == OverlayMouseButton.Left) _canvasViewPanLast = null;
+            else if (input.Kind == OverlayPointerKind.Up && input.Button == _canvasNavigationMouseButton) _canvasViewPanLast = null;
             return true;
         }
-        if (!_canvasNavigationSpaceHeld) return false;
         bool wheel = input.Kind == OverlayPointerKind.Wheel;
-        bool down = input.Button == OverlayMouseButton.Left && input.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick;
+        bool down = (input.Button == OverlayMouseButton.Middle || _canvasNavigationSpaceHeld && input.Button == OverlayMouseButton.Left) &&
+            input.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick;
+        if ((input.Modifiers & (OverlayModifiers.Alt | OverlayModifiers.Windows)) != 0) return false;
         if (!wheel && !down) return false;
         if (_editor.HasPointerGesture || Active.IsTransactionActive || _inlineText is not null ||
             _canvasCalibration.IsDragging || _canvasCalibration.IsPlacing || _canvasGridCalibrationSession is not null) return true;
-        if (wheel) ChangeCanvasViewing(_canvasView.ZoomAt(_canvasView.Zoom * Math.Pow(1.1, input.WheelDelta / 120d), point));
+        if (wheel)
+        {
+            bool zoom = input.Modifiers == OverlayModifiers.Control;
+            if (zoom) ChangeCanvasViewing(_canvasView.ZoomAt(_canvasView.Zoom * Math.Pow(1.1, input.WheelDelta / 120d), point));
+
+        }
         else
         {
+            if (input.Modifiers != OverlayModifiers.None && !(input.Button == OverlayMouseButton.Middle && input.Modifiers == OverlayModifiers.Control)) return true;
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
             DismissPanelsForCanvasPress();
-            _canvasViewPanLast = point;
+            _canvasViewPanLast = point; _canvasNavigationAnchor = point;
+            _canvasNavigationMouseButton = input.Button;
+            _canvasNavigationZoom = input.Button == OverlayMouseButton.Middle && input.Modifiers == OverlayModifiers.Control;
         }
         _propertiesClicks?.Reset(); return true;
     }

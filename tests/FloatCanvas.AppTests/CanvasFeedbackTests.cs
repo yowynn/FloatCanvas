@@ -79,8 +79,8 @@ internal static class CanvasFeedbackTests
         Pointer(OverlayPointerKind.Up, 180, 140);
         Expect("Space left drag navigates without editing artwork", Field<CanvasViewTransform>("_canvasView").Offset == initial.Offset + new PointD(30, 20) && before == JsonSerializer.Serialize(editor.Session.Document));
         initial = Field<CanvasViewTransform>("_canvasView");
-        Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Wheel, new(180, 140), OverlayMouseButton.None, OverlayModifiers.None, 120));
-        Expect("Space wheel zooms the view", Field<CanvasViewTransform>("_canvasView").Zoom > initial.Zoom);
+        Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Wheel, new(180, 140), OverlayMouseButton.None, OverlayModifiers.Control, 120));
+        Expect("Ctrl wheel zooms the view", Field<CanvasViewTransform>("_canvasView").Zoom > initial.Zoom);
         editor.Tool = EditorTool.Rectangle;
         before = JsonSerializer.Serialize(editor.Session.Document);
         initial = Field<CanvasViewTransform>("_canvasView");
@@ -95,7 +95,7 @@ internal static class CanvasFeedbackTests
         ((Action<int>)typeof(OverlayHost).GetField("KeyReleased", Hidden)!.GetValue(host)!)(0x20);
         Expect("Space release ends the temporary navigation state", !Field<bool>("_canvasNavigationSpaceHeld"));
         Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Down, new(200, 150), OverlayMouseButton.Middle, OverlayModifiers.None));
-        Expect("middle button retains its existing temporary selection tool", editor.IsTemporaryMove);
+        Expect("middle button starts view navigation without changing objects", !editor.IsTemporaryMove && Field<PointD?>("_canvasViewPanLast") is not null);
         Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Up, new(200, 150), OverlayMouseButton.Middle, OverlayModifiers.None));
         editor.Tool = EditorTool.Canvas;
         var gridTarget = (CanvasSettingsTarget)Call("CaptureCanvasSettingsTarget")!;
@@ -112,7 +112,10 @@ internal static class CanvasFeedbackTests
             Field<CanvasViewTransform>("_canvasView") == initial && authoredTransforms.SequenceEqual(editor.Session.Document.Elements.Select(item => item.Transform)));
         double cellSize = CanvasGridGeometry.ResolveCellSize(gridTarget.Settings, gridTarget.Viewport);
         Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Wheel, new(220, 170), OverlayMouseButton.None, OverlayModifiers.Shift, 120));
-        Expect("Shift wheel changes only the flat grid size", CanvasGridGeometry.ResolveCellSize(gridTarget.Settings, gridTarget.Viewport) > cellSize && Field<CanvasViewTransform>("_canvasView") == initial);
+        Expect("Shift wheel leaves the camera and grid unchanged", CanvasGridGeometry.ResolveCellSize(gridTarget.Settings, gridTarget.Viewport) == cellSize && Field<CanvasViewTransform>("_canvasView") == initial);
+        Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Wheel, new(220, 170), OverlayMouseButton.None, OverlayModifiers.None, -120));
+        Expect("bare wheel leaves camera, grid and artwork unchanged", Field<CanvasViewTransform>("_canvasView") == initial &&
+            CanvasGridGeometry.ResolveCellSize(gridTarget.Settings, gridTarget.Viewport) == cellSize && authoredTransforms.SequenceEqual(editor.Session.Document.Elements.Select(item => item.Transform)));
         editor.Session.SetEditScope(null); Call("SetGroupCanvasMode", GroupCanvasMode.RootProject);
         var moving = new CanvasElement { Kind = ElementKind.Rectangle, Width = 60, Height = 40,
             Transform = Affine2D.Translation(100, 80), Style = new() { Foreground = 0, Background = 0xff20cc50, StrokeWidth = 0 } };

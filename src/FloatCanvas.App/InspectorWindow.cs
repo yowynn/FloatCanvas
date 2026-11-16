@@ -249,15 +249,15 @@ internal sealed partial class InspectorWindow : Wpf.Window
             var key = e.Key == Input.Key.System ? e.SystemKey : e.Key;
             var modifiers = Input.Keyboard.Modifiers;
             var source = e.OriginalSource as Wpf.DependencyObject;
-            if (e.Handled || (modifiers & (Input.ModifierKeys.Alt | Input.ModifierKeys.Windows)) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
+            if (e.Handled || (modifiers & Input.ModifierKeys.Windows) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
             if (key == Input.Key.Escape) { e.Handled = true; if (!AppInputPolicy.IsRepeat(e) && !FontPickerControl.TryCancelForInput(source) && !AppWindowChrome.TryCloseHelp(this)) HandleEscape(); return; }
-            if (key == Input.Key.Enter && (modifiers & Input.ModifierKeys.Control) != 0) { e.Handled = true; if (!AppInputPolicy.IsRepeat(e)) Apply(); return; }
+            if (key == Input.Key.Enter && modifiers == Input.ModifierKeys.Control) { e.Handled = true; if (!AppInputPolicy.IsRepeat(e)) Apply(); return; }
             bool textInput = OwnsLocalEditingKeys(source);
             int command = Input.KeyInterop.VirtualKeyFromKey(key);
             bool control = (Input.Keyboard.Modifiers & Input.ModifierKeys.Control) != 0;
             if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, localInput: textInput)) return;
             e.Handled = true;
-            if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, control, textInput);
+            if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, modifiers, textInput);
         };
         AppWindowChrome.Apply(this); Icon = AppIcon.WindowImage;
         pin=ActionIconButton.Create(PanelActionIcon.Pin,L.Get("ToolbarV2.PinOptions"),()=>{IsPinned=!IsPinned;UpdatePin();});
@@ -1174,9 +1174,9 @@ internal sealed partial class InspectorWindow : Wpf.Window
         active |= presentationSettings.CancelGestures();
         return active;
     }
-    private bool RouteCommandKey(int key, bool control, bool textInput)
+    private bool RouteCommandKey(int key, Input.ModifierKeys modifiers, bool textInput)
     {
-        if (!CanRouteCommandKey(key, control, textInput)) return false;
+        if (!EditorShortcutPolicy.ShouldRoute(key,modifiers,null,localInput:textInput)) return false;
         if (!canMutate()) { SetStatus(L.Get("Inspector.BusyDraftRetained"), true); return true; }
         CompletePendingEdit();
         CommandKey?.Invoke(key); return true;

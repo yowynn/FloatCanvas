@@ -58,8 +58,8 @@ internal static class ShortcutSurfaceRoutingTests
             var ordinary = new[]
             {
                 Key.V, Key.E, Key.B, Key.H, Key.L, Key.R, Key.O, Key.T, Key.N, Key.S, Key.J, Key.I, Key.P,
-                Key.M, Key.Tab, Key.OemMinus, Key.OemPlus, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5,
-                Key.D6, Key.D7, Key.D8, Key.D9, Key.D0, Key.Enter, Key.Delete,
+                Key.M, Key.F4, Key.F8, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5,
+                Key.D6, Key.D7, Key.D8, Key.D9, Key.D0, Key.Delete,
                 Key.Left, Key.Up, Key.Right, Key.Down
             };
             for (int surface = 0; surface < surfaces.Length; surface++)
@@ -83,16 +83,16 @@ internal static class ShortcutSurfaceRoutingTests
                     { RoutedEvent = Keyboard.KeyDownEvent };
                 InstallModifiers();
                 if (!preview.Handled) sources[1].Button.RaiseEvent(keyDown);
-                check("Layers Button Return routes the editor command without another Click",
-                    preview.Handled && nativeClicks == 0 && commands[1].Count == nativeBefore + 1);
+                check("Layers ordinary button forwards Return without activating stale focus",
+                    preview.Handled && commands[1].Count == nativeBefore + 1 && nativeClicks == 0);
             }
             finally { sources[1].Button.Click -= countNativeClick; }
             ExpectRoute(1, sources[1].Panel, Key.Enter);
 
             SetModifiers(ModifierKeys.Control);
             check("shortcut matrix controls only its thread-local Ctrl state", Keyboard.Modifiers == ModifierKeys.Control);
-            foreach (var key in new[] { Key.Z, Key.Y, Key.A, Key.C, Key.V, Key.D, Key.S, Key.O, Key.N, Key.Back, Key.Delete,
-                Key.PageUp, Key.PageDown, Key.L, Key.OemComma, Key.T })
+            foreach (var key in new[] { Key.Z, Key.Y, Key.A, Key.C, Key.V, Key.D, Key.S, Key.O, Key.N, Key.X, Key.D0, Key.D1, Key.D2,
+                Key.PageUp, Key.PageDown, Key.L, Key.OemComma })
                 for (int surface = 0; surface < surfaces.Length; surface++) ExpectRoute(surface, sources[surface].Button, key);
             foreach (bool shift in new[] { false, true })
             {
@@ -100,14 +100,13 @@ internal static class ShortcutSurfaceRoutingTests
                 ExpectRoute(0, sources[0].Button, Key.G);
                 ExpectRoute(2, sources[2].Button, Key.G);
                 int before = commands[1].Count;
-                int undoBefore = state.UndoCount;
                 var args = Send(sources[1].Button, Key.G);
-                check($"Layers Ctrl{(shift ? "+Shift" : "")}+G executes its real local grouping command once",
-                    args.Handled && commands[1].Count == before && state.Document.Groups.Count == (shift ? 0 : 1) && state.UndoCount == undoBefore + 1 &&
-                    (shift ? state.Selection.SetEquals([first.Id, second.Id]) : state.Selection.SetEquals([state.Document.Groups.Single().Id])));
+                check($"Layers Ctrl{(shift ? "+Shift" : "")}+G forwards the central grouping command once",
+                    args.Handled && commands[1].Count == before + 1 && commands[1][^1] == 0x47);
                 // A visible Layers window refreshes after the command. Keep this
                 // detached fixture's current-level rows in sync before the next key.
                 layers.PrepareForShow();
+                if (!shift) { state.GroupSelection(); layers.PrepareForShow(); }
             }
 
             for (int surface = 0; surface < surfaces.Length; surface++)
@@ -125,7 +124,8 @@ internal static class ShortcutSurfaceRoutingTests
                 {
                     sources[surface].Panel.Children.Add(control);
                     SetModifiers(ModifierKeys.None);
-                    foreach (var key in new[] { Key.Space, Key.B, Key.Tab, Key.D4, Key.Enter, Key.Delete }) ExpectRoute(surface, control, key);
+                    foreach (var key in new[] { Key.B, Key.D4, Key.Delete }) ExpectRoute(surface, control, key);
+                    foreach (var key in new[] { Key.Space, Key.Tab, Key.Enter }) ExpectRoute(surface, control, key);
                     if (control is Slider) ExpectLocal(surface, control, Key.Right);
                     else ExpectRoute(surface, control, Key.Right);
                     SetModifiers(ModifierKeys.Control);

@@ -9,6 +9,8 @@ namespace FloatCanvas.App;
 
 internal sealed class UserSettings
 {
+    public Dictionary<string, CommandChord[]> CommandBindings { get; set; } = [];
+    public Dictionary<string, HotkeyBinding> GlobalCommandBindings { get; set; } = [];
     public HotkeyBinding Toggle { get; set; } = HotkeyBinding.DefaultToggle;
     public HotkeyBinding Hide { get; set; } = HotkeyBinding.DefaultHide;
     // UI geometry belongs to this process only. Older settings may still contain these

@@ -49,10 +49,10 @@ public sealed partial class EditorSession
     public LayerOperationAnalysis AnalyzeLayerOperation(LayerOperation operation, IEnumerable<Guid>? ids = null)
         => AnalyzeLayerOperation(operation, ids ?? Selection, SceneGraph.Read(Document));
 
-    private LayerOperationAnalysis AnalyzeLayerOperation(LayerOperation operation, IEnumerable<Guid> ids, SceneGraph graph)
+    private LayerOperationAnalysis AnalyzeLayerOperation(LayerOperation operation, IEnumerable<Guid> ids, SceneGraph graph, bool withinTransaction = false)
     {
         var input = ids.Distinct().ToArray(); var requested = graph.NormalizeSelection(input).ToArray();
-        string? blocked = IsReadOnly ? "GroupCanvas.ReadOnly" : IsTransactionActive ? "History.TransactionAlreadyActive" :
+        string? blocked = IsReadOnly ? "GroupCanvas.ReadOnly" : IsTransactionActive && !withinTransaction ? "History.TransactionAlreadyActive" :
             !CanInsertInEditScope ? "Inspector.LockedSuffix" : null;
         if (input.Any(id => graph.FindElement(id) is null && graph.FindGroup(id) is null && graph.FindInstance(id) is null) ||
             requested.Any(id => !InActiveRoot(graph, id))) blocked = "Layers.StaleMove";

@@ -40,11 +40,11 @@ internal static class AuxiliaryShortcutRoutingTests
             if (!canvasRoute || !stampRoute) return;
 
             var canvasSource = Field<Button>(canvas, "fourPoints");
-            foreach (var key in new[] { Key.B, Key.D1, Key.D0, Key.Enter, Key.Delete, Key.Right })
+            foreach (var key in new[] { Key.B, Key.D1, Key.D0, Key.Delete, Key.Right })
                 ExpectRoute("CanvasSettings", canvasSource, key, canvasCommands);
             SetModifiers(ModifierKeys.Control);
             check("auxiliary shortcuts use only a thread-local Ctrl snapshot", Keyboard.Modifiers == ModifierKeys.Control);
-            foreach (var key in new[] { Key.Z, Key.Y, Key.S, Key.O, Key.N, Key.G, Key.Back, Key.Delete })
+            foreach (var key in new[] { Key.Z, Key.Y, Key.S, Key.O, Key.N, Key.G, Key.X })
                 ExpectRoute("CanvasSettings", canvasSource, key, canvasCommands);
             SetModifiers(ModifierKeys.Control | ModifierKeys.Shift);
             ExpectRoute("CanvasSettings", canvasSource, Key.G, canvasCommands);
@@ -63,11 +63,12 @@ internal static class AuxiliaryShortcutRoutingTests
             foreach (var control in new FrameworkElement[] { counts.Slider, Field<SegmentedChoice>(canvas, "pattern") })
             {
                 SetModifiers(ModifierKeys.None);
-                foreach (var key in new[] { Key.B, Key.Tab, Key.D4, Key.Enter, Key.Delete }) ExpectRoute("CanvasSettings", control, key, canvasCommands);
+                foreach (var key in new[] { Key.B, Key.D4, Key.Delete }) ExpectRoute("CanvasSettings", control, key, canvasCommands);
+                foreach (var key in new[] { Key.Tab, Key.Enter, Key.Space }) ExpectRoute("CanvasSettings", control, key, canvasCommands);
                 if (control is Slider) ExpectLocal("CanvasSettings", control, Key.Right, canvasCommands);
                 else ExpectRoute("CanvasSettings", control, Key.Right, canvasCommands);
                 SetModifiers(ModifierKeys.Control);
-                foreach (var key in new[] { Key.Z, Key.A, Key.V, Key.G, Key.Back, Key.Delete, Key.S, Key.O }) ExpectRoute("CanvasSettings", control, key, canvasCommands);
+                foreach (var key in new[] { Key.Z, Key.A, Key.V, Key.G, Key.X, Key.S, Key.O }) ExpectRoute("CanvasSettings", control, key, canvasCommands);
             }
             var presets = Field<CanvasPresetGallery>(canvas, "presets");
             var presetTile = presets.OfficialTiles.Children.OfType<Button>().First();

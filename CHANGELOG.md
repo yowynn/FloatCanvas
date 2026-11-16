@@ -20,6 +20,7 @@ Major user-facing changes, with explicit language and category markers. See the 
 
 #### 改进
 <!-- category:improvement -->
+- **统一快捷键与鼠标交互。** 支持命令搜索、主键与备用键自定义、导入导出；中键平移、Ctrl+滚轮缩放、按住工具键临时使用并恢复原工具，Alt 拖动复制及中心缩放。Tab 控制工具条、Space 临时平移，输入框与菜单保留本地按键，新增可选全局动作，数值长按合并为一次调节。
 - **嵌套组合与图层。** 用面包屑和当前层级列表浏览组合，拖动调整层级，并可整体或分别旋转、缩放。组的变换保留内部坐标，旧工程的交错图层保持显示顺序。
 - **画布校准与立牌放置。** 画布尺寸、网格间距和原点可独立调整，提供纸张比例与三交点辅助标定。立牌默认直接在屏幕绘制或放置后调整高度；图片、截图与文字使用相同放置规则。
 - **样式与文件操作。** 统一前景色、背景色和样式预设；序号提供实心与两种空心样式。完整工程直接打开，预制体追加置入；置入内容保留宿主的画布设置。
@@ -48,6 +49,7 @@ Major user-facing changes, with explicit language and category markers. See the 
 
 #### Improvements
 <!-- category:improvement -->
+- **Unified shortcuts and mouse gestures.** Search commands, customize primary/alternate bindings and import/export them. Middle-drag pans, Ctrl+wheel zooms, holding any tool key temporarily borrows that tool, and Alt supports drag-copy and centered resize. Tab toggles the toolbar and Space temporarily pans; text fields and menus retain local keys. Optional global commands and single-gesture numeric key holds are available.
 - **Nested groups and layers.** Browse groups with breadcrumbs and a current-level list, drag to change hierarchy, and rotate or scale selections together or individually. Group transforms preserve local coordinates; interleaved layers in older projects retain their paint order.
 - **Canvas calibration and billboards.** Adjust canvas dimensions, grid spacing and origin independently, with paper ratios and three-intersection calibration. Draw or place billboards on screen before adjusting their height; images, captures and text share the same placement rules.
 - **Styles and file operations.** Share foreground, background and style presets across tools; number badges offer filled and two outline styles. Full projects open directly while prefabs append content, preserving the host canvas settings.

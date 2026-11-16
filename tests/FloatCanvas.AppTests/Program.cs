@@ -28,6 +28,7 @@ internal static class Program
             if (args.Contains("--panel-review-only")) { PanelReviewRegressionTests.Run(Assert, args.SkipWhile(a => a != "--panel-review-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-spacing-only")) { WindowSpacingTests.Run(Assert); return 0; }
             if (args.Contains("--property-visuals-only")) { PropertyVisualTests.Run(Assert); return 0; }
+            if (args.Contains("--shortcut-system-only")) { ShortcutSystemTests.Run(Assert); return 0; }
             if (args.Contains("--numeric-controls-only")) { NumericControlTests.Run(Assert, args.SkipWhile(a => a != "--numeric-controls-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--numeric-rails-only")) { NumericRailRangeTests.Run(Assert); return 0; }
             if (args.Contains("--numeric-pointer-regression-only")) { NumericPointerRegressionTests.Run(Assert); return 0; }
@@ -42,6 +43,9 @@ internal static class Program
             if (args.Contains("--new-canvas-confirmation-only")) { CanvasWorkflowRegressionTests.NewCanvas(Assert); return 0; }
             if (args.Contains("--canvas-preset-selection-only")) { CanvasWorkflowRegressionTests.PresetSelection(Assert, args.SkipWhile(a => a != "--canvas-preset-selection-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--project-preview-navigation-only")) { ProjectPreviewNavigationTests.Run(Assert, args.SkipWhile(a => a != "--project-preview-navigation-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--shortcut-desktop-only")) { ShortcutDesktopTests.Run(Assert); return 0; }
+            if (args.Contains("--controller-contracts-only"))
+            { CreationTools(); SelectionAndTransforms(); CancellationAndReplacement(); EraserTransactions(); return 0; }
             if (args.Contains("--canvas-feedback-only")) { CanvasFeedbackTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-text-exit-only")) { CanvasTextExitTests.Run(Assert); return 0; }
             if (args.Contains("--canvas-feedback-native-only")) { CanvasFeedbackNativeTests.Run(Assert); return 0; }
@@ -499,6 +503,7 @@ internal static class Program
                 Console.WriteLine("SKIP desktop-composition cue fixture on the isolated desktop; verify separately with --property-changes-only.");
             else PropertyChangeRegionTests.Run(Assert);
             WindowSpacingTests.Run(Assert);
+            ShortcutSystemTests.Run(Assert);
             TemporaryMoveControllerTests.Run(Assert);
             PropertiesClickSequenceTests.Run(Assert);
             ShortcutSurfaceRoutingTests.Run(Assert);
@@ -699,7 +704,7 @@ internal static class Program
         Assert("rotation handle snaps 90 degrees", Math.Abs(angle - 90) < 1e-8 && session.UndoCount == undo + 1);
         Assert("rotation leaves element center fixed", rotated.Transform.TransformPoint(new(40, 30)).DistanceTo(center) < 1e-8);
         session.Undo(); var beforeResize = session.Document.Elements.Single().Transform; bounds = session.SelectionBounds()!.Value; center = bounds.Center;
-        Gesture(controller, new(bounds.Right, bounds.Bottom), center + (new PointD(bounds.Right, bounds.Bottom) - center) * 2);
+        Gesture(controller, new(bounds.Right, bounds.Bottom), center + (new PointD(bounds.Right, bounds.Bottom) - center) * 2, OverlayModifiers.Alt);
         var resized = session.Document.Elements.Single();
         Assert("shape resize changes vector dimensions without scaling its stroke matrix", Math.Abs(resized.Transform.M11 - 1) < 1e-8 && Math.Abs(resized.Transform.M22 - 1) < 1e-8 && resized.Width == 160 && resized.Height == 120);
         Assert("resize remains undoable as one operation", session.Undo() && session.Document.Elements.Single().Transform == beforeResize);

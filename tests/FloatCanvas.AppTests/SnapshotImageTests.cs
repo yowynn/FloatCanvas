@@ -161,13 +161,13 @@ internal static class SnapshotImageTests
             check(shape + " screenshot frame exactly matches the captured plane region", selected!.PlaneBounds is { } capturedPlane &&
                 Math.Abs(planeBounds.Left - capturedPlane.Left) < 1e-7 && Math.Abs(planeBounds.Top - capturedPlane.Top) < 1e-7 &&
                 Math.Abs(planeBounds.Right - capturedPlane.Right) < 1e-7 && Math.Abs(planeBounds.Bottom - capturedPlane.Bottom) < 1e-7);
-            void Drag(PointD from, PointD to)
+            void Drag(PointD from, PointD to, OverlayModifiers modifiers = OverlayModifiers.None)
             {
                 foreach (var (kind, point) in new[] { (OverlayPointerKind.Down, from), (OverlayPointerKind.Move, to), (OverlayPointerKind.Up, to) })
-                    selectedImage.Pointer(new(kind, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None, 0));
+                    selectedImage.Pointer(new(kind, new(point.X, point.Y), OverlayMouseButton.Left, modifiers, 0));
             }
             var center = planeBounds.Center;
-            Drag(mapping.ToScreen(frame[2]), mapping.ToScreen(center + (frame[2] - center) * 1.25));
+            Drag(mapping.ToScreen(frame[2]), mapping.ToScreen(center + (frame[2] - center) * 1.25), OverlayModifiers.Alt);
             var expectedScale = Affine2D.Around(center, Affine2D.Scale(1.25, 1.25));
             check(shape + " screenshot resizes from its projected plane-frame corner", target.UndoCount == 2 &&
                 target.Document.Elements.Single().Transform.TransformPoint(center).DistanceTo(center) < 1e-7 &&

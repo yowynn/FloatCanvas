@@ -16,12 +16,12 @@ internal sealed partial class DesktopSession
         else button.SetResourceReference(Control.BackgroundProperty,"CanvasButton");
         if(selected)button.SetResourceReference(Control.BorderBrushProperty,"CanvasAccent");else button.BorderBrush=Brushes.Transparent;
         System.Windows.Automation.AutomationProperties.SetItemStatus(button,selected?L.Get("ToolbarV2.Selected"):"");
+        string shortcut=EditorCommandCatalog.Hint("Stamp.Library");
+        button.ToolTip=entry is null ? L.Get("Stamp.LibraryTitle")+(shortcut.Length>0?" · "+shortcut:"") : StampPreviewTooltip.Create(_stampLibrary,entry,shortcut);
         if(_toolbarLibraryStamp==entry)return;
         _toolbarLibraryStamp=entry;
         glyph.Content=_stampLibraryDefaultGlyph;
-        button.ToolTip=L.Get("Stamp.LibraryTitle")+" · -";
         if(entry is null)return;
-        button.ToolTip=StampPreviewTooltip.Create(_stampLibrary,entry,"-");
         try
         {
             var bitmap=await StampPreviewTooltip.GetThumbnailAsync(_stampLibrary,entry);

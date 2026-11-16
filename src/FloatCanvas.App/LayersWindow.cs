@@ -348,7 +348,7 @@ internal sealed partial class LayersWindow : Wpf.Window
         }
         Add("Layers.MoveTo", Folder, "", ShowMoveDialog);
         var enter = Add("Layers.EnterGroup", Folder, "Enter", () => EnterGroup(id));
-        var rename = Add("Layers.Rename", "M2,11 V14 H5 L13,6 L10,3 Z", "F2", () => BeginRename(id));
+        var rename = Add("Layers.Rename", "M2,11 V14 H5 L13,6 L10,3 Z", EditorCommandCatalog.Hint("Selection.Rename"), () => BeginRename(id));
         var collect = Add("Layers.CollectGroup", "M2,3 H14 M4,7 H12 M6,11 H10", "", () => RunLayerCommand(s => s.CollectLegacyGroup(id)));
         var editPrefab = Add("Prefab.EditDefinition", Instance, "Enter", () => EnterGroup(id));
         var detachPrefab = Add("Prefab.Detach", Folder, "", () => DetachPrefabRequested?.Invoke(id));
@@ -358,15 +358,15 @@ internal sealed partial class LayersWindow : Wpf.Window
             if (new SceneGraph(getSession().Document).FindInstance(id) is { } instance) ExportPrefabRequested?.Invoke(instance.DefinitionId);
         });
         menu.Items.Add(new Controls.Separator());
-        Add("Inspector.Duplicate", "M1,1 H10 V10 M5,5 H14 V14 H5 Z", "Ctrl+D", () => RunLayerCommand(s => s.DuplicateSelection(), operationKind: LayerOperation.Duplicate));
+        Add("Inspector.Duplicate", "M1,1 H10 V10 M5,5 H14 V14 H5 Z", EditorCommandCatalog.Hint("Edit.Duplicate"), () => RunLayerCommand(s => s.DuplicateSelection(), operationKind: LayerOperation.Duplicate));
         Add("Inspector.Delete", "M3,4 H13 M5,4 V14 H11 V4 M6,1 H10", "Delete", () => RunLayerCommand(s => s.DeleteSelection(), operationKind: LayerOperation.Delete));
         menu.Items.Add(new Controls.Separator());
         Add("Inspector.BringToFront", "M3,9 L8,4 L13,9 M8,4 V14 M2,1 H14", "", () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Front)));
         Add("Inspector.SendToBack", "M3,7 L8,12 L13,7 M8,2 V12 M2,15 H14", "", () => RunLayerCommand(s => s.ReorderSelection(LayerOrder.Back)));
         Add("Layers.MoveOut", "M3,8 H13 M7,3 L2,8 L7,13", "", () => MoveOut(id));
         menu.Items.Add(new Controls.Separator());
-        Add("Layers.Group", "M1,1 H8 V8 H1 Z M6,6 H14 V14 H6 Z", "Ctrl+G", () => RunLayerCommand(s => s.GroupSelection(), operationKind: LayerOperation.Group));
-        Add("Layers.Ungroup", "M1,1 H6 V6 H1 Z M9,9 H14 V14 H9 Z", "Ctrl+Shift+G", () => RunLayerCommand(s => s.UngroupSelection(), operationKind: LayerOperation.Ungroup));
+        Add("Layers.Group", "M1,1 H8 V8 H1 Z M6,6 H14 V14 H6 Z", EditorCommandCatalog.Hint("Edit.Group"), () => RunLayerCommand(s => s.GroupSelection(), operationKind: LayerOperation.Group));
+        Add("Layers.Ungroup", "M1,1 H6 V6 H1 Z M9,9 H14 V14 H9 Z", EditorCommandCatalog.Hint("Edit.Ungroup"), () => RunLayerCommand(s => s.UngroupSelection(), operationKind: LayerOperation.Ungroup));
         menu.Opened += (_, _) =>
         {
             var session = getSession();
@@ -450,12 +450,12 @@ internal sealed partial class LayersWindow : Wpf.Window
     {
         var key = e.Key == Input.Key.System ? e.SystemKey : e.Key; var modifiers = Input.Keyboard.Modifiers;
         var source = e.OriginalSource as Wpf.DependencyObject;
-        if (e.Handled || (modifiers & (Input.ModifierKeys.Alt | Input.ModifierKeys.Windows)) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
+        if (e.Handled || (modifiers & Input.ModifierKeys.Windows) != 0 || EditorShortcutPolicy.OwnsMenu(source)) return;
         if (key == Input.Key.Escape && !renameComposing && !AppInputPolicy.IsRepeat(e) && AppWindowChrome.TryCloseHelp(this)) { e.Handled = true; return; }
         if (IsRenaming)
         {
             int projectKey = Input.KeyInterop.VirtualKeyFromKey(key);
-            if (!renameComposing && EditorShortcutPolicy.IsProjectCommand(projectKey, (FloatCanvas.Windows.OverlayModifiers)modifiers))
+            if (!renameComposing && EditorShortcutPolicy.CanRouteProjectCommandFromText(projectKey, (FloatCanvas.Windows.OverlayModifiers)modifiers))
             { e.Handled = true; if (!AppInputPolicy.IsRepeat(e) && canMutate()) { CommitRename(); CommandKey?.Invoke(projectKey); } }
             return;
         }
@@ -484,13 +484,10 @@ internal sealed partial class LayersWindow : Wpf.Window
             }
             return;
         }
-        bool ctrl = (modifiers & Input.ModifierKeys.Control) != 0;
-        if (ctrl && key == Input.Key.G && !localInput)
-        { e.Handled = true; if (!AppInputPolicy.IsRepeat(e) && CanRunSelectionCommand((modifiers & Input.ModifierKeys.Shift) != 0 ? "Layers.Ungroup" : "Layers.Group")) RunLayerCommand(s => { if ((modifiers & Input.ModifierKeys.Shift) != 0) s.UngroupSelection(); else s.GroupSelection(); }, operationKind: (modifiers & Input.ModifierKeys.Shift) != 0 ? LayerOperation.Ungroup : LayerOperation.Group); return; }
         int command = Input.KeyInterop.VirtualKeyFromKey(key);
         if (!EditorShortcutPolicy.ShouldRoute(command, modifiers, source, preserveListNavigation: listInput, localInput: localInput)) return;
         e.Handled = true;
-        if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, ctrl);
+        if (!AppInputPolicy.IsRepeat(e) || EditorShortcutPolicy.AllowsRepeat(command, (FloatCanvas.Windows.OverlayModifiers)modifiers)) RouteCommandKey(command, modifiers);
     }
     private bool IsListSource(Wpf.DependencyObject? source)
     {
@@ -516,10 +513,11 @@ internal sealed partial class LayersWindow : Wpf.Window
         };
         return session.AnalyzeLayerOperation(operation).CanExecute;
     }
-    private bool RouteCommandKey(int key, bool control)
+    private bool RouteCommandKey(int key, Input.ModifierKeys modifiers)
     {
-        if (!CanRouteCommandKey(key, control)) return false;
-        string? command = key == 0x2e ? "Inspector.Delete" : control && key == 0x44 ? "Inspector.Duplicate" : null;
+        if (IsRenaming || !EditorShortcutPolicy.ShouldRoute(key,modifiers,null)) return false;
+        string? command = EditorCommandCatalog.Resolve(key,(FloatCanvas.Windows.OverlayModifiers)modifiers)?.Id switch
+        { "Edit.Delete"=>"Inspector.Delete", "Edit.Duplicate"=>"Inspector.Duplicate", "Edit.Group"=>"Layers.Group", "Edit.Ungroup"=>"Layers.Ungroup", _=>null };
         if (command is not null && !CanRunSelectionCommand(command)) return true;
         if (canMutate()) CommandKey?.Invoke(key); return true;
     }

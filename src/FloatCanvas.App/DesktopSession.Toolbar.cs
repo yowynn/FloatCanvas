@@ -14,6 +14,7 @@ namespace FloatCanvas.App;
 
 internal sealed partial class DesktopSession
 {
+    private readonly List<(Controls.Button Button, string Id, string Label)> _toolbarCommandHints=[];
     private ToolbarLauncher _toolbarLauncher = null!;
     private StampShelfControl _stampShelf = null!;
     private Controls.Border _toolbarExpandedContent = null!;
@@ -111,7 +112,7 @@ internal sealed partial class DesktopSession
         Cell(CreateCanvasNavigationButton(), toolColumn++);
         Cell(Separator(), toolColumn++);
         Action("import", L.Get("Toolbar.Image"), CommandGlyphs.Image, () => _ = RunCommand(() => ImportImagesAsync()), "I");
-        AddShortcutHint(content.Children.OfType<Controls.Button>().Last(), "I");
+        AddShortcutHint(content.Children.OfType<Controls.Button>().Last(), "I", EditorTool.Image);
         Action("capture", L.Get("Acceptance2.Toolbar.Capture"), "M1,6 L1,2 L5,2 M11,2 L15,2 L15,6 M15,10 L15,14 L11,14 M5,14 L1,14 L1,10 M4,5 L12,5 L12,11 L4,11 Z", () => ActivateTool(EditorTool.CaptureRegion), "P");
         var captureButton = content.Children.OfType<Controls.Button>().Last();
         _toolbarToolButtons[EditorTool.CaptureRegion] = captureButton;
@@ -122,13 +123,13 @@ internal sealed partial class DesktopSession
         Controls.ToolTipService.SetShowOnDisabled(_toolbarToolButtons[EditorTool.Crop], true);
         Cell(Separator(), toolColumn++);
         Action("properties", L.Get("ToolbarV2.Properties"), "M1,3 L15,3 M1,8 L15,8 M1,13 L15,13 M5,1 L5,5 M11,6 L11,10 M6,11 L6,15", ToggleInspector, "Enter");
-        Action("layers", L.Get("ToolbarV2.Layers"), "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13", ToggleLayers, "Ctrl+L");
+        Action("layers", L.Get("ToolbarV2.Layers"), "M1,5 L8,1 L15,5 L8,9 Z M1,9 L8,13 L15,9 M1,13 L8,17 L15,13", OpenLayers, "Panel.Layers");
         Cell(Separator(), toolColumn++);
-        Action("undo", L.Get("ToolbarV2.Undo"), "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,13", Undo, "Ctrl+Z");
-        Action("redo", L.Get("ToolbarV2.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13", Redo, "Ctrl+Y");
+        Action("undo", L.Get("ToolbarV2.Undo"), "M6,3 L2,7 L6,11 M2,7 L10,7 Q14,7 14,13", Undo, "Edit.Undo");
+        Action("redo", L.Get("ToolbarV2.Redo"), "M10,3 L14,7 L10,11 M14,7 L6,7 Q2,7 2,13", Redo, "Edit.Redo");
         _newCanvasButton = new NewCanvasButton(() => !_disposed && !DocumentOperationBusy, () => RunCommand(ReplaceCanvasAsync), NeedsNewCanvasConfirmationAsync);
         Cell(_newCanvasButton, toolColumn++);
-        var clearCurrent=ToolbarIcon(L.Get("History.ClearCurrent"),CommandGlyphs.ClearCanvas,()=>_ = RunCommand(ClearCurrentCanvasAsync),"Ctrl+Backspace / Ctrl+Delete");
+        var clearCurrent=ToolbarIcon(L.Get("History.ClearCurrent"),CommandGlyphs.ClearCanvas,()=>_ = RunCommand(ClearCurrentCanvasAsync),"Edit.Clear");
         clearCurrent.Tag="clear";clearCurrent.SetResourceReference(Controls.Control.StyleProperty,"CanvasDangerButton");
         clearCurrent.ClearValue(Controls.Control.BackgroundProperty);
         var clearGlyph=(System.Windows.Shapes.Path)((Controls.Canvas)((Controls.Viewbox)clearCurrent.Content).Child).Children[0];
@@ -139,13 +140,13 @@ internal sealed partial class DesktopSession
         RefreshCanvasVisibilityButton();
         _passThroughButton = ToolbarIcon(L.Get("Acceptance2.Toolbar.Done"), CommandGlyphs.PassThrough, () => SetEditing(false), FormatHotkey(_settings.Toggle));
         _passThroughButton.Tag = "done"; Cell(_passThroughButton, toolColumn++);
-        var manage=ToolbarIcon(L.Get("Stamp.LibraryTitle"),"M6,8.5 V7 C6,5.5 4.8,4.7 4.8,3.2 C4.8,.6 11.2,.6 11.2,3.2 C11.2,4.7 10,5.5 10,7 V8.5 M6,8.5 H10 Q12,8.5 12,11 M6,8.5 Q4,8.5 4,11 M1.5,11 H14.5 V13.5 H1.5 Z M3,15.5 H13",ShowStampLibrary,"-");
-        AddShortcutHint(manage,"-",lowerRow:true);manage.Tag="manage-stamps";Cell(manage,0,1);
+        var manage=ToolbarIcon(L.Get("Stamp.LibraryTitle"),"M6,8.5 V7 C6,5.5 4.8,4.7 4.8,3.2 C4.8,.6 11.2,.6 11.2,3.2 C11.2,4.7 10,5.5 10,7 V8.5 M6,8.5 H10 Q12,8.5 12,11 M6,8.5 Q4,8.5 4,11 M1.5,11 H14.5 V13.5 H1.5 Z M3,15.5 H13",ShowStampLibrary,"Stamp.Library");
+        AddShortcutHint(manage,"",lowerRow:true);manage.Tag="manage-stamps";Cell(manage,0,1);
         _stampLibraryButton=manage;
         _stampLibraryGlyph=((Controls.Grid)manage.Content).Children.OfType<Controls.ContentPresenter>().Single();
         _stampLibraryDefaultGlyph=_stampLibraryGlyph.Content;
-        var save=ToolbarIcon(L.Get("Feedback3.Toolbar.NewStamp"),"M4.5,8.5 V7 C4.5,5.5 3.5,4.7 3.5,3.2 C3.5,.6 8.5,.6 8.5,3.2 C8.5,4.7 7.5,5.5 7.5,7 V8.5 M4.5,8.5 H7.5 Q9.5,8.5 9.5,11 M4.5,8.5 Q2.5,8.5 2.5,11 M1,11 H11 V13.5 H1 Z M2,15.5 H10 M12.5,2.5 V7.5 M10,5 H15",SaveStampSelection,"+");
-        AddShortcutHint(save,"+",lowerRow:true);save.Tag="save-stamp";Cell(save,1,1);
+        var save=ToolbarIcon(L.Get("Feedback3.Toolbar.NewStamp"),"M4.5,8.5 V7 C4.5,5.5 3.5,4.7 3.5,3.2 C3.5,.6 8.5,.6 8.5,3.2 C8.5,4.7 7.5,5.5 7.5,7 V8.5 M4.5,8.5 H7.5 Q9.5,8.5 9.5,11 M4.5,8.5 Q2.5,8.5 2.5,11 M1,11 H11 V13.5 H1 Z M2,15.5 H10 M12.5,2.5 V7.5 M10,5 H15",SaveStampSelection,"Stamp.Create");
+        AddShortcutHint(save,"",lowerRow:true);save.Tag="save-stamp";Cell(save,1,1);
         _stampShelf = new(_stampLibrary, SelectStampSlot); Cell(_stampShelf, 3, 1, 10);
         _stampShelf.EntryMenuFactory=(id,slot)=>
         {
@@ -262,7 +263,15 @@ internal sealed partial class DesktopSession
 
     private void ActivateTool(EditorTool tool)
     {
+        CancelBorrowedTool();
+        ForgetBorrowedTool();
+        ActivateToolCore(tool,showOptions:true);
+    }
+
+    private void ActivateToolCore(EditorTool tool,bool showOptions)
+    {
         if (DocumentOperationBusy) return;
+        if(tool!=EditorTool.CaptureRegion) CompleteGlobalCapture(inserted:false,restoreMode:false);
         if (tool == EditorTool.Canvas && !CanEditDisplayedCanvas)
         { UpdateStatus(L.Get("GroupCanvas.EditPreviewInIndependent")); return; }
         if (tool == EditorTool.Crop && _editor.TryRedirectWindowSourceCrop()) return;
@@ -273,7 +282,7 @@ internal sealed partial class DesktopSession
         if (tool == EditorTool.Crop && !_editor.CanCropSelection) return;
         if (tool == EditorTool.CaptureRegion && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
         var family = ToolFamily(tool); var currentFamily = ToolFamily(_editor.Tool);
-        bool same = currentFamily == family && (tool is not (EditorTool.Arrow or EditorTool.DoubleArrow or EditorTool.RoundedRectangle) || AliasMatches(tool));
+        bool same = currentFamily == family && (tool is not (EditorTool.Arrow or EditorTool.DoubleArrow or EditorTool.RoundedRectangle or EditorTool.Triangle) || AliasMatches(tool));
         if (!same)
         {
             SwitchToolState(tool, applyAlias: true);
@@ -281,6 +290,7 @@ internal sealed partial class DesktopSession
         SynchronizeCanvasTool();
         UpdateStatus(ToolName(_editor.Tool)); RefreshToolbarState();
         if (!_host.IsEditing) { CloseToolOptions(); return; }
+        if(!showOptions)return;
         bool open = ShouldOpenToolOptions(same, wasOpen);
         if (open) OpenToolOptions(); else CloseToolOptions();
     }
@@ -294,7 +304,8 @@ internal sealed partial class DesktopSession
         var end = p.Style.EndArrowHead ?? (_editor.Tool is EditorTool.Arrow or EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None);
         return requested switch { EditorTool.Arrow => start == ArrowHeadStyle.None && end != ArrowHeadStyle.None,
             EditorTool.DoubleArrow => start != ArrowHeadStyle.None && end != ArrowHeadStyle.None,
-            EditorTool.RoundedRectangle => (p.CornerRadius ?? (_editor.Tool == EditorTool.RoundedRectangle ? 1 : 0)) > 0, _ => true };
+            EditorTool.RoundedRectangle => (p.CornerRadius ?? (_editor.Tool == EditorTool.RoundedRectangle ? 1 : 0)) > 0,
+            EditorTool.Triangle => p.Symbol==SymbolKind.Triangle, _ => true };
     }
     private void RefreshCanvasStateGlyph()
     {
@@ -314,7 +325,7 @@ internal sealed partial class DesktopSession
         foreach (var (key, button) in _commandStateButtons.Where(pair => pair.Key is "undo" or "redo"))
         {
             button.IsEnabled = CanExecuteUiCommand(key);
-            string label = L.Get(key == "undo" ? "ToolbarV2.Undo" : "ToolbarV2.Redo") + (key == "undo" ? " · Ctrl+Z" : " · Ctrl+Y");
+            string label = L.Get(key == "undo" ? "ToolbarV2.Undo" : "ToolbarV2.Redo") + (" · " + EditorCommandCatalog.Hint(key == "undo" ? "Edit.Undo" : "Edit.Redo"));
             string? operation = key == "undo" ? Active.UndoLabel : Active.RedoLabel;
             if (button.IsEnabled && operation is not null) label += "\n" + operation;
             button.ToolTip = button.IsEnabled ? label : label + "\n" + UiCommandDisabledHint(key);
@@ -382,7 +393,11 @@ internal sealed partial class DesktopSession
             if (tool == EditorTool.Crop) button.IsEnabled = _editor.CanCropSelection;
             bool selected = tool == EditorTool.Blur ? _toolbarUpperRow.IsExpanded || ButtonFamily(_editor.Tool) == tool : ButtonFamily(_editor.Tool) == tool;
             RefreshToolTooltip(tool, button, selected);
-            if (tool == EditorTool.Blur) button.ToolTip = L.Get(_toolbarUpperRow.IsExpanded ? "Toolbar.MoreCollapse" : "Toolbar.MoreExpand") + " · M";
+            if (tool == EditorTool.Blur)
+            {
+                string binding=EditorCommandCatalog.Hint("Tools.More");
+                button.ToolTip = L.Get(_toolbarUpperRow.IsExpanded ? "Toolbar.MoreCollapse" : "Toolbar.MoreExpand") + (binding.Length>0?" · "+binding:"");
+            }
             if(selected)button.SetResourceReference(Controls.Control.BorderBrushProperty,"CanvasAccent");else button.BorderBrush=Brushes.Transparent;
             button.SetResourceReference(Controls.Control.BackgroundProperty, selected ? "CanvasHover" : "CanvasSurface");
             if (tool == EditorTool.Blur && _toolbarUpperRow.IsExpanded)
@@ -410,9 +425,10 @@ internal sealed partial class DesktopSession
         if (selected)
         {
             // M toggles the extra tool row; ordinary tool keys revisit their panel.
-            string hint = tool == EditorTool.Select ? L.Get("Toolbar.SelectionHint") : shortcut.Length > 0 && tool != EditorTool.Blur
-                ? L.Format("Toolbar.ToolOptionsWithKeyHint", shortcut)
-                : L.Get("Toolbar.ToolOptionsHint");
+            string hint = shortcut.Length > 0 && tool != EditorTool.Blur
+                ? L.Format("Toolbar.ToolOptionsWithKeyHint", EditorCommandCatalog.Hint("Panel.Tools"), shortcut)
+                : L.Format("Toolbar.ToolOptionsHint", EditorCommandCatalog.Hint("Panel.Tools"));
+            if (tool == EditorTool.Select) text += "\n" + L.Get("Toolbar.SelectionHint");
             text += "\n" + hint;
         }
         if (!Equals(button.ToolTip, text)) button.ToolTip = text;
@@ -452,7 +468,9 @@ internal sealed partial class DesktopSession
     private static string ToolName(EditorTool tool) => ToolDisplayName.Get(tool);
     private Controls.Button ToolbarIcon(string label, string geometry, Action action, string shortcut = "")
     {
-        var button = ToolButton(label, geometry, action);
+        var command=EditorCommandCatalog.All.FirstOrDefault(c=>c.Id==shortcut);
+        var button = ToolButton(label, geometry, command is null ? action : ()=>ExecuteEditorCommand(command));
+        if(command is not null) { _toolbarCommandHints.Add((button,command.Id,label)); shortcut=EditorCommandCatalog.Hint(command.Id); }
         // Keep the frame pixel-aligned, but allow its centered artwork to sit
         // between pixels when the frame and glyph have different pixel parity.
         var glyphStyle = new Style(typeof(Controls.ContentPresenter));
@@ -471,22 +489,47 @@ internal sealed partial class DesktopSession
     {
         var content=ToolbarShortcutHint.CreateButtonContent(button,shortcut,lowerRow);
         if(tool is { } key)_toolbarGlyphHosts[key]=content.Glyph;
+        if (tool is {} hintedTool) content.Hint.Tag = (hintedTool, button);
         _toolbarShortcutHintLabels.Add(content.Hint);button.Content=content.Content;
     }
     private void RefreshToolShortcutHints()
     {
-        foreach(var hint in _toolbarShortcutHintLabels)hint.Visibility=_settings.ShowToolShortcutHints?Visibility.Visible:Visibility.Collapsed;
+        foreach(var hint in _toolbarShortcutHintLabels)
+        {
+            if(hint.Tag is ValueTuple<EditorTool,Controls.Button> target)
+            {
+                string binding=Equals(target.Item2.Tag,"more")?EditorCommandCatalog.Hint("Tools.More"):ToolShortcutCatalog.Hint(target.Item1);
+                hint.Text=binding.Length==1?binding:"";
+                target.Item2.ToolTip=(Equals(target.Item2.Tag,"more")?L.Get("Feedback4.Toolbar.More"):ToolName(target.Item1))+(binding.Length>0?" · "+binding:"");
+                System.Windows.Automation.AutomationProperties.SetAcceleratorKey(target.Item2,binding);
+            }
+            hint.Visibility=_settings.ShowToolShortcutHints?Visibility.Visible:Visibility.Collapsed;
+        }
+        foreach(var (button,id,label) in _toolbarCommandHints)
+        {
+            string binding=EditorCommandCatalog.Hint(id);
+            button.ToolTip=label+(binding.Length>0?" · "+binding:"");
+            System.Windows.Automation.AutomationProperties.SetAcceleratorKey(button,binding);
+        }
+        foreach(var (tool,button) in _extraToolButtons)
+        {
+            System.Windows.Automation.AutomationProperties.SetAcceleratorKey(button,ToolShortcutCatalog.Hint(tool));
+            RefreshToolTooltip(tool,button,ToolFamily(_editor.Tool)==tool);
+        }
+        RefreshLibraryStamp(_toolbarLibraryStamp);
+        _stampShelf?.Refresh();
         _stampShelf?.SetShortcutHintsVisible(_settings.ShowToolShortcutHints);
     }
     private static Controls.Border Separator()
     {var separator=new Controls.Border {Width=1,Margin=new Thickness(4,4,4,4)};separator.SetResourceReference(Controls.Border.BackgroundProperty,"CanvasBorder");return separator;}
     private Controls.Slider CreateToolbarOpacitySlider()
     {
-        var opacity=new ToolbarOpacitySlider {Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=L.Get("Feedback3.Toolbar.Opacity")+" · Ctrl+PageUp / Ctrl+PageDown"};
+        var opacity=new ToolbarOpacitySlider {Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=L.Get("Feedback3.Toolbar.Opacity")+" · "+EditorCommandCatalog.Hint("Canvas.OpacityUp")+" / "+EditorCommandCatalog.Hint("Canvas.OpacityDown")};
         opacity.FocusVisualStyle=null; Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(opacity,false);
         System.Windows.Automation.AutomationProperties.SetName(opacity,L.Get("Feedback3.Toolbar.Opacity"));
-        void RefreshOpacityTooltip() => opacity.ToolTip = L.Get("Feedback3.Toolbar.Opacity") + $" · {opacity.Value * 100:0.#}% · Ctrl+PageUp / Ctrl+PageDown";
+        void RefreshOpacityTooltip() => opacity.ToolTip = L.Get("Feedback3.Toolbar.Opacity") + $" · {opacity.Value * 100:0.#}% · "+EditorCommandCatalog.Hint("Canvas.OpacityUp")+" / "+EditorCommandCatalog.Hint("Canvas.OpacityDown");
         RefreshOpacityTooltip();
+        opacity.ToolTipOpening+=(_,_)=>RefreshOpacityTooltip();
         EditorSession? pointerSession=null; CanvasSettingsTarget? pointerTarget=null; long pointerTransaction=0;
         bool OwnsPointerTransaction()=>pointerSession is {IsTransactionActive:true}&&ReferenceEquals(pointerSession,Active)&&pointerSession.TransactionId==pointerTransaction&&pointerTarget?.IsCurrent==true;
         opacity.PointerGestureStarted+=()=>{pointerSession=null;pointerTarget=null;if(!DocumentOperationBusy&&CanEditDisplayedCanvas&&!Active.IsReadOnly){_editor.Cancel();pointerSession=Active;pointerTarget=CaptureCanvasSettingsTarget();pointerSession.BeginTransaction(L.Get("History.LayerOpacity"));pointerTransaction=pointerSession.TransactionId;}};

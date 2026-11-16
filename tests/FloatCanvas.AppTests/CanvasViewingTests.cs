@@ -206,7 +206,7 @@ internal static class CanvasViewingTests
         typeof(DesktopSession).GetField("_canvasNavigationSpaceHeld", hidden)!.SetValue(desktop, true);
         Pointer(OverlayPointerKind.Wheel, OverlayMouseButton.None, 200, 100, 120);
         var camera = Field<CanvasViewTransform>("_canvasView");
-        check("Space wheel uses a pointer-centered camera in the production desktop handler", Math.Abs(camera.Zoom - 1.1) < 1e-9 && camera.ToCanvas(new(200, 100)).DistanceTo(new(200, 100)) < 1e-7);
+        check("Ctrl wheel uses a pointer-centered camera in the production desktop handler", Math.Abs(camera.Zoom - 1.1) < 1e-9 && camera.ToCanvas(new(200, 100)).DistanceTo(new(200, 100)) < 1e-7);
         Pointer(OverlayPointerKind.Down, OverlayMouseButton.Left, 200, 100);
         Pointer(OverlayPointerKind.Move, OverlayMouseButton.Left, 250, 130);
         Pointer(OverlayPointerKind.Up, OverlayMouseButton.Left, 250, 130);
@@ -321,7 +321,7 @@ internal static class CanvasViewingTests
         object? Invoke(string name, params object[] arguments) => typeof(DesktopSession).GetMethod(name, hidden)!.Invoke(desktop, arguments);
         void Set(string name, object value) => typeof(DesktopSession).GetField(name, hidden)!.SetValue(desktop, value);
         void Pointer(OverlayPointerKind kind, OverlayMouseButton button, double x, double y, int wheel = 0) =>
-            Invoke("HandleCanvasPointer", new OverlayPointerEvent(kind, new(x, y), button, OverlayModifiers.None, wheel));
+            Invoke("HandleCanvasPointer", new OverlayPointerEvent(kind, new(x, y), button, kind == OverlayPointerKind.Wheel ? OverlayModifiers.Control : OverlayModifiers.None, wheel));
         void ObjectPointer(OverlayPointerKind kind, PointD point) =>
             Invoke("HandleCanvasPointer", new OverlayPointerEvent(kind, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None));
     }

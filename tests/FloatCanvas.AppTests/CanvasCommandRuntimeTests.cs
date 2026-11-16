@@ -39,15 +39,14 @@ internal static class CanvasCommandRuntimeTests
         check("canvas Ctrl+G selects the new group node containing the original members", GroupSelected());
         Press(0x47, control: true, shift: true);
         check("canvas Ctrl+Shift+G ungroups the same selected members", state.Document.Groups.Count == 0 && state.Selection.SetEquals([first.Id, second.Id]));
-        foreach (uint clear in new uint[] { 0x08, 0x2E })
-        {
-            var document = state.Document;
-            var canvas = document.Canvas;
-            Press(clear, control: true); WaitForCommand();
-            check($"Ctrl+{(clear == 0x08 ? "Backspace" : "Delete")} clears only the current canvas", ReferenceEquals(editor.Session, state) && ReferenceEquals(state.Document, document) && ReferenceEquals(state.Document.Canvas, canvas) && document.Elements.Count == 0);
-            Invoke("Undo");
-            check("one undo restores the shortcut-cleared objects", state.Document.Elements.Count == 2);
-        }
+        Press(0x08, control: true); Press(0x2E, control: true);
+        check("unbound Ctrl+Backspace and Ctrl+Delete cannot clear the canvas", state.Document.Elements.Count == 2);
+        var document = state.Document; var canvas = document.Canvas;
+        typeof(DesktopSession).GetMethod("ExecuteEditorCommand", Private)!.Invoke(session, [EditorCommandCatalog.All.Single(c=>c.Id=="Edit.Clear")]);
+        WaitForCommand();
+        check("explicit clear command clears only the current canvas", ReferenceEquals(editor.Session,state) && ReferenceEquals(state.Document,document) && ReferenceEquals(document.Canvas,canvas) && document.Elements.Count==0);
+        Invoke("Undo");
+        check("one undo restores the explicitly cleared objects",state.Document.Elements.Count==2);
         var prior = editor.Session;
         Press(0x4E, control: true); WaitForCommand();
         check("Ctrl+N creates a new empty session through the existing archive workflow", !ReferenceEquals(editor.Session, prior) && editor.Session.Document.Elements.Count == 0 && prior.Document.Elements.Count == 2);

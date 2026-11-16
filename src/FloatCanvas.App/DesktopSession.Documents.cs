@@ -620,10 +620,13 @@ internal sealed partial class DesktopSession
     }
 
     private void CopySelection() => _ = CopySelectionAsync();
-    private async Task CopySelectionAsync()
+    private async Task CopySelectionAsync(bool cut = false)
     {
         if (DocumentOperationBusy) return;
         _editor.Cancel(); var session = Active;
+        if (cut && (session.IsReadOnly || session.Selection.Count == 0)) return;
+        var cutSelection = session.Selection.ToArray();
+        long cutRevision = session.SceneRevision;
         using var windowRaster = FreezeWindowSourceCapture(session);
         var selected = ObjectClipboardCommand.CreateSnapshot(session);
         bool objects = selected.Elements.Count > 0 || selected.Groups.Count > 0 || selected.Instances.Count > 0;
@@ -682,6 +685,8 @@ internal sealed partial class DesktopSession
             data.SetData(Wpf.DataFormats.Bitmap, bitmap);
             if (encoded.internalObjects is not null) data.SetData(ObjectClipboardFormat, encoded.internalObjects);
             Wpf.Clipboard.SetDataObject(data, copy: true);
+            if (cut && objects && ReferenceEquals(Active, session) && session.SceneRevision == cutRevision &&
+                session.Selection.SetEquals(cutSelection)) session.DeleteSelection();
             UpdateStatus(WithCaptureWarning(objects ? L.Get("Clipboard.CopiedObjects") : L.Get("Clipboard.CopiedImage"), captureWarning));
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { ShowError(L.Get("Clipboard.CopyFailed") + ex.Message); }

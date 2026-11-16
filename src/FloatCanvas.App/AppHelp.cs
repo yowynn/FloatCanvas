@@ -36,6 +36,12 @@ internal static class AppHelp
                 if (start >= 0) text = string.Join("\n", lines.Skip(start).TakeWhile(line => line.StartsWith('|')));
             }
         }
+        if (shortcuts)
+        {
+            var rows=EditorCommandCatalog.All.Select(command=>"| "+command.Name+" | "+
+                (EditorCommandCatalog.Hint(command.Id) is {Length:>0} hint?hint:L.Get("Shortcuts.Unbound"))+" |");
+            text="| "+L.Get("Shortcuts.CommandColumn")+" | "+L.Get("Settings.Shortcuts")+" |\n| --- | --- |\n"+string.Join("\n",rows)+"\n\n"+L.Get("Shortcuts.Scope");
+        }
         return text;
     }
     internal static void ShowText(string title, string text, Window? owner = null)

@@ -52,6 +52,7 @@ internal static class NumericRailRangeTests
         { RoutedEvent = Keyboard.PreviewKeyDownEvent };
         target.RaiseEvent(input);
         if (!input.Handled) { input.RoutedEvent = Keyboard.KeyDownEvent; target.RaiseEvent(input); }
+        target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,new DetachedSource(),Environment.TickCount,key) { RoutedEvent=Keyboard.PreviewKeyUpEvent });
     }
 
     private sealed class DetachedSource : PresentationSource

@@ -20,6 +20,7 @@ internal sealed class KeyboardSuppressionState
     private readonly uint[] scans = new uint[256], flags = new uint[256];
     private readonly nint[] targets = new nint[256];
     private HotkeyBinding toggle, hide;
+    internal Dictionary<int, HotkeyBinding> CommandHotkeys { get; set; } = [];
     internal bool CommandsSuspended { get; set; }
     private long sequence, lease, inFlight;
     private KeyboardInputPacket? inFlightPacket;
@@ -49,7 +50,7 @@ internal sealed class KeyboardSuppressionState
     public void UpdateHotkeys(HotkeyBinding toggle, HotkeyBinding hide)
     {
         ValidateHotkey(toggle); ValidateHotkey(hide);
-        if (toggle == hide) throw new ArgumentException(L.Get("Hotkeys.DuplicateBindings"));
+        if (toggle.VirtualKey != 0 && toggle == hide) throw new ArgumentException(L.Get("Hotkeys.DuplicateBindings"));
         this.toggle = toggle; this.hide = hide;
     }
 
@@ -57,7 +58,7 @@ internal sealed class KeyboardSuppressionState
     {
         if (initialState.Length != 256) throw new ArgumentException(L.Get("Keyboard.InvalidStateLength"), nameof(initialState));
         ValidateHotkey(toggle); ValidateHotkey(hide);
-        if (toggle == hide) throw new ArgumentException(L.Get("Hotkeys.DuplicateBindings"));
+        if (toggle.VirtualKey != 0 && toggle == hide) throw new ArgumentException(L.Get("Hotkeys.DuplicateBindings"));
         if (IsActive) End(KeyboardLeaseEndReason.Replaced, now);
         CancelInputMethodSwitch();
         // Keep queued balancing/end packets from the old lease, but never stale input keydowns.
@@ -200,6 +201,14 @@ internal sealed class KeyboardSuppressionState
             End(KeyboardLeaseEndReason.Toggle, now, KeyboardInputPacketKind.Toggle);
             return true;
         }
+        if (!CommandsSuspended && !up && !repeat)
+            foreach (var command in CommandHotkeys)
+                if (Matches(command.Value, vk))
+                {
+                    visibilityCommand[key] = true;
+                    queue.Enqueue(Packet(KeyboardInputPacketKind.Command, (uint)command.Key, vk, 0, 0, false, false, 0));
+                    return true;
+                }
         queue.Enqueue(Packet(KeyboardInputPacketKind.Key, vk, scan, eventFlags, time, up, repeat, foreground, message: message, pointerPosition: pointerPosition, pointerLeftDown: pointerLeftDown));
         return true;
     }
@@ -228,6 +237,8 @@ internal sealed class KeyboardSuppressionState
     };
     internal static void ValidateHotkey(HotkeyBinding binding)
     {
+        if (binding == default) return;
+        if (binding.VirtualKey == 0x7B) throw new ArgumentException("F12 is reserved by Windows.", nameof(binding));
         if (binding.VirtualKey is 0 or >= 255 || (binding.Modifiers & ~15u) != 0)
             throw new ArgumentOutOfRangeException(nameof(binding));
         if ((binding.Modifiers & 8) != 0 || binding.VirtualKey is 0x5B or 0x5C)

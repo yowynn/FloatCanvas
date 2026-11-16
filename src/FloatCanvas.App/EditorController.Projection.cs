@@ -5,6 +5,16 @@ namespace FloatCanvas.App;
 
 internal sealed partial class EditorController
 {
+    internal RectD? SelectionViewingBounds
+    {
+        get
+        {
+            var mapping=CurrentCanvasMapping;
+            var bounds=SelectedEditingWorldElements().Where(element=>element.Visible && element.Style.Opacity>0)
+                .Select(element=>mapping.ProjectedBounds(element)).Where(b=>!b.IsEmpty && double.IsFinite(b.X+b.Y+b.Width+b.Height)).ToArray();
+            return bounds.Length==0?null:bounds.Aggregate(RectD.Union);
+        }
+    }
     // All adorner points use the output coordinate system, before CanvasOrigin is added.
     internal IReadOnlyList<PointD> SelectionScreenCorners
     {

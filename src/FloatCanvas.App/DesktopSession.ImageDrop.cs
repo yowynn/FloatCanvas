@@ -21,6 +21,7 @@ internal sealed partial class DesktopSession
     private void ToggleEditing()
     {
         if (System.Windows.Interop.ComponentDispatcher.IsThreadModal) return;
+        if (_allOverlaysHidden is not null) { RestoreAllOverlays(); if (!_host.IsEditing) SetEditing(true); return; }
         if (_snapshotCaptureRequest is not null) { CancelSnapshotCapture("ToggleEditing"); SetEditing(false); return; }
         if (_host.IsReceivingDrop) { CloseImageDrop(); RequestRender(); return; }
         if (_host.IsEditing) { SetEditing(false); return; }

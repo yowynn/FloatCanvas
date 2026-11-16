@@ -7,8 +7,7 @@ namespace FloatCanvas.App;
 internal static class PresetHistoryKeyboardRoute
 {
     internal static bool ShouldRoute(Key key, ModifierKeys modifiers, DependencyObject? source) =>
-        (key == Key.Z && (modifiers == ModifierKeys.Control || modifiers == (ModifierKeys.Control | ModifierKeys.Shift)) ||
-         key == Key.Y && modifiers == ModifierKeys.Control) &&
+        EditorCommandCatalog.Resolve(KeyInterop.VirtualKeyFromKey(key), (FloatCanvas.Windows.OverlayModifiers)modifiers)?.Id is ("Edit.Undo" or "Edit.Redo") &&
         EditorShortcutPolicy.ShouldRoute(KeyInterop.VirtualKeyFromKey(key), modifiers, source);
 
     internal static void Handle(KeyEventArgs args, ModifierKeys modifiers, Action<int> command)

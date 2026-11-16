@@ -180,7 +180,7 @@ internal static class BillboardInteractionAuditTests
         var editor = new EditorController(session) { Tool = EditorTool.Select };
         var center = editor.BillboardSelectionGuide!.Value.Center; var anchor = box.BillboardAnchor;
         var corner = editor.SelectionScreenCorners[2]; var target = center + (corner - center) * 1.5;
-        Send(editor, OverlayPointerKind.Down, corner); Send(editor, OverlayPointerKind.Move, target); Send(editor, OverlayPointerKind.Up, target);
+        Send(editor, OverlayPointerKind.Down, corner, OverlayModifiers.Alt); Send(editor, OverlayPointerKind.Move, target, OverlayModifiers.Alt); Send(editor, OverlayPointerKind.Up, target, OverlayModifiers.Alt);
         check("billboard corner resize keeps approved center and ground anchor", box.BillboardAnchor == anchor && box.BillboardHeight == 50 &&
             editor.BillboardSelectionGuide!.Value.Center.DistanceTo(center) < 1e-6);
         check("billboard rectangle resize edits logical dimensions while retaining uniform logical stroke", Math.Abs(box.Width - 300) < 1e-6 &&

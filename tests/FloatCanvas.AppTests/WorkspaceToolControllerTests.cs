@@ -107,11 +107,11 @@ internal static class WorkspaceToolControllerTests
         var world = SceneEvaluation.Build(session.Document).RenderDocument.Elements;
         check("dragging a selected group moves the world view in one transaction without baking child transforms", world.All(element => element.Transform.OffsetY == 115) &&
             world[0].Transform.OffsetX == 120 && world[1].Transform.OffsetX == 270 && session.Document.Elements[0].Transform.OffsetX == 100 && session.UndoCount == 1);
-        Gesture(controller, new(160, 145), new(160, 145), OverlayModifiers.Alt);
-        check("Alt-click chooses one editable child without ungrouping or adding history", session.Selection.SetEquals([first.Id]) && session.Document.Groups.Count == 1 && session.UndoCount == 1);
-        Gesture(controller, new(160, 145), new(170, 165), OverlayModifiers.Alt);
+        Gesture(controller, new(160, 145), new(160, 145), OverlayModifiers.Control);
+        check("Ctrl-click chooses one editable child without ungrouping or adding history", session.Selection.SetEquals([first.Id]) && session.Document.Groups.Count == 1 && session.UndoCount == 1);
+        Gesture(controller, new(160, 145), new(170, 165), OverlayModifiers.Control);
         world = SceneEvaluation.Build(session.Document).RenderDocument.Elements;
-        check("Alt-drag moves only that child while preserving its parent-local membership", world[0].Transform == Affine2D.Translation(130, 135) &&
+        check("Ctrl-drag moves only that child while preserving its parent-local membership", world[0].Transform == Affine2D.Translation(130, 135) &&
             world[1].Transform == Affine2D.Translation(270, 115) && session.Document.Elements.All(element => element.GroupId == group.Id) && session.UndoCount == 2);
         Gesture(controller, new(170, 165), new(170, 165));
         check("a normal click after child editing returns to selecting the owning group", session.Selection.SetEquals([group.Id]) && !session.IsTransactionActive);

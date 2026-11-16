@@ -89,7 +89,7 @@ internal static class LayerRenameTests
         ClickName(a.Id); Editor(a.Id).Text = "保留中文 draft"; window.PrepareForShow();
         check(locale + " periodic refresh preserves the uncommitted draft", window.IsRenaming && Editor(a.Id).Text == "保留中文 draft");
         int routed = 0; window.CommandKey += _ => routed++;
-        bool route = (bool)Invoke(window, "RouteCommandKey", 0x2E, false)!;
+        bool route = (bool)Invoke(window, "RouteCommandKey", 0x2E, Input.ModifierKeys.None)!;
         check(locale + " text editing never routes Delete to scene commands", !route && routed == 0 && session.Document.Elements.Count == 2);
         SetField(window, "renameComposing", true);
         bool handled = (bool)Invoke(window, "HandleRenameKey", Input.Key.Enter)!;

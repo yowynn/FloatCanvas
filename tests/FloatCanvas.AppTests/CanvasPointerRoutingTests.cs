@@ -34,11 +34,13 @@ internal static class CanvasPointerRoutingTests
         editor.Tool = EditorTool.Stamp; state.SetSelection([item.Id]);
         int count = state.Document.Elements.Count;
         var before = state.Document.Elements.Single(element => element.Id == item.Id).Transform;
-        Send(OverlayPointerKind.Down, OverlayMouseButton.Middle);
-        check("production middle press starts temporary Move before the Stamp placement route", editor.IsTemporaryMove && editor.Tool == EditorTool.Stamp && state.Document.Elements.Count == count);
-        Send(OverlayPointerKind.Move, OverlayMouseButton.Middle, new(point.X + 20, point.Y + 10));
-        Send(OverlayPointerKind.Up, OverlayMouseButton.Middle, new(point.X + 20, point.Y + 10));
-        check("production Stamp middle drag moves existing content without adding a stamp or changing tool", !editor.IsTemporaryMove && editor.Tool == EditorTool.Stamp &&
+        editor.BeginTemporarySelection();
+        Send(OverlayPointerKind.Down, OverlayMouseButton.Left);
+        check("production borrowed selection press starts temporary Move before the Stamp placement route", editor.IsTemporaryMove && editor.Tool == EditorTool.Stamp && state.Document.Elements.Count == count);
+        Send(OverlayPointerKind.Move, OverlayMouseButton.Left, new(point.X + 20, point.Y + 10));
+        Send(OverlayPointerKind.Up, OverlayMouseButton.Left, new(point.X + 20, point.Y + 10));
+        editor.EndTemporarySelection();
+        check("production Stamp borrowed selection drag moves existing content without adding a stamp or changing tool", !editor.IsTemporaryMove && editor.Tool == EditorTool.Stamp &&
             state.Document.Elements.Count == count && state.Document.Elements.Single(element => element.Id == item.Id).Transform ==
                 Affine2D.Translation(20,10).Compose(before));
         check("production pointer fixture preserves native editing", host.IsEditing);

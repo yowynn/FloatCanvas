@@ -627,9 +627,9 @@ internal static partial class GroupCanvasRootEditingTests
         PointD[] localCorners = [default, new(element.Width, 0), new(element.Width, element.Height), new(0, element.Height)];
         var expected = localCorners.Select(ResizeLocal).Select(localToRoot.TransformPoint).ToArray();
         target = CanvasMapping.Create(restored.Document).ToScreen(expected[2]) + restored.Origin;
-        fixture.Pointer(OverlayPointerKind.Down, from);
+        fixture.Pointer(OverlayPointerKind.Down, from, OverlayModifiers.Alt);
         check(name + " real root corner handle starts its resize gesture", Field<string?>(fixture.Editor, "gesture") == "resize");
-        fixture.Pointer(OverlayPointerKind.Move, target); fixture.Pointer(OverlayPointerKind.Up, target);
+        fixture.Pointer(OverlayPointerKind.Move, target, OverlayModifiers.Alt); fixture.Pointer(OverlayPointerKind.Up, target, OverlayModifiers.Alt);
         using var resized = fixture.Present(name + "-root-resized");
         var resizedCorners = PlaneCorners(resized, name, host);
         check(name + " resize oracle matches centered local 1.2 by 0.85 scale for every root-plane corner", expected.Zip(resizedCorners).All(pair => pair.First.DistanceTo(pair.Second) < 1e-5));
@@ -745,10 +745,10 @@ internal static partial class GroupCanvasRootEditingTests
                 File.WriteAllBytes(Path.Combine(output, filename), encoded.ToArray());
             }
         }
-        internal void Pointer(OverlayPointerKind kind, PointD localScreen)
+        internal void Pointer(OverlayPointerKind kind, PointD localScreen, OverlayModifiers modifiers = OverlayModifiers.None)
         {
             var physical = localScreen + new PointD(bounds.Left, bounds.Top);
-            Call("HandleCanvasPointer", new OverlayPointerEvent(kind, new(physical.X, physical.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+            Call("HandleCanvasPointer", new OverlayPointerEvent(kind, new(physical.X, physical.Y), OverlayMouseButton.Left, modifiers));
             Await(Editor.PendingPicking);
             if (kind == OverlayPointerKind.Down) Console.WriteLine($"ROOT_POINTER_DOWN point={localScreen} actual={Field<PointD>(Editor, "pointerScreen")} gesture={Field<string?>(Editor, "gesture")} suspended={Field<bool>(Editor, "presentedPickingSuspended")} selection={Editor.Session.Selection.Count} message={LastMessage}");
         }

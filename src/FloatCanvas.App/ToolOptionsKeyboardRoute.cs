@@ -16,7 +16,7 @@ internal static class ToolOptionsKeyboardRoute
         {
             var source = e.OriginalSource as DependencyObject ?? Keyboard.FocusedElement as DependencyObject;
             var key = e.Key == Key.System ? e.SystemKey : e.Key;
-            if (e.Handled || SessionKeyboardRouter.IsModal || (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
+            if (e.Handled || SessionKeyboardRouter.IsModal || (Keyboard.Modifiers & ModifierKeys.Windows) != 0) return;
             if (key == Key.Escape)
             {
                 if (FontPickerControl.TryCancelForInput(source)) { e.Handled = true; return; }

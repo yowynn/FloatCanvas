@@ -1,4 +1,6 @@
 using FloatCanvas.Windows;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace FloatCanvas.App;
 
@@ -7,14 +9,29 @@ internal static class HotkeyDisplay
 {
     public static string Format(HotkeyBinding binding)
     {
+        if (binding.VirtualKey==0) return FloatCanvas.Localization.AppText.Get("Shortcuts.Unbound");
         var parts = new List<string>();
         if ((binding.Modifiers & 2) != 0) parts.Add("Ctrl");
         if ((binding.Modifiers & 1) != 0) parts.Add("Alt");
         if ((binding.Modifiers & 4) != 0) parts.Add("Shift");
         if ((binding.Modifiers & 8) != 0) parts.Add("Win");
-        parts.Add(KeyName(binding.VirtualKey));
+        parts.Add(LayoutKeyName(binding.VirtualKey));
         return string.Join("+", parts);
     }
+
+    private static string LayoutKeyName(uint key)
+    {
+        if (key is >=0xBA and <=0xE2)
+        {
+            uint scan=MapVirtualKeyEx(key,0,GetKeyboardLayout(0));
+            var label=new StringBuilder(64);
+            if(scan!=0 && GetKeyNameText((int)(scan<<16),label,label.Capacity)>0) return label.ToString();
+        }
+        return KeyName(key);
+    }
+    [DllImport("user32.dll")] private static extern nint GetKeyboardLayout(uint thread);
+    [DllImport("user32.dll",EntryPoint="MapVirtualKeyExW")] private static extern uint MapVirtualKeyEx(uint code,uint map,nint layout);
+    [DllImport("user32.dll",EntryPoint="GetKeyNameTextW",CharSet=CharSet.Unicode)] private static extern int GetKeyNameText(int code,StringBuilder text,int size);
 
     internal static string KeyName(uint key) => key switch
     {

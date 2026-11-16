@@ -112,12 +112,13 @@ internal sealed partial class EditorController
             else
             {
                 if (!mapping.ElementToScreen(billboard).TryInverse(out var inverse)) { RejectPointer(); return true; }
-                var center = ElementGeometry.LocalBounds(billboard).Center;
+                var center = ResizePivot(ElementGeometry.LocalBounds(billboard),inverse.TransformPoint(startScreen));
                 var from = inverse.TransformPoint(startScreen) - center; var to = inverse.TransformPoint(pointerScreen) - center;
                 double sx = Math.Abs(from.X) < .001 ? 1 : Math.Max(.02, to.X / from.X);
                 double sy = Math.Abs(from.Y) < .001 ? 1 : Math.Max(.02, to.Y / from.Y);
                 if (ElementGeometry.PreservesAspect(billboard) ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = UniformScale(from, to);
                 ResizeWorldLeaf(candidate, billboard, sx, sy);
+                PreserveResizePivot(billboard,candidate,center);
             }
             if (!WriteWorldElement(candidate)) RejectPointer(); else NotifyGeometryChanged();
             return true;
@@ -126,16 +127,17 @@ internal sealed partial class EditorController
             (ElementGeometry.IsBoxShape(single.Kind) || single.Kind is ElementKind.Text or ElementKind.Presentation))
         {
             if (!ElementGeometry.LocalToPlane(single).TryInverse(out var inverse)) return true;
-            var center = ElementGeometry.LocalBounds(single).Center;
+            var center = ResizePivot(ElementGeometry.LocalBounds(single),inverse.TransformPoint(start));
             var from = inverse.TransformPoint(start) - center; var to = inverse.TransformPoint(point) - center;
             double sx = Math.Abs(from.X) < .001 ? 1 : Math.Max(.02, to.X / from.X);
             double sy = Math.Abs(from.Y) < .001 ? 1 : Math.Max(.02, to.Y / from.Y);
             if (ElementGeometry.PreservesAspect(single) ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = UniformScale(from, to);
             var candidate = single.Clone(); ResizeWorldLeaf(candidate, single, sx, sy);
+            PreserveResizePivot(single,candidate,center);
             if (!WriteWorldElement(candidate)) RejectPointer(); else NotifyGeometryChanged();
             return true;
         }
-        var pivot = selectionBounds.Center; Affine2D delta; double elevation = 1;
+        var pivot = gesture == "resize" ? ResizePivot(selectionBounds,start) : selectionBounds.Center; Affine2D delta; double elevation = 1;
         if (gesture == "move")
         {
             var displacement = ConstrainViewMove(point - start, modifiers);
@@ -175,7 +177,7 @@ internal sealed partial class EditorController
         }
         else
         {
-            var center = ElementGeometry.LocalBounds(authored).Center;
+            var center = gesture == "resize" ? ResizePivot(ElementGeometry.LocalBounds(authored),first) : ElementGeometry.LocalBounds(authored).Center;
             var from = first - center; var to = last - center;
             if (gesture == "rotate")
             {
@@ -190,6 +192,7 @@ internal sealed partial class EditorController
                 double sy = Math.Abs(from.Y) < .001 ? 1 : Math.Max(.02, to.Y / from.Y);
                 if (ElementGeometry.PreservesAspect(authored) ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = UniformScale(from, to);
                 ResizeWorldLeaf(candidate, authored, sx, sy);
+                PreserveResizePivot(authored,candidate,center);
             }
         }
         var graph = new SceneGraph(Session.Document);

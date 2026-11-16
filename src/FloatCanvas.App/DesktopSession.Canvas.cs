@@ -500,12 +500,7 @@ internal sealed partial class DesktopSession
         {
             if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick && e.Button == OverlayMouseButton.Left)
                 _canvasGridScale.DownPan(Active, point, CanvasReferenceViewport(), CaptureCanvasSettingsTarget());
-            else if (e.Kind == OverlayPointerKind.Wheel && !Active.IsTransactionActive)
-            {
-                double size = Math.Clamp(CanvasGridGeometry.ResolveCellSize(CurrentCanvasSettings, CanvasReferenceViewport()) *
-                    Math.Pow(1.1, e.WheelDelta / 120d), CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize);
-                SetCanvasGridSize(size);
-            }
+
         }
         return true;
     }

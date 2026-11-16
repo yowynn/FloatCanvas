@@ -114,6 +114,14 @@ internal static class AppInputPolicy
         threadInitialized = true;
         WindowFocusLifecycle.Initialize();
         TooltipLifecycle.Initialize();
+        EventManager.RegisterClassHandler(typeof(UIElement), Keyboard.KeyDownEvent, new KeyEventHandler((_, e) =>
+        {
+            if (e.Handled || e.Key != Key.Tab || SessionKeyboardRouter.IsModal) return;
+            var source = e.OriginalSource as DependencyObject ?? Keyboard.FocusedElement as DependencyObject;
+            if (EditorShortcutPolicy.OwnsLocalEditingKeys(source) || EditorShortcutPolicy.OwnsMenu(source)) return;
+            if (source is not null && Window.GetWindow(source) is {} window && EditorShortcutPolicy.RecordingWindows.Contains(window)) return;
+            e.Handled = true;
+        }));
         InputManager.Current.PreProcessInput += CaptureNativeMessage;
     }
     internal static void Initialize()

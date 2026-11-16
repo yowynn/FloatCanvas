@@ -49,14 +49,15 @@ internal static class PointerPresentationBehaviorTests
         session.Cancel();
 
         editor.Tool = EditorTool.Select;
-        editor.HandleTemporaryMovePointer(new(OverlayPointerKind.Down, new(110, 100), OverlayMouseButton.Middle, OverlayModifiers.None));
-        editor.HandleTemporaryMovePointer(new(OverlayPointerKind.Move, new(140, 125), OverlayMouseButton.Middle, OverlayModifiers.None));
-        check("ordinary tools still enter the existing middle selection transaction", editor.IsTemporaryMove && session.IsTransactionActive);
+        editor.BeginTemporarySelection();
+        editor.HandleTemporaryMovePointer(new(OverlayPointerKind.Down, new(110, 100), OverlayMouseButton.Left, OverlayModifiers.None));
+        editor.HandleTemporaryMovePointer(new(OverlayPointerKind.Move, new(140, 125), OverlayMouseButton.Left, OverlayModifiers.None));
+        check("ordinary tools still enter the existing borrowed selection selection transaction", editor.IsTemporaryMove && session.IsTransactionActive);
         editor.Tool = EditorTool.PointerPresentation;
-        check("switching into mouse presentation cancels an existing middle drag without clearing selection",
+        check("switching into mouse presentation cancels an existing borrowed selection drag without clearing selection",
             JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo && !session.IsTransactionActive && !editor.IsTemporaryMove && session.Selection.SetEquals([element.Id]));
-        Send(OverlayPointerKind.Up, OverlayMouseButton.Middle, new(140, 125));
-        check("late release from the old middle gesture cannot commit into the mouse tool", JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo);
+        Send(OverlayPointerKind.Up, OverlayMouseButton.Left, new(140, 125));
+        check("late release from the old borrowed selection gesture cannot commit into the mouse tool", JsonSerializer.Serialize(session.Document) == before && session.UndoCount == undo);
         // Only the pending recipient identity is needed by Move. Avoid constructing
         // application resources or sampling a real desktop in this managed route check.
         Set(desktop, "_eyedropper", RuntimeHelpers.GetUninitializedObject(typeof(ColorField))); Set(desktop, "_disposed", true);
@@ -70,8 +71,9 @@ internal static class PointerPresentationBehaviorTests
         Visuals(check, desktop, editor);
         Toolbar(check, desktop, editor);
         editor.Tool = EditorTool.Freehand;
-        editor.HandleTemporaryMovePointer(new(OverlayPointerKind.Down, new(110, 100), OverlayMouseButton.Middle, OverlayModifiers.None));
-        check("leaving mouse presentation restores ordinary middle selection rules", editor.IsTemporaryMove && session.IsTransactionActive);
+        editor.BeginTemporarySelection();
+        editor.HandleTemporaryMovePointer(new(OverlayPointerKind.Down, new(110, 100), OverlayMouseButton.Left, OverlayModifiers.None));
+        check("leaving mouse presentation permits explicit borrowed selection", editor.IsTemporaryMove && session.IsTransactionActive);
         editor.Cancel();
 
         void Send(OverlayPointerKind kind, OverlayMouseButton button, OverlayPoint point) =>

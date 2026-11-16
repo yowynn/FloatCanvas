@@ -41,7 +41,7 @@ internal static class Feedback4GeometryTests
             var editor = new EditorController(session) { Tool = EditorTool.Select };
             string before = JsonSerializer.Serialize(session.Document); var bounds = session.SelectionBounds()!.Value;
             var from = new PointD(bounds.Right, bounds.Bottom);
-            Gesture(editor, from, from + new PointD(50, 0));
+            Gesture(editor, from, from + new PointD(50, 0), OverlayModifiers.Alt);
             var resized = session.Document.Elements.Single();
             check(kind + " changes width independently without distorting its stroke matrix", resized.Width > 190 && Math.Abs(resized.Height - 60) < 1e-8 &&
                 Math.Abs(resized.Transform.M11 - 1) < 1e-8 && Math.Abs(resized.Transform.M22 - 1) < 1e-8 && resized.Style.StrokeWidth == 4);
@@ -134,9 +134,9 @@ internal static class Feedback4GeometryTests
         check("existing number width editing enlarges its locked circle in one undoable operation", Math.Abs(bounds.Width - 64) < 1e-8 && Math.Abs(bounds.Height - 64) < 1e-8 && number.Style.FontSize == 24 && session.UndoCount == 1);
     }
 
-    private static void Gesture(EditorController editor, PointD from, PointD to)
+    private static void Gesture(EditorController editor, PointD from, PointD to, OverlayModifiers modifiers = OverlayModifiers.None)
     {
         foreach (var (kind, point) in new[] { (OverlayPointerKind.Down, from), (OverlayPointerKind.Move, to), (OverlayPointerKind.Up, to) })
-            editor.Pointer(new(kind, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+            editor.Pointer(new(kind, new(point.X, point.Y), OverlayMouseButton.Left, modifiers));
     }
 }

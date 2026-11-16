@@ -148,6 +148,7 @@ internal sealed partial class DesktopSession
             return false;
         }
         _documentBusy = true;
+        bool inserted=false;
         var animationTime = _renderer.AnimationTime;
         LogSnapshot(request, "Begin", selection: selection);
         try
@@ -197,6 +198,7 @@ internal sealed partial class DesktopSession
             if (!result.HasVisiblePixels) { LogSnapshot(request, "Empty"); UpdateStatus(L.Get("Snapshot.Empty")); return; }
             SnapshotImageCommand.Insert(request.Target, result, capturedMapping.PlaneToScreen,
                 selection.BillboardDepthLine, selection.BillboardScreenFirst, capturedMapping);
+            inserted=true;
             LogSnapshot(request, "Inserted");
             UpdateStatus(WithCaptureWarning(L.Get("Snapshot.Inserted"), desktop is null ? null : CaptureWarning(desktop)));
             ScheduleRecovery();
@@ -209,6 +211,7 @@ internal sealed partial class DesktopSession
             LogSnapshot(request, "End");
             if (ReferenceEquals(_snapshotCaptureRequest, request)) _snapshotCaptureRequest = null;
             _documentBusy = false; PruneDocumentResources(); RequestRender();
+            CompleteGlobalCapture(inserted);
         }
     }
 

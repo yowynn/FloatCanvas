@@ -279,6 +279,8 @@ internal static class CanvasApplyTests
         session.ReplaceDocument(document); session.SetEditScope(group.Id); fixture.Call("SetGroupCanvasMode", GroupCanvasMode.Temporary); fixture.Call("CurrentGroupCanvasView");
         check("hidden-content independent opening preserves the authored view", fixture.View == CanvasViewTransform.Identity);
         fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.FitContent);
+        check("content framing without visible content preserves the current view", fixture.View == CanvasViewTransform.Identity);
+        fixture.Call("ExecuteCanvasViewing", CanvasViewingCommand.FullCanvas);
         var expected = CanvasViewTransform.Fit(group.PreviewCanvas!.Viewport, new(0, 0, 640, 360), allowEnlarge: true);
         check("hidden-content independent framing uses its own saved canvas reference rather than the adjusted viewport", fixture.View == expected);
         using var imageSurface = SKSurface.Create(new SKImageInfo(2, 2)); imageSurface.Canvas.Clear(SKColors.Blue);

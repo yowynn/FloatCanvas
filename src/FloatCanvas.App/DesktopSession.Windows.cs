@@ -92,7 +92,15 @@ internal sealed partial class DesktopSession
 
     private void ShowHelp(bool shortcuts)
     {
-        var window = AppHelp.CreateTextWindow(FloatCanvas.Localization.AppText.Get(shortcuts ? "Settings.Shortcuts" : "Audit.UserGuide"), AppHelp.ReadGuide(shortcuts), OpenExternalLink, regular: !_host.IsEditing);
+        string text=AppHelp.ReadGuide(shortcuts);
+        if(shortcuts)
+        {
+            var globals=GlobalBindings(_settings.Toggle,_settings.Hide,_settings.GlobalCommandBindings);
+            var entries=new[]{("Global.Toggle","Settings.ToggleHotkey"),("Global.Hide","Settings.HideHotkey")}.Concat(OptionalGlobalCommands);
+            text+="\n\n| "+FloatCanvas.Localization.AppText.Get("Shortcuts.CommandColumn")+" | "+FloatCanvas.Localization.AppText.Get("Settings.Shortcuts")+" |\n| --- | --- |\n"+
+                string.Join("\n",entries.Select(entry=>"| "+FloatCanvas.Localization.AppText.Get(entry.Item2)+" | "+FormatHotkey(globals.GetValueOrDefault(entry.Item1))+" |"));
+        }
+        var window = AppHelp.CreateTextWindow(FloatCanvas.Localization.AppText.Get(shortcuts ? "Settings.Shortcuts" : "Audit.UserGuide"), text, OpenExternalLink, regular: !_host.IsEditing);
         ShowSessionDialog(window);
     }
 

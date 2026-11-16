@@ -205,7 +205,7 @@ internal sealed partial class DesktopSession : IDisposable
         };
         _host.PointerLeft += ClearProjectionHover;
         _host.PointerLeft += StopCanvasEdgePan;
-        _editor.Cancelling += () => { _keyboardRouter?.Cancel(); CancelCanvasNavigationGesture(); };
+        _editor.Cancelling += () => { _keyboardRouter?.CancelGesture(); CancelCanvasNavigationGesture(); };
         _editor.DesktopEffectRequested += (region, kind, amount, color) => _ = RunCommand(() => AddDesktopEffectAsync(region, kind, amount, color));
         _host.KeyInput += OnCanvasKeyInput;
         _host.KeyReleased += key => _keyboardRouter?.Release(key);
@@ -216,6 +216,7 @@ internal sealed partial class DesktopSession : IDisposable
         };
         _host.ToggleRequested += ToggleEditing;
         _host.HideRequested += ToggleCanvasVisibility;
+        _host.CommandHotkeyRequested += ExecuteGlobalCommand;
         _host.EnableImageDrops(SupportsCanvasImageDrop, ReceiveCanvasImageDrop);
         _host.MonitorsChanged += OnMonitorsChanged;
         _host.Error += ex =>
@@ -224,6 +225,7 @@ internal sealed partial class DesktopSession : IDisposable
             if (TryRequestDesktopFallback(ex)) return;
             _app.Dispatcher.BeginInvoke(() => ShowError(ex.Message));
         };
+        EditorCommandCatalog.Overrides = EditorCommandCatalog.Validate(_settings.CommandBindings) is null ? _settings.CommandBindings : [];
         _toolbar = CreateToolbarV2();
         _windowCoordinator = new(_host, _toolbar) { HistoryCommand = OnKey };
         _keyboardSession = Active;
@@ -235,6 +237,9 @@ internal sealed partial class DesktopSession : IDisposable
                 if (_canvasNavigationSpaceHeld && !held) CancelCanvasNavigationGesture();
                 _canvasNavigationSpaceHeld = held;
             });
+        _keyboardRouter.CommandInput = OnCommandInput;
+        _keyboardRouter.KeyReleased = ReleaseBorrowedTool;
+        _keyboardRouter.Cancelled = CancelBorrowedTool;
         _windowCoordinator.ModalEntering += () => { _keyboardRouter.Cancel(); CancelCanvasNavigationGesture(); };
         _windowCoordinator.Register(_toolOptionsWindow, () => _toolOptionsPinned, DismissToolOptions);
         InitializeCanvasTool();
@@ -250,6 +255,7 @@ internal sealed partial class DesktopSession : IDisposable
             _windowCoordinator?.SuspendEditingWindows();
             EndCanvasCalibration(restoreWindows: false);
             CancelSnapshotCapture("ExternalFocus", userInitiated: false);
+            CompleteGlobalCapture(inserted:false,restoreMode:false);
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.ExternalFocus);
             // Do not gate focus release on an asynchronous document operation.
             CloseImageDrop();
@@ -351,7 +357,7 @@ internal sealed partial class DesktopSession : IDisposable
                 _tray.ShowBalloonTip(5000, L.Get("Stamp.LibraryTitle"), ex.Message, Forms.ToolTipIcon.Warning);
             }
             OnMonitorsChanged();
-            _host.RegisterHotkeys(_settings.Toggle, _settings.Hide);
+            _host.RegisterCommandHotkeys(GlobalBindings(_settings.Toggle, _settings.Hide, _settings.GlobalCommandBindings));
             NotifyDesktopFallback();
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or ArgumentException)
@@ -446,6 +452,7 @@ internal sealed partial class DesktopSession : IDisposable
     private bool SetEditingCore(bool editing, bool preserveImageDrop, bool restorePreviousForeground)
     {
         if (editing && _desktopFallbackPending) return false;
+        if(!editing) CompleteGlobalCapture(inserted:false,restoreMode:false);
         ClearProjectionHover();
         if (!editing) { CloseEditingDialogs(); _windowCoordinator?.SuspendEditingWindows(); EndCanvasCalibration(restoreWindows: false); }
         if (!editing) { _keyboardRouter?.Cancel(); CancelCanvasNavigationGesture(); }
@@ -459,7 +466,7 @@ internal sealed partial class DesktopSession : IDisposable
         bool wasEditing = _host.IsEditing;
         _inspector?.CompletePendingEdit();
         _editor.Cancel();
-        if (!editing && !HasPrefabEditContext && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
+        if (!editing && _allOverlaysHidden is null && !HasPrefabEditContext && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
         if (editing && !_host.TryEnterEditing(out var failure))
         {
             // Never leave an opaque frozen screenshot over a desktop that is receiving input.
@@ -670,18 +677,21 @@ internal sealed partial class DesktopSession : IDisposable
     }
     private void OnKey(int key)
     {
+        var modifiers = _commandModifiers ?? OverlayHost.CurrentModifiers;
         if (SessionKeyboardRouter.IsModal) return;
-        if (!EditorShortcutPolicy.IsCommand(key, OverlayHost.CurrentModifiers)) return;
-        if (key == 0x09)
+        if (!EditorShortcutPolicy.IsCommand(key, modifiers)) return;
+        if (_commandModifiers is null && EditorCommandCatalog.Resolve(key,modifiers)?.Tool is not null)
+        { OnCommandInput(new(key,modifiers,false)); return; }
+        if (key == 0x09 && modifiers == OverlayModifiers.None)
         {
             if (_inlineText is null && _layers?.IsRenaming != true) ToggleToolbarExpanded();
             return;
         }
-        if(_inlineText is not null&&key is 0x1B or 0x0D)
+        if(_inlineText is not null && modifiers == OverlayModifiers.None && key is 0x1B or 0x0D)
         {FinishInlineText(key==0x0D,selectEdited:key==0x0D);return;}
-        if (HandleCanvasSampleKey(key)) return;
-        if (key == 0x1B && _canvasRectificationRequest is not null) { CancelCanvasRectification("Escape"); return; }
-        if (key == 0x1B && _editor.Tool == EditorTool.Canvas &&
+        if (modifiers == OverlayModifiers.None && HandleCanvasSampleKey(key)) return;
+        if (modifiers == OverlayModifiers.None && key == 0x1B && _canvasRectificationRequest is not null) { CancelCanvasRectification("Escape"); return; }
+        if (modifiers == OverlayModifiers.None && key == 0x1B && _editor.Tool == EditorTool.Canvas &&
             (_canvasCalibration.IsDragging || _canvasGridScale.IsDragging || _canvasCalibration.IsPlacing ||
                 IsCanvasSettingsOpen && !_toolOptionsPinned))
         {
@@ -691,90 +701,19 @@ internal sealed partial class DesktopSession : IDisposable
             else DismissCanvasSettings();
             RequestRender(); return;
         }
-        if (key == 0x1B && _snapshotCaptureRequest is not null) { CancelSnapshotCapture("Escape"); return; }
+        if (modifiers == OverlayModifiers.None && key == 0x1B && _snapshotCaptureRequest is not null) { CancelSnapshotCapture("Escape"); return; }
+        if (modifiers == OverlayModifiers.None && key == 0x1B && _globalCapture is not null) {CompleteGlobalCapture(inserted:false);return;}
         if (_newCanvasButton is { IsConfirming: true } clear &&
-            !(key == 0x4E && (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0))
+            !(key == 0x4E && (modifiers & OverlayModifiers.Control) != 0))
         {
             clear.CancelConfirmation();
             if (key == 0x1B) return;
         }
         if (DocumentOperationBusy || _layers?.IsRenaming == true) return;
-        if (Active.IsReadOnly && (key is 0x08 or 0x2E or 0x25 or 0x26 or 0x27 or 0x28 ||
-            (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0 && key is 0x5A or 0x59 or 0x44 or 0x47 or 0x56 or 0x21 or 0x22))
-        { UpdateStatus(L.Get("GroupCanvas.ReadOnly")); return; }
         _inspector?.CompletePendingEdit();
-        if (_editor.HandleCaptureKey(key)) return;
-        if(key==0x0D&&Active.Selection.Count>0)
-        {
-            var pointer=Forms.Cursor.Position;
-            ShowInspectorNear(new(pointer.X-_editor.CanvasOrigin.X,pointer.Y-_editor.CanvasOrigin.Y));return;
-        }
-        var ctrl = (OverlayHost.CurrentModifiers & OverlayModifiers.Control) != 0;
-        var shift = (OverlayHost.CurrentModifiers & OverlayModifiers.Shift) != 0;
-        if (!_host.IsVisible && ctrl && key is 0x41 or 0x43 or 0x44 or 0x47) return;
-        if (key == 0x1B)
-        {
-            if (_eyedropper is not null) { EndEyedropper(); UpdateStatus(L.Get("Color.SampleCancelled")); }
-            else if (_toolOptionsPanel.CloseColorPicker()) { }
-            else if (IsToolOptionsOpen && !_toolOptionsPinned) CloseToolOptions();
-            else if (Active.IsTransactionActive || _editor.Marquee != null || _editor.HasPendingBillboardOperation) _editor.Cancel();
-            else if (Active.EditScopeId is not null) { _editor.Cancel(); Active.LeaveScope(); }
-            else if (TryHandlePrefabEscape()) { }
-            else SetEditing(false);
-            return;
-        }
-        if (ctrl)
-        {
-            switch (key)
-            {
-                case 0x4C: OpenLayers(); return;
-                case 0xBC: ShowHotkeySettings(); return;
-                case 0x54: OpenCurrentToolOptions(); return;
-                case 0x21: case 0x22:
-                    _editor.Cancel();
-                    ChangeCurrentCanvasOpacity(Math.Clamp(Math.Round(CurrentCanvasLayerOpacity + (key == 0x21 ? .05 : -.05), 10), 0, 1));
-                    return;
-            }
-            // Modifiers (including a repeated or delayed Ctrl packet) are not editor
-            // commands. They must not roll back a pointer transaction in progress.
-            if (key is not (0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F or 0x4E or 0x08 or 0x2E)) return;
-            EndCanvasCalibration();
-            _editor.Cancel();
-            switch (key)
-            {
-                case 0x5A: if (shift) Redo(); else Undo(); break;
-                case 0x59: Redo(); break;
-                case 0x41: Active.SelectAll(); break;
-                case 0x43: CopySelection(); break;
-                case 0x56: _ = RunCommand(PasteAsync); break;
-                case 0x44: if (CanAddCanvasContent()) RunSafeSelectionCommand(() => Active.DuplicateSelection()); break;
-                case 0x47: if (shift) Active.UngroupSelection(); else Active.GroupSelection(); break;
-                case 0x53: _ = RunCommand(() => SaveProjectAsync(shift)); break;
-                case 0x4F: _ = RunCommand(OpenProjectAsync); break;
-                case 0x4E: _ = StartNewCanvasAsync(); break;
-                case 0x08: case 0x2E: _ = RunCommand(ClearCurrentCanvasAsync); break;
-            }
-            SynchronizeCanvasTool(); return;
-        }
-        if (key == ToolShortcutCatalog.MoreKey) { OpenMoreTools(); return; }
-        if (key == ToolShortcutCatalog.StampLibraryKey) { ShowStampLibrary(); return; }
-        if (key == ToolShortcutCatalog.NewStampKey) { SaveStampSelection(); return; }
-        if (key is >= 0x30 and <= 0x39)
-        {
-            var slot = key == 0x30 ? 9 : key - 0x31;
-            if (_stampLibrary.Pins[slot] is { } stamp) SelectStampSlot(stamp);
-            return;
-        }
-        if (key == 0x2E) { _editor.Cancel(); Active.DeleteSelection(); return; }
-        if (key is >= 0x25 and <= 0x28)
-        {
-            _editor.Cancel(); var amount = shift ? 10 : 1;
-            RunSafeSelectionCommand(() => _editor.TransformSelectionInCanvas(Affine2D.Translation(key == 0x25 ? -amount : key == 0x27 ? amount : 0,
-                key == 0x26 ? -amount : key == 0x28 ? amount : 0))); return;
-        }
-        if (ToolShortcutCatalog.IsReserved(key)) return;
-        if (key == 0x49) { _ = RunCommand(() => ImportImagesAsync()); return; }
-        if (ToolShortcutCatalog.TryGetTool(key, out var tool)) SelectTool(tool);
+        if (modifiers == OverlayModifiers.None && _editor.HandleCaptureKey(key)) return;
+        var command = EditorCommandCatalog.Resolve(key, modifiers);
+        if (command is not null) ExecuteEditorCommand(command);
     }
     private void RunSafeSelectionCommand(Action command)
     {
@@ -821,7 +760,7 @@ internal sealed partial class DesktopSession : IDisposable
             RequestCanvasPreview(false, null);
         }
         canvas.Save(); canvas.Translate((float)_editor.CanvasOrigin.X,(float)_editor.CanvasOrigin.Y);
-        if (_host.IsEditing && _hasEditableCanvasOccurrence && !Active.IsReadOnly && _editor.Tool != EditorTool.PointerPresentation)
+        if (_host.IsEditing && _hasEditableCanvasOccurrence && !Active.IsReadOnly && _editor.InteractionTool != EditorTool.PointerPresentation)
         {
             DrawPresentationLayerGuides(canvas);
             DrawProjectionHover(canvas);
@@ -1038,7 +977,7 @@ internal sealed partial class DesktopSession : IDisposable
             _app.Dispatcher.BeginInvoke(() => { if (!_disposed) AppTheme.Apply("system"); });
     }
 
-    private static string FormatHotkey(HotkeyBinding binding) => HotkeyDisplay.Format(binding);
+    private static string FormatHotkey(HotkeyBinding binding) => binding.VirtualKey==0?L.Get("Shortcuts.Unbound"):HotkeyDisplay.Format(binding);
 
     internal static bool ShouldNotifyKeyboardRelease(KeyboardLeaseEndReason reason) => reason is
         KeyboardLeaseEndReason.HeartbeatExpired or KeyboardLeaseEndReason.QueueOverflow or
@@ -1064,6 +1003,7 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.Cancel();
         var toggle = _settings.Toggle;
         var hide = _settings.Hide;
+        var globalDraft = new Dictionary<string, HotkeyBinding>(_settings.GlobalCommandBindings);
         var window = new AppSettingsWindow(regular: !_host.IsEditing)
         {
             MaxHeight = Math.Max(240, _host.PrimaryMonitor.WorkArea.Height * 96 / _host.PrimaryMonitor.DpiY - 24),
@@ -1074,6 +1014,7 @@ internal sealed partial class DesktopSession : IDisposable
         var general = window.AddSection(L.Get("Settings.General"), L.Get("Settings.GeneralHint"));
         var canvas = window.AddSection(L.Get("Settings.CanvasHistory"), L.Get("Settings.CanvasHistoryHint"));
         var shortcuts = window.AddSection(L.Get("Settings.Shortcuts"), L.Get("Settings.ShortcutsHint"));
+        shortcuts.Children.Add(Button(FloatCanvas.Localization.AppText.Get("Shortcuts.ConfigureCommands"), () => ShowCommandSearch(configure: true)));
         var system = window.AddSection(L.Get("Settings.System"), L.Get("Settings.SystemHint"));
         var error = window.Error;
         System.Windows.Controls.TextBox Recorder(string label, HotkeyBinding initial, Action<HotkeyBinding> change)
@@ -1088,6 +1029,9 @@ internal sealed partial class DesktopSession : IDisposable
                 if (key is System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl or System.Windows.Input.Key.LeftAlt
                     or System.Windows.Input.Key.RightAlt or System.Windows.Input.Key.LeftShift or System.Windows.Input.Key.RightShift)
                 { e.Handled = true; return; }
+                if (key == System.Windows.Input.Key.Escape) { e.Handled = true; window.Focus(); return; }
+                if (key == System.Windows.Input.Key.Back && OverlayHost.CurrentModifiers == OverlayModifiers.None)
+                { change(default); box.Text=FloatCanvas.Localization.AppText.Get("Shortcuts.Unbound"); e.Handled=true;return; }
                 var modifiers = OverlayHost.CurrentModifiers;
                 if (modifiers == OverlayModifiers.None) { error.Text = L.Get("Settings.ModifiersRequired"); e.Handled = true; return; }
                 var binding = new HotkeyBinding((uint)modifiers, (uint)System.Windows.Input.KeyInterop.VirtualKeyFromKey(key));
@@ -1103,6 +1047,9 @@ internal sealed partial class DesktopSession : IDisposable
         }
         Recorder(L.Get("Settings.ToggleHotkey"), toggle, value => toggle = value);
         Recorder(L.Get("Settings.HideHotkey"), hide, value => hide = value);
+        foreach(var command in OptionalGlobalCommands)
+            Recorder(L.Get(command.Name),globalDraft.GetValueOrDefault(command.Id),value=>globalDraft[command.Id]=value);
+        shortcuts.Children.Add(new TextBlock { Text=FloatCanvas.Localization.AppText.Get("Shortcuts.GlobalHint"),TextWrapping=TextWrapping.Wrap });
         var theme = SegmentedChoicePreviews.Appearance(_settings.Theme);
         AppSettingsWindow.AddSetting(general, L.Get("Settings.Theme"), theme);
         var shortcutHints = new CheckBox { Content = L.Get("Feedback3.Toolbar.ShowShortcutHints"),
@@ -1180,6 +1127,7 @@ internal sealed partial class DesktopSession : IDisposable
             var oldPreviewUpdates = _settings.IncludePrereleaseUpdates;
             var oldToggle = _settings.Toggle;
             var oldHide = _settings.Hide;
+            var oldGlobalBindings=_settings.GlobalCommandBindings;
             var oldTheme = _settings.Theme;
             var oldPrimaryScreenOnly = _settings.PrimaryScreenOnly;
             var oldMonitorDevice = _settings.MonitorDeviceName;
@@ -1190,7 +1138,12 @@ internal sealed partial class DesktopSession : IDisposable
             bool restart = RestartRequired();
             try
             {
-                _host.RegisterHotkeys(toggle, hide);
+                var pendingGlobals=GlobalBindings(toggle,hide,globalDraft);
+                foreach(var binding in pendingGlobals.Values.Where(b=>b.VirtualKey!=0))
+                    if(EditorCommandCatalog.Resolve((int)binding.VirtualKey,(OverlayModifiers)binding.Modifiers) is {} conflict)
+                        throw new ArgumentException(FormatHotkey(binding)+": "+conflict.Name);
+                _host.RegisterCommandHotkeys(pendingGlobals);
+                _settings.GlobalCommandBindings=globalDraft;
                 _settings.HistoryVersionLimit = maximumHistory;
                 _settings.PreserveCanvasSettingsOnNewCanvas = preserveCanvas.IsChecked == true;
                 _settings.ShowPassThroughLauncher = passThroughLauncher.IsChecked == true;
@@ -1224,6 +1177,7 @@ internal sealed partial class DesktopSession : IDisposable
                     _settings.IncludePrereleaseUpdates = oldPreviewUpdates;
                     _settings.Toggle = oldToggle;
                     _settings.Hide = oldHide;
+                    _settings.GlobalCommandBindings=oldGlobalBindings;
                     _settings.Theme = oldTheme;
                     _settings.PrimaryScreenOnly = oldPrimaryScreenOnly;
                     _settings.MonitorDeviceName = oldMonitorDevice;
@@ -1234,7 +1188,7 @@ internal sealed partial class DesktopSession : IDisposable
                     RefreshPassThroughLauncher();
                     try
                     {
-                        _host.RegisterHotkeys(oldToggle, oldHide);
+                        _host.RegisterCommandHotkeys(GlobalBindings(oldToggle,oldHide,oldGlobalBindings));
                         if (settingsSaved)
                         {
                             try { _settings.Save(); }
@@ -1277,6 +1231,7 @@ internal sealed partial class DesktopSession : IDisposable
 
     public void Dispose()
     {
+        ForgetBorrowedTool();
         if (_disposed) return;
         _presentationPrivacy?.Dispose();
         _host.PresentationInputObserved -= OnPresentationHookInput;

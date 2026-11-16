@@ -21,6 +21,7 @@ internal sealed class NumericValueField : UserControl
     }
     private readonly bool integerOnly;
     private double? keyboardStep;
+    private Key? keyboardGestureKey;
     internal double KeyboardStep
     {
         get => keyboardStep ?? step;
@@ -90,7 +91,7 @@ internal sealed class NumericValueField : UserControl
         var hover = new Trigger { Property = IsMouseOverProperty, Value = true }; hover.Setters.Add(new Setter(Border.BackgroundProperty, new DynamicResourceExtension("CanvasHover"))); anchorStyle.Triggers.Add(hover);
         DragAnchor.Style = anchorStyle;
         SetScrubAnchor(NumericPropertyKind.Number, string.IsNullOrWhiteSpace(label) ? L.Get("Numeric.Value") : label);
-        if (!customAnchorGesture) { AnchorScrubber = new NumericScrubber(DragAnchor, BeginGesture, delta => Publish(gestureStart + delta * step), EndGesture, Slider); scrubbers.Add(AnchorScrubber); }
+        if (!customAnchorGesture) { AnchorScrubber = new NumericScrubber(DragAnchor, BeginGesture, delta => Publish(gestureStart + delta * KeyboardStep), EndGesture, Slider); scrubbers.Add(AnchorScrubber); }
         suffix.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted");
         editor.Children.Add(DragAnchor); Grid.SetColumn(Input, 1); editor.Children.Add(Input); Grid.SetColumn(suffix, 2); editor.Children.Add(suffix);
         panel.Children.Add(editor); Grid.SetRow(Slider, 1); panel.Children.Add(Slider);
@@ -124,15 +125,32 @@ internal sealed class NumericValueField : UserControl
         };
         Slider.PreviewKeyDown += (_, e) =>
         {
-            if (e.Key is not (Key.Left or Key.Right) || Keyboard.Modifiers != ModifierKeys.None) return;
+            if (e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.PageUp or Key.PageDown or Key.Home or Key.End) ||
+                (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
             e.Handled = true;
             if (!IsEnabled || Input.IsReadOnly || !TryGetValue(out double current)) return;
-            double before = value;
+            if (keyboardGestureKey is null && !IsInteracting)
+            {
+                if (e.IsRepeat || !BeginGesture()) return;
+                keyboardGestureKey=e.Key;
+            }
+            if (!IsInteracting) return;
             // The representative thumb can be at a common-range endpoint while
             // the actual value is farther out. Arrow keys edit that actual value.
-            Publish(current + (e.Key == Key.Right ? KeyboardStep : -KeyboardStep));
-            if (!IsInteracting && value != before) SliderValueCommitted?.Invoke();
+            var modifiers = Keyboard.Modifiers;
+            double scale = (modifiers & ModifierKeys.Shift) != 0 ? .1 : (modifiers & ModifierKeys.Control) != 0 ? 10 : 1;
+            double delta = KeyboardStep * (e.Key is Key.PageUp or Key.PageDown ? 10 : scale);
+            if (integerOnly) delta = Math.Max(1, Math.Round(delta));
+            Publish(e.Key == Key.Home ? Slider.Minimum : e.Key == Key.End ? Slider.Maximum :
+                current + (e.Key is Key.Right or Key.Up or Key.PageUp ? delta : -delta));
         };
+        Slider.PreviewKeyUp += (_,e)=>
+        {
+            if (keyboardGestureKey!=e.Key) return;
+            keyboardGestureKey=null; EndGesture(true); e.Handled=true;
+        };
+        Slider.LostKeyboardFocus += (_,_)=>
+        { if(keyboardGestureKey is not null) { keyboardGestureKey=null; EndGesture(true); } };
         Slider.PreviewMouseLeftButtonDown += (_, e) =>
         {
             if (e.ChangedButton != MouseButton.Left) return;

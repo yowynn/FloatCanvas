@@ -30,9 +30,15 @@ internal sealed partial class DesktopSession
             (CanvasViewingCommand.FullCanvas, "Canvas.FullCanvas") })
         {
             var item = new MenuItem { Header = L.Get(label) };
+            string? id=command switch { CanvasViewingCommand.Reset=>"View.Reset", CanvasViewingCommand.OriginalSize=>"View.Actual", CanvasViewingCommand.FitContent=>"View.Fit", _=>null };
+            if(id is not null) menu.Opened+=(_,_)=>item.InputGestureText=EditorCommandCatalog.Hint(id);
             item.Click += (_, _) => ExecuteCanvasViewing(command);
             menu.Items.Add(item);
         }
+        var fitSelection=new MenuItem {Header=L.Get("Shortcuts.Command.View.Selection")};
+        fitSelection.Click+=(_,_)=>FitSelectedContent();
+        menu.Opened+=(_,_)=>{fitSelection.InputGestureText=EditorCommandCatalog.Hint("View.Selection");fitSelection.IsEnabled=Active.Selection.Count>0;};
+        menu.Items.Add(fitSelection);
         menu.Items.Add(new Separator());
         _navigationApply = new MenuItem { Header = L.Get("Canvas.ApplyView"), ToolTip = L.Get("Canvas.ApplyViewHint") };
         _navigationApply.Click += (_, _) => ApplyCanvasViewing(); menu.Items.Add(_navigationApply);

@@ -46,9 +46,9 @@ internal static class ProjectPreviewNavigationTests
         var panned = Field<CanvasViewTransform>("_canvasView");
         check("Space pan moves the root camera without editing artwork", panned.Offset == initial.Offset + new PointD(30, 20) &&
             before == JsonSerializer.Serialize(editor.Session.Document) && editor.Session.UndoCount == undo && editor.Tool == EditorTool.Rectangle);
-        Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Wheel, new(230, 160), OverlayMouseButton.None, OverlayModifiers.None, 120));
+        Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Wheel, new(230, 160), OverlayMouseButton.None, OverlayModifiers.Control, 120));
         var zoomed = Field<CanvasViewTransform>("_canvasView");
-        check("Space wheel retains project mode and zooms the root camera", Field<GroupCanvasMode>("_groupCanvasMode") == GroupCanvasMode.RootProject && zoomed.Zoom > panned.Zoom);
+        check("Ctrl wheel retains project mode and zooms the root camera", Field<GroupCanvasMode>("_groupCanvasMode") == GroupCanvasMode.RootProject && zoomed.Zoom > panned.Zoom);
         ((Action<int>)typeof(OverlayHost).GetField("KeyReleased", Hidden)!.GetValue(host)!)(0x20);
         var rootTarget = (CanvasSettingsTarget)Call("CaptureCanvasSettingsTarget")!;
         check("deep project canvas operations target the document canvas", !rootTarget.Independent && ReferenceEquals(rootTarget.Settings, editor.Session.Document.Canvas));
@@ -57,9 +57,11 @@ internal static class ProjectPreviewNavigationTests
         Call("SynchronizeCanvasTool");
         double gridSize = CanvasGridGeometry.ResolveCellSize(editor.Session.Document.Canvas, editor.Session.Document.Viewport);
         Call("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Wheel, new(230, 160), OverlayMouseButton.None, OverlayModifiers.Shift, 120));
-        check("canvas tool changes the root grid without switching preview or editing group settings",
+        check("Shift wheel leaves root camera, grid and group settings unchanged",
             Field<GroupCanvasMode>("_groupCanvasMode") == GroupCanvasMode.RootProject && editor.Session.EditScopeId == inner.Id &&
-            CanvasGridGeometry.ResolveCellSize(editor.Session.Document.Canvas, editor.Session.Document.Viewport) > gridSize && inner.PreviewCanvas is null);
+            CanvasGridGeometry.ResolveCellSize(editor.Session.Document.Canvas, editor.Session.Document.Viewport) == gridSize && inner.PreviewCanvas is null &&
+            Field<CanvasViewTransform>("_canvasView") == zoomed);
+        zoomed = Field<CanvasViewTransform>("_canvasView");
         Call("SetGroupCanvasMode", GroupCanvasMode.Temporary); Call("CurrentGroupCanvasView");
         Call("ChangeCanvasViewing", new CanvasViewTransform(3, new(2, 4)), false);
         Call("SetGroupCanvasMode", GroupCanvasMode.RootProject); Call("CurrentGroupCanvasView");

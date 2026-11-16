@@ -160,66 +160,84 @@ public sealed partial class OverlayHost : IDisposable
         catch { Dispose(); throw; }
     }
 
-    /// <summary>Registers both keys as a transaction; a conflict restores the previous active bindings.</summary>
+    private Dictionary<string, HotkeyBinding> _commandHotkeys = [];
+    private Dictionary<int, string> _commandHotkeyIds = [];
+    public event Action<string>? CommandHotkeyRequested;
+    public bool ApplicationHotkeysSuspended => _applicationHotkeysSuspended;
+    private static int CommandHotkeyId(string name) => name switch
+    {
+        "Global.Toggle"=>ToggleHotkeyId,"Global.Hide"=>HideHotkeyId,
+        "Global.Enter"=>0x4650,"Global.Exit"=>0x4651,"Global.Keyboard"=>0x4652,
+        "Global.Pointer"=>0x4653,"Global.HideAll"=>0x4654,"Global.Capture"=>0x4655,
+        _=>throw new ArgumentException("Unknown global command: "+name)
+    };
+
     public void RegisterHotkeys(HotkeyBinding toggle, HotkeyBinding hide)
     {
+        var commands = new Dictionary<string, HotkeyBinding>(_commandHotkeys) { ["Global.Toggle"] = toggle, ["Global.Hide"] = hide };
+        RegisterCommandHotkeys(commands);
+    }
+
+    /// <summary>All registrations are replaced together; conflicts restore the previous effective set.</summary>
+    public void RegisterCommandHotkeys(IReadOnlyDictionary<string, HotkeyBinding> commands)
+    {
         CheckThread();
-        ValidateHotkey(toggle);
-        ValidateHotkey(hide);
-        if (_keyboardIsolation is not null)
+        var next = commands.Where(p=>p.Value.VirtualKey != 0).ToDictionary(p=>p.Key,p=>p.Value);
+        foreach (var binding in next.Values) { ValidateHotkey(binding); KeyboardInputIsolation.ValidateHotkey(binding); }
+        if (next.Values.Distinct().Count() != next.Count) throw new ArgumentException(L.Get("Hotkeys.BindingsMustDiffer"));
+        var ids = next.Keys.ToDictionary(CommandHotkeyId,name=>name);
+        var previous = _commandHotkeys;
+        var previousIds = _commandHotkeyIds;
+        UnregisterApplicationHotkeys();
+        int failure=0; string? failedCommand=null;
+        foreach (var pair in ids)
         {
-            KeyboardInputIsolation.ValidateHotkey(toggle);
-            KeyboardInputIsolation.ValidateHotkey(hide);
+            var binding=next[pair.Value];
+            if (!RegisterHotKey(ControlHandle,pair.Key,binding.Modifiers|0x4000,binding.VirtualKey)) { failure=Marshal.GetLastWin32Error(); failedCommand=pair.Value; break; }
         }
-        if (toggle == hide) throw new ArgumentException(L.Get("Hotkeys.BindingsMustDiffer"));
-        if (_nativeHotkeysRegistered && _toggleHotkey == toggle && _hideHotkey == hide) return;
-        var previousToggle = _toggleHotkey;
-        var previousHide = _hideHotkey;
-        UnregisterHotKey(ControlHandle, ToggleHotkeyId);
-        UnregisterHotKey(ControlHandle, HideHotkeyId);
-        var toggleRegistered = RegisterHotKey(ControlHandle, ToggleHotkeyId, toggle.Modifiers | 0x4000, toggle.VirtualKey);
-        var failure = toggleRegistered ? 0 : Marshal.GetLastWin32Error();
-        var hideRegistered = toggleRegistered && RegisterHotKey(ControlHandle, HideHotkeyId, hide.Modifiers | 0x4000, hide.VirtualKey);
-        if (!hideRegistered)
+        if (failure!=0)
         {
-            if (toggleRegistered) failure = Marshal.GetLastWin32Error();
-            UnregisterHotKey(ControlHandle, ToggleHotkeyId);
-            UnregisterHotKey(ControlHandle, HideHotkeyId);
-            var restoredToggle = previousToggle is null || RegisterHotKey(ControlHandle, ToggleHotkeyId,
-                previousToggle.Value.Modifiers | 0x4000, previousToggle.Value.VirtualKey);
-            var restoredHide = previousHide is null || RegisterHotKey(ControlHandle, HideHotkeyId,
-                previousHide.Value.Modifiers | 0x4000, previousHide.Value.VirtualKey);
-            _nativeHotkeysRegistered = restoredToggle && restoredHide;
-            if (_applicationHotkeysSuspended) UnregisterApplicationHotkeys();
-            if (!restoredToggle || !restoredHide)
+            foreach(var id in ids.Keys) UnregisterHotKey(ControlHandle,id);
+            bool restored=true;
+            var effective=new Dictionary<int,string>();
+            foreach(var pair in previousIds)
             {
-                _toggleHotkey = restoredToggle ? previousToggle : null;
-                _hideHotkey = restoredHide ? previousHide : null;
-                throw new Win32Exception(failure, L.Get("Hotkeys.ConflictAndRestoreFailed"));
+                var binding=previous[pair.Value];
+                bool registered=RegisterHotKey(ControlHandle,pair.Key,binding.Modifiers|0x4000,binding.VirtualKey);
+                if(registered) effective[pair.Key]=pair.Value;
+                restored &= registered;
             }
-            throw new Win32Exception(failure, L.Get("Hotkeys.ConflictPreviousPreserved"));
+            _commandHotkeyIds=effective;
+            _commandHotkeys=effective.Values.ToDictionary(name=>name,name=>previous[name]);
+            _toggleHotkey=_commandHotkeys.GetValueOrDefault("Global.Toggle"); _hideHotkey=_commandHotkeys.GetValueOrDefault("Global.Hide");
+            _keyboardIsolation?.UpdateHotkeys(_toggleHotkey.Value,_hideHotkey.Value);
+            _keyboardIsolation?.UpdateCommandHotkeys(effective.Where(p=>p.Key!=ToggleHotkeyId && p.Key!=HideHotkeyId).ToDictionary(p=>p.Key,p=>_commandHotkeys[p.Value]));
+            _nativeHotkeysRegistered=restored;
+            if(_applicationHotkeysSuspended) UnregisterApplicationHotkeys();
+            string label=L.Get(failedCommand switch {"Global.Toggle"=>"Settings.ToggleHotkey","Global.Hide"=>"Settings.HideHotkey",_=>"Shortcuts."+failedCommand});
+            throw new Win32Exception(failure,label+": "+L.Get(restored?"Hotkeys.ConflictPreviousPreserved":"Hotkeys.ConflictAndRestoreFailed"));
         }
-        _toggleHotkey = toggle;
-        _hideHotkey = hide;
-        _keyboardIsolation?.UpdateHotkeys(toggle, hide);
-        _nativeHotkeysRegistered = true;
-        if (_applicationHotkeysSuspended) UnregisterApplicationHotkeys();
+        _commandHotkeys=next; _commandHotkeyIds=ids;
+        _toggleHotkey=next.GetValueOrDefault("Global.Toggle"); _hideHotkey=next.GetValueOrDefault("Global.Hide");
+        _keyboardIsolation?.UpdateHotkeys(_toggleHotkey.Value,_hideHotkey.Value);
+        _keyboardIsolation?.UpdateCommandHotkeys(ids.Where(p=>p.Key!=ToggleHotkeyId && p.Key!=HideHotkeyId).ToDictionary(p=>p.Key,p=>next[p.Value]));
+        _nativeHotkeysRegistered=true;
+        if(_applicationHotkeysSuspended) UnregisterApplicationHotkeys();
     }
 
     private void UnregisterApplicationHotkeys()
     {
-        UnregisterHotKey(ControlHandle, ToggleHotkeyId); UnregisterHotKey(ControlHandle, HideHotkeyId);
-        _nativeHotkeysRegistered = false;
+        foreach(var id in _commandHotkeyIds.Keys) UnregisterHotKey(ControlHandle,id);
+        _nativeHotkeysRegistered=false;
     }
 
     public void SuspendApplicationHotkeys(bool suspended)
     {
         CheckThread();
-        if (_applicationHotkeysSuspended == suspended) return;
-        _applicationHotkeysSuspended = suspended;
-        _keyboardIsolation?.SuspendCommands(suspended);
-        if (suspended) UnregisterApplicationHotkeys();
-        else if (_toggleHotkey is { } toggle && _hideHotkey is { } hide) RegisterHotkeys(toggle, hide);
+        if(_applicationHotkeysSuspended==suspended) return;
+        _applicationHotkeysSuspended=suspended; _keyboardIsolation?.SuspendCommands(suspended);
+        if(suspended) UnregisterApplicationHotkeys();
+        else RegisterCommandHotkeys(_commandHotkeys);
     }
 
     public void SetEditing(bool editing)
@@ -530,8 +548,7 @@ public sealed partial class OverlayHost : IDisposable
         IsVisible = false;
         if (_control.Handle != 0)
         {
-            UnregisterHotKey(_control.Handle, ToggleHotkeyId);
-            UnregisterHotKey(_control.Handle, HideHotkeyId);
+            UnregisterApplicationHotkeys();
         }
         _systemInput?.End();
         DestroyPairs();
@@ -829,6 +846,9 @@ public sealed partial class OverlayHost : IDisposable
             if (message == WmHotkey)
             {
                 if (_applicationHotkeysSuspended) return 0;
+                if (!_commandHotkeyIds.TryGetValue((int)wParam,out var registeredName) ||
+                    !_commandHotkeys.TryGetValue(registeredName,out var registeredBinding) ||
+                    registeredBinding.VirtualKey != ((uint)lParam.ToInt64() >> 16) || registeredBinding.Modifiers != ((uint)lParam.ToInt64() & 0xFFFF)) return 0;
                 if (_captureActive)
                 {
                     if ((int)wParam == ToggleHotkeyId) CancelPendingCapture();
@@ -837,6 +857,7 @@ public sealed partial class OverlayHost : IDisposable
                 }
                 if ((int)wParam == ToggleHotkeyId) ToggleRequested?.Invoke();
                 else if ((int)wParam == HideHotkeyId) HideRequested?.Invoke();
+                else if (_commandHotkeyIds.TryGetValue((int)wParam, out var command)) CommandHotkeyRequested?.Invoke(command);
                 return 0;
             }
             if (message == WmRefreshMonitors)

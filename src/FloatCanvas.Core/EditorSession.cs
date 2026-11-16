@@ -1,4 +1,4 @@
-﻿using L = FloatCanvas.Localization.AppText;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.Core;
 
@@ -292,13 +292,14 @@ public sealed partial class EditorSession
     });
     public void SetLocked(bool locked) => SetNodesFlag(Selection, false, locked);
     public void SetVisible(bool visible) => SetNodesFlag(Selection, true, visible);
-    public void DuplicateSelection(double offsetX = 16, double offsetY = 16)
+    public void DuplicateSelection(double offsetX = 16, double offsetY = 16, bool withinTransaction = false)
     {
-        var analysis = AnalyzeLayerOperation(LayerOperation.Duplicate);
+        if (withinTransaction && !IsTransactionActive) throw new InvalidOperationException("Duplication requires an active gesture transaction.");
+        var analysis = AnalyzeLayerOperation(LayerOperation.Duplicate, Selection, SceneGraph.Read(Document), withinTransaction);
         if (analysis.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
         if (!analysis.CanExecute) return;
         var snapshot = CreateSelectionSnapshot(normalizeOrigin: false);
-        InsertDocument(snapshot, Assets, Affine2D.Translation(offsetX, offsetY), label: L.Get("History.DuplicateElements"), preserveDefinitions: true);
+        InsertDocument(snapshot, Assets, Affine2D.Translation(offsetX, offsetY), label: L.Get("History.DuplicateElements"), preserveDefinitions: true, withinTransaction: withinTransaction);
     }
     private void EnsureSafeInsertion(IEnumerable<CanvasElement> elements)
     {

@@ -39,7 +39,7 @@ internal sealed class CanvasTextInput : IDisposable
             var modifiers=Keyboard.Modifiers;
             if ((modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
             int command = KeyInterop.VirtualKeyFromKey(key);
-            if (EditorShortcutPolicy.IsProjectCommand(command, (OverlayModifiers)modifiers))
+            if (EditorShortcutPolicy.CanRouteProjectCommandFromText(command, (OverlayModifiers)modifiers))
             { e.Handled = true; if (!AppInputPolicy.IsRepeat(e)) CommandKey?.Invoke(command); return; }
             if(key==Key.Escape){e.Handled=true;CompleteRequested?.Invoke(false);}
             else if(key==Key.Enter&&(modifiers&ModifierKeys.Shift)==0){e.Handled=true;CompleteRequested?.Invoke(true);}

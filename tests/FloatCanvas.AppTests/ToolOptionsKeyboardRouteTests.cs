@@ -34,7 +34,7 @@ internal static class ToolOptionsKeyboardRouteTests
             {
                 if(Keyboard.Modifiers!=ModifierKeys.None)Console.WriteLine($"OPTIONS_SETUP modifiers={Keyboard.Modifiers} native={ThreadModifierScope.Describe()}");
                 check("keyboard route fixture establishes no modifiers after WPF initialization",Keyboard.Modifiers==ModifierKeys.None);
-                foreach (var key in new[] { Key.B, Key.L, Key.M, Key.OemMinus, Key.OemPlus })
+                foreach (var key in new[] { Key.B, Key.L, Key.M, Key.F4, Key.F8 })
                 {
                     int previous = commands.Count; var args = Send(button, key);
                     if(!args.Handled||commands.Count!=previous+1)Console.WriteLine($"OPTIONS_ROUTE requested={key} key={args.Key} systemKey={args.SystemKey} handled={args.Handled} repeat={args.IsRepeat} modifiers={Keyboard.Modifiers} native={ThreadModifierScope.Describe()} commands={previous}->{commands.Count} source={args.OriginalSource?.GetType().Name} current={args.Source?.GetType().Name}");
@@ -43,17 +43,17 @@ internal static class ToolOptionsKeyboardRouteTests
                 int before = commands.Count; Send(text, Key.B); Send(text, Key.D3); Send(text, Key.D2); Send(slider, Key.Right);
                 check("text, numeric, slider and font controls keep their local keys", commands.Count == before);
                 var tab = Send(button, Key.Tab);
-                check("Tab on an ordinary tool control routes exactly one toolbar command", tab.Handled && commands.Count == before + 1 && commands[^1] == 0x09);
+                check("Tab on an ordinary tool control toggles toolbar", tab.Handled && commands.Count == before + 1);
                 before = commands.Count;
                 var canvasTab = Send(window, Key.Tab);
-                check("Tab on the empty editor surface still routes one toolbar command", canvasTab.Handled && commands.Count == before + 1 && commands[^1] == 0x09);
+                check("Tab on a panel surface toggles toolbar", canvasTab.Handled && commands.Count == before + 1);
                 before = commands.Count;
                 Send(text, Key.Tab);
                 check("Tab in a text editor stays local", commands.Count == before);
                 foreach(var source in new UIElement[]{slider,combo})
                 {
                     Send(source,Key.Tab);
-                    check("Tab on non-text " + source.GetType().Name + " folds the toolbar", commands.Count == ++before);
+                    check("Tab on non-text " + source.GetType().Name + " toggles toolbar", commands.Count == ++before);
                 }
                 Send(combo, Key.B);
                 check("collapsed combo forwards tool shortcuts", commands.Count == ++before && commands[^1] == 0x42);
@@ -76,13 +76,13 @@ internal static class ToolOptionsKeyboardRouteTests
                 foreach (int command in new[] { 0x0D, 0x4E, 0x08, 0x2E })
                 {
                     var modifiers = command == 0x0D ? ModifierKeys.None : ModifierKeys.Control;
-                    check("ordinary tool controls forward canvas command " + command, ToolOptionsKeyboardRoute.ShouldRoute(command, modifiers, button));
+                    check("ordinary tool controls forward canvas command " + command, ToolOptionsKeyboardRoute.ShouldRoute(command, modifiers, button) == (command is 0x0D or 0x4E));
                     check("text controls retain local Enter and word deletion, except explicit new canvas " + command,
                         ToolOptionsKeyboardRoute.ShouldRoute(command, modifiers, text) == (command == 0x4E));
                 }
                 check("menus and system modifier keys are not repurposed as tools", !ToolOptionsKeyboardRoute.ShouldRoute(0x42, ModifierKeys.None, new MenuItem()) && !ToolOptionsKeyboardRoute.ShouldRoute(0x42, ModifierKeys.Alt, button));
                 var modalSource = new Button(); var modalWindow = new Window { Content = modalSource };
-                var modalKey = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.OemPlus) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                var modalKey = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.F8) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
                 bool consumedBeforeCommand = false;
                 ToolOptionsKeyboardRoute.Attach(modalWindow, () => false, _ => consumedBeforeCommand = modalKey.Handled);
                 try { modalSource.RaiseEvent(modalKey); check("a modal-capable command consumes its source key before invoking the command", consumedBeforeCommand); }

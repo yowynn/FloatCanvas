@@ -157,6 +157,7 @@ try
         return 0;
     }
     WindowsCompatibilityTests.Run(Check);
+    CommandHotkeyTests.Run(Check);
     CaptureFrameBoundaryTests.Run(Check);
     CaptureContinuationTests.Run(Check);
     CaptureInputObservationTests.Run(Check);

@@ -10,32 +10,24 @@ namespace FloatCanvas.App;
 /// <summary>Shared application commands; controls and library windows retain their own editing keys.</summary>
 internal static class EditorShortcutPolicy
 {
-    internal static bool IsCommand(int key, OverlayModifiers modifiers)
-    {
-        if (key == 0x09) return modifiers == OverlayModifiers.None;
-        if (key == 0x20) return (modifiers & ~OverlayModifiers.Shift) == 0;
-        if ((modifiers & (OverlayModifiers.Alt | OverlayModifiers.Windows)) != 0) return false;
-        if ((modifiers & OverlayModifiers.Control) != 0)
-            return key is 0x5A or 0x59 or 0x41 or 0x43 or 0x56 or 0x44 or 0x47 or 0x53 or 0x4F or 0x4E or 0x08 or 0x2E ||
-                modifiers == OverlayModifiers.Control && key is 0x21 or 0x22 or 0x4C or 0xBC or 0x54;
-        return key is 0x1B or 0x0D or 0x08 or 0x2E or >= 0x25 and <= 0x28 or >= 0x30 and <= 0x39 ||
-            ToolShortcutCatalog.TryGetTool(key, out _) || ToolShortcutCatalog.IsReserved(key);
-    }
-
-    internal static bool AllowsRepeat(int key, OverlayModifiers modifiers) =>
-        (modifiers & OverlayModifiers.Control) != 0 ? key is 0x5A or 0x59 or 0x21 or 0x22 : key is 0x08 or 0x2E or >= 0x25 and <= 0x28;
-
-    internal static bool IsProjectCommand(int key, OverlayModifiers modifiers) =>
-        IsCommand(key, modifiers) && (modifiers & OverlayModifiers.Control) != 0 && key is 0x53 or 0x4F or 0x4E;
+    internal static readonly HashSet<Window> RecordingWindows = [];
+    internal static readonly HashSet<Window> CommandWindows = [];
+    internal static bool IsCommand(int key, OverlayModifiers modifiers) => EditorCommandCatalog.Resolve(key, modifiers) is not null;
+    internal static bool AllowsRepeat(int key, OverlayModifiers modifiers) => EditorCommandCatalog.Resolve(key, modifiers)?.Repeat == true;
+    internal static bool CanRouteProjectCommandFromText(int key, OverlayModifiers modifiers) =>
+        (modifiers & OverlayModifiers.Control)!=0 && (modifiers & (OverlayModifiers.Alt|OverlayModifiers.Windows))==0 &&
+        key is not (0x41 or 0x43 or 0x58 or 0x56 or 0x5A or 0x59 or >= 0x21 and <= 0x28) &&
+        EditorCommandCatalog.Resolve(key, modifiers)?.Id is "File.Save" or "File.SaveAs" or "File.Open" or "File.New";
 
     internal static bool ShouldRoute(int key, ModifierKeys modifiers, DependencyObject? source,
         bool preserveListNavigation = false, bool localInput = false)
     {
+        if (source is not null && Window.GetWindow(source) is {} window && (RecordingWindows.Contains(window) || CommandWindows.Contains(window))) return false;
         if (SessionKeyboardRouter.IsModal || !IsCommand(key, (OverlayModifiers)modifiers)) return false;
         var ancestors = Ancestors(source).ToArray();
         if (ancestors.Any(value => value is MenuItem or MenuBase or ComboBox { IsDropDownOpen: true })) return false;
         bool control = (modifiers & ModifierKeys.Control) != 0;
-        if (IsProjectCommand(key, (OverlayModifiers)modifiers)) return true;
+        if (CanRouteProjectCommandFromText(key, (OverlayModifiers)modifiers)) return true;
         if (!control && key == 0x1B)
             return !ancestors.Any(value => value is ComboBox { IsDropDownOpen: true } or Thumb { IsDragging: true });
         if (localInput || ancestors.Any(IsLocalInput)) return false;
@@ -60,7 +52,7 @@ internal static class EditorShortcutPolicy
     private static bool IsPresetTile(DependencyObject value) => value is SelectionTileButton or ColorSwatchButton { Tag: string };
     internal static bool OwnsNumericKey(int key, ModifierKeys modifiers, DependencyObject? source) => OwnsNumericKey(key, modifiers, Ancestors(source));
     private static bool OwnsNumericKey(int key, ModifierKeys modifiers, IEnumerable<DependencyObject> ancestors) =>
-        (modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) == 0 &&
+        (modifiers & (ModifierKeys.Alt | ModifierKeys.Windows)) == 0 &&
         key is >= 0x21 and <= 0x28 && ancestors.Any(value => value is Slider or NumericValueField or ToolbarOpacitySlider);
     private static bool IsLocalInput(DependencyObject value) => value is UIElement { IsEnabled: true, Visibility: Visibility.Visible } &&
         value is TextBoxBase { IsReadOnly: false } or PasswordBox;

@@ -340,7 +340,7 @@ internal sealed partial class EditorController
             // pointer can stay on the visible branch while a distant group anchor crosses
             // the horizon during rotation or scaling. Such a sample must leave the last
             // valid group intact, including surface members handled by the caller.
-            var groupCenter = selectionBounds.Center;
+            var groupCenter = gesture == "resize" ? ResizePivot(selectionBounds,start) : selectionBounds.Center;
             Affine2D layout, content;
             double heightScale = 1;
             if (gesture == "rotate")
@@ -402,7 +402,7 @@ internal sealed partial class EditorController
             else if (gesture == "resize")
             {
                 if (!canvas.ElementToScreen(source).TryInverse(out var inverse)) continue;
-                var center = ElementGeometry.LocalBounds(source).Center;
+                var center = ResizePivot(ElementGeometry.LocalBounds(source),inverse.TransformPoint(startScreen));
                 var from = inverse.TransformPoint(startScreen) - center;
                 var to = inverse.TransformPoint(pointerScreen) - center;
                 double sx = Math.Abs(from.X) < .001 ? 1 : Math.Max(.02, to.X / from.X);
@@ -418,6 +418,7 @@ internal sealed partial class EditorController
                     ElementGeometry.ResizeShapeGeometry(item, sx, sy);
                 }
                 else item.Transform = source.Transform.Compose(Affine2D.Scale(sx, sy));
+                PreserveResizePivot(source,item,center);
             }
         }
         if (!mixed) { NotifyGeometryChanged(); return true; }

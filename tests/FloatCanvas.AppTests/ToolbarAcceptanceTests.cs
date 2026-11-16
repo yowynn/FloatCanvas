@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -197,7 +197,7 @@ internal static class ToolbarAcceptanceTests
             string canvasTooltip=L.Get("Canvas.Title")+" · C";
             check("unselected canvas tooltip contains only its name and shortcut",Equals(tools[EditorTool.Canvas].ToolTip,canvasTooltip));
             editor.Tool=EditorTool.Canvas;Invoke(session,"RefreshToolbarState");
-            check("selected canvas adds one panel instruction line",Equals(tools[EditorTool.Canvas].ToolTip,canvasTooltip+"\n"+L.Format("Toolbar.ToolOptionsWithKeyHint","C")));
+            check("selected canvas adds one panel instruction line",Equals(tools[EditorTool.Canvas].ToolTip,canvasTooltip+"\n"+L.Format("Toolbar.ToolOptionsWithKeyHint","F4","C")));
             check("switching away removes the previous tool's extra instruction",Equals(tools[EditorTool.Freehand].ToolTip,L.Get("Preset.Freehand")+" · B"));
             editor.Tool=EditorTool.Blur;Invoke(session,"RefreshToolbarState");
             string moreTooltip=L.Get("Toolbar.MoreExpand")+" · M";
@@ -205,12 +205,12 @@ internal static class ToolbarAcceptanceTests
             editor.Tool=EditorTool.Pixelate;Invoke(session,"RefreshToolbarState");
             check("selected mosaic shares More's expansion command",Equals(more.ToolTip,moreTooltip));
             editor.Tool=EditorTool.CaptureRegion;Invoke(session,"RefreshToolbarState");
-            check("selected capture has exactly its name and panel instruction",Equals(tools[EditorTool.CaptureRegion].ToolTip,L.Get("Acceptance2.Toolbar.Capture")+" · P\n"+L.Format("Toolbar.ToolOptionsWithKeyHint","P")));
+            check("selected capture has exactly its name and panel instruction",Equals(tools[EditorTool.CaptureRegion].ToolTip,L.Get("Acceptance2.Toolbar.Capture")+" · P\n"+L.Format("Toolbar.ToolOptionsWithKeyHint","F4","P")));
             editor.Tool=EditorTool.Select;Invoke(session,"RefreshToolbarState");
             check("selected Select explains selection instead of an unsupported options shortcut",Equals(tools[EditorTool.Select].ToolTip,L.Get("ToolbarV2.Select")+" · V\n"+L.Get("Toolbar.SelectionHint")));
             check("unselected capture drops the former always-visible description",Equals(tools[EditorTool.CaptureRegion].ToolTip,L.Get("Acceptance2.Toolbar.Capture")+" · P"));
             editor.ApplyParameters(tooltipParameters);Invoke(session,"RefreshToolbarState");
-            check("main keyboard minus and plus are independent stamp commands",ToolShortcutCatalog.StampLibraryKey==0xBD&&ToolShortcutCatalog.NewStampKey==0xBB&&ToolShortcutCatalog.IsReserved(0xBD)&&ToolShortcutCatalog.IsReserved(0xBB)&&!ToolShortcutCatalog.IsReserved(0x6B)&&!ToolShortcutCatalog.IsReserved(0x6D));
+            check("stamp commands use exact F8 and Ctrl+Shift+K bindings",EditorCommandCatalog.Resolve(0x77,FloatCanvas.Windows.OverlayModifiers.None)?.Id=="Stamp.Library" && EditorCommandCatalog.Resolve(0x4B,FloatCanvas.Windows.OverlayModifiers.Control|FloatCanvas.Windows.OverlayModifiers.Shift)?.Id=="Stamp.Create" && EditorCommandCatalog.Resolve(0xBB,FloatCanvas.Windows.OverlayModifiers.None) is null);
             check("toolbar controls retain keyboard input without focus frames or focus-only tooltips",allButtons.All(button=>button.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(button)==false)&&opacity.FocusVisualStyle is null&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(opacity)==false&&Controls.ToolTipService.GetShowsToolTipOnKeyboardFocus(Field<ToolbarLauncher>(session,"_toolbarLauncher"))==false);
             var clearAction=buttons.Single(button=>Equals(button.Tag,"clear"));
             check("clear broom uses danger red beside the gray new-canvas action",clearAction.Background==app.Resources["CanvasDanger"]&&buttons.Single(button=>Equals(button.Tag,"new-canvas")).Background==app.Resources["CanvasButton"]&&Controls.Grid.GetColumn(clearAction)==Controls.Grid.GetColumn(buttons.Single(button=>Equals(button.Tag,"new-canvas")))+1);
@@ -258,7 +258,7 @@ internal static class ToolbarAcceptanceTests
             check("selecting one editable image enables the crop button and all menu entries",cropButton.IsEnabled && cropMenus.All(item=>item.IsEnabled));
             Invoke(session,"ActivateTool",EditorTool.Crop);
             check("the dedicated crop action activates its own tool family",editor.Tool==EditorTool.Crop);
-            check("selected crop adds its available panel shortcut",Equals(cropButton.ToolTip,L.Get("Tool.Crop")+"\n"+L.Get("Toolbar.ToolOptionsHint")));
+            check("selected crop adds its available panel shortcut",Equals(cropButton.ToolTip,L.Get("Tool.Crop")+"\n"+L.Format("Toolbar.ToolOptionsHint","F4")));
             cropTarget.Locked=true;editor.Session.NotifyChanged();Invoke(session,"RefreshToolbarState");
             check("locking the selected image disables all crop entries and exits the crop tool",!cropButton.IsEnabled && cropMenus.All(item=>!item.IsEnabled) && editor.Tool==EditorTool.Select);
             Invoke(session,"ActivateTool",EditorTool.Crop);
@@ -267,7 +267,7 @@ internal static class ToolbarAcceptanceTests
             var manage=allButtons.Single(button=>Equals(button.Tag,"manage-stamps"));var saveStamp=allButtons.Single(button=>Equals(button.Tag,"save-stamp"));
             check("idle stamp-library launcher shares New Stamp's normal gray button background",((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)saveStamp.Background).Color && ((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)app.Resources["CanvasButton"]).Color);
             var newStampVertices=Vertices(Descendants(saveStamp).OfType<Shapes.Path>().Single().Data);
-            check("stamp buttons explain minus and plus while New Stamp presents an explicit plus",manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · -"&&saveStamp.ToolTip?.ToString()==L.Get("Feedback3.Toolbar.NewStamp")+" · +"&&newStampVertices.Contains(new Wpf.Point(12.5,2.5))&&newStampVertices.Contains(new Wpf.Point(12.5,7.5))&&newStampVertices.Contains(new Wpf.Point(10,5))&&newStampVertices.Contains(new Wpf.Point(15,5)));
+            check("stamp buttons expose current command bindings while New Stamp presents an explicit plus",manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · F8"&&saveStamp.ToolTip?.ToString()==L.Get("Feedback3.Toolbar.NewStamp")+" · Ctrl+Shift+K"&&newStampVertices.Contains(new Wpf.Point(12.5,2.5))&&newStampVertices.Contains(new Wpf.Point(12.5,7.5))&&newStampVertices.Contains(new Wpf.Point(10,5))&&newStampVertices.Contains(new Wpf.Point(15,5)));
 
             var parameters=editor.Parameters; parameters.Tool=EditorTool.Symbol; parameters.Symbol=SymbolKind.Heart;parameters.Style.Stroke=0xFFDC4F78;
             editor.ApplyParameters(parameters);Invoke(session,"RefreshToolbarState");Measure(shell);
@@ -287,7 +287,7 @@ internal static class ToolbarAcceptanceTests
             check("returning to Freehand preserves the most recent symbol shape and paint",Fingerprint((Imaging.BitmapSource)rememberedSymbol.Source)==configuredSymbol && ContainsColor((Imaging.BitmapSource)rememberedSymbol.Source,Media.Color.FromRgb(0x16,0x8F,0x69)));
             check("returning to Freehand preserves the most recent emoji image",ReferenceEquals(((Controls.Image)Glyph(tools[EditorTool.Emoji])).Source,EmojiArtwork.Image("🔥")));
             var hints=Field<List<Controls.TextBlock>>(session,"_toolbarShortcutHintLabels");
-            check("all tool and image commands share corner legends and stamp commands add minus/plus",hints.Count==17&&hints.Take(15).Select(hint=>hint.Text).SequenceEqual(ToolShortcutCatalog.All.Select(binding=>binding.Hint))&&hints.Skip(15).Select(hint=>hint.Text).SequenceEqual(new[]{"-","+"}));
+            check("single-letter tools share corner legends; longer stamp bindings remain in tooltips",hints.Count==17&&hints.Take(15).Select(hint=>hint.Text).Order().SequenceEqual(ToolShortcutCatalog.All.Select(binding=>binding.Hint).Order())&&hints.Skip(15).Select(hint=>hint.Text).SequenceEqual(new[]{"",""}));
             foreach(var button in buttons.Where(button=>button.Content is Controls.Grid content&&content.Children.OfType<Controls.TextBlock>().Any()))
             {
                 var hint=((Controls.Grid)button.Content).Children.OfType<Controls.TextBlock>().Single();
@@ -336,7 +336,7 @@ internal static class ToolbarAcceptanceTests
                 Save(shell,Path.Combine(output,"stamp-library-active-"+theme+".png"),1.5);
             }
             Set(session,"_selectedStampFromSlot",true);Invoke(session,"RefreshToolbarState");
-            check("leaving the library stamp restores its normal trigger glyph and gray background",ReferenceEquals(Glyph(manage),Field<object>(session,"_stampLibraryDefaultGlyph")) && ((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)saveStamp.Background).Color && ((Media.SolidColorBrush)manage.BorderBrush).Color.A==0 && manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · -");
+            check("leaving the library stamp restores its normal trigger glyph and gray background",ReferenceEquals(Glyph(manage),Field<object>(session,"_stampLibraryDefaultGlyph")) && ((Media.SolidColorBrush)manage.Background).Color==((Media.SolidColorBrush)saveStamp.Background).Color && ((Media.SolidColorBrush)manage.BorderBrush).Color.A==0 && manage.ToolTip?.ToString()==L.Get("Stamp.LibraryTitle")+" · F8");
             Task.Run(()=>library.PinAsync(1,null)).GetAwaiter().GetResult();PumpToIdle(app.Dispatcher);
             check("unbinding the active last slot restores Select through the library notification",editor.Tool==EditorTool.Select && Field<Guid?>(session,"_selectedStampId") is null);
 

@@ -142,7 +142,7 @@ internal static class GroupCanvasUiTests
         check(prefix + " offline snapshot permits locked-group navigation and selection while mutations keep history unchanged", session.EditScopeId == group.Id && session.Selection.SetEquals([element.Id]) && window.VisibleNodes.Single().Id == element.Id && element.Visible && session.Document.Groups.Count == 1 && session.UndoCount == 0);
         int copied = 0, deleted = 0; window.CommandKey += key => { if (key == 0x43) copied++; if (key == 0x2e) deleted++; };
         var route = typeof(LayersWindow).GetMethod("RouteCommandKey", Hidden)!;
-        route.Invoke(window, [0x43, true]); route.Invoke(window, [0x2e, false]);
+        route.Invoke(window, [0x43, System.Windows.Input.ModifierKeys.Control]); route.Invoke(window, [0x2e, System.Windows.Input.ModifierKeys.None]);
         check(prefix + " offline snapshot routes Copy but blocks data editing shortcuts", copied == 1 && deleted == 0 && session.Document.Elements.Count == 1 && session.UndoCount == 0);
         int detached = 0; window.SetGroupContext(new("Cached source", GroupStorageKind.ExternalFile, "C:/unavailable/source.floatcanvas", GroupCanvasMode.Temporary, true, Detach: () => detached++, IsReadOnly: true, IsOfflineSnapshot: true)); host.Layout();
         Field<Button>(window, "groupDetach").RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));

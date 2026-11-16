@@ -79,7 +79,7 @@ internal static class TextToolTransformTests
             double wantedSize = text.Height / 1.35; var style = text.Style.Clone(); style.FontSize = wantedSize;
             double width = renderer.MeasureText(text.Text, style).Width + 8;
             var to = new PointD(center.X + width / 2, corner.Y);
-            Send(editor, OverlayPointerKind.Down, corner); Send(editor, OverlayPointerKind.Move, to); Send(editor, OverlayPointerKind.Up, to);
+            Send(editor, OverlayPointerKind.Down, corner, OverlayModifiers.Alt); Send(editor, OverlayPointerKind.Move, to, OverlayModifiers.Alt); Send(editor, OverlayPointerKind.Up, to, OverlayModifiers.Alt);
             var measured = renderer.MeasureText(text.Text, text.Style, text.Width);
             check("widened " + alignment + " text grows to fill its one-line frame without old wrapped-line space", measured.LineCount == 1 && text.Style.FontSize > originalSize * 2.5 && measured.Height >= text.Height - .02 && measured.Width <= text.Width + .01 && state.UndoCount == 1);
             var enlarged = text.Style.FontSize;

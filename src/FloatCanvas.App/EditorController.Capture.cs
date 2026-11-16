@@ -25,7 +25,7 @@ internal sealed partial class EditorController
                 if (!mapping.TryToPlane(start, out var planeStart) || !mapping.TryToPlane(point, out var planeEnd))
                 { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
                 if ((modifiers & OverlayModifiers.Shift) != 0) planeEnd = SquareEnd(planeStart, planeEnd);
-                var box = RectD.FromPoints(planeStart, planeEnd);
+                var box = RectD.FromPoints(centeredGesture ? planeStart-(planeEnd-planeStart) : planeStart, planeEnd);
                 if (!mapping.PlaneToScreen.TryTransformBounds(box, out _))
                 { CapturePreview = null; RejectPointer(); Changed?.Invoke(); return; }
                 var points = CaptureShape == CaptureShape.Rectangle ? Corners(box)
@@ -42,7 +42,7 @@ internal sealed partial class EditorController
             else
             {
                 if ((modifiers & OverlayModifiers.Shift) != 0) point=SquareEnd(start,point);
-                bounds = RectD.FromPoints(start, point);
+                bounds = RectD.FromPoints(centeredGesture ? start-(point-start) : start, point);
             }
         }
         else

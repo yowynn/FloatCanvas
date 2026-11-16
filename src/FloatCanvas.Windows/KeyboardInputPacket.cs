@@ -1,6 +1,6 @@
 namespace FloatCanvas.Windows;
 
-public enum KeyboardInputPacketKind { Key, Toggle, Hide, LeaseEnded }
+public enum KeyboardInputPacketKind { Key, Toggle, Hide, LeaseEnded, Command }
 public enum KeyboardLeaseEndReason
 {
     Explicit, Toggle, Hide, ForegroundLost, HeartbeatExpired, QueueOverflow,
