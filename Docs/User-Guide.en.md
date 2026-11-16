@@ -587,7 +587,7 @@ Live regions follow new desktop frames, targeting the display refresh rate up to
 
 **External capture compatibility:** when the system supports session-local window exclusion, live filters exclude FloatCanvas only from its own capture, leaving visible annotations available to other capture tools. The application checks actual interface availability. Unsupported systems use compatibility capture, with a status message that third-party screenshots may omit the canvas. In that mode, use the in-app export for a complete composite, or remove or hide all live regions before capturing. This does not resolve the known Windows Snipping Tool window-detection limitation.
 
-## Window sources
+## Window sources (Experimental)
 
 Choose **Main menu → Window sources → Add window source...**, search and select a window, then preview the full image and drag the region to keep, or choose **Use full image**. The list contains window information only; image preparation starts after selection. Cancelling creates no layer. Ordinary placement inserts into the current editing scope. Billboard placement also asks you to choose a canvas position; the advanced fixed-depth workflow remains available.
 

@@ -5,7 +5,7 @@ Major user-facing changes, with explicit language and category markers. See the 
 
 ## [Unreleased]
 
-当前开发版本：**0.4.0** / Current development version: **0.4.0**.
+## [0.4.0] - 2026-11-16
 
 <!-- floatcanvas-notes:1 -->
 ### 简体中文
@@ -13,57 +13,60 @@ Major user-facing changes, with explicit language and category markers. See the 
 
 #### 新功能
 <!-- category:feature -->
-- **多画布创作。** 新增前景、主画布与背景三个根画布；前景和背景固定在屏幕平面，主画布可独立设置透视。普通组和子工程也可切换独立画布编辑。
-- **共享预制体与链接工程。** 从选择创建可重复放置的共享内容，修改后同步全部实例，也可解除链接。新增工程资源面板和自包含 `.floatprefab` 文件；外部工程支持离线预览、只读浏览、刷新来源及转为内部内容。
-- **画布浏览与分辨率转换。** 支持平移、缩放、居中、完整画布取景及本机视角记忆；也可将取景应用到作品并撤销。跨分辨率打开时可保持原尺寸或转换副本，整幅导出保留完整创作范围。
-- **窗口画面与演示工具。** 可把窗口的持续画面放到画布，裁剪、暂停或冻结为图片。键盘演示支持按键记录与可编辑的实时键盘；鼠标演示提供独立的高亮、点击反馈和轨迹。
+- **多画布与独立编辑。** 新增前景、主画布和背景三个根画布，主画布可独立设置透视。普通组、共享内容和子工程支持独立画布编辑，并可切回完整工程查看。
+- **共享预制体与链接工程。** 从选择创建可重复放置的共享内容，修改后同步实例，也可解除链接。新增工程资源面板和自包含 `.floatprefab` 文件，外部工程支持离线预览、刷新来源和转为内部内容。
+- **画布浏览与分辨率转换。** 支持平移、缩放、适配内容及本机视角记忆，也可将取景应用到作品并撤销。跨分辨率打开工程时，可保持原尺寸或转换副本；整幅导出保留完整创作范围。
+- **键盘与鼠标演示。** 键盘演示支持按键记录、实时键盘和可编辑布局，并可按图层设置采集范围。鼠标演示提供可独立配置的指针高亮、点击反馈和轨迹。
+- **窗口源（实验性）。** 将窗口的实时画面放入画布，支持裁剪、暂停和冻结为普通图片。入口明确标注实验性；工程保存离线画面，重新打开后需手动绑定窗口。
 
 #### 改进
 <!-- category:improvement -->
-- **统一快捷键与鼠标交互。** 支持命令搜索、主键与备用键自定义、导入导出；中键平移、Ctrl+滚轮缩放、按住工具键临时使用并恢复原工具，Alt 拖动复制及中心缩放。Tab 控制工具条、Space 临时平移，输入框与菜单保留本地按键，新增可选全局动作，数值长按合并为一次调节。
-- **嵌套组合与图层。** 用面包屑和当前层级列表浏览组合，拖动调整层级，并可整体或分别旋转、缩放。组的变换保留内部坐标，旧工程的交错图层保持显示顺序。
-- **画布校准与立牌放置。** 画布尺寸、网格间距和原点可独立调整，提供纸张比例与三交点辅助标定。立牌默认直接在屏幕绘制或放置后调整高度；图片、截图与文字使用相同放置规则。
-- **样式与文件操作。** 统一前景色、背景色和样式预设；序号提供实心与两种空心样式。完整工程直接打开，预制体追加置入；置入内容保留宿主的画布设置。
-- **更新说明与手动更新。** 更新窗口按分类显示当前语言的日志，汇总当前版本到目标版本之间的变化，并标明每条来源版本。无法自动更新时可直接打开官方发布页，手动下载安装包。
+- **统一快捷键与鼠标交互。** 新增命令搜索、主键与备用键自定义、导入导出，以及可选全局快捷键。工具键支持短按切换、按住临时使用；中键或 Space+左键平移，Ctrl+滚轮缩放，普通滚轮不再误移画布。
+- **嵌套组合与图层操作。** 通过面包屑和当前层级列表浏览组合，拖动调整层级，支持深层选择、Alt 拖动复制及整体或分别变换。组变换保留内部坐标，旧工程的交错图层保持原有显示顺序。
+- **画布校准与立牌放置。** 画布尺寸、网格间距和原点可独立调整，提供纸张比例与三交点辅助标定。图片、截图、文字及整组内容使用统一的立牌放置规则，可在放置后调整高度。
+- **工具预览、预设与属性。** 统一图标对齐和实时预览，改善画笔、荧光笔的线型与粗细展示；重新整理官方预设、数值范围和键盘步长。F4 统一打开当前工具属性，数值长按调整合并为一次撤销操作。
+- **更新说明与手动更新。** 更新窗口按分类显示当前语言的日志，汇总已安装版本到目标版本之间的变化。自动更新不可用时，可直接前往官方发布页手动下载安装包。
 
 #### 修复
 <!-- category:fix -->
-- **画布编辑稳定性。** 修复导航卡顿与闪烁、靠边拖动回弹、空格焦点冲突和空白画布误报未保存的问题。
-- **多屏编辑。** 修复副屏文字输入与输入法定位、显示器变化导致意外退出编辑；多屏取景统一参考主屏，穿透展示保留完整根工程。
+- **画布编辑稳定性。** 修复取消或撤销时闪帧、导航卡顿、靠边拖动回弹，以及空白画布误报未保存等问题。恢复鼠标优先的键盘规则，避免隐藏焦点导致误操作。
+- **多屏编辑。** 修复副屏文字输入与输入法定位、显示器变化导致意外退出编辑等问题。多屏取景统一参考主屏，穿透展示保留完整根工程。
 - **图片粘贴。** 修复从 Photoshop 等应用复制图片后，画布只出现选框、图片不可见的问题。
 
 #### 兼容性提示
 <!-- category:compatibility -->
-- **工程格式升级至 v18。** 支持读取并迁移 v1–v17 工程，读取不会改写原文件；新保存的工程需要支持 v18 的版本打开。旧印章库继续可用，新印章使用 `.floatprefab` 格式。
+- **工程格式升级至 v19。** 支持读取并迁移 v1–v18 工程，读取不会改写原文件；新保存的工程需要支持 v19 的版本打开。旧印章库继续可用，新印章使用 `.floatprefab` 格式；与旧版本交换文件前请保留原件。
 
 <!-- /lang -->
+
 ### English
 <!-- lang:en -->
 
 #### New features
 <!-- category:feature -->
-- **Multiple canvases.** Draw on foreground, main and background roots. Foreground and background stay in screen space while the main canvas has independent perspective. Groups and subprojects can also be edited on their own canvases.
-- **Shared prefabs and linked projects.** Create reusable content from selections and publish edits to every instance, or detach a copy. A project resources panel and self-contained `.floatprefab` files support reuse; external projects offer offline previews, read-only browsing, source refresh and conversion to internal content.
-- **Canvas navigation and resolution conversion.** Pan, zoom, center, frame the full canvas and remember local views, or apply a view to artwork with undo. Keep original dimensions or convert a copy when opening on another resolution; full exports retain the entire authored area.
-- **Window sources and presentation tools.** Place a live window view on the canvas, crop it, pause it or freeze it as an image. Keyboard demonstration offers key recording and an editable live keyboard; mouse demonstration has independent highlights, click feedback and trails.
+- **Multiple canvases and independent editing.** Foreground, main and background roots let the main canvas use its own perspective. Edit groups, shared content and subprojects on independent canvases, then return to the full project view.
+- **Shared prefabs and linked projects.** Create reusable shared content from selections, update its instances together or detach a copy. A project resources panel and self-contained `.floatprefab` files support offline previews, source refresh and conversion of external projects to internal content.
+- **Canvas navigation and resolution conversion.** Pan, zoom, fit content and remember local views, or apply a view to artwork with undo. Keep original dimensions or convert a copy when opening on another resolution; full exports retain the entire authored area.
+- **Keyboard and mouse demonstration.** Show key logs or a live keyboard with editable layouts and per-layer input scope. Configure pointer highlights, click feedback and mouse trails independently.
+- **Window sources (Experimental).** Place live window content on the canvas, crop it, pause it or freeze it as an ordinary image. Entry points identify the feature as experimental. Projects retain offline images; opening a project requires manually binding its windows again.
 
 #### Improvements
 <!-- category:improvement -->
-- **Unified shortcuts and mouse gestures.** Search commands, customize primary/alternate bindings and import/export them. Middle-drag pans, Ctrl+wheel zooms, holding any tool key temporarily borrows that tool, and Alt supports drag-copy and centered resize. Tab toggles the toolbar and Space temporarily pans; text fields and menus retain local keys. Optional global commands and single-gesture numeric key holds are available.
-- **Nested groups and layers.** Browse groups with breadcrumbs and a current-level list, drag to change hierarchy, and rotate or scale selections together or individually. Group transforms preserve local coordinates; interleaved layers in older projects retain their paint order.
-- **Canvas calibration and billboards.** Adjust canvas dimensions, grid spacing and origin independently, with paper ratios and three-intersection calibration. Draw or place billboards on screen before adjusting their height; images, captures and text share the same placement rules.
-- **Styles and file operations.** Share foreground, background and style presets across tools; number badges offer filled and two outline styles. Full projects open directly while prefabs append content, preserving the host canvas settings.
-- **Release notes and manual updates.** The update window groups notes in your application language, includes changes between your installed and target versions, and identifies each entry's release. If automatic updating is unavailable, open the official release page to download manually.
+- **Unified shortcuts and mouse gestures.** Search commands, customize primary and alternate bindings, import/export them and configure optional global shortcuts. Tap a tool key to switch or hold it to borrow the tool temporarily. Middle-drag or Space+left-drag pans, Ctrl+wheel zooms, and the ordinary wheel no longer moves the canvas accidentally.
+- **Nested groups and layer operations.** Browse groups with breadcrumbs and a current-level list, drag to change hierarchy, select nested objects, Alt-drag to copy, and transform selections together or individually. Group transforms preserve local coordinates; interleaved layers in older projects retain their paint order.
+- **Canvas calibration and billboard placement.** Adjust canvas dimensions, grid spacing and origin independently, with paper ratios and three-intersection calibration. Images, captures, text and whole groups share billboard placement rules, with height adjustable after placement.
+- **Tool previews, presets and properties.** Align icons and live previews, improve pen and highlighter stroke-style and width previews, and revise official presets, numeric ranges and keyboard steps. F4 consistently opens the current tool properties; a held numeric adjustment becomes one undo operation.
+- **Release notes and manual updates.** The update window groups notes in your application language and includes changes between your installed and target versions. If automatic updating is unavailable, open the official release page to download an installer manually.
 
 #### Fixes
 <!-- category:fix -->
-- **Canvas editing reliability.** Fix navigation stalls and flicker, drag rollback during edge panning, Space focus conflicts and false unsaved-work prompts on empty canvases.
+- **Canvas editing reliability.** Fix flashes during cancellation or undo, navigation stalls, drag rollback during edge panning and false unsaved-work prompts on empty canvases. Restore mouse-first keyboard behavior to prevent unintended actions through invisible focus.
 - **Multi-monitor editing.** Fix text input and IME positioning on secondary screens and unexpected exits from editing on display changes. Multi-monitor framing uses the primary screen, and pass-through retains the complete root project.
 - **Image pasting.** Fix images copied from applications such as Photoshop appearing invisible with only a selection box on the canvas.
 
 #### Compatibility
 <!-- category:compatibility -->
-- **Project format v18.** Read and migrate v1–v17 projects without rewriting their source files. Newly saved projects require a version that supports v18. Existing stamp libraries remain usable; new stamps use `.floatprefab` files.
+- **Project format v19.** Read and migrate v1–v18 projects without rewriting their source files. Newly saved projects require a version that supports v19. Existing stamp libraries remain usable; new stamps use `.floatprefab` files. Keep originals before exchanging files with older versions.
 
 <!-- /lang -->
 

@@ -1,6 +1,6 @@
 {
-  "WindowSource.Menu": { "zh": "窗口源", "en": "Window sources" },
-  "WindowSource.Add": { "zh": "添加窗口源…", "en": "Add window source..." },
+  "WindowSource.Menu": { "zh": "窗口源（实验性）", "en": "Window sources (Experimental)" },
+  "WindowSource.Add": { "zh": "添加窗口源（实验性）…", "en": "Add window source (Experimental)..." },
   "WindowSource.Rebind": { "zh": "重新绑定窗口…", "en": "Rebind window..." },
   "WindowSource.Crop": { "zh": "裁剪源内容…", "en": "Crop source..." },
   "WindowSource.Freeze": { "zh": "冻结为普通图片", "en": "Freeze as image" },
@@ -25,7 +25,7 @@
   "WindowSource.Status.SourceHidden": { "zh": "源窗口不可见 · 已暂停", "en": "Source hidden · Paused" },
   "WindowSource.Status.Unavailable": { "zh": "窗口捕获暂不可用", "en": "Window capture unavailable" },
   "WindowSource.Status.SourceLimit": { "zh": "最多同时显示 4 个实时源 · 当前显示保存画面", "en": "Four live sources at a time · Showing the saved image" },
-  "WindowSource.PickerTitle": { "zh": "选择窗口源", "en": "Choose a window source" },
+  "WindowSource.PickerTitle": { "zh": "选择窗口源（实验性）", "en": "Choose a window source (Experimental)" },
   "WindowSource.Refresh": { "zh": "刷新列表", "en": "Refresh list" },
   "WindowSource.Search": { "zh": "搜索窗口", "en": "Search windows" },
   "WindowSource.Select": { "zh": "选择窗口", "en": "Select window" },
