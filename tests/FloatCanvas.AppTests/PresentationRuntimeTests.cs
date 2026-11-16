@@ -55,7 +55,7 @@ internal static class PresentationRuntimeTests
         check("released chords expire at the configured hold boundary",timeline.Capture(1,9,Ms(1010)).RecentChords.Count==0);
         timeline.Clear();var shortcuts=All with{AllPhysicalKeys=false};
         timeline.Apply(Batch(Key(0x41),Key(0xA0),Key(0x42)),shortcuts,Ms(100));
-        check("default shortcut mode ignores unmodified and Shift-only letter input",timeline.Capture(1,10,Ms(100)).PressedKeys.All(key=>key.IsModifier)&&timeline.Capture(1,11,Ms(100)).RecentChords.Count==0);
+        check("default shortcut mode ignores unmodified and Shift-only letter input",timeline.Capture(1,10,Ms(100)).PressedKeys.All(key=>key.IsModifier)&&timeline.Capture(1,11,Ms(100)).RecentChords is [{ IsHeld: true }]);
         timeline.Apply(Batch(Key(0xA2),Key(0x43),Key(13)),shortcuts,Ms(100));
         check("shortcut mode retains Ctrl combinations and named controls",timeline.Capture(1,12,Ms(100)).RecentChords.Count==2);
         timeline.Clear();timeline.Apply(new(1,Enumerable.Range(1,PresentationLimits.MaximumHeldKeys).Select(vk=>Key(vk)),null,false),All,Ms(100));

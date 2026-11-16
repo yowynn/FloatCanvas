@@ -95,12 +95,12 @@ internal sealed partial class EditorController
         NumberStart = NumberStart, NumberStep = NumberStep, NumberTextSizeMode = NumberTextSizeMode, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
         CaptureBorderWidth = CaptureBorderWidth, CaptureBorderColor = CaptureBorderColor, Presentation = Presentation?.Clone(),
         PointerPresentation = PointerPresentation?.Clone() };
-            parameters.NormalizeAppearance(); return parameters;
+            parameters.NormalizeForCreation(); return parameters;
         }
     }
     public void ApplyParameters(ToolParameters parameters, bool? followNumberStart = null)
     {
-        parameters = parameters.Clone(); parameters.NormalizeAppearance();
+        parameters = parameters.Clone(); parameters.NormalizeForCreation();
         if (!parameters.IsValid()) throw new ArgumentException(nameof(parameters));
         // Old presets retain their serialized enum; only future drawing uses the unified symbol tool.
         var nextTool = parameters.Tool == EditorTool.Triangle ? EditorTool.Symbol :
@@ -457,7 +457,7 @@ internal sealed partial class EditorController
                 Symbol = Symbol, Transform = Affine2D.Translation(p.X, p.Y), Points = [new(0, 0)] };
             if (Tool == EditorTool.Presentation)
             { drawing.Presentation = (Presentation ?? new()).Clone(); drawing.Presentation.Modules = PresentationModules.Keys; }
-            if(ElementGeometry.IsBoxShape(drawing.Kind) || drawing.Kind == ElementKind.Presentation)drawing.ConstrainAspect=ConstrainAspect;
+            if(ElementGeometry.IsBoxShape(drawing.Kind) || drawing.Kind == ElementKind.Presentation)drawing.ConstrainAspect=drawing.Kind == ElementKind.Presentation || ConstrainAspect;
             if (Tool == EditorTool.Highlighter) drawing.Style.StrokeWidth = Math.Max(16, Style.StrokeWidth);
             if(drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
             if (UsesDefaultSize(Tool)) ApplyDefaultSize(drawing, start, e.Modifiers);
@@ -553,9 +553,15 @@ internal sealed partial class EditorController
     private void ApplyDefaultSize(CanvasElement element, PointD center, OverlayModifiers modifiers)
     {
         double width = DefaultWidth, height = DefaultHeight;
+        if (element.Kind == ElementKind.Presentation)
+        {
+            using var renderer = new SceneRenderer();
+            var natural = PresentationLayout.NaturalSize(element.Presentation ?? new(), element.Style, renderer);
+            width = natural.X; height = natural.Y;
+        }
         // Locked dimensions already describe the intended ratio. Shift on an
         // unlocked tool retains the quick square/circle insertion shortcut.
-        if (!ConstrainAspect && (modifiers & OverlayModifiers.Shift) != 0) height = width;
+        if (element.Kind != ElementKind.Presentation && !ConstrainAspect && (modifiers & OverlayModifiers.Shift) != 0) height = width;
         element.Width = width; element.Height = height; element.Points.Clear();
         element.Transform = Affine2D.Translation(center.X - width / 2, center.Y - height / 2);
     }
@@ -667,7 +673,7 @@ internal sealed partial class EditorController
         }
         transforms = Session.SelectedElements().Where(x => !x.Locked).ToDictionary(x => x.Id, x => x.Transform);
         billboardSources = Session.SelectedElements().Where(x => !x.Locked && x.IsBillboard).ToDictionary(x => x.Id, x => x.Clone());
-        resizeSource = gesture == "resize" && selected.Length == 1 && (ElementGeometry.IsBoxShape(selected[0].Kind) || selected[0].Kind == ElementKind.Text) ? selected[0].Clone() : null;
+        resizeSource = gesture == "resize" && selected.Length == 1 && (ElementGeometry.IsBoxShape(selected[0].Kind) || selected[0].Kind is ElementKind.Text or ElementKind.Presentation) ? selected[0].Clone() : null;
         resizeTextSources=gesture=="resize"?selected.Where(element=>element.Kind==ElementKind.Text).ToDictionary(element=>element.Id,element=>element.Clone()):[];
         if (resizeTextSources.Count>0) resizeTextRenderer = new();
         PrepareNodeTransform();
@@ -734,7 +740,17 @@ internal sealed partial class EditorController
                 drawing.Points = [new(0, 0), (modifiers&OverlayModifiers.Shift)!=0?EightDirectionEnd(start,p)-start:local];
             else
             {
-                if (ConstrainBox(modifiers)) p = ConstrainAspect && UsesDefaultSize(Tool) ? DefaultRatioEnd(start, p) : SquareEnd(start, p);
+                if (drawing.Kind == ElementKind.Presentation)
+                {
+                    using var renderer = new SceneRenderer();
+                    var natural = PresentationLayout.NaturalSize(drawing.Presentation ?? new(), Style, renderer);
+                    var drag = p - start;
+                    double height = Math.Max(1, Math.Abs(drag.Y));
+                    double width = (modifiers & OverlayModifiers.Shift) == 0 ? height * natural.X / natural.Y : Math.Max(1, Math.Abs(drag.X));
+                    p = start + new PointD(Math.CopySign(width, drag.X), Math.CopySign(height, drag.Y));
+                    drawing.Style.FontSize = Math.Clamp(Style.FontSize * height / natural.Y, 1, 4096);
+                }
+                else if (ConstrainBox(modifiers)) p = ConstrainAspect && UsesDefaultSize(Tool) ? DefaultRatioEnd(start, p) : SquareEnd(start, p);
                 var rect = RectD.FromPoints(start, p);
                 drawing.Width = Math.Max(1, rect.Width); drawing.Height = Math.Max(1, rect.Height);
                 drawing.Transform = Affine2D.Translation(rect.X, rect.Y); drawing.Points.Clear();
@@ -766,8 +782,12 @@ internal sealed partial class EditorController
                     TextFrameLayout.Resize(element, source, scaleX, scaleY, resizeTextRenderer!);
                     NotifyGeometryChanged(); return;
                 }
-                element.Width = source.Width; element.Height = source.Height; element.CornerRadius = source.CornerRadius; element.Transform = original;
-                ElementGeometry.ResizeShapeGeometry(element, scaleX, scaleY);
+                if (source.Kind == ElementKind.Presentation) PresentationFrameLayout.Resize(element, source, scaleX, scaleY);
+                else
+                {
+                    element.Width = source.Width; element.Height = source.Height; element.CornerRadius = source.CornerRadius; element.Transform = original;
+                    ElementGeometry.ResizeShapeGeometry(element, scaleX, scaleY);
+                }
                 NotifyGeometryChanged(); return;
             }
             var center = selectionBounds.Center;

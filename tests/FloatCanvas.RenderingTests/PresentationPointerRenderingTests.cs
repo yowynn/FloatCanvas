@@ -125,8 +125,8 @@ internal static class PresentationPointerRenderingTests
         check("released shortcut expires without an orphan modifier row", Empty(faded));
         layer.Presentation!.KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys;
         renderer.PresentationFrame = new(4, 8, TimeSpan.FromSeconds(5), recentChords: [new([ctrl], TimeSpan.FromSeconds(5), true)]);
-        using var malformedModifierOnly = Scene(renderer, scene);
-        check("even all-physical display does not render modifier-only semantic fragments", Empty(malformedModifierOnly));
+        using var standaloneModifier = Scene(renderer, scene);
+        check("all-physical display renders an explicit standalone modifier record", !Empty(standaloneModifier));
     }
 
     private static void CanvasSeparation(Action<string, bool> check)

@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-using System.Text;
 using static FloatCanvas.Windows.NativeMethods;
 
 namespace FloatCanvas.Windows;
@@ -16,7 +15,6 @@ public sealed class PresentationInputObserver : IPresentationInputSource
     private readonly WindowProcedure callback;
     private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly Dictionary<(int Vk, int Scan, uint Flags), string> keyNames = [];
     private nint window;
     private int stopped, accepting, error;
     private PresentationObservedCursor? previousCursor;
@@ -137,11 +135,10 @@ public sealed class PresentationInputObserver : IPresentationInputSource
         if (copied == uint.MaxValue || copied != size) return;
         var bytes = new ReadOnlySpan<byte>(data, (int)size);
         long now = ExpandMessageTime(unchecked((uint)Native.GetMessageTime()), Environment.TickCount64);
-        if (keyboard && PresentationRawInputDecoder.TryKeyboard(bytes, IntPtr.Size, out var key))
-            Add(new(key.Released ? PresentationObservedKind.KeyUp : PresentationObservedKind.KeyDown, now,
-                key.Device, key.VirtualKey, key.ScanCode, key.Flags, KeyName(key.VirtualKey, key.ScanCode, key.Flags),
-                InputOwner: ForegroundInputOwner()));
-        else if (PresentationRawInputDecoder.TryMouse(bytes, IntPtr.Size, out long device, out ushort buttons) && buttons != 0)
+        // Keyboard registration is retained for device-removal notifications only.
+        // Physical keyboard edges come exclusively from the existing low-level hook:
+        // raw delivery can omit consumed shortcuts and contain re-injected modifiers.
+        if (PresentationRawInputDecoder.TryMouse(bytes, IntPtr.Size, out long device, out ushort buttons) && buttons != 0)
         {
             bool located = Native.GetPhysicalCursorPos(out var point);
             for (int button = 0; button < 5; button++)
@@ -152,34 +149,9 @@ public sealed class PresentationInputObserver : IPresentationInputSource
         }
     }
     private void Add(PresentationObservedInput packet) { if (buffer.Add(packet)) Signal(); }
-    private static PresentationInputOwner ForegroundInputOwner()
-    {
-        nint foreground = Native.GetForegroundWindow();
-        if (foreground == 0 || Native.GetWindowThreadProcessId(foreground, out uint process) == 0) return PresentationInputOwner.Unknown;
-        return process == Environment.ProcessId ? PresentationInputOwner.FloatCanvas : PresentationInputOwner.OtherApplication;
-    }
     internal static long ExpandMessageTime(uint messageTime, long now) =>
         Math.Max(0, now - unchecked((uint)now - messageTime));
     private void Signal() { try { Available?.Invoke(); } catch { /* A detached UI subscriber cannot change input delivery. */ } }
-    private string KeyName(int vk, int scan, uint flags)
-    {
-        var key = (vk, scan, flags); if (keyNames.TryGetValue(key, out var cached)) return cached;
-        string label = vk switch
-        {
-            >= 0x41 and <= 0x5A or >= 0x30 and <= 0x39 => ((char)vk).ToString(),
-            >= 0x70 and <= 0x87 => "F" + (vk - 0x6F),
-            0xA0 or 0xA1 or 0x10 => "Shift", 0xA2 or 0xA3 or 0x11 => "Ctrl", 0xA4 or 0xA5 or 0x12 => "Alt", 0x5B or 0x5C => "Win",
-            0x08 => "Backspace", 0x09 => "Tab", 0x0D => "Enter", 0x13 => "Pause", 0x14 => "CapsLock", 0x1B => "Esc", 0x20 => "Space", 0x21 => "PgUp", 0x22 => "PgDn",
-            0x23 => "End", 0x24 => "Home", 0x25 => "←", 0x26 => "↑", 0x27 => "→", 0x28 => "↓", 0x2C => "PrintScreen", 0x2D => "Insert", 0x2E => "Delete",
-            0x5D => "Menu", 0x90 => "NumLock", 0x91 => "ScrollLock", _ => ""
-        };
-        if (label.Length == 0)
-        {
-            var text = new StringBuilder(33); int descriptor = (scan & 255) << 16 | ((flags & 2) != 0 ? 1 << 24 : 0);
-            label = Native.GetKeyNameText(descriptor, text, text.Capacity) > 0 ? text.ToString() : "Key " + vk;
-        }
-        if (keyNames.Count >= 256) keyNames.Clear(); keyNames.Add(key, label); return label;
-    }
     private RawDevice[] Requested(nint target, uint flags) => keyboard
         ? [new(1, 6, flags, target), new(1, 2, flags, target)] : [new(1, 2, flags, target)];
     private bool RemoveOwned()
@@ -219,11 +191,8 @@ public sealed class PresentationInputObserver : IPresentationInputSource
         [DllImport("user32.dll", EntryPoint = "DispatchMessageW")] internal static extern nint DispatchMessage(ref Message message);
         [DllImport("user32.dll")] internal static extern void PostQuitMessage(int code);
         [DllImport("user32.dll")] internal static extern int GetMessageTime();
-        [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
-        [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint process);
         [DllImport("user32.dll", SetLastError = true)] internal static extern nuint SetTimer(nint window, nuint id, uint elapsed, nint procedure);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool KillTimer(nint window, nuint timer);
         [DllImport("user32.dll", EntryPoint = "UnregisterClassW", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool UnregisterClass(string name, nint module);
-        [DllImport("user32.dll", EntryPoint = "GetKeyNameTextW", CharSet = CharSet.Unicode)] internal static extern int GetKeyNameText(int code, StringBuilder text, int maximum);
     }
 }

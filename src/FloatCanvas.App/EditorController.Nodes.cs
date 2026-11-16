@@ -123,7 +123,7 @@ internal sealed partial class EditorController
             return true;
         }
         if (directLeaf && gesture == "resize" && nodeOriginalElements.Values.Single() is { } single &&
-            (ElementGeometry.IsBoxShape(single.Kind) || single.Kind == ElementKind.Text))
+            (ElementGeometry.IsBoxShape(single.Kind) || single.Kind is ElementKind.Text or ElementKind.Presentation))
         {
             if (!ElementGeometry.LocalToPlane(single).TryInverse(out var inverse)) return true;
             var center = ElementGeometry.LocalBounds(single).Center;
@@ -226,6 +226,7 @@ internal sealed partial class EditorController
     {
         if (original.Kind == ElementKind.Text)
             TextFrameLayout.Resize(target, original, sx, sy, resizeTextRenderer ??= new());
+        else if (original.Kind == ElementKind.Presentation) PresentationFrameLayout.Resize(target, original, sx, sy);
         else if (ElementGeometry.IsBoxShape(original.Kind)) ElementGeometry.ResizeShapeGeometry(target, sx, sy);
         else target.Transform = original.Transform.Compose(Affine2D.Scale(sx, sy));
     }

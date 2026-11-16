@@ -1279,7 +1279,7 @@ internal sealed partial class DesktopSession : IDisposable
     {
         if (_disposed) return;
         _presentationPrivacy?.Dispose();
-        _host.PresentationInputObserved -= OnPresentationEditingInput;
+        _host.PresentationInputObserved -= OnPresentationHookInput;
         _host.ConfigurePresentationInputTap(false, false, 0);
         _presentationRuntime?.Dispose();
         DisposeWindowSources();

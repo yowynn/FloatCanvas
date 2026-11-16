@@ -672,6 +672,19 @@ internal sealed partial class InspectorWindow : Wpf.Window
             edited.Transform = edited.Transform.Compose(Affine2D.Translation((edited.Width - diameter) / 2, (edited.Height - diameter) / 2));
             edited.Width = edited.Height = diameter;
         }
+        if (source.Kind == ElementKind.Presentation && dirtyFields.Overlaps(["FontSize", "FontFamily", "Presentation.RecentChordLimit", "Presentation.DisplayStyle", "Presentation.KeyboardLayout"]))
+        {
+            using var renderer = new SceneRenderer();
+            var oldSize = PresentationLayout.NaturalSize(source.Presentation ?? new(), source.Style, renderer);
+            var newSize = PresentationLayout.NaturalSize(edited.Presentation ?? new(), edited.Style, renderer);
+            double oldWidth = edited.Width, oldHeight = edited.Height;
+            edited.Width *= newSize.X / oldSize.X; edited.Height *= newSize.Y / oldSize.Y;
+            var alignment = edited.Presentation?.KeyPanelAlignment ?? PresentationPanelAlignment.BottomLeft;
+            double anchorDx = alignment is PresentationPanelAlignment.TopRight or PresentationPanelAlignment.BottomRight ? oldWidth - edited.Width :
+                alignment is PresentationPanelAlignment.TopCenter or PresentationPanelAlignment.BottomCenter ? (oldWidth - edited.Width) / 2 : 0;
+            double anchorDy = alignment is PresentationPanelAlignment.BottomLeft or PresentationPanelAlignment.BottomCenter or PresentationPanelAlignment.BottomRight ? oldHeight - edited.Height : 0;
+            edited.Transform = edited.Transform.Compose(Affine2D.Translation(anchorDx, anchorDy));
+        }
         if (dirtyFields.Contains("Number") && source.Kind == ElementKind.Number)
         {
             if (!int.TryParse(fields["Number"].Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var value))
@@ -744,7 +757,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             {
                 "X" or "Y" => (-10000000d, 10000000d, -8192d, 8192d, 1d),
                 "BillboardHeight" => (-10000000d, 10000000d, -1000d, 1000d, 1d),
-                "W" or "H" => (0d, 10000000d, 1d, 1000d, 1d),
+                "W" or "H" => (.01d, 10000000d, 1d, 1000d, 1d),
                 "Angle" => (-360000d, 360000d, -180d, 180d, 1d),
                 "StrokeWidth" => (0d, 10000000d, 0d, 32d, .1d),
                 "CornerRadius" => (0d, 10000000d, 0d, 64d, 1d),
@@ -757,6 +770,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             };
             var numeric = new NumericValueField(field, limits.Item1, limits.Item2, limits.Item3, limits.Item4, limits.Item5, integerOnly: key == "Number", customAnchorGesture: geometryScrub)
             { Unit = key switch { "Angle" => "°", "Opacity" => "%", "Number" => "#", _ => "px" } };
+            numeric.KeyboardStep = NumericKeyboardSteps.ForProperty(key);
             numeric.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), label);
             if (geometryScrub) scrubbers.Add(new NumericScrubber(numeric.DragAnchor, () => BeginScrub(key), delta => UpdateScrub(key, delta), FinishScrub, numeric.Slider));
             if (key == "Number") numeric.Slider.IsSnapToTickEnabled = true;
@@ -983,11 +997,16 @@ internal sealed partial class InspectorWindow : Wpf.Window
 
     private void RefreshNumericRanges(CanvasElement[] selected)
     {
+        numericFields["StrokeWidth"].SetInputRange(0, selected.Length > 0 && selected.All(element => element.Kind == ElementKind.Image) ? 10000000 : 1024);
         if (selected.Length > 0 && selected.All(element => element.Kind == ElementKind.Highlighter))
             numericFields["StrokeWidth"].SetSliderRange(16, 64);
         else numericFields["StrokeWidth"].SetSliderRange(0, selected.Any(element => element.Kind == ElementKind.Image) ? 16 : 32);
         var effect = selected.Length == 0 ? null : SelectedEffect(selected[0]);
         numericFields["EffectStrength"].SetSliderRange(effect?.Kind == ImageEffectKind.Pixelate ? 1 : .1, 64);
+        numericFields["EffectStrength"].KeyboardStep = effect?.Kind == ImageEffectKind.Pixelate ? 1 : .1;
+        bool largeGlyph = selected.Length > 0 && selected.All(element => element.Kind == ElementKind.Number ||
+            element.Kind == ElementKind.Text && EmojiGlyphs.IsEmoji(element.Text, element.Style));
+        numericFields["FontSize"].SetSliderRange(largeGlyph ? 16 : 8, largeGlyph ? 256 : 144);
     }
 
     private ImageEffect? SelectedEffect(CanvasElement element) => compatibleEffects.Contains(effectIndex) && effectIndex < element.Effects.Count
@@ -1183,7 +1202,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
 
     private static void ResizeElement(CanvasElement element, double x, double y)
     {
-        if(element.Kind==ElementKind.Text)
+        if(element.Kind==ElementKind.Presentation)
+        {
+            PresentationFrameLayout.Resize(element, element.Clone(), x, y);
+        }
+        else if(element.Kind==ElementKind.Text)
         {
             using var renderer=new SceneRenderer();
             TextFrameLayout.Resize(element,element.Clone(),x,y,renderer);

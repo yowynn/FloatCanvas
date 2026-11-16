@@ -16,7 +16,7 @@ internal sealed partial class CanvasToolOptions : UserControl, IToolOptionsConte
     private readonly CheckBox gridVisible = new(), gridSizeLock = new();
     private readonly NumericValueField columns = new(1, CanvasCalibration.MaximumGridCount, sliderMaximum: 32, integerOnly: true) { Unit = L.Get("Numeric.Unit.Column") },
         rows = new(1, CanvasCalibration.MaximumGridCount, sliderMaximum: 32, integerOnly: true) { Unit = L.Get("Numeric.Unit.Row") },
-        width = new(double.Epsilon, 64, sliderMinimum: .5, sliderMaximum: 8, step: .5) { Unit = "px" };
+        width = new(double.Epsilon, 64, sliderMinimum: .5, sliderMaximum: 8, step: .5) { Unit = "px", KeyboardStep = .1 };
     private readonly NumericValueField gridSize = new(CanvasGridGeometry.MinimumEditableCellSize, CanvasGridGeometry.MaximumCellSize,
         sliderMinimum: 1, sliderMaximum: 400, step: 1) { Unit = "px" };
     private readonly Grid countPair = new();

@@ -46,6 +46,17 @@ internal static class PresentationInputTests
             BinaryPrimitives.WriteUInt16LittleEndian(keyboard.AsSpan(header + 6), 0x10);
             check(PresentationRawInputDecoder.TryKeyboard(keyboard, pointerSize, out key) && key.VirtualKey == 0xA1,
                 pointerSize + "-byte pointer right Shift is identified from its scan code");
+            foreach (ushort win in new ushort[] { 0x5B, 0x5C })
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(keyboard.AsSpan(header), win == 0x5B ? (ushort)0x5B : (ushort)0x5C);
+                BinaryPrimitives.WriteUInt16LittleEndian(keyboard.AsSpan(header + 2), 2);
+                BinaryPrimitives.WriteUInt16LittleEndian(keyboard.AsSpan(header + 6), win);
+                check(PresentationRawInputDecoder.TryKeyboard(keyboard, pointerSize, out var windowsKey) && windowsKey.VirtualKey == win && !windowsKey.Released,
+                    pointerSize + "-byte raw Windows key down retains its physical identity");
+                BinaryPrimitives.WriteUInt16LittleEndian(keyboard.AsSpan(header + 2), 3);
+                check(PresentationRawInputDecoder.TryKeyboard(keyboard, pointerSize, out var windowsUp) && windowsUp.VirtualKey == win && windowsUp.Released && windowsUp.Flags == windowsKey.Flags,
+                    pointerSize + "-byte raw Windows key release matches its press");
+            }
             BinaryPrimitives.WriteUInt16LittleEndian(keyboard.AsSpan(header + 6), 255);
             check(!PresentationRawInputDecoder.TryKeyboard(keyboard, pointerSize, out _), "Unmapped raw virtual keys are ignored");
             BinaryPrimitives.WriteUInt16LittleEndian(keyboard.AsSpan(header + 6), 65);

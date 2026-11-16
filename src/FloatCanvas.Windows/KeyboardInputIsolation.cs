@@ -224,7 +224,6 @@ public sealed class KeyboardInputIsolation : IDisposable
         long lease = state.Begin(initial, toggle, hide, now, passModifiers: delegatedForeground != 0);
         modifierHistory.Reset(now, state.CurrentModifiers);
         pointerPresses.Clear();
-        presentationInput.Clear();
         if (!Native.SetKeyboardState(state.CopyLocalState()))
         {
             int error = Marshal.GetLastWin32Error();
@@ -239,7 +238,7 @@ public sealed class KeyboardInputIsolation : IDisposable
     }
 
     public void EndLease(KeyboardLeaseEndReason reason = KeyboardLeaseEndReason.Explicit)
-    { lock (gate) { state.End(reason, Environment.TickCount64); delegatedForeground = 0; delegatedProcess = 0; pointerPresses.Clear(); presentationInput.Clear(); NotifyLocked(); } }
+    { lock (gate) { state.End(reason, Environment.TickCount64); delegatedForeground = 0; delegatedProcess = 0; pointerPresses.Clear(); NotifyLocked(); } }
     /// <summary>Atomically replaces both private command bindings without restarting an active lease.</summary>
     public void UpdateHotkeys(HotkeyBinding toggle, HotkeyBinding hide)
     {
@@ -315,8 +314,8 @@ public sealed class KeyboardInputIsolation : IDisposable
                 try
                 {
                     NotifyPresentationInputLocked(presentationInput.Keyboard(key.VirtualKey, key.ScanCode, key.Flags,
-                        message is 0x101 or 0x105, now, own && state.IsActive &&
-                        now - Volatile.Read(ref lastHeartbeat) <= heartbeatMilliseconds));
+                        message is 0x101 or 0x105, now, true, foreground == 0 ? PresentationInputOwner.Unknown :
+                        own ? PresentationInputOwner.FloatCanvas : PresentationInputOwner.OtherApplication));
                 }
                 catch { presentationInput.Clear(); } // A visual observer cannot end the editing lease.
                 NotifyLocked();

@@ -53,7 +53,8 @@ internal sealed class ToolPresetLibrary
     public IReadOnlyList<ToolPreset> Official => CreateOfficial();
     internal static ToolParameters OfficialDefault(EditorTool tool) => CreateOfficial()
         .First(preset => Family(preset.Parameters.Tool) == Family(tool)).Parameters.Clone();
-    public IReadOnlyList<ToolPreset> User => presets.Where(p => p.Parameters.IsValid()).Select(p => p.Clone()).ToArray();
+    public IReadOnlyList<ToolPreset> User => presets.Where(p => p.Parameters.IsValid()).Select(p =>
+    { var copy = p.Clone(); copy.Parameters.NormalizeForCreation(); return copy; }).ToArray();
     public IReadOnlyList<ToolPreset> All => Official.Concat(User).ToArray();
     internal static EditorTool Family(EditorTool tool) => tool switch
     {
@@ -74,7 +75,7 @@ internal sealed class ToolPresetLibrary
 
     public ToolPreset Save(string name, ToolParameters parameters)
     {
-        parameters = parameters.Clone(); parameters.NormalizeAppearance();
+        parameters = parameters.Clone(); parameters.NormalizeForCreation();
         NormalizePointerPreset(parameters);
         Validate(name, parameters);
         if (presets.Count >= 1000) throw new InvalidDataException(L.Get("Preset.InvalidLibrary"));
@@ -91,7 +92,7 @@ internal sealed class ToolPresetLibrary
 
     public ToolPreset Update(string id, ToolParameters parameters)
     {
-        parameters = parameters.Clone(); parameters.NormalizeAppearance();
+        parameters = parameters.Clone(); parameters.NormalizeForCreation();
         NormalizePointerPreset(parameters);
         var preset = FindUser(id).Clone(); Validate(preset.Name, parameters); preset.Parameters = parameters.Clone();
         Replace(preset, L.Format("PresetHistory.Update", preset.Name)); return preset.Clone();
@@ -104,8 +105,25 @@ internal sealed class ToolPresetLibrary
     }
 
     /// <summary>Apply every saved parameter; fields absent from older JSON use model defaults when loaded.</summary>
-    public ToolParameters Apply(string id) =>
-        (All.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id)).Parameters.Clone();
+    public ToolParameters Apply(string id)
+    {
+        var parameters = (All.FirstOrDefault(p => p.Id == ResolveOfficialId(id)) ?? throw new KeyNotFoundException(id)).Parameters.Clone();
+        parameters.NormalizeForCreation(); return parameters;
+    }
+
+    internal static string ResolveOfficialId(string id) => id switch
+    {
+        "official.square" => "official.rectangle",
+        "official.circle" => "official.ellipse",
+        "official.symbol-green" => "official.triangle",
+        "official.text-heading" => "official.text",
+        "official.blur-fine" => "official.blur",
+        "official.pixelate-fine" => "official.pixelate",
+        "official.image-half" or "official.image-faint" => "official.image",
+        "official.highlighter-green" => "official.highlighter-dotted",
+        "official.number-blue" => "official.number-outline",
+        _ => id
+    };
 
     private ToolPreset FindUser(string id) => presets.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException(id);
     private void Replace(ToolPreset preset, string label) => Persist(presets.Select(p => p.Id == preset.Id ? preset : p).ToList(), label);
@@ -136,8 +154,8 @@ internal sealed class ToolPresetLibrary
         void Add(string id, string key, EditorTool tool, Action<ToolParameters>? configure = null)
         {
             var parameters = new ToolParameters { Tool = tool };
-            if (tool == EditorTool.Symbol) parameters.DefaultWidth = parameters.DefaultHeight = 72;
-            if (tool is EditorTool.Rectangle or EditorTool.Ellipse) { parameters.DefaultWidth = 144; parameters.DefaultHeight = 108; }
+            if (tool == EditorTool.Symbol) { parameters.DefaultWidth = parameters.DefaultHeight = 72; parameters.ConstrainAspect = true; }
+            if (tool is EditorTool.Rectangle or EditorTool.Ellipse) { parameters.DefaultWidth = parameters.DefaultHeight = 108; }
             if (tool is EditorTool.Number or EditorTool.Emoji) parameters.Style.FontSize = 72;
             if (tool == EditorTool.Text) parameters.Style.FontSize = 36;
             if (tool == EditorTool.Number) parameters.Style.Background = 0xFFFFFFFF;
@@ -149,13 +167,13 @@ internal sealed class ToolPresetLibrary
         }
         // Each family starts with its standard form, followed by ready-to-use common combinations.
         // These remain complete snapshots; personal presets and legacy missing-field defaults are untouched.
-        Add("freehand", "Freehand", EditorTool.Freehand);
+        Add("freehand", "Freehand", EditorTool.Freehand, p => p.Style.StrokeWidth = 6);
         Add("freehand-fine", "FreehandFine", EditorTool.Freehand, p => p.Style.StrokeWidth = 2);
-        Add("freehand-bold", "FreehandBold", EditorTool.Freehand, p => p.Style.StrokeWidth = 12);
+        Add("freehand-bold", "FreehandBold", EditorTool.Freehand, p => p.Style.StrokeWidth = 16);
         Add("freehand-dotted", "FreehandDotted", EditorTool.Freehand, p => { p.Style.StrokeWidth = 24; p.Style.StrokePattern = StrokePattern.Dotted; });
         Add("highlighter", "Highlighter", EditorTool.Highlighter);
-        Add("highlighter-yellow", "HighlighterYellow", EditorTool.Highlighter, p => { p.Style.Foreground = 0xFFCB912F; p.Style.StrokeWidth = 32; });
-        Add("highlighter-green", "HighlighterGreen", EditorTool.Highlighter, p => p.Style.Foreground = 0xFF448361);
+        Add("highlighter-yellow", "HighlighterYellow", EditorTool.Highlighter, p => { p.Style.Foreground = 0xFFCB912F; p.Style.StrokeWidth = 48; });
+        Add("highlighter-dotted", "HighlighterDotted", EditorTool.Highlighter, p => { p.Style.StrokeWidth = 32; p.Style.StrokePattern = StrokePattern.Dotted; });
         void Line(string id, string label, ArrowHeadStyle start, ArrowHeadStyle end, StrokePattern pattern = StrokePattern.Solid) =>
             Add(id, label, EditorTool.Line,
                 p => { p.Style.StartArrowHead = start; p.Style.EndArrowHead = end; p.Style.StrokePattern = pattern; });
@@ -166,38 +184,30 @@ internal sealed class ToolPresetLibrary
         Line("dotted-line", "DottedLine", ArrowHeadStyle.None, ArrowHeadStyle.None, StrokePattern.Dotted);
         Add("rectangle", "Rectangle", EditorTool.Rectangle, p => p.CornerRadius = 0);
         Add("rounded-rectangle", "RoundedRectangle", EditorTool.Rectangle, p => p.CornerRadius = 12);
-        Add("square", "Square", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; });
         Add("rectangle-soft", "RectangleSoft", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.Style.Background = ColorLibrary.BackgroundRed; });
         Add("rectangle-filled", "RectangleFilled", EditorTool.Rectangle, p => { p.CornerRadius = 0; p.Style.Background = ColorLibrary.BackgroundRed; p.Style.Variant = ElementAppearance.ShapeUniform; });
-        Add("circle", "Circle", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; });
         Add("ellipse", "Ellipse", EditorTool.Ellipse);
-        Add("circle-soft", "CircleSoft", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; p.Style.Background = ColorLibrary.BackgroundRed; });
-        Add("circle-filled", "CircleFilled", EditorTool.Ellipse, p => { p.ConstrainAspect = true; p.DefaultWidth = p.DefaultHeight = 108; p.Style.Background = ColorLibrary.BackgroundRed; p.Style.Variant = ElementAppearance.ShapeUniform; });
+        Add("circle-soft", "CircleSoft", EditorTool.Ellipse, p => { p.DefaultWidth = p.DefaultHeight = 108; p.Style.Background = ColorLibrary.BackgroundRed; });
+        Add("circle-filled", "CircleFilled", EditorTool.Ellipse, p => { p.DefaultWidth = p.DefaultHeight = 108; p.Style.Background = ColorLibrary.BackgroundRed; p.Style.Variant = ElementAppearance.ShapeUniform; });
         // The shape picker applies every style to any geometry in one click.
         // Keep one canonical shape rather than repeating a recipe for each symbol.
         Add("triangle", "SymbolOutline", EditorTool.Symbol);
         Add("symbol-soft", "SymbolSoft", EditorTool.Symbol, p => p.Style.Background = ColorLibrary.BackgroundRed);
         Add("symbol-filled", "SymbolFilled", EditorTool.Symbol, p => { p.Style.Variant = ElementAppearance.ShapeUniform; p.Style.Background = ColorLibrary.BackgroundRed; });
         Add("symbol-dashed", "SymbolDashed", EditorTool.Symbol, p => p.Style.StrokePattern = StrokePattern.Dashed);
-        Add("symbol-green", "SymbolGreen", EditorTool.Symbol, p => { p.Style.Foreground = 0xFF448361; p.Style.StrokeWidth = 6; });
         Add("text", "Text", EditorTool.Text);
-        Add("text-heading", "TextHeading", EditorTool.Text, p => p.Style.FontSize = 48);
         Add("text-body", "TextBody", EditorTool.Text, p => { p.Style.Foreground = 0xFF252525; p.Style.FontSize = 24; });
         Add("text-label", "TextLabel", EditorTool.Text, p => { p.Style.Foreground = 0xFF2383E2; p.Style.FontSize = 28; p.Style.TextAlignment = TextAlignment.Center; });
         Add("number", "Number", EditorTool.Number);
-        Add("number-blue", "NumberBlue", EditorTool.Number, p => { p.Style.Foreground = 0xFF2383E2; p.Style.FontSize = 48; });
+        Add("number-outline", "NumberOutline", EditorTool.Number, p => { p.Style.Variant = ElementAppearance.NumberOutline; p.Style.Foreground = ColorLibrary.ForegroundRed; p.Style.Background = 0; p.Style.StrokeWidth = 3; p.Style.FontSize = 56; });
         Add("number-compact", "NumberCompact", EditorTool.Number, p => { p.Style.Foreground = 0xFF252525; p.Style.FontSize = 36; });
         Add("eraser", "Eraser", EditorTool.Eraser);
         Add("blur", "Blur", EditorTool.Blur);
-        Add("blur-fine", "BlurFine", EditorTool.Blur, p => p.EffectStrength = 6);
         Add("blur-strong", "BlurStrong", EditorTool.Blur, p => p.EffectStrength = 24);
         Add("pixelate", "Pixelate", EditorTool.Pixelate);
-        Add("pixelate-fine", "PixelateFine", EditorTool.Pixelate, p => p.EffectStrength = 6);
         Add("pixelate-strong", "PixelateStrong", EditorTool.Pixelate, p => p.EffectStrength = 24);
         Add("select", "Select", EditorTool.Select);
         Add("image", "Image", EditorTool.Image);
-        Add("image-half", "ImageHalf", EditorTool.Image, p => p.Style.Opacity = .5);
-        Add("image-faint", "ImageFaint", EditorTool.Image, p => p.Style.Opacity = .25);
         Add("crop", "Crop", EditorTool.Crop);
         Add("crop-square", "CropSquare", EditorTool.Crop, p => p.ConstrainAspect = true);
         Add("capture", "Capture", EditorTool.CaptureRegion);

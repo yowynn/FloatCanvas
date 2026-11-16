@@ -18,7 +18,7 @@ internal static class OfficialPresetDesignTests
     private static readonly Dictionary<EditorTool, string> FirstIds = new()
     {
         [EditorTool.Select] = "select", [EditorTool.Freehand] = "freehand", [EditorTool.Highlighter] = "highlighter",
-        [EditorTool.Line] = "line", [EditorTool.Rectangle] = "rectangle", [EditorTool.Ellipse] = "circle",
+        [EditorTool.Line] = "line", [EditorTool.Rectangle] = "rectangle", [EditorTool.Ellipse] = "ellipse",
         [EditorTool.Text] = "text", [EditorTool.Number] = "number", [EditorTool.Image] = "image",
         [EditorTool.Eraser] = "eraser", [EditorTool.Crop] = "crop", [EditorTool.Blur] = "blur",
         [EditorTool.Pixelate] = "pixelate", [EditorTool.CaptureRegion] = "capture", [EditorTool.Symbol] = "triangle",
@@ -70,8 +70,8 @@ internal static class OfficialPresetDesignTests
             var first = library.OfficialFor(tool).First();
             check(tool + " starts with its standard recipe", first.Id == "official." + id && first.Parameters.Style.Foreground == (tool == EditorTool.Presentation ? 0xFFF8FAFC : ColorLibrary.ForegroundRed));
         }
-        check("the circle standard is circular and the ellipse remains available", library.OfficialFor(EditorTool.Ellipse).First().Parameters is
-            { ConstrainAspect: true, DefaultWidth: 108, DefaultHeight: 108 } && library.Apply("official.ellipse") is { ConstrainAspect: false, DefaultWidth: 144, DefaultHeight: 108 });
+        check("the ellipse standard has equal default dimensions and allows free proportions", library.OfficialFor(EditorTool.Ellipse).First().Parameters is
+            { ConstrainAspect: false, DefaultWidth: 108, DefaultHeight: 108 } && library.Apply("official.circle") is { ConstrainAspect: false, DefaultWidth: 108, DefaultHeight: 108 });
         check("tools without adjustable appearance have one useful standard each", new[] { EditorTool.Select, EditorTool.Eraser, EditorTool.Stamp }
             .All(tool => library.OfficialFor(tool).Count == 1));
     }
@@ -100,7 +100,7 @@ internal static class OfficialPresetDesignTests
         check("common drawing recipes are distinct usable property combinations", library.Apply("official.freehand-fine").Style.StrokeWidth < library.Apply("official.freehand-bold").Style.StrokeWidth &&
             library.Apply("official.freehand-dotted").Style.StrokePattern == StrokePattern.Dotted && library.Apply("official.highlighter-yellow").Style.Stroke != ColorLibrary.ForegroundRed &&
             library.Apply("official.rectangle-soft").Style.Fill == ColorLibrary.BackgroundRed && library.Apply("official.rectangle-filled").Style.LinkColors);
-        check("common content recipes retain their meaningful variations", library.Apply("official.image-half").Style.Opacity == .5 && library.Apply("official.crop-square").ConstrainAspect &&
+        check("common content recipes retain functional variations without tool opacity", library.Apply("official.image-half").Style.Opacity == 1 && library.OfficialFor(EditorTool.Image).Count == 1 && library.Apply("official.crop-square").ConstrainAspect &&
             library.Apply("official.capture-annotated").CaptureSource == CaptureSource.BackgroundAndCanvas && library.Apply("official.capture-bordered").CaptureBorderWidth > 0 &&
             library.Apply("official.blur-fine").EffectStrength < library.Apply("official.blur-strong").EffectStrength);
         foreach (var preset in library.OfficialFor(EditorTool.CaptureRegion).Where(p => p.Parameters.CaptureBorderWidth == 0))

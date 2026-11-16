@@ -60,6 +60,8 @@ internal sealed class ToolStateStore
         Tools = state.Tools; Buttons = state.Buttons; Selections = state.Selections;
         OfficialBaselines = state.OfficialBaselines; PreviewSources = state.PreviewSources;
         savedFingerprint = JsonSerializer.Serialize(state, JsonOptions);
+        foreach (var parameters in Tools.Values.Concat(PreviewSources.Values)) parameters.NormalizeForCreation();
+        foreach (var key in Selections.Keys.ToArray()) Selections[key] = ToolPresetLibrary.ResolveOfficialId(Selections[key]);
         if (legacyKeyboardScope != PresentationKeyboardScope.AllApplications && Enum.IsDefined(legacyKeyboardScope) && !HasAuthoredKeyboardScope(this.path))
         {
             if (!Tools.TryGetValue(EditorTool.Presentation, out var keyboard))
@@ -84,6 +86,7 @@ internal sealed class ToolStateStore
     public void Save()
     {
         foreach (var parameters in Tools.Values.Concat(OfficialBaselines.Values).Concat(PreviewSources.Values)) parameters.NormalizeAppearance();
+        foreach (var parameters in Tools.Values.Concat(PreviewSources.Values)) parameters.NormalizeForCreation();
         var state = new State { CanvasPresetSelection = CanvasPresetSelection, Tools = Tools, Buttons = Buttons, Selections = Selections,
             OfficialBaselines = OfficialBaselines, PreviewSources = PreviewSources };
         Validate(state);

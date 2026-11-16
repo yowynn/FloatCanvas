@@ -24,7 +24,7 @@ internal readonly record struct NumericParameterDomain(double Minimum, double Ma
         var domain = ForTool(key);
         return (key, tool) switch
         {
-            ("StrokeWidth", EditorTool.Highlighter) => domain with { RailMinimum = 16, RailMaximum = 64 },
+            ("StrokeWidth", EditorTool.Highlighter) => domain with { Minimum = 16, RailMinimum = 16, RailMaximum = 64 },
             ("FontSize", EditorTool.Number or EditorTool.Emoji) => domain with { RailMinimum = 16, RailMaximum = 256 },
             ("EffectStrength", EditorTool.Pixelate) => domain with { RailMinimum = 1 },
             _ => domain

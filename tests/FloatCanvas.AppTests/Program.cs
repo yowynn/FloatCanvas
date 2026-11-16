@@ -95,6 +95,7 @@ internal static class Program
             if (args.Contains("--scope-recovery-only")) { GroupCanvasRootEditingTests.RunScopeRecovery(Assert, args.SkipWhile(a => a != "--scope-recovery-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--root-canvases-only")) { RootCanvasIntegrationTests.Run(Assert); return 0; }
             if (args.Contains("--root-canvas-indicator-only")) { RootCanvasIndicatorTests.Run(Assert, args.SkipWhile(a => a != "--root-canvas-indicator-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--presentation-keyboard-state-only")) { PresentationKeyboardStateTests.Run(Assert); return 0; }
             if (args.Contains("--presentation-chords-only")) { PresentationChordSequenceTests.Run(Assert); return 0; }
             if (args.Contains("--presentation-physical-state-only")) { PresentationPhysicalStateTests.Run(Assert); return 0; }
             if (args.Contains("--presentation-tools-desktop-only")) { PresentationToolsDesktopTests.Run(Assert); return 0; }
@@ -146,6 +147,7 @@ internal static class Program
             if (args.Contains("--color-picker-escape-only")) { ColorPickerEscapeTests.Run(Assert, args.SkipWhile(a => a != "--color-picker-escape-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--inspector-color-menu-only")) { InspectorColorMenuLifecycleTests.Run(Assert, args.SkipWhile(a => a != "--inspector-color-menu-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-robustness-only")) { WindowRobustnessTests.RunNative(Assert); return 0; }
+            if (args.Contains("--canvas-history-presentation-only")) { CanvasHistoryPresentationTests.Run(Assert); return 0; }
             if (args.Contains("--native-presentation-lifecycle-only")) { NativePresentationLifecycleTests.Run(Assert); return 0; }
             if (args.Contains("--archive-worker-only")) { Task.Run(() => ArchiveWorkerTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--preview-request-recovery-only")) { PreviewRequestRecoveryTests.Run(Assert); return 0; }
@@ -410,6 +412,7 @@ internal static class Program
             if (args.Contains("--native-input-routing-only")) { NativeInputRoutingFixture.Run(Assert); return 0; }
             if (args.Contains("--stamp-selection-only")) { StampSelectionIntegrationTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar-header-only")) { ToolbarAcceptanceTests.Run(Assert, headerOnly: true); return 0; }
+            if (args.Contains("--toolbar-icon-centering-only")) { ToolbarIconCenteringTests.Run(Assert); return 0; }
             if (args.Contains("--toolbar2-only")) { ToolbarAcceptanceTests.Run(Assert); return 0; }
             if (args.Contains("--creation-selection-only")) { CreationSelectionTests.Run(Assert); return 0; }
             if (args.Contains("--click-placement-threshold-only")) { ClickPlacementThresholdTests.Run(Assert); return 0; }
@@ -449,6 +452,7 @@ internal static class Program
             if (args.Contains("--aspect-inspector-only")) { AspectInspectorRegressionTests.Run(Assert); return 0; }
             if (args.Contains("--number-start-link-only")) { NumberStartLinkTests.Run(Assert); return 0; }
             if (args.Contains("--complete-presets-only")) { CompletePresetContractTests.Run(Assert); return 0; }
+            if (args is ["--tool-preset-audit", var auditOutput]) { ToolPresetAuditTests.Run(Assert, auditOutput); return 0; }
             if (args.Contains("--presets-only")) { ToolPresetAndColorTests.Run(Assert); return 0; }
             if (args.Contains("--stamps-only")) { Task.Run(() => StampLibraryTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--data-remediation-only")) { DataRemediationTests.Run(Assert); return 0; }
@@ -521,6 +525,7 @@ internal static class Program
             BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert); BillboardScreenCreationTests.Run(Assert); BillboardLogicalCreationTests.Run(Assert); ScreenDraftPreviewTests.Run(Assert);
             ContainerBillboardAppTests.Run(Assert);
             PresentationPreviewTests.Run(Assert);
+            PresentationKeyboardStateTests.Run(Assert);
             PresentationChordSequenceTests.Run(Assert);
             PresentationPhysicalStateTests.Run(Assert);
             PointerPresentationToolTests.Run(Assert);

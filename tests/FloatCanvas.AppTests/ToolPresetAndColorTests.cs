@@ -46,12 +46,13 @@ internal static class ToolPresetAndColorTests
             applied.Style.Stroke == initial.Style.Stroke && applied.Style.Fill == initial.Style.Fill && applied.Style.StrokeWidth == initial.Style.StrokeWidth &&
             applied.Style.Opacity == initial.Style.Opacity && applied.CornerRadius == initial.CornerRadius && applied.EffectStrength == initial.EffectStrength);
         var circle = library.Apply("official.circle");
-        check("circle preset restores its default font effect and ellipse constraint", circle.Tool == EditorTool.Ellipse && circle.ConstrainAspect && circle.Style.FontFamily == initial.Style.FontFamily && circle.EffectStrength == initial.EffectStrength);
+        check("circle preset restores its default font effect and ellipse constraint", circle.Tool == EditorTool.Ellipse && !circle.ConstrainAspect && circle.Style.FontFamily == initial.Style.FontFamily && circle.EffectStrength == initial.EffectStrength);
         var rounded = library.Apply("official.rounded-rectangle");
         check("rounded recipe uses unified rectangle radius and releases square constraint", rounded.Tool == EditorTool.Rectangle && rounded.CornerRadius == 12 && !rounded.ConstrainAspect);
         check("plain and double arrow recipes remain independent", library.Apply("official.line").Style.EndArrowHead == ArrowHeadStyle.None && library.Apply("official.double-arrow").Style.StartArrowHead == ArrowHeadStyle.FilledTriangle);
         check("official dashed and dotted presets restore factory colors", library.Apply("official.dashed-line").Style.StrokePattern == StrokePattern.Dashed && library.Apply("official.dotted-line").Style.Stroke == initial.Style.Stroke);
-        string savedState = JsonSerializer.Serialize(current);
+        var normalized = current.Clone(); normalized.NormalizeForCreation();
+        string savedState = JsonSerializer.Serialize(normalized);
         var saved = library.Save(" My preset ", current); current.Style.Stroke = 0xFFFFFFFF;
         check("user save keeps complete independent parameter snapshot", saved.Name == "My preset" && JsonSerializer.Serialize(saved.Parameters) == savedState && library.User[0].Parameters.Style.Stroke == 0x7F112233);
         var userApplied = library.Apply(saved.Id);

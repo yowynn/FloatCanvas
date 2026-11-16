@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using SkiaSharp;
 
 namespace FloatCanvas.Rendering;
@@ -61,6 +61,11 @@ public sealed partial class SceneRenderer
                     !element.Visible || element.Style.Opacity <= 0) continue;
                 var local = ElementGeometry.LocalBounds(element); if (local.IsEmpty) continue;
                 var transform = space == SceneRenderSpace.PlaneContent ? ElementGeometry.LocalToPlane(element) : mapping.ElementToScreen(element);
+                var natural = PresentationLayout.NaturalSize(element.Presentation, element.Style, this);
+                double naturalWidth = natural.X * element.Height / natural.Y;
+                double stretch = element.Width / naturalWidth;
+                transform = transform.Compose(Projective2D.FromAffine(Affine2D.Scale(stretch, 1)));
+                local = local with { Width = naturalWidth };
                 var polygon = PresentationLocalPolygon(document, element, mapping, transform, space);
                 if (polygon.Count < 3) continue;
                 var screen = polygon.Select(transform.TransformPoint).ToArray();
@@ -80,7 +85,7 @@ public sealed partial class SceneRenderer
         CanvasMapping mapping, Projective2D transform, SceneRenderSpace space)
     {
         if (space != SceneRenderSpace.ScreenComposite || !transform.TryInverse(out var inverse) ||
-            !PresentationGeometry.TryScreenRegion(element, mapping, document.Viewport, out var screen)) return [];
+            !PresentationGeometry.TryScreenRegion(element, mapping, document.Viewport, out var screen, element.Presentation?.DisplayStyle != PresentationDisplayStyle.Keyboard)) return [];
         var polygon = new List<PointD>(screen.Count);
         foreach (var point in screen)
         {
@@ -103,8 +108,8 @@ public sealed partial class SceneRenderer
             var chords = frame.RecentChords.Where(chord => VisibleChord(chord.Keys, settings.KeyDisplay) &&
                 chord.Timestamp <= frame.Time && (chord.IsHeld || frame.Time - chord.Timestamp < TimeSpan.FromMilliseconds(settings.KeyHoldMilliseconds)))
                 .OrderBy(chord => chord.Timestamp).TakeLast(settings.RecentChordLimit).ToList();
-            double pad = Math.Min(region.Style.FontSize * .35, region.Local.Width / 8), gap = Math.Max(2, pad * .5);
-            double maximum = Math.Max(.01, Math.Min(settings.KeyPanelMaximumWidth, region.Local.Width - pad * 2));
+            double pad = Math.Min(region.Style.FontSize * .35, region.Local.Width / 8), gap = pad * .5;
+            double maximum = 1_000_000;
             foreach (var chord in chords.TakeLast(settings.RecentChordLimit))
             {
                 string label = string.Join(" + ", chord.Keys.Select(key => key.Label));
@@ -115,7 +120,7 @@ public sealed partial class SceneRenderer
                 count += Math.Max(label.Length, metrics.GlyphCount) + 1;
                 if (count > PresentationLimits.MaximumPrimitives) { exceeded = true; return new(rows, [], damage); }
                 double fade = chord.IsHeld ? 1 : Math.Clamp(1 - (frame.Time - chord.Timestamp).TotalMilliseconds / settings.KeyHoldMilliseconds, 0, 1);
-                rows.Add(new(label, new(0, 0, Math.Min(maximum, metrics.Width + pad * 2), metrics.Height + pad * 2), pad, fade));
+                rows.Add(new(label, new(0, 0, metrics.Width + pad * 2, metrics.Height + pad * 2), pad, fade));
             }
             double height = rows.Sum(row => row.Bounds.Height) + Math.Max(0, rows.Count - 1) * gap;
             bool top = settings.KeyPanelAlignment is PresentationPanelAlignment.TopLeft or PresentationPanelAlignment.TopCenter or PresentationPanelAlignment.TopRight;
@@ -145,8 +150,8 @@ public sealed partial class SceneRenderer
             chord.Timestamp <= frame.Time && (chord.IsHeld || frame.Time - chord.Timestamp < TimeSpan.FromMilliseconds(settings.KeyHoldMilliseconds)))
             .OrderBy(chord => chord.Timestamp).TakeLast(settings.RecentChordLimit);
         var lines = new List<(List<PresentationCell> Cells, double Width, double Height)>();
-        double pad = Math.Min(region.Style.FontSize * .35, region.Local.Width / 8), gap = Math.Max(2, pad * .6);
-        double maximum = Math.Max(.01, Math.Min(settings.KeyPanelMaximumWidth, region.Local.Width - pad * 2));
+        double pad = Math.Min(region.Style.FontSize * .35, region.Local.Width / 8), gap = pad * .6;
+        double maximum = 1_000_000;
         foreach (var chord in chords)
         {
             var line = new List<PresentationCell>(); double x = 0, height = 0;
@@ -157,13 +162,14 @@ public sealed partial class SceneRenderer
                 { count = PresentationLimits.MaximumPrimitives + 1; exceeded = true; return new([], [], []); }
                 var metrics = _text.Measure(cap.Label, region.Style, maximum);
                 count += Math.Max(cap.Label.Length, metrics.GlyphCount) + 3;
-                double width = Math.Max(region.Style.FontSize, metrics.Width) + pad * 2, cellHeight = metrics.Height + pad * 2 + 3;
+                double cellHeight = metrics.Height + pad * 2 + region.Style.FontSize * 3 / 22;
+                double width = Math.Max(cellHeight * PresentationLayout.KeycapWidthUnits(cap.VirtualKey), metrics.Width + pad * 2);
                 line.Add(new(cap.Label, new(x, 0, width, cellHeight), fade, false, region.Style.FontSize));
                 x += width + gap; height = Math.Max(height, cellHeight);
             }
-            double widthSum = Math.Max(.01, x - gap), scale = Math.Min(1, maximum / widthSum);
-            line = line.Select(cell => cell with { Bounds = new(cell.Bounds.X * scale, 0, cell.Bounds.Width * scale, height * scale), FontSize = cell.FontSize * scale }).ToList();
-            lines.Add((line, widthSum * scale, height * scale));
+            double widthSum = Math.Max(.01, x - gap);
+            line = line.Select(cell => cell with { Bounds = cell.Bounds with { Height = height } }).ToList();
+            lines.Add((line, widthSum, height));
         }
         double totalHeight = lines.Sum(line => line.Height) + Math.Max(0, lines.Count - 1) * gap;
         double y = PanelTop(settings.KeyPanelAlignment) ? region.Local.Top + pad : region.Local.Bottom - pad - totalHeight;
@@ -187,9 +193,9 @@ public sealed partial class SceneRenderer
         if (keys.Length == 0) return new([], cells, damage);
         double left = keys.Min(key => key.X), top = keys.Min(key => key.Y), right = keys.Max(key => key.X + key.Width), bottom = keys.Max(key => key.Y + key.Height);
         double pad = Math.Min(region.Style.FontSize * .35, Math.Min(region.Local.Width, region.Local.Height) / 8);
-        double unit = Math.Min((region.Local.Width - pad * 2) / (right - left), (region.Local.Height - pad * 2) / (bottom - top));
-        double x = PanelX(settings.KeyPanelAlignment, region.Local, pad, (right - left) * unit);
-        double y = PanelTop(settings.KeyPanelAlignment) ? region.Local.Top + pad : region.Local.Bottom - pad - (bottom - top) * unit;
+        double unit = (region.Local.Height - pad * 2) / (bottom - top);
+        double x = region.Local.Center.X - (right - left) * unit / 2;
+        double y = region.Local.Center.Y - (bottom - top) * unit / 2;
         foreach (var key in keys)
         {
             if (count + key.Label.Length + 3 > PresentationLimits.MaximumPrimitives)
@@ -226,7 +232,7 @@ public sealed partial class SceneRenderer
     }
 
     private static bool VisibleChord(IReadOnlyList<PresentationKeyCap> keys, PresentationKeyDisplayMode mode) => keys.Count > 0 &&
-        keys.Any(key => !key.IsModifier) && (mode == PresentationKeyDisplayMode.AllPhysicalKeys ||
+        (keys.All(key => key.IsModifier) || mode == PresentationKeyDisplayMode.AllPhysicalKeys ||
          keys.Any(key => key.VirtualKey is 0x11 or 0xA2 or 0xA3 or 0x12 or 0xA4 or 0xA5 or 0x5B or 0x5C) ||
          keys.Any(key => key.VirtualKey is >= 0x70 and <= 0x87 or 0x08 or 0x09 or 0x0D or 0x1B or >= 0x21 and <= 0x2E));
 
@@ -281,24 +287,36 @@ public sealed partial class SceneRenderer
             var bounds = cell.Bounds; double radius = Math.Min(bounds.Width, bounds.Height) * .13;
             uint foreground = cell.Pressed ? region.Style.Background : region.Style.Foreground;
             uint background = cell.Pressed ? region.Style.Foreground : region.Style.Background;
-            paint.Style = SKPaintStyle.Fill; paint.Color = WithElementOpacity(new SKColor(background), cell.Opacity);
-            canvas.DrawRoundRect(ToRect(bounds), (float)radius, (float)radius, paint);
-            paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = (float)Math.Max(.5, Math.Min(bounds.Width, bounds.Height) * .025);
-            paint.Color = WithElementOpacity(new SKColor(foreground), cell.Opacity * .65);
-            canvas.DrawRoundRect(ToRect(bounds), (float)radius, (float)radius, paint);
-            var face = bounds.Inflate(-Math.Min(bounds.Width, bounds.Height) * .07);
-            canvas.DrawRoundRect(ToRect(face), (float)(radius * .7), (float)(radius * .7), paint);
-            paint.Style = SKPaintStyle.Fill; paint.Color = WithElementOpacity(new SKColor(foreground), cell.Opacity);
-            var style = region.Style.Clone(); style.FontSize = cell.FontSize;
-            var metrics = _text.Measure(cell.Label, style, Math.Max(.01, face.Width));
-            int saved = canvas.Save();
+            // Replace the base under outlines and glyphs, including fully transparent ink.
+            // Isolate each key so replacement never clears other scene content.
+            int keyLayer = canvas.SaveLayer(ToRect(bounds.Inflate(Math.Max(.5, Math.Min(bounds.Width, bounds.Height) * .025))), null);
             try
             {
-                canvas.ClipRect(ToRect(bounds));
-                canvas.Translate((float)(bounds.Center.X - metrics.Width / 2), (float)(bounds.Center.Y - metrics.Height / 2 + (cell.Pressed ? radius * .3 : -radius * .15)));
-                _text.Draw(canvas, cell.Label, style, Math.Max(.01, face.Width), paint);
+                paint.Style = SKPaintStyle.Fill; paint.Color = WithElementOpacity(new SKColor(background), cell.Opacity);
+                canvas.DrawRoundRect(ToRect(bounds), (float)radius, (float)radius, paint);
+                paint.BlendMode = SKBlendMode.Src;
+                paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = (float)Math.Max(.5, Math.Min(bounds.Width, bounds.Height) * .025);
+                paint.Color = WithElementOpacity(new SKColor(foreground), cell.Opacity * .65);
+                canvas.DrawRoundRect(ToRect(bounds), (float)radius, (float)radius, paint);
+                var face = bounds.Inflate(-Math.Min(bounds.Width, bounds.Height) * .07);
+                canvas.DrawRoundRect(ToRect(face), (float)(radius * .7), (float)(radius * .7), paint);
+                paint.Style = SKPaintStyle.Fill; paint.Color = WithElementOpacity(new SKColor(foreground), cell.Opacity);
+                var style = region.Style.Clone(); style.FontSize = cell.FontSize;
+                var metrics = _text.Measure(cell.Label, style, Math.Max(.01, face.Width));
+                int saved = canvas.Save();
+                try
+                {
+                    canvas.ClipRect(ToRect(bounds));
+                    canvas.Translate((float)(bounds.Center.X - metrics.Width / 2), (float)(bounds.Center.Y - metrics.Height / 2 + (cell.Pressed ? radius * .3 : -radius * .15)));
+                    _text.Draw(canvas, cell.Label, style, Math.Max(.01, face.Width), paint);
+                }
+                finally { canvas.RestoreToCount(saved); }
             }
-            finally { canvas.RestoreToCount(saved); }
+            finally
+            {
+                paint.BlendMode = SKBlendMode.SrcOver;
+                canvas.RestoreToCount(keyLayer);
+            }
         }
     }
 

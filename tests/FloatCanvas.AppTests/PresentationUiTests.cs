@@ -33,7 +33,7 @@ internal static class PresentationUiTests
         var library = new ToolPresetLibrary(Path.Combine(folder, "official.json"));
         var presets = library.OfficialFor(EditorTool.Presentation);
         check("presentation appends its enum without renumbering existing tool and element IDs", (int)EditorTool.Canvas == 22 && (int)EditorTool.Presentation == 23 && (int)ElementKind.LiveBlur == 14 && (int)ElementKind.Presentation == 15);
-        check("keyboard and mouse tools each provide three official recipes after the original 57", library.Official.Count == 63 && presets.Select(preset => preset.Id).SequenceEqual(new[] { "official.presentation-keys", "official.presentation-keycaps", "official.presentation-keyboard" }) && library.OfficialFor(EditorTool.PointerPresentation).Count == 3);
+        check("keyboard and mouse tools each provide three official recipes in the curated catalog", library.Official.Count == 55 && presets.Select(preset => preset.Id).SequenceEqual(new[] { "official.presentation-keys", "official.presentation-keycaps", "official.presentation-keyboard" }) && library.OfficialFor(EditorTool.PointerPresentation).Count == 3);
         var keys = library.Apply("official.presentation-keys"); var pointer = LegacyPointer(keys);
         check("key panel preset has bounded geometry canonical appearance and all-key recording", keys.DefaultWidth == 360 && keys.DefaultHeight == 120 && keys.Presentation is { Modules: PresentationModules.Keys, KeyDisplay: PresentationKeyDisplayMode.AllPhysicalKeys } && keys.Style.Foreground == 0xfff8fafc && keys.Style.Background == 0xdd20252f && keys.IsValid());
         check("legacy pointer tool snapshots remain readable without a new pointer-region recipe", pointer.IsValid() && library.Official.All(recipe => recipe.Id != "official.presentation-pointer"));
@@ -69,7 +69,7 @@ internal static class PresentationUiTests
         controller.Pointer(new(OverlayPointerKind.Down, new(300, 200), OverlayMouseButton.Left, OverlayModifiers.Control));
         controller.Pointer(new(OverlayPointerKind.Up, new(300, 200), OverlayMouseButton.Left, OverlayModifiers.Control));
         var created = session.Document.Elements.Single();
-        check("presentation click creates one selectable ordinary authored region", created.Kind == ElementKind.Presentation && created.Presentation?.Modules == PresentationModules.Keys && created.Width == 360 && created.Height == 120 && session.Selection.SetEquals([created.Id]) && session.UndoCount == 1);
+        check("presentation click creates one selectable ordinary authored region", created.Kind == ElementKind.Presentation && created.Presentation?.Modules == PresentationModules.Keys && Math.Abs(created.Width - created.Style.FontSize * PresentationLayout.LogWidthPerFontSize) < 1e-8 && ElementGeometry.PreservesAspect(created) && session.Selection.SetEquals([created.Id]) && session.UndoCount == 1);
         controller.Presentation!.KeyHoldMilliseconds = 1900;
         check("created presentation settings do not alias future tool settings", created.Presentation!.KeyHoldMilliseconds == 900);
         check("presentation creation is a single reversible transaction", session.Undo() && session.Document.Elements.Count == 0 && session.Redo() && session.Document.Elements.Single().Presentation!.KeyHoldMilliseconds == 900);
@@ -78,9 +78,26 @@ internal static class PresentationUiTests
         controller.Pointer(new(OverlayPointerKind.Move, new(860, 470), OverlayMouseButton.Left, OverlayModifiers.Control));
         controller.Pointer(new(OverlayPointerKind.Up, new(860, 470), OverlayMouseButton.Left, OverlayModifiers.Control));
         var drawn = session.Document.Elements.Last();
-        check("presentation drag creates a free-proportion common region", drawn.Width == 260 && drawn.Height == 170 && !ElementGeometry.PreservesAspect(drawn) && drawn.Presentation!.KeyHoldMilliseconds == 1900);
+        check("presentation drag preserves the natural ratio and derives size from height", Math.Abs(drawn.Width / drawn.Height - created.Width / created.Height) < .001 && drawn.Height == 170 && ElementGeometry.PreservesAspect(drawn) && drawn.Presentation!.KeyHoldMilliseconds == 1900);
+        controller.Pointer(new(OverlayPointerKind.Down, new(100, 500), OverlayMouseButton.Left, OverlayModifiers.Control | OverlayModifiers.Shift));
+        controller.Pointer(new(OverlayPointerKind.Move, new(300, 650), OverlayMouseButton.Left, OverlayModifiers.Control | OverlayModifiers.Shift));
+        controller.Pointer(new(OverlayPointerKind.Up, new(300, 650), OverlayMouseButton.Left, OverlayModifiers.Control | OverlayModifiers.Shift));
+        var stretched = session.Document.Elements.Last();
+        check("Shift creates a stretched keyboard layer while retaining its aspect lock", Math.Abs(stretched.Width - 200) < .001 && Math.Abs(stretched.Height - 150) < .001 && ElementGeometry.PreservesAspect(stretched) && stretched.Style.FontSize != controller.Style.FontSize);
         var drawnSettings = drawn.Presentation!; drawnSettings.Enabled = false; drawnSettings.Modules = PresentationModules.None;
         check("a disabled empty presentation region remains pickable by its stable bounds", ElementGeometry.HitTest(drawn, new(700, 380), 0));
+
+        var physicalSession = new EditorSession(new() { Viewport = new(0, 0, 1400, 900) });
+        var physical = new EditorController(physicalSession);
+        physical.ApplyParameters(new ToolPresetLibrary(Path.Combine(folder, "physical-create.json")).Apply("official.presentation-keyboard"));
+        using (var layoutRenderer = new SceneRenderer())
+        {
+            var expected = PresentationLayout.NaturalSize(physical.Presentation!, physical.Style, layoutRenderer);
+            physical.Pointer(new(OverlayPointerKind.Down, new(600, 400), OverlayMouseButton.Left, OverlayModifiers.Control));
+            physical.Pointer(new(OverlayPointerKind.Up, new(600, 400), OverlayMouseButton.Left, OverlayModifiers.Control));
+            var keyboard = physicalSession.Document.Elements.Single();
+            check("physical keyboard click uses font and enabled layout natural size", Math.Abs(keyboard.Width - expected.X) < .001 && Math.Abs(keyboard.Height - expected.Y) < .001 && ElementGeometry.PreservesAspect(keyboard));
+        }
 
         var projected = new SceneDocument { Viewport = new(0, 0, 800, 700) };
         projected.Canvas.Projection.Enabled = true;
@@ -89,9 +106,9 @@ internal static class PresentationUiTests
         session = new(projected); controller = new(session) { BillboardMode = true, BillboardWorkflow = BillboardCreationWorkflow.ScreenFirst };
         controller.ApplyParameters(LegacyPointer(new ToolPresetLibrary(Path.Combine(folder, "billboard.json")).Apply("official.presentation-keys")));
         controller.Pointer(new(OverlayPointerKind.Down, new(100, 100), OverlayMouseButton.Left, OverlayModifiers.Control));
-        controller.Pointer(new(OverlayPointerKind.Move, new(300, 400), OverlayMouseButton.Left, OverlayModifiers.Control));
+        controller.Pointer(new(OverlayPointerKind.Move, new(300, 400), OverlayMouseButton.Left, OverlayModifiers.Control | OverlayModifiers.Shift));
         check("presentation screen-first draft crosses the horizon without publishing source geometry", controller.ScreenBillboardDraft?.Kind == ElementKind.Presentation && session.Document.Elements.Count == 0 && session.UndoCount == 0);
-        controller.Pointer(new(OverlayPointerKind.Up, new(300, 400), OverlayMouseButton.Left, OverlayModifiers.Control));
+        controller.Pointer(new(OverlayPointerKind.Up, new(300, 400), OverlayMouseButton.Left, OverlayModifiers.Control | OverlayModifiers.Shift));
         created = session.Document.Elements.Single(); var projectedBounds = CanvasMapping.Create(session.Document).ProjectedBounds(created, false);
         check("legacy tool snapshots create keyboard billboards with exact placement and one undo", created.IsBillboard && Math.Abs(projectedBounds.X - 100) < 1e-6 && Math.Abs(projectedBounds.Y - 100) < 1e-6 && Math.Abs(projectedBounds.Width - 200) < 1e-6 && Math.Abs(projectedBounds.Height - 300) < 1e-6 && created.Presentation!.Modules == PresentationModules.Keys && controller.Presentation!.Modules == (PresentationModules.Cursor | PresentationModules.Clicks | PresentationModules.Trail) && session.UndoCount == 1 && session.Selection.SetEquals([created.Id]));
         string beforeCancel = JsonSerializer.Serialize(session.Document);
@@ -130,7 +147,7 @@ internal static class PresentationUiTests
         string original = JsonSerializer.Serialize(session.Document); var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
         var settings = Field<PresentationSettingsPanel>(inspector, "presentationSettings");
         check("selected keyboard layers expose their automatic observation status", Field<PresentationRuntimeControls>(inspector, "presentationRuntime").Visibility == Visibility.Visible);
-        check("multi-selected keyboard widths use the standard mixed-value placeholder", Find<TextBox>(settings, "Presentation.PanelWidth").Text == "—");
+        check("legacy maximum width is not exposed as a keyboard setting", !Descendants(settings).OfType<TextBox>().Any(box => AutomationProperties.GetName(box) == L.Get("Presentation.PanelWidth")));
         var hold = Find<TextBox>(settings, "Presentation.KeyHold"); hold.Text = "1500"; inspector.CompletePendingEdit();
         check("multi-keyboard edits preserve each source's hidden legacy settings in one undo", session.Document.Elements.All(element => element.Presentation!.KeyHoldMilliseconds == 1500) && session.Document.Elements.Select(element => element.Presentation!.CursorRadiusPixels).SequenceEqual(new[] { 18d, 42d }) && session.Document.Elements.Select(element => element.Presentation!.KeyPanelMaximumWidth).SequenceEqual(new[] { 250d, 480d }) && session.UndoCount == 1);
         check("keyboard Inspector has no recording or layer-owned pointer switches", !Descendants(settings).OfType<CheckBox>().Any());

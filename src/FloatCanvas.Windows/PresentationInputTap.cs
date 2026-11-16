@@ -20,9 +20,11 @@ internal sealed class PresentationInputTap
     }
     internal void Clear()
     { buffer.Clear(); Generation = Generation == uint.MaxValue ? 1 : Generation + 1; }
-    internal uint Keyboard(uint vk, uint scan, uint flags, bool up, long now, bool active)
+    internal uint Keyboard(uint vk, uint scan, uint flags, bool up, long now, bool active, PresentationInputOwner owner = PresentationInputOwner.FloatCanvas)
     {
-        if (!keyboard || !active || vk is 0 or >= 255 || scan == 255) return 0;
+        // The presentation shows physical presses. Re-injected mapper/system edges
+        // must not start a second chord or release a still-held physical key.
+        if (!keyboard || !active || (flags & 0x10) != 0 || vk is 0 or >= 255 || scan == 255) return 0;
         int key = (int)vk;
         if (key == 0x10) key = scan == 0x36 ? 0xA1 : 0xA0;
         else if (key == 0x11) key = (flags & 1) != 0 ? 0xA3 : 0xA2;
@@ -30,7 +32,7 @@ internal sealed class PresentationInputTap
         uint physicalFlags = (flags & 1) != 0 ? 2u : 0u;
         return buffer.Add(new(up ? PresentationObservedKind.KeyUp : PresentationObservedKind.KeyDown,
             now, Device: 0, VirtualKey: key, ScanCode: (int)scan, KeyFlags: physicalFlags,
-            KeyLabel: Label(key, (int)scan, physicalFlags), InputOwner: PresentationInputOwner.FloatCanvas)) ? Generation : 0;
+            KeyLabel: Label(key, (int)scan, physicalFlags), InputOwner: owner)) ? Generation : 0;
     }
     internal uint Pointer(uint message, int x, int y, long now, bool active)
     {

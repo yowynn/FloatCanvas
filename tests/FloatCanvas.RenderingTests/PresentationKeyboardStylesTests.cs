@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
 using SkiaSharp;
@@ -7,6 +7,10 @@ internal static class PresentationKeyboardStylesTests
 {
     internal static void Run(Action<string, bool> check)
     {
+        check("recording keycaps use square letters, physical modifier proportions and compact space",
+            PresentationLayout.KeycapWidthUnits(0x41) == 1 && PresentationLayout.KeycapWidthUnits(0x11) == 1.25 &&
+            PresentationLayout.KeycapWidthUnits(0x10) == 2.25 && PresentationLayout.KeycapWidthUnits(0x20) == 2.25 &&
+            PresentationLayout.KeycapWidthUnits(0x20) < PresentationKeyboardLayout.CreateDefault().Keys.Single(key => key.VirtualKey == 0x20).Width);
         var layer = Layer(); var scene = Scene(layer); using var renderer = new SceneRenderer();
         using var idleLog = Render(renderer, scene);
         layer.Presentation!.DisplayStyle = PresentationDisplayStyle.Keycaps; using var idleCaps = Render(renderer, scene);
@@ -18,11 +22,24 @@ internal static class PresentationKeyboardStylesTests
         renderer.PresentationFrame = new(1, 2, TimeSpan.FromSeconds(8), recentChords: [new([new(0x11, "Ctrl", true), new(0x43, "C")], TimeSpan.FromSeconds(1), true)]);
         using var heldCaps = Render(renderer, scene); check("keycap log chords remain visible for the full physical hold", !Empty(heldCaps));
         renderer.PresentationFrame = new(1, 3, TimeSpan.FromSeconds(8), recentChords: [new([new(0x11, "Ctrl", true)], TimeSpan.FromSeconds(8), true)]);
-        using var modifierOnly = Render(renderer, scene); check("keycap logs do not add modifier-only or raw-pressed rows", Empty(modifierOnly));
+        using var modifierOnly = Render(renderer, scene); check("keycap logs display modifier-only preview rows", !Empty(modifierOnly));
+        foreach (var style in new[] { PresentationDisplayStyle.Log, PresentationDisplayStyle.Keycaps })
+        foreach (var display in Enum.GetValues<PresentationKeyDisplayMode>())
+        {
+            layer.Presentation.DisplayStyle = style; layer.Presentation.KeyDisplay = display;
+            renderer.PresentationFrame = new(1, 3, TimeSpan.FromSeconds(8), recentChords: [new([new(0x5B, "Win", true)], TimeSpan.FromSeconds(8), true)]);
+            using var win = Render(renderer, scene);
+            check(style + " " + display + " renders a standalone held Windows key", !Empty(win));
+        }
+        layer.Presentation.KeyDisplay = PresentationKeyDisplayMode.AllPhysicalKeys;
 
         layer.Presentation.DisplayStyle = PresentationDisplayStyle.Keyboard; renderer.PresentationFrame = null;
         using var idle = Render(renderer, scene); string authored = JsonSerializer.Serialize(scene);
         check("live keyboard draws the normal full layout with no input and no serialized 104-key default", !Empty(idle) && !authored.Contains("KeyboardLayout", StringComparison.Ordinal));
+        layer.Presentation.KeyPanelAlignment = PresentationPanelAlignment.TopRight;
+        using var alternateAlignment = Render(renderer, scene);
+        check("physical keyboard does not depend on log panel alignment", alternateAlignment.Pixels.SequenceEqual(idle.Pixels));
+        layer.Presentation.KeyPanelAlignment = PresentationPanelAlignment.BottomLeft;
         renderer.PresentationFrame = new(1, 4, TimeSpan.FromSeconds(1), pressedKeys: [new(0xA2, "Ctrl", true, 0x1D, false)]);
         using var leftCtrl = Render(renderer, scene);
         renderer.PresentationFrame = new(1, 5, TimeSpan.FromSeconds(1), pressedKeys: [new(0xA3, "Ctrl", true, 0x1D, true)]);
@@ -72,6 +89,78 @@ internal static class PresentationKeyboardStylesTests
         Perspective(scene); using var perspective = Render(renderer, scene);
         check("the live physical keyboard follows the actual canvas projective mapping", !Empty(perspective) && !perspective.Pixels.SequenceEqual(transformed.Pixels));
         Budget(check);
+        Overflow(check);
+        TwoColorCoverage(check);
+    }
+
+    private static void TwoColorCoverage(Action<string, bool> check)
+    {
+        foreach (bool pressed in new[] { false, true })
+        foreach (bool projected in new[] { false, true })
+        {
+            var layer = Layer(); layer.Width = 240; layer.Height = 240; layer.Style.FontSize = 72;
+            layer.Presentation!.DisplayStyle = PresentationDisplayStyle.Keyboard;
+            layer.Presentation.KeyboardLayout = new() { Keys = [new() { VirtualKey = 0x41, Label = "A", Width = 1, Height = 1 }] };
+            var scene = Scene(layer);
+            if (projected) Perspective(scene);
+            string state = $"pressed={pressed}, projected={projected}";
+            using var renderer = new SceneRenderer { PresentationFrame = new(1, 1, TimeSpan.Zero,
+                pressedKeys: pressed ? [new(0x41, "A")] : []) };
+            void Colors(uint ink)
+            {
+                layer.Style.Foreground = pressed ? 0xFF0000FF : ink;
+                layer.Style.Background = pressed ? ink : 0xFF0000FF;
+            }
+            Colors(0xFFFF0000); using var reference = Render(renderer, scene);
+            var glyph = reference.Pixels.Select((pixel, index) => (pixel, index))
+                .Where(p => p.pixel.Red == 255 && p.pixel.Blue == 0 && p.pixel.Alpha == 255).Select(p => p.index).ToArray();
+            check($"two-color {state}: reference contains solid glyph pixels", glyph.Length > 20);
+            foreach (uint ink in new uint[] { 0x00000000, 0x80FF0000 })
+            {
+                Colors(ink); using var actual = Render(renderer, scene); var pixels = actual.Pixels;
+                check($"two-color {state}: glyph replaces the base at alpha {ink >> 24}",
+                    glyph.All(i => Math.Abs(pixels[i].Alpha - (ink >> 24)) <= 1 && (pixels[i].Alpha == 0 || pixels[i].Blue < 3)));
+            }
+            Colors(0);
+            using (var composite = new SKBitmap(reference.Width, reference.Height))
+            using (var canvas = new SKCanvas(composite))
+            {
+                canvas.Clear(SKColors.Lime);
+                renderer.Draw(canvas, scene, new(), includeBackground: false, includeCanvasBackground: false, includeGrid: false);
+                var pixels = composite.Pixels;
+                check($"two-color {state}: transparent glyph exposes rather than erases underlying scene",
+                    glyph.All(i => pixels[i].Alpha == 255 && pixels[i].Green > 250 && pixels[i].Blue < 3));
+            }
+            layer.Style.Foreground = 0x80FF0000; layer.Style.Background = 0x800000FF;
+            using var translucent = Render(renderer, scene);
+            check($"two-color {state}: antialias transitions never double the two color alphas",
+                translucent.Pixels.All(p => p.Alpha <= 128));
+            Colors(0xFFFF0000);
+            // The inner outline is deliberately 65% opaque, but must contain no blue base.
+            check($"two-color {state}: translucent outline does not accumulate base color",
+                reference.Pixels.Count(p => p.Red > 250 && p.Blue < 3 && p.Alpha is >= 164 and <= 167) > 100);
+        }
+    }
+
+    private static void Overflow(Action<string, bool> check)
+    {
+        foreach (var style in new[] { PresentationDisplayStyle.Log, PresentationDisplayStyle.Keycaps })
+        {
+            var layer = Layer(); layer.Width = 100; layer.Height = 160; layer.Transform = Affine2D.Translation(100, 50);
+            layer.Presentation!.DisplayStyle = style; layer.Presentation.KeyPanelAlignment = PresentationPanelAlignment.TopLeft;
+            var scene = Scene(layer);
+            using var renderer = new SceneRenderer { PresentationFrame = new(1, 1, TimeSpan.FromSeconds(1), recentChords:
+                [new([new(0x41, new string('W', 40))], TimeSpan.FromSeconds(1), true)]) };
+            using var image = Render(renderer, scene);
+            bool beyond = false;
+            for (int y = 0; y < image.Height && !beyond; y++) for (int x = 205; x < image.Width; x++)
+                if (image.GetPixel(x, y).Alpha != 0) { beyond = true; break; }
+            check(style + " long keyboard record remains visible beyond the selection frame", beyond);
+            check(style + " dynamic damage covers overflowing content", renderer.PreparePresentation(scene).DirtyBounds.Any(bounds => bounds.Right > 200));
+            layer.Transform = Affine2D.Translation(-120, 50);
+            using var offscreenFrame = Render(renderer, scene);
+            check(style + " overflowing record remains visible when its frame is offscreen", !Empty(offscreenFrame));
+        }
     }
 
     private static void Budget(Action<string, bool> check)
@@ -96,6 +185,11 @@ internal static class PresentationKeyboardStylesTests
         foreach (var key in layout.Keys.Where(key => key.Enabled)) { key.X = key.VirtualKey switch { 0x57 or 0x53 or 0x20 => 1, 0x41 => 0, _ => 2 }; key.Y = key.VirtualKey switch { 0x57 => 0, 0x20 => 2, _ => 1 }; key.Width = key.VirtualKey == 0x20 ? 2 : 1; }
         layer.Presentation!.KeyboardLayout = layout; renderer.PresentationFrame = new(1, 1, TimeSpan.FromSeconds(1), pressedKeys: [new(0x57, "W", false, 0x11)]);
         File.WriteAllBytes(Path.Combine(directory, "style-Keyboard-game.png"), renderer.ExportPng(scene, new()));
+        layer.Style.Foreground = 0xFF2088DD; layer.Style.Background = 0;
+        renderer.PresentationFrame = new(1, 2, TimeSpan.FromSeconds(1), pressedKeys: [new(0x20, "Space")]);
+        File.WriteAllBytes(Path.Combine(directory, "style-Keyboard-transparent-game.png"), renderer.ExportPng(scene, new()));
+        layer.Style.Foreground = 0xFFEEF4FF; layer.Style.Background = 0xFF243247;
+        renderer.PresentationFrame = new(1, 1, TimeSpan.FromSeconds(1), pressedKeys: [new(0x57, "W", false, 0x11)]);
         layer.Presentation.KeyboardLayout = null; Perspective(scene);
         File.WriteAllBytes(Path.Combine(directory, "style-Keyboard-perspective.png"), renderer.ExportPng(scene, new()));
     }

@@ -23,6 +23,7 @@ internal static class PresentationChordSequenceTests
 
     internal static void Run(Action<string, bool> check)
     {
+        ModifierPreviewLifecycle(check);
         ShortcutLifecycle(check);
         MainKeySequences(check);
         ModifierFamilies(check);
@@ -31,12 +32,46 @@ internal static class PresentationChordSequenceTests
         ResetAndTime(check);
     }
 
+    private static void ModifierPreviewLifecycle(Action<string, bool> check)
+    {
+        foreach (int vk in new[] { 0x11, 0x10, 0x12, 0x5B, 0x5C })
+        {
+            var timeline = new PresentationTimeline();
+            Apply(timeline, 10, Key(vk, time: 10));
+            var initial = Frame(timeline, 10).RecentChords;
+            check($"modifier {vk:X} appears as a held preview", initial.Count == 1 && initial[0].IsHeld && initial[0].Keys.Count == 1 && initial[0].Keys[0].IsModifier);
+            timeline.Trim(Ms(2000), All);
+            check($"modifier {vk:X} preview remains while held", Frame(timeline, 2000).RecentChords.Single().IsHeld);
+            Apply(timeline, 2100, Key(vk, false, 2100));
+            var released = Frame(timeline, 2100).RecentChords.Single();
+            check($"modifier {vk:X} release begins its fade", !released.IsHeld && released.Timestamp == Ms(2100));
+            timeline.Trim(Ms(2999), All); check($"modifier {vk:X} survives until fade ends", Frame(timeline, 2999).RecentChords.Count == 1);
+            timeline.Trim(Ms(3000), All); check($"modifier {vk:X} expires after fade", Frame(timeline, 3000).RecentChords.Count == 0);
+        }
+        var multiple = new PresentationTimeline();
+        Apply(multiple, 10, Key(0x11, time: 10), Key(0x10, time: 10));
+        check("multiple pending modifiers share one held preview", Frame(multiple, 10).RecentChords is [{ IsHeld: true }] && Keys(Frame(multiple, 10).RecentChords[0], 0x11, 0x10));
+        Apply(multiple, 20, Key(0x10, false, 20)); Apply(multiple, 30, Key(0x11, false, 30));
+        check("releasing pending modifiers records their combination once", Frame(multiple, 30).RecentChords.Count == 1 && Keys(Frame(multiple, 30).RecentChords[0], 0x11, 0x10));
+        multiple.Clear(); Apply(multiple, 10, Key(0xA2, scan: 29), Key(0xA3, scan: 29, flags: 2));
+        Apply(multiple, 20, Key(0xA2, false, 20, scan: 29));
+        check("one side releasing does not prematurely commit a held modifier family", Frame(multiple, 20).RecentChords is [{ IsHeld: true }]);
+        Apply(multiple, 30, Key(0xA3, false, 30, scan: 29, flags: 2));
+        check("final side releases exactly one normalized modifier", Frame(multiple, 30).RecentChords.Count == 1 && !Frame(multiple, 30).RecentChords[0].IsHeld && Keys(Frame(multiple, 30).RecentChords[0], 0x11));
+        var combined = new PresentationTimeline();
+        Apply(combined, 10, Key(0x5B, time: 10));
+        Apply(combined, 20, Key(0x41, time: 20));
+        check("Win preview becomes one Win+A chord", Frame(combined, 20).RecentChords.Count == 1 && Keys(Frame(combined, 20).RecentChords[0], 0x5B, 0x41));
+        Apply(combined, 30, Key(0x41, false, 30)); Apply(combined, 40, Key(0x5B, false, 40));
+        check("releasing a modifier used in a shortcut never adds a standalone record", Frame(combined, 40).RecentChords.Count == 1 && Keys(Frame(combined, 40).RecentChords[0], 0x5B, 0x41));
+    }
+
     private static void ShortcutLifecycle(Action<string, bool> check)
     {
         var timeline = new PresentationTimeline();
         Apply(timeline, 10, Key(0x11, time: 10));
-        check("modifier down updates raw physical state without a semantic history entry",
-            Frame(timeline).PressedKeys.Single().VirtualKey == 0x11 && Frame(timeline).RecentChords.Count == 0);
+        check("modifier down updates physical state and exposes a held preview",
+            Frame(timeline).PressedKeys.Single().VirtualKey == 0x11 && Frame(timeline).RecentChords.Count == 1 && Frame(timeline).RecentChords[0].IsHeld && Keys(Frame(timeline).RecentChords[0], 0x11));
         Apply(timeline, 20, Key(0x43, time: 20));
         var chord = Frame(timeline).RecentChords.Single();
         check("Ctrl then C produces exactly one held Ctrl+C semantic event", chord.IsHeld && Keys(chord, 0x11, 0x43));
@@ -60,8 +95,8 @@ internal static class PresentationChordSequenceTests
         timeline.Clear();
         foreach (int vk in new[] { 0x11, 0x12, 0x10, 0x5B })
         { Apply(timeline, 10, Key(vk)); Apply(timeline, 20, Key(vk, false, 20)); }
-        check("standalone Ctrl Alt Shift and Win taps stay silent in semantic history",
-            Frame(timeline).PressedKeys.Count == 0 && Frame(timeline).RecentChords.Count == 0);
+        check("standalone Ctrl Alt Shift and Win taps each record one released event",
+            Frame(timeline).PressedKeys.Count == 0 && Frame(timeline).RecentChords.Count == 4 && Frame(timeline).RecentChords.All(chord => !chord.IsHeld));
     }
 
     private static void MainKeySequences(Action<string, bool> check)
@@ -79,8 +114,8 @@ internal static class PresentationChordSequenceTests
         timeline.Clear();
         Apply(timeline, 10, Key(0x43));
         Apply(timeline, 20, Key(0x11, time: 20));
-        check("a modifier pressed after C does not retroactively relabel the earlier C event",
-            Frame(timeline).RecentChords.Count == 1 && Keys(Frame(timeline).RecentChords[0], 0x43));
+        check("a modifier pressed after C leaves the earlier C intact and previews the modifier",
+            Frame(timeline).RecentChords.Count == 2 && Keys(Frame(timeline).RecentChords[0], 0x43) && Keys(Frame(timeline).RecentChords[1], 0x11));
         Apply(timeline, 30, Key(0x56, time: 30));
         check("a later new main key uses the current modifiers but not the old held C",
             Keys(Frame(timeline).RecentChords[0], 0x43) && Keys(Frame(timeline).RecentChords[1], 0x11, 0x56));
@@ -164,7 +199,7 @@ internal static class PresentationChordSequenceTests
         timeline.Clear(); var shortcuts = All with { AllPhysicalKeys = false };
         timeline.Apply(new(1, [Key(0x41), Key(0xA0), Key(0x42)], null, false), shortcuts, Ms(10));
         check("shortcut filtering still ignores unmodified and Shift-only ordinary letters",
-            Frame(timeline).RecentChords.Count == 0 && Frame(timeline).PressedKeys.All(key => key.IsModifier));
+            Frame(timeline).RecentChords.Count == 1 && Keys(Frame(timeline).RecentChords[0], 0x10) && Frame(timeline).PressedKeys.All(key => key.IsModifier));
         timeline.Apply(new(1, [Key(9, time: 20), Key(0xA2, time: 20), Key(0x43, time: 20)], null, false), shortcuts, Ms(20));
         check("named controls and Ctrl shortcuts retain the original shortcut-only admission rules",
             Frame(timeline).RecentChords.Count == 2 && Keys(Frame(timeline).RecentChords[0], 0x10, 9) && Keys(Frame(timeline).RecentChords[1], 0x11, 0x10, 0x43));

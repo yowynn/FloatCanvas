@@ -13,12 +13,35 @@ internal sealed class ToolPresetGallery : PresetGallery<ToolPreset>
     { this.controller = controller; this.library = library; this.stateStore = stateStore; selections = stateStore?.Selections ?? []; }
     protected override IReadOnlyList<ToolPreset> Official => library.OfficialFor(controller.Tool);
     protected override IReadOnlyList<ToolPreset> Users => library.UserFor(controller.Tool);
-    internal override string SelectedId => selections.GetValueOrDefault(ToolPresetLibrary.Family(controller.Tool)) ?? "";
+    internal override string SelectedId => ToolPresetLibrary.ResolveOfficialId(selections.GetValueOrDefault(ToolPresetLibrary.Family(controller.Tool)) ?? "");
     protected override void Select(string id)
     { if (SelectedId == id) return; selections[ToolPresetLibrary.Family(controller.Tool)] = id; stateStore?.MarkChanged(); }
     protected override string Id(ToolPreset p) => p.Id;
     protected override string Caption(ToolPreset p) => p.Name;
-    protected override FrameworkElement Preview(ToolPreset p) => (FrameworkElement)ToolParameterIcon.Create(p.Parameters, 24);
+    protected override FrameworkElement Preview(ToolPreset p) => CreatePreview(p.Parameters);
+    internal static FrameworkElement CreatePreview(ToolParameters parameters)
+    {
+        var icon = (FrameworkElement)ToolParameterIcon.Create(parameters, 24);
+        if (parameters.Tool is not (EditorTool.Freehand or EditorTool.Highlighter or EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow
+            or EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Symbol or EditorTool.Triangle
+            or EditorTool.Text or EditorTool.Number or EditorTool.Emoji or EditorTool.Presentation)) return icon;
+        return new System.Windows.Controls.Border { Width = 24, Height = 24, Background = PreviewBackground, Child = icon };
+    }
+    private static readonly System.Windows.Media.Brush PreviewBackground = CreatePreviewBackground();
+    private static System.Windows.Media.Brush CreatePreviewBackground()
+    {
+        var drawing = new System.Windows.Media.DrawingGroup();
+        using (var context = drawing.Open())
+        {
+            context.DrawRectangle(System.Windows.Media.Brushes.White, null, new Rect(0, 0, 8, 8));
+            var shade = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(205, 210, 218));
+            context.DrawRectangle(shade, null, new Rect(0, 0, 4, 4));
+            context.DrawRectangle(shade, null, new Rect(4, 4, 4, 4));
+        }
+        var brush = new System.Windows.Media.DrawingBrush(drawing) { TileMode = System.Windows.Media.TileMode.Tile,
+            ViewportUnits = System.Windows.Media.BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 8, 8) };
+        brush.Freeze(); return brush;
+    }
     protected override string PreviewIdentity(ToolPreset p) => JsonSerializer.Serialize(p.Parameters);
     protected override bool Modified(ToolPreset p) => JsonSerializer.Serialize(PreservePointerMaster(p.Parameters.Clone())) != JsonSerializer.Serialize(controller.Parameters);
     protected override void ApplyPreset(ToolPreset p) => controller.ApplyParameters(PreservePointerMaster(library.Apply(p.Id)));
@@ -35,5 +58,5 @@ internal sealed class ToolPresetGallery : PresetGallery<ToolPreset>
         base.PrepareForShow();
     }
     private ToolParameters PreservePointerMaster(ToolParameters parameters)
-    { if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer) pointer.Enabled = controller.Parameters.PointerPresentation?.Enabled ?? false; return parameters; }
+    { parameters.NormalizeForCreation(); if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer) pointer.Enabled = controller.Parameters.PointerPresentation?.Enabled ?? false; return parameters; }
 }

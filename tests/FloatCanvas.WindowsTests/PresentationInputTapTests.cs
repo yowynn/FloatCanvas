@@ -30,6 +30,15 @@ internal static class PresentationInputTapTests
             "Extended right Control make and break keep one physical identity");
         check(sides.Changes.Skip(2).All(key => key.VirtualKey == 0xA1 && key.KeyFlags == 0 && key.ScanCode == 54),
             "Right Shift comes from its physical scan code in both directions");
+        tap.Keyboard(0x5B, 0x5B, 0x11, false, 24, true);
+        tap.Keyboard(0x5B, 0x5B, 0x91, true, 25, true);
+        check(!tap.TryDrain(generation, out _), "Injected modifier replay does not create physical presentation edges");
+        tap.Keyboard(0x5B, 0x5B, 1, false, 24, true); tap.Keyboard(0x5B, 0x5B, 0x81, true, 25, true);
+        tap.Keyboard(0x5C, 0x5C, 1, false, 26, true); tap.Keyboard(0x5C, 0x5C, 0x81, true, 27, true);
+        tap.TryDrain(generation, out var windowsKeys);
+        check(windowsKeys!.Changes.Select(key => key.VirtualKey).SequenceEqual(new[] { 0x5B, 0x5B, 0x5C, 0x5C }) &&
+            windowsKeys.Changes.Select(key => key.Kind).SequenceEqual(new[] { PresentationObservedKind.KeyDown, PresentationObservedKind.KeyUp, PresentationObservedKind.KeyDown, PresentationObservedKind.KeyUp }) &&
+            windowsKeys.Changes.All(key => key.KeyLabel == "Win"), "Editing tap preserves left and right Windows key transitions");
         foreach (uint message in new uint[] { 0x201, 0x202, 0x204, 0x205, 0x207, 0x208 })
             tap.Pointer(message, -120, 480, 30, true);
         tap.TryDrain(generation, out var mouse);

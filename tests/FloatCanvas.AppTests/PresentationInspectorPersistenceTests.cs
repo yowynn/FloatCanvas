@@ -25,8 +25,11 @@ internal static class PresentationInspectorPersistenceTests
             Console.WriteLine($"PRESENTATION_FONT family={session.Document.Elements[0].Style.FontFamily} size={session.Document.Elements[0].Style.FontSize}");
             check("presentation font family is committed to the layer rather than only its textbox", Current().Style.FontFamily == "Consolas");
             check("changing presentation font preserves the saved size", Current().Style.FontSize == 24);
+            double priorWidth = Current().Width, priorHeight = Current().Height;
+            var priorBottom = ElementGeometry.Bounds(Current(), false).Bottom;
             edit.Set("FontSize", "53");
             check("presentation size commits while retaining the edited family", Current().Style.FontSize == 53 && Current().Style.FontFamily == "Consolas");
+            check("font size scales both dimensions and preserves the bottom anchor", Math.Abs(Current().Width / priorWidth - 53d / 24) < .001 && Math.Abs(Current().Height / priorHeight - 53d / 24) < .001 && Math.Abs(ElementGeometry.Bounds(Current(), false).Bottom - priorBottom) < .001);
             edit.Set("X", "175"); edit.Set("Y", "210");
             check("moving the presentation region retains both typography fields", Current().Style.FontFamily == "Consolas" && Current().Style.FontSize == 53 && Current().Transform != originalTransform);
             edit.Window.PrepareForShow();
@@ -68,6 +71,22 @@ internal static class PresentationInspectorPersistenceTests
                 burst.Document.Elements.Single().Style is { FontFamily: "Segoe UI", FontSize: 25 } && burst.Document.Elements.Single().Transform.OffsetX == 30);
             check("redoing a rapid typography burst restores all committed values together", burst.Redo() &&
                 burst.Document.Elements.Single().Style is { FontFamily: "Consolas", FontSize: 44 } && burst.Document.Elements.Single().Transform.OffsetX == 135);
+        }
+        var sizing = Layer("Segoe UI", 24, 300); sizing.ConstrainAspect = true;
+        var sizingSession = new EditorSession(new() { Elements = [sizing], Viewport = new(0, 0, 1200, 900) });
+        sizingSession.SetSelection([sizing.Id]);
+        using (var edit = new Fixture(sizingSession, folder))
+        {
+            double originalHeight = sizing.Height, originalWidth = sizing.Width;
+            edit.Set("H", (originalHeight * 1.5).ToString(System.Globalization.CultureInfo.CurrentCulture));
+            check("locked layer height resize adjusts width and font size", Math.Abs(sizing.Height - originalHeight * 1.5) < .01 && Math.Abs(sizing.Width - originalWidth * 1.5) < .01 && Math.Abs(sizing.Style.FontSize - 36) < .01);
+            var panel = (PresentationSettingsPanel)typeof(InspectorWindow).GetField("presentationSettings", Hidden)!.GetValue(edit.Window)!;
+            var entries = (System.Collections.IDictionary)typeof(PresentationSettingsPanel).GetField("entries", Hidden)!.GetValue(panel)!;
+            var entry = entries["RecentChordLimit"]!;
+            var field = (NumericValueField)entry.GetType().GetProperty("Control")!.GetValue(entry)!;
+            double heightBefore = sizing.Height, widthBefore = sizing.Width, fontBefore = sizing.Style.FontSize, bottomBefore = ElementGeometry.Bounds(sizing, false).Bottom;
+            field.Input.Text = "6"; edit.Window.CompletePendingEdit();
+            check("increasing record count expands the layer while retaining its bottom anchor", sizing.Presentation!.RecentChordLimit == 6 && sizing.Height > heightBefore && Math.Abs(sizing.Width - widthBefore) < .01 && sizing.Style.FontSize == fontBefore && Math.Abs(ElementGeometry.Bounds(sizing, false).Bottom - bottomBefore) < .01);
         }
         CanvasElement Current() => session.Document.Elements.Single();
     }

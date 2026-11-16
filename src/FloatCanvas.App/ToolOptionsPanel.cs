@@ -194,6 +194,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
         // All tool pages share these two viewports and the fixed status row.
         body.Children.Add(heading); body.Children.Add(parameters);
         standardContent = new(body, presets, () => new ToolOptionsHeader(ToolDisplayName.Get(controller.Tool),
+            Target: controller.Tool == EditorTool.Presentation ? presentationRuntime.StatusText : "",
             Actions: controller.Tool == EditorTool.PointerPresentation ? presentationGlobalSettings.HeaderActions : null), RefreshStandard, CancelStandardEditing);
         parameterScroll.Content = body;
         presetHost.Child = presets; recipeBorder.Child = presetHost;
@@ -254,7 +255,9 @@ internal sealed partial class ToolOptionsPanel : UserControl
             foreach (var (key, field) in numericFields)
             {
                 var domain = NumericParameterDomain.ForTool(key, tool);
+                field.SetInputRange(domain.Minimum, domain.Maximum);
                 field.SetSliderRange(domain.RailMinimum, domain.RailMaximum);
+                field.KeyboardStep = NumericKeyboardSteps.ForProperty(key, tool);
             }
             if (fontContextTool != tool || !ReferenceEquals(fontContextSession, controller.Session))
             {
@@ -280,18 +283,18 @@ internal sealed partial class ToolOptionsPanel : UserControl
             Show("Colors", paint);
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
             background.Visibility = secondary ? Visibility.Visible : Visibility.Collapsed;
-            Show("StrokeWidth", stroke || numberOutline); Show("Opacity", tool is EditorTool.Emoji or EditorTool.Image || presentation);
+            Show("StrokeWidth", stroke || numberOutline); Show("Opacity", false);
             Show("FontSize", text); Show("FontFamily", tool is EditorTool.Text or EditorTool.Number || presentation);
             Show("NumberStart", tool == EditorTool.Number); Show("NumberStep", tool == EditorTool.Number); Show("NextNumber", tool == EditorTool.Number);
-            Show("DefaultWidth", shape || presentation); Show("DefaultHeight", shape || presentation);
+            Show("DefaultWidth", shape); Show("DefaultHeight", shape);
             Show("StartArrowHead", line); Show("EndArrowHead", line); Show("ArrowHeadSize", line); Show("StrokePattern", stroke);
             Show("CornerRadius", tool is EditorTool.Rectangle or EditorTool.RoundedRectangle);
-            Show("Size", shape || presentation); Show("Aspect", !shape && boxRegion);
+            Show("Size", shape); Show("Aspect", !shape && boxRegion && !presentation);
             Show("EffectStrength", tool is EditorTool.Blur or EditorTool.Pixelate);
             Show("TextAlignment", tool == EditorTool.Text);
             Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji);
             Show("CaptureShape", capture); Show("CaptureSource", capture); Show("CaptureBorderWidth", capture);
-            noParameters.Visibility = paint || text || boxRegion || tool is EditorTool.Image or EditorTool.PointerPresentation ? Visibility.Collapsed : Visibility.Visible;
+            noParameters.Visibility = paint || text || boxRegion || tool is EditorTool.PointerPresentation ? Visibility.Collapsed : Visibility.Visible;
             RefreshPresentationParameters(p);
             bool colorEcho = foreground.IsNotifyingOwner || background.IsNotifyingOwner;
             if (IsApplicable("Foreground"))
@@ -350,7 +353,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             ["FontFamily"], ["FontSize"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
             ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
         if (controller.Tool == EditorTool.Presentation)
-            groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"], ["PresentationRuntime"]];
+            groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"]];
         foreach (var group in groups)
         {
             var visible = group.Select(key => rows[key]).Where(row => row.Visibility == Visibility.Visible).ToArray();

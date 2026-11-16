@@ -60,12 +60,13 @@ internal static class ToolOptionsPanelTests
             check(key + " text immediately changes the effective parameter once", applied() && changes == before + 1);
         }
         Number(EditorTool.Line, "StrokeWidth", "7.5", () => controller.Style.StrokeWidth == 7.5);
-        Number(EditorTool.Image, "Opacity", "65", () => controller.Style.Opacity == .65);
+        controller.Tool = EditorTool.Image; panel.PrepareForShow();
+        check("image presets do not expose layer opacity", Field<Dictionary<string, System.Windows.FrameworkElement>>(panel, "rows")["Opacity"].Visibility == System.Windows.Visibility.Collapsed);
         Number(EditorTool.Text, "FontSize", "36", () => controller.Style.FontSize == 36);
         Number(EditorTool.Blur, "EffectStrength", "24", () => controller.EffectStrength == 24);
         Number(EditorTool.Rectangle, "CornerRadius", "9", () => controller.CornerRadius == 9);
 
-        foreach (var (tool, key, invalid) in new[] { (EditorTool.Line, "StrokeWidth", "-1"), (EditorTool.Image, "Opacity", "101"),
+        foreach (var (tool, key, invalid) in new[] { (EditorTool.Line, "StrokeWidth", "-1"),
             (EditorTool.Text, "FontSize", "0"), (EditorTool.Blur, "EffectStrength", "NaN"), (EditorTool.Rectangle, "CornerRadius", "-1") })
         {
             controller.Tool = tool; panel.PrepareForShow();
@@ -94,7 +95,7 @@ internal static class ToolOptionsPanelTests
             Equals(pickers["StartArrowHead"].SelectedValue, ArrowHeadStyle.FilledTriangle) &&
             Equals(pickers["EndArrowHead"].SelectedValue, ArrowHeadStyle.Diamond) &&
             Equals(pickers["StrokePattern"].SelectedValue, StrokePattern.Dashed));
-        External(EditorTool.Image, () => numbers["Opacity"].Text == "42");
+        External(EditorTool.Image, () => controller.Style.Opacity == 1);
         External(EditorTool.Text, () => numbers["FontSize"].Text == "44" &&
             ToolOptionPreviews.SelectedFontName(Field<Controls.ComboBox>(panel, "fontFamily")) == external.Style.FontFamily);
         External(EditorTool.Rectangle, () => numbers["StrokeWidth"].Text == "11" && numbers["CornerRadius"].Text == "17" &&

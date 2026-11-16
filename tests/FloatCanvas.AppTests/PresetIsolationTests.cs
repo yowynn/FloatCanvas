@@ -80,7 +80,7 @@ internal static class PresetIsolationTests
         check(target + " switching back restores the edited pen state", controller.Style.Stroke == EditedPen && controller.Style.StrokePattern == StrokePattern.Dotted && controller.Style.StrokeWidth == 13);
         Activate(session, target); gallery.PrepareForShow();
         check(target + " revisiting restores working state while an explicit arrow alias restores its factory preset", controller.Style.Stroke == (target == EditorTool.Arrow ? DefaultStroke : EditedTarget) &&
-            controller.Style.StrokeWidth == (target == EditorTool.Arrow ? 4 : 9) && controller.Style.StrokePattern == (target == EditorTool.Arrow ? StrokePattern.Solid : StrokePattern.Dashed));
+            controller.Style.StrokeWidth == (target == EditorTool.Arrow ? 4 : target == EditorTool.Highlighter ? 16 : 9) && controller.Style.StrokePattern == (target == EditorTool.Arrow ? StrokePattern.Solid : StrokePattern.Dashed));
         check(target + " tool switching does not write user recipes or official definitions", fileBefore == Hash(File.ReadAllBytes(path)) && definitionsBefore == JsonSerializer.Serialize(library.Official));
     }
 

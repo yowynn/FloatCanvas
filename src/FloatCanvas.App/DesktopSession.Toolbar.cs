@@ -453,6 +453,11 @@ internal sealed partial class DesktopSession
     private Controls.Button ToolbarIcon(string label, string geometry, Action action, string shortcut = "")
     {
         var button = ToolButton(label, geometry, action);
+        // Keep the frame pixel-aligned, but allow its centered artwork to sit
+        // between pixels when the frame and glyph have different pixel parity.
+        var glyphStyle = new Style(typeof(Controls.ContentPresenter));
+        glyphStyle.Setters.Add(new Setter(FrameworkElement.UseLayoutRoundingProperty, false));
+        button.Resources.Add(typeof(Controls.ContentPresenter), glyphStyle);
         button.MinWidth = button.Width = 26; button.MinHeight = button.Height = 26;
         button.FocusVisualStyle=null; Controls.ToolTipService.SetShowsToolTipOnKeyboardFocus(button,false);
         button.Margin = new Thickness(2, 0, 2, 0); button.BorderThickness = new Thickness(1); button.BorderBrush=Brushes.Transparent;button.Padding = new Thickness(3);

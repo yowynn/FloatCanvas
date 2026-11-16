@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using L = FloatCanvas.Localization.AppText;
 
@@ -12,6 +12,7 @@ internal sealed class PresentationRuntimeControls : StackPanel
     private readonly TextBlock status = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 5, 0, 0) };
     internal event Action? ToggleRequested { add { } remove { } }
     internal event Action<Guid?>? BakeRequested { add { } remove { } }
+    internal string StatusText => status.Text;
     internal PresentationRuntimeUiState State { get; private set; } = new(false, false, false);
 
     internal PresentationRuntimeControls()

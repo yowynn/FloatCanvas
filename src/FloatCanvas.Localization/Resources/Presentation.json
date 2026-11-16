@@ -1,4 +1,4 @@
-{
+﻿{
   "Tool.Presentation": {
     "zh": "键盘演示",
     "en": "Keyboard demonstration"
@@ -18,7 +18,7 @@
   "Editor.ElementKind.Presentation.Log": { "zh": "按键记录", "en": "Key log" },
   "Editor.ElementKind.Presentation.Keycaps": { "zh": "键帽记录", "en": "Keycap log" },
   "Editor.ElementKind.Presentation.Keyboard": { "zh": "实时键盘", "en": "Live keyboard" },
-  "Presentation.KeyboardScope": { "zh": "此图层采集范围", "en": "Layer input scope" },
+  "Presentation.KeyboardScope": { "zh": "采集范围", "en": "Input scope" },
   "Recipe.PresentationKeys": {
     "zh": "按键记录 · 简洁",
     "en": "Key recording · Simple"
@@ -164,8 +164,8 @@
     "en": "No valid paused trail is available."
   },
   "Presentation.Status.Stopped": {
-    "zh": "等待可见的键盘图层或鼠标效果",
-    "en": "Waiting for a visible key layer or pointer effect"
+    "zh": "等待可见的键盘图层",
+    "en": "Waiting for a visible keyboard layer"
   },
   "Presentation.Status.PausedEditing": {
     "zh": "当前记录范围不包含浮绘内部操作",
@@ -176,8 +176,8 @@
     "en": "Paused while the canvas is hidden"
   },
   "Presentation.Status.NoLayers": {
-    "zh": "没有可见的键盘图层或鼠标效果",
-    "en": "No visible key layer or pointer effect"
+    "zh": "没有可见的键盘图层",
+    "en": "No visible keyboard layer"
   },
   "Presentation.Status.Starting": {
     "zh": "正在开始演示",
@@ -192,8 +192,8 @@
     "en": "Input observation is unavailable"
   },
   "Presentation.Status.KeyboardProtected": {
-    "zh": "键盘显示已暂停，鼠标效果继续",
-    "en": "Key display paused; pointer effects continue"
+    "zh": "键盘显示已暂停",
+    "en": "Keyboard display paused"
   },
   "Presentation.Status.OutsideScope": {
     "zh": "当前应用不在键盘记录范围内",
@@ -208,16 +208,16 @@
     "en": "Input scope"
   },
   "Presentation.Scope.AllApplications": {
-    "zh": "所有应用（含浮绘）",
+    "zh": "所有应用",
     "en": "All apps"
   },
   "Presentation.Scope.OutsideFloatCanvas": {
-    "zh": "仅其他应用",
-    "en": "Other apps only"
+    "zh": "其他应用",
+    "en": "Other apps"
   },
   "Presentation.Scope.FloatCanvasOnly": {
-    "zh": "仅浮绘内部",
-    "en": "FloatCanvas only"
+    "zh": "浮绘内部",
+    "en": "FloatCanvas"
   },
   "Presentation.Global.KeyboardHint": {
     "zh": "画出键盘图层后即记录，无需开始按钮。显示内容跟随图层的移动和透视；这里的范围设置适用于所有键盘图层。",

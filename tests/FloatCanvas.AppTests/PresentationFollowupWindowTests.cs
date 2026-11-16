@@ -80,8 +80,8 @@ internal static class PresentationFollowupWindowTests
             void CheckSharedOrder(string state)
             {
                 var toolRows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
-                string[] shared = ["Colors", "Opacity", "FontFamily", "FontSize", "Size"];
-                check(locale + " " + theme + " " + state + " tool mode and exclusive fields precede every shared property", shared.All(key => toolRows[key].IsVisible && Grid.GetRow(toolRows[key]) > Grid.GetRow(toolRows["PresentationSettings"])) && Field<Dictionary<string, FrameworkElement>>(keyboard, "rows")["KeyPanelAlignment"].IsVisible);
+                string[] shared = ["Colors", "Opacity", "FontFamily", "FontSize"];
+                check(locale + " " + theme + " " + state + " tool mode and exclusive fields precede every shared property", shared.All(key => toolRows[key].IsVisible && Grid.GetRow(toolRows[key]) > Grid.GetRow(toolRows["PresentationSettings"])) && !toolRows["Size"].IsVisible && Field<Dictionary<string, FrameworkElement>>(keyboard, "rows")["KeyPanelAlignment"].IsVisible == (state != "live"));
                 var element = new CanvasElement { Kind = ElementKind.Presentation, Width = 760, Height = 260, Presentation = editor.Parameters.Presentation!.Clone(), Style = editor.Parameters.Style.Clone() };
                 var inspected = new EditorSession(new() { Elements = [element] }); inspected.SetSelection([element.Id]);
                 var inspector = new InspectorWindow(() => inspected) { Owner = window, ShowActivated = false };
@@ -91,7 +91,7 @@ internal static class PresentationFollowupWindowTests
                     var fields = Field<Dictionary<string, FrameworkElement>>(inspector, "fieldContainers"); var properties = Field<StackPanel>(inspector, "propertyPanel");
                     double boundary = fields["PresentationSettings"].TransformToAncestor(properties).TransformBounds(new Rect(fields["PresentationSettings"].RenderSize)).Bottom;
                     string[] names = ["X", "W", "Angle", "Stroke", "Fill", "Opacity", "FontFamily", "FontSize"];
-                    check(locale + " " + theme + " " + state + " Inspector mode and exclusive fields precede all visible shared fields", names.All(key => fields[key].IsVisible && fields[key].TransformToAncestor(properties).TransformBounds(new Rect(fields[key].RenderSize)).Top >= boundary - 1) && Field<Dictionary<string, FrameworkElement>>(Field<PresentationSettingsPanel>(inspector, "presentationSettings"), "rows")["KeyPanelAlignment"].IsVisible);
+                    check(locale + " " + theme + " " + state + " Inspector mode and exclusive fields precede all visible shared fields", names.All(key => fields[key].IsVisible && fields[key].TransformToAncestor(properties).TransformBounds(new Rect(fields[key].RenderSize)).Top >= boundary - 1) && Field<Dictionary<string, FrameworkElement>>(Field<PresentationSettingsPanel>(inspector, "presentationSettings"), "rows")["KeyPanelAlignment"].IsVisible == (state != "live"));
                     Snapshot("inspector-" + state, inspector);
                 }
                 finally { SessionWindowCoordinator.Close(inspector); }

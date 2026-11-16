@@ -66,6 +66,7 @@ internal sealed class StampShelfControl : Controls.UserControl
             frame.SetResourceReference(Controls.Border.BorderBrushProperty, selected ? "CanvasAccent" : "CanvasMuted");
             content.Children.Add(frame);
             var image = new Controls.Image { Width = 20, Height = 20, Stretch = Media.Stretch.Uniform,
+                UseLayoutRounding = false, SnapsToDevicePixels = false,
                 HorizontalAlignment = Wpf.HorizontalAlignment.Center, VerticalAlignment = Wpf.VerticalAlignment.Center };
             content.Children.Add(image);
             var number = ToolbarShortcutHint.Create(digit, lowerRow:true);

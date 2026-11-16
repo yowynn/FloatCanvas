@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
@@ -9,18 +9,19 @@ using System.Windows.Media.Imaging;
 
 namespace FloatCanvas.App;
 
-/// <summary>Small style samples rendered by the same geometry path as the actual document.</summary>
+/// <summary>Document-style previews, with bounded stroke samples for readable toolbar patterns.</summary>
 internal static class ToolParameterIcon
 {
     private static readonly Dictionary<string,BitmapSource> Cache = new(StringComparer.Ordinal);
     private static readonly Queue<string> Order = new();
     private static readonly object Gate = new();
+    private static readonly Dictionary<double,double> PenPreviewWidths = new();
 
     internal static UIElement Create(ToolParameters parameters,double size=16)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         if(!double.IsFinite(size)||size<=0)throw new ArgumentOutOfRangeException(nameof(size));
-        if(parameters.Tool==EditorTool.Emoji)return new Image {Source=EmojiArtwork.Image(parameters.Emoji),Width=size,Height=size,Stretch=Stretch.Uniform};
+        if(parameters.Tool==EditorTool.Emoji)return new Image {Source=EmojiArtwork.Image(parameters.Emoji),Width=size,Height=size,Stretch=Stretch.Uniform,Opacity=parameters.Style.Opacity};
         if(parameters.Tool==EditorTool.CaptureRegion)return CaptureIcon(parameters,size);
         if(parameters.Tool is EditorTool.Blur or EditorTool.Pixelate)return EffectIcon(parameters,size);
         if(parameters.Tool==EditorTool.Presentation)return KeyboardIcon(parameters,size);
@@ -30,13 +31,15 @@ internal static class ToolParameterIcon
             EditorTool.Select=>"M3,1 L3,15 L7,11 L10,16 L12,15 L9,10 L15,10 Z",
             EditorTool.Eraser=>"M1,10 L8,2 L15,9 L8,16 L6,16 Z M5,6 L12,13 M8,16 L16,16",
             EditorTool.Image=>"M1,1 L15,1 L15,15 L1,15 Z M1,12 L6,7 L10,11 L13,8 L15,10 M11,4 L11.1,4",
-            EditorTool.Crop=>"M1,5 L1,1 L5,1 M11,1 L15,1 L15,5 M15,11 L15,15 L11,15 M5,15 L1,15 L1,11",
+            EditorTool.Crop=>parameters.ConstrainAspect
+                ? "M1,5 L1,1 L5,1 M11,1 L15,1 L15,5 M15,11 L15,15 L11,15 M5,15 L1,15 L1,11"
+                : "M1,6 L1,3 L5,3 M11,3 L15,3 L15,6 M15,10 L15,13 L11,13 M5,13 L1,13 L1,10",
             EditorTool.Stamp=>"M2,7 L14,7 L14,15 L2,15 Z M5,7 L5,1 L11,1 L11,7",
             _=>null
         };
         if(control is not null)
         {
-            var icon=ControlIcon(control,size);
+            var icon=ControlIcon(control,size,centerArtwork: parameters.Tool is EditorTool.Select or EditorTool.Eraser);
             if(parameters.Tool==EditorTool.Image)icon.Opacity=parameters.Style.Opacity;
             return icon;
         }
@@ -46,7 +49,7 @@ internal static class ToolParameterIcon
         {
             if(!Cache.TryGetValue(key,out source!))
             {
-                source=Render(parameters);Cache.Add(key,source);Order.Enqueue(key);
+                source=Render(parameters,out _);Cache.Add(key,source);Order.Enqueue(key);
                 while(Cache.Count>256)Cache.Remove(Order.Dequeue());
             }
         }
@@ -75,6 +78,12 @@ internal static class ToolParameterIcon
             RenderTransform=new TranslateTransform(1,1),IsHitTestVisible=false};
         content.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"CanvasText");
         ((Canvas)icon.Child).Children.Add(content);
+        if (parameters.CaptureSource == CaptureSource.BackgroundAndCanvas)
+            ((Canvas)icon.Child).Children.Add(new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse("M5,13 L8,10 L10,12 L14,8"), Stroke = ColorBrush(ColorLibrary.ForegroundRed),
+                StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false
+            });
         return icon;
     }
 
@@ -116,11 +125,16 @@ internal static class ToolParameterIcon
         return icon;
     }
 
-    private static UIElement ControlIcon(string path,double size,Brush? stroke=null,double thickness=1.5)
+    private static UIElement ControlIcon(string path,double size,Brush? stroke=null,double thickness=1.5,bool centerArtwork=false)
     {
         var glyph=new System.Windows.Shapes.Path { Data=Geometry.Parse(path), StrokeThickness=thickness,
             StrokeStartLineCap=PenLineCap.Round, StrokeEndLineCap=PenLineCap.Round, StrokeLineJoin=PenLineJoin.Round,
             RenderTransform=new TranslateTransform(1,1), IsHitTestVisible=false };
+        if(centerArtwork)
+        {
+            var bounds = glyph.Data.Bounds;
+            glyph.RenderTransform = new TranslateTransform(9 - (bounds.Left + bounds.Right) / 2, 9 - (bounds.Top + bounds.Bottom) / 2);
+        }
         if(stroke is null)glyph.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"CanvasText");else glyph.Stroke=stroke;
         var stage=new Canvas {Width=18,Height=18,IsHitTestVisible=false};stage.Children.Add(glyph);
         return new Viewbox {Child=stage,Width=size,Height=size,Stretch=Stretch.Uniform,IsHitTestVisible=false};
@@ -128,45 +142,114 @@ internal static class ToolParameterIcon
 
     private static UIElement KeyboardIcon(ToolParameters parameters, double size)
     {
-        string path = parameters.Presentation?.DisplayStyle switch
+        var settings = parameters.Presentation ?? new();
+        var background = new GeometryGroup(); var ink = new GeometryGroup();
+        static RectangleGeometry Rect(double x,double y,double w,double h,double radius=1) => new(new Rect(x,y,w,h),radius,radius);
+        void Key(double x,double y,double width)
         {
-            PresentationDisplayStyle.Keycaps => "M1,4 H6 V11 H1 Z M8,4 H15 V11 H8 Z M2,6 H5 M9,6 H14 M3,13 H13",
-            PresentationDisplayStyle.Keyboard => CommandGlyphs.Presentation,
-            _ => "M1,2 H5 V5 H1 Z M7,3.5 H15 M1,7 H7 V10 H1 Z M9,8.5 H15 M1,12 H4 V15 H1 Z M6,13.5 H15"
-        };
-        var icon = (Viewbox)ControlIcon(path, size, ColorBrush(parameters.Style.Foreground));
-        icon.Opacity = parameters.Style.Opacity;
-        var background = new System.Windows.Shapes.Rectangle { Width = 16, Height = 16, RadiusX = 1, RadiusY = 1,
-            Fill = ColorBrush(parameters.Style.Background), IsHitTestVisible = false };
-        Canvas.SetLeft(background, 1); Canvas.SetTop(background, 1); ((Canvas)icon.Child).Children.Insert(0, background);
-        return icon;
+            background.Children.Add(Rect(x,y,width,12,3));
+            ink.Children.Add(Rect(x+3,y+4,width-6,4,2));
+        }
+        if (settings.DisplayStyle == PresentationDisplayStyle.Keyboard)
+        {
+            background.Children.Add(Rect(5,15,62,42,7));
+            for (int row=0;row<2;row++) for (int col=0;col<5;col++) ink.Children.Add(Rect(10+col*11,21+row*10,8,7,2));
+            ink.Children.Add(Rect(20,43,32,7,2));
+        }
+        else
+        {
+            int count=Math.Min(settings.RecentChordLimit,4);
+            bool top=settings.KeyPanelAlignment is PresentationPanelAlignment.TopLeft or PresentationPanelAlignment.TopCenter or PresentationPanelAlignment.TopRight;
+            double X(double width) => settings.KeyPanelAlignment switch
+            {
+                PresentationPanelAlignment.TopLeft or PresentationPanelAlignment.BottomLeft => 8,
+                PresentationPanelAlignment.TopCenter or PresentationPanelAlignment.BottomCenter => (72-width)/2,
+                _ => 64-width
+            };
+            double start=top?7:65-count*14;
+            for(int i=0;i<count;i++)
+            {
+                double y=start+(top?i:count-1-i)*14;
+                if(settings.RecentChordLimit>4 && i==3)
+                { double x=X(15); for(int dot=0;dot<3;dot++) ink.Children.Add(new EllipseGeometry(new Point(x+3+dot*4.5,y+6),1.7,1.7)); continue; }
+                bool longer=i%2==0;
+                if(settings.DisplayStyle==PresentationDisplayStyle.Log)
+                { double width=longer?38:20,x=X(width); background.Children.Add(Rect(x,y,width,12,3)); ink.Children.Add(Rect(x+4,y+4,width-8,4,2)); }
+                else if(longer) { double x=X(38); Key(x,y,22); Key(x+26,y,12); }
+                else Key(X(12),y,12);
+            }
+        }
+        // The two inks occupy disjoint regions, including when either color is transparent.
+        // Fill the UI's icon slot; the host already provides spacing around it.
+        // Keep a fixed frame for records so their configured alignment stays visible.
+        var stage=new Canvas {Width=56,Height=58,IsHitTestVisible=false};
+        var artwork=new Canvas {Width=72,Height=72,IsHitTestVisible=false};
+        artwork.RenderTransform = settings.DisplayStyle == PresentationDisplayStyle.Keyboard
+            ? new MatrixTransform(56d/62,0,0,56d/62,-5*56d/62,(58-42*56d/62)/2-15*56d/62)
+            : new TranslateTransform(-8,-7);
+        artwork.Children.Add(new System.Windows.Shapes.Path {Data=Geometry.Combine(background,ink,GeometryCombineMode.Exclude,null),Fill=ColorBrush(parameters.Style.Background)});
+        artwork.Children.Add(new System.Windows.Shapes.Path {Data=ink,Fill=ColorBrush(parameters.Style.Foreground)});
+        stage.Children.Add(artwork);
+        return new Viewbox {Child=stage,Width=size,Height=size,Stretch=Stretch.Uniform,Opacity=parameters.Style.Opacity,IsHitTestVisible=false};
     }
 
     private static UIElement PointerIcon(ToolParameters parameters, double size)
     {
         var settings = parameters.PointerPresentation?.Clone() ?? new(); settings.NormalizeColorAlpha();
-        var icon = (Viewbox)ControlIcon(CommandGlyphs.PresentationPointerSettings, size);
-        var effects = new Canvas { Width = 16, Height = 16, IsHitTestVisible = false, RenderTransform = new TranslateTransform(1, 1) };
+        // One vector coordinate space, uniformly scaled at the final UI size. Do not
+        // rasterize tiny rounded borders and magnify them: the click rings must stay round.
+        var stage = new Canvas { Width = 30, Height = 30, IsHitTestVisible = false,
+            UseLayoutRounding = false, SnapsToDevicePixels = false };
+        var center = new Point(9.75, 19.5);
+        if (settings.CursorEnabled)
+            Circle(center, Math.Clamp(settings.CursorRadiusPixels * 9 / 18, 4.5, 9.2), ColorBrush(settings.CursorColor), null, 0);
         if (settings.TrailEnabled)
-            effects.Children.Add(new System.Windows.Shapes.Path { Data = Geometry.Parse("M1,14 Q4,10 7,13 Q10,15 14,8"), Stroke = ColorBrush(settings.TrailColor),
-                StrokeThickness = Math.Clamp(settings.TrailWidthPixels / 2, 1, 3), StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round });
-        if (settings.CursorEnabled) Circle(7, 7, Math.Clamp(settings.CursorRadiusPixels / 4.5, 2, 5), ColorBrush(settings.CursorColor), null, 0);
+            stage.Children.Add(new System.Windows.Shapes.Path {
+                Data = Geometry.Parse("M15.8,23.2 C19,22.9 20.5,23.2 22.4,24.6 C24.1,25.8 25.9,25.5 27,24.3"),
+                Stroke = ColorBrush(settings.TrailColor), StrokeThickness = PenPreviewWidth(settings.TrailWidthPixels) * 30 / 96,
+                StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
+                IsHitTestVisible = false });
         if (settings.ClicksEnabled)
         {
-            Click(settings.LeftClick, 4, 8); Click(settings.RightClick, 8, 5); Click(settings.MiddleClick, 12, 9);
+            Click(settings.LeftClick, 0); Click(settings.MiddleClick, 30); Click(settings.RightClick, 60);
         }
-        ((Canvas)icon.Child).Children.Insert(0, effects); return icon;
+        var pointer = new System.Windows.Shapes.Path {
+            Data = Geometry.Parse("M7.366666667,13.2 L18.7,17.866666667 L12.7,19.866666667 L10.7,25.866666667 Z"),
+            StrokeThickness = 1.7, StrokeLineJoin = PenLineJoin.Round,
+            RenderTransform = new ScaleTransform(1.1, 1.1, 10.5, 19),
+            IsHitTestVisible = false };
+        pointer.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "CanvasText");
+        pointer.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "CanvasSurface");
+        stage.Children.Add(pointer);
+        // Center the visible combination, keeping the relative positions of cursor,
+        // trail and click indicators intact as effects are enabled or disabled.
+        Rect bounds = Rect.Empty;
+        foreach (System.Windows.Shapes.Path shape in stage.Children)
+        {
+            if (shape.Fill is SolidColorBrush fill && fill.Color.A == 0 && (shape.Stroke is not SolidColorBrush line || line.Color.A == 0)) continue;
+            var part = shape.Data.Bounds;
+            if (shape.RenderTransform is { } transform) part = transform.TransformBounds(part);
+            if (shape.Stroke is not null) part.Inflate(shape.StrokeThickness / 2, shape.StrokeThickness / 2);
+            bounds.Union(part);
+        }
+        if (!bounds.IsEmpty) stage.RenderTransform = new TranslateTransform(15 - (bounds.Left + bounds.Right) / 2, 15 - (bounds.Top + bounds.Bottom) / 2);
+        return new Viewbox { Child = stage, Width = size, Height = size, Stretch = Stretch.Uniform, IsHitTestVisible = false };
 
-        void Click(PresentationClickStyle style, double x, double y)
+        void Click(PresentationClickStyle style, double degrees)
         {
             if (!style.Enabled) return;
+            double angle = degrees * Math.PI / 180;
+            var position = new Point(center.X + 15.5 * Math.Sin(angle), center.Y - 15.5 * Math.Cos(angle));
             var brush = ColorBrush(style.Color); bool disc = style.Shape == PresentationClickShape.Disc;
-            Circle(x, y, Math.Clamp(style.RadiusPixels / 8, 2, 4), disc ? brush : null, disc ? null : brush, Math.Clamp(style.StrokeWidthPixels / 2, .5, 2));
+            Circle(position, Math.Clamp(style.RadiusPixels * 2.4 / 24, 1.5, 3), disc ? brush : null,
+                disc ? null : brush, Math.Clamp(style.StrokeWidthPixels * 1.4 / 2, .7, 1.8));
         }
-        void Circle(double x, double y, double radius, Brush? fill, Brush? stroke, double width)
+        void Circle(Point position, double radius, Brush? fill, Brush? stroke, double width)
         {
-            var circle = new System.Windows.Shapes.Ellipse { Width = radius * 2, Height = radius * 2, Fill = fill, Stroke = stroke, StrokeThickness = width };
-            Canvas.SetLeft(circle, x - radius); Canvas.SetTop(circle, y - radius); effects.Children.Add(circle);
+            // EllipseGeometry describes a true circle, independent of FrameworkElement
+            // sizing, border layout rounding and the toolbar/preset host's aspect ratio.
+            stage.Children.Add(new System.Windows.Shapes.Path { Data = new EllipseGeometry(position, radius, radius),
+                Fill = fill, Stroke = stroke, StrokeThickness = width, IsHitTestVisible = false });
         }
     }
     private static Brush ColorBrush(uint argb)
@@ -175,13 +258,32 @@ internal static class ToolParameterIcon
         brush.Freeze(); return brush;
     }
 
-    private static BitmapSource Render(ToolParameters parameters)
+    private static double PenPreviewWidth(double width)
+    {
+        width = Math.Clamp(width, 2, 6);
+        lock (Gate)
+        {
+            if (!PenPreviewWidths.TryGetValue(width, out double previewWidth))
+            {
+                var pen = new ToolParameters { Tool = EditorTool.Freehand, Style = new() { Foreground = 0xFF000000, StrokeWidth = width } };
+                _ = Render(pen, out double artworkScale);
+                previewWidth = width * 2 * artworkScale;
+                if (PenPreviewWidths.Count >= 256) PenPreviewWidths.Clear();
+                PenPreviewWidths.Add(width, previewWidth);
+            }
+            return previewWidth;
+        }
+    }
+
+    private static BitmapSource Render(ToolParameters parameters,out double artworkScale)
     {
         parameters = parameters.Clone(); parameters.NormalizeAppearance();
+        if (parameters.Tool is EditorTool.Freehand or EditorTool.Highlighter)
+            return RenderStrokeSample(parameters, out artworkScale);
         var style=parameters.Style.Clone();
         // Preserve useful width differences while leaving enough room to identify
         // arrow heads and dashed strokes in a 16-DIP sample.
-        style.StrokeWidth=style.StrokeWidth==0 && style.Background!=0?0:Math.Clamp(style.StrokeWidth,2,6);
+        style.StrokeWidth=style.StrokeWidth==0?0:Math.Clamp(style.StrokeWidth,2,6);
         if(parameters.Tool is EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow)style.StrokeWidth=Math.Min(style.StrokeWidth,4);
         if(style.StrokePattern!=StrokePattern.Solid)style.StrokeWidth=Math.Min(style.StrokeWidth,3);
         style.FontSize=32;
@@ -202,10 +304,6 @@ internal static class ToolParameterIcon
                 element.Kind=ElementKind.Text;element.Text="T";element.Width=38;element.Height=40;element.Transform=Affine2D.Translation(6,2);break;
             case EditorTool.Number:
                 element.Kind=ElementKind.Number;element.NumberTextSizeMode=parameters.NumberTextSizeMode;element.Number=1;element.Width=32;element.Height=32;style.FontSize=24;element.Transform=Affine2D.Translation(8,8);break;
-            case EditorTool.Highlighter:
-                // A preview describes the chosen color; document highlighter blending must
-                // not make its toolbar swatch hard to distinguish.
-                element.Kind=ElementKind.Freehand;element.Points=[new(1,23),new(30,4)];style.StrokeWidth=Math.Clamp(parameters.Style.StrokeWidth,8,14);break;
             default:
                 element.Kind=ElementKind.Freehand;
                 var curve = Geometry.Parse(LayerTypeIcon.Geometry(ElementKind.Freehand)).GetFlattenedPathGeometry(.01, ToleranceType.Absolute);
@@ -213,7 +311,7 @@ internal static class ToolParameterIcon
                     .OfType<PolyLineSegment>().SelectMany(segment => segment.Points))).Select(point => new PointD(point.X * 2, point.Y * 2)).ToList();
                 break;
         }
-        if(parameters.ConstrainAspect && parameters.Tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Symbol or EditorTool.Triangle)
+        if(parameters.Tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Symbol or EditorTool.Triangle)
         {
             double scale=32/Math.Max(parameters.DefaultWidth,parameters.DefaultHeight);
             element.Width=parameters.DefaultWidth*scale;element.Height=parameters.DefaultHeight*scale;
@@ -224,21 +322,80 @@ internal static class ToolParameterIcon
         var document=new SceneDocument {Viewport=new(0,0,96,96),Elements=[element]};
         using var stream=new MemoryStream(renderer.ExportPng(document,new(),true));
         var frame=BitmapFrame.Create(stream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad);
-        return FitArtwork(frame);
+        return FitArtwork(frame,out artworkScale);
     }
 
-    private static BitmapSource FitArtwork(BitmapSource source)
+    private static BitmapSource RenderStrokeSample(ToolParameters parameters, out double artworkScale)
+    {
+        bool highlighter = parameters.Tool == EditorTool.Highlighter;
+        double authoredWidth = parameters.Style.StrokeWidth;
+        // Compress the full width range without flattening ordinary slider values.
+        // Every pattern uses the same width and fixed frame, never a separate ink crop.
+        double width = authoredWidth <= 0 ? 0 : highlighter
+            ? 20 + 12 * (Math.Max(16, authoredWidth) - 16) / (Math.Max(16, authoredWidth) + 32)
+            : 2 + 12 * authoredWidth / (authoredWidth + 12);
+        artworkScale = authoredWidth > 0 ? width / (2 * authoredWidth) : 1;
+        var geometry = Geometry.Parse(highlighter ? "M18,64 L78,32" : LayerTypeIcon.Geometry(ElementKind.Freehand)).Clone();
+        if (!highlighter)
+        {
+            var bounds = geometry.Bounds;
+            double scale = 78 / Math.Max(bounds.Width, bounds.Height);
+            geometry.Transform = new MatrixTransform(scale, 0, 0, scale,
+                48 - (bounds.Left + bounds.Right) * scale / 2, 48 - (bounds.Top + bounds.Bottom) * scale / 2);
+        }
+        var path = geometry.GetFlattenedPathGeometry(.01, ToleranceType.Absolute);
+        var points = path.Figures.SelectMany(figure => new[] { figure.StartPoint }.Concat(figure.Segments
+            .SelectMany(segment => segment switch
+            {
+                PolyLineSegment polyline => polyline.Points.AsEnumerable(),
+                LineSegment line => new[] { line.Point },
+                _ => Enumerable.Empty<Point>()
+            }))).ToArray();
+        double length = points.Zip(points.Skip(1), (a, b) => (b - a).Length).Sum();
+        var visual = new DrawingVisual();
+        using (var drawing = visual.RenderOpen())
+        {
+            drawing.PushOpacity(parameters.Style.Opacity);
+            var brush = ColorBrush(parameters.Style.Foreground);
+            if (width > 0 && parameters.Style.StrokePattern == StrokePattern.Dotted)
+            {
+                int count = highlighter ? 3 : 11;
+                for (int i = 0; i < count; i++)
+                {
+                    path.GetPointAtFractionLength((double)i / (count - 1), out Point point, out _);
+                    drawing.DrawEllipse(brush, null, point, width / 2, width / 2);
+                }
+            }
+            else if (width > 0)
+            {
+                var pen = new Pen(brush, width) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+                if (parameters.Style.StrokePattern == StrokePattern.Dashed)
+                {
+                    // Small fixed gaps preserve bends; flat dash caps keep thick marks separate.
+                    double gap = 5;
+                    pen.DashStyle = new DashStyle(new[] { (length - 2 * gap) / (3 * width), gap / width }, 0);
+                    pen.DashCap = PenLineCap.Flat;
+                }
+                drawing.DrawGeometry(null, pen, path);
+            }
+            drawing.Pop();
+        }
+        var bitmap = new RenderTargetBitmap(96, 96, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual); bitmap.Freeze(); return bitmap;
+    }
+
+    private static BitmapSource FitArtwork(BitmapSource source,out double scale)
     {
         var pixels=new FormatConvertedBitmap(source,PixelFormats.Pbgra32,null,0);
         byte[] bytes=new byte[pixels.PixelWidth*pixels.PixelHeight*4];pixels.CopyPixels(bytes,pixels.PixelWidth*4,0);
         int left=pixels.PixelWidth,top=pixels.PixelHeight,right=-1,bottom=-1;
         for(int y=0;y<pixels.PixelHeight;y++)for(int x=0;x<pixels.PixelWidth;x++)if(bytes[(y*pixels.PixelWidth+x)*4+3]!=0)
         {left=Math.Min(left,x);top=Math.Min(top,y);right=Math.Max(right,x);bottom=Math.Max(bottom,y);}
-        if(right<left){source.Freeze();return source;}
+        if(right<left){scale=1;source.Freeze();return source;}
         // Keep one DIP of breathing room inside the 16-DIP button artwork. Text,
         // numbers and shapes have different actual ink bounds, not different UI sizes.
         int width=right-left+1,height=bottom-top+1;
-        double scale=84d/Math.Max(width,height);
+        scale=84d/Math.Max(width,height);
         var visual=new DrawingVisual();RenderOptions.SetBitmapScalingMode(visual,BitmapScalingMode.HighQuality);
         using(var drawing=visual.RenderOpen())drawing.DrawImage(new CroppedBitmap(source,new Int32Rect(left,top,width,height)),
             new Rect((96-width*scale)/2,(96-height*scale)/2,width*scale,height*scale));

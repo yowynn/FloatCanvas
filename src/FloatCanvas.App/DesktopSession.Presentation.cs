@@ -1,4 +1,4 @@
-using FloatCanvas.Core;
+﻿using FloatCanvas.Core;
 using FloatCanvas.Storage;
 using FloatCanvas.Windows;
 using System.IO;
@@ -41,7 +41,7 @@ internal sealed partial class DesktopSession
         get
         {
             if (_presentationRuntime is not null) return _presentationRuntime;
-            _presentationRuntime = new(_app.Dispatcher, OnPresentationRuntimeChanged, isInternalInput: IsPresentationInputInternal);
+            _presentationRuntime = new(_app.Dispatcher, OnPresentationRuntimeChanged, isInternalInput: IsPresentationInputInternal, keyboardAvailable: () => _host.IsPresentationKeyboardAvailable);
             _presentationRuntime.BeforeInput += batch => { UpdatePresentationRuntime(); ObservePresentationKeyboardPrivacy(batch); };
             return _presentationRuntime;
         }
@@ -50,13 +50,13 @@ internal sealed partial class DesktopSession
 
     private PresentationRuntimeUiState GetPresentationRuntimeUiState(Guid? hostId = null) => new(
         _presentationRuntime?.Armed == true, _presentationRuntime?.Observing == true, false,
-        _presentationRuntime?.StatusKey ?? "Presentation.Status.NoLayers");
+        _presentationRuntime?.HasKeyboardDemand == true ? _presentationRuntime.StatusKey : "Presentation.Status.NoLayers");
 
     private void InitializePresentation()
     {
         if (!_presentationInputSubscribed)
         {
-            _host.PresentationInputObserved += OnPresentationEditingInput;
+            _host.PresentationInputObserved += OnPresentationHookInput;
             _presentationInputSubscribed = true;
         }
         PresentationRuntime.SetArmed(true);
@@ -244,11 +244,11 @@ internal sealed partial class DesktopSession
         if (_presentationRuntime is not { } runtime || _disposed) return;
         bool editing = runtime.Observing && _host.HasEditingInput && _host.IsKeyboardIsolationActive;
         runtime.ConfigureEditingInput(editing);
-        _host.ConfigurePresentationInputTap(editing && runtime.ObservingKeyboard,
-            editing && _settings.PresentationGlobal.Pointer.AnyEnabled, runtime.EditingInputEpoch);
+        _host.ConfigurePresentationInputTap(runtime.ObservingKeyboard && _host.IsPresentationKeyboardAvailable,
+            runtime.Observing && _settings.PresentationGlobal.Pointer.AnyEnabled, Math.Max(0, runtime.InputEpoch));
     }
-    private void OnPresentationEditingInput(PresentationObservedBatch batch)
+    private void OnPresentationHookInput(PresentationObservedBatch batch)
     {
-        if (!_disposed) _presentationRuntime?.ObserveEditingInput(batch);
+        if (!_disposed) _presentationRuntime?.ObserveHookInput(batch);
     }
 }

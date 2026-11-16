@@ -103,7 +103,7 @@ internal static class HiddenToolPropertiesTests
             Observe("entering capture synchronizes its previously hidden shape source and border", pickers["CaptureShape"].SelectedItem is RadioButton { Tag: CaptureShape.Ellipse } &&
                 pickers["CaptureSource"].SelectedItem is RadioButton { Tag: CaptureSource.CanvasOnly } && numbers["CaptureBorderWidth"].Value == 14 && foreground.Value == 0xFF789ABC);
             Apply(EditorTool.Image, _ => { }); Refresh();
-            Observe("entering image synchronizes its previously hidden opacity", numbers["Opacity"].Value == 40);
+            Observe("entering image keeps overall opacity out of tool properties", rows["Opacity"].Visibility == Visibility.Collapsed && editor.Parameters.Style.Opacity == 1);
             Observe("attribute synchronization never edits scene contents or history", editor.Session.Document.Elements.Count == 0 && editor.Session.UndoCount == 0 && !editor.Session.IsTransactionActive);
             Observe("hidden property fixture creates no native presentation source", !PresentationSource.CurrentSources.Cast<PresentationSource>().Any());
 

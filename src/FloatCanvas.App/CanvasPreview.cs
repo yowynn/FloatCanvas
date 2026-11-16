@@ -12,20 +12,29 @@ namespace FloatCanvas.App;
 internal sealed record CanvasPreviewContext(object Session, object Monitors, PointD Origin,
     bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1,
     object? ScreenDraftEpoch = null, object? PresentationEpoch = null, object? WindowEpoch = null, object? GroupEpoch = null,
-    CanvasViewTransform? View = null, bool DepthPriorityOcclusion = false)
+    CanvasViewTransform? View = null, bool DepthPriorityOcclusion = false, object? ContinuityEpoch = null)
 {
     // Editing guides may lag one worker frame; never discard the matching base
     // scene while they update. Epoch still rejects a completed A→B→A transition.
     internal bool HasSameContent(CanvasPreviewContext other) => Equals(Session, other.Session) && Equals(Monitors, other.Monitors) &&
         Origin == other.Origin && Hidden == other.Hidden && Equals(DocumentEpoch, other.DocumentEpoch) &&
         Equals(VisibilityEpoch, other.VisibilityEpoch) && Equals(GroupEpoch, other.GroupEpoch) && View == other.View &&
-        DepthPriorityOcclusion == other.DepthPriorityOcclusion && Epoch == other.Epoch;
+        DepthPriorityOcclusion == other.DepthPriorityOcclusion && Epoch == other.Epoch && Equals(ContinuityEpoch, other.ContinuityEpoch);
 
     // A completed navigation frame is useful even when input has advanced the
     // camera. Keep lifecycle identity strict so scope/privacy transitions never
     // display old content, including an A -> B -> A transition.
     internal bool HasSameScene(CanvasPreviewContext other) =>
         (this with { View = other.View }).HasSameContent(other);
+
+    // This permits retaining already submitted pixels, never adopting an old
+    // worker frame or its picking scene as the result of the new document.
+    internal bool CanRetainPixelsFor(CanvasPreviewContext next) => ContinuityEpoch is not null &&
+        ReferenceEquals(ContinuityEpoch, next.ContinuityEpoch) && ReferenceEquals(Session, next.Session) &&
+        ReferenceEquals(Monitors, next.Monitors) && Origin == next.Origin && Hidden == next.Hidden &&
+        ReferenceEquals(VisibilityEpoch, next.VisibilityEpoch) &&
+        ReferenceEquals(PresentationEpoch, next.PresentationEpoch) && ReferenceEquals(WindowEpoch, next.WindowEpoch) &&
+        (ReferenceEquals(ScreenDraftEpoch, next.ScreenDraftEpoch) || next.ScreenDraftEpoch is null);
 }
 
 internal sealed class CanvasPreviewSnapshot : IDisposable

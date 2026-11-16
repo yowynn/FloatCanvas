@@ -12,8 +12,20 @@ namespace FloatCanvas.App;
 /// <summary>An icon drag anchor, text entry and a common-range rail share one frame.</summary>
 internal sealed class NumericValueField : UserControl
 {
-    private readonly double minimum, maximum, step;
+    private double minimum, maximum;
+    private readonly double step;
+    internal void SetInputRange(double minimum, double maximum)
+    {
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum) || maximum < minimum) throw new ArgumentOutOfRangeException(nameof(minimum));
+        this.minimum = minimum; this.maximum = maximum;
+    }
     private readonly bool integerOnly;
+    private double? keyboardStep;
+    internal double KeyboardStep
+    {
+        get => keyboardStep ?? step;
+        set { if (!double.IsFinite(value) || value <= 0) throw new ArgumentOutOfRangeException(nameof(value)); keyboardStep = value; }
+    }
     private readonly List<NumericScrubber> scrubbers = [];
     private NumericPropertyKind anchorKind;
     internal Border DragAnchor { get; }
@@ -118,7 +130,7 @@ internal sealed class NumericValueField : UserControl
             double before = value;
             // The representative thumb can be at a common-range endpoint while
             // the actual value is farther out. Arrow keys edit that actual value.
-            Publish(current + (e.Key == Key.Right ? step : -step));
+            Publish(current + (e.Key == Key.Right ? KeyboardStep : -KeyboardStep));
             if (!IsInteracting && value != before) SliderValueCommitted?.Invoke();
         };
         Slider.PreviewMouseLeftButtonDown += (_, e) =>

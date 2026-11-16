@@ -1,4 +1,4 @@
-using System.Windows.Threading;
+﻿using System.Windows.Threading;
 using FloatCanvas.Core;
 using FloatCanvas.Windows;
 
@@ -12,6 +12,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     private readonly Func<long, bool, bool, CancellationToken, Task<IPresentationInputSource>> start;
     private readonly Func<TimeSpan> clock;
     private readonly Func<bool> isInternalInput;
+    private readonly Func<bool> keyboardAvailable;
     private readonly PresentationTimeline timeline = new();
     private readonly PresentationTimeline outsideTimeline = new(), insideTimeline = new();
     private bool? observedInternalInput;
@@ -28,10 +29,10 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     private bool editingInput;
     private bool changingInputRoute;
     private long rawTransitionCutoff = -1;
-    internal long EditingInputEpoch { get; private set; }
     private string pausedStatus = "Presentation.Status.PausedEditing";
     internal bool Armed { get; private set; }
     internal bool Observing => input?.IsRunning == true && allowed && Armed;
+    internal bool HasKeyboardDemand => demand.Keyboard;
     internal bool ObservingKeyboard => Observing && demand.Keyboard && KeyboardScopeAllowsInput();
     internal bool HasKeyboardAnimation => Enum.GetValues<PresentationKeyboardScope>()
         .Any(scope => Frame.ForKeyboardScope(scope).RecentChords.Any(chord => !chord.IsHeld));
@@ -48,12 +49,13 @@ internal sealed class PresentationRuntimeBroker : IDisposable
 
     internal PresentationRuntimeBroker(Dispatcher dispatcher, Action changed,
         Func<long, bool, bool, CancellationToken, Task<IPresentationInputSource>>? start = null, Func<TimeSpan>? clock = null,
-        Func<bool>? isInternalInput = null)
+        Func<bool>? isInternalInput = null, Func<bool>? keyboardAvailable = null)
     {
         this.dispatcher = dispatcher; this.changed = changed;
         this.start = start ?? (async (id, keyboard, pointer, token) => await PresentationInputObserver.StartAsync(id, keyboard, pointer, token));
         this.clock = clock ?? (() => PresentationTimeline.FromMilliseconds(Environment.TickCount64));
         this.isInternalInput = isInternalInput ?? (() => false);
+        this.keyboardAvailable = keyboardAvailable ?? (() => true);
         animation = new(DispatcherPriority.Background, dispatcher) { Interval = TimeSpan.FromMilliseconds(33) };
         animation.Tick += (_, _) => Tick();
     }
@@ -105,15 +107,18 @@ internal sealed class PresentationRuntimeBroker : IDisposable
             if (disposed || !Observing) return;
         }
         else rawTransitionCutoff = clock().Ticks / TimeSpan.TicksPerMillisecond;
-        editingInput = enabled; EditingInputEpoch++;
-        ReleaseHeldKeys(clock()); NewLifetime(); Publish(force: true); Schedule();
+        editingInput = enabled;
+        // Editing changes the pointer route, not keyboard ownership or held-key state.
+        Publish(force: true); Schedule();
     }
-    internal void ObserveEditingInput(PresentationObservedBatch batch)
+    internal void ObserveHookInput(PresentationObservedBatch batch)
     {
         dispatcher.VerifyAccess();
-        if (disposed || !Observing || !editingInput || batch.Epoch != EditingInputEpoch) return;
+        if (disposed || !Observing || batch.Epoch != InputEpoch) return;
         BeforeInput?.Invoke(batch);
-        if (!Observing || !editingInput || batch.Epoch != EditingInputEpoch) return;
+        if (!Observing || batch.Epoch != InputEpoch) return;
+        if (!editingInput)
+            batch = new(batch.Epoch, batch.Changes.Where(value => value.Kind is PresentationObservedKind.KeyDown or PresentationObservedKind.KeyUp), null, batch.Overflowed);
         ApplyObservedInput(batch);
     }
     internal void Pause(bool retainTrail)
@@ -130,6 +135,15 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     }
     internal void ClearKeyboardForFocusChange()
     { dispatcher.VerifyAccess(); ResetKeyboardState(); keyboardScopeAllowed = KeyboardScopeAllowsInput(); NewLifetime(); Publish(force: true); Schedule(); }
+    internal void RefreshKeyboardForFocusChange()
+    {
+        dispatcher.VerifyAccess();
+        // A system shortcut can open another window while its physical keys are
+        // still held. Retire privacy metadata, not the all-applications key stream.
+        RefreshKeyboardScope();
+        if (demand.ScopedKeyboard) TransitionScopedOwner(CurrentInternalInput(), clock());
+        NewLifetime(); Publish(force: true); Schedule();
+    }
     internal void BlockForBudget()
     { dispatcher.VerifyAccess(); faulted = true; Stop(retainTrail: false); NotifyChanged(); }
     internal void RetryIfFaulted()
@@ -201,6 +215,8 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         if (service is null || !Armed || !allowed) return;
         if (!service.IsRunning) { faulted = true; Stop(retainTrail: false); NotifyChanged(); return; }
         var batch = service.Drain(); if (batch.Epoch != service.Epoch || service.Epoch != connection) return;
+        if (batch.Changes.Count == 0 && batch.Cursor is null && !batch.Overflowed)
+        { ApplyObservedInput(batch); return; } // Advance fading without re-running input/privacy work.
         BeforeInput?.Invoke(batch);
         if (!ReferenceEquals(input, service) || !allowed || !Armed) return;
         if (editingInput)
@@ -269,6 +285,8 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     private void Tick()
     {
         animation.Stop(); if (!Observing || disposed) return;
+        if (demand.Keyboard && !keyboardAvailable())
+        { faulted = true; Stop(retainTrail: false); NotifyChanged(); return; }
         bool scopeChanged = RefreshKeyboardScope();
         bool transient = HasTransients; var now = clock();
         if (demand.ScopedKeyboard) scopeChanged |= TransitionScopedOwner(CurrentInternalInput(), now);
@@ -277,9 +295,10 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         Schedule();
     }
     private void Schedule()
-    { if (Observing && (HasTransients || demand.Keyboard && (demand.ScopedKeyboard || keyboardScope != PresentationKeyboardScope.AllApplications))) animation.Start(); else animation.Stop(); }
+    { if (Observing && (HasTransients || HasHeldKeys || demand.Keyboard && (demand.ScopedKeyboard || keyboardScope != PresentationKeyboardScope.AllApplications))) animation.Start(); else animation.Stop(); }
     private long Revision => timeline.Revision + outsideTimeline.Revision + insideTimeline.Revision;
     private bool HasTransients => timeline.HasTransients || outsideTimeline.HasTransients || insideTimeline.HasTransients;
+    private bool HasHeldKeys => timeline.HasHeldKeys || outsideTimeline.HasHeldKeys || insideTimeline.HasHeldKeys;
     private bool? CurrentInternalInput()
     { try { return isInternalInput(); } catch { return null; } }
     private bool TransitionScopedOwner(bool? inside, TimeSpan now)
@@ -326,7 +345,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     }
     private void Stop(bool retainTrail, bool preservePointer = false)
     {
-        editingInput = false; EditingInputEpoch++;
+        editingInput = false;
         rawTransitionCutoff = -1;
         ++connection; starting?.Cancel(); starting = null; animation.Stop();
         if (retainTrail && Frame.Trail.Count > 1) PausedTrail = Frame;

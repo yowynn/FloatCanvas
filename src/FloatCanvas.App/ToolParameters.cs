@@ -48,6 +48,14 @@ internal sealed class ToolParameters
     internal ElementKind? AppearanceKind => Tool == EditorTool.Emoji ? ElementKind.Text :
         Enum.TryParse<ElementKind>(Tool.ToString(), out var kind) ? kind : null;
 
+    // Creation-only policy: layer opacity and color alpha have different ownership.
+    internal void NormalizeForCreation()
+    {
+        NormalizeAppearance();
+        if (Style.Opacity is >= 0 and <= 1) Style.Opacity = 1;
+        if (Tool == EditorTool.Highlighter && Style.StrokeWidth is >= 0 and < 16) Style.StrokeWidth = 16;
+    }
+
     internal void NormalizeAppearance()
     {
         if (Tool == EditorTool.Presentation) Presentation ??= new();

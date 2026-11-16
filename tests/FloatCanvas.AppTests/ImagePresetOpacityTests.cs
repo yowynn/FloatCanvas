@@ -55,7 +55,7 @@ internal static class ImagePresetOpacityTests
             var restored = new ToolStateStore(Path.Combine(folder, "tool-state.json"));
             var pen = new EditorController(new()); pen.Style.Opacity = .1;
             var otherTool = Desktop(pen, library, restored.Tools);
-            check("imports from another active tool use the restored image opacity rather than pen opacity", Opacity(otherTool) == .25 && pen.Style.Opacity == .1);
+            check("imports normalize retired image opacity presets without changing the active pen", Opacity(otherTool) == 1 && pen.Style.Opacity == .1);
             restored.Tools.Clear();
             check("an image tool without saved state defaults to full opacity while another tool is active", Opacity(otherTool) == 1 && pen.Style.Opacity == .1);
 

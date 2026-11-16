@@ -65,10 +65,20 @@ internal static class PresentationHookCallbackTests
                     "A failed visual metadata observer cannot change suppression or close the editing lease");
             }
             finally { labels.SetValue(tap, originalLabels); }
+            Key(0x5B, 0x5B, false);
+            uint beforeLeaseEnd = tap.Generation;
             input.EndLease(); generation = tap.Generation;
-            Key(0x43, 46, false); Pointer(0x201);
-            check(!input.TryDrainPresentationInput(generation, out _),
-                "Actual callback paths collect nothing after the editing lease ends");
+            Key(0x5B, 0x5B, true);
+            check(generation == beforeLeaseEnd && input.TryDrainPresentationInput(generation, out var spanning) &&
+                spanning!.Changes is [{ Kind: PresentationObservedKind.KeyDown, VirtualKey: 0x5B }, { Kind: PresentationObservedKind.KeyUp, VirtualKey: 0x5B }],
+                "Ending the editing lease preserves queued physical keyboard edges and their matching release");
+            Key(0x43, 46, false); Key(0x43, 46, true); Pointer(0x201);
+            check(input.TryDrainPresentationInput(generation, out var passive) && passive!.Changes.Count == 2 &&
+                passive.Changes.All(value => value.Kind is PresentationObservedKind.KeyDown or PresentationObservedKind.KeyUp),
+                "The same keyboard callback continues in pass-through while editing-only pointer observation stops");
+            input.ConfigurePresentationInputTap(false, false, 779, 0x8006); generation = tap.Generation;
+            Key(0x43, 46, false); Key(0x43, 46, true);
+            check(!input.TryDrainPresentationInput(generation, out _), "Disabling presentation stops observation without changing the hook lease");
             check(!IsWindowVisible(window) && !input.IsThreadAlive,
                 "Callback fixture finishes without an exposed window, hook thread or synthetic system input");
 

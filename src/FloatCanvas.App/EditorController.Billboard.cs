@@ -410,6 +410,8 @@ internal sealed partial class EditorController
                 if (ElementGeometry.PreservesAspect(source) ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = UniformScale(from, to);
                 if (source.Kind == ElementKind.Text && resizeTextRenderer is not null)
                     TextFrameLayout.Resize(item, source, sx, sy, resizeTextRenderer);
+                else if (source.Kind == ElementKind.Presentation)
+                    PresentationFrameLayout.Resize(item, source, sx, sy);
                 else if (ElementGeometry.IsBoxShape(source.Kind))
                 {
                     item.Width = source.Width; item.Height = source.Height; item.CornerRadius = source.CornerRadius; item.Transform = source.Transform;

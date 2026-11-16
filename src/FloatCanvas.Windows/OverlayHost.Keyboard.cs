@@ -16,7 +16,7 @@ public sealed partial class OverlayHost
     private bool _presentationTapKeyboard, _presentationTapPointer;
     private long _presentationTapEpoch;
 
-    /// <summary>Passive metadata from the existing editing hooks, delivered on the owner UI thread.</summary>
+    /// <summary>Passive metadata from the existing hooks in both editing and pass-through modes, delivered on the owner UI thread.</summary>
     public event Action<PresentationObservedBatch>? PresentationInputObserved;
 
     public void ConfigurePresentationInputTap(bool keyboard, bool pointer, long epoch)
@@ -26,6 +26,8 @@ public sealed partial class OverlayHost
         _presentationTapKeyboard = keyboard; _presentationTapPointer = pointer; _presentationTapEpoch = epoch;
         _keyboardIsolation?.ConfigurePresentationInputTap(keyboard, pointer, epoch, PresentationInputMessage);
     }
+
+    public bool IsPresentationKeyboardAvailable => _keyboardIsolation is { IsThreadAlive: true, Failure: null };
 
     public bool IsKeyboardIsolationEnabled => _keyboardIsolation is not null;
     public bool IsKeyboardIsolationActive => _keyboardIsolation is { } isolation
@@ -84,8 +86,7 @@ public sealed partial class OverlayHost
         if (message == PresentationInputMessage)
         {
             var source = _keyboardIsolation;
-            if (source is not null && source.TryDrainPresentationInput(unchecked((uint)wParam), out var batch) &&
-                IsEditing && HasEditingInput && source.IsLeaseActive)
+            if (source is not null && source.TryDrainPresentationInput(unchecked((uint)wParam), out var batch))
             {
                 try { PresentationInputObserved?.Invoke(batch!); }
                 catch { /* A visual subscriber cannot interrupt the editing input dispatcher. */ }

@@ -20,9 +20,9 @@ internal static class SymbolStylePresetTests
         {
             var library = new ToolPresetLibrary(Path.Combine(folder, "presets.json"));
             var official = library.OfficialFor(EditorTool.Symbol);
-            check("symbol presets offer five styles on one standard geometry rather than a recipe per shape", official.Count == 5 &&
+            check("symbol presets offer four styles on one standard geometry rather than a recipe per shape", official.Count == 4 &&
                 official.All(p => p.Parameters.Symbol == SymbolKind.Triangle) && official.First().Id == "official.triangle");
-            check("the five symbol styles have distinct paint combinations", official.Select(p => JsonSerializer.Serialize(p.Parameters.Style)).Distinct().Count() == 5);
+            check("the four symbol styles have distinct paint combinations", official.Select(p => JsonSerializer.Serialize(p.Parameters.Style)).Distinct().Count() == 4);
             foreach (var preset in official)
             {
                 var session = new EditorSession();

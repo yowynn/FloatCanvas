@@ -22,11 +22,11 @@ internal static class PresentationPhysicalStateTests
         timeline.Clear();
         Apply(Key(0xA2, 29));
         var modifier = Frame();
-        check("a modifier-only press has live physical state while log history stays silent", modifier.PressedKeys.Count == 1 && modifier.RecentChords.Count == 0);
+        check("a modifier-only press has live physical state and a held log preview", modifier.PressedKeys.Count == 1 && modifier.RecentChords is [{ IsHeld: true }]);
         check("modifier-only transitions invalidate the keyboard preview", !Same(PresentationFrame.Empty, modifier));
         Apply(Key(0xA2, 29, up: true));
         check("modifier-only release invalidates the keyboard preview", !Same(modifier, Frame()));
-        check("equal physical snapshots do not redraw merely because sequence or time changes", Same(Frame(), new(1, now + 1, TimeSpan.FromMilliseconds(now + 1))));
+        check("equal physical snapshots do not redraw merely because sequence or time changes", Same(Frame(), new(1, now + 1, TimeSpan.FromMilliseconds(now + 1), recentChords: Frame().RecentChords)));
         timeline.Clear();
         Apply(Key(0x41, 30, device: 1), Key(0x41, 30, device: 2));
         check("the same physical position on two devices has one visible key state", Frame().PressedKeys.Count == 1);

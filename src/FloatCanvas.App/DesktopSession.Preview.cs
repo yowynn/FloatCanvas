@@ -23,6 +23,8 @@ internal sealed partial class DesktopSession
     private object? _hiddenPreviewMembership;
     private long _hiddenPreviewRevision = -1;
     private CanvasPreviewContext? _currentCanvasContext;
+    private (EditorSession Session, long Generation, long Scope, PrefabEditContext? Prefab, GroupCanvasMode Mode, bool Editing)? _canvasContinuityKey;
+    private object _canvasContinuityEpoch = new();
     private long _canvasContextEpoch, _canvasInputSequence, _canvasControlsSequence;
     private long _canvasDraftRevision;
     private object? _screenDraftEpoch;
@@ -56,6 +58,9 @@ internal sealed partial class DesktopSession
     private CanvasPreviewContext CurrentPreviewContext()
     {
         var view = CurrentGroupCanvasView();
+        var continuity = (Active, Active.DocumentGeneration, Active.EditScopeVersion, _prefabEditContext, _groupCanvasMode, _host.IsEditing);
+        if (_canvasContinuityKey != continuity)
+        { _canvasContinuityKey = continuity; _canvasContinuityEpoch = new(); }
         bool foreignSource = view.IsRootPreview && _prefabEditContext is not null;
         bool flatCanvasTool = _editor.Tool == EditorTool.Canvas && !Active.IsReadOnly && !view.Document.Canvas.Projection.Enabled;
         var context = new CanvasPreviewContext(Active, _host.Monitors, view.Origin,
@@ -65,7 +70,7 @@ internal sealed partial class DesktopSession
             PresentationEpoch: _presentationRuntime?.ObservingKeyboard == true ? _presentationRuntime.Lifetime : null,
             WindowEpoch: foreignSource ? null : CurrentWindowRenderEpoch(), GroupEpoch: _host.IsEditing ? _canvasViewGroupEpoch : view.Epoch,
             View: EditingCanvasView == CanvasViewTransform.Identity ? null : EditingCanvasView,
-            DepthPriorityOcclusion: PreviewAppearance.DepthPriorityOcclusion);
+            DepthPriorityOcclusion: PreviewAppearance.DepthPriorityOcclusion, ContinuityEpoch: _canvasContinuityEpoch);
         if (_currentCanvasContext is { } current && current with { Epoch = 0 } == context) return current;
         long epoch = _currentCanvasContext is { } prior && prior.HasSameScene(context with { Epoch = prior.Epoch })
             ? prior.Epoch : ++_canvasContextEpoch;
@@ -243,14 +248,11 @@ internal sealed partial class DesktopSession
         if ((frame is null || !CanPresentCanvasFrame(frame, context)) && _cancelledDraftFrame is { } restored && restored.Context == context) frame = restored;
         bool textExit = _sceneExitPresentation is { } transition && transition.From == _presentedCanvasContext && transition.To == context;
         if ((frame is null || !CanPresentCanvasFrame(frame, context)) && _presentedPixels is not null &&
-            (textExit || _presentedCanvasContext is { } shown && ReferenceEquals(shown.Session, context.Session) &&
-            ReferenceEquals(shown.DocumentEpoch, context.DocumentEpoch) && ReferenceEquals(shown.Monitors, context.Monitors) &&
-            ReferenceEquals(shown.ScreenDraftEpoch, context.ScreenDraftEpoch) && ReferenceEquals(shown.PresentationEpoch, context.PresentationEpoch) &&
-            ReferenceEquals(shown.WindowEpoch, context.WindowEpoch) &&
-            shown.Origin == context.Origin && shown.Hidden == context.Hidden))
+            (textExit || _presentedCanvasContext?.CanRetainPixelsFor(context) == true))
         {
-            // Camera changes invalidate the worker frame, not the displayed artwork or
-            // the in-flight drag. Never submit an empty intermediate frame.
+            // Rollback/history and camera changes invalidate the worker frame, not
+            // the last submitted pixels. Wait for a complete replacement rather
+            // than clearing the canvas; document/scope/privacy exits remain strict.
             request.Deferred = true; _submittingCanvasContext = null;
             RequestCanvasPreview(false, null); return;
         }

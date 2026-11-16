@@ -64,8 +64,10 @@ internal static class PresentationPrivacyGateTests
             rig.Source.Queue([new(PresentationObservedKind.KeyDown,0,1,0x11,29,0,"Ctrl"),new(PresentationObservedKind.KeyDown,0,1,0x43,46,0,"C")]);Pump(dispatcher);
             check("foreground fixture has visible held key state before switching",rig.Runtime.Frame.PressedKeys.Count==2);
             var next=rig.Plan(null);rig.Foreground=202;rig.Gate.Observe();Wait(()=>next.Entered.IsSet);
-            check("foreground change immediately clears old keys before new metadata returns",rig.Runtime.Frame.PressedKeys.Count==0&&!rig.Runtime.Frame.KeyboardSuppressed);
+            check("foreground change preserves the global physical stream while new privacy metadata is pending",rig.Runtime.Frame.PressedKeys.Count==2&&!rig.Runtime.Frame.KeyboardSuppressed);
             next.Release.Set();rig.AwaitCallbacks(2);
+            var password=rig.Plan(true);rig.Now=250;rig.Gate.Observe();Wait(()=>password.Entered.IsSet);password.Release.Set();rig.AwaitCallbacks(3);
+            check("confirmed password metadata still clears global held state after a foreground change",rig.Runtime.Frame.PressedKeys.Count==0&&rig.Runtime.Frame.KeyboardSuppressed);
         }
         using(var rig=new Rig(dispatcher))
         {

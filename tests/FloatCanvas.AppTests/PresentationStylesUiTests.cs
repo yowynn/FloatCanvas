@@ -32,7 +32,7 @@ internal static class PresentationStylesUiTests
         var panel = Field<PresentationSettingsPanel>(inspector, "presentationSettings");
         string original = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
         check("keyboard settings expose two primary modes and two recording appearances with standard numeric fields", Entry<SegmentedChoice>(panel, "DisplayStyle").Items.Count == 2 && Entry<SegmentedChoice>(panel, "LogStyle").Items.Count == 2 && Entry<NumericValueField>(panel, "KeyHoldMilliseconds").Input is not null && Entry<NumericValueField>(panel, "RecentChordLimit").Slider.IsSnapToTickEnabled);
-        check("live keyboard shows layout editor while irrelevant log controls stay hidden", Rows(panel)["KeyboardLayout"].IsVisible && !Rows(panel)["RecentChordLimit"].IsVisible && !Rows(panel)["KeyHoldMilliseconds"].IsVisible && !Rows(panel)["KeyDisplay"].IsVisible);
+        check("live keyboard shows layout editor while irrelevant log controls stay hidden", Rows(panel)["KeyboardLayout"].IsVisible && !Rows(panel)["KeyPanelAlignment"].IsVisible && !Rows(panel)["RecentChordLimit"].IsVisible && !Rows(panel)["KeyHoldMilliseconds"].IsVisible && !Rows(panel)["KeyDisplay"].IsVisible);
         string aId = PresentationKeyboardLayout.CreateDefault().Keys.Single(key => key.VirtualKey == 0x41).Id;
         PresentationKeyboardLayout? published = null;
         Edit(panel, dialog =>

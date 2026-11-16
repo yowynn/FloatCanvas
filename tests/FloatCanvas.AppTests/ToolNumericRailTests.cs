@@ -82,7 +82,7 @@ internal static class ToolNumericRailTests
                 DefaultWidth = 2048, DefaultHeight = 1536, CornerRadius = 4096, EffectStrength = 512, CaptureBorderWidth = 512,
                 Style = new() { StrokeWidth = 512, FontSize = 1024, ArrowHeadSize = 256, Opacity = .123456789 } };
             var library = new ToolPresetLibrary(Path.Combine(folder, "wide-presets.json"));
-            parameters.NormalizeAppearance();
+            parameters.NormalizeForCreation();
             library.Save("Values beyond common rails", parameters);
             var restored = new ToolPresetLibrary(Path.Combine(folder, "wide-presets.json")).User.Single().Parameters;
             check("saving and reopening presets preserves wide valid numeric values exactly", JsonSerializer.Serialize(restored) == JsonSerializer.Serialize(parameters));
@@ -109,7 +109,7 @@ internal static class ToolNumericRailTests
         {
             var domain = NumericParameterDomain.ForTool(key);
             var context = NumericParameterDomain.ForTool(key, tool);
-            check($"{tool}/{key} context changes only the rail", context.Minimum == domain.Minimum && context.Maximum == domain.Maximum && context.Step == domain.Step && context.Integer == domain.Integer);
+            check($"{tool}/{key} context retains its domain with the highlighter creation minimum", context.Minimum == (tool == EditorTool.Highlighter ? 16 : domain.Minimum) && context.Maximum == domain.Maximum && context.Step == domain.Step && context.Integer == domain.Integer);
         }
     }
 }

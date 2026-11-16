@@ -139,7 +139,7 @@ internal static class ColorRobustnessTests
                 (EditorTool.Rectangle, "CornerRadius", double.MaxValue), (EditorTool.Rectangle, "DefaultWidth", 1000000d), (EditorTool.Rectangle, "DefaultHeight", 1d),
                 (EditorTool.Freehand, "StrokeWidth", 1024d), (EditorTool.Text, "FontSize", double.Epsilon),
                 (EditorTool.Number, "NumberStart", -999999d), (EditorTool.Number, "NumberStep", 999999d),
-                (EditorTool.Image, "Opacity", complete.Style.Opacity * 100), (EditorTool.Line, "ArrowHeadSize", 512d),
+                (EditorTool.Line, "ArrowHeadSize", 512d),
                 (EditorTool.Blur, "EffectStrength", double.Epsilon), (EditorTool.CaptureRegion, "CaptureBorderWidth", 1024d)
             })
             {

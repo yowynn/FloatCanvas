@@ -27,9 +27,10 @@ internal static class CanonicalToolAppearanceTests
         var current = new ToolPresetLibrary(Path.Combine(folder, "official-unused.json")).Official;
         var baselineIds = baseline.Select(node => node!["Id"]!.ToString()).ToHashSet(StringComparer.Ordinal);
         var original = current.Where(preset => baselineIds.Contains(preset.Id)).ToArray();
-        check("official baseline keeps all 57 actual M4 IDs in order", baseline.Select(node => node!["Id"]!.ToString()).SequenceEqual(original.Select(preset => preset.Id)));
-        check("presentation adds three keyboard and three mouse recipes after the original 57 without rewriting their identities", current.Count == 63 && current.Where(preset => !baselineIds.Contains(preset.Id)).Select(preset => preset.Id).SequenceEqual(new[] { "official.presentation-keys", "official.presentation-keycaps", "official.presentation-keyboard", "official.presentation-pointer-halo", "official.presentation-pointer-clicks", "official.presentation-pointer-trail" }));
-        foreach (var preset in original)
+        check("all historical official IDs resolve to a current recipe", baselineIds.All(id => current.Any(p => p.Id == ToolPresetLibrary.ResolveOfficialId(id))));
+        check("curated catalog keeps 55 unique recipes including six presentation recipes", current.Count == 55 && current.Select(p => p.Id).Distinct().Count() == current.Count && current.Count(p => p.Parameters.Tool is EditorTool.Presentation or EditorTool.PointerPresentation) == 6);
+        var redesigned = new HashSet<string> { "official.freehand", "official.freehand-bold", "official.highlighter-yellow", "official.rectangle", "official.rounded-rectangle", "official.rectangle-soft", "official.rectangle-filled", "official.ellipse", "official.circle-soft", "official.circle-filled", "official.triangle", "official.symbol-soft", "official.symbol-filled", "official.symbol-dashed" };
+        foreach (var preset in original.Where(p => !redesigned.Contains(p.Id)))
         {
             var expected = baseline.Single(node => node!["Id"]!.ToString() == preset.Id)!["Parameters"]!.DeepClone();
             var style = expected["Style"]!.AsObject();

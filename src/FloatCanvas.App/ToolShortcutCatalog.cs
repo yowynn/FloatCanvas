@@ -47,6 +47,7 @@ internal static class ToolbarShortcutHint
     internal static System.Windows.Controls.TextBlock Create(string text, bool lowerRow = false,System.Windows.Thickness frameInset=default)
     {
         var hint=new System.Windows.Controls.TextBlock {Text=text,FontSize=9,FontFamily=new System.Windows.Media.FontFamily("Consolas"),
+            UseLayoutRounding=true,
             FontWeight=System.Windows.FontWeights.SemiBold,Width=10,Height=12,TextAlignment=System.Windows.TextAlignment.Center,
             LineHeight=12,LineStackingStrategy=System.Windows.LineStackingStrategy.BlockLineHeight,
             HorizontalAlignment=lowerRow?System.Windows.HorizontalAlignment.Left:System.Windows.HorizontalAlignment.Right,

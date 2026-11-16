@@ -70,7 +70,7 @@ internal static class ToolCompatibilityTests
         controller.Tool = EditorTool.Symbol; controller.Symbol = SymbolKind.Heart; controller.ConstrainAspect = true;
         official.RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
         check("the official triangle recipe restores its baseline shape and paint", controller.Tool == EditorTool.Symbol && controller.Symbol == SymbolKind.Triangle &&
-            !controller.ConstrainAspect && controller.Style.Stroke == officialBaseline.Style.Stroke && controller.Style.Fill == officialBaseline.Style.Fill &&
+            controller.ConstrainAspect && controller.Style.Stroke == officialBaseline.Style.Stroke && controller.Style.Fill == officialBaseline.Style.Fill &&
             Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows")["Symbols"].Visibility == Wpf.Visibility.Visible);
         var gallery = Field<System.Windows.Controls.Primitives.UniformGrid>(panel, "symbolGallery");
         gallery.Children.OfType<Controls.Button>().Single(button => Equals(button.Tag, SymbolKind.Star)).RaiseEvent(new Wpf.RoutedEventArgs(Controls.Button.ClickEvent));
@@ -111,7 +111,7 @@ internal static class ToolCompatibilityTests
         var element = session.Document.Elements.Last();
         check("emoji insertion uses the displayed preset size for font and object bounds", element.Kind == ElementKind.Text && element.Text == "👩‍🎨" &&
             element.Style.FontFamily == "Segoe UI Emoji" && element.Style.FontSize == 18 && element.Width == 18 && element.Height == 18 &&
-            element.Transform == Affine2D.Translation(41, 51) && element.Style.Opacity == .65 && session.UndoCount == before + 1);
+            element.Transform == Affine2D.Translation(41, 51) && element.Style.Opacity == 1 && session.UndoCount == before + 1);
         numbers["FontSize"].Text = "12";
         session.SetSelection([]); // This check starts a new insertion; selected-object blank clicks now deselect first.
         Gesture(controller, new(-200, 180), new(-200, 180));

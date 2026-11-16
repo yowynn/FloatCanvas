@@ -29,7 +29,12 @@ internal sealed partial class ToolOptionsPanel
 
     internal void SetPresentationRuntimeUi(Func<Guid?, PresentationRuntimeUiState>? provider)
     { presentationRuntimeProvider = provider; presentationRuntime.Refresh(provider); }
-    internal void RefreshPresentationRuntimeUi() => presentationRuntime.Refresh(presentationRuntimeProvider);
+    internal void RefreshPresentationRuntimeUi()
+    {
+        string previous = presentationRuntime.StatusText;
+        presentationRuntime.Refresh(presentationRuntimeProvider);
+        if (controller.Tool == EditorTool.Presentation && previous != presentationRuntime.StatusText) HeaderChanged?.Invoke();
+    }
 
     private void InitializePresentationParameters()
     {
@@ -58,7 +63,7 @@ internal sealed partial class ToolOptionsPanel
     private void RefreshPresentationParameters(ToolParameters parameters)
     {
         bool keyboard = parameters.Tool == EditorTool.Presentation;
-        Show("PresentationSettings", keyboard); Show("PresentationRuntime", keyboard);
+        Show("PresentationSettings", keyboard); Show("PresentationRuntime", false);
         Show("PointerPresentationSettings", parameters.Tool == EditorTool.PointerPresentation);
         RefreshPresentationGlobalUi();
         if (!keyboard) return;

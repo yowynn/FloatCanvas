@@ -13,6 +13,39 @@ internal static class ToolParameterIconTests
     {
         _ = Wpf.Application.Current ?? new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
+        PointerIconGeometryTests.Run(check);
+        PatternedToolIconTests.Run(check);
+        foreach (var tool in new[] { EditorTool.Select, EditorTool.Eraser, EditorTool.PointerPresentation })
+        {
+            var bounds = InkBounds(Rasterize(ToolParameterIcon.Create(new ToolParameters { Tool = tool }, 96), 96));
+            check(tool + " default artwork is centered in its icon slot", Math.Abs(bounds.X + bounds.Width / 2d - 48) <= 1 && Math.Abs(bounds.Y + bounds.Height / 2d - 48) <= 1);
+        }
+        foreach (var mode in new[] { 0, 1, 2, 3 })
+        {
+            var pointerSettings = new PresentationPointerSettings { CursorEnabled = mode == 0 || mode == 3, TrailEnabled = mode == 1 || mode == 3, ClicksEnabled = mode == 2 || mode == 3 };
+            var bounds = InkBounds(Rasterize(ToolParameterIcon.Create(new ToolParameters { Tool = EditorTool.PointerPresentation, PointerPresentation = pointerSettings }, 96), 96));
+            check("pointer icon centers enabled effect combination " + mode, Math.Abs(bounds.X + bounds.Width / 2d - 48) <= 1.5 && Math.Abs(bounds.Y + bounds.Height / 2d - 48) <= 1.5);
+        }
+
+        if (Environment.GetEnvironmentVariable("FLOATCANVAS_ICON_AUDIT") == "1")
+        foreach (EditorTool tool in Enum.GetValues<EditorTool>())
+        {
+            try { var bounds = InkBounds(Rasterize(ToolParameterIcon.Create(new ToolParameters { Tool = tool },96),96));
+                Console.WriteLine($"AUDIT {tool} {bounds.X} {bounds.Y} {bounds.Width} {bounds.Height}"); }
+            catch (Exception e) { Console.WriteLine($"AUDIT {tool} ERROR {e.GetType().Name}"); }
+        }
+
+        var keys = new ToolParameters { Tool = EditorTool.Presentation, Presentation = new() { DisplayStyle = PresentationDisplayStyle.Log, RecentChordLimit = 1 }, Style = new() { Foreground = 0xffff4400, Background = 0xff113388 } };
+        string Icon() => Hash(Rasterize(ToolParameterIcon.Create(keys,72),72));
+        var one = Icon(); keys.Presentation.RecentChordLimit = 2; var two = Icon(); keys.Presentation.RecentChordLimit = 3; var three = Icon(); keys.Presentation.RecentChordLimit = 4; var four = Icon(); keys.Presentation.RecentChordLimit = 5; var more = Icon(); keys.Presentation.RecentChordLimit = 6;
+        check("keyboard icon distinguishes one through four rows and uses a stable ellipsis above four", new[] { one,two,three,four,more }.Distinct().Count() == 5 && Icon() == more);
+        keys.Presentation.RecentChordLimit = 2; keys.Presentation.KeyPanelAlignment = PresentationPanelAlignment.TopLeft; var top = Icon(); keys.Presentation.KeyPanelAlignment = PresentationPanelAlignment.BottomLeft; var bottom = Icon(); keys.Presentation.KeyPanelAlignment = PresentationPanelAlignment.BottomRight;
+        check("keyboard icon changes with vertical and horizontal alignment", top != bottom && bottom != Icon());
+        keys.Presentation.DisplayStyle = PresentationDisplayStyle.Keycaps; var caps = Icon(); keys.Presentation.DisplayStyle = PresentationDisplayStyle.Log; var log = Icon(); keys.Presentation.DisplayStyle = PresentationDisplayStyle.Keyboard; var live = Icon();
+        check("keyboard icon distinguishes all three presentation styles", new[] { caps,log,live }.Distinct().Count() == 3);
+        keys.Style.Background = 0; var transparent = Icon(); keys.Style.Foreground = 0; var empty = Icon();
+        check("keyboard icon respects foreground and background alpha", transparent != live && transparent != empty);
+
         var pen = new ToolParameters { Tool = EditorTool.Freehand, Style = new() { Foreground = 0xFFCC3344, StrokeWidth = 2 } };
         var penBefore = JsonSerializer.Serialize(pen);
         var thin = Hash(Rasterize(ToolParameterIcon.Create(pen),16));
@@ -22,6 +55,12 @@ internal static class ToolParameterIconTests
         var thick=Hash(Rasterize(ToolParameterIcon.Create(pen),16));pen.Style.Foreground=0xFF2266DD;
         check("curved pen preview still displays the chosen color",thick!=Hash(Rasterize(ToolParameterIcon.Create(pen),16)));
         var demonstration = new ToolPresetLibrary(Path.Combine(Path.GetTempPath(), "FloatCanvas-icon-unused-" + Guid.NewGuid().ToString("N"))).Official;
+        if (Environment.GetEnvironmentVariable("FLOATCANVAS_ICON_AUDIT") == "1")
+        foreach (var preset in demonstration)
+        {
+            var bounds = InkBounds(Rasterize(ToolParameterIcon.Create(preset.Parameters,96),96));
+            Console.WriteLine($"PRESET {preset.Parameters.Tool}|{preset.Id}|{bounds.X}|{bounds.Y}|{bounds.Width}|{bounds.Height}");
+        }
         var keyboardPreviews = demonstration.Where(preset => preset.Parameters.Tool == EditorTool.Presentation)
             .Select(preset => Rasterize(ToolParameterIcon.Create(preset.Parameters), 16)).ToArray();
         check("log keycaps and full-keyboard recipes keep distinct visible artwork at sixteen DIP", keyboardPreviews.Length == 3 && keyboardPreviews.All(bitmap => InkCount(bitmap) > 12) && keyboardPreviews.Select(Hash).Distinct().Count() == 3);
@@ -79,6 +118,13 @@ internal static class ToolParameterIconTests
         check("solid and dashed line samples retain visible ink and distinct pixels at toolbar size",InkCount(readableLine)>=16&&InkCount(readableDashed)>=10&&Hash(readableLine)!=Hash(readableDashed));
         foreach(var tool in new[]{EditorTool.Eraser,EditorTool.Blur,EditorTool.Pixelate})
             check(tool+" presets retain a distinct bounded live control-tool illustration",ToolParameterIcon.Create(new ToolParameters {Tool=tool},32) is Controls.Viewbox {Width:32,Height:32});
+        foreach (var tool in new[] { EditorTool.Freehand, EditorTool.Line, EditorTool.Arrow, EditorTool.Rectangle, EditorTool.Ellipse, EditorTool.Symbol })
+        {
+            var invisible = new ToolParameters { Tool = tool, Style = new() { Foreground = 0xFFFF0000, Background = 0, StrokeWidth = 0 } };
+            check(tool + " zero-width transparent sample does not invent visible ink", MaxAlpha(Bitmap(invisible)) == 0);
+        }
+        var emojiOpacities = new[] { 1d, .5, .25, 0 }.Select(opacity => Rasterize(ToolParameterIcon.Create(new ToolParameters { Tool = EditorTool.Emoji, Style = new() { Opacity = opacity } }, 32), 32)).ToArray();
+        check("emoji preview follows full half quarter and zero opacity", MaxAlpha(emojiOpacities[0]) > 200 && MaxAlpha(emojiOpacities[1]) is > 0 and <= 129 && MaxAlpha(emojiOpacities[2]) is > 0 and <= 65 && MaxAlpha(emojiOpacities[3]) == 0);
         var imageOpacities=new[]{1d,.5,.25}.Select(opacity=>Rasterize(ToolParameterIcon.Create(new ToolParameters {Tool=EditorTool.Image,Style=new() {Opacity=opacity}},32),32)).ToArray();
         check("image preset icons preview distinct full half and quarter opacity",imageOpacities.Select(Hash).Distinct().Count()==3&&
             MaxAlpha(imageOpacities[0])>200&&MaxAlpha(imageOpacities[1]) is >0 and <=129&&MaxAlpha(imageOpacities[2]) is >0 and <=65);

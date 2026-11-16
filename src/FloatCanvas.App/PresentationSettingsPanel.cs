@@ -42,14 +42,12 @@ internal sealed class PresentationSettingsPanel : StackPanel
         Choice(recordOptions, "KeyDisplay", "Presentation.KeyDisplay", Enum.GetValues<PresentationKeyDisplayMode>().Select(value => (L.Get("Presentation.KeyDisplay." + value), (object)value)));
         Number(recordOptions, "RecentChordLimit", "Presentation.RecentChordLimit", 1, PresentationLimits.MaximumChords, 1, PresentationLimits.MaximumChords, integer: true);
         Number(recordOptions, "KeyHoldMilliseconds", "Presentation.KeyHold", 100, 5000, 100, 2000, "ms");
-        Number(recordOptions, "KeyPanelMaximumWidth", "Presentation.PanelWidth", 1, 1_000_000, 100, 1200, "px");
         var layout = new Button { Content = L.Get("Presentation.Layout.Edit"), MinHeight = PropertyPanelLayout.ControlHeight };
         AutomationProperties.SetName(layout, L.Get("Presentation.Layout.Edit")); layout.Click += (_, _) => OpenLayoutEditor();
         Add(keyboardOptions, "KeyboardLayout", "Presentation.Layout.Label", layout, _ => { });
         var options = new StackPanel(); options.Children.Add(recordOptions); options.Children.Add(keyboardOptions);
         modeOptions = new(options); Children.Add(modeOptions);
         Choice(this, "KeyboardScope", "Presentation.KeyboardScope", Enum.GetValues<PresentationKeyboardScope>().Select(value => (L.Get("Presentation.Scope." + value), (object)value)));
-        // Alignment affects both logs and the fitted live keyboard, so it follows the exclusive options.
         Choice(this, "KeyPanelAlignment", "Presentation.Alignment", Enum.GetValues<PresentationPanelAlignment>().Select(value => (L.Get("Presentation.Alignment." + value), (object)value)));
         var hint = new TextBlock { Text = L.Get("Presentation.RegionHint"), FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 6, 0, 4) };
         hint.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); Children.Add(hint);
@@ -111,6 +109,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
             logStyle.SelectedValue = recalled.Length == 1 ? recalled[0] : null;
             recordOptions.Visibility = shownMode == PresentationDisplayStyle.Log ? Visibility.Visible : Visibility.Collapsed;
             keyboardOptions.Visibility = shownMode == PresentationDisplayStyle.Keyboard ? Visibility.Visible : Visibility.Collapsed;
+            rows["KeyPanelAlignment"].Visibility = shownMode == PresentationDisplayStyle.Keyboard ? Visibility.Collapsed : Visibility.Visible;
         }
         finally { refreshing = previous; }
     }
@@ -150,9 +149,9 @@ internal sealed class PresentationSettingsPanel : StackPanel
             foreach (var (label, value) in values)
                 choice.Add(label, value, CommandGlyphs.Create(value switch
                 {
-                    PresentationKeyboardScope.AllApplications => CommandGlyphs.Windows,
-                    PresentationKeyboardScope.OutsideFloatCanvas => CommandGlyphs.Exit,
-                    PresentationKeyboardScope.FloatCanvasOnly => CommandGlyphs.FloatingLogo,
+                    PresentationKeyboardScope.AllApplications => "M3,2 H6 Q7,2 7,3 V6 Q7,7 6,7 H3 Q2,7 2,6 V3 Q2,2 3,2 Z M11,2 H14 Q15,2 15,3 V6 Q15,7 14,7 H11 Q10,7 10,6 V3 Q10,2 11,2 Z M3,10 H6 Q7,10 7,11 V14 Q7,15 6,15 H3 Q2,15 2,14 V11 Q2,10 3,10 Z M11,10 H14 Q15,10 15,11 V14 Q15,15 14,15 H11 Q10,15 10,14 V11 Q10,10 11,10 Z",
+                    PresentationKeyboardScope.OutsideFloatCanvas => "M7,2 H3 Q2,2 2,3 V13 Q2,14 3,14 H7 M5,8 H15 M11,4 L15,8 L11,12",
+                    PresentationKeyboardScope.FloatCanvasOnly => "M2,4 L4,12 H12 L14,4 L10,7 L8,2 L6,7 Z M4,14 H12",
                     PresentationKeyDisplayMode.ShortcutChords => CommandGlyphs.Shortcuts,
                     _ => CommandGlyphs.Presentation
                 }));
@@ -167,7 +166,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
     private void Number(Panel parent, string key, string labelKey, double min, double max, double railMin, double railMax, string unit = "", bool integer = false)
     {
         var input = new TextBox(); AutomationProperties.SetName(input, L.Get(labelKey));
-        var control = new NumericValueField(input, min, max, railMin, railMax, integerOnly: integer) { Unit = unit, CanBeginGesture = () => IsEnabled && CanBeginGesture?.Invoke() != false };
+        var control = new NumericValueField(input, min, max, railMin, railMax, integerOnly: integer) { Unit = unit, KeyboardStep = NumericKeyboardSteps.ForProperty(key), CanBeginGesture = () => IsEnabled && CanBeginGesture?.Invoke() != false };
         control.SetScrubAnchor(key == "KeyPanelMaximumWidth" ? NumericPropertyKind.Width : NumericPropertyKind.Number, L.Get(labelKey));
         control.ValueChanged += value => Commit(key, integer ? (object)(int)value : value); control.InvalidInput += Invalid;
         control.GestureStarted += () => GestureStarted?.Invoke(); control.GestureCompleted += value => GestureCompleted?.Invoke(value);

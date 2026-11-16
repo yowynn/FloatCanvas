@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -232,6 +232,9 @@ internal static class ToolbarAcceptanceTests
                 var bound=Media.VisualTreeHelper.GetDescendantBounds(glyph);
                 if(bound.IsEmpty)bound=new Wpf.Rect(content.RenderSize);
                 var actual=glyph.TransformToAncestor(button).TransformBounds(bound);
+                if(Environment.GetEnvironmentVariable("FLOATCANVAS_ICON_AUDIT") == "1" && name.StartsWith("tool:"))
+                    Console.WriteLine($"HOST {name}|{button.ActualWidth}|{button.ActualHeight}|{actual.X}|{actual.Y}|{actual.Width}|{actual.Height}");
+
                 check(name+" glyph fits without clipping",actual.Left>=-.05 && actual.Top>=-.05 && actual.Right<=button.ActualWidth+.05 && actual.Bottom<=button.ActualHeight+.05);
             }
             check("straight-line entry now presents the actual current style sample",Glyph(tools[EditorTool.Line]) is Controls.Image {Source:Imaging.BitmapSource,Width:16,Height:16});
