@@ -213,7 +213,7 @@ internal static class ToolOptionsInputFixture
         il = getter.GetILGenerator(); il.Emit(OpCodes.Ldarg_0); il.Emit(OpCodes.Ldfld, target); il.Emit(OpCodes.Ret); type.DefineMethodOverride(getter, method);
         return type.CreateType()!;
     });
-    private static MouseDevice ControlledMouse(IInputElement target) => (MouseDevice)Activator.CreateInstance(MouseType.Value, InputManager.Current, target)!;
+    internal static MouseDevice ControlledMouse(IInputElement target) => (MouseDevice)Activator.CreateInstance(MouseType.Value, InputManager.Current, target)!;
     [DllImport("user32.dll")] private static extern bool IsWindow(nint handle);
 }
 

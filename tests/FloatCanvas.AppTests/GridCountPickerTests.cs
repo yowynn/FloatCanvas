@@ -105,7 +105,22 @@ internal static class GridCountPickerTests
             var captured = Mouse.Captured as UIElement;
             if (captured is not null)
             {
-                captured.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseDownOutsideCapturedElementEvent }); Pump();
+                // WPF Popup dismisses on the regular preview press routed through PopupRoot,
+                // then hit-tests its position. The OutsideCapturedElement notification alone
+                // is not that press, and using the real mouse makes the position machine-dependent.
+                var source = (System.Windows.Interop.HwndSource)PresentationSource.FromVisual(picker.PickerContent)!;
+                check(prefix + " outside press targets this picker's captured popup root", ReferenceEquals(captured, source.RootVisual));
+                var mouse = ToolOptionsInputFixture.ControlledMouse(captured);
+                try
+                {
+                    const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                    typeof(MouseDevice).GetField("_inputSource", flags)!.SetValue(mouse, source);
+                    typeof(MouseDevice).GetField("_lastPosition", flags)!.SetValue(mouse, new Point(-20, -20));
+                    var press = new MouseButtonEventArgs(mouse, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseDownEvent };
+                    check(prefix + " outside press has a controlled point outside the popup", captured.InputHitTest(press.GetPosition(captured)) is null);
+                    InputManager.Current.ProcessInput(press); Pump();
+                }
+                finally { ToolOptionsInputFixture.ReleaseControlledMouse(mouse); }
                 check(prefix + " outside press dismisses without editing or closing the dialog", !picker.IsPickerOpen && draft.Columns == "6" && dialog.IsVisible);
             }
             else
