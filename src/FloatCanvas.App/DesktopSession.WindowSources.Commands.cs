@@ -23,7 +23,7 @@ internal sealed partial class DesktopSession
         public void Dispose() { if (disposed) return; disposed = true; if (!Transferred) Capture.Dispose(); }
     }
     private sealed record PendingWindowInsertion(PreparedWindowSource Source, WindowSourceOperationGuard Guard, EditorSession Owner,
-        Action<BillboardDepthLine?, PointD> Placement);
+        Action<BillboardDepthLine?, PointD> Placement, bool CanvasVisible);
     private PendingWindowInsertion? _pendingWindowInsertion;
     private Func<WindowSourceOperationGuard, RectD?, WindowSourceFit, CancellationToken, Task<PreparedWindowSource?>>? _prepareWindowSource;
 
@@ -87,6 +87,7 @@ internal sealed partial class DesktopSession
     private async Task AddWindowSourceAsync()
     {
         if (DocumentOperationBusy || Active.IsTransactionActive || !Active.CanInsertInEditScope || _prepareWindowSource is null) return;
+        if (_editor.BillboardMode) SwitchToolState(EditorTool.Select);
         var owner = Active; var guard = CaptureWindowOperation(selection: false); PreparedWindowSource? prepared = null; bool pending = false;
         _documentBusy = true;
         try
@@ -101,8 +102,12 @@ internal sealed partial class DesktopSession
                 try { CommitWindowInsertion(owner, source, guard, billboard: true, depth, center); }
                 finally { source.Dispose(); }
             };
-            if (_editor.BeginBillboardPlacement(placement))
-            { _pendingWindowInsertion = new(prepared, guard, owner, placement); pending = true; RequestRender(); }
+            if (_editor.BeginBillboardPlacement(placement, (depth, center) =>
+            {
+                try { return PrepareWindowInsertion(owner, source, billboard: true, depth, center); }
+                catch (InvalidOperationException) { return null; }
+            }))
+            { _pendingWindowInsertion = new(prepared, guard, owner, placement, _host.IsVisible); pending = true; RequestRender(); }
             else CommitWindowInsertion(owner, prepared, guard, billboard: false, null, null);
         }
         finally { if (!pending) prepared?.Dispose(); _documentBusy = false; }
@@ -111,10 +116,7 @@ internal sealed partial class DesktopSession
         bool billboard, BillboardDepthLine? depth, PointD? center)
     {
         if (!IsCurrentWindowOperation(guard) || !source.IsCurrent || _windowRuntime is null) return;
-        var placement = billboard ? owner.Document.Viewport : VisibleDocumentArea();
-        var element = WindowSourceInsertion.Prepare(owner, source.Descriptor, source.Content.Width, source.Content.Height, source.Crop,
-            placement, billboard, depth, center, ImageInsertionOpacity(), planeCenter: billboard ? null : VisibleDocumentInsertionCenter(placement),
-            placementMapping: _editor.CurrentCanvasMapping, logicalCanvasBounds: billboard ? NewBillboardImageBounds() : null);
+        var element = PrepareWindowInsertion(owner, source, billboard, depth, center);
         AppearanceMigration.NormalizeElement(element);
         var staging = new AssetLibrary(); element.AssetId = staging.Add(source.Png, "image/png");
         var candidate = owner.Document.Clone(); new SceneGraph(candidate).InsertElement(element.Clone(), owner.EditScopeId, rootCanvas: owner.ActiveRootCanvas); SceneValidation.Validate(candidate);
@@ -125,10 +127,18 @@ internal sealed partial class DesktopSession
         source.Transferred = true; owner.SetSelection([element.Id]); SwitchToolState(EditorTool.Select);
         UpdateWindowSourceRuntime(); RefreshWindowSourcesUi(); ScheduleRecovery(); RequestRender();
     }
+    private CanvasElement PrepareWindowInsertion(EditorSession owner, PreparedWindowSource source,
+        bool billboard, BillboardDepthLine? depth, PointD? center)
+    {
+        var placement = billboard ? owner.Document.Viewport : VisibleDocumentArea();
+        return WindowSourceInsertion.Prepare(owner, source.Descriptor, source.Content.Width, source.Content.Height, source.Crop,
+            placement, billboard, depth, center, ImageInsertionOpacity(), planeCenter: billboard ? null : VisibleDocumentInsertionCenter(placement),
+            placementMapping: _editor.CurrentCanvasMapping, logicalCanvasBounds: billboard ? NewBillboardImageBounds() : null);
+    }
     private void ValidatePendingWindowInsertion()
     {
         if (_pendingWindowInsertion is not { } pending || _editor.HasPendingBillboardInsertion &&
-            ReferenceEquals(Active, pending.Owner) && IsCurrentWindowOperation(pending.Guard) && _host.IsVisible) return;
+            ReferenceEquals(Active, pending.Owner) && IsCurrentWindowOperation(pending.Guard) && _host.IsVisible == pending.CanvasVisible) return;
         _pendingWindowInsertion = null;
         _editor.CancelBillboardPlacement(pending.Placement);
         pending.Source.Dispose();

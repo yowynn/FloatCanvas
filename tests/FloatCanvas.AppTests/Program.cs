@@ -252,6 +252,7 @@ internal static class Program
             if (args.Contains("--window-source-desktop-only")) { WindowSourceDesktopTests.Run(Assert); return 0; }
             if (args.Contains("--window-source-persistence-desktop-only")) { WindowSourcePersistenceDesktopTests.Run(Assert, args.SkipWhile(a => a != "--window-source-persistence-desktop-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-source-guard-only")) { WindowSourceOperationGuardTests.Run(Assert); return 0; }
+            if (args.Contains("--layer-creation-desktop-only")) { WindowSourceCommandTests.Run(Assert, args.SkipWhile(a => a != "--layer-creation-desktop-only").Skip(1).FirstOrDefault(), creationOnly: true); return 0; }
             if (args.Contains("--window-source-commands-desktop-only")) { WindowSourceCommandTests.Run(Assert, args.SkipWhile(a => a != "--window-source-commands-desktop-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-source-document-boundary-only")) { WindowSourceDocumentBoundaryTests.Run(Assert, args.SkipWhile(a => a != "--window-source-document-boundary-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-source-prefab-binding-only")) { WindowSourcePrefabBindingTests.Run(Assert, args.SkipWhile(a => a != "--window-source-prefab-binding-only").Skip(1).FirstOrDefault()); return 0; }

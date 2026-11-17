@@ -24,6 +24,30 @@ internal static class ImageDropTests
         FileDecodingAndRetry(check);
         DropPosition(check);
         GroupViewDropPosition(check);
+        EditingHandoff(check);
+    }
+
+    private static void EditingHandoff(Action<string, bool> check)
+    {
+        foreach (string change in new[] { "epoch", "content", "scope", "mapping", "cancel", "entry failure", "later navigation" })
+        {
+            var target = new EditorSession(new() { Viewport = new(0, 0, 600, 400) });
+            object epoch = new(); var mapping = CanvasMapping.Create(target.Document);
+            using var request = new ImageDropRequest(target, target.Document.Viewport, CancellationToken.None,
+                mapping: () => mapping, viewEpoch: () => epoch);
+            bool continued = request.TryEnterEditing(request, target, null, target, () =>
+            {
+                epoch = new();
+                if (change == "content") target.Add(new() { Width = 10, Height = 10 });
+                if (change == "scope") target.SetRootCanvas(RootCanvasKind.Foreground);
+                if (change == "mapping") mapping = CanvasMapping.CreateViewing(target.Document, new CanvasViewTransform(2, default));
+                if (change == "cancel") request.Cancel();
+                return change != "entry failure";
+            });
+            if (change == "later navigation") epoch = new();
+            bool committed = continued && request.TryCommit(request, target, null, [new([1, 2, 3], 20, 15)]);
+            check("drop handoff only accepts its intentional epoch change: " + change, committed == (change == "epoch"));
+        }
     }
 
     private static void GroupViewDropPosition(Action<string, bool> check)

@@ -112,7 +112,8 @@ internal sealed partial class DesktopSession
                 GetToolbarForegroundWindow() != sourceForeground) return;
             _host.EndDropReception();
             // This runs only after the native Drop callback has returned to OLE.
-            if (!SetEditing(true, preserveImageDrop: true)) { request.Cancel(); return; }
+            if (!request.TryEnterEditing(_imageDropRequest, _live, _capture, Active,
+                () => SetEditing(true, preserveImageDrop: true))) { request.Cancel(); return; }
             var editor = _editor; long placementVersion = editor.PlacementContextVersion, editingVersion = _host.EditingSessionVersion;
             var origin = editor.CanvasOrigin; var monitors = _host.Monitors; var prefabContext = _prefabEditContext;
             request.BindCompletionGuard(() => !_disposed && !_documentStopped && !_documentExitRequested && ReferenceEquals(Active, request.Target) &&

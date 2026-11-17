@@ -14,7 +14,7 @@ internal sealed class ImageDropRequest : IDisposable
     private readonly bool initiallyWritable;
     private readonly Func<CanvasMapping> mapping;
     private readonly Func<object?>? viewEpoch;
-    private readonly object? initialViewEpoch;
+    private object? initialViewEpoch;
     private Func<bool>? completionGuard;
     private bool invalidated;
     private bool disposed;
@@ -49,6 +49,17 @@ internal sealed class ImageDropRequest : IDisposable
             (ReferenceEquals(Target, live) || ReferenceEquals(Target, capture) || ReferenceEquals(Target, editingOwner)) && (completionGuard?.Invoke() ?? true);
         if (!valid) invalidated = true;
         return valid;
+    }
+
+    // Entering editing intentionally replaces the passive presentation's view epoch.
+    // Only that synchronous handoff may rebind it; document, scope and mapping guards
+    // still apply, and later navigation continues to invalidate the request.
+    internal bool TryEnterEditing(ImageDropRequest? current, EditorSession live, EditorSession? capture,
+        EditorSession editingOwner, Func<bool> enterEditing)
+    {
+        if (!IsCurrent(current, live, capture, editingOwner) || !enterEditing()) return false;
+        initialViewEpoch = viewEpoch?.Invoke();
+        return IsCurrent(current, live, capture, editingOwner);
     }
 
     internal void BindCompletionGuard(Func<bool> guard)

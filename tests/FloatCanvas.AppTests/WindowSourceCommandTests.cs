@@ -17,7 +17,7 @@ using SkiaSharp;
 internal static class WindowSourceCommandTests
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
-    internal static void Run(Action<string, bool> check, string? output = null)
+    internal static void Run(Action<string, bool> check, string? output = null, bool creationOnly = false)
     {
         if (!DesktopName().StartsWith("FloatCanvas.Tests.", StringComparison.Ordinal) || PresentationDesktopAvailability.IsCurrentInputDesktop())
             throw new InvalidOperationException("Use --isolated-ui-desktop --window-source-commands-desktop-only.");
@@ -40,6 +40,7 @@ internal static class WindowSourceCommandTests
         using var target = new OwnTarget();
         var editor = Field<EditorController>(desktop, "_editor"); var owner = editor.Session;
         var fixture = new Fixture(desktop, editor, owner, target.Target);
+        if (creationOnly) { CompleteImageDrop(fixture, check); CompleteBillboardInsertion(fixture, check); PendingInvalidation(fixture, check); return; }
         check("command fixture reads only its own undisplayed HWND identity without source enumeration", target.Target.IsCurrent && target.Target.ProcessId == Environment.ProcessId);
         AddAndRebind(fixture, check);
         CenteredInsertion(fixture, check);
@@ -209,6 +210,86 @@ internal static class WindowSourceCommandTests
         check("billboard Add holds only prepared pixels until explicit canvas placement", f.Editor.HasPendingBillboardInsertion && f.Owner.Document.Elements.Count == 0 && Snapshot(f.Owner) == before && ((FakeSource)prepared.Capture).DisposeCount == 0);
         f.Editor.Cancel(); Pump();
         check("cancelling pending billboard placement releases its service without assets or a late insert", !f.Editor.HasPendingBillboardInsertion && Field<object?>(f.Desktop, "_pendingWindowInsertion") is null && ((FakeSource)prepared.Capture).DisposeCount == 1 && Snapshot(f.Owner) == before);
+    }
+
+    private static void CompleteImageDrop(Fixture f, Action<string, bool> check)
+    {
+        f.Reset();
+        var host = Field<OverlayHost>(f.Desktop, "_host");
+        // Native activation cannot acquire the user's input desktop in this fixture.
+        // Exercise the same guarded handoff with the real passive/editing view providers.
+        GroupCanvasView View() => (GroupCanvasView)Invoke(f.Desktop, "CurrentGroupCanvasView")!;
+        using var request = new ImageDropRequest(f.Owner, f.Owner.Document.Viewport, CancellationToken.None,
+            mapping: () => f.Editor.CurrentCanvasMapping, viewEpoch: () => View().Epoch);
+        using var oldGuard = new ImageDropRequest(f.Owner, f.Owner.Document.Viewport, CancellationToken.None,
+            mapping: () => f.Editor.CurrentCanvasMapping, viewEpoch: () => View().Epoch);
+        request.TrySetDropPoint(new(200, 150), default);
+        var passive = View().Epoch;
+        bool continued = request.TryEnterEditing(request, f.Owner, null, f.Owner, () =>
+        {
+            typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
+            var editing = View().Epoch;
+            check("passive and editing presentations have different view epochs", !ReferenceEquals(passive, editing));
+            check("the original untransferred drop guard rejects that ordinary mode change", !oldGuard.IsCurrent(oldGuard, f.Owner, null));
+            return true;
+        });
+        check("drop survives the intentional passive-to-editing view handoff", continued);
+        check("drop commits one image after that handoff", request.TryCommit(request, f.Owner, null,
+            new[] { AssetImport.Normalize(Png(SKColors.Red)) }, f.Owner) && f.Owner.Document.Elements.Count == 1);
+    }
+    private static void CompleteBillboardInsertion(Fixture f, Action<string, bool> check)
+    {
+        var host = Field<OverlayHost>(f.Desktop, "_host");
+        typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
+        host.SetVisible(true);
+        f.Editor.BackgroundPickingEnabled = false;
+        string imagePath = Path.Combine(ApplicationPaths.ProfileDirectory, "placement-fixture.png");
+        File.WriteAllBytes(imagePath, Png(SKColors.Red));
+        foreach (bool visible in new[] { true, false })
+        foreach (var workflow in new[] { BillboardCreationWorkflow.ScreenFirst, BillboardCreationWorkflow.FixedDepthLine })
+        foreach (var tool in new[] { EditorTool.Select, EditorTool.Freehand, EditorTool.Image, EditorTool.Canvas, EditorTool.PointerPresentation, EditorTool.Stamp })
+        foreach (bool window in new[] { true, false })
+        {
+            var document = new SceneDocument { Viewport = new(0, 0, 640, 360) };
+            document.Canvas.Projection.Enabled = true;
+            document.Canvas.Projection.PlaneBounds = document.Viewport;
+            document.Canvas.Projection.Matrix = new(1, 0, 0, 0, 1, 0, 0, .001, 1);
+            document.Canvas.Projection.Quad = EditorController.Corners(document.Viewport).Select(document.Canvas.Projection.Matrix.TransformPoint).ToList();
+            f.Reset(document); host.SetVisible(visible); f.Editor.Tool = tool; f.Editor.BillboardMode = true;
+            f.Editor.BillboardWorkflow = workflow;
+            Invoke(f.Desktop, "CurrentGroupCanvasView");
+            if (window)
+            {
+                var prepared = f.Prepare(contentSize: new(32, 24));
+                f.SetPrepare((_, _, _, _) => Task.FromResult<DesktopSession.PreparedWindowSource?>(prepared));
+                Await(f.Add());
+            }
+            else Await((Task)Invoke(f.Desktop, "ImportImagesAsync", new[] { imagePath }, false)!);
+            f.Editor.ResumePresentedPicking();
+            if (visible && workflow == BillboardCreationWorkflow.ScreenFirst && tool == EditorTool.Select)
+            {
+                var invalid = f.Editor.CanvasOrigin + new PointD(300, 1200);
+                bool threw = false;
+                try
+                {
+                    foreach (var kind in new[] { OverlayPointerKind.Down, OverlayPointerKind.Up })
+                        Invoke(f.Desktop, "HandleCanvasPointer", new OverlayPointerEvent(kind, new(invalid.X, invalid.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+                }
+                catch (InvalidOperationException) { threw = true; }
+                check($"invalid billboard {(window ? "source" : "image")} position retains placement for retry", !threw && f.Editor.HasPendingBillboardInsertion && f.Owner.Document.Elements.Count == 0);
+            }
+            var point = f.Editor.CanvasOrigin + new PointD(300, 180);
+            if (workflow == BillboardCreationWorkflow.FixedDepthLine)
+                foreach (var kind in new[] { OverlayPointerKind.Down, OverlayPointerKind.Up })
+                    Invoke(f.Desktop, "HandleCanvasPointer", new OverlayPointerEvent(kind, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+            Invoke(f.Desktop, "HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Move, new(point.X, point.Y), OverlayMouseButton.None, OverlayModifiers.None));
+            check($"{tool} {workflow} visible={visible} pending placement shows its outline", f.Editor.PendingBillboardOutline is { Count: 4 } && (visible || host.IsPreviewVisible));
+            foreach (var kind in new[] { OverlayPointerKind.Down, OverlayPointerKind.Up })
+                Invoke(f.Desktop, "HandleCanvasPointer", new OverlayPointerEvent(kind, new(point.X, point.Y), OverlayMouseButton.Left, OverlayModifiers.None));
+            Console.WriteLine($"INSERT_RESULT {tool} window={window} count={f.Owner.Document.Elements.Count} pending={f.Editor.HasPendingBillboardInsertion}");
+            check($"{tool} {workflow} visible={visible} billboard {(window ? "window source" : "image")} creates one layer on canvas click", f.Owner.Document.Elements.Count == 1);
+        }
+        typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, false);
     }
 
     private static void PendingInvalidation(Fixture f, Action<string, bool> check)

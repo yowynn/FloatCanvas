@@ -81,6 +81,22 @@ internal static class ImageImportCommand
     internal static void InsertBillboard(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD screenPlacement,
         BillboardDepthLine? depth, PointD screenCenter, double opacity = 1, CanvasMapping? placementMapping = null, RectD? logicalCanvasBounds = null)
     {
+        var elements = PrepareBillboard(target, images, screenPlacement, depth, screenCenter, opacity, placementMapping, logicalCanvasBounds);
+        target.Execute(L.Get("Image.ImportTitle"), document =>
+        {
+            target.Selection.Clear();
+            var graph = new SceneGraph(document);
+            for (int i = 0; i < elements.Count; i++)
+            {
+                var element = elements[i]; element.AssetId = target.Assets.Add(images[i].PngBytes, images[i].MediaType);
+                graph.InsertElement(element, target.EditScopeId, rootCanvas: target.ActiveRootCanvas); target.Selection.Add(element.Id);
+            }
+        });
+    }
+
+    internal static IReadOnlyList<CanvasElement> PrepareBillboard(EditorSession target, IReadOnlyList<NormalizedImage> images, RectD screenPlacement,
+        BillboardDepthLine? depth, PointD screenCenter, double opacity = 1, CanvasMapping? placementMapping = null, RectD? logicalCanvasBounds = null)
+    {
         ValidateOpacity(opacity);
         RequireWritableScope(target);
         var mapping = placementMapping ?? CanvasMapping.Create(target.Document, target.ActiveRootCanvas);
@@ -99,16 +115,7 @@ internal static class ImageImportCommand
             elements.Add(element);
             index++;
         }
-        target.Execute(L.Get("Image.ImportTitle"), document =>
-        {
-            target.Selection.Clear();
-            var graph = new SceneGraph(document);
-            for (int i = 0; i < elements.Count; i++)
-            {
-                var element = elements[i]; element.AssetId = target.Assets.Add(images[i].PngBytes, images[i].MediaType);
-                graph.InsertElement(element, target.EditScopeId, rootCanvas: target.ActiveRootCanvas); target.Selection.Add(element.Id);
-            }
-        });
+        return elements;
     }
 
     private static void ValidateOpacity(double opacity)

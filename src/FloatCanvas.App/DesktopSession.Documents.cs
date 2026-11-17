@@ -832,6 +832,9 @@ internal sealed partial class DesktopSession
     private bool InsertImages(EditorSession target, IReadOnlyList<NormalizedImage> images, bool replace, double? opacity = null)
     {
         double imageOpacity = opacity ?? ImageInsertionOpacity();
+        // A deferred placement owns the next canvas click, even when launched from
+        // calibration, stamp or pointer-presentation tools.
+        if (!replace && _editor.BillboardMode) SwitchToolState(EditorTool.Select);
         var document = target.Document;
         long revision = target.SceneRevision;
         var projection = CanvasMapping.Create(document).PlaneToScreen;
@@ -843,6 +846,11 @@ internal sealed partial class DesktopSession
             ImageImportCommand.InsertBillboard(target, images, document.Viewport, depth, screenCenter, imageOpacity, _editor.CurrentCanvasMapping, NewBillboardImageBounds());
             SwitchToolState(EditorTool.Select);
             ScheduleRecovery(); RequestRender(); UpdateStatus(L.Format("Image.Imported", images.Count));
+        }, (depth, center) =>
+        {
+            try { return ImageImportCommand.PrepareBillboard(target, images, document.Viewport, depth, center,
+                imageOpacity, _editor.CurrentCanvasMapping, NewBillboardImageBounds()).FirstOrDefault(); }
+            catch (InvalidOperationException) { return null; }
         }))
         {
             RequestRender();

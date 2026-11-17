@@ -83,7 +83,7 @@ internal sealed partial class DesktopSession
         }
         UpdateHiddenCanvasState();
         if (DocumentOperationBusy) { _propertiesClicks?.Reset(); return; }
-        if (!_host.IsVisible && !EditorController.IsCreationTool(_editor.Tool) && _editor.Tool is not (EditorTool.Canvas or EditorTool.Stamp or EditorTool.Blur or EditorTool.Pixelate)) return;
+        if (!_host.IsVisible && !_editor.HasPendingBillboardInsertion && !EditorController.IsCreationTool(_editor.Tool) && _editor.Tool is not (EditorTool.Canvas or EditorTool.Stamp or EditorTool.Blur or EditorTool.Pixelate)) return;
         if (_editor.HandleTemporaryMovePointer(e)) { SynchronizeCanvasTool(); _propertiesClicks?.Reset(); return; }
         if (HandleEyedropperPointer(e)) { _propertiesClicks?.Reset(); return; }
         if (HandleInlineTextPointer(e)) { _propertiesClicks?.Reset(); return; }
