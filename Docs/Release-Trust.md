@@ -86,3 +86,18 @@ Compare each computed hash with its own `.sha256` file, and adjust the example v
 `-ValidationOnly` 保留本地验证用途，默认输出到 `dist-validation` 并标记 `UnsignedValidation`。正常发布默认输出到 `dist`，标记 `Unsigned`。两种模式均不签名；`-RequireRelease` 确保发布阶段不会误用本地验证包。
 
 `-ValidationOnly` writes local test packages to `dist-validation` and marks them `UnsignedValidation`. Normal publication defaults to `dist` and marks packages `Unsigned`. Neither mode signs files; `-RequireRelease` prevents local validation packages from being published as releases.
+
+## README 预览图 / README preview image
+
+README 预览图作为 PNG 附件保存于对应的 GitHub Release，不提交图片到 Git；中英文 README 使用同一条固定版本地址：`https://github.com/yowynn/FloatCanvas/releases/download/v<version>/FloatCanvas-<version>-preview.png`。不使用 `latest` 地址，以免旧版本说明随新版本换图。删除工作树中的旧图片不会清除 Git 历史。
+
+发布前将审核过的原图复制到 Git 忽略目录 `.local/release-assets/<version>/`，命名为 `FloatCanvas-<version>-preview.png`。托管 CI 无法读取本地文件：在 CI 成功创建该版本 Release 后，从持有图片的本机上传附件，再完成发布验收；不要提前创建同名 Release，否则现有工作流会拒绝发布。上传不使用 `--clobber`，不得覆盖已有附件。
+
+```powershell
+$releaseVersion = '0.4.1'
+gh release upload "v$releaseVersion" ".local/release-assets/$releaseVersion/FloatCanvas-$releaseVersion-preview.png" --repo yowynn/FloatCanvas
+```
+
+上传后核对远端文件名、PNG 类型及下载内容的 SHA256 与本地一致，并打开中英文 README 确认图片显示。附件上传之前，新地址尚不可用；不得把仅修改引用当作发布完成。预览图是文档附件，不加入应用 ZIP 或安装包。
+
+README previews are version-pinned PNG release assets, not Git-tracked images. Stage the reviewed image under the ignored `.local/release-assets/<version>/` directory. After CI creates the release, upload it from the local machine without overwriting existing assets, verify the downloaded bytes against the local SHA256, and check both rendered READMEs before declaring publication complete. Do not pre-create the release or include the image in application packages.

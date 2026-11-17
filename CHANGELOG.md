@@ -5,6 +5,61 @@ Major user-facing changes, with explicit language and category markers. See the 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-17
+
+<!-- floatcanvas-notes:1 -->
+### 简体中文
+<!-- lang:zh-CN -->
+
+#### 新功能
+<!-- category:feature -->
+- **全局区域截图。** 从全局快捷键触发时先冻结屏幕并显示暗色选区，沿用截图工具的矩形、圆形或套索样式，并支持透视画布。选区完成后才显示画布、进入编辑并置入截图，保留原来使用的工具。
+- **组与多选透明度。** 组和共享实例可独立调整不透明度，保留子图层原有设置；普通多选可统一赋值。复制、创建印章和解除组合时保留相应的透明度效果。
+
+#### 改进
+<!-- category:improvement -->
+- **键盘布局编辑。** 支持多选、批量拖动、空格启用或禁用所选键，以及双击切换单键状态。修改布局后保持键盘坐标对齐，隐藏外围按键不会使剩余按键在画布上移位；区域辅助框仅用于两种按键记录样式。
+- **快捷键与工具入口。** 印章库和添加印章改用反引号键与等号键，工具条显示 `~` 和 `+`；“贴图”更名为“置入内容”，保留 `I`。移除冗余全局命令和旧样式的独立工具绑定，鼠标演示快捷键直接切换总开关，快捷键帮助只显示已绑定项。
+- **鼠标演示与画布一致。** 鼠标效果位于前景内容最上方，跟随画布整体显隐和不透明度，同时保留自身的总开关及效果设置。
+- **属性与校准操作。** “各自变换”下输入 X、Y 会分别设置每个选中对象的位置；网格局部校准使用完全不透明的参考线预览。统一样式选择控件，并清理属性面板中没有控件的空标题和空行。
+
+#### 修复
+<!-- category:fix -->
+- **画布闪烁。** 改善前台窗口切换、编辑与穿透切换、窗口源操作和视图移动时的画布连续显示，修复键盘演示状态变化引起的整张画布短暂消失。
+- **图层创建与窗口源。** 修复拖放图片及立牌模式下部分内容无法创建的问题，以及添加窗口源时的无效窗口句柄错误；重新裁剪窗口源后恢复画布快捷键响应。
+- **编辑入口与截图恢复。** 在进入编辑及对话框返回等关键时机校对按键状态，减少过期按下记录阻塞编辑，并补充间歇性问题诊断。修复截图异常后无法再次触发，以及穿透模式截图沿用旧编辑视角的问题。
+
+#### 兼容性
+<!-- category:compatibility -->
+- **工程格式升级至 v20。** 可读取 v1～v19 工程，读取时不改写原文件；新保存的工程、恢复文件和预制体包含组透明度信息，旧版应用无法读取。需要与旧版交换或降级时，请保留升级前的文件副本。
+<!-- /lang -->
+
+### English
+<!-- lang:en -->
+
+#### Features
+<!-- category:feature -->
+- **Global region capture.** A global shortcut freezes the screen and opens a dimmed selection surface, using the capture tool's rectangle, ellipse or lasso style and supporting perspective canvases. Completing the selection reveals the canvas, enters editing and inserts the capture while keeping the previous tool.
+- **Group and multi-selection opacity.** Groups and shared instances have independent opacity while retaining child settings; ordinary multi-selection can assign one value to every selected item. Copying, creating stamps and ungrouping preserve the corresponding appearance.
+
+#### Improvements
+<!-- category:improvement -->
+- **Keyboard layout editing.** Select and drag multiple keys, use Space to enable or disable the selection, or double-click to toggle one key. Layout changes retain keyboard coordinate alignment, so hiding outer keys does not move remaining keys on the canvas. Region helper frames appear only for the two key-recording styles.
+- **Shortcuts and tool entries.** Stamp Library and Create Stamp use the backtick and equals keys, labeled `~` and `+` on the toolbar. Image becomes Import Content and keeps `I`. Redundant global commands and standalone legacy style bindings are removed; the mouse shortcut toggles its master switch, and shortcut help lists assigned bindings only.
+- **Mouse presentation follows the canvas.** Pointer effects appear above foreground content and inherit overall canvas visibility and opacity, while retaining their own master switch and effect settings.
+- **Properties and calibration.** In Individual transform mode, entering X or Y assigns that coordinate to each selected object. Local grid calibration uses fully opaque reference guides. Style selectors are more consistent, and empty property rows and headings are removed.
+
+#### Fixes
+<!-- category:fix -->
+- **Canvas flicker.** Improve continuity during foreground-window changes, editing/pass-through transitions, window-source operations and view navigation; fix brief disappearance of the entire canvas caused by keyboard-presentation state changes.
+- **Layer creation and window sources.** Fix image drag-and-drop and content creation failures in billboard mode, invalid window-handle errors when adding window sources, and lost canvas shortcut response after recropping a source.
+- **Editing entry and capture recovery.** Reconcile key state when entering editing and returning from dialogs to reduce stale pressed-key blockers, with diagnostics for intermittent cases. Fix capture becoming unavailable after an error and pass-through capture using a stale editing view.
+
+#### Compatibility
+<!-- category:compatibility -->
+- **Scene format advances to v20.** Versions v1–v19 remain readable without rewriting the source on load. Newly saved projects, recovery files and prefabs include container opacity and cannot be opened by older apps. Keep original copies when exchanging with older versions or downgrading.
+<!-- /lang -->
+
 ## [0.4.0] - 2026-11-16
 
 <!-- floatcanvas-notes:1 -->
