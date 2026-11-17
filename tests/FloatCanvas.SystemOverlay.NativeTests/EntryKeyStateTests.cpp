@@ -8,6 +8,19 @@ namespace {
 SHORT queuedKeys[256]{};
 int asynchronousHeldKey{};
 ULONGLONG replayNow{10000};
+unsigned stateWrites{};
+bool stateReadable{true},stateWritable{true};
+BOOL WINAPI ReplayReadState(PBYTE state) {
+    if(!stateReadable)return FALSE;
+    for(int key=0;key<256;++key)state[key]=static_cast<BYTE>((queuedKeys[key]<0?0x80:0)|(queuedKeys[key]&1));
+    return TRUE;
+}
+BOOL WINAPI ReplayWriteState(LPBYTE state) {
+    if(!stateWritable)return FALSE;
+    ++stateWrites;
+    for(int key=0;key<256;++key)queuedKeys[key]=static_cast<SHORT>((state[key]&0x80?0x8000:0)|(state[key]&1));
+    return TRUE;
+}
 SHORT WINAPI ReplayAsync(int key) {return key==asynchronousHeldKey?-32768:0;}
 SHORT WINAPI ReplayQueue(int key) {return key>=0&&key<256?queuedKeys[key]:0;}
 ULONGLONG WINAPI ReplayTickCount64() {return replayNow;}
@@ -15,10 +28,14 @@ ULONGLONG WINAPI ReplayTickCount64() {return replayNow;}
 #define GetAsyncKeyState ReplayAsync
 #define GetKeyState ReplayQueue
 #define GetTickCount64 ReplayTickCount64
+#define GetKeyboardState ReplayReadState
+#define SetKeyboardState ReplayWriteState
 #include "../../src/FloatCanvas.SystemOverlay.Native/SystemOverlay.cpp"
 #undef GetAsyncKeyState
 #undef GetKeyState
 #undef GetTickCount64
+#undef GetKeyboardState
+#undef SetKeyboardState
 
 namespace {
 struct Calls {
@@ -68,6 +85,36 @@ int main() {
 
     HWND foreground=GetForegroundWindow();
     Host host;WNDCLASSW wc{};wc.lpfnWndProc=Procedure;wc.hInstance=GetModuleHandleW(nullptr);wc.lpszClassName=ClassName;
+    queuedKeys[VK_SPACE]=-32768;
+    bool firstWait=RefreshEntryKeys(host,true);
+    bool staleCleared=!RefreshEntryKeys(host,true);
+    std::printf("TRUSTED_RELEASE_STALE_SPACE first_wait=%s second_proceeds=%s expected=true\n",firstWait?"true":"false",staleCleared?"true":"false");
+    passed=passed&&firstWait&&staleCleared;
+    passed=passed&&queuedKeys[VK_SPACE]==0&&queuedKeys[VK_CAPITAL]==1;
+    unsigned writes=stateWrites;
+    asynchronousHeldKey=VK_SPACE;queuedKeys[VK_SPACE]=-32768;
+    bool actualHeld=RefreshEntryKeys(host,true)&&RefreshEntryKeys(host,true)&&stateWrites==writes;
+    asynchronousHeldKey=0;
+    bool release=RefreshEntryKeys(host,true)&&!RefreshEntryKeys(host,true)&&queuedKeys[VK_SPACE]==0;
+    bool unknown=!RefreshEntryKeys(host,false)&&stateWrites==writes+1;
+    queuedKeys['C']=-32768;host.entryTrustReason=5;
+    bool unknownHeld=RefreshEntryKeys(host,false);
+    char diagnostic[131072]{};
+    bool trace=FcSystemGetEntryTrace(&host,diagnostic,sizeof(diagnostic))==S_OK&&
+        strstr(diagnostic,"\"TrustReason\":5")&&strstr(diagnostic,"\"QueueDown\":[67]");
+    queuedKeys['C']=0;
+    bool restartedWait=RefreshEntryKeys(host,true);
+    stateReadable=false;bool readFailure=RefreshEntryKeys(host,true);stateReadable=true;
+    stateWritable=false;bool writeFailure=RefreshEntryKeys(host,true);stateWritable=true;
+    bool recovered=!RefreshEntryKeys(host,true);
+    std::printf("ENTRY_REFRESH held_preserved=%s release_repairs=%s unknown_without_keys_proceeds=%s reliability_resets=%s failures_wait=%s recovery=%s expected=true\n",
+        actualHeld?"true":"false",release?"true":"false",unknown?"true":"false",restartedWait?"true":"false",
+        readFailure&&writeFailure?"true":"false",recovered?"true":"false");
+    passed=passed&&actualHeld&&release&&unknown&&restartedWait&&readFailure&&writeFailure&&recovered;
+    std::printf("ENTRY_TRACE unknown_queued_C_waits=%s separate_state_and_reason=%s expected=true\n",unknownHeld?"true":"false",trace?"true":"false");
+    passed=passed&&unknownHeld&&trace;
+    passed=passed&&!CanQueryEntryKeys(nullptr);
+    ZeroMemory(queuedKeys,sizeof(queuedKeys));
     RegisterClassW(&wc);
     host.window=CreateWindowExW(WS_EX_NOACTIVATE,ClassName,L"Entry boundary replay",WS_POPUP,-32000,-32000,1,1,
         nullptr,nullptr,wc.hInstance,&host);
@@ -86,6 +133,16 @@ int main() {
     ContinueEntry(host,external,false);
     bool acquired=host.requested&&calls.acquires==1;passed=passed&&acquired;
     std::printf("NEXT_PUMP_HELD_THEN_RELEASE waits=%s acquire_once=%s expected=true\n",held?"true":"false",acquired?"true":"false");
+    Release(host);
+    queuedKeys[VK_SPACE]=-32768;
+    result=Begin(&host,external,external);
+    replayNow+=2001;
+    unsigned beforeRefresh=calls.acquires;
+    HRESULT firstClear=ContinueEntry(host,external,RefreshEntryKeys(host,true));
+    HRESULT confirmedClear=ContinueEntry(host,external,RefreshEntryKeys(host,true));
+    bool staleEntry=SUCCEEDED(result)&&firstClear==E_PENDING&&confirmedClear==S_OK&&calls.acquires==beforeRefresh+1&&queuedKeys[VK_SPACE]==0;
+    std::printf("DELAYED_STALE_QUEUE_ENTRY confirmed_release_acquires_once=%s expected=true\n",staleEntry?"true":"false");
+    passed=passed&&staleEntry;
     Release(host);
     ZeroMemory(queuedKeys,sizeof(queuedKeys));asynchronousHeldKey='2';
     queuedKeys[VK_CONTROL]=queuedKeys[VK_RBUTTON]=-32768;

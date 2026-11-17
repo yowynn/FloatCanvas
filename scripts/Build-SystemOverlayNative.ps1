@@ -12,12 +12,12 @@ $vcvars=Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
 if(-not (Test-Path -LiteralPath $vcvars -PathType Leaf)){throw "Missing compiler environment: $vcvars. Repair the Visual Studio C++ build tools installation."}
 $source=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../src/FloatCanvas.SystemOverlay.Native/SystemOverlay.cpp'))
 $command=Join-Path $output 'build-system-overlay.cmd'
-$text="@echo off`r`ncall `"$vcvars`" >nul`r`nif errorlevel 1 exit /b %errorlevel%`r`ncl /nologo /std:c++20 /EHsc /MT /O2 /W4 /LD /DUNICODE /D_UNICODE `"$source`" /Fo`"$output\SystemOverlay.obj`" /link /OUT:`"$output\FloatCanvas.SystemOverlay.dll`" /IMPLIB:`"$output\SystemOverlay.lib`" user32.lib runtimeobject.lib ole32.lib`r`nexit /b %errorlevel%`r`n"
+$text="@echo off`r`ncall `"$vcvars`" >nul`r`nif errorlevel 1 exit /b %errorlevel%`r`ncl /nologo /std:c++20 /EHsc /MT /O2 /W4 /LD /DUNICODE /D_UNICODE `"$source`" /Fo`"$output\SystemOverlay.obj`" /link /OUT:`"$output\FloatCanvas.SystemOverlay.dll`" /IMPLIB:`"$output\SystemOverlay.lib`" user32.lib runtimeobject.lib ole32.lib advapi32.lib`r`nexit /b %errorlevel%`r`n"
 if($RunTests){
     $text="@echo off`r`ncall `"$vcvars`" >nul`r`nif errorlevel 1 exit /b %errorlevel%`r`n"
     foreach($name in @('SystemOverlayTests','EntryKeyStateTests','InputSafetyWatchdogTests')) {
         $source=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../tests/FloatCanvas.SystemOverlay.NativeTests/$name.cpp"))
-        $text+="cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE `"$source`" /Fo`"$output\$name.obj`" /Fe`"$output\$name.exe`" /link user32.lib runtimeobject.lib ole32.lib`r`nif errorlevel 1 exit /b %errorlevel%`r`n"
+        $text+="cl /nologo /std:c++20 /EHsc /MT /O2 /W4 /DUNICODE /D_UNICODE `"$source`" /Fo`"$output\$name.obj`" /Fe`"$output\$name.exe`" /link user32.lib runtimeobject.lib ole32.lib advapi32.lib`r`nif errorlevel 1 exit /b %errorlevel%`r`n"
     }
     $text+="exit /b %errorlevel%`r`n"
 }

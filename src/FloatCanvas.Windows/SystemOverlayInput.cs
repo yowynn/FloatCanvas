@@ -31,6 +31,15 @@ internal sealed class SystemOverlayInput : IDisposable
             return keys;
         }
     }
+    internal string EntryTrace
+    {
+        get
+        {
+            var buffer=new byte[131072];Check(FcSystemGetEntryTrace(native,buffer,(uint)buffer.Length));
+            int end=Array.IndexOf(buffer,(byte)0);
+            return System.Text.Encoding.UTF8.GetString(buffer,0,end<0?buffer.Length:end);
+        }
+    }
     private InputStatus Status { get {Check(FcSystemGetStatus(native,out var status));return status;} }
     internal SystemOverlayInput()
     {Check(FcSystemCreate(-32000,-32000,1,1,out native,out var owner));Owner=owner;}
@@ -78,6 +87,7 @@ internal sealed class SystemOverlayInput : IDisposable
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemEnd(nint host);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemGetStatus(nint host,out InputStatus status);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemGetEntryBlockers(nint host,[Out] byte[] blockers,uint length);
+    [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern int FcSystemGetEntryTrace(nint host,[Out] byte[] buffer,uint capacity);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true)] private static extern void FcSystemDestroy(nint host);
     [DllImport("FloatCanvas.SystemOverlay.dll",ExactSpelling=true,CharSet=CharSet.Unicode,SetLastError=true)]
     private static extern nint FcSystemCreateHostedWindow(uint extended,string name,string title,uint style,int x,int y,int width,int height,nint parameter);

@@ -14,6 +14,7 @@ public sealed partial class OverlayHost
     public event Action? SystemInputUnavailable;
     /// <summary>A bounded key-release wait expired. The pending request is cancelled before this notification.</summary>
     public event Action<IReadOnlyList<uint>>? SystemInputEntryBlocked;
+    public string? LastSystemInputEntryTrace { get; private set; }
     /// <summary>Use in an isolated startup probe. Never requests input or displays a window.</summary>
     public static void ProbeSystemInput() { using var probe = new SystemOverlayInput(); }
     /// <summary>Enable before constructing tool windows or entering editing. Existing document/rendering routes are retained.</summary>
@@ -78,6 +79,8 @@ public sealed partial class OverlayHost
     }
     private void RequestSystemInput(nint foreground)
     {
+        LastSystemInputEntryTrace=null;
+        KeyboardStateTrace.RecordBoundary("RequestSystemInput");
         EndKeyboardIsolation();
         _keyboardLease = 0; // A suspended lease cannot end the pending native request on return.
         GetCursorPos(out var cursor);
@@ -100,6 +103,8 @@ public sealed partial class OverlayHost
     {
         if(!IsEditing || _systemInput is not { } system)return;
         var blockers=system.EntryBlockers;
+        try { LastSystemInputEntryTrace=system.EntryTrace; }
+        catch(Exception error) { LastSystemInputEntryTrace=System.Text.Json.JsonSerializer.Serialize(new { DiagnosticError=error.Message }); }
         // Key state is not a backend failure and must not change the active document or foreground.
         ExitEditing(restorePreviousForeground:false);
         SystemInputEntryBlocked?.Invoke(blockers);
@@ -118,6 +123,7 @@ public sealed partial class OverlayHost
             return;
         }
         _systemInputReady=true;
+        KeyboardStateTrace.RecordBoundary("SystemInputReady");
         foreach(var pair in _windows)ShowWindow(pair.Input.Handle,8);
         GetCursorPos(out var cursor);
         var active=_windows.FirstOrDefault(pair=>pair.Monitor.Bounds.Contains(new(cursor.X,cursor.Y)))??_windows.First();

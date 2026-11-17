@@ -8,6 +8,8 @@
 #include <msctf.h>
 #include <atomic>
 #include <new>
+#include <vector>
+#include <sstream>
 #include "InputSafetyWatchdog.h"
 
 namespace {
@@ -54,6 +56,11 @@ struct Handler final : AckDelegate {
     }
 };
 struct Host {
+    struct EntrySample { ULONGLONG first{},last{}; unsigned reason{},refresh{}; BYTE async[32]{},queue[32]{}; };
+    std::vector<EntrySample> entryTrace;
+    unsigned entryTrustReason{};
+    ULONGLONG firstReadyTick{};
+    unsigned successfulEntries{};
     InputSafetyWatchdog safety;
     HWND window{},receiver{},target{},savedActive{},savedFocus{};
     DWORD thread{GetCurrentThreadId()},pid{};
@@ -71,6 +78,7 @@ struct Host {
     ULONGLONG entryDeadline{};
     BYTE entryBlockers[32]{};
     bool entryTimedOut{};
+    unsigned entryClearSamples{};
 };
 void Destroy(Host* host);
 HRESULT Factory(const wchar_t* name,REFIID iid,void** result) {
@@ -158,15 +166,21 @@ HRESULT Request(Host& host) {
     if(host.destroyPending)Destroy(&host);
     return hr;
 }
-bool PhysicalKeysDown(BYTE* blockers=nullptr) {
-    // Async queries can return zero across integrity levels. After the entry
-    // message has returned, also retain any down state in this thread's queue.
-    // Wait for the whole chord and mouse buttons without synthesizing releases.
+bool PhysicalKeysDown(BYTE* blockers=nullptr,bool trustedAsync=false,BYTE* asyncMask=nullptr,BYTE* queueMask=nullptr) {
+    // Queue state is only a conservative fallback when async access is uncertain.
     if(blockers)ZeroMemory(blockers,32);
+    if(asyncMask)ZeroMemory(asyncMask,32);
+    if(queueMask)ZeroMemory(queueMask,32);
     bool held=false;
-    for(int key=1;key<256;++key) if(GetAsyncKeyState(key)<0||GetKeyState(key)<0) {
+    for(int key=1;key<256;++key) {
+        bool async=GetAsyncKeyState(key)<0,queued=GetKeyState(key)<0;
+        BYTE bit=static_cast<BYTE>(1u<<(key%8));
+        if(async&&asyncMask)asyncMask[key/8]|=bit;
+        if(queued&&queueMask)queueMask[key/8]|=bit;
+        if(async||(!trustedAsync&&queued)) {
         held=true;
-        if(blockers)blockers[key/8]|=static_cast<BYTE>(1u<<(key%8));
+        if(blockers)blockers[key/8]|=bit;
+        }
     }
     return held;
 }
@@ -178,6 +192,68 @@ HRESULT FocusAndRequest(Host& host) {
     }
     return Request(host);
 }
+bool ProcessIntegrity(DWORD pid,DWORD& level) {
+    HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid);
+    if(!process)return false;
+    HANDLE token{};bool valid=false;
+    if(OpenProcessToken(process,TOKEN_QUERY,&token)) {
+        DWORD size{};GetTokenInformation(token,TokenIntegrityLevel,nullptr,0,&size);
+        if(size&&size<=4096) {
+            std::vector<BYTE> buffer(size);
+            if(GetTokenInformation(token,TokenIntegrityLevel,buffer.data(),size,&size)) {
+                auto label=reinterpret_cast<TOKEN_MANDATORY_LABEL*>(buffer.data());
+                if(IsValidSid(label->Label.Sid)) {
+                    BYTE count=*GetSidSubAuthorityCount(label->Label.Sid);
+                    if(count) {level=*GetSidSubAuthority(label->Label.Sid,count-1);valid=true;}
+                }
+            }
+        }
+        CloseHandle(token);
+    }
+    CloseHandle(process);return valid;
+}
+bool CanQueryEntryKeys(HWND target,unsigned* reason=nullptr) {
+    if(reason)*reason=1; // Target changed or unavailable.
+    if(!target||target!=GetForegroundWindow())return false;
+    HDESK input=OpenInputDesktop(0,FALSE,DESKTOP_READOBJECTS|DESKTOP_HOOKCONTROL);
+    if(reason)*reason=2; // Input desktop cannot be opened.
+    if(!input)return false;
+    wchar_t inputName[256]{},threadName[256]{};DWORD length{};
+    bool same=GetUserObjectInformationW(input,UOI_NAME,inputName,sizeof(inputName),&length)&&
+        GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()),UOI_NAME,threadName,sizeof(threadName),&length)&&
+        wcscmp(inputName,threadName)==0;
+    CloseDesktop(input);
+    if(reason)*reason=3; // Different/unreadable thread desktop.
+    if(!same)return false;
+    DWORD pid{},ownLevel{},targetLevel{};GetWindowThreadProcessId(target,&pid);
+    if(reason)*reason=4; // Integrity query failed.
+    if(!ProcessIntegrity(GetCurrentProcessId(),ownLevel)||!ProcessIntegrity(pid,targetLevel))return false;
+    if(reason)*reason=targetLevel<=ownLevel?0:5; // Target has higher integrity.
+    return targetLevel<=ownLevel;
+}
+bool RefreshEntryKeys(Host& host,bool trustedAsync) {
+    Host::EntrySample sample;sample.first=sample.last=GetTickCount64();sample.reason=host.entryTrustReason;
+    bool held=PhysicalKeysDown(host.entryBlockers,trustedAsync,sample.async,sample.queue);
+    if(!host.entryTrace.empty()&&host.entryTrace.back().reason==sample.reason&&
+        memcmp(host.entryTrace.back().async,sample.async,32)==0&&memcmp(host.entryTrace.back().queue,sample.queue,32)==0)
+        host.entryTrace.back().last=sample.last;
+    else {
+        if(host.entryTrace.size()>=64)host.entryTrace.erase(host.entryTrace.begin()+1); // Keep initial evidence.
+        host.entryTrace.push_back(sample);
+    }
+    // Uncertain access falls back to the previous union rule, not an unconditional veto.
+    if(held||!trustedAsync) {host.entryClearSamples=0;return held;}
+    // A short stable release interval avoids racing the hotkey's message delivery.
+    // This runs only while acquiring input, including reacquisition after dialogs.
+    if(++host.entryClearSamples<2) {host.entryTrace.back().refresh=1;return true;}
+    BYTE state[256]{};
+    if(!GetKeyboardState(state)) {host.entryTrace.back().refresh=2;return true;}
+    for(int key=1;key<256;++key)state[key]&=0x7f; // Preserve Caps/Num/Scroll toggle bits.
+    // Repair this thread only. Never inject key-up events into another application.
+    bool written=SetKeyboardState(state)!=FALSE;
+    host.entryTrace.back().refresh=written?4:3;
+    return !written;
+}
 HRESULT ContinueEntry(Host& host,HWND foreground,bool keysDown) {
     if(!host.waiting)return S_FALSE;
     DWORD pid{};GetWindowThreadProcessId(host.target,&pid);
@@ -187,6 +263,9 @@ HRESULT ContinueEntry(Host& host,HWND foreground,bool keysDown) {
         return host.last;
     }
     if(keysDown) {
+        // A delayed first timer may already be past the deadline. Let its first
+        // trustworthy clear sample be confirmed on the next turn, not reported as a held key.
+        if(host.entryClearSamples==1)return E_PENDING;
         if(!host.entryDeadline||GetTickCount64()<host.entryDeadline)return E_PENDING;
         Release(host);host.last=HRESULT_FROM_WIN32(ERROR_TIMEOUT);host.entryTimedOut=true;
         if(host.receiver)PostMessageW(host.receiver,ChangedMessage,host.generation,FALSE);
@@ -208,7 +287,7 @@ LRESULT CALLBACK Procedure(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
         return 0;
     }
     if(message==WM_TIMER&&wparam==EntryKeysTimer) {
-        if(host->waiting)ContinueEntry(*host,GetForegroundWindow(),PhysicalKeysDown(host->entryBlockers));
+        if(host->waiting)ContinueEntry(*host,GetForegroundWindow(),RefreshEntryKeys(*host,CanQueryEntryKeys(host->target,&host->entryTrustReason)));
         return 0;
     }
     if(message==AckMessage) {
@@ -218,6 +297,7 @@ LRESULT CALLBACK Procedure(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
             if(host->enabling) {delete host->deferredAck;host->deferredAck=ack;return 0;}
             const bool wasAcknowledged=host->acknowledged;
             host->acknowledged=ack->on!=0;
+            if(host->acknowledged&&!wasAcknowledged) {++host->successfulEntries;if(!host->firstReadyTick)host->firstReadyTick=GetTickCount64();}
             if(host->acknowledged&&!wasAcknowledged) { SetActiveWindow(hwnd); if(host->receiver) SetFocus(host->receiver); }
             if(host->receiver) PostMessageW(host->receiver,ChangedMessage,host->generation,host->acknowledged);
         }
@@ -310,12 +390,14 @@ static HRESULT Begin(Host* host,HWND target,HWND foreground) {
     DWORD pid{}; GetWindowThreadProcessId(target,&pid);
     if(!pid||target!=foreground) return E_INVALIDARG;
     host->target=target; host->pid=pid; ++host->generation;
-    host->entryDeadline=0;host->entryTimedOut=false;ZeroMemory(host->entryBlockers,sizeof(host->entryBlockers));
+    host->entryDeadline=0;host->entryTimedOut=false;host->entryClearSamples=0;ZeroMemory(host->entryBlockers,sizeof(host->entryBlockers));
+    host->entryTrace.clear();host->entryTrustReason=0;
     // A tray menu makes its own NotifyIcon window foreground. Input is already
     // ours in that case: use ordinary local focus, never delegate to ourselves.
     if(pid==GetCurrentProcessId()) {
         host->savedActive=GetActiveWindow();host->savedFocus=GetFocus();host->focusSaved=true;
         host->local=true;host->requested=true;host->acknowledged=true;
+        ++host->successfulEntries;if(!host->firstReadyTick)host->firstReadyTick=GetTickCount64();
         SetActiveWindow(host->window);SetFocus(host->receiver);
         if(host->receiver)PostMessageW(host->receiver,ChangedMessage,host->generation,TRUE);
         return host->last=S_OK;
@@ -345,6 +427,27 @@ static HRESULT Begin(Host* host,HWND target,HWND foreground) {
 }
 EXPORT HRESULT WINAPI FcSystemBegin(Host* host,HWND target) {return Begin(host,target,GetForegroundWindow());}
 EXPORT HRESULT WINAPI FcSystemEnd(Host* host) { return host?Release(*host):E_INVALIDARG; }
+EXPORT HRESULT WINAPI FcSystemGetEntryTrace(Host* host,char* buffer,UINT capacity) {
+    if(!host||!buffer||!capacity||GetCurrentThreadId()!=host->thread)return E_INVALIDARG;
+    std::ostringstream text;
+    text<<"{\"Generation\":"<<host->generation<<",\"Thread\":"<<host->thread<<",\"TargetPid\":"<<host->pid
+        <<",\"SuccessfulEntries\":"<<host->successfulEntries<<",\"FirstReadyTick\":"<<host->firstReadyTick
+        <<",\"TimedOut\":"<<(host->entryTimedOut?"true":"false")<<",\"Samples\":[";
+    auto keys=[&](const BYTE* mask) {
+        text<<'[';bool first=true;
+        for(int key=1;key<256;++key)if(mask[key/8]&(1u<<(key%8))) {if(!first)text<<',';first=false;text<<key;}
+        text<<']';
+    };
+    bool first=true;
+    for(const auto& sample:host->entryTrace) {
+        if(!first)text<<',';first=false;
+        text<<"{\"FirstTick\":"<<sample.first<<",\"LastTick\":"<<sample.last<<",\"TrustReason\":"<<sample.reason<<",\"RefreshResult\":"<<sample.refresh<<",\"AsyncDown\":";
+        keys(sample.async);text<<",\"QueueDown\":";keys(sample.queue);text<<'}';
+    }
+    text<<"]}";auto value=text.str();
+    if(value.size()+1>capacity)return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+    memcpy(buffer,value.c_str(),value.size()+1);return S_OK;
+}
 struct FcSystemStatus { unsigned generation,pid; BOOL requested,acknowledged,waiting; HRESULT last; };
 static_assert(sizeof(FcSystemStatus)==24);
 EXPORT HRESULT WINAPI FcSystemGetStatus(Host* host,FcSystemStatus* status) {

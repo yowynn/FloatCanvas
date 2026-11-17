@@ -11,6 +11,7 @@ internal sealed partial class DesktopSession
 
     private void ShowSystemInputEntryBlocked(IReadOnlyList<uint> keys)
     {
+        var stateWrites=KeyboardStateTrace.Recent(keys);
         // The native pending request has already been cancelled. Hide editing UI
         // without switching documents or taking focus from the external window.
         _overlayWindows?.ClosePopups();
@@ -22,7 +23,8 @@ internal sealed partial class DesktopSession
 
         string names = FormatSystemInputEntryBlockers(keys);
         _systemInputEntryHint = names.Length == 0 ? L.Get("Input.EntryRecovery.Unknown") : L.Format("Input.EntryRecovery.Blocked", names);
-        _diagnostics.Write("Input.EntryBlocked", new { BlockerCount = keys.Distinct().Count() });
+        _diagnostics.Write("Input.EntryBlocked", new { BlockerCount = keys.Distinct().Count(), Blockers=keys,
+            NativeTrace=_host.LastSystemInputEntryTrace, StateWrites=stateWrites });
         UpdateStatus(_systemInputEntryHint);
         RefreshPassThroughLauncher(); RequestRender();
         _tray.ShowBalloonTip(6000, L.Get("Input.EntryRecovery.Title"), _systemInputEntryHint, System.Windows.Forms.ToolTipIcon.Info);

@@ -214,6 +214,7 @@ public sealed class KeyboardInputIsolation : IDisposable
     {
         var initial = new byte[256];
         if (!Native.GetKeyboardState(initial)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        var beforeRefresh=(byte[])initial.Clone();
         // Serialize this brief snapshot with hook-state updates. No UI callback/wait occurs.
         // Never infer inherited keys from the relay's possibly still-down local state.
         for (int i = 1; i < 255; i++)
@@ -231,6 +232,7 @@ public sealed class KeyboardInputIsolation : IDisposable
             state.End(KeyboardLeaseEndReason.HookFailure, now); NotifyLocked();
             throw new Win32Exception(error, L.Get("Keyboard.LocalStateInitializationFailed"));
         }
+        KeyboardStateTrace.RecordWrite("BeginKeyboardLease",lease,0,beforeRefresh,state.CopyLocalState());
         NotifyLocked();
         if (!state.IsActive || Volatile.Read(ref stopped) != 0)
             throw new InvalidOperationException(L.Get("Keyboard.UiNotificationFailed"), Failure);

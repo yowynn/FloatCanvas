@@ -122,6 +122,7 @@ internal sealed class PrivateKeyboardBridge
         foreach (int button in new[] { 1, 2, 4, 5, 6 }) state[button] = current[button];
         if (!SetKeyboardState(state))
             throw new Win32Exception(Marshal.GetLastWin32Error(), L.Get("App.UpdateKeyboardStateFailed"));
+        KeyboardStateTrace.RecordWrite(packet.IsLocalBalance ? "PrivateKeyBalance" : "PrivateKeyPacket", packet.LeaseId, packet.Sequence, current, state);
         // Enhanced input passes modifier messages through the native stream. Keep
         // their ordered snapshot without delivering a second key event or text.
         if (packet.IsStateOnly) return true;
