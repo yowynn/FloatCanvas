@@ -11,7 +11,7 @@ internal readonly record struct CommandChord(int Key, OverlayModifiers Modifiers
 internal sealed record EditorCommand(string Id, string DefaultName, CommandChord[] Defaults,
     EditorTool? Tool = null, bool Repeat = false, bool Mutates = false, bool Configurable = true)
 {
-    internal string Name => Tool is {} tool && tool is not (EditorTool.Arrow or EditorTool.DoubleArrow or EditorTool.RoundedRectangle or EditorTool.Triangle)
+    internal string Name => Tool is {} tool
         ? ToolDisplayName.Get(tool) : FloatCanvas.Localization.AppText.Get("Shortcuts.Command."+Id);
 }
 
@@ -30,6 +30,7 @@ internal static class EditorCommandCatalog
     internal static string Hint(string id) => All.FirstOrDefault(c => c.Id == id) is { } command
         ? string.Join(" / ", Bindings(command).Select(key => key.ToString())) : "";
     internal static string ToolId(EditorTool tool) => "Tool." + tool;
+    internal static bool IsRetired(string id) => id is "Tool.Arrow" or "Tool.DoubleArrow" or "Tool.RoundedRectangle" or "Tool.Triangle";
     internal static string? Validate(Dictionary<string, CommandChord[]> bindings)
     {
         var used = new Dictionary<CommandChord, string>();
@@ -65,9 +66,9 @@ internal static class EditorCommandCatalog
             [EditorTool.Number]=0x4E,[EditorTool.Symbol]=0x53,[EditorTool.Emoji]=0x4A,[EditorTool.Canvas]=0x43,[EditorTool.CaptureRegion]=0x50
         };
         foreach (var tool in Enum.GetValues<EditorTool>())
-            if (tool != EditorTool.Image) result.Add(new(ToolId(tool), tool.ToString(), letters.TryGetValue(tool, out int key) ? [new(key)] : [], tool));
-        Add("Image.Import", "导入图像", 0x49); Add("Tools.More", "更多工具", 0x4D);
-        Add("Stamp.Library", "印章库", 0x77); Add("Stamp.Create", "从选择新建印章", 0x4B, C|S);
+            if (tool != EditorTool.Image && !IsRetired(ToolId(tool))) result.Add(new(ToolId(tool), tool.ToString(), letters.TryGetValue(tool, out int key) ? [new(key)] : [], tool));
+        Add("Image.Import", "置入内容", 0x49); Add("Tools.More", "更多工具", 0x4D);
+        Add("Stamp.Library", "印章库", 0xC0); Add("Stamp.Create", "从选择新建印章", 0xBB);
         for (int i=0;i<10;i++) Add("Stamp.Slot"+i, "印章槽 "+(i+1), i==9?0x30:0x31+i);
         Add("Edit.Undo", "撤销", 0x5A,C,true,true);
         result.Add(new("Edit.Redo","重做",[new(0x5A,C|S),new(0x59,C)],Repeat:true,Mutates:true));

@@ -48,7 +48,7 @@ internal sealed partial class DesktopSession
         var settings = _settings.PresentationGlobal.Pointer;
         var before = _pointerPresentationFrame;
         var priorSettings = _pointerPresentationSettings;
-        _pointerPresentationFrame = settings.AnyEnabled ? _presentationRuntime?.PointerFrame : null;
+        _pointerPresentationFrame = settings.AnyEnabled && _host.IsVisible ? _presentationRuntime?.PointerFrame : null;
         _pointerPresentationSettings = settings;
         var damage = new List<PixelBounds>();
         foreach (var monitor in _host.Monitors)
@@ -95,13 +95,23 @@ internal sealed partial class DesktopSession
 
     private void DrawPresentationPointer(SKCanvas canvas)
     {
-        if (_pointerPresentationFrame is not { } frame || !_pointerPresentationSettings.AnyEnabled) return;
+        if (!_host.IsVisible || _pointerPresentationFrame is not { } frame || !_pointerPresentationSettings.AnyEnabled) return;
+        double opacity = CurrentCanvasLayerOpacity;
+        if (opacity <= 0) return;
         var clip = canvas.LocalClipBounds;
-        PresentationPointerRenderer.Draw(canvas, frame, _pointerPresentationSettings,
-            new(clip.Left, clip.Top, clip.Width, clip.Height));
+        int saved = canvas.SaveCount;
+        using var paint = new SKPaint { Color = SKColors.White.WithAlpha((byte)Math.Round(Math.Clamp(opacity, 0, 1) * 255)) };
+        if (opacity < 1) canvas.SaveLayer(paint);
+        try
+        {
+            PresentationPointerRenderer.Draw(canvas, frame, _pointerPresentationSettings,
+                new(clip.Left, clip.Top, clip.Width, clip.Height));
+        }
+        finally { canvas.RestoreToCount(saved); }
     }
 
-    private bool HasPresentationLayerGuides => _host.IsVisible && _presentationLeaves is { Count: > 0 };
+    private bool HasPresentationLayerGuides => _host.IsVisible && _presentationLeaves.Any(IsLogPresentation);
+    private static bool IsLogPresentation(ResolvedLeaf leaf) => leaf.RenderElement.Presentation?.DisplayStyle is PresentationDisplayStyle.Log or PresentationDisplayStyle.Keycaps;
 
     private void DrawPresentationLayerGuides(SKCanvas canvas)
     {
@@ -111,7 +121,7 @@ internal sealed partial class DesktopSession
             StrokeWidth = 1, IsAntialias = true, PathEffect = dash };
         using var fill = new SKPaint { Color = new SKColor(90, 167, 245, 12), IsAntialias = true };
         // Guides are editing adorners, never scene content or capture pixels.
-        foreach (var leaf in _presentationLeaves.Take(PresentationLimits.MaximumPrimitives / 8))
+        foreach (var leaf in _presentationLeaves.Where(IsLogPresentation).Take(PresentationLimits.MaximumPrimitives / 8))
         {
             var display = _presentationDisplayDocument ?? Active.Document;
             var mapping = CanvasMapping.CreateViewing(display, EditingCanvasView, leaf.RootCanvas);

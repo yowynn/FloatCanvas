@@ -10,7 +10,8 @@
   "Shell.StartWithWindows": { "zh": "开机启动", "en": "Start with Windows" },
   "Shell.StartupHint": { "zh": "登录 Windows 后在托盘中运行。", "en": "Start in the tray when you sign in to Windows." },
   "Shell.RegisterProjectType": { "zh": "工程文件关联", "en": "Project file association" },
-  "Shell.AssociateProjectFiles": { "zh": "关联 .floatcanvas 工程文件", "en": "Associate .floatcanvas project files" },
+  "Shell.AssociateProjectFiles": { "zh": "关联浮绘工程文件", "en": "Associate FloatCanvas project files" },
+  "Shell.AssociateProjectFilesHint": { "zh": "关联 .floatcanvas 工程文件和 .floatprefab 预制体文件。", "en": "Associate .floatcanvas project files and .floatprefab prefab files." },
   "Shell.Registered": { "zh": "已注册工程打开方式。可以在 Windows 的“打开方式”中选择浮绘并设为默认应用。", "en": "Project file type registered. Choose FloatCanvas in Windows Open with to make it the default app." },
   "Shell.TestProfileHint": { "zh": "独立测试配置不修改系统启动项或文件关联。", "en": "Isolated test profiles do not change Windows startup or file associations." }
 }

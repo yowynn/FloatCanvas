@@ -79,15 +79,15 @@ public sealed partial class EditorSession
                     {
                         var combined = placement.Compose(new(nested.Transform, nested.ElevationScale));
                         nested.Transform = combined.PlaneTransform; nested.ElevationScale = combined.ElevationScale; nested.ParentId = root.ParentId;
-                        nested.Visible &= root.Visible; nested.Locked |= root.Locked;
+                        nested.Visible &= root.Visible; nested.Locked |= root.Locked; nested.Opacity *= root.Opacity;
                     }
                     else if (current.FindInstance(child) is { } instance)
                     {
                         var combined = placement.Compose(new(instance.Transform, instance.ElevationScale));
                         instance.Transform = combined.PlaneTransform; instance.ElevationScale = combined.ElevationScale; instance.ParentId = root.ParentId;
-                        instance.Visible &= root.Visible; instance.Locked |= root.Locked;
+                        instance.Visible &= root.Visible; instance.Locked |= root.Locked; instance.Opacity *= root.Opacity;
                     }
-                    else { var element = current.FindElement(child)!; SceneGraph.ApplyPlacement(element, placement); element.GroupId = root.ParentId; element.Visible &= root.Visible; element.Locked |= root.Locked; }
+                    else { var element = current.FindElement(child)!; SceneGraph.ApplyPlacement(element, placement); element.GroupId = root.ParentId; element.Visible &= root.Visible; element.Locked |= root.Locked; element.Style.Opacity *= root.Opacity; }
                 }
                 if (root.OrderMode == GroupOrderMode.AtomicBlock)
                 {
@@ -115,6 +115,15 @@ public sealed partial class EditorSession
         // Clipboard/stamps own the chosen subtrees, rather than duplicate their unselected editing context.
         var graph = new SceneGraph(snapshot); var roots = graph.NormalizeSelection(Selection);
         var retainedGroups = snapshot.Groups.Where(group => roots.Contains(group.Id) || graph.AncestorIds(group.Id).Any(roots.Contains)).Select(group => group.Id).ToHashSet();
+        // The snapshot drops unselected ancestor containers. Retain their visible
+        // opacity on each selected root before removing that inherited context.
+        foreach (var id in roots)
+        {
+            double inherited = graph.InheritedOpacity(id);
+            if (graph.FindGroup(id) is { } group) group.Opacity *= inherited;
+            else if (graph.FindInstance(id) is { } instance) instance.Opacity *= inherited;
+            else graph.FindElement(id)!.Style.Opacity *= inherited;
+        }
         graph.ReparentPreservingWorld(roots, null);
         graph.RemoveNodes(snapshot.Groups.Where(group => !retainedGroups.Contains(group.Id)).Select(group => group.Id).ToArray());
         var world = SceneEvaluation.Build(snapshot).RenderDocument.Elements;

@@ -29,6 +29,7 @@ internal static class Program
             if (args.Contains("--window-spacing-only")) { WindowSpacingTests.Run(Assert); return 0; }
             if (args.Contains("--property-visuals-only")) { PropertyVisualTests.Run(Assert); return 0; }
             if (args.Contains("--shortcut-system-only")) { ShortcutSystemTests.Run(Assert); return 0; }
+            if (args.Contains("--frozen-global-capture-only")) { FrozenGlobalCaptureTests.Run(Assert,args.SkipWhile(a=>a!="--frozen-global-capture-only").Skip(1).First()); return 0; }
             if (args.Contains("--numeric-controls-only")) { NumericControlTests.Run(Assert, args.SkipWhile(a => a != "--numeric-controls-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--numeric-rails-only")) { NumericRailRangeTests.Run(Assert); return 0; }
             if (args.Contains("--numeric-pointer-regression-only")) { NumericPointerRegressionTests.Run(Assert); return 0; }
@@ -113,6 +114,7 @@ internal static class Program
             if (args.Contains("--presentation-followup-ui-only")) { PresentationFollowupWindowTests.Run(Assert, args.SkipWhile(a => a != "--presentation-followup-ui-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--group-controller-only")) { GroupControllerTests.Run(Assert); return 0; }
             if (args.Contains("--node-controller-audit-only")) { NodeControllerAuditTests.Run(Assert); return 0; }
+            if (args.Contains("--node-opacity-only")) { NodeOpacityTests.Run(Assert,args.SkipWhile(a=>a!="--node-opacity-only").Skip(1).First()); return 0; }
             if (args.Contains("--groups-creation-only")) { GroupedCreationTests.Run(Assert); return 0; }
             if (args.Contains("--groups-recovery-only")) { GroupedRecoveryTests.Run(Assert); return 0; }
             if (args.Contains("--prefab-boundaries-only")) { PrefabInstanceBoundaryTests.Run(Assert); return 0; }
@@ -409,6 +411,7 @@ internal static class Program
             if (args.Contains("--lcd-only")) { LcdPaletteTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-library-ui-only")) { StampLibraryUiTests.Run(Assert); return 0; }
             if (args.Contains("--stamp-library-theme-only")) { StampLibraryThemeTests.Run(Assert, args.SkipWhile(a => a != "--stamp-library-theme-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--inspector-geometry-visibility-only")) { InspectorGeometryVisibilityTests.Run(Assert); return 0; }
             if (args.Contains("--inspector-only")) { InspectorTests.Run(Assert); return 0; }
             if (args.Contains("--inspector-hidden-only")) { InspectorVisibilityLifecycleTests.Run(Assert); return 0; }
             if (args.Contains("--inspector-behavior-only")) { InspectorScrubTests.Run(Assert); InspectorLiveTests.Run(Assert); InspectorColorTests.Run(Assert); BillboardInspectorTests.Run(Assert); return 0; }

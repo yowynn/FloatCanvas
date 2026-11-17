@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -25,6 +26,8 @@ internal static class PresentationStylesUiTests
         var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         string folder = output ?? Path.Combine(Path.GetTempPath(), "FloatCanvas-layout-ui-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
         ApplicationPaths.Configure(["--profile", Path.Combine(folder, "profile")]); L.Initialize("en"); AppTheme.Apply("dark");
+        KeyboardCoordinates(check);
+        KeyboardMultiSelection(check,folder);
         var layer = new CanvasElement { Kind = ElementKind.Presentation, Width = 760, Height = 260, Presentation = new() { DisplayStyle = PresentationDisplayStyle.Keyboard } };
         var session = new EditorSession(new() { Elements = [layer] }); session.SetSelection([layer.Id]);
         var inspector = new InspectorWindow(() => session) { ShowActivated = false };
@@ -97,6 +100,94 @@ internal static class PresentationStylesUiTests
         check("keyboard layout UI stays on the private desktop without observing physical input", !PresentationDesktopAvailability.IsCurrentInputDesktop());
         Console.WriteLine("PRESENTATION_STYLES_UI " + folder);
     }
+    private static void KeyboardMultiSelection(Action<string,bool> check,string folder)
+    {
+        var source=PresentationKeyboardLayout.CreateDefault();
+        var dialog=new KeyboardLayoutEditorWindow(source);dialog.Show();Pump();
+        var ids=source.Keys.Where(k=>k.VirtualKey is 0x1B or 0x44).Select(k=>k.Id).ToArray();
+        var views=Field<Dictionary<string,Thumb>>(dialog,"keyViews");
+        void Click(string id,ModifierKeys modifiers)
+        {
+            using var scope=new ThreadModifierScope(modifiers);
+            views[id].RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.PreviewMouseLeftButtonDownEvent});
+        }
+        void SendKey(Key key,ModifierKeys modifiers,UIElement target)
+        {
+            using var scope=new ThreadModifierScope(modifiers);
+            target.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(dialog)!,Environment.TickCount,key){RoutedEvent=Keyboard.PreviewKeyDownEvent});
+        }
+        dialog.SelectKey(ids[0]);Click(ids[1],ModifierKeys.Control);
+        check("Ctrl-click adds a key to the keyboard selection",dialog.SelectedKeyIds.SetEquals(ids));
+        Click(ids[1],ModifierKeys.Shift);
+        check("Shift-click removes a selected key without focus reselecting it",dialog.SelectedKeyIds.SetEquals([ids[0]]));
+        Click(ids[1],ModifierKeys.Control);views[ids[0]].Focus();
+        check("keyboard focusing a selected key preserves the multi-selection",dialog.SelectedKeyIds.Count==2);
+        SendKey(Key.Space,ModifierKeys.None,views[ids[0]]);
+        check("Space disables all selected keys without changing the source layout",dialog.Draft.Keys.Where(k=>ids.Contains(k.Id)).All(k=>!k.Enabled)&&source.Keys.All(k=>k.Enabled));
+        dialog.SelectKey(ids[0]);dialog.ToggleSelectedEnabled();dialog.SelectKeys(ids);
+        check("mixed selected enable state is shown explicitly",Field<CheckBox>(dialog,"enabled").IsChecked is null);
+        Save(dialog,Path.Combine(folder,"keyboard-multiselect.png"));
+        SendKey(Key.Space,ModifierKeys.None,views[ids[0]]);
+        check("Space enables a mixed selection together",dialog.Draft.Keys.Where(k=>ids.Contains(k.Id)).All(k=>k.Enabled));
+        SendKey(Key.A,ModifierKeys.Control,views[ids[0]]);
+        check("Ctrl+A selects every keyboard key",dialog.SelectedKeyIds.Count==source.Keys.Count);
+        dialog.SelectKeys(ids);
+        var before=dialog.Draft;
+        views[ids[0]].RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});
+        views[ids[0]].RaiseEvent(new DragDeltaEventArgs(30,15){RoutedEvent=Thumb.DragDeltaEvent});
+        check("dragging selected keys preserves their spacing",dialog.Draft.Keys.Where(k=>ids.Contains(k.Id)).All(k=>k.X==before.Keys.Single(p=>p.Id==k.Id).X+1&&k.Y==before.Keys.Single(p=>p.Id==k.Id).Y+.5));
+        views[ids[0]].RaiseEvent(new DragCompletedEventArgs(30,15,true){RoutedEvent=Thumb.DragCompletedEvent});
+        check("cancelling a group drag restores all selected keys",JsonSerializer.Serialize(dialog.Draft)==JsonSerializer.Serialize(before));
+        var label=Field<TextBox>(dialog,"label");dialog.SelectKey(ids[0]);label.Focus();
+        var enabled=dialog.Draft.Keys.Single(k=>k.Id==ids[0]).Enabled;
+        SendKey(Key.Space,ModifierKeys.None,label);
+        check("Space in the label field never toggles keyboard keys",dialog.Draft.Keys.Single(k=>k.Id==ids[0]).Enabled==enabled);
+        dialog.SelectKeys(ids);
+        views[ids[1]].RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=Control.PreviewMouseDoubleClickEvent});
+        check("double-click toggles only its key and leaves an explicit single selection",dialog.SelectedKeyIds.SetEquals([ids[1]]) && !dialog.Draft.Keys.Single(k=>k.Id==ids[1]).Enabled && dialog.Draft.Keys.Single(k=>k.Id==ids[0]).Enabled);
+        dialog.Close();
+    }
+
+    private static void KeyboardCoordinates(Action<string,bool> check)
+    {
+        foreach (bool move in new[]{false,true})
+        foreach (var pose in new[]{"rotated","projective","billboard"})
+        {
+            var layout=PresentationKeyboardLayout.CreateDefault();
+            foreach(var key in layout.Keys) key.Enabled=key.VirtualKey is 0x1B or 0xA2 or 0xA3 or 0x7B or 0x44;
+            var source=new CanvasElement { Kind=ElementKind.Presentation,Width=760,Height=260,Transform=Affine2D.Translation(110,75).Compose(Affine2D.Rotation(23)),Presentation=new(){DisplayStyle=PresentationDisplayStyle.Keyboard,KeyboardLayout=layout} };
+            if(pose=="projective") source.ProjectivePlacement=new(1,0,0,0,1,0,.0001,.0002,1);
+            if(pose=="billboard") {source.IsBillboard=true;source.BillboardAnchor=new(300,300);source.BillboardHeight=40;}
+            var document=new SceneDocument {Viewport=new(0,0,1200,900),Elements=[source]};
+            document.Canvas.Projection.Enabled=true;document.Canvas.Projection.Matrix=new(1,0,0,0,1,0,0,.0002,1);
+            document.Canvas.Projection.Quad=[new(0,0),new(1200,0),new(1000,750),new(0,750)];
+            var mapping=CanvasMapping.Create(document);
+            var session=new EditorSession(document);session.SetSelection([source.Id]);
+            var inspector=new InspectorWindow(()=>session);inspector.PrepareForShow();inspector.Show();Pump();
+            var panel=Field<PresentationSettingsPanel>(inspector,"presentationSettings");
+            var targetKey=layout.Keys.Single(k=>k.VirtualKey==(move?0x1B:0x44));
+            var expected=KeyPoint(source,targetKey.X,targetKey.Y,mapping);
+            var expectedEnd=KeyPoint(source,targetKey.X+1,targetKey.Y+1,mapping);
+            var changed=layout.Clone();foreach(var key in changed.Keys)key.Enabled=key.VirtualKey==0x44;
+            var d=changed.Keys.Single(k=>k.VirtualKey==0x44);if(move){d.X=targetKey.X;d.Y=targetKey.Y;}
+            typeof(PresentationSettingsPanel).GetMethod("Commit",Hidden)!.Invoke(panel,["KeyboardLayout",changed]);inspector.CompletePendingEdit();
+            var actual=session.Document.Elements.Single();
+            Console.WriteLine($"KEYBOARD_ANCHOR pose={pose} move={move} distance={KeyPoint(actual,d.X,d.Y,mapping).DistanceTo(expected)} size={actual.Width},{actual.Height} undo={session.UndoCount}");
+            check(pose+" keyboard layout coordinates stay aligned when "+(move?"D moves to ESC":"only D remains"),KeyPoint(actual,d.X,d.Y,mapping).DistanceTo(expected)<1e-6 && actual.Width<760 && actual.Height<260);
+            check(pose+" keyboard key scale is preserved",KeyPoint(actual,d.X+1,d.Y+1,mapping).DistanceTo(expectedEnd)<1e-6);
+            check("keyboard layout reframing is one undoable edit",session.UndoCount==1 && session.Undo() && session.Document.Elements.Single().Width==760 && session.Redo());
+            inspector.Close();
+        }
+        static PointD KeyPoint(CanvasElement e,double x,double y,CanvasMapping mapping)
+        {
+            var keys=e.Presentation!.KeyboardLayout!.Keys.Where(k=>k.Enabled).ToArray();
+            double left=keys.Min(k=>k.X),top=keys.Min(k=>k.Y),w=keys.Max(k=>k.X+k.Width)-left,h=keys.Max(k=>k.Y+k.Height)-top;
+            double f=e.Style.FontSize,ratio=(w*f/.36+f*.7)/(h*f/.36+f*.7),width=ratio*e.Height;
+            double pad=Math.Min(f*.35,Math.Min(width,e.Height)/8),unit=(e.Height-pad*2)/h;
+            return mapping.ElementToScreen(e).TransformPoint(new((width/2-w*unit/2+(x-left)*unit)*e.Width/width,pad+(y-top)*unit));
+        }
+    }
+
     private static void Edit(PresentationSettingsPanel panel, Action<KeyboardLayoutEditorWindow> edit)
     {
         Exception? failure = null;

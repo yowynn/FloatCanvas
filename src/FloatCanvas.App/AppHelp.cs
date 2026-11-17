@@ -38,7 +38,7 @@ internal static class AppHelp
         }
         if (shortcuts)
         {
-            var rows=EditorCommandCatalog.All.Select(command=>"| "+command.Name+" | "+
+            var rows=EditorCommandCatalog.All.Where(command => EditorCommandCatalog.Bindings(command).Length > 0).Select(command=>"| "+command.Name+" | "+
                 (EditorCommandCatalog.Hint(command.Id) is {Length:>0} hint?hint:L.Get("Shortcuts.Unbound"))+" |");
             text="| "+L.Get("Shortcuts.CommandColumn")+" | "+L.Get("Settings.Shortcuts")+" |\n| --- | --- |\n"+string.Join("\n",rows)+"\n\n"+L.Get("Shortcuts.Scope");
         }

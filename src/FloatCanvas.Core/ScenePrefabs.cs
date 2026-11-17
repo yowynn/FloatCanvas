@@ -13,6 +13,7 @@ public sealed class PrefabInstance
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ContainerBillboard? Billboard { get; set; }
     public bool Visible { get; set; } = true;
+    public double Opacity { get; set; } = 1;
     public bool Locked { get; set; }
     public PrefabInstance Clone() => (PrefabInstance)MemberwiseClone();
 }

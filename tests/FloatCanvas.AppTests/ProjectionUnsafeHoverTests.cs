@@ -38,11 +38,14 @@ internal static class ProjectionUnsafeHoverTests
         Set(session, "_app", app); Set(session, "_host", host); Set(session, "_editor", editor);
         Set(session, "_assets", state.Assets); Set(session, "_renderer", renderer);
         Set(session, "_canvasCalibration", calibration);
+        var owners = typeof(DesktopSession).GetField("_windowOwners", Private)!;
+        owners.SetValue(session, Activator.CreateInstance(owners.FieldType));
         // Match the constructor's root-project default; a zeroed enum would now
         // enter independent first framing and move calibration guides under this sample.
         Set(session, "_groupCanvasMode", GroupCanvasMode.RootProject);
         Set(session, "_canvasReferenceLines", new List<CanvasReferenceLine>());
         Set(session, "_windowSourceLeaves", Array.Empty<ResolvedLeaf>());
+        Set(session, "_presentationLeaves", Array.Empty<ResolvedLeaf>());
         Set(session, "_settings", new UserSettings());
         // This fixture verifies UI adorners only. The independent preview worker publishes empty tiles.
         using var preview = new CanvasPreviewPump(app.Dispatcher, () => new()

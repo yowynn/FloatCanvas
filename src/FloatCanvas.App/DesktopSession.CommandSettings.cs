@@ -87,6 +87,7 @@ internal sealed partial class DesktopSession
                 var dialog = new Microsoft.Win32.OpenFileDialog { Filter=FloatCanvas.Localization.AppText.Get("Shortcuts.FileFilter") };
                 if (SessionWindowCoordinator.ShowNativeModal(window,()=>dialog.ShowDialog(window))!=true) return;
                 var incoming = JsonSerializer.Deserialize<Dictionary<string,CommandChord[]>>(File.ReadAllText(dialog.FileName)) ?? [];
+                foreach (var id in incoming.Keys.Where(EditorCommandCatalog.IsRetired).ToArray()) incoming.Remove(id);
                 if (ValidateCommandBindings(incoming) is {} error) {status.Text=error;return;}
                 draft=incoming;Refresh();status.Text=FloatCanvas.Localization.AppText.Get("Shortcuts.Imported");
             });

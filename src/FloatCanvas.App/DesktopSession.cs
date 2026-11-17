@@ -466,7 +466,7 @@ internal sealed partial class DesktopSession : IDisposable
         bool wasEditing = _host.IsEditing;
         _inspector?.CompletePendingEdit();
         _editor.Cancel();
-        if (!editing && _allOverlaysHidden is null && !HasPrefabEditContext && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
+        if (!editing && !HasPrefabEditContext && Active.Document.Kind == DocumentKind.FrozenCapture) ReturnToLive();
         if (editing && !_host.TryEnterEditing(out var failure))
         {
             // Never leave an opaque frozen screenshot over a desktop that is receiving input.
@@ -1076,7 +1076,8 @@ internal sealed partial class DesktopSession : IDisposable
         });
         registerFiles.IsEnabled = shell is not null;
         ToolTipService.SetShowOnDisabled(registerFiles, true);
-        if (shell is null) registerFiles.ToolTip = L.Get("Shell.TestProfileHint");
+        registerFiles.ToolTip = L.Get("Shell.AssociateProjectFilesHint")
+            + (shell is null ? "\n" + L.Get("Shell.TestProfileHint") : string.Empty);
         var fileRegistration = AppSettingsWindow.AddGroup(system, L.Get("Shell.RegisterProjectType"));
         fileRegistration.Children.Add(registerFiles); fileRegistration.Children.Add(registrationStatus);
         var language = SegmentedChoicePreviews.Language(_settings.Language);

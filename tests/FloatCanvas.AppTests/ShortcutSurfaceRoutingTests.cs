@@ -58,7 +58,7 @@ internal static class ShortcutSurfaceRoutingTests
             var ordinary = new[]
             {
                 Key.V, Key.E, Key.B, Key.H, Key.L, Key.R, Key.O, Key.T, Key.N, Key.S, Key.J, Key.I, Key.P,
-                Key.M, Key.F4, Key.F8, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5,
+                Key.M, Key.F4, Key.Oem3, Key.OemPlus, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5,
                 Key.D6, Key.D7, Key.D8, Key.D9, Key.D0, Key.Delete,
                 Key.Left, Key.Up, Key.Right, Key.Down
             };

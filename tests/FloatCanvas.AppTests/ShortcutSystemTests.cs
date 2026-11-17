@@ -13,14 +13,42 @@ internal static class ShortcutSystemTests
         {
             EditorCommandCatalog.Overrides=[];
             check("default shortcut catalog has no collision",EditorCommandCatalog.Validate([]) is null);
+            check("stamp shortcuts use unmodified visible keys",EditorCommandCatalog.Resolve(0xC0,0)?.Id=="Stamp.Library"&&EditorCommandCatalog.Resolve(0xBB,0)?.Id=="Stamp.Create");
+            check("punctuation legends use familiar keycaps",HotkeyDisplay.Format(new(0,0xC0))=="~"&&HotkeyDisplay.Format(new(0,0xBB))=="+"&&HotkeyDisplay.Format(new(0,0xBD))=="-");
             foreach(int key in new[]{0x43,0x44,0x56,0x4F,0x59})
                 check("extra Shift does not inherit Ctrl command "+key,EditorCommandCatalog.Resolve(key,OverlayModifiers.Control|OverlayModifiers.Shift) is null);
             check("Ctrl Shift A is explicit deselect",EditorCommandCatalog.Resolve(0x41,OverlayModifiers.Control|OverlayModifiers.Shift)?.Id=="Edit.Deselect");
             check("Ctrl T has no accidental tool command",!EditorShortcutPolicy.IsCommand(0x54,OverlayModifiers.Control));
             check("F4 opens tool properties",EditorCommandCatalog.Resolve(0x73,0)?.Id=="Panel.Tools");
-            foreach(var tool in Enum.GetValues<EditorTool>().Where(t=>t!=EditorTool.Image))
+            foreach(var tool in Enum.GetValues<EditorTool>().Where(t=>t!=EditorTool.Image && !EditorCommandCatalog.IsRetired(EditorCommandCatalog.ToolId(t))))
                 check("tool registered "+tool,EditorCommandCatalog.All.Any(c=>c.Tool==tool));
             check("image import is an action",EditorCommandCatalog.All.Single(c=>c.Id=="Image.Import").Tool is null);
+            check("preset aliases have no standalone tool commands", !EditorCommandCatalog.All.Any(command => EditorCommandCatalog.IsRetired(command.Id)));
+            check("optional globals contain only mouse master and capture", GlobalShortcutCatalog.Optional.Select(command => command.Id).SequenceEqual(new[] { "Global.Pointer", "Global.Capture" }));
+            var settings = new UserSettings
+            {
+                CommandBindings = new() { ["Tool.Arrow"] = [new(0x51)], ["Tool.Line"] = [new(0x4B)] },
+                GlobalCommandBindings = new() { ["Global.Keyboard"] = new(3, 0x78), ["Global.HideAll"] = new(3, 0x79), ["Global.Capture"] = new(3, 0x7A) }
+            };
+            settings.RemoveRetiredShortcuts();
+            check("retired settings do not discard unrelated custom bindings", settings.CommandBindings.Count == 1 && settings.CommandBindings.ContainsKey("Tool.Line") &&
+                EditorCommandCatalog.Validate(settings.CommandBindings) is null && settings.GlobalCommandBindings.Count == 1 && settings.GlobalCommandBindings.ContainsKey("Global.Capture"));
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "shortcut-migration-" + Guid.NewGuid().ToString("N") + ".json");
+            System.IO.File.WriteAllText(path, """{"CommandBindings":{"Tool.Arrow":[],"Tool.Line":[{"Key":75,"Modifiers":0}]},"GlobalCommandBindings":{"Global.Keyboard":{"Modifiers":3,"VirtualKey":120}},"FutureSetting":true}""");
+            try
+            {
+                var storage = new CompatibleConfiguration(path);
+                var options = new System.Text.Json.JsonSerializerOptions();
+                var migrated = storage.Read<UserSettings>(options);
+                migrated.RemoveRetiredShortcuts(); storage.Save(migrated, options);
+                var json = System.IO.File.ReadAllText(path);
+                check("saving removes obsolete bindings while retaining unknown settings", !json.Contains("Tool.Arrow") && !json.Contains("Global.Keyboard") && json.Contains("Tool.Line") && json.Contains("FutureSetting"));
+            }
+            finally { System.IO.File.Delete(path); }
+            check("shortcut help hides unbound entries", !AppHelp.ReadGuide(true).Contains(FloatCanvas.Localization.AppText.Get("Shortcuts.Unbound")));
+            EditorCommandCatalog.Overrides = new() { ["Tool.Blur"] = [new(0x4B)] };
+            check("a newly bound tool appears in help", AppHelp.ReadGuide(true).Contains("| " + ToolDisplayName.Get(EditorTool.Blur) + " | K |"));
+            EditorCommandCatalog.Overrides = [];
             var custom=new Dictionary<string,CommandChord[]> { ["Edit.Undo"]=[new(0x55,OverlayModifiers.Control)] };
             check("unique custom binding accepted",EditorCommandCatalog.Validate(custom) is null);
             EditorCommandCatalog.Overrides=custom;

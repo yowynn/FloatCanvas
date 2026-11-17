@@ -57,7 +57,7 @@ internal static class ContainerBillboardTests
         string json = JsonSerializer.Serialize(shared.Document);
         check(!json.Contains("BillboardSurface") && !json.Contains("IsValid"), "runtime geometry is not persisted");
         var loaded = JsonSerializer.Deserialize<SceneDocument>(json)!;
-        check(loaded.Version == 19 && loaded.Instances[0].Billboard == a.Billboard, "container placement roundtrips in format 19");
+        check(loaded.Version == SceneDocument.CurrentVersion && loaded.Instances[0].Billboard == a.Billboard, "container placement roundtrips in the current format");
         var selectionCopy = shared.Document.CloneElements([a.Id], newIds: true);
         check(selectionCopy.Instances.Single().Billboard == a.Billboard, "selection copy retains shared card placement");
         var detached = new EditorSession(shared.Document.Clone());

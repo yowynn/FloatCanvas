@@ -52,7 +52,7 @@ internal static class LocalizationTests
                     ToolDisplayName.PresetName(EditorTool.RoundedRectangle) == ToolDisplayName.PresetName(EditorTool.Rectangle) &&
                     ToolDisplayName.PresetName(EditorTool.Triangle) == ToolDisplayName.PresetName(EditorTool.Symbol));
                 check(language + " canvas and image use the same preset naming convention", ToolDisplayName.PresetName(EditorTool.Canvas) == (english ? "Canvas preset" : "画布预设") &&
-                    ToolDisplayName.PresetName(EditorTool.Image) == (english ? "Image preset" : "贴图预设"));
+                    ToolDisplayName.PresetName(EditorTool.Image) == (english ? "Import Content preset" : "置入内容预设"));
             }
             L.Initialize("en");
             check("English welcome is resolved at runtime", L.Get("Welcome.Title") == "FloatCanvas · Welcome");

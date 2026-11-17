@@ -534,6 +534,7 @@ internal static class PackageCodec
     }
     private static void RequireContainerPlacement(JsonElement owner, int version)
     {
+        if (version >= 20 && owner.TryGetProperty("Transform", out _)) RequireProperties(owner, "Opacity");
         if (!owner.TryGetProperty("Billboard", out var placement) || placement.ValueKind == JsonValueKind.Null) return;
         if (version < 19) throw new InvalidDataException("Container billboards require scene format 19.");
         RequireProperties(placement, "ReferencePoint", "Height");

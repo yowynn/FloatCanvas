@@ -22,7 +22,7 @@ public sealed partial class EditorSession
         OnChanged(contentChanged: true, previewChangedElements: changedIds.ToFrozenSet());
     }
 
-    /// <summary>Placement-only edits: ownership, paint order, visibility and definitions must be unchanged.</summary>
+    /// <summary>Placement or opacity edits: ownership, paint order, visibility and definitions must be unchanged.</summary>
     public void NotifyContainerPlacementChanged(IEnumerable<Guid> containers, IEnumerable<Guid>? elements = null) =>
         OnChanged(contentChanged: true, definitionsUnchanged: true, previewChangedElements: (elements ?? []).ToFrozenSet(),
             previewChangedContainers: containers.ToFrozenSet(), topologyValidated: true);

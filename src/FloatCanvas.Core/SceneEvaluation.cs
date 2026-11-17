@@ -25,19 +25,21 @@ public sealed class EvaluatedScene
     private readonly IReadOnlyDictionary<Guid, LayerPlacement> placements;
     private readonly IReadOnlyDictionary<Guid, ContainerPlacementContext> containers;
     private readonly IReadOnlyDictionary<Guid, bool> visible, locked;
+    private readonly IReadOnlyDictionary<Guid, double> inheritedOpacity;
     private readonly IReadOnlyDictionary<Guid, int> runtime;
     private readonly IReadOnlyDictionary<OccurrencePath, int> occurrences;
     private readonly IReadOnlyDictionary<SourceNodeAddress, IReadOnlyList<int>> sourceOccurrences;
     private readonly IReadOnlyDictionary<Guid, IReadOnlyList<int>> hostOccurrences;
     internal EvaluatedScene(SceneDocument renderDocument, IReadOnlyList<ResolvedLeaf> leaves,
         Dictionary<Guid, Guid?> parents, Dictionary<Guid, LayerPlacement> placements,
-        Dictionary<Guid, bool> visible, Dictionary<Guid, bool> locked, Dictionary<Guid, ContainerPlacementContext> containers)
+        Dictionary<Guid, bool> visible, Dictionary<Guid, bool> locked, Dictionary<Guid, ContainerPlacementContext> containers, SceneGraph graph)
     {
         RenderDocument = renderDocument; Leaves = leaves;
         this.parents = new ReadOnlyDictionary<Guid, Guid?>(parents);
         this.placements = new ReadOnlyDictionary<Guid, LayerPlacement>(placements);
         this.containers = new ReadOnlyDictionary<Guid, ContainerPlacementContext>(containers);
         this.visible = new ReadOnlyDictionary<Guid, bool>(visible); this.locked = new ReadOnlyDictionary<Guid, bool>(locked);
+        inheritedOpacity = parents.Keys.ToDictionary(id => id, graph.InheritedOpacity);
         runtime = leaves.Select((leaf, i) => (leaf, i)).ToDictionary(p => p.leaf.RuntimeElementId, p => p.i);
         occurrences = leaves.Select((leaf, i) => (leaf, i)).ToDictionary(p => p.leaf.OccurrencePath, p => p.i);
         var bySource = new Dictionary<SourceNodeAddress, List<int>>();
@@ -61,6 +63,7 @@ public sealed class EvaluatedScene
     {
         RenderDocument = renderDocument; Leaves = baseScene.Leaves;
         parents = baseScene.parents; placements = baseScene.placements; containers = baseScene.containers; visible = baseScene.visible; locked = baseScene.locked;
+        inheritedOpacity = baseScene.inheritedOpacity;
         runtime = baseScene.runtime; occurrences = baseScene.occurrences;
         sourceOccurrences = baseScene.sourceOccurrences; hostOccurrences = baseScene.hostOccurrences;
     }
@@ -77,12 +80,15 @@ public sealed class EvaluatedScene
         Leaves = leaves;
         var nextPlacements = previous.placements.ToDictionary();
         var nextContainers = previous.containers.ToDictionary();
+        var nextOpacity = previous.inheritedOpacity.ToDictionary();
         foreach (var id in changedNodes)
         {
             nextPlacements[id] = graph.NodeWorldPlacement(id);
+            nextOpacity[id] = graph.InheritedOpacity(id);
             if (graph.FindGroup(id) is not null) nextContainers[id] = graph.ScopeContainerPlacement(id);
         }
         placements = nextPlacements; containers = nextContainers;
+        inheritedOpacity = nextOpacity;
     }
     internal int IndexOf(Guid runtimeId) => runtime.GetValueOrDefault(runtimeId, -1);
     public SceneDocument RenderDocument { get; }
@@ -122,6 +128,7 @@ public sealed class EvaluatedScene
         {
             result = containers[parent].Resolve(draft); result.Visible &= visible[parent]; result.Locked |= locked[parent];
         }
+        result.Style.Opacity *= inheritedOpacity.GetValueOrDefault(draft.Id, 1);
         result.GroupId = null; return result;
     }
 }
@@ -205,7 +212,7 @@ public static partial class SceneEvaluation
             LayerOpacity = source.LayerOpacity, NextNumber = source.NextNumber,
             DisplayLayout = source.DisplayLayout.Select(display => display.Clone()).ToList()
         };
-        var result = new EvaluatedScene(renderDocument, leaves.AsReadOnly(), parents, placements, visible, locked, containers);
+        var result = new EvaluatedScene(renderDocument, leaves.AsReadOnly(), parents, placements, visible, locked, containers, graph);
         runtimeViews.Add(renderDocument, result); return result;
 
         void Expand(SceneGraph current, Guid? definitionId, ContainerPlacementContext incoming, bool inheritedVisible,
@@ -236,6 +243,7 @@ public static partial class SceneEvaluation
                         !double.IsFinite(world.BillboardAnchor.Y) || !double.IsFinite(world.BillboardHeight))
                         throw new InvalidDataException(L.Get("Scene.InvalidElementTransform"));
                     world.Id = runtimeId; world.GroupId = null;
+                    world.Style.Opacity *= current.InheritedOpacity(id);
                     world.Visible = inheritedVisible && current.IsVisible(id); world.Locked = inheritedLocked || current.IsLocked(id);
                     leaves.Add(new(occurrence, new(definitionId, id), world, parent, hostInstance ?? id, rootCanvas));
                 }
@@ -259,6 +267,7 @@ public static partial class SceneEvaluation
                             world.BillboardSurface is { ContentPlacement.IsFinite: false })
                             throw new InvalidDataException(L.Get("Scene.InvalidElementTransform"));
                         world.Id = runtimeId; world.GroupId = null; world.Visible &= shown; world.Locked |= blocked;
+                        world.Style.Opacity *= current.InheritedOpacity(id) * instance.Opacity;
                         leaves.Add(new(occurrence, leaf.Source with { DefinitionId = leaf.Source.DefinitionId ?? definition.Id }, world,
                             container.Placement.Compose(leaf.ParentWorld), hostInstance ?? id, rootCanvas));
                     }
@@ -274,5 +283,5 @@ public static partial class SceneEvaluation
         return new Guid(digest.AsSpan(0, 16));
     }
     public static CanvasElement ResolveElement(SceneDocument source, CanvasElement element) =>
-        source.IsRuntimeEvaluated ? element.Clone() : SceneGraph.Read(source).ScopeContainerPlacement(element.GroupId).Resolve(element);
+        source.IsRuntimeEvaluated ? element.Clone() : SceneGraph.Read(source).ResolveElement(element);
 }

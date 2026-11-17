@@ -24,7 +24,7 @@ public sealed partial class SceneRenderer
     internal void DrawGrid(SKCanvas canvas, SceneDocument document)
         => DrawGridCore(canvas, document, false);
 
-    internal void DrawCalibrationGuides(SKCanvas canvas, SceneDocument document, double opacity = 1)
+    internal void DrawCalibrationGuides(SKCanvas canvas, SceneDocument document, double opacity = 1, bool opaque = false)
     {
         if (!(opacity > 0)) return;
         document = BeginFrame(document);
@@ -32,12 +32,12 @@ public sealed partial class SceneRenderer
         try
         {
             canvas.ClipRect(ToRect(document.Viewport));
-            DrawGridCore(canvas, document, true, opacity);
+            DrawGridCore(canvas, document, true, opacity, opaque);
         }
         finally { canvas.RestoreToCount(saved); EndFrame(); }
     }
 
-    private void DrawGridCore(SKCanvas canvas, SceneDocument document, bool reference, double referenceOpacity = 1)
+    private void DrawGridCore(SKCanvas canvas, SceneDocument document, bool reference, double referenceOpacity = 1, bool opaqueReference = false)
     {
         var grid = document.Canvas.Grid;
         if (_renderSpace == SceneRenderSpace.PlaneContent || (!reference && (!grid.Visible || grid.Width <= 0 || (grid.Color >> 24) == 0))) return;
@@ -50,7 +50,7 @@ public sealed partial class SceneRenderer
         double right = polygon.Max(p => p.X), bottom = polygon.Max(p => p.Y);
         if (!double.IsFinite(left + top + right + bottom)) return;
         var origin = mapping.GridOrigin;
-        byte guideAlpha = (byte)Math.Round((grid.Visible && grid.Width > 0 && (grid.Color >> 24) != 0 && document.LayerOpacity > 0 ? 88 : 176) *
+        byte guideAlpha = (byte)Math.Round((opaqueReference ? 255 : grid.Visible && grid.Width > 0 && (grid.Color >> 24) != 0 && document.LayerOpacity > 0 ? 88 : 176) *
             Math.Clamp(referenceOpacity, 0, 1));
         using var paint = new SKPaint { IsAntialias = true, Color = reference ? SKColors.White.WithAlpha(guideAlpha) : new SKColor(grid.Color),
             StrokeWidth = reference ? 1 : (float)grid.Width, Style = SKPaintStyle.Stroke,

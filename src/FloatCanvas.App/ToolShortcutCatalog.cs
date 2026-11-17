@@ -10,8 +10,8 @@ internal static class ToolShortcutCatalog
         .Select(c=>new Shortcut(c.Tool ?? (c.Id=="Image.Import"?EditorTool.Image:null),EditorCommandCatalog.Hint(c.Id),
             EditorCommandCatalog.Bindings(c).FirstOrDefault().Key)).ToArray();
     internal const int MoreKey = 0x4D;
-    internal const int StampLibraryKey = 0x77;
-    internal const int NewStampKey = 0x4B;
+    internal const int StampLibraryKey = 0xC0;
+    internal const int NewStampKey = 0xBB;
     internal static string Hint(EditorTool tool) => EditorCommandCatalog.Hint(tool == EditorTool.Image ? "Image.Import" : EditorCommandCatalog.ToolId(tool));
     internal static bool IsReserved(int virtualKey) => virtualKey is MoreKey or StampLibraryKey or NewStampKey;
     internal static bool TryGetTool(int virtualKey,out EditorTool tool)

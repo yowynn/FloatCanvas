@@ -45,7 +45,7 @@ internal sealed partial class DesktopSession
             }
             bool draft = Active.Document.Elements.Any(element => !_hiddenCanvasElements.Contains(element.Id)) ||
                 Active.Document.Instances.Any(instance => !_hiddenCanvasElements.Contains(instance.Id));
-            _host.SetPreviewVisible(_settings.PresentationGlobal.Pointer.AnyEnabled || draft || _editor.HasScreenBillboardDraft || _editor.PendingBillboardOutline is not null || _inlineText is not null || _editor.CapturePreview is not null ||
+            _host.SetPreviewVisible(draft || _editor.HasScreenBillboardDraft || _editor.PendingBillboardOutline is not null || _inlineText is not null || _editor.CapturePreview is not null ||
                 _editor.EffectScreenPreview.Count > 0 || _host.IsEditing && _editor.Tool == EditorTool.Canvas);
         }
         finally { _updatingHiddenCanvas = false; }

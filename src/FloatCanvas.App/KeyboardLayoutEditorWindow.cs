@@ -27,7 +27,8 @@ internal sealed class KeyboardLayoutEditorWindow : Window
     private PresentationKeyboardLayout draft;
     private bool useDefault, refreshing;
     private string? selectedId;
-    private PresentationKeyboardKey? movingStart;
+    private readonly HashSet<string> selectedIds = [];
+    private PresentationKeyboardKey[]? movingStart;
     private bool movingWasDefault;
     private double movingX, movingY;
     private static ControlTemplate? keyTemplate;
@@ -35,6 +36,7 @@ internal sealed class KeyboardLayoutEditorWindow : Window
     internal bool Accepted { get; private set; }
     internal PresentationKeyboardLayout Draft => draft.Clone();
     internal string? SelectedKeyId => selectedId;
+    internal IReadOnlySet<string> SelectedKeyIds => selectedIds;
 
     internal KeyboardLayoutEditorWindow(PresentationKeyboardLayout? source, Window? owner = null)
     {
@@ -63,7 +65,7 @@ internal sealed class KeyboardLayoutEditorWindow : Window
         var title = PropertyPanelLayout.SectionTitle(L.Get("Presentation.Layout.Selected")); title.Margin = new(0, 0, 0, 8); properties.Children.Add(title);
         identity.SetResourceReference(TextBlock.ForegroundProperty, "CanvasMuted"); properties.Children.Add(identity);
         properties.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Presentation.Layout.Enabled"), enabled));
-        enabled.Click += (_, _) => UpdateSelected(key => key.Enabled = enabled.IsChecked == true);
+        enabled.Click += (_, _) => ToggleSelectedEnabled();
         AutomationProperties.SetName(enabled, L.Get("Presentation.Layout.Enabled"));
         label.MaxLength = 64; label.Height = PropertyPanelLayout.ControlHeight; AutomationProperties.SetName(label, L.Get("Presentation.Layout.KeyLabel"));
         label.TextChanged += (_, _) => { if (!refreshing) UpdateSelected(key => key.Label = label.Text, "Label"); };
@@ -78,6 +80,14 @@ internal sealed class KeyboardLayoutEditorWindow : Window
         status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); properties.Children.Add(status);
         Grid.SetColumn(properties, 1); columns.Children.Add(new ScrollViewer { Content = properties, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }); Grid.SetColumn(columns.Children[^1], 1);
         body.Children.Add(columns); Content = body; AppWindowChrome.ApplyDialog(this);
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.OriginalSource is not Thumb thumb || !keyViews.Values.Contains(thumb)) return;
+            if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
+            { if (!e.IsRepeat) ToggleSelectedEnabled(); e.Handled = true; }
+            else if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control)
+            { SelectKeys(draft.Keys.Select(key => key.Id)); e.Handled = true; }
+        };
         BuildPreview();
         if (draft.Keys.Count > 0) SelectKey(draft.Keys[0].Id);
         else { enabled.IsEnabled = label.IsEnabled = false; foreach (var field in coordinates.Values) field.IsEnabled = false; identity.Text = L.Get("Presentation.Layout.NoSelection"); }
@@ -119,17 +129,39 @@ internal sealed class KeyboardLayoutEditorWindow : Window
     }
     internal void SelectKey(string id)
     {
-        var selected = draft.Keys.FirstOrDefault(key => key.Id == id); if (selected is null) return;
-        selectedId = id; invalidFields.Clear(); refreshing = true;
-        enabled.IsEnabled = label.IsEnabled = true; foreach (var field in coordinates.Values) field.IsEnabled = true;
+        SelectKeys([id]);
+    }
+    internal void SelectKeys(IEnumerable<string> ids)
+    {
+        selectedIds.Clear(); selectedIds.UnionWith(ids.Where(id => draft.Keys.Any(key => key.Id == id)));
+        selectedId = draft.Keys.FirstOrDefault(key => selectedIds.Contains(key.Id))?.Id;
+        invalidFields.Clear(); RefreshSelection();
+    }
+    private void RefreshSelection()
+    {
+        var selected = Selected; refreshing = true;
+        enabled.IsEnabled = selected is not null; label.IsEnabled = selectedIds.Count == 1;
+        foreach (var field in coordinates.Values) field.IsEnabled = selectedIds.Count == 1;
         try
         {
-            enabled.IsChecked = selected.Enabled; label.Text = selected.Label;
-            identity.Text = L.Format("Presentation.Layout.PhysicalKey", PhysicalKeyNames.GetValueOrDefault(selected.Id, L.Get("Presentation.Layout.CustomKey")));
-            coordinates["X"].Value = selected.X; coordinates["Y"].Value = selected.Y; coordinates["Width"].Value = selected.Width; coordinates["Height"].Value = selected.Height;
+            var values = draft.Keys.Where(key => selectedIds.Contains(key.Id)).Select(key => key.Enabled).Distinct().ToArray();
+            enabled.IsChecked = values.Length == 1 ? values[0] : null;
+            label.Text = selectedIds.Count == 1 ? selected!.Label : "";
+            identity.Text = selected is null ? L.Get("Presentation.Layout.NoSelection") : selectedIds.Count > 1 ? L.Format("Presentation.Layout.MultiSelection", selectedIds.Count) :
+                L.Format("Presentation.Layout.PhysicalKey", PhysicalKeyNames.GetValueOrDefault(selected.Id, L.Get("Presentation.Layout.CustomKey")));
+            if (selected is not null)
+            { coordinates["X"].Value = selected.X; coordinates["Y"].Value = selected.Y; coordinates["Width"].Value = selected.Width; coordinates["Height"].Value = selected.Height; }
         }
         finally { refreshing = false; }
         RefreshPreview(); RefreshStatus();
+    }
+    internal void ToggleSelectedEnabled()
+    {
+        var selected = draft.Keys.Where(key => selectedIds.Contains(key.Id)).ToArray();
+        if (selected.Length == 0) return;
+        bool value = !selected.All(key => key.Enabled);
+        foreach (var key in selected) key.Enabled = value;
+        useDefault = false; enabled.IsChecked = value; RefreshPreview(); RefreshStatus();
     }
     private void UpdateSelected(Action<PresentationKeyboardKey> change, string field = "")
     {
@@ -148,19 +180,47 @@ internal sealed class KeyboardLayoutEditorWindow : Window
         foreach (var key in draft.Keys)
         {
             string id = key.Id; var view = new Thumb { Template = keyTemplate, Cursor = Cursors.SizeAll, Focusable = true };
-            AutomationProperties.SetName(view, key.Label); view.PreviewMouseLeftButtonDown += (_, _) => SelectKey(id);
-            view.GotKeyboardFocus += (_, _) => SelectKey(id);
-            view.DragStarted += (_, _) => { SelectKey(id); movingStart = Selected!.Clone(); movingWasDefault = useDefault; movingX = movingStart.X; movingY = movingStart.Y; };
+            AutomationProperties.SetName(view, key.Label);
+            view.PreviewMouseDoubleClick += (_, e) =>
+            {
+                if (e.ChangedButton != MouseButton.Left) return;
+                SelectKey(id); ToggleSelectedEnabled(); view.Focus(); e.Handled = true;
+            };
+            view.PreviewMouseLeftButtonDown += (_, e) =>
+            {
+                if (e.ClickCount == 2) { e.Handled = true; return; }
+                if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0)
+                {
+                    var next = selectedIds.ToHashSet(); if (!next.Add(id)) next.Remove(id);
+                    // Focus first: keyboard focus must not undo a Ctrl-click deselection.
+                    view.Focus(); SelectKeys(next); e.Handled = true;
+                }
+                else if (!selectedIds.Contains(id)) SelectKey(id);
+            };
+            view.GotKeyboardFocus += (_, _) => { if (!selectedIds.Contains(id)) SelectKey(id); };
+            view.DragStarted += (_, _) =>
+            {
+                if (!selectedIds.Contains(id)) SelectKey(id);
+                movingStart = draft.Keys.Where(item => selectedIds.Contains(item.Id)).Select(item => item.Clone()).ToArray();
+                movingWasDefault = useDefault; movingX = movingY = 0;
+            };
             view.DragDelta += (_, delta) =>
             {
                 if (movingStart is null) return;
                 movingX += delta.HorizontalChange / UnitPixels; movingY += delta.VerticalChange / UnitPixels;
-                UpdateSelected(item => { item.X = Math.Clamp(Math.Round(movingX * 4) / 4, 0, 64 - item.Width); item.Y = Math.Clamp(Math.Round(movingY * 4) / 4, 0, 64 - item.Height); });
+                double dx = Math.Clamp(Math.Round(movingX * 4) / 4, -movingStart.Min(item => item.X), 64 - movingStart.Max(item => item.X + item.Width));
+                double dy = Math.Clamp(Math.Round(movingY * 4) / 4, -movingStart.Min(item => item.Y), 64 - movingStart.Max(item => item.Y + item.Height));
+                foreach (var original in movingStart)
+                {
+                    var item = draft.Keys.Single(item => item.Id == original.Id); item.X = original.X + dx; item.Y = original.Y + dy;
+                }
+                useDefault = false; RefreshPreview(); RefreshStatus();
                 RefreshCoordinates();
             };
             view.DragCompleted += (_, delta) =>
             {
-                if (delta.Canceled && movingStart is { } previous) { draft.Keys[draft.Keys.FindIndex(item => item.Id == id)] = previous; useDefault = movingWasDefault; RefreshPreview(); RefreshCoordinates(); }
+                if (delta.Canceled && movingStart is { } previous)
+                { foreach (var item in previous) draft.Keys[draft.Keys.FindIndex(key => key.Id == item.Id)] = item; useDefault = movingWasDefault; RefreshPreview(); RefreshCoordinates(); }
                 movingStart = null;
             };
             keyViews.Add(id, view); preview.Children.Add(view);
@@ -181,13 +241,13 @@ internal sealed class KeyboardLayoutEditorWindow : Window
         {
             var view = keyViews[key.Id]; view.Tag = key.Label; view.Width = key.Width * UnitPixels - KeyGap; view.Height = key.Height * UnitPixels - KeyGap;
             AutomationProperties.SetName(view, key.Label);
-            view.Opacity = key.Enabled ? 1 : .35; view.SetResourceReference(Control.BackgroundProperty, key.Id == selectedId ? "CanvasHover" : "CanvasSurface");
-            view.SetResourceReference(Control.ForegroundProperty, "CanvasText"); view.SetResourceReference(Control.BorderBrushProperty, key.Id == selectedId ? "CanvasAccent" : "CanvasBorder");
+            view.Opacity = key.Enabled ? 1 : .35; view.SetResourceReference(Control.BackgroundProperty, selectedIds.Contains(key.Id) ? "CanvasHover" : "CanvasSurface");
+            view.SetResourceReference(Control.ForegroundProperty, "CanvasText"); view.SetResourceReference(Control.BorderBrushProperty, selectedIds.Contains(key.Id) ? "CanvasAccent" : "CanvasBorder");
             Canvas.SetLeft(view, Inset + key.X * UnitPixels); Canvas.SetTop(view, Inset + key.Y * UnitPixels);
         }
     }
     private void SetAllEnabled(bool value)
-    { foreach (var key in draft.Keys) key.Enabled = value; useDefault = false; RefreshPreview(); if (selectedId is { } id) SelectKey(id); }
+    { foreach (var key in draft.Keys) key.Enabled = value; useDefault = false; RefreshSelection(); }
     internal void ResetToDefault()
     { draft = PresentationKeyboardLayout.CreateDefault(); useDefault = true; invalidFields.Clear(); BuildPreview(); SelectKey(draft.Keys[0].Id); }
     internal void Accept()

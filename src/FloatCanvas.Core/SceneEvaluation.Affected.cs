@@ -21,6 +21,7 @@ public static partial class SceneEvaluation
                 var container = graph.ScopeContainerPlacement(element.GroupId);
                 var world = container.Resolve(element); world.GroupId = null;
                 world.Visible = graph.IsVisible(id); world.Locked = graph.IsLocked(id);
+                world.Style.Opacity *= graph.InheritedOpacity(id);
                 result.Add(new(identities?.FindOccurrence(id)?.OccurrencePath ?? new(id.ToString("N")), new(null, id), world, container.Placement, id, root));
                 return;
             }
@@ -39,13 +40,14 @@ public static partial class SceneEvaluation
                 var world = context.ResolveWorld(leaf.RenderElement);
                 world.Id = previous is not null && previous.Count == local.Leaves.Count ? previous[i].RuntimeElementId : RuntimeId(occurrence);
                 world.GroupId = null; world.Visible &= shown; world.Locked |= locked;
+                world.Style.Opacity *= graph.InheritedOpacity(id) * instance.Opacity;
                 result.Add(new(occurrence, leaf.Source with { DefinitionId = leaf.Source.DefinitionId ?? definition.Id }, world,
                     context.Placement.Compose(leaf.ParentWorld), id, root));
             }
         }
     }
 
-    /// <summary>Placement-only update of a frozen source with unchanged topology and definition identities.</summary>
+    /// <summary>Update placement and inherited appearance with unchanged topology and definition identities.</summary>
     public static EvaluatedScene UpdatePlacements(SceneDocument source, EvaluatedScene previous, IEnumerable<Guid> changedContainers,
         SceneEvaluationCache definitions)
     {

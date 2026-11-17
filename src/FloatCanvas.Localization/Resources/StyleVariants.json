@@ -1,6 +1,6 @@
 {
-  "Style.Number.Filled": { "zh": "实心序号", "en": "Filled badge" },
-  "Style.Number.Outline": { "zh": "空心序号", "en": "Outline badge" },
-  "Style.Number.OutlineIndependent": { "zh": "双色空心序号", "en": "Two-color outline" },
+  "Style.Number.Filled": { "zh": "实心", "en": "Solid" },
+  "Style.Number.Outline": { "zh": "描边", "en": "Outline" },
+  "Style.Number.OutlineIndependent": { "zh": "双色描边", "en": "Two-tone" },
   "Style.Default": { "zh": "默认样式", "en": "Default" }
 }

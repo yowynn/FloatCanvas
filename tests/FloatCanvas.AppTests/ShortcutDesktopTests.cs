@@ -30,11 +30,14 @@ internal static class ShortcutDesktopTests
         editor.Pointer(new(OverlayPointerKind.Down,new(20,20),OverlayMouseButton.Left,0));
         check("idempotent entry fixture owns a creation",editor.Session.IsTransactionActive);
         Call("ExecuteGlobalCommand","Global.Enter");
-        check("entering an already editing canvas preserves the gesture",editor.Session.IsTransactionActive);
+        check("retired entry command cannot affect the active gesture",editor.Session.IsTransactionActive);
         editor.Cancel();
         BorrowedToolTests.Run(check,desktop,editor);
         var parametersBeforeOptions=editor.Parameters.Clone();
         var toolbar=Field<Window>("_toolbar"); toolbar.Show(); toolbar.UpdateLayout();
+        var commandLegends = Field<List<TextBlock>>("_toolbarShortcutHintLabels");
+        check("stamp buttons show their visible character shortcuts", commandLegends.Single(label => Equals(label.Tag, "Stamp.Library")).Text == "~" &&
+            commandLegends.Single(label => Equals(label.Tag, "Stamp.Create")).Text == "+");
         foreach(var tool in new[]{EditorTool.Select,EditorTool.Stamp,EditorTool.Freehand,EditorTool.Canvas})
         {
             Call("CloseToolOptions"); editor.Tool=tool;
@@ -64,48 +67,30 @@ internal static class ShortcutDesktopTests
             check("extra tool tooltip exposes its newly assigned binding",extra[EditorTool.Blur].ToolTip?.ToString()?.Contains(" · K")==true);
             check("multi-key tool binding remains readable in tooltip",tools[EditorTool.Freehand].ToolTip?.ToString()?.Contains("Alt+B")==true);
             check("stamp library tooltip uses remapped binding",Field<Button>("_stampLibraryButton").ToolTip?.ToString()?.EndsWith(" · F7")==true);
+            check("multi-character stamp binding does not crowd the toolbar legend", commandLegends.Single(label => Equals(label.Tag, "Stamp.Library")).Text == "");
         }
         finally {EditorCommandCatalog.Overrides=bindings;Call("RefreshToolShortcutHints");}
         check("command search explains an unavailable crop",Call("EditorCommandDisabledReason",EditorCommandCatalog.All.Single(c=>c.Tool==EditorTool.Crop)) as string==L.Get("Audit.ImageRequirement"));
-        var shape=editor.Parameters;shape.Tool=EditorTool.Symbol;shape.Symbol=SymbolKind.Star;editor.ApplyParameters(shape);
-        Call("ExecuteEditorCommand",EditorCommandCatalog.All.Single(c=>c.Id=="Tool.Triangle"));
-        check("triangle command replaces a remembered star with the triangle preset",editor.Parameters.Symbol==SymbolKind.Triangle);
         var pen=editor.Parameters;pen.Tool=EditorTool.Freehand;pen.Style.StrokeWidth=7;editor.ApplyParameters(pen);
-        Call("ExecuteGlobalCommand","Global.Capture");
-        check("global capture owns a pending selection request",editor.Tool==EditorTool.CaptureRegion && Field<object?>("_globalCapture") is not null);
-        Call("ExecuteGlobalCommand","Global.Capture");
-        Call("HandleCanvasContextMenu",new OverlayPointerEvent(OverlayPointerKind.Down,new(30,30),OverlayMouseButton.Right,0));
-        check("right-cancel before capture restores original tool parameters and mode",editor.Tool==EditorTool.Freehand && editor.Style.StrokeWidth==7 && host.IsEditing && host.IsVisible && Field<object?>("_globalCapture") is null);
-        Call("ExecuteGlobalCommand","Global.Capture");
-        Call("OnKey",0x1B);
-        check("Escape cancels the global capture request before a selection exists",editor.Tool==EditorTool.Freehand && Field<object?>("_globalCapture") is null);
-        Call("ExecuteGlobalCommand","Global.Capture");
-        typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host,false);
-        Call("CompleteGlobalCapture",false,false);
-        check("external capture cancellation restores the tool without reacquiring editing",!host.IsEditing && editor.Tool==EditorTool.Freehand);
-        typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host,true);
-        Call("ExecuteGlobalCommand","Global.Capture");Call("CompleteGlobalCapture",true,true);
-        check("successful global capture ends in selection for image editing",editor.Tool==EditorTool.Select && Field<object?>("_globalCapture") is null);
-        var frozen=new SceneDocument {Kind=DocumentKind.FrozenCapture,Viewport=new(0,0,640,480)};
-        editor.Session.ReplaceDocument(frozen);
-        Call("ExecuteGlobalCommand","Global.HideAll");
-        check("hide all preserves the frozen capture document",ReferenceEquals(editor.Session.Document,frozen) && !host.IsEditing && !host.IsVisible);
-        Call("ExecuteGlobalCommand","Global.Capture");
-        Call("CompleteGlobalCapture",false,true);
-        check("cancelling capture restores the hidden-all snapshot and frozen document",!host.IsEditing && !host.IsVisible &&
-            Field<object?>("_allOverlaysHidden") is not null && ReferenceEquals(editor.Session.Document,frozen));
+        // FrozenGlobalCaptureTests covers selection, cancellation and insertion without switching tools.
+        var settings = Field<UserSettings>("_settings");
+        bool pointerEnabled = settings.PresentationGlobal.Pointer.Enabled;
+        Call("ExecuteGlobalCommand", "Global.Pointer");
+        check("global pointer command toggles the visible master setting", settings.PresentationGlobal.Pointer.Enabled != pointerEnabled);
+        Call("ExecuteGlobalCommand", "Global.Pointer");
+        check("global pointer command restores the same master setting", settings.PresentationGlobal.Pointer.Enabled == pointerEnabled);
         // Native registration on the isolated desktop, without injecting input.
-        var original=new Dictionary<string,HotkeyBinding> { ["Global.Enter"]=new(3,0x79) };
+        var original=new Dictionary<string,HotkeyBinding> { ["Global.Capture"]=new(3,0x79) };
         host.RegisterCommandHotkeys(original);
         using var peer=new HwndSource(new HwndSourceParameters("shortcut conflict fixture") {Width=1,Height=1,WindowStyle=0});
         check("reserve conflicting chord on the isolated desktop",RegisterHotKey(peer.Handle,91,3|0x4000,0x7A));
         try
         {
             bool rejected=false;
-            try { host.RegisterCommandHotkeys(new Dictionary<string,HotkeyBinding> { ["Global.Enter"]=new(3,0x7A) }); }
+            try { host.RegisterCommandHotkeys(new Dictionary<string,HotkeyBinding> { ["Global.Capture"]=new(3,0x7A) }); }
             catch(System.ComponentModel.Win32Exception) { rejected=true; }
             var actual=(Dictionary<string,HotkeyBinding>)typeof(OverlayHost).GetField("_commandHotkeys",Hidden)!.GetValue(host)!;
-            check("registration failure restores the complete prior collection",rejected && actual.Count==1 && actual["Global.Enter"]==original["Global.Enter"]);
+            check("registration failure restores the complete prior collection",rejected && actual.Count==1 && actual["Global.Capture"]==original["Global.Capture"]);
         }
         finally {UnregisterHotKey(peer.Handle,91);}
         Call("ShowCommandSearch",true);

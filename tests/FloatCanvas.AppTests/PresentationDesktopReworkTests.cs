@@ -84,6 +84,13 @@ internal static class PresentationDesktopReworkTests
             Save(guides, "empty-keyboard-editing-guides.png");
             check("actual editing-guide drawing exposes the transparent keyboard extent", Count(guides) > 100 && guides.GetPixel(100, 100).Alpha > 0 && guides.GetPixel(650, 500).Alpha == 0);
         }
+        foreach (var style in new[] { PresentationDisplayStyle.Keycaps, PresentationDisplayStyle.Keyboard, PresentationDisplayStyle.Log })
+        {
+            session.Execute("change guide display style", document => document.Elements.Single().Presentation!.DisplayStyle = style);
+            using var guides = DrawGuides();
+            check($"editing guide only belongs to log styles: {style}",
+                (Count(guides) > 100) == (style != PresentationDisplayStyle.Keyboard));
+        }
         editor.Tool = EditorTool.Select; session.SetSelection([]);
         Send(OverlayPointerKind.Down, viewport.Left + 100, viewport.Top + 100);
         Send(OverlayPointerKind.Up, viewport.Left + 100, viewport.Top + 100);
@@ -102,7 +109,7 @@ internal static class PresentationDesktopReworkTests
 
         string untouched = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount, assets = session.Assets.Count;
         Feed([Key(0x11, "Ctrl", 29)]);
-        check("modifier-only input has no semantic keyboard entry", runtime.Frame.RecentChords.Count == 0);
+        check("modifier-only input has a held preview", runtime.Frame.RecentChords is [{ IsHeld: true }]);
         Feed([Key(0x43, "C", 46)]);
         check("global keyboard input outside any pointer region produces one Ctrl+C chord", runtime.Frame.RecentChords is [var chord] && chord.Keys.Select(key => key.Label).SequenceEqual(new[] { "Ctrl", "C" }));
         using (var capture = Capture()) using (var frame = worker.Render(capture)) using (var pixels = Pixels(frame))
@@ -166,7 +173,10 @@ internal static class PresentationDesktopReworkTests
         check("pointer-only observation cannot add keyboard records", runtime.Frame.RecentChords.Count == 0 && runtime.Frame.PressedKeys.Count == 0);
         int pointerStarts = starts.Count; long pointerEpoch = runtime.InputEpoch; object pointerContext = Field<object>(desktop, "_presentationInputContext");
         using var fixedPointer = DrawPointer();
-        session.Execute("change canvas opacity", document => document.LayerOpacity = 0);
+        session.Execute("change canvas opacity", document => document.LayerOpacity = .5);
+        using (var faded = DrawPointer())
+            check("foreground pointer effects inherit overall canvas opacity", Math.Abs(faded.GetPixel(650, 500).Alpha - fixedPointer.GetPixel(650, 500).Alpha * .5) <= 1);
+        session.Execute("restore canvas opacity", document => document.LayerOpacity = 1);
         session.Execute("change canvas viewport and projection", document =>
         {
             document.Viewport = new(-10, -10, 40, 40); document.Canvas.Projection = CanvasCalibration.CreateInitial(document.Viewport);
@@ -174,11 +184,11 @@ internal static class PresentationDesktopReworkTests
         });
         editor.ScreenOrigin += new PointD(57, -23); Call("UpdatePresentationRuntime");
         using (var after = DrawPointer())
-            check("canvas opacity viewport perspective and origin cannot move global pointer pixels", fixedPointer.Bytes.SequenceEqual(after.Bytes) && after.GetPixel(650, 500).Alpha > 0);
+            check("viewport perspective and origin cannot move foreground pointer pixels", fixedPointer.Bytes.SequenceEqual(after.Bytes) && after.GetPixel(650, 500).Alpha > 0);
         check("pointer-only canvas changes reuse the actual source and stable input context", starts.Count == pointerStarts && runtime.InputEpoch == pointerEpoch && ReferenceEquals(pointerContext, Field<object>(desktop, "_presentationInputContext")));
         SetEditing(false); host.SetVisible(false); Call("UpdateHiddenCanvasState");
-        check("hidden canvas retains a preview host for independently enabled pointer effects", !host.IsVisible && host.IsPreviewVisible && runtime.Observing && !runtime.ObservingKeyboard);
-        using (var hidden = DrawPointer()) check("hidden-canvas global pointer remains visible at the same screen position", hidden.GetPixel(650, 500).Alpha > 0);
+        check("hidden canvas hides the pointer host and stops observation without disabling the master", !host.IsVisible && !host.IsPreviewVisible && !runtime.Observing && Settings().PresentationGlobal.Pointer.Enabled);
+        using (var hidden = DrawPointer()) check("hidden canvas has no foreground pointer pixels", Count(hidden) == 0);
 
         host.SetVisible(true);
         session.Execute("restore visible keyboard region", document =>
@@ -186,9 +196,14 @@ internal static class PresentationDesktopReworkTests
             document.Viewport = viewport; document.Canvas.Projection.Enabled = false; document.LayerOpacity = 1;
             new SceneGraph(document).InsertElement(keyLayer.Clone());
         });
+        Feed(cursor: new(bounds.Left + 650, bounds.Top + 500, now + 10));
+        using (var shown = DrawPointer()) check("showing the canvas restores pointer presentation", Demand().Pointer && shown.GetPixel(650, 500).Alpha > 0);
+        session.Execute("zero canvas opacity", document => document.LayerOpacity = 0);
+        using (var transparent = DrawPointer()) check("zero overall opacity removes all pointer pixels", Count(transparent) == 0 && !Demand().Pointer);
+        session.Execute("restore overall opacity", document => document.LayerOpacity = 1);
         host.SetVisible(false); Call("UpdateHiddenCanvasState");
         Feed([Key(0x5a, "Z", 44)]);
-        check("hiding an enabled keyboard layer removes keyboard demand while mouse effects continue", !Demand().Keyboard && Demand().Pointer && runtime.Observing && runtime.Frame.RecentChords.Count == 0);
+        check("hiding canvas removes both keyboard and pointer demand", !Demand().Keyboard && !Demand().Pointer && !runtime.Observing && runtime.Frame.RecentChords.Count == 0);
         Call("TogglePresentationPointer"); Call("UpdateHiddenCanvasState");
         check("turning off the last global effect removes the hidden preview and observer", !host.IsVisible && !host.IsPreviewVisible && !runtime.Observing && !Demand().Any);
         check("all fixture source objects are synthetic and the real private-desktop gate stayed false", starts.All(request => request.Source.GetType() == typeof(FakeSource)) && starts.All(request => !request.Source.IsRunning) && !PresentationDesktopAvailability.IsCurrentInputDesktop() && !host.IsKeyboardIsolationActive && !host.HasEditingInput);

@@ -5,6 +5,7 @@ internal static class SceneGraphTests
 {
     internal static void Run(Action<bool, string> check)
     {
+        SelectionSnapshotOpacityTests.Run(check);
         void Near(PointD actual, PointD expected, string message) => check(actual.DistanceTo(expected) < 1e-7, message);
         void Reject(Action action, string message)
         {

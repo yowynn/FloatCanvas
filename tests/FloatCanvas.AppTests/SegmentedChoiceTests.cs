@@ -74,12 +74,13 @@ internal static class SegmentedChoiceTests
         foreach (var tool in new[] { EditorTool.Rectangle, EditorTool.RoundedRectangle, EditorTool.Ellipse, EditorTool.Triangle, EditorTool.Symbol })
         {
             SegmentedChoicePreviews.UpdateColorStyle(color, tool, SymbolKind.Heart);
-            var first = (Image)((StackPanel)color.Items[0].Content).Children[0];
-            var second = (Image)((StackPanel)color.Items[1].Content).Children[0];
-            check(name + " " + tool + " has distinct previews for separate and unified colors", first.Source is BitmapSource && second.Source is BitmapSource && !ReferenceEquals(first.Source, second.Source));
+            var first = (Grid)((StackPanel)color.Items[0].Content).Children[0];
+            var second = (Grid)((StackPanel)color.Items[1].Content).Children[0];
+            check(name + " " + tool + " has distinct previews for separate and unified colors",
+                !Equals(((System.Windows.Shapes.Shape)first.Children[0]).Fill, ((System.Windows.Shapes.Shape)second.Children[0]).Fill));
             SegmentedChoicePreviews.UpdateColorStyle(color, Enum.Parse<ElementKind>(tool.ToString()), SymbolKind.Heart);
-            check(name + " " + tool + " uses matching shape previews in the inspector", ReferenceEquals(first.Source, ((Image)((StackPanel)color.Items[0].Content).Children[0]).Source) &&
-                ReferenceEquals(second.Source, ((Image)((StackPanel)color.Items[1].Content).Children[0]).Source));
+            check(name + " " + tool + " uses matching style previews in the inspector",
+                Equals(((System.Windows.Shapes.Shape)first.Children[0]).Fill, ((System.Windows.Shapes.Shape)((Grid)((StackPanel)color.Items[0].Content).Children[0]).Children[0]).Fill));
         }
     }
 
@@ -94,6 +95,8 @@ internal static class SegmentedChoiceTests
             (L.Get("OverlaySafety.ModeSetting"), SegmentedChoicePreviews.OverlayMode(OverlayBackendMode.Auto))
         };
         SegmentedChoicePreviews.UpdateColorStyle(choices[1].Choice, EditorTool.Ellipse);
+        var numberStyles = new SegmentedChoice(); SegmentedChoicePreviews.AddVariants(numberStyles, ElementKind.Number);
+        choices.Add((L.Get("Tool.Number"), numberStyles));
         Add("Inspector.StrokePattern", Enum.GetValues<StrokePattern>().Select(value => (L.Get("Canvas." + value), (object)value)));
         Add("Inspector.EndArrow", Enum.GetValues<ArrowHeadStyle>().Select(value => (L.Get(value switch { ArrowHeadStyle.FilledTriangle => "Inspector.ArrowFilledTriangle", ArrowHeadStyle.Open => "Inspector.ArrowOpen", ArrowHeadStyle.Diamond => "Inspector.ArrowDiamond", _ => "Inspector.ArrowNone" }), (object)value)));
         Add("Snapshot.Shape", Enum.GetValues<CaptureShape>().Select(value => (L.Get("Snapshot.Shape." + value), (object)value)));

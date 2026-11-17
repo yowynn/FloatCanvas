@@ -167,7 +167,7 @@ public sealed class DisplayLayoutHint
 public sealed partial class SceneDocument : SceneNodeGraph
 {
     private SceneResourceIdentity resourceIdentity = new(Guid.NewGuid());
-    public const int CurrentVersion = 19;
+    public const int CurrentVersion = 20;
     public int Version { get; set; } = CurrentVersion;
     public Guid ResourceId { get => resourceIdentity.Id; set => resourceIdentity = new(value); }
     public List<PrefabDefinition> Definitions { get; set; } = [];

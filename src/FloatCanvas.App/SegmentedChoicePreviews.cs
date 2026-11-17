@@ -26,6 +26,10 @@ internal static class SegmentedChoicePreviews
             "background" => "M1,2 H15 V14 H1 Z M2,11 L6,7 L10,11 L13,8 L15,10",
             "canvas" => "M2,2 H14 V14 H2 Z M5,11 L11,5 M6,4 H12 V10",
             "combined" => "M1,5 H11 V15 H1 Z M5,1 H15 V11 H11 M8,8 L12,4",
+            "capture-rectangle" => "M2,2 H14 V14 H2 Z",
+            "capture-ellipse" => "M8,2 A6,6 0 1 0 8,14 A6,6 0 1 0 8,2 Z",
+            "capture-lasso" => "M5,13 C0,12 0,5 4,3 C10,-1 17,5 14,10 C12,14 6,15 5,11 C4,8 9,9 8,12 L6,16",
+            "capture-polygon" => "M2,5 L9,1 L15,6 L12,14 L3,12 Z",
             "language" => "M1,3 H9 M5,1 V3 M3,4 C3,7 6,10 9,11 M8,4 C8,7 5,10 1,11 M9,15 L12,7 L15,15 M10,12 H14",
             _ => "M2,2 H14 V14 H2 Z"
         };
@@ -37,12 +41,9 @@ internal static class SegmentedChoicePreviews
 
     internal static FrameworkElement Icon(object value)
     {
-        if (value is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline)
-        {
-            var sample = new ToolParameters { Tool = EditorTool.Number, Style = new() { Variant = (string)value, Stroke = 0xFF4285D4, Fill = 0xFFFFFFFF, StrokeWidth = 4 } };
-            return (FrameworkElement)ToolParameterIcon.Create(sample, 18);
-        }
-        if (value is CaptureShape capture) return (FrameworkElement)ToolParameterIcon.Create(new ToolParameters { Tool = EditorTool.CaptureRegion, CaptureShape = capture }, 18);
+        if(value is string variant && variant is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline or ElementAppearance.NumberOutlineIndependent or ElementAppearance.ShapeIndependent or ElementAppearance.ShapeUniform)
+            return StyleIcon(variant);
+        if (value is CaptureShape capture) return Icon(capture switch { CaptureShape.Rectangle => "capture-rectangle", CaptureShape.Ellipse => "capture-ellipse", CaptureShape.FreehandLasso => "capture-lasso", _ => "capture-polygon" });
         if (value is CaptureSource source) return Icon(source switch { CaptureSource.Background => "background", CaptureSource.CanvasOnly => "canvas", _ => "combined" });
         var drawing = new DrawingGroup();
         var image = new Image { Width = 18, Height = 18, Stretch = Stretch.Uniform };
@@ -72,6 +73,27 @@ internal static class SegmentedChoicePreviews
             }
         }
         image.Source = new DrawingImage(drawing); return image;
+    }
+
+    private static FrameworkElement StyleIcon(string variant)
+    {
+        var grid=new Grid { Width=18,Height=18 };
+        bool number=variant is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline or ElementAppearance.NumberOutlineIndependent;
+        bool filled=variant==ElementAppearance.NumberFilled;
+        System.Windows.Shapes.Shape outline=number ? new System.Windows.Shapes.Ellipse() : new System.Windows.Shapes.Rectangle { RadiusX=2,RadiusY=2 };
+        outline.Margin=new Thickness(1.5);outline.StrokeThickness=1.4;
+        outline.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"CanvasText");
+        if(filled||variant==ElementAppearance.ShapeUniform)outline.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"CanvasText");
+        else if(!number)outline.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"CanvasHover");
+        grid.Children.Add(outline);
+        if(number)
+        {
+            var digit=new TextBlock { Text="1",FontSize=11,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center };
+            digit.SetResourceReference(TextBlock.ForegroundProperty,filled?"CanvasInput":"CanvasText");
+            if(variant==ElementAppearance.NumberOutlineIndependent)digit.Opacity=.5;
+            grid.Children.Add(digit);
+        }
+        return grid;
     }
 
     internal static void Add(SegmentedChoice choice, string label, object value)
@@ -114,9 +136,7 @@ internal static class SegmentedChoicePreviews
         var variants = AppearanceRegistry.VariantsFor(kind);
         for (int index = 0; index < Math.Min(choice.Items.Count, variants.Count); index++)
         {
-            var sample = new ToolParameters { Tool = tool, Symbol = symbol, DefaultWidth = 120, DefaultHeight = 90, CornerRadius = tool == EditorTool.RoundedRectangle ? 18 : 0 };
-            sample.Style.Foreground = 0xFF4285D4; sample.Style.Background = 0x554285D4; sample.Style.StrokeWidth = 7; sample.Style.Variant = variants[index].Id;
-            choice.SetIcon(index, (FrameworkElement)ToolParameterIcon.Create(sample, 18));
+            choice.SetIcon(index, StyleIcon(variants[index].Id));
         }
     }
 

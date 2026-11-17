@@ -214,7 +214,7 @@ internal sealed partial class DesktopSession
         }
         bool keyboard = false, all = false, scoped = false;
         double hold = 100;
-        if (_host.IsVisible && display.LayerOpacity > 0 && !_keyboardPresentationPaused && _allOverlaysHidden is null)
+        if (_host.IsVisible && display.LayerOpacity > 0)
             foreach (var leaf in _presentationLeaves)
             {
                 var settings = leaf.RenderElement.Presentation!;
@@ -227,7 +227,7 @@ internal sealed partial class DesktopSession
             }
         var global = _settings.PresentationGlobal;
         var pointer = global.Pointer;
-        bool pointerAllowed = pointer.AnyEnabled && !_pointerPresentationPaused && _allOverlaysHidden is null;
+        bool pointerAllowed = pointer.AnyEnabled && _host.IsVisible && display.LayerOpacity > 0;
         bool clicks = pointerAllowed && pointer.ClicksEnabled;
         bool trail = pointerAllowed && pointer.TrailEnabled;
         double ripple = new[] { pointer.LeftClick, pointer.RightClick, pointer.MiddleClick }

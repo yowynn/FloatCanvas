@@ -13,7 +13,7 @@ internal sealed record CanvasPreviewContext(object Session, object Monitors, Poi
     bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1,
     object? ScreenDraftEpoch = null, object? PresentationEpoch = null, object? WindowEpoch = null, object? GroupEpoch = null,
     CanvasViewTransform? View = null, bool DepthPriorityOcclusion = false, object? ContinuityEpoch = null,
-    object? WindowContinuityEpoch = null, object? PresentationContinuityEpoch = null)
+    object? WindowContinuityEpoch = null, object? PresentationContinuityEpoch = null, bool OpaqueCalibrationGuides = false)
 {
     // Editing guides may lag one worker frame; never discard the matching base
     // scene while they update. Epoch still rejects a completed A→B→A transition.
@@ -196,7 +196,7 @@ internal sealed class CanvasPreviewRenderer : IDisposable
                     else cache.DrawOnClearedRasterTarget(surface, display, assets, snapshot.Revision, snapshot.Transaction,
                         snapshot.First, snapshot.Last, snapshot.BypassCache, snapshot.SceneIdentity);
                     if (snapshot.Context.Calibration && !snapshot.Context.Placing)
-                        renderer.DrawCalibrationGuides(canvas, display, snapshot.Context.GuideOpacity);
+                        renderer.DrawCalibrationGuides(canvas, display, snapshot.Context.GuideOpacity, snapshot.Context.OpaqueCalibrationGuides);
                     if (snapshot.PlacementScene is { } placement && snapshot.PlacementClip is { Count: 4 } quad)
                     {
                         using var builder = new SKPathBuilder();

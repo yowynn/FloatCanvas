@@ -80,6 +80,8 @@ internal static class CanvasAnchorCaptureTests
         check("confirmed four-line frame creates one undo and restores previous panels", session.UndoCount == undo + 1 && fixture.Panel.IsVisible && fixture.Secondary.IsVisible && !fixture.Hidden.IsVisible);
         check("four-line result maps the requested frame corners", session.Document.Canvas.Projection.Quad[0].DistanceTo(new(200, 200)) < 1e-6 && session.Document.Canvas.Projection.Quad[2].DistanceTo(new(500, 500)) < 1e-6);
         session.Document.Canvas.Grid.Visible = false;
+        session.Document.Canvas.Grid.Color = 0xFFFF0000;
+        typeof(DesktopSession).GetField("_canvasGuideOpacity", Private)!.SetValue(fixture.Session, 0d);
         fixture.Invoke("BeginCanvasGridCalibration");
         fixture.Pointer(OverlayPointerKind.Down, new(230, 230)); fixture.Pointer(OverlayPointerKind.Move, new(350, 380));
         Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
@@ -90,9 +92,26 @@ internal static class CanvasAnchorCaptureTests
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Render);
             WaitForSafeCandidate(dialog);
             var preview = Field<CanvasSettings>(fixture.Session, "_canvasGridCalibrationPreview");
-            check("rectangle popup previews the safety-checked visible grid without changing original visibility or history", preview.Grid.Visible && !session.Document.Canvas.Grid.Visible && session.UndoCount == undo + 1);
+            check("rectangle popup suppresses the custom red grid without changing original visibility or history", !preview.Grid.Visible && !session.Document.Canvas.Grid.Visible && session.UndoCount == undo + 1);
+            var context = (CanvasPreviewContext)fixture.Invoke("CurrentPreviewContext")!;
+            check("sample preview forces opaque reference guides despite zero user opacity", context.Calibration && context.GuideOpacity == 1 && context.OpaqueCalibrationGuides);
+            using (var renderer = new FloatCanvas.Rendering.SceneRenderer())
+            using (var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(64,64)))
+            {
+                var sample = new SceneDocument { Viewport = new(0,0,64,64), Canvas = preview.Clone() };
+                sample.Canvas.Projection.Enabled = false;
+                sample.Canvas.Grid.FlatOrigin = new(16.5,16.5); sample.Canvas.Grid.FlatCellSize = 16;
+                surface.Canvas.Clear(SkiaSharp.SKColors.Transparent);
+                typeof(FloatCanvas.Rendering.SceneRenderer).GetMethod("DrawCalibrationGuides", Private)!.Invoke(renderer,
+                    [surface.Canvas, sample, context.GuideOpacity, context.OpaqueCalibrationGuides]);
+                using var image = surface.Snapshot(); using var bitmap = SkiaSharp.SKBitmap.FromImage(image);
+                var pixels = bitmap.Pixels;
+                check("sample reference pixels contain opaque black and white without custom red", pixels.Any(p => p.Alpha == 255 && p.Red == 0) &&
+                    pixels.Any(p => p.Alpha == 255 && p.Red == 255) && pixels.All(p => p.Red == p.Green && p.Green == p.Blue));
+            }
             fields[0].Input.Text = "bad"; Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Render);
             check("invalid typed counts clear the stale preview immediately", typeof(DesktopSession).GetField("_canvasGridCalibrationPreview", Private)!.GetValue(fixture.Session) is null);
+            check("clearing sample preview restores the user's reference opacity", ((CanvasPreviewContext)fixture.Invoke("CurrentPreviewContext")!).GuideOpacity == 0);
             fields[0].Input.Text = "4";
             Descendants(dialog).OfType<System.Windows.Controls.Button>().Single(b => Equals(b.Content, L.Get("Canvas.AdjustGridSample"))).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         }));
@@ -108,6 +127,7 @@ internal static class CanvasAnchorCaptureTests
         }));
         fixture.Invoke("OnKey", 0x1B); Pump();
         check("sample application creates one undo while preserving hidden grid setting and restoring panels", session.UndoCount == undo + 2 && !session.Document.Canvas.Grid.Visible && fixture.Panel.IsVisible);
+        check("sample application preserves authored red and reference opacity", session.Document.Canvas.Grid.Color == 0xFFFF0000 && Field<double>(fixture.Session,"_canvasGuideOpacity") == 0);
         check("calibration undo and redo remain single steps", session.Undo() && session.Redo());
         fixture.Panel.Show(); fixture.Secondary.Show();
         fixture.Invoke("BeginCanvasGridCalibration"); fixture.Editor.Tool = EditorTool.Select; fixture.Invoke("SynchronizeCanvasTool");

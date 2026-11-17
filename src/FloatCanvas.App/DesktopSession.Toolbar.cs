@@ -490,12 +490,18 @@ internal sealed partial class DesktopSession
         var content=ToolbarShortcutHint.CreateButtonContent(button,shortcut,lowerRow);
         if(tool is { } key)_toolbarGlyphHosts[key]=content.Glyph;
         if (tool is {} hintedTool) content.Hint.Tag = (hintedTool, button);
+        else if (_toolbarCommandHints.FirstOrDefault(entry => ReferenceEquals(entry.Button, button)) is var command && command.Id is not null) content.Hint.Tag = command.Id;
         _toolbarShortcutHintLabels.Add(content.Hint);button.Content=content.Content;
     }
     private void RefreshToolShortcutHints()
     {
         foreach(var hint in _toolbarShortcutHintLabels)
         {
+            if (hint.Tag is string commandId)
+            {
+                string binding = EditorCommandCatalog.Hint(commandId);
+                hint.Text = binding.Length == 1 ? binding : "";
+            }
             if(hint.Tag is ValueTuple<EditorTool,Controls.Button> target)
             {
                 string binding=Equals(target.Item2.Tag,"more")?EditorCommandCatalog.Hint("Tools.More"):ToolShortcutCatalog.Hint(target.Item1);

@@ -54,12 +54,20 @@ internal sealed class UserSettings
     {
         if (!File.Exists(FilePath)) return new();
         var source=new CompatibleConfiguration(FilePath);
-        var settings=source.Read<UserSettings>(JsonOptions);settings.compatibility=source;return settings;
+        var settings=source.Read<UserSettings>(JsonOptions);settings.compatibility=source;
+        settings.RemoveRetiredShortcuts();
+        return settings;
     }
 
     public void Save()
     {
+        RemoveRetiredShortcuts();
         presentationGlobal.Pointer.NormalizeColorAlpha();
         (compatibility??=new CompatibleConfiguration(FilePath)).Save(this,JsonOptions);
+    }
+    internal void RemoveRetiredShortcuts()
+    {
+        foreach (var id in CommandBindings.Keys.Where(EditorCommandCatalog.IsRetired).ToArray()) CommandBindings.Remove(id);
+        foreach (var id in GlobalCommandBindings.Keys.Where(GlobalShortcutCatalog.IsRetired).ToArray()) GlobalCommandBindings.Remove(id);
     }
 }

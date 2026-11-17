@@ -61,7 +61,7 @@ internal static class PanelReviewRegressionTests
             session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 50, Style = new() { Opacity = .5 } });
             session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 50, Style = new() { Opacity = .8 } });
             session.SelectAll(); var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
-            var opacity = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields")["Opacity"];
+            var opacity = Field<Dictionary<string, NumericValueField>>(Field<NodeTransformPanel>(inspector, "nodeTransforms"), "fields")["Opacity"];
             Measure(opacity, 180, 34);
             check("mixed opacity can start its rail without typing first", opacity.Input.Text == "" && opacity.BeginGesture());
             opacity.UpdateRail(opacity.Slider.ActualWidth * .75); opacity.CancelGesture();

@@ -344,8 +344,8 @@
     "en": "Mouse demonstration"
   },
   "Presentation.Layout.Hint": {
-    "zh": "点击键位以选择，拖动调整位置；右侧可修改显示、标签和尺寸。位置与尺寸以普通按键宽度为单位，只有“应用”会保存本次草稿。",
-    "en": "Select and drag a key to reposition it, or edit its visibility, label and size on the right. One unit equals one standard key width. Only Apply saves this draft."
+    "zh": "Ctrl/Shift 点击增减选择，拖动可一起移动。在键位区按 Ctrl+A 全选、空格启用或禁用所选键；双击切换单个键。混合状态按空格统一启用。标签与尺寸需单选编辑，只有“应用”会保存草稿。",
+    "en": "Ctrl/Shift-click to add or remove keys; drag to move the selection together. In the key area, Ctrl+A selects all and Space enables or disables the selection (mixed becomes enabled). Double-click toggles one key. Select a single key to edit its label or size. Only Apply saves the draft."
   },
   "Presentation.DisplayStyle.Log": {
     "zh": "按键记录 · 简洁",
@@ -384,8 +384,8 @@
     "en": "Key recording · Realistic keycaps"
   },
   "Presentation.Layout.Enabled": {
-    "zh": "显示此键位",
-    "en": "Include this key"
+    "zh": "启用所选键位",
+    "en": "Enable selected keys"
   },
   "Presentation.Layout.Width": {
     "zh": "宽度",
@@ -401,15 +401,16 @@
   },
   "Presentation.Layout.Selected": {
     "zh": "所选键位",
-    "en": "Selected key"
+    "en": "Selected keys"
   },
+  "Presentation.Layout.MultiSelection": { "zh": "已选择 {0} 个键位，可统一启用、禁用或一起拖动。", "en": "{0} keys selected. Enable, disable or drag them together." },
   "Presentation.Layout.Title": {
     "zh": "编辑键盘布局",
     "en": "Keyboard layout editor"
   },
   "Presentation.Layout.NoSelection": {
-    "zh": "此布局没有键位。可恢复标准键盘。",
-    "en": "This layout has no keys. Restore the standard layout to begin."
+    "zh": "尚未选择键位。点击键位进行选择；空布局可恢复标准键盘。",
+    "en": "No keys selected. Click a key to select it, or restore the standard keyboard if the layout is empty."
   },
   "Recipe.PresentationKeycaps": {
     "zh": "按键记录 · 仿真键帽",

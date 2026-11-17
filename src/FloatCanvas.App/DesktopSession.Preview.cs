@@ -63,15 +63,17 @@ internal sealed partial class DesktopSession
         { _canvasContinuityKey = continuity; _canvasContinuityEpoch = new(); }
         bool foreignSource = view.IsRootPreview && _prefabEditContext is not null;
         bool flatCanvasTool = _editor.Tool == EditorTool.Canvas && !Active.IsReadOnly && !view.Document.Canvas.Projection.Enabled;
+        bool gridSample = !foreignSource && ReferenceEquals(_canvasGridCalibrationSession, Active) && _canvasGridCalibrationPreview is not null;
         var context = new CanvasPreviewContext(Active, _host.Monitors, view.Origin,
-            !_host.IsVisible, !foreignSource && _host.IsEditing && (_canvasCalibrationRequested || _canvasCalibration.IsActive || flatCanvasTool),
+            !_host.IsVisible, !foreignSource && _host.IsEditing && (_canvasCalibrationRequested || _canvasCalibration.IsActive || flatCanvasTool || gridSample),
             !foreignSource && _canvasCalibration.IsPlacing, Active.Document, _host.IsVisible ? null : _hiddenCanvasElements,
-            GuideOpacity: _canvasGuideOpacity, ScreenDraftEpoch: foreignSource ? null : _screenDraftEpoch,
+            GuideOpacity: gridSample ? 1 : _canvasGuideOpacity, ScreenDraftEpoch: foreignSource ? null : _screenDraftEpoch,
             PresentationEpoch: _presentationRuntime?.ObservingKeyboard == true ? _presentationRuntime.Lifetime : null,
             WindowEpoch: foreignSource ? null : CurrentWindowRenderEpoch(), GroupEpoch: _host.IsEditing ? _canvasViewGroupEpoch : view.Epoch,
             View: EditingCanvasView == CanvasViewTransform.Identity ? null : EditingCanvasView,
             DepthPriorityOcclusion: PreviewAppearance.DepthPriorityOcclusion, ContinuityEpoch: _canvasContinuityEpoch,
-            WindowContinuityEpoch: WindowOwnerToken(Active), PresentationContinuityEpoch: _presentationRuntime?.PixelContinuity);
+            WindowContinuityEpoch: WindowOwnerToken(Active), PresentationContinuityEpoch: _presentationRuntime?.PixelContinuity,
+            OpaqueCalibrationGuides: gridSample);
         if (_currentCanvasContext is { } current && current with { Epoch = 0 } == context) return current;
         long epoch = _currentCanvasContext is { } prior && prior.HasSameScene(context with { Epoch = prior.Epoch })
             ? prior.Epoch : ++_canvasContextEpoch;
@@ -88,17 +90,22 @@ internal sealed partial class DesktopSession
         SynchronizeCanvasViewing(view);
         view = view with { Epoch = _canvasViewEpoch };
         _hasEditableCanvasOccurrence = !view.IsRootPreview || _prefabEditContext is null || view.EditingPlacement is not null;
-        var scopeGraph = SceneGraph.Read(Active.Document);
-        var scopeContext = scopeGraph.ScopeContainerPlacement(Active.EditScopeId);
-        if (view.EditingContainer is { } container) scopeContext = container.Compose(scopeContext);
-        _editor.SetCanvasView(view.IsRootPreview && scopeContext.Surface is not null
-                ? CanvasMapping.CreateSurfaceView(view.Document, scopeContext, scopeGraph.ScopeWorldPlacement(Active.EditScopeId), EditingCanvasView, view.EditingRootCanvas, view.EditingContainer)
-            : view.EditingPlacement is { } placement
-                ? CanvasMapping.CreateView(view.Document, placement, view.EditingRootCanvas, EditingCanvasView)
-                : CanvasMapping.CreateViewing(view.Document, EditingCanvasView, view.EditingRootCanvas),
+        _editor.SetCanvasView(MappingForGroupCanvasView(view, EditingCanvasView),
             view.Origin, view.Epoch, view.EditingPlacement, view.Document, view.EditingRootCanvas,
             _groupCanvasMode == GroupCanvasMode.Temporary, EditingCanvasView, _canvasViewDuringMove, view.EditingContainer);
         return view;
+    }
+
+    private CanvasMapping MappingForGroupCanvasView(GroupCanvasView view, CanvasViewTransform viewing)
+    {
+        var scopeGraph = SceneGraph.Read(Active.Document);
+        var scopeContext = scopeGraph.ScopeContainerPlacement(Active.EditScopeId);
+        if (view.EditingContainer is { } container) scopeContext = container.Compose(scopeContext);
+        return view.IsRootPreview && scopeContext.Surface is not null
+                ? CanvasMapping.CreateSurfaceView(view.Document, scopeContext, scopeGraph.ScopeWorldPlacement(Active.EditScopeId), viewing, view.EditingRootCanvas, view.EditingContainer)
+            : view.EditingPlacement is { } placement
+                ? CanvasMapping.CreateView(view.Document, placement, view.EditingRootCanvas, viewing)
+                : CanvasMapping.CreateViewing(view.Document, viewing, view.EditingRootCanvas);
     }
 
     private void RequestCanvasPreview(bool pixelsOnly, IReadOnlyList<PixelBounds>? pixelDamage)

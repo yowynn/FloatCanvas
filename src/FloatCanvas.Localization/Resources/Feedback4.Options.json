@@ -17,7 +17,7 @@
   "ToolDescription.Symbol": {"zh":"选择图案，单击插入或拖动确定尺寸。","en":"Choose a symbol, then click to insert or drag its size."},
   "ToolDescription.Text": {"zh":"点击画布原位输入，点击已有文字继续编辑；Shift+Enter 换行，Enter 提交。","en":"Click the canvas to type inline or click existing text to edit; Shift+Enter adds a line and Enter commits."},
   "ToolDescription.Number": {"zh":"连续插入序号；当前序号随画布保存。","en":"Insert sequential numbers; the current counter belongs to the canvas."},
-  "ToolDescription.Image": {"zh":"从剪贴板、文件或拖放导入图片。","en":"Import images from the clipboard, files, or drag and drop."},
+  "ToolDescription.Image": {"zh":"从文件、剪贴板或拖放置入图片与工程内容。","en":"Import images and project content from files, the clipboard, or drag and drop."},
   "ToolDescription.Eraser": {"zh":"拖动擦除接触到的整个元素。","en":"Drag to erase whole elements under the pointer."},
   "ToolDescription.Crop": {"zh":"选中一张可编辑图片，拖动设置其裁剪范围。","en":"Select one editable image, then drag its crop area."},
   "ToolDescription.Blur": {"zh":"在实时画布上拖出动态模糊区域，随下层画面更新。","en":"Drag a live blur region that follows changes underneath."},

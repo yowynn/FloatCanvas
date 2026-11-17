@@ -52,6 +52,9 @@ public sealed partial class SceneGraph
         while (parent is { } value) { yield return value; parent = groups[value].ParentId; }
     }
     public bool IsAncestor(Guid ancestorId, Guid nodeId) => AncestorIds(nodeId).Contains(ancestorId);
+    public double NodeOpacity(Guid id) => groups.TryGetValue(id, out var group) ? group.Opacity :
+        instances.TryGetValue(id, out var instance) ? instance.Opacity : elements[id].Style.Opacity;
+    public double InheritedOpacity(Guid id) => AncestorIds(id).Aggregate(1d, (opacity, parent) => opacity * groups[parent].Opacity);
     public IReadOnlyList<Guid> EnumerateChildren(Guid? parentId) => parentId is { } id ? children.GetValueOrDefault(id) ?? [] : rootChildren;
     /// <summary>Real ownership subtree including its root; instances are terminal source nodes.</summary>
     public IEnumerable<Guid> DescendantNodeIds(Guid nodeId)
@@ -139,6 +142,7 @@ public sealed partial class SceneGraph
     public CanvasElement ResolveElement(CanvasElement element)
     {
         var result = ScopeContainerPlacement(element.GroupId).Resolve(element);
+        result.Style.Opacity *= InheritedOpacity(element.Id);
         result.Visible = IsVisible(element.Id); result.Locked = IsLocked(element.Id); result.GroupId = null;
         return result;
     }
@@ -280,13 +284,13 @@ public sealed partial class SceneGraph
             if (element is null || element.Id == Guid.Empty || !elements.TryAdd(element.Id, element)) throw InvalidGraph();
         foreach (var group in document.Groups)
             if (group is null || group.Id == Guid.Empty || elements.ContainsKey(group.Id) || !groups.TryAdd(group.Id, group) ||
-                !Enum.IsDefined(group.OrderMode) || !new LayerPlacement(group.Transform, group.ElevationScale).IsValid || group.Billboard is { IsValid: false } ||
+                !double.IsFinite(group.Opacity) || group.Opacity is < 0 or > 1 || !Enum.IsDefined(group.OrderMode) || !new LayerPlacement(group.Transform, group.ElevationScale).IsValid || group.Billboard is { IsValid: false } ||
                 group.Billboard is not null && group.OrderMode != GroupOrderMode.AtomicBlock ||
                 group.OrderMode == GroupOrderMode.AtomicBlock && group.ChildOrder is null ||
                 group.OrderMode == GroupOrderMode.LegacyPassThrough && group.ChildOrder is { Count: > 0 }) throw InvalidGraph();
         foreach (var instance in document.Instances)
             if (instance is null || instance.Id == Guid.Empty || instance.DefinitionId == Guid.Empty || elements.ContainsKey(instance.Id) || groups.ContainsKey(instance.Id) ||
-                !instances.TryAdd(instance.Id, instance) || !new LayerPlacement(instance.Transform, instance.ElevationScale).IsValid || instance.Billboard is { IsValid: false }) throw InvalidGraph();
+                !double.IsFinite(instance.Opacity) || instance.Opacity is < 0 or > 1 || !instances.TryAdd(instance.Id, instance) || !new LayerPlacement(instance.Transform, instance.ElevationScale).IsValid || instance.Billboard is { IsValid: false }) throw InvalidGraph();
         // Reuse validation scratch storage; a large scene otherwise allocates a
         // fresh hash set (and buckets) for every leaf on every read index build.
         var visited = new HashSet<Guid>();

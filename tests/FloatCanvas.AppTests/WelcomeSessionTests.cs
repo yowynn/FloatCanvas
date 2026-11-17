@@ -30,7 +30,7 @@ internal static class WelcomeSessionTests
         {
             check("fresh toggle is Ctrl+backtick without Alt", HotkeyBinding.DefaultToggle == new HotkeyBinding(2, 0xC0));
             check("fresh hide is Ctrl+Shift+backtick", HotkeyBinding.DefaultHide == new HotkeyBinding(6, 0xC0));
-            foreach (var pair in new (uint Key, string Label)[] { (0xC0,"`"), (0x31,"1"), (0xBA,";"), (0xBB,"="), (0xDB,"["), (0xDC,"\\"), (0xDE,"'"), (0x08,"Backspace"), (0x21,"Page Up"), (0x6B,"Num +") })
+            foreach (var pair in new (uint Key, string Label)[] { (0xC0,"~"), (0x31,"1"), (0xBA,";"), (0xBB,"+"), (0xDB,"["), (0xDC,"\\"), (0xDE,"'"), (0x08,"Backspace"), (0x21,"Page Up"), (0x6B,"Num +") })
                 check("readable key cap " + pair.Key, HotkeyDisplay.KeyName(pair.Key) == pair.Label);
             var settings = JsonSerializer.Deserialize<UserSettings>("""{"Toggle":{"Modifiers":3,"VirtualKey":70},"Hide":{"Modifiers":7,"VirtualKey":70},"ToolbarX":123,"ToolbarY":456,"ToolbarExpanded":false,"Theme":"dark","Language":"en","PrimaryScreenOnly":false}""")!;
             check("existing custom hotkeys survive without silent migration", settings.Toggle == new HotkeyBinding(3,70) && settings.Hide == new HotkeyBinding(7,70));
@@ -70,8 +70,8 @@ internal static class WelcomeSessionTests
                 var host = new Controls.Border {Width=430, Child=view};
                 host.SetResourceReference(Controls.Border.BackgroundProperty,"CanvasSurface");
                 host.Measure(new Wpf.Size(430,double.PositiveInfinity)); host.Arrange(new Wpf.Rect(0,0,430,host.DesiredSize.Height)); host.UpdateLayout();
-                check(language + theme + " code shortcuts are not text inputs", view.ToggleShortcut.Text == "Ctrl+`" && view.HideShortcut.Text == "Ctrl+Shift+`" && !Descendants(view).OfType<Controls.TextBox>().Any());
-                check(language + theme + " primary action includes the current shortcut", view.StartButton.Content?.ToString() == L.Format("Acceptance2.Welcome.Start","Ctrl+`"));
+                check(language + theme + " code shortcuts are not text inputs", view.ToggleShortcut.Text == "Ctrl+~" && view.HideShortcut.Text == "Ctrl+Shift+~" && !Descendants(view).OfType<Controls.TextBox>().Any());
+                check(language + theme + " primary action includes the current shortcut", view.StartButton.Content?.ToString() == L.Format("Acceptance2.Welcome.Start","Ctrl+~"));
                 check(language + theme + " shortcut decoration has no input border", view.ToggleShortcut.Parent is Controls.Border code && code.BorderThickness == new Wpf.Thickness(0) && code.CornerRadius == new Wpf.CornerRadius(4));
                 check(language + theme + " footer shows version and exact attribution with color emoji artwork", Descendants(view).OfType<Controls.TextBlock>().Any(text=>text.Text.StartsWith("v0.")) &&
                     Descendants(view).OfType<Controls.TextBlock>().Any(text=>text.Text.StartsWith("By 𝗛𝗘𝗣𝗧𝗔𝗬𝗢 with ")) &&

@@ -1,7 +1,7 @@
 {
   "Shortcuts.Command.Image.Import": {
-    "zh": "导入图像",
-    "en": "Import images"
+    "zh": "置入内容",
+    "en": "Import Content"
   },
   "Shortcuts.Command.Tools.More": {
     "zh": "更多工具",
@@ -332,8 +332,8 @@
     "en": "Pause/resume keyboard presentation capture"
   },
   "Shortcuts.Global.Pointer": {
-    "zh": "暂停/恢复鼠标演示",
-    "en": "Pause/resume pointer presentation"
+    "zh": "开启/关闭鼠标演示",
+    "en": "Toggle mouse presentation"
   },
   "Shortcuts.Global.HideAll": {
     "zh": "临时隐藏/恢复全部覆盖内容",

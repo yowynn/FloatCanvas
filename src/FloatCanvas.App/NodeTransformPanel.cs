@@ -51,15 +51,15 @@ internal sealed class NodeTransformPanel : StackPanel
         mode.Add(L.Get("GroupTransform.Individual"), true, SegmentedChoicePreviews.Icon("canvas"));
         Children.Add(PropertyPanelLayout.Row(new PropertyLabel(L.Get("GroupTransform.Pivot")), mode));
         mode.SelectionChanged += (_, _) => { if (!refreshing && mode.SelectedValue is bool value) { CompletePendingEdit(); getSession().TransformIndividually = value; Refresh(); } };
-        foreach (var (key, label) in new[] { ("X", "X"), ("Y", "Y"), ("W", L.Get("Inspector.Width")), ("H", L.Get("Inspector.Height")), ("Angle", L.Get("GroupTransform.RotationDelta")), ("CardHeight", L.Get("Billboard.Height")) })
+        foreach (var (key, label) in new[] { ("X", "X"), ("Y", "Y"), ("W", L.Get("Inspector.Width")), ("H", L.Get("Inspector.Height")), ("Angle", L.Get("GroupTransform.RotationDelta")), ("CardHeight", L.Get("Billboard.Height")), ("Opacity", L.Get("Inspector.Opacity")) })
         {
-            var field = key == "Angle" ? new NumericValueField(-360000, 360000, sliderMinimum: -180, sliderMaximum: 180) :
+            var field = key == "Opacity" ? new NumericValueField(0, 100, sliderMinimum: 0, sliderMaximum: 100, step: 1) : key == "Angle" ? new NumericValueField(-360000, 360000, sliderMinimum: -180, sliderMaximum: 180) :
                 key is "W" or "H" ? new NumericValueField(.01, 100_000_000, sliderMinimum: 1, sliderMaximum: 2000) :
                 new NumericValueField(-100_000_000, 100_000_000, sliderMinimum: -1000, sliderMaximum: 1000);
-            fields.Add(key, field); field.Unit = key == "Angle" ? "°" : "px";
+            fields.Add(key, field); field.Unit = key == "Opacity" ? "%" : key == "Angle" ? "°" : "px";
             field.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), label);
             AutomationProperties.SetName(field.Input, label); AutomationProperties.SetName(field.Slider, label);
-            if (key == "Angle")
+            if (key is "Angle" or "Opacity")
             {
                 var caption = new PropertyLabel(label); field.SetLabel(caption);
                 Children.Add(PropertyPanelLayout.Row(caption, field));
@@ -114,6 +114,9 @@ internal sealed class NodeTransformPanel : StackPanel
             var current = Bounds(session);
             fields["X"].SetModelValue(current.X); fields["Y"].SetModelValue(current.Y);
             fields["W"].SetModelValue(Math.Max(.01, current.Width)); fields["H"].SetModelValue(Math.Max(.01, current.Height)); fields["Angle"].SetModelValue(0);
+            var opacity = graph.NormalizeSelection(session.Selection).Select(graph.NodeOpacity).Distinct().ToArray();
+            fields["Opacity"].SetModelValue(opacity.FirstOrDefault(1) * 100);
+            if (opacity.Length > 1) fields["Opacity"].ShowPlaceholder("");
             foreach (var field in fields.Values) field.IsEnabled = editable;
             fields["W"].IsEnabled = fields["H"].IsEnabled = editable && current.Width > 0 && current.Height > 0;
             enter.Visibility = session.Selection.Count == 1 && (graph.FindGroup(session.Selection.First()) is not null || graph.FindInstance(session.Selection.First()) is not null) ? Visibility.Visible : Visibility.Collapsed;
@@ -151,6 +154,13 @@ internal sealed class NodeTransformPanel : StackPanel
         if (key == "CardHeight")
         {
             if (selection is [var id] && !session.TryUpdateContainerBillboardHeight(id, value)) status.Text = L.Get("Perspective.InputOutsidePlane");
+            return;
+        }
+        if (key == "Opacity") { session.TrySetSelectionOpacity(value / 100); return; }
+        if (session.TransformIndividually && key is "X" or "Y")
+        {
+            if (!session.TrySetIndividualSelectionPosition(original!, key == "X" ? value : null, key == "Y" ? value : null))
+                status.Text = L.Get("Perspective.InputOutsidePlane");
             return;
         }
         Affine2D delta; double elevation = 1;

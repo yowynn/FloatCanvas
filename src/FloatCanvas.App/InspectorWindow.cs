@@ -29,6 +29,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private readonly Controls.TextBlock selectionLabel = new() { TextWrapping = Wpf.TextWrapping.Wrap, FontWeight = Wpf.FontWeights.SemiBold };
     private readonly Controls.TextBlock status = new() { TextWrapping = Wpf.TextWrapping.Wrap, MinHeight = 28, FontSize = 11 };
     private readonly Controls.Border textSection;
+    private readonly Controls.Border geometrySection;
+    private readonly List<(Controls.Grid Row, string First, string Second)> pairedFieldRows = [];
     private readonly Controls.StackPanel linkedColorsGroup = new();
     private readonly PropertyChangeRegion linkedColorsRegion;
     private readonly AspectRatioButton keepAspect = new();
@@ -97,7 +99,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
         body.Children.Add(selectionLabel);
         nodeTransforms = new(getSession, this.canMutate); nodeTransforms.EditPrefabRequested += id => PrefabEditRequested?.Invoke(id); body.Children.Add(nodeTransforms);
         body.Children.Add(propertyPanel);
-        propertyPanel.Children.Add(SectionHeading("Inspector.GeometrySection", L.Get("Inspector.GeometryHint")));
+        geometrySection = SectionHeading("Inspector.GeometrySection", L.Get("Inspector.GeometryHint"));
+        propertyPanel.Children.Add(geometrySection);
         propertyPanel.Children.Add(FieldPair("X", "X", "Y", "Y"));
         propertyPanel.Children.Add(FieldPair("W", L.Get("Inspector.Width"), "H", L.Get("Inspector.Height")));
         propertyPanel.Children.Add(FieldPair("Angle", L.Get("Inspector.Angle"), null, null));
@@ -674,16 +677,38 @@ internal sealed partial class InspectorWindow : Wpf.Window
         }
         if (source.Kind == ElementKind.Presentation && dirtyFields.Overlaps(["FontSize", "FontFamily", "Presentation.RecentChordLimit", "Presentation.DisplayStyle", "Presentation.KeyboardLayout"]))
         {
-            using var renderer = new SceneRenderer();
-            var oldSize = PresentationLayout.NaturalSize(source.Presentation ?? new(), source.Style, renderer);
-            var newSize = PresentationLayout.NaturalSize(edited.Presentation ?? new(), edited.Style, renderer);
-            double oldWidth = edited.Width, oldHeight = edited.Height;
-            edited.Width *= newSize.X / oldSize.X; edited.Height *= newSize.Y / oldSize.Y;
-            var alignment = edited.Presentation?.KeyPanelAlignment ?? PresentationPanelAlignment.BottomLeft;
-            double anchorDx = alignment is PresentationPanelAlignment.TopRight or PresentationPanelAlignment.BottomRight ? oldWidth - edited.Width :
-                alignment is PresentationPanelAlignment.TopCenter or PresentationPanelAlignment.BottomCenter ? (oldWidth - edited.Width) / 2 : 0;
-            double anchorDy = alignment is PresentationPanelAlignment.BottomLeft or PresentationPanelAlignment.BottomCenter or PresentationPanelAlignment.BottomRight ? oldHeight - edited.Height : 0;
-            edited.Transform = edited.Transform.Compose(Affine2D.Translation(anchorDx, anchorDy));
+            if (dirtyFields.Contains("Presentation.KeyboardLayout") && PresentationFrameLayout.ReframeKeyboard(edited, source, out var shift))
+            {
+                var translation = Projective2D.FromAffine(Affine2D.Translation(shift.X, shift.Y));
+                if (source.IsBillboard)
+                {
+                    var graph = new SceneGraph(getSession().Document);
+                    bool withinCard = hasSharedCardContext() || graph.ScopeContainerPlacement(source.GroupId).Surface is not null;
+                    var world = withinCard ? source.Clone() : graph.ToWorld(source);
+                    var mapping = CanvasMapping.Create(withinCard ? new SceneDocument() : getSession().Document, getSession().ActiveRootCanvas);
+                    var placement = mapping.ElementToScreen(world).Compose(translation);
+                    var resized = withinCard ? edited.Clone() : graph.ToWorld(edited);
+                    if (!BillboardGeometry.TryEqualDepthLine(mapping, mapping.ToScreen(world.BillboardAnchor), out var depth) ||
+                        !BillboardGeometry.TryPlaceFromScreen(resized, mapping, depth, placement))
+                        throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
+                    EditorSession.CopyPlacement(edited, withinCard ? resized : graph.ToLocal(resized, source.GroupId));
+                }
+                else if (source.ProjectivePlacement is { } projection) edited.ProjectivePlacement = projection.Compose(translation);
+                else edited.Transform = edited.Transform.Compose(Affine2D.Translation(shift.X, shift.Y));
+            }
+            else
+            {
+                using var renderer = new SceneRenderer();
+                var oldSize = PresentationLayout.NaturalSize(source.Presentation ?? new(), source.Style, renderer);
+                var newSize = PresentationLayout.NaturalSize(edited.Presentation ?? new(), edited.Style, renderer);
+                double oldWidth = edited.Width, oldHeight = edited.Height;
+                edited.Width *= newSize.X / oldSize.X; edited.Height *= newSize.Y / oldSize.Y;
+                var alignment = edited.Presentation?.KeyPanelAlignment ?? PresentationPanelAlignment.BottomLeft;
+                double anchorDx = alignment is PresentationPanelAlignment.TopRight or PresentationPanelAlignment.BottomRight ? oldWidth - edited.Width :
+                    alignment is PresentationPanelAlignment.TopCenter or PresentationPanelAlignment.BottomCenter ? (oldWidth - edited.Width) / 2 : 0;
+                double anchorDy = alignment is PresentationPanelAlignment.BottomLeft or PresentationPanelAlignment.BottomCenter or PresentationPanelAlignment.BottomRight ? oldHeight - edited.Height : 0;
+                edited.Transform = edited.Transform.Compose(Affine2D.Translation(anchorDx, anchorDy));
+            }
         }
         if (dirtyFields.Contains("Number") && source.Kind == ElementKind.Number)
         {
@@ -740,8 +765,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private Controls.Grid FieldPair(string first, string firstLabel, string? second, string? secondLabel)
     {
         var firstCell = Add(first, firstLabel);
-        return second is null ? firstCell : PropertyPanelLayout.Row(new PropertyLabel(L.Get(first == "W" ? "Property.Size" : "Property.Position")),
+        if (second is null) return firstCell;
+        var pairedRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get(first == "W" ? "Property.Size" : "Property.Position")),
             PropertyPanelLayout.Pair(firstCell, Add(second, secondLabel!), first == "W" ? keepAspect : null));
+        pairedFieldRows.Add((pairedRow, first, second));
+        return pairedRow;
 
         Controls.Grid Add(string key, string label)
         {
@@ -1085,7 +1113,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         RefreshPresentationSettings(selected);
         if (nodeTransforms.IsApplicable)
-            foreach (var key in new[] { "X", "Y", "W", "H", "Angle", "ConstrainAspect" }) fieldContainers[key].Visibility = Wpf.Visibility.Collapsed;
+            foreach (var key in new[] { "X", "Y", "W", "H", "Angle", "ConstrainAspect", "Opacity" }) fieldContainers[key].Visibility = Wpf.Visibility.Collapsed;
         linkedColorsGroup.Visibility = new[] { "Stroke", "Fill", "LinkColors", "StyleVariant" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         bool number = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Number);
         bool shape = selected.Length > 0 && selected.All(e => ElementGeometry.IsBoxShape(e.Kind));
@@ -1101,8 +1129,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
         bool perspective=insideCard || getSession().ActiveRootCanvas == RootCanvasKind.Main && getSession().Document.Canvas.Projection.Enabled;
         if(!perspective){fieldContainers["Placement"].Visibility=Wpf.Visibility.Collapsed;fieldContainers["BillboardHeight"].Visibility=Wpf.Visibility.Collapsed;}
         foreach(var key in new[]{"X","Y"})fieldContainers[key].ToolTip=selected.Any(e=>e.IsBillboard)?L.Get("Billboard.AnchorHint"):null;
-        foreach (var row in propertyPanel.Children.OfType<Controls.Grid>().Where(row => !fieldContainers.Values.Contains(row)))
-            row.Visibility = row.Children.OfType<Wpf.FrameworkElement>().Any(child => child.Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        foreach (var (row, first, second) in pairedFieldRows)
+            row.Visibility = fieldContainers[first].Visibility == Wpf.Visibility.Visible || fieldContainers[second].Visibility == Wpf.Visibility.Visible
+                ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        geometrySection.Visibility = new[] { "X", "Y", "W", "H", "Angle" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible)
+            ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         bool firstSection = true;
         foreach (var section in propertyPanel.Children.OfType<Controls.Border>().Where(section => section.Visibility == Wpf.Visibility.Visible))
         {

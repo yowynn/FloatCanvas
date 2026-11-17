@@ -9,6 +9,7 @@ public sealed class SelectionTransformSnapshot
     internal Dictionary<Guid, CanvasGroup> Groups { get; } = [];
     internal Dictionary<Guid, PrefabInstance> Instances { get; } = [];
     internal Dictionary<Guid, PointD> Centers { get; } = [];
+    internal Dictionary<Guid, PointD> Positions { get; } = [];
     internal PointD CommonCenter { get; set; }
     internal Guid[] Ids => Elements.Keys.Concat(Groups.Keys).Concat(Instances.Keys).ToArray();
 }
@@ -264,6 +265,7 @@ public sealed partial class EditorSession
             else result.Elements.Add(id, graph.FindElement(id)!.Clone());
             var bounds = NodeBounds(graph, id, evaluated);
             result.Centers[id] = bounds?.Center ?? default;
+            result.Positions[id] = bounds is { } box ? new(box.Left, box.Top) : graph.NodeWorldPlacement(id).PlaneTransform.TransformPoint(default);
             if (bounds is { } value) combined = combined is { } previous ? RectD.Union(previous, value) : value;
         }
         result.CommonCenter = combined?.Center ?? default;
@@ -298,6 +300,19 @@ public sealed partial class EditorSession
     }
     public bool TryApplySelectionTransform(SelectionTransformSnapshot original, Affine2D delta, double elevationScale = 1, bool? individually = null,
         CanvasMapping? displayMapping = null)
+        => TryApplySelectionTransformCore(original, delta, elevationScale, individually, displayMapping, null);
+
+    /// <summary>Assigns absolute world bounds coordinates independently to each selected node.</summary>
+    public bool TrySetIndividualSelectionPosition(SelectionTransformSnapshot original, double? x = null, double? y = null)
+    {
+        if (x is { } px && !double.IsFinite(px) || y is { } py && !double.IsFinite(py)) return false;
+        var moves = original.Positions.ToDictionary(pair => pair.Key, pair =>
+            Affine2D.Translation(x is { } left ? left-pair.Value.X : 0, y is { } top ? top-pair.Value.Y : 0));
+        return TryApplySelectionTransformCore(original, Affine2D.Identity, 1, false, null, moves);
+    }
+
+    private bool TryApplySelectionTransformCore(SelectionTransformSnapshot original, Affine2D delta, double elevationScale, bool? individually,
+        CanvasMapping? displayMapping, IReadOnlyDictionary<Guid, Affine2D>? perNode)
     {
         if (IsReadOnly) return false;
         var displacement = new LayerPlacement(delta, elevationScale);
@@ -307,9 +322,9 @@ public sealed partial class EditorSession
         {
             RestorePlacements(original); var graph = new SceneGraph(Document);
             var ids = original.Ids.ToHashSet();
-            foreach (var id in displacement == LayerPlacement.Identity ? Array.Empty<Guid>() : original.Ids)
+            foreach (var id in displacement == LayerPlacement.Identity && perNode is null ? Array.Empty<Guid>() : original.Ids)
             {
-                var operation = displacement;
+                var operation = perNode is null ? displacement : new LayerPlacement(perNode[id], 1);
                 if (individually ?? TransformIndividually)
                 {
                     var linear = delta with { OffsetX = 0, OffsetY = 0 };

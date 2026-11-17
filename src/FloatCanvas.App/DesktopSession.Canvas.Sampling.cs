@@ -231,7 +231,7 @@ internal sealed partial class DesktopSession
                 if (!ReferenceEquals(target, _canvasGridCalibrationTarget) || !CanvasSamplingCurrent) return;
                 _canvasGridCalibrationPreview = settings?.Clone();
                 if (_canvasGridCalibrationPreview is { } preview)
-                { preview.Grid.Visible = true; if (preview.Grid.Width <= 0) preview.Grid.Width = 1; if ((preview.Grid.Color >> 24) == 0) preview.Grid.Color = 0xAA23B5CC; }
+                    preview.Grid.Visible = false; // Sample counts use reference guides, never the authored grid style.
                 _canvasDraftRevision++; RequestRender();
             }, async (settings, cancellationToken) =>
             {

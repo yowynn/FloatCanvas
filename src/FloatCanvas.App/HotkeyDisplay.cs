@@ -21,6 +21,7 @@ internal static class HotkeyDisplay
 
     private static string LayoutKeyName(uint key)
     {
+        if(key is 0xC0 or 0xBB or 0xBD)return KeyName(key);
         if (key is >=0xBA and <=0xE2)
         {
             uint scan=MapVirtualKeyEx(key,0,GetKeyboardLayout(0));
@@ -43,8 +44,8 @@ internal static class HotkeyDisplay
         0x22 => "Page Down", 0x23 => "End", 0x24 => "Home", 0x25 => "←", 0x26 => "↑",
         0x27 => "→", 0x28 => "↓", 0x2C => "Print Screen", 0x2D => "Insert", 0x2E => "Delete",
         0x6A => "Num *", 0x6B => "Num +", 0x6C => "Num ,", 0x6D => "Num -", 0x6E => "Num .", 0x6F => "Num /",
-        0x90 => "Num Lock", 0x91 => "Scroll Lock", 0xBA => ";", 0xBB => "=", 0xBC => ",",
-        0xBD => "-", 0xBE => ".", 0xBF => "/", 0xC0 => "`", 0xDB => "[", 0xDC => "\\",
+        0x90 => "Num Lock", 0x91 => "Scroll Lock", 0xBA => ";", 0xBB => "+", 0xBC => ",",
+        0xBD => "-", 0xBE => ".", 0xBF => "/", 0xC0 => "~", 0xDB => "[", 0xDC => "\\",
         0xDD => "]", 0xDE => "'", 0xE2 => "\\",
         _ => System.Windows.Input.KeyInterop.KeyFromVirtualKey((int)key) is var mapped && mapped != System.Windows.Input.Key.None
             ? mapped.ToString() : "Key 0x" + key.ToString("X2")

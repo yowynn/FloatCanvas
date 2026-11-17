@@ -130,12 +130,12 @@
     "en": "Redo · Ctrl+Y"
   },
   "Tool.Image": {
-    "zh": "贴图",
-    "en": "Image"
+    "zh": "置入内容",
+    "en": "Import Content"
   },
   "Toolbar.Image": {
-    "zh": "置入图片或工程",
-    "en": "Place images or projects"
+    "zh": "置入内容",
+    "en": "Import Content"
   },
   "Toolbar.Capture": {
     "zh": "截图",
@@ -182,7 +182,7 @@
     "en": "Settings"
   },
   "Toolbar.Opacity": {
-    "zh": "标注与贴图的整体不透明度",
+    "zh": "标注与图片的整体不透明度",
     "en": "Overall annotation and image opacity"
   },
   "History.LayerOpacity": {
@@ -530,8 +530,8 @@
     "en": "Replace selected image"
   },
   "Image.ImportTitle": {
-    "zh": "导入图片",
-    "en": "Import images"
+    "zh": "置入内容",
+    "en": "Import Content"
   },
   "Image.Filter": {
     "zh": "图片 (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif)|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif",

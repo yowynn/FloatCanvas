@@ -218,6 +218,20 @@ internal static class NodeControllerAuditTests
             check("a locked-scope capture rejects before adding newly captured PNG bytes", session.Assets.Count == 0);
         });
 
+        Case("individual position fields set each selected layer to the same coordinate", () =>
+        {
+            var a = Box("first", 10, 20); var b = Box("second", 180, 90);
+            var session = CreateSession(new() { Elements = [a,b] }); session.SetSelection([a.Id,b.Id]); session.TransformIndividually = true;
+            var panel = new NodeTransformPanel(() => session, () => true); panel.Refresh();
+            var fields = Field<Dictionary<string, NumericValueField>>(panel,"fields");
+            fields["X"].Input.Text = "300"; Invoke(panel,"Publish","X"); panel.CompletePendingEdit();
+            check("individual X assigns a shared left edge and preserves each Y", session.Document.Elements.All(e => Math.Abs(ElementGeometry.Bounds(e).Left-300)<1e-6) &&
+                session.Document.Elements[0].Transform.OffsetY==20 && session.Document.Elements[1].Transform.OffsetY==90);
+            fields["Y"].Input.Text = "200"; Invoke(panel,"Publish","Y"); panel.CompletePendingEdit();
+            check("individual Y assigns a shared top edge", session.Document.Elements.All(e => Math.Abs(ElementGeometry.Bounds(e).Top-200)<1e-6));
+            check("individual coordinates retain separate undo steps",session.UndoCount==2 && session.Undo() && session.Undo() && session.Document.Elements[1].Transform.OffsetX==180);
+        });
+
         Case("node property panel owns only its transaction", () =>
         {
             var fixture = PopulatedNested(); var graph = new SceneGraph(fixture.Document); graph.InsertElement(Box("panel child", 10, 20), fixture.Inner, worldCoordinates: false);

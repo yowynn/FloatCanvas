@@ -68,7 +68,6 @@ internal sealed partial class DesktopSession
 
     private void RefreshPassThroughLauncher()
     {
-        if (_allOverlaysHidden is not null) { _passThroughLauncher?.Hide(); return; }
         if (_disposed || _toolbar is null) return;
         RefreshMascotVisibility(_host.IsVisible);
         // An editing request can still be waiting for entry keys or input acknowledgement.

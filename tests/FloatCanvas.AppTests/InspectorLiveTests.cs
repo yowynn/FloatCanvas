@@ -32,16 +32,16 @@ internal static class InspectorLiveTests
         window.CompletePendingEdit();
         session.SetSelection([first, second]);
         check("multiple selection is explicitly labeled and shows only common fields", Field<Controls.TextBlock>(window, "selectionLabel").Visibility == Wpf.Visibility.Visible &&
-            Field<Controls.TextBlock>(window, "selectionLabel").Text.Contains("2") && containers["Opacity"].Visibility == Wpf.Visibility.Visible &&
+            Field<Controls.TextBlock>(window, "selectionLabel").Text.Contains("2") && containers["Opacity"].Visibility == Wpf.Visibility.Collapsed &&
             containers["Stroke"].Visibility == Wpf.Visibility.Visible && containers["Fill"].Visibility == Wpf.Visibility.Collapsed && containers["Text"].Visibility == Wpf.Visibility.Collapsed && containers["FontSize"].Visibility == Wpf.Visibility.Collapsed);
         var nodePanel = Field<NodeTransformPanel>(window, "nodeTransforms");
         var nodeFields = Field<Dictionary<string, NumericValueField>>(nodePanel, "fields");
         check("multi-selection geometry shows the whole selection size and hides per-layer geometry", containers["W"].Visibility == Wpf.Visibility.Collapsed &&
             Math.Abs(nodeFields["W"].Value - session.SelectionBounds()!.Value.Width) < 1e-8);
         undo = session.UndoCount;
-        fields["Opacity"].Text = "42";
+        nodeFields["Opacity"].Input.Text = "42"; Invoke(nodePanel, "Publish", "Opacity");
         check("a shared property immediately updates every selected layer", session.Document.Elements.All(e => e.Style.Opacity == .42));
-        Invoke(window, "CompleteEdit");
+        nodePanel.CompletePendingEdit();
         check("multi-layer edit has one undo entry", session.UndoCount == undo + 1 && session.Undo() && session.Document.Elements.All(e => e.Style.Opacity == 1));
         session.SetSelection([first, second]);
         var before = session.Document.Elements.Select(e => ElementGeometry.Bounds(e).Left).ToArray();

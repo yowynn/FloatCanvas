@@ -371,7 +371,7 @@ public sealed partial class EditorSession
         new SceneGraph(copy).MaterializeOrder();
         var root = new CanvasGroup { Id = instance.Id, ParentId = instance.ParentId, Name = instance.Name,
             Billboard = instance.Billboard,
-            Transform = instance.Transform, ElevationScale = instance.ElevationScale, Visible = instance.Visible, Locked = instance.Locked,
+            Transform = instance.Transform, ElevationScale = instance.ElevationScale, Visible = instance.Visible, Locked = instance.Locked, Opacity = instance.Opacity,
             PreviewCanvas = definition.PreviewCanvas?.Clone() ?? new SubprojectCanvasSettings { Origin = definition.Pivot },
             OrderMode = GroupOrderMode.AtomicBlock, ChildOrder = copy.RootOrder!.ToList() };
         foreach (var group in copy.Groups.Where(group => group.ParentId is null)) group.ParentId = root.Id;

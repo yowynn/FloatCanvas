@@ -108,6 +108,9 @@ internal static class CanvasToolRenderingTests
         Set(desktop, "_canvasCalibration", calibration);
         Set(desktop, "_canvasReferenceLines", new List<CanvasReferenceLine>());
         Set(desktop, "_windowSourceLeaves", Array.Empty<ResolvedLeaf>());
+        var owners = typeof(DesktopSession).GetField("_windowOwners", flags)!;
+        owners.SetValue(desktop, Activator.CreateInstance(owners.FieldType));
+        Set(desktop, "_presentationLeaves", Array.Empty<ResolvedLeaf>());
         Set(desktop, "_hiddenCanvasElements", new HashSet<Guid>()); Set(desktop, "_canvasGuideOpacity", 1d);
         CanvasPreviewContext Context() => (CanvasPreviewContext)typeof(DesktopSession).GetMethod("CurrentPreviewContext", flags)!.Invoke(desktop, null)!;
         var normal = Context(); editor.Tool = EditorTool.Canvas; var navigation = Context();

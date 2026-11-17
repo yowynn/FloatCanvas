@@ -55,6 +55,7 @@ internal static class SettingsWindowFixture
             var isolation = typeof(OverlayHost).GetField("_keyboardIsolation", PrivateInstance)!;
             (isolation.GetValue(host) as IDisposable)?.Dispose(); isolation.SetValue(host, null);
             CheckShellRestartSettings();
+            if (Environment.GetEnvironmentVariable("FLOATCANVAS_ASSOCIATION_ONLY") == "1") return;
             Observe("direct", () => typeof(DesktopSession).GetMethod("ShowHotkeySettings", PrivateInstance)!.Invoke(session, null));
             var menu = (ContextMenu)typeof(DesktopSession).GetField("_toolbarMenu", PrivateInstance)!.GetValue(session)!;
             var settings = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, L.Get("Menu.Settings")));
@@ -156,7 +157,9 @@ internal static class SettingsWindowFixture
                         check(launch.Name + " shows the expected enabled startup and file association controls",
                             startup.IsEnabled == launch.Enabled && associate.IsEnabled == launch.Enabled);
                         check(launch.Name + " uses an explicit association action distinct from the group title",
-                            !Equals(associate.Content, L.Get("Shell.RegisterProjectType")) && associate.Content.ToString()!.Contains(".floatcanvas"));
+                            !Equals(associate.Content, L.Get("Shell.RegisterProjectType")) && !associate.Content.ToString()!.Contains(".floatcanvas"));
+                        check(launch.Name + " lists both file types in the association tooltip",
+                            associate.ToolTip.ToString()!.Contains(".floatcanvas") && associate.ToolTip.ToString()!.Contains(".floatprefab"));
                         if (launch.Name == "settings restart")
                         {
                             controls.OfType<ListBox>().Single().SelectedIndex = 3; Pump();
@@ -210,7 +213,7 @@ internal static class SettingsWindowFixture
                         historyNumber.Input.Text = "1000";
                         check("history input accepts values above the rail up to one thousand", historyNumber.TryGetValue(out double manualLimit) && manualLimit == 1000);
                         historyNumber.Input.Text = "60";
-                        check("both shortcut recorders display their current bindings", recorders.Select(box => box.Text).SequenceEqual(new[] { HotkeyDisplay.Format(UserSettings.Load().Toggle), HotkeyDisplay.Format(UserSettings.Load().Hide) }));
+                        check("both primary shortcut recorders display their current bindings", recorders.Take(2).Select(box => box.Text).SequenceEqual(new[] { HotkeyDisplay.Format(UserSettings.Load().Toggle), HotkeyDisplay.Format(UserSettings.Load().Hide) }));
                         var language = controls.OfType<SegmentedChoice>().Single(box => AutomationProperties.GetName(box) == L.Get("Settings.Language"));
                         int originalLanguage = language.SelectedIndex; language.SelectedIndex = originalLanguage == 1 ? 2 : 1;
                         check("restart-required settings change the save action", Equals(layout.SaveButton.Content, L.Get("Settings.SaveRestart")));

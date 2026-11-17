@@ -34,7 +34,7 @@ internal static class ToolOptionsKeyboardRouteTests
             {
                 if(Keyboard.Modifiers!=ModifierKeys.None)Console.WriteLine($"OPTIONS_SETUP modifiers={Keyboard.Modifiers} native={ThreadModifierScope.Describe()}");
                 check("keyboard route fixture establishes no modifiers after WPF initialization",Keyboard.Modifiers==ModifierKeys.None);
-                foreach (var key in new[] { Key.B, Key.L, Key.M, Key.F4, Key.F8 })
+                foreach (var key in new[] { Key.B, Key.L, Key.M, Key.F4, Key.Oem3 })
                 {
                     int previous = commands.Count; var args = Send(button, key);
                     if(!args.Handled||commands.Count!=previous+1)Console.WriteLine($"OPTIONS_ROUTE requested={key} key={args.Key} systemKey={args.SystemKey} handled={args.Handled} repeat={args.IsRepeat} modifiers={Keyboard.Modifiers} native={ThreadModifierScope.Describe()} commands={previous}->{commands.Count} source={args.OriginalSource?.GetType().Name} current={args.Source?.GetType().Name}");
@@ -82,7 +82,7 @@ internal static class ToolOptionsKeyboardRouteTests
                 }
                 check("menus and system modifier keys are not repurposed as tools", !ToolOptionsKeyboardRoute.ShouldRoute(0x42, ModifierKeys.None, new MenuItem()) && !ToolOptionsKeyboardRoute.ShouldRoute(0x42, ModifierKeys.Alt, button));
                 var modalSource = new Button(); var modalWindow = new Window { Content = modalSource };
-                var modalKey = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.F8) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                var modalKey = new KeyEventArgs(Keyboard.PrimaryDevice, new DetachedSource(), Environment.TickCount, Key.Oem3) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
                 bool consumedBeforeCommand = false;
                 ToolOptionsKeyboardRoute.Attach(modalWindow, () => false, _ => consumedBeforeCommand = modalKey.Handled);
                 try { modalSource.RaiseEvent(modalKey); check("a modal-capable command consumes its source key before invoking the command", consumedBeforeCommand); }

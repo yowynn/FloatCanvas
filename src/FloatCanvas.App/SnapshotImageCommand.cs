@@ -10,14 +10,14 @@ internal static class SnapshotImageCommand
     internal static CaptureRasterResult Render(SceneDocument committedScene, IEnumerable<AssetResource> resources,
         CaptureSelection selection, CapturedDesktop? desktop, IReadOnlyList<RectD> displays, TimeSpan animationTime = default,
         PointD screenOrigin = default, PresentationCaptureSnapshot? presentation = null, WindowRasterCapture? windows = null,
-        CanvasViewTransform? viewing = null)
+        CanvasViewTransform? viewing = null, bool preserveLayerOpacity = false)
     {
         if (!double.IsFinite(selection.BorderWidth) || selection.BorderWidth < 0)
             throw new ArgumentException(L.Get("Capture.EmptyRegion"), nameof(selection));
         selection = selection with { Points = selection.Points.ToArray() };
         var scene = committedScene.Clone();
         // The new Image receives canvas opacity in the ordinary render pass, exactly once.
-        scene.LayerOpacity = 1;
+        if(!preserveLayerOpacity)scene.LayerOpacity = 1;
         var assets = new AssetLibrary();
         foreach (var resource in resources) assets.Add(resource.Data.ToArray(), resource.MediaType);
         bool background = selection.Source != CaptureSource.CanvasOnly;

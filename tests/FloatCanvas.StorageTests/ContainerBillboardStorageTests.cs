@@ -51,7 +51,7 @@ internal static class ContainerBillboardStorageTests
                 using var writer = new StreamWriter(zip.CreateEntry(name).Open()); await writer.WriteAsync(json.ToJsonString());
             }
         var legacyLoaded = (await store.LoadAsync(legacy)).Document;
-        check(legacyLoaded.Version == 19 && JsonSerializer.Serialize(legacyLoaded.Elements) == JsonSerializer.Serialize(old.Elements), "format 18 preserves historical billboard compensation without rewriting");
+        check(legacyLoaded.Version == SceneDocument.CurrentVersion && JsonSerializer.Serialize(legacyLoaded.Elements) == JsonSerializer.Serialize(old.Elements), "format 18 preserves historical billboard compensation without rewriting");
         var invalidVersion = session.Document.Clone(); invalidVersion.Version = 18;
         bool versionRejected = false; try { SceneValidation.Validate(invalidVersion); } catch (InvalidDataException) { versionRejected = true; }
         check(versionRejected, "old format cannot carry new container semantics");

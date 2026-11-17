@@ -155,6 +155,8 @@ public static class SceneValidation
     }
     private static void ValidatePreviewVersion(SceneNodeGraph graph, int version)
     {
+        Require(version >= 20 || graph.Groups.All(group => group.Opacity == 1) && graph.Instances.All(instance => instance.Opacity == 1),
+            "Container opacity requires scene format 20.");
         Require(version >= 19 || graph.Groups.All(group => group.Billboard is null) && graph.Instances.All(instance => instance.Billboard is null),
             "Container billboards require scene format 19.");
         Require(version >= 17 || graph.Groups.All(group => group.PreviewCanvas is null), "Subproject canvases require scene format 17.");

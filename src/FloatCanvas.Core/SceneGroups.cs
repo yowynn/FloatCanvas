@@ -15,6 +15,7 @@ public sealed class CanvasGroup
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ContainerBillboard? Billboard { get; set; }
     public bool Visible { get; set; } = true;
+    public double Opacity { get; set; } = 1;
     public bool Locked { get; set; }
     public GroupOrderMode OrderMode { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
