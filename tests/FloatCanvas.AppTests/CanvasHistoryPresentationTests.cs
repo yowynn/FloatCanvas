@@ -16,6 +16,12 @@ internal static class CanvasHistoryPresentationTests
             DocumentEpoch: new object(), ContinuityEpoch: new object());
         check("retaining history pixels does not accept an obsolete scene", context.CanRetainPixelsFor(context with { DocumentEpoch = new object() }) &&
             !context.HasSameScene(context with { DocumentEpoch = new object() }));
+        var windows = context with { WindowEpoch = new object(), WindowContinuityEpoch = new object() };
+        check("window render-plan changes retain submitted pixels within the same owner", windows.CanRetainPixelsFor(windows with { WindowEpoch = new object() }));
+        check("window owner retirement cannot retain old source pixels", !windows.CanRetainPixelsFor(windows with { WindowContinuityEpoch = new object() }));
+        var presentation = context with { PresentationEpoch = new object(), PresentationContinuityEpoch = new object() };
+        check("capture pause can retain submitted pixels", presentation.CanRetainPixelsFor(presentation with { PresentationEpoch = null }));
+        check("privacy change while capture is paused rejects submitted pixels", !presentation.CanRetainPixelsFor(presentation with { PresentationEpoch = null, PresentationContinuityEpoch = new object() }));
         foreach (var blocked in new[] { context with { ContinuityEpoch = new object() }, context with { Session = new object() },
             context with { Monitors = new object() }, context with { Hidden = true }, context with { VisibilityEpoch = new object() },
             context with { PresentationEpoch = new object() }, context with { WindowEpoch = new object() },

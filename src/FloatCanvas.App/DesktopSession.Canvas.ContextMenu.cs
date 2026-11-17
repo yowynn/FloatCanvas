@@ -14,7 +14,9 @@ internal sealed partial class DesktopSession
         if(_globalCapture is not null) {CompleteGlobalCapture(inserted:false);return true;}
         if(_editor.HasPointerGesture || Active.IsTransactionActive || _editor.HasPendingBillboardOperation)
         { _editor.Cancel(); return true; }
-        if(_eyedropper is not null) { EndEyedropper();return true; }
+        // Sampling owns the complete cancel click; restore its windows on release,
+        // so the mouse-up cannot land in a picker that has just reappeared.
+        if(_eyedropper is not null) return HandleEyedropperPointer(input);
         FinishInlineText(); _inspector?.CompletePendingEdit();
         _editor.SelectContextTarget(new(input.Position.X-_editor.CanvasOrigin.X,input.Position.Y-_editor.CanvasOrigin.Y));
         var menu=new OverlayContextMenu { PlacementTarget=_toolbar,Placement=PlacementMode.MousePoint };

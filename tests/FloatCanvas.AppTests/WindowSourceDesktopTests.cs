@@ -85,11 +85,24 @@ internal static class WindowSourceDesktopTests
         editor.Cancel(); editor.ScreenOrigin = beforeOrigin; Call("UpdateWindowSourceRuntime");
         check("disposing retained stale submissions did not destroy the original frame lease", frame.PickingWindowFrames is { } originalFrames && originalFrames.TryGet(new(session.Document.ResourceId, new(null, image.Id)), out var original) && original.Id.Sequence == 1);
 
+        typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, true);
+        Call("CurrentGroupCanvasView");
+        AllowSynthetic(); source.Publish(SKColors.Lime, 3); Drain(source);
+        foreach (double offset in new[] { -1000d, 0d, -1000d, 0d })
+        {
+            Call("ChangeCanvasViewing", new CanvasViewTransform(1, new(offset, 0)), false);
+            Call("UpdateWindowSourceRuntime");
+            using var edgeSnapshot = Capture(); using var edgeFrame = worker.Render(edgeSnapshot); using var edgePixels = FramePixels(edgeFrame);
+            check("window source viewport crossing keeps the last live pixels instead of fallback: " + offset,
+                offset == 0 ? edgePixels.GetPixel(80, 80) == SKColors.Lime : edgePixels.GetPixel(80, 80).Alpha == 0);
+        }
+        typeof(OverlayHost).GetProperty(nameof(OverlayHost.IsEditing))!.SetValue(host, false);
+
         object ownerBeforeUndo = Call("WindowOwnerToken", session)!;
         session.Execute("test temporary opacity", document => document.Elements.Single(element => element.Id == image.Id).Style.Opacity = .8);
         session.Undo(); Call("UpdateWindowSourceRuntime");
         using (var remembered = Retain(session, new(null, image.Id), image.WindowSource.BindingIntent))
-            check("ordinary Undo restoration preserves same-owner intent lookup despite a new document object", remembered is not null && remembered.Id.Sequence == 2 && ReferenceEquals(ownerBeforeUndo, Call("WindowOwnerToken", session)));
+            check("ordinary Undo restoration preserves same-owner intent lookup despite a new document object", remembered is not null && remembered.Id.Sequence == 3 && ReferenceEquals(ownerBeforeUndo, Call("WindowOwnerToken", session)));
 
         var hidden = Image(50, 250, 120, 90); var zero = Image(200, 250, 120, 90); zero.Style.Opacity = 0;
         var definitionImage = Image(0, 0, 100, 80); var definition = new PrefabDefinition { Graph = new() { Elements = [definitionImage] } };

@@ -942,29 +942,11 @@ internal sealed partial class DesktopSession : IDisposable
             _toolOptionsWindow.IsEnabled = enabled;
         }
         if (_editor is not null) { RefreshHistoryCommandState(); SynchronizeCanvasTool(); UpdateWindowSourceRuntime(); RefreshWindowSourcesUi(); }
-        if (enabled) RestoreToolbarKeyboardFocus();
+        if (enabled) _windowCoordinator?.RestoreKeyboardDestination();
         if (enabled && _toolbar is not null && !_disposed) RequestRender();
-    }
-    private void RestoreToolbarKeyboardFocus()
-    {
-        // Disabling the toolbar removes WPF keyboard focus. Native dialog ownership restores
-        // its HWND, but enabling it does not restore the element receiving routed key events.
-        // Repair only this already-foreground toolbar, synchronously; do not activate a window
-        // or replace an existing text/IME/other control's keyboard focus.
-        if (_disposed || !_host.IsEditing || !_host.IsKeyboardIsolationActive || _toolbar is null ||
-            !_toolbar.IsVisible || !_toolbar.IsEnabled || System.Windows.Input.Keyboard.FocusedElement is not null) return;
-        var handle = new WindowInteropHelper(_toolbar).Handle;
-        if (handle == 0 || (_host.UsesSystemInput
-            ? !_host.HasEditingInput || GetToolbarFocusWindow()!=handle
-            : GetToolbarForegroundWindow()!=handle)) return;
-        var previous = System.Windows.Input.FocusManager.GetFocusedElement(_toolbar) as UIElement;
-        var target = previous is { Focusable: true, IsVisible: true, IsEnabled: true } && ReferenceEquals(Window.GetWindow(previous), _toolbar)
-            ? previous : _toolbar;
-        System.Windows.Input.Keyboard.Focus(target);
     }
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
     private static extern nint GetToolbarForegroundWindow();
-    [DllImport("user32.dll",EntryPoint="GetFocus")] private static extern nint GetToolbarFocusWindow();
     private void ShowError(string error)
     {
         _diagnostics.Write("App.ErrorShown", new { Message = error });

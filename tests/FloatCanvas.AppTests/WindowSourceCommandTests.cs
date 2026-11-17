@@ -17,9 +17,10 @@ using SkiaSharp;
 internal static class WindowSourceCommandTests
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
-    internal static void Run(Action<string, bool> check, string? output = null, bool creationOnly = false)
+    internal static void Run(Action<string, bool> check, string? output = null, bool creationOnly = false, bool focusOnly = false)
     {
-        if (!DesktopName().StartsWith("FloatCanvas.Tests.", StringComparison.Ordinal) || PresentationDesktopAvailability.IsCurrentInputDesktop())
+        if ((!DesktopName().StartsWith("FloatCanvas.Tests.", StringComparison.Ordinal) || PresentationDesktopAvailability.IsCurrentInputDesktop()) &&
+            !(focusOnly && Environment.GetCommandLineArgs().Contains("--window-crop-focus-native-only")))
             throw new InvalidOperationException("Use --isolated-ui-desktop --window-source-commands-desktop-only.");
         if (Application.Current is not null) throw new InvalidOperationException("Run in a fresh isolated child process.");
         string root = Path.Combine(output ?? Path.GetTempPath(), "window-commands-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
@@ -40,6 +41,17 @@ internal static class WindowSourceCommandTests
         using var target = new OwnTarget();
         var editor = Field<EditorController>(desktop, "_editor"); var owner = editor.Session;
         var fixture = new Fixture(desktop, editor, owner, target.Target);
+        if (focusOnly)
+        {
+            nint previousForeground = GetForegroundWindow();
+            try { CropFocus(fixture, check); }
+            finally
+            {
+                GetWindowThreadProcessId(GetForegroundWindow(), out uint foregroundProcess);
+                if (foregroundProcess == Environment.ProcessId && previousForeground != 0) SetForegroundWindow(previousForeground);
+            }
+            return;
+        }
         if (creationOnly) { CompleteImageDrop(fixture, check); CompleteBillboardInsertion(fixture, check); PendingInvalidation(fixture, check); return; }
         check("command fixture reads only its own undisplayed HWND identity without source enumeration", target.Target.IsCurrent && target.Target.ProcessId == Environment.ProcessId);
         AddAndRebind(fixture, check);
@@ -212,6 +224,80 @@ internal static class WindowSourceCommandTests
         check("cancelling pending billboard placement releases its service without assets or a late insert", !f.Editor.HasPendingBillboardInsertion && Field<object?>(f.Desktop, "_pendingWindowInsertion") is null && ((FakeSource)prepared.Capture).DisposeCount == 1 && Snapshot(f.Owner) == before);
     }
 
+    private static void CropFocus(Fixture f, Action<string, bool> check)
+    {
+        var host = Field<OverlayHost>(f.Desktop, "_host");
+        DesktopSyntheticKeyboard.Allow(f.Desktop, host);
+        var toolbar = Field<Window>(f.Desktop, "_toolbar");
+        var coordinator = Field<SessionWindowCoordinator>(f.Desktop, "_windowCoordinator");
+        toolbar.Show();
+        foreach (bool pinned in new[] { false, true })
+        foreach (bool accept in new[] { true, false })
+        {
+            f.Reset(); ActivateOwn(toolbar);
+            typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
+            check("native crop fixture owns foreground", host.HasEditingInput);
+            var image = new CanvasElement { Kind = ElementKind.Image, Width = 80, Height = 60,
+                AssetId = f.Owner.Assets.Add(Png(SKColors.Red), "image/png"),
+                WindowSource = new() { BindingIntent = Guid.NewGuid(), TitleHint = "fixture" } };
+            f.Owner.Add(image); f.Owner.SetSelection([image.Id]);
+            Invoke(f.Desktop, "ShowInspectorNear", new PointD(100, 100));
+            var inspector = Field<InspectorWindow>(f.Desktop, "_inspector");
+            typeof(InspectorWindow).GetProperty("IsPinned", Hidden)!.SetValue(inspector, pinned);
+            ActivateOwn(inspector); Pump();
+            bool closed = false;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+            timer.Tick += (_, _) =>
+            {
+                if (Application.Current.Windows.OfType<WindowSourceCropWindow>().FirstOrDefault(w => w.IsVisible) is not { } dialog) return;
+                timer.Stop();
+                var apply = Field<System.Windows.Controls.Button>(dialog, "apply");
+                System.Windows.Input.Keyboard.Focus(apply);
+                var focused = System.Windows.Input.Keyboard.FocusedElement;
+                coordinator.RestoreKeyboardDestination();
+                check("focus repair does not leave a live modal", ReferenceEquals(focused, System.Windows.Input.Keyboard.FocusedElement));
+                if (accept) apply.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                else SessionWindowCoordinator.SetModalResult(dialog, false);
+                closed = true;
+            };
+            timer.Start();
+            try { Await(f.Crop(image.Id)); } finally { timer.Stop(); }
+            Pump();
+            Console.WriteLine($"CROP_FOCUS pinned={pinned} accept={accept} editing={host.IsEditing} input={host.HasEditingInput} focus={System.Windows.Input.Keyboard.FocusedElement?.GetType().Name}");
+            check("real crop modal closes", closed && !Application.Current.Windows.OfType<WindowSourceCropWindow>().Any(w => w.IsVisible));
+            foreach (bool up in new[] { false, true })
+            {
+                var state = new byte[256]; if (!up) state[0x2E] = 0x80;
+                var packet = (KeyboardInputPacket)Activator.CreateInstance(typeof(KeyboardInputPacket), Hidden, null,
+                    [up ? 2L : 1L, 1L, KeyboardInputPacketKind.Key, 0x2Eu, 0x53u, 1u, 0u, up, false, (nint)0, state, false, null, 0u], null)!;
+                Field<Action<KeyboardInputPacket, Action>>(host, "_dispatchPrivateKey")(packet, () => { });
+            }
+            Pump();
+            check($"Delete after crop pinned={pinned} accept={accept} needs no canvas click", f.Owner.Document.Elements.Count == 0);
+        }
+        var input = new System.Windows.Controls.TextBox { Text = "keep selection" };
+        var textWindow = new Window { Owner = toolbar, Content = input, Width = 200, Height = 90, Opacity = 0, ShowInTaskbar = false };
+        coordinator.Register(textWindow); SessionWindowCoordinator.Show(textWindow); ActivateOwn(textWindow);
+        System.Windows.Input.Keyboard.Focus(input); input.Select(1, 3);
+        coordinator.RestoreKeyboardDestination();
+        check("focus repair preserves live text selection", ReferenceEquals(System.Windows.Input.Keyboard.FocusedElement, input) && input.SelectionStart == 1 && input.SelectionLength == 3);
+        var independent = new Window { Content = new System.Windows.Controls.TextBox(), Width = 200, Height = 90, Opacity = 0, ShowInTaskbar = false };
+        independent.Show(); ActivateOwn(independent); var independentHandle = GetFocus();
+        coordinator.RestoreKeyboardDestination();
+        check("focus repair does not take focus from an unrelated window", GetFocus() == independentHandle);
+        independent.Close(); textWindow.Close();
+    }
+
+    private static void ActivateOwn(Window window)
+    {
+        var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+        GetWindowThreadProcessId(handle, out uint process);
+        if (process != Environment.ProcessId) throw new InvalidOperationException("Only fixture windows may be activated.");
+        uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
+        bool attached = foregroundThread != 0 && foregroundThread != GetCurrentThreadId() && AttachThreadInput(GetCurrentThreadId(), foregroundThread, true);
+        try { SetForegroundWindow(handle); SetActiveWindow(handle); SetFocus(handle); }
+        finally { if (attached) AttachThreadInput(GetCurrentThreadId(), foregroundThread, false); }
+    }
     private static void CompleteImageDrop(Fixture f, Action<string, bool> check)
     {
         f.Reset();
@@ -427,6 +513,13 @@ internal static class WindowSourceCommandTests
     private static string DesktopName()
     { var name = new StringBuilder(256); if (!GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()), 2, name, name.Capacity * 2, out _)) throw new InvalidOperationException("Cannot verify isolated desktop."); return name.ToString(); }
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
+    [DllImport("user32.dll")] private static extern nint SetActiveWindow(nint window);
+    [DllImport("user32.dll")] private static extern nint SetFocus(nint window);
+    [DllImport("user32.dll")] private static extern nint GetFocus();
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint first, uint second, bool attach);
     [DllImport("user32.dll")] private static extern nint GetThreadDesktop(uint thread);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool GetUserObjectInformationW(nint handle, int index, StringBuilder information, int length, out int needed);
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);

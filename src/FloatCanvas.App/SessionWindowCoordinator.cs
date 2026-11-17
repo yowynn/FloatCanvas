@@ -172,10 +172,12 @@ internal sealed class SessionWindowCoordinator : IDisposable
         }
         finally
         {
+            modalScope?.Dispose();
             if (coordinator is not null && coordinator.host.EditingSessionVersion == version)
             {
                 using var returning = coordinator.BeginTransition();
                 coordinator.ReturnToOwner(owner);
+                coordinator.RestoreKeyboardDestination();
             }
         }
     }
@@ -286,6 +288,7 @@ internal sealed class SessionWindowCoordinator : IDisposable
             {
                 using var returning = coordinator.BeginTransition();
                 coordinator.ActivateIfOwned(owner ?? coordinator.toolbar);
+                coordinator.RestoreKeyboardDestination();
             }
         }
     }
@@ -446,6 +449,35 @@ internal sealed class SessionWindowCoordinator : IDisposable
         }
         if (!ActivateIfOwned(toolbar)) host.TryFocusEditingCanvas();
     }
+
+    // WPF may restore native focus to the previously active property window even
+    // after that window has hidden itself, or while the modal owner was disabled
+    // by an asynchronous command. Reconcile again once the command reenables it.
+    internal void RestoreKeyboardDestination()
+    {
+        if (disposed || !host.IsEditing || IsDirectTransfer || HasModalInput || ComponentDispatcher.IsThreadModal || !OwnsEditingInput()) return;
+        nint handle = host.UsesSystemInput ? GetFocus() : GetForegroundWindow();
+        if (FindKeyboardWindow(handle) is not { } window) return;
+        if (!CanActivate(window))
+        {
+            using var transition = BeginTransition();
+            ReturnToOwner(window.Owner);
+            handle = GetFocus();
+            if (FindKeyboardWindow(handle) is not { } destination) return;
+            window = destination;
+        }
+        if (!CanActivate(window) || GetFocus() != new WindowInteropHelper(window).Handle) return;
+        if (Keyboard.FocusedElement is DependencyObject focused && ReferenceEquals(Window.GetWindow(focused), window) &&
+            (focused is UIElement { IsVisible: true, IsEnabled: true } || focused is ContentElement { IsEnabled: true })) return;
+        // Restore command routing on the already active surface, without reviving
+        // a remembered hidden editor or changing an existing live text selection.
+        Keyboard.Focus(window);
+    }
+
+    // Focus can legitimately be absent while a native/modal window is closing.
+    // HwndSource.FromHwnd throws for zero rather than returning null.
+    internal Window? FindKeyboardWindow(nint handle) =>
+        handle != 0 && HwndSource.FromHwnd(handle)?.RootVisual is Window window && ReferenceEquals(Find(window), this) ? window : null;
 
     private bool ActivateIfOwned(Window target)
     {

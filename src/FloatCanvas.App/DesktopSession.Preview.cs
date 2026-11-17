@@ -23,7 +23,7 @@ internal sealed partial class DesktopSession
     private object? _hiddenPreviewMembership;
     private long _hiddenPreviewRevision = -1;
     private CanvasPreviewContext? _currentCanvasContext;
-    private (EditorSession Session, long Generation, long Scope, PrefabEditContext? Prefab, GroupCanvasMode Mode, bool Editing)? _canvasContinuityKey;
+    private (EditorSession Session, long Generation, long Scope, PrefabEditContext? Prefab, GroupCanvasMode Mode)? _canvasContinuityKey;
     private object _canvasContinuityEpoch = new();
     private long _canvasContextEpoch, _canvasInputSequence, _canvasControlsSequence;
     private long _canvasDraftRevision;
@@ -58,7 +58,7 @@ internal sealed partial class DesktopSession
     private CanvasPreviewContext CurrentPreviewContext()
     {
         var view = CurrentGroupCanvasView();
-        var continuity = (Active, Active.DocumentGeneration, Active.EditScopeVersion, _prefabEditContext, _groupCanvasMode, _host.IsEditing);
+        var continuity = (Active, Active.DocumentGeneration, Active.EditScopeVersion, _prefabEditContext, _groupCanvasMode);
         if (_canvasContinuityKey != continuity)
         { _canvasContinuityKey = continuity; _canvasContinuityEpoch = new(); }
         bool foreignSource = view.IsRootPreview && _prefabEditContext is not null;
@@ -70,7 +70,8 @@ internal sealed partial class DesktopSession
             PresentationEpoch: _presentationRuntime?.ObservingKeyboard == true ? _presentationRuntime.Lifetime : null,
             WindowEpoch: foreignSource ? null : CurrentWindowRenderEpoch(), GroupEpoch: _host.IsEditing ? _canvasViewGroupEpoch : view.Epoch,
             View: EditingCanvasView == CanvasViewTransform.Identity ? null : EditingCanvasView,
-            DepthPriorityOcclusion: PreviewAppearance.DepthPriorityOcclusion, ContinuityEpoch: _canvasContinuityEpoch);
+            DepthPriorityOcclusion: PreviewAppearance.DepthPriorityOcclusion, ContinuityEpoch: _canvasContinuityEpoch,
+            WindowContinuityEpoch: WindowOwnerToken(Active), PresentationContinuityEpoch: _presentationRuntime?.PixelContinuity);
         if (_currentCanvasContext is { } current && current with { Epoch = 0 } == context) return current;
         long epoch = _currentCanvasContext is { } prior && prior.HasSameScene(context with { Epoch = prior.Epoch })
             ? prior.Epoch : ++_canvasContextEpoch;

@@ -250,6 +250,8 @@ internal static class Program
             if (args.Contains("--window-source-insertion-only")) { WindowSourceInsertionTests.Run(Assert); return 0; }
             if (args.Contains("--window-source-persistence-only")) { Task.Run(() => WindowSourcePersistenceTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--window-source-desktop-only")) { WindowSourceDesktopTests.Run(Assert); return 0; }
+            if (args.Contains("--canvas-transition-only")) { ForegroundPresentationTests.Run(Assert, transitions: true); return 0; }
+            if (args.Contains("--window-crop-focus-native-only")) { WindowSourceCommandTests.Run(Assert, args.SkipWhile(a => a != "--window-crop-focus-native-only").Skip(1).FirstOrDefault(), focusOnly: true); return 0; }
             if (args.Contains("--window-source-persistence-desktop-only")) { WindowSourcePersistenceDesktopTests.Run(Assert, args.SkipWhile(a => a != "--window-source-persistence-desktop-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-source-guard-only")) { WindowSourceOperationGuardTests.Run(Assert); return 0; }
             if (args.Contains("--layer-creation-desktop-only")) { WindowSourceCommandTests.Run(Assert, args.SkipWhile(a => a != "--layer-creation-desktop-only").Skip(1).FirstOrDefault(), creationOnly: true); return 0; }

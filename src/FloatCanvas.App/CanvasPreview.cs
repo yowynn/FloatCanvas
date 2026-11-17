@@ -12,7 +12,8 @@ namespace FloatCanvas.App;
 internal sealed record CanvasPreviewContext(object Session, object Monitors, PointD Origin,
     bool Hidden, bool Calibration, bool Placing, object? DocumentEpoch = null, object? VisibilityEpoch = null, long Epoch = 0, double GuideOpacity = 1,
     object? ScreenDraftEpoch = null, object? PresentationEpoch = null, object? WindowEpoch = null, object? GroupEpoch = null,
-    CanvasViewTransform? View = null, bool DepthPriorityOcclusion = false, object? ContinuityEpoch = null)
+    CanvasViewTransform? View = null, bool DepthPriorityOcclusion = false, object? ContinuityEpoch = null,
+    object? WindowContinuityEpoch = null, object? PresentationContinuityEpoch = null)
 {
     // Editing guides may lag one worker frame; never discard the matching base
     // scene while they update. Epoch still rejects a completed A→B→A transition.
@@ -29,11 +30,14 @@ internal sealed record CanvasPreviewContext(object Session, object Monitors, Poi
 
     // This permits retaining already submitted pixels, never adopting an old
     // worker frame or its picking scene as the result of the new document.
+    // Window render plans change during ordinary drags/navigation; only retiring
+    // their owner ends pixel continuity. Unscoped callers retain strict epoch checks.
     internal bool CanRetainPixelsFor(CanvasPreviewContext next) => ContinuityEpoch is not null &&
         ReferenceEquals(ContinuityEpoch, next.ContinuityEpoch) && ReferenceEquals(Session, next.Session) &&
         ReferenceEquals(Monitors, next.Monitors) && Origin == next.Origin && Hidden == next.Hidden &&
         ReferenceEquals(VisibilityEpoch, next.VisibilityEpoch) &&
-        ReferenceEquals(PresentationEpoch, next.PresentationEpoch) && ReferenceEquals(WindowEpoch, next.WindowEpoch) &&
+        (PresentationContinuityEpoch is not null ? ReferenceEquals(PresentationContinuityEpoch, next.PresentationContinuityEpoch) : ReferenceEquals(PresentationEpoch, next.PresentationEpoch)) &&
+        (WindowContinuityEpoch is not null ? ReferenceEquals(WindowContinuityEpoch, next.WindowContinuityEpoch) : ReferenceEquals(WindowEpoch, next.WindowEpoch)) &&
         (ReferenceEquals(ScreenDraftEpoch, next.ScreenDraftEpoch) || next.ScreenDraftEpoch is null);
 }
 

@@ -47,11 +47,12 @@ internal sealed class PresentationKeyboardPrivacyGate : IDisposable
         long now = milliseconds(); nint current = foreground();
         if (sourceEpoch != runtime.InputEpoch || window != current)
         {
-            bool newSource = sourceEpoch != runtime.InputEpoch;
             sourceEpoch = runtime.InputEpoch; window = current;
             ++requestId; pendingId = 0; requestedAt = long.MinValue; requestedLifetime = null;
-            if (newSource) runtime.ClearKeyboardForFocusChange();
-            else runtime.RefreshKeyboardForFocusChange();
+            // Starting a source already clears its old keyboard state. Retire
+            // metadata requests here without invalidating the whole canvas again;
+            // scope changes and confirmed password protection remain strict.
+            runtime.RefreshKeyboardForFocusChange();
         }
         if (pendingId != 0 && now - requestedAt >= 200)
         {

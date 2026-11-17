@@ -89,7 +89,11 @@ internal static class EyedropperWindowRestoreTests
     private static void OtherColorWindow(Application app, Action<string, bool> check)
     {
         using var fixture = new Fixture(app);
+        var canvas = Field<EditorController>(fixture.Session, "_editor").Session.Document.Canvas;
+        canvas.Grid.Visible = true;
+        fixture.Panel.Refresh(canvas); fixture.Panel.PrepareForShow(); Pump();
         var other = Field<ColorField>(fixture.Panel, "gridColor");
+        check("secondary color sampling starts from a visible grid color control", other.IsVisible);
         other.OpenPicker(); Pump();
         var color = Window.GetWindow(other.PickerRoot)!;
         fixture.Invoke("BeginEyedropper", fixture.Target); Pump();
@@ -135,7 +139,7 @@ internal static class EyedropperWindowRestoreTests
             var editor = Field<EditorController>(Session, "_editor"); editor.Tool = EditorTool.Canvas;
             Toolbar = Field<Window>(Session, "_toolbar"); Offscreen(Toolbar); Toolbar.Show();
             Panel = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()) { Owner = Toolbar };
-            Field<Button>(Panel, "pin").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Panel.Pin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Offscreen(Panel); typeof(DesktopSession).GetField("_canvasToolOptions", Private)!.SetValue(Session, Panel.Options);
             Target = Field<ColorField>(Panel, "background");
             Target.EyedropperRequested += () => Invoke("BeginEyedropper", Target);

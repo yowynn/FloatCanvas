@@ -42,6 +42,9 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         demand.Keyboard && !KeyboardScopeAllowsInput() ? "Presentation.Status.OutsideScope" : timeline.KeyboardSuppressed ?
         "Presentation.Status.KeyboardProtected" : Observing ? "Presentation.Status.Running" : "Presentation.Status.Unavailable";
     internal object Lifetime { get; private set; } = new();
+    // Capture pauses/restarts invalidate worker results, but not pixels already
+    // displayed. Privacy/scope changes still retire those pixels immediately.
+    internal object PixelContinuity { get; private set; } = new();
     internal PresentationFrame Frame { get; private set; } = PresentationFrame.Empty;
     internal PresentationFrame? PointerFrame => !disposed && Armed && allowed && demand.Pointer && !faulted ? Frame : null;
     internal PresentationFrame? PausedTrail { get; private set; }
@@ -92,7 +95,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
         bool canRecord = KeyboardScopeAllowsInput();
         if (changed || canRecord != keyboardScopeAllowed)
         {
-            keyboardScopeAllowed = canRecord; ResetKeyboardState(); NewLifetime(); Publish(force: true);
+            keyboardScopeAllowed = canRecord; ResetKeyboardState(); PixelContinuity = new(); NewLifetime(); Publish(force: true);
         }
         Schedule();
     }
@@ -131,10 +134,10 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     {
         dispatcher.VerifyAccess(); if (timeline.KeyboardSuppressed == protectedInput) return;
         timeline.SetKeyboardSuppressed(protectedInput); outsideTimeline.SetKeyboardSuppressed(protectedInput);
-        insideTimeline.SetKeyboardSuppressed(protectedInput); NewLifetime(); Publish(force: true);
+        insideTimeline.SetKeyboardSuppressed(protectedInput); PixelContinuity = new(); NewLifetime(); Publish(force: true);
     }
     internal void ClearKeyboardForFocusChange()
-    { dispatcher.VerifyAccess(); ResetKeyboardState(); keyboardScopeAllowed = KeyboardScopeAllowsInput(); NewLifetime(); Publish(force: true); Schedule(); }
+    { dispatcher.VerifyAccess(); ResetKeyboardState(); keyboardScopeAllowed = KeyboardScopeAllowsInput(); PixelContinuity = new(); NewLifetime(); Publish(force: true); Schedule(); }
     internal void RefreshKeyboardForFocusChange()
     {
         dispatcher.VerifyAccess();
@@ -329,7 +332,7 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     {
         bool canRecord = KeyboardScopeAllowsInput();
         if (canRecord == keyboardScopeAllowed) return false;
-        keyboardScopeAllowed = canRecord; ResetKeyboardState(); NewLifetime(); return true;
+        keyboardScopeAllowed = canRecord; ResetKeyboardState(); PixelContinuity = new(); NewLifetime(); return true;
     }
     private void ResetKeyboardState()
     {

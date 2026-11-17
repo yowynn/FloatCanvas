@@ -57,6 +57,7 @@ internal static class WindowFocusLifecycleTests
                 using var scope = overlay ? new OverlayWindowScope(toolbarHandle, () => true) : null;
                 AppTheme.Apply("light");
                 using var coordinator = new SessionWindowCoordinator(host, toolbar);
+                check(backend + " absent native focus has no keyboard destination", coordinator.FindKeyboardWindow(0) is null);
                 var first = new CanvasElement { Kind = ElementKind.Text, Text = "Focus lifecycle", Width = 160, Height = 60,
                     Style = new() { FontFamily = "Arial" } };
                 var document = new EditorSession(new SceneDocument { Elements = [first] }); document.SelectAll();
@@ -126,6 +127,7 @@ internal static class WindowFocusLifecycleTests
                 {
                     string label = backend + " " + surface;
                     ActivateOwn(toolbar); Keyboard.Focus(toolbarFocus); Pump();
+                    Observe(label + " shown toolbar resolves to its keyboard destination", ReferenceEquals(coordinator.FindKeyboardWindow(toolbarHandle), toolbar));
                     open(); Pump(); ActivateOwn(window);
                     font.ApplyTemplate(); window.UpdateLayout(); Pump();
                     var input = (TextBox)font.Template.FindName("PART_EditableTextBox", font);
