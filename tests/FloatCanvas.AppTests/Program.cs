@@ -152,6 +152,7 @@ internal static class Program
             if (args.Contains("--inspector-color-menu-only")) { InspectorColorMenuLifecycleTests.Run(Assert, args.SkipWhile(a => a != "--inspector-color-menu-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--window-robustness-only")) { WindowRobustnessTests.RunNative(Assert); return 0; }
             if (args.Contains("--canvas-history-presentation-only")) { CanvasHistoryPresentationTests.Run(Assert); return 0; }
+            if (args.Contains("--foreground-presentation-only")) { ForegroundPresentationTests.Run(Assert); return 0; }
             if (args.Contains("--native-presentation-lifecycle-only")) { NativePresentationLifecycleTests.Run(Assert); return 0; }
             if (args.Contains("--archive-worker-only")) { Task.Run(() => ArchiveWorkerTests.RunAsync(Assert)).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--preview-request-recovery-only")) { PreviewRequestRecoveryTests.Run(Assert); return 0; }
@@ -530,6 +531,7 @@ internal static class Program
             BillboardControllerTests.Run(Assert); BillboardCreationTests.Run(Assert); BillboardScreenCreationTests.Run(Assert); BillboardLogicalCreationTests.Run(Assert); ScreenDraftPreviewTests.Run(Assert);
             ContainerBillboardAppTests.Run(Assert);
             PresentationPreviewTests.Run(Assert);
+            ForegroundPresentationTests.Run(Assert);
             PresentationKeyboardStateTests.Run(Assert);
             PresentationChordSequenceTests.Run(Assert);
             PresentationPhysicalStateTests.Run(Assert);

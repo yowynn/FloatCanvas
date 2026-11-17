@@ -139,10 +139,12 @@ internal sealed class PresentationRuntimeBroker : IDisposable
     {
         dispatcher.VerifyAccess();
         // A system shortcut can open another window while its physical keys are
-        // still held. Retire privacy metadata, not the all-applications key stream.
+        // still held. The privacy gate retires its own requests by foreground/request ID.
+        // Keep the render lifetime unless scope or protection really changes; rotating it
+        // here rejects the entire retained canvas while the replacement worker frame renders.
         RefreshKeyboardScope();
         if (demand.ScopedKeyboard) TransitionScopedOwner(CurrentInternalInput(), clock());
-        NewLifetime(); Publish(force: true); Schedule();
+        Publish(force: true); Schedule();
     }
     internal void BlockForBudget()
     { dispatcher.VerifyAccess(); faulted = true; Stop(retainTrail: false); NotifyChanged(); }
