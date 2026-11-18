@@ -24,10 +24,16 @@ internal static class AppWindowChrome
     public static void ApplyDialog(Window window) => ApplyCore(window);
     public static void SetHeaderDetail(Window window, string detail, bool besideTitle = false)
     {
-        window.Resources["CanvasWindowDetail"] = detail;
-        window.Resources["CanvasWindowDetailDock"] = besideTitle ? Dock.Left : Dock.Right;
-        window.Resources["CanvasWindowDetailMaximum"] = besideTitle ? 300d : 160d;
-        window.Resources["CanvasWindowHeaderHitTesting"] = besideTitle;
+        var resources = window.Resources;
+        SetIfChanged("CanvasWindowDetail", detail);
+        SetIfChanged("CanvasWindowDetailDock", besideTitle ? Dock.Left : Dock.Right);
+        SetIfChanged("CanvasWindowDetailMaximum", besideTitle ? 300d : 160d);
+        SetIfChanged("CanvasWindowHeaderHitTesting", besideTitle);
+
+        void SetIfChanged(string key, object value)
+        {
+            if (!Equals(resources[key], value)) resources[key] = value;
+        }
     }
     public static void SetHeaderActions(Window window, FrameworkElement actions) => window.Resources["CanvasWindowActions"] = actions;
     public static void SetHelp(Window window, string title, string text)

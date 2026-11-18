@@ -31,6 +31,8 @@ internal sealed partial class EditorController
         }
     }
     private EditorTool tool = EditorTool.Freehand;
+    internal bool SmoothFreehand { get; set; }
+    private FreehandPathSmoother? freehandCorrection;
     internal long PlacementContextVersion { get; private set; }
     public EditorTool Tool
     {
@@ -287,7 +289,7 @@ internal sealed partial class EditorController
         gesture = null; drawing = effectTarget = resizeSource = billboardEndpointSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
         lastGestureMove = null;
         CapturePreview = null; capturePoints.Clear();
-        straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null;
+        straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null; freehandCorrection = null;
         deselectOnClick = gestureMoved = duplicateOnDrag = duplicatedOnDrag = centeredGesture = false;
         shiftDeselectOnClick = false;
         shiftDeselectTarget = null;
@@ -462,6 +464,7 @@ internal sealed partial class EditorController
             { drawing.Presentation = (Presentation ?? new()).Clone(); drawing.Presentation.Modules = PresentationModules.Keys; }
             if(ElementGeometry.IsBoxShape(drawing.Kind) || drawing.Kind == ElementKind.Presentation)drawing.ConstrainAspect=drawing.Kind == ElementKind.Presentation || ConstrainAspect;
             if (Tool == EditorTool.Highlighter) drawing.Style.StrokeWidth = Math.Max(16, Style.StrokeWidth);
+            if (drawing.Kind == ElementKind.Freehand && SmoothFreehand) freehandCorrection = new(drawing.Style.StrokeWidth);
             if(drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
             if (UsesDefaultSize(Tool)) ApplyDefaultSize(drawing, start, e.Modifiers);
             BeginBillboardDrawing();
@@ -491,7 +494,7 @@ internal sealed partial class EditorController
                 CompleteCaptureSelection(); return;
             }
             TrackGestureMovement();
-            MoveSafely(p, e.Modifiers);
+            MoveSafely(p, e.Modifiers, finishStroke: true);
             if (IsPointerBlocked && !IsPlanarStrokeDrawing)
             {
                 Cancel();
@@ -529,7 +532,7 @@ internal sealed partial class EditorController
             }
             resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
             resizeTextSources.Clear();
-            straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null;
+            straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null; freehandCorrection = null;
             drawing = effectTarget = null; Marquee = imageRegion = null; EffectPreviewPolygon = null; Changed?.Invoke();
             strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
             ClearBillboardDepth(); billboardSources.Clear();
@@ -686,7 +689,7 @@ internal sealed partial class EditorController
         BeginPointerTransaction(L.Get("Editor.History.Transform"));
     }
 
-    private void Move(PointD p, OverlayModifiers modifiers)
+    private void Move(PointD p, OverlayModifiers modifiers, bool finishStroke = false)
     {
         gestureModifiers=modifiers;
         if (gesture == "move" && duplicateOnDrag && !duplicatedOnDrag)
@@ -749,7 +752,7 @@ internal sealed partial class EditorController
             var local = p - start;
             if (drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter)
             {
-                UpdateStroke(drawing.Points,local,modifiers);
+                UpdateStroke(drawing.Points, local, modifiers, finishStroke);
             }
             else if (drawing.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
                 drawing.Points = [new(0, 0), (modifiers&OverlayModifiers.Shift)!=0?EightDirectionEnd(start,p)-start:local];

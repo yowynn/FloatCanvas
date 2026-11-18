@@ -32,6 +32,7 @@ internal sealed partial class EditorController
         {strokeInterrupted=true;RejectPointer();return;}
         if((modifiers&OverlayModifiers.Shift)!=0&&!(IsPlanarStrokeDrawing&&strokeInterrupted)&&ActiveStroke is { } points)
         {
+            freehandCorrection?.Reset();
             AppendStrokePoint(points,gesture=="draw"?current-start:current,force:true);
             straightStrokeStart=points.Count-1;
         }
@@ -59,17 +60,20 @@ internal sealed partial class EditorController
         double x=Math.Cos(angle),y=Math.Sin(angle),distance=delta.X*x+delta.Y*y;
         return anchor+new PointD(x*distance,y*distance);
     }
-    private void UpdateStroke(IList<PointD> points,PointD point,OverlayModifiers modifiers)
+    private void UpdateStroke(IList<PointD> points, PointD point, OverlayModifiers modifiers, bool finishStroke = false)
     {
         bool straight=(modifiers&OverlayModifiers.Shift)!=0;
         if(straight||straightStrokeStart is not null)
         {
+            freehandCorrection?.Reset();
             straightStrokeStart??=points.Count-1;
             int endpoint=straightStrokeStart.Value+1;
             if(endpoint<points.Count)points[endpoint]=point;
             else if(gesture=="draw"||points.Count<MaximumCapturePoints)points.Add(point);
             if(!straight)straightStrokeStart=null;
         }
+        else if (gesture == "draw" && drawing is { Kind: ElementKind.Freehand } stroke && freehandCorrection is { } correction)
+            stroke.Points = correction.Update(stroke.Points, point, StrokeToScreen(stroke), finishStroke);
         else AppendStrokePoint(points,point);
     }
     private void AppendStrokePoint(IList<PointD> points,PointD point,bool force=false)
@@ -79,11 +83,13 @@ internal sealed partial class EditorController
         double distance=points[^1].DistanceTo(point);
         if(gesture=="draw"&&drawing is not null)
         {
-            var mapping = screenBillboardDrawing ? ElementGeometry.LocalToPlane(drawing) : billboardDrawing && billboardDepth is { } depth ?
-                Projective2D.FromAffine(Affine2D.Scale(depth.Scale, depth.Scale)).Compose(ElementGeometry.LocalToPlane(drawing)) :
-                CurrentCanvasMapping.ElementToScreen(drawing);
+            var mapping = StrokeToScreen(drawing);
             distance=mapping.TransformPoint(points[^1]).DistanceTo(mapping.TransformPoint(point));
         }
         if(distance>=(force?1e-9:.75))points.Add(point);
     }
+    private Projective2D StrokeToScreen(CanvasElement stroke) => screenBillboardDrawing ? ElementGeometry.LocalToPlane(stroke)
+        : billboardDrawing && billboardDepth is { } depth
+            ? Projective2D.FromAffine(Affine2D.Scale(depth.Scale, depth.Scale)).Compose(ElementGeometry.LocalToPlane(stroke))
+            : CurrentCanvasMapping.ElementToScreen(stroke);
 }

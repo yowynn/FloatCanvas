@@ -91,8 +91,39 @@ internal static class CanvasNumericPreviewTests
             check("external undo during a numeric gesture prevents stale release from reapplying its draft", session.Document.Canvas.Grid.Width == 1 && session.UndoCount == 0 && session.RedoCount == 1 && width.Value == 1);
             width.Input.Text = "invalid";
             check("invalid canvas draft cannot open a hidden settings transaction", !width.BeginGesture() && !width.AnchorScrubber!.TryBegin(0) && !session.IsTransactionActive && session.UndoCount == 0);
+            ColorOpacityPreview(window, session, check);
         }
         finally { window.CloseForDispose(); }
+    }
+
+    private static void ColorOpacityPreview(CanvasOptionsTestWindow window, EditorSession session, Action<string, bool> check)
+    {
+        const uint original = 0x80112233;
+        const uint preview = 0xB3112233;
+        session.Document.Canvas.BackgroundColor = session.Document.Canvas.Grid.Color = original;
+        void Refresh() { window.Refresh(session.Document.Canvas); window.PrepareForShow(); }
+        var edit = new CanvasColorEdit(() => session, () => true, () => { }, Refresh);
+        window.BeginColorGesture = edit.Begin;
+        window.ColorGestureCompleted += edit.Complete;
+        window.BackgroundChanged += value => edit.Preview(settings => settings.BackgroundColor = value);
+        window.GridColorChanged += value => edit.Preview(settings => settings.Grid.Color = value);
+        Refresh();
+        foreach (string name in new[] { "background", "gridColor" })
+        {
+            var field = Field<ColorField>(window, name);
+            var type = typeof(ColorField);
+            const BindingFlags members = BindingFlags.Instance | BindingFlags.NonPublic;
+            type.GetField("opacityPress", members)!.SetValue(field, new Point(0, 0));
+            var point = new Point(Math.Max(5, SystemParameters.MinimumHorizontalDragDistance) + 40, 0);
+            type.GetMethod("UpdateOpacityPreview", members)!.Invoke(field, [point, Environment.TickCount]);
+            uint ReadColor() => name == "background" ? session.Document.Canvas.BackgroundColor : session.Document.Canvas.Grid.Color;
+            check(name + " live Alpha preview reaches the canvas during the gesture",
+                ReadColor() == preview && field.IsInteracting && session.IsTransactionActive && session.UndoCount == 0);
+            field.EndOpacityDrag(commit: true);
+            check(name + " live Alpha preview commits one reversible canvas change",
+                session.UndoCount == 1 && !session.IsTransactionActive && session.Undo() && ReadColor() == original);
+            Refresh();
+        }
     }
 
     private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;

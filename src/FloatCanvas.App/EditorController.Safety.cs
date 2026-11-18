@@ -49,22 +49,23 @@ internal sealed partial class EditorController
         return source is not null;
     }
 
-    private void MoveSafely(PointD point, OverlayModifiers modifiers)
+    private void MoveSafely(PointD point, OverlayModifiers modifiers, bool finishStroke = false)
     {
         SetPointerBlocked(false);
         if (nodeTransform is not null && gesture is "move" or "rotate" or "resize") { Move(point, modifiers); return; }
-        if (IsPlanarStrokeDrawing) { MoveStrokeSafely(point, modifiers); return; }
+        if (IsPlanarStrokeDrawing) { MoveStrokeSafely(point, modifiers, finishStroke); return; }
         var changed = Session.IsTransactionActive && gesture is "draw" or "endpoint" or "move" or "rotate" or "resize" or "billboard-height"
             ? Session.Document.Elements.Where(e => e.Id == drawing?.Id || transforms.ContainsKey(e.Id)).Select(e =>
                 (Item: e, State: new GeometrySnapshot(e, gesture == "draw", gesture == "endpoint" && e == drawing ? endpoint : -1))).ToArray()
             : [];
-        Move(point, modifiers);
+        Move(point, modifiers, finishStroke);
         var mapping = CurrentCanvasMapping;
         var graph = new SceneGraph(Session.Document);
         if (!IsPointerBlocked && changed.All(pair => mapping.IsElementSafe(graph.ToWorld(graph.FindElement(pair.Item.Id) ?? pair.Item)))) return;
         foreach (var (item, state) in changed) state.Restore(graph.FindElement(item.Id) ?? item);
         if (drawing is not null && drawingParents.ContainsKey(drawing.Id) && new SceneGraph(Session.Document).FindElement(drawing.Id) is { } restored)
             drawing = new SceneGraph(Session.Document).ToWorld(restored);
+        freehandCorrection?.Reset();
         if (changed.Length > 0) NotifyGeometryChanged();
         RejectPointer();
     }
@@ -108,7 +109,7 @@ internal sealed partial class EditorController
         }
     }
 
-    private void MoveStrokeSafely(PointD point, OverlayModifiers modifiers)
+    private void MoveStrokeSafely(PointD point, OverlayModifiers modifiers, bool finishStroke)
     {
         if (drawing is null) return;
         gestureModifiers = modifiers;
@@ -119,11 +120,12 @@ internal sealed partial class EditorController
         {
             strokeFragmentIds.Add(drawing.Id);
             drawing = drawing.Clone(newId: true); drawing.Points = [local];
+            freehandCorrection?.Reset();
             InsertWorldDrawing(); strokeFragmentIds.Add(drawing.Id);
             straightStrokeStart = (modifiers & OverlayModifiers.Shift) != 0 ? 0 : null;
             strokeInterrupted = false;
         }
-        else UpdateStroke(drawing.Points, local, modifiers);
+        else UpdateStroke(drawing.Points, local, modifiers, finishStroke);
         strokeLocalBounds = bounds;
         NotifyGeometryChanged();
     }

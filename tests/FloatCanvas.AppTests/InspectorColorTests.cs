@@ -40,6 +40,16 @@ internal static class InspectorColorTests
                 check(language + " color fields keep paint labels and exact accessible ARGB", colors.All(pair =>
                     Automation.AutomationProperties.GetLabeledBy(pair.Value) is Controls.TextBlock caption && !string.IsNullOrWhiteSpace(caption.Text) &&
                     Automation.AutomationProperties.GetName(pair.Value).Contains(ColorLibrary.ToHtml(pair.Value.Value))));
+                string xText = fields["X"].Text, widthText = fields["W"].Text;
+                int geometryTextChanges = 0;
+                Controls.TextChangedEventHandler countGeometryChanges = (_, _) => geometryTextChanges++;
+                fields["X"].TextChanged += countGeometryChanges;
+                fields["W"].TextChanged += countGeometryChanges;
+                Invoke(inspector, "LoadSelection", true);
+                fields["X"].TextChanged -= countGeometryChanges;
+                fields["W"].TextChanged -= countGeometryChanges;
+                check(language + " refreshing unchanged geometry never clears or rewrites its text",
+                    geometryTextChanges == 0 && fields["X"].Text == xText && fields["W"].Text == widthText);
                 int undo = session.UndoCount; string before = JsonSerializer.Serialize(session.Document);
                 colors["Stroke"].SetUserValue(0x80112233); colors["Fill"].SetUserValue(0x20445566);
                 fields["X"].Text = "35";
@@ -83,12 +93,39 @@ internal static class InspectorColorTests
                 Invoke(inspector, "Apply");
                 check(language + " inspector color checks use a visible offscreen native surface", new System.Windows.Interop.WindowInteropHelper(inspector).Handle != 0 && inspector.IsVisible && inspector.Left < -10000 && !inspector.ShowActivated);
             }
+            MixedOpacityDrag(check, directory);
         }
         finally
         {
             L.Initialize(preference);
             Directory.Delete(directory, true);
         }
+    }
+
+    private static void MixedOpacityDrag(Action<string, bool> check, string directory)
+    {
+        var session = new EditorSession();
+        session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60, Style = new() { Stroke = 0x80112233 } });
+        session.Add(new() { Kind = ElementKind.Rectangle, Width = 100, Height = 60, Style = new() { Stroke = 0x40556677 } });
+        session.SetSelection(session.Document.Elements.Select(element => element.Id).ToArray());
+        var inspector = new InspectorWindow(() => session, () => true, new ColorLibrary(Path.Combine(directory, "mixed.json")));
+        using var surface = new InspectorTestSurface(inspector);
+        var stroke = Field<Dictionary<string, ColorField>>(inspector, "colorFields")["Stroke"];
+        check("different stroke colors begin as a mixed inspector value", stroke.IsMixed);
+        int undo = session.UndoCount;
+        typeof(ColorField).GetField("opacityPress", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(stroke, new Wpf.Point(0, 0));
+        double threshold = Math.Max(5, Wpf.SystemParameters.MinimumHorizontalDragDistance);
+        Invoke(stroke, "UpdateOpacityPreview", new Wpf.Point(threshold + 240, 0), Environment.TickCount);
+        check("mixed opacity previews the actual objects before mouse-up",
+            session.IsTransactionActive && session.UndoCount == undo &&
+            session.Document.Elements.Select(element => element.Style.Stroke).SequenceEqual([0xFF112233u, 0xFF556677u]));
+        Invoke(stroke, "UpdateOpacityPreview", new Wpf.Point(threshold + 40, 0), Environment.TickCount);
+        check("mixed opacity reversal uses the starting alphas even after saturation",
+            session.Document.Elements.Select(element => element.Style.Stroke).SequenceEqual([0xB3112233u, 0x73556677u]) && stroke.IsMixed);
+        Invoke(stroke, "EndOpacityDrag", true, true);
+        check("mixed opacity drag commits one undo step",
+            session.UndoCount == undo + 1 && session.Undo() &&
+            session.Document.Elements.Select(element => element.Style.Stroke).SequenceEqual([0x80112233u, 0x40556677u]));
     }
 
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;

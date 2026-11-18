@@ -30,6 +30,7 @@ internal sealed class UserSettings
     [JsonIgnore] public bool ShowPassThroughLauncher { get => ShowFloatingLogo; set => ShowFloatingLogo = value; }
     public bool IncludePrereleaseUpdates { get; set; }
     public bool PreferGpuAcceleration { get; set; } = true;
+    public bool SmoothFreehand { get; set; }
     public BillboardCreationWorkflow BillboardWorkflow { get; set; } = BillboardCreationWorkflow.ScreenFirst;
     public string OverlayMode { get; set; } = "auto";
     private PresentationGlobalSettings presentationGlobal = new();

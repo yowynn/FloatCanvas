@@ -23,6 +23,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
     private readonly Dictionary<string, FrameworkElement> rows = [];
     private readonly Dictionary<string, TextBlock> captions = [];
     private readonly ColorField foreground, background;
+    private readonly CaptionModeSwitch freehandSmoothing = new(FreehandSmoothingIcon);
     private readonly AspectRatioButton aspect = new();
     private readonly CheckBox aspectSwitch = new();
     private readonly SegmentedChoice linkColors = SegmentedChoicePreviews.ColorStyle();
@@ -66,6 +67,22 @@ internal sealed partial class ToolOptionsPanel : UserControl
         presentationSettings.CancelGestures(); foreground.ClosePicker(); background.ClosePicker(); presentationGlobalSettings.ClosePickers();
     }
     internal void ClearStatus() { status.Text = ""; status.Visibility = Visibility.Collapsed; }
+    internal void SynchronizeFreehandSmoothing()
+    {
+        bool enabled = controller.SmoothFreehand;
+        freehandSmoothing.Synchronize(enabled, true, L.Get("Tool.Freehand.Smoothing"),
+            L.Get(enabled ? "Tool.Freehand.SmoothingOn" : "Tool.Freehand.SmoothingOff"),
+            L.Get(enabled ? "Tool.Freehand.DisableSmoothing" : "Tool.Freehand.EnableSmoothing"));
+    }
+
+    private static FrameworkElement FreehandSmoothingIcon(bool enabled, string foreground)
+    {
+        var icon = (Viewbox)CommandGlyphs.Create(enabled ? "M2,12 C6,12 9,3 14,3" : "M2,12 L6,12 L10,3 L14,3");
+        foreach (var path in ((Canvas)icon.Child).Children.OfType<System.Windows.Shapes.Path>())
+            path.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, foreground);
+        return icon;
+    }
+
     private void ActivateContent(IToolOptionsContent content)
     {
         if (ReferenceEquals(activeContent, content)) return;
@@ -94,10 +111,14 @@ internal sealed partial class ToolOptionsPanel : UserControl
 
     public event Action? ParametersChanged;
     public event Action<ColorField>? EyedropperRequested;
+    internal event Action? FreehandSmoothingRequested;
 
     public ToolOptionsPanel(EditorController controller, ToolPresetLibrary library, ColorLibrary colors, ToolStateStore? stateStore = null)
     {
         this.controller = controller;
+        System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(freehandSmoothing, true);
+        freehandSmoothing.Click += (_, _) => FreehandSmoothingRequested?.Invoke();
+        SynchronizeFreehandSmoothing();
         PropertyPanelLayout.Scope(this);
         Width = double.NaN; MinWidth = PropertyPanelLayout.TwoColumnMinimumWidth - 2;
         SetResourceReference(BackgroundProperty, "CanvasSurface"); SetResourceReference(ForegroundProperty, "CanvasText");
@@ -195,7 +216,12 @@ internal sealed partial class ToolOptionsPanel : UserControl
         body.Children.Add(heading); body.Children.Add(parameters);
         standardContent = new(body, presets, () => new ToolOptionsHeader(ToolDisplayName.Get(controller.Tool),
             Target: controller.Tool == EditorTool.Presentation ? presentationRuntime.StatusText : "",
-            Actions: controller.Tool == EditorTool.PointerPresentation ? presentationGlobalSettings.HeaderActions : null), RefreshStandard, CancelStandardEditing);
+            Actions: controller.Tool switch
+            {
+                EditorTool.Freehand => freehandSmoothing,
+                EditorTool.PointerPresentation => presentationGlobalSettings.HeaderActions,
+                _ => null
+            }), RefreshStandard, CancelStandardEditing);
         parameterScroll.Content = body;
         presetHost.Child = presets; recipeBorder.Child = presetHost;
         columns.Children.Add(parameterScroll); Grid.SetColumn(recipeBorder, 1); columns.Children.Add(recipeBorder);

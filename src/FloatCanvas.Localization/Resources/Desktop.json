@@ -201,6 +201,11 @@
     "zh": "选择  V",
     "en": "Select  V"
   },
+  "Tool.Freehand.Smoothing": { "zh": "笔迹修整", "en": "Stroke refinement" },
+  "Tool.Freehand.SmoothingOn": { "zh": "笔迹修整已开启", "en": "Stroke refinement on" },
+  "Tool.Freehand.SmoothingOff": { "zh": "笔迹修整已关闭", "en": "Stroke refinement off" },
+  "Tool.Freehand.EnableSmoothing": { "zh": "点击开启笔迹修整\n逐段拉直或平顺已画出的笔迹", "en": "Turn on stroke refinement\nStraighten or smooth segments as you draw" },
+  "Tool.Freehand.DisableSmoothing": { "zh": "点击关闭笔迹修整\n逐段拉直或平顺已画出的笔迹", "en": "Turn off stroke refinement\nStraighten or smooth segments as you draw" },
   "Tool.Freehand": {
     "zh": "自由画笔  B",
     "en": "Freehand  B"

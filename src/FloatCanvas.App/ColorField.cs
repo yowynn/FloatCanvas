@@ -24,6 +24,8 @@ internal sealed class ColorField : UserControl
     private bool pickerSessionOpen, draftCommitted, pickerSessionChanged, isMixed;
     private bool suppressTriggerClick;
     private int suppressedPressTime;
+    private Point? opacityPress;
+    private uint? opacityDragStart;
     private int pickerSuspensions;
     private bool valueDirty = true;
     private bool publishingValue;
@@ -35,7 +37,8 @@ internal sealed class ColorField : UserControl
     }
 
     internal bool IsPickerOpen => popupDisplay.IsOpen;
-    internal bool IsInteracting => picker.IsInteracting;
+    internal int? OpacityDragDelta { get; private set; }
+    internal bool IsInteracting => opacityDragStart.HasValue || picker.IsInteracting;
     internal bool IsSynchronizingModel { get; private set; }
     internal bool IsNotifyingOwner { get; private set; }
     internal DependencyObject PickerRoot => popupDisplay.Child!;
@@ -121,10 +124,34 @@ internal sealed class ColorField : UserControl
         button.PreviewMouseLeftButtonDown += (_, e) =>
         {
             if (e.Timestamp != suppressedPressTime) suppressTriggerClick = false;
+            if (!popupDisplay.IsOpen && !suppressTriggerClick)
+                opacityPress = e.GetPosition(button);
         };
-        button.PreviewMouseLeftButtonUp += (_, _) => ClearTriggerSuppressionAfterInput();
-        button.LostMouseCapture += (_, _) => ClearTriggerSuppressionAfterInput();
-        button.PreviewKeyDown += (_, _) => suppressTriggerClick = false;
+        button.PreviewMouseMove += (_, e) =>
+        {
+            if (button.IsMouseCaptured && e.LeftButton == MouseButtonState.Pressed)
+                UpdateOpacityPreview(e.GetPosition(button), e.Timestamp);
+        };
+        button.PreviewMouseLeftButtonUp += (_, e) =>
+        {
+            if (button.IsMouseCaptured) UpdateOpacityPreview(e.GetPosition(button), e.Timestamp);
+            EndOpacityDrag(commit: true);
+            ClearTriggerSuppressionAfterInput();
+        };
+        button.LostMouseCapture += (_, _) =>
+        {
+            EndOpacityDrag(commit: false);
+            ClearTriggerSuppressionAfterInput();
+        };
+        button.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape && opacityDragStart.HasValue)
+            {
+                e.Handled = TryClosePicker();
+                return;
+            }
+            if (!opacityPress.HasValue) suppressTriggerClick = false;
+        };
         button.Click += (_, e) =>
         {
             // OverlayPopup's logical parent is this placement target. A nested
@@ -153,6 +180,67 @@ internal sealed class ColorField : UserControl
         RefreshValue();
     }
 
+    private void UpdateOpacityPreview(Point position, int timestamp)
+    {
+        if (opacityPress is not Point press) return;
+        double dx = position.X - press.X;
+        double horizontal = Math.Abs(dx);
+        double vertical = Math.Abs(position.Y - press.Y);
+        double threshold = Math.Max(5, SystemParameters.MinimumHorizontalDragDistance);
+        if (!suppressTriggerClick)
+        {
+            if (horizontal < threshold && vertical < Math.Max(5, SystemParameters.MinimumVerticalDragDistance)) return;
+            // A deliberate move is no longer a click. Only a horizontal move edits alpha.
+            suppressTriggerClick = true;
+            suppressedPressTime = timestamp;
+            if (horizontal < threshold || horizontal < vertical) { opacityPress = null; return; }
+        }
+
+        const double dipsPerPercent = 2;
+        double distance = Math.Sign(dx) * Math.Max(0, horizontal - threshold);
+        int delta = (int)Math.Round(distance * 255 / (100 * dipsPerPercent));
+        uint start = opacityDragStart ?? Value;
+        uint color = AdjustAlpha(start, delta);
+        if ((!IsMixed && color == Value) || delta == (OpacityDragDelta ?? 0)) return;
+        if (!opacityDragStart.HasValue)
+        {
+            if (CanBeginGesture?.Invoke() == false) { opacityPress = null; return; }
+            opacityDragStart = start;
+            OpacityDragDelta = 0;
+            GestureStarted?.Invoke();
+        }
+        PublishOpacityPreview(color, delta);
+    }
+    internal static uint AdjustAlpha(uint color, int delta)
+    {
+        uint alpha = (uint)Math.Clamp((int)(color >> 24) + delta, 0, 255);
+        return (color & 0x00FFFFFF) | (alpha << 24);
+    }
+
+    private void PublishOpacityPreview(uint color, int delta)
+    {
+        OpacityDragDelta = delta;
+        // Alpha drags use the owner's live edit path without adding color history.
+        SetPublishedValue(color);
+        NotifyOwner(color);
+    }
+
+    internal bool EndOpacityDrag(bool commit, bool restore = true)
+    {
+        opacityPress = null;
+        if (opacityDragStart is not uint start) return false;
+        opacityDragStart = null;
+        try
+        {
+            if (!commit && restore && OpacityDragDelta != 0) PublishOpacityPreview(start, 0);
+        }
+        finally
+        {
+            try { GestureCompleted?.Invoke(commit); }
+            finally { OpacityDragDelta = null; }
+        }
+        return true;
+    }
     public void SetUserValue(uint value)
     {
         if (popupDisplay.IsOpen)
@@ -211,6 +299,7 @@ internal sealed class ColorField : UserControl
     }
     internal void SynchronizeModel(uint color)
     {
+        if (Value != color) EndOpacityDrag(commit: false, restore: false);
         IsSynchronizingModel = true;
         try { picker.SynchronizeExternalValue(color); pickerSessionChanged = false; Value = color; }
         finally { IsSynchronizingModel = false; }
@@ -227,6 +316,7 @@ internal sealed class ColorField : UserControl
         {
             // Owner echo of our exact value never changes the dependency property.
             // A different value is an external undo, preset or document replacement.
+            EndOpacityDrag(commit: false, restore: false);
             IsSynchronizingModel = true;
             try { picker?.SynchronizeExternalValue(Value); }
             finally { IsSynchronizingModel = false; }
@@ -254,6 +344,7 @@ internal sealed class ColorField : UserControl
     public void ClosePicker()
     {
         if (pickerSuspensions != 0) return;
+        EndOpacityDrag(commit: false);
         CommitPickerDraft();
         popupDisplay.IsOpen = false;
     }
@@ -278,6 +369,11 @@ internal sealed class ColorField : UserControl
     }
     public bool TryClosePicker()
     {
+        if (EndOpacityDrag(commit: false))
+        {
+            button.ReleaseMouseCapture();
+            return true;
+        }
         if (!popupDisplay.IsOpen && !pickerSessionOpen) return false;
         ClosePicker(); if (MayReturnFocus) button.Focus(); return true;
     }
@@ -303,11 +399,12 @@ internal sealed class ColorField : UserControl
     {
         if (!valueDirty) return;
         valueDirty = false;
-        swatch.Children.Clear(); swatch.Children.Add(ColorPickerPanel.CreateSwatch(Value));
-        double alpha = (Value >> 24) / 255d;
-        double luminance = alpha * (.2126 * ((Value >> 16) & 255) + .7152 * ((Value >> 8) & 255) + .0722 * (Value & 255)) + (1 - alpha) * 220;
+        uint color = Value;
+        swatch.Children.Clear(); swatch.Children.Add(ColorPickerPanel.CreateSwatch(color));
+        double alpha = (color >> 24) / 255d;
+        double luminance = alpha * (.2126 * ((color >> 16) & 255) + .7152 * ((color >> 8) & 255) + .0722 * (color & 255)) + (1 - alpha) * 220;
         label.Foreground = luminance < 140 ? Brushes.White : Brushes.Black;
-        label.Text = IsMixed ? "—" : (Value >> 24) == 0 ? L.Get("Color.Transparent") : ColorLibrary.ToHtml(Value, (Value >> 24) != 255);
+        label.Text = IsMixed ? "—" : (color >> 24) == 0 ? L.Get("Color.Transparent") : ColorLibrary.ToHtml(color, (color >> 24) != 255);
         string name = L.Get(Role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background") + " " + (IsMixed ? L.Get("Feedback4.Inspector.Mixed") : ColorLibrary.ToHtml(Value));
         button.ToolTip = name; AutomationProperties.SetName(button, name); AutomationProperties.SetName(this, name);
     }

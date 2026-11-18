@@ -115,7 +115,94 @@ internal static class ColorPopupOwnershipTests
         Press(trigger);
         check("ordinary menus still close when their placement target is pressed", menuClosed > 0);
         ColorActionBubbling(owner, check);
+        ColorOpacityDrag(check);
         ownerSource.RootVisual = null;
+    }
+    private static void ColorOpacityDrag(Action<string, bool> check)
+    {
+        const uint original = 0x80112233;
+        var library = new ColorLibrary(Path.Combine(ApplicationPaths.ProfileDirectory, "opacity-drag-colors.json"));
+        library.Remember(0xFFE03E3E);
+        var originalHistory = library.History.ToArray();
+        var field = new ColorField(ColorRole.Foreground, library) { Value = original };
+        var host = new Window { Content = field, Width = 450, Height = 150, ShowActivated = false, ShowInTaskbar = false };
+        var trigger = (Button)typeof(ColorField).GetField("button", Private)!.GetValue(field)!;
+        var label = (TextBlock)typeof(ColorField).GetField("label", Private)!.GetValue(field)!;
+        var update = typeof(ColorField).GetMethod("UpdateOpacityPreview", Private)!;
+        int notifications = 0;
+        field.ValueChanged += _ => notifications++;
+        double threshold = Math.Max(5, SystemParameters.MinimumHorizontalDragDistance);
+        void Move(double x, double y = 0) => update.Invoke(field, [new Point(4 + x, 4 + y), Environment.TickCount]);
+        void Click() => trigger.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, trigger));
+        void Release()
+        {
+            trigger.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent });
+            // ButtonBase emits Click after release for a captured press ending on the button.
+            Click();
+        }
+        try
+        {
+            host.Show();
+            host.UpdateLayout();
+            Press(trigger);
+            Move(2, 1);
+            Release();
+            check("sub-threshold movement still opens the existing color picker", field.IsPickerOpen && field.Value == original);
+            field.ClosePicker();
+
+            Press(trigger);
+            Move(-threshold - 40);
+            uint expected = 0x4D112233;
+            check("opacity drag updates the owner and existing HTML label before mouse-up without recording history",
+                field.Value == expected && notifications == 1 && label.Text == ColorLibrary.ToHtml(expected) &&
+                library.History.SequenceEqual(originalHistory));
+            Release();
+            check("mouse-up ends the live opacity drag without publishing again or opening the picker",
+                field.Value == expected && notifications == 1 && !field.IsPickerOpen);
+
+            Press(trigger);
+            Move(threshold + 20);
+            Move(0);
+            Release();
+            check("returning to the press point keeps the starting alpha and still consumes click",
+                field.Value == expected && notifications == 3 && !field.IsPickerOpen);
+
+            Press(trigger);
+            Move(threshold + 40);
+            Release();
+            check("dragging right increases alpha and retains RGB", field.Value == original && notifications == 4 && !field.IsPickerOpen);
+
+            Press(trigger);
+            Move(-threshold - 40);
+            trigger.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.LostMouseCaptureEvent });
+            check("loss of capture restores the original color in the owner and the face",
+                field.Value == original && notifications == 6 && label.Text == ColorLibrary.ToHtml(original));
+
+            Press(trigger);
+            Move(0, Math.Max(5, SystemParameters.MinimumVerticalDragDistance) + 3);
+            Release();
+            check("vertical movement neither changes opacity nor opens the picker",
+                field.Value == original && notifications == 6 && !field.IsPickerOpen);
+
+            Press(trigger);
+            Release();
+            check("plain click after a drag opens the color picker", field.IsPickerOpen);
+            field.ClosePicker();
+
+            field.CanBeginGesture = () => false;
+            Press(trigger);
+            Move(-threshold - 40);
+            Release();
+            check("an owner can reject the color edit without opening the picker",
+                field.Value == original && notifications == 6 && label.Text == ColorLibrary.ToHtml(original) && !field.IsPickerOpen);
+            check("completed and canceled opacity drags leave recent colors untouched", library.History.SequenceEqual(originalHistory));
+        }
+        finally
+        {
+            field.ClosePicker();
+            host.Close();
+        }
     }
     private static void ColorActionBubbling(Grid owner, Action<string, bool> check)
     {

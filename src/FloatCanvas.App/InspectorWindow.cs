@@ -20,6 +20,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private readonly Dictionary<string, Controls.TextBox> fields = [];
     private readonly Dictionary<string, NumericValueField> numericFields = [];
     private readonly Dictionary<string, ColorField> colorFields = [];
+    private Dictionary<Guid, uint>? opacityDragColors;
     private readonly HashSet<OverlayContextMenu> contextMenus = [];
     private readonly Dictionary<string, Wpf.FrameworkElement> fieldContainers = [];
     private readonly HashSet<string> dirtyFields = [];
@@ -338,7 +339,9 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if (!ReferenceEquals(session, formSession) || !session.Selection.SetEquals(formSelection))
         {
             var requestedSelection = session.Selection.ToArray();
-            if (CancelNumericGestures() && !session.Selection.SetEquals(requestedSelection)) session.SetSelection(requestedSelection);
+            bool canceled = CancelNumericGestures();
+            foreach (var color in colorFields.Values) canceled |= color.EndOpacityDrag(commit: false, restore: false);
+            if (canceled && !session.Selection.SetEquals(requestedSelection)) session.SetSelection(requestedSelection);
             CompleteEdit();
             LoadSelection(true);
             return;
@@ -401,7 +404,6 @@ internal sealed partial class InspectorWindow : Wpf.Window
                 : L.Format("Inspector.ElementSelection", ElementName(element), element.Locked ? L.Get("Inspector.LockedSuffix") : "", !element.Visible ? L.Get("Inspector.HiddenSuffix") : "");
             selectionLabel.Visibility = selected.Length == 1 ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
             AppWindowChrome.SetHeaderDetail(this, selected.Length > 1 ? L.Get("Feedback4.Inspector.MultipleHeader") : selected.Length == 1 ? selectionLabel.Text : "");
-            foreach (var (key, box) in fields) if (IsFieldVisible(key)) box.Text = "";
             foreach (var (key, color) in colorFields)
                 if (IsFieldVisible(key)) { color.Value = (uint)PropertyValue(element!, key)!; color.IsMixed = false; color.PrepareForShow(); }
             if (IsFieldVisible("LinkColors"))
@@ -616,8 +618,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if(dirtyFields.Contains("ConstrainAspect"))edited.ConstrainAspect=keepAspect.IsChecked==true;
         if(dirtyFields.Contains("LinkColors") && linkColors.SelectedValue is string shapeVariant)ElementAppearance.SetVariant(edited, shapeVariant);
         if(dirtyFields.Contains("StyleVariant") && numberStyle.SelectedValue is string variant)ElementAppearance.SetVariant(edited, variant);
-        if (dirtyFields.Contains("Stroke")) ElementAppearance.SetPrimaryColor(edited, colorFields["Stroke"].Value);
-        if (dirtyFields.Contains("Fill")) ElementAppearance.SetSecondaryColor(edited, colorFields["Fill"].Value);
+        if (dirtyFields.Contains("Stroke")) ElementAppearance.SetPrimaryColor(edited, EditedColor("Stroke", source.Id));
+        if (dirtyFields.Contains("Fill")) ElementAppearance.SetSecondaryColor(edited, EditedColor("Fill", source.Id));
         if (dirtyFields.Contains("StrokeWidth"))
         {
             double width = Number("StrokeWidth", L.Get("Inspector.StrokeWidth"), 0, source.Kind == ElementKind.Image ? 10000000 : 1024);
@@ -865,9 +867,21 @@ internal sealed partial class InspectorWindow : Wpf.Window
             CompleteEdit();
             return !invalidDraft && canMutate() && !getSession().IsTransactionActive;
         };
+        field.GestureStarted += () =>
+        {
+            if (field.OpacityDragDelta.HasValue)
+                opacityDragColors = getSession().SelectedElements().ToDictionary(element => element.Id, element => (uint)PropertyValue(element, key)!);
+        };
         field.GestureCompleted += commit =>
         {
-            if (commit) { CompleteEdit(); return; }
+            bool opacityDrag = field.OpacityDragDelta.HasValue;
+            if (opacityDrag) opacityDragColors = null;
+            if (commit)
+            {
+                CompleteEdit();
+                if (opacityDrag) LoadSelection(true);
+                return;
+            }
             editTimer.Stop(); var previous = editSession; editSession = null;
             if (previous is not null && ReferenceEquals(previous, getSession()) && previous.IsTransactionActive && previous.TransactionId == editTransaction)
             {
@@ -880,6 +894,13 @@ internal sealed partial class InspectorWindow : Wpf.Window
         field.PickerClosed += CompleteEdit;
         colorFields.Add(key, field); fieldContainers.Add(key, row);
         return row;
+    }
+
+    private uint EditedColor(string key, Guid elementId)
+    {
+        var field = colorFields[key];
+        return field.OpacityDragDelta is int delta && opacityDragColors?.TryGetValue(elementId, out uint original) == true
+            ? ColorField.AdjustAlpha(original, delta) : field.Value;
     }
 
     private void CloseColorPickers()

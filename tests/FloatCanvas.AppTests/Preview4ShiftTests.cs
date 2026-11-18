@@ -41,8 +41,229 @@ internal static class Preview4ShiftTests
             check(tool+" freezes each release endpoint then resumes the curve through multiple Shift intervals",session.Document.Elements.Single().Points.SequenceEqual(expected)&&session.UndoCount==1);
             check(tool+" retains one undo and redo for the mixed curve and straight gesture",session.Undo()&&session.Document.Elements.Count==0&&session.Redo()&&session.Document.Elements.Single().Points.SequenceEqual(expected));
         }
+        SmoothFreehand(check);
         Boxes(check);Lines(check);Captures(check);ImageRegions(check);ProjectedStroke(check);Options(check);InputOrdering(check);
     }
+    private static void SmoothFreehand(Action<string, bool> check)
+    {
+        var session = new EditorSession();
+        var editor = new EditorController(session) { SmoothFreehand = true };
+        Send(editor, OverlayPointerKind.Down, new(20, 20));
+        foreach (PointD point in new PointD[] { new(38, 29), new(54, 12), new(74, 32), new(95, 13), new(125, 20) })
+            Send(editor, OverlayPointerKind.Move, point);
+        var points = session.Document.Elements.Single().Points;
+        check("a noisy straight stroke fits the live endpoint-to-endpoint line without Shift",
+            points.SequenceEqual([default, new PointD(105, 0)]));
+        Send(editor, OverlayPointerKind.Up, new(125.25, 20));
+        check("straight shape correction includes the actual mouse-up endpoint",
+            session.Document.Elements.Single().Points[^1] == new PointD(105.25, 0));
+
+        var arcInput = Enumerable.Range(0, 37).Select(i =>
+        {
+            double angle = i * Math.PI / 36;
+            double radius = 45 + 3 * Math.Sin(4 * angle);
+            return new PointD(180 + radius * Math.Cos(angle), 180 + radius * Math.Sin(angle));
+        }).ToArray();
+        var arc = Draw(arcInput);
+        var arcPoints = arc.Session.Document.Elements.Single().Points;
+        check("a half-drawn circle only refines the authored arc and keeps the tip under the pointer",
+            arc.Session.IsTransactionActive && arcPoints[0] == default && arcPoints[^1] == arcInput[^1] - arcInput[0] &&
+            arcPoints.All(point => point.Y >= -1e-6) && arcPoints.Max(point => point.Y) > 35);
+        Send(arc, OverlayPointerKind.Up, arcInput[^1]);
+        var encoded = System.Text.Json.JsonSerializer.Serialize(arc.Session.Document);
+        var reopened = System.Text.Json.JsonSerializer.Deserialize<SceneDocument>(encoded)!;
+        check("the open arc persists as ordinary points with a single undo entry",
+            reopened.Elements.Single().Points.SequenceEqual(arc.Session.Document.Elements.Single().Points) &&
+            !encoded.Contains(nameof(EditorController.SmoothFreehand)) && arc.Session.UndoCount == 1);
+
+        var sharp = Draw(Bend(0));
+        var sharpPoints = sharp.Session.Document.Elements.Single().Points;
+        check("a decisive sharp turn remains a sharp fitted corner in the live preview",
+            sharpPoints.SequenceEqual([default, new PointD(100, 0), new PointD(100, 100)]));
+        var shallow = Draw(Bend(16)).Session.Document.Elements.Single().Points;
+        var wide = Draw(Bend(37)).Session.Document.Elements.Single().Points;
+        var vertex = new PointD(100, 0);
+        Console.WriteLine($"FREEHAND_ROUNDING shallowCount={shallow.Count} shallowGap={shallow.Min(point => point.DistanceTo(vertex)):F1} wideCount={wide.Count} wideGap={wide.Min(point => point.DistanceTo(vertex)):F1}");
+        check("two rounded bends preserve different rounding sizes",
+            shallow.Count > 3 && wide.Count > 3 && shallow.Min(point => point.DistanceTo(vertex)) + 5 <
+                wide.Min(point => point.DistanceTo(vertex)) && shallow[^1] == new PointD(100, 100) && wide[^1] == shallow[^1]);
+        RoundedRunTransitions(check);
+        BroadArcTangency(check);
+        WidthScaledRefinement(check);
+
+        PointD[] stairs = [new(20, 20), new(80, 21), new(79, 65), new(139, 63), new(141, 109), new(195, 110)];
+        var stairInput = new List<PointD> { stairs[0] };
+        for (int i = 1; i < stairs.Length; i++)
+        {
+            var segment = stairs[i] - stairs[i - 1];
+            var across = new PointD(-segment.Y, segment.X) * (1 / segment.DistanceTo(default));
+            for (int step = 1; step < 10; step++)
+                stairInput.Add(stairs[i - 1] + segment * (step / 10d) + across * (step % 2 == 0 ? 1.2 : -1.2));
+            stairInput.Add(stairs[i]);
+        }
+        var staircase = Draw(stairInput.ToArray()).Session.Document.Elements.Single().Points;
+        check("one stroke keeps all four staircase corners and straightens all five runs",
+            staircase.Count == stairs.Length &&
+            Enumerable.Range(1, staircase.Count - 1).All(i => i % 2 == 1 ? staircase[i - 1].Y == staircase[i].Y : staircase[i - 1].X == staircase[i].X) &&
+            staircase[^1] == stairs[^1] - stairs[0]);
+
+        var lengthy = Enumerable.Range(0, 700).Select(i => new PointD(20 + i, 40)).ToArray();
+        var longPoints = Draw(lengthy).Session.Document.Elements.Single().Points;
+        check("long live strokes keep a continuous line across settled windows",
+            longPoints.Count < 10 && longPoints[^1] == new PointD(699, 0) && longPoints.All(point => point.Y == 0));
+
+        var prefix = sharpPoints.ToArray();
+        sharp.ModifiersChanged(OverlayModifiers.Shift, new(120, 120));
+        Send(sharp, OverlayPointerKind.Move, new(139, 145), OverlayModifiers.Shift);
+        Send(sharp, OverlayPointerKind.Move, new(152, 137), OverlayModifiers.Shift);
+        sharpPoints = sharp.Session.Document.Elements.Single().Points;
+        check("holding Shift keeps the fitted prefix and one exact straight endpoint",
+            sharpPoints.Take(prefix.Length).SequenceEqual(prefix) && sharpPoints.Count == prefix.Length + 1 &&
+            sharpPoints[^1] == new PointD(132, 117));
+        sharp.ModifiersChanged(OverlayModifiers.None, new(154, 141));
+        Send(sharp, OverlayPointerKind.Move, new(172, 143));
+        Send(sharp, OverlayPointerKind.Up, new(187, 142));
+        sharpPoints = sharp.Session.Document.Elements.Single().Points;
+        check("shape correction resumes after Shift without moving the straight section",
+            sharpPoints.Take(prefix.Length).SequenceEqual(prefix) && sharpPoints[prefix.Length] == new PointD(134, 121));
+
+        PointD[] squiggle = [new(30, 30), new(55, 75), new(80, 30), new(105, 75), new(130, 30), new(155, 70)];
+        var fallback = Draw(squiggle);
+        var original = Draw(squiggle, enabled: false);
+        check("unrecognized input restores the original live points",
+            fallback.Session.Document.Elements.Single().Points.SequenceEqual(original.Session.Document.Elements.Single().Points));
+        Send(fallback, OverlayPointerKind.Up, squiggle[^1]);
+        check("unknown shape stays raw after mouse-up",
+            fallback.Session.Document.Elements.Single().Points.SequenceEqual(original.Session.Document.Elements.Single().Points));
+        PointD[] square = [new(30, 30), new(50, 30), new(70, 30), new(90, 30), new(90, 50), new(90, 70),
+            new(90, 90), new(70, 90), new(50, 90), new(30, 90), new(30, 70), new(30, 50), new(30, 30)];
+        check("a closed square retains its corners instead of being classified as a circle",
+            Draw(square).Session.Document.Elements.Single().Points.SequenceEqual([default, new PointD(60, 0), new PointD(60, 60), new PointD(0, 60), default]));
+
+        var recipe = editor.Parameters;
+        editor.ApplyParameters(recipe);
+        check("shape correction stays a local preference outside preset data",
+            editor.SmoothFreehand && !System.Text.Json.JsonSerializer.Serialize(recipe).Contains(nameof(EditorController.SmoothFreehand)));
+        check("shape correction defaults off and old local settings still load off",
+            !new EditorController(new()).SmoothFreehand && !System.Text.Json.JsonSerializer.Deserialize<UserSettings>("{}")!.SmoothFreehand);
+    }
+
+    private static PointD[] Bend(double radius)
+    {
+        var points = new List<PointD>();
+        for (int i = 0; i <= 16; i++) points.Add(new(20 + (100 - radius) * i / 16, 20));
+        for (int i = 1; radius > 0 && i <= 16; i++)
+        {
+            double angle = Math.PI * i / 32;
+            points.Add(new(120 - radius + radius * Math.Sin(angle), 20 + radius * (1 - Math.Cos(angle))));
+        }
+        for (int i = 1; i <= 16; i++) points.Add(new(120, 20 + radius + (100 - radius) * i / 16));
+        return points.ToArray();
+    }
+
+    private static void RoundedRunTransitions(Action<string, bool> check)
+    {
+        foreach (double degrees in new[] { 90d, 135d })
+        {
+            const double radius = 6;
+            var start = new PointD(100, 100);
+            var raw = Enumerable.Range(0, 61).Select(i => start + new PointD(i, 0)).ToList();
+            var center = raw[^1] + new PointD(0, radius);
+            double angle = degrees * Math.PI / 180;
+            for (int i = 1; i <= 24; i++)
+            {
+                double theta = angle * i / 24;
+                raw.Add(center + new PointD(Math.Sin(theta), -Math.Cos(theta)) * radius);
+            }
+            var tangent = new PointD(Math.Cos(angle), Math.Sin(angle));
+            var exit = raw[^1];
+            for (int i = 1; i <= 12; i++) raw.Add(exit + tangent * i);
+            var pen = Draw(raw.ToArray());
+            double live = LargestTurn();
+            for (int i = 13; i <= 230; i++) Send(pen, OverlayPointerKind.Move, exit + tangent * i);
+            double extended = LargestTurn();
+            Send(pen, OverlayPointerKind.Up, exit + tangent * 230);
+            double finished = LargestTurn();
+            Console.WriteLine($"REFINEMENT_JOIN source={degrees} preview={live:F1} extended={extended:F1} finished={finished:F1}");
+            check($"a {degrees} degree round transition does not become a sharp corner as its outgoing line grows",
+                live < 40 && extended < 40 && finished < 40);
+
+            double LargestTurn()
+            {
+                var points = pen.Session.Document.Elements.Single().Points;
+                double maximum = 0;
+                for (int i = 1; i < points.Count - 1; i++)
+                {
+                    var before = points[i] - points[i - 1];
+                    var after = points[i + 1] - points[i];
+                    if (before.DistanceTo(default) < .01 || after.DistanceTo(default) < .01) continue;
+                    double turn = Math.Atan2(before.X * after.Y - before.Y * after.X, before.X * after.X + before.Y * after.Y);
+                    maximum = Math.Max(maximum, Math.Abs(turn) * 180 / Math.PI);
+                }
+                return maximum;
+            }
+        }
+    }
+
+    private static void BroadArcTangency(Action<string, bool> check)
+    {
+        const double radius = 240;
+        var center = new PointD(420, 420);
+        var input = Enumerable.Range(0, 641).Select(i =>
+        {
+            double angle = i * Math.PI * .75 / 640;
+            return center + new PointD(Math.Cos(angle), Math.Sin(angle)) * radius;
+        }).ToArray();
+        var pen = Draw(input);
+        Send(pen, OverlayPointerKind.Up, input[^1]);
+        var points = pen.Session.Document.Elements.Single().Points;
+        var localCenter = center - input[0];
+        double worst = 0;
+        for (int i = 1; i < points.Count; i++)
+        {
+            var chord = points[i] - points[i - 1];
+            var radial = (points[i] + points[i - 1]) * .5 - localCenter;
+            var tangent = new PointD(-radial.Y, radial.X);
+            var error = Math.Atan2(chord.X * tangent.Y - chord.Y * tangent.X, chord.X * tangent.X + chord.Y * tangent.Y);
+            worst = Math.Max(worst, Math.Abs(error) * 180 / Math.PI);
+        }
+        Console.WriteLine($"REFINEMENT_BROAD_ARC points={points.Count} maximumHeadingError={worst:F2}");
+        check("a broad arc follows the source curvature smoothly across settled window boundaries",
+            worst < 5 && points[0] == default && points[^1] == input[^1] - input[0]);
+    }
+
+    private static void WidthScaledRefinement(Action<string, bool> check)
+    {
+        var wave = Enumerable.Range(0, 331).Select(i => new PointD(50 + i * .91,
+            100 + 7 * Math.Sin(i * .085) + .7 * Math.Sin(i * .61))).ToArray();
+        var thin = Draw(wave, strokeWidth: 4).Session.Document.Elements.Single().Points;
+        var thick = Draw(wave.Select(point => point * 10).ToArray(), strokeWidth: 40).Session.Document.Elements.Single().Points;
+        double difference = thin.Count == thick.Count
+            ? Enumerable.Range(0, thin.Count).Max(i => thin[i].DistanceTo(thick[i] * .1))
+            : double.PositiveInfinity;
+        double height = thin.Max(point => point.Y) - thin.Min(point => point.Y);
+        Console.WriteLine($"REFINEMENT_WIDTH_SCALE thinPoints={thin.Count} thickPoints={thick.Count} normalizedDifference={difference:F4} waveHeight={height:F2}");
+        check("a tenfold increase in input and brush width preserves the refined wave across settled windows",
+            difference < .05 && height > 8);
+
+        var zoomed = new FreehandPathSmoother(4);
+        var zoom = Projective2D.FromAffine(Affine2D.Scale(10, 10));
+        PointCollection points = [default];
+        foreach (var position in wave.Skip(1))
+            points = zoomed.Update(points, position - wave[0], zoom, finishStroke: false);
+        check("the same refinement follows projected screen width when viewing scale changes",
+            points.Count == thin.Count && Enumerable.Range(0, thin.Count).All(i => points[i].DistanceTo(thin[i]) < .05));
+    }
+
+    private static EditorController Draw(PointD[] points, bool enabled = true, double strokeWidth = 4)
+    {
+        var pen = new EditorController(new()) { SmoothFreehand = enabled };
+        pen.Style.StrokeWidth = strokeWidth;
+        Send(pen, OverlayPointerKind.Down, points[0]);
+        foreach (var point in points.Skip(1)) Send(pen, OverlayPointerKind.Move, point);
+        return pen;
+    }
+
     private static void Boxes(Action<string,bool> check)
     {
         foreach(var tool in new[] {EditorTool.Rectangle,EditorTool.RoundedRectangle,EditorTool.Ellipse,EditorTool.Symbol})
@@ -158,6 +379,15 @@ internal static class Preview4ShiftTests
         string root=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"FloatCanvas-ShiftOptions",Guid.NewGuid().ToString("N"));
         var editor=new EditorController(new());
         var panel=new ToolOptionsPanel(editor,new(System.IO.Path.Combine(root,"presets.json")),new(System.IO.Path.Combine(root,"colors.json"))); panel.PrepareForShow();
+        check("the freehand header uses the shared caption switch and defaults off",
+            panel.Header.Actions is CaptionModeSwitch { SelectedFirst: false });
+        editor.SmoothFreehand = true;
+        panel.SynchronizeFreehandSmoothing();
+        check("the freehand header reflects the local smoothing preference",
+            panel.Header.Actions is CaptionModeSwitch { SelectedFirst: true });
+        editor.Tool = EditorTool.Line;
+        panel.PrepareForShow();
+        check("the straight line tool has no smoothing action", panel.Header.Actions is null);
         var privateFields=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
         var aspectRows=(Dictionary<string,System.Windows.FrameworkElement>)typeof(ToolOptionsPanel).GetField("rows",privateFields)!.GetValue(panel)!;
         var aspect=aspectRows["Aspect"];

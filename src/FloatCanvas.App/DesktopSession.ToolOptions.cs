@@ -20,7 +20,9 @@ internal sealed partial class DesktopSession
 
     private void CreateToolOptionsPopup(Window toolbar)
     {
+        _editor.SmoothFreehand = _settings.SmoothFreehand;
         _toolOptionsPanel = new(_editor, _toolPresets, _colorLibrary, _toolStateStore);
+        _toolOptionsPanel.FreehandSmoothingRequested += ToggleFreehandSmoothing;
         _toolOptionsPanel.CanvasContentFactory = EnsureCanvasToolOptions;
         ConfigurePresentationUi(_toolOptionsPanel);
         _toolOptionsFrame = new Border { Child = _toolOptionsPanel };
@@ -92,6 +94,22 @@ internal sealed partial class DesktopSession
     private void UpdateToolOptionsPin()
     {
         ActionIconButton.UpdatePin(_toolOptionsPin,_toolOptionsPinned);
+    }
+
+    private void ToggleFreehandSmoothing()
+    {
+        bool previous = _settings.SmoothFreehand;
+        _settings.SmoothFreehand = !previous;
+        try { _settings.Save(); }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            _settings.SmoothFreehand = previous;
+            _toolOptionsPanel.Error(ex.Message);
+            return;
+        }
+        _editor.SmoothFreehand = _settings.SmoothFreehand;
+        _toolOptionsPanel.ClearStatus();
+        _toolOptionsPanel.SynchronizeFreehandSmoothing();
     }
 
     private void SetToolOptionsPinned(bool value)
