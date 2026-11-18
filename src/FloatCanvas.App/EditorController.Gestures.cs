@@ -18,7 +18,11 @@ internal sealed partial class EditorController
     internal void SelectContextTarget(PointD screen)
     {
         if(HitTestScreen(screen,7) is {} hit && ResolveHitSelectableNode(hit.Id) is {} node)
-        { if(!Session.Selection.Contains(node)) Session.SetSelection([node]); }
+        {
+            if (Session.Selection.Contains(node) ||
+                ResolveHitSelectableNode(hit.Id, individual: true) is { } leaf && Session.Selection.Contains(leaf)) return;
+            Session.SetSelection([node]);
+        }
         else Session.SetSelection([]);
     }
     private PointD ResizePivot(RectD bounds, PointD grab) => centeredGesture ? bounds.Center :

@@ -17,6 +17,8 @@ internal sealed partial class DesktopSession
     private DispatcherTimer? _canvasViewSaveTimer;
     private bool _canvasViewDuringMove;
     private OverlayMouseButton _canvasNavigationMouseButton;
+    private OverlayMouseButton? _cancelledNavigationButton;
+    private CanvasViewTransform _canvasNavigationStart;
     private bool _canvasNavigationZoom;
     private PointD _canvasNavigationAnchor;
     private bool _canvasNavigationSpaceHeld;
@@ -24,6 +26,15 @@ internal sealed partial class DesktopSession
     private CanvasViewTransform EditingCanvasView => _host.IsEditing && _host.IsVisible ? _canvasView : CanvasViewTransform.Identity;
     private void CancelCanvasNavigationGesture()
     { _canvasViewPanLast = null; StopCanvasEdgePan(); }
+
+    private bool CancelCanvasNavigationWithEscape()
+    {
+        if (_canvasViewPanLast is null) return false;
+        _cancelledNavigationButton = _canvasNavigationMouseButton;
+        CancelCanvasNavigationGesture();
+        ChangeCanvasViewing(_canvasNavigationStart);
+        return true;
+    }
 
     private void SynchronizeCanvasViewing(GroupCanvasView display)
     {
@@ -144,6 +155,14 @@ internal sealed partial class DesktopSession
 
     private bool HandleCanvasViewingPointer(OverlayPointerEvent input)
     {
+        if (_cancelledNavigationButton is { } cancelled)
+        {
+            if (input.Kind == OverlayPointerKind.Cancel ||
+                input.Kind == OverlayPointerKind.Up && input.Button == cancelled)
+            { _cancelledNavigationButton = null; return true; }
+            if (input.Kind == OverlayPointerKind.Move) return true;
+            if (input.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) _cancelledNavigationButton = null;
+        }
         if (_editor.InteractionTool == EditorTool.PointerPresentation && !_canvasNavigationSpaceHeld)
         { _canvasViewPanLast = null; return false; }
         if (input.Kind == OverlayPointerKind.Cancel)
@@ -181,7 +200,7 @@ internal sealed partial class DesktopSession
             if (input.Modifiers != OverlayModifiers.None && !(input.Button == OverlayMouseButton.Middle && input.Modifiers == OverlayModifiers.Control)) return true;
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);
             DismissPanelsForCanvasPress();
-            _canvasViewPanLast = point; _canvasNavigationAnchor = point;
+            _canvasViewPanLast = point; _canvasNavigationAnchor = point; _canvasNavigationStart = _canvasView;
             _canvasNavigationMouseButton = input.Button;
             _canvasNavigationZoom = input.Button == OverlayMouseButton.Middle && input.Modifiers == OverlayModifiers.Control;
         }

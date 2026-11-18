@@ -98,7 +98,7 @@ internal sealed class SessionKeyboardRouter : IDisposable
                     EditorShortcutPolicy.ShouldRoute(0x20, (ModifierKeys)modifiers, canvas ? null : source);
             }
         }
-        bool editor = !repeat && active() && !IsModal && !OverlayContextMenu.HasOpenMenu && !localText() &&
+        bool editor = modifiers == OverlayModifiers.None && !repeat && active() && !IsModal && !OverlayContextMenu.HasOpenMenu && !localText() &&
             (canvas || owns(source)) && EditorShortcutPolicy.ShouldRoute(0x20, (ModifierKeys)modifiers, canvas ? null : source);
         presses[0x20] = editor ? Owner.Editor : Owner.Local;
         pan(editor); return editor;

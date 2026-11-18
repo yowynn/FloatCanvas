@@ -16,6 +16,6 @@ internal static class PresetHistoryKeyboardRoute
         if (args.Handled || !ShouldRoute(key, modifiers, args.OriginalSource as DependencyObject)) return;
         // A command can open a dialog: consume the source event before entering its nested input loop.
         args.Handled = true;
-        command(KeyInterop.VirtualKeyFromKey(key));
+        if (!AppInputPolicy.IsRepeat(args)) command(KeyInterop.VirtualKeyFromKey(key));
     }
 }

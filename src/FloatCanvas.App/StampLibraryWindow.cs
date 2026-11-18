@@ -546,9 +546,9 @@ internal sealed class StampLibraryWindow : Wpf.Window
             selected=id;var previous=dialogOwner;dialogOwner=owner;
             try {await action();} finally {dialogOwner=previous;}
         });
-        void Add(string key, PanelActionIcon icon, Action action, string? shortcut = null)
+        void Add(string key, PanelActionIcon icon, Action action, string libraryShortcut = "")
         {
-            var item = new Controls.MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = shortcut ?? "", Tag = key };
+            var item = new Controls.MenuItem { Header = L.Get(key), Icon = ActionIconButton.Glyph(icon), InputGestureText = toolbarSlot is null ? libraryShortcut : "", Tag = key };
             item.Click += (_, _) => {selected=id;action();}; menu.Items.Add(item);
         }
         // A toolbar slot is already the direct use action. Its context menu is

@@ -15,15 +15,19 @@ internal static class EditorShortcutPolicy
     internal static bool IsCommand(int key, OverlayModifiers modifiers) => EditorCommandCatalog.Resolve(key, modifiers) is not null;
     internal static bool AllowsRepeat(int key, OverlayModifiers modifiers) => EditorCommandCatalog.Resolve(key, modifiers)?.Repeat == true;
     internal static bool CanRouteProjectCommandFromText(int key, OverlayModifiers modifiers) =>
-        (modifiers & OverlayModifiers.Control)!=0 && (modifiers & (OverlayModifiers.Alt|OverlayModifiers.Windows))==0 &&
-        key is not (0x41 or 0x43 or 0x58 or 0x56 or 0x5A or 0x59 or >= 0x21 and <= 0x28) &&
+        IsProjectChordUsableFromText(new(key, modifiers)) &&
         EditorCommandCatalog.Resolve(key, modifiers)?.Id is "File.Save" or "File.SaveAs" or "File.Open" or "File.New";
+
+    internal static bool IsProjectChordUsableFromText(CommandChord chord) =>
+        (chord.Modifiers & OverlayModifiers.Control) != 0 &&
+        (chord.Modifiers & (OverlayModifiers.Alt | OverlayModifiers.Windows)) == 0 &&
+        chord.Key is not (0x41 or 0x43 or 0x58 or 0x56 or 0x5A or 0x59 or >= 0x21 and <= 0x28);
 
     internal static bool ShouldRoute(int key, ModifierKeys modifiers, DependencyObject? source,
         bool preserveListNavigation = false, bool localInput = false)
     {
         if (source is not null && Window.GetWindow(source) is {} window && (RecordingWindows.Contains(window) || CommandWindows.Contains(window))) return false;
-        if (SessionKeyboardRouter.IsModal || !IsCommand(key, (OverlayModifiers)modifiers)) return false;
+        if (SessionKeyboardRouter.IsModal || EditorCommandCatalog.Resolve(key, (OverlayModifiers)modifiers) is not { } command) return false;
         var ancestors = Ancestors(source).ToArray();
         if (ancestors.Any(value => value is MenuItem or MenuBase or ComboBox { IsDropDownOpen: true })) return false;
         bool control = (modifiers & ModifierKeys.Control) != 0;
@@ -34,7 +38,7 @@ internal static class EditorShortcutPolicy
         // Read-only text keeps selection and copying, without owning editing-mode Space/Tab.
         if (ancestors.Any(value => value is TextBoxBase { IsReadOnly: true }) &&
             (key is >= 0x21 and <= 0x28 || control && key is 0x41 or 0x43)) return false;
-        if (OwnsNumericKey(key, modifiers, ancestors)) return false;
+        if (OwnsNumericKey(key, modifiers, ancestors) && command.Id is not ("Canvas.OpacityUp" or "Canvas.OpacityDown")) return false;
         if ((preserveListNavigation || OwnsList(source)) && key is >= 0x25 and <= 0x28) return false;
         if (!control && key is 0x0D or 0x2E && ancestors.Any(IsPresetTile)) return false;
         return true;

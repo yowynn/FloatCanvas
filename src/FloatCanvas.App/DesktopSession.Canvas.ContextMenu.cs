@@ -2,6 +2,7 @@ using FloatCanvas.Windows;
 using FloatCanvas.Core;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
@@ -20,6 +21,11 @@ internal sealed partial class DesktopSession
         FinishInlineText(); _inspector?.CompletePendingEdit();
         _editor.SelectContextTarget(new(input.Position.X-_editor.CanvasOrigin.X,input.Position.Y-_editor.CanvasOrigin.Y));
         var menu=new OverlayContextMenu { PlacementTarget=_toolbar,Placement=PlacementMode.MousePoint };
+        if (Active.Selection.Count > 1)
+        {
+            menu.Items.Add(new MenuItem { Header = L.Format("Shortcuts.ContextSelectionCount", Active.Selection.Count), IsEnabled = false });
+            menu.Items.Add(new Separator());
+        }
         foreach(var id in new[]{"Edit.Copy","Edit.Cut","Edit.Paste","Edit.Duplicate","Edit.Delete","Edit.Group","Edit.Ungroup",
             "Layer.Up","Layer.Down","Layer.Top","Layer.Bottom","Selection.Properties","View.Fit","View.Reset"})
         {

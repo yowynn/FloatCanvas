@@ -207,8 +207,10 @@ internal sealed class ToolbarOpacitySlider : Slider
                 </RepeatButton>
               </Track.IncreaseRepeatButton>
             </Track>
+            <Border x:Name="KeyboardFocusRing" BorderBrush="{DynamicResource CanvasAccent}" BorderThickness="1" CornerRadius="4" IsHitTestVisible="False" Visibility="Collapsed"/>
           </Grid>
           <ControlTemplate.Triggers>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="KeyboardFocusRing" Property="Visibility" Value="Visible"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="PART_Track" Property="Opacity" Value=".45"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>

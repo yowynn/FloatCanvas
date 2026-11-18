@@ -79,6 +79,7 @@ internal static class MenuLayerAndPanelSizeTests
                 Invoke(session,"EnsureStampWindow");
                 var stamp=Field<StampLibraryWindow>(session,"_stampWindow");
                 var slot=stamp.CreateToolbarMenu(entry.Id,0,toolbar);slot.PlacementTarget=Field<ToolbarLauncher>(session,"_toolbarLauncher");
+                Observe("toolbar stamp slot omits library-only shortcut hints", slot.Items.OfType<MenuItem>().All(item => string.IsNullOrEmpty(item.InputGestureText)));
                 var main=Field<OverlayContextMenu>(session,"_toolbarMenu");main.PlacementTarget=slot.PlacementTarget;
                 foreach(var (name,menu) in new[]{("main",main),("stamp slot",slot)})
                 {

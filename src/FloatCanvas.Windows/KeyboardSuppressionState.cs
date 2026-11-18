@@ -46,6 +46,8 @@ internal sealed class KeyboardSuppressionState
     internal bool CanResumeForegroundLoss => !IsActive && LastEndReason == KeyboardLeaseEndReason.ForegroundLost && !foregroundResumeVeto;
     internal byte[] CopyLocalState() => (byte[])local.Clone();
     internal OverlayModifiers CurrentModifiers => Modifiers();
+    internal bool IsChordHeld(int virtualKey, OverlayModifiers modifiers) =>
+        IsActive && (uint)virtualKey < (uint)physical.Length && physical[virtualKey] && Modifiers() == modifiers;
 
     public void UpdateHotkeys(HotkeyBinding toggle, HotkeyBinding hide)
     {

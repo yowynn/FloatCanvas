@@ -13,6 +13,19 @@ internal static class KeyboardPassedStateTests
             state.Process(key, 0, up ? 0x80u : 0, (uint)now, up, up ? 0x101u : 0x100u,
                 42, own, true, now);
 
+        var nudge = New(); Begin(nudge);
+        Key(nudge, 0xA0, own: true, now: 210);
+        check(Key(nudge, 0x27, own: true, now: 220) && nudge.IsChordHeld(0x27, OverlayModifiers.Shift),
+            "A suppressed arrow and Shift are physically held even without a Windows key message");
+        Key(nudge, 0xA0, up: true, own: true, now: 230);
+        check(!nudge.IsChordHeld(0x27, OverlayModifiers.Shift) && nudge.IsChordHeld(0x27, OverlayModifiers.None),
+            "Releasing a modifier invalidates only the previously held chord");
+        Key(nudge, 0x27, up: true, own: true, now: 240);
+        check(!nudge.IsChordHeld(0x27, OverlayModifiers.None), "Physical arrow release stops a hold even before dispatch");
+        Key(nudge, 0x27, own: true, now: 250);
+        nudge.End(KeyboardLeaseEndReason.Explicit, 260);
+        check(!nudge.IsChordHeld(0x27, OverlayModifiers.None), "Ending the lease invalidates every held chord");
+
         var recording = New(); Begin(recording); recording.CommandsSuspended = true;
         Key(recording, 0xA2, own: true, now: 210);
         Key(recording, HotkeyBinding.DefaultToggle.VirtualKey, own: true, now: 220);

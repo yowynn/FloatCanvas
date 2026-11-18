@@ -96,12 +96,31 @@ internal static class ProjectOpenModeTests
             ExitEditing(); Hide(); entry.Reset();
             long passiveVersion = host.EditingSessionVersion;
             nint passiveForeground = GetForegroundWindow();
+            // Replay the shell-open path with synthetic input; never observe the user's desktop.
+            Field<PresentationRuntimeBroker>(session, "_presentationRuntime").Dispose();
+            PresentationRuntimeTests.FakeSource? source = null;
+            var runtime = new PresentationRuntimeBroker(app.Dispatcher, () => { },
+                (epoch, _, _, _) => Task.FromResult<IPresentationInputSource>(source = new(epoch, [])),
+                () => TimeSpan.FromMilliseconds(1000));
+            typeof(DesktopSession).GetField("_presentationRuntime", Private)!.SetValue(session, runtime);
+            typeof(DesktopSession).GetField("_presentationDesktopAvailable", Private)!.SetValue(session, (Func<bool>)(() => true));
+            runtime.SetArmed(true);
             Queue(second);
+            check("passive shell open starts keyboard observation without entering editing", runtime.ObservingKeyboard);
+            source!.Queue([new(PresentationObservedKind.KeyDown, 1000, VirtualKey: 0x44)]);
+            Pump();
+            check("passive shell-open keyboard layer receives its first key without an edit-mode visit", runtime.Frame.PressedKeys.Count > 0);
+            var busy = typeof(DesktopSession).GetProperty("_documentBusy", Private)!;
+            busy.SetValue(session, true);
+            check("document operation suspends keyboard observation", !runtime.ObservingKeyboard);
+            busy.SetValue(session, false); Pump();
+            check("ending a document operation resumes keyboard without a mode change", runtime.ObservingKeyboard && Passive());
             Observe("queued-passive");
             check("project handoff to a passive instance reveals the new project without acquiring input",
                 Marker() == "second" && Passive() && Revealed() && host.EditingSessionVersion == passiveVersion &&
                 GetForegroundWindow() == passiveForeground && entry.Count == 0);
             Hide(); entry.Reset(); Queue(capture);
+            check("passive frozen-project opening also starts keyboard observation", runtime.ObservingKeyboard);
             Observe("queued-passive-capture");
             check("passive opening retains the newly loaded frozen-capture project instead of returning to live",
                 Marker() == "capture" && Editor().Session.Document.Kind == DocumentKind.FrozenCapture &&
@@ -111,6 +130,7 @@ internal static class ProjectOpenModeTests
             check("direct project opening from passive mode also preserves input mode and reveals the canvas",
                 Marker() == "first" && Passive() && Revealed() && host.EditingSessionVersion == passiveVersion && entry.Count == 0);
 
+            check("opening a project without keyboard layers stops the previous observer", !runtime.ObservingKeyboard);
             var insertionOwner = Editor().Session; Guid mainNodeId = insertionOwner.Document.Elements.Single().Id;
             Guid insertionScope = insertionOwner.CreatePopulatedGroup("prefab destination"); insertionOwner.SetEditScope(insertionScope);
             int insertionUndo = insertionOwner.UndoCount; string insertionSettings = System.Text.Json.JsonSerializer.Serialize(insertionOwner.Document.Canvas);
@@ -196,6 +216,11 @@ internal static class ProjectOpenModeTests
         string path = Path.Combine(folder, marker + ".floatcanvas");
         var document = new SceneDocument { Kind = kind, Viewport = new(0, 0, 640, 360),
             Elements = [new() { Kind = ElementKind.Text, Text = marker, Width = 120, Height = 30 }] };
+        if (marker is "second" or "capture") document.Elements.Add(new()
+        {
+            Kind = ElementKind.Presentation, Width = 200, Height = 100,
+            Presentation = new() { KeyboardScope = PresentationKeyboardScope.AllApplications }
+        });
         new ProjectStore().SaveAsync(path, document, new AssetLibrary()).GetAwaiter().GetResult();
         return path;
     }

@@ -57,6 +57,15 @@ internal static class PrefabDesktopContextTests
             check("definition edits appear in the actual root canvas snapshot", SceneEvaluation.Build(rootCanvas.Document).Leaves.Single().RenderElement.Width == 55 && rootCanvas.Document.ResourceId == owner.Document.ResourceId && rootCanvas.Context.Origin == context.ReturnOrigin);
         check("root canvas preview retains the current group list and detached editor", ReferenceEquals(editor.Session, draftSession) && draftRows.SequenceEqual(layers.VisibleNodes.Select(row => row.Id)) && layers.CurrentGroupContext is { Storage: GroupStorageKind.Embedded, IsEntered: true, Mode: GroupCanvasMode.RootProject });
         check("root canvas preview does not publish history or source content", owner.UndoCount == before && draftSession.UndoCount == draftHistory && JsonSerializer.Serialize(owner.Document) == untouchedOwner);
+        var opacityCommand = EditorCommandCatalog.All.Single(command => command.Id == "Canvas.OpacityDown");
+        var opacitySlider = Field<ToolbarOpacitySlider>(desktop, "_opacitySlider");
+        Invoke("RefreshToolbarState");
+        check("prefab root preview disables both opacity entry points and explains why",
+            !opacitySlider.IsEnabled && Invoke("CanExecuteEditorCommand", opacityCommand) is false &&
+            Equals(Invoke("EditorCommandDisabledReason", opacityCommand), L.Get("GroupCanvas.EditPreviewInIndependent")));
+        Invoke("ExecuteEditorCommand", opacityCommand);
+        check("disabled opacity command leaves host and draft history untouched",
+            JsonSerializer.Serialize(owner.Document) == untouchedOwner && draftSession.UndoCount == draftHistory);
         string draftBeforePointer = JsonSerializer.Serialize(draftSession.Document);
         editor.Tool = EditorTool.Rectangle;
         Invoke("HandleCanvasPointer", new OverlayPointerEvent(OverlayPointerKind.Down, new(15, 15), OverlayMouseButton.Left, OverlayModifiers.None));
@@ -67,6 +76,9 @@ internal static class PrefabDesktopContextTests
         check("a recovered relative source without a save location remains visible", ((string)Invoke("GroupSourcePath", unresolvedSource, owner)!).Contains(unresolvedSource.Locator, StringComparison.Ordinal));
         Invoke("SetGroupCanvasMode", GroupCanvasMode.Temporary);
         check("temporary canvas returns to the same editable draft without an extra preview window", ReferenceEquals(editor.Session, draftSession) && layers.CurrentGroupContext?.Mode == GroupCanvasMode.Temporary && app.Windows.OfType<Window>().All(window => window.GetType().Name != "PrefabPreviewWindow"));
+        Invoke("RefreshToolbarState");
+        check("editable prefab canvas enables both opacity entry points",
+            opacitySlider.IsEnabled && Invoke("CanExecuteEditorCommand", opacityCommand) is true);
         string added = owner.Assets.Add(Png());
         editor.Session.Add(new() { Kind = ElementKind.Image, AssetId = added, Width = 12, Height = 12, Visible = false });
         Invoke("PruneDocumentResources");

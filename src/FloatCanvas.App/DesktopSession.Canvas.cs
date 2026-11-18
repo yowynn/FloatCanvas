@@ -478,7 +478,6 @@ internal sealed partial class DesktopSession
     private bool HandleCanvasToolPointer(OverlayPointerEvent e)
     {
         if (_editor.Tool != EditorTool.Canvas) return false;
-        if (HandleCanvasGridCalibrationPointer(e)) return true;
         if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick)
         {
             using var destination = _windowCoordinator?.DirectTransfer(WindowDismissReason.CanvasPress);

@@ -209,6 +209,7 @@ internal static class AppTheme
             <Setter Property="Background" Value="{DynamicResource CanvasInput}"/>
             <Style.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource CanvasMuted}"/></Trigger>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
               <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
             </Style.Triggers>
           </Style>
@@ -513,8 +514,10 @@ internal static class AppTheme
                     <Track.Thumb><Thumb Width="14" Height="14"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="Handle" CornerRadius="7" Background="{DynamicResource CanvasAccent}" BorderBrush="{DynamicResource CanvasInput}" BorderThickness="2"/><ControlTemplate.Triggers><Trigger Property="IsDragging" Value="True"><Setter TargetName="Handle" Property="BorderBrush" Value="{DynamicResource CanvasText}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
                     <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}" Command="{x:Static Slider.IncreaseLarge}"/></Track.IncreaseRepeatButton>
                   </Track>
+                <Border x:Name="KeyboardFocusRing" BorderBrush="{DynamicResource CanvasAccent}" BorderThickness="1" CornerRadius="4" IsHitTestVisible="False" Visibility="Collapsed"/>
                 </Grid>
                 <ControlTemplate.Triggers>
+                  <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="KeyboardFocusRing" Property="Visibility" Value="Visible"/></Trigger>
                   <Trigger Property="Orientation" Value="Vertical"><Setter TargetName="Rail" Property="Width" Value="4"/><Setter TargetName="Rail" Property="Height" Value="Auto"/><Setter TargetName="Rail" Property="VerticalAlignment" Value="Stretch"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
@@ -551,8 +554,10 @@ internal static class AppTheme
                     </Thumb></Track.Thumb>
                     <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource CanvasSliderPageButton}" Command="{x:Static Slider.IncreaseLarge}"/></Track.IncreaseRepeatButton>
                   </Track>
+                <Border x:Name="KeyboardFocusRing" BorderBrush="{DynamicResource CanvasAccent}" BorderThickness="1" CornerRadius="4" IsHitTestVisible="False" Visibility="Collapsed"/>
                 </Grid>
                 <ControlTemplate.Triggers>
+                  <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="KeyboardFocusRing" Property="Visibility" Value="Visible"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
@@ -591,6 +596,7 @@ internal static class AppTheme
                   <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}" VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
                 </Border>
                 <ControlTemplate.Triggers>
+                  <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>
@@ -744,6 +750,7 @@ internal static class AppTheme
                   <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasMuted}"/></Trigger>
                   <Trigger Property="IsDropDownOpen" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEditable" Value="True"><Setter TargetName="Selection" Property="Visibility" Value="Collapsed"/><Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/><Setter TargetName="DropDownToggle" Property="Width" Value="26"/><Setter TargetName="DropDownToggle" Property="HorizontalAlignment" Value="Right"/></Trigger>
+                  <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource CanvasAccent}"/></Trigger>
                   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/><Setter TargetName="Selection" Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
               </ControlTemplate>

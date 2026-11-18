@@ -71,7 +71,7 @@ internal sealed partial class DesktopSession
             // A toolbar revisit restores its family's working state. Remembered
             // legacy aliases must not act like an explicit recipe selection.
             var button = ToolbarIcon(label, CommandGlyphs.Tool(tool), () => ActivateTool(ToolFamily(ButtonFamily(_editor.Tool) == tool ? _editor.Tool : _toolbarButtonMemory.GetValueOrDefault(tool, tool))), shortcut);
-            if(shortcut.Length>0)AddShortcutHint(button,shortcut,tool);
+            AddShortcutHint(button,shortcut,tool);
             button.Tag = "tool:" + tool; _toolbarToolButtons[tool] = button; Cell(button, toolColumn++);
         }
         Tool(EditorTool.Select, L.Get("ToolbarV2.Select"));
@@ -92,6 +92,7 @@ internal sealed partial class DesktopSession
         foreach(var tool in new[]{EditorTool.Blur,EditorTool.Pixelate,EditorTool.Presentation,EditorTool.PointerPresentation})
         {
             var button = ToolbarIcon(ToolName(tool), CommandGlyphs.Tool(tool), () => ActivateTool(tool));
+            AddShortcutHint(button, "", tool, trackMainGlyph: false);
             button.Tag = "extra-tool:" + tool; _extraToolButtons.Add(tool, button);
         }
         _toolbarToolButtons[EditorTool.Blur]=more;
@@ -119,6 +120,7 @@ internal sealed partial class DesktopSession
         AddShortcutHint(captureButton, "P", EditorTool.CaptureRegion);
         Action("crop", L.Get("Tool.Crop"), "M4,1 L4,11 Q4,12 5,12 L15,12 M1,4 L11,4 Q12,4 12,5 L12,15", () => ActivateTool(EditorTool.Crop));
         _toolbarToolButtons[EditorTool.Crop] = content.Children.OfType<Controls.Button>().Last();
+        AddShortcutHint(_toolbarToolButtons[EditorTool.Crop], "", EditorTool.Crop, trackMainGlyph: false);
         _toolbarToolButtons[EditorTool.Crop].IsEnabled = _editor.CanCropSelection;
         Controls.ToolTipService.SetShowOnDisabled(_toolbarToolButtons[EditorTool.Crop], true);
         Cell(Separator(), toolColumn++);
@@ -349,7 +351,7 @@ internal sealed partial class DesktopSession
         RefreshToolbarToolSelection();
         foreach (var item in _cropMenuItems) item.IsEnabled = _editor.CanCropSelection;
         _syncingControls = true;
-        try { if (!Active.IsTransactionActive) _opacitySlider.Value = CurrentCanvasLayerOpacity; _opacitySlider.IsEnabled = CanEditDisplayedCanvas && !Active.IsReadOnly; }
+        try { if (!Active.IsTransactionActive) _opacitySlider.Value = CurrentCanvasLayerOpacity; _opacitySlider.IsEnabled = CanChangeCanvasOpacity; }
         finally { _syncingControls = false; }
         var parameters = _editor.Parameters;
         string fingerprint = JsonSerializer.Serialize(parameters);
@@ -436,7 +438,9 @@ internal sealed partial class DesktopSession
 
     private void RefreshMoreToolPreviews()
     {
-        foreach (var (tool, button) in _extraToolButtons) button.Content = ToolParameterIcon.Create(ToolbarPreviewParameters(tool));
+        foreach (var (tool, button) in _extraToolButtons)
+            ((Controls.Grid)button.Content).Children.OfType<Controls.ContentPresenter>().Single().Content =
+                ToolParameterIcon.Create(ToolbarPreviewParameters(tool));
         if (_toolbarGlyphHosts.TryGetValue(EditorTool.Blur, out var presenter))
             presenter.Content = _toolbarUpperRow.IsExpanded ? CommandGlyphs.Create(MoreExpandedGlyph) :
                 ButtonFamily(_editor.Tool) == EditorTool.Blur ? ToolParameterIcon.Create(ToolbarPreviewParameters(_editor.Tool)) :
@@ -485,31 +489,30 @@ internal sealed partial class DesktopSession
         Controls.ToolTipService.SetInitialShowDelay(button, 650); Controls.ToolTipService.SetBetweenShowDelay(button, 300); Controls.ToolTipService.SetShowDuration(button, 7000);
         return button;
     }
-    private void AddShortcutHint(Controls.Button button,string shortcut,EditorTool? tool=null,bool lowerRow=false)
+    private void AddShortcutHint(Controls.Button button,string shortcut,EditorTool? tool=null,bool lowerRow=false,bool trackMainGlyph=true)
     {
         var content=ToolbarShortcutHint.CreateButtonContent(button,shortcut,lowerRow);
-        if(tool is { } key)_toolbarGlyphHosts[key]=content.Glyph;
+        if(trackMainGlyph && tool is { } key)_toolbarGlyphHosts[key]=content.Glyph;
         if (tool is {} hintedTool) content.Hint.Tag = (hintedTool, button);
         else if (_toolbarCommandHints.FirstOrDefault(entry => ReferenceEquals(entry.Button, button)) is var command && command.Id is not null) content.Hint.Tag = command.Id;
         _toolbarShortcutHintLabels.Add(content.Hint);button.Content=content.Content;
     }
     private void RefreshToolShortcutHints()
     {
+        _newCanvasButton?.RefreshTooltip();
         foreach(var hint in _toolbarShortcutHintLabels)
         {
             if (hint.Tag is string commandId)
-            {
-                string binding = EditorCommandCatalog.Hint(commandId);
-                hint.Text = binding.Length == 1 ? binding : "";
-            }
+                hint.Text = ToolbarShortcutHint.ForCommand(commandId);
             if(hint.Tag is ValueTuple<EditorTool,Controls.Button> target)
             {
-                string binding=Equals(target.Item2.Tag,"more")?EditorCommandCatalog.Hint("Tools.More"):ToolShortcutCatalog.Hint(target.Item1);
-                hint.Text=binding.Length==1?binding:"";
+                string toolCommand = Equals(target.Item2.Tag, "more") ? "Tools.More" : ToolShortcutCatalog.CommandId(target.Item1);
+                string binding = EditorCommandCatalog.Hint(toolCommand);
+                hint.Text = ToolbarShortcutHint.ForCommand(toolCommand);
                 target.Item2.ToolTip=(Equals(target.Item2.Tag,"more")?L.Get("Feedback4.Toolbar.More"):ToolName(target.Item1))+(binding.Length>0?" · "+binding:"");
                 System.Windows.Automation.AutomationProperties.SetAcceleratorKey(target.Item2,binding);
             }
-            hint.Visibility=_settings.ShowToolShortcutHints?Visibility.Visible:Visibility.Collapsed;
+            ToolbarShortcutHint.UpdateVisibility(hint, _settings.ShowToolShortcutHints);
         }
         foreach(var (button,id,label) in _toolbarCommandHints)
         {
@@ -518,10 +521,7 @@ internal sealed partial class DesktopSession
             System.Windows.Automation.AutomationProperties.SetAcceleratorKey(button,binding);
         }
         foreach(var (tool,button) in _extraToolButtons)
-        {
-            System.Windows.Automation.AutomationProperties.SetAcceleratorKey(button,ToolShortcutCatalog.Hint(tool));
             RefreshToolTooltip(tool,button,ToolFamily(_editor.Tool)==tool);
-        }
         RefreshLibraryStamp(_toolbarLibraryStamp);
         _stampShelf?.Refresh();
         _stampShelf?.SetShortcutHintsVisible(_settings.ShowToolShortcutHints);
@@ -538,10 +538,10 @@ internal sealed partial class DesktopSession
         opacity.ToolTipOpening+=(_,_)=>RefreshOpacityTooltip();
         EditorSession? pointerSession=null; CanvasSettingsTarget? pointerTarget=null; long pointerTransaction=0;
         bool OwnsPointerTransaction()=>pointerSession is {IsTransactionActive:true}&&ReferenceEquals(pointerSession,Active)&&pointerSession.TransactionId==pointerTransaction&&pointerTarget?.IsCurrent==true;
-        opacity.PointerGestureStarted+=()=>{pointerSession=null;pointerTarget=null;if(!DocumentOperationBusy&&CanEditDisplayedCanvas&&!Active.IsReadOnly){_editor.Cancel();pointerSession=Active;pointerTarget=CaptureCanvasSettingsTarget();pointerSession.BeginTransaction(L.Get("History.LayerOpacity"));pointerTransaction=pointerSession.TransactionId;}};
+        opacity.PointerGestureStarted+=()=>{pointerSession=null;pointerTarget=null;if(CanChangeCanvasOpacity){_editor.Cancel();pointerSession=Active;pointerTarget=CaptureCanvasSettingsTarget();pointerSession.BeginTransaction(L.Get("History.LayerOpacity"));pointerTransaction=pointerSession.TransactionId;}};
         opacity.ValueChanged+=(_,_)=>
         {
-            RefreshOpacityTooltip();if(_syncingControls||DocumentOperationBusy||!CanEditDisplayedCanvas||Active.IsReadOnly)return;
+            RefreshOpacityTooltip();if(_syncingControls||!CanChangeCanvasOpacity)return;
             if(opacity.IsPointerInteracting&&!OwnsPointerTransaction())
             {
                 // Escape or a document command can end this gesture's transaction.

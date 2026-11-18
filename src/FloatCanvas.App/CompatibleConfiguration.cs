@@ -94,10 +94,11 @@ internal sealed class CompatibleConfiguration(string path)
             }
             return result;
         }
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+        if (type.IsSZArray || type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
         {
-            var result = new JsonArray(); if (raw is not JsonArray array) return result;
-            var itemType = type.GetGenericArguments()[0];
+            if (raw is not JsonArray array) return type.IsSZArray ? Fallback(fallback, type) : new JsonArray();
+            var result = new JsonArray();
+            var itemType = type.IsSZArray ? type.GetElementType()! : type.GetGenericArguments()[0];
             foreach (var item in array) result.Add(Normalize(item, itemType, Default(itemType)));
             return result;
         }
@@ -225,7 +226,9 @@ internal sealed class CompatibleConfiguration(string path)
     }
     private static JsonNode? Fallback(object? value,Type type) => value is null ? null : JsonSerializer.SerializeToNode(value,type,ReadOptions);
     private static bool TryEnum(Type type, string value, out object? parsed) => Enum.TryParse(type, value, false, out parsed) && parsed is not null &&
-        (type == typeof(PresentationModules) ? ((PresentationModules)parsed & ~(PresentationModules.Keys | PresentationModules.Cursor | PresentationModules.Clicks | PresentationModules.Trail)) == 0 : Enum.IsDefined(type, parsed));
+        (type == typeof(PresentationModules) ? ((PresentationModules)parsed & ~(PresentationModules.Keys | PresentationModules.Cursor | PresentationModules.Clicks | PresentationModules.Trail)) == 0 :
+         type == typeof(OverlayModifiers) ? ((OverlayModifiers)parsed & ~(OverlayModifiers.Alt | OverlayModifiers.Control | OverlayModifiers.Shift | OverlayModifiers.Windows)) == 0 :
+         Enum.IsDefined(type, parsed));
 
     private static bool ValidValue(Type owner, string name, JsonNode? value)
     {

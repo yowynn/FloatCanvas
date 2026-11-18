@@ -41,7 +41,7 @@ internal sealed class StampShelfControl : Controls.UserControl
         if (!IsVisible) { dirty = true; return; }
         foreach (var hint in slots.Children.OfType<Controls.Button>().Select(button => button.Content).OfType<Controls.Grid>()
             .SelectMany(content => content.Children.OfType<Controls.TextBlock>()))
-            hint.Visibility = visible ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+            ToolbarShortcutHint.UpdateVisibility(hint, visible);
     }
     public void Refresh()
     {
@@ -58,7 +58,8 @@ internal sealed class StampShelfControl : Controls.UserControl
         for (int index = 0; index < 10; index++)
         {
             int slotIndex = index;
-            string digit = EditorCommandCatalog.Hint("Stamp.Slot"+index);
+            string command = "Stamp.Slot" + index;
+            string digit = EditorCommandCatalog.Hint(command);
             var entry = library.Items.FirstOrDefault(item => item.Id == library.Pins[index]);
             var content = new Controls.Grid { Width = 26, Height = 26 };
             bool selected = active == entry?.Id && entry is not null;
@@ -69,8 +70,9 @@ internal sealed class StampShelfControl : Controls.UserControl
                 UseLayoutRounding = false, SnapsToDevicePixels = false,
                 HorizontalAlignment = Wpf.HorizontalAlignment.Center, VerticalAlignment = Wpf.VerticalAlignment.Center };
             content.Children.Add(image);
-            var number = ToolbarShortcutHint.Create(digit.Length==1?digit:"", lowerRow:true);
-            number.Visibility=showShortcutHints?Wpf.Visibility.Visible:Wpf.Visibility.Collapsed;content.Children.Add(number);
+            var number = ToolbarShortcutHint.Create(ToolbarShortcutHint.ForCommand(command), lowerRow: true);
+            ToolbarShortcutHint.UpdateVisibility(number, showShortcutHints);
+            content.Children.Add(number);
             var button = new Controls.Button { Content = content, Width = 30, Height = 26, MinWidth = 30, MinHeight = 26,
                 Padding = new Wpf.Thickness(0), Margin = new Wpf.Thickness(0), Template = SlotTemplate,
                 ToolTip = entry is null ? digit + " · " + L.Get("Stamp.EmptySlot") : StampPreviewTooltip.Create(library, entry, digit) };

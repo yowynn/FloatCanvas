@@ -208,9 +208,11 @@ internal sealed partial class EditorController
     }
     internal void TransformSelectionInCanvas(Affine2D delta) => Session.Execute(L.Get("History.TransformElements"), _ =>
     {
-        if (!Session.TryApplySelectionTransform(Session.CaptureSelectionTransform(), ViewDelta(delta), displayMapping: CurrentCanvasMapping))
+        if (!TryTransformSelectionInCanvas(Session.CaptureSelectionTransform(), delta))
             throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
     });
+    internal bool TryTransformSelectionInCanvas(SelectionTransformSnapshot original, Affine2D delta) =>
+        Session.TryApplySelectionTransform(original, ViewDelta(delta), displayMapping: CurrentCanvasMapping);
     private Affine2D RotationDelta(PointD pivot, PointD first, PointD last, OverlayModifiers modifiers)
     {
         var transform = viewPlacement?.PlaneTransform ?? Affine2D.Identity;

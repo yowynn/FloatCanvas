@@ -114,12 +114,19 @@ internal static class LocateSelectionTests
         window.PrepareForShow(); host.Layout();
         var button = (Button)typeof(LayersWindow).GetField("locateSelection", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         var list = (ListBox)typeof(LayersWindow).GetField("layers", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
-        // Individual additive hits model Alt+Shift selection without navigating.
+        var editor = new EditorController(session) { Tool = EditorTool.Select };
         foreach (int x in new[] { 300, 100, 500, 400, 600 })
-            session.SelectAt(new PointD(x + 5, 15), additive: true, individual: true);
+        {
+            var position = new FloatCanvas.Windows.OverlayPoint(x + 5, 15);
+            const FloatCanvas.Windows.OverlayModifiers modifiers = FloatCanvas.Windows.OverlayModifiers.Control | FloatCanvas.Windows.OverlayModifiers.Shift;
+            editor.Pointer(new(FloatCanvas.Windows.OverlayPointerKind.Down, position, FloatCanvas.Windows.OverlayMouseButton.Left, modifiers));
+            editor.Pointer(new(FloatCanvas.Windows.OverlayPointerKind.Up, position, FloatCanvas.Windows.OverlayMouseButton.Left, modifiers));
+        }
         Guid[] expected = [aHigh.Id, deep.Id, bHigh.Id, bLow.Id, root.Id];
         Guid?[] scopes = [a.Id, inner.Id, b.Id, b.Id, null];
         check(prefix + "individual additive hits retain all levels without navigation", session.EditScopeId is null && session.Selection.SetEquals(expected));
+        editor.SelectContextTarget(new(305, 15));
+        check(prefix + "right-clicking a selected leaf keeps the exact cross-level selection", session.Selection.SetEquals(expected));
         int undo = session.UndoCount; long revision = session.SceneRevision;
         // Production refreshes synchronously during SetEditScope and SetSelection.
         // The temporary empty selection must not reset the locate cycle.

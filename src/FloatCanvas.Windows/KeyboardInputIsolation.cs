@@ -111,6 +111,10 @@ public sealed class KeyboardInputIsolation : IDisposable
             return state.IsActive;
         }
     }
+    internal bool IsChordHeld(int virtualKey, OverlayModifiers modifiers)
+    {
+        lock (gate) return state.IsChordHeld(virtualKey, modifiers);
+    }
     internal bool TryGetPointerModifiers(uint messageTime, OverlayPoint position, OverlayMouseButton button,
         bool isPress, out OverlayModifiers modifiers)
     {

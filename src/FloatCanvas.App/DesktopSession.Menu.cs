@@ -26,7 +26,7 @@ internal sealed partial class DesktopSession
         {
             var group = new Controls.MenuItem { Header = L.Get(key), Icon = CommandGlyphs.Create(geometry) }; menu.Items.Add(group); return group;
         }
-        void Item(Controls.MenuItem group, string label, string geometry, Action action, string shortcut = "", string? command = null)
+        Controls.MenuItem Item(Controls.MenuItem group, string label, string geometry, Action action, string shortcut = "", string? command = null)
         {
             var registered=EditorCommandCatalog.All.FirstOrDefault(c=>c.Id==shortcut);
             string Binding()=>shortcut=="Global.Hide"?FormatHotkey(_settings.Hide):registered is null?shortcut:EditorCommandCatalog.Hint(shortcut);
@@ -38,6 +38,7 @@ internal sealed partial class DesktopSession
                 Controls.ToolTipService.SetShowOnDisabled(item, true);
                 menu.Opened += (_, _) => { item.IsEnabled = CanExecuteUiCommand(command); item.ToolTip = UiCommandDisabledHint(command); };
             }
+            return item;
         }
         var file = Group("ToolbarV2.File", CommandGlyphs.File);
         Item(file, L.Get("Feedback4.Toolbar.NewBlankCanvas"), CommandGlyphs.NewCanvas, () => _ = StartNewCanvasAsync(), "File.New");
@@ -101,7 +102,13 @@ internal sealed partial class DesktopSession
         Item(canvas, L.Get("History.ClearCurrent"), CommandGlyphs.ClearCanvas, () => _ = RunCommand(ClearCurrentCanvasAsync), "Edit.Clear");
         var windows = Group("ToolbarV2.Windows", CommandGlyphs.Windows);
         Item(windows, L.Get("ToolbarV2.Properties"), CommandGlyphs.Properties, ToggleInspector, "Selection.Properties"); Item(windows, L.Get("ToolbarV2.Layers"), CommandGlyphs.Layers, ToggleLayers, "Panel.Layers");
-        Item(windows, L.Get("ToolOptions.Title"), CommandGlyphs.ToolOptions, OpenCurrentToolOptions, "Panel.Tools");
+        var options = Item(windows, L.Get("ToolOptions.Title"), CommandGlyphs.ToolOptions, OpenCurrentToolOptions, "Panel.Tools");
+        Controls.ToolTipService.SetShowOnDisabled(options, true);
+        menu.Opened += (_, _) =>
+        {
+            options.IsEnabled = HasCurrentToolOptions;
+            options.ToolTip = HasCurrentToolOptions ? null : L.Get("Shortcuts.StampPlacementNoOptions");
+        };
         Item(windows, L.Get("Stamp.LibraryTitle"), CommandGlyphs.Stamp, ShowStampLibrary, "Stamp.Library");
         Item(edit, L.Get("Feedback3.Toolbar.NewStamp"), CommandGlyphs.NewStamp, SaveStampSelection, "Stamp.Create", "save-stamp");
         menu.Items.Add(new Controls.Separator());

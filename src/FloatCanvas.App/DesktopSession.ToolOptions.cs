@@ -16,6 +16,7 @@ internal sealed partial class DesktopSession
     private Window _toolOptionsWindow = null!;
     private ContentControl _toolOptionsHeaderContent = null!;
     private bool IsToolOptionsOpen => _toolOptionsWindow?.IsVisible == true;
+    private bool HasCurrentToolOptions => _editor.Tool != EditorTool.Stamp;
 
     private void CreateToolOptionsPopup(Window toolbar)
     {
@@ -121,6 +122,7 @@ internal sealed partial class DesktopSession
 
     private void OpenToolOptions()
     {
+        if (!HasCurrentToolOptions) return;
         if (_editor.Tool == EditorTool.Canvas) { OpenCanvasSettings(); return; }
         ShowCurrentToolOptions();
     }

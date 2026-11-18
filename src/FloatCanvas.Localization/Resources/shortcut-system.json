@@ -311,6 +311,14 @@
     "zh": "编辑工具与命令快捷键",
     "en": "Edit tool and command shortcuts"
   },
+  "Settings.InternalShortcuts": {
+    "zh": "应用内快捷键",
+    "en": "In-app shortcuts"
+  },
+  "Settings.GlobalShortcuts": {
+    "zh": "全局快捷键",
+    "en": "Global shortcuts"
+  },
   "Shortcuts.Unbound": {
     "zh": "未绑定",
     "en": "Unbound"
@@ -354,6 +362,310 @@
   "Shortcuts.Reserved": {
     "zh": "保留快捷键：",
     "en": "Reserved shortcut: "
+  },
+  "Shortcuts.SpaceReserved": {
+    "zh": "Space 用于临时平移，带修饰键的 Space 保留给系统及输入法。请选择其他按键组合。",
+    "en": "Space pans the view. Modified Space combinations are reserved for system and input method use. Choose another shortcut."
+  },
+  "Shortcuts.BindingConflict": {
+    "zh": "{0}的 {1} 已被「{2}」占用，请重新绑定。",
+    "en": "{1} for {0} is used by {2}. Choose another shortcut."
+  },
+  "Shortcuts.BindingUnavailable": {
+    "zh": "「{0}」的旧绑定无法使用，请在此检查并重新绑定。",
+    "en": "An old binding for {0} is unavailable. Review its shortcuts here."
+  },
+  "Shortcuts.ContextSelectionCount": {
+    "zh": "已选 {0} 项",
+    "en": "{0} selected"
+  },
+  "Shortcuts.PointerGestures": {
+    "zh": "## 选择工具的鼠标手势\n\n- Ctrl+单击选取组内叶子图层。Ctrl+Shift+单击增减叶子选择。\n- Alt+拖动对象复制。按住 Alt 拖动缩放手柄，以中心为支点。",
+    "en": "## Mouse gestures in Select\n\n- Ctrl+click selects a leaf inside a group. Ctrl+Shift+click adds or removes a leaf.\n- Alt+drag an object to duplicate it. Alt+drag a resize handle to resize from the center."
+  },
+  "Shortcuts.TableSearch": {
+    "zh": "搜索命令、按键或生效条件",
+    "en": "Search commands, keys, or conditions"
+  },
+  "Shortcuts.FindKey": {
+    "zh": "按键查找",
+    "en": "Find by pressing keys"
+  },
+  "Shortcuts.KeyboardPreview": {
+    "zh": "键盘预览",
+    "en": "Keyboard preview"
+  },
+  "Shortcuts.KeyboardPreviewHint": {
+    "zh": "高亮表示有绑定，可切换修饰键查看组合。",
+    "en": "Highlighted keys have bindings. Toggle modifiers to see combinations."
+  },
+  "Shortcuts.KeyboardPreviewSelect": {
+    "zh": "点击键帽查看命令及生效条件。",
+    "en": "Select a key to see its commands and conditions."
+  },
+  "Shortcuts.KeyboardPreviewEmergency": {
+    "zh": "紧急释放输入",
+    "en": "Emergency input release"
+  },
+  "Shortcuts.FindKeyHint": {
+    "zh": "按下要查找的组合键，或按 Esc 结束查找。",
+    "en": "Press a chord to find it, or press Esc to stop."
+  },
+  "Shortcuts.NoResults": {
+    "zh": "没有匹配的快捷键。",
+    "en": "No matching shortcuts."
+  },
+  "Shortcuts.AllAreas": {
+    "zh": "全部归属",
+    "en": "All areas"
+  },
+  "Shortcuts.AllSources": {
+    "zh": "全部绑定状态",
+    "en": "All binding states"
+  },
+  "Shortcuts.AreaColumn": {
+    "zh": "功能归属",
+    "en": "Area"
+  },
+  "Shortcuts.WhenColumn": {
+    "zh": "生效条件",
+    "en": "When it works"
+  },
+  "Shortcuts.SourceColumn": {
+    "zh": "来源",
+    "en": "Source"
+  },
+  "Shortcuts.Source.Default": {
+    "zh": "默认",
+    "en": "Default"
+  },
+  "Shortcuts.Source.Custom": {
+    "zh": "自定义",
+    "en": "Custom"
+  },
+  "Shortcuts.Source.Fixed": {
+    "zh": "固定",
+    "en": "Fixed"
+  },
+  "Shortcuts.Area.General": {
+    "zh": "通用编辑",
+    "en": "General"
+  },
+  "Shortcuts.Area.Tools": {
+    "zh": "绘图与内容",
+    "en": "Drawing"
+  },
+  "Shortcuts.Area.Canvas": {
+    "zh": "画布与视图",
+    "en": "Canvas"
+  },
+  "Shortcuts.Area.Layers": {
+    "zh": "选择与图层",
+    "en": "Layers"
+  },
+  "Shortcuts.Area.Stamps": {
+    "zh": "印章",
+    "en": "Stamps"
+  },
+  "Shortcuts.Area.Capture": {
+    "zh": "截图与采样",
+    "en": "Capture"
+  },
+  "Shortcuts.Area.Presentation": {
+    "zh": "演示",
+    "en": "Presentation"
+  },
+  "Shortcuts.Area.Numeric": {
+    "zh": "数值控件",
+    "en": "Numeric fields"
+  },
+  "Shortcuts.When.NumericSlider": {
+    "zh": "可编辑的数值滑轨有焦点时",
+    "en": "When an editable numeric slider has focus"
+  },
+  "Shortcuts.NumericStep": {
+    "zh": "按步长调整",
+    "en": "Adjust by one step"
+  },
+  "Shortcuts.NumericFine": {
+    "zh": "精细调整",
+    "en": "Fine adjustment"
+  },
+  "Shortcuts.NumericCoarse": {
+    "zh": "粗调数值",
+    "en": "Coarse adjustment"
+  },
+  "Shortcuts.NumericBounds": {
+    "zh": "移到滑轨端点",
+    "en": "Go to a slider endpoint"
+  },
+  "Shortcuts.When.Editing": {
+    "zh": "编辑模式",
+    "en": "Editing mode"
+  },
+  "Shortcuts.When.ToolOptions": {
+    "zh": "当前工具有参数时；印章放置使用印章库和槽位",
+    "en": "When the current tool has options; stamp placement uses the library and slots"
+  },
+  "Shortcuts.When.ClearCanvas": {
+    "zh": "当前画布有内容且可编辑时；长按不连发",
+    "en": "With content on an editable canvas; does not repeat while held"
+  },
+  "Shortcuts.StampPlacementNoOptions": {
+    "zh": "印章放置没有独立参数。请使用印章库或工具栏槽位。",
+    "en": "Stamp placement uses the Stamp library and toolbar slots."
+  },
+  "Shortcuts.When.File": {
+    "zh": "编辑模式；部分或全部绑定也可在文本字段中使用",
+    "en": "Editing mode; some or all bindings also work in text fields"
+  },
+  "Shortcuts.When.ViewNavigation": {
+    "zh": "画布可见、无绘制或校准手势，且未使用鼠标演示工具时",
+    "en": "With the canvas visible, no drawing or calibration gesture, and the pointer presentation tool inactive"
+  },
+  "Shortcuts.When.Cancel": {
+    "zh": "先取消当前局部操作，逐级退回穿透",
+    "en": "Cancels the current action first, then backs out to pass-through"
+  },
+  "Shortcuts.When.Pan": {
+    "zh": "按住，再用左键拖动画布",
+    "en": "Hold while dragging the canvas with the left button"
+  },
+  "Shortcuts.When.PolygonOrCalibration": {
+    "zh": "多边形截图或透视四线采样时",
+    "en": "During a polygon capture or four-line calibration"
+  },
+  "Shortcuts.When.Polygon": {
+    "zh": "多边形截图选区尚未完成时",
+    "en": "While drawing a polygon capture region"
+  },
+  "Shortcuts.When.CanvasOpacity": {
+    "zh": "当前画布允许调整不透明度时",
+    "en": "When the current canvas allows opacity changes"
+  },
+  "Shortcuts.When.RenameLayer": {
+    "zh": "选中一个图层、组合或共享实例时",
+    "en": "With one layer, group, or shared instance selected"
+  },
+  "Shortcuts.When.Selected": {
+    "zh": "画布可见且有选择时",
+    "en": "With a visible canvas and an active selection"
+  },
+  "Shortcuts.When.EditableSelection": {
+    "zh": "有可执行此操作的可编辑选择时",
+    "en": "With an editable selection eligible for this action"
+  },
+  "Shortcuts.When.SelectedGroup": {
+    "zh": "选中可解组的组合时",
+    "en": "With a group that can be ungrouped selected"
+  },
+  "Shortcuts.When.Undo": {
+    "zh": "有可撤销的操作时，每按一次撤销一步",
+    "en": "With undo history; one step per press"
+  },
+  "Shortcuts.When.Redo": {
+    "zh": "有可重做的操作时，每按一次重做一步",
+    "en": "With redo history; one step per press"
+  },
+  "Shortcuts.When.Crop": {
+    "zh": "只选中一张可裁剪的图片时",
+    "en": "With one croppable image selected"
+  },
+  "Shortcuts.When.Move": {
+    "zh": "有可移动的选择时，长按可连续移动",
+    "en": "With a movable selection; hold to repeat"
+  },
+  "Shortcuts.When.StampSlot": {
+    "zh": "对应工具栏槽位已有印章时",
+    "en": "When the corresponding toolbar slot holds a stamp"
+  },
+  "Shortcuts.When.LayerGroup": {
+    "zh": "焦点在图层列表且选中可进入的组合时",
+    "en": "When the layer list has focus and the selected group can be entered"
+  },
+  "Shortcuts.When.LayerList": {
+    "zh": "焦点在图层列表中时",
+    "en": "When the layer list has focus"
+  },
+  "Shortcuts.When.StampLibrary": {
+    "zh": "焦点在印章库中时",
+    "en": "When the Stamp library has focus"
+  },
+  "Shortcuts.When.StampList": {
+    "zh": "焦点在印章列表且有可用的选中项时",
+    "en": "With the stamp list focused and an eligible stamp selected"
+  },
+  "Shortcuts.When.SelectTool": {
+    "zh": "选择或临时选择工具中",
+    "en": "In Select or temporary Select"
+  },
+  "Shortcuts.When.ResizeHandle": {
+    "zh": "拖动对象的缩放手柄时",
+    "en": "While dragging a selection resize handle"
+  },
+  "Shortcuts.ParentLayer": {
+    "zh": "返回上一级",
+    "en": "Go to parent level"
+  },
+  "Shortcuts.StampSearch": {
+    "zh": "搜索印章",
+    "en": "Find a stamp"
+  },
+  "Shortcuts.FinishPolygon": {
+    "zh": "确认多边形选区",
+    "en": "Confirm polygon region"
+  },
+  "Shortcuts.DeepSelect": {
+    "zh": "选中组内叶子",
+    "en": "Select a leaf inside a group"
+  },
+  "Shortcuts.DeepSelectKeys": {
+    "zh": "Ctrl+左键单击",
+    "en": "Ctrl+left click"
+  },
+  "Shortcuts.CrossLevelSelect": {
+    "zh": "跨组增减叶子",
+    "en": "Add or remove leaves across groups"
+  },
+  "Shortcuts.CrossLevelSelectKeys": {
+    "zh": "Ctrl+Shift+左键单击",
+    "en": "Ctrl+Shift+left click"
+  },
+  "Shortcuts.DuplicateDrag": {
+    "zh": "拖动复制",
+    "en": "Duplicate by dragging"
+  },
+  "Shortcuts.DuplicateDragKeys": {
+    "zh": "Alt+左键拖动",
+    "en": "Alt+left drag"
+  },
+  "Shortcuts.CenterResize": {
+    "zh": "以中心缩放",
+    "en": "Resize from center"
+  },
+  "Shortcuts.CenterResizeKeys": {
+    "zh": "Alt+左键拖动",
+    "en": "Alt+left drag"
+  },
+  "Shortcuts.PointerPan": {
+    "zh": "鼠标平移",
+    "en": "Pan with the mouse"
+  },
+  "Shortcuts.PointerPanKeys": {
+    "zh": "中键拖动",
+    "en": "Middle drag"
+  },
+  "Shortcuts.PointerZoom": {
+    "zh": "鼠标缩放",
+    "en": "Zoom with the mouse"
+  },
+  "Shortcuts.PointerZoomKeys": {
+    "zh": "Ctrl+滚轮 / Ctrl+中键拖动",
+    "en": "Ctrl+wheel / Ctrl+middle drag"
+  },
+  "Shortcuts.PreviousEntries": {
+    "zh": "## 从旧版升级\n\n- 工具参数和印章库的当前绑定见上表。\n- 单向箭头、双向箭头、圆角矩形和三角形可以在线条、矩形或符号的工具预设中选择。\n- 清空画布可通过菜单或命令搜索执行，也可以在快捷键设置中自行绑定。",
+    "en": "## Upgrading from an earlier version\n\n- See the table for current shortcuts for Tool options and the Stamp library.\n- Choose the arrow, double arrow, rounded rectangle and triangle in the Line, Rectangle or Symbol tool presets.\n- Clear canvas is available in the menu and command search. You can assign a shortcut in Settings."
   },
   "Shortcuts.ResetAll": {
     "zh": "全部恢复默认",

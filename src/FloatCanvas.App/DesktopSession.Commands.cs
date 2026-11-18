@@ -23,8 +23,11 @@ internal sealed partial class DesktopSession
     private void OnCommandInput(OverlayKeyEvent input)
     {
         var command = EditorCommandCatalog.Resolve(input.VirtualKey, input.Modifiers);
+        if (input.IsRepeat && command?.Repeat != true) return;
         if (command?.Tool is not null)
         {
+            FinishKeyboardNudge();
+            if (HandleCanvasSampleKey(input.VirtualKey, input.Modifiers)) return;
             if (!input.IsRepeat) BeginBorrowedTool(command,input.VirtualKey);
             return;
         }
@@ -36,6 +39,8 @@ internal sealed partial class DesktopSession
     private bool CanExecuteEditorCommand(EditorCommand command)
     {
         if (command.Id is "Interaction.Pan" or "Capture.Back" || DocumentOperationBusy || command.Mutates && Active.IsReadOnly) return false;
+        if (command.Id is "Canvas.OpacityUp" or "Canvas.OpacityDown") return CanChangeCanvasOpacity;
+        if (command.Id == "Panel.Tools") return HasCurrentToolOptions;
         if (command.Id=="Edit.Undo") return Active.CanUndo;
         if (command.Id=="Edit.Redo") return Active.CanRedo;
         if (command.Tool == EditorTool.Crop && !_editor.CanCropSelection) return false;
@@ -47,7 +52,8 @@ internal sealed partial class DesktopSession
             "Layer.Up" or "Layer.Down" or "Layer.Top" or "Layer.Bottom"=>LayerOperation.Reorder, _=>null
         };
         if (operation is {} op) return Active.AnalyzeLayerOperation(op).CanExecute;
-        if (command.Id is "Edit.Copy" or "Selection.Rename" or "Selection.Properties" or "View.Selection" or "Stamp.Create" || command.Id.StartsWith("Move.",StringComparison.Ordinal))
+        if (command.Id == "Selection.Rename") return _host.IsVisible && Active.Selection.Count == 1;
+        if (command.Id is "Edit.Copy" or "Selection.Properties" or "View.Selection" or "Stamp.Create" || command.Id.StartsWith("Move.",StringComparison.Ordinal))
             return _host.IsVisible && Active.Selection.Count>0;
         return true;
     }
@@ -57,6 +63,9 @@ internal sealed partial class DesktopSession
         if(CanExecuteEditorCommand(command)) return "";
         if(DocumentOperationBusy || Active.IsTransactionActive) return L.Get("Audit.CommandBusy");
         if(Active.IsReadOnly) return L.Get("GroupCanvas.ReadOnly");
+        if (command.Id == "Panel.Tools" && !HasCurrentToolOptions) return L.Get("Shortcuts.StampPlacementNoOptions");
+        if (command.Id is "Canvas.OpacityUp" or "Canvas.OpacityDown")
+            return L.Get(CanEditDisplayedCanvas ? "LayerExperience.LockedBrowse" : "GroupCanvas.EditPreviewInIndependent");
         if(command.Id is "Interaction.Pan" or "Capture.Back") return L.Get("Shortcuts.GestureOnly");
         if(command.Tool==EditorTool.Crop) return L.Get("Audit.ImageRequirement");
         if(command.Tool is not null) return L.Get("Inspector.LockedSuffix");
@@ -81,10 +90,10 @@ internal sealed partial class DesktopSession
         { if (_stampLibrary.Pins[slot] is { } stamp) SelectStampSlot(stamp); else UpdateStatus(FloatCanvas.Localization.AppText.Get("Shortcuts.EmptyStamp")); return; }
         if (id.StartsWith("Move.", StringComparison.Ordinal))
         {
-            _editor.Cancel(); bool fast = id.StartsWith("Move.Fast", StringComparison.Ordinal);
-            int key = int.Parse(id[(fast ? 9 : 5)..]); int amount = fast ? 10 : 1;
-            RunSafeSelectionCommand(() => _editor.TransformSelectionInCanvas(Affine2D.Translation(
-                key == 0x25 ? -amount : key == 0x27 ? amount : 0, key == 0x26 ? -amount : key == 0x28 ? amount : 0))); return;
+            _editor.Cancel();
+            var step = SelectionMoveStep(id);
+            RunSafeSelectionCommand(() => _editor.TransformSelectionInCanvas(Affine2D.Translation(step.X, step.Y)));
+            return;
         }
         switch (id)
         {
@@ -92,7 +101,7 @@ internal sealed partial class DesktopSession
                 if (_globalCapture is not null) CompleteGlobalCapture(inserted:false);
                 else if (_eyedropper is not null) EndEyedropper();
                 else if (_toolOptionsPanel.CloseColorPicker()) { }
-                else if (Active.IsTransactionActive || _editor.Marquee != null || _editor.HasPendingBillboardOperation || _editor.IsBorrowingSelection) _editor.Cancel();
+                else if (Active.IsTransactionActive || _editor.HasPointerGesture || _editor.HasPendingBillboardOperation || _editor.IsBorrowingSelection) _editor.Cancel();
                 else if (_borrowedTool is not null) CancelBorrowedTool();
                 else if (IsToolOptionsOpen && !_toolOptionsPinned && _toolOptionsWindow.IsKeyboardFocusWithin) CloseToolOptions();
                 else if (Active.Selection.Count > 0) Active.SetSelection([]);

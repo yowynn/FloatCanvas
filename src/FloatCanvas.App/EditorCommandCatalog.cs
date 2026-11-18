@@ -1,5 +1,6 @@
 using FloatCanvas.Windows;
 using System.Windows.Input;
+using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
@@ -30,7 +31,54 @@ internal static class EditorCommandCatalog
     internal static string Hint(string id) => All.FirstOrDefault(c => c.Id == id) is { } command
         ? string.Join(" / ", Bindings(command).Select(key => key.ToString())) : "";
     internal static string ToolId(EditorTool tool) => "Tool." + tool;
-    internal static bool IsRetired(string id) => id is "Tool.Arrow" or "Tool.DoubleArrow" or "Tool.RoundedRectangle" or "Tool.Triangle";
+    internal static bool IsRetired(string id) => id is "Tool.Arrow" or "Tool.DoubleArrow" or "Tool.RoundedRectangle" or "Tool.Triangle" or "Tool.Stamp";
+
+    private static bool IsReserved(CommandChord key) =>
+        key.Key <= 0 || key.Key > 254 || key.Key is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C or >= 0xA0 and <= 0xA5 ||
+        (key.Modifiers & ~(C | S | OverlayModifiers.Alt)) != 0 ||
+        key.Key == 0x20 && key.Modifiers != OverlayModifiers.None ||
+        key.Modifiers.HasFlag(OverlayModifiers.Alt) && key.Key is 0x09 or 0x1B or 0x73 ||
+        key.Modifiers.HasFlag(C) && key.Key == 0x1B;
+
+    // Existing user choices take priority over defaults introduced by an upgrade.
+    // Fixed gestures and global hotkeys already own their input before editor commands.
+    internal static Dictionary<string, CommandChord[]> ReconcileSavedBindings(
+        Dictionary<string, CommandChord[]> saved, IEnumerable<KeyValuePair<CommandChord, string>> globals,
+        out List<string> notices)
+    {
+        notices = [];
+        var occupied = new Dictionary<CommandChord, string>();
+        foreach (var (chord, owner) in globals) occupied.TryAdd(chord, owner);
+        foreach (var command in All.Where(command => !command.Configurable))
+            foreach (var chord in command.Defaults) occupied[chord] = command.Name;
+
+        var result = new Dictionary<string, CommandChord[]>();
+        foreach (var command in All.Where(command => command.Configurable && saved.ContainsKey(command.Id)))
+        {
+            var kept = new List<CommandChord>(2);
+            var original = saved[command.Id];
+            if (original is null || original.Length > 2) notices.Add(L.Format("Shortcuts.BindingUnavailable", command.Name));
+            foreach (var chord in (original ?? []).Take(2))
+            {
+                if (IsReserved(chord)) notices.Add(L.Format("Shortcuts.BindingUnavailable", command.Name + " · " + chord));
+                else if (occupied.TryGetValue(chord, out var owner)) notices.Add(L.Format("Shortcuts.BindingConflict", command.Name, chord, owner));
+                else { occupied.Add(chord, command.Name); kept.Add(chord); }
+            }
+            result[command.Id] = kept.ToArray();
+        }
+        foreach (var command in All.Where(command => command.Configurable && !saved.ContainsKey(command.Id)))
+        {
+            var kept = new List<CommandChord>(command.Defaults.Length);
+            foreach (var chord in command.Defaults)
+            {
+                if (occupied.TryGetValue(chord, out var owner)) notices.Add(L.Format("Shortcuts.BindingConflict", command.Name, chord, owner));
+                else { occupied.Add(chord, command.Name); kept.Add(chord); }
+            }
+            if (kept.Count != command.Defaults.Length) result[command.Id] = kept.ToArray();
+        }
+        return result;
+    }
+
     internal static string? Validate(Dictionary<string, CommandChord[]> bindings)
     {
         var used = new Dictionary<CommandChord, string>();
@@ -42,10 +90,8 @@ internal static class EditorCommandCatalog
             if (keys is null || keys.Length > 2) return command.Name + ": " + FloatCanvas.Localization.AppText.Get("Shortcuts.TwoBindings");
             foreach (var key in keys)
             {
-                if (key.Key <= 0 || key.Key > 254 || key.Key is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C or >= 0xA0 and <= 0xA5 ||
-                    (key.Modifiers & ~(C | S | OverlayModifiers.Alt)) != 0 ||
-                    key.Modifiers.HasFlag(OverlayModifiers.Alt) && key.Key is 0x09 or 0x1B or 0x73 ||
-                    key.Modifiers.HasFlag(C) && key.Key == 0x1B)
+                if (key.Key == 0x20 && key.Modifiers != OverlayModifiers.None) return L.Get("Shortcuts.SpaceReserved");
+                if (IsReserved(key))
                     return FloatCanvas.Localization.AppText.Get("Shortcuts.Reserved") + key;
                 if (used.TryGetValue(key, out var other)) return key + ": " + other + " / " + command.Name;
                 used[key] = command.Name;
@@ -70,13 +116,13 @@ internal static class EditorCommandCatalog
         Add("Image.Import", "置入内容", 0x49); Add("Tools.More", "更多工具", 0x4D);
         Add("Stamp.Library", "印章库", 0xC0); Add("Stamp.Create", "从选择新建印章", 0xBB);
         for (int i=0;i<10;i++) Add("Stamp.Slot"+i, "印章槽 "+(i+1), i==9?0x30:0x31+i);
-        Add("Edit.Undo", "撤销", 0x5A,C,true,true);
-        result.Add(new("Edit.Redo","重做",[new(0x5A,C|S),new(0x59,C)],Repeat:true,Mutates:true));
+        Add("Edit.Undo", "撤销", 0x5A,C,mutates:true);
+        result.Add(new("Edit.Redo","重做",[new(0x5A,C|S),new(0x59,C)],Mutates:true));
         Add("Edit.SelectAll","全选",0x41,C); Add("Edit.Deselect","取消选择",0x41,C|S);
         Add("Edit.Copy","复制",0x43,C); Add("Edit.Cut","剪切",0x58,C,mutates:true);
         Add("Edit.Paste","粘贴",0x56,C,mutates:true); Add("Edit.Duplicate","复制选中对象",0x44,C,mutates:true);
         Add("Edit.Group","成组",0x47,C,mutates:true); Add("Edit.Ungroup","解组",0x47,C|S,mutates:true);
-        Add("Edit.Delete","删除",0x2E,mutates:true); Add("Edit.Clear","清空画布",mutates:true);
+        Add("Edit.Delete","删除",0x2E,mutates:true); Add("Edit.Clear","清空画布",0x08,C|S,mutates:true);
         Add("File.Save","保存",0x53,C); Add("File.SaveAs","另存为",0x53,C|S);
         Add("File.Open","打开工程",0x4F,C); Add("File.New","新建画布",0x4E,C);
         Add("Layer.Down","下移一层",0xDB,C,mutates:true); Add("Layer.Up","上移一层",0xDD,C,mutates:true);
@@ -92,8 +138,8 @@ internal static class EditorCommandCatalog
         Add("Capture.Back","删除截图顶点",0x08,repeat:true,configurable:false);
         foreach (var key in new[]{0x25,0x26,0x27,0x28})
         {
-            Add("Move."+key,"移动 "+KeyInterop.KeyFromVirtualKey(key),key,repeat:true,mutates:true);
-            Add("Move.Fast"+key,"快速移动 "+KeyInterop.KeyFromVirtualKey(key),key,S,true,true);
+            Add("Move."+key,"移动 "+KeyInterop.KeyFromVirtualKey(key),key,mutates:true);
+            Add("Move.Fast"+key,"快速移动 "+KeyInterop.KeyFromVirtualKey(key),key,S,mutates:true);
         }
         return result.AsReadOnly();
     }

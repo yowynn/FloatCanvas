@@ -164,14 +164,15 @@ internal sealed partial class DesktopSession
         }
         RequestRender(); return true;
     }
-    private bool HandleCanvasSampleKey(int key)
+    private bool HandleCanvasSampleKey(int key, OverlayModifiers modifiers)
     {
         if (_canvasGridCalibrationSession is null || _canvasSamplingStage == CanvasSamplingStage.Dialog ||
             Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase) return false;
         if (!CanvasSamplingCurrent) { CancelCanvasGridCalibration(); return true; }
-        if (key == 0x1B) EscapeCanvasSample();
-        else if (key == 0x0D) QueueConfirmCanvasSample();
-        else if (key == 0x08 && _canvasSamplingStage == CanvasSamplingStage.Lines)
+        if (key == 0x1B && modifiers == OverlayModifiers.None) EscapeCanvasSample();
+        else if (key == 0x0D && modifiers == OverlayModifiers.None) QueueConfirmCanvasSample();
+        else if (_canvasSamplingStage == CanvasSamplingStage.Lines &&
+            (key == 0x08 && modifiers == OverlayModifiers.None || EditorCommandCatalog.Resolve(key, modifiers)?.Id == "Edit.Undo"))
         {
             if (_canvasReferenceLines.Count > 0) _canvasReferenceLines.RemoveAt(_canvasReferenceLines.Count - 1);
             _canvasSampleStart = _canvasSampleEnd = null; _canvasSampleDragging = false; SetCanvasSampleHint();

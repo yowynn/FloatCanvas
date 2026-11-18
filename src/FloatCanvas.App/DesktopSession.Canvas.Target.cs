@@ -31,6 +31,7 @@ internal sealed partial class DesktopSession
     private double CurrentCanvasLayerOpacity => !CanEditDisplayedCanvas && _prefabEditContext is { } context
         ? context.Chain().Last().Owner.Document.LayerOpacity : CaptureCanvasSettingsTarget().LayerOpacity;
     private bool CanEditDisplayedCanvas => !HasPrefabEditContext || _groupCanvasMode == GroupCanvasMode.Temporary;
+    private bool CanChangeCanvasOpacity => CanEditDisplayedCanvas && Active.CanInsertInEditScope && !Active.IsReadOnly && !DocumentOperationBusy;
     private bool IsCanvasWindowTargetCurrent => _canvasWindowTarget?.IsCurrent == true && CanEditDisplayedCanvas && !Active.IsReadOnly && Active.CanInsertInEditScope;
 
     private void RefreshCanvasSettingsTarget()
@@ -52,7 +53,7 @@ internal sealed partial class DesktopSession
     }
     private void ChangeCurrentCanvasOpacity(double opacity)
     {
-        if (!CanEditDisplayedCanvas) return;
+        if (!CanChangeCanvasOpacity) return;
         CaptureCanvasSettingsTarget().ChangeOpacity(opacity);
     }
 }

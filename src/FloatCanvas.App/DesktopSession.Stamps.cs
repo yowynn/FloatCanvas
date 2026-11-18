@@ -43,7 +43,10 @@ internal sealed partial class DesktopSession
 
     private void HandleCanvasPointerCore(OverlayPointerEvent e)
     {
+        if (e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick or OverlayPointerKind.Wheel)
+            FinishKeyboardNudge();
         _ = CurrentGroupCanvasView();
+        if (HandleCanvasGridCalibrationPointer(e)) { _propertiesClicks?.Reset(); return; }
         if (_borrowedTool is {} borrowed && e.Kind is OverlayPointerKind.Down or OverlayPointerKind.DoubleClick) borrowed.Used = true;
         if (HandleCanvasViewingPointer(e)) return;
         if (HandleCanvasContextMenu(e)) return;

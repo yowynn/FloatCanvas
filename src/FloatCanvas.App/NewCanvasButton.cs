@@ -38,6 +38,7 @@ internal sealed class NewCanvasButton : Button
         SetResourceReference(BackgroundProperty,"CanvasButton");
         ToolTipService.SetShowsToolTipOnKeyboardFocus(this, false);
         ToolTipService.SetInitialShowDelay(this, 650);
+        ToolTipOpening += (_, _) => RefreshTooltip();
         var text = new TextBlock { Text = L.Get("History.NewQuestion"), FontSize = 14, FontWeight=FontWeights.SemiBold };
         text.SetResourceReference(TextBlock.ForegroundProperty,"CanvasText");
         var bubble = new ConfirmationBubble { Child = text, CornerRadius = new CornerRadius(6),
@@ -95,7 +96,7 @@ internal sealed class NewCanvasButton : Button
     {
         ConfirmationChanged?.Invoke();
         string label = L.Get(IsConfirming ? "History.NewConfirm" : "Feedback4.Toolbar.NewBlankCanvas");
-        ToolTip = IsConfirming ? null : label + "  Ctrl+N";
+        RefreshTooltip();
         AutomationProperties.SetName(this, label);
         var path = new Path { Data = Geometry.Parse(IsConfirming ? "M3 8 L6.5 11.5 L13 4.5" :
             CommandGlyphs.NewCanvas),
@@ -104,6 +105,12 @@ internal sealed class NewCanvasButton : Button
         path.SetResourceReference(Shape.StrokeProperty,"CanvasText");
         var canvas = new Canvas { Width = 16, Height = 16, IsHitTestVisible = false }; canvas.Children.Add(path);
         Content = new Viewbox { Width = 16, Height = 16, Child = canvas, IsHitTestVisible = false };
+    }
+
+    internal void RefreshTooltip()
+    {
+        string hint = EditorCommandCatalog.Hint("File.New");
+        ToolTip = IsConfirming ? null : L.Get("Feedback4.Toolbar.NewBlankCanvas") + (hint.Length == 0 ? "" : "  " + hint);
     }
 }
 

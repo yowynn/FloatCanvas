@@ -114,6 +114,12 @@ public sealed partial class OverlayHost : IDisposable
     public OverlayModifiers InteractionModifiers => _keyboardIsolation is { } isolation && isolation.TryGetModifiers(null, out var modifiers)
         ? modifiers : CurrentModifiers;
 
+    /// <summary>Checks the physical chord even when its key messages are suppressed by the editing lease.</summary>
+    public bool IsEditingChordHeld(int virtualKey, OverlayModifiers modifiers) =>
+        HasEditingInput && (_keyboardIsolation is { } isolation
+            ? isolation.IsChordHeld(virtualKey, modifiers)
+            : GetAsyncKeyState(virtualKey) < 0 && CurrentModifiers == modifiers);
+
     public OverlayHost() : this(OverlayMonitorScope.AllScreens) { }
 
     public OverlayHost(OverlayMonitorScope scope) : this(scope, EnumerateMonitors) { }

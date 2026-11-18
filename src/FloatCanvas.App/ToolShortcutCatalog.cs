@@ -12,7 +12,8 @@ internal static class ToolShortcutCatalog
     internal const int MoreKey = 0x4D;
     internal const int StampLibraryKey = 0xC0;
     internal const int NewStampKey = 0xBB;
-    internal static string Hint(EditorTool tool) => EditorCommandCatalog.Hint(tool == EditorTool.Image ? "Image.Import" : EditorCommandCatalog.ToolId(tool));
+    internal static string CommandId(EditorTool tool) => tool == EditorTool.Image ? "Image.Import" : EditorCommandCatalog.ToolId(tool);
+    internal static string Hint(EditorTool tool) => EditorCommandCatalog.Hint(CommandId(tool));
     internal static bool IsReserved(int virtualKey) => virtualKey is MoreKey or StampLibraryKey or NewStampKey;
     internal static bool TryGetTool(int virtualKey,out EditorTool tool)
     {
@@ -25,6 +26,21 @@ internal static class ToolShortcutCatalog
 
 internal static class ToolbarShortcutHint
 {
+    internal static string ForCommand(string id)
+    {
+        if (EditorCommandCatalog.All.FirstOrDefault(command => command.Id == id) is not { } command) return "";
+        foreach (var chord in EditorCommandCatalog.Bindings(command))
+        {
+            if (chord.Modifiers != FloatCanvas.Windows.OverlayModifiers.None) continue;
+            string text = chord.ToString();
+            if (text.Length == 1) return text;
+        }
+        return "";
+    }
+
+    internal static void UpdateVisibility(System.Windows.Controls.TextBlock hint, bool enabled) =>
+        hint.Visibility = enabled && hint.Text.Length == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
     internal static (System.Windows.Controls.Grid Content, System.Windows.Controls.ContentPresenter Glyph,
         System.Windows.Controls.TextBlock Hint) CreateButtonContent(System.Windows.Controls.Button button,string text,bool lowerRow=false)
     {
@@ -53,7 +69,9 @@ internal static class ToolbarShortcutHint
                 lowerRow?frameInset.Bottom:-frameInset.Top),IsHitTestVisible=false};
         System.Windows.Media.TextOptions.SetTextFormattingMode(hint,System.Windows.Media.TextFormattingMode.Display);
         hint.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,"CanvasText");
-        hint.SetResourceReference(MaskSurfaceProperty,"CanvasSurface");return hint;
+        hint.SetResourceReference(MaskSurfaceProperty,"CanvasSurface");
+        UpdateVisibility(hint, enabled: true);
+        return hint;
     }
 
     private static readonly System.Windows.DependencyProperty MaskSurfaceProperty=System.Windows.DependencyProperty.RegisterAttached(
