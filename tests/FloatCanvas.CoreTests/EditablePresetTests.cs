@@ -17,9 +17,10 @@ internal static class EditablePresetTests
         line.Style.EndArrowHead = ArrowHeadStyle.None;
         check(ElementGeometry.GetStyledArrowHeads(line).Count == 1 && !ElementGeometry.HitTest(line, new(85, 10), 0), "explicit none suppresses only its endpoint");
         line.Style.StartArrowHead = ArrowHeadStyle.None; line.Style.StrokePattern = StrokePattern.Dashed;
-        check(ElementGeometry.HitTest(line, new(4, 0), 0) && !ElementGeometry.HitTest(line, new(11, 0), 0), "dashed exact hit respects ink and gaps");
+        check(ElementGeometry.HitTest(line, new(4.75, 0), 0) && !ElementGeometry.HitTest(line, new(6, 0), 0) &&
+            !ElementGeometry.HitTest(line, new(4.85, .85), 0), "dashed exact hit respects round caps and one-width gaps");
         line.Style.StrokePattern = StrokePattern.Dotted;
-        check(ElementGeometry.HitTest(line, new(5, 0), 0) && !ElementGeometry.HitTest(line, new(2.5, 0), 0), "dotted exact hit respects round dots and gaps");
+        check(ElementGeometry.HitTest(line, new(4, 0), 0) && !ElementGeometry.HitTest(line, new(2, 0), 0), "dotted exact hit respects round dots and one-width gaps");
 
         var rectangle = new CanvasElement { Kind = ElementKind.RoundedRectangle, Width = 100, Height = 60 };
         check(ElementGeometry.CornerRadius(rectangle) == 12 && ElementGeometry.CornerRadius(rectangle.Clone()) == 12, "legacy rounded rectangle keeps twenty percent radius");

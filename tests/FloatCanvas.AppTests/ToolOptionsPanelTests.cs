@@ -86,10 +86,11 @@ internal static class ToolOptionsPanelTests
         check("a tip toggle remembers the chosen angle",
             tipRows["HighlighterTipAngle"].Visibility == Wpf.Visibility.Visible && numbers["HighlighterTipAngle"].Text == "35");
         string tipPresetPath = Path.Combine(root, "flat-tip-preset.json");
+        Select(pickers["StrokePattern"], StrokePattern.DashDot);
         var tipPreset = new ToolPresetLibrary(tipPresetPath).Save("Flat tip", controller.Parameters);
         var restored = new ToolPresetLibrary(tipPresetPath).Apply(tipPreset.Id);
-        check("a saved highlighter preset restores the chosen tip and angle",
-            restored.Style is { HighlighterTip: HighlighterTip.Flat, HighlighterTipAngle: 35, HighlighterInkContrast: .55 });
+        check("a saved highlighter preset restores the chosen tip, angle and dash-dot pattern",
+            restored.Style is { HighlighterTip: HighlighterTip.Flat, HighlighterTipAngle: 35, HighlighterInkContrast: .55, StrokePattern: StrokePattern.DashDot });
         controller.Tool = EditorTool.Text; panel.PrepareForShow();
         check("switching to text renames the reused color field and picker",
             colorCaption.Text == L.Get("Color.Unified") && colorPopup.Title == colorCaption.Text);

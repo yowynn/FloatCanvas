@@ -275,6 +275,12 @@ public sealed partial class SceneRenderer : IDisposable
                 bool shape = element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle or ElementKind.Ellipse or ElementKind.Triangle or ElementKind.Symbol;
                 uint fill = ElementAppearance.ShapeFill(element.Style);
                 if (shape) DrawInsideShape(canvas, element, geometry, fill, directOpacity);
+                else if (element.Style.StrokeWidth > 0 && geometry.HasArrowHeads)
+                {
+                    SetPaint(element.Style.Foreground, SKPaintStyle.Fill);
+                    if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
+                    canvas.DrawPath(geometry.ArrowInk, _paint);
+                }
                 else if (element.Style.StrokeWidth > 0)
                 {
                     SetPaint(element.Style.Foreground, SKPaintStyle.Stroke, element.Style.StrokeWidth);
@@ -294,7 +300,8 @@ public sealed partial class SceneRenderer : IDisposable
                     else if (element.Style.StrokePattern != StrokePattern.Solid)
                     {
                         _paint.Style = SKPaintStyle.Fill;
-                        if (element.Style.StrokePattern == StrokePattern.Dashed && element.Kind is ElementKind.Freehand or ElementKind.Highlighter)
+                        if (element.Style.StrokePattern is StrokePattern.Dashed or StrokePattern.DashDot &&
+                            element.Kind is ElementKind.Freehand or ElementKind.Highlighter)
                         {
                             // Apply the shared dash mask during drawing. Intersecting the
                             // complete stroke and every mask polygon rebuilds a costly
@@ -312,13 +319,6 @@ public sealed partial class SceneRenderer : IDisposable
                     }
                     else canvas.DrawPath(geometry.Path, _paint);
                     _paint.PathEffect = null;
-                    if (ElementGeometry.IsLine(element.Kind))
-                    {
-                        _paint.Style = SKPaintStyle.Fill;
-                        canvas.DrawPath(geometry.FilledHeads, _paint);
-                        _paint.Style = SKPaintStyle.Stroke;
-                        canvas.DrawPath(geometry.OpenHeads, _paint);
-                    }
                 }
             }
         }
@@ -383,6 +383,7 @@ public sealed partial class SceneRenderer : IDisposable
         {
             StrokePattern.Dashed => SKPathEffect.CreateDash([width * 4, width * 3], 0),
             StrokePattern.Dotted => SKPathEffect.CreateDash([width * .001f, width * 2.5f], 0),
+            StrokePattern.DashDot => SKPathEffect.CreateDash([width * 3, width, width, width], 0),
             _ => null
         };
     }
@@ -640,14 +641,15 @@ public sealed partial class SceneRenderer : IDisposable
         private readonly PointCollection _points = element.Points.Snapshot();
         public SKPath Path { get; } = path;
         public RectD StrokedBounds { get; } = ElementGeometry.StrokedLocalBounds(element);
-        public SKPath FilledHeads { get; } = filledHeads;
-        public SKPath OpenHeads { get; } = openHeads;
+        public bool HasArrowHeads => !filledHeads.IsEmpty || !openHeads.IsEmpty;
+        public SKPath ArrowInk => _arrowInk ??= BuildArrowInk();
         public long Used { get; set; } = used;
         private SKPath? _opacityStroke;
         private SKPath? _innerStroke;
         private SKPath? _patternStroke;
         private SKPath? _patternMask;
         private SKPath? _solidStroke;
+        private SKPath? _arrowInk;
         private readonly StrokePatternGeometry? _patternGeometry = element.Style.StrokePattern == StrokePattern.Solid || ElementGeometry.HasFlatHighlighterTip(element)
             ? null : ElementGeometry.StrokePatternGeometry(element);
         public SKPath PatternStroke => _patternStroke ??= BuildStroke(false);
@@ -660,6 +662,21 @@ public sealed partial class SceneRenderer : IDisposable
                 if (_innerStroke is not null) return _innerStroke;
                 return _innerStroke = BuildStroke(true);
             }
+        }
+        private SKPath BuildArrowInk()
+        {
+            // The shaft and heads share a color. Union their coverage before applying it.
+            var shaft = _strokePattern == StrokePattern.Solid ? SolidStroke : PatternStroke;
+            if (openHeads.IsEmpty) return Union(shaft, filledHeads);
+            using var stroke = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)_strokeWidth,
+                StrokeJoin = SKStrokeJoin.Round, StrokeCap = SKStrokeCap.Round };
+            using var openInk = stroke.GetFillPath(openHeads);
+            if (filledHeads.IsEmpty) return Union(shaft, openInk);
+            using var heads = Union(filledHeads, openInk);
+            return Union(shaft, heads);
+
+            static SKPath Union(SKPath a, SKPath b) => a.IsEmpty ? new(b) : b.IsEmpty ? new(a) :
+                a.Op(b, SKPathOp.Union) ?? throw new InvalidOperationException("Cannot combine the line and arrowheads.");
         }
         private SKPath BuildStroke(bool inside, bool patterned = true)
         {
@@ -698,7 +715,8 @@ public sealed partial class SceneRenderer : IDisposable
         public void Dispose()
         {
             _opacityStroke?.Dispose(); _innerStroke?.Dispose(); _patternStroke?.Dispose(); _patternMask?.Dispose(); _solidStroke?.Dispose();
-            Path.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose();
+            _arrowInk?.Dispose();
+            Path.Dispose(); filledHeads.Dispose(); openHeads.Dispose();
         }
     }
     private class ImageEntry : IDisposable

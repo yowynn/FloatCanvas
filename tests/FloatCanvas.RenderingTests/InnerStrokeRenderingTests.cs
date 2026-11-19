@@ -8,6 +8,8 @@ internal static class InnerStrokeRenderingTests
     {
         PatternCuts(check);
         PatternEdgesAndProjection(check);
+        OpenStrokeRhythm(check);
+        ArrowInkDoesNotOverlap(check);
         FlatHighlighter(check);
         HighlighterOverlap(check);
         RotatedHighlighterCoverage(check);
@@ -122,26 +124,28 @@ internal static class InnerStrokeRenderingTests
     private static void PatternEdgesAndProjection(Action<string, bool> check)
     {
         using var renderer = new SceneRenderer();
-        var line = new CanvasElement { Kind=ElementKind.Line, Points=[new(20,40),new(80,40)],
+        var line = new CanvasElement { Kind=ElementKind.Line, Points=[new(20,40),new(68,40)],
             Style=new() { Stroke=0xFFFF0000, StrokeWidth=8, StrokePattern=StrokePattern.Dashed } };
         var document = new SceneDocument { Viewport=new(0,0,600,260), Elements=[line] };
         using (var ink = Render(renderer,document))
         {
-            check("open dashed line cuts a flat full-width gap",ink.GetPixel(51,37).Alpha==255 && ink.GetPixel(52,40).Alpha==0);
-            check("open dashed line preserves both original solid endpoint caps when visible",ink.GetPixel(17,40).Alpha>200 && ink.GetPixel(82,40).Alpha>200);
+            check("open dashed line uses rounded caps on both sides of a full-width gap",ink.GetPixel(38,40).Alpha==255 &&
+                ink.GetPixel(39,36).Alpha == 0 && Enumerable.Range(40,8).All(x => ink.GetPixel(x,40).Alpha == 0) &&
+                ink.GetPixel(49,40).Alpha == 255 && ink.GetPixel(48,36).Alpha == 0);
+            check("open dashed line preserves both original endpoint caps when visible",ink.GetPixel(17,40).Alpha>200 && ink.GetPixel(70,40).Alpha>200);
         }
-        line.Points=[new(20,20),new(40,20),new(40,60)];
+        line.Points=[new(20,20),new(32,20),new(32,60)];
         using (var ink=Render(renderer,document))
-            check("a retained dash crosses a polyline corner without a triangular hole",ink.GetPixel(41,18).Alpha==255 && ink.GetPixel(40,34).Alpha==0);
+            check("a retained dash crosses a polyline corner without a triangular hole",ink.GetPixel(33,18).Alpha==255 && ink.GetPixel(32,31).Alpha==0);
         line.Style.StrokePattern=StrokePattern.Dotted;
         using (var ink=Render(renderer,document))
         {
-            var circle=ComponentBounds(ink,40,40);
+            var circle=ComponentBounds(ink,32,24);
             check("open dotted polylines keep complete full-diameter circles",circle.Width==8 && circle.Height==8);
         }
-        line.Points=[new(20,20),new(40,20),new(20,20)];line.Style.StrokePattern=StrokePattern.Dashed;
+        line.Points=[new(20,20),new(34,20),new(20,20)];line.Style.StrokePattern=StrokePattern.Dashed;
         using(var ink=Render(renderer,document))
-            check("a retained dash preserves the solid round join at a reversing polyline corner",ink.GetPixel(42,20).Alpha>200);
+            check("a retained dash preserves the solid round join at a reversing polyline corner",ink.GetPixel(36,20).Alpha>200);
 
         var rounded=Shape(ElementKind.RoundedRectangle); rounded.Width=140; rounded.Height=120;
         rounded.Style.StrokeWidth=14; rounded.Style.StrokePattern=StrokePattern.Dashed; document.Elements=[rounded];
@@ -197,7 +201,89 @@ internal static class InnerStrokeRenderingTests
         // A local epsilon must never become a visible hit margin after a large scale.
         line.Points=[new(0,0),new(60,0)];line.Style.StrokePattern=StrokePattern.Dashed;
         line.Transform=Affine2D.Translation(30,30).Compose(Affine2D.Scale(10000,100));line.ProjectivePlacement=null;
-        check("large nonuniform transforms preserve a truly empty dash gap at zero tolerance",!ElementGeometry.HitTest(line,new(30+32.001*10000,30),0));
+        check("large nonuniform transforms preserve a truly empty dash gap at zero tolerance",!ElementGeometry.HitTest(line,new(30+24.001*10000,30),0));
+    }
+
+    private static void ArrowInkDoesNotOverlap(Action<string, bool> check)
+    {
+        using var renderer = new SceneRenderer();
+        foreach (var head in new[] { ArrowHeadStyle.FilledTriangle, ArrowHeadStyle.Open, ArrowHeadStyle.Diamond })
+        foreach (var pattern in Enum.GetValues<StrokePattern>())
+        {
+            var arrow = new CanvasElement
+            {
+                Kind = ElementKind.Line, Points = [new(24, 40), new(168, 40)],
+                Style = new() { Foreground = 0x80DD3300, StrokeWidth = 12, ArrowHeadSize = 32,
+                    StartArrowHead = ArrowHeadStyle.Open, EndArrowHead = head, StrokePattern = pattern }
+            };
+            var document = new SceneDocument { Viewport = new(0, 0, 200, 80), Elements = [arrow] };
+            using var ink = Render(renderer, document);
+            int maximum = ink.Pixels.Max(pixel => pixel.Alpha);
+            check($"{head} {pattern} shares one alpha across shaft and heads (max {maximum})",
+                maximum == 128 && ink.GetPixel(160, 40).Alpha == 128);
+            if (pattern != StrokePattern.Solid) continue;
+            check($"{head} solid joint keeps full coverage between shaft and head",
+                Enumerable.Range(128, 33).All(x => ink.GetPixel(x, 40).Alpha == 128));
+            arrow.Style.Opacity = .5;
+            using var faded = Render(renderer, document);
+            check($"{head} opacity is applied once after combining its coverage", faded.Pixels.Max(pixel => pixel.Alpha) == 64);
+        }
+    }
+
+    private static void OpenStrokeRhythm(Action<string, bool> check)
+    {
+        const int width = 16;
+        using var renderer = new SceneRenderer();
+        foreach (var (kind, tip, angle) in new[]
+        {
+            (ElementKind.Line, HighlighterTip.Round, 0d),
+            (ElementKind.Freehand, HighlighterTip.Round, 0d),
+            (ElementKind.Highlighter, HighlighterTip.Round, 0d),
+            (ElementKind.Highlighter, HighlighterTip.Flat, 0d),
+            (ElementKind.Highlighter, HighlighterTip.Flat, 45d),
+            (ElementKind.Highlighter, HighlighterTip.Flat, 90d)
+        })
+        foreach (var pattern in new[] { StrokePattern.Dashed, StrokePattern.Dotted, StrokePattern.DashDot })
+        {
+            var stroke = new CanvasElement
+            {
+                Kind = kind, Points = [new(50, 35), new(350, 35)],
+                Style = new() { StrokeWidth = width, StrokePattern = pattern, HighlighterTip = tip, HighlighterTipAngle = angle }
+            };
+            using var bitmap = Render(renderer, new() { Viewport = new(0, 0, 400, 70), Elements = [stroke] });
+            var ink = Enumerable.Range(0, bitmap.Width)
+                .Select(x => Enumerable.Range(0, bitmap.Height).Any(y => bitmap.GetPixel(x, y).Alpha > 0)).ToArray();
+            var starts = Enumerable.Range(1, ink.Length - 1).Where(x => !ink[x - 1] && ink[x]).ToArray();
+            var ends = Enumerable.Range(1, ink.Length - 1).Where(x => ink[x - 1] && !ink[x]).ToArray();
+            int dash = starts.Length > 2 ? ends[1] - starts[1] : 0;
+            int gap = starts.Length > 2 ? starts[2] - ends[1] : 0;
+            if (pattern == StrokePattern.DashDot)
+            {
+                var radians = angle * Math.PI / 180;
+                double dotWidth = tip == HighlighterTip.Round ? width :
+                    width * (Math.Abs(Math.Sin(radians)) + .25 * Math.Abs(Math.Cos(radians)));
+                check($"{kind} {tip} {angle}° dash-dot preserves both gaps and its nib-shaped dot (dot {dash}, gap {gap})",
+                    starts.Length > 2 && Math.Abs(ends[0] - starts[0] - 3 * width) <= 1 &&
+                    Math.Abs(starts[1] - ends[0] - width) <= 1 && Math.Abs(dash - dotWidth) <= 1 && Math.Abs(gap - width) <= 1);
+                continue;
+            }
+            check($"{kind} {tip} {angle}° {pattern} has the planned visible rhythm (segment {dash}, gap {gap})",
+                Math.Abs(gap - width) <= 1 && (pattern == StrokePattern.Dotted || Math.Abs(dash - 3 * width) <= 1));
+            if (pattern == StrokePattern.Dashed && tip == HighlighterTip.Round)
+                check($"{kind} dashed marks have two rounded ends and an equally long first mark",
+                    ends[0] - starts[0] == 3 * width &&
+                    bitmap.GetPixel(starts[1], 35).Alpha > 0 && bitmap.GetPixel(starts[1], 28).Alpha == 0 &&
+                    bitmap.GetPixel(ends[1] - 1, 35).Alpha > 0 && bitmap.GetPixel(ends[1] - 1, 28).Alpha == 0);
+        }
+
+        var rectangle = Shape(ElementKind.Rectangle);
+        rectangle.Width = 200;
+        rectangle.Style.StrokePattern = StrokePattern.DashDot;
+        using var outline = Render(renderer, new() { Viewport = new(0, 0, 280, 100), Elements = [rectangle] });
+        check("dash-dot shape outlines have square cutoffs on both the long dash and short mark",
+            outline.GetPixel(47, 21).Alpha == 255 && outline.GetPixel(48, 21).Alpha == 0 &&
+            outline.GetPixel(55, 21).Alpha == 0 && outline.GetPixel(56, 21).Alpha == 255 &&
+            outline.GetPixel(63, 21).Alpha == 255 && outline.GetPixel(64, 21).Alpha == 0);
     }
 
     internal static void WriteEvidence(string directory)
@@ -280,8 +366,8 @@ internal static class InnerStrokeRenderingTests
             stroke.Style.StrokePattern = pattern;
             using var marks = Render(renderer, document);
             check("flat " + pattern + " keeps the tip's square corners and visible gaps",
-                marks.GetPixel(38, 29).Alpha > 0 && marks.GetPixel(151, 40).Alpha == 0 &&
-                !ElementGeometry.HitTest(stroke, new(151, 40), 0));
+                marks.GetPixel(38, 29).Alpha > 0 && marks.GetPixel(120, 40).Alpha == 0 &&
+                !ElementGeometry.HitTest(stroke, new(120, 40), 0));
         }
         stroke.Points = [new(40, 40)];
         using var dab = Render(renderer, document);
@@ -326,10 +412,11 @@ internal static class InnerStrokeRenderingTests
                 using var patterned = Render(renderer, document);
                 byte once = (byte)Math.Round((pattern == StrokePattern.Dotted ? 41 : 89) * opacity);
                 check($"{tip} {pattern} at {opacity} accumulates ink at repeated marks",
-                    patterned.GetPixel(85, 40).Alpha > once + 25 * opacity);
+                    patterned.GetPixel(pattern == StrokePattern.Dotted ? 25 : 57, 40).Alpha > once + 25 * opacity);
                 if (pattern == StrokePattern.Dashed)
-                    check($"{tip} at {opacity} does not deposit a second coat from a dash gap",
-                        Math.Abs(patterned.GetPixel(105, 40).Alpha - 89 * opacity) <= 1);
+                    check($"{tip} at {opacity} preserves the gaps on a reversing stroke",
+                        tip == HighlighterTip.Round ? patterned.GetPixel(103, 40).Alpha == 0 :
+                            Math.Abs(patterned.GetPixel(116, 40).Alpha - 89 * opacity) <= 1);
             }
         }
     }

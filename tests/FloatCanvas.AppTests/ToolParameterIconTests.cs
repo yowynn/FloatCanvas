@@ -140,6 +140,7 @@ internal static class ToolParameterIconTests
         var imageOpacities=new[]{1d,.5,.25}.Select(opacity=>Rasterize(ToolParameterIcon.Create(new ToolParameters {Tool=EditorTool.Image,Style=new() {Opacity=opacity}},32),32)).ToArray();
         check("image preset icons preview distinct full half and quarter opacity",imageOpacities.Select(Hash).Distinct().Count()==3&&
             MaxAlpha(imageOpacities[0])>200&&MaxAlpha(imageOpacities[1]) is >0 and <=129&&MaxAlpha(imageOpacities[2]) is >0 and <=65);
+        CheckStrokePatternIcons(check);
         var examples=new List<(string Label,ToolParameters Parameters)>();
         foreach(string label in new[]{"Line","Arrow","Double","Dashed","Dotted"})
         {
@@ -228,6 +229,72 @@ internal static class ToolParameterIconTests
         element.Measure(new Wpf.Size(width,height));element.Arrange(new Wpf.Rect(0,0,width,height));element.UpdateLayout();
         var pixels=new Imaging.RenderTargetBitmap(width,height,96,96,Media.PixelFormats.Pbgra32);pixels.Render(element);return pixels;
     }
+    private static void CheckStrokePatternIcons(Action<string, bool> check)
+    {
+        const int size = 16;
+        string? directory = Environment.GetEnvironmentVariable("FLOATCANVAS_TOOL_ICON_PREVIEW_DIR");
+        var patterns = Enum.GetValues<StrokePattern>();
+        foreach (var (pattern, expected) in new (StrokePattern, int[])[]
+        {
+            (StrokePattern.Solid, [11]), (StrokePattern.Dashed, [3, 3, 3]),
+            (StrokePattern.Dotted, [1, 1, 1, 1, 1, 1]), (StrokePattern.DashDot, [3, 1, 3, 1])
+        })
+        {
+            var icon = (Controls.Viewbox)SegmentedChoicePreviews.Icon(pattern);
+            var path = (System.Windows.Shapes.Path)((Controls.Canvas)icon.Child).Children[0];
+            var geometry = (Media.GeometryGroup)path.Data;
+            var marks = geometry.Children.Select(mark => mark.Bounds).ToArray();
+            var choice = Rasterize(icon, 18);
+            byte[] pixels = new byte[18 * 18 * 4];
+            choice.CopyPixels(pixels, 18 * 4, 0);
+            var bands = Enumerable.Range(0, 18)
+                .Select(x => Enumerable.Range(0, 18).Any(y => pixels[(y * 18 + x) * 4 + 3] >= 80)).ToArray();
+            check($"{pattern} picker spans eleven units with the expected mark lengths and one-unit gaps",
+                geometry.Bounds.Width == 16.5 &&
+                marks.Select(mark => mark.Width / 1.5).SequenceEqual(expected.Select(mark => (double)mark)) &&
+                marks.Zip(marks.Skip(1), (a, b) => b.Left - a.Right).All(gap => gap == 1.5) &&
+                bands.Where((ink, x) => ink && (x == 0 || !bands[x - 1])).Count() == expected.Length);
+            Save("selector-" + pattern, choice);
+        }
+
+        foreach (var tool in new[] { EditorTool.Freehand, EditorTool.Highlighter, EditorTool.Line, EditorTool.Arrow, EditorTool.DoubleArrow,
+            EditorTool.Rectangle, EditorTool.RoundedRectangle, EditorTool.Ellipse, EditorTool.Triangle, EditorTool.Symbol })
+        foreach (var tip in tool == EditorTool.Highlighter ? Enum.GetValues<HighlighterTip>() : [HighlighterTip.Round])
+        {
+            string label = tool == EditorTool.Highlighter ? $"{tool}-{tip}" : tool.ToString();
+            var sample = new ToolParameters { Tool = tool, Style = new() { Foreground = 0xFFFF0000,
+                StrokeWidth = tool == EditorTool.Highlighter ? 32 : 6, HighlighterTip = tip } };
+            var icons = patterns.Select(pattern =>
+            {
+                sample.Style.StrokePattern = pattern;
+                var icon = Rasterize(ToolParameterIcon.Create(sample, size), size);
+                Save(label + "-" + pattern, icon);
+                return icon;
+            }).ToArray();
+            check($"{label} toolbar renders four distinct line patterns at {size} DIP",
+                icons.All(icon => InkCount(icon) >= 8) && icons.Select(Hash).Distinct().Count() == patterns.Length);
+        }
+
+        var gridIcons = patterns.Select(pattern =>
+        {
+            var icon = Rasterize(new CanvasParameterIcon(new() { GridVisible = true, GridWidth = 2,
+                GridColor = 0xFFFF0000, GridPattern = pattern }, size), size);
+            Save("Canvas-" + pattern, icon);
+            return icon;
+        });
+        check("the canvas toolbar icon distinguishes all four grid patterns", gridIcons.Select(Hash).Distinct().Count() == patterns.Length);
+
+        void Save(string name, Imaging.BitmapSource icon)
+        {
+            if (string.IsNullOrWhiteSpace(directory)) return;
+            Directory.CreateDirectory(directory);
+            var encoder = new Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(Imaging.BitmapFrame.Create(icon));
+            using var stream = File.Create(Path.Combine(directory, name + ".png"));
+            encoder.Save(stream);
+        }
+    }
+
     private static Imaging.BitmapSource Bitmap(ToolParameters parameters)=>(Imaging.BitmapSource)((Controls.Image)ToolParameterIcon.Create(parameters)).Source;
     private static Imaging.BitmapSource Rasterize(Wpf.UIElement image,int size)
     {

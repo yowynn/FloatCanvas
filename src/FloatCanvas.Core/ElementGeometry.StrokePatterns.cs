@@ -41,32 +41,49 @@ public static partial class ElementGeometry
         for (int i = 0; i < segments; i++) total += center[i].DistanceTo(center[(i + 1) % center.Count]);
         if (element.Style.StrokePattern == StrokePattern.Dotted)
         {
-            foreach (var station in DotStations(center, closed, width, total))
+            foreach (var station in DotStations(center, closed, width * (closed ? 2.5 : 2), total))
                 if (!closed) dots.Add(station);
                 else if (FitDot(element, outer, station, radius, out var point)) dots.Add(point);
         }
+        else if (element.Style.StrokePattern == StrokePattern.DashDot)
+        {
+            if (closed && center.Count > 0) center.Add(center[0]);
+            foreach (var mark in DashDotMarks(center, width, squareCaps: closed))
+            {
+                if (mark.Count > 1) AddDashPolygons(mark, radius, polygons, dots);
+                if (!closed)
+                {
+                    dots.Add(mark[0]);
+                    if (mark.Count > 1) dots.Add(mark[^1]);
+                }
+            }
+            if (closed && center.Count > 0) center.RemoveAt(center.Count - 1);
+        }
         else
         {
-            var chunks = DashRuns(center, closed, width).Select(run => run.Points).ToList();
+            var chunks = DashRuns(center, closed, width, roundCaps: !closed).Select(run => run.Points).ToList();
             if (closed && chunks.Count > 1 && chunks[0][0].DistanceTo(chunks[^1][^1]) < 1e-8)
             {
                 var merged = chunks[^1]; merged.AddRange(chunks[0].Skip(1)); chunks.RemoveAt(chunks.Count - 1); chunks[0] = merged;
             }
-            foreach (var points in chunks) AddDashPolygons(points, radius, polygons, dots);
-            // Cutting gaps must leave the original solid line's endpoint caps intact.
-            if (!closed && center.Count > 0)
+            foreach (var points in chunks)
             {
-                dots.Add(center[0]);
-                if (total % (width * 7) < width * 4 - 1e-9 && center.Count > 1) dots.Add(center[^1]);
+                AddDashPolygons(points, radius, polygons, dots);
+                if (!closed)
+                {
+                    dots.Add(points[0]);
+                    dots.Add(points[^1]);
+                }
             }
+            if (!closed && chunks.Count == 0 && center.Count > 0) dots.Add(center[0]);
         }
         return new(center, polygons, dots, radius, closed);
     }
 
-    private static IEnumerable<PointD> DotStations(IReadOnlyList<PointD> center, bool closed, double width, double total = 0)
+    private static IEnumerable<PointD> DotStations(IReadOnlyList<PointD> center, bool closed, double spacing, double total = 0)
     {
         if (!closed && center.Count > 0) yield return center[0];
-        double station = closed ? 0 : width * 2.5, offset = 0, step = width * 2.5;
+        double station = closed ? 0 : spacing, offset = 0;
         int segments = closed ? center.Count : center.Count - 1;
         for (int i = 0; i < segments; i++)
         {
@@ -75,16 +92,87 @@ public static partial class ElementGeometry
             while (station <= offset + length + 1e-9 && (!closed || station < total - 1e-9))
             {
                 yield return a + (b - a) * Math.Clamp((station - offset) / length, 0, 1);
-                station += step;
+                station += spacing;
             }
             offset += length;
         }
     }
 
-    private static IEnumerable<(List<PointD> Points, bool EndCap)> DashRuns(IReadOnlyList<PointD> center, bool closed, double width)
+    private static IEnumerable<IReadOnlyList<PointD>> DashDotMarks(
+        IReadOnlyList<PointD> points, double width, ElementStyle? flatStyle = null, bool squareCaps = false)
+    {
+        if (points.Count == 0) yield break;
+        var axes = flatStyle is null ? default : FlatHighlighterAxes(flatStyle);
+        var position = points[0];
+        int next = 1;
+        bool first = true;
+        while (true)
+        {
+            var tangent = NextDirection();
+            if (!first && next == points.Count) yield break;
+            var dash = new List<PointD> { position };
+            double leadingReach = Reach(tangent);
+            double remaining = Advance(3 * width - (first ? leadingReach : 0), dash);
+            // Locate the nib centers inside the visible dash envelope.
+            double trailingInset = dash.Count > 1 ? Math.Max(0, Reach(dash[^1] - dash[^2]) - remaining) : 0;
+            var trimmed = TrimDash(dash, first ? 0 : leadingReach, trailingInset);
+            if (trimmed.Count > 0) yield return trimmed;
+            if (remaining > 0 || Advance(width) > 0) yield break;
+            if (squareCaps)
+            {
+                var dot = new List<PointD> { position };
+                double dotRemaining = Advance(width, dot);
+                if (dot.Count > 1) yield return dot;
+                if (dotRemaining > 0) yield break;
+            }
+            else
+            {
+                var direction = NextDirection();
+                if (next == points.Count) yield break;
+                double dotReach = Reach(direction);
+                if (Advance(dotReach) > 0) yield break;
+                yield return new[] { position };
+                if (Advance(dotReach) > 0) yield break;
+            }
+            if (Advance(width) > 0) yield break;
+            first = false;
+        }
+
+        double Reach(PointD tangent) => squareCaps ? 0 : flatStyle is null ? width / 2 : FlatReach(tangent, axes);
+
+        PointD NextDirection()
+        {
+            while (next < points.Count && position.DistanceTo(points[next]) <= 1e-9) next++;
+            return next < points.Count ? points[next] - position : default;
+        }
+
+        double Advance(double distance, List<PointD>? path = null)
+        {
+            while (distance > 1e-9)
+            {
+                var delta = NextDirection();
+                if (next == points.Count) return distance;
+                double length = delta.DistanceTo(default);
+                if (distance < length)
+                {
+                    position += delta * (distance / length);
+                    path?.Add(position);
+                    return 0;
+                }
+                position = points[next++];
+                path?.Add(position);
+                distance -= length;
+            }
+            return 0;
+        }
+    }
+
+    private static IEnumerable<(List<PointD> Points, bool EndCap)> DashRuns(
+        IReadOnlyList<PointD> center, bool closed, double width, bool roundCaps = false)
     {
         List<PointD>? chunk = null;
-        double offset = 0, ink = width * 4, cycle = width * 7;
+        // Two semicircular caps add one width to the visible dash.
+        double offset = 0, ink = width * (closed ? 4 : roundCaps ? 2 : 3), cycle = width * (closed ? 7 : 4);
         int segments = closed ? center.Count : center.Count - 1;
         for (int i = 0; i < segments; i++)
         {

@@ -29,15 +29,46 @@ internal sealed class CanvasParameterIcon : FrameworkElement
         cells = Enumerable.Range(0, 16).Select(i => Polygon((i % 4) / 4d, (i / 4) / 4d, (i % 4 + 1) / 4d, (i / 4 + 1) / 4d)).ToArray();
         outline = Polygon(0, 0, 1, 1);
         var lines = new StreamGeometry();
-        using (var context = lines.Open()) for (int i = 1; i < 4; i++)
-        { context.BeginFigure(Map(i / 4d, 0), false, false); context.LineTo(Map(i / 4d, 1), true, false); context.BeginFigure(Map(0, i / 4d), false, false); context.LineTo(Map(1, i / 4d), true, false); }
+        using (var context = lines.Open())
+            for (int i = 1; i < 4; i++)
+            {
+                AddLine(context, Map(i / 4d, 0), Map(i / 4d, 1));
+                AddLine(context, Map(0, i / 4d), Map(1, i / 4d));
+            }
         lines.Freeze(); grid = lines;
         background = new SolidColorBrush(ColorValue(parameters.BackgroundColor)); background.Freeze();
         if (parameters.GridVisible)
         {
             gridPen = new Pen(new SolidColorBrush(ColorValue(parameters.GridColor)), Math.Min(2, parameters.GridWidth))
-            { DashStyle = parameters.GridPattern switch { StrokePattern.Dashed => DashStyles.Dash, StrokePattern.Dotted => DashStyles.Dot, _ => DashStyles.Solid } };
+            { DashStyle = parameters.GridPattern switch
+                {
+                    StrokePattern.Dashed => DashStyles.Dash,
+                    StrokePattern.Dotted => DashStyles.Dot,
+                    _ => DashStyles.Solid
+                } };
             gridPen.Freeze();
+        }
+
+        void AddLine(StreamGeometryContext context, Point start, Point end)
+        {
+            if (parameters.GridPattern != StrokePattern.DashDot)
+            {
+                context.BeginFigure(start, false, false);
+                context.LineTo(end, true, false);
+                return;
+            }
+            // Keep the glyph legible in a 16-DIP toolbar button.
+            var delta = end - start;
+            double length = delta.Length;
+            var unit = delta / length;
+            for (double offset = 0; offset < length; offset += 12.5)
+            {
+                context.BeginFigure(start + unit * offset, false, false);
+                context.LineTo(start + unit * Math.Min(length, offset + 6), true, false);
+                if (offset + 8.5 >= length) continue;
+                context.BeginFigure(start + unit * (offset + 8.5), false, false);
+                context.LineTo(start + unit * Math.Min(length, offset + 10), true, false);
+            }
         }
     }
 

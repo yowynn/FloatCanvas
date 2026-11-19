@@ -170,26 +170,16 @@ public sealed partial class SceneRenderer
         internal void AddRun(HighlighterRun run)
         {
             var points = run.Points;
-            if (points.Count == 1) { AddSegment(points[0], points[0]); return; }
-            bool roundDash = _key.Tip == HighlighterTip.Round && _key.Pattern == StrokePattern.Dashed;
-            double total = 0;
-            if (roundDash && !run.EndCap)
-                for (int i = 1; i < points.Count; i++) total += points[i].DistanceTo(points[i - 1]);
-            double traveled = 0;
-            for (int i = 1; i < points.Count; i++)
+            if (points.Count == 1)
             {
-                double length = points[i].DistanceTo(points[i - 1]);
-                var startCut = roundDash && !run.StartCap && traveled < _radius
-                    ? new DashCut(points[0], points[1] - points[0], _radius - traveled) : default;
-                traveled += length;
-                double remaining = total - traveled;
-                var endCut = roundDash && !run.EndCap && remaining < _radius
-                    ? new DashCut(points[^1], points[^2] - points[^1], _radius - remaining) : default;
-                AddSegment(points[i - 1], points[i], startCut, endCut);
+                AddSegment(points[0], points[0], dashDotDab: _key.Pattern == StrokePattern.DashDot);
+                return;
             }
+            for (int i = 1; i < points.Count; i++)
+                AddSegment(points[i - 1], points[i]);
         }
 
-        private void AddSegment(PointD start, PointD end, DashCut startCut = default, DashCut endCut = default)
+        private void AddSegment(PointD start, PointD end, bool dashDotDab = false)
         {
             var delta = end - start;
             double length = delta.DistanceTo(default);
@@ -206,7 +196,7 @@ public sealed partial class SceneRenderer
             }
             if (left >= right || top >= bottom) return;
             var segment = new InkSegment(start, delta, length, _radius, _sin, _cos, _profile,
-                _key.Tip == HighlighterTip.Flat, startCut, endCut);
+                _key.Tip == HighlighterTip.Flat);
             bool dotted = _key.Pattern == StrokePattern.Dotted;
             int samples = _samplesPerAxis * _samplesPerAxis;
             for (int tileY = top & -TileSize; tileY < bottom; tileY += TileSize)
@@ -244,8 +234,13 @@ public sealed partial class SceneRenderer
                             else if (!_inverse.TryTransformPoint(sample, out local) || _key.Transform.Denominator(local) <= 0) continue;
                             if (!segment.TryAccumulate(local, out float dose)) continue;
                             if (tile is null) _tiles.Add(tileKey, tile = new CoverageTile(samples));
-                            float prior = tile.Amounts![index];
-                            tile.Amounts[index] = dotted ? prior + 1 : Math.Max(1, prior) + dose;
+                            if (dashDotDab)
+                                (tile.Dabs ??= new float[TileSize * TileSize * samples])[index]++;
+                            else
+                            {
+                                float prior = tile.Amounts![index];
+                                tile.Amounts[index] = dotted ? prior + 1 : Math.Max(1, prior) + dose;
+                            }
                             touched = true;
                         }
                     }
@@ -288,8 +283,12 @@ public sealed partial class SceneRenderer
                             double alpha = 0;
                             for (int sample = 0; sample < samples; sample++)
                             {
-                                float amount = amounts[i * samples + sample];
-                                alpha += dotted ? _profile.DotAlpha(amount) : _profile.SweptAlpha(amount);
+                                int index = i * samples + sample;
+                                float amount = amounts[index];
+                                float coverage = dotted ? _profile.DotAlpha(amount) : _profile.SweptAlpha(amount);
+                                if (tile.Dabs is { } dabs)
+                                    coverage += _profile.DotAlpha(dabs[index]) * (1 - coverage / 255);
+                                alpha += coverage;
                             }
                             pixels[i] = _palette[(int)(alpha * scale + .5)];
                         }
@@ -316,6 +315,7 @@ public sealed partial class SceneRenderer
                 // A failed image allocation can be retried on a later draw.
                 if (!tile.Dirty.IsEmpty) continue;
                 tile.Amounts = null;
+                tile.Dabs = null;
             }
         }
 
@@ -328,17 +328,10 @@ public sealed partial class SceneRenderer
         private sealed class CoverageTile(int samples)
         {
             internal float[]? Amounts = new float[TileSize * TileSize * samples];
+            internal float[]? Dabs;
             internal SKImage? Image;
             internal SKRectI Dirty;
         }
-    }
-
-    // A butt end clips all nib impressions within a radius of the cut along the dash.
-    // Farther along, a looping dash can legitimately revisit the other side of this plane.
-    private readonly record struct DashCut(PointD Origin, PointD Inward, double Distance)
-    {
-        internal bool Excludes(PointD sample) => Distance > 0 &&
-            (sample.X - Origin.X) * Inward.X + (sample.Y - Origin.Y) * Inward.Y < 0;
     }
 
     private readonly struct InkSegment
@@ -347,10 +340,9 @@ public sealed partial class SceneRenderer
         private readonly double _length, _radiusSquared, _sin, _cos, _inverseRadius;
         private readonly double _longVelocity, _shortVelocity, _inverseLongVelocity, _inverseShortVelocity, _rate;
         private readonly bool _flat;
-        private readonly DashCut _startCut, _endCut;
 
         internal InkSegment(PointD start, PointD delta, double length, double radius, double sin, double cos,
-            HighlighterInkProfile profile, bool flat, DashCut startCut, DashCut endCut)
+            HighlighterInkProfile profile, bool flat)
         {
             _start = start;
             _length = length;
@@ -359,8 +351,6 @@ public sealed partial class SceneRenderer
             _sin = sin;
             _cos = cos;
             _flat = flat;
-            _startCut = startCut;
-            _endCut = endCut;
             _inverseRadius = 1 / radius;
             _rate = profile.CenterDose / (4 * radius / 3);
             if (!flat) return;
@@ -403,8 +393,6 @@ public sealed partial class SceneRenderer
             {
                 if (_length == 0) return p.X * p.X + p.Y * p.Y <= _radiusSquared;
                 double along = p.X * _unit.X + p.Y * _unit.Y;
-                if (_startCut.Excludes(sample)) entry = _startCut.Distance;
-                if (_endCut.Excludes(sample)) exit -= _endCut.Distance;
                 double perpendicular = p.X * _unit.Y - p.Y * _unit.X;
                 double chordSquared = _radiusSquared - perpendicular * perpendicular;
                 if (chordSquared < 0) return false;

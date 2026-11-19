@@ -179,7 +179,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
         Picker(parameterGrid, "StartArrowHead", L.Get("Inspector.StartArrow"), ArrowOptions(), (p, v) => p.Style.StartArrowHead = (ArrowHeadStyle)v);
         Picker(parameterGrid, "EndArrowHead", L.Get("Inspector.EndArrow"), ArrowOptions(), (p, v) => p.Style.EndArrowHead = (ArrowHeadStyle)v);
         Picker(parameterGrid, "StrokePattern", L.Get("Inspector.StrokePattern"),
-            [(L.Get("Inspector.PatternSolid"), StrokePattern.Solid), (L.Get("Inspector.PatternDashed"), StrokePattern.Dashed), (L.Get("Inspector.PatternDotted"), StrokePattern.Dotted)],
+            [(L.Get("Inspector.PatternSolid"), StrokePattern.Solid), (L.Get("Inspector.PatternDashed"), StrokePattern.Dashed),
+             (L.Get("Inspector.PatternDotted"), StrokePattern.Dotted), (L.Get("Inspector.PatternDashDot"), StrokePattern.DashDot)],
             (p, v) => p.Style.StrokePattern = (StrokePattern)v);
         Number(parameterGrid, "ArrowHeadSize", L.Get("Inspector.ArrowHeadSize"), (p, v) => p.Style.ArrowHeadSize = v);
         Number(parameterGrid, "CornerRadius", L.Get("Inspector.CornerRadius"), (p, v) => p.CornerRadius = v);

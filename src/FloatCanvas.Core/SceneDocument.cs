@@ -9,7 +9,7 @@ public enum TextAlignment { Left, Center, Right }
 public enum ImageEffectKind { Blur = 0, Pixelate = 1 }
 public enum LayerOrder { Forward, Backward, Front, Back }
 public enum ArrowHeadStyle { FilledTriangle, Open, Diamond, None }
-public enum StrokePattern { Solid, Dashed, Dotted }
+public enum StrokePattern { Solid, Dashed, Dotted, DashDot }
 public enum HighlighterTip { Round, Flat }
 public enum SymbolKind { Triangle, Star, Heart, Check, Cross, Diamond, Pentagon, Hexagon, SpeechBubble }
 

@@ -110,8 +110,8 @@ internal sealed partial class CanvasToolOptions : UserControl, IToolOptionsConte
         AddField(authoringControls, "Canvas.Background", background);
         authoringControls.Children.Add(PropertyPanelLayout.BooleanRow(L.Get("Canvas.GridVisible"), gridVisible));
         AddField(gridAppearanceFields, "Canvas.GridColor", gridColor); AddField(gridAppearanceFields, "Canvas.GridWidth", width);
-        foreach (var value in new[] { StrokePattern.Solid, StrokePattern.Dashed, StrokePattern.Dotted })
-            SegmentedChoicePreviews.Add(pattern, L.Get("Canvas." + value), value);
+        foreach (var value in Enum.GetValues<StrokePattern>())
+            SegmentedChoicePreviews.Add(pattern, L.Get(value == StrokePattern.DashDot ? "Inspector.PatternDashDot" : "Canvas." + value), value);
         System.Windows.Automation.AutomationProperties.SetName(pattern, L.Get("Canvas.GridPattern"));
         AddField(gridAppearanceFields, "Canvas.GridPattern", pattern);
         gridAppearanceRegion = new(gridAppearanceFields); authoringControls.Children.Add(gridAppearanceRegion);

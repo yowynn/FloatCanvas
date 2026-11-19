@@ -24,7 +24,8 @@ internal static class StyleVariantStorageTests
                 new() { Kind = ElementKind.Number, Width = 60, Height = 60, Number = 13, NumberUsesForeground = false,
                     Style = new() { Variant = ElementAppearance.NumberFilled, Stroke = 0xFF123456, Fill = 0xFFEEDDCC, FontSize = 17 } },
                 new() { Kind = ElementKind.Highlighter, Points = [new(20, 30), new(100, 30)],
-                    Style = new() { StrokeWidth = 24, HighlighterTip = HighlighterTip.Flat, HighlighterTipAngle = -35, HighlighterInkContrast = .55 } },
+                    Style = new() { StrokeWidth = 24, HighlighterTip = HighlighterTip.Flat, HighlighterTipAngle = -35,
+                        HighlighterInkContrast = .55, StrokePattern = StrokePattern.DashDot } },
                 new() { Kind = ElementKind.Highlighter, Points = [new(20, 60), new(100, 60)], Style = new() { StrokeWidth = 24 } }
             ]
         };
@@ -40,9 +41,10 @@ internal static class StyleVariantStorageTests
         var outline = loaded.Document.Elements[2]; var filled = loaded.Document.Elements[3];
         var flat = loaded.Document.Elements[4]; var round = loaded.Document.Elements[5];
         check(flat.Style.HighlighterTip == HighlighterTip.Flat && flat.Style.HighlighterTipAngle == -35 && flat.Style.HighlighterInkContrast == .55 &&
+            flat.Style.StrokePattern == StrokePattern.DashDot &&
             round.Style.HighlighterTip == HighlighterTip.Round && round.Style.HighlighterTipAngle == 0 &&
             !JsonSerializer.Serialize(round).Contains("HighlighterTip", StringComparison.Ordinal),
-            "flat highlighter tip and angle survive saving while existing strokes retain the round default");
+            "flat highlighter tip, angle and dash-dot pattern survive saving while existing strokes retain the round default");
         var olderStyle = JsonNode.Parse(JsonSerializer.Serialize(flat.Style))!.AsObject();
         olderStyle.Remove(nameof(ElementStyle.HighlighterInkContrast));
         check(olderStyle.Deserialize<ElementStyle>()!.HighlighterInkContrast == 1,

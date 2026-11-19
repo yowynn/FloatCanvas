@@ -293,7 +293,11 @@ internal static class ToolParameterIcon
         {
             case EditorTool.Line: case EditorTool.Arrow:case EditorTool.DoubleArrow:
                 element.Kind=parameters.Tool==EditorTool.Line?ElementKind.Line:parameters.Tool==EditorTool.Arrow?ElementKind.Arrow:ElementKind.DoubleArrow;
-                element.Points=[new(0,26),new(32,0)];break;
+                element.Points=[new(0,26),new(32,0)];
+                if (ElementGeometry.ArrowStyle(element, reverse: true) != ArrowHeadStyle.None &&
+                    ElementGeometry.ArrowStyle(element) != ArrowHeadStyle.None)
+                    style.ArrowHeadSize = Math.Min(style.ArrowHeadSize, 9);
+                break;
             case EditorTool.Rectangle:case EditorTool.RoundedRectangle:
                 element.Kind=ElementKind.Rectangle;element.CornerRadius=parameters.CornerRadius is { } corner?Math.Clamp(corner/3,0,10):parameters.Tool==EditorTool.RoundedRectangle?6:0;
                 break;
@@ -352,11 +356,27 @@ internal static class ToolParameterIcon
                 _ => Enumerable.Empty<Point>()
             }))).ToArray();
         double length = points.Zip(points.Skip(1), (a, b) => (b - a).Length).Sum();
+        if (width > 0 && !highlighter && parameters.Style.StrokePattern is StrokePattern.Dashed or StrokePattern.DashDot)
+        {
+            var style = parameters.Style.Clone();
+            // Fit at least one long mark and one dot inside the preview frame.
+            style.StrokeWidth = Math.Min(width, length / 5);
+            var stroke = new CanvasElement
+            {
+                Kind = highlighter ? ElementKind.Highlighter : ElementKind.Freehand,
+                Points = points.Select(point => new PointD(point.X, point.Y)).ToList(),
+                Style = style
+            };
+            using var renderer = new SceneRenderer();
+            using var stream = new MemoryStream(renderer.ExportPng(new() { Viewport = new(0, 0, 96, 96), Elements = [stroke] }, new(), true));
+            return BitmapFrame.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        }
         var visual = new DrawingVisual();
         using (var drawing = visual.RenderOpen())
         {
             drawing.PushOpacity(parameters.Style.Opacity);
             var brush = ColorBrush(parameters.Style.Foreground);
+            bool dashDot = parameters.Style.StrokePattern == StrokePattern.DashDot;
             if (width > 0 && highlighter && parameters.Style.HighlighterTip == HighlighterTip.Flat)
             {
                 var style = parameters.Style.Clone();
@@ -366,13 +386,18 @@ internal static class ToolParameterIcon
                 using (var context = sample.Open())
                 {
                     bool dotted = parameters.Style.StrokePattern == StrokePattern.Dotted;
-                    int runs = dotted ? 3 : 1;
+                    int runs = dotted ? 3 : dashDot ? 2 : 1;
                     for (int i = 0; i < runs; i++)
                     {
                         var a = points[0];
                         var b = points[^1];
                         var dot = a + (b - a) * ((i + .5) / runs);
-                        PointD[] run = dotted ? [new(dot.X, dot.Y)] : [new(a.X, a.Y), new(b.X, b.Y)];
+                        if (dashDot)
+                        {
+                            dot = a + (b - a) * .94;
+                            b = a + (b - a) * .34;
+                        }
+                        PointD[] run = dotted || dashDot && i == 1 ? [new(dot.X, dot.Y)] : [new(a.X, a.Y), new(b.X, b.Y)];
                         foreach (var polygon in ElementGeometry.FlatHighlighterPolygons(run, style))
                         {
                             context.BeginFigure(new(polygon[0].X, polygon[0].Y), true, true);
@@ -403,6 +428,14 @@ internal static class ToolParameterIcon
                 }
                 else drawing.DrawGeometry(brush, null, sample);
             }
+            else if (width > 0 && highlighter && dashDot)
+            {
+                var start = points[0];
+                var direction = points[^1] - start;
+                var pen = new Pen(brush, width) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                drawing.DrawLine(pen, start, start + direction * .34);
+                drawing.DrawEllipse(brush, null, start + direction * .94, width / 2, width / 2);
+            }
             else if (width > 0 && parameters.Style.StrokePattern == StrokePattern.Dotted)
             {
                 int count = highlighter ? 3 : 11;
@@ -417,10 +450,12 @@ internal static class ToolParameterIcon
                 var pen = new Pen(brush, width) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
                 if (parameters.Style.StrokePattern == StrokePattern.Dashed)
                 {
-                    // Small fixed gaps preserve bends; flat dash caps keep thick marks separate.
-                    double gap = 5;
-                    pen.DashStyle = new DashStyle(new[] { (length - 2 * gap) / (3 * width), gap / width }, 0);
-                    pen.DashCap = PenLineCap.Flat;
+                    // Leave room for both round caps and the visible gap at icon scale.
+                    int count = highlighter ? 2 : 3;
+                    double gap = width + (highlighter ? 9 : 5);
+                    double dash = (length - (count - 1) * gap) / count;
+                    pen.DashStyle = new DashStyle(new[] { dash / width, gap / width }, 0);
+                    pen.DashCap = PenLineCap.Round;
                 }
                 drawing.DrawGeometry(null, pen, path);
             }

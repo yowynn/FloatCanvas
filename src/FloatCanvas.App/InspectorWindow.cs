@@ -156,7 +156,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         AddPicker("EndArrowHead", L.Get("Inspector.EndArrow"), endArrow,
             [L.Get("Inspector.ArrowFilledTriangle"), L.Get("Inspector.ArrowOpen"), L.Get("Inspector.ArrowDiamond"), L.Get("Inspector.ArrowNone")]);
         AddPicker("StrokePattern", L.Get("Inspector.StrokePattern"), strokePattern,
-            [L.Get("Inspector.PatternSolid"), L.Get("Inspector.PatternDashed"), L.Get("Inspector.PatternDotted")]);
+            [L.Get("Inspector.PatternSolid"), L.Get("Inspector.PatternDashed"), L.Get("Inspector.PatternDotted"), L.Get("Inspector.PatternDashDot")]);
         propertyPanel.Children.Add(FieldPair("ArrowHeadSize", L.Get("Inspector.ArrowHeadSize"), null, null));
         var arrowHint = new Controls.TextBlock { Text = L.Get("Inspector.ArrowHeadSizeHint"), FontSize = 11, Opacity = .65 };
         fieldContainers.Add("ArrowHint", arrowHint); propertyPanel.Children.Add(arrowHint);

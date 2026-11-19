@@ -48,6 +48,7 @@ internal static class SegmentedChoicePreviews
         if (value is CaptureShape capture) return Icon(capture switch { CaptureShape.Rectangle => "capture-rectangle", CaptureShape.Ellipse => "capture-ellipse", CaptureShape.FreehandLasso => "capture-lasso", _ => "capture-polygon" });
         if (value is CaptureSource source) return Icon(source switch { CaptureSource.Background => "background", CaptureSource.CanvasOnly => "canvas", _ => "combined" });
         if (value is HighlighterTip tip) return Icon(tip == HighlighterTip.Flat ? "tip-flat" : "tip-round");
+        if (value is StrokePattern pattern) return StrokePatternIcon(pattern);
         var drawing = new DrawingGroup();
         var image = new Image { Width = 18, Height = 18, Stretch = Stretch.Uniform };
         image.SetResourceReference(TextElement.ForegroundProperty, "CanvasText");
@@ -65,7 +66,6 @@ internal static class SegmentedChoicePreviews
         }
         else
         {
-            if (value is StrokePattern pattern) pen.DashStyle = pattern switch { StrokePattern.Dashed => new DashStyle([3d, 2d], 0), StrokePattern.Dotted => new DashStyle([.5, 2d], 0), _ => DashStyles.Solid };
             drawing.Children.Add(new GeometryDrawing(null, pen, Geometry.Parse("M0,8 H18")));
             if (value is ArrowHeadStyle arrow && arrow != ArrowHeadStyle.None)
             {
@@ -76,6 +76,31 @@ internal static class SegmentedChoicePreviews
             }
         }
         image.Source = new DrawingImage(drawing); return image;
+    }
+
+    private static FrameworkElement StrokePatternIcon(StrokePattern pattern)
+    {
+        const double size = 18, unit = 1.5, units = 11;
+        const double left = (size - units * unit) / 2, top = (size - unit) / 2;
+        int[] marks = pattern switch
+        {
+            StrokePattern.Dashed => [3, 3, 3],
+            StrokePattern.Dotted => [1, 1, 1, 1, 1, 1],
+            StrokePattern.DashDot => [3, 1, 3, 1],
+            _ => [11]
+        };
+        var geometry = new GeometryGroup();
+        double x = left;
+        foreach (int mark in marks)
+        {
+            var bounds = new Rect(x, top, mark * unit, unit);
+            geometry.Children.Add(mark == 1 ? new EllipseGeometry(bounds) : new RectangleGeometry(bounds, unit / 2, unit / 2));
+            x += (mark + 1) * unit;
+        }
+        geometry.Freeze();
+        var glyph = new System.Windows.Shapes.Path { Data = geometry };
+        glyph.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "CanvasText");
+        return new Viewbox { Width = size, Height = size, Child = new Canvas { Width = size, Height = size, Children = { glyph } } };
     }
 
     private static FrameworkElement StyleIcon(string variant)

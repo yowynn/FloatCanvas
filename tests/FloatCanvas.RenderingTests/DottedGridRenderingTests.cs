@@ -26,6 +26,13 @@ internal static class DottedGridRenderingTests
             check($"{mode} cached dotted grid agrees with direct rendering", Difference(dotted, cached) <= 2);
             using var reference = Pixels(renderer, scene, assets, reference: true);
             check($"{mode} colored dotted grid remains visible over calibration guides", GreenInk(reference) > 250);
+
+            scene.Canvas.Grid.Pattern = StrokePattern.DashDot;
+            using var dashDot = Pixels(renderer, scene, assets);
+            using var cachedDashDot = CachedPixels(renderer, scene, assets);
+            check($"{mode} dash-dot grid retains gaps and matches cached rendering",
+                GreenInk(dashDot) is > 250 && GreenInk(dashDot) < solidInk * .85 &&
+                Difference(dashDot, cachedDashDot) <= 2);
         }
 
         var defaultWidth = Scene(false);

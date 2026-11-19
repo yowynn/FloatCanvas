@@ -69,29 +69,29 @@ internal static class DashedFreehandPerformanceTests
             int edgeAlpha = kind == ElementKind.Highlighter ? (int)Math.Round(expectedAlpha * .46) : expectedAlpha;
             var element = new CanvasElement
             {
-                Kind = kind, Points = [new(20, 40), new(80, 40)],
+                Kind = kind, Points = [new(20, 40), new(68, 40)],
                 Style = new() { Stroke = (uint)alpha << 24 | 0x00CC3311u, StrokeWidth = 8, StrokePattern = StrokePattern.Dashed }
             };
             var scene = new SceneDocument { Viewport = new(0, 0, 120, 100), Elements = [element] };
             using (var ink = Render())
             {
-                check($"{kind} alpha {alpha} retains flat dash cuts and transparent gaps", ink.GetPixel(51, 37).Alpha >= edgeAlpha &&
-                    ink.GetPixel(38, 40).Alpha >= expectedAlpha - 2 && ink.GetPixel(52, 40).Alpha == 0);
-                check($"{kind} alpha {alpha} retains the original round endpoint caps", ink.GetPixel(17, 40).Alpha >= edgeAlpha * .8 && ink.GetPixel(82, 40).Alpha >= edgeAlpha * .8);
+                check($"{kind} alpha {alpha} retains round dash ends and transparent gaps", ink.GetPixel(38, 40).Alpha >= edgeAlpha &&
+                    ink.GetPixel(39, 36).Alpha == 0 && ink.GetPixel(47, 40).Alpha == 0 && ink.GetPixel(49, 40).Alpha >= edgeAlpha);
+                check($"{kind} alpha {alpha} retains the original round endpoint caps", ink.GetPixel(17, 40).Alpha >= edgeAlpha * .8 && ink.GetPixel(70, 40).Alpha >= edgeAlpha * .8);
                 if (kind == ElementKind.Highlighter)
                 {
-                    element.Points = Enumerable.Range(0, 121).Select(i => new PointD(20 + .5 * i, 40)).ToList();
+                    element.Points = Enumerable.Range(0, 97).Select(i => new PointD(20 + .5 * i, 40)).ToList();
                     using var dense = Render();
                     check("a densely sampled round highlighter keeps both straight dash cuts",
                         dense.Pixels.Zip(ink.Pixels, (a, b) => Math.Abs(a.Alpha - b.Alpha)).Max() <= 1);
                 }
             }
-            element.Points = [new(20, 20), new(40, 20), new(40, 60)];
+            element.Points = [new(20, 20), new(32, 20), new(32, 60)];
             using (var ink = Render())
-                check($"{kind} alpha {alpha} retains the round corner without filling its next dash gap", ink.GetPixel(41, 18).Alpha >= edgeAlpha && ink.GetPixel(40, 34).Alpha == 0);
-            element.Points = [new(20, 20), new(40, 20), new(20, 20)];
+                check($"{kind} alpha {alpha} retains the round corner without filling its next dash gap", ink.GetPixel(33, 18).Alpha >= edgeAlpha && ink.GetPixel(32, 31).Alpha == 0);
+            element.Points = [new(20, 20), new(34, 20), new(20, 20)];
             using (var ink = Render())
-                check($"{kind} alpha {alpha} retains the round join at a reversing corner", ink.GetPixel(42, 20).Alpha >= edgeAlpha * .8);
+                check($"{kind} alpha {alpha} retains the round join at a reversing corner", ink.GetPixel(36, 20).Alpha >= edgeAlpha * .8);
             element.Points = [new(20, 20), new(90, 70), new(20, 70), new(90, 20)];
             CheckCrossing("self-crossings");
             element.Transform = Affine2D.Translation(4, 12).Compose(Affine2D.Scale(.9, .65));

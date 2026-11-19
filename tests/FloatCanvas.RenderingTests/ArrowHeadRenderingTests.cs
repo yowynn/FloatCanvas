@@ -23,6 +23,20 @@ internal static class ArrowHeadRenderingTests
         }
         var shortArrow = new CanvasElement { Kind = ElementKind.DoubleArrow, Points = [new(80, 80), new(85, 80)], Style = new() { StrokeWidth = 20, ArrowHeadSize = 30 } };
         check("overlapping arrow heads do not create a reversed shaft outside their endpoints", ElementGeometry.LineShaftPoints(shortArrow).Count == 0);
+        var diamonds = new CanvasElement
+        {
+            Kind = ElementKind.Line, Points = [new(24, 40), new(168, 40)],
+            Style = new() { Foreground = 0x80FF0000, StrokeWidth = 12, StartArrowHead = ArrowHeadStyle.Diamond, EndArrowHead = ArrowHeadStyle.Diamond }
+        };
+        using (var diamondInk = SKBitmap.Decode(renderer.ExportPng(
+            new() { Viewport = new(0, 0, 200, 80), Elements = [diamonds] }, assets, true)))
+        {
+            check("automatic diamond heads meet the full-width translucent shaft without a round-cap notch",
+                Enumerable.Range(66, 60).All(x => diamondInk.GetPixel(x, 35).Alpha == 128 && diamondInk.GetPixel(x, 44).Alpha == 128));
+            check("diamond joints retain single coverage and exact picking",
+                diamondInk.Pixels.All(pixel => pixel.Alpha <= 128) &&
+                ElementGeometry.HitTest(diamonds, new(66.5, 35.5), 0) && ElementGeometry.HitTest(diamonds, new(125.5, 44.5), 0));
+        }
         var arrow = new CanvasElement { Kind = ElementKind.Arrow, Points = [new(20, 70), new(140, 70)],
             Style = new() { Stroke = 0xFFFF0000, StrokeWidth = 2, ArrowHeadSize = 40 } };
         var scene = new SceneDocument { Viewport = new(0, 0, 180, 140), Elements = [arrow] };

@@ -119,7 +119,12 @@ public sealed partial class SceneRenderer
                 a = mapping.ScreenToPlane.TransformPoint(screenStart); b = mapping.ScreenToPlane.TransformPoint(screenEnd);
                 if (!reference && grid.Pattern != StrokePattern.Solid)
                 {
-                    double period = Math.Max(.1, grid.Width) * (grid.Pattern == StrokePattern.Dotted ? 2.501 : 7);
+                    double period = Math.Max(.1, grid.Width) * (grid.Pattern switch
+                    {
+                        StrokePattern.Dotted => 2.501,
+                        StrokePattern.DashDot => 6,
+                        _ => 7
+                    });
                     UnresolvedGridDashIntervalCount += a.DistanceTo(b) / period;
                     if (!TrimUnresolvedDashes(mapping, a, b, period, grid.Pattern == StrokePattern.Dashed ? 4 : 2, ref screenStart, ref screenEnd)) continue;
                     a = mapping.ScreenToPlane.TransformPoint(screenStart); b = mapping.ScreenToPlane.TransformPoint(screenEnd);

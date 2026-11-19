@@ -237,6 +237,8 @@ public static partial class ElementGeometry
         }
         return previous is { } last && first is { } start && DistanceToSegment(worldPoint, last, start) <= tolerance;
     }
+    private const double ArrowHeadHalfWidthRatio = .45;
+
     public static IReadOnlyList<PointD> ArrowHead(CanvasElement element, bool reverse = false)
     {
         if (element.Points.Count < 2) return [];
@@ -248,7 +250,7 @@ public static partial class ElementGeometry
         var direction = (tip - previous) * (1 / length);
         double size = ArrowHeadLength(element);
         var basePoint = tip - direction * size;
-        var normal = new PointD(-direction.Y, direction.X) * (size * .45);
+        var normal = new PointD(-direction.Y, direction.X) * (size * ArrowHeadHalfWidthRatio);
         return style switch
         {
             ArrowHeadStyle.Open => [basePoint + normal, tip, basePoint - normal],
@@ -265,8 +267,14 @@ public static partial class ElementGeometry
         var points = element.Points.ToList();
         foreach (bool reverse in new[] { true, false })
         {
-            if (ArrowStyle(element, reverse) is not (ArrowHeadStyle.FilledTriangle or ArrowHeadStyle.Diamond)) continue;
-            double remaining = Math.Max(ArrowHeadLength(element), element.Style.StrokeWidth / 2);
+            var style = ArrowStyle(element, reverse);
+            if (style is not (ArrowHeadStyle.FilledTriangle or ArrowHeadStyle.Diamond)) continue;
+            double radius = element.Style.StrokeWidth / 2;
+            double headLength = ArrowHeadLength(element);
+            // A diamond starts at a point. Continue to where its widening sides cover the shaft.
+            double inset = style == ArrowHeadStyle.Diamond
+                ? Math.Min(headLength / 2, radius / (2 * ArrowHeadHalfWidthRatio)) : 0;
+            double remaining = Math.Max(radius, headLength - inset);
             if (!reverse) points.Reverse();
             while (remaining > 0 && points.Count >= 2)
             {
