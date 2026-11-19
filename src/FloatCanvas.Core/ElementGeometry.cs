@@ -134,18 +134,19 @@ public static partial class ElementGeometry
             return Enumerable.Range(0, steps).Select(i => new PointD(w / 2 + Math.Cos(i * Math.Tau / steps) * w / 2,
                 h / 2 + Math.Sin(i * Math.Tau / steps) * h / 2)).ToArray();
         }
-        if (element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle && CornerRadius(element) > 0)
+        return RectangleOutline(w, h, element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle ? CornerRadius(element) : 0);
+    }
+
+    private static IReadOnlyList<PointD> RectangleOutline(double w, double h, double radius)
+    {
+        if (radius <= 0) return [new(0, 0), new(w, 0), new(w, h), new(0, h)];
+        int steps = CurveQuarterSteps(radius);
+        PointD[] centers = [new(w - radius, radius), new(w - radius, h - radius), new(radius, h - radius), new(radius, radius)];
+        return Enumerable.Range(0, 4).SelectMany(corner => Enumerable.Range(0, steps + 1).Select(step =>
         {
-            double radius = CornerRadius(element);
-            int steps = CurveQuarterSteps(radius);
-            PointD[] centers = [new(w - radius, radius), new(w - radius, h - radius), new(radius, h - radius), new(radius, radius)];
-            return Enumerable.Range(0, 4).SelectMany(corner => Enumerable.Range(0, steps + 1).Select(step =>
-            {
-                double angle = (-90 + corner * 90 + step * 90.0 / steps) * Math.PI / 180;
-                return new PointD(centers[corner].X + Math.Cos(angle) * radius, centers[corner].Y + Math.Sin(angle) * radius);
-            })).ToArray();
-        }
-        return [new(0, 0), new(w, 0), new(w, h), new(0, h)];
+            double angle = (-90 + corner * 90 + step * 90.0 / steps) * Math.PI / 180;
+            return new PointD(centers[corner].X + Math.Cos(angle) * radius, centers[corner].Y + Math.Sin(angle) * radius);
+        })).ToArray();
     }
     // The renderer uses this same ordered contour for patterned strokes. Keeping its
     // starting point and segment lengths identical also keeps every dash and dot hittable.

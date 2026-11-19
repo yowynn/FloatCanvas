@@ -16,7 +16,7 @@ internal sealed partial class EditorController
         if (!IsScreenDraftContextCurrent) { Cancel(); return; }
         if (gesture is not null && _pointerOwnedSession is not null && !OwnsPointerTransaction)
         { CancelGesture(rollback: false, notify: false); return; }
-        if(gesture is null||(gestureModifiers&OverlayModifiers.Shift)==(modifiers&OverlayModifiers.Shift))return;
+        if(gesture is null || cornerRadiusDrag is not null || (gestureModifiers&OverlayModifiers.Shift)==(modifiers&OverlayModifiers.Shift))return;
         if(time is { } inputTime&&modifierTime is { } boundary&&unchecked((int)(inputTime-boundary))<0)return;
         modifierTime=time??modifierTime;
         if(pointerLeftDown==false&&!temporaryMove&&gesture!="capture-polygon")

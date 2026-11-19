@@ -6,6 +6,7 @@ internal static class InnerStrokeRenderingTests
 {
     internal static void Run(Action<string, bool> check)
     {
+        ClosedStrokeRhythm(check);
         PatternCuts(check);
         PatternEdgesAndProjection(check);
         OpenStrokeRhythm(check);
@@ -91,13 +92,60 @@ internal static class InnerStrokeRenderingTests
         check("open lines retain centered strokes and round caps", lineInk.GetPixel(40, 37).Alpha == 255 && lineInk.GetPixel(40, 43).Alpha == 255 && lineInk.GetPixel(18, 40).Alpha > 200);
     }
 
+    private static void ClosedStrokeRhythm(Action<string, bool> check)
+    {
+        foreach (var (kind, width, height, count) in new[] {
+            (ElementKind.Rectangle, 100, 58, 14), (ElementKind.Ellipse, 111, 111, 16) })
+        {
+            var shape = Shape(kind);
+            shape.Width = width; shape.Height = height; shape.Style.StrokeWidth = 8;
+            shape.Style.StrokePattern = StrokePattern.Dotted;
+            var dots = ElementGeometry.StrokePatternGeometry(shape).Dots;
+            double first = dots[0].DistanceTo(dots[1]), closing = dots[^1].DistanceTo(dots[0]);
+            check($"{kind} closes its dots at the regular spacing ({first:F2}, {closing:F2})",
+                dots.Count == count && first > 19 && first < 21 && Math.Abs(first - closing) < .01);
+            if (kind == ElementKind.Rectangle)
+            {
+                foreach (double corner in new[] { 1d, 2d, 4d })
+                {
+                    shape.CornerRadius = corner;
+                    check("small corner edits keep the dot positions and closing phase stable",
+                        ElementGeometry.StrokePatternGeometry(shape).Dots.SequenceEqual(dots));
+                }
+            }
+        }
+
+        var box = Shape(ElementKind.Rectangle);
+        box.Width = 200; box.Height = 104; box.Style.StrokeWidth = 4; box.Style.StrokePattern = StrokePattern.Dashed;
+        using var renderer = new SceneRenderer();
+        using var ink = Render(renderer, new() { Viewport = new(0, 0, 250, 160), Elements = [box] });
+        // The 592 px inset perimeter fits exactly 37 cycles. Ignore the two corner joins.
+        var runs = new List<(bool Visible, int Length)>();
+        bool squareCuts = true;
+        for (int x = 45; x < 195; x++)
+        {
+            bool visible = ink.GetPixel(x, 21).Alpha > 127;
+            if (runs.Count > 0 && runs[^1].Visible == visible) runs[^1] = (visible, runs[^1].Length + 1);
+            else runs.Add((visible, 1));
+            squareCuts &= visible == (ink.GetPixel(x, 23).Alpha > 127);
+        }
+        check("rectangle dashes have square cuts across the full inner stroke", squareCuts);
+        check("4 px closed dashes have 12 px of ink and a 4 px gap",
+            runs.Count > 12 && runs.Skip(1).SkipLast(1).All(run => run.Length == (run.Visible ? 12 : 4)));
+        var thick = Shape(ElementKind.Ellipse);
+        thick.Width = 28; thick.Height = 20; thick.Style.StrokeWidth = 18;
+        using var full = Render(renderer, new() { Viewport = new(0, 0, 80, 70), Elements = [thick] });
+        check("an ellipse whose inner stroke spans its minor radius has no hole at its center",
+            full.GetPixel(34, 30).Alpha == 255 && ElementGeometry.HitTest(thick, new(34, 30), 0));
+    }
+
     private static void PatternCuts(Action<string, bool> check)
     {
         using var renderer = new SceneRenderer();
         var shape = Shape(ElementKind.Rectangle); shape.Width = 64; shape.Style.StrokeWidth = 8; shape.Style.StrokePattern = StrokePattern.Dashed;
         var document = new SceneDocument { Viewport = new(0,0,120,100), Elements = [shape] };
         using var dash = Render(renderer,document);
-        check("rectangle dashes cut flat gaps from the complete square-cornered solid band", dash.GetPixel(20,20).Alpha == 255 && dash.GetPixel(45,27).Alpha == 255 && dash.GetPixel(56,23).Alpha == 0);
+        check("rectangle dashes cut flat gaps from the complete square-cornered solid band", dash.GetPixel(20,20).Alpha == 255 && dash.GetPixel(45,27).Alpha == 255 && dash.GetPixel(39,23).Alpha == 0);
         shape.Kind = ElementKind.Ellipse; shape.Width = 80; shape.Height = 60; shape.Style.StrokePattern = StrokePattern.Dotted;
         using var dot = Render(renderer,document);
         var bounds = ComponentBounds(dot, 95, 50);
@@ -184,7 +232,9 @@ internal static class InnerStrokeRenderingTests
                 else {var outline=ElementGeometry.Outline(element);boundary.MoveTo((float)outline[0].X,(float)outline[0].Y);foreach(var p in outline.Skip(1))boundary.LineTo((float)p.X,(float)p.Y);boundary.Close();}
                 using var outer=boundary.Detach();
                 using var pen=new SKPaint { Style=SKPaintStyle.Stroke,StrokeWidth=(float)element.Style.StrokeWidth*2,StrokeJoin=SKStrokeJoin.Miter,StrokeMiter=4,StrokeCap=SKStrokeCap.Round };
-                using var expanded=pen.GetFillPath(outer,16);using var band=outer.Op(expanded,SKPathOp.Intersect)!;
+                using var expanded=pen.GetFillPath(outer,16);
+                using var band=kind==ElementKind.Ellipse && element.Style.StrokeWidth>=Math.Min(element.Width,element.Height)/2
+                    ? new SKPath(outer) : outer.Op(expanded,SKPathOp.Intersect)!;
                 foreach(var dot in geometry.Dots)for(int i=0;i<512;i++)
                 {
                     var direction=new PointD(Math.Cos(i*Math.Tau/512),Math.Sin(i*Math.Tau/512));

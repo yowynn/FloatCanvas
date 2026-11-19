@@ -46,6 +46,7 @@
   "Line.Straight": {"zh":"直线","en":"Straight"},
   "Line.Arc": {"zh":"弧线","en":"Arc"},
   "Editor.History.AdjustArc": {"zh":"调整弧线","en":"Adjust arc"},
+  "Editor.History.AdjustCornerRadius": {"zh":"调整矩形圆角","en":"Adjust rectangle corner radius"},
   "Inspector.CornerRadius": {"zh":"圆角","en":"Corner radius"},
   "Preset.Freehand": {"zh":"画笔","en":"Pen"},
   "Preset.Highlighter": {"zh":"荧光笔","en":"Highlighter"},

@@ -5,6 +5,7 @@ namespace FloatCanvas.Core;
 public static partial class ElementGeometry
 {
     private static readonly ConditionalWeakTable<CanvasElement, PatternCache> PatternCaches = new();
+    private const double ClosedDotSpacingInRadii = 5;
 
     /// <summary>Flat dash masks and complete circles, measured along the middle of the solid stroke band.</summary>
     public static StrokePatternGeometry StrokePatternGeometry(CanvasElement element)
@@ -33,21 +34,23 @@ public static partial class ElementGeometry
     private static StrokePatternGeometry BuildPattern(CanvasElement element)
     {
         double width = Math.Max(.1, element.Style.StrokeWidth), radius = width / 2;
+        if (element.Kind == ElementKind.Ellipse && element.Style.StrokePattern == StrokePattern.Dotted)
+            return DottedEllipse(element.Width / 2, element.Height / 2, radius);
         bool closed = IsBoxShape(element.Kind);
         bool roundJoins = IsLine(element.Kind);
         if (roundJoins && element.Style.StrokePattern is StrokePattern.Dashed or StrokePattern.DashDot)
             radius = element.Style.StrokeWidth / 2;
-        var outer = closed ? CleanContour(Outline(element)) : [];
-        var center = closed ? InsetContour(outer, radius) : CleanContour(IsLine(element.Kind) ? LineShaftPoints(element) : element.Points, false);
+        bool rectangle = element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle;
+        var outer = closed && !rectangle ? CleanContour(Outline(element)) : [];
+        var center = rectangle ? InsetRectangle(element, radius) :
+            closed ? InsetContour(outer, radius) : CleanContour(IsLine(element.Kind) ? LineShaftPoints(element) : element.Points, false);
         var polygons = new List<IReadOnlyList<PointD>>(); var dots = new List<PointD>();
-        int segments = closed ? center.Count : Math.Max(0, center.Count - 1);
-        double total = 0;
-        for (int i = 0; i < segments; i++) total += center[i].DistanceTo(center[(i + 1) % center.Count]);
         if (element.Style.StrokePattern == StrokePattern.Dotted)
         {
-            foreach (var station in DotStations(center, closed, width * (closed ? 2.5 : 2), total))
+            if (rectangle) return new(center, [], RectangleDots(element, center, radius), radius, true);
+            foreach (var station in DotStations(center, closed, closed ? ClosedDotSpacingInRadii * radius : 2 * width))
                 if (!closed) dots.Add(station);
-                else if (FitDot(element, outer, station, radius, out var point)) dots.Add(point);
+                else if (FitDot(outer, station, radius, out var point)) dots.Add(point);
         }
         else if (element.Style.StrokePattern == StrokePattern.DashDot)
         {
@@ -84,22 +87,110 @@ public static partial class ElementGeometry
         return new(center, polygons, dots, radius, closed);
     }
 
-    private static IEnumerable<PointD> DotStations(IReadOnlyList<PointD> center, bool closed, double spacing, double total = 0)
+    private static double ClosedPerimeter(IReadOnlyList<PointD> points)
     {
-        if (!closed && center.Count > 0) yield return center[0];
-        double station = closed ? 0 : spacing, offset = 0;
+        double length = 0;
+        for (int i = 0; i < points.Count; i++) length += points[i].DistanceTo(points[(i + 1) % points.Count]);
+        return length;
+    }
+
+    private static double ClosedRepeatCount(double perimeter, double nominalPeriod) =>
+        Math.Max(1, Math.Round(perimeter / nominalPeriod, MidpointRounding.AwayFromZero));
+
+    private static IEnumerable<PointD> DotStations(IReadOnlyList<PointD> center, bool closed, double spacing,
+        Func<int, double, PointD>? pointOnCurve = null)
+    {
+        if (center.Count == 0) yield break;
+        yield return center[0];
+        double limit = double.PositiveInfinity;
+        if (closed)
+        {
+            double perimeter = ClosedPerimeter(center);
+            limit = ClosedRepeatCount(perimeter, spacing);
+            spacing = perimeter / limit;
+        }
+        long index = 1;
+        double offset = 0;
         int segments = closed ? center.Count : center.Count - 1;
-        for (int i = 0; i < segments; i++)
+        for (int i = 0; i < segments && index < limit; i++)
         {
             var a = center[i]; var b = center[(i + 1) % center.Count]; double length = a.DistanceTo(b);
             if (length <= 1e-9) continue;
-            while (station <= offset + length + 1e-9 && (!closed || station < total - 1e-9))
+            while (index < limit && index * spacing <= offset + length + 1e-9)
             {
-                yield return a + (b - a) * Math.Clamp((station - offset) / length, 0, 1);
-                station += spacing;
+                double fraction = Math.Clamp((index * spacing - offset) / length, 0, 1);
+                yield return pointOnCurve is null ? a + (b - a) * fraction : pointOnCurve(i, fraction);
+                index++;
             }
             offset += length;
         }
+    }
+
+    private static StrokePatternGeometry DottedEllipse(double a, double b, double radius)
+    {
+        double major = Math.Max(a, b), minor = Math.Min(a, b);
+        var center = new PointD(a, b);
+        if (radius >= minor)
+            return new([center], [], radius == minor ? [center] : [], radius, true);
+
+        // A complete dot touches the ellipse along its inward unit normal. If the
+        // offset folds near a sharp tip, keep only normals up to the medial axis.
+        double aspect = minor / major, inset = radius / minor;
+        double trim = inset <= aspect ? 0 : Math.Asin(Math.Sqrt(Math.Clamp(
+            (inset - aspect) * (inset + aspect) / ((1 - aspect) * (1 + aspect)), 0, 1)));
+        int steps = CurveQuarterSteps(major);
+        double quarter = Math.PI / 2, step = (quarter - trim) / steps;
+        PointD At(int segment, double fraction)
+        {
+            int quadrant = segment / steps;
+            double start = quadrant * quarter + ((quadrant % 2 == 0) == (a >= b) ? trim : 0);
+            var (sin, cos) = Math.SinCos(start + (segment % steps + fraction) * step);
+            double speed = double.Hypot(b * cos, a * sin);
+            return new(a + cos * (a - radius * (b / speed)), b + sin * (b - radius * (a / speed)));
+        }
+        var contour = new PointD[4 * steps];
+        for (int i = 0; i < contour.Length; i++) contour[i] = At(i, 0);
+        // Measure along the inset contour, then evaluate the true tangent point at
+        // each station. Drawing and picking consume the same complete circles.
+        var dots = DotStations(contour, true, ClosedDotSpacingInRadii * radius, At).ToArray();
+        return new(contour, [], dots, radius, true);
+    }
+
+    private static List<PointD> InsetRectangle(CanvasElement box, double radius)
+    {
+        var inset = new PointD(Math.Min(radius, box.Width / 2), Math.Min(radius, box.Height / 2));
+        double corner = Math.Max(0, CornerRadius(box) - radius);
+        var outline = RectangleOutline(box.Width - 2 * inset.X, box.Height - 2 * inset.Y, corner);
+        // Use the top-left tangent as the seam, also when the corner shrinks to zero.
+        int start = corner > 0 ? outline.Count - 1 : 0;
+        var points = new PointD[outline.Count];
+        for (int i = 0; i < points.Length; i++) points[i] = inset + outline[(start + i) % points.Length];
+        return CleanContour(points);
+    }
+
+    private static IReadOnlyList<PointD> RectangleDots(CanvasElement box, IReadOnlyList<PointD> center, double radius)
+    {
+        if (2 * radius > Math.Min(box.Width, box.Height)) return [];
+        double spacing = ClosedDotSpacingInRadii * radius;
+        if (center.Count == 2)
+        {
+            // At exactly one dot diameter thick, both sides share one row.
+            var span = center[1] - center[0];
+            double length = span.DistanceTo(default);
+            int intervals = (int)Math.Floor(length / spacing);
+            double first = (length - intervals * spacing) / 2;
+            return Enumerable.Range(0, intervals + 1).Select(i => center[0] + span * ((first + i * spacing) / length)).ToArray();
+        }
+        var stations = DotStations(center, true, spacing);
+        double corner = CornerRadius(box);
+        if (corner <= radius) return stations.ToArray();
+        return stations.Select(p =>
+        {
+            var origin = new PointD(Math.Clamp(p.X, corner, box.Width - corner), Math.Clamp(p.Y, corner, box.Height - corner));
+            if (p.X == origin.X || p.Y == origin.Y) return p;
+            var radial = p - origin;
+            return origin + radial * ((corner - radius) / radial.DistanceTo(default));
+        }).ToArray();
     }
 
     private static IEnumerable<IReadOnlyList<PointD>> DashDotMarks(
@@ -176,7 +267,15 @@ public static partial class ElementGeometry
     {
         List<PointD>? chunk = null;
         // Two semicircular caps add one width to the visible dash.
-        double offset = 0, ink = width * (closed ? 4 : roundCaps ? 2 : 3), cycle = width * (closed ? 7 : 4);
+        double offset = 0, cycle = 4 * width, ink = width * (roundCaps ? 2 : 3);
+        if (closed)
+        {
+            double perimeter = ClosedPerimeter(center);
+            if (perimeter <= 1e-9) yield break;
+            cycle = perimeter / ClosedRepeatCount(perimeter, cycle);
+            ink = .75 * cycle;
+            offset = ink / 2; // Carry the middle of a dash through the closing corner.
+        }
         int segments = closed ? center.Count : center.Count - 1;
         for (int i = 0; i < segments; i++)
         {
@@ -255,54 +354,30 @@ public static partial class ElementGeometry
         }
     }
 
-    private static bool FitDot(CanvasElement element, IReadOnlyList<PointD> outer, PointD candidate, double radius, out PointD point)
+    private static bool FitDot(IReadOnlyList<PointD> outer, PointD candidate, double radius, out PointD point)
     {
         point = candidate;
         // Segment interpolation on a curved inset is slightly inside its exact offset.
         // Put the circle back on the true boundary-distance contour before checking fit.
         for (int i = 0; i < 3; i++)
         {
-            var nearest = NearestOutlinePoint(element, outer, point); double distance = point.DistanceTo(nearest);
+            var nearest = NearestOutlinePoint(outer, point); double distance = point.DistanceTo(nearest);
             if (distance < 1e-9 || !PointInPolygon(point, outer)) return false;
             point = nearest + (point - nearest) * (radius / distance);
         }
-        return PointInPolygon(point, outer) && point.DistanceTo(NearestOutlinePoint(element, outer, point)) >= radius - 1e-5;
+        return PointInPolygon(point, outer) && point.DistanceTo(NearestOutlinePoint(outer, point)) >= radius - 1e-5;
     }
 
-    private static PointD NearestOutlinePoint(CanvasElement e, IReadOnlyList<PointD> outer, PointD point)
+    private static PointD NearestOutlinePoint(IReadOnlyList<PointD> outer, PointD point)
     {
-        if (e.Kind == ElementKind.Ellipse)
-        {
-            double cx = e.Width / 2, cy = e.Height / 2, best = 0, distance = double.MaxValue, step = Math.Tau / 32;
-            PointD At(double angle) => new(cx + cx * Math.Cos(angle), cy + cy * Math.Sin(angle));
-            for (int i = 0; i < 32; i++) { double d = point.DistanceTo(At(i * step)); if (d < distance) { distance = d; best = i * step; } }
-            double first = best - step, last = best + step;
-            for (int i = 0; i < 48; i++) { double a = (first * 2 + last) / 3, b = (first + last * 2) / 3; if (point.DistanceTo(At(a)) < point.DistanceTo(At(b))) last = b; else first = a; }
-            return At((first + last) / 2);
-        }
         PointD nearest = default; double minimum = double.MaxValue;
-        void Consider(PointD q) { double d = point.DistanceTo(q); if (d < minimum) { minimum = d; nearest = q; } }
-        if (e.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle && CornerRadius(e) > 0)
-        {
-            double r = CornerRadius(e), w = e.Width, h = e.Height;
-            Consider(new(Math.Clamp(point.X, r, w - r), 0)); Consider(new(Math.Clamp(point.X, r, w - r), h));
-            Consider(new(0, Math.Clamp(point.Y, r, h - r))); Consider(new(w, Math.Clamp(point.Y, r, h - r)));
-            PointD[] centers = [new(w-r,r), new(w-r,h-r), new(r,h-r), new(r,r)];
-            for (int i = 0; i < 4; i++)
-            {
-                double first = -Math.PI / 2 + i * Math.PI / 2;
-                double angle = Math.Atan2(point.Y - centers[i].Y, point.X - centers[i].X);
-                while (angle < first - Math.PI) angle += Math.Tau;
-                while (angle > first + Math.PI) angle -= Math.Tau;
-                angle = Math.Clamp(angle, first, first + Math.PI / 2);
-                Consider(centers[i] + new PointD(Math.Cos(angle), Math.Sin(angle)) * r);
-            }
-        }
-        else for (int i = 0; i < outer.Count; i++)
+        for (int i = 0; i < outer.Count; i++)
         {
             var a = outer[i]; var b = outer[(i + 1) % outer.Count]; var v = b - a;
             double length = v.X * v.X + v.Y * v.Y;
-            Consider(a + v * (length <= 1e-12 ? 0 : Math.Clamp(((point.X-a.X)*v.X+(point.Y-a.Y)*v.Y)/length, 0, 1)));
+            var q = a + v * (length <= 1e-12 ? 0 : Math.Clamp(((point.X-a.X)*v.X+(point.Y-a.Y)*v.Y)/length, 0, 1));
+            double distance = point.DistanceTo(q);
+            if (distance < minimum) { minimum = distance; nearest = q; }
         }
         return nearest;
     }

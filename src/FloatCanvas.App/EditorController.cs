@@ -224,12 +224,17 @@ internal sealed partial class EditorController
             if (nodeTransform is not null && UsesHierarchicalSelection) return (-1, -1, true);
             // Erasure changes the element list. Unknown transactions may mutate any content.
             // Both use the reference draw path rather than reuse potentially stale surfaces.
-            if (gesture is not ("draw" or "endpoint" or "move" or "rotate" or "resize")) return (-1, -1, true);
+            if (gesture is not ("draw" or "endpoint" or "corner-radius" or "move" or "rotate" or "resize")) return (-1, -1, true);
             int first = int.MaxValue, last = -1;
             for (int i = 0; i < Session.Document.Elements.Count; i++)
             {
                 var id = Session.Document.Elements[i].Id;
-                bool active = gesture is "draw" or "endpoint" ? drawing?.Id == id || strokeFragmentIds.Contains(id) : transforms.ContainsKey(id);
+                bool active = gesture switch
+                {
+                    "corner-radius" => cornerRadiusDrag?.Target.Id == id,
+                    "draw" or "endpoint" => drawing?.Id == id || strokeFragmentIds.Contains(id),
+                    _ => transforms.ContainsKey(id)
+                };
                 if (active) { first = Math.Min(first, i); last = i; }
             }
             return last < 0 ? (-1, -1, true) : (first, last, false);
@@ -291,6 +296,7 @@ internal sealed partial class EditorController
         resizeTextSources.Clear();
         nodeTransform = null; nodeOriginalElements.Clear(); nodeOriginalAuthoredElements.Clear(); drawingParents.Clear();
         gesture = null; drawing = effectTarget = resizeSource = billboardEndpointSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
+        cornerRadiusDrag = null;
         lastGestureMove = null;
         CapturePreview = null; capturePoints.Clear();
         straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null; freehandCorrection = null;
@@ -348,7 +354,7 @@ internal sealed partial class EditorController
         if (!IsScreenDraftContextCurrent) { Cancel(); return; }
         if (e.Button == OverlayMouseButton.Right && e.Kind == OverlayPointerKind.Down) { Cancel(); return; }
         if (HandleBillboardDepthInput(e)) return;
-        bool screenGesture = HasCaptureGesture || Tool == EditorTool.CaptureRegion && gesture is null || UsesScreenCreationInput(e.Modifiers);
+        bool screenGesture = cornerRadiusDrag is not null || HasCaptureGesture || Tool == EditorTool.CaptureRegion && gesture is null || UsesScreenCreationInput(e.Modifiers);
         PointD p;
         if (screenGesture) p = pointerScreen;
         else if (UsesBillboardDrawingInput || gesture is null && billboardDepth is not null) p = BillboardInput(pointerScreen);
@@ -542,6 +548,7 @@ internal sealed partial class EditorController
             resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
             resizeTextSources.Clear();
             straightStrokeStart=null;gestureModifiers=OverlayModifiers.None;modifierTime=null; freehandCorrection = null;
+            cornerRadiusDrag = null;
             drawing = effectTarget = null; Marquee = imageRegion = null; EffectPreviewPolygon = null; Changed?.Invoke();
             strokeInterrupted = false; strokeLocalBounds = null; strokeFragmentIds.Clear();
             ClearBillboardDepth(); billboardSources.Clear();
@@ -558,6 +565,7 @@ internal sealed partial class EditorController
         if (SelectionScreenRotationHandle is { } rotation && screen.DistanceTo(rotation) < 14 ||
             BillboardSelectionGuide is { } guide && screen.DistanceTo(guide.Center) < 12 ||
             SelectionScreenArcHandle is { } arc && screen.DistanceTo(arc) < 12 ||
+            SelectionScreenCornerRadiusHandle is { } radius && screen.DistanceTo(radius) < CornerRadiusHitDistance ||
             SelectionScreenEndpoints.Any(endpoint => screen.DistanceTo(endpoint) < 12)) return true;
         var corners = SelectionScreenCorners;
         return includeInterior && corners.Count == 4 && ElementGeometry.PointInPolygon(screen, corners) ||
@@ -643,9 +651,10 @@ internal sealed partial class EditorController
         centeredGesture = (modifiers & OverlayModifiers.Alt) != 0;
         deepSelectionGesture = (modifiers & OverlayModifiers.Control) != 0;
         duplicateOnDrag = centeredGesture; duplicatedOnDrag = false;
+        var selected = SelectedEditingWorldElements(editableOnly: true).ToArray();
+        if ((modifiers & OverlayModifiers.Control) == 0 && selected is [var shape] && TryStartCornerRadius(shape)) return;
         if (TryStartBillboardHeight()) return;
         var bounds = Session.SelectionBounds(editableOnly: true);
-        var selected = SelectedEditingWorldElements(editableOnly: true).ToArray();
         if (bounds != null && selected.Length > 0 && (modifiers & OverlayModifiers.Control)==0)
         {
             selectionBounds = bounds.Value;

@@ -52,6 +52,7 @@ internal sealed partial class EditorController
     private void MoveSafely(PointD point, OverlayModifiers modifiers, bool finishStroke = false)
     {
         SetPointerBlocked(false);
+        if (cornerRadiusDrag is { } corner) { MoveCornerRadius(corner); return; }
         if (nodeTransform is not null && gesture is "move" or "rotate" or "resize") { Move(point, modifiers); return; }
         if (IsPlanarStrokeDrawing) { MoveStrokeSafely(point, modifiers, finishStroke); return; }
         var changed = Session.IsTransactionActive && gesture is "draw" or "endpoint" or "move" or "rotate" or "resize" or "billboard-height"

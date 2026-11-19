@@ -18,6 +18,7 @@ internal static class CreationSelectionTests
         RegionToolSelectedEndpoints(check);
         foreach (var tool in DragTools) DraggedObject(tool, check);
         EditableArc(check);
+        RectangleCornerRadius(check);
         ClosedStroke(check);
         PointerCancellation(check);
         ExistingSelectionIsTheTarget(check);
@@ -77,6 +78,63 @@ internal static class CreationSelectionTests
         Gesture(controller, new(450, 480), new(530, 560), OverlayModifiers.Shift);
         check("Shift constrains distant arc handle movement to the bisector without a distance cap",
             controller.SelectionScreenArcHandle == new PointD(150, 560));
+    }
+
+    private static void RectangleCornerRadius(Action<string, bool> check)
+    {
+        var session = new EditorSession();
+        var editor = new EditorController(session) { Tool = EditorTool.Rectangle };
+        Gesture(editor, new(80, 60), new(280, 140));
+        var box = session.Document.Elements.Single();
+        var handle = editor.SelectionScreenCornerRadiusHandle!.Value;
+        int history = session.UndoCount;
+        var grab = handle + new PointD(2, -2);
+        Send(editor, OverlayPointerKind.Down, grab);
+        Send(editor, OverlayPointerKind.Move, grab + new PointD(8, 8));
+        check("the inner handle rounds all four corners live without moving or resizing the rectangle",
+            box.CornerRadius == 16 && box.Transform == Affine2D.Translation(80, 60) && box.Width == 200 && box.Height == 80 &&
+            editor.SelectionScreenCornerRadiusHandle!.Value.DistanceTo(handle + new PointD(8, 8)) < 1e-9 &&
+            editor.RasterPreview == (0, 0, false) && session.UndoCount == history);
+        Send(editor, OverlayPointerKind.Move, grab + new PointD(80, 60));
+        Send(editor, OverlayPointerKind.Up, grab + new PointD(80, 60));
+        check("the radius stops at half the short side and the entire drag is one undo step",
+            box.CornerRadius == 40 && session.UndoCount == history + 1 && session.Undo() &&
+            session.Document.Elements.Single().CornerRadius is null && session.Redo() && session.Document.Elements.Single().CornerRadius == 40);
+        handle = editor.SelectionScreenCornerRadiusHandle!.Value;
+        Send(editor, OverlayPointerKind.Down, handle);
+        Send(editor, OverlayPointerKind.Move, handle - new PointD(50, 50));
+        check("dragging back toward the corner reaches a square corner", session.Document.Elements.Single().CornerRadius == 0);
+        editor.Pointer(new(OverlayPointerKind.Down, new(handle.X, handle.Y), OverlayMouseButton.Right, OverlayModifiers.None));
+        check("cancelling a radius drag restores the prior radius", session.Document.Elements.Single().CornerRadius == 40 &&
+            session.UndoCount == history + 1 && !session.IsTransactionActive);
+        var resizeCorner = editor.SelectionScreenCorners[0];
+        Gesture(editor, resizeCorner, resizeCorner - new PointD(10, 5));
+        var resized = session.Document.Elements.Single();
+        check("the outer square handle continues to resize the box independently of the radius handle",
+            resized.Width > 200 && resized.Height > 80 && resized.CornerRadius == 40);
+
+        var legacy = new CanvasElement { Kind = ElementKind.RoundedRectangle, Width = 120, Height = 70,
+            Transform = Affine2D.Translation(240, 100).Compose(Affine2D.Rotation(31)).Compose(Affine2D.Scale(1.3, .85)),
+            ProjectivePlacement = new(1, .03, 0, .01, 1, 0, .0005, .0002, 1) };
+        session.Add(legacy); session.SetSelection([legacy.Id]);
+        handle = editor.SelectionScreenCornerRadiusHandle!.Value;
+        history = session.UndoCount;
+        Gesture(editor, handle, handle);
+        check("clicking an automatic legacy corner keeps its authored value and history",
+            session.Document.Elements.Single(e => e.Id == legacy.Id).CornerRadius is null && session.UndoCount == history);
+        var map = editor.CurrentCanvasMapping.ElementToScreen(legacy);
+        var local = map.Inverse().TransformPoint(handle);
+        Gesture(editor, handle, map.TransformPoint(local + new PointD(5, 5)));
+        check("a transformed rectangle edits the radius in its own coordinate system",
+            Math.Abs(session.Document.Elements.Single(e => e.Id == legacy.Id).CornerRadius!.Value - 24) < 1e-8);
+        var ellipse = new CanvasElement { Kind = ElementKind.Ellipse, Width = 100, Height = 60 };
+        session.Add(ellipse); session.SetSelection([legacy.Id, ellipse.Id]);
+        check("multiple selected shapes have no corner radius handle", editor.SelectionScreenCornerRadiusHandle is null);
+        session.SetSelection([ellipse.Id]);
+        check("an ellipse has no rectangle corner handle", editor.SelectionScreenCornerRadiusHandle is null);
+        session.SetSelection([legacy.Id]);
+        session.UpdateSelection(e => e.Locked = true);
+        check("a locked rectangle has no editable radius handle", editor.SelectionScreenCornerRadiusHandle is null);
     }
 
     private static void RegionToolSelectionRouting(Action<string, bool> check)

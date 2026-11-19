@@ -715,17 +715,26 @@ public sealed partial class SceneRenderer : IDisposable
         }
         private SKPath BuildStroke(bool inside, bool patterned = true)
         {
+            if (!patterned || _patternGeometry is null) return BuildSolidBand(inside);
+            // Fitted dots already are the finished ink.
+            if (_strokePattern == StrokePattern.Dotted) return BuildPatternMask(_patternGeometry);
+            using var solid = BuildSolidBand(inside);
+            using var mask = BuildPatternMask(_patternGeometry);
+            return solid.Op(mask, SKPathOp.Intersect) ??
+                throw new InvalidOperationException("Cannot cut dash gaps from a solid stroke band.");
+        }
+
+        private SKPath BuildSolidBand(bool inside)
+        {
+            // Once the inner edge reaches the medial axis, no hole remains. A
+            // doubled Skia stroke can fold back on itself and leave a spurious hole.
+            if (inside && _kind == ElementKind.Ellipse && _strokeWidth >= Math.Min(_width, _height) / 2)
+                return new(Path);
             using var paint = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)_strokeWidth * (inside ? 2 : 1),
                 StrokeJoin = inside ? SKStrokeJoin.Miter : SKStrokeJoin.Round, StrokeMiter = 4, StrokeCap = SKStrokeCap.Round };
-            using var expanded = inside ? paint.GetFillPath(Path, 16) : paint.GetFillPath(Path);
-            using var solid = inside ? Path.Op(expanded, SKPathOp.Intersect) : new SKPath(expanded);
-            if (solid is null) throw new InvalidOperationException("Cannot construct a solid stroke band.");
-            if (!patterned || _patternGeometry is null) return new(solid);
-            using var mask = BuildPatternMask(_patternGeometry);
-            // Dots are already fitted as complete circles. Only dash masks are cut
-            // against S, retaining S's original corners, joins and endpoint caps.
-            return _strokePattern == StrokePattern.Dotted ? new(mask) : solid.Op(mask, SKPathOp.Intersect) ??
-                throw new InvalidOperationException("Cannot cut dash gaps from a solid stroke band.");
+            if (!inside) return paint.GetFillPath(Path);
+            using var expanded = paint.GetFillPath(Path, 16);
+            return Path.Op(expanded, SKPathOp.Intersect) ?? throw new InvalidOperationException("Cannot construct a solid stroke band.");
         }
         private float _opacityStrokeScale;
         public SKPath? OpacityStroke(SKPaint paint, SKMatrix matrix)

@@ -815,6 +815,12 @@ internal sealed partial class DesktopSession : IDisposable
         foreach(var p in _editor.SelectionScreenEndpoints) canvas.DrawCircle((float)p.X,(float)p.Y,6,paint);
         if (_editor.SelectionScreenArcHandle is { } arc)
             DrawScreenPolygon(canvas, [arc + new PointD(0, -7), arc + new PointD(7, 0), arc + new PointD(0, 7), arc + new PointD(-7, 0)], paint);
+        if (_editor.SelectionScreenCornerRadiusHandle is { } radius)
+        {
+            using var fill = new SKPaint { IsAntialias = true, Color = SKColors.White };
+            canvas.DrawCircle((float)radius.X, (float)radius.Y, 5, fill);
+            canvas.DrawCircle((float)radius.X, (float)radius.Y, 5, paint);
+        }
     }
     private void ToggleInspector()
         => ToggleInspectorAt(null);
