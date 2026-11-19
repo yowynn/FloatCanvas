@@ -357,7 +357,53 @@ internal static class ToolParameterIcon
         {
             drawing.PushOpacity(parameters.Style.Opacity);
             var brush = ColorBrush(parameters.Style.Foreground);
-            if (width > 0 && parameters.Style.StrokePattern == StrokePattern.Dotted)
+            if (width > 0 && highlighter && parameters.Style.HighlighterTip == HighlighterTip.Flat)
+            {
+                var style = parameters.Style.Clone();
+                style.StrokeWidth = width;
+                style.StrokePattern = StrokePattern.Solid;
+                var sample = new StreamGeometry { FillRule = FillRule.Nonzero };
+                using (var context = sample.Open())
+                {
+                    bool dotted = parameters.Style.StrokePattern == StrokePattern.Dotted;
+                    int runs = dotted ? 3 : 1;
+                    for (int i = 0; i < runs; i++)
+                    {
+                        var a = points[0];
+                        var b = points[^1];
+                        var dot = a + (b - a) * ((i + .5) / runs);
+                        PointD[] run = dotted ? [new(dot.X, dot.Y)] : [new(a.X, a.Y), new(b.X, b.Y)];
+                        foreach (var polygon in ElementGeometry.FlatHighlighterPolygons(run, style))
+                        {
+                            context.BeginFigure(new(polygon[0].X, polygon[0].Y), true, true);
+                            for (int j = 1; j < polygon.Length; j++) context.LineTo(new(polygon[j].X, polygon[j].Y), true, false);
+                        }
+                    }
+                }
+                if (parameters.Style.StrokePattern == StrokePattern.Dashed)
+                {
+                    // Cut gaps from the full tip footprint. Sweeping the tip
+                    // separately for each dash can fill those gaps at small sizes.
+                    const double halfGap = 4.5;
+                    var start = points[0];
+                    var direction = points[^1] - start;
+                    var bands = new GeometryGroup
+                    {
+                        Transform = new RotateTransform(Math.Atan2(direction.Y, direction.X) * 180 / Math.PI, start.X, start.Y)
+                    };
+                    for (int i = 0; i < 3; i++)
+                    {
+                        double left = i == 0 ? -width : i * length / 3 + halfGap;
+                        double right = i == 2 ? length + width : (i + 1) * length / 3 - halfGap;
+                        bands.Children.Add(new RectangleGeometry(new Rect(start.X + left, start.Y - width, right - left, 2 * width)));
+                    }
+                    drawing.PushClip(bands);
+                    drawing.DrawGeometry(brush, null, sample);
+                    drawing.Pop();
+                }
+                else drawing.DrawGeometry(brush, null, sample);
+            }
+            else if (width > 0 && parameters.Style.StrokePattern == StrokePattern.Dotted)
             {
                 int count = highlighter ? 3 : 11;
                 for (int i = 0; i < count; i++)

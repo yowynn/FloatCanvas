@@ -246,6 +246,7 @@ internal sealed partial class DesktopSession : IDisposable
                 if (held) FinishKeyboardNudge();
                 if (_canvasNavigationSpaceHeld && !held) CancelCanvasNavigationGesture();
                 _canvasNavigationSpaceHeld = held;
+                UpdateBrushTipDamage();
             });
         _keyboardRouter.CommandInput = OnCommandInput;
         _keyboardRouter.KeyReleased = ReleaseEditorKey;
@@ -789,6 +790,7 @@ internal sealed partial class DesktopSession : IDisposable
             DrawBillboardGuides(canvas);
             DrawCanvasCalibration(canvas);
             DrawInlineText(canvas);
+            DrawBrushTip(canvas);
         }
         canvas.Restore();
         DrawCanvasViewingBadge(canvas);

@@ -41,49 +41,13 @@ public static partial class ElementGeometry
         for (int i = 0; i < segments; i++) total += center[i].DistanceTo(center[(i + 1) % center.Count]);
         if (element.Style.StrokePattern == StrokePattern.Dotted)
         {
-            double station = 0, offset = 0, step = width * 2.5;
-            for (int i = 0; i < segments; i++)
-            {
-                var a = center[i]; var b = center[(i + 1) % center.Count]; double length = a.DistanceTo(b);
-                if (length <= 1e-9) continue;
-                while (station <= offset + length + 1e-9 && (!closed || station < total - 1e-9))
-                {
-                    var point = a + (b - a) * Math.Clamp((station - offset) / length, 0, 1);
-                    if (!closed || FitDot(element, outer, point, radius, out point)) dots.Add(point);
-                    station += step;
-                }
-                offset += length;
-            }
-            if (!closed && center.Count == 1) dots.Add(center[0]);
+            foreach (var station in DotStations(center, closed, width, total))
+                if (!closed) dots.Add(station);
+                else if (FitDot(element, outer, station, radius, out var point)) dots.Add(point);
         }
         else
         {
-            var chunks = new List<List<PointD>>(); List<PointD>? chunk = null;
-            double offset = 0, ink = width * 4, cycle = width * 7;
-            for (int i = 0; i < segments; i++)
-            {
-                var a = center[i]; var b = center[(i + 1) % center.Count]; double length = a.DistanceTo(b), along = 0;
-                if (length <= 1e-9) continue;
-                while (along < length - 1e-9)
-                {
-                    double phase = (offset + along) % cycle;
-                    if (cycle - phase < 1e-8) phase = 0;
-                    bool visible = phase < ink - 1e-9;
-                    double end = Math.Min(length, along + (visible ? ink - phase : cycle - phase));
-                    if (end <= along + 1e-10) { along += 1e-8; continue; }
-                    if (visible)
-                    {
-                        chunk ??= new();
-                        var startPoint = a + (b - a) * (along / length);
-                        if (chunk.Count == 0 || chunk[^1].DistanceTo(startPoint) > 1e-8) chunk.Add(startPoint);
-                        chunk.Add(a + (b - a) * (end / length));
-                    }
-                    else if (chunk is not null) { chunks.Add(chunk); chunk = null; }
-                    along = end;
-                }
-                offset += length;
-            }
-            if (chunk is not null) chunks.Add(chunk);
+            var chunks = DashRuns(center, closed, width).Select(run => run.Points).ToList();
             if (closed && chunks.Count > 1 && chunks[0][0].DistanceTo(chunks[^1][^1]) < 1e-8)
             {
                 var merged = chunks[^1]; merged.AddRange(chunks[0].Skip(1)); chunks.RemoveAt(chunks.Count - 1); chunks[0] = merged;
@@ -93,10 +57,59 @@ public static partial class ElementGeometry
             if (!closed && center.Count > 0)
             {
                 dots.Add(center[0]);
-                if (total % cycle < ink - 1e-9 && center.Count > 1) dots.Add(center[^1]);
+                if (total % (width * 7) < width * 4 - 1e-9 && center.Count > 1) dots.Add(center[^1]);
             }
         }
         return new(center, polygons, dots, radius, closed);
+    }
+
+    private static IEnumerable<PointD> DotStations(IReadOnlyList<PointD> center, bool closed, double width, double total = 0)
+    {
+        if (!closed && center.Count > 0) yield return center[0];
+        double station = closed ? 0 : width * 2.5, offset = 0, step = width * 2.5;
+        int segments = closed ? center.Count : center.Count - 1;
+        for (int i = 0; i < segments; i++)
+        {
+            var a = center[i]; var b = center[(i + 1) % center.Count]; double length = a.DistanceTo(b);
+            if (length <= 1e-9) continue;
+            while (station <= offset + length + 1e-9 && (!closed || station < total - 1e-9))
+            {
+                yield return a + (b - a) * Math.Clamp((station - offset) / length, 0, 1);
+                station += step;
+            }
+            offset += length;
+        }
+    }
+
+    private static IEnumerable<(List<PointD> Points, bool EndCap)> DashRuns(IReadOnlyList<PointD> center, bool closed, double width)
+    {
+        List<PointD>? chunk = null;
+        double offset = 0, ink = width * 4, cycle = width * 7;
+        int segments = closed ? center.Count : center.Count - 1;
+        for (int i = 0; i < segments; i++)
+        {
+            var a = center[i]; var b = center[(i + 1) % center.Count]; double length = a.DistanceTo(b), along = 0;
+            if (length <= 1e-9) continue;
+            while (along < length - 1e-9)
+            {
+                double phase = (offset + along) % cycle;
+                if (cycle - phase < 1e-8) phase = 0;
+                bool visible = phase < ink - 1e-9;
+                double end = Math.Min(length, along + (visible ? ink - phase : cycle - phase));
+                if (end <= along + 1e-10) { along += 1e-8; continue; }
+                if (visible)
+                {
+                    chunk ??= new();
+                    var startPoint = a + (b - a) * (along / length);
+                    if (chunk.Count == 0 || chunk[^1].DistanceTo(startPoint) > 1e-8) chunk.Add(startPoint);
+                    chunk.Add(a + (b - a) * (end / length));
+                }
+                else if (chunk is not null) { yield return (chunk, false); chunk = null; }
+                along = end;
+            }
+            offset += length;
+        }
+        if (chunk is not null) yield return (chunk, !closed && offset % cycle < ink - 1e-9);
     }
 
     private static List<PointD> CleanContour(IReadOnlyList<PointD> points, bool closed = true)

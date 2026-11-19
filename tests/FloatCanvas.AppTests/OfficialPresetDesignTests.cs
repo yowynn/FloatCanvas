@@ -78,6 +78,15 @@ internal static class OfficialPresetDesignTests
 
     private static void Appearance(ToolPresetLibrary library, Action<string, bool> check)
     {
+        var highlighters = library.OfficialFor(EditorTool.Highlighter);
+        check("all three official highlighters use solid strokes", highlighters.Count == 3 &&
+            highlighters.All(preset => preset.Parameters.Style.StrokePattern == StrokePattern.Solid));
+        check("the third official highlighter uses the palette blue and a vertical flat tip at its original width",
+            highlighters[2].Parameters.Style is { StrokeWidth: 32, Foreground: ColorLibrary.ForegroundBlue,
+                HighlighterTip: HighlighterTip.Flat, HighlighterTipAngle: 0 });
+        check("the previous third highlighter preset IDs resolve to the blue flat tip",
+            new[] { "official.highlighter-green", "official.highlighter-dotted" }
+                .All(id => ToolPresetLibrary.ResolveOfficialId(id) == highlighters[2].Id));
         foreach (var preset in library.Official)
         {
             var p = library.Apply(preset.Id);

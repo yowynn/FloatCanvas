@@ -469,6 +469,7 @@ internal sealed partial class CanvasToolOptions : UserControl, IToolOptionsConte
             numeric.SetLabel(label);
         }
         System.Windows.Automation.AutomationProperties.SetName(field, L.Get(key));
+        if (field is ColorField color) color.SetColorLabel(L.Get(key));
         if (numeric is not null)
         {
             System.Windows.Automation.AutomationProperties.SetName(numeric.Input, L.Get(key));

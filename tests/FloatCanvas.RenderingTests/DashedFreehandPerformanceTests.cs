@@ -26,16 +26,16 @@ internal static class DashedFreehandPerformanceTests
             double solid = Time(Draw);
             element.Style.StrokePattern = StrokePattern.Dashed;
             double switched = Time(Draw);
-            long built = renderer.PathBuildCount;
+            long built = BuildCount();
             Draw();
-            check(kind + " unchanged dashed strokes reuse their cached path", renderer.PathBuildCount == built);
+            check(kind + " unchanged dashed strokes reuse cached coverage", BuildCount() == built);
             var append = new List<double>();
             for (int i = 500; i < 503; i++)
             {
                 element.Points.Add(Point(i));
                 append.Add(Time(Draw));
             }
-            check(kind + " appending points rebuilds the actual dashed stroke", renderer.PathBuildCount == built + 3);
+            check(kind + " appending points updates dashed coverage", BuildCount() == built + 3);
             // Generous frame-cost guard: catches the second-long global path operation
             // while allowing scheduler noise and slower CI hardware.
             double limit = Math.Max(100, solid * 50), median = append.Order().ElementAt(1);
@@ -47,6 +47,8 @@ internal static class DashedFreehandPerformanceTests
             using var pixels = surface.PeekPixels();
             check(kind + " long self-crossing dashed strokes render visible ink without a path-operation failure",
                 pixels.GetPixelSpan().ContainsAnyExcept((byte)0));
+
+            long BuildCount() => kind == ElementKind.Highlighter ? renderer.HighlighterRasterBuildCount : renderer.PathBuildCount;
 
             void Draw()
             {
@@ -64,6 +66,7 @@ internal static class DashedFreehandPerformanceTests
         foreach (byte alpha in new byte[] { 255, 89 })
         {
             byte expectedAlpha = kind == ElementKind.Highlighter ? (byte)Math.Round(alpha * .35) : alpha;
+            int edgeAlpha = kind == ElementKind.Highlighter ? (int)Math.Round(expectedAlpha * .46) : expectedAlpha;
             var element = new CanvasElement
             {
                 Kind = kind, Points = [new(20, 40), new(80, 40)],
@@ -72,15 +75,23 @@ internal static class DashedFreehandPerformanceTests
             var scene = new SceneDocument { Viewport = new(0, 0, 120, 100), Elements = [element] };
             using (var ink = Render())
             {
-                check($"{kind} alpha {alpha} retains flat dash cuts and transparent gaps", ink.GetPixel(51, 37).Alpha == expectedAlpha && ink.GetPixel(52, 40).Alpha == 0);
-                check($"{kind} alpha {alpha} retains the original round endpoint caps", ink.GetPixel(17, 40).Alpha >= expectedAlpha * .8 && ink.GetPixel(82, 40).Alpha >= expectedAlpha * .8);
+                check($"{kind} alpha {alpha} retains flat dash cuts and transparent gaps", ink.GetPixel(51, 37).Alpha >= edgeAlpha &&
+                    ink.GetPixel(38, 40).Alpha >= expectedAlpha - 2 && ink.GetPixel(52, 40).Alpha == 0);
+                check($"{kind} alpha {alpha} retains the original round endpoint caps", ink.GetPixel(17, 40).Alpha >= edgeAlpha * .8 && ink.GetPixel(82, 40).Alpha >= edgeAlpha * .8);
+                if (kind == ElementKind.Highlighter)
+                {
+                    element.Points = Enumerable.Range(0, 121).Select(i => new PointD(20 + .5 * i, 40)).ToList();
+                    using var dense = Render();
+                    check("a densely sampled round highlighter keeps both straight dash cuts",
+                        dense.Pixels.Zip(ink.Pixels, (a, b) => Math.Abs(a.Alpha - b.Alpha)).Max() <= 1);
+                }
             }
             element.Points = [new(20, 20), new(40, 20), new(40, 60)];
             using (var ink = Render())
-                check($"{kind} alpha {alpha} retains the round corner without filling its next dash gap", ink.GetPixel(41, 18).Alpha == expectedAlpha && ink.GetPixel(40, 34).Alpha == 0);
+                check($"{kind} alpha {alpha} retains the round corner without filling its next dash gap", ink.GetPixel(41, 18).Alpha >= edgeAlpha && ink.GetPixel(40, 34).Alpha == 0);
             element.Points = [new(20, 20), new(40, 20), new(20, 20)];
             using (var ink = Render())
-                check($"{kind} alpha {alpha} retains the round join at a reversing corner", ink.GetPixel(42, 20).Alpha >= expectedAlpha * .8);
+                check($"{kind} alpha {alpha} retains the round join at a reversing corner", ink.GetPixel(42, 20).Alpha >= edgeAlpha * .8);
             element.Points = [new(20, 20), new(90, 70), new(20, 70), new(90, 20)];
             CheckCrossing("self-crossings");
             element.Transform = Affine2D.Translation(4, 12).Compose(Affine2D.Scale(.9, .65));
@@ -98,7 +109,13 @@ internal static class DashedFreehandPerformanceTests
                     maximum = Math.Max(maximum, coverage);
                     if (coverage >= expectedAlpha * .95 && !ElementGeometry.HitTest(element, new(x + .5, y + .5), 0)) missed++;
                 }
-                check($"{kind} alpha {alpha} {name} apply ink alpha only once", maximum == expectedAlpha);
+                if (kind == ElementKind.Freehand)
+                    check($"{kind} alpha {alpha} {name} apply ink alpha only once", maximum == expectedAlpha);
+                else
+                {
+                    double doubleCoat = expectedAlpha + expectedAlpha * (1 - expectedAlpha / 255d);
+                    check($"{kind} alpha {alpha} {name} preserve normal ink and allow layered ink", maximum >= expectedAlpha && maximum <= doubleCoat + 1);
+                }
                 check($"{kind} alpha {alpha} {name} remain selectable with zero tolerance", missed == 0);
             }
 

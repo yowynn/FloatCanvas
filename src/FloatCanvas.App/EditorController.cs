@@ -146,6 +146,8 @@ internal sealed partial class EditorController
     internal bool IsMovingCanvasSelection => gesture == "move" && OwnsPointerTransaction;
     private RootCanvasKind PickingRootCanvas => viewPlacement is not null ? RootCanvasKind.Main : Session.ActiveRootCanvas;
     internal PointD CanvasOrigin => viewOrigin ?? ScreenOrigin;
+    internal RectD CanvasViewport => (viewDocument ?? Session.Document).Viewport;
+    internal double CanvasDisplayOpacity => (viewDocument ?? Session.Document).LayerOpacity;
     internal CanvasMapping CurrentCanvasMapping => viewMapping ?? CanvasMapping.Create(Session.Document, Session.ActiveRootCanvas);
     internal bool HasSharedCardContext => !independentCanvasView && viewContainer?.Surface is not null;
     internal void SetCanvasView(CanvasMapping? mapping, PointD? origin, object? epoch, LayerPlacement? placement = null,

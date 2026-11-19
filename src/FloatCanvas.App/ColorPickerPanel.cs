@@ -69,7 +69,7 @@ internal sealed class ColorPickerPanel : UserControl
         divider.SetResourceReference(Border.BackgroundProperty, "CanvasBorder");
         Grid.SetColumn(divider, 1); columns.Children.Add(divider);
         Grid.SetColumn(collections, 2); columns.Children.Add(collections);
-        var title = new TextBlock { Text = L.Get(role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
+        var title = new TextBlock { Text = L.Get("Color.Unified"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
         DragHandle = title;
         body.Children.Add(title);
         collections.Children.Add(historyHeading); collections.Children.Add(history);

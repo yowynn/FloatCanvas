@@ -22,6 +22,11 @@ public static partial class ElementGeometry
     public static RectD StrokedLocalBounds(CanvasElement element, bool includeStroke = true)
     {
         var bounds = LocalBounds(element);
+        if (includeStroke && HasFlatHighlighterTip(element) && element.Points.Count > 0 && element.Style.StrokeWidth > 0)
+        {
+            var extent = FlatHighlighterExtent(element.Style);
+            return new(bounds.X - extent.X, bounds.Y - extent.Y, bounds.Width + extent.X * 2, bounds.Height + extent.Y * 2);
+        }
         double stroke = !includeStroke ? 0 : element.Kind == ElementKind.Image ? element.ImageBorderWidth :
             element.Kind is not (ElementKind.Text or ElementKind.Number or ElementKind.Presentation) && !IsLiveEffect(element.Kind) && !IsBoxShape(element.Kind) ? element.Style.StrokeWidth / 2 : 0;
         if (IsLine(element.Kind))
@@ -73,6 +78,9 @@ public static partial class ElementGeometry
         if (UsesPoints(element.Kind))
         {
             if (element.Style.StrokeWidth <= 0) return false;
+            if (HasFlatHighlighterTip(element))
+                return FlatHighlighterPolygons(element.Points, element.Style).Any(polygon =>
+                    PointInPolygon(local, polygon) || ProjectedContourHit(transform, polygon, worldPoint, tolerance));
             if (element.Points.Count == 1) return StrokeSegmentHit(transform, worldPoint, local, element.Points[0], element.Points[0], strokeRadius, tolerance);
             var shaft = IsLine(element.Kind) ? LineShaftPoints(element) : element.Points;
             if (element.Style.StrokePattern == StrokePattern.Solid

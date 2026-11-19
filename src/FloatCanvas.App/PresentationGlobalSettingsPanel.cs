@@ -202,7 +202,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
         var control = new ColorField(ColorRole.Foreground) { CanBeginGesture = () => IsEnabled };
         control.ValueChanged += value => Commit(key, value);
         control.EyedropperRequested += () => EyedropperRequested?.Invoke(control);
-        AutomationProperties.SetName(control, L.Get(labelKey));
+        control.SetColorLabel(L.Get(labelKey));
         Add(key, control, Row(labelKey, control), value => control.Value = (uint)value);
     }
     private void Number(string key, string labelKey, double min, double max, double railMin, double railMax, string unit, double step = 1)

@@ -32,6 +32,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
     private readonly Grid parameterGrid = new();
     private readonly Grid parameterColumns = new();
     private readonly PropertyChangeRegion linkedColorsRegion;
+    private readonly PropertyChangeRegion highlighterAngleRegion;
     private readonly ToolPresetGallery presets;
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 6, 0, 0) };
     private readonly TextBlock heading = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) };
@@ -135,7 +136,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
         presets.Applied += () => { Refresh(); ParametersChanged?.Invoke(); };
         presets.Failed += Error;
         foreground = new(ColorRole.Foreground, colors); background = new(ColorRole.Background, colors);
-        AddRow(parameterGrid, "Foreground", L.Get("Color.Foreground"), foreground); AddRow(parameterGrid, "Background", L.Get("Color.Background"), background);
+        AddRow(parameterGrid, "Foreground", L.Get("Color.Unified"), foreground);
+        AddRow(parameterGrid, "Background", L.Get("Color.Interior"), background);
         var colorRows = new StackPanel();
         foreach (string key in new[] { "Foreground", "Background" })
         { parameterGrid.Children.Remove(rows[key]); colorRows.Children.Add(rows[key]); }
@@ -145,6 +147,17 @@ internal sealed partial class ToolOptionsPanel : UserControl
         foreground.EyedropperRequested += () => EyedropperRequested?.Invoke(foreground);
         background.EyedropperRequested += () => EyedropperRequested?.Invoke(background);
         Number(parameterGrid, "StrokeWidth", L.Get("Inspector.StrokeWidth"), (p, v) => p.Style.StrokeWidth = v);
+        Picker(parameterGrid, "HighlighterTip", L.Get("Highlighter.Tip"),
+            [(L.Get("Highlighter.TipRound"), HighlighterTip.Round), (L.Get("Highlighter.TipFlat"), HighlighterTip.Flat)],
+            (p, v) => p.Style.HighlighterTip = (HighlighterTip)v);
+        Number(parameterGrid, "HighlighterTipAngle", L.Get("Highlighter.TipAngle"), (p, v) => p.Style.HighlighterTipAngle = v);
+        var angleRow = rows["HighlighterTipAngle"];
+        parameterGrid.Children.Remove(angleRow);
+        angleRow.Margin = PropertyPanelLayout.RowMargin;
+        highlighterAngleRegion = new(new StackPanel { Children = { angleRow } });
+        rows.Add("HighlighterAngleRegion", highlighterAngleRegion);
+        parameterGrid.Children.Add(highlighterAngleRegion);
+        Number(parameterGrid, "HighlighterInkContrast", L.Get("Highlighter.InkContrast"), (p, v) => p.Style.HighlighterInkContrast = v / 100);
         Number(parameterGrid, "Opacity", L.Get("Inspector.Opacity"), (p, v) => p.Style.Opacity = v / 100);
         Number(parameterGrid, "FontSize", L.Get("Inspector.FontSize"), (p, v) => p.Style.FontSize = v);
         Number(parameterGrid, "NumberStart", L.Get("ToolOptions.NumberStart"), (p, v) => p.NumberStart = (int)v);
@@ -288,6 +301,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             if (fontContextTool != tool || !ReferenceEquals(fontContextSession, controller.Session))
             {
                 linkedColorsRegion.Reset();
+                highlighterAngleRegion.Reset();
                 ((FontPickerControl)fontFamily).ResetModelContext();
                 fontContextTool = tool; fontContextSession = controller.Session;
             }
@@ -310,6 +324,10 @@ internal sealed partial class ToolOptionsPanel : UserControl
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
             background.Visibility = secondary ? Visibility.Visible : Visibility.Collapsed;
             Show("StrokeWidth", stroke || numberOutline); Show("Opacity", false);
+            Show("HighlighterTip", tool == EditorTool.Highlighter);
+            Show("HighlighterInkContrast", tool == EditorTool.Highlighter);
+            Show("HighlighterAngleRegion", tool == EditorTool.Highlighter);
+            Show("HighlighterTipAngle", tool == EditorTool.Highlighter && p.Style.HighlighterTip == HighlighterTip.Flat);
             Show("FontSize", text); Show("FontFamily", tool is EditorTool.Text or EditorTool.Number || presentation);
             Show("NumberStart", tool == EditorTool.Number); Show("NumberStep", tool == EditorTool.Number); Show("NextNumber", tool == EditorTool.Number);
             Show("DefaultWidth", shape); Show("DefaultHeight", shape);
@@ -348,8 +366,18 @@ internal sealed partial class ToolOptionsPanel : UserControl
                 SegmentedChoicePreviews.UpdateColorStyle(pickers["StyleVariant"], EditorTool.Number);
                 SetPicker("StyleVariant", p.Style.Variant!);
             }
-            if (IsApplicable("Foreground")) captions["Foreground"].Text = L.Get(presentation ? "Presentation.Foreground" : capture ? "Snapshot.BorderColor" : numberOutline && !secondary ? "Color.Unified" : tool == EditorTool.Number ? "Color.NumberShape" : shape ? linked ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
-            if (IsApplicable("Background")) captions["Background"].Text = L.Get(presentation ? "Presentation.Background" : tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
+            if (IsApplicable("Foreground"))
+                SetColorLabel("Foreground", foreground, tool switch
+                {
+                    EditorTool.Presentation => "Presentation.Foreground",
+                    EditorTool.CaptureRegion => "Snapshot.BorderColor",
+                    EditorTool.Number when secondary => "Color.NumberShape",
+                    EditorTool.Freehand or EditorTool.Highlighter => "Color.Stroke",
+                    _ when shape && !linked => "Color.Outline",
+                    _ => "Color.Unified"
+                });
+            if (IsApplicable("Background"))
+                SetColorLabel("Background", background, presentation ? "Presentation.Background" : tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
             SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);
             SetNumber("StrokeWidth", tool == EditorTool.Highlighter ? Math.Max(16, p.Style.StrokeWidth) : p.Style.StrokeWidth); SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
             SetNumber("EffectStrength", p.EffectStrength); SetNumber("CornerRadius", p.CornerRadius ?? 0); SetNumber("ArrowHeadSize", p.Style.ArrowHeadSize);
@@ -359,6 +387,9 @@ internal sealed partial class ToolOptionsPanel : UserControl
             SetPicker("StartArrowHead", p.Style.StartArrowHead ?? (tool == EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("EndArrowHead", p.Style.EndArrowHead ?? (tool is EditorTool.Arrow or EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("StrokePattern", p.Style.StrokePattern);
+            SetPicker("HighlighterTip", p.Style.HighlighterTip);
+            SetNumber("HighlighterTipAngle", p.Style.HighlighterTipAngle);
+            SetNumber("HighlighterInkContrast", 100 * p.Style.HighlighterInkContrast);
             SetPicker("TextAlignment", p.Style.TextAlignment);
             if (IsApplicable("Symbols")) HighlightGallery(symbolGallery, p.Symbol);
             if (IsApplicable("Emoji")) HighlightGallery(emojiGallery, p.Emoji);
@@ -375,9 +406,10 @@ internal sealed partial class ToolOptionsPanel : UserControl
     {
         foreach (var section in parameterGrid.Children.OfType<FrameworkElement>().Where(item => Equals(item.Tag, "ToolSection")).ToArray()) parameterGrid.Children.Remove(section);
         parameterGrid.RowDefinitions.Clear();
-        string[][] groups = [ ["PresentationRuntime"], ["Size"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["StyleVariant"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
+        string[][] groups = [ ["PresentationRuntime"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["StyleVariant"],
+            ["HighlighterTip"], ["HighlighterAngleRegion"], ["HighlighterInkContrast"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
             ["FontFamily"], ["FontSize"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
-            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
+            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Size"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
         if (controller.Tool == EditorTool.Presentation)
             groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"]];
         foreach (var group in groups)
@@ -440,6 +472,13 @@ internal sealed partial class ToolOptionsPanel : UserControl
 
     internal void Error(string message) { if (string.IsNullOrEmpty(message)) { ClearStatus(); return; } status.Visibility = Visibility.Visible; status.Text = "⚠ " + message; status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); }
     private void Show(string key, bool visible) => rows[key].Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    private void SetColorLabel(string key, ColorField field, string resource)
+    {
+        string caption = L.Get(resource);
+        captions[key].Text = caption;
+        captions[key].ToolTip = caption;
+        field.SetColorLabel(caption);
+    }
     private bool IsApplicable(string key) => rows[key].Visibility == Visibility.Visible;
     private void SetNumber(string key, double value)
     { if ((refreshing||IsVisible) && IsApplicable(key)) numericFields[key].Value = value; }
@@ -484,7 +523,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
     {
         var domain = NumericParameterDomain.ForTool(key);
         var field = new NumericValueField(domain.Minimum, domain.Maximum, domain.RailMinimum, domain.RailMaximum, domain.Step, domain.Integer)
-        { Unit = key switch { "Opacity" => "%", "NumberStart" or "NextNumber" => "#", "NumberStep" => L.Get("Numeric.Unit.Step"), _ => "px" } };
+        { Unit = key switch { "HighlighterTipAngle" => "°", "Opacity" or "HighlighterInkContrast" => "%", "NumberStart" or "NextNumber" => "#", "NumberStep" => L.Get("Numeric.Unit.Step"), _ => "px" } };
         if (key is "NumberStart" or "NumberStep" or "NextNumber") field.Slider.IsSnapToTickEnabled = true;
         var box = field.Input; numbers.Add(key, box); numericFields.Add(key, field); AddRow(body, key, label, field);
         box.LostKeyboardFocus += (_, _) => { if (!refreshing && !numericFields.Values.Any(number => number.IsInteracting)) Refresh(); };
@@ -558,7 +597,12 @@ internal sealed partial class ToolOptionsPanel : UserControl
         foreach (var option in options) SegmentedChoicePreviews.Add(picker, option.Name, option.Value);
         AutomationProperties.SetName(picker, label);
         pickers.Add(key, picker); AddRow(body, key, label, picker);
-        picker.SelectionChanged += (_, _) => { if (!refreshing && picker.SelectedValue is { } value) { Change(p => set(p, value)); if (key == "StyleVariant") Refresh(); } };
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (refreshing || picker.SelectedValue is not { } value) return;
+            if (key == "HighlighterTip") highlighterAngleRegion.Change(() => { Change(p => set(p, value)); Refresh(); });
+            else { Change(p => set(p, value)); if (key == "StyleVariant") Refresh(); }
+        };
     }
 
     private static (string, object)[] ArrowOptions() =>

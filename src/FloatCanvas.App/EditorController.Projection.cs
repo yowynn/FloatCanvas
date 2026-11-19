@@ -195,7 +195,8 @@ internal sealed partial class EditorController
             bool closed = !ElementGeometry.UsesPoints(element.Kind);
             // Image alpha and its editable border can extend beyond the body contour.
             // The full envelope above is a broad phase; the ink sample below is exact.
-            bool intersects = element.Kind == ElementKind.Image || ProjectedContourIntersectsRectangle(local, transform, rectangle, closed);
+            bool intersects = element.Kind == ElementKind.Image || ElementGeometry.HasFlatHighlighterTip(element) ||
+                ProjectedContourIntersectsRectangle(local, transform, rectangle, closed);
             bool hasStroke = element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !ElementGeometry.IsLiveEffect(element.Kind);
             if (!intersects && hasStroke)
                 intersects = ProjectedStrokeIntersectsRectangle(local, transform, rectangle, closed, element.Style.StrokeWidth);

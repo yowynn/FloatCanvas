@@ -46,6 +46,19 @@ public sealed class PointCollection : IList<PointD>, IReadOnlyList<PointD>
                 !chunks[index].AsSpan(0, ChunkCount(index)).SequenceEqual(other.chunks[index].AsSpan(0, ChunkCount(index)))) return false;
         return true;
     }
+    /// <summary>Checks a captured prefix while skipping point chunks shared with the snapshot.</summary>
+    public bool StartsWith(PointCollection prefix)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        if (prefix.count > count) return false;
+        for (int index = 0; index < prefix.chunks.Count; index++)
+        {
+            int length = prefix.ChunkCount(index);
+            if (!ReferenceEquals(chunks[index], prefix.chunks[index]) &&
+                !chunks[index].AsSpan(0, length).SequenceEqual(prefix.chunks[index].AsSpan(0, length))) return false;
+        }
+        return true;
+    }
     internal object StorageIdentity => chunks;
     /// <summary>A compatibility view. Chunk-aware callers should use SequenceEqual to avoid flattening.</summary>
     public ReadOnlySpan<PointD> AsSpan()

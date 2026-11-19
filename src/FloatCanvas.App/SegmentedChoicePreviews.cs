@@ -30,6 +30,8 @@ internal static class SegmentedChoicePreviews
             "capture-ellipse" => "M8,2 A6,6 0 1 0 8,14 A6,6 0 1 0 8,2 Z",
             "capture-lasso" => "M5,13 C0,12 0,5 4,3 C10,-1 17,5 14,10 C12,14 6,15 5,11 C4,8 9,9 8,12 L6,16",
             "capture-polygon" => "M2,5 L9,1 L15,6 L12,14 L3,12 Z",
+            "tip-round" => "M4,5 H12 A3,3 0 0 1 12,11 H4 A3,3 0 0 1 4,5 Z",
+            "tip-flat" => "M2,5 H14 V11 H2 Z",
             "language" => "M1,3 H9 M5,1 V3 M3,4 C3,7 6,10 9,11 M8,4 C8,7 5,10 1,11 M9,15 L12,7 L15,15 M10,12 H14",
             _ => "M2,2 H14 V14 H2 Z"
         };
@@ -45,6 +47,7 @@ internal static class SegmentedChoicePreviews
             return StyleIcon(variant);
         if (value is CaptureShape capture) return Icon(capture switch { CaptureShape.Rectangle => "capture-rectangle", CaptureShape.Ellipse => "capture-ellipse", CaptureShape.FreehandLasso => "capture-lasso", _ => "capture-polygon" });
         if (value is CaptureSource source) return Icon(source switch { CaptureSource.Background => "background", CaptureSource.CanvasOnly => "canvas", _ => "combined" });
+        if (value is HighlighterTip tip) return Icon(tip == HighlighterTip.Flat ? "tip-flat" : "tip-round");
         var drawing = new DrawingGroup();
         var image = new Image { Width = 18, Height = 18, Stretch = Stretch.Uniform };
         image.SetResourceReference(TextElement.ForegroundProperty, "CanvasText");

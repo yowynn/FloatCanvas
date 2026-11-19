@@ -25,7 +25,46 @@ internal static class PropertyChangeRegionTests
             Canvas(check, output, theme);
             Colors(check, output, theme, inspector: false);
             Colors(check, output, theme, inspector: true);
+            HighlighterAngle(check, output, theme);
         }
+    }
+
+    private static void HighlighterAngle(Action<string, bool> check, string output, string theme)
+    {
+        var controller = new EditorController(new EditorSession()) { Tool = EditorTool.Highlighter };
+        var panel = new ToolOptionsPanel(controller, new ToolPresetLibrary(Path.Combine(output, "highlighter-tools.json")),
+            new ColorLibrary(Path.Combine(output, "highlighter-colors.json")));
+        var window = new Window { Content = panel, Width = ToolOptionsPanel.PreferredWidth + 2, Height = 440 };
+        AppTheme.UseRegularControls(window);
+        try
+        {
+            Show(window);
+            panel.PrepareForShow();
+            var rows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
+            var picker = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers")["HighlighterTip"];
+            var region = Field<PropertyChangeRegion>(panel, "highlighterAngleRegion");
+            var angle = rows["HighlighterTipAngle"];
+            check(theme + " highlighter tip comes before paint and hides its angle initially",
+                Grid.GetRow(rows["HighlighterTip"]) < Grid.GetRow(rows["Colors"]) && !angle.IsVisible && region.CueStrength == 0);
+            window.UpdateLayout();
+            check(theme + " both nib choices receive hits above the contrast row", picker.Items.OfType<RadioButton>().All(button =>
+            {
+                var center = button.TranslatePoint(new(button.ActualWidth / 2, button.ActualHeight / 2), panel);
+                return panel.InputHitTest(center) is Visual hit && (hit == button || button.IsAncestorOf(hit));
+            }));
+            Save(window, Path.Combine(output, theme + "-highlighter-round.png"));
+            Select(HighlighterTip.Flat); Pump(65); window.UpdateLayout();
+            check(theme + " switching to flat highlights only the newly visible angle row",
+                angle.IsVisible && ReferenceEquals(AncestorRegion(angle), region) && region.CueStrength > 0);
+            CheckBounds(check, theme + " flat tip", region, rows["HighlighterTip"]);
+            Save(window, Path.Combine(output, theme + "-highlighter-flat.png"));
+            Select(HighlighterTip.Round); Pump(65); window.UpdateLayout();
+            check(theme + " switching to round removes the angle without leaving an empty highlighted row",
+                !angle.IsVisible && region.ActualHeight == 0 && region.CueStrength == 0);
+
+            void Select(HighlighterTip tip) => picker.SelectedItem = picker.Items.OfType<RadioButton>().Single(button => Equals(button.Tag, tip));
+        }
+        finally { window.Close(); }
     }
 
     private static void ImmediateLayout(Action<string, bool> check, string theme)

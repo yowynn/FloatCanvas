@@ -42,8 +42,27 @@ internal static class Preview4ShiftTests
             check(tool+" retains one undo and redo for the mixed curve and straight gesture",session.Undo()&&session.Document.Elements.Count==0&&session.Redo()&&session.Document.Elements.Single().Points.SequenceEqual(expected));
         }
         SmoothFreehand(check);
+        FlatHighlighter(check);
         Boxes(check);Lines(check);Captures(check);ImageRegions(check);ProjectedStroke(check);Options(check);InputOrdering(check);
     }
+    private static void FlatHighlighter(Action<string, bool> check)
+    {
+        var session = new EditorSession();
+        var editor = new EditorController(session) { Tool = EditorTool.Highlighter };
+        editor.Style.HighlighterTip = HighlighterTip.Flat;
+        editor.Style.HighlighterTipAngle = 30;
+        Send(editor, OverlayPointerKind.Down, new(40, 40));
+        Send(editor, OverlayPointerKind.Move, new(120, 40));
+        var stroke = session.Document.Elements.Single();
+        check("flat highlighter uses its chosen angle during the pointer preview",
+            stroke.Style is { HighlighterTip: HighlighterTip.Flat, HighlighterTipAngle: 30 } &&
+            ElementGeometry.HitTest(stroke, new(80, 40)));
+        Send(editor, OverlayPointerKind.Up, new(150, 40));
+        editor.Style.HighlighterTipAngle = 0;
+        check("completed flat highlighter retains its authored tip angle",
+            session.Document.Elements.Single().Style.HighlighterTipAngle == 30 && session.UndoCount == 1);
+    }
+
     private static void SmoothFreehand(Action<string, bool> check)
     {
         var session = new EditorSession();

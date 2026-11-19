@@ -20,7 +20,7 @@
 | 选择 | 标准选择 / Standard selection | 标准指针选择；无外观变体。 |
 | 橡皮擦 | 标准橡皮擦 / Standard eraser | 标准擦除；无可保存的粗细或范围模式。 |
 | 画笔 | 标准画笔 / Standard pen；精细画笔 / Fine pen；粗笔标注 / Bold pen；点状画笔 / Dotted pen | 红色，宽度依次 4、2、12、24；末项点线，用于点状路径标注。 |
-| 荧光笔 | 标准荧光笔 / Standard highlighter；黄色宽幅荧光笔 / Wide yellow highlighter；绿色荧光笔 / Green highlighter | 红色 24、黄色 32、绿色 24；保留渲染器自身的 35% 高亮混合，不重复降低颜色 alpha。 |
+| 荧光笔 | 标准荧光笔 / Standard highlighter；黄色宽幅荧光笔 / Wide yellow highlighter；蓝色扁头荧光笔 / Blue flat-tip highlighter | 三个都是实线。红色圆头 24 px、黄色圆头 48 px、蓝色扁头 32 px（0°）。 |
 | 直线 | 标准直线 / Standard line；单向箭头 / Single arrow；双向箭头 / Double arrow；虚线 / Dashed line；点线 / Dotted line | 均为红色宽 4；无箭头、末端实心三角、双端实心三角、虚线、点线。 |
 | 矩形 | 标准矩形 / Standard rectangle；圆角矩形 / Rounded rectangle；正方形 / Square；浅色填充矩形 / Tinted rectangle；实心矩形 / Solid rectangle | 标准 144×108、直角、红框宽 4；圆角半径 12；正方形 108×108 锁比例；浅红填充；统一红色实心。 |
 | 圆形 | 标准圆形 / Standard circle；椭圆 / Ellipse；浅色填充圆形 / Tinted circle；实心圆形 / Solid circle | 首项 108×108 且锁比例，点击或拖动得到圆；椭圆 144×108 可自由调整；后两项为圆形浅红填充和统一红色实心。 |

@@ -38,7 +38,7 @@ internal sealed partial class DesktopSession
     {
         using var sceneRead = SceneGraph.BeginReadScope();
         try { HandleCanvasPointerCore(e); }
-        finally { ObserveCanvasEdgePan(e); TryRestoreBorrowedTool(); }
+        finally { ObserveCanvasEdgePan(e); TryRestoreBorrowedTool(); UpdateBrushTipDamage(); }
     }
 
     private void HandleCanvasPointerCore(OverlayPointerEvent e)

@@ -58,6 +58,8 @@ internal static class ProjectionUnsafeHoverTests
         // GetUninitializedObject bypasses the production collection initializer.
         var dirtyRegions = new List<PixelBounds>();
         Set(session, "_pixelDirtyRegions", dirtyRegions);
+        var presentationDamage = new List<PixelBounds>();
+        Set(session, "_presentationDirty", presentationDamage);
         string before = JsonSerializer.Serialize(document);
         try
         {
@@ -101,6 +103,7 @@ internal static class ProjectionUnsafeHoverTests
             check("viewed safe hover removes the tint without changing projection or history", Alpha(100, 75) == 0 && JsonSerializer.Serialize(document) == before && state.UndoCount == 0);
             Invoke(session, "ExecuteCanvasViewing", CanvasViewingCommand.Reset);
             Abort();
+            BrushTip();
             var local = new PixelBounds(-490, 110, 20, 20);
             Invoke(session, "RequestPixelRender", (object)new[] { local });
             check("a localized pixel refresh retains its requested region", Pending() && dirtyRegions.SequenceEqual([local]));
@@ -114,7 +117,7 @@ internal static class ProjectionUnsafeHoverTests
                 ((DispatcherOperation)typeof(DesktopSession).GetField("_renderOperation", Private)!.GetValue(session)!).Priority == DispatcherPriority.Render);
             NativeLeaveOrdering(host, check);
         }
-        finally { Abort(); }
+        finally { Abort(); AbortPresentation(); }
 
         void Observe(PointD point) => Invoke(session, "ObserveProjectionHover", new OverlayPointerEvent(OverlayPointerKind.Move,
             new(point.X + editor.ScreenOrigin.X, point.Y + editor.ScreenOrigin.Y), OverlayMouseButton.None, OverlayModifiers.None));
@@ -126,14 +129,67 @@ internal static class ProjectionUnsafeHoverTests
             Set(session, "_pixelsOnlyRender", false);
             dirtyRegions.Clear();
         }
-        byte Alpha(int x = 120, int y = 50)
+        void AbortPresentation()
+        {
+            (typeof(DesktopSession).GetField("_presentOperation", Private)!.GetValue(session) as DispatcherOperation)?.Abort();
+            Set(session, "_presentOperation", null);
+            presentationDamage.Clear();
+        }
+        void BrushTip()
+        {
+            document.Canvas.Projection.Enabled = false;
+            editor.Tool = EditorTool.Freehand;
+            editor.Style.StrokeWidth = 20; editor.Style.Foreground = 0xFF0080FF;
+            Observe(new(100, 100)); Invoke(session, "UpdateBrushTipDamage");
+            check("brush hover draws the configured color centered at the pointer hotspot",
+                Pixel(100, 100) == new SKColor(0xFF0080FF) && Alpha(109, 100) > 200 && Alpha(111, 100) == 0);
+            check("brush hover invalidates only a small presentation region", !Pending() && presentationDamage is [{ Width: 24, Height: 24 }]);
+            AbortPresentation();
+            Observe(new(130, 100)); Invoke(session, "UpdateBrushTipDamage");
+            check("moving the brush tip queues both the old and new footprints",
+                presentationDamage.Count == 2 && Alpha(100, 100) == 0 && Alpha(130, 100) == 255);
+            AbortPresentation();
+            editor.Style.StrokeWidth = 32; editor.Style.Foreground = 0xFFFF0000;
+            check("brush hover immediately reflects a new width and color", Pixel(143, 100) == SKColors.Red);
+
+            editor.Tool = EditorTool.Highlighter;
+            editor.Style.HighlighterTip = HighlighterTip.Flat;
+            editor.Style.HighlighterTipAngle = 0;
+            check("a vertical flat highlighter hover shows its translucent narrow footprint",
+                Alpha(130, 114) == 41 && Alpha(138, 100) == 0);
+            editor.Style.HighlighterTipAngle = 90;
+            check("flat highlighter hover follows its rotation", Alpha(144, 100) == 41 && Alpha(130, 110) == 0);
+            var presentation = new PresentationPointerSettings
+            {
+                Enabled = true, CursorEnabled = true, CursorColor = 0xFF00FF00, CursorRadiusPixels = 4,
+                TrailEnabled = false, ClicksEnabled = false
+            };
+            Set(session, "_pointerPresentationSettings", presentation);
+            Set(session, "_pointerPresentationFrame", new PresentationFrame(1, 1, TimeSpan.Zero, cursorScreen: new(-370, 200)));
+            check("mouse presentation effects draw above the brush tip", Pixel(130, 100) == SKColors.Lime && Alpha(142, 100) == 41);
+            Set(session, "_pointerPresentationFrame", null);
+            Set(session, "_canvasNavigationSpaceHeld", true);
+            check("temporary canvas navigation suppresses the brush tip", Alpha(130, 100) == 0);
+            Set(session, "_canvasNavigationSpaceHeld", false);
+            typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, false);
+            check("pass-through mode suppresses the brush tip", Alpha(130, 100) == 0);
+            typeof(OverlayHost).GetProperty("IsEditing")!.SetValue(host, true);
+            Invoke(session, "ClearProjectionHover");
+            check("leaving canvas input removes the tip and invalidates its old footprint", Alpha(130, 100) == 0 && presentationDamage.Count == 1);
+            check("hover never creates ink or undo history", document.Elements.Count == 0 && state.UndoCount == 0);
+            AbortPresentation();
+            editor.Tool = EditorTool.Select;
+            document.Canvas.Projection.Enabled = true;
+        }
+        byte Alpha(int x = 120, int y = 50) => Pixel(x, y).Alpha;
+        SKColor Pixel(int x, int y)
         {
             using var surface = SKSurface.Create(new SKImageInfo(240, 180, SKColorType.Bgra8888, SKAlphaType.Premul));
             surface.Canvas.Clear(SKColors.Transparent);
             surface.Canvas.Translate(500, -100);
             Invoke(session, "Draw", surface);
             using var image = surface.Snapshot(); using var pixels = SKBitmap.FromImage(image);
-            return pixels.GetPixel(x, y).Alpha;
+            return pixels.GetPixel(x, y);
         }
     }
 

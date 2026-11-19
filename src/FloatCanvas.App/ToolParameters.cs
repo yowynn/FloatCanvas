@@ -90,5 +90,7 @@ internal sealed class ToolParameters
         s.FontFamily is { Length: > 0 and <= 1024 } && Enum.IsDefined(s.TextAlignment) &&
         Enum.IsDefined(s.ArrowHeadStyle) && NumericParameterDomain.ForStyle(nameof(s.ArrowHeadSize)).Contains(s.ArrowHeadSize) &&
         (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&
-        (s.EndArrowHead is null || Enum.IsDefined(s.EndArrowHead.Value)) && Enum.IsDefined(s.StrokePattern);
+        (s.EndArrowHead is null || Enum.IsDefined(s.EndArrowHead.Value)) && Enum.IsDefined(s.StrokePattern) &&
+        Enum.IsDefined(s.HighlighterTip) && NumericParameterDomain.ForStyle(nameof(s.HighlighterTipAngle)).Contains(s.HighlighterTipAngle) &&
+        NumericParameterDomain.ForStyle(nameof(s.HighlighterInkContrast)).Contains(s.HighlighterInkContrast);
 }

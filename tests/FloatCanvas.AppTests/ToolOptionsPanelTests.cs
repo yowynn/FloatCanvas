@@ -66,6 +66,34 @@ internal static class ToolOptionsPanelTests
         Number(EditorTool.Blur, "EffectStrength", "24", () => controller.EffectStrength == 24);
         Number(EditorTool.Rectangle, "CornerRadius", "9", () => controller.CornerRadius == 9);
 
+        controller.Tool = EditorTool.Highlighter; panel.PrepareForShow();
+        var tipRows = Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows");
+        var colorField = Field<ColorField>(panel, "foreground");
+        var colorCaption = Field<Dictionary<string, Controls.TextBlock>>(panel, "captions")["Foreground"];
+        var colorPopup = (WindowPopup)Field<PopupHandle>(colorField, "popupDisplay").Key;
+        check("highlighter color uses the stroke label on the row, picker and swatch",
+            colorCaption.Text == L.Get("Color.Stroke") && colorPopup.Title == colorCaption.Text &&
+            Wpf.Automation.AutomationProperties.GetName(colorField).StartsWith(colorCaption.Text + " ", StringComparison.Ordinal));
+        check("highlighter starts with the round tip and hides the angle",
+            Equals(pickers["HighlighterTip"].SelectedValue, HighlighterTip.Round) && tipRows["HighlighterTipAngle"].Visibility == Wpf.Visibility.Collapsed);
+        Select(pickers["HighlighterTip"], HighlighterTip.Flat);
+        check("flat tip immediately shows its vertical default", controller.Style.HighlighterTip == HighlighterTip.Flat &&
+            tipRows["HighlighterTipAngle"].Visibility == Wpf.Visibility.Visible && numbers["HighlighterTipAngle"].Text == "0");
+        Number(EditorTool.Highlighter, "HighlighterTipAngle", "35", () => controller.Style.HighlighterTipAngle == 35);
+        Number(EditorTool.Highlighter, "HighlighterInkContrast", "55", () => controller.Style.HighlighterInkContrast == .55);
+        Select(pickers["HighlighterTip"], HighlighterTip.Round);
+        Select(pickers["HighlighterTip"], HighlighterTip.Flat);
+        check("a tip toggle remembers the chosen angle",
+            tipRows["HighlighterTipAngle"].Visibility == Wpf.Visibility.Visible && numbers["HighlighterTipAngle"].Text == "35");
+        string tipPresetPath = Path.Combine(root, "flat-tip-preset.json");
+        var tipPreset = new ToolPresetLibrary(tipPresetPath).Save("Flat tip", controller.Parameters);
+        var restored = new ToolPresetLibrary(tipPresetPath).Apply(tipPreset.Id);
+        check("a saved highlighter preset restores the chosen tip and angle",
+            restored.Style is { HighlighterTip: HighlighterTip.Flat, HighlighterTipAngle: 35, HighlighterInkContrast: .55 });
+        controller.Tool = EditorTool.Text; panel.PrepareForShow();
+        check("switching to text renames the reused color field and picker",
+            colorCaption.Text == L.Get("Color.Unified") && colorPopup.Title == colorCaption.Text);
+
         foreach (var (tool, key, invalid) in new[] { (EditorTool.Line, "StrokeWidth", "-1"),
             (EditorTool.Text, "FontSize", "0"), (EditorTool.Blur, "EffectStrength", "NaN"), (EditorTool.Rectangle, "CornerRadius", "-1") })
         {
@@ -236,6 +264,44 @@ internal static class ToolOptionsPanelTests
         check("options prefer above near the work area bottom and clamp horizontally", above[0].Point.Y == -388 && above[0].Point.X == 380);
         var left = DesktopSession.OptionsPlacements(new Wpf.Size(520, 380), new Wpf.Size(800, 100), 10, new Wpf.Rect(0, -80, 1200, 900));
         check("options retain the gap while clamping at the left work area edge", left[0].Point.X == 0 && left[0].Point.Y == 108);
+
+        var parameterGrid = Field<Controls.Grid>(panel, "parameterGrid");
+        foreach (var tool in new[] { EditorTool.Rectangle, EditorTool.RoundedRectangle, EditorTool.Ellipse, EditorTool.Triangle, EditorTool.Symbol })
+        {
+            controller.Tool = tool;
+            panel.PrepareForShow();
+            var size = rows["Size"];
+            int sizeRow = Controls.Grid.GetRow(size);
+            check(tool + " shows color style and colors first, and default dimensions last",
+                Shown(rows, "LinkColors", "Colors", "Size") && Controls.Grid.GetRow(rows["LinkColors"]) == 0 &&
+                Controls.Grid.GetRow(rows["Colors"]) == 1 &&
+                parameterGrid.Children.OfType<Wpf.FrameworkElement>().Where(row => row != size && row.Visibility == Wpf.Visibility.Visible)
+                    .All(row => Controls.Grid.GetRow(row) < sizeRow));
+        }
+
+        controller.Tool = EditorTool.Highlighter;
+        var fields = Field<Dictionary<string, NumericValueField>>(panel, "numericFields");
+        var tipChoice = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers")["HighlighterTip"];
+        var foreground = Field<ColorField>(panel, "foreground");
+        foreach (double width in new[] { ToolOptionsPanel.PreferredWidth, panel.MinWidth })
+        foreach (var tip in new[] { HighlighterTip.Round, HighlighterTip.Flat })
+        {
+            controller.Style.HighlighterTip = tip;
+            panel.PrepareForShow();
+            panel.Measure(new Wpf.Size(width, double.PositiveInfinity));
+            panel.Arrange(new Wpf.Rect(0, 0, width, panel.DesiredSize.Height)); panel.UpdateLayout();
+            var contrast = Bounds(fields["HighlighterInkContrast"]);
+            var lineWidth = Bounds(fields["StrokeWidth"]);
+            var preceding = tip == HighlighterTip.Round ? Bounds(tipChoice) : Bounds(fields["HighlighterTipAngle"]);
+            check($"{tip} at {width} DIP gives ink contrast its own full-width numeric row " +
+                $"(previous bottom {preceding.Bottom:0.#}, contrast {contrast}, foreground top {Bounds(foreground).Top:0.#})",
+                Math.Abs(contrast.Top - preceding.Bottom - PropertyPanelLayout.RowGap) < 1 &&
+                Math.Abs(Bounds(foreground).Top - contrast.Bottom - PropertyPanelLayout.RowGap) < 1 &&
+                contrast.Height == PropertyPanelLayout.ControlHeight && Math.Abs(contrast.Left - lineWidth.Left) < 1 &&
+                Math.Abs(contrast.Right - lineWidth.Right) < 1);
+        }
+
+        Wpf.Rect Bounds(Wpf.FrameworkElement element) => new(element.TranslatePoint(new(), panel), element.RenderSize);
     }
 
     private static ToolOptionsPanel Panel(EditorController controller, string root, string name)

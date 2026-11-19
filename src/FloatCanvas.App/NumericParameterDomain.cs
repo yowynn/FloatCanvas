@@ -7,8 +7,9 @@ internal readonly record struct NumericParameterDomain(double Minimum, double Ma
     internal static NumericParameterDomain ForTool(string key) => key switch
     {
         "StrokeWidth" => new(0, 1024, 0, 32, .1),
+        "HighlighterTipAngle" => new(-90, 90, -90, 90),
         "CaptureBorderWidth" => new(0, 1024, 0, 16, .1),
-        "Opacity" => new(0, 100, 0, 100),
+        "Opacity" or "HighlighterInkContrast" => new(0, 100, 0, 100),
         "FontSize" => new(double.Epsilon, 4096, 8, 144),
         "NumberStart" => new(-999999, 999999, 1, 100, Integer: true),
         "NumberStep" => new(-999999, 999999, -10, 10, Integer: true),
@@ -30,5 +31,5 @@ internal readonly record struct NumericParameterDomain(double Minimum, double Ma
             _ => domain
         };
     }
-    internal static NumericParameterDomain ForStyle(string key) => key == "Opacity" ? new(0, 1, 0, 1) : ForTool(key);
+    internal static NumericParameterDomain ForStyle(string key) => key is "Opacity" or "HighlighterInkContrast" ? new(0, 1, 0, 1) : ForTool(key);
 }

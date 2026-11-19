@@ -102,6 +102,18 @@ internal static class ToolParameterIconTests
         }
         var highlighter=new ToolParameters {Tool=EditorTool.Highlighter,Style=new ElementStyle {Stroke=0x8053C7D3,Opacity=.5,StrokeWidth=24}};
         check("highlighter preview describes its selected alpha and opacity",MaxAlpha(Bitmap(highlighter)) is > 30 and < 110);
+        highlighter.Style = new() { Foreground = ColorLibrary.ForegroundYellow, HighlighterTip = HighlighterTip.Flat, StrokeWidth = 32 };
+        foreach (double angle in new[] { -90d, -35d, 0d, 35d, 90d })
+        foreach (int size in new[] { 16, 24 })
+        {
+            highlighter.Style.HighlighterTipAngle = angle;
+            highlighter.Style.StrokePattern = StrokePattern.Solid;
+            var solid = Rasterize(ToolParameterIcon.Create(highlighter, size), size);
+            highlighter.Style.StrokePattern = StrokePattern.Dashed;
+            var dashedTip = Rasterize(ToolParameterIcon.Create(highlighter, size), size);
+            check($"flat highlighter separates dashed and solid at {angle}° and {size} DIP",
+                InkCount(solid) - InkCount(dashedTip) >= 6 && InkCount(dashedTip) >= 12);
+        }
         var symbols=new ToolParameters {Tool=EditorTool.Symbol,Symbol=SymbolKind.Heart};string heart=Hash(Bitmap(symbols));symbols.Symbol=SymbolKind.Hexagon;
         check("symbol preset previews retain distinct actual outlines",heart!=Hash(Bitmap(symbols)));
         var toolbarTools=new[]{EditorTool.Freehand,EditorTool.Highlighter,EditorTool.Line,EditorTool.Arrow,EditorTool.DoubleArrow,EditorTool.Rectangle,EditorTool.Ellipse,EditorTool.Text,EditorTool.Number,EditorTool.Symbol};

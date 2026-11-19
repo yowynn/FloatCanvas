@@ -21,6 +21,7 @@ internal sealed class ColorField : UserControl
     private readonly PopupHandle popupDisplay;
     private readonly ColorPickerPanel picker;
     private readonly ColorClipboardMenu clipboard;
+    private string colorLabel = L.Get("Color.Unified");
     private bool pickerSessionOpen, draftCommitted, pickerSessionChanged, isMixed;
     private bool suppressTriggerClick;
     private int suppressedPressTime;
@@ -89,7 +90,7 @@ internal sealed class ColorField : UserControl
         border.SetResourceReference(Border.BackgroundProperty, "CanvasSurface"); border.SetResourceReference(Border.BorderBrushProperty, "CanvasBorder");
         var popup = new Popup { PlacementTarget = button, Placement = PlacementMode.Bottom, StaysOpen = false,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None, Child = border, HorizontalOffset = 0, VerticalOffset = 4 };
-        popupDisplay=new(popup, L.Get(role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background")) { TargetPressToggles = true };
+        popupDisplay=new(popup, colorLabel) { TargetPressToggles = true };
         if (popupDisplay.Key is WindowPopup window) window.EscapePressed += (_, e) => HandlePickerEscape(e);
         PopupChildDialog.Attach(border, popupDisplay.Key);
         PreviewKeyDown += (_, e) =>
@@ -405,7 +406,20 @@ internal sealed class ColorField : UserControl
         double luminance = alpha * (.2126 * ((color >> 16) & 255) + .7152 * ((color >> 8) & 255) + .0722 * (color & 255)) + (1 - alpha) * 220;
         label.Foreground = luminance < 140 ? Brushes.White : Brushes.Black;
         label.Text = IsMixed ? "—" : (color >> 24) == 0 ? L.Get("Color.Transparent") : ColorLibrary.ToHtml(color, (color >> 24) != 255);
-        string name = L.Get(Role == ColorRole.Foreground ? "Color.Foreground" : "Color.Background") + " " + (IsMixed ? L.Get("Feedback4.Inspector.Mixed") : ColorLibrary.ToHtml(Value));
+        UpdateColorName();
+    }
+
+    internal void SetColorLabel(string caption)
+    {
+        if (colorLabel == caption) return;
+        colorLabel = caption;
+        if (popupDisplay.Key is WindowPopup window) window.Title = caption;
+        UpdateColorName();
+    }
+
+    private void UpdateColorName()
+    {
+        string name = colorLabel + " " + (IsMixed ? L.Get("Feedback4.Inspector.Mixed") : ColorLibrary.ToHtml(Value));
         button.ToolTip = name; AutomationProperties.SetName(button, name); AutomationProperties.SetName(this, name);
     }
     [DllImport("user32.dll")] private static extern int GetMessageTime();

@@ -26,6 +26,7 @@ internal sealed partial class DesktopSession
     private void ClearProjectionHover()
     {
         _projectionHoverPoint = null;
+        if (_queuedBrushTipBounds is not null) UpdateBrushTipDamage();
         if (!_unsafeHoverVisible) return;
         _unsafeHoverVisible = false;
         RequestPixelRender();

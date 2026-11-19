@@ -97,6 +97,43 @@ internal static class InspectorLiveTests
         check("UI command wrapper commits live properties before mutation", uiSeesEdit);
         session.SetSelection([]);
         check("empty selection collapses the property list without synchronizing hidden fields", containers.Values.All(container => container.Visibility == Wpf.Visibility.Collapsed) && Field<Controls.StackPanel>(window, "propertyPanel").Visibility == Wpf.Visibility.Collapsed);
+
+        var highlight = new CanvasElement { Kind = ElementKind.Highlighter, Points = [new(30, 50), new(160, 50)], Style = new() { StrokeWidth = 24 } };
+        session.Add(highlight);
+        var strokeRow = (Controls.Grid)containers["Stroke"];
+        check("selected highlighter labels its color by its use on the stroke",
+            ((Controls.TextBlock)strokeRow.Children[0]).Text == FloatCanvas.Localization.AppText.Get("Color.Stroke"));
+        check("selected round highlighter shows the tip choice with its angle hidden",
+            containers["HighlighterTip"].Visibility == Wpf.Visibility.Visible && containers["HighlighterTipAngle"].Visibility == Wpf.Visibility.Collapsed);
+        var tip = Field<SegmentedChoice>(window, "highlighterTip");
+        tip.SelectedItem = tip.Items.OfType<Controls.RadioButton>().Single(button => Equals(button.Tag, HighlighterTip.Flat));
+        fields["HighlighterTipAngle"].Text = "-40";
+        fields["HighlighterInkContrast"].Text = "55";
+        window.CompletePendingEdit();
+        check("inspector edits the existing stroke's tip and angle without changing its centerline",
+            containers["HighlighterTipAngle"].Visibility == Wpf.Visibility.Visible &&
+            session.Document.Elements.Last().Style is { HighlighterTip: HighlighterTip.Flat, HighlighterTipAngle: -40, HighlighterInkContrast: .55 } &&
+            session.Document.Elements.Last().Points.SequenceEqual(highlight.Points));
+        check("undo restores the round tip and hides the angle again", session.Undo() &&
+            session.Document.Elements.Last().Style.HighlighterTip == HighlighterTip.Round && containers["HighlighterTipAngle"].Visibility == Wpf.Visibility.Collapsed);
+
+        var pen = new CanvasElement { Kind = ElementKind.Freehand, Points = [new(30, 70), new(160, 70)] };
+        session.Add(pen);
+        session.SetSelection([highlight.Id, pen.Id]);
+        check("different kinds sharing the stroke label keep it in multi-selection", HasColorCaption("Stroke", "Color.Stroke"));
+        session.SetSelection([highlight.Id, second]);
+        check("different names on the primary color key fall back to the primary label",
+            HasColorCaption("Stroke", "Color.Primary") && containers["Fill"].Visibility == Wpf.Visibility.Collapsed);
+        var badge = new CanvasElement { Kind = ElementKind.Number, Style = new() { Variant = ElementAppearance.NumberFilled } };
+        var box = new CanvasElement { Kind = ElementKind.Rectangle, Style = new() { Variant = ElementAppearance.ShapeIndependent } };
+        session.Add(badge);
+        session.Add(box);
+        session.SetSelection([badge.Id, box.Id]);
+        check("shared secondary keys with different names use the secondary label",
+            containers["Fill"].Visibility == Wpf.Visibility.Visible && HasColorCaption("Fill", "Color.Secondary"));
+
+        bool HasColorCaption(string key, string resource) =>
+            ((Controls.TextBlock)((Controls.Grid)containers[key]).Children[0]).Text == FloatCanvas.Localization.AppText.Get(resource);
     }
 
     private static void PumpIdle()

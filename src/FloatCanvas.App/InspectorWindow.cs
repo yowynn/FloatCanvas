@@ -34,9 +34,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private readonly List<(Controls.Grid Row, string First, string Second)> pairedFieldRows = [];
     private readonly Controls.StackPanel linkedColorsGroup = new();
     private readonly PropertyChangeRegion linkedColorsRegion;
+    private readonly PropertyChangeRegion highlighterAngleRegion;
     private readonly AspectRatioButton keepAspect = new();
     private readonly SegmentedChoice linkColors = SegmentedChoicePreviews.ColorStyle();
     private readonly SegmentedChoice numberStyle = new();
+    private readonly SegmentedChoice highlighterTip = new();
     private (ElementKind Kind, SymbolKind Symbol)? colorStyleContext;
     private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
     private readonly SegmentedChoice alignment = new(), arrowStyle = new(), startArrow = new(), endArrow = new(), strokePattern = new(), placement = new();
@@ -109,6 +111,14 @@ internal sealed partial class InspectorWindow : Wpf.Window
         keepAspect.Click += (_,_) => ChangeField("ConstrainAspect");
         propertyPanel.Children.Add(SectionHeading("Inspector.AppearanceSection"));
         InitializeWindowSourceFitControl();
+        AddPicker("HighlighterTip", L.Get("Highlighter.Tip"), highlighterTip,
+            [L.Get("Highlighter.TipRound"), L.Get("Highlighter.TipFlat")]);
+        highlighterAngleRegion = new(new Controls.StackPanel
+        {
+            Children = { FieldPair("HighlighterTipAngle", L.Get("Highlighter.TipAngle"), null, null) }
+        });
+        propertyPanel.Children.Add(highlighterAngleRegion);
+        propertyPanel.Children.Add(FieldPair("HighlighterInkContrast", L.Get("Highlighter.InkContrast"), null, null));
         propertyPanel.Children.Add(FieldPair("StrokeWidth", L.Get("Inspector.StrokeWidth"), null, null));
         propertyPanel.Children.Add(FieldPair("CornerRadius", L.Get("Inspector.CornerRadius"), null, null));
         foreach (var value in Enum.GetValues<SymbolKind>())
@@ -429,6 +439,9 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (IsFieldVisible("StartArrowHead")) startArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element, reverse: true);
             if (IsFieldVisible("EndArrowHead")) endArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element);
             if (IsFieldVisible("StrokePattern")) strokePattern.SelectedIndex = (int)element.Style.StrokePattern;
+            if (IsFieldVisible("HighlighterTip")) highlighterTip.SelectedIndex = (int)element.Style.HighlighterTip;
+            SetField("HighlighterTipAngle", element.Style.HighlighterTipAngle);
+            SetField("HighlighterInkContrast", 100 * element.Style.HighlighterInkContrast);
             if (IsFieldVisible("Symbol")) symbolChoice.SelectedValue = PropertyValue(element, "Symbol");
             if (IsFieldVisible("WindowSourceFit")) windowSourceFit.SelectedValue = element.WindowSource!.Fit;
             if (IsFieldVisible("EffectSelection")) RefreshEffectChoices(element);
@@ -451,7 +464,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
                 foreach (var key in fields.Keys)
                     if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) SetMixedField(key, PropertyValue(element, key));
                 if (IsFieldVisible("FontFamily") && selected.Skip(1).Any(other => other.Style.FontFamily != element.Style.FontFamily)) ToolOptionPreviews.ClearFontSelection(fontPicker);
-                foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("TextAlignment", alignment), ("WindowSourceFit", windowSourceFit) })
+                foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("HighlighterTip", highlighterTip), ("TextAlignment", alignment), ("WindowSourceFit", windowSourceFit) })
                     if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) picker.SelectedIndex = -1;
                 if (IsFieldVisible("Symbol") && selected.Skip(1).Any(other => !Equals(PropertyValue(element, "Symbol"), PropertyValue(other, "Symbol")))) symbolChoice.SelectedIndex = -1;
                 foreach (var (key, color) in colorFields)
@@ -569,7 +582,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if(changedKey=="ConstrainAspect")
             {keepAspect.IsThreeState=false;keepAspect.IsChecked=selected.All(ElementGeometry.PreservesAspect);}
             if(changedKey=="Placement")SetPropertyVisibility(selected);
-            if(changedKey is "LinkColors" or "StyleVariant")SetPropertyVisibility(selected);
+            if(changedKey is "LinkColors" or "StyleVariant" or "HighlighterTip")SetPropertyVisibility(selected);
             if (changedKey.StartsWith("Presentation.", StringComparison.Ordinal)) RefreshPresentationSettings(selected);
             if(changedKey=="Symbol")
             {
@@ -647,6 +660,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (dirtyFields.Contains("ArrowHeadSize")) edited.Style.ArrowHeadSize = Number("ArrowHeadSize", L.Get("Inspector.ArrowSize"), 0, 512);
         }
         if (dirtyFields.Contains("StrokePattern")) edited.Style.StrokePattern = (StrokePattern)strokePattern.SelectedIndex;
+        if (dirtyFields.Contains("HighlighterTip") && highlighterTip.SelectedValue is HighlighterTip tip) edited.Style.HighlighterTip = tip;
+        if (dirtyFields.Contains("HighlighterTipAngle"))
+            edited.Style.HighlighterTipAngle = Number("HighlighterTipAngle", L.Get("Highlighter.TipAngle"), -90, 90);
+        if (dirtyFields.Contains("HighlighterInkContrast"))
+            edited.Style.HighlighterInkContrast = Number("HighlighterInkContrast", L.Get("Highlighter.InkContrast"), 0, 100) / 100;
         if (dirtyFields.Contains("CornerRadius")) edited.CornerRadius = Number("CornerRadius", L.Get("Inspector.CornerRadius"), 0, 10000000);
         if (dirtyFields.Contains("Opacity")) edited.Style.Opacity = Number("Opacity", L.Get("Inspector.Opacity"), 0, 100) / 100;
         if (dirtyFields.Contains("FontSize") && source.Kind is ElementKind.Text or ElementKind.Number or ElementKind.Presentation)
@@ -789,17 +807,18 @@ internal sealed partial class InspectorWindow : Wpf.Window
                 "BillboardHeight" => (-10000000d, 10000000d, -1000d, 1000d, 1d),
                 "W" or "H" => (.01d, 10000000d, 1d, 1000d, 1d),
                 "Angle" => (-360000d, 360000d, -180d, 180d, 1d),
+                "HighlighterTipAngle" => (-90d, 90d, -90d, 90d, 1d),
                 "StrokeWidth" => (0d, 10000000d, 0d, 32d, .1d),
                 "CornerRadius" => (0d, 10000000d, 0d, 64d, 1d),
                 "ArrowHeadSize" => (0d, 512d, 0d, 64d, 1d),
-                "Opacity" => (0d, 100d, 0d, 100d, 1d),
+                "Opacity" or "HighlighterInkContrast" => (0d, 100d, 0d, 100d, 1d),
                 "FontSize" => (1d, 4096d, 8d, 144d, 1d),
                 "EffectStrength" => (.01d, 1024d, .1d, 64d, .1d),
                 "Number" => ((double)int.MinValue, (double)int.MaxValue, 1d, 100d, 1d),
                 _ => (1d, 1000000d, 1d, 100d, 1d)
             };
             var numeric = new NumericValueField(field, limits.Item1, limits.Item2, limits.Item3, limits.Item4, limits.Item5, integerOnly: key == "Number", customAnchorGesture: geometryScrub)
-            { Unit = key switch { "Angle" => "°", "Opacity" => "%", "Number" => "#", _ => "px" } };
+            { Unit = key switch { "Angle" or "HighlighterTipAngle" => "°", "Opacity" or "HighlighterInkContrast" => "%", "Number" => "#", _ => "px" } };
             numeric.KeyboardStep = NumericKeyboardSteps.ForProperty(key);
             numeric.SetScrubAnchor(NumericPropertyIcon.ForProperty(key), label);
             if (geometryScrub) scrubbers.Add(new NumericScrubber(numeric.DragAnchor, () => BeginScrub(key), delta => UpdateScrub(key, delta), FinishScrub, numeric.Slider));
@@ -837,17 +856,53 @@ internal sealed partial class InspectorWindow : Wpf.Window
     {
         for (int index = 0; index < options.Length; index++)
         {
-            object value = key == "StrokePattern" ? (StrokePattern)index : (ArrowHeadStyle)index;
+            object value = key switch { "StrokePattern" => (StrokePattern)index, "HighlighterTip" => (HighlighterTip)index, _ => (ArrowHeadStyle)index };
             SegmentedChoicePreviews.Add(picker, options[index], value);
         }
         Automation.AutomationProperties.SetName(picker, label);
         picker.SelectionChanged += (_, _) =>
         {
             if (refreshing) return;
-            ChangeField(key);
+            if (key == "HighlighterTip") highlighterAngleRegion.Change(() => ChangeField(key));
+            else ChangeField(key);
         };
         var row = PropertyPanelLayout.Row(new PropertyLabel(label), picker);
         fieldContainers.Add(key, row); propertyPanel.Children.Add(row);
+    }
+
+    private void SetColorLabel(string key, string resource)
+    {
+        string caption = L.Get(resource);
+        ((Controls.TextBlock)((Controls.Grid)fieldContainers[key]).Children[0]).Text = caption;
+        colorFields[key].SetColorLabel(caption);
+    }
+
+    private static string SelectionColorLabel(CanvasElement[] selected, bool secondary)
+    {
+        if (selected.Length == 0) return secondary ? "Color.Secondary" : "Color.Unified";
+        string label = ColorLabel(selected[0]);
+        return selected.All(element => ColorLabel(element) == label)
+            ? label : secondary ? "Color.Secondary" : "Color.Primary";
+
+        string ColorLabel(CanvasElement element)
+        {
+            if (secondary)
+                return element.Kind switch
+                {
+                    ElementKind.Presentation => "Presentation.Background",
+                    ElementKind.Number => "Color.NumberText",
+                    _ => "Color.Interior"
+                };
+            return element.Kind switch
+            {
+                ElementKind.Presentation => "Presentation.Foreground",
+                ElementKind.Image => "Snapshot.BorderColor",
+                ElementKind.Freehand or ElementKind.Highlighter => "Color.Stroke",
+                ElementKind.Number when AppearanceRegistry.Resolve(element).BackgroundActive => "Color.NumberShape",
+                _ when ElementGeometry.IsBoxShape(element.Kind) && AppearanceRegistry.Resolve(element).BackgroundActive => "Color.Outline",
+                _ => "Color.Unified"
+            };
+        }
     }
 
     private Controls.Grid CreateColorField(string key, string label, ColorRole role, ColorLibrary? library)
@@ -1084,6 +1139,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
             "StyleVariant" => number,
             "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !text && element.Kind != ElementKind.Presentation && (!number || ElementAppearance.IsOutlineNumber(element)),
             "StrokePattern" => !image && !text && !number && element.Kind != ElementKind.Presentation,
+            "HighlighterTip" or "HighlighterInkContrast" => element.Kind == ElementKind.Highlighter,
+            "HighlighterTipAngle" => ElementGeometry.HasFlatHighlighterTip(element),
             "CornerRadius" => element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle,
             "FontFamily" => text || number || element.Kind == ElementKind.Presentation,
             "FontSize" => text || number || element.Kind == ElementKind.Presentation,
@@ -1114,6 +1171,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
         "ArrowHeadStyle" => e.Style.ArrowHeadStyle, "ArrowHeadSize" => e.Style.ArrowHeadSize,
         "StartArrowHead" => ElementGeometry.ArrowStyle(e, reverse: true), "EndArrowHead" => ElementGeometry.ArrowStyle(e),
         "StrokePattern" => e.Style.StrokePattern, "FontFamily" => e.Style.FontFamily,
+        "HighlighterTip" => e.Style.HighlighterTip, "HighlighterTipAngle" => e.Style.HighlighterTipAngle,
+        "HighlighterInkContrast" => e.Style.HighlighterInkContrast,
         "FontSize" => e.Style.FontSize, "Number" => e.Number, "Text" => e.Text, "TextAlignment" => e.Style.TextAlignment,
         "Symbol" => e.Kind == ElementKind.Triangle ? SymbolKind.Triangle : e.Symbol,
         "WindowSourceFit" => e.WindowSource?.Fit,
@@ -1136,14 +1195,12 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if (nodeTransforms.IsApplicable)
             foreach (var key in new[] { "X", "Y", "W", "H", "Angle", "ConstrainAspect", "Opacity" }) fieldContainers[key].Visibility = Wpf.Visibility.Collapsed;
         linkedColorsGroup.Visibility = new[] { "Stroke", "Fill", "LinkColors", "StyleVariant" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
-        bool number = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Number);
-        bool shape = selected.Length > 0 && selected.All(e => ElementGeometry.IsBoxShape(e.Kind));
         bool images = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Image);
         bool presentation = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Presentation);
         ((Controls.TextBlock)textSection.Child).Text = L.Get(presentation ? "Presentation.Text" : "Inspector.TextSection");
-        ((Controls.TextBlock)((Controls.Grid)fieldContainers["Stroke"]).Children[0]).Text = L.Get(presentation ? "Presentation.Foreground" : number ? selected.All(e => AppearanceRegistry.Resolve(e).NumberTextRole == AppearanceColorRole.Foreground) ? "Color.Unified" : "Color.NumberShape" : images ? "Snapshot.BorderColor" : shape ? selected.All(e => !AppearanceRegistry.Resolve(e).BackgroundActive) ? "Color.Unified" : "Color.Outline" : "Color.Foreground");
+        SetColorLabel("Stroke", SelectionColorLabel(selected, secondary: false));
         ((Controls.TextBlock)((Controls.Grid)fieldContainers["StrokeWidth"]).Children[0]).Text = L.Get(images ? "Property.BorderWidth" : "Inspector.StrokeWidth");
-        ((Controls.TextBlock)((Controls.Grid)fieldContainers["Fill"]).Children[0]).Text = L.Get(presentation ? "Presentation.Background" : number ? "Color.NumberText" : shape ? "Color.Interior" : "Color.Background");
+        SetColorLabel("Fill", SelectionColorLabel(selected, secondary: true));
         var placementGraph = SceneGraph.Read(getSession().Document);
         bool insideCard = hasSharedCardContext() || selected.Any(element => placementGraph.ScopeContainerPlacement(element.GroupId).Surface is not null);
         insideCardHint.Visibility = insideCard && selected.Any(element => element.IsBillboard) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;

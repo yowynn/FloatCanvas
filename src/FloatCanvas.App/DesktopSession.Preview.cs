@@ -127,7 +127,7 @@ internal sealed partial class DesktopSession
 
     private bool CanvasControlsVisible() => HasCanvasViewingBadge || _hasEditableCanvasOccurrence && !Active.IsReadOnly && _editor.InteractionTool != EditorTool.PointerPresentation && (_host.IsReceivingDrop || _host.IsEditing &&
         (_inlineText is not null || _canvasCalibration.IsActive || _editor.Tool == EditorTool.Canvas ||
-         _unsafeHoverVisible || _eyedropper is not null || _editor.CapturePreview is not null || HasPresentationLayerGuides ||
+         _unsafeHoverVisible || _eyedropper is not null || _editor.CapturePreview is not null || HasPresentationLayerGuides || CurrentBrushTip() is not null ||
          _editor.EffectPreviewPolygon is { Count: > 0 } || _editor.Marquee is not null ||
          _editor.VisibleBillboardDepthLine is not null || _editor.BillboardDrawingGuide is not null ||
          _editor.Session.Selection.Count > 0 && _editor.ShouldShowSelection(_host.InteractionModifiers)));
@@ -152,6 +152,7 @@ internal sealed partial class DesktopSession
             _editor.BillboardSelectionGuide is not null)
             return _host.Monitors.Select(monitor => monitor.Bounds).ToArray();
         var regions = new List<PixelBounds>();
+        if (CurrentBrushTip() is { } tip) regions.Add(tip.Bounds);
         if (HasCanvasViewingBadge) regions.Add(CanvasViewingBadgeBounds);
         if (_editor.MarqueeScreenPolygon is { } marquee) Polygon(marquee);
         if (_editor.ShouldShowSelection(_host.InteractionModifiers) && _editor.SelectionScreenCorners is { } corners)

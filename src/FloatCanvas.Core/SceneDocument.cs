@@ -10,6 +10,7 @@ public enum ImageEffectKind { Blur = 0, Pixelate = 1 }
 public enum LayerOrder { Forward, Backward, Front, Back }
 public enum ArrowHeadStyle { FilledTriangle, Open, Diamond, None }
 public enum StrokePattern { Solid, Dashed, Dotted }
+public enum HighlighterTip { Round, Flat }
 public enum SymbolKind { Triangle, Star, Heart, Check, Cross, Diamond, Pentagon, Hexagon, SpeechBubble }
 
 public sealed class ElementStyle : IJsonOnDeserialized
@@ -54,6 +55,12 @@ public sealed class ElementStyle : IJsonOnDeserialized
     public ArrowHeadStyle? StartArrowHead { get; set; }
     public ArrowHeadStyle? EndArrowHead { get; set; }
     public StrokePattern StrokePattern { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public HighlighterTip HighlighterTip { get; set; }
+    /// <summary>Clockwise degrees from vertical in the stroke's local coordinates.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double HighlighterTipAngle { get; set; }
+    public double HighlighterInkContrast { get; set; } = 1;
     public double Opacity { get; set; } = 1;
     public string FontFamily { get; set; } = "Microsoft YaHei UI";
     public double FontSize { get; set; } = 24;

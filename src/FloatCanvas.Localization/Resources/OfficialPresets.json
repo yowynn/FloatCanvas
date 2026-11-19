@@ -56,6 +56,6 @@
   "Recipe.EmojiCheck": { "zh": "完成", "en": "Done" },
   "Recipe.EmojiWarning": { "zh": "提醒", "en": "Warning" },
   "Recipe.Stamp": { "zh": "标准印章", "en": "Standard stamp" },
-  "Recipe.HighlighterDotted": { "zh": "点状标记", "en": "Dotted marking" },
+  "Recipe.HighlighterFlatBlue": { "zh": "蓝色扁头荧光笔", "en": "Blue flat-tip highlighter" },
   "Recipe.NumberOutline": { "zh": "轮廓序号", "en": "Outline number" }
 }

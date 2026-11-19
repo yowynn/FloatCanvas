@@ -247,6 +247,7 @@ public sealed partial class SceneRenderer : IDisposable
                 using var alpha = new SKPaint { Color = SKColors.White.WithAlpha(Alpha(opacity)) };
                 canvas.SaveLayer(alpha);
             }
+            if (element.Kind == ElementKind.Highlighter && TryDrawHighlighterDeposits(canvas, element, directOpacity)) return;
             if (element.Kind == ElementKind.Image) DrawImage(canvas, element, assets);
             else if (element.Kind == ElementKind.Text)
             {
@@ -261,6 +262,13 @@ public sealed partial class SceneRenderer : IDisposable
                 else _text.Draw(canvas, element.Text, element.Style, element.Width, _paint);
             }
             else if (element.Kind == ElementKind.Number) DrawNumber(canvas, element);
+            else if (ElementGeometry.HasFlatHighlighterTip(element))
+            {
+                SetPaint(element.Style.Foreground, SKPaintStyle.Fill);
+                var ink = HighlighterInk(_paint.Color);
+                _paint.Color = directOpacity < 1 ? WithElementOpacity(ink, directOpacity) : ink;
+                canvas.DrawPath(GetPath(element).Path, _paint);
+            }
             else
             {
                 var geometry = GetPath(element);
@@ -270,7 +278,7 @@ public sealed partial class SceneRenderer : IDisposable
                 else if (element.Style.StrokeWidth > 0)
                 {
                     SetPaint(element.Style.Foreground, SKPaintStyle.Stroke, element.Style.StrokeWidth);
-                    if (element.Kind == ElementKind.Highlighter) _paint.Color = _paint.Color.WithAlpha((byte)Math.Round(_paint.Color.Alpha * .35));
+                    if (element.Kind == ElementKind.Highlighter) _paint.Color = HighlighterInk(_paint.Color);
                     var strokeMatrix = canvas.TotalMatrix;
                     var opacityStroke = !includeOpacity && directOpacity == 1 && canvas.Context is null &&
                         element.Kind is ElementKind.Freehand or ElementKind.Highlighter && element.Style.StrokePattern == StrokePattern.Solid &&
@@ -389,6 +397,10 @@ public sealed partial class SceneRenderer : IDisposable
         float width = (float)element.Width, height = (float)element.Height;
         switch (element.Kind)
         {
+            case ElementKind.Highlighter when ElementGeometry.HasFlatHighlighterTip(element):
+                foreach (var polygon in ElementGeometry.FlatHighlighterPolygons(element.Points, element.Style))
+                    AddHead(builder, polygon, true);
+                break;
             case ElementKind.Rectangle:
             case ElementKind.RoundedRectangle:
                 float radius = (float)ElementGeometry.CornerRadius(element);
@@ -416,7 +428,7 @@ public sealed partial class SceneRenderer : IDisposable
         return entry;
     }
 
-    private RectD DrawLocalBounds(CanvasElement element) => element.Kind is ElementKind.Freehand or ElementKind.Highlighter
+    private RectD DrawLocalBounds(CanvasElement element) => element.Kind == ElementKind.Freehand
         ? GetPath(element).StrokedBounds : ElementGeometry.StrokedLocalBounds(element);
 
     private static void AddHead(SKPathBuilder builder, IReadOnlyList<PointD> points, bool closed)
@@ -425,6 +437,20 @@ public sealed partial class SceneRenderer : IDisposable
         builder.MoveTo(ToPoint(points[0]));
         foreach (var point in points.Skip(1)) builder.LineTo(ToPoint(point));
         if (closed) builder.Close();
+    }
+
+    private static SKPath BuildPatternMask(StrokePatternGeometry geometry)
+    {
+        using var builder = new SKPathBuilder();
+        foreach (var polygon in geometry.DashPolygons)
+        {
+            double area = 0;
+            for (int i = 0; i < polygon.Count; i++) { var a = polygon[i]; var b = polygon[(i + 1) % polygon.Count]; area += a.X*b.Y-b.X*a.Y; }
+            AddHead(builder, area >= 0 ? polygon : polygon.Reverse().ToArray(), true);
+        }
+        foreach (var point in geometry.Dots)
+            builder.AddCircle((float)point.X, (float)point.Y, (float)geometry.Radius);
+        return builder.Detach();
     }
 
     private void DrawNumber(SKCanvas canvas, CanvasElement element)
@@ -544,6 +570,7 @@ public sealed partial class SceneRenderer : IDisposable
 
     private void TrimCaches()
     {
+        TrimHighlighterRasters();
         if (CachedElementOpacityBytes > Math.Max(0, Math.Min(CacheByteLimit, 64L * 1024 * 1024))) ReleaseElementOpacitySurface();
         foreach (var id in _paths.Where(p => p.Value.Used < _clock - 2).Select(p => p.Key).ToArray())
         { _paths[id].Dispose(); _paths.Remove(id); }
@@ -576,6 +603,8 @@ public sealed partial class SceneRenderer : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        foreach (var stroke in _highlighterStrokes.Values) stroke.Dispose();
+        _highlighterStrokes.Clear(); _highlighterWorkingId = null;
         ClearLiveEffectImages();
         DisposeDepthBuffers();
         foreach (var entry in _paths.Values) entry.Dispose();
@@ -606,6 +635,8 @@ public sealed partial class SceneRenderer : IDisposable
         private readonly SymbolKind _symbol = element.Symbol;
         private readonly double _arrowHeadSize = element.Style.ArrowHeadSize;
         private readonly StrokePattern _strokePattern = element.Style.StrokePattern;
+        private readonly HighlighterTip _highlighterTip = element.Style.HighlighterTip;
+        private readonly double _highlighterTipAngle = element.Style.HighlighterTipAngle;
         private readonly PointCollection _points = element.Points.Snapshot();
         public SKPath Path { get; } = path;
         public RectD StrokedBounds { get; } = ElementGeometry.StrokedLocalBounds(element);
@@ -617,9 +648,10 @@ public sealed partial class SceneRenderer : IDisposable
         private SKPath? _patternStroke;
         private SKPath? _patternMask;
         private SKPath? _solidStroke;
-        private readonly StrokePatternGeometry? _patternGeometry = element.Style.StrokePattern == StrokePattern.Solid ? null : ElementGeometry.StrokePatternGeometry(element);
+        private readonly StrokePatternGeometry? _patternGeometry = element.Style.StrokePattern == StrokePattern.Solid || ElementGeometry.HasFlatHighlighterTip(element)
+            ? null : ElementGeometry.StrokePatternGeometry(element);
         public SKPath PatternStroke => _patternStroke ??= BuildStroke(false);
-        public SKPath PatternMask => _patternMask ??= BuildPatternMask();
+        public SKPath PatternMask => _patternMask ??= BuildPatternMask(_patternGeometry!);
         public SKPath SolidStroke => _solidStroke ??= BuildStroke(false, patterned: false);
         public SKPath InnerStroke
         {
@@ -637,24 +669,11 @@ public sealed partial class SceneRenderer : IDisposable
             using var solid = inside ? Path.Op(expanded, SKPathOp.Intersect) : new SKPath(expanded);
             if (solid is null) throw new InvalidOperationException("Cannot construct a solid stroke band.");
             if (!patterned || _patternGeometry is null) return new(solid);
-            using var mask = BuildPatternMask();
+            using var mask = BuildPatternMask(_patternGeometry);
             // Dots are already fitted as complete circles. Only dash masks are cut
             // against S, retaining S's original corners, joins and endpoint caps.
             return _strokePattern == StrokePattern.Dotted ? new(mask) : solid.Op(mask, SKPathOp.Intersect) ??
                 throw new InvalidOperationException("Cannot cut dash gaps from a solid stroke band.");
-        }
-        private SKPath BuildPatternMask()
-        {
-            using var builder = new SKPathBuilder();
-            foreach (var polygon in _patternGeometry!.DashPolygons)
-            {
-                double area = 0;
-                for (int i = 0; i < polygon.Count; i++) { var a = polygon[i]; var b = polygon[(i + 1) % polygon.Count]; area += a.X*b.Y-b.X*a.Y; }
-                AddHead(builder, area >= 0 ? polygon : polygon.Reverse().ToArray(), true);
-            }
-            foreach (var point in _patternGeometry.Dots)
-                builder.AddCircle((float)point.X, (float)point.Y, (float)_patternGeometry.Radius);
-            return builder.Detach();
         }
         private float _opacityStrokeScale;
         public SKPath? OpacityStroke(SKPaint paint, SKMatrix matrix)
@@ -674,8 +693,13 @@ public sealed partial class SceneRenderer : IDisposable
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
             _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
             _strokePattern == e.Style.StrokePattern &&
+            _highlighterTip == e.Style.HighlighterTip && _highlighterTipAngle == e.Style.HighlighterTipAngle &&
             e.Points.ContentEquals(_points);
-        public void Dispose() { _opacityStroke?.Dispose(); _innerStroke?.Dispose(); _patternStroke?.Dispose(); _patternMask?.Dispose(); _solidStroke?.Dispose(); Path.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose(); }
+        public void Dispose()
+        {
+            _opacityStroke?.Dispose(); _innerStroke?.Dispose(); _patternStroke?.Dispose(); _patternMask?.Dispose(); _solidStroke?.Dispose();
+            Path.Dispose(); FilledHeads.Dispose(); OpenHeads.Dispose();
+        }
     }
     private class ImageEntry : IDisposable
     {

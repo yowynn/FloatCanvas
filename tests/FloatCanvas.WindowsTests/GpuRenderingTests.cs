@@ -75,6 +75,31 @@ internal static class GpuRenderingTests
         check(hardware[(260 * 440 + 420) * 4 + 3] == 0 && hardware[(30 * 440 + 30) * 4 + 3] is >= 110 and <= 114,
             "GPU viewport clipping leaves outside pixels clear and applies layer opacity once");
 
+        var tilted = new SceneDocument { Viewport = new(0, 0, 240, 200) };
+        tilted.Elements =
+        [
+            new() { Kind = ElementKind.Highlighter, Points = Enumerable.Range(0, 145)
+                .Select(i => new PointD(20 + i * 1.3, 40 + .0006 * i * i)).ToList(),
+                Style = new() { HighlighterTip = HighlighterTip.Flat, HighlighterTipAngle = 42, StrokeWidth = 32 } },
+            new() { Kind = ElementKind.Highlighter, Points = [new(25, 110), new(195, 170), new(25, 170), new(195, 110)],
+                Style = new() { HighlighterTip = HighlighterTip.Flat, HighlighterTipAngle = 42, StrokeWidth = 32 } }
+        ];
+        var tiltedPixels = RenderPixels(gpu, tilted, assets, 240, 200, null, TimeSpan.Zero, out _);
+        var tiltedCpu = RenderPixels(null, tilted, assets, 240, 200, null, TimeSpan.Zero, out _);
+        var interior = Enumerable.Range(48, 144).SelectMany(x => Enumerable.Range(-5, 11).Select(offset =>
+        {
+            int y = (int)(40 + .0006 * Math.Pow((x - 20) / 1.3, 2)) + offset;
+            return (y * 240 + x) * 4 + 3;
+        })).ToArray();
+        int maxCoatDelta = interior.Max(index => Math.Abs(tiltedPixels[index] - tiltedCpu[index]));
+        int minimum = interior.Min(index => tiltedPixels[index]), maximum = interior.Max(index => tiltedPixels[index]);
+        double meanCoatDelta = interior.Average(index => Math.Abs(tiltedPixels[index] - tiltedCpu[index]));
+        check(minimum > 40 && maximum - minimum > 12 && maxCoatDelta <= 1 && meanCoatDelta <= 1,
+            $"GPU tilted highlighter matches the CPU density gradient across dense pointer samples ({minimum}–{maximum}, delta {maxCoatDelta})");
+        int crossingIndex = (140 * 240 + 110) * 4 + 3;
+        check(tiltedPixels[crossingIndex] > maximum + 30 &&
+            Math.Abs(tiltedPixels[crossingIndex] - tiltedCpu[crossingIndex]) <= 2, "GPU tilted highlighter preserves both coats at a real crossing");
+
         var projectionReference = CanvasCalibration.CreateInitial(scene.Viewport, 8, 6);
         check(CanvasCalibration.TryCalibrate(projectionReference,
             [new(0, 0), new(290, 8), new(320, 190), new(12, 205)], scene.Viewport, out var projection, out _),

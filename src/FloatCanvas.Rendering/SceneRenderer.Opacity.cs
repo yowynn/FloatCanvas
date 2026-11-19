@@ -172,14 +172,14 @@ public sealed partial class SceneRenderer
         else Array.Clear(_opacityTiles, 0, size);
         int minRow = rows, maxRow = 0, minColumn = columns, maxColumn = 0;
         double radius = (float)element.Style.StrokeWidth / 2d;
-        // GetPath submits float vertices and round joins/caps. Each inflated segment
-        // rectangle contains its stroke, including joins. Mapping all four corners
+        var extent = ElementGeometry.HasFlatHighlighterTip(element) ? ElementGeometry.FlatHighlighterExtent(element.Style) : new(radius, radius);
+        // Each inflated segment rectangle contains its stroke, including joins. Mapping all four corners
         // before adding a device-pixel AA guard keeps the mask conservative.
         for (int i = 0; i < Math.Max(1, element.Points.Count - 1); i++)
         {
             var a = element.Points[i]; var b = element.Points[Math.Min(i + 1, element.Points.Count - 1)];
             double x = (float)a.X, y = (float)a.Y, bx = (float)b.X, by = (float)b.Y;
-            var local = new RectD(Math.Min(x, bx) - radius, Math.Min(y, by) - radius, Math.Abs(x - bx) + radius * 2, Math.Abs(y - by) + radius * 2);
+            var local = new RectD(Math.Min(x, bx) - extent.X, Math.Min(y, by) - extent.Y, Math.Abs(x - bx) + extent.X * 2, Math.Abs(y - by) + extent.Y * 2);
             if (!TryOpacityBounds(transform, local, out var bounds)) return null;
             // Integer tile edges bound the number of region bands. Exact per-segment
             // edges otherwise spend more time building/visiting clip runs than blending.

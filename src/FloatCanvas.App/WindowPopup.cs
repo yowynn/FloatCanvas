@@ -14,6 +14,19 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
     private Window? window, owner;
     private int suspensionDepth;
     internal UIElement Child => child;
+    internal string Title
+    {
+        get => title;
+        set
+        {
+            title = value;
+            if (window is { } current)
+            {
+                current.Title = value;
+                WindowTitles.Apply(current);
+            }
+        }
+    }
     internal bool StaysOpen { get; set; }
     internal bool TargetPressToggles { get; set; }
     internal double VerticalOffset { get; set; } = offset;
@@ -47,7 +60,7 @@ internal sealed class WindowPopup(UIElement child, UIElement target, string titl
     {
         if (window is not null) return;
         owner = Window.GetWindow(target) ?? throw new InvalidOperationException("A panel requires its source window.");
-        var shown = new Window { Title = title, Content = child, Owner = owner, ShowInTaskbar = false, Topmost = true,
+        var shown = new Window { Title = Title, Content = child, Owner = owner, ShowInTaskbar = false, Topmost = true,
             ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight,
             WindowStartupLocation = WindowStartupLocation.Manual, ShowActivated = owner.IsActive, Icon = AppIcon.WindowImage };
         // Theme resources are application-scoped. A source dictionary also contains live

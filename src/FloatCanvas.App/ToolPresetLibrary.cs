@@ -120,7 +120,7 @@ internal sealed class ToolPresetLibrary
         "official.blur-fine" => "official.blur",
         "official.pixelate-fine" => "official.pixelate",
         "official.image-half" or "official.image-faint" => "official.image",
-        "official.highlighter-green" => "official.highlighter-dotted",
+        "official.highlighter-green" or "official.highlighter-dotted" => "official.highlighter-flat-blue",
         "official.number-blue" => "official.number-outline",
         _ => id
     };
@@ -172,8 +172,13 @@ internal sealed class ToolPresetLibrary
         Add("freehand-bold", "FreehandBold", EditorTool.Freehand, p => p.Style.StrokeWidth = 16);
         Add("freehand-dotted", "FreehandDotted", EditorTool.Freehand, p => { p.Style.StrokeWidth = 24; p.Style.StrokePattern = StrokePattern.Dotted; });
         Add("highlighter", "Highlighter", EditorTool.Highlighter);
-        Add("highlighter-yellow", "HighlighterYellow", EditorTool.Highlighter, p => { p.Style.Foreground = 0xFFCB912F; p.Style.StrokeWidth = 48; });
-        Add("highlighter-dotted", "HighlighterDotted", EditorTool.Highlighter, p => { p.Style.StrokeWidth = 32; p.Style.StrokePattern = StrokePattern.Dotted; });
+        Add("highlighter-yellow", "HighlighterYellow", EditorTool.Highlighter, p => { p.Style.Foreground = ColorLibrary.ForegroundYellow; p.Style.StrokeWidth = 48; });
+        Add("highlighter-flat-blue", "HighlighterFlatBlue", EditorTool.Highlighter, p =>
+        {
+            p.Style.StrokeWidth = 32;
+            p.Style.HighlighterTip = HighlighterTip.Flat;
+            p.Style.Foreground = ColorLibrary.ForegroundBlue;
+        });
         void Line(string id, string label, ArrowHeadStyle start, ArrowHeadStyle end, StrokePattern pattern = StrokePattern.Solid) =>
             Add(id, label, EditorTool.Line,
                 p => { p.Style.StartArrowHead = start; p.Style.EndArrowHead = end; p.Style.StrokePattern = pattern; });
