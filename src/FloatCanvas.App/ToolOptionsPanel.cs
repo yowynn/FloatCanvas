@@ -176,6 +176,9 @@ internal sealed partial class ToolOptionsPanel : UserControl
         {
             if (!refreshing) Change(p => p.Style.FontFamily = name);
         };
+        Picker(parameterGrid, "LinePathMode", L.Get("Line.PathMode"),
+            [(L.Get("Line.Straight"), LinePathMode.Straight), (L.Get("Line.Arc"), LinePathMode.Arc)],
+            (p, v) => p.Style.LineArcBulge = (LinePathMode)v == LinePathMode.Arc ? ElementGeometry.DefaultLineArcBulge : null);
         Picker(parameterGrid, "StartArrowHead", L.Get("Inspector.StartArrow"), ArrowOptions(), (p, v) => p.Style.StartArrowHead = (ArrowHeadStyle)v);
         Picker(parameterGrid, "EndArrowHead", L.Get("Inspector.EndArrow"), ArrowOptions(), (p, v) => p.Style.EndArrowHead = (ArrowHeadStyle)v);
         Picker(parameterGrid, "StrokePattern", L.Get("Inspector.StrokePattern"),
@@ -333,6 +336,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             Show("NumberStart", tool == EditorTool.Number); Show("NumberStep", tool == EditorTool.Number); Show("NextNumber", tool == EditorTool.Number);
             Show("DefaultWidth", shape); Show("DefaultHeight", shape);
             Show("StartArrowHead", line); Show("EndArrowHead", line); Show("ArrowHeadSize", line); Show("StrokePattern", stroke);
+            Show("LinePathMode", line);
             Show("CornerRadius", tool is EditorTool.Rectangle or EditorTool.RoundedRectangle);
             Show("Size", shape); Show("Aspect", !shape && boxRegion && !presentation);
             Show("EffectStrength", tool is EditorTool.Blur or EditorTool.Pixelate);
@@ -388,6 +392,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             SetPicker("StartArrowHead", p.Style.StartArrowHead ?? (tool == EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("EndArrowHead", p.Style.EndArrowHead ?? (tool is EditorTool.Arrow or EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
             SetPicker("StrokePattern", p.Style.StrokePattern);
+            SetPicker("LinePathMode", p.Style.LineArcBulge.HasValue ? LinePathMode.Arc : LinePathMode.Straight);
             SetPicker("HighlighterTip", p.Style.HighlighterTip);
             SetNumber("HighlighterTipAngle", p.Style.HighlighterTipAngle);
             SetNumber("HighlighterInkContrast", 100 * p.Style.HighlighterInkContrast);
@@ -407,7 +412,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
     {
         foreach (var section in parameterGrid.Children.OfType<FrameworkElement>().Where(item => Equals(item.Tag, "ToolSection")).ToArray()) parameterGrid.Children.Remove(section);
         parameterGrid.RowDefinitions.Clear();
-        string[][] groups = [ ["PresentationRuntime"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["StyleVariant"],
+        string[][] groups = [ ["PresentationRuntime"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["StyleVariant"], ["LinePathMode"],
             ["HighlighterTip"], ["HighlighterAngleRegion"], ["HighlighterInkContrast"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
             ["FontFamily"], ["FontSize"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
             ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Size"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];

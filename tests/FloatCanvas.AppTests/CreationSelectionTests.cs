@@ -17,12 +17,66 @@ internal static class CreationSelectionTests
         CaptureSelectionCoordinates(check);
         RegionToolSelectedEndpoints(check);
         foreach (var tool in DragTools) DraggedObject(tool, check);
+        EditableArc(check);
         ClosedStroke(check);
         PointerCancellation(check);
         ExistingSelectionIsTheTarget(check);
         CtrlGestureOwnership(check);
         ClickObjectsAndImage(check);
         ContinuousClickInsertion(check);
+    }
+
+    private static void EditableArc(Action<string, bool> check)
+    {
+        var session = new EditorSession();
+        var controller = new EditorController(session) { Tool = EditorTool.Line };
+        controller.Style.LineArcBulge = ElementGeometry.DefaultLineArcBulge;
+        Gesture(controller, new(50, 80), new(250, 80));
+        var arc = session.Document.Elements.Single();
+        var ends = arc.Points.ToArray();
+        check("drawing in arc mode selects the new arc and reveals its midpoint",
+            controller.SelectionScreenArcHandle == new PointD(150, 120) && session.Selection.SetEquals([arc.Id]));
+        Gesture(controller, new(150, 120), new(150, 40));
+        arc = session.Document.Elements.Single();
+        check("dragging the midpoint bends the same arc to the other side without moving its endpoints",
+            arc.Points.SequenceEqual(ends) && arc.Style.LineArcBulge == -.2 && controller.SelectionScreenArcHandle == new PointD(150, 40));
+        check("one undo restores the original arc", session.Undo() &&
+            session.Document.Elements.Single().Style.LineArcBulge == ElementGeometry.DefaultLineArcBulge);
+        Gesture(controller, new(150, 120), new(150, 80));
+        check("flattening an arc keeps an editable midpoint", session.Document.Elements.Single().Style.LineArcBulge == 0 &&
+            controller.SelectionScreenArcHandle == new PointD(150, 80));
+        Send(controller, OverlayPointerKind.Down, new(150, 80));
+        Send(controller, OverlayPointerKind.Move, new(205, 135));
+        check("an unmodified arc handle follows the pointer off center during the drag",
+            controller.SelectionScreenArcHandle == new PointD(205, 135) && session.Document.Elements.Single().Points.SequenceEqual(ends));
+        var originalPath = ElementGeometry.LineShaftPoints(session.Document.Elements.Single()).ToArray();
+        foreach (var beyond in new[] { new PointD(310, 135), new PointD(10, 135) })
+        {
+            Send(controller, OverlayPointerKind.Move, beyond);
+            var edited = session.Document.Elements.Single();
+            var path = ElementGeometry.LineShaftPoints(edited).Select(edited.Transform.TransformPoint);
+            check("dragging past an endpoint shows its rounded return before release",
+                controller.SelectionScreenArcHandle == beyond && (beyond.X > 250 ? path.Max(p => p.X) > beyond.X + 1 : path.Min(p => p.X) < beyond.X - 1));
+            Send(controller, OverlayPointerKind.Move, new(205, 135));
+            check("dragging back restores the same live ellipse with both endpoints fixed",
+                ElementGeometry.LineShaftPoints(session.Document.Elements.Single()).SequenceEqual(originalPath) &&
+                session.Document.Elements.Single().Points.SequenceEqual(ends));
+        }
+        controller.ModifiersChanged(OverlayModifiers.Shift, pointerLeftDown: true);
+        check("pressing Shift mid-drag immediately snaps the arc handle to the perpendicular bisector",
+            controller.SelectionScreenArcHandle == new PointD(150, 135));
+        controller.ModifiersChanged(OverlayModifiers.None, pointerLeftDown: true);
+        check("releasing Shift resumes free dragging without another mouse move",
+            controller.SelectionScreenArcHandle == new PointD(205, 135));
+        Send(controller, OverlayPointerKind.Up, new(205, 135), OverlayModifiers.Shift);
+        check("releasing the handle with Shift commits the centered position",
+            controller.SelectionScreenArcHandle == new PointD(150, 135));
+        Gesture(controller, new(150, 135), new(450, 480));
+        check("dragging far diagonally leaves the arc handle at the pointer",
+            controller.SelectionScreenArcHandle == new PointD(450, 480) && session.Document.Elements.Single().Points.SequenceEqual(ends));
+        Gesture(controller, new(450, 480), new(530, 560), OverlayModifiers.Shift);
+        check("Shift constrains distant arc handle movement to the bisector without a distance cap",
+            controller.SelectionScreenArcHandle == new PointD(150, 560));
     }
 
     private static void RegionToolSelectionRouting(Action<string, bool> check)

@@ -189,6 +189,8 @@ internal sealed partial class EditorController
     private Dictionary<Guid, Affine2D> transforms = [];
     private CanvasElement? resizeSource;
     private CanvasElement? billboardEndpointSource;
+    private PointD arcHandleGrabOffset;
+    private (double Offset, double Bulge) arcHandleStart;
     private SceneRenderer? resizeTextRenderer;
     private Dictionary<Guid,CanvasElement> resizeTextSources = [];
     private int endpoint;
@@ -530,6 +532,11 @@ internal sealed partial class EditorController
                 { var ids = shiftDeselectTarget is { } id && ResolveHitSelectableNode(id,deepSelectionGesture) is { } node ? new[] { node } : []; Session.Cancel(); Session.SetSelection(Session.Selection.Except(ids)); }
                 else if (completed == "move" && !gestureMoved && selectionOnClick is { } clicked)
                 { CommitPointerEdit(); Session.SetSelection(clicked); }
+                else if (completed == "draw" && drawing is { } arc && ElementGeometry.LineArcHandle(arc).HasValue)
+                {
+                    if (!screenBillboardDrawing) Session.Selection.Add(arc.Id);
+                    CommitPointerEdit();
+                }
                 else CommitPointerEdit();
             }
             resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
@@ -550,6 +557,7 @@ internal sealed partial class EditorController
         if (!SelectedEditingWorldElements(editableOnly: true).Any(element => element.Visible)) return false;
         if (SelectionScreenRotationHandle is { } rotation && screen.DistanceTo(rotation) < 14 ||
             BillboardSelectionGuide is { } guide && screen.DistanceTo(guide.Center) < 12 ||
+            SelectionScreenArcHandle is { } arc && screen.DistanceTo(arc) < 12 ||
             SelectionScreenEndpoints.Any(endpoint => screen.DistanceTo(endpoint) < 12)) return true;
         var corners = SelectionScreenCorners;
         return includeInterior && corners.Count == 4 && ElementGeometry.PointInPolygon(screen, corners) ||
@@ -644,8 +652,21 @@ internal sealed partial class EditorController
             if (!HasNodeSelection && selected.Length == 1 && selected[0].Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow && selected[0].Points.Count > 1)
             {
                 var element = selected[0];
+                var screen = CurrentCanvasMapping.ElementToScreen(element);
+                if (ScreenArcHandle(element) is { } handle && handle.DistanceTo(pointerScreen) < 12 &&
+                    element.Points.All(point => screen.TransformPoint(point).DistanceTo(pointerScreen) >= handle.DistanceTo(pointerScreen)))
+                {
+                    BeginWorldEndpoint(Session.Document.Elements.Single(source => source.Id == element.Id));
+                    billboardEndpointSource = element.IsBillboard ? element.Clone() : null;
+                    endpoint = -1;
+                    arcHandleGrabOffset = pointerScreen - handle;
+                    arcHandleStart = (element.Style.LineArcOffset, element.Style.LineArcBulge!.Value);
+                    gesture = "endpoint";
+                    BeginPointerTransaction(L.Get("Editor.History.AdjustArc"));
+                    return;
+                }
                 foreach (var i in new[] { 0, element.Points.Count - 1 })
-                    if (CurrentCanvasMapping.ElementToScreen(element).TransformPoint(element.Points[i]).DistanceTo(pointerScreen) < 12)
+                    if (screen.TransformPoint(element.Points[i]).DistanceTo(pointerScreen) < 12)
                     { BeginWorldEndpoint(Session.Document.Elements.Single(source => source.Id == element.Id)); billboardEndpointSource = element.IsBillboard ? element.Clone() : null; endpoint = i; gesture = "endpoint"; BeginPointerTransaction(L.Get("Editor.History.AdjustEndpoint")); return; }
             }
             if (SelectionScreenRotationHandle is { } rotation && pointerScreen.DistanceTo(rotation) < 14) gesture = "rotate";
@@ -719,6 +740,27 @@ internal sealed partial class EditorController
         if (gesture == "erase") { Erase(p); return; }
         if (gesture == "endpoint" && drawing != null)
         {
+            if (endpoint == -1)
+            {
+                var source = billboardEndpointSource ?? drawing;
+                var canvasMapping = CurrentCanvasMapping;
+                var screenMap = canvasMapping.ElementToScreen(source);
+                if (!screenMap.TryInverse(out var toLocal) ||
+                    !toLocal.TryTransformPoint(pointerScreen - arcHandleGrabOffset, out var handle)) { RejectPointer(); return; }
+                var (offset, bulge) = pointerScreen == startScreen && !gestureMoved ? arcHandleStart :
+                    ElementGeometry.LineArcCoordinatesAt(source, handle, (modifiers & OverlayModifiers.Shift) != 0);
+                if (drawing.Style.LineArcBulge != bulge || drawing.Style.LineArcOffset != offset)
+                {
+                    drawing.Style.LineArcBulge = bulge;
+                    drawing.Style.LineArcOffset = offset;
+                    if (drawing.IsBillboard &&
+                        (!canvasMapping.TryGetEqualDepthLine(canvasMapping.ToScreen(source.BillboardAnchor), out var depth) ||
+                         !BillboardGeometry.TryPlaceFromScreen(drawing, canvasMapping, depth, screenMap)))
+                    { RejectPointer(); return; }
+                    NotifyGeometryChanged();
+                }
+                return;
+            }
             if (drawing.IsBillboard)
             {
                 var source = billboardEndpointSource ?? drawing;

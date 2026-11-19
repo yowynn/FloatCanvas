@@ -75,7 +75,8 @@ internal sealed partial class EditorController
     {
         if (!TryScreenBillboardCandidate(out var candidate)) throw new InvalidOperationException(L.Get("Billboard.InvalidLogicalPlacement"));
         new SceneGraph(Session.Document).InsertElement(candidate, Session.EditScopeId, rootCanvas: Session.ActiveRootCanvas);
-        if (candidate.Kind is not (ElementKind.Freehand or ElementKind.Highlighter) && !ElementGeometry.IsLine(candidate.Kind))
+        if (candidate.Kind is not (ElementKind.Freehand or ElementKind.Highlighter) &&
+            (!ElementGeometry.IsLine(candidate.Kind) || ElementGeometry.LineArcHandle(candidate).HasValue))
             Session.Selection.Add(candidate.Id);
     }
 }

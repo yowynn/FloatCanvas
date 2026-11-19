@@ -32,6 +32,8 @@ internal static class SegmentedChoicePreviews
             "capture-polygon" => "M2,5 L9,1 L15,6 L12,14 L3,12 Z",
             "tip-round" => "M4,5 H12 A3,3 0 0 1 12,11 H4 A3,3 0 0 1 4,5 Z",
             "tip-flat" => "M2,5 H14 V11 H2 Z",
+            "line-straight" => "M2,12 L14,4",
+            "line-arc" => "M2,12 A12,12 0 0 1 14,4",
             "language" => "M1,3 H9 M5,1 V3 M3,4 C3,7 6,10 9,11 M8,4 C8,7 5,10 1,11 M9,15 L12,7 L15,15 M10,12 H14",
             _ => "M2,2 H14 V14 H2 Z"
         };
@@ -48,6 +50,7 @@ internal static class SegmentedChoicePreviews
         if (value is CaptureShape capture) return Icon(capture switch { CaptureShape.Rectangle => "capture-rectangle", CaptureShape.Ellipse => "capture-ellipse", CaptureShape.FreehandLasso => "capture-lasso", _ => "capture-polygon" });
         if (value is CaptureSource source) return Icon(source switch { CaptureSource.Background => "background", CaptureSource.CanvasOnly => "canvas", _ => "combined" });
         if (value is HighlighterTip tip) return Icon(tip == HighlighterTip.Flat ? "tip-flat" : "tip-round");
+        if (value is LinePathMode pathMode) return Icon(pathMode == LinePathMode.Arc ? "line-arc" : "line-straight");
         if (value is StrokePattern pattern) return StrokePatternIcon(pattern);
         var drawing = new DrawingGroup();
         var image = new Image { Width = 18, Height = 18, Stretch = Stretch.Uniform };

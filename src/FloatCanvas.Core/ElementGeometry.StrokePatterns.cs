@@ -25,7 +25,8 @@ public static partial class ElementGeometry
             s.CornerRadius == e.CornerRadius && s.Symbol == e.Symbol && s.Style.StrokeWidth == e.Style.StrokeWidth &&
             s.Style.StrokePattern == e.Style.StrokePattern && s.Style.ArrowHeadSize == e.Style.ArrowHeadSize &&
             s.Style.ArrowHeadStyle == e.Style.ArrowHeadStyle && s.Style.StartArrowHead == e.Style.StartArrowHead &&
-            s.Style.EndArrowHead == e.Style.EndArrowHead && e.Points.ContentEquals(s.Points);
+            s.Style.EndArrowHead == e.Style.EndArrowHead && s.Style.LineArcBulge == e.Style.LineArcBulge &&
+            s.Style.LineArcOffset == e.Style.LineArcOffset && e.Points.ContentEquals(s.Points);
         public void Update(CanvasElement e) { Geometry = BuildPattern(e); _snapshot = e.Clone(); }
     }
 
@@ -33,6 +34,9 @@ public static partial class ElementGeometry
     {
         double width = Math.Max(.1, element.Style.StrokeWidth), radius = width / 2;
         bool closed = IsBoxShape(element.Kind);
+        bool roundJoins = IsLine(element.Kind);
+        if (roundJoins && element.Style.StrokePattern is StrokePattern.Dashed or StrokePattern.DashDot)
+            radius = element.Style.StrokeWidth / 2;
         var outer = closed ? CleanContour(Outline(element)) : [];
         var center = closed ? InsetContour(outer, radius) : CleanContour(IsLine(element.Kind) ? LineShaftPoints(element) : element.Points, false);
         var polygons = new List<IReadOnlyList<PointD>>(); var dots = new List<PointD>();
@@ -50,7 +54,7 @@ public static partial class ElementGeometry
             if (closed && center.Count > 0) center.Add(center[0]);
             foreach (var mark in DashDotMarks(center, width, squareCaps: closed))
             {
-                if (mark.Count > 1) AddDashPolygons(mark, radius, polygons, dots);
+                if (mark.Count > 1) AddDashPolygons(mark, radius, polygons, dots, roundJoins);
                 if (!closed)
                 {
                     dots.Add(mark[0]);
@@ -68,7 +72,7 @@ public static partial class ElementGeometry
             }
             foreach (var points in chunks)
             {
-                AddDashPolygons(points, radius, polygons, dots);
+                AddDashPolygons(points, radius, polygons, dots, roundJoins);
                 if (!closed)
                 {
                     dots.Add(points[0]);
@@ -223,7 +227,8 @@ public static partial class ElementGeometry
         return result;
     }
 
-    private static void AddDashPolygons(IReadOnlyList<PointD> points, double radius, List<IReadOnlyList<PointD>> polygons, List<PointD> caps)
+    private static void AddDashPolygons(IReadOnlyList<PointD> points, double radius, List<IReadOnlyList<PointD>> polygons,
+        List<PointD> caps, bool roundJoins = false)
     {
         for (int i = 1; i < points.Count; i++)
         {
@@ -235,7 +240,9 @@ public static partial class ElementGeometry
         bool loop = points.Count > 2 && points[0].DistanceTo(points[^1]) < 1e-8;
         for (int i = loop ? 0 : 1; i < points.Count - 1; i++)
         {
-            var p = points[i]; var previous = points[i == 0 ? points.Count - 2 : i - 1]; var next = points[i + 1];
+            var p = points[i];
+            if (roundJoins) { caps.Add(p); continue; }
+            var previous = points[i == 0 ? points.Count - 2 : i - 1]; var next = points[i + 1];
             var a = (p - previous) * (1 / p.DistanceTo(previous)); var b = (next - p) * (1 / next.DistanceTo(p));
             var n1 = new PointD(-a.Y, a.X) * radius; var n2 = new PointD(-b.Y, b.X) * radius;
             double denominator = 1 + a.X * b.X + a.Y * b.Y;
@@ -303,9 +310,9 @@ public static partial class ElementGeometry
     private static bool PatternHit(CanvasElement element, Projective2D transform, PointD target, PointD local, double tolerance)
     {
         var geometry = StrokePatternGeometry(element);
-        if (element.Style.StrokePattern == StrokePattern.Dashed)
+        if (element.Style.StrokePattern == StrokePattern.Dashed && !IsLine(element.Kind))
         {
-            var contour = geometry.Closed ? Outline(element) : IsLine(element.Kind) ? LineShaftPoints(element) : element.Points;
+            var contour = geometry.Closed ? Outline(element) : element.Points;
             double radius = element.Style.StrokeWidth * (geometry.Closed ? 1 : .5);
             if (!StrokePathHit(transform, contour, geometry.Closed, target, local, radius, tolerance) &&
                 (!geometry.Closed || !InsideMiterHit(element, transform, contour, target, local, tolerance))) return false;

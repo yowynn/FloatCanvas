@@ -9,8 +9,10 @@ public static partial class ElementGeometry
     {
         if (UsesPoints(element.Kind) && element.Points.Count > 0)
         {
-            double x = element.Points.Min(p => p.X), y = element.Points.Min(p => p.Y);
-            return new(x, y, element.Points.Max(p => p.X) - x, element.Points.Max(p => p.Y) - y);
+            if (TryLineEllipse(element, out var arc)) return arc.Bounds;
+            var points = IsLine(element.Kind) ? LineCenterline(element) : element.Points;
+            double x = points.Min(p => p.X), y = points.Min(p => p.Y);
+            return new(x, y, points.Max(p => p.X) - x, points.Max(p => p.Y) - y);
         }
         return new(0, 0, Math.Max(0, element.Width), Math.Max(0, element.Height));
     }
@@ -247,8 +249,8 @@ public static partial class ElementGeometry
         PointD tip = reverse ? element.Points[0] : element.Points[^1], previous = reverse ? element.Points[1] : element.Points[^2];
         double length = tip.DistanceTo(previous);
         if (length < .001) return style == ArrowHeadStyle.Diamond ? [tip, tip, tip, tip] : [tip, tip, tip];
-        var direction = (tip - previous) * (1 / length);
         double size = ArrowHeadLength(element);
+        var direction = LineArrowDirection(element, reverse, style, size, (tip - previous) * (1 / length));
         var basePoint = tip - direction * size;
         var normal = new PointD(-direction.Y, direction.X) * (size * ArrowHeadHalfWidthRatio);
         return style switch
@@ -264,17 +266,22 @@ public static partial class ElementGeometry
     public static IReadOnlyList<PointD> LineShaftPoints(CanvasElement element)
     {
         if (!IsLine(element.Kind) || element.Points.Count < 2) return element.Points;
-        var points = element.Points.ToList();
+        var centerline = LineCenterline(element);
+        var points = centerline.ToList();
         foreach (bool reverse in new[] { true, false })
         {
             var style = ArrowStyle(element, reverse);
             if (style is not (ArrowHeadStyle.FilledTriangle or ArrowHeadStyle.Diamond)) continue;
             double radius = element.Style.StrokeWidth / 2;
             double headLength = ArrowHeadLength(element);
-            // A diamond starts at a point. Continue to where its widening sides cover the shaft.
-            double inset = style == ArrowHeadStyle.Diamond
-                ? Math.Min(headLength / 2, radius / (2 * ArrowHeadHalfWidthRatio)) : 0;
-            double remaining = Math.Max(radius, headLength - inset);
+            if (!TryLineArcHeadTrim(element, centerline, reverse, style, headLength, radius, out double remaining))
+            {
+                // A diamond starts at a point. Continue to where its widening sides cover the shaft.
+                double inset = style == ArrowHeadStyle.Diamond
+                    ? Math.Min(headLength / 2, radius / (2 * ArrowHeadHalfWidthRatio))
+                    : 0;
+                remaining = Math.Max(radius, headLength - inset);
+            }
             if (!reverse) points.Reverse();
             while (remaining > 0 && points.Count >= 2)
             {

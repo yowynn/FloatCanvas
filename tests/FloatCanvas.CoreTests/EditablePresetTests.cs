@@ -22,6 +22,32 @@ internal static class EditablePresetTests
         line.Style.StrokePattern = StrokePattern.Dotted;
         check(ElementGeometry.HitTest(line, new(4, 0), 0) && !ElementGeometry.HitTest(line, new(2, 0), 0), "dotted exact hit respects round dots and one-width gaps");
 
+        line.Style.StrokePattern = StrokePattern.Solid;
+        line.Style.LineArcBulge = .5;
+        var arc = ElementGeometry.LineShaftPoints(line);
+        check(arc.Count > 2 && arc[0] == new PointD(0, 0) && arc[^1] == new PointD(100, 0) &&
+            arc.All(point => Math.Abs(point.DistanceTo(new(50, 0)) - 50) < 1e-8), "semicircle preserves both endpoints and its radius");
+        check(ElementGeometry.LineArcHandle(line) == new PointD(50, 50) &&
+            ElementGeometry.LineArcCoordinatesAt(line, new(85, -30), centered: true) == (0, -.3) &&
+            ElementGeometry.HitTest(line, new(50, 50), 0) && !ElementGeometry.HitTest(line, new(50, 0), 0),
+            "arc handle edits the perpendicular midpoint and hit-testing follows its visible curve");
+        line.Style.EndArrowHead = ArrowHeadStyle.Open;
+        var arcHead = ElementGeometry.ArrowHead(line);
+        check(((arcHead[0] + arcHead[2]) * .5).DistanceTo(new(100, 30)) < 1e-8,
+            "an arc arrowhead points along the end tangent");
+        line.Style.EndArrowHead = ArrowHeadStyle.Diamond;
+        line.Style.StrokeWidth = 8;
+        line.Style.ArrowHeadSize = 0;
+        check(ElementGeometry.PointInPolygon(ElementGeometry.LineShaftPoints(line)[^1], ElementGeometry.ArrowHead(line)),
+            "a tight arc reaches inside its diamond head instead of separating at the tangent");
+
+        line.Style.EndArrowHead = ArrowHeadStyle.None;
+        HalfEllipse(check);
+        line.Style.LineArcBulge = 0;
+        line.Style.LineArcOffset = 1;
+        check(ElementGeometry.LineShaftPoints(line).SequenceEqual(new[] { new PointD(0, 0), new PointD(150, 0), new PointD(100, 0) }),
+            "a collinear handle past the endpoints remains reachable with a single reversal");
+
         var rectangle = new CanvasElement { Kind = ElementKind.RoundedRectangle, Width = 100, Height = 60 };
         check(ElementGeometry.CornerRadius(rectangle) == 12 && ElementGeometry.CornerRadius(rectangle.Clone()) == 12, "legacy rounded rectangle keeps twenty percent radius");
         rectangle.Kind = ElementKind.Rectangle; rectangle.CornerRadius = 30; rectangle.Style.Fill = 0xFF2244FF;
@@ -102,5 +128,60 @@ internal static class EditablePresetTests
         bool rejected = false;
         try { destination.InsertDocument(imageSnapshot, new(), Affine2D.Identity); } catch (KeyNotFoundException) { rejected = true; }
         check(rejected && destination.Document.Elements.Count == beforeFailedInsert && !destination.IsTransactionActive, "missing stamp assets cannot partially overwrite a receiving document");
+    }
+
+    private static void HalfEllipse(Action<bool, string> check)
+    {
+        var line = new CanvasElement { Kind = ElementKind.Line, Points = [new(43, 68), new(316, 68)] };
+        void MoveHandle(PointD p) =>
+            (line.Style.LineArcOffset, line.Style.LineArcBulge) = ElementGeometry.LineArcCoordinatesAt(line, p, centered: false);
+
+        // Reference positions from the draggable half-ellipse preview.
+        MoveHandle(new(386, 123));
+        var points = ElementGeometry.LineShaftPoints(line).ToList();
+        int handleIndex = points.FindIndex(p => p.DistanceTo(new(386, 123)) < 1e-9);
+        check(handleIndex > 0 && points.Skip(handleIndex).Max(p => p.X) is > 397.20 and < 397.26 &&
+            points.All(p => p.Y >= 68), "beyond B, the return passes the handle on its right and stays on its side of AB");
+        check(points.All(p =>
+        {
+            double v = (p.Y - 68) / 58.64930569026503;
+            double u = (p.X - 179.5) / 136.5 - 1.2429214617781612 * v;
+            return Math.Abs(u * u + v * v - 1) < 1e-9;
+        }), "both sides of the handle lie on the same preview ellipse centered at the chord midpoint");
+        var bounds = ElementGeometry.LocalBounds(line);
+        check(Math.Abs(bounds.Right - 397.25295973311534) < 1e-8 && Math.Abs(bounds.Bottom - 126.64930569026503) < 1e-8 &&
+            ElementGeometry.HitTest(line, new(397, 114), 0), "the returning tip is included in exact bounds and hit testing");
+
+        var rotated = line.Clone();
+        var placement = Affine2D.Translation(100, -40).Compose(Affine2D.Rotation(37));
+        rotated.Points = new(line.Points.Select(placement.TransformPoint));
+        var rotatedPath = ElementGeometry.LineShaftPoints(rotated);
+        check(rotatedPath.Count == points.Count && points.Select(placement.TransformPoint)
+            .Zip(rotatedPath).All(pair => pair.First.DistanceTo(pair.Second) < 1e-8),
+            "rotating the chord rotates the entire half ellipse, including the returning tip");
+
+        foreach (int side in new[] { -1, 1 })
+        {
+            double previous = double.PositiveInfinity;
+            foreach (double offset in new[] { 136.5, 206.5, 256.5, 406.5 })
+            {
+                double x = 179.5 + side * offset;
+                MoveHandle(new(x, 123));
+                bounds = ElementGeometry.LocalBounds(line);
+                double over = side < 0 ? x - bounds.Left : bounds.Right - x;
+                check(over > 0 && over < previous, "the lateral return narrows continuously beyond either endpoint");
+                previous = over;
+            }
+            foreach (double dy in new[] { -.001, 0, .001 })
+            {
+                double x = 179.5 + side * 206.5;
+                MoveHandle(new(x, 68 + dy));
+                var nearAxis = ElementGeometry.LineShaftPoints(line);
+                check(nearAxis.All(p => Math.Abs(p.Y - 68) < .002) &&
+                    nearAxis.Any(p => p.DistanceTo(new(x, 68 + dy)) < 1e-9) &&
+                    nearAxis.All(p => side * (p.X - x) < .001),
+                    "crossing either extension collapses onto the collinear return at the handle");
+            }
+        }
     }
 }

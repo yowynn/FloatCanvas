@@ -159,6 +159,7 @@ internal sealed partial class DesktopSession
         {
             Polygon(corners);
             foreach (var point in _editor.SelectionScreenEndpoints) Region(point, point);
+            if (_editor.SelectionScreenArcHandle is { } arc) Region(arc, arc);
             if (EditorController.RotationAnchor(corners) is { } anchor && EditorController.RotationHandle(corners) is { } handle)
                 Region(anchor, handle);
         }

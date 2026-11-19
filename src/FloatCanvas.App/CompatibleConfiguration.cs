@@ -236,6 +236,7 @@ internal sealed class CompatibleConfiguration(string path)
         if (owner == typeof(ElementStyle)) return name switch
         {
             "StrokeWidth" or "Opacity" or "FontSize" or "ArrowHeadSize" => NumericParameterDomain.ForStyle(name).Contains(value.Deserialize<double>()),
+            "LineArcBulge" => Range(value, -ElementGeometry.MaximumLineArcBulge, ElementGeometry.MaximumLineArcBulge),
             "FontFamily" => Text(value, 1024), _ => true
         };
         if (owner == typeof(PresentationSettings))

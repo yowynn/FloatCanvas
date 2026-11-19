@@ -94,6 +94,14 @@ internal static class ToolOptionsPanelTests
         controller.Tool = EditorTool.Text; panel.PrepareForShow();
         check("switching to text renames the reused color field and picker",
             colorCaption.Text == L.Get("Color.Unified") && colorPopup.Title == colorCaption.Text);
+        controller.Tool = EditorTool.Line; panel.PrepareForShow();
+        Select(pickers["LinePathMode"], LinePathMode.Arc);
+        var arcPreset = new ToolPresetLibrary(tipPresetPath).Save("Arc", controller.Parameters);
+        check("the line path selector enables the default bend and the preset restores it",
+            controller.Style.LineArcBulge == ElementGeometry.DefaultLineArcBulge &&
+            new ToolPresetLibrary(tipPresetPath).Apply(arcPreset.Id).Style.LineArcBulge == ElementGeometry.DefaultLineArcBulge);
+        Select(pickers["LinePathMode"], LinePathMode.Straight);
+        check("the line path selector can return to straight drawing", controller.Style.LineArcBulge is null);
 
         foreach (var (tool, key, invalid) in new[] { (EditorTool.Line, "StrokeWidth", "-1"),
             (EditorTool.Text, "FontSize", "0"), (EditorTool.Blur, "EffectStrength", "NaN"), (EditorTool.Rectangle, "CornerRadius", "-1") })

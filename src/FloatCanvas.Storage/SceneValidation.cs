@@ -201,7 +201,8 @@ public static class SceneValidation
             (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&
             (s.EndArrowHead is null || Enum.IsDefined(s.EndArrowHead.Value)), L.Get("Scene.InvalidArrowHead"));
         Require(Enum.IsDefined(s.StrokePattern) && Enum.IsDefined(s.HighlighterTip) &&
-            s.HighlighterTipAngle is >= -90 and <= 90 && s.HighlighterInkContrast is >= 0 and <= 1, L.Get("Scene.InvalidElementStyle"));
+            s.HighlighterTipAngle is >= -90 and <= 90 && s.HighlighterInkContrast is >= 0 and <= 1 &&
+            (s.LineArcBulge is null || double.IsFinite(s.LineArcBulge.Value)) && double.IsFinite(s.LineArcOffset), L.Get("Scene.InvalidElementStyle"));
         Require(element.Kind != ElementKind.Image || element.WindowSource is not null || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidImageReference"));
         Require(element.AssetId is null || PackageCodec.IsAssetId(element.AssetId), L.Get("Scene.InvalidAssetReference"));
         Require(element.ImageCrop is null || NormalizedRect(element.ImageCrop.Value, positive: true), L.Get("Scene.InvalidImageCrop"));

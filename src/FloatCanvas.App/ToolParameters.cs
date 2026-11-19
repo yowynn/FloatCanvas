@@ -3,6 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace FloatCanvas.App;
 
+internal enum LinePathMode { Straight, Arc }
+
 /// <summary>Complete editable tool state, separate from any open document or selection.</summary>
 internal sealed class ToolParameters
 {
@@ -89,6 +91,7 @@ internal sealed class ToolParameters
         NumericParameterDomain.ForStyle(nameof(s.FontSize)).Contains(s.FontSize) &&
         s.FontFamily is { Length: > 0 and <= 1024 } && Enum.IsDefined(s.TextAlignment) &&
         Enum.IsDefined(s.ArrowHeadStyle) && NumericParameterDomain.ForStyle(nameof(s.ArrowHeadSize)).Contains(s.ArrowHeadSize) &&
+        (s.LineArcBulge is null or >= -ElementGeometry.MaximumLineArcBulge and <= ElementGeometry.MaximumLineArcBulge) &&
         (s.StartArrowHead is null || Enum.IsDefined(s.StartArrowHead.Value)) &&
         (s.EndArrowHead is null || Enum.IsDefined(s.EndArrowHead.Value)) && Enum.IsDefined(s.StrokePattern) &&
         Enum.IsDefined(s.HighlighterTip) && NumericParameterDomain.ForStyle(nameof(s.HighlighterTipAngle)).Contains(s.HighlighterTipAngle) &&

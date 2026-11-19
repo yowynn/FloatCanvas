@@ -420,7 +420,12 @@ public sealed partial class SceneRenderer : IDisposable
                 }
                 if (ElementGeometry.IsLine(element.Kind) && element.Points.Count >= 2)
                     foreach (var head in ElementGeometry.GetStyledArrowHeads(element))
-                        AddHead(head.Style == ArrowHeadStyle.Open ? openHeads : filledHeads, head.Points, head.Style != ArrowHeadStyle.Open);
+                    {
+                        if (head.Style == ArrowHeadStyle.Open && element.Style.StrokePattern != StrokePattern.Solid)
+                            AddRoundHeadInk(filledHeads, head.Points, element.Style.StrokeWidth / 2);
+                        else
+                            AddHead(head.Style == ArrowHeadStyle.Open ? openHeads : filledHeads, head.Points, head.Style != ArrowHeadStyle.Open);
+                    }
                 break;
         }
         var entry = new PathEntry(element, builder.Detach(), filledHeads.Detach(), openHeads.Detach(), _clock);
@@ -452,6 +457,20 @@ public sealed partial class SceneRenderer : IDisposable
         foreach (var point in geometry.Dots)
             builder.AddCircle((float)point.X, (float)point.Y, (float)geometry.Radius);
         return builder.Detach();
+    }
+
+    private static void AddRoundHeadInk(SKPathBuilder builder, IReadOnlyList<PointD> points, double radius)
+    {
+        foreach (var point in points)
+            builder.AddCircle((float)point.X, (float)point.Y, (float)radius);
+        for (int i = 1; i < points.Count; i++)
+        {
+            var a = points[i - 1]; var b = points[i];
+            double length = a.DistanceTo(b);
+            if (length <= 1e-9) continue;
+            var normal = new PointD(a.Y - b.Y, b.X - a.X) * (radius / length);
+            AddHead(builder, [a + normal, a - normal, b - normal, b + normal], true);
+        }
     }
 
     private void DrawNumber(SKCanvas canvas, CanvasElement element)
@@ -633,6 +652,8 @@ public sealed partial class SceneRenderer : IDisposable
         private readonly ArrowHeadStyle _arrowHeadStyle = element.Style.ArrowHeadStyle;
         private readonly ArrowHeadStyle? _startArrowHead = element.Style.StartArrowHead, _endArrowHead = element.Style.EndArrowHead;
         private readonly double? _cornerRadius = element.CornerRadius;
+        private readonly double? _lineArcBulge = element.Style.LineArcBulge;
+        private readonly double _lineArcOffset = element.Style.LineArcOffset;
         private readonly SymbolKind _symbol = element.Symbol;
         private readonly double _arrowHeadSize = element.Style.ArrowHeadSize;
         private readonly StrokePattern _strokePattern = element.Style.StrokePattern;
@@ -652,7 +673,8 @@ public sealed partial class SceneRenderer : IDisposable
         private SKPath? _arrowInk;
         private readonly StrokePatternGeometry? _patternGeometry = element.Style.StrokePattern == StrokePattern.Solid || ElementGeometry.HasFlatHighlighterTip(element)
             ? null : ElementGeometry.StrokePatternGeometry(element);
-        public SKPath PatternStroke => _patternStroke ??= BuildStroke(false);
+        public SKPath PatternStroke => _patternStroke ??= ElementGeometry.IsLine(_kind)
+            ? BuildPatternMask(_patternGeometry!) : BuildStroke(false);
         public SKPath PatternMask => _patternMask ??= BuildPatternMask(_patternGeometry!);
         public SKPath SolidStroke => _solidStroke ??= BuildStroke(false, patterned: false);
         public SKPath InnerStroke
@@ -665,6 +687,9 @@ public sealed partial class SceneRenderer : IDisposable
         }
         private SKPath BuildArrowInk()
         {
+            if (_patternGeometry is not null && ElementGeometry.IsLine(_kind))
+                return BuildPatternedArrowInk();
+
             // The shaft and heads share a color. Union their coverage before applying it.
             var shaft = _strokePattern == StrokePattern.Solid ? SolidStroke : PatternStroke;
             if (openHeads.IsEmpty) return Union(shaft, filledHeads);
@@ -677,6 +702,16 @@ public sealed partial class SceneRenderer : IDisposable
 
             static SKPath Union(SKPath a, SKPath b) => a.IsEmpty ? new(b) : b.IsEmpty ? new(a) :
                 a.Op(b, SKPathOp.Union) ?? throw new InvalidOperationException("Cannot combine the line and arrowheads.");
+        }
+
+        private SKPath BuildPatternedArrowInk()
+        {
+            // All contours wind in the same direction, including the heads. Draw once so
+            // crossings and head joins share coverage without a global boolean operation.
+            using var builder = new SKPathBuilder();
+            builder.AddPath(PatternStroke);
+            builder.AddPath(filledHeads);
+            return builder.Detach();
         }
         private SKPath BuildStroke(bool inside, bool patterned = true)
         {
@@ -709,7 +744,7 @@ public sealed partial class SceneRenderer : IDisposable
         public bool Matches(CanvasElement e) => _kind == e.Kind && _width == e.Width && _height == e.Height && _strokeWidth == e.Style.StrokeWidth &&
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
             _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
-            _strokePattern == e.Style.StrokePattern &&
+            _strokePattern == e.Style.StrokePattern && _lineArcBulge == e.Style.LineArcBulge && _lineArcOffset == e.Style.LineArcOffset &&
             _highlighterTip == e.Style.HighlighterTip && _highlighterTipAngle == e.Style.HighlighterTipAngle &&
             e.Points.ContentEquals(_points);
         public void Dispose()

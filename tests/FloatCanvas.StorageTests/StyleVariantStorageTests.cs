@@ -26,13 +26,22 @@ internal static class StyleVariantStorageTests
                 new() { Kind = ElementKind.Highlighter, Points = [new(20, 30), new(100, 30)],
                     Style = new() { StrokeWidth = 24, HighlighterTip = HighlighterTip.Flat, HighlighterTipAngle = -35,
                         HighlighterInkContrast = .55, StrokePattern = StrokePattern.DashDot } },
-                new() { Kind = ElementKind.Highlighter, Points = [new(20, 60), new(100, 60)], Style = new() { StrokeWidth = 24 } }
+                new() { Kind = ElementKind.Highlighter, Points = [new(20, 60), new(100, 60)], Style = new() { StrokeWidth = 24 } },
+                new() { Kind = ElementKind.Line, Points = [new(20, 90), new(100, 90)],
+                    Style = new() { LineArcBulge = -.3, EndArrowHead = ArrowHeadStyle.Open, StrokePattern = StrokePattern.DashDot } },
+                new() { Kind = ElementKind.Line, Points = [new(20, 90), new(100, 90)],
+                    Style = new() { LineArcBulge = -.75, LineArcOffset = .25 } }
             ]
         };
         string expected = JsonSerializer.Serialize(document); string path = Path.Combine(root, "variants.floatcanvas");
         await store.SaveAsync(path, document, assets);
         var loaded = await store.LoadAsync(path);
         check(JsonSerializer.Serialize(loaded.Document) == expected, "project roundtrip retains all stable style IDs, inactive colors and historical compatibility flags");
+        check(loaded.Document.Elements[6].Style.LineArcBulge == -.3 && loaded.Document.Elements[6].Points.Count == 2,
+            "project roundtrip retains the signed bend and both editable endpoints");
+        check(ElementGeometry.LineArcHandle(loaded.Document.Elements[6]) == new PointD(60, 66) &&
+            ElementGeometry.LineArcHandle(loaded.Document.Elements[7]) == new PointD(80, 30),
+            "project roundtrip preserves the position of a handle past the semicircle boundary");
         var uniform = loaded.Document.Elements[0]; var independent = loaded.Document.Elements[1];
         check(ElementAppearance.ShapeFill(uniform.Style) == 0xFF112233 && uniform.Style.LinkColors && uniform.Style.Fill == 0x7F445566,
             "canonical uniform style derives its compatibility flag without discarding the inactive fill color");

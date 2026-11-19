@@ -81,6 +81,24 @@ internal sealed partial class EditorController
         }
     }
 
+    internal PointD? SelectionScreenArcHandle
+    {
+        get
+        {
+            if (HasNodeSelection || SelectedEditingWorldElements(editableOnly: true).ToArray() is not [var line])
+                return null;
+            return ScreenArcHandle(line);
+        }
+    }
+
+    private PointD? ScreenArcHandle(CanvasElement line)
+    {
+        if (ElementGeometry.LineArcHandle(line) is not { } local) return null;
+        var mapping = CurrentCanvasMapping;
+        var transform = mapping.ElementToScreen(line);
+        return mapping.IsElementSafe(line) && transform.TryTransformPoint(local, out var point) ? point : null;
+    }
+
     internal IReadOnlyList<PointD> MarqueeScreenPolygon => Marquee is not { } bounds ? [] :
         gesture == "marquee" ? Corners(bounds) : gesture == "desktop-effect" && billboardDepth is { } depth ?
         Corners(bounds).Select(p => p * depth.Scale).ToArray() : ToScreenPoints(Corners(bounds));

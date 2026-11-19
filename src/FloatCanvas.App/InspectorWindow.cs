@@ -39,6 +39,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private readonly SegmentedChoice linkColors = SegmentedChoicePreviews.ColorStyle();
     private readonly SegmentedChoice numberStyle = new();
     private readonly SegmentedChoice highlighterTip = new();
+    private readonly SegmentedChoice linePathMode = new();
     private (ElementKind Kind, SymbolKind Symbol)? colorStyleContext;
     private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
     private readonly SegmentedChoice alignment = new(), arrowStyle = new(), startArrow = new(), endArrow = new(), strokePattern = new(), placement = new();
@@ -110,6 +111,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         fieldContainers.Add("ConstrainAspect",keepAspect);
         keepAspect.Click += (_,_) => ChangeField("ConstrainAspect");
         propertyPanel.Children.Add(SectionHeading("Inspector.AppearanceSection"));
+        AddPicker("LinePathMode", L.Get("Line.PathMode"), linePathMode, [L.Get("Line.Straight"), L.Get("Line.Arc")]);
         InitializeWindowSourceFitControl();
         AddPicker("HighlighterTip", L.Get("Highlighter.Tip"), highlighterTip,
             [L.Get("Highlighter.TipRound"), L.Get("Highlighter.TipFlat")]);
@@ -439,6 +441,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (IsFieldVisible("StartArrowHead")) startArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element, reverse: true);
             if (IsFieldVisible("EndArrowHead")) endArrow.SelectedIndex = (int)ElementGeometry.ArrowStyle(element);
             if (IsFieldVisible("StrokePattern")) strokePattern.SelectedIndex = (int)element.Style.StrokePattern;
+            if (IsFieldVisible("LinePathMode")) linePathMode.SelectedValue = element.Style.LineArcBulge.HasValue ? LinePathMode.Arc : LinePathMode.Straight;
             if (IsFieldVisible("HighlighterTip")) highlighterTip.SelectedIndex = (int)element.Style.HighlighterTip;
             SetField("HighlighterTipAngle", element.Style.HighlighterTipAngle);
             SetField("HighlighterInkContrast", 100 * element.Style.HighlighterInkContrast);
@@ -464,7 +467,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
                 foreach (var key in fields.Keys)
                     if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) SetMixedField(key, PropertyValue(element, key));
                 if (IsFieldVisible("FontFamily") && selected.Skip(1).Any(other => other.Style.FontFamily != element.Style.FontFamily)) ToolOptionPreviews.ClearFontSelection(fontPicker);
-                foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("HighlighterTip", highlighterTip), ("TextAlignment", alignment), ("WindowSourceFit", windowSourceFit) })
+                foreach (var (key, picker) in new[] { ("ArrowHeadStyle", arrowStyle), ("StartArrowHead", startArrow), ("EndArrowHead", endArrow), ("StrokePattern", strokePattern), ("LinePathMode", linePathMode), ("HighlighterTip", highlighterTip), ("TextAlignment", alignment), ("WindowSourceFit", windowSourceFit) })
                     if (IsFieldVisible(key) && selected.Skip(1).Any(other => !Equals(PropertyValue(element, key), PropertyValue(other, key)))) picker.SelectedIndex = -1;
                 if (IsFieldVisible("Symbol") && selected.Skip(1).Any(other => !Equals(PropertyValue(element, "Symbol"), PropertyValue(other, "Symbol")))) symbolChoice.SelectedIndex = -1;
                 foreach (var (key, color) in colorFields)
@@ -655,6 +658,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
         }
         if (source.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow)
         {
+            if (dirtyFields.Contains("LinePathMode") && linePathMode.SelectedValue is LinePathMode pathMode)
+            {
+                edited.Style.LineArcBulge = pathMode == LinePathMode.Arc ? source.Style.LineArcBulge ?? ElementGeometry.DefaultLineArcBulge : null;
+                if (pathMode != LinePathMode.Arc) edited.Style.LineArcOffset = 0;
+            }
             if (dirtyFields.Contains("StartArrowHead")) edited.Style.StartArrowHead = (ArrowHeadStyle)startArrow.SelectedIndex;
             if (dirtyFields.Contains("EndArrowHead")) edited.Style.EndArrowHead = (ArrowHeadStyle)endArrow.SelectedIndex;
             if (dirtyFields.Contains("ArrowHeadSize")) edited.Style.ArrowHeadSize = Number("ArrowHeadSize", L.Get("Inspector.ArrowSize"), 0, 512);
@@ -856,7 +864,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
     {
         for (int index = 0; index < options.Length; index++)
         {
-            object value = key switch { "StrokePattern" => (StrokePattern)index, "HighlighterTip" => (HighlighterTip)index, _ => (ArrowHeadStyle)index };
+            object value = key switch
+            {
+                "StrokePattern" => (StrokePattern)index, "HighlighterTip" => (HighlighterTip)index,
+                "LinePathMode" => (LinePathMode)index, _ => (ArrowHeadStyle)index
+            };
             SegmentedChoicePreviews.Add(picker, options[index], value);
         }
         Automation.AutomationProperties.SetName(picker, label);
@@ -1155,6 +1167,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             "BillboardHeight" => element.IsBillboard,
             "ArrowHeadStyle" => element.Kind is ElementKind.Arrow or ElementKind.DoubleArrow,
             "ArrowHeadSize" or "ArrowHint" or "StartArrowHead" or "EndArrowHead" => element.Kind is ElementKind.Line or ElementKind.Arrow or ElementKind.DoubleArrow,
+            "LinePathMode" => ElementGeometry.IsLine(element.Kind) && element.Points.Count == 2,
             _ => true
         };
     }
@@ -1171,6 +1184,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         "ArrowHeadStyle" => e.Style.ArrowHeadStyle, "ArrowHeadSize" => e.Style.ArrowHeadSize,
         "StartArrowHead" => ElementGeometry.ArrowStyle(e, reverse: true), "EndArrowHead" => ElementGeometry.ArrowStyle(e),
         "StrokePattern" => e.Style.StrokePattern, "FontFamily" => e.Style.FontFamily,
+        "LinePathMode" => e.Style.LineArcBulge.HasValue ? LinePathMode.Arc : LinePathMode.Straight,
         "HighlighterTip" => e.Style.HighlighterTip, "HighlighterTipAngle" => e.Style.HighlighterTipAngle,
         "HighlighterInkContrast" => e.Style.HighlighterInkContrast,
         "FontSize" => e.Style.FontSize, "Number" => e.Number, "Text" => e.Text, "TextAlignment" => e.Style.TextAlignment,

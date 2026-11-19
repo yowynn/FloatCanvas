@@ -54,6 +54,12 @@ public sealed class ElementStyle : IJsonOnDeserialized
     /// <summary>Null retains the legacy Arrow/DoubleArrow head; None explicitly disables this end.</summary>
     public ArrowHeadStyle? StartArrowHead { get; set; }
     public ArrowHeadStyle? EndArrowHead { get; set; }
+    /// <summary>Signed perpendicular handle offset from the chord midpoint, in chord lengths. Null selects a straight line.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? LineArcBulge { get; set; }
+    /// <summary>Handle offset along the chord from its midpoint, in chord lengths.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double LineArcOffset { get; set; }
     public StrokePattern StrokePattern { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public HighlighterTip HighlighterTip { get; set; }
