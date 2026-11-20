@@ -17,10 +17,10 @@ internal sealed record SavedColor(string Id, string Name, uint Value);
 /// <summary>Role-specific built-in colors and exact ARGB history/pins shared by every color field.</summary>
 internal sealed class ColorLibrary
 {
-    internal const uint ForegroundRed = 0xFFE03E3E;
-    internal const uint ForegroundYellow = 0xFFCB912F;
-    internal const uint ForegroundBlue = 0xFF2383E2;
-    internal const uint BackgroundRed = 0xFFFFDCDC;
+    internal const uint ForegroundRed = BuiltInColors.Red;
+    internal const uint ForegroundYellow = BuiltInColors.Yellow;
+    internal const uint ForegroundBlue = BuiltInColors.Blue;
+    internal const uint BackgroundRed = BuiltInColors.PaleRed;
     private sealed class State
     {
         public int Version { get; set; } = 1;
@@ -29,9 +29,6 @@ internal sealed class ColorLibrary
         public List<SavedColor> Swatches { get; set; } = [];
     }
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
-    private static readonly string[] Names = ["Black", "White", "Red", "Brown", "Orange", "Yellow", "Blue", "Green", "Purple", "Pink"];
-    private static readonly uint[] Foreground = [0xFF252525, 0xFFFFFFFF, ForegroundRed, 0xFF9F6B53, 0xFFD9730D, ForegroundYellow, ForegroundBlue, 0xFF448361, 0xFF9065B0, 0xFFC14C8A];
-    private static readonly uint[] Background = [0xFFE4E4E4, 0xFFFFFFFF, BackgroundRed, 0xFFEADDD4, 0xFFFFE5CC, 0xFFFFF2BB, 0xFFDCEEFF, 0xFFDCEFE5, 0xFFEBDFF5, 0xFFF6DDEB];
     private readonly string path;
     private readonly CompatibleConfiguration compatibility;
     private static ColorLibrary? shared;
@@ -105,8 +102,8 @@ internal sealed class ColorLibrary
     public static IReadOnlyList<PaletteColor> Palette(ColorRole role)
     {
         if (!Enum.IsDefined(role)) throw new ArgumentOutOfRangeException(nameof(role));
-        var values = role == ColorRole.Foreground ? Foreground : Background;
-        return Names.Select((name, index) => new PaletteColor(name, values[index])).ToArray();
+        return BuiltInColors.Families.Select(family => new PaletteColor(family.Name,
+            role == ColorRole.Foreground ? family.Ink : family.Tint)).ToArray();
     }
     public void Remember(uint color)
     {

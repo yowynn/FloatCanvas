@@ -126,7 +126,7 @@ internal static class PaletteLayoutTests
         var field = new ColorField(ColorRole.Foreground, colors) { Width = 300 };
         Layout(field, scale);
         var quick = Visuals(field).OfType<PixelTilePanel>().Single();
-        check(name + " quick palette retains five columns and two rows", Rows(quick).SequenceEqual([5, 5]));
+        check(name + " quick palette has six columns and two rows", Rows(quick).SequenceEqual([6, 6]));
         CheckSwatches(quick.Children.OfType<Button>(), name + " quick palette", scale, check);
         var trigger = Field<Button>(field, "button");
         var chrome = trigger.Template.FindName("Chrome", trigger) as Border;

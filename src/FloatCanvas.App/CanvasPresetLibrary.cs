@@ -174,7 +174,7 @@ internal sealed class CanvasPresetLibrary
         if (parameters.ProjectionEnabled && !CanvasCalibration.IsValidProjection(projection.Matrix))
             throw new InvalidDataException(L.Get("Canvas.UnstableProjection"));
         // Applying a recipe establishes a fresh calibration reference, like Reset.
-        CanvasCalibration.UpgradeLegacy(projection);
+        CanvasCalibration.AdoptReference(projection);
         projection.LockedGridCellSize = null;
         projection.Enabled = parameters.ProjectionEnabled;
         var result = new CanvasSettings
@@ -186,7 +186,7 @@ internal sealed class CanvasPresetLibrary
                 FlatOrigin = current.Grid.FlatOrigin ?? referenceViewport.Center, FlatTranslation = parameters.FlatTranslation,
                 PlaneCellSize = parameters.PlaneCellSize, PlaneOrigin = parameters.PlaneOrigin }
         };
-        CanvasGeometryMigration.UpgradeLegacy(result);
+        CanvasProjectionGeometry.InitializePlane(result);
         SceneValidation.Validate(new SceneDocument { Canvas = result, Viewport = viewport });
         return result;
     }

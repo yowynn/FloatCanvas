@@ -74,7 +74,7 @@ internal static class CanvasPhysicalMonitorTests
                 new(secondary.Bounds.Left + 180, secondary.Bounds.Top + 580) }.Select(view.ToCanvas).ToArray();
             if (!CanvasCalibration.TryCalibrate(CanvasCalibration.CreateInitial(reference), quad, extent, out var projection, out var error)) throw new InvalidOperationException(error);
             projection.Enabled = true; session.ExecuteSettings("physical calibration fixture", scene =>
-            { scene.Canvas.Projection = projection; CanvasGeometryMigration.UpgradeLegacy(scene.Canvas); });
+            { scene.Canvas.Projection = projection; CanvasProjectionGeometry.InitializePlane(scene.Canvas); });
             Call("BeginCanvasCalibrationTool"); Settle();
             string beforeCalibration = JsonSerializer.Serialize(session.Document); int undo = session.UndoCount;
             var corner = view.ToView(quad[0]) + editor.CanvasOrigin; var delta = new PointD(27, 18);

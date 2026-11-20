@@ -97,7 +97,9 @@ internal static class CanvasToolOptionsLifecycleTests
             check("redoing perspective reenables the retained depth choice", depth.IsEnabled && !depth.SelectedFirst);
             Call(session, "OpenToolOptions");
             Call(session, "ActivateTool", EditorTool.Freehand);
-            check("switching tools removes canvas-only caption controls", ordinary.IsVisible && Field<ContentControl>(session, "_toolOptionsHeaderContent").Content is null);
+            var brushHeader = Field<CaptionModeSwitch>(Field<ToolOptionsPanel>(session, "_toolOptionsPanel"), "freehandSmoothing");
+            check("switching from canvas restores the brush correction switch in the shared caption",
+                ordinary.IsVisible && ReferenceEquals(Field<ContentControl>(session, "_toolOptionsHeaderContent").Content, brushHeader));
             Call(session, "ActivateTool", EditorTool.Canvas);
             check("returning to canvas restores the same caption and preview choice", ReferenceEquals(Field<ContentControl>(session, "_toolOptionsHeaderContent").Content, canvas.Header.Actions) && !depth.SelectedFirst);
             check("tool configuration tests never show overlay input windows or acquire isolation", !host.IsKeyboardIsolationActive);

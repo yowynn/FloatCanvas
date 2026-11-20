@@ -20,8 +20,8 @@
   "Editor.ElementKind.Presentation.Keyboard": { "zh": "实时键盘", "en": "Live keyboard" },
   "Presentation.KeyboardScope": { "zh": "采集范围", "en": "Input scope" },
   "Recipe.PresentationKeys": {
-    "zh": "按键记录 · 简洁",
-    "en": "Key recording · Simple"
+    "zh": "简洁记录",
+    "en": "Key log"
   },
   "Recipe.PresentationPointer": {
     "zh": "鼠标演示区",
@@ -348,8 +348,8 @@
     "en": "Ctrl/Shift-click to add or remove keys; drag to move the selection together. In the key area, Ctrl+A selects all and Space enables or disables the selection (mixed becomes enabled). Double-click toggles one key. Select a single key to edit its label or size. Only Apply saves the draft."
   },
   "Presentation.DisplayStyle.Log": {
-    "zh": "按键记录 · 简洁",
-    "en": "Key recording · Simple"
+    "zh": "简洁记录",
+    "en": "Key log"
   },
   "Presentation.DisplayStyle.Keyboard": {
     "zh": "实时键盘",
@@ -380,8 +380,8 @@
     "en": "Cursor halo"
   },
   "Presentation.DisplayStyle.Keycaps": {
-    "zh": "按键记录 · 仿真键帽",
-    "en": "Key recording · Realistic keycaps"
+    "zh": "仿真键帽",
+    "en": "Keycaps"
   },
   "Presentation.Layout.Enabled": {
     "zh": "启用所选键位",
@@ -413,8 +413,8 @@
     "en": "No keys selected. Click a key to select it, or restore the standard keyboard if the layout is empty."
   },
   "Recipe.PresentationKeycaps": {
-    "zh": "按键记录 · 仿真键帽",
-    "en": "Key recording · Realistic keycaps"
+    "zh": "仿真键帽",
+    "en": "Keycaps"
   },
   "Recipe.PresentationKeyboard": {
     "zh": "实时键盘",

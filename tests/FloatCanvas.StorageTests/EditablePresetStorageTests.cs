@@ -16,7 +16,7 @@ internal static class EditablePresetStorageTests
             Groups = [inner, outer],
             Elements =
             [
-                new() { Kind = ElementKind.Text, Text = "原始矢量", GroupId = inner.Id, Width = 120, Height = 30 },
+                new() { Kind = ElementKind.Text, Text = "原始矢量", TextAutoWidth = true, GroupId = inner.Id, Width = 120, Height = 30 },
                 new() { Kind = ElementKind.Image, AssetId = resource, Width = 100, Height = 80, GroupId = inner.Id,
                     Transform = Affine2D.Translation(30, 60).Compose(Affine2D.Rotation(23)), ImageCrop = new(.1, .2, .7, .6),
                     Effects = [new() { Kind = ImageEffectKind.Pixelate, Bounds = new(.1, .1, .2, .2), Amount = 8 }] },

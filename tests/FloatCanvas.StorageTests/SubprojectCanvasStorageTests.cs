@@ -66,31 +66,23 @@ internal static class SubprojectCanvasStorageTests
         var invalidPackage = package.Clone(); invalidPackage.Definitions[0].Graph.Groups[0].PreviewCanvas!.Viewport = new(0, 0, 0, 20);
         Reject(() => SceneValidation.Validate(invalidPackage), "nested group preview headers receive complete geometry validation");
 
-        // Real v16 payloads omit future fields rather than relabelling a v17 DTO.
-        var oldProject = JsonSerializer.SerializeToNode(new SceneDocument())!.AsObject(); oldProject["Version"] = 16; oldProject.Remove("RootPreviewCanvases");
-        string historicalProject = Path.Combine(root, "v16.floatcanvas"); await Write(historicalProject, "project", "scene.json", oldProject);
-        byte[] original = await File.ReadAllBytesAsync(historicalProject);
-        var migrated = await projects.LoadAsync(historicalProject);
-        check(migrated.Document.Version == SceneDocument.CurrentVersion && migrated.Document.RootPreviewCanvases.Count == 0 && (await File.ReadAllBytesAsync(historicalProject)).SequenceEqual(original),
-            "v16 project migration keeps neutral preview defaults and leaves source bytes intact");
         var historicalDefinition = new PrefabDefinition { Graph = new() { Elements = [new() { Kind = ElementKind.Rectangle, Width = 15, Height = 20 }] } };
         var historicalPackage = new PrefabPackage { EntryDefinitionId = historicalDefinition.Id, Definitions = [historicalDefinition] };
-        var oldPrefab = JsonSerializer.SerializeToNode(historicalPackage)!.AsObject(); oldPrefab["Version"] = 16;
-        string historicalPrefab = Path.Combine(root, "v16.floatprefab"); await Write(historicalPrefab, "prefab", "prefab.json", oldPrefab);
+        var oldPrefab = JsonSerializer.SerializeToNode(historicalPackage)!.AsObject(); oldPrefab["Version"] = 19;
+        LegacyFixtureSchema.UseForegroundBackground(oldPrefab);
+        string historicalPrefab = Path.Combine(root, "v19.floatprefab"); await Write(historicalPrefab, "prefab", "prefab.json", oldPrefab);
+        byte[] original = await File.ReadAllBytesAsync(historicalPrefab);
         var migratedPrefab = await prefabs.LoadAsync(historicalPrefab);
-        check(migratedPrefab.Package.Version == SceneDocument.CurrentVersion && migratedPrefab.Package.Definitions.Single().PreviewCanvas is null,
-            "legacy prefab has a neutral independent preview instead of inheriting a host camera");
-        oldPrefab["Definitions"]![0]!["PreviewCanvas"] = JsonSerializer.SerializeToNode(preview);
-        string smuggled = Path.Combine(root, "future-in-v16.floatprefab"); await Write(smuggled, "prefab", "prefab.json", oldPrefab);
-        bool rejected = false; try { await prefabs.LoadAsync(smuggled); } catch (InvalidDataException) { rejected = true; }
-        check(rejected, "v16 packages cannot smuggle v17 canvas semantics into a historical schema");
+        check(migratedPrefab.Package.Version == SceneDocument.CurrentVersion && migratedPrefab.Package.Definitions.Single().PreviewCanvas is null &&
+            (await File.ReadAllBytesAsync(historicalPrefab)).SequenceEqual(original),
+            "published prefab import preserves its neutral preview and source bytes");
 
         void Reject(Action action, string message) { bool rejected = false; try { action(); } catch (InvalidDataException) { rejected = true; } check(rejected, message); }
     }
     private static async Task Write(string path, string kind, string payload, JsonObject value)
     {
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
-        var manifest = new JsonObject { ["Format"] = "FloatCanvas." + kind, ["Version"] = 16, ["Payload"] = payload,
+        var manifest = new JsonObject { ["Format"] = "FloatCanvas." + kind, ["Version"] = value["Version"]!.DeepClone(), ["Payload"] = payload,
             ["CreatedWith"] = "0.4.0", ["LastSavedWith"] = "0.4.0", ["Assets"] = new JsonArray() };
         using (var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open())) await writer.WriteAsync(manifest.ToJsonString());
         using (var writer = new StreamWriter(zip.CreateEntry(payload).Open())) await writer.WriteAsync(value.ToJsonString());

@@ -139,7 +139,7 @@ internal static class Program
             if (args.Contains("--canvas-geometry-ui-only")) { CanvasIndependentUiTests.Run(Assert, args.SkipWhile(a => a != "--canvas-geometry-ui-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--canvas-geometry-lifecycle-only")) { CanvasAnchorCaptureTests.Run(Assert, geometryOnly: true); return 0; }
             if (args.Contains("--canvas-options-lifecycle-only")) { CanvasToolOptionsLifecycleTests.Run(Assert); return 0; }
-            if (args.Contains("--appearance-only")) { StyleVariantTests.Run(Assert); return 0; }
+            if (args.Contains("--appearance-only")) { StyleVariantTests.Run(Assert); ToolStyleCoverageTests.Run(Assert); return 0; }
             if (args.Contains("--enhanced-keyboard-isolation-only")) { EnhancedKeyboardIsolationTests.Run(Assert); return 0; }
             if (args.Contains("--enhanced-monitor-messages-only")) { EnhancedKeyboardIsolationTests.Run(Assert, monitorMessagesOnly: true); return 0; }
             if (args.Contains("--private-keyboard-bridge-state-only")) { PrivateKeyboardBridgeStateTests.Run(Assert); return 0; }
@@ -470,6 +470,7 @@ internal static class Program
             if (args.Contains("--data-remediation-only")) { DataRemediationTests.Run(Assert); return 0; }
             LocalizationTests.Run((name, condition) => Assert(name, condition));
             StyleVariantTests.Run(Assert);
+            ToolStyleCoverageTests.Run(Assert);
             GroupControllerTests.Run(Assert);
             SubprojectCanvasViewTests.Run(Assert);
             IndependentCanvasExtentTests.Run(Assert);

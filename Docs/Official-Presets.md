@@ -13,30 +13,32 @@
 
 ## 官方清单与顺序
 
-共 18 个工具族、62 项官方预设：17 个普通工具族 57 项，另有画布 5 项。符号工具由原先 11 项精简为 5 种样式。下表每行的第一项为**标准范式**，其余依次为**常用预设**。尺寸、线宽与字号均为工具参数的逻辑像素值。未列出的字段由完整官方定义给出，不从当前工作状态继承。
+工具预设库有 19 个工具族、57 项官方预设，另有 5 项独立画布预设。每个工具族的第一项为标准配置，其余为常用组合。尺寸、线宽与字号使用逻辑像素。
 
 | 工具 | 官方顺序（中文 / English） | 主要组合与用途 |
 | --- | --- | --- |
 | 选择 | 标准选择 / Standard selection | 标准指针选择；无外观变体。 |
 | 橡皮擦 | 标准橡皮擦 / Standard eraser | 标准擦除；无可保存的粗细或范围模式。 |
-| 画笔 | 标准画笔 / Standard pen；精细画笔 / Fine pen；粗笔标注 / Bold pen；点状画笔 / Dotted pen | 红色，宽度依次 4、2、12、24；末项点线，用于点状路径标注。 |
-| 荧光笔 | 标准荧光笔 / Standard highlighter；黄色宽幅荧光笔 / Wide yellow highlighter；蓝色扁头荧光笔 / Blue flat-tip highlighter | 三个都是实线。红色圆头 24 px、黄色圆头 48 px、蓝色扁头 32 px（0°）。 |
-| 直线 | 标准直线 / Standard line；单向箭头 / Single arrow；双向箭头 / Double arrow；虚线 / Dashed line；点线 / Dotted line | 均为红色宽 4；无箭头、末端实心三角、双端实心三角、虚线、点线。 |
-| 矩形 | 标准矩形 / Standard rectangle；圆角矩形 / Rounded rectangle；正方形 / Square；浅色填充矩形 / Tinted rectangle；实心矩形 / Solid rectangle | 标准 144×108、直角、红框宽 4；圆角半径 12；正方形 108×108 锁比例；浅红填充；统一红色实心。 |
-| 圆形 | 标准圆形 / Standard circle；椭圆 / Ellipse；浅色填充圆形 / Tinted circle；实心圆形 / Solid circle | 首项 108×108 且锁比例，点击或拖动得到圆；椭圆 144×108 可自由调整；后两项为圆形浅红填充和统一红色实心。 |
-| 文字 | 标准文字 / Standard text；醒目标题 / Prominent heading；正文注释 / Body note；居中标签 / Centered label | 红色 36 左对齐；红色 48 左对齐；黑色 24 左对齐；蓝色 28 居中。保留默认字体。 |
-| 序号 | 标准序号 / Standard number；蓝色步骤 / Blue step badge；紧凑序号 / Compact number | 红底白字 72；蓝底白字 48；黑底白字 36；均从 1 开始、步长 1，使用当前前景/背景颜色角色。 |
-| 符号 | 标准轮廓 / Standard outline；浅色填充 / Tinted fill；实心填充 / Solid fill；虚线轮廓 / Dashed outline；绿色强调 / Green emphasis | 统一用 72×72 三角形示范：红色宽 4、浅红填充、统一红色实心、红色虚线、绿色宽 6。选好样式后单击形状选择器，即可切换任一几何并保留其余全部参数。 |
-| 表情 | 微笑 / Smile；赞许 / Thumbs up；完成 / Done；提醒 / Warning | 😀、👍、✅、⚠️，均为 72；保留原生表情颜色。 |
-| 模糊 | 标准模糊 / Standard blur；轻度模糊 / Light blur；强效模糊 / Strong blur | 强度 12、6、24；用于不同程度的视觉弱化。 |
-| 马赛克 | 标准马赛克 / Standard mosaic；细格马赛克 / Fine mosaic；粗格马赛克 / Coarse mosaic | 格块强度 12、6、24。 |
-| 裁剪 | 自由裁剪 / Free crop；正方形裁剪 / Square crop | 自由比例、锁定 1:1；由实际图片局部坐标约束路径执行。 |
+| 画笔 | 标准画笔 / Standard pen、精细画笔 / Fine pen、粗笔标注 / Bold pen、点状画笔 / Dotted pen | 红色，线宽依次为 6、2、16、24 px。最后一项为点线。 |
+| 荧光笔 | 标准荧光笔 / Standard highlighter、黄色宽幅荧光笔 / Wide yellow highlighter、蓝色扁头荧光笔 / Blue flat-tip highlighter | 三个都是实线。红色圆头 24 px、黄色圆头 48 px、蓝色扁头 32 px（0°）。 |
+| 直线 | 标准直线 / Standard line、单向箭头 / Single arrow、双向箭头 / Double arrow、虚线 / Dashed line、点线 / Dotted line | 均为红色宽 4；无箭头、末端实心三角、双端实心三角、虚线、点线。 |
+| 矩形 | 自由比例矩形 / Free-aspect rectangle、圆角矩形 / Rounded rectangle、浅色填充矩形 / Tinted rectangle、实心矩形 / Solid rectangle | 自由比例默认 108×108、红色描边。圆角半径为 12，浅色填充采用浅红，实心使用一个填充色。 |
+| 圆形 | 自由比例椭圆 / Free-aspect ellipse、浅色椭圆区域 / Tinted ellipse region、实色椭圆标记 / Solid ellipse marker | 默认 108×108，拖动可改变比例。浅色区域保留描边，实色标记使用单一填充色。 |
+| 文字 | 标准文字 / Standard text、正文注释 / Body note、居中注释 / Centered annotation、白字深边 / Outlined white text、蓝色标签 / Blue label | 前三项是普通文字，分别为红色 36、黑色 24、蓝色居中 28。白字深边为 36，蓝色标签为 28。五项都可继续编辑主色、字体、字号和对齐。 |
+| 序号 | 标准序号 / Standard number、轮廓序号 / Outline number、紧凑序号 / Compact number | 标准实心为红底白字 72，轮廓为红色数字和 3 px 红边、透明背景 56，紧凑实心为黑底白字 36。三者均从 1 开始，步长 1。 |
+| 符号 | 标准轮廓 / Standard outline、浅色填充 / Tinted fill、实心填充 / Solid fill、虚线轮廓 / Dashed outline | 四项都用 72×72 三角形示范。形状选择与实心、描边样式独立。 |
+| 表情 | 微笑 / Smile、赞许 / Thumbs up、完成 / Done、提醒 / Warning | 😀、👍、✅、⚠️，均为 72；保留原生表情颜色。 |
+| 模糊 | 标准模糊 / Standard blur、强效模糊 / Strong blur | 强度分别为 12 和 24。 |
+| 马赛克 | 标准马赛克 / Standard mosaic、粗格马赛克 / Coarse mosaic | 标准和粗格预设分别使用默认格长和较大格长。 |
+| 裁剪 | 自由裁剪 / Free crop、正方形裁剪 / Square crop | 自由比例、锁定 1:1；由实际图片局部坐标约束路径执行。 |
 | 贴图 | 完全不透明 / Full opacity；半透明参考图 / Half-opacity reference；淡色描摹底图 / Faint tracing reference | 新图片不透明度 100%、50%、25%；适用新导入、粘贴和拖放的贴面及立牌图片。替换资源保留既有图片外观。 |
-| 截图 | 矩形截图 / Rectangle capture；圆形截图 / Circle capture；含标注截图 / Capture with annotations；红框截图 / Red-border capture；自由套索截图 / Freehand lasso capture；多边形套索截图 / Polygon lasso capture | 首项矩形、仅背景、无边框；圆形；矩形且包含画布；矩形红框宽 4；自由套索；多边形套索。无边框组合仍保存红色边框色；全部官方项显式关闭持久等比，矩形／圆形仅按住 Shift 时临时 1:1。 |
+| 截图 | 矩形截图 / Rectangle capture、圆形截图 / Circle capture、含标注截图 / Capture with annotations、红框截图 / Red-border capture、自由套索截图 / Freehand lasso capture、多边形套索截图 / Polygon lasso capture | 首项矩形、仅背景、无边框；圆形；矩形且包含画布；矩形红框宽 4；自由套索；多边形套索。无边框组合仍保存红色边框色；全部官方项显式关闭持久等比，矩形／圆形仅按住 Shift 时临时 1:1。 |
 | 印章 | 标准印章 / Standard stamp | 使用素材库选择的实际印章。 |
+| 键盘演示 | 简洁记录 / Key log、仿真键帽 / Keycaps、实时键盘 / Live keyboard | 三种样式在同一行选择。前两项记录按键，实时键盘支持编辑布局。 |
+| 鼠标演示 | 光标高亮 / Cursor halo、点击提示 / Click effects、鼠标轨迹 / Pointer trail | 三个预设分别示范光标、点击和轨迹，这些效果可以同时启用。 |
 | 画布 | 透明画布 / Transparent canvas；白板 / Whiteboard；黑板 / Blackboard；方格纸 / Graph paper；透明点线网格 / Transparent dotted grid | 首三项关闭网格但留红色网格参数；白/深色背景；方格纸浅底蓝网格；透明背景红色点线网格。均为 8 列×6 行、线宽 1，默认关闭透视与深度优先遮挡。 |
 
-符号形状选择器继续使用 `Symbol.*` 双语资源，五种样式与其余普通工具内容使用 `Recipe.*` 双语资源，画布沿用 `CanvasPreset.*`。工具显示名称与官方配方名称分离，今后调整配方名不会改动工具条显示名。
+符号形状选择器继续使用 `Symbol.*` 双语资源，四项预设与其余普通工具内容使用 `Recipe.*` 双语资源，画布沿用 `CanvasPreset.*`。工具显示名称与官方配方名称分离，今后调整配方名不会改动工具条显示名。
 
 ## 画布与可选参数的启用规则
 
@@ -48,7 +50,7 @@
 | 关闭的透视 | 官方应用保持 `ResetProjection=true`，生成有效参考四角、矩阵和正间距；打开透视一次即可生效。个人校准仍按原快照恢复。 |
 | 截图边框 | 0 宽直接表达“无边框”，没有另一个开关；边框色保持不透明红色，单次提高宽度即可显示。 |
 | 直线箭头 | None 表达关闭端点；箭头尺寸 0 有自动尺寸语义，不是无效尺寸。选一次端点样式即可显示。 |
-| 图形填充 | 透明色直接表达“无填充”，没有独立填充开关；轮廓标准保持透明内填。实心组合使用 LinkColors，并保留有效浅红色 Fill，切回分离颜色即可使用。 |
+| 图形填充 | 透明色直接表达“无填充”，没有独立填充开关；轮廓标准保持透明内填。实心样式用主要颜色填充。切到描边后，主要颜色用于描边，次要颜色用于填充。 |
 | 可见内容与特效 | 有效描边、文字颜色、总体不透明度、字号、尺寸和特效强度均非零；高亮不重复降低 alpha。 |
 | 贴图透明度 | 新图创建及立牌路径使用 Image 工具的 Opacity 参数；替换图片保持原外观。 |
 
@@ -74,7 +76,7 @@
 
 ### 符号样式与几何
 
-对应当前 **符号工具**的形状选择器，五种样式统一以 72×72 三角形示范，按下列顺序展示：
+符号工具提供实心和描边两种样式。四项官方预设用 72×72 三角形示范不同的配色和线型。
 
 | 类别 | ID | 名称 | 参数 |
 | --- | --- | --- | --- |
@@ -82,7 +84,6 @@
 | 常用预设 | `official.symbol-soft` | 浅色填充 / Tinted fill | 红色轮廓宽 4、浅红填充 |
 | 常用预设 | `official.symbol-filled` | 实心填充 / Solid fill | 统一红色填充，保留浅红备用填充色 |
 | 常用预设 | `official.symbol-dashed` | 虚线轮廓 / Dashed outline | 红色、宽 4、虚线、无填充 |
-| 常用预设 | `official.symbol-green` | 绿色强调 / Green emphasis | 色板绿色、宽 6、实线、无填充 |
 
 三角形、五角星、爱心、对勾、叉号、菱形、五边形、六边形和对话框在选择器中切换，保留当前样式和尺寸，并创建对应的可编辑图层。矩形、圆形等独立工具预设保持独立，个人预设不删除。
 

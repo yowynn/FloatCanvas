@@ -57,7 +57,7 @@ internal static class CaptureSelectionTests
         {
             var session = new EditorSession();
             var controller = new EditorController(session) { Tool = EditorTool.CaptureRegion, CaptureShape = shape,
-                CaptureSource = CaptureSource.CanvasOnly, CaptureBorderWidth = 3, CaptureBorderColor = 0x7F112233, ScreenOrigin = new(-400, 200) };
+                CaptureSource = CaptureSource.CanvasOnly, CaptureBorderWidth = 3, Style = { PrimaryColor = 0x7F112233 }, ScreenOrigin = new(-400, 200) };
             CaptureSelection? result = null; int completions = 0;
             controller.CaptureSelectionCompleted += value => { result = value; completions++; };
             Pointer(controller, OverlayPointerKind.Down, new(100, 80));
@@ -151,7 +151,7 @@ internal static class CaptureSelectionTests
         {
             string file = Path.Combine(directory, "tool-state.json");
             var parameters = new ToolParameters { Tool = EditorTool.CaptureRegion, CaptureShape = CaptureShape.PolygonLasso,
-                CaptureSource = CaptureSource.BackgroundAndCanvas, CaptureBorderWidth = 4, CaptureBorderColor = 0x7F123456 };
+                CaptureSource = CaptureSource.BackgroundAndCanvas, CaptureBorderWidth = 4, Style = { PrimaryColor = 0x7F123456 } };
             var controller = new EditorController(new()); controller.ApplyParameters(parameters);
             check("capture options clone and apply independently of mutable source parameters", JsonSerializer.Serialize(controller.Parameters) == JsonSerializer.Serialize(parameters) &&
                 JsonSerializer.Serialize(parameters.Clone()) == JsonSerializer.Serialize(parameters));
@@ -161,16 +161,22 @@ internal static class CaptureSelectionTests
             var restored = new ToolStateStore(file);
             check("all tool-state parameter dictionaries persist capture options", restored.Tools[EditorTool.CaptureRegion].CaptureShape == CaptureShape.PolygonLasso &&
                 restored.OfficialBaselines["official.capture"].CaptureSource == CaptureSource.BackgroundAndCanvas && restored.PreviewSources[EditorTool.CaptureRegion].CaptureBorderWidth == 4 &&
-                restored.Tools[EditorTool.CaptureRegion].CaptureBorderColor == 0x7F123456);
+                restored.Tools[EditorTool.CaptureRegion].Style.PrimaryColor == 0x7F123456);
             var legacy = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+            legacy["Version"] = 1;
             foreach (string dictionary in new[] { "Tools", "OfficialBaselines", "PreviewSources" })
                 foreach (var entry in legacy[dictionary]!.AsObject())
+                {
+                    var style = entry.Value!["Style"]!.AsObject();
+                    style.Remove("PrimaryColor"); style.Remove("SecondaryColor");
+                    style["Stroke"] = 0xFF123456u; style["Fill"] = 0; style.Remove("Variant");
                     foreach (string field in new[] { "CaptureShape", "CaptureSource", "CaptureBorderWidth", "CaptureBorderColor" }) entry.Value!.AsObject().Remove(field);
+                }
             string oldBytes = legacy.ToJsonString(); File.WriteAllText(file, oldBytes);
             restored = new(file);
             check("pre-capture v1 tool cache retains its original choices and gets explicit new defaults", restored.Tools[EditorTool.CaptureRegion] is
                 { CaptureShape: CaptureShape.Rectangle, CaptureSource: CaptureSource.Background, CaptureBorderWidth: 0 } &&
-                restored.Selections[EditorTool.CaptureRegion] == "official.capture" && restored.Tools[EditorTool.CaptureRegion].CaptureBorderColor == ColorLibrary.ForegroundRed);
+                restored.Selections[EditorTool.CaptureRegion] == "official.capture" && restored.Tools[EditorTool.CaptureRegion].Style.PrimaryColor == ColorLibrary.ForegroundRed);
             check("reading a legacy cache does not rewrite or replace the user's file", File.ReadAllText(file) == oldBytes);
             string expectedTools = JsonSerializer.Serialize(restored.Tools), expectedBaselines = JsonSerializer.Serialize(restored.OfficialBaselines), expectedPreviews = JsonSerializer.Serialize(restored.PreviewSources);
             legacy["Tools"]!["CaptureRegion"]!.AsObject().Remove("NumberStep"); string missingStepBytes = legacy.ToJsonString(); File.WriteAllText(file, missingStepBytes);
@@ -184,7 +190,7 @@ internal static class CaptureSelectionTests
             var library = new ToolPresetLibrary(Path.Combine(directory, "tool-presets.json"));
             var saved = library.Save("capture", parameters);
             check("user capture preset round trip retains independent source shape and border", new ToolPresetLibrary(Path.Combine(directory, "tool-presets.json")).User.Single().Parameters is
-                { CaptureShape: CaptureShape.PolygonLasso, CaptureSource: CaptureSource.BackgroundAndCanvas, CaptureBorderWidth: 4, CaptureBorderColor: 0x7F123456 });
+                { CaptureShape: CaptureShape.PolygonLasso, CaptureSource: CaptureSource.BackgroundAndCanvas, CaptureBorderWidth: 4, Style.PrimaryColor: 0x7F123456 });
             var official = library.Apply("official.capture");
             check("explicit default capture preset resets capture fields and style", official is
                 { CaptureShape: CaptureShape.Rectangle, CaptureSource: CaptureSource.Background, CaptureBorderWidth: 0 } && official.Style.Stroke == ColorLibrary.ForegroundRed);

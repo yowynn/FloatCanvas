@@ -56,7 +56,7 @@ internal static class TemporaryMoveControllerTests
             StrokeWidth = 7.5, Opacity = .65, FontSize = 37, FontFamily = "Arial" }, CornerRadius = 13,
             Symbol = SymbolKind.Heart, ConstrainAspect = true, EffectStrength = 29, Emoji = "🎨",
             DefaultWidth = 281, DefaultHeight = 173, NumberStart = 9, NumberStep = 3,
-            CaptureShape = CaptureShape.PolygonLasso, CaptureSource = CaptureSource.CanvasOnly, CaptureBorderWidth = 6, CaptureBorderColor = 0xFFABCDEF });
+            CaptureShape = CaptureShape.PolygonLasso, CaptureSource = CaptureSource.CanvasOnly, CaptureBorderWidth = 6 });
         string parameters = JsonSerializer.Serialize(editor.Parameters); var style = editor.Style;
         int text = 0, properties = 0, capture = 0, effect = 0;
         editor.EditText += (_, _) => text++; editor.PropertiesRequested += _ => properties++;

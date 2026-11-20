@@ -86,7 +86,7 @@ internal static class ConfigurationCompatibilityTests
         check("preset rename retains future version nested fields and unreadable values",raw["Version"]!.GetValue<int>()==23 && raw["Presets"]![0]!["Parameters"]!["Style"]!["FutureColor"]!.GetValue<int>()==123 && raw["Presets"]![0]!["Parameters"]!["Style"]!["StrokeWidth"]!.GetValue<string>()=="new-width");
         string numbersPath=Path.Combine(folder,"legacy-number-presets.json");var numberLibrary=new ToolPresetLibrary(numbersPath);var numberPreset=numberLibrary.Save("Legacy number",new ToolParameters {Tool=EditorTool.Number,Style=new(){Stroke=0xFF00FF00,Fill=0xFF2383E2}});raw=JsonNode.Parse(File.ReadAllText(numbersPath))!;raw["Version"]=1;LegacyNumber(raw["Presets"]![0]!["Parameters"]!,0xFF00FF00,0xFF2383E2);File.WriteAllText(numbersPath,raw.ToJsonString());string oldNumber=File.ReadAllText(numbersPath);
         numberLibrary=new(numbersPath);var controller=new EditorController(new EditorSession());controller.ApplyParameters(numberLibrary.Apply(numberPreset.Id));
-        check("legacy number presets convert their former badge color to foreground and retain white labels without rewriting",controller.Style.Stroke==0xFF2383E2 && controller.Style.Fill==0xFFFFFFFF && controller.Parameters.NumberColorRolesVersion==1 && File.ReadAllText(numbersPath)==oldNumber);
+        check("legacy number presets convert their former badge color to foreground and retain white labels without rewriting",controller.Style.Stroke==0xFF2383E2 && controller.Style.Fill==0xFFFFFFFF && File.ReadAllText(numbersPath)==oldNumber);
         var currentNumber=controller.Parameters;currentNumber.Style.Fill=0xFF000000;var modern=numberLibrary.Save("Modern labels",currentNumber);controller.ApplyParameters(new ToolPresetLibrary(numbersPath).Apply(modern.Id));
         check("modern number presets retain custom text colors across save reload and apply",controller.Style.Fill==0xFF000000);
         string colorsPath=Path.Combine(folder,"colors.json");File.WriteAllText(colorsPath,"{\"Future\":{\"x\":1},\"History\":[],\"Pinned\":[]}");var colors=new ColorLibrary(colorsPath);colors.Save("Blue",0xFF2383E2);
@@ -107,7 +107,7 @@ internal static class ConfigurationCompatibilityTests
     {
         parameters.AsObject().Remove("NumberColorRolesVersion"); parameters.AsObject().Remove("NumberTextSizeMode");
         var style=parameters["Style"]!.AsObject();
-        foreach(string key in new[]{"Foreground","Background","AdditionalColors","Variant"})style.Remove(key);
+        foreach(string key in new[]{"PrimaryColor","SecondaryColor","Foreground","Background","AdditionalColors","Variant"})style.Remove(key);
         style["Stroke"]=stroke;style["Fill"]=fill;
     }
     private static void Repair(string folder,Action<string,bool> check)

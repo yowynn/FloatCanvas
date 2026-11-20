@@ -20,10 +20,10 @@ internal static class CanonicalAppearanceTests
         }
         var badge = new CanvasElement { Kind = ElementKind.Number, NumberTextSizeMode = NumberTextSizeMode.CapFontSize,
             Style = new() { Foreground = 0xFF112233, Background = 0xFF445566, FontSize = 11 } };
-        check(AppearanceRegistry.VariantsFor(ElementKind.Number).Count == 3, "number registry exposes three independent stable variants");
-        ElementAppearance.SetVariant(badge, ElementAppearance.NumberOutlineIndependent);
-        check(ElementAppearance.IsOutlineNumber(badge) && ElementAppearance.NumberTextColor(badge) == badge.Style.Background,
-            "third number style keeps independent text color without body fill");
+        check(AppearanceRegistry.VariantsFor(ElementKind.Number).Count == 2, "number registry exposes solid and outlined styles");
+        ElementAppearance.SetVariant(badge, ElementAppearance.NumberFilled);
+        check(!ElementAppearance.IsOutlineNumber(badge) && ElementAppearance.NumberTextColor(badge) == badge.Style.SecondaryColor,
+            "solid badge uses secondary ink for its digit");
         ElementAppearance.SetVariant(badge, ElementAppearance.NumberOutline);
         check(ElementAppearance.NumberTextColor(badge) == badge.Style.Foreground && badge.Style.Background == 0xFF445566 && badge.Style.FontSize == 11 &&
             badge.NumberTextSizeMode == NumberTextSizeMode.CapFontSize, "style switching preserves hidden secondary color and original font sizing");
@@ -37,25 +37,27 @@ internal static class CanonicalAppearanceTests
         foreach (bool oldSizing in new[] { false, true })
         foreach (uint fill in new uint[] { 0x00123456, 0x7F445566 })
         {
-            string raw = $$"""{"Kind":10,"Style":{"Stroke":4279312947,"Fill":{{fill}},"FontSize":13},"NumberUsesForeground":{{oldSizing.ToString().ToLowerInvariant()}}} """;
-            var old = JsonSerializer.Deserialize<CanvasElement>(raw)!;
+            var old = new CanvasElement { Kind = ElementKind.Number, Style = new() { FontSize = 13 } };
+            AppearanceMigration.MigrateElement(old, new(0xFF112233, fill, false, null), oldSizing);
             check(old.Style.Foreground == (oldSizing || fill >> 24 == 0 ? 0xFF112233 : fill) &&
                 old.Style.Background == (oldSizing ? fill : 0xFFFFFFFF) && old.Style.FontSize == 13 &&
                 old.NumberTextSizeMode == (oldSizing ? NumberTextSizeMode.FitBadge : NumberTextSizeMode.CapFontSize), "legacy number independently migrates effective colors and typography");
             check(oldSizing || old.Style.AdditionalColors["legacy.fill"] == fill && old.Style.AdditionalColors["legacy.stroke"] == 0xFF112233,
                 "legacy unused raw badge colors survive as named inactive roles");
         }
-        var explicitOld = JsonSerializer.Deserialize<CanvasElement>("""{"Kind":10,"Style":{"Stroke":4279312947,"Fill":4282668390,"Variant":"number.outline"},"NumberUsesForeground":false}""")!;
-        check(explicitOld.Style.Foreground == 0xFF112233 && explicitOld.Style.Background == 0xFF445566 && explicitOld.NumberTextSizeMode == NumberTextSizeMode.CapFontSize,
+        var explicitOld = new CanvasElement { Kind = ElementKind.Number };
+        AppearanceMigration.MigrateElement(explicitOld, new(0xFF112233, 0xFF445566, false, AppearanceMigration.LegacyNumberOutline), false);
+        check(explicitOld.Style.Foreground == 0xFF112233 && explicitOld.Style.Background == 0x00445566 && explicitOld.NumberTextSizeMode == NumberTextSizeMode.CapFontSize,
             "explicit old variant overrides historical color convention without changing old text size");
-        var sparse = JsonSerializer.Deserialize<CanvasElement>("""{"Kind":10}""")!;
+        var sparse = new CanvasElement { Kind = ElementKind.Number };
+        AppearanceMigration.MigrateElement(sparse, new(0xFFEF4444, 0, false, null), false);
         check(sparse.Style.Foreground == 0xFFEF4444 && sparse.Style.Background == 0xFFFFFFFF && sparse.Style.Variant == ElementAppearance.NumberFilled &&
             sparse.NumberTextSizeMode == NumberTextSizeMode.CapFontSize, "sparse legacy number without Style retains its original red badge and white text defaults");
         foreach (bool uniform in new[] { false, true })
         {
-            string raw = JsonSerializer.Serialize(new { Kind = 5, Style = new { Stroke = 0xFF112233u, Fill = 0xFF445566u,
-                LinkColors = !uniform, Variant = uniform ? ElementAppearance.ShapeUniform : ElementAppearance.ShapeIndependent } });
-            var old = JsonSerializer.Deserialize<CanvasElement>(raw)!;
+            var old = new CanvasElement { Kind = ElementKind.Rectangle };
+            AppearanceMigration.MigrateElement(old, new(0xFF112233, 0xFF445566, !uniform,
+                uniform ? ElementAppearance.ShapeUniform : ElementAppearance.ShapeIndependent), false);
             check(ElementAppearance.ShapeFill(old.Style) == (uniform ? 0xFF112233 : 0xFF445566) && old.Style.Background == 0xFF445566 && old.Style.LinkColors == uniform,
                 "explicit legacy shape variant wins contradictory raw linked bit while preserving the hidden secondary color");
         }

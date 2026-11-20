@@ -35,6 +35,14 @@ internal static class ToolParameterIconTests
             catch (Exception e) { Console.WriteLine($"AUDIT {tool} ERROR {e.GetType().Name}"); }
         }
 
+        var textSample = new ToolParameters { Tool = EditorTool.Text, Style = new() { PrimaryColor = BuiltInColors.Blue } };
+        var textIcons = AppearanceRegistry.VariantsFor(ElementKind.Text).Select(variant =>
+        {
+            textSample.Style.Variant = variant.Id;
+            return Hash(Rasterize(ToolParameterIcon.Create(textSample, 24), 24));
+        }).ToArray();
+        check("text toolbar and preset previews distinguish plain, outline and label at display size", textIcons.Distinct().Count() == 3);
+
         var keys = new ToolParameters { Tool = EditorTool.Presentation, Presentation = new() { DisplayStyle = PresentationDisplayStyle.Log, RecentChordLimit = 1 }, Style = new() { Foreground = 0xffff4400, Background = 0xff113388 } };
         string Icon() => Hash(Rasterize(ToolParameterIcon.Create(keys,72),72));
         var one = Icon(); keys.Presentation.RecentChordLimit = 2; var two = Icon(); keys.Presentation.RecentChordLimit = 3; var three = Icon(); keys.Presentation.RecentChordLimit = 4; var four = Icon(); keys.Presentation.RecentChordLimit = 5; var more = Icon(); keys.Presentation.RecentChordLimit = 6;
@@ -55,6 +63,7 @@ internal static class ToolParameterIconTests
         var thick=Hash(Rasterize(ToolParameterIcon.Create(pen),16));pen.Style.Foreground=0xFF2266DD;
         check("curved pen preview still displays the chosen color",thick!=Hash(Rasterize(ToolParameterIcon.Create(pen),16)));
         var demonstration = new ToolPresetLibrary(Path.Combine(Path.GetTempPath(), "FloatCanvas-icon-unused-" + Guid.NewGuid().ToString("N"))).Official;
+        CheckMatchingArrowheads(demonstration, check);
         if (Environment.GetEnvironmentVariable("FLOATCANVAS_ICON_AUDIT") == "1")
         foreach (var preset in demonstration)
         {
@@ -292,6 +301,56 @@ internal static class ToolParameterIconTests
             encoder.Frames.Add(Imaging.BitmapFrame.Create(icon));
             using var stream = File.Create(Path.Combine(directory, name + ".png"));
             encoder.Save(stream);
+        }
+    }
+
+    private static void CheckMatchingArrowheads(IReadOnlyList<ToolPreset> presets, Action<string, bool> check)
+    {
+        var single = presets.Single(p => p.Id == "official.arrow").Parameters;
+        var both = presets.Single(p => p.Id == "official.double-arrow").Parameters;
+        check("official arrows use the same stroke width and automatic head size",
+            single.Style.StrokeWidth == both.Style.StrokeWidth && single.Style.ArrowHeadSize == 0 && both.Style.ArrowHeadSize == 0);
+        // The gallery renders at 24 DIP. Isolate its actual artwork from the checkerboard.
+        static Imaging.BitmapSource GalleryInk(ToolParameters p)
+        {
+            var tile = (Controls.Border)ToolPresetGallery.CreatePreview(p);
+            return Rasterize(tile.Child, (int)tile.Width);
+        }
+        static double EndInk(Imaging.BitmapSource icon, bool start = false)
+        {
+            int half = icon.PixelWidth / 2;
+            var quadrant = new Wpf.Int32Rect(start ? 0 : half, start ? half : 0, half, half);
+            var pixels = new byte[half * half * 4];
+            icon.CopyPixels(quadrant, pixels, half * 4, 0);
+            int alpha = 0;
+            for (int i = 3; i < pixels.Length; i += 4) alpha += pixels[i];
+            return alpha / 255d;
+        }
+        void Compare(ToolParameters left, ToolParameters right, string name, bool start = false)
+        {
+            double singleInk = EndInk(GalleryInk(left), start), doubleInk = EndInk(GalleryInk(right), start);
+            check($"{name}: same endpoint coverage at 24 DIP ({singleInk:F2} vs {doubleInk:F2} px)",
+                singleInk > 3 && Math.Abs(singleInk - doubleInk) < 1);
+        }
+        Compare(single, both, "official single and double arrows");
+        double smallSingle = EndInk(Rasterize(ToolParameterIcon.Create(single, 16), 16));
+        double smallDouble = EndInk(Rasterize(ToolParameterIcon.Create(both, 16), 16));
+        check($"official arrows keep the common head at toolbar size ({smallSingle:F2} vs {smallDouble:F2} px)",
+            smallSingle > 3 && Math.Abs(smallSingle - smallDouble) < 1);
+        var curved = single.Clone(); curved.Style.LineArcBulge = ElementGeometry.DefaultLineArcBulge;
+        var curvedPair = curved.Clone(); curvedPair.Style.StartArrowHead = ArrowHeadStyle.Diamond;
+        Compare(curved, curvedPair, "curved line with a different opposite head");
+        check("curved preview includes the entire arrow artwork", HasTransparentEdges(Bitmap(curved)) && HasTransparentEdges(Bitmap(curvedPair)));
+        var scaled = both.Clone(); scaled.Style.ArrowHeadSize = 8;
+        double narrow = EndInk(GalleryInk(scaled));
+        scaled.Style.ArrowHeadSize = 16;
+        check("explicit head size is visible on a double-arrow preset", EndInk(GalleryInk(scaled)) > narrow + 3);
+        foreach (var head in new[] { ArrowHeadStyle.FilledTriangle, ArrowHeadStyle.Open, ArrowHeadStyle.Diamond })
+        {
+            var first = single.Clone(); first.Style.ArrowHeadSize = 13;
+            first.Style.StartArrowHead = head; first.Style.EndArrowHead = ArrowHeadStyle.None;
+            var pair = first.Clone(); pair.Style.EndArrowHead = head;
+            Compare(first, pair, head + " start with an explicit size", start: true);
         }
     }
 

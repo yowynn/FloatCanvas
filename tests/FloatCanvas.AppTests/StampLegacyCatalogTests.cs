@@ -35,7 +35,7 @@ internal static class StampLegacyCatalogTests
                 await new PrefabStore().SaveAsync(Base(shared) + ".floatprefab", new() { EntryDefinitionId = definition.Id, Definitions = [definition] }, assets);
                 oldFiles.Add(Base(shared) + ".floatprefab");
             }
-            foreach (string file in oldFiles) await AsV16(file);
+            foreach (string file in oldFiles) await AsV19(file);
             foreach (var entry in new[] { editable, merged, shared }) await File.WriteAllBytesAsync(Base(entry) + ".png", png);
             var original = oldFiles.ToDictionary(file => file, File.ReadAllBytes);
             var entries = version == 1 ? new[] { editable, merged } : new[] { shared, editable, merged };
@@ -53,8 +53,8 @@ internal static class StampLegacyCatalogTests
             await library.RenameAsync(editable.Id, "renamed vector"); await library.RenameAsync(merged.Id, "renamed raster");
             if (version == 2) await library.RenameAsync(shared.Id, "renamed shared");
             var reloaded = new StampLibrary(folder); await reloaded.LoadAsync();
-            check($"legacy v{version} rename publishes v3 while preserving order pins and old format inference", reloaded.Items.Select(entry => entry.Id).SequenceEqual(expectedOrder) &&
-                reloaded.Pins.SequenceEqual(pins) && reloaded.Items.All(entry => entry.Format is null) && (await reloaded.LoadStampAsync(editable.Id)).Document.Elements.Single().Kind == ElementKind.Rectangle);
+            check($"legacy v{version} rename publishes v3 while preserving order pins and the resolved resource formats", reloaded.Items.Select(entry => entry.Id).SequenceEqual(expectedOrder) &&
+                reloaded.Pins.SequenceEqual(pins) && reloaded.Items.All(entry => entry.Format == (entry.Mode == StampSaveMode.SharedPrefab ? StampPackageFormat.Prefab : StampPackageFormat.LegacyProject)) && (await reloaded.LoadStampAsync(editable.Id)).Document.Elements.Single().Kind == ElementKind.Rectangle);
             foreach (var entry in entries)
             {
                 var target = new EditorSession(new SceneDocument { Viewport = new(0, 0, 700, 500) });
@@ -71,14 +71,16 @@ internal static class StampLegacyCatalogTests
             check($"legacy v{version} load rename catalog conversion and placement never rewrite any old package", original.All(pair => File.ReadAllBytes(pair.Key).AsSpan().SequenceEqual(pair.Value)));
         }
     }
-    private static async Task AsV16(string path)
+    private static async Task AsV19(string path)
     {
         using var zip = ZipFile.Open(path, ZipArchiveMode.Update);
         foreach (string name in new[] { "manifest.json", Path.GetExtension(path) == ".floatprefab" ? "prefab.json" : "scene.json" })
         {
             var entry = zip.GetEntry(name)!; JsonObject json;
             using (var reader = new StreamReader(entry.Open())) json = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
-            json["Version"] = 16; json.Remove("RootPreviewCanvases"); entry.Delete();
+            json["Version"] = 19;
+            LegacyFixtureSchema.UseForegroundBackground(json);
+            entry.Delete();
             using var writer = new StreamWriter(zip.CreateEntry(name).Open()); await writer.WriteAsync(json.ToJsonString());
         }
     }

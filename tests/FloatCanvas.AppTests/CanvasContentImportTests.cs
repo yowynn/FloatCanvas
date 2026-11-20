@@ -103,7 +103,7 @@ internal static class CanvasContentImportTests
         var emptyDefinition = emptyLink.Package.Definitions.Single();
         check("empty linked projects retain their resource and preview without an ordinary empty wrapper", emptyDefinition.Graph.Groups.Count == 0 && emptyDefinition.Graph.Elements.Count == 0 && emptyDefinition.PreviewCanvas!.Viewport == emptyDocument.Viewport);
         check("preparing an empty linked resource leaves its owner unchanged", JsonSerializer.Serialize(owner.Document) == unchanged && owner.Assets.Count == unchangedAssets);
-        string legacy = Path.Combine(root, "legacy-v10.floatcanvas"); await Legacy(legacy); string legacyHash = Hash(legacy); Exception? legacyError = null;
+        string legacy = Path.Combine(root, "legacy-v8.floatcanvas"); await Legacy(legacy); string legacyHash = Hash(legacy); Exception? legacyError = null;
         try { _ = await CanvasContentImport.PrepareAsync(owner, [legacy], [], owner.Document.Viewport, null, 1, null, CancellationToken.None); } catch (Exception error) { legacyError = error; }
         check("legacy files without persistent identity request an explicit save before linking (" + legacyError?.GetType().Name + ": " + legacyError?.Message + ")", legacyError?.Message == FloatCanvas.Localization.AppText.Get("Prefab.LinkNeedsIdentity"));
         check("rejected legacy linking never migrates or rewrites the source file", Hash(legacy) == legacyHash && JsonSerializer.Serialize(owner.Document) == unchanged && owner.Assets.Count == unchangedAssets);
@@ -111,10 +111,10 @@ internal static class CanvasContentImportTests
     }
     internal static async Task Legacy(string path)
     {
-        var json = JsonSerializer.SerializeToNode(new SceneDocument())!.AsObject(); json["Version"] = 10;
+        var json = JsonSerializer.SerializeToNode(new SceneDocument())!.AsObject(); json["Version"] = 8;
         json.Remove("ResourceId"); json.Remove("Definitions"); json.Remove("Instances"); json.Remove("RootCanvasAssignments"); json.Remove("RootPreviewCanvases");
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
-        var manifest = new JsonObject { ["Format"] = "FloatCanvas.project", ["Version"] = 10, ["Payload"] = "scene.json", ["CreatedWith"] = "0.4.0-m3", ["LastSavedWith"] = "0.4.0-m3", ["Assets"] = new JsonArray() };
+        var manifest = new JsonObject { ["Format"] = "FloatCanvas.project", ["Version"] = 8, ["Payload"] = "scene.json", ["CreatedWith"] = "0.4.0-m3", ["LastSavedWith"] = "0.4.0-m3", ["Assets"] = new JsonArray() };
         using (var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open())) await writer.WriteAsync(manifest.ToJsonString());
         using (var writer = new StreamWriter(zip.CreateEntry("scene.json").Open())) await writer.WriteAsync(json.ToJsonString());
     }

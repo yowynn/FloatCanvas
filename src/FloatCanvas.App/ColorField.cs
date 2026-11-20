@@ -15,6 +15,12 @@ internal sealed class ColorField : UserControl
     public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(nameof(Value), typeof(uint), typeof(ColorField),
         new FrameworkPropertyMetadata(ColorLibrary.ForegroundRed, (sender, _) => ((ColorField)sender).SynchronizeValue()));
     private readonly ColorLibrary library;
+    private readonly ColorSwatchButton[] quickColors = new ColorSwatchButton[10];
+    private readonly ColorSwatchButton switchPalette = new(0);
+    private readonly HashSet<object> alternatePalettes = [];
+    private object paletteContext = "";
+    internal ColorRole DisplayedPalette => alternatePalettes.Contains(paletteContext)
+        ? (Role == ColorRole.Foreground ? ColorRole.Background : ColorRole.Foreground) : Role;
     private readonly System.Windows.Controls.Button button = new() { MinHeight = 34, Padding = new Thickness(6, 4, 6, 4) };
     private readonly Grid swatch = new() { IsHitTestVisible = false };
     private readonly TextBlock label = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 10, FontWeight = FontWeights.SemiBold };
@@ -69,12 +75,28 @@ internal sealed class ColorField : UserControl
         button.Padding = new(0); button.BorderThickness = new(1); button.SetResourceReference(BorderBrushProperty, "CanvasBorder");
         button.MinWidth = 66; button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.VerticalContentAlignment = VerticalAlignment.Stretch;
         row.Children.Add(button);
-        var palette = new PixelTilePanel(5, (PropertyPanelLayout.ControlHeight - 2) / 2) { Margin = new(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; Grid.SetColumn(palette, 1); row.Children.Add(palette);
-        foreach (var color in ColorLibrary.Palette(role))
+        var palette = new PixelTilePanel(6, (PropertyPanelLayout.ControlHeight - 2) / 2) { Margin = new(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; Grid.SetColumn(palette, 1); row.Children.Add(palette);
+        for (int i = 0; i < quickColors.Length; i++)
         {
-            var tile = new ColorSwatchButton(color.Value) { ToolTip = color.Name };
-            AutomationProperties.SetName(tile, color.Name); tile.Click += (_, _) => SetUserValue(color.Value); palette.Children.Add(tile);
+            var tile = quickColors[i] = new(0);
+            tile.Click += (_, _) => SetUserValue((uint)tile.Tag);
+            palette.Children.Add(tile);
+            if (i == 4)
+            {
+                var clear = new ColorSwatchButton(0) { Content = ActionIconButton.Glyph(PanelActionIcon.Transparent, 13) };
+                clear.ToolTip = L.Get("Color.SetTransparent"); AutomationProperties.SetName(clear, (string)clear.ToolTip);
+                clear.Click += (_, _) => SetUserValue(0);
+                palette.Children.Add(clear);
+            }
         }
+        switchPalette.Content = ActionIconButton.Glyph(PanelActionIcon.SwitchPalette, 13);
+        switchPalette.Click += (_, _) =>
+        {
+            if (!alternatePalettes.Remove(paletteContext)) alternatePalettes.Add(paletteContext);
+            RefreshQuickColors();
+        };
+        palette.Children.Add(switchPalette);
+        RefreshQuickColors();
         Content = row;
         picker = new ColorPickerPanel(role, this.library);
         clipboard = new ColorClipboardMenu(button, () => Value, SetUserValue, message =>
@@ -268,6 +290,25 @@ internal sealed class ColorField : UserControl
         return false;
     }
     internal void RefreshPresets() { if (IsPickerOpen) picker.RefreshCollections(); }
+    internal void SetPaletteContext(object context)
+    {
+        if (Equals(paletteContext, context)) return;
+        var previous = DisplayedPalette;
+        paletteContext = context;
+        if (previous != DisplayedPalette) RefreshQuickColors();
+    }
+    private void RefreshQuickColors()
+    {
+        var palette = ColorLibrary.Palette(DisplayedPalette);
+        for (int i = 0; i < quickColors.Length; i++)
+        {
+            var tile = quickColors[i]; var color = palette[i];
+            tile.Content = ColorPickerPanel.CreateSwatch(color.Value); tile.Tag = color.Value;
+            tile.ToolTip = color.Name; AutomationProperties.SetName(tile, color.Name);
+        }
+        var label = L.Get(DisplayedPalette == ColorRole.Foreground ? "Color.UseBackgroundPalette" : "Color.UseForegroundPalette");
+        switchPalette.ToolTip = label; AutomationProperties.SetName(switchPalette, label);
+    }
     private void ClearTriggerSuppressionAfterInput()
     {
         int press = suppressedPressTime;

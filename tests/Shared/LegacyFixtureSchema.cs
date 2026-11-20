@@ -9,12 +9,30 @@ internal static class LegacyFixtureSchema
         {
             if (item["Version"] is JsonValue version && version.TryGetValue<int>(out int value))
             {
+                if (value == 19) UseForegroundBackground(item);
                 if (value < 16) item.Remove("RootCanvasAssignments");
                 if (value < 17) item.Remove("RootPreviewCanvases");
             }
             foreach (var child in item.ToArray()) RemoveFutureRootFields(child.Value);
         }
         else if (node is JsonArray array) foreach (var child in array) RemoveFutureRootFields(child);
+    }
+
+    internal static void UseForegroundBackground(JsonNode? node)
+    {
+        if (node is JsonArray array) { foreach (var child in array) UseForegroundBackground(child); return; }
+        if (node is not JsonObject item) return;
+        if (item.ContainsKey("Kind") && item["Style"] is JsonObject style && style.Remove("PrimaryColor", out var primary))
+        {
+            style.Remove("SecondaryColor", out var secondary);
+            style.Remove(nameof(ElementStyle.HasTextOutlineColor));
+            style["Foreground"] = primary;
+            style["Background"] = secondary;
+            style["AdditionalColors"] ??= new JsonObject();
+            if (style["Variant"]?.GetValue<string>() == ElementAppearance.NumberOutline)
+                style["Variant"] = AppearanceMigration.LegacyNumberOutline;
+        }
+        foreach (var child in item.ToArray()) UseForegroundBackground(child.Value);
     }
 
     internal static void RemovePrefabFields(JsonObject scene)
@@ -24,6 +42,7 @@ internal static class LegacyFixtureSchema
     }
     internal static void UseLegacyAppearance(JsonObject graph)
     {
+        UseForegroundBackground(graph);
         graph.Remove("RootCanvasAssignments"); graph.Remove("RootPreviewCanvases");
         foreach (var element in (graph["Elements"]?.AsArray() ?? []).Append(graph["Background"]).Where(item => item is not null))
         {

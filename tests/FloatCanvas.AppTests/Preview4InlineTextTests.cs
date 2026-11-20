@@ -11,6 +11,7 @@ internal static class Preview4InlineTextTests
         _=Application.Current??new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};
         AppTheme.Apply("light");
         using var renderer=new SceneRenderer();
+        EditingRegressions(check, renderer);
         var text=new CanvasElement {Kind=ElementKind.Text,Text="Edit here",Width=180,Height=50,Transform=Affine2D.Translation(100,100)};
         var session=new EditorSession(new SceneDocument {Elements=[text]});session.SetSelection([text.Id]);
         var controller=new EditorController(session) {Tool=EditorTool.Text};
@@ -126,5 +127,74 @@ internal static class Preview4InlineTextTests
             edit.Navigate(System.Windows.Input.Key.Right,true);edit.Navigate(System.Windows.Input.Key.Right,true);
             check("Repeated Shift Right extends from the active visual caret", edit.Input.SelectionStart == 0 && edit.Input.SelectionLength == 2);
         }
+    }
+    private static void EditingRegressions(Action<string, bool> check, SceneRenderer renderer)
+    {
+        var style = new ElementStyle { FontSize = 36 };
+        var session = new EditorSession();
+        using (var edit = new InlineTextEdit(session, null, new(50, 50), style, renderer))
+        { edit.Input.SelectedText = "会"; edit.Finish(true); }
+        // Reopen a saved label to exercise persistence as well as the live editor.
+        var saved = System.Text.Json.JsonSerializer.Serialize(session.Document);
+        session = new EditorSession(System.Text.Json.JsonSerializer.Deserialize<SceneDocument>(saved)!);
+        var layer = session.Document.Elements.Single();
+        using (var edit = new InlineTextEdit(session, layer, default, style, renderer))
+        {
+            edit.Navigate(System.Windows.Input.Key.End, false);
+            edit.Input.SelectedText = "议纪要";
+            check("continuing an automatic label matches entering the entire label at once",
+                edit.Target.Width == renderer.MeasureText("会议纪要", style).Width + 4 &&
+                edit.Geometry.Lines.Count == 1 && layer.Text == "会议纪要");
+            edit.Finish(true);
+        }
+        check("one undo restores both the short label and its original width", session.Undo() &&
+            session.Document.Elements.Single().Text == "会" && session.Document.Elements.Single().Width == 40);
+        var legacy = session.Document.Elements.Single();
+        legacy.TextAutoWidth = false;
+        using (var edit = new InlineTextEdit(session, legacy, default, style, renderer))
+        {
+            edit.Input.Text = "会议纪要";
+            check("labels saved before automatic width was recorded can continue growing",
+                legacy.Width == renderer.MeasureText("会议纪要", style).Width + 4 && legacy.TextAutoWidth);
+            edit.Finish(false);
+        }
+        layer = session.Document.Elements.Single();
+        TextFrameLayout.Resize(layer, layer.Clone(), 1.5, 1.2, renderer);
+        double fixedWidth = layer.Width;
+        using (var edit = new InlineTextEdit(session, layer, default, style, renderer))
+        {
+            edit.Input.Text = "会议纪要";
+            check("a hand-sized text frame retains its width during the same continuation",
+                layer.TextFrameFixed && !layer.TextAutoWidth && layer.Width == fixedWidth);
+            edit.Finish(false);
+        }
+        using (var large = new InlineTextEdit(new EditorSession(), null, default, new() { FontSize = 4096 }, renderer))
+        {
+            large.Input.Text = "会";
+            check("an automatic frame encloses even an indivisible 4096 px glyph",
+                large.Target.Width >= renderer.MeasureText("会", large.Target.Style).Width && large.Geometry.Lines.Count == 1);
+        }
+        using var selection = new InlineTextEdit(new EditorSession(), null, default, style, renderer);
+        selection.Input.Text = "one word next";
+        var line = selection.Geometry.Lines[0];
+        var letter = line.Spans!.Single(span => span.Start == 7);
+        foreach (double fraction in new[] { .25, .75 })
+        {
+            selection.Pointer(new(letter.Left + fraction * (letter.Right - letter.Left), line.Height / 2), true, true, word: true);
+            check("both halves of the last glyph select its word", selection.Input.SelectedText == "word");
+        }
+        selection.Input.Text = "123456789\r\nx\r\n123456789";
+        var rows = selection.Geometry.Lines;
+        var start = rows[0].Carets.Single(stop => stop.Index == 7);
+        selection.Pointer(new(start.X, rows[0].Height / 2), true, true);
+        selection.Navigate(System.Windows.Input.Key.Down, false);
+        selection.Navigate(System.Windows.Input.Key.Down, false);
+        check("vertical navigation restores its column after a short intervening line",
+            selection.Input.CaretIndex == rows[2].Carets[0].Index + 7);
+        selection.Navigate(System.Windows.Input.Key.Left, false);
+        selection.Navigate(System.Windows.Input.Key.Up, true);
+        selection.Navigate(System.Windows.Input.Key.Up, true);
+        check("a horizontal move resets the desired column for vertical selection",
+            selection.Input.SelectionStart == 6 && selection.Input.SelectionLength > 0);
     }
 }

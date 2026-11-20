@@ -12,7 +12,7 @@ internal sealed class ToolStateStore
     private sealed class State
     {
         public string CanvasPresetSelection { get; set; } = "";
-        [JsonRequired] public int Version { get; set; } = 2;
+        [JsonRequired] public int Version { get; set; } = 3;
         [JsonRequired] public Dictionary<EditorTool, ToolParameters> Tools { get; set; } = [];
         [JsonRequired] public Dictionary<EditorTool, EditorTool> Buttons { get; set; } = [];
         [JsonRequired] public Dictionary<EditorTool, string> Selections { get; set; } = [];
@@ -53,7 +53,7 @@ internal sealed class ToolStateStore
             foreach(var key in state.Selections.Where(p=>!IsFamily(p.Key)||!ValidPresetId(p.Value)).Select(p=>p.Key).ToArray())state.Selections.Remove(key);
             foreach(var key in state.OfficialBaselines.Where(p=>!ValidPresetId(p.Key,true)||!p.Value.IsValid()).Select(p=>p.Key).ToArray())state.OfficialBaselines.Remove(key);
             Validate(state);
-            state.Version = 2;
+            state.Version = 3;
             compatibility.Capture(state,JsonOptions);
         }
         CanvasPresetSelection = state.CanvasPresetSelection;
@@ -100,7 +100,7 @@ internal sealed class ToolStateStore
     private static void Validate(State state)
     {
         int families = Enum.GetValues<EditorTool>().Count(tool => ToolPresetLibrary.Family(tool) == tool);
-        if (state.Version is not (1 or 2) || state.Tools is null || state.Buttons is null || state.Selections is null ||
+        if (state.Version is < 1 or > 3 || state.Tools is null || state.Buttons is null || state.Selections is null ||
             state.OfficialBaselines is null || state.PreviewSources is null || state.Tools.Count > families ||
             state.Buttons.Count > families || state.Selections.Count > families || state.PreviewSources.Count > families ||
             state.OfficialBaselines.Count > 256 ||

@@ -156,10 +156,19 @@ internal static class Feedback4OptionsTests
         field.PrepareForShow();
         field.Measure(new Size(300, 100)); field.Arrange(new Rect(field.DesiredSize)); field.UpdateLayout();
         var row = (Grid)field.Content; var palette = row.Children.OfType<Panel>().Single();
-        check(locale + " primary color field exposes ten swatches in two rows", palette.Children.Count == 10 &&
-            palette.Children.OfType<Button>().GroupBy(tile => Math.Round(tile.TranslatePoint(new Point(), palette).Y, 5)).Select(group => group.Count()).SequenceEqual([5, 5]));
+        check(locale + " primary color field exposes ten swatches in two rows", palette.Children.Count == 12 && palette.Children.OfType<Button>().Count(tile => tile.Tag is uint) == 10 &&
+            palette.Children.OfType<Button>().GroupBy(tile => Math.Round(tile.TranslatePoint(new Point(), palette).Y, 5)).Select(group => group.Count()).SequenceEqual([6, 6]));
         palette.Children.OfType<Button>().ElementAt(2).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(locale + " a primary swatch applies directly without opening a popup", field.Value == ColorLibrary.Palette(ColorRole.Foreground)[2].Value && changed == 1 && !field.IsPickerOpen);
+        uint chosen = field.Value;
+        var history = library.History.ToArray();
+        var actions = palette.Children.OfType<Button>().ToArray();
+        actions[11].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(locale + " switching banks changes only the ten swatches", field.Value == chosen && changed == 1 &&
+            (uint)actions[2].Tag == ColorLibrary.Palette(ColorRole.Background)[2].Value && library.History.SequenceEqual(history));
+        field.SetPaletteContext("another"); check(locale + " another setting starts on its own bank", (uint)actions[2].Tag == ColorLibrary.Palette(ColorRole.Foreground)[2].Value);
+        actions[5].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(locale + " transparent action commits alpha zero directly", field.Value == 0 && changed == 2 && !field.IsPickerOpen);
         var picker = Field<ColorPickerPanel>(field, "picker");
         check(locale + " secondary colors omit the role palette and confirmation button", !Descendants(picker).OfType<Button>().Any(button => Equals(button.ToolTip, L.Get("Color.Red")) || System.Windows.Automation.AutomationProperties.GetName(button) == L.Get("Color.Apply")));
         var first = library.Save("First", 0x7F123456); var second = library.Save("Second", 0xFF987654);

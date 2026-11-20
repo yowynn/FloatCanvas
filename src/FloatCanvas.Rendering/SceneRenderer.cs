@@ -153,6 +153,15 @@ public sealed partial class SceneRenderer : IDisposable
         return _text.Measure(text, style, maxWidth);
     }
 
+    internal double FittedTextSize(string text, ElementStyle style, double width, double height, double requestedSize)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        double maximum = Math.Clamp(requestedSize, 1, ElementStyle.MaximumFontSize);
+        if (!EmojiGlyphs.IsEmoji(text, style)) return _text.FitSize(text, style, width, height, maximum);
+        var glyph = EmojiGlyphs.Measure(text, maximum);
+        return Math.Clamp(maximum * Math.Min((width + .001) / glyph.Width, (height + .001) / glyph.Height), 1, maximum);
+    }
+
     public TextEditingGeometry TextEditingGeometry(string text,ElementStyle style,double width)
     {
         if(!EmojiGlyphs.IsEmoji(text,style))return _text.EditingGeometry(text,style,width);
@@ -259,7 +268,7 @@ public sealed partial class SceneRenderer : IDisposable
                     canvas.Scale((float)(element.Width / glyph.Width), (float)(element.Height / glyph.Height));
                     EmojiGlyphs.Draw(canvas, element.Text, element.Style.FontSize, _paint);
                 }
-                else _text.Draw(canvas, element.Text, element.Style, element.Width, _paint);
+                else _text.DrawElement(canvas, element, _paint);
             }
             else if (element.Kind == ElementKind.Number) DrawNumber(canvas, element);
             else if (ElementGeometry.HasFlatHighlighterTip(element))
@@ -328,7 +337,7 @@ public sealed partial class SceneRenderer : IDisposable
     private void DrawInsideShape(SKCanvas canvas, CanvasElement element, PathEntry geometry, uint fill, double directOpacity)
     {
         bool filled = (fill >> 24) != 0;
-        bool stroked = element.Style.StrokeWidth > 0 && (element.Style.Foreground >> 24) != 0;
+        bool stroked = ElementAppearance.HasShapeStroke(element.Style) && element.Style.StrokeWidth > 0 && (element.Style.PrimaryColor >> 24) != 0;
         // Replace fill with stroke on an isolated element layer, including the
         // antialiased transition. SourceOver would stack translucent colors there.
         int layer = filled && stroked ? canvas.SaveLayer(ToRect(geometry.StrokedBounds), null) : -1;
@@ -360,7 +369,7 @@ public sealed partial class SceneRenderer : IDisposable
         if (element.Kind is ElementKind.Freehand or ElementKind.Highlighter) return true;
         if (!ElementGeometry.IsBoxShape(element.Kind)) return false;
         uint fill = ElementAppearance.ShapeFill(element.Style);
-        return (fill >> 24) == 0 || element.Style.StrokeWidth <= 0;
+        return (fill >> 24) == 0 || !ElementAppearance.HasShapeStroke(element.Style) || element.Style.StrokeWidth <= 0;
     }
 
     private static SKColor WithElementOpacity(SKColor color, double opacity) =>
@@ -479,9 +488,29 @@ public sealed partial class SceneRenderer : IDisposable
         if (width <= 0 || height <= 0) return;
         bool outline = ElementAppearance.IsOutlineNumber(element);
         double border = Math.Min(element.Style.StrokeWidth, Math.Min(width, height) / 2);
-        SetPaint(ElementAppearance.PrimaryColor(element), outline ? SKPaintStyle.Stroke : SKPaintStyle.Fill, border);
-        float inset = outline ? (float)(border / 2) : 0;
-        if (!outline || element.Style.StrokeWidth > 0) canvas.DrawOval(new SKRect(inset, inset, width - inset, height - inset), _paint);
+        uint fill = outline ? element.Style.SecondaryColor : element.Style.PrimaryColor;
+        bool hasFill = (fill >> 24) != 0, hasBorder = outline && border > 0 && (element.Style.PrimaryColor >> 24) != 0;
+        int layer = hasFill && hasBorder ? canvas.SaveLayer(new SKRect(0, 0, width, height), null) : -1;
+        try
+        {
+            if (hasFill)
+            {
+                SetPaint(fill, SKPaintStyle.Fill);
+                canvas.DrawOval(new SKRect(0, 0, width, height), _paint);
+            }
+            if (hasBorder)
+            {
+                SetPaint(element.Style.PrimaryColor, SKPaintStyle.Stroke, border);
+                if (layer >= 0) _paint.BlendMode = SKBlendMode.Src;
+                float inset = (float)(border / 2);
+                canvas.DrawOval(new SKRect(inset, inset, width - inset, height - inset), _paint);
+            }
+        }
+        finally
+        {
+            _paint.BlendMode = SKBlendMode.SrcOver;
+            if (layer >= 0) canvas.RestoreToCount(layer);
+        }
         string label = element.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var style = element.Style.Clone();
         style.FontSize = Math.Clamp(element.NumberTextSizeMode == NumberTextSizeMode.FitBadge ? Math.Min(width, height) * .58 : Math.Min(style.FontSize, Math.Min(width, height) * .58), 1, 2048);
@@ -671,7 +700,9 @@ public sealed partial class SceneRenderer : IDisposable
         private SKPath? _patternMask;
         private SKPath? _solidStroke;
         private SKPath? _arrowInk;
-        private readonly StrokePatternGeometry? _patternGeometry = element.Style.StrokePattern == StrokePattern.Solid || ElementGeometry.HasFlatHighlighterTip(element)
+        private readonly bool _shapeStroke = ElementAppearance.HasShapeStroke(element.Style);
+        private readonly StrokePatternGeometry? _patternGeometry = element.Style.StrokePattern == StrokePattern.Solid || ElementGeometry.HasFlatHighlighterTip(element) ||
+            ElementGeometry.IsBoxShape(element.Kind) && !ElementAppearance.HasShapeStroke(element.Style)
             ? null : ElementGeometry.StrokePatternGeometry(element);
         public SKPath PatternStroke => _patternStroke ??= ElementGeometry.IsLine(_kind)
             ? BuildPatternMask(_patternGeometry!) : BuildStroke(false);
@@ -751,6 +782,7 @@ public sealed partial class SceneRenderer : IDisposable
             return _opacityStroke;
         }
         public bool Matches(CanvasElement e) => _kind == e.Kind && _width == e.Width && _height == e.Height && _strokeWidth == e.Style.StrokeWidth &&
+            _shapeStroke == ElementAppearance.HasShapeStroke(e.Style) &&
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
             _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
             _strokePattern == e.Style.StrokePattern && _lineArcBulge == e.Style.LineArcBulge && _lineArcOffset == e.Style.LineArcOffset &&

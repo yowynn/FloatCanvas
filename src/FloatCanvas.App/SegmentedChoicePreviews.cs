@@ -45,7 +45,7 @@ internal static class SegmentedChoicePreviews
 
     internal static FrameworkElement Icon(object value)
     {
-        if(value is string variant && variant is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline or ElementAppearance.NumberOutlineIndependent or ElementAppearance.ShapeIndependent or ElementAppearance.ShapeUniform)
+        if(value is string variant && variant is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline or ElementAppearance.ShapeIndependent or ElementAppearance.ShapeUniform)
             return StyleIcon(variant);
         if (value is CaptureShape capture) return Icon(capture switch { CaptureShape.Rectangle => "capture-rectangle", CaptureShape.Ellipse => "capture-ellipse", CaptureShape.FreehandLasso => "capture-lasso", _ => "capture-polygon" });
         if (value is CaptureSource source) return Icon(source switch { CaptureSource.Background => "background", CaptureSource.CanvasOnly => "canvas", _ => "combined" });
@@ -106,22 +106,27 @@ internal static class SegmentedChoicePreviews
         return new Viewbox { Width = size, Height = size, Child = new Canvas { Width = size, Height = size, Children = { glyph } } };
     }
 
-    private static FrameworkElement StyleIcon(string variant)
+    private static FrameworkElement StyleIcon(string variant, ElementKind kind = ElementKind.Rectangle, SymbolKind symbol = default)
     {
         var grid=new Grid { Width=18,Height=18 };
-        bool number=variant is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline or ElementAppearance.NumberOutlineIndependent;
-        bool filled=variant==ElementAppearance.NumberFilled;
-        System.Windows.Shapes.Shape outline=number ? new System.Windows.Shapes.Ellipse() : new System.Windows.Shapes.Rectangle { RadiusX=2,RadiusY=2 };
+        bool number=variant is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline;
+        bool filled=variant is ElementAppearance.NumberFilled or ElementAppearance.ShapeUniform;
+        System.Windows.Shapes.Shape outline;
+        if (number || kind == ElementKind.Ellipse) outline = new System.Windows.Shapes.Ellipse();
+        else if (kind is ElementKind.Symbol or ElementKind.Triangle)
+        {
+            var points = SymbolGeometry.Outline(kind == ElementKind.Triangle ? SymbolKind.Triangle : symbol, 15, 15);
+            outline = new System.Windows.Shapes.Polygon { Points = new System.Windows.Media.PointCollection(points.Select(p => new Point(p.X, p.Y))), Stretch = Stretch.Uniform };
+        }
+        else outline = new System.Windows.Shapes.Rectangle { RadiusX=2,RadiusY=2 };
         outline.Margin=new Thickness(1.5);outline.StrokeThickness=1.4;
         outline.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"CanvasText");
-        if(filled||variant==ElementAppearance.ShapeUniform)outline.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"CanvasText");
-        else if(!number)outline.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"CanvasHover");
+        outline.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,filled?"CanvasText":"CanvasHover");
         grid.Children.Add(outline);
         if(number)
         {
             var digit=new TextBlock { Text="1",FontSize=11,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center };
             digit.SetResourceReference(TextBlock.ForegroundProperty,filled?"CanvasInput":"CanvasText");
-            if(variant==ElementAppearance.NumberOutlineIndependent)digit.Opacity=.5;
             grid.Children.Add(digit);
         }
         return grid;
@@ -161,13 +166,43 @@ internal static class SegmentedChoicePreviews
         foreach (var variant in AppearanceRegistry.VariantsFor(kind)) Add(choice, L.Get(variant.LabelKey), variant.Id);
     }
 
+    internal static void SetStyleFamily(SegmentedChoice choice, ElementKind kind)
+    {
+        var variants = AppearanceRegistry.VariantsFor(kind);
+        if (choice.Items.Count == variants.Count && Equals(choice.Items[0].Tag, variants[0].Id)) return;
+        choice.ReplaceOptions(variants.Select(variant => (L.Get(variant.LabelKey), (object)variant.Id,
+            kind == ElementKind.Text ? TextStyleIcon(variant.Id) : StyleIcon(variant.Id))));
+    }
+
+    private static FrameworkElement TextStyleIcon(string variant)
+    {
+        var box = new Grid { Width = 18, Height = 18 };
+        if (variant == ElementAppearance.TextLabel)
+        {
+            var tag = new Border { CornerRadius = new(2), BorderThickness = new(1), Margin = new(0, 2, 0, 2) };
+            tag.SetResourceReference(Border.BackgroundProperty, "CanvasHover");
+            tag.SetResourceReference(Border.BorderBrushProperty, "CanvasText");
+            box.Children.Add(tag);
+        }
+        var letter = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("M2,2 H14 V5 H10 V14 H6 V5 H2 Z"), Stretch = Stretch.Fill,
+            Margin = variant == ElementAppearance.TextLabel ? new Thickness(5) : new Thickness(3),
+            StrokeThickness = variant == ElementAppearance.TextOutline ? 1.2 : 0, StrokeLineJoin = PenLineJoin.Round
+        };
+        letter.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, variant == ElementAppearance.TextOutline ? "CanvasInput" : "CanvasText");
+        letter.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "CanvasText");
+        box.Children.Add(letter);
+        return box;
+    }
+
     internal static void UpdateColorStyle(SegmentedChoice choice, EditorTool tool, SymbolKind symbol = default)
     {
         ElementKind kind = Enum.TryParse<ElementKind>(tool.ToString(), out var parsed) ? parsed : ElementKind.Rectangle;
         var variants = AppearanceRegistry.VariantsFor(kind);
         for (int index = 0; index < Math.Min(choice.Items.Count, variants.Count); index++)
         {
-            choice.SetIcon(index, StyleIcon(variants[index].Id));
+            choice.SetIcon(index, StyleIcon(variants[index].Id,kind,symbol));
         }
     }
 

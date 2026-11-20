@@ -70,7 +70,7 @@ internal static class WindowSourceStorageTests
         // Assert the exact new-field guard so an unrelated old-schema rejection cannot make this pass.
         var legacyRoot = new SceneDocument { Elements = [Live(fallback)] };
         string legacyTemplate = Path.Combine(root, "legacy-template.floatcanvas"); await store.SaveAsync(legacyTemplate, legacyRoot, assets);
-        for (int version = 1; version <= 13; version++)
+        foreach (int version in new[] { 1, 2, 3, 6, 8 })
         {
             string invalid = Path.Combine(root, "old-" + version + ".floatcanvas"); File.Copy(legacyTemplate, invalid);
             await Edit(invalid, "manifest.json", n => n["Version"] = version);
@@ -81,48 +81,42 @@ internal static class WindowSourceStorageTests
             bool exactGuard = false; try { await store.LoadAsync(invalid); } catch (InvalidDataException e) { exactGuard = e.Message.Contains("Window sources require scene format 14.", StringComparison.Ordinal); }
             check(exactGuard, "legacy source field is explicitly rejected before migration in version " + version);
         }
-        string oldNull = Path.Combine(root, "old13-null-source.floatcanvas"); File.Copy(legacyTemplate, oldNull);
-        await Edit(oldNull, "manifest.json", n => n["Version"] = 13);
-        await Edit(oldNull, "scene.json", n => { n["Version"] = 13; n["Elements"]![0]!["WindowSource"] = null; });
+        string oldNull = Path.Combine(root, "old8-null-source.floatcanvas"); File.Copy(legacyTemplate, oldNull);
+        await Edit(oldNull, "manifest.json", n => n["Version"] = 8);
+        await Edit(oldNull, "scene.json", n => { n["Version"] = 8; LegacyFixtureSchema.RemovePrefabFields(n); n["Elements"]![0]!["WindowSource"] = null; });
         await Reject(() => store.LoadAsync(oldNull), check, "old schemas reject an explicit null future source field too");
-        for (int version = 11; version <= 13; version++)
-        {
-            string invalid = Path.Combine(root, "old-prefab-" + version + ".floatprefab"); File.Copy(prefab, invalid);
-            await Edit(invalid, "manifest.json", n => n["Version"] = version);
-            await Edit(invalid, "prefab.json", n => { n["Version"] = version; if (version < 12) foreach (var def in n["Definitions"]!.AsArray()) LegacyFixtureSchema.UseLegacyAppearance(def!["Graph"]!.AsObject()); });
-            await Reject(() => prefabStore.LoadAsync(invalid), check, "old prefab envelopes cannot hide live source content in version " + version);
-        }
         foreach (string target in new[] { "LiveDocument", "CaptureDocument", "DraftDocument", "ParentDraftDocument" })
         {
             string directory = Path.Combine(root, "legacy-recovery-" + target); Directory.CreateDirectory(directory);
             string invalid = Path.Combine(directory, "workspace.floatcanvas"); File.Copy(recovery.CurrentPath, invalid);
-            await Edit(invalid, "manifest.json", n => n["Version"] = 13);
+            await Edit(invalid, "manifest.json", n => n["Version"] = 19);
             await Edit(invalid, "workspace.json", n => {
                 var docs = new[] { n["LiveDocument"]!.AsObject(), n["CaptureDocument"]!.AsObject(), n["PendingPrefabEdit"]!["DraftDocument"]!.AsObject(), n["PendingPrefabEdit"]!["ParentEdit"]!["DraftDocument"]!.AsObject() };
-                foreach (var doc in docs) { doc["Version"] = 13; ClearSources(doc); }
+                foreach (var doc in docs) { doc["Version"] = 19; ClearSources(doc); }
                 int index = Array.IndexOf(new[] { "LiveDocument", "CaptureDocument", "DraftDocument", "ParentDraftDocument" }, target);
                 Leaf(docs[index])["WindowSource"] = JsonSerializer.SerializeToNode(leaf.WindowSource);
+                Leaf(docs[index])["WindowSource"]!.AsObject().Remove("Fit");
             });
             await Reject(() => new RecoveryStore(directory).LoadAsync(), check, "recovery schema guards every document and parent draft: " + target);
         }
-        foreach (int version in new[] { 1, 9, 10, 11, 12, 13 })
+        foreach (int version in new[] { 1, 2, 3, 6, 8, 19 })
         {
             var old = legacyRoot.Clone(); old.Version = version;
             await Reject(() => store.SaveAsync(Path.Combine(root, "typed-old-" + version + ".floatcanvas"), old, assets), check, "typed legacy save cannot silently upgrade hidden live content version " + version);
         }
 
         var oldDocument = document.Clone(); ClearTypedSources(oldDocument);
-        string true13 = Path.Combine(root, "true-v13.floatcanvas"); await store.SaveAsync(true13, oldDocument, assets);
-        await Edit(true13, "manifest.json", n => n["Version"] = 13); await Edit(true13, "scene.json", n => n["Version"] = 13);
-        byte[] sourceBytes = await File.ReadAllBytesAsync(true13); var migrated = (await store.LoadAsync(true13)).Document;
-        byte[] sourceBytesAfter = await File.ReadAllBytesAsync(true13);
+        string released19 = Path.Combine(root, "true-v19.floatcanvas"); await store.SaveAsync(released19, oldDocument, assets);
+        await Edit(released19, "manifest.json", n => n["Version"] = 19); await Edit(released19, "scene.json", n => n["Version"] = 19);
+        byte[] sourceBytes = await File.ReadAllBytesAsync(released19); var migrated = (await store.LoadAsync(released19)).Document;
+        byte[] sourceBytesAfter = await File.ReadAllBytesAsync(released19);
         check(migrated.Version == SceneDocument.CurrentVersion && migrated.ResourceId == oldDocument.ResourceId && migrated.ResourceIdentityPersistent &&
             JsonSerializer.Serialize(migrated) == JsonSerializer.Serialize(oldDocument) && sourceBytes.AsSpan().SequenceEqual(sourceBytesAfter),
-            "explicit 13-to14 migration preserves presentation, canonical palette, local transforms, elevation, grid, identity and source file bytes");
+            "released v19 import preserves presentation, canonical palette, local transforms, elevation, grid, identity and source file bytes");
         var oldPackage = new PrefabPackage { Definitions = oldDocument.Definitions.Select(d => d.Clone()).ToList(), EntryDefinitionId = definition.Id };
-        string truePrefab13 = Path.Combine(root, "true-v13.floatprefab"); await prefabStore.SaveAsync(truePrefab13, oldPackage, assets);
-        await Edit(truePrefab13, "manifest.json", n => n["Version"] = 13); await Edit(truePrefab13, "prefab.json", n => n["Version"] = 13);
-        check(JsonSerializer.Serialize((await prefabStore.LoadAsync(truePrefab13)).Package) == JsonSerializer.Serialize(oldPackage), "explicit v13 prefab migration preserves complete definition metadata and graph");
+        string releasedPrefab19 = Path.Combine(root, "true-v19.floatprefab"); await prefabStore.SaveAsync(releasedPrefab19, oldPackage, assets);
+        await Edit(releasedPrefab19, "manifest.json", n => n["Version"] = 19); await Edit(releasedPrefab19, "prefab.json", n => n["Version"] = 19);
+        check(JsonSerializer.Serialize((await prefabStore.LoadAsync(releasedPrefab19)).Package) == JsonSerializer.Serialize(oldPackage), "released v19 prefab migration preserves complete definition metadata and graph");
 
         var runtime = SceneEvaluation.Build(document).RenderDocument;
         await Reject(() => store.SaveAsync(Path.Combine(root, "runtime.floatcanvas"), runtime, assets), check, "project runtime marker remains an early save rejection");

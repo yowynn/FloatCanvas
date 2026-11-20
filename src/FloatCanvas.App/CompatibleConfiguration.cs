@@ -23,10 +23,19 @@ internal sealed class CompatibleConfiguration(string path)
         using var document = JsonDocument.Parse(File.ReadAllText(path), new() { MaxDepth = 128 });
         CheckDuplicates(document.RootElement);
         original = JsonNode.Parse(document.RootElement.GetRawText()) as JsonObject ?? throw new InvalidDataException("Configuration must be an object.");
-        NeedsCleanup = (typeof(T).DeclaringType == typeof(ToolStateStore) || typeof(T).DeclaringType == typeof(ToolPresetLibrary)) && FilterUnknownTools(original);
+        bool toolConfiguration = typeof(T).DeclaringType == typeof(ToolStateStore) || typeof(T).DeclaringType == typeof(ToolPresetLibrary);
+        NeedsCleanup = toolConfiguration && FilterUnknownTools(original);
         var normalized = Normalize(original, typeof(T), Default(typeof(T)));
+        if (toolConfiguration && normalized is JsonObject tools)
+            tools["Version"] = 3;
         var value = normalized!.Deserialize<T>(ReadOptions) ?? throw new InvalidDataException("Configuration is empty.");
         Capture(value, options);
+        // Migrate the owned portion of the in-memory merge source alongside the typed
+        // snapshot. From here on edits and saves compare the same current field names.
+        if (toolConfiguration)
+            UpgradeToolSnapshots(original, baseline!);
+        if (typeof(T) == typeof(UserSettings))
+            RewritePointerAlpha(original["PresentationGlobal"]?["Pointer"], baseline!["PresentationGlobal"]?["Pointer"]);
         return value;
     }
 
@@ -38,10 +47,6 @@ internal sealed class CompatibleConfiguration(string path)
         var current = JsonSerializer.SerializeToNode(value, options)!;
         var replacements=new List<string>();
         var merged = original is null || baseline is null ? current : Merge(original, baseline, current,replacements,"")!;
-        if (typeof(T).DeclaringType == typeof(ToolStateStore) || typeof(T).DeclaringType == typeof(ToolPresetLibrary))
-            RewriteOwnedToolAppearance(merged, current);
-        if (typeof(T) == typeof(UserSettings))
-            RewritePointerAlpha(merged["PresentationGlobal"]?["Pointer"], current["PresentationGlobal"]?["Pointer"]);
         if(replacements.Count>0 && ConfirmRepair?.Invoke(path,replacements)!=true)
             throw new IOException(FloatCanvas.Localization.AppText.Get("Configuration.SaveCancelled"));
         string serialized = merged.ToJsonString(new() { WriteIndented = true });
@@ -118,7 +123,7 @@ internal sealed class CompatibleConfiguration(string path)
         {
             if (property.GetCustomAttribute<JsonIgnoreAttribute>()?.Condition == JsonIgnoreCondition.Always) continue;
             string name = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
-            if (type == typeof(ElementStyle) && name is "Stroke" or "Fill" or "LinkColors") continue;
+            if (type == typeof(ElementStyle) && name is "Stroke" or "Fill" or "LinkColors" or "Foreground" or "Background") continue;
             object? defaultValue = fallback is null ? Default(property.PropertyType) : property.GetValue(fallback);
             var next = source.TryGetPropertyValue(name, out var supplied) ? Normalize(supplied, property.PropertyType, defaultValue) : JsonSerializer.SerializeToNode(defaultValue, property.PropertyType, ReadOptions);
             if (name == "Version" && (next is null || !int.TryParse(next.ToString(),out int version) || version<1 || version>Convert.ToInt32(defaultValue)) || !ValidValue(type, name, next))
@@ -173,48 +178,66 @@ internal sealed class CompatibleConfiguration(string path)
     {
         var parameters = normalized.Deserialize<ToolParameters>(ReadOptions)!;
         var rawStyle = source[nameof(ToolParameters.Style)] as JsonObject;
-        if (rawStyle is null || !rawStyle.ContainsKey(nameof(ElementStyle.Foreground)) && !rawStyle.ContainsKey(nameof(ElementStyle.Background)))
+        uint Color(string key, uint fallback) => rawStyle?[key] is JsonValue value && value.TryGetValue<uint>(out uint color) ? color : fallback;
+        bool primarySlots = rawStyle?.ContainsKey(nameof(ElementStyle.PrimaryColor)) == true || rawStyle?.ContainsKey(nameof(ElementStyle.SecondaryColor)) == true;
+        if (!primarySlots && rawStyle is not null && (rawStyle.ContainsKey("Foreground") || rawStyle.ContainsKey("Background")))
         {
-            uint Color(string key, uint fallback) => rawStyle?[key] is JsonValue value && value.TryGetValue<uint>(out uint color) ? color : fallback;
+            parameters.Style.PrimaryColor = Color("Foreground", parameters.Style.PrimaryColor);
+            parameters.Style.SecondaryColor = Color("Background", parameters.Style.SecondaryColor);
+            AppearanceMigration.UpgradeNumberOutline(parameters.Style, parameters.AppearanceKind);
+        }
+        else if (!primarySlots)
+        {
             string? variant = rawStyle?[nameof(ElementStyle.Variant)] is JsonValue variantValue && variantValue.TryGetValue<string>(out var id) ? id : null;
             bool linked = rawStyle?["LinkColors"] is JsonValue linkValue && linkValue.TryGetValue<bool>(out bool link) && link;
             int version = source["NumberColorRolesVersion"] is JsonValue roleValue && roleValue.TryGetValue<int>(out int roleVersion) && roleVersion == 1 ? 1 : 0;
             var legacy = new LegacyAppearance(Color("Stroke", parameters.Style.Foreground), Color("Fill", parameters.Style.Background), linked, variant);
-            if (variant is not null && parameters.AppearanceKind is { } kind && AppearanceRegistry.Find(kind, variant) is null)
+            if (variant is not null && parameters.AppearanceKind is { } kind && AppearanceRegistry.Find(kind, variant) is null &&
+                !(kind == ElementKind.Number && AppearanceMigration.IsLegacyNumberOutline(variant)))
             {
                 // A newer recipe stays stored, but cannot execute in this version.
                 parameters.Style.Foreground = legacy.Stroke; parameters.Style.Background = legacy.Fill; parameters.Style.Variant = variant;
             }
             else AppearanceMigration.MigrateToolStyle(parameters.Style, parameters.AppearanceKind, legacy, version);
         }
+        if (!primarySlots && parameters.Tool == EditorTool.CaptureRegion)
+            parameters.Style.PrimaryColor = source["CaptureBorderColor"] is JsonValue capture && capture.TryGetValue<uint>(out uint ink)
+                ? ink : ColorLibrary.ForegroundRed;
         parameters.NormalizeAppearance();
         normalized[nameof(ToolParameters.Style)] = JsonSerializer.SerializeToNode(parameters.Style, ReadOptions);
         normalized[nameof(ToolParameters.PointerPresentation)] = JsonSerializer.SerializeToNode(parameters.PointerPresentation, ReadOptions);
     }
 
-    // These paths belong to this application. Migrate them even when a later edit only
-    // changes a button or a preset name; unknown sibling settings remain Merge's input.
-    private static void RewriteOwnedToolAppearance(JsonNode merged, JsonNode current)
+    // Upgrade the owned fields in the read-time merge source, keeping unknown siblings.
+    private static void UpgradeToolSnapshots(JsonNode source, JsonNode current)
     {
         void Rewrite(JsonNode? target, JsonNode? known)
         {
             if (target is not JsonObject parameters || known is not JsonObject snapshot || snapshot["Tool"] is null || snapshot["Style"] is not JsonObject style) return;
-            if (parameters["Style"] is not JsonObject targetStyle) parameters["Style"] = targetStyle = new JsonObject();
-            foreach (string key in new[] { "Foreground", "Background", "AdditionalColors", "Variant" })
-                if (style.ContainsKey(key)) targetStyle[key] = style[key]?.DeepClone();
-            foreach (string key in new[] { "Stroke", "Fill", "LinkColors" }) targetStyle.Remove(key);
-            parameters.Remove("NumberColorRolesVersion");
-            parameters["NumberTextSizeMode"] = snapshot["NumberTextSizeMode"]?.DeepClone();
+            if (parameters["Style"] is not JsonObject targetStyle)
+            {
+                if (parameters["Style"] is not null) return;
+                parameters["Style"] = targetStyle = new JsonObject();
+            }
             RewritePointerAlpha(parameters[nameof(ToolParameters.PointerPresentation)], snapshot[nameof(ToolParameters.PointerPresentation)]);
+            if (targetStyle.ContainsKey("PrimaryColor") || targetStyle.ContainsKey("SecondaryColor")) return;
+            foreach (string key in new[] { "PrimaryColor", "SecondaryColor", "Variant" })
+                if (style.ContainsKey(key)) targetStyle[key] = style[key]?.DeepClone();
+            if (style["AdditionalColors"] is { } archived) targetStyle["AdditionalColors"] = archived.DeepClone();
+            else targetStyle.Remove("AdditionalColors");
+            foreach (string key in new[] { "Foreground", "Background", "Stroke", "Fill", "LinkColors" }) targetStyle.Remove(key);
+            parameters.Remove("NumberColorRolesVersion");
+            parameters.Remove("CaptureBorderColor");
+            parameters["NumberTextSizeMode"] = snapshot["NumberTextSizeMode"]?.DeepClone();
         }
         foreach (string key in new[] { "Tools", "OfficialBaselines", "PreviewSources" })
-            if (current[key] is JsonObject values && merged[key] is JsonObject targets)
+            if (current[key] is JsonObject values && source[key] is JsonObject targets)
                 foreach (var (id, value) in values) Rewrite(targets[id], value);
-        if (current["Presets"] is JsonArray presets && merged["Presets"] is JsonArray targetsList)
+        if (current["Presets"] is JsonArray presets && source["Presets"] is JsonArray targetsList)
             foreach (var preset in presets.OfType<JsonObject>().Where(preset => preset["Id"] is not null))
                 Rewrite(targetsList.OfType<JsonObject>().FirstOrDefault(target => JsonNode.DeepEquals(target["Id"], preset["Id"]))?["Parameters"], preset["Parameters"]);
-        if (merged is JsonObject root && (root["Version"] is not JsonValue versionValue ||
-            !versionValue.TryGetValue<int>(out int version) || version <= 2)) root["Version"] = 2;
+        if (source is JsonObject root && (root["Version"] is not JsonValue versionValue ||
+            !versionValue.TryGetValue<int>(out int version) || version <= 3)) root["Version"] = 3;
     }
 
     private static object? Default(Type type)
@@ -262,7 +285,6 @@ internal sealed class CompatibleConfiguration(string path)
         if (owner == typeof(ToolParameters)) return name switch
         {
             "DefaultWidth" or "DefaultHeight" or "NumberStart" or "NumberStep" or "EffectStrength" or "CaptureBorderWidth" or "CornerRadius" => NumericParameterDomain.ForTool(name).Contains(value.Deserialize<double>()),
-            "NumberColorRolesVersion" => Range(value,0,1),
             "Emoji" => Text(value, 32) && System.Globalization.StringInfo.GetNextTextElement(value.GetValue<string>()).Length == value.GetValue<string>().Length, _ => true
         };
         if (owner == typeof(CanvasPresetParameters)) return name switch

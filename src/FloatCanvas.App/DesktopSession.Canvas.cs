@@ -209,12 +209,12 @@ internal sealed partial class DesktopSession
 
     private void EnsureCanvasReference(CanvasSettings settings)
     {
-        if (settings.Projection.Quad.Count == 4) { CanvasGeometryMigration.UpgradeLegacy(settings); return; }
+        if (settings.Projection.Quad.Count == 4) { CanvasProjectionGeometry.InitializePlane(settings); return; }
         var old = settings.Projection;
         double size = CanvasGridGeometry.ResolveCellSize(settings, CanvasReferenceViewport());
         settings.Projection = CanvasGridGeometry.CreateFlatReference(CanvasReferenceViewport(), old.Columns, old.Rows, size);
         settings.Projection.Enabled = old.Enabled;
-        CanvasGeometryMigration.UpgradeLegacy(settings);
+        CanvasProjectionGeometry.InitializePlane(settings);
 
     }
 

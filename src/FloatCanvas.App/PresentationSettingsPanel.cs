@@ -6,23 +6,19 @@ using L = FloatCanvas.Localization.AppText;
 
 namespace FloatCanvas.App;
 
-/// <summary>Authored keyboard display fields. UI mode choices map to the existing three display styles.</summary>
+/// <summary>Authored keyboard display fields. The three stored display styles are directly selectable.</summary>
 internal sealed class PresentationSettingsPanel : StackPanel
 {
     private sealed record Entry(FrameworkElement Control, Action<object?> Display);
-    private sealed record RestoredLogStyles(IReadOnlyDictionary<Guid, PresentationDisplayStyle> Values);
     private readonly Dictionary<string, Entry> entries = [];
     private readonly Dictionary<string, FrameworkElement> rows = [];
     private readonly Dictionary<string, object?> editedValues = [];
-    private readonly Dictionary<Guid, PresentationDisplayStyle> rememberedLogStyles = [];
-    private readonly SegmentedChoice displayMode = new(), logStyle = new();
+    private readonly SegmentedChoice displayMode = new();
     private readonly StackPanel recordOptions = new(), keyboardOptions = new();
     private readonly PropertyChangeRegion modeOptions;
     internal Action<string>? ReportError { get; set; }
     private readonly TextBlock error = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
     private PresentationSettings sample = new();
-    private Guid[] sourceIds = [];
-    private PresentationDisplayStyle? shownMode;
     private object? context;
     private bool refreshing;
     internal event Action<string>? ValueChanged;
@@ -33,12 +29,9 @@ internal sealed class PresentationSettingsPanel : StackPanel
 
     internal PresentationSettingsPanel()
     {
-        displayMode.Add(L.Get("Presentation.Mode.Log"), PresentationDisplayStyle.Log, StyleIcon(PresentationDisplayStyle.Log));
-        displayMode.Add(L.Get("Presentation.Mode.Keyboard"), PresentationDisplayStyle.Keyboard, StyleIcon(PresentationDisplayStyle.Keyboard));
-        Add(this, "DisplayStyle", "Presentation.Mode.Label", displayMode, _ => { });
-        logStyle.Add(L.Get("Presentation.LogStyle.Log"), PresentationDisplayStyle.Log, StyleIcon(PresentationDisplayStyle.Log));
-        logStyle.Add(L.Get("Presentation.LogStyle.Keycaps"), PresentationDisplayStyle.Keycaps, StyleIcon(PresentationDisplayStyle.Keycaps));
-        Add(recordOptions, "LogStyle", "Presentation.LogStyle.Label", logStyle, _ => { });
+        foreach (var style in Enum.GetValues<PresentationDisplayStyle>())
+            displayMode.Add(L.Get("Presentation.DisplayStyle." + style), style, StyleIcon(style));
+        Add(this, "DisplayStyle", "Color.Style", displayMode, _ => { });
         Choice(recordOptions, "KeyDisplay", "Presentation.KeyDisplay", Enum.GetValues<PresentationKeyDisplayMode>().Select(value => (L.Get("Presentation.KeyDisplay." + value), (object)value)));
         Number(recordOptions, "RecentChordLimit", "Presentation.RecentChordLimit", 1, PresentationLimits.MaximumChords, 1, PresentationLimits.MaximumChords, integer: true);
         Number(recordOptions, "KeyHoldMilliseconds", "Presentation.KeyHold", 100, 5000, 100, 2000, "ms");
@@ -54,15 +47,11 @@ internal sealed class PresentationSettingsPanel : StackPanel
         error.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); Children.Add(error);
         displayMode.SelectionChanged += (_, _) =>
         {
-            if (refreshing || displayMode.SelectedValue is not PresentationDisplayStyle mode) return;
-            object value = mode == PresentationDisplayStyle.Keyboard ? mode : new RestoredLogStyles(sourceIds.ToDictionary(id => id, id => rememberedLogStyles.GetValueOrDefault(id, PresentationDisplayStyle.Log)));
-            modeOptions.Change(() => Commit("DisplayStyle", value));
-        };
-        logStyle.SelectionChanged += (_, _) =>
-        {
-            if (refreshing || shownMode != PresentationDisplayStyle.Log || logStyle.SelectedValue is not PresentationDisplayStyle style) return;
-            foreach (var id in sourceIds) rememberedLogStyles[id] = style;
-            Commit("DisplayStyle", style);
+            if (refreshing || displayMode.SelectedValue is not PresentationDisplayStyle style) return;
+            if ((style == PresentationDisplayStyle.Keyboard) == (keyboardOptions.Visibility == Visibility.Visible) &&
+                (style != PresentationDisplayStyle.Keyboard) == (recordOptions.Visibility == Visibility.Visible))
+                Commit("DisplayStyle", style);
+            else modeOptions.Change(() => Commit("DisplayStyle", style));
         };
     }
 
@@ -72,24 +61,20 @@ internal sealed class PresentationSettingsPanel : StackPanel
         parameters.Style.Foreground = 0xff4285d4; parameters.Style.Background = 0x224285d4;
         return (FrameworkElement)ToolParameterIcon.Create(parameters, 18);
     }
-    internal void Refresh(IEnumerable<(Guid Id, PresentationSettings Value)> values, object modelContext, bool canEdit = true)
+    internal void Refresh(IEnumerable<PresentationSettings> values, object modelContext, bool canEdit = true)
     {
-        var sources = values.ToArray(); if (sources.Length == 0) return;
+        var settings = values.ToArray(); if (settings.Length == 0) return;
         bool changedContext = !Equals(context, modelContext);
-        if (changedContext) { CancelGestures(); rememberedLogStyles.Clear(); }
-        context = modelContext; sourceIds = sources.Select(source => source.Id).ToArray();
-        var selectedIds = sourceIds.ToHashSet(); foreach (var id in rememberedLogStyles.Keys.Where(id => !selectedIds.Contains(id)).ToArray()) rememberedLogStyles.Remove(id);
-        foreach (var source in sources)
-            if (source.Value.DisplayStyle != PresentationDisplayStyle.Keyboard) rememberedLogStyles[source.Id] = source.Value.DisplayStyle;
-            else if (!rememberedLogStyles.ContainsKey(source.Id)) rememberedLogStyles[source.Id] = PresentationDisplayStyle.Log;
-        var settings = sources.Select(source => source.Value).ToArray(); refreshing = true;
+        if (changedContext) CancelGestures();
+        context = modelContext;
+        refreshing = true;
         try
         {
             sample = settings[0].Clone(); editedValues.Clear(); IsEnabled = canEdit;
             if (changedContext) { error.Text = ""; error.Visibility = Visibility.Collapsed; modeOptions.Reset(); }
             foreach (var (key, entry) in entries)
             {
-                if (key is "DisplayStyle" or "LogStyle") continue;
+                if (key == "DisplayStyle") continue;
                 if (!changedContext && (entry.Control.IsKeyboardFocusWithin || entry.Control is NumericValueField { IsInteracting: true })) continue;
                 object? value = Get(settings[0], key);
                 entry.Display(settings.Skip(1).Any(setting => !Equals(Get(setting, key), value)) ? null : value);
@@ -103,32 +88,25 @@ internal sealed class PresentationSettingsPanel : StackPanel
         bool previous = refreshing; refreshing = true;
         try
         {
-            var modes = styles.Select(style => style == PresentationDisplayStyle.Keyboard ? PresentationDisplayStyle.Keyboard : PresentationDisplayStyle.Log).Distinct().ToArray();
-            shownMode = modes.Length == 1 ? modes[0] : null; displayMode.SelectedValue = shownMode;
-            var recalled = sourceIds.Select(id => rememberedLogStyles.GetValueOrDefault(id, PresentationDisplayStyle.Log)).Distinct().ToArray();
-            logStyle.SelectedValue = recalled.Length == 1 ? recalled[0] : null;
-            recordOptions.Visibility = shownMode == PresentationDisplayStyle.Log ? Visibility.Visible : Visibility.Collapsed;
-            keyboardOptions.Visibility = shownMode == PresentationDisplayStyle.Keyboard ? Visibility.Visible : Visibility.Collapsed;
-            rows["KeyPanelAlignment"].Visibility = shownMode == PresentationDisplayStyle.Keyboard ? Visibility.Collapsed : Visibility.Visible;
+            displayMode.SelectedValue = styles.All(style => style == styles[0]) ? styles[0] : null;
+            bool allRecording = styles.All(style => style != PresentationDisplayStyle.Keyboard);
+            recordOptions.Visibility = allRecording ? Visibility.Visible : Visibility.Collapsed;
+            keyboardOptions.Visibility = styles.All(style => style == PresentationDisplayStyle.Keyboard) ? Visibility.Visible : Visibility.Collapsed;
+            rows["KeyPanelAlignment"].Visibility = recordOptions.Visibility;
         }
         finally { refreshing = previous; }
     }
-    internal void ApplyEdit(PresentationSettings target, string key, Guid sourceId = default)
-    { if (editedValues.TryGetValue(key, out var value)) Set(target, key, value, sourceId); }
+    internal void ApplyEdit(PresentationSettings target, string key)
+    { if (editedValues.TryGetValue(key, out var value)) Set(target, key, value); }
     internal bool CancelGestures()
     { bool active = IsInteracting; foreach (var field in entries.Values.Select(entry => entry.Control).OfType<NumericValueField>()) field.CancelGesture(); return active; }
     private void Commit(string key, object? value)
     {
-        if (refreshing || !IsEnabled || sourceIds.Length == 0) return;
-        var candidate = sample.Clone(); Set(candidate, key, value, sourceIds.FirstOrDefault());
+        if (refreshing || !IsEnabled || context is null) return;
+        var candidate = sample.Clone(); Set(candidate, key, value);
         if (!candidate.IsValid()) { Invalid(); return; }
         sample = candidate; editedValues[key] = value; error.Text = ""; error.Visibility = Visibility.Collapsed; ReportError?.Invoke("");
-        if (key == "DisplayStyle")
-        {
-            var styles = value is RestoredLogStyles recalled ? sourceIds.Select(id => recalled.Values.GetValueOrDefault(id, PresentationDisplayStyle.Log)).ToArray() : sourceIds.Select(_ => (PresentationDisplayStyle)value!).ToArray();
-            foreach (var (id, style) in sourceIds.Zip(styles)) if (style != PresentationDisplayStyle.Keyboard) rememberedLogStyles[id] = style;
-            SetChoices(styles);
-        }
+        if (value is PresentationDisplayStyle style && key == "DisplayStyle") SetChoices([style]);
         ValueChanged?.Invoke(key);
     }
     private void Invalid() { if (!refreshing) { if (ReportError is { } report) report(L.Get("Presentation.InvalidValue")); else { error.Text = L.Get("Presentation.InvalidValue"); error.Visibility = Visibility.Visible; } } }
@@ -184,11 +162,11 @@ internal sealed class PresentationSettingsPanel : StackPanel
         "RecentChordLimit" => value.RecentChordLimit, "KeyHoldMilliseconds" => value.KeyHoldMilliseconds, "KeyPanelMaximumWidth" => value.KeyPanelMaximumWidth,
         _ => throw new ArgumentOutOfRangeException(nameof(key))
     };
-    private static void Set(PresentationSettings target, string key, object? value, Guid sourceId)
+    private static void Set(PresentationSettings target, string key, object? value)
     {
         switch (key)
         {
-            case "DisplayStyle": target.DisplayStyle = value is RestoredLogStyles restored ? restored.Values.GetValueOrDefault(sourceId, PresentationDisplayStyle.Log) : (PresentationDisplayStyle)value!; break;
+            case "DisplayStyle": target.DisplayStyle = (PresentationDisplayStyle)value!; break;
             case "KeyboardLayout": target.KeyboardLayout = (value as PresentationKeyboardLayout)?.Clone(); break;
             case "KeyDisplay": target.KeyDisplay = (PresentationKeyDisplayMode)value!; break;
             case "KeyboardScope": target.KeyboardScope = (PresentationKeyboardScope)value!; break;

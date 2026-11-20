@@ -4,7 +4,6 @@ using FloatCanvas.Storage;
 using SkiaSharp;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Windows.Threading;
 
 namespace FloatCanvas.App;
@@ -92,33 +91,6 @@ internal sealed class WindowWorkspacePackageCapture : IDisposable
 
 internal static class WindowSourcePersistence
 {
-    internal static void ValidateClipboardSources(string payload)
-    {
-        using var json = JsonDocument.Parse(payload, new() { MaxDepth = 128 });
-        if (!json.RootElement.TryGetProperty("Document", out var document) || !document.TryGetProperty("Version", out var versionValue) ||
-            !versionValue.TryGetInt32(out int version)) throw new InvalidDataException("Missing clipboard document version.");
-        Graph(document);
-        if (document.TryGetProperty("Definitions", out var definitions) && definitions.ValueKind == JsonValueKind.Array)
-            foreach (var definition in definitions.EnumerateArray())
-                if (definition.TryGetProperty("Graph", out var graph)) Graph(graph);
-        if (document.TryGetProperty("Background", out var background) && background.ValueKind == JsonValueKind.Object) Element(background);
-        void Graph(JsonElement graph)
-        {
-            if (graph.TryGetProperty("Elements", out var elements) && elements.ValueKind == JsonValueKind.Array)
-                foreach (var element in elements.EnumerateArray()) Element(element);
-        }
-        void Element(JsonElement element)
-        {
-            if (!element.TryGetProperty("WindowSource", out var source)) return;
-            if (version < 14) throw new InvalidDataException("Window sources require scene format 14.");
-            if (element.EnumerateObject().Count(p => p.Name == "WindowSource") != 1) throw new InvalidDataException("Duplicate clipboard window source.");
-            if (source.ValueKind == JsonValueKind.Null) return;
-            string[] fields = ["BindingIntent", "TitleHint", "ProcessNameHint", "WindowClassHint", "Fit"];
-            if (source.ValueKind != JsonValueKind.Object || source.EnumerateObject().Count() != fields.Length ||
-                fields.Any(field => !source.TryGetProperty(field, out _)) || source.EnumerateObject().Any(p => !fields.Contains(p.Name, StringComparer.Ordinal)))
-                throw new InvalidDataException("Invalid canonical clipboard window source fields.");
-        }
-    }
     internal static IEnumerable<SceneDocument> Documents(WorkspaceState workspace) => new[] { workspace.LiveDocument }
         .Concat(workspace.CaptureDocument is { } capture ? [capture] : [])
         .Concat(PrefabDraftState.Enumerate(workspace.PendingPrefabEdit).Select(state => state.DraftDocument));

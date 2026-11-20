@@ -32,12 +32,10 @@ internal sealed class ToolParameters
     public double DefaultHeight { get; set; } = 100;
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
-    [JsonIgnore] public int NumberColorRolesVersion { get; set; } = 1;
     public NumberTextSizeMode NumberTextSizeMode { get; set; } = NumberTextSizeMode.FitBadge;
     public CaptureShape CaptureShape { get; set; } = CaptureShape.Rectangle;
     public CaptureSource CaptureSource { get; set; } = CaptureSource.Background;
     public double CaptureBorderWidth { get; set; }
-    public uint CaptureBorderColor { get; set; } = ColorLibrary.ForegroundRed;
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PresentationSettings? Presentation { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PresentationPointerSettings? PointerPresentation { get; set; }
 
@@ -47,7 +45,7 @@ internal sealed class ToolParameters
         copy.PointerPresentation = PointerPresentation?.Clone(); return copy;
     }
 
-    internal ElementKind? AppearanceKind => Tool == EditorTool.Emoji ? ElementKind.Text :
+    internal ElementKind? AppearanceKind => Tool == EditorTool.Emoji ? null :
         Enum.TryParse<ElementKind>(Tool.ToString(), out var kind) ? kind : null;
 
     // Creation-only policy: layer opacity and color alpha have different ownership.
@@ -62,10 +60,6 @@ internal sealed class ToolParameters
     {
         if (Tool == EditorTool.Presentation) Presentation ??= new();
         if (Tool == EditorTool.PointerPresentation) PointerPresentation ??= new();
-        PointerPresentation?.NormalizeColorAlpha();
-        if (Tool == EditorTool.Number && NumberColorRolesVersion == 0 && Style.Variant is null)
-            AppearanceMigration.MigrateToolStyle(Style, ElementKind.Number, new(Style.Foreground, Style.Background, false, null), 0);
-        NumberColorRolesVersion = 1;
         if (Style.Variant is null || Style.Variant == ElementAppearance.Default)
             Style.Variant = AppearanceKind is { } kind && ElementGeometry.IsBoxShape(kind) ? ElementAppearance.ShapeIndependent :
                 Tool == EditorTool.Number ? ElementAppearance.NumberFilled : ElementAppearance.Default;
@@ -76,7 +70,7 @@ internal sealed class ToolParameters
 
     internal bool IsValid(bool allowUnsupportedAppearance = false) => Enum.IsDefined(Tool) && Style is { } s && Enum.IsDefined(Symbol) && Emoji is { Length: > 0 and <= 32 } &&
         NumericParameterDomain.ForTool(nameof(NumberStart)).Contains(NumberStart) && NumericParameterDomain.ForTool(nameof(NumberStep)).Contains(NumberStep) &&
-        NumberColorRolesVersion is 0 or 1 && Enum.IsDefined(NumberTextSizeMode) &&
+        Enum.IsDefined(NumberTextSizeMode) &&
         (Tool != EditorTool.Presentation || Presentation is not null) && (Presentation is null || Presentation.IsValid()) &&
         (Tool != EditorTool.PointerPresentation || PointerPresentation is not null) && (PointerPresentation is null || PointerPresentation.IsValid()) &&
         (allowUnsupportedAppearance && s.Variant is { Length: > 0 and <= 128 } || SupportedAppearance) &&

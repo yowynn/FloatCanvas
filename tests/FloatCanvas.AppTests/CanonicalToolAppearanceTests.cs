@@ -28,7 +28,7 @@ internal static class CanonicalToolAppearanceTests
         var baselineIds = baseline.Select(node => node!["Id"]!.ToString()).ToHashSet(StringComparer.Ordinal);
         var original = current.Where(preset => baselineIds.Contains(preset.Id)).ToArray();
         check("all historical official IDs resolve to a current recipe", baselineIds.All(id => current.Any(p => p.Id == ToolPresetLibrary.ResolveOfficialId(id))));
-        check("curated catalog keeps 55 unique recipes including six presentation recipes", current.Count == 55 && current.Select(p => p.Id).Distinct().Count() == current.Count && current.Count(p => p.Parameters.Tool is EditorTool.Presentation or EditorTool.PointerPresentation) == 6);
+        check("curated catalog keeps 57 unique recipes including six presentation recipes", current.Count == 57 && current.Select(p => p.Id).Distinct().Count() == current.Count && current.Count(p => p.Parameters.Tool is EditorTool.Presentation or EditorTool.PointerPresentation) == 6);
         var redesigned = new HashSet<string> { "official.freehand", "official.freehand-bold", "official.highlighter-yellow", "official.rectangle", "official.rounded-rectangle", "official.rectangle-soft", "official.rectangle-filled", "official.ellipse", "official.circle-soft", "official.circle-filled", "official.triangle", "official.symbol-soft", "official.symbol-filled", "official.symbol-dashed" };
         foreach (var preset in original.Where(p => !redesigned.Contains(p.Id)))
         {
@@ -36,10 +36,13 @@ internal static class CanonicalToolAppearanceTests
             var style = expected["Style"]!.AsObject();
             bool linked = style["LinkColors"]?.GetValue<bool>() == true;
             var kind = preset.Parameters.AppearanceKind;
-            style["Foreground"] = style["Stroke"]!.DeepClone(); style["Background"] = style["Fill"]!.DeepClone(); style["AdditionalColors"] = new JsonObject();
+            style["PrimaryColor"] = style["Stroke"]!.DeepClone(); style["SecondaryColor"] = style["Fill"]!.DeepClone();
+            if (preset.Parameters.Tool == EditorTool.CaptureRegion) style["PrimaryColor"] = expected["CaptureBorderColor"]?.DeepClone() ?? ColorLibrary.ForegroundRed;
+            expected.AsObject().Remove("CaptureBorderColor");
             style["Variant"] = kind is { } shape && ElementGeometry.IsBoxShape(shape) ? linked ? ElementAppearance.ShapeUniform : ElementAppearance.ShapeIndependent :
                 kind == ElementKind.Number ? ElementAppearance.NumberFilled : ElementAppearance.Default;
             foreach (string key in new[] { "Stroke", "Fill", "LinkColors" }) style.Remove(key);
+            style["HighlighterInkContrast"] ??= 1.0;
             expected.AsObject().Remove("NumberColorRolesVersion"); expected["NumberTextSizeMode"] = (int)NumberTextSizeMode.FitBadge;
             check("official complete snapshot remains equivalent: " + preset.Id, JsonNode.DeepEquals(expected, JsonSerializer.SerializeToNode(preset.Parameters)));
         }
@@ -49,7 +52,7 @@ internal static class CanonicalToolAppearanceTests
     {
         var parameters = JsonSerializer.SerializeToNode(new ToolParameters { Tool = EditorTool.Number })!.AsObject();
         var style = parameters["Style"]!.AsObject();
-        foreach (string key in new[] { "Foreground", "Background", "AdditionalColors", "Variant" }) style.Remove(key);
+        foreach (string key in new[] { "PrimaryColor", "SecondaryColor", "Foreground", "Background", "AdditionalColors", "Variant" }) style.Remove(key);
         style["Stroke"] = stroke; style["Fill"] = fill; if (variant is not null) style["Variant"] = variant;
         parameters.Remove("NumberTextSizeMode"); if (roles is { } version) parameters["NumberColorRolesVersion"] = version;
         return parameters;
@@ -61,7 +64,7 @@ internal static class CanonicalToolAppearanceTests
         CompatibleConfiguration.ConfirmRepair = (_, _) => { prompts++; return false; };
         try
         {
-            foreach (int? roles in new int?[] { null, 0, 1 }) foreach (string? variant in new[] { null, ElementAppearance.NumberFilled, ElementAppearance.NumberOutline })
+            foreach (int? roles in new int?[] { null, 0, 1 }) foreach (string? variant in new[] { null, ElementAppearance.NumberFilled, AppearanceMigration.LegacyNumberOutline, AppearanceMigration.LegacyTwoColorNumberOutline })
             foreach (uint fill in new uint[] { 0x00112233, 0xff2288cc })
             {
                 uint stroke = 0x80443322; string path = Path.Combine(folder, "state-matrix.json");
@@ -75,11 +78,11 @@ internal static class CanonicalToolAppearanceTests
                 bool legacy = roles != 1 && variant is null;
                 var snapshots = new[] { state.Tools[EditorTool.Number], state.PreviewSources[EditorTool.Number], state.OfficialBaselines["official.number"] };
                 check($"v1 role migration preserves all snapshots roles={roles} style={variant} fill={fill:x8}", snapshots.All(value =>
-                    value.Style.Foreground == (legacy ? (fill >> 24) == 0 ? stroke : fill : stroke) && value.Style.Background == (legacy ? 0xffffffff : fill) &&
+                    value.Style.Foreground == (legacy ? (fill >> 24) == 0 ? stroke : fill : stroke) && value.Style.Background == (legacy ? 0xffffffff : AppearanceMigration.IsLegacyNumberOutline(variant) ? fill & 0x00ffffff : fill) &&
                     value.NumberTextSizeMode == NumberTextSizeMode.FitBadge && (!legacy || value.Style.AdditionalColors["legacy.fill"] == fill && value.Style.AdditionalColors["legacy.stroke"] == stroke)));
                 check("reading and unchanged Save leave v1 bytes untouched", File.ReadAllText(path) == original);
                 state.Buttons[EditorTool.Number] = EditorTool.Number; state.Save(); var saved = JsonNode.Parse(File.ReadAllText(path))!;
-                check("unrelated real save rewrites each owned style to v2 without legacy aliases", saved["Version"]!.GetValue<int>() == 2 &&
+                check("unrelated real save rewrites each owned style to v3 without legacy aliases", saved["Version"]!.GetValue<int>() == 3 &&
                     new[] { saved["Tools"]!["Number"]!, saved["PreviewSources"]!["Number"]!, saved["OfficialBaselines"]!["official.number"]! }.All(Canonical) &&
                     saved["Future"]!["Stroke"]!.GetValue<int>() == 17 && saved["Future"]!["Fill"]!.GetValue<string>() == "unrelated");
                 check("canonical reload does not repeat the number role migration", JsonSerializer.Serialize(new ToolStateStore(path).Tools[EditorTool.Number]) == JsonSerializer.Serialize(state.Tools[EditorTool.Number]));
@@ -92,7 +95,7 @@ internal static class CanonicalToolAppearanceTests
     {
         var style = parameters["Style"]!.AsObject();
         return !parameters.AsObject().ContainsKey("NumberColorRolesVersion") && parameters["NumberTextSizeMode"] is not null &&
-            new[] { "Foreground", "Background", "AdditionalColors", "Variant" }.All(style.ContainsKey) && !new[] { "Stroke", "Fill", "LinkColors" }.Any(style.ContainsKey);
+            new[] { "PrimaryColor", "SecondaryColor", "Variant" }.All(style.ContainsKey) && !new[] { "Foreground", "Background", "Stroke", "Fill", "LinkColors" }.Any(style.ContainsKey);
     }
 
     private static void Unknown(string folder, Action<string, bool> check)
@@ -109,7 +112,7 @@ internal static class CanonicalToolAppearanceTests
         bool rejected = false; try { library.Apply("user-future"); } catch (KeyNotFoundException) { rejected = true; }
         library.Rename("user-known", "Renamed"); var saved = JsonNode.Parse(File.ReadAllText(path))!; var future = saved["Presets"]![0]!;
         check("unsupported variant cannot execute and survives a peer edit with unknown metadata", rejected && future["Parameters"]!["Style"]!["Variant"]!.ToString() == "number.future-style" &&
-            future["Parameters"]!["Style"]!["Foreground"]!.GetValue<uint>() == 0xff123456 && future["Parameters"]!["Style"]!["Background"]!.GetValue<uint>() == 0x00778899 &&
+            future["Parameters"]!["Style"]!["PrimaryColor"]!.GetValue<uint>() == 0xff123456 && future["Parameters"]!["Style"]!["SecondaryColor"]!.GetValue<uint>() == 0x00778899 &&
             future["FutureRecord"]!.GetValue<int>() == 81 && saved["FutureRoot"]!.GetValue<bool>());
     }
 
@@ -121,7 +124,7 @@ internal static class CanonicalToolAppearanceTests
         controller.ApplyParameters(parameters); var panel = new ToolOptionsPanel(controller, new(Path.Combine(folder, "selector-presets.json")), new(Path.Combine(folder, "selector-colors.json")));
         panel.PrepareForShow(); var pickers = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers"); var rows = Field<Dictionary<string, Wpf.FrameworkElement>>(panel, "rows");
         var selector = pickers["StyleVariant"];
-        check("number options expose all three registry variants with string IDs", selector.Items.Count == 3 && selector.Items.Select(item => item.Tag).SequenceEqual(AppearanceRegistry.VariantsFor(ElementKind.Number).Select(variant => variant.Id)));
+        check("number options expose both registry variants with string IDs", selector.Items.Count == 2 && selector.Items.Select(item => item.Tag).SequenceEqual(AppearanceRegistry.VariantsFor(ElementKind.Number).Select(variant => variant.Id)));
         foreach (var variant in AppearanceRegistry.VariantsFor(ElementKind.Number))
         {
             selector.SelectedValue = variant.Id; panel.PrepareForShow();
@@ -137,13 +140,17 @@ internal static class CanonicalToolAppearanceTests
         }
         var cappedLibrary = new ToolPresetLibrary(Path.Combine(folder, "capped-font-preset.json")); var cappedPreset = cappedLibrary.Save("Capped font", controller.Parameters);
         var cappedReload = new ToolPresetLibrary(Path.Combine(folder, "capped-font-preset.json")).Apply(cappedPreset.Id);
-        check("personal recipes round-trip explicit capped number font mode independently of style", cappedReload.NumberTextSizeMode == NumberTextSizeMode.CapFontSize && cappedReload.Style.FontSize == 8 && cappedReload.Style.Variant == ElementAppearance.NumberOutlineIndependent);
+        check("personal recipes round-trip explicit capped number font mode independently of style", cappedReload.NumberTextSizeMode == NumberTextSizeMode.CapFontSize && cappedReload.Style.FontSize == 8 && cappedReload.Style.Variant == ElementAppearance.NumberOutline);
         check("tool appearance selection creates no canvas undo entries", controller.Session.UndoCount == 0 && controller.Session.Document.Elements.Count == 0);
         var first = new CanvasElement { Kind = ElementKind.Rectangle, Width = 50, Height = 40, Style = new() { Foreground = 0xff334455, Background = 0xffbbccdd, Variant = ElementAppearance.ShapeIndependent } };
-        var number = new CanvasElement { Kind = ElementKind.Number, Width = 40, Height = 40, Style = new() { Foreground = 0xff556677, Background = 0xffbbccdd, Variant = ElementAppearance.NumberOutlineIndependent } };
+        var number = new CanvasElement { Kind = ElementKind.Number, Width = 40, Height = 40, Style = new() { Foreground = 0xff556677, Background = 0xffbbccdd, Variant = ElementAppearance.NumberOutline } };
         var owner = new EditorSession(new() { Elements = [first, number] }); owner.SetSelection([first.Id, number.Id]);
         var inspector = new InspectorWindow(() => owner); inspector.PrepareForShow(); var colors = Field<Dictionary<string, ColorField>>(inspector, "colorFields");
         check("mixed shape and two-color number share canonical mixed primary and secondary", colors["Stroke"].IsMixed && !colors["Fill"].IsMixed);
+        var captions = Field<Dictionary<string, Wpf.FrameworkElement>>(inspector, "fieldContainers");
+        string Caption(string key) => ((Controls.TextBlock)((Controls.Grid)captions[key]).Children[0]).Text;
+        check("mixed types name the shared slots by role", Caption("Stroke") == FloatCanvas.Localization.AppText.Get("Color.Primary") &&
+            Caption("Fill") == FloatCanvas.Localization.AppText.Get("Color.Secondary"));
         colors["Stroke"].SetUserValue(0x80112233); Invoke(inspector, "Apply");
         check("mixed canonical primary edits both real source leaves in one undo", owner.Document.Elements.All(element => element.Style.Foreground == 0x80112233) && owner.UndoCount == 1);
         owner.Undo(); check("mixed undo restores both distinct original primary colors", owner.Document.Elements[0].Style.Foreground == 0xff334455 && owner.Document.Elements[1].Style.Foreground == 0xff556677);
@@ -153,14 +160,14 @@ internal static class CanonicalToolAppearanceTests
     private static void Render(Action<string, bool> check)
     {
         var element = new CanvasElement { Kind = ElementKind.Number, Width = 80, Height = 80, Number = 1, NumberTextSizeMode = NumberTextSizeMode.FitBadge,
-            Transform = Affine2D.Translation(10, 10), Style = new() { Foreground = 0xffff0000, Background = 0xff0000ff, Variant = ElementAppearance.NumberOutlineIndependent, StrokeWidth = 6 } };
+            Transform = Affine2D.Translation(10, 10), Style = new() { Foreground = 0xffff0000, Background = 0xff0000ff, Variant = ElementAppearance.NumberOutline, StrokeWidth = 6 } };
         using var renderer = new SceneRenderer();
         using var bitmap = SKBitmap.Decode(renderer.ExportPng(new() { Viewport = new(0, 0, 100, 100), Elements = [element] }, new(), true));
         int red = 0, blue = 0; foreach (var color in bitmap.Pixels) { if (color.Red > 200 && color.Blue < 30) red++; if (color.Blue > 200 && color.Red < 30) blue++; }
-        check("third number style renders separate red ring and blue text with an empty body", red > 100 && blue > 30 && bitmap.GetPixel(35, 35).Alpha == 0);
+        check("outlined number renders red ring and digit over the blue body", red > 100 && blue > 30 && bitmap.GetPixel(35, 35).Blue > 200);
         element.Style.StrokeWidth = 0;
         using var zero = SKBitmap.Decode(renderer.ExportPng(new() { Viewport = new(0, 0, 100, 100), Elements = [element] }, new(), true));
-        check("zero-width third number style hides the ring while keeping its text", !zero.Pixels.Any(color => color.Red > 200 && color.Blue < 30) && zero.Pixels.Any(color => color.Blue > 200 && color.Red < 30));
+        check("zero-width outlined badge hides the ring while keeping its text", zero.GetPixel(11, 50).Blue > 200 && zero.Pixels.Any(color => color.Red > 200 && color.Blue < 30));
         element.Style.AdditionalColors["shadow"] = 0x00123456; var clone = element.Clone(); clone.Style.AdditionalColors["shadow"] = 0xffabcdef;
         check("additional color snapshots are isolated and preserve transparent RGB", element.Style.AdditionalColors["shadow"] == 0x00123456);
     }
@@ -171,9 +178,13 @@ internal static class CanonicalToolAppearanceTests
         var cases = JsonNode.Parse(stream)!.AsArray(); using var renderer = new SceneRenderer();
         foreach (var baseline in cases)
         {
-            var element = baseline!["Element"]!.Deserialize<CanvasElement>()!;
+            var wire = JsonSerializer.SerializeToNode(new SceneDocument())!.AsObject();
+            wire["Version"] = 8; LegacyFixtureSchema.RemovePrefabFields(wire);
+            wire["Elements"] = new JsonArray(baseline!["Element"]!.DeepClone());
+            var options = new JsonSerializerOptions { Converters = { new FloatCanvas.Storage.EmbeddedDocumentConverter() } };
+            var element = wire.Deserialize<SceneDocument>(options)!.Elements.Single();
             using var bitmap = SKBitmap.Decode(renderer.ExportPng(new() { Viewport = new(0, 0, 100, 100), Elements = [element] }, new(), true));
-            check("M4 wire migration preserves exact pixels: " + baseline["Name"], Convert.ToHexString(SHA256.HashData(bitmap.Bytes)) == baseline["PixelSha256"]!.ToString());
+            check("released legacy color fields preserve exact pixels: " + baseline["Name"], Convert.ToHexString(SHA256.HashData(bitmap.Bytes)) == baseline["PixelSha256"]!.ToString());
         }
     }
     private static void Visuals(string output, string folder, Action<string, bool> check)
@@ -185,14 +196,14 @@ internal static class CanonicalToolAppearanceTests
             {
                 FloatCanvas.Localization.AppText.Initialize(locale); AppTheme.Apply(theme);
                 var controller = new EditorController(new EditorSession());
-                controller.ApplyParameters(new() { Tool = EditorTool.Number, Style = new() { Foreground = 0xff2266aa, Background = 0xffdd5533, Variant = ElementAppearance.NumberOutlineIndependent } });
+                controller.ApplyParameters(new() { Tool = EditorTool.Number, Style = new() { Foreground = 0xff2266aa, Background = 0xffdd5533, Variant = ElementAppearance.NumberOutline } });
                 var panel = new ToolOptionsPanel(controller, new(Path.Combine(folder, "visual-presets.json")), new(Path.Combine(folder, "visual-colors.json")));
                 panel.PrepareForShow(); panel.Measure(new(ToolOptionsPanel.PreferredWidth, 620)); panel.Arrange(new(0, 0, ToolOptionsPanel.PreferredWidth, 620)); panel.UpdateLayout();
                 var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(panel.ActualWidth), 620, 96, 96, System.Windows.Media.PixelFormats.Pbgra32); bitmap.Render(panel);
                 var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
                 using var stream = File.Create(Path.Combine(output, $"number-variants-{locale}-{theme}.png")); encoder.Save(stream);
                 var selector = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers")["StyleVariant"];
-                check(locale + " " + theme + " all three style controls fit their bounded row", selector.Items.Count == 3 && selector.Items.All(item => item.ActualWidth > 0 && item.ActualHeight > 0) && selector.ActualWidth <= panel.ActualWidth);
+                check(locale + " " + theme + " both style controls fit their bounded row", selector.Items.Count == 2 && selector.Items.All(item => item.ActualWidth > 0 && item.ActualHeight > 0) && selector.ActualWidth <= panel.ActualWidth);
                 var number = new CanvasElement { Kind = ElementKind.Number, Width = 72, Height = 72, Style = controller.Style.Clone(), NumberTextSizeMode = NumberTextSizeMode.FitBadge };
                 var owner = new EditorSession(new() { Elements = [number] }); owner.Document.Canvas.Projection.Enabled = true; owner.SetSelection([number.Id]);
                 var inspector = new InspectorWindow(() => owner); inspector.PrepareForShow();
@@ -202,8 +213,8 @@ internal static class CanonicalToolAppearanceTests
                 var inspectorImage = new System.Windows.Media.Imaging.RenderTargetBitmap(300, 700, 96, 96, System.Windows.Media.PixelFormats.Pbgra32); inspectorImage.Render(background); inspectorImage.Render(content);
                 var inspectorEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); inspectorEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(inspectorImage));
                 using (var inspectorStream = File.Create(Path.Combine(output, $"number-inspector-{locale}-{theme}.png"))) inspectorEncoder.Save(inspectorStream);
-                var numberStyle = Field<SegmentedChoice>(inspector, "numberStyle"); var preserve = Field<Controls.CheckBox>(inspector, "preservePlacementAppearance");
-                check(locale + " " + theme + " narrow inspector keeps three styles and placement option within the property width", numberStyle.ActualWidth <= 300 &&
+                var numberStyle = Field<SegmentedChoice>(inspector, "appearanceStyle"); var preserve = Field<Controls.CheckBox>(inspector, "preservePlacementAppearance");
+                check(locale + " " + theme + " narrow inspector keeps both styles and placement option within the property width", numberStyle.ActualWidth <= 300 &&
                     numberStyle.Items.All(item => item.ActualWidth > 0) && preserve.ActualWidth > 0 && preserve.ActualWidth <= 300 && new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);
                 Descendants(content).OfType<Controls.ScrollViewer>().First().ScrollToEnd(); content.UpdateLayout();
                 var placementImage = new System.Windows.Media.Imaging.RenderTargetBitmap(300, 700, 96, 96, System.Windows.Media.PixelFormats.Pbgra32); placementImage.Render(background); placementImage.Render(content);

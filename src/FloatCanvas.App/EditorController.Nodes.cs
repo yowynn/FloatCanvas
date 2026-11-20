@@ -15,7 +15,6 @@ internal sealed partial class EditorController
     private void InsertWorldDrawing()
     {
         if (drawing is null) return;
-        AppearanceMigration.NormalizeElement(drawing);
         if (screenBillboardDrawing) return;
         new SceneGraph(Session.Document).InsertElement(drawing, Session.EditScopeId, rootCanvas: Session.ActiveRootCanvas);
         drawingParents[drawing.Id] = Session.EditScopeId;
@@ -81,7 +80,7 @@ internal sealed partial class EditorController
     private static void CopyGeometry(CanvasElement target, CanvasElement source)
     {
         target.Width = source.Width; target.Height = source.Height; target.CornerRadius = source.CornerRadius;
-        target.Points = source.Points.Snapshot(); target.TextFrameFixed = source.TextFrameFixed; target.Style = source.Style;
+        target.Points = source.Points.Snapshot(); target.TextFrameFixed = source.TextFrameFixed; target.TextAutoWidth = source.TextAutoWidth; target.Style = source.Style;
         target.Text = source.Text; target.Number = source.Number; target.NumberTextSizeMode = source.NumberTextSizeMode;
         target.ConstrainAspect = source.ConstrainAspect; EditorSession.CopyPlacement(target, source);
     }

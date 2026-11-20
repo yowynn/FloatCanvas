@@ -6,7 +6,7 @@ internal static class CanvasRectangleCalibrationTests
     internal static void Run(Action<bool, string> check)
     {
         var settings = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 1200, 900)) };
-        CanvasGeometryMigration.UpgradeLegacy(settings); settings.Projection.Enabled = true;
+        CanvasProjectionGeometry.InitializePlane(settings); settings.Projection.Enabled = true;
         PointD[] q = [new(100, 80), new(900, 160), new(1050, 800), new(50, 720)];
         check(CanvasProjectionGeometry.TryCalibrate(settings.Projection, q, out var projection, out _), "rectangle fixture has nonaffine projection");
         settings.Projection = projection; settings.Grid.Visible = false; settings.Projection.LockedGridCellSize = 17;

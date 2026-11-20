@@ -115,7 +115,7 @@ internal static class PrefabStorageTests
             using (var zip = ZipFile.Open(path, ZipArchiveMode.Update)) { var json = await Read(zip, "scene.json"); change.Mutate(json); await Replace(zip, "scene.json", json); }
             await Reject(() => projectStore.LoadAsync(path), $"v11 malformed {change.Name} cannot silently discard source nodes");
         }
-        await Version10(check, projectStore, root);
+        await PublishedGroups(check, projectStore, root);
         var sharedPath = new CanvasElement { Kind = ElementKind.Freehand, Points = new(Enumerable.Range(0, 1000).Select(i => new PointD(i, i % 17))) };
         var sharedDefinition = new PrefabDefinition { Graph = new() { Elements = [sharedPath] } };
         var shared = new SceneDocument { Definitions = [sharedDefinition] };
@@ -134,7 +134,7 @@ internal static class PrefabStorageTests
             check(rejected, message);
         }
     }
-    private static async Task Version10(Action<bool, string> check, ProjectStore store, string root)
+    private static async Task PublishedGroups(Action<bool, string> check, ProjectStore store, string root)
     {
         var outer = new CanvasGroup { OrderMode = GroupOrderMode.AtomicBlock, Transform = Affine2D.Translation(33, 44).Compose(Affine2D.Rotation(27)),
             ElevationScale = -2, Visible = false, Locked = true, ChildOrder = [] };
@@ -143,24 +143,24 @@ internal static class PrefabStorageTests
         outer.ChildOrder = [empty.Id, leaf.Id];
         var document = new SceneDocument { Groups = [outer, empty], Elements = [leaf], RootOrder = [outer.Id] };
         document.Canvas.Grid.FlatCellSize = 29; document.Canvas.Grid.PlaneCellSize = 17; document.Canvas.Grid.PlaneOrigin = new(3, 7);
-        var json = JsonSerializer.SerializeToNode(document)!.AsObject(); json["Version"] = 10; LegacyFixtureSchema.RemovePrefabFields(json);
-        string path = Path.Combine(root, "true-v10.floatcanvas");
+        var json = JsonSerializer.SerializeToNode(document)!.AsObject(); json["Version"] = 19; LegacyFixtureSchema.UseForegroundBackground(json);
+        string path = Path.Combine(root, "released-v19.floatcanvas");
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
         {
-            var manifest = new JsonObject { ["Format"] = "FloatCanvas.project", ["Version"] = 10, ["Payload"] = "scene.json", ["CreatedWith"] = "0.4.0-m3", ["LastSavedWith"] = "0.4.0-m3", ["Assets"] = new JsonArray() };
+            var manifest = new JsonObject { ["Format"] = "FloatCanvas.project", ["Version"] = 19, ["Payload"] = "scene.json", ["CreatedWith"] = "0.4.0", ["LastSavedWith"] = "0.4.0", ["Assets"] = new JsonArray() };
             using (var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open())) await writer.WriteAsync(manifest.ToJsonString());
             using (var writer = new StreamWriter(zip.CreateEntry("scene.json").Open())) await writer.WriteAsync(json.ToJsonString());
         }
         byte[] original = await File.ReadAllBytesAsync(path); var loaded = (await store.LoadAsync(path)).Document;
-        check(!loaded.ResourceIdentityPersistent && loaded.ResourceId != Guid.Empty && loaded.Version == SceneDocument.CurrentVersion && loaded.Groups[0].Transform == outer.Transform &&
+        check(loaded.ResourceIdentityPersistent && loaded.ResourceId == document.ResourceId && loaded.Version == SceneDocument.CurrentVersion && loaded.Groups[0].Transform == outer.Transform &&
             loaded.Groups[0].ElevationScale == -2 && !loaded.Groups[0].Visible && loaded.Groups[0].Locked && loaded.Groups[0].OrderMode == GroupOrderMode.AtomicBlock &&
             loaded.Groups[0].ChildOrder!.SequenceEqual([empty.Id, leaf.Id]) && loaded.RootOrder!.SequenceEqual([outer.Id]) && loaded.Groups[1].ChildOrder is { Count: 0 },
-            "v10 migration preserves true local matrices, flags, empty atomic slots and source order while assigning only a transient resource identity");
-        check(JsonSerializer.Serialize(loaded.Canvas) == JsonSerializer.Serialize(document.Canvas) && loaded.Provenance.CreatedWith == "0.4.0-m3" &&
-            (await File.ReadAllBytesAsync(path)).AsSpan().SequenceEqual(original), "v10-to-v11 migration leaves M2 plane/grid, provenance and original bytes intact");
+            "released v19 preserves local matrices, flags, empty atomic slots, source identity and order");
+        check(JsonSerializer.Serialize(loaded.Canvas) == JsonSerializer.Serialize(document.Canvas) && loaded.Provenance.CreatedWith == "0.4.0" &&
+            (await File.ReadAllBytesAsync(path)).AsSpan().SequenceEqual(original), "released v19 retains independent plane/grid, provenance and original bytes intact");
         var snapshot = loaded.Clone(); await store.SaveAsync(path, loaded, new()); var reopened = (await store.LoadAsync(path)).Document;
         check(snapshot.ResourceIdentityPersistent && loaded.ResourceIdentityPersistent && reopened.ResourceIdentityPersistent && reopened.ResourceId == loaded.ResourceId,
-            "explicit successful migrated save establishes a stable resource identity shared by undo snapshots");
+            "resave retains the stable identity shared by undo snapshots");
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Update))
         {
             var manifest = await Read(zip, "manifest.json"); manifest["Version"] = 10; await Replace(zip, "manifest.json", manifest);

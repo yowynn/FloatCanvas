@@ -6,5 +6,8 @@
   <ItemGroup>
     <ProjectReference Include="../../src/FloatCanvas.Storage/FloatCanvas.Storage.csproj" />
   </ItemGroup>
-  <ItemGroup><Compile Include="../Shared/GroupTestData.cs" Link="GroupTestData.cs" /></ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/GroupTestData.cs" Link="GroupTestData.cs" />
+    <Compile Include="../Shared/LegacyFixtureSchema.cs" Link="LegacyFixtureSchema.cs" />
+  </ItemGroup>
 </Project>

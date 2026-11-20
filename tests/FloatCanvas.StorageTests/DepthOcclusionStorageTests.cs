@@ -16,7 +16,7 @@ internal static class DepthOcclusionStorageTests
             Elements = [new() { Kind = ElementKind.Rectangle, Width = 30, Height = 40, IsBillboard = true,
                 BillboardAnchor = new(120, 100), BillboardHeight = -12, Style = new() { StrokeWidth = 5 } }] };
         var assets = new AssetLibrary(); var store = new ProjectStore();
-        string path = Path.Combine(root, "depth.floatcanvas"); CanvasCalibration.UpgradeLegacy(scene.Canvas.Projection); string original = JsonSerializer.Serialize(scene);
+        string path = Path.Combine(root, "depth.floatcanvas"); CanvasCalibration.AdoptReference(scene.Canvas.Projection); string original = JsonSerializer.Serialize(scene);
         await store.SaveAsync(path, scene, assets);
         var loaded = (await store.LoadAsync(path)).Document;
         check(loaded.Canvas.DepthPriorityOcclusion && JsonSerializer.Serialize(loaded) == original,
@@ -42,7 +42,7 @@ internal static class DepthOcclusionStorageTests
         check(workspace.LiveDocument.Canvas.DepthPriorityOcclusion && workspace.CaptureDocument!.Canvas.DepthPriorityOcclusion &&
             !workspace.CaptureDocument.Canvas.Projection.Enabled && workspace.CaptureOrigin == new PointD(15, 20),
             "recovery preserves independent active and disabled depth choices for both workspace documents");
-        foreach (int version in new[] { 1, 2, 3, 4 })
+        foreach (int version in new[] { 1, 2, 3 })
         {
             string legacy = Path.Combine(root, "legacy-v" + version + ".floatcanvas"); File.Copy(path, legacy);
             using (var archive = ZipFile.Open(legacy, ZipArchiveMode.Update))

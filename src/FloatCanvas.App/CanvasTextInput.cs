@@ -73,7 +73,7 @@ internal sealed class CanvasTextInput : IDisposable
         {
             var dpi=VisualTreeHelper.GetDpi(window);
             double scale=Math.Sqrt(jacobian.M11*jacobian.M11+jacobian.M21*jacobian.M21)/dpi.DpiScaleX;
-            edit.Input.FontSize=Math.Clamp(edit.Target.Style.FontSize*scale,1,2048);
+            edit.Input.FontSize=Math.Clamp(edit.Target.Style.FontSize*scale,1,ElementStyle.MaximumFontSize);
             edit.Input.FontFamily=new FontFamily(edit.Target.Style.FontFamily);
             edit.Input.Width=Math.Clamp(edit.Target.Width*scale,40,1000);
             window.UpdateLayout();

@@ -6,6 +6,38 @@ namespace FloatCanvas.App;
 /// <summary>Resize the text frame without distorting glyphs, fitting its font and wrapping to the new bounds.</summary>
 internal static class TextFrameLayout
 {
+    private const double MinimumLabelWidth = 40;
+    private const double MaximumLabelWidth = 360;
+
+    private static double LabelWidth(CanvasElement text, SceneRenderer renderer) =>
+        Math.Clamp(renderer.MeasureText(text.Text, text.Style).Width + 4, MinimumLabelWidth, MaximumLabelWidth);
+
+    internal static bool UsesAutoWidth(CanvasElement text, SceneRenderer renderer) =>
+        !text.TextFrameFixed && (text.TextAutoWidth ||
+            // Older labels saved their calculated width without recording its origin.
+            text.Width >= MinimumLabelWidth && text.Width <= MaximumLabelWidth &&
+            (text.Width == MinimumLabelWidth || Math.Abs(text.Width - LabelWidth(text, renderer)) < .001));
+
+    internal static void Reflow(CanvasElement text, bool autoWidth, SceneRenderer renderer)
+    {
+        text.TextAutoWidth = autoWidth;
+        if (EmojiGlyphs.IsEmoji(text.Text, text.Style))
+        {
+            var glyph = renderer.MeasureText(text.Text, text.Style);
+            text.Width = glyph.Width; text.Height = glyph.Height;
+            return;
+        }
+        if (autoWidth) text.Width = LabelWidth(text, renderer);
+        var metrics = renderer.MeasureText(text.Text, text.Style, text.Width);
+        if (autoWidth && metrics.Width > text.Width + .001)
+        {
+            // A glyph wider than the usual wrapping limit must still fit inside its own editable frame.
+            text.Width = metrics.Width + 4;
+            metrics = renderer.MeasureText(text.Text, text.Style, text.Width);
+        }
+        text.Height = metrics.Height;
+    }
+
     internal static void Transform(CanvasElement target,CanvasElement source,Affine2D delta,SceneRenderer renderer)
     {
         var center=new PointD(source.Width/2,source.Height/2);
@@ -24,7 +56,7 @@ internal static class TextFrameLayout
     {
         var center=ElementGeometry.LocalToPlane(source).TransformPoint(new(source.Width/2,source.Height/2));
         target.Width=Math.Max(2,source.Width*x);target.Height=Math.Max(2,source.Height*y);
-        target.Transform=source.Transform;target.TextFrameFixed=true;
+        target.Transform=source.Transform;target.TextFrameFixed=true;target.TextAutoWidth=false;
         var movedCenter=ElementGeometry.LocalToPlane(target).TransformPoint(new(target.Width/2,target.Height/2));
         target.Transform=Affine2D.Translation(center.X-movedCenter.X,center.Y-movedCenter.Y).Compose(target.Transform);
         // A wider frame can remove wrapped lines, so the old font size is no longer
@@ -32,21 +64,5 @@ internal static class TextFrameLayout
         Fit(target,EmojiGlyphs.IsEmoji(source.Text,source.Style)?source.Style.FontSize*y:target.Height,renderer);
     }
     internal static void Fit(CanvasElement target,double requestedSize,SceneRenderer renderer)
-    {
-        double maximum=Math.Clamp(requestedSize,1,2048);
-        bool Fits(double size)
-        {
-            target.Style.FontSize=size;
-            var measured=renderer.MeasureText(target.Text,target.Style,target.Width);
-            return measured.Width<=target.Width+.001&&measured.Height<=target.Height+.001;
-        }
-        if(Fits(maximum))return;
-        double minimum=1;
-        for(int i=0;i<20;i++)
-        {
-            double middle=(minimum+maximum)/2;
-            if(Fits(middle))minimum=middle;else maximum=middle;
-        }
-        target.Style.FontSize=minimum;
-    }
+        => target.Style.FontSize = renderer.FittedTextSize(target.Text, target.Style, target.Width, target.Height, requestedSize);
 }

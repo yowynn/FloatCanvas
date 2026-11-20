@@ -3,6 +3,20 @@ namespace FloatCanvas.Core;
 /// <summary>Fixed source geometry. Grid density is deliberately absent from this interface.</summary>
 public static class CanvasProjectionGeometry
 {
+    /// <summary>Establish the independent plane and grid from a newly adopted quad, preserving its projection.</summary>
+    public static void InitializePlane(CanvasSettings canvas)
+    {
+        var projection = canvas.Projection;
+        if (projection.PlaneBounds is not null || projection.Quad.Count != 4) return;
+        var pin = projection.PinPoint;
+        double spacing = projection.GridCellSize;
+        projection.PlaneBounds = CanvasProjectionGeometry.ResolvePlaneBounds(projection);
+        projection.PinPlanePoint = pin;
+        canvas.Grid.PlaneCellSize ??= spacing;
+        canvas.Grid.PlaneOrigin ??= pin;
+        projection.AlgorithmVersion = CanvasCalibration.AlgorithmVersion;
+    }
+
     public static RectD ResolvePlaneBounds(CanvasProjectionSettings projection) => projection.PlaneBounds ??
         new(projection.Origin.X, projection.Origin.Y, projection.Columns * projection.CellSize, projection.Rows * projection.CellSize);
 

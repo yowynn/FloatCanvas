@@ -4,6 +4,10 @@
 
 FloatCanvas ships unsigned Windows ZIP and EXE installer packages containing the same application files. Publishing and updating do not require a code-signing certificate, publisher signing key or detached signature manifest. Release packages declare `Unsigned` in `PACKAGE-INFO.json`; download, archive and update integrity checks remain enabled. Dual-format publication starts with 0.3.1; the published 0.3.0 ZIP and historical assets remain unchanged.
 
+## 工程格式版本
+
+工程、预制体、自动恢复包共用 `SceneDocument.CurrentVersion`。只有为新发布版本定稿时才调整这个数。一次发布周期内的功能和提交共用当前格式号。兼容转换集中在读取入口，只维护已公开发行的稳定版及公开预览版；开发过程中的中间结构不产生独立版本或迁移链。0.4.1 对应工程格式 v20。对同一个发布号，读取入口按已发布字段约定识别需要转换的数据，再向编辑器交付当前模型。
+
 ## 更新日志写作 / Release-note style
 
 从 0.4.0 起，`CHANGELOG.md` 是更新说明的唯一维护源。每个版本的正文使用 `<!-- floatcanvas-notes:1 -->`，分别放置且关闭 `<!-- lang:zh-CN -->`、`<!-- lang:en -->` 区块（结束标记 `<!-- /lang -->`）。区块内以 `<!-- category:feature -->`、`improvement`、`fix`、`compatibility` 标记新功能、改进、修复、兼容性提示；可读标题不参与解析。每条使用单行 `- ` 列表，可含行内 Markdown；中英文分类顺序与条数对应，没有内容的分类省略。不要手工维护第二份 JSON 或 Release 正文。

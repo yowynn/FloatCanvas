@@ -59,7 +59,7 @@ internal static class CanvasAnchorCaptureTests
     {
         using var fixture = new Fixture(app, offscreenMonitor: true);
         var session = fixture.Editor.Session;
-        session.Document.Canvas.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(session.Document.Canvas);
+        session.Document.Canvas.Projection.Enabled = true; CanvasProjectionGeometry.InitializePlane(session.Document.Canvas);
         int undo = session.UndoCount;
         fixture.Invoke("BeginCanvasFourLines");
         check("four-line capture hides previously visible panels without altering history", !fixture.Panel.IsVisible && !fixture.Secondary.IsVisible && session.UndoCount == undo);
@@ -153,7 +153,7 @@ internal static class CanvasAnchorCaptureTests
         var foreground = GetForegroundWindow();
         using var fixture = new Fixture(app, offscreenMonitor: true);
         var target = fixture.Editor.Session;
-        target.Document.Canvas.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(target.Document.Canvas);
+        target.Document.Canvas.Projection.Enabled = true; CanvasProjectionGeometry.InitializePlane(target.Document.Canvas);
         fixture.Editor.Tool = EditorTool.Canvas;
         var before = System.Text.Json.JsonSerializer.Serialize(target.Document); int undo = target.UndoCount;
         void SetField(string name, object? value) => typeof(DesktopSession).GetField(name, Private)!.SetValue(fixture.Session, value);

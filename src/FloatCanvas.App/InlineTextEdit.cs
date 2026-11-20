@@ -15,11 +15,13 @@ internal sealed class InlineTextEdit : IDisposable
     private readonly Func<CanvasMapping> canvasMapping;
     private readonly CanvasElement original;
     private readonly bool isNew;
+    private readonly bool autoWidth;
     private readonly long transaction;
     private int anchor;
     private PointD? caretAffinity;
     private int affinityIndex = -1;
     private bool movingCaret;
+    private double? verticalCaretX;
     private int ActiveCaretIndex => Input.SelectionLength > 0 && affinityIndex >= Input.SelectionStart && affinityIndex <= Input.SelectionStart + Input.SelectionLength ? affinityIndex : Input.CaretIndex;
     internal RectD Caret => Geometry.Caret(ActiveCaretIndex, ActiveCaretIndex == affinityIndex ? caretAffinity : null);
     internal TextBox Input { get; } = new() { AcceptsReturn=true,AcceptsTab=true,TextWrapping=System.Windows.TextWrapping.Wrap };
@@ -70,9 +72,8 @@ internal sealed class InlineTextEdit : IDisposable
         if(existing is not null&&(existing.Kind!=ElementKind.Text||!session.Document.Elements.Contains(existing)||graph.IsLocked(existing.Id)))
             throw new InvalidOperationException(L.Get("Text.CannotEdit"));
         if (isNew && session.EditScopeId is { } scope && graph.IsLocked(scope)) throw new InvalidOperationException(L.Get("Text.CannotEdit"));
-        var draft=existing??new CanvasElement {Kind=ElementKind.Text,Width=40,Height=style.FontSize*1.35,
+        var draft=existing??new CanvasElement {Kind=ElementKind.Text,TextAutoWidth=true,Width=40,Height=style.FontSize*1.35,
             Style=style.Clone(),Transform=Affine2D.Translation(point.X,point.Y)};
-        if (isNew) AppearanceMigration.NormalizeElement(draft);
         creationDepth = isNew ? billboardDepth : null; creationTransform = draft.Transform;
         if (creationDepth is { } depth)
             BillboardGeometry.TryPlaceFromScreen(draft, CurrentCanvasMapping, depth,
@@ -83,10 +84,11 @@ internal sealed class InlineTextEdit : IDisposable
         parentVisible = Target.GroupId is not { } parent || graph.IsVisible(parent);
         parentLocked = Target.GroupId is { } owner && graph.IsLocked(owner);
         original=Target.Clone();Input.Text=Target.Text;
+        autoWidth=TextFrameLayout.UsesAutoWidth(original, renderer);
         Geometry=renderer.TextEditingGeometry(Input.Text,Target.Style,Target.Width);
         session.SetSelection(screenFirst ? [] : [Target.Id]);
         Input.TextChanged+=OnTextChanged;
-        Input.SelectionChanged+=(_,_)=> { if (!movingCaret) { caretAffinity=null; affinityIndex=-1; } Changed?.Invoke(); };
+        Input.SelectionChanged+=(_,_)=> { if (!movingCaret) { caretAffinity=null; affinityIndex=-1; verticalCaretX=null; } Changed?.Invoke(); };
         session.Changed+=OnSessionChanged;
         if(!isNew)Input.SelectAll();
         if (!screenFirst) session.NotifyChanged();
@@ -96,21 +98,15 @@ internal sealed class InlineTextEdit : IDisposable
     private void OnTextChanged(object sender,TextChangedEventArgs args)
     {
         if(!IsActive)return;
-        caretAffinity=null;affinityIndex=-1;
+        caretAffinity=null;affinityIndex=-1;verticalCaretX=null;
         Target.Text=Normalize(Input.Text);
         if(!isNew&&Target.Text==Normalize(original.Text))
-        {Target.Text=original.Text;Target.Width=original.Width;Target.Height=original.Height;Target.Style.FontSize=original.Style.FontSize;}
-        else
         {
-            if(Target.TextFrameFixed)TextFrameLayout.Fit(Target,original.Style.FontSize,renderer);
-            else if(EmojiGlyphs.IsEmoji(Target.Text,Target.Style))
-            {var metrics=renderer.MeasureText(Target.Text,Target.Style);Target.Width=metrics.Width;Target.Height=metrics.Height;}
-            else
-            {
-                if(isNew)Target.Width=Math.Clamp(renderer.MeasureText(Target.Text,Target.Style).Width+4,40,360);
-                Target.Height=Math.Max(Target.Style.FontSize*1.35,renderer.MeasureText(Target.Text,Target.Style,Target.Width).Height);
-            }
+            Target.Text=original.Text;Target.Width=original.Width;Target.Height=original.Height;
+            Target.Style.FontSize=original.Style.FontSize;Target.TextAutoWidth=original.TextAutoWidth;
         }
+        else if(Target.TextFrameFixed) TextFrameLayout.Fit(Target,original.Style.FontSize,renderer);
+        else TextFrameLayout.Reflow(Target, autoWidth, renderer);
         Geometry=renderer.TextEditingGeometry(Input.Text,Target.Style,Target.Width);
         PlaceBillboardText();
         if (!screenFirst) session.NotifyChanged();
@@ -160,6 +156,7 @@ internal sealed class InlineTextEdit : IDisposable
     {
         if(!IsActive||!LocalToScreen.TryInverse(out var inverse)||!inverse.TryTransformPoint(screen,out var local))return;
         if(!down&&!IsSelecting)return;
+        verticalCaretX=null;
         var position=Geometry.HitTestPosition(local);
         int index=position.Index;
         if(down)
@@ -168,8 +165,9 @@ internal sealed class InlineTextEdit : IDisposable
             IsSelecting=true;
             if(word)
             {
+                int character = Geometry.HitTestCharacter(local);
                 var match=System.Text.RegularExpressions.Regex.Matches(Input.Text,@"\w+|[^\w\s]|\s+").Cast<System.Text.RegularExpressions.Match>()
-                    .FirstOrDefault(match=>index>=match.Index&&index<match.Index+match.Length);
+                    .FirstOrDefault(match=>character>=match.Index&&character<match.Index+match.Length);
                 if(match is not null)
                 {
                     var boundaries=System.Globalization.StringInfo.ParseCombiningCharacters(Input.Text).Append(Input.Text.Length).ToArray();
@@ -187,13 +185,14 @@ internal sealed class InlineTextEdit : IDisposable
     {
         if(key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End))return false;
         var caret=Caret;
+        if (key is not (Key.Up or Key.Down)) verticalCaretX=null;
         int index=ActiveCaretIndex;
         TextCaretPosition position;
         if(key is Key.Left or Key.Right && !shift && Input.SelectionLength > 0)
             position=Geometry.CollapseSelection(Input.SelectionStart,Input.SelectionLength,key==Key.Left?-1:1);
         else if(key is Key.Left or Key.Right) position=Geometry.MoveHorizontalPosition(index,key==Key.Left?-1:1,new(caret.X,caret.Y));
         else if(key is Key.Up or Key.Down)
-            position=Geometry.HitTestPosition(new(caret.X,caret.Y+(key==Key.Up?-.5:caret.Height+.5)));
+            position=Geometry.HitTestPosition(new(verticalCaretX ??= caret.X,caret.Y+(key==Key.Up?-.5:caret.Height+.5)));
         else
         {
             var line=Geometry.Lines.MinBy(line=>Math.Abs(line.Top-caret.Y))!;

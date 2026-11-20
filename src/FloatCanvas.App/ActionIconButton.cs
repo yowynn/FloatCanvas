@@ -6,7 +6,7 @@ using System.Windows.Shapes;
 
 namespace FloatCanvas.App;
 
-internal enum PanelActionIcon { Apply, Add, Save, Delete, Rename, Pin, Unpin, Eyedropper, Transparent, Refresh, Close, Use, Source, Previous, Next }
+internal enum PanelActionIcon { Apply, Add, Save, Delete, Rename, Pin, Unpin, Eyedropper, Transparent, Refresh, Close, Use, Source, Previous, Next, SwitchPalette }
 
 /// <summary>Compact panel actions share the caption's 16-DIP, rounded-line icon grid.</summary>
 internal static class ActionIconButton
@@ -76,6 +76,7 @@ internal static class ActionIconButton
             PanelActionIcon.Use => "M5 3 L12 8 L5 13 Z",
             PanelActionIcon.Source => "M6 3 H2.5 V6.5 M10 3 H13.5 V6.5 M2.5 10 V13.5 H6 M10 13.5 H13.5 V10 M6 6 H10 V10 H6 Z",
             PanelActionIcon.Previous => "M10.5 3 L5.5 8 L10.5 13",
+            PanelActionIcon.SwitchPalette => "M2 5 H13 M10 2 L13 5 L10 8 M14 11 H3 M6 8 L3 11 L6 14",
             PanelActionIcon.Next => "M5.5 3 L10.5 8 L5.5 13",
             _ => throw new ArgumentOutOfRangeException(nameof(icon))
         };

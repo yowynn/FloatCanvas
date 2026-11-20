@@ -34,17 +34,17 @@ internal static class CanvasAuthoringReferenceTests
         await recovery.SaveAsync(new() { LiveDocument = document.Clone() }, assets);
         check((await recovery.LoadAsync())!.State.LiveDocument.AuthoringReference == document.AuthoringReference,
             "workspace recovery retains all three authored reference rectangles");
-        string legacyPath = Path.Combine(directory, "legacy17.floatcanvas"); File.Copy(path, legacyPath);
+        string legacyPath = Path.Combine(directory, "legacy8.floatcanvas"); File.Copy(path, legacyPath);
         await Mutate(legacyPath, scene => scene.Remove("AuthoringReference"));
         byte[] untouched = await File.ReadAllBytesAsync(legacyPath); var legacy = await store.LoadAsync(legacyPath);
-        check(legacy.Document.Version == SceneDocument.CurrentVersion && legacy.Document.AuthoringReference is null && (await File.ReadAllBytesAsync(legacyPath)).SequenceEqual(untouched),
-            "reading format17 upgrades only the owned DTO and never rewrites or guesses reference metadata");
+        check(legacy.Document.Version == SceneDocument.CurrentVersion && legacy.Document.AuthoringReference?.Frame == document.Viewport && (await File.ReadAllBytesAsync(legacyPath)).SequenceEqual(untouched),
+            "opening v8 freezes the authored frame from stored data and preserves the original bytes");
         check(CanvasAuthoringReference.FromSavedDocument(legacy.Document).ReferenceScreenBounds == legacy.Document.DisplayLayout.Single().Bounds,
             "legacy inference uses the saved screen evidence before a runtime viewport synchronization");
-        string smuggled = Path.Combine(directory, "future-reference-in17.floatcanvas"); File.Copy(path, smuggled);
+        string smuggled = Path.Combine(directory, "future-reference-in8.floatcanvas"); File.Copy(path, smuggled);
         await Mutate(smuggled, _ => { }); bool rejected = false;
         try { await store.LoadAsync(smuggled); } catch (InvalidDataException) { rejected = true; }
-        check(rejected, "format17 cannot smuggle a format18 authored reference through the strict reader");
+        check(rejected, "format8 cannot smuggle a format18 authored reference through the strict reader");
         var invalid = document.Clone(); invalid.AuthoringReference = document.AuthoringReference with { ContentReferenceBounds = new(0, 0, -1, 100) };
         rejected = false; try { SceneValidation.Validate(invalid); } catch (InvalidDataException) { rejected = true; }
         check(rejected, "invalid effective conversion bounds fail validation instead of being normalized");
@@ -56,7 +56,7 @@ internal static class CanvasAuthoringReferenceTests
         {
             JsonObject value;
             using (var reader = new StreamReader(zip.GetEntry(name)!.Open())) value = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
-            value["Version"] = 17; if (name == "scene.json") update(value);
+            value["Version"] = 8; if (name == "scene.json") { update(value); LegacyFixtureSchema.RemovePrefabFields(value); }
             zip.GetEntry(name)!.Delete();
             using var writer = new StreamWriter(zip.CreateEntry(name).Open()); await writer.WriteAsync(value.ToJsonString());
         }

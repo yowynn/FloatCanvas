@@ -73,6 +73,14 @@ internal sealed class StampLibrary(string profileDirectory)
                     content.Items = content.Order is { } savedOrder
                         ? savedOrder.Select(id => content.Items.Single(item => item.Id == id)).ToList()
                         : content.Items.OrderByDescending(item => item.UpdatedAtUtc).ToList();
+                    for (int i = 0; i < content.Items.Count; i++)
+                    {
+                        var entry = content.Items[i];
+                        if (entry.Format is null)
+                            content.Items[i] = entry with { Format = entry.Mode == StampSaveMode.SharedPrefab
+                                ? StampPackageFormat.Prefab : StampPackageFormat.LegacyProject };
+                    }
+                    content.Version = 3;
                     catalog = content;
                 }
                 catch (Exception ex) when (ex is JsonException or InvalidDataException or NotSupportedException)
@@ -503,7 +511,7 @@ internal sealed class StampLibrary(string profileDirectory)
         definition.PreviewCanvas?.ApplyTo(document);
         return new(document, loaded.Assets, shared ? loaded.Package : null, entry.Name, bounds);
     }
-    private static bool UsesPrefab(StampEntry entry) => entry.Format == StampPackageFormat.Prefab || entry.Format is null && entry.Mode == StampSaveMode.SharedPrefab;
+    private static bool UsesPrefab(StampEntry entry) => entry.Format == StampPackageFormat.Prefab;
     private string PackagePath(StampEntry entry) => ResourceBase(entry) + (UsesPrefab(entry) ? ".floatprefab" : ".floatcanvas");
     private string SourcePath(StampEntry entry) => ResourceBase(entry) + (entry.Format == StampPackageFormat.Prefab ? ".source.floatprefab" : ".source.floatcanvas");
     private string ThumbnailPath(StampEntry entry) => ResourceBase(entry) + ".png";

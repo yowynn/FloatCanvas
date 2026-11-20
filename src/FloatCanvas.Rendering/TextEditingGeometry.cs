@@ -42,9 +42,22 @@ public sealed record TextEditingGeometry(IReadOnlyList<TextEditingLine> Lines)
         return new(stop.X,line.Top,0,line.Height);
     }
     public int HitTest(PointD point) => HitTestPosition(point).Index;
+    private TextEditingLine LineAt(double y) =>
+        Lines.MinBy(line => y < line.Top ? line.Top - y : Math.Max(0, y - line.Top - line.Height))!;
+
+    // A glyph occupies the interval between two caret stops, in either reading direction.
+    public int HitTestCharacter(PointD point)
+    {
+        var line = LineAt(point.Y);
+        if (line.Spans is not { Count: > 0 } spans) return line.Carets[0].Index;
+        var hit = spans.FirstOrDefault(span => span.Left <= point.X && point.X < span.Right) ??
+            spans.MinBy(span => Math.Max(span.Left - point.X, point.X - span.Right))!;
+        return hit.Start;
+    }
+
     public TextCaretPosition HitTestPosition(PointD point)
     {
-        var line=Lines.MinBy(line=>point.Y<line.Top?line.Top-point.Y:Math.Max(0,point.Y-line.Top-line.Height))!;
+        var line=LineAt(point.Y);
         var stop = line.Carets.MinBy(stop=>Math.Abs(stop.X-point.X))!;
         return new(stop.Index, stop.X, line.Top);
     }

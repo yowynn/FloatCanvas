@@ -28,13 +28,15 @@ internal static class RootCanvasStorageTests
         await recovery.SaveAsync(new() { LiveDocument = document.Clone() }, owner.Assets);
         check(JsonSerializer.Serialize((await recovery.LoadAsync())!.State.LiveDocument) == original, "recovery saves root assignments with authored source graphs");
 
-        foreach (int version in Enumerable.Range(1, 15))
+        foreach (int version in new[] { 1, 2, 3, 6, 8, 19, 20 })
         {
             // Explicitly remove future fields and write the era's color contract;
             // a current DTO merely relabelled v1 would be a false legacy fixture.
             var fixture = new SceneDocument { Elements = [Box("legacy")], Viewport = new(0, 0, 600, 400), LayerOpacity = .8, NextNumber = 3 };
-            var old = JsonSerializer.SerializeToNode(fixture)!.AsObject(); old["Version"] = version; old.Remove("RootCanvasAssignments"); old.Remove("RootPreviewCanvases");
-            if (version < 12) LegacyFixtureSchema.UseLegacyAppearance(old);
+            var old = JsonSerializer.SerializeToNode(fixture)!.AsObject(); old["Version"] = version;
+            if (version < 16) old.Remove("RootCanvasAssignments");
+            if (version < 17) old.Remove("RootPreviewCanvases");
+            if (version < 12) LegacyFixtureSchema.UseLegacyAppearance(old); else LegacyFixtureSchema.UseForegroundBackground(old);
             if (version < 11) { old.Remove("ResourceId"); old.Remove("Instances"); old.Remove("Definitions"); }
             if (version < 3) old.Remove("Canvas");
             if (version is 6 or 7) old["Canvas"]!["Projection"]!["LockedGridCellSize"] = null;
@@ -51,7 +53,7 @@ internal static class RootCanvasStorageTests
             string converted = Path.Combine(root, "v" + version + "-converted.floatcanvas");
             await store.SaveAsync(converted, migrated.Document, migrated.Assets);
             check(JsonSerializer.Serialize((await store.LoadAsync(converted)).Document) == JsonSerializer.Serialize(migrated.Document),
-                $"historical v{version} resaves and reloads stably as v16");
+                $"historical v{version} resaves and reloads stably in the current schema");
         }
         foreach (var item in new (string Name, Action<JsonObject> Edit)[]
         {

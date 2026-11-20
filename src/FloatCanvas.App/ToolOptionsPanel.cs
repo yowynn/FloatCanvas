@@ -32,6 +32,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
     private readonly Grid parameterGrid = new();
     private readonly Grid parameterColumns = new();
     private readonly PropertyChangeRegion linkedColorsRegion;
+    private readonly StackPanel colorRows = new();
     private readonly PropertyChangeRegion highlighterAngleRegion;
     private readonly ToolPresetGallery presets;
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new(0, 6, 0, 0) };
@@ -138,16 +139,15 @@ internal sealed partial class ToolOptionsPanel : UserControl
         foreground = new(ColorRole.Foreground, colors); background = new(ColorRole.Background, colors);
         AddRow(parameterGrid, "Foreground", L.Get("Color.Unified"), foreground);
         AddRow(parameterGrid, "Background", L.Get("Color.Interior"), background);
-        var colorRows = new StackPanel();
         foreach (string key in new[] { "Foreground", "Background" })
         { parameterGrid.Children.Remove(rows[key]); colorRows.Children.Add(rows[key]); }
         linkedColorsRegion = new(colorRows); rows.Add("Colors", linkedColorsRegion); parameterGrid.Children.Add(linkedColorsRegion);
-        foreground.ValueChanged += value => Change(p => { if (p.Tool == EditorTool.CaptureRegion) p.CaptureBorderColor = value; else p.Style.Foreground = value; });
-        background.ValueChanged += value => Change(p => p.Style.Background = value);
+        foreground.ValueChanged += value => Change(p => p.Style.PrimaryColor = value);
+        background.ValueChanged += value => Change(p => p.Style.SecondaryColor = value);
         foreground.EyedropperRequested += () => EyedropperRequested?.Invoke(foreground);
         background.EyedropperRequested += () => EyedropperRequested?.Invoke(background);
         Number(parameterGrid, "StrokeWidth", L.Get("Inspector.StrokeWidth"), (p, v) => p.Style.StrokeWidth = v);
-        Picker(parameterGrid, "HighlighterTip", L.Get("Highlighter.Tip"),
+        Picker(parameterGrid, "HighlighterTip", L.Get("Color.Style"),
             [(L.Get("Highlighter.TipRound"), HighlighterTip.Round), (L.Get("Highlighter.TipFlat"), HighlighterTip.Flat)],
             (p, v) => p.Style.HighlighterTip = (HighlighterTip)v);
         Number(parameterGrid, "HighlighterTipAngle", L.Get("Highlighter.TipAngle"), (p, v) => p.Style.HighlighterTipAngle = v);
@@ -171,12 +171,13 @@ internal sealed partial class ToolOptionsPanel : UserControl
              (L.Get("Inspector.AlignRight"), FloatCanvas.Core.TextAlignment.Right)], (p, v) => p.Style.TextAlignment = (FloatCanvas.Core.TextAlignment)v);
         Picker(parameterGrid, "StyleVariant", L.Get("Color.Style"),
             AppearanceRegistry.VariantsFor(ElementKind.Number).Select(variant => (L.Get(variant.LabelKey), (object)variant.Id)).ToArray(),
-            (p, value) => p.Style.Variant = (string)value);
+            (p, value) => ElementAppearance.SetVariant(p.Style, p.AppearanceKind!.Value, (string)value));
+        SegmentedChoicePreviews.UpdateColorStyle(pickers["StyleVariant"], EditorTool.Number);
         ((FontPickerControl)fontFamily).FontCommitted += name =>
         {
             if (!refreshing) Change(p => p.Style.FontFamily = name);
         };
-        Picker(parameterGrid, "LinePathMode", L.Get("Line.PathMode"),
+        Picker(parameterGrid, "LinePathMode", L.Get("Color.Style"),
             [(L.Get("Line.Straight"), LinePathMode.Straight), (L.Get("Line.Arc"), LinePathMode.Arc)],
             (p, v) => p.Style.LineArcBulge = (LinePathMode)v == LinePathMode.Arc ? ElementGeometry.DefaultLineArcBulge : null);
         Picker(parameterGrid, "StartArrowHead", L.Get("Inspector.StartArrow"), ArrowOptions(), (p, v) => p.Style.StartArrowHead = (ArrowHeadStyle)v);
@@ -319,15 +320,17 @@ internal sealed partial class ToolOptionsPanel : UserControl
             bool capture = tool == EditorTool.CaptureRegion;
             bool boxRegion=tool is EditorTool.Crop or EditorTool.Blur or EditorTool.Pixelate;
             paint |= capture;
-            bool linked = shape && appearance?.BackgroundActive == false;
+            bool shapeStroke = shape && ElementAppearance.HasShapeStroke(p.Style);
             bool numberOutline = tool == EditorTool.Number && appearance?.IsOutlineNumber == true;
             bool secondary = appearance?.BackgroundActive == true;
             Show("Foreground", paint && (capture || appearance?.ForegroundActive == true)); Show("Background", secondary); Show("LinkColors", shape);
-            Show("StyleVariant", tool == EditorTool.Number);
+            Show("StyleVariant", tool is EditorTool.Number or EditorTool.Text);
             Show("Colors", paint);
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
             background.Visibility = secondary ? Visibility.Visible : Visibility.Collapsed;
-            Show("StrokeWidth", stroke || numberOutline); Show("Opacity", false);
+            GroupStyleStrokeRows(shape || tool == EditorTool.Number);
+            foreground.SetPaletteContext(ToolPresetLibrary.Family(tool)); background.SetPaletteContext(ToolPresetLibrary.Family(tool));
+            Show("StrokeWidth", shape ? shapeStroke : stroke || numberOutline); Show("Opacity", false);
             Show("HighlighterTip", tool == EditorTool.Highlighter);
             Show("HighlighterInkContrast", tool == EditorTool.Highlighter);
             Show("HighlighterAngleRegion", tool == EditorTool.Highlighter);
@@ -335,7 +338,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             Show("FontSize", text); Show("FontFamily", tool is EditorTool.Text or EditorTool.Number || presentation);
             Show("NumberStart", tool == EditorTool.Number); Show("NumberStep", tool == EditorTool.Number); Show("NextNumber", tool == EditorTool.Number);
             Show("DefaultWidth", shape); Show("DefaultHeight", shape);
-            Show("StartArrowHead", line); Show("EndArrowHead", line); Show("ArrowHeadSize", line); Show("StrokePattern", stroke);
+            Show("StartArrowHead", line); Show("EndArrowHead", line); Show("ArrowHeadSize", line); Show("StrokePattern", shape ? shapeStroke : stroke);
             Show("LinePathMode", line);
             Show("CornerRadius", tool is EditorTool.Rectangle or EditorTool.RoundedRectangle);
             Show("Size", shape); Show("Aspect", !shape && boxRegion && !presentation);
@@ -348,7 +351,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             bool colorEcho = foreground.IsNotifyingOwner || background.IsNotifyingOwner;
             if (IsApplicable("Foreground"))
             {
-                uint value = capture ? p.CaptureBorderColor : p.Style.Foreground;
+                uint value = p.Style.PrimaryColor;
                 if (colorEcho) foreground.Value = value; else foreground.SynchronizeModel(value);
                 foreground.PrepareForShow();
             }
@@ -368,21 +371,14 @@ internal sealed partial class ToolOptionsPanel : UserControl
             }
             if (IsApplicable("StyleVariant"))
             {
-                SegmentedChoicePreviews.UpdateColorStyle(pickers["StyleVariant"], EditorTool.Number);
+                SegmentedChoicePreviews.SetStyleFamily(pickers["StyleVariant"], p.AppearanceKind!.Value);
                 SetPicker("StyleVariant", p.Style.Variant!);
             }
             if (IsApplicable("Foreground"))
-                SetColorLabel("Foreground", foreground, tool switch
-                {
-                    EditorTool.Presentation => "Presentation.Foreground",
-                    EditorTool.CaptureRegion => "Snapshot.BorderColor",
-                    EditorTool.Number when secondary => "Color.NumberShape",
-                    EditorTool.Freehand or EditorTool.Highlighter => "Color.Stroke",
-                    _ when shape && !linked => "Color.Outline",
-                    _ => "Color.Unified"
-                });
+                SetColorLabel("Foreground", foreground, capture ? "Snapshot.BorderColor" :
+                    p.AppearanceKind is { } primaryKind ? AppearanceRegistry.ColorLabel(primaryKind, p.Style, false) : "Color.Unified");
             if (IsApplicable("Background"))
-                SetColorLabel("Background", background, presentation ? "Presentation.Background" : tool == EditorTool.Number ? "Color.NumberText" : "Color.Interior");
+                SetColorLabel("Background", background, AppearanceRegistry.ColorLabel(p.AppearanceKind!.Value, p.Style, true));
             SetPicker("CaptureShape", p.CaptureShape); SetPicker("CaptureSource", p.CaptureSource); SetNumber("CaptureBorderWidth", p.CaptureBorderWidth);
             SetNumber("StrokeWidth", tool == EditorTool.Highlighter ? Math.Max(16, p.Style.StrokeWidth) : p.Style.StrokeWidth); SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
             SetNumber("EffectStrength", p.EffectStrength); SetNumber("CornerRadius", p.CornerRadius ?? 0); SetNumber("ArrowHeadSize", p.Style.ArrowHeadSize);
@@ -407,7 +403,18 @@ internal sealed partial class ToolOptionsPanel : UserControl
         finally { refreshing = false; }
     }
 
-    // Every row is always visible together with its applicable peer; no accordion state to manage.
+    private void GroupStyleStrokeRows(bool grouped)
+    {
+        Panel target = grouped ? colorRows : parameterGrid;
+        foreach (var key in new[] { "StrokeWidth", "StrokePattern" })
+        {
+            var row = rows[key];
+            if (ReferenceEquals(row.Parent, target)) continue;
+            ((Panel)row.Parent).Children.Remove(row);
+            target.Children.Add(row); row.Margin = PropertyPanelLayout.RowMargin;
+        }
+    }
+
     private void LayoutParameters()
     {
         foreach (var section in parameterGrid.Children.OfType<FrameworkElement>().Where(item => Equals(item.Tag, "ToolSection")).ToArray()) parameterGrid.Children.Remove(section);
@@ -420,7 +427,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"]];
         foreach (var group in groups)
         {
-            var visible = group.Select(key => rows[key]).Where(row => row.Visibility == Visibility.Visible).ToArray();
+            var visible = group.Select(key => rows[key]).Where(row => row.Visibility == Visibility.Visible && row.Parent == parameterGrid).ToArray();
             if (visible.Length == 0) continue;
             if (controller.Tool == EditorTool.Presentation && group[0] is "PresentationSettings" or "Colors" or "PresentationRuntime")
             {
@@ -607,7 +614,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
         {
             if (refreshing || picker.SelectedValue is not { } value) return;
             if (key == "HighlighterTip") highlighterAngleRegion.Change(() => { Change(p => set(p, value)); Refresh(); });
-            else { Change(p => set(p, value)); if (key == "StyleVariant") Refresh(); }
+            else if (key == "StyleVariant") linkedColorsRegion.Change(() => { Change(p => set(p, value)); Refresh(); });
+            else Change(p => set(p, value));
         };
     }
 

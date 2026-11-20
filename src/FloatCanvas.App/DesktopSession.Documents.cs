@@ -46,14 +46,27 @@ internal sealed partial class DesktopSession
     private EditorTool _documentLiveTool = EditorTool.Freehand;
     private bool DocumentOperationBusy => _documentBusy || _documentExitRequested || _canvasCalibration?.IsAwaitingResolution == true;
     private sealed class DocumentFileState { public string? Path; public string? SuggestedSaveAsPath; public string? SavedFingerprint; public long SavedContentVersion = -1; public long SavedMediaVersion; public Guid? SavedPrefabRevision; public ProjectFileVersion? DiskVersion; }
-    private sealed class ClipboardObjects
+    internal sealed class ClipboardObjects
     {
         public int Version { get; set; } = 1;
+        [System.Text.Json.Serialization.JsonRequired, System.Text.Json.Serialization.JsonConverter(typeof(EmbeddedDocumentConverter))]
         public SceneDocument Document { get; set; } = new();
         public Guid? OwnerTransfer { get; set; }
         public List<ClipboardAsset> Assets { get; set; } = [];
+
+        private static readonly JsonSerializerOptions ReadOptions = new() { MaxDepth = 128, AllowDuplicateProperties = false };
+        internal static ClipboardObjects Read(string json)
+        {
+            try
+            {
+                var objects = JsonSerializer.Deserialize<ClipboardObjects>(json, ReadOptions);
+                return objects is { Version: 1, Document: not null, Assets: not null }
+                    ? objects : throw new InvalidDataException(L.Get("Clipboard.InvalidVersion"));
+            }
+            catch (JsonException ex) { throw new InvalidDataException(L.Get("Clipboard.InvalidObjects"), ex); }
+        }
     }
-    private sealed class ClipboardAsset
+    internal sealed class ClipboardAsset
     {
         public string Id { get; set; } = "";
         public string MediaType { get; set; } = "image/png";
@@ -713,10 +726,7 @@ internal sealed partial class DesktopSession
                 if (json is null || json.Length > ImageImportBudget.MaximumBatchBytes) throw new InvalidDataException(L.Get("Clipboard.InvalidObjects"));
                 var payload = await Task.Run(() =>
                 {
-                    WindowSourcePersistence.ValidateClipboardSources(json);
-                    var objects = JsonSerializer.Deserialize<ClipboardObjects>(json) ?? throw new InvalidDataException(L.Get("Clipboard.NullObjects"));
-                    if (objects.Version != 1 || objects.Assets is null) throw new InvalidDataException(L.Get("Clipboard.InvalidVersion"));
-                    SceneValidation.Validate(objects.Document);
+                    var objects = ClipboardObjects.Read(json);
                     if (objects.Assets.Count > ImageImportBudget.MaximumFiles) throw new InvalidDataException(L.Get("Images.ImportCapacityExceeded"));
                     ImageImportBudget.RequireBytes(objects.Assets.Sum(a => a.Bytes?.LongLength ?? 0), ImageImportBudget.MaximumBatchBytes);
                     var assets = new AssetLibrary();

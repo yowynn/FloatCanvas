@@ -13,22 +13,23 @@ public enum StrokePattern { Solid, Dashed, Dotted, DashDot }
 public enum HighlighterTip { Round, Flat }
 public enum SymbolKind { Triangle, Star, Heart, Check, Cross, Diamond, Pentagon, Hexagon, SpeechBubble }
 
-public sealed class ElementStyle : IJsonOnDeserialized
+public sealed class ElementStyle
 {
-    private uint foreground = 0xFFEF4444, background;
-    private uint? legacyStroke, legacyFill;
-    private bool? legacyLinkColors;
-    private bool canonicalColorsRead;
-    private bool deserialized;
-    private string? variant = ElementAppearance.Default;
-    private bool variantRead;
-    public uint Foreground { get => foreground; set { foreground = value; canonicalColorsRead = true; } }
-    public uint Background { get => background; set { background = value; canonicalColorsRead = true; } }
-    [JsonConverter(typeof(AppearanceColorRolesConverter))]
+    public const double MaximumFontSize = 4096;
+    public uint PrimaryColor { get; set; } = 0xFFEF4444;
+    public uint SecondaryColor { get; set; }
+    // An inactive outline can have an explicitly transparent color, including transparent black.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool HasTextOutlineColor { get; set; }
+    [JsonIgnore] public uint Foreground { get => PrimaryColor; set => PrimaryColor = value; }
+    [JsonIgnore] public uint Background { get => SecondaryColor; set => SecondaryColor = value; }
+    [JsonIgnore]
     public Dictionary<string, uint> AdditionalColors { get; set; } = new(StringComparer.Ordinal);
-    /// <summary>Stable appearance identifier. Null is accepted only as a transitional in-memory default.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Variant { get => variant; set { variant = value; variantRead = true; } }
+    // Retain archived roles from older documents without creating extra color slots in new styles.
+    [JsonPropertyName("AdditionalColors"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(AppearanceColorRolesConverter))]
+    public Dictionary<string, uint>? ArchivedColorsWire { get => AdditionalColors.Count == 0 ? null : AdditionalColors; set => AdditionalColors = value ?? new(StringComparer.Ordinal); }
+    private string variant = ElementAppearance.Default;
+    public string? Variant { get => variant; set => variant = value ?? ElementAppearance.Default; }
     [JsonIgnore] public uint Stroke { get => Foreground; set => Foreground = value; }
     [JsonIgnore] public uint Fill { get => Background; set => Background = value; }
     [JsonIgnore] public bool LinkColors
@@ -36,17 +37,6 @@ public sealed class ElementStyle : IJsonOnDeserialized
         get => Variant == ElementAppearance.ShapeUniform;
         set { if (Variant is null or ElementAppearance.Default or ElementAppearance.ShapeIndependent or ElementAppearance.ShapeUniform) Variant = value ? ElementAppearance.ShapeUniform : ElementAppearance.ShapeIndependent; }
     }
-    // Read-only wire aliases. Getters never emit a second persisted color authority.
-    [JsonPropertyName("Stroke"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public uint? LegacyStrokeWire { get => null; set => legacyStroke = value; }
-    [JsonPropertyName("Fill"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public uint? LegacyFillWire { get => null; set => legacyFill = value; }
-    [JsonPropertyName("LinkColors"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? LegacyLinkColorsWire { get => null; set => legacyLinkColors = value; }
-    [JsonIgnore] internal bool HasLegacyInput => deserialized && !canonicalColorsRead || legacyStroke is not null || legacyFill is not null || legacyLinkColors is not null;
-    [JsonIgnore] internal LegacyAppearance LegacyInput => new(legacyStroke ?? foreground, legacyFill ?? background, legacyLinkColors ?? false, variantRead ? Variant : null);
-    internal void ClearLegacyInput() { legacyStroke = null; legacyFill = null; legacyLinkColors = null; canonicalColorsRead = true; }
-    void IJsonOnDeserialized.OnDeserialized() => deserialized = true;
     public double StrokeWidth { get; set; } = 4;
     public ArrowHeadStyle ArrowHeadStyle { get; set; } = ArrowHeadStyle.FilledTriangle;
     /// <summary>Head length in local document pixels; zero preserves automatic max(10, StrokeWidth * 4).</summary>
@@ -87,7 +77,7 @@ public sealed class ImageEffect
     public ImageEffect Clone(bool newId = false) => new() { Id = newId ? Guid.NewGuid() : Id, Kind = Kind, Bounds = Bounds, Amount = Amount, Color = Color };
 }
 
-public sealed class CanvasElement : IJsonOnDeserialized
+public sealed class CanvasElement
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     /// <summary>Optional user layer label. Null keeps the localized default for the element kind.</summary>
@@ -103,6 +93,9 @@ public sealed class CanvasElement : IJsonOnDeserialized
     /// <summary>A resized text frame keeps its bounds while text is fitted and wrapped inside it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool TextFrameFixed { get; set; }
+    /// <summary>Inline labels follow their content width until their frame is explicitly resized.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool TextAutoWidth { get; set; }
     /// <summary>Local pixels; null preserves the legacy rounded rectangle's 20 percent radius.</summary>
     public double? CornerRadius { get; set; }
     public SymbolKind Symbol { get; set; }
@@ -119,9 +112,7 @@ public sealed class CanvasElement : IJsonOnDeserialized
     public PointD BillboardAnchor { get; set; }
     /// <summary>Logical height above the ground anchor; screen distance is height times the depth scale.</summary>
     public double BillboardHeight { get; set; }
-    private ElementStyle style = new();
-    private bool styleRead;
-    public ElementStyle Style { get => style; set { style = value; styleRead = true; } }
+    public ElementStyle Style { get; set; } = new();
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PresentationSettings? Presentation { get; set; }
     public string Text { get; set; } = "";
@@ -132,15 +123,6 @@ public sealed class CanvasElement : IJsonOnDeserialized
     {
         get => NumberTextSizeMode == global::FloatCanvas.Core.NumberTextSizeMode.FitBadge;
         set => NumberTextSizeMode = value ? global::FloatCanvas.Core.NumberTextSizeMode.FitBadge : global::FloatCanvas.Core.NumberTextSizeMode.CapFontSize;
-    }
-    [JsonIgnore] internal bool LegacyNumberUsesForegroundInput { get; private set; }
-    [JsonPropertyName("NumberUsesForeground"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? LegacyNumberUsesForegroundWire { get => null; set => LegacyNumberUsesForegroundInput = value ?? false; }
-    void IJsonOnDeserialized.OnDeserialized()
-    {
-        if (Style is null) return;
-        if (!styleRead) AppearanceMigration.MigrateElement(this, new(Style.Foreground, Style.Background, false, null), LegacyNumberUsesForegroundInput);
-        else AppearanceMigration.NormalizeElement(this);
     }
     public string? AssetId { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -163,7 +145,7 @@ public sealed class CanvasElement : IJsonOnDeserialized
         if (newId) copy.Id = Guid.NewGuid();
         copy.Points = Points.Snapshot(); copy.Style = Style.Clone(); copy.Presentation = Presentation?.Clone();
         copy.WindowSource = WindowSource?.Clone(); copy.ImageFrame = ImageFrame?.ToList();
-        copy.Effects = Effects.Select(effect => effect.Clone(newId)).ToList(); copy.LegacyNumberUsesForegroundInput = false;
+        copy.Effects = Effects.Select(effect => effect.Clone(newId)).ToList();
         return copy;
     }
 }
@@ -180,6 +162,7 @@ public sealed class DisplayLayoutHint
 public sealed partial class SceneDocument : SceneNodeGraph
 {
     private SceneResourceIdentity resourceIdentity = new(Guid.NewGuid());
+    // File format numbers are assigned at product release, never per feature or commit.
     public const int CurrentVersion = 20;
     public int Version { get; set; } = CurrentVersion;
     public Guid ResourceId { get => resourceIdentity.Id; set => resourceIdentity = new(value); }

@@ -68,7 +68,7 @@ internal sealed partial class ToolOptionsPanel
         RefreshPresentationGlobalUi();
         if (!keyboard) return;
         var keySettings = parameters.Presentation?.Clone() ?? new(); keySettings.Modules = PresentationModules.Keys;
-        presentationSettings.Refresh([(Guid.Empty, keySettings)], (controller.Session, controller.Tool));
+        presentationSettings.Refresh([keySettings], (controller.Session, controller.Tool));
         presentationRuntime.Refresh(presentationRuntimeProvider);
     }
 }

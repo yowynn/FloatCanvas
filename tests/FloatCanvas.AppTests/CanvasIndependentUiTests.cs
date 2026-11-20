@@ -23,7 +23,7 @@ internal static class CanvasIndependentUiTests
         {
             L.Initialize(locale);
             var canvas = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 1000, 700)) };
-            canvas.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(canvas);
+            canvas.Projection.Enabled = true; CanvasProjectionGeometry.InitializePlane(canvas);
             var matrix = canvas.Projection.Matrix; double spacing = canvas.Grid.PlaneCellSize!.Value;
             var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly());
             try
@@ -102,7 +102,7 @@ internal static class CanvasIndependentUiTests
         {
             AppTheme.Apply(theme); string prefix = locale + "/" + theme + " ";
             var canvas = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 800, 600)) };
-            canvas.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(canvas);
+            canvas.Projection.Enabled = true; CanvasProjectionGeometry.InitializePlane(canvas);
             CanvasSettings? lastPreview = null;
             var calibration = new CanvasGridCalibrationWindow(null!, canvas, new RectD(.1, .1, .2, .2), new CanvasGridCalibrationDraft(), value => lastPreview = value);
             var calibrationBody = (FrameworkElement)((ScrollViewer)calibration.Content).Content;
@@ -219,7 +219,7 @@ internal static class CanvasIndependentUiTests
         try
         {
             var canvas = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 1200, 900)), Grid = new() { FlatCellSize = 47.123, FlatOrigin = new(600, 450) } };
-            canvas.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(canvas);
+            canvas.Projection.Enabled = true; CanvasProjectionGeometry.InitializePlane(canvas);
             CanvasProjectionGeometry.TrySetAspect(canvas.Projection, 210.0 / 297, out var projection, out _); canvas.Projection = projection;
             canvas.Grid.PlaneCellSize = 23.125; canvas.Grid.PlaneOrigin = new(-32, 74);
             var library = new CanvasPresetLibrary(Path.Combine(directory, "canvas.json")); var saved = library.Save("A4", canvas);

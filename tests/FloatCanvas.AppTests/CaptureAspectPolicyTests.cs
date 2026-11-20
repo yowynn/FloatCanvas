@@ -77,7 +77,7 @@ internal static class CaptureAspectPolicyTests
     private static void LegacyState(string folder, Action<string, bool> check)
     {
         var parameters = new ToolParameters { Tool = EditorTool.CaptureRegion, CaptureShape = CaptureShape.Ellipse,
-            ConstrainAspect = true, CaptureBorderColor = ColorLibrary.ForegroundRed, CaptureBorderWidth = 3 };
+            ConstrainAspect = true, Style = { PrimaryColor = ColorLibrary.ForegroundRed }, CaptureBorderWidth = 3 };
         string presetFile = Path.Combine(folder, "legacy-presets.json");
         File.WriteAllText(presetFile, JsonSerializer.Serialize(new { Version = 1, Presets = new[] { new
             { Id = "user-legacycapture", Name = "Legacy capture", Parameters = parameters } } }));

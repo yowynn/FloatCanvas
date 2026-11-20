@@ -82,7 +82,7 @@ internal sealed partial class EditorController
         private readonly double width, height, billboardHeight;
         private readonly double? cornerRadius;
         private readonly ElementStyle style;
-        private readonly bool textFrameFixed, isBillboard, visible;
+        private readonly bool textFrameFixed, textAutoWidth, isBillboard, visible;
         private readonly PointD billboardAnchor, endpointPoint;
         private readonly int endpointIndex;
 
@@ -91,7 +91,7 @@ internal sealed partial class EditorController
             transform = element.Transform; placement = element.ProjectivePlacement;
             points = copyPoints ? [.. element.Points] : element.Points;
             width = element.Width; height = element.Height; cornerRadius = element.CornerRadius;
-            style = element.Style.Clone(); textFrameFixed = element.TextFrameFixed;
+            style = element.Style.Clone(); textFrameFixed = element.TextFrameFixed; textAutoWidth = element.TextAutoWidth;
             isBillboard = element.IsBillboard; billboardAnchor = element.BillboardAnchor;
             billboardHeight = element.BillboardHeight; visible = element.Visible;
             this.endpointIndex = endpointIndex;
@@ -104,7 +104,7 @@ internal sealed partial class EditorController
             item.Points = points;
             if (endpointIndex >= 0) item.Points[endpointIndex] = endpointPoint;
             item.Width = width; item.Height = height; item.CornerRadius = cornerRadius;
-            item.Style = style; item.TextFrameFixed = textFrameFixed; item.IsBillboard = isBillboard;
+            item.Style = style; item.TextFrameFixed = textFrameFixed; item.TextAutoWidth = textAutoWidth; item.IsBillboard = isBillboard;
             item.BillboardAnchor = billboardAnchor; item.BillboardHeight = billboardHeight;
             item.Visible = visible;
         }

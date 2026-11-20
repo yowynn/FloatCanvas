@@ -3,8 +3,6 @@
   "Canvas.Flat": { "zh": "平面", "en": "Flat" },
   "Canvas.Perspective": { "zh": "透视", "en": "Perspective" },
   "Color.Style": { "zh": "样式", "en": "Style" },
-  "Color.StyleSeparate": { "zh": "独立配色", "en": "Independent" },
-  "Color.StyleUnified": { "zh": "统一配色", "en": "Unified" },
   "Choice.System": { "zh": "系统", "en": "System" },
   "Choice.Auto": { "zh": "自动", "en": "Auto" },
   "Choice.Chinese": { "zh": "中文", "en": "中文" },

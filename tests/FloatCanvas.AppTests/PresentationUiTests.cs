@@ -33,7 +33,7 @@ internal static class PresentationUiTests
         var library = new ToolPresetLibrary(Path.Combine(folder, "official.json"));
         var presets = library.OfficialFor(EditorTool.Presentation);
         check("presentation appends its enum without renumbering existing tool and element IDs", (int)EditorTool.Canvas == 22 && (int)EditorTool.Presentation == 23 && (int)ElementKind.LiveBlur == 14 && (int)ElementKind.Presentation == 15);
-        check("keyboard and mouse tools each provide three official recipes in the curated catalog", library.Official.Count == 55 && presets.Select(preset => preset.Id).SequenceEqual(new[] { "official.presentation-keys", "official.presentation-keycaps", "official.presentation-keyboard" }) && library.OfficialFor(EditorTool.PointerPresentation).Count == 3);
+        check("keyboard and mouse tools each provide three official recipes in the curated catalog", library.Official.Count == 57 && presets.Select(preset => preset.Id).SequenceEqual(new[] { "official.presentation-keys", "official.presentation-keycaps", "official.presentation-keyboard" }) && library.OfficialFor(EditorTool.PointerPresentation).Count == 3);
         var keys = library.Apply("official.presentation-keys"); var pointer = LegacyPointer(keys);
         check("key panel preset has bounded geometry canonical appearance and all-key recording", keys.DefaultWidth == 360 && keys.DefaultHeight == 120 && keys.Presentation is { Modules: PresentationModules.Keys, KeyDisplay: PresentationKeyDisplayMode.AllPhysicalKeys } && keys.Style.Foreground == 0xfff8fafc && keys.Style.Background == 0xdd20252f && keys.IsValid());
         check("legacy pointer tool snapshots remain readable without a new pointer-region recipe", pointer.IsValid() && library.Official.All(recipe => recipe.Id != "official.presentation-pointer"));
@@ -185,24 +185,24 @@ internal static class PresentationUiTests
         var session = new EditorSession(new() { Elements = [first, second] }); session.SetSelection([first.Id, second.Id]);
         var inspector = new InspectorWindow(() => session); inspector.PrepareForShow();
         var panel = Field<PresentationSettingsPanel>(inspector, "presentationSettings");
-        var mode = ModeControl(panel, "DisplayStyle"); var appearance = ModeControl(panel, "LogStyle");
-        check("mixed recording appearances retain a selected recording mode and an unselected appearance", Equals(mode.SelectedValue, PresentationDisplayStyle.Log) && appearance.SelectedIndex == -1);
+        var mode = ModeControl(panel, "DisplayStyle");
+        var rows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
+        check("mixed log and keycaps show no selected style and share their recording controls", mode.SelectedIndex == -1 &&
+            rows["KeyPanelAlignment"].Visibility == Visibility.Visible && !rows.ContainsKey("LogStyle"));
         string HiddenValues() => JsonSerializer.Serialize(session.Document.Elements.Select(element => new { element.Presentation!.RecentChordLimit, element.Presentation.KeyHoldMilliseconds, element.Presentation.KeyDisplay, element.Presentation.KeyPanelAlignment, element.Presentation.KeyPanelMaximumWidth, element.Presentation.KeyboardLayout }));
         string hidden = HiddenValues();
-        mode.SelectedValue = PresentationDisplayStyle.Keyboard; inspector.CompletePendingEdit();
-        check("switching to live keyboard edits only the existing style field", session.Document.Elements.All(element => element.Presentation!.DisplayStyle == PresentationDisplayStyle.Keyboard) && HiddenValues() == hidden);
-        mode.SelectedValue = PresentationDisplayStyle.Log; inspector.CompletePendingEdit();
-        check("returning to recording restores each selected layer's prior appearance", session.Document.Elements.Select(element => element.Presentation!.DisplayStyle).SequenceEqual(new[] { PresentationDisplayStyle.Log, PresentationDisplayStyle.Keycaps }) && appearance.SelectedIndex == -1 && HiddenValues() == hidden);
-        appearance.SelectedValue = PresentationDisplayStyle.Keycaps; inspector.CompletePendingEdit();
-        mode.SelectedValue = PresentationDisplayStyle.Keyboard; inspector.CompletePendingEdit(); mode.SelectedValue = PresentationDisplayStyle.Log; inspector.CompletePendingEdit();
-        check("an explicitly unified recording appearance survives a mode round trip", session.Document.Elements.All(element => element.Presentation!.DisplayStyle == PresentationDisplayStyle.Keycaps) && Equals(appearance.SelectedValue, PresentationDisplayStyle.Keycaps) && HiddenValues() == hidden);
-        session.Execute("mix keyboard modes", document => document.Elements[1].Presentation!.DisplayStyle = PresentationDisplayStyle.Keyboard); inspector.PrepareForShow();
-        check("a mixed recording and live-keyboard selection has no false primary selection", mode.SelectedIndex == -1 && Field<Dictionary<string, FrameworkElement>>(panel, "rows")["KeyPanelAlignment"].Visibility == Visibility.Visible);
+        foreach (var style in new[] { PresentationDisplayStyle.Keyboard, PresentationDisplayStyle.Log, PresentationDisplayStyle.Keycaps })
+        {
+            mode.SelectedValue = style; inspector.CompletePendingEdit(); inspector.PrepareForShow();
+            check("one style choice applies explicitly to every selected layer: " + style,
+                session.Document.Elements.All(element => element.Presentation!.DisplayStyle == style) && HiddenValues() == hidden);
+        }
+        check("undo restores the previous explicit keyboard style", session.Undo() && session.Document.Elements.All(e => e.Presentation!.DisplayStyle == PresentationDisplayStyle.Log));
+        session.Execute("mix keyboard modes", document => document.Elements[1].Presentation!.DisplayStyle = PresentationDisplayStyle.Keyboard);
+        inspector.PrepareForShow();
+        check("a mixed log and live-keyboard selection exposes just shared settings", mode.SelectedIndex == -1 &&
+            rows["KeyPanelAlignment"].Visibility == Visibility.Collapsed && rows["KeyboardScope"].Visibility == Visibility.Visible);
         SessionWindowCoordinator.Close(inspector);
-        var detached = new PresentationSettingsPanel(); detached.Refresh([(first.Id, first.Presentation!), (second.Id, second.Presentation!)], new object());
-        var fresh = Guid.NewGuid(); detached.Refresh([(fresh, new PresentationSettings { DisplayStyle = PresentationDisplayStyle.Keyboard })], new object());
-        var cache = Field<Dictionary<Guid, PresentationDisplayStyle>>(detached, "rememberedLogStyles");
-        check("recording appearance cache is bounded to the current editing context", cache.Count == 1 && cache.GetValueOrDefault(fresh) == PresentationDisplayStyle.Log);
     }
     private static SegmentedChoice ModeControl(PresentationSettingsPanel panel, string key)
     {

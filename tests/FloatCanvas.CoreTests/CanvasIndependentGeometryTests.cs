@@ -18,13 +18,13 @@ internal static class CanvasIndependentGeometryTests
         scene.Elements.Add(billboard);
         var oldMatrix = original.Matrix; var oldPin = original.PinPoint; var oldBounds = CanvasMapping.Create(scene).ProjectedBounds(billboard);
         var oldGrid = CanvasMapping.Create(scene); string elements = JsonSerializer.Serialize(scene.Elements);
-        CanvasGeometryMigration.UpgradeLegacy(scene.Canvas);
+        CanvasProjectionGeometry.InitializePlane(scene.Canvas);
         check(scene.Canvas.Projection.Matrix == oldMatrix && scene.Canvas.Projection.PinPoint == oldPin, "adoption preserves exact matrix and material pin");
         check(CanvasMapping.Create(scene).ProjectedBounds(billboard) == oldBounds && JsonSerializer.Serialize(scene.Elements) == elements,
             "legacy adoption preserves billboard envelope and all element data");
         check(CanvasMapping.Create(scene).GridOrigin == oldGrid.GridOrigin && CanvasMapping.Create(scene).GridCellSize == oldGrid.GridCellSize,
             "legacy adoption preserves locked lattice phase and spacing");
-        string adopted = JsonSerializer.Serialize(scene.Canvas); CanvasGeometryMigration.UpgradeLegacy(scene.Canvas);
+        string adopted = JsonSerializer.Serialize(scene.Canvas); CanvasProjectionGeometry.InitializePlane(scene.Canvas);
         check(JsonSerializer.Serialize(scene.Canvas) == adopted, "geometry adoption is idempotent");
         foreach (double spacing in new[] { .01, 1.0, 32.125, 1_000_000.0 })
         {

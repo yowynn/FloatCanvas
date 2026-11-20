@@ -33,12 +33,15 @@ internal static class PackageCodec
 
     public static async Task<ProjectFileVersion> SaveAsync<T>(string path, string kind, T value, AssetResource[] resources, CancellationToken ct, byte[]? previewPng = null, ProjectFileVersion? expectedVersion = null, string? applicationVersion = null)
     {
-        ct.ThrowIfCancellationRequested(); Validate(value);
+        ct.ThrowIfCancellationRequested(); ValidateCurrent(value);
         string writerVersion = PackageProvenance.ApplicationVersion(applicationVersion);
-        // Never emit a v1 envelope for the richer editable model: published v1 readers
-        // ignore fields they do not know and would silently discard groups and styles.
-        // Clone instead of upgrading the caller's live document as a side effect of save.
-        value = CurrentVersionCopy(value);
+        value = value switch
+        {
+            SceneDocument document => (T)(object)document.Clone(),
+            WorkspaceState workspace => (T)(object)workspace.Clone(),
+            PrefabPackage package => (T)(object)package.Clone(),
+            _ => throw new InvalidDataException(L.Get("Project.InvalidContentType"))
+        };
         var references = References(value).ToHashSet(StringComparer.Ordinal);
         if (!references.SetEquals(resources.Select(r => r.Id))) throw new InvalidDataException(L.Get("Project.IncompleteAssets"));
         if (resources.Length > 4096 || resources.Any(r => r.Data.Length > MaxAssetBytes) || resources.Sum(r => (long)r.Data.Length) > MaxExpandedBytes) throw new InvalidDataException(L.Get("Project.AssetCapacityExceeded"));
@@ -142,17 +145,8 @@ internal static class PackageCodec
             if (hasPreview) knownEntries.Add(RecoveryPreview.EntryName);
             if (!knownEntries.SetEquals(archive.Entries.Select(e => e.FullName))) throw new InvalidDataException(L.Get("Project.UnexpectedArchiveContents"));
             bool skippedNodes = false;
-            T value = await ReadJsonAsync<T>(RequiredEntry(archive, payload), JsonCapacity(payload), ct, skipped => skippedNodes = skipped).ConfigureAwait(false);
-            Validate(value);
-            RequirePayloadVersion(value, manifest.Version);
-            if (UpgradeVersion(value)) ValidateCurrent(value);
-            if (skippedNodes)
-            {
-                NormalizeSkippedNavigation(value);
-                if (value is PrefabPackage compatiblePrefab)
-                    foreach (var definition in compatiblePrefab.Definitions) SceneGraph.PruneEmptyGroups(definition.Graph);
-                Validate(value);
-            }
+            T value = await ReadJsonAsync<T>(RequiredEntry(archive, payload), JsonCapacity(payload), ct, skipped => skippedNodes = skipped, manifest.Version).ConfigureAwait(false);
+            PrepareLoaded(value, manifest.Version, skippedNodes);
             var provenance = new DocumentProvenance(manifest.CreatedWith, manifest.LastSavedWith);
             foreach (var document in Documents(value)) { document.Provenance = provenance; if (manifest.Version >= 11) document.RecordResourceIdentityPersistence(); }
             if (value is PrefabPackage prefab) { prefab.Provenance = provenance; prefab.RecordResourceIdentityPersistence(); }
@@ -200,18 +194,6 @@ internal static class PackageCodec
         return ValidatedPackageCache.Contains(file.SafeFileHandle, kind);
     }
     private static ZipArchiveEntry RequiredEntry(ZipArchive archive, string name) => archive.GetEntry(name) ?? throw new InvalidDataException(L.Format("Project.MissingEntry", name));
-    private static T CurrentVersionCopy<T>(T value)
-    {
-        T copy = value switch
-        {
-            SceneDocument document => (T)(object)document.Clone(),
-            WorkspaceState workspace => (T)(object)workspace.Clone(),
-            PrefabPackage package => (T)(object)package.Clone(),
-            _ => throw new InvalidDataException(L.Get("Project.InvalidContentType"))
-        };
-        if (UpgradeVersion(copy)) ValidateCurrent(copy);
-        return copy;
-    }
     private static void NormalizeSkippedNavigation<T>(T value)
     {
         var documents = Documents(value).ToArray();
@@ -244,33 +226,32 @@ internal static class PackageCodec
     };
     private static DocumentProvenance Provenance<T>(T value) => value is PrefabPackage package ? package.Provenance : Documents(value).First().Provenance;
     private static string PayloadName(string kind) => kind switch { "project" => "scene.json", "recovery" => "workspace.json", "prefab" => "prefab.json", _ => throw new InvalidDataException(L.Get("Project.InvalidContentType")) };
-    private static void RequirePayloadVersion<T>(T value, int packageVersion)
+    private static void PrepareLoaded<T>(T value, int version, bool skippedNodes)
     {
-        if (value is PrefabPackage prefab && prefab.Version != packageVersion) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", prefab.Version));
-        foreach (var document in Documents(value))
-            if (document.Version != packageVersion) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+        Validate(value);
+        if (version < SceneDocument.CurrentVersion) UpgradeAndValidate(value);
+        if (!skippedNodes) return;
+        NormalizeSkippedNavigation(value);
+        if (value is PrefabPackage prefab)
+            foreach (var definition in prefab.Definitions) SceneGraph.PruneEmptyGroups(definition.Graph);
+        Validate(value);
     }
-    private static bool UpgradeVersion<T>(T value)
+    private static void UpgradeAndValidate<T>(T value)
     {
-        if (value is PrefabPackage package)
-        {
-            bool changed = package.Version != SceneDocument.CurrentVersion;
-            SceneFormatMigration.Upgrade(package);
-            return changed;
-        }
-        bool upgraded = false;
-        foreach (var document in Documents(value))
-        {
-            upgraded |= document.Version != SceneDocument.CurrentVersion;
-            SceneFormatMigration.Upgrade(document);
-        }
-        return upgraded;
+        if (value is PrefabPackage package) SceneFormatMigration.Upgrade(package);
+        foreach (var document in Documents(value)) SceneFormatMigration.Upgrade(document);
+        ValidateCurrent(value);
     }
     private static void ValidateCurrent<T>(T value)
     {
+        if (value is PrefabPackage prefab && prefab.Version != SceneDocument.CurrentVersion)
+            throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", prefab.Version));
         foreach (var document in Documents(value))
+        {
+            if (document is null) throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
             if (document.Version != SceneDocument.CurrentVersion)
                 throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+        }
         Validate(value);
     }
     private static void Validate<T>(T value)
@@ -318,32 +299,44 @@ internal static class PackageCodec
         await using var stream = entry.Open();
         await stream.WriteAsync(bytes, ct).ConfigureAwait(false);
     }
-    private static async Task<T> ReadJsonAsync<T>(ZipArchiveEntry entry, long maximumBytes, CancellationToken ct, Action<bool>? contentFiltered = null)
+    // The released v20 palette uses Foreground/Background. The working model uses
+    // PrimaryColor/SecondaryColor under the same version until the next release.
+    // Determine the contract while validating the payload, before any model is exposed.
+    private sealed class SourceColorSchema
+    {
+        private bool? current;
+        public bool UsesPublishedColors => current == false;
+        public bool Observe(JsonElement style, int version)
+        {
+            bool hasCurrentNames = version >= 20 && (style.TryGetProperty("PrimaryColor", out _) || style.TryGetProperty("SecondaryColor", out _));
+            if (current.HasValue && current != hasCurrentNames)
+                throw new InvalidDataException("Mixed color field contracts in one payload.");
+            current = hasCurrentNames;
+            return hasCurrentNames;
+        }
+    }
+
+    private static async Task<T> ReadJsonAsync<T>(ZipArchiveEntry entry, long maximumBytes, CancellationToken ct, Action<bool>? contentFiltered = null, int? sourceVersion = null)
     {
         byte[] bytes = await ReadBytesAsync(entry, maximumBytes, ct).ConfigureAwait(false);
         using var sourceJson = JsonDocument.Parse(bytes, new() { MaxDepth = 128 });
         RejectDuplicateProperties(sourceJson.RootElement);
-        using var filtered = typeof(T) != typeof(Manifest) && SceneContentCompatibility.RequiresFiltering(sourceJson.RootElement)
-            ? FilterContent() : null;
+        bool skipped = false;
+        using var filtered = typeof(T) == typeof(Manifest) ? null : FilterUnsupportedContent(sourceJson.RootElement, out skipped);
+        contentFiltered?.Invoke(skipped);
         var json = filtered ?? sourceJson;
-        JsonDocument FilterContent()
-        {
-            var compatible = System.Text.Json.Nodes.JsonNode.Parse(bytes, documentOptions: new() { MaxDepth = 128 })!;
-            bool skipped = SceneContentCompatibility.Filter(compatible);
-            contentFiltered?.Invoke(skipped);
-            return JsonDocument.Parse(compatible.ToJsonString(new() { MaxDepth = 128 }), new() { MaxDepth = 128 });
-        }
         if (typeof(T) == typeof(Manifest) && json.RootElement.TryGetProperty("Version", out var packageVersion) && packageVersion.ValueKind == JsonValueKind.Number &&
             packageVersion.TryGetInt32(out int version) && version >= 9)
             RequireProperties(json.RootElement, "CreatedWith", "LastSavedWith");
+        var colors = new SourceColorSchema();
         // Scene version and workspace document identity are mandatory, not inferred from C# defaults.
-        if (typeof(T) == typeof(SceneDocument)) RequireSceneProperties(json.RootElement);
-        if (typeof(T) == typeof(PrefabPackage)) RequirePrefabProperties(json.RootElement);
+        if (typeof(T) == typeof(SceneDocument)) RequireSceneProperties(json.RootElement, colors, sourceVersion);
+        if (typeof(T) == typeof(PrefabPackage)) RequirePrefabProperties(json.RootElement, colors, sourceVersion);
         if (typeof(T) == typeof(WorkspaceState))
         {
             if (!json.RootElement.TryGetProperty("LiveDocument", out var live) || !json.RootElement.TryGetProperty("CaptureOrigin", out _)) throw new InvalidDataException(L.Get("Recovery.MissingRequiredFields"));
-            RequireSceneProperties(live);
-            if (json.RootElement.TryGetProperty("CaptureDocument", out var capture) && capture.ValueKind != JsonValueKind.Null) RequireSceneProperties(capture);
+            RequireSceneProperties(live, colors, sourceVersion);
+            if (json.RootElement.TryGetProperty("CaptureDocument", out var capture) && capture.ValueKind != JsonValueKind.Null) RequireSceneProperties(capture, colors, sourceVersion);
             if (json.RootElement.TryGetProperty("PendingPrefabEdit", out var pending) && pending.ValueKind != JsonValueKind.Null)
             {
                 if (ReadFormatVersion(live) < 11) throw new InvalidDataException("Legacy workspace cannot contain prefab edit state.");
@@ -352,7 +345,7 @@ internal static class PackageCodec
                 {
                     if (++depth > SceneLimits.MaximumGroupDepth) throw new InvalidDataException("Nested prefab edit recovery is too deep.");
                     RequireProperties(pending, "OwnerResourceId", "DefinitionId", "ExpectedRevision", "DraftDocument", "ReturnScopeId", "ReturnSelection", "DraftScopeId", "DraftSelection", "IsSourceProject", "SourcePath", "SourceFileSha256");
-                    RequireSceneProperties(pending.GetProperty("DraftDocument"));
+                    RequireSceneProperties(pending.GetProperty("DraftDocument"), colors, sourceVersion);
                     if (pending.TryGetProperty("PreviewOrigin", out var previewOrigin) && previewOrigin.ValueKind != JsonValueKind.Null)
                     {
                         if (ReadFormatVersion(pending.GetProperty("DraftDocument")) < 17) throw new InvalidDataException("Subproject preview origins require scene format 17.");
@@ -362,12 +355,40 @@ internal static class PackageCodec
                 }
             }
         }
-        return json.RootElement.Deserialize<T>(JsonOptions) ?? throw new InvalidDataException(L.Get("Project.EmptyContent"));
+        return SceneFormatMigration.ReadPayload<T>(json.RootElement, sourceVersion ?? SceneDocument.CurrentVersion, JsonOptions, colors.UsesPublishedColors);
     }
-    private static void RequireSceneProperties(JsonElement json)
+    private static JsonDocument? FilterUnsupportedContent(JsonElement source, out bool skipped)
+    {
+        skipped = false;
+        if (source.ValueKind != JsonValueKind.Object) throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
+        if (!SceneContentCompatibility.RequiresFiltering(source)) return null;
+        var compatible = System.Text.Json.Nodes.JsonObject.Create(source)!;
+        skipped = SceneContentCompatibility.Filter(compatible);
+        return JsonSerializer.SerializeToDocument(compatible, JsonOptions);
+    }
+
+    internal static void WriteEmbeddedDocument(Utf8JsonWriter writer, SceneDocument document)
+    {
+        if (document.Version != SceneDocument.CurrentVersion) throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", document.Version));
+        JsonSerializer.Serialize(writer, document, JsonOptions);
+    }
+
+    internal static SceneDocument ReadEmbeddedDocument(JsonElement source)
+    {
+        RejectDuplicateProperties(source);
+        using var filtered = FilterUnsupportedContent(source, out bool skipped);
+        var json = filtered?.RootElement ?? source;
+        var colors = new SourceColorSchema();
+        RequireSceneProperties(json, colors);
+        int version = ReadFormatVersion(json);
+        var document = SceneFormatMigration.ReadPayload<SceneDocument>(json, version, JsonOptions, colors.UsesPublishedColors);
+        PrepareLoaded(document, version, skipped);
+        return document;
+    }
+    private static void RequireSceneProperties(JsonElement json, SourceColorSchema colors, int? packageVersion = null)
     {
         if (json.ValueKind != JsonValueKind.Object || new[] { "Version", "Kind", "Elements", "Viewport", "LayerOpacity", "NextNumber" }.Any(p => !json.TryGetProperty(p, out _))) throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
-        int version = ReadFormatVersion(json);
+        int version = CheckSourceVersion(json, packageVersion);
         if (version >= 16)
         {
             RequireProperties(json, "RootCanvasAssignments");
@@ -389,7 +410,7 @@ internal static class PackageCodec
             {
                 if (!Enum.TryParse<RootCanvasKind>(pair.Name, out var root) || root is not (RootCanvasKind.Foreground or RootCanvasKind.Background) || !roots.Add(root))
                     throw new InvalidDataException("Invalid or repeated root preview canvas.");
-                RequirePreviewProperties(pair.Value, version);
+                RequirePreviewProperties(pair.Value, version, colors);
             }
         }
         else if (json.TryGetProperty("RootPreviewCanvases", out _)) throw new InvalidDataException("Subproject canvases require scene format 17.");
@@ -409,7 +430,7 @@ internal static class PackageCodec
             RequireCanvasProperties(canvas, version);
         }
         if (json.GetProperty("Elements").ValueKind == JsonValueKind.Array)
-            foreach (var element in json.GetProperty("Elements").EnumerateArray()) { RequirePlacementProperties(element); RequireAppearanceProperties(element, version); }
+            foreach (var element in json.GetProperty("Elements").EnumerateArray()) { RequirePlacementProperties(element); RequireAppearanceProperties(element, version, colors); }
         int graphVersion = version;
         if (graphVersion >= 10)
         {
@@ -419,18 +440,18 @@ internal static class PackageCodec
             {
                 RequireProperties(group, "Id", "ParentId", "Name", "Transform", "ElevationScale", "Visible", "Locked", "OrderMode");
                 RequireProperties(group.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
-                RequireOptionalPreview(group, version);
+                RequireOptionalPreview(group, version, colors);
             }
         }
         if (graphVersion >= 11)
         {
             RequireProperties(json, "ResourceId", "Instances", "Definitions");
-            RequireGraphProperties(json, version);
-            RequireDefinitions(json.GetProperty("Definitions"), version);
+            RequireGraphProperties(json, version, colors);
+            RequireDefinitions(json.GetProperty("Definitions"), version, colors);
         }
         else if (json.TryGetProperty("Instances", out _) || json.TryGetProperty("Definitions", out _) || json.TryGetProperty("ResourceId", out _))
             throw new InvalidDataException("Prefab fields require scene format 11.");
-        if (json.TryGetProperty("Background", out var background) && background.ValueKind != JsonValueKind.Null) { RequirePlacementProperties(background); RequireAppearanceProperties(background, version); }
+        if (json.TryGetProperty("Background", out var background) && background.ValueKind != JsonValueKind.Null) { RequirePlacementProperties(background); RequireAppearanceProperties(background, version, colors); }
     }
     private static void RequireCanvasProperties(JsonElement canvas, int version)
     {
@@ -438,7 +459,7 @@ internal static class PackageCodec
         if (version >= 5) RequireProperties(canvas, "DepthPriorityOcclusion");
         var projection = canvas.GetProperty("Projection");
         RequireProperties(projection, "Enabled", "Columns", "Rows", "Origin", "CellSize", "Quad", "Matrix", "AlgorithmVersion");
-        if (version is 6 or 7) RequireProperties(projection, "LockedGridCellSize");
+        if (version == 6) RequireProperties(projection, "LockedGridCellSize");
         if (version >= 8)
         {
             RequireProperties(projection, "PinLocation", "PinPlanePoint", "ReferenceBounds");
@@ -464,22 +485,22 @@ internal static class PackageCodec
                 RequireProperties(grid.GetProperty("FlatOrigin"), "X", "Y");
         }
     }
-    private static void RequirePrefabProperties(JsonElement json)
+    private static void RequirePrefabProperties(JsonElement json, SourceColorSchema colors, int? packageVersion)
     {
         RequireProperties(json, "Version", "ResourceId", "EntryDefinitionId", "Definitions");
-        int version = ReadFormatVersion(json);
+        int version = CheckSourceVersion(json, packageVersion);
         if (!SceneFormatMigration.SupportsPrefab(version)) throw new InvalidDataException("Unsupported prefab format.");
-        RequireDefinitions(json.GetProperty("Definitions"), version);
+        RequireDefinitions(json.GetProperty("Definitions"), version, colors);
     }
-    private static void RequireDefinitions(JsonElement definitions, int version)
+    private static void RequireDefinitions(JsonElement definitions, int version, SourceColorSchema colors)
     {
         if (definitions.ValueKind != JsonValueKind.Array || definitions.GetArrayLength() > SceneLimits.MaximumDefinitions) throw new InvalidDataException("Invalid prefab definitions.");
         foreach (var definition in definitions.EnumerateArray())
         {
             RequireProperties(definition, "Id", "Revision", "Name", "Pivot", "Graph", "Source");
             RequireProperties(definition.GetProperty("Pivot"), "X", "Y");
-            RequireOptionalPreview(definition, version);
-            RequireGraphProperties(definition.GetProperty("Graph"), version);
+            RequireOptionalPreview(definition, version, colors);
+            RequireGraphProperties(definition.GetProperty("Graph"), version, colors);
             var source = definition.GetProperty("Source");
             if (source.ValueKind == JsonValueKind.Null) continue;
             RequireProperties(source, "Locator", "IsRelative", "SourceResourceId", "EntryKind", "EntryDefinitionId", "LastAcceptedFileSha256", "LastAcceptedContentRevision", "ImportOrigin", "OriginClosure", "ImportedDefinitionIds");
@@ -494,7 +515,7 @@ internal static class PackageCodec
             foreach (var origin in source.GetProperty("OriginClosure").EnumerateArray()) RequireProperties(origin, "ResourceId", "EntryKind", "EntryDefinitionId");
         }
     }
-    private static void RequireGraphProperties(JsonElement graph, int version)
+    private static void RequireGraphProperties(JsonElement graph, int version, SourceColorSchema colors)
     {
         RequireProperties(graph, "Elements", "Groups", "Instances");
         if (graph.GetProperty("Elements").ValueKind != JsonValueKind.Array || graph.GetProperty("Groups").ValueKind != JsonValueKind.Array || graph.GetProperty("Instances").ValueKind != JsonValueKind.Array)
@@ -504,7 +525,7 @@ internal static class PackageCodec
             RequireProperties(element, "Id", "Kind", "GroupId", "Transform", "Points", "Width", "Height", "Style", "Text", "Effects", "Visible", "Locked");
             RequireProperties(element.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
             RequirePlacementProperties(element);
-            RequireAppearanceProperties(element, version);
+            RequireAppearanceProperties(element, version, colors);
             if (element.GetProperty("Effects").ValueKind != JsonValueKind.Array) throw new InvalidDataException("Missing source effects.");
             foreach (var effect in element.GetProperty("Effects").EnumerateArray())
             {
@@ -516,7 +537,7 @@ internal static class PackageCodec
         {
             RequireProperties(group, "Id", "ParentId", "Name", "Transform", "ElevationScale", "Visible", "Locked", "OrderMode");
             RequireProperties(group.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
-            RequireOptionalPreview(group, version);
+            RequireOptionalPreview(group, version, colors);
         }
         foreach (var instance in graph.GetProperty("Instances").EnumerateArray())
         {
@@ -525,12 +546,12 @@ internal static class PackageCodec
             RequireContainerPlacement(instance, version);
         }
     }
-    private static void RequireOptionalPreview(JsonElement owner, int version)
+    private static void RequireOptionalPreview(JsonElement owner, int version, SourceColorSchema colors)
     {
         RequireContainerPlacement(owner, version);
         if (!owner.TryGetProperty("PreviewCanvas", out var preview)) return;
         if (version < 17) throw new InvalidDataException("Subproject canvases require scene format 17.");
-        if (preview.ValueKind != JsonValueKind.Null) RequirePreviewProperties(preview, version);
+        if (preview.ValueKind != JsonValueKind.Null) RequirePreviewProperties(preview, version, colors);
     }
     private static void RequireContainerPlacement(JsonElement owner, int version)
     {
@@ -540,7 +561,7 @@ internal static class PackageCodec
         RequireProperties(placement, "ReferencePoint", "Height");
         RequireProperties(placement.GetProperty("ReferencePoint"), "X", "Y");
     }
-    private static void RequirePreviewProperties(JsonElement preview, int version)
+    private static void RequirePreviewProperties(JsonElement preview, int version, SourceColorSchema colors)
     {
         RequireProperties(preview, "Origin", "Viewport", "Canvas", "LayerOpacity");
         RequireProperties(preview.GetProperty("Origin"), "X", "Y");
@@ -550,10 +571,10 @@ internal static class PackageCodec
         {
             RequireProperties(background, "Id", "Kind", "GroupId", "Transform", "Points", "Width", "Height", "Style", "Text", "Effects", "Visible", "Locked");
             RequireProperties(background.GetProperty("Transform"), "M11", "M12", "M21", "M22", "OffsetX", "OffsetY");
-            RequirePlacementProperties(background); RequireAppearanceProperties(background, version);
+            RequirePlacementProperties(background); RequireAppearanceProperties(background, version, colors);
         }
     }
-    private static void RequireAppearanceProperties(JsonElement element, int version)
+    private static void RequireAppearanceProperties(JsonElement element, int version, SourceColorSchema colors)
     {
         if (element.ValueKind != JsonValueKind.Object) throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
         RequireWindowSourceProperties(element, version);
@@ -562,11 +583,32 @@ internal static class PackageCodec
         {
             RequireProperties(element, "Style", "NumberTextSizeMode");
             var style = element.GetProperty("Style");
-            RequireProperties(style, "Foreground", "Background", "AdditionalColors", "Variant");
+            bool currentColors = colors.Observe(style, version);
+            if (currentColors)
+            {
+                RequireProperties(style, "PrimaryColor", "SecondaryColor", "Variant");
+                if (style.TryGetProperty("Foreground", out _) || style.TryGetProperty("Background", out _) ||
+                    style.GetProperty("Variant") is { ValueKind: JsonValueKind.String } current && AppearanceMigration.IsLegacyNumberOutline(current.GetString()))
+                    throw new InvalidDataException("Invalid primary/secondary color schema.");
+            }
+            else
+            {
+                RequireProperties(style, "Foreground", "Background", "AdditionalColors", "Variant");
+                if (style.TryGetProperty("PrimaryColor", out _) || style.TryGetProperty("SecondaryColor", out _) ||
+                    style.TryGetProperty(nameof(ElementStyle.HasTextOutlineColor), out _) ||
+                    style.GetProperty("Variant") is { ValueKind: JsonValueKind.String } previous &&
+                    previous.GetString() is ElementAppearance.NumberOutline or ElementAppearance.TextOutline or ElementAppearance.TextLabel)
+                    throw new InvalidDataException("Unexpected fields or variant in the released foreground/background color contract.");
+            }
+            var primary = style.GetProperty(currentColors ? "PrimaryColor" : "Foreground");
+            var secondary = style.GetProperty(currentColors ? "SecondaryColor" : "Background");
+            if (primary.ValueKind != JsonValueKind.Number || !primary.TryGetUInt32(out _) ||
+                secondary.ValueKind != JsonValueKind.Number || !secondary.TryGetUInt32(out _))
+                throw new InvalidDataException("Invalid color value.");
             if (element.TryGetProperty("NumberUsesForeground", out _) || style.TryGetProperty("Stroke", out _) ||
                 style.TryGetProperty("Fill", out _) || style.TryGetProperty("LinkColors", out _) ||
                 style.GetProperty("Variant").ValueKind != JsonValueKind.String ||
-                style.GetProperty("AdditionalColors").ValueKind != JsonValueKind.Object)
+                style.TryGetProperty("AdditionalColors", out var archived) && archived.ValueKind != JsonValueKind.Object)
                 throw new InvalidDataException("Invalid canonical appearance fields.");
         }
         else
@@ -576,7 +618,8 @@ internal static class PackageCodec
                 throw new InvalidDataException("Invalid legacy number sizing flag.");
             if (!element.TryGetProperty("Style", out var style)) return;
             if (style.ValueKind != JsonValueKind.Object || style.TryGetProperty("Foreground", out _) || style.TryGetProperty("Background", out _) ||
-                style.TryGetProperty("AdditionalColors", out _)) throw new InvalidDataException("Canonical appearance requires scene format 12.");
+                style.TryGetProperty("AdditionalColors", out _) || style.TryGetProperty(nameof(ElementStyle.HasTextOutlineColor), out _) || style.TryGetProperty("PrimaryColor", out _) ||
+                style.TryGetProperty("SecondaryColor", out _)) throw new InvalidDataException("Invalid legacy appearance fields.");
             foreach (string color in new[] { "Stroke", "Fill" })
                 if (style.TryGetProperty(color, out var value) && (value.ValueKind != JsonValueKind.Number || !value.TryGetUInt32(out _)))
                     throw new InvalidDataException("Invalid legacy color value.");
@@ -584,7 +627,7 @@ internal static class PackageCodec
                 throw new InvalidDataException("Invalid legacy linked-colors flag.");
             if (style.TryGetProperty("Variant", out var variant) && variant.ValueKind != JsonValueKind.Null &&
                 (variant.ValueKind != JsonValueKind.String || variant.GetString() is not
-                    (ElementAppearance.ShapeIndependent or ElementAppearance.ShapeUniform or ElementAppearance.NumberFilled or ElementAppearance.NumberOutline)))
+                    (ElementAppearance.ShapeIndependent or ElementAppearance.ShapeUniform or ElementAppearance.NumberFilled or AppearanceMigration.LegacyNumberOutline)))
                 throw new InvalidDataException("Unsupported legacy appearance variant.");
         }
     }
@@ -653,6 +696,13 @@ internal static class PackageCodec
     {
         if (value.ValueKind != JsonValueKind.Object || properties.Any(p => !value.TryGetProperty(p, out _)))
             throw new InvalidDataException(L.Get("Scene.MissingRequiredFields"));
+    }
+    private static int CheckSourceVersion(JsonElement json, int? packageVersion)
+    {
+        int version = ReadFormatVersion(json);
+        if (!SceneFormatMigration.Supports(version) || packageVersion.HasValue && packageVersion != version)
+            throw new InvalidDataException(L.Format("Scene.UnsupportedVersion", version));
+        return version;
     }
     private static int ReadFormatVersion(JsonElement value)
     {

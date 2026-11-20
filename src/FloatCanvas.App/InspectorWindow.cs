@@ -37,7 +37,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private readonly PropertyChangeRegion highlighterAngleRegion;
     private readonly AspectRatioButton keepAspect = new();
     private readonly SegmentedChoice linkColors = SegmentedChoicePreviews.ColorStyle();
-    private readonly SegmentedChoice numberStyle = new();
+    private readonly SegmentedChoice appearanceStyle = new();
     private readonly SegmentedChoice highlighterTip = new();
     private readonly SegmentedChoice linePathMode = new();
     private (ElementKind Kind, SymbolKind Symbol)? colorStyleContext;
@@ -111,9 +111,9 @@ internal sealed partial class InspectorWindow : Wpf.Window
         fieldContainers.Add("ConstrainAspect",keepAspect);
         keepAspect.Click += (_,_) => ChangeField("ConstrainAspect");
         propertyPanel.Children.Add(SectionHeading("Inspector.AppearanceSection"));
-        AddPicker("LinePathMode", L.Get("Line.PathMode"), linePathMode, [L.Get("Line.Straight"), L.Get("Line.Arc")]);
+        AddPicker("LinePathMode", L.Get("Color.Style"), linePathMode, [L.Get("Line.Straight"), L.Get("Line.Arc")]);
         InitializeWindowSourceFitControl();
-        AddPicker("HighlighterTip", L.Get("Highlighter.Tip"), highlighterTip,
+        AddPicker("HighlighterTip", L.Get("Color.Style"), highlighterTip,
             [L.Get("Highlighter.TipRound"), L.Get("Highlighter.TipFlat")]);
         highlighterAngleRegion = new(new Controls.StackPanel
         {
@@ -168,18 +168,24 @@ internal sealed partial class InspectorWindow : Wpf.Window
         colors.Children.Add(strokeColor);
         var fillColor = CreateColorField("Fill", L.Get("Inspector.Fill"), ColorRole.Background, colorLibrary);
         colors.Children.Add(fillColor);
+        foreach (string key in new[] { "StrokeWidth", "StrokePattern" })
+        {
+            var row = fieldContainers[key];
+            propertyPanel.Children.Remove(row);
+            colors.Children.Add(row);
+        }
         var linkRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Color.Style")), linkColors);
         Automation.AutomationProperties.SetName(linkColors, L.Get("Color.Style"));
         fieldContainers.Add("LinkColors", linkRow);
-        SegmentedChoicePreviews.AddVariants(numberStyle, ElementKind.Number);
-        SegmentedChoicePreviews.UpdateColorStyle(numberStyle, EditorTool.Number);
-        var numberStyleRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Color.Style")), numberStyle);
-        Automation.AutomationProperties.SetName(numberStyle, L.Get("Color.Style"));
-        fieldContainers.Add("StyleVariant", numberStyleRow);
+        SegmentedChoicePreviews.AddVariants(appearanceStyle, ElementKind.Number);
+        SegmentedChoicePreviews.UpdateColorStyle(appearanceStyle, EditorTool.Number);
+        var appearanceStyleRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Color.Style")), appearanceStyle);
+        Automation.AutomationProperties.SetName(appearanceStyle, L.Get("Color.Style"));
+        fieldContainers.Add("StyleVariant", appearanceStyleRow);
         linkedColorsRegion = new(colors);
-        numberStyle.SelectionChanged += (_, _) => { if (!refreshing && numberStyle.SelectedValue is string) linkedColorsRegion.Change(() => ChangeField("StyleVariant")); };
-        linkedColorsGroup.Children.Add(linkRow); linkedColorsGroup.Children.Add(numberStyleRow); linkedColorsGroup.Children.Add(linkedColorsRegion);
-        propertyPanel.Children.Add(linkedColorsGroup);
+        appearanceStyle.SelectionChanged += (_, _) => { if (!refreshing && appearanceStyle.SelectedValue is string) linkedColorsRegion.Change(() => ChangeField("StyleVariant")); };
+        linkedColorsGroup.Children.Add(linkRow); linkedColorsGroup.Children.Add(appearanceStyleRow); linkedColorsGroup.Children.Add(linkedColorsRegion);
+        propertyPanel.Children.Insert(propertyPanel.Children.IndexOf(fieldContainers["CornerRadius"]), linkedColorsGroup);
         linkColors.SelectionChanged += (_, _) => { if (!refreshing && linkColors.SelectedValue is string) linkedColorsRegion.Change(() => ChangeField("LinkColors")); };
         propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.Opacity"), null, null));
         var effectsSection = SectionHeading("Inspector.EffectsSection");
@@ -426,9 +432,14 @@ internal sealed partial class InspectorWindow : Wpf.Window
                     if (colorStyleContext != context)
                     { SegmentedChoicePreviews.UpdateColorStyle(linkColors, element.Kind, element.Symbol); colorStyleContext = context; }
                 }
-                linkColors.SelectedValue = selected.Select(e => AppearanceRegistry.Resolve(e).Id).Distinct().Count() > 1 ? null : element is null ? null : AppearanceRegistry.Resolve(element).Id;
+                linkColors.SelectedValue = selected.Select(ShapeChoice).Distinct().Count() > 1 ? null : element is null ? null : ShapeChoice(element);
             }
-            if (IsFieldVisible("StyleVariant")) numberStyle.SelectedValue = selected.Select(ElementAppearance.NumberVariant).Distinct().Count() > 1 ? null : element is null ? null : ElementAppearance.NumberVariant(element);
+            if (element is not null && IsFieldVisible("StyleVariant"))
+            {
+                SegmentedChoicePreviews.SetStyleFamily(appearanceStyle, element.Kind);
+                string first = AppearanceRegistry.Resolve(element).Id;
+                appearanceStyle.SelectedValue = selected.All(item => AppearanceRegistry.Resolve(item).Id == first) ? first : null;
+            }
             if (element is null) { SetStatus(L.Get("Inspector.SelectHiddenOrLocked"), false); return; }
             var bounds = PropertyBounds(element);
             var size = GeometricSize(element);
@@ -556,7 +567,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
                     source.Text = edited.Text; source.Number = edited.Number;
                     source.Width = edited.Width; source.Height = edited.Height; source.CornerRadius = edited.CornerRadius;
                     source.ImageBorderWidth = edited.ImageBorderWidth;
-                    source.ConstrainAspect = edited.ConstrainAspect; source.TextFrameFixed = edited.TextFrameFixed;
+                    source.ConstrainAspect = edited.ConstrainAspect; source.TextFrameFixed = edited.TextFrameFixed; source.TextAutoWidth = edited.TextAutoWidth;
                     source.NumberTextSizeMode = edited.NumberTextSizeMode;
                     source.Presentation = edited.Presentation;
                     source.WindowSource = edited.WindowSource;
@@ -616,7 +627,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     {
         var edited = source.Clone();
         foreach (string key in dirtyFields.Where(key => key.StartsWith("Presentation.", StringComparison.Ordinal)))
-            presentationSettings.ApplyEdit(edited.Presentation ??= new(), key[13..], source.Id);
+            presentationSettings.ApplyEdit(edited.Presentation ??= new(), key[13..]);
         if(dirtyFields.Contains("Placement"))
         {
             var graph = new SceneGraph(getSession().Document);
@@ -632,8 +643,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
         }
         if(dirtyFields.Contains("BillboardHeight"))edited.BillboardHeight=Number("BillboardHeight",L.Get("Billboard.Height"),-10000000,10000000);
         if(dirtyFields.Contains("ConstrainAspect"))edited.ConstrainAspect=keepAspect.IsChecked==true;
-        if(dirtyFields.Contains("LinkColors") && linkColors.SelectedValue is string shapeVariant)ElementAppearance.SetVariant(edited, shapeVariant);
-        if(dirtyFields.Contains("StyleVariant") && numberStyle.SelectedValue is string variant)ElementAppearance.SetVariant(edited, variant);
+        if (dirtyFields.Contains("LinkColors") && linkColors.SelectedValue is string shapeVariant)
+            ElementAppearance.SetVariant(edited, edited.Kind == ElementKind.Number
+                ? shapeVariant == ElementAppearance.ShapeUniform ? ElementAppearance.NumberFilled : ElementAppearance.NumberOutline
+                : shapeVariant);
+        if(dirtyFields.Contains("StyleVariant") && appearanceStyle.SelectedValue is string variant)ElementAppearance.SetVariant(edited, variant);
         if (dirtyFields.Contains("Stroke")) ElementAppearance.SetPrimaryColor(edited, EditedColor("Stroke", source.Id));
         if (dirtyFields.Contains("Fill")) ElementAppearance.SetSecondaryColor(edited, EditedColor("Fill", source.Id));
         if (dirtyFields.Contains("StrokeWidth"))
@@ -676,7 +690,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if (dirtyFields.Contains("CornerRadius")) edited.CornerRadius = Number("CornerRadius", L.Get("Inspector.CornerRadius"), 0, 10000000);
         if (dirtyFields.Contains("Opacity")) edited.Style.Opacity = Number("Opacity", L.Get("Inspector.Opacity"), 0, 100) / 100;
         if (dirtyFields.Contains("FontSize") && source.Kind is ElementKind.Text or ElementKind.Number or ElementKind.Presentation)
-            edited.Style.FontSize = Number("FontSize", L.Get("Inspector.FontSize"), 1, 4096);
+            edited.Style.FontSize = Number("FontSize", L.Get("Inspector.FontSize"), 1, ElementStyle.MaximumFontSize);
         if (dirtyFields.Contains("FontFamily") && source.Kind is ElementKind.Text or ElementKind.Number or ElementKind.Presentation)
         {
             var family = fields["FontFamily"].Text.Trim();
@@ -686,16 +700,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
         if (dirtyFields.Contains("TextAlignment") && source.Kind == ElementKind.Text && alignment.SelectedIndex is >= 0 and <= 2)
             edited.Style.TextAlignment = (FloatCanvas.Core.TextAlignment)alignment.SelectedIndex;
         if (dirtyFields.Contains("Text") && source.Kind == ElementKind.Text) edited.Text = fields["Text"].Text;
-        if (source.Kind == ElementKind.Text && dirtyFields.Overlaps(["Text", "FontFamily", "FontSize"]))
+        if (source.Kind == ElementKind.Text && dirtyFields.Overlaps(["Text", "FontFamily", "FontSize", "StyleVariant"]))
         {
             using var renderer = new SceneRenderer();
-            var metrics = renderer.MeasureText(edited.Text, edited.Style, edited.Width);
             if(edited.TextFrameFixed)TextFrameLayout.Fit(edited,edited.Style.FontSize,renderer);
-            else
-            {
-                edited.Height = Math.Max(1, metrics.Height);
-                if (EmojiGlyphs.IsEmoji(edited.Text, edited.Style)) edited.Width = metrics.Width;
-            }
+            else TextFrameLayout.Reflow(edited, TextFrameLayout.UsesAutoWidth(source, renderer), renderer);
         }
         if (source.Kind == ElementKind.Number && dirtyFields.Contains("FontSize"))
         {
@@ -820,7 +829,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
                 "CornerRadius" => (0d, 10000000d, 0d, 64d, 1d),
                 "ArrowHeadSize" => (0d, 512d, 0d, 64d, 1d),
                 "Opacity" or "HighlighterInkContrast" => (0d, 100d, 0d, 100d, 1d),
-                "FontSize" => (1d, 4096d, 8d, 144d, 1d),
+                "FontSize" => (1d, ElementStyle.MaximumFontSize, 8d, 144d, 1d),
                 "EffectStrength" => (.01d, 1024d, .1d, 64d, .1d),
                 "Number" => ((double)int.MinValue, (double)int.MaxValue, 1d, 100d, 1d),
                 _ => (1d, 1000000d, 1d, 100d, 1d)
@@ -889,32 +898,17 @@ internal sealed partial class InspectorWindow : Wpf.Window
         colorFields[key].SetColorLabel(caption);
     }
 
+    private static string ShapeChoice(CanvasElement element) => element.Kind == ElementKind.Number
+        ? ElementAppearance.IsOutlineNumber(element) ? ElementAppearance.ShapeIndependent : ElementAppearance.ShapeUniform
+        : AppearanceRegistry.Resolve(element).Id;
+
     private static string SelectionColorLabel(CanvasElement[] selected, bool secondary)
     {
-        if (selected.Length == 0) return secondary ? "Color.Secondary" : "Color.Unified";
-        string label = ColorLabel(selected[0]);
-        return selected.All(element => ColorLabel(element) == label)
-            ? label : secondary ? "Color.Secondary" : "Color.Primary";
-
-        string ColorLabel(CanvasElement element)
-        {
-            if (secondary)
-                return element.Kind switch
-                {
-                    ElementKind.Presentation => "Presentation.Background",
-                    ElementKind.Number => "Color.NumberText",
-                    _ => "Color.Interior"
-                };
-            return element.Kind switch
-            {
-                ElementKind.Presentation => "Presentation.Foreground",
-                ElementKind.Image => "Snapshot.BorderColor",
-                ElementKind.Freehand or ElementKind.Highlighter => "Color.Stroke",
-                ElementKind.Number when AppearanceRegistry.Resolve(element).BackgroundActive => "Color.NumberShape",
-                _ when ElementGeometry.IsBoxShape(element.Kind) && AppearanceRegistry.Resolve(element).BackgroundActive => "Color.Outline",
-                _ => "Color.Unified"
-            };
-        }
+        string generic = secondary ? "Color.Secondary" : "Color.Primary";
+        if (selected.Length == 0 || selected.Any(e => e.Kind != selected[0].Kind)) return generic;
+        if (selected[0].Kind == ElementKind.Text && selected.Any(e => e.Style.Variant != selected[0].Style.Variant)) return generic;
+        string label = AppearanceRegistry.ColorLabel(selected[0].Kind, selected[0].Style, secondary);
+        return selected.All(e => AppearanceRegistry.ColorLabel(e.Kind, e.Style, secondary) == label) ? label : generic;
     }
 
     private Controls.Grid CreateColorField(string key, string label, ColorRole role, ColorLibrary? library)
@@ -1055,7 +1049,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             target.Transform = edited.Transform; target.Style = edited.Style; target.CornerRadius = edited.CornerRadius;
             target.ImageBorderWidth = edited.ImageBorderWidth;
             target.Width = edited.Width; target.Height = edited.Height;
-            target.TextFrameFixed = edited.TextFrameFixed;
+            target.TextFrameFixed = edited.TextFrameFixed; target.TextAutoWidth = edited.TextAutoWidth;
             target.BillboardAnchor=edited.BillboardAnchor;target.BillboardHeight=edited.BillboardHeight;
         }
         session.NotifyElementsChanged(changes.Select(change => change.Item1.Id));
@@ -1145,12 +1139,14 @@ internal sealed partial class InspectorWindow : Wpf.Window
         bool image = element.Kind == ElementKind.Image || ElementGeometry.IsLiveEffect(element.Kind), text = element.Kind == ElementKind.Text, number = element.Kind == ElementKind.Number;
         return key switch
         {
-            "Stroke" => AppearanceRegistry.Resolve(element).ForegroundActive,
+            "Stroke" => AppearanceRegistry.Resolve(element).ForegroundActive && (!text || !EmojiGlyphs.IsEmoji(element.Text, element.Style)),
             "Fill" => AppearanceRegistry.Resolve(element).BackgroundActive,
-            "LinkColors" => ElementGeometry.IsBoxShape(element.Kind),
-            "StyleVariant" => number,
-            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !text && element.Kind != ElementKind.Presentation && (!number || ElementAppearance.IsOutlineNumber(element)),
-            "StrokePattern" => !image && !text && !number && element.Kind != ElementKind.Presentation,
+            "LinkColors" => ElementGeometry.IsBoxShape(element.Kind) || number,
+            "StyleVariant" => number || text && !EmojiGlyphs.IsEmoji(element.Text, element.Style),
+            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !text && element.Kind != ElementKind.Presentation &&
+                (!number || ElementAppearance.IsOutlineNumber(element)) && (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
+            "StrokePattern" => !image && !text && !number && element.Kind != ElementKind.Presentation &&
+                (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
             "HighlighterTip" or "HighlighterInkContrast" => element.Kind == ElementKind.Highlighter,
             "HighlighterTipAngle" => ElementGeometry.HasFlatHighlighterTip(element),
             "CornerRadius" => element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle,
@@ -1177,8 +1173,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
         "X" => e.IsBillboard?e.BillboardAnchor.X:PropertyBounds(e).Left, "Y" => e.IsBillboard?e.BillboardAnchor.Y:PropertyBounds(e).Top,
         "BillboardHeight" => e.BillboardHeight,
         "W" => GeometricSize(e).X, "H" => GeometricSize(e).Y, "Angle" => ElementAngle(e),
-        "Stroke" => e.Style.Foreground,
-        "Fill" => e.Style.Background,
+        "Stroke" => e.Style.PrimaryColor,
+        "Fill" => e.Style.SecondaryColor,
         "StrokeWidth" => e.Kind == ElementKind.Image ? e.ImageBorderWidth : e.Style.StrokeWidth,
         "CornerRadius" => ElementGeometry.CornerRadius(e), "Opacity" => e.Style.Opacity,
         "ArrowHeadStyle" => e.Style.ArrowHeadStyle, "ArrowHeadSize" => e.Style.ArrowHeadSize,
@@ -1205,10 +1201,14 @@ internal sealed partial class InspectorWindow : Wpf.Window
         textSection.Visibility = editable && selected.All(e => Supports(e, "FontSize")) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
             container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        if (selected.Any(e => e.Kind != element?.Kind)) fieldContainers["StyleVariant"].Visibility = Wpf.Visibility.Collapsed;
+        if (selected.All(e => e.Kind == ElementKind.Number)) fieldContainers["LinkColors"].Visibility = Wpf.Visibility.Collapsed;
         RefreshPresentationSettings(selected);
         if (nodeTransforms.IsApplicable)
             foreach (var key in new[] { "X", "Y", "W", "H", "Angle", "ConstrainAspect", "Opacity" }) fieldContainers[key].Visibility = Wpf.Visibility.Collapsed;
-        linkedColorsGroup.Visibility = new[] { "Stroke", "Fill", "LinkColors", "StyleVariant" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        linkedColorsGroup.Visibility = new[] { "Stroke", "Fill", "LinkColors", "StyleVariant", "StrokeWidth", "StrokePattern" }.Any(key => fieldContainers[key].Visibility == Wpf.Visibility.Visible) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        object paletteContext = selected.Length > 0 && selected.All(e => e.Kind == selected[0].Kind) ? selected[0].Kind : "mixed";
+        colorFields["Stroke"].SetPaletteContext(paletteContext); colorFields["Fill"].SetPaletteContext(paletteContext);
         bool images = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Image);
         bool presentation = selected.Length > 0 && selected.All(e => e.Kind == ElementKind.Presentation);
         ((Controls.TextBlock)textSection.Child).Text = L.Get(presentation ? "Presentation.Text" : "Inspector.TextSection");

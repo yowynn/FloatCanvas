@@ -40,7 +40,7 @@ internal static class CanvasGridGeometryStorageTests
         check(JsonSerializer.Serialize(restored.LiveDocument) == original && JsonSerializer.Serialize(restored.CaptureDocument) == JsonSerializer.Serialize(capture),
             "recovery preserves enabled and disabled flat grids independently");
 
-        foreach (int version in new[] { 1, 2, 3, 4, 5, 6 })
+        foreach (int version in new[] { 1, 2, 3, 6 })
         {
             string legacy = Path.Combine(root, "legacy-v" + version + ".floatcanvas"); File.Copy(path, legacy);
             using (var archive = ZipFile.Open(legacy, ZipArchiveMode.Update))

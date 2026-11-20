@@ -12,7 +12,7 @@ internal static class PropertyControlMetricsTests
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         AppTheme.Apply("light");
         var settings = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 1000, 700)) };
-        settings.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(settings);
+        settings.Projection.Enabled = true; CanvasProjectionGeometry.InitializePlane(settings);
         var canvas = new CanvasToolOptions(CanvasPresetLibrary.OfficialOnly()); canvas.Refresh(settings); canvas.PrepareForShow();
         Layout(canvas, 440);
         var controls = new FrameworkElement[] { Field<SegmentedChoice>(canvas,"projection"), Field<Button>(canvas,"fourPoints"),

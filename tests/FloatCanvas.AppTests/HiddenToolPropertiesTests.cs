@@ -64,7 +64,7 @@ internal static class HiddenToolPropertiesTests
                     p.Symbol = Enum.GetValues<SymbolKind>().First(value => value != SymbolKind.Heart);
                     p.Emoji = EmojiArtwork.BuiltIn.First(value => value != EmojiArtwork.BuiltIn.First());
                     p.CaptureShape = CaptureShape.Ellipse; p.CaptureSource = CaptureSource.CanvasOnly;
-                    p.CaptureBorderWidth = 13 + index; p.CaptureBorderColor = 0xFF789ABC;
+                    p.CaptureBorderWidth = 13 + index;
                     p.EffectStrength = 50 + index; p.CornerRadius = 11 + index;
                     p.Style.Fill = 0xFFABCDEF; p.Style.Opacity = .4;
                     p.Style.ArrowHeadSize = 37 + index; p.Style.StartArrowHead = ArrowHeadStyle.Diamond;
@@ -101,7 +101,7 @@ internal static class HiddenToolPropertiesTests
             Observe("returning to shape synchronizes the latest dimensions", numbers["DefaultWidth"].Value == 334 && numbers["DefaultHeight"].Value == 223);
             Apply(EditorTool.CaptureRegion, _ => { }); Refresh();
             Observe("entering capture synchronizes its previously hidden shape source and border", pickers["CaptureShape"].SelectedItem is RadioButton { Tag: CaptureShape.Ellipse } &&
-                pickers["CaptureSource"].SelectedItem is RadioButton { Tag: CaptureSource.CanvasOnly } && numbers["CaptureBorderWidth"].Value == 14 && foreground.Value == 0xFF789ABC);
+                pickers["CaptureSource"].SelectedItem is RadioButton { Tag: CaptureSource.CanvasOnly } && numbers["CaptureBorderWidth"].Value == 14 && foreground.Value == editor.Style.PrimaryColor && foreground.Value == 0xFF123456);
             Apply(EditorTool.Image, _ => { }); Refresh();
             Observe("entering image keeps overall opacity out of tool properties", rows["Opacity"].Visibility == Visibility.Collapsed && editor.Parameters.Style.Opacity == 1);
             Observe("attribute synchronization never edits scene contents or history", editor.Session.Document.Elements.Count == 0 && editor.Session.UndoCount == 0 && !editor.Session.IsTransactionActive);

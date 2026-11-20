@@ -19,6 +19,7 @@ public static class EmojiGlyphs
     private static long clock;
 
     public static bool IsEmoji(string text, ElementStyle style) =>
+        style.Variant is not (ElementAppearance.TextLabel or ElementAppearance.TextOutline) &&
         string.Equals(style.FontFamily, FontFamily, StringComparison.OrdinalIgnoreCase) &&
         IsSingleGrapheme(text);
 
@@ -26,7 +27,7 @@ public static class EmojiGlyphs
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(emoji);
         if (!IsSingleGrapheme(emoji)) throw new ArgumentException("Expected a single emoji grapheme.", nameof(emoji));
-        double scale = Math.Clamp(fontSize, 1, 2048) / ReferenceSize;
+        double scale = Math.Clamp(fontSize, 1, ElementStyle.MaximumFontSize) / ReferenceSize;
         lock (Gate)
         {
             var glyph = Get(emoji);
@@ -42,7 +43,7 @@ public static class EmojiGlyphs
             int saved = canvas.Save();
             try
             {
-                float scale = (float)(Math.Clamp(fontSize, 1, 2048) / ReferenceSize);
+                float scale = (float)(Math.Clamp(fontSize, 1, ElementStyle.MaximumFontSize) / ReferenceSize);
                 canvas.Scale(scale, scale);
                 canvas.Translate(-glyph.Ink.Left, -glyph.Ink.Top);
                 canvas.DrawText(glyph.Blob, 0, 0, paint);

@@ -45,7 +45,7 @@ internal static class NodeOpacityTests
         check("incremental group opacity refreshes descendants and draft resolution",Math.Abs(incremental.Leaves.Single(l=>l.SourceElementId==child.Id).RenderElement.Style.Opacity-.2)<1e-9 && Math.Abs(incremental.ResolveElement(session.Document.Elements.Single(e=>e.Id==child.Id)).Style.Opacity-.2)<1e-9);session.Cancel();
         Directory.CreateDirectory(output);var path=Path.Combine(output,"opacity.floatcanvas");var store=new ProjectStore();
         store.SaveAsync(path,session.Document,session.Assets).GetAwaiter().GetResult();var loaded=store.LoadAsync(path).GetAwaiter().GetResult();
-        check("project roundtrip retains container and child opacity",loaded.Document.Version==20 && loaded.Document.Groups.Single().Opacity==.5 && loaded.Document.Elements.Single(e=>e.Id==child.Id).Style.Opacity==.8);
+        check("project roundtrip retains container and child opacity",loaded.Document.Version==SceneDocument.CurrentVersion && loaded.Document.Groups.Single().Opacity==.5 && loaded.Document.Elements.Single(e=>e.Id==child.Id).Style.Opacity==.8);
         session.SetSelection([group.Id]);session.UngroupSelection();
         check("ungroup preserves visible opacity",session.Document.Groups.Count==0 && Math.Abs(session.Document.Elements.Single(e=>e.Id==child.Id).Style.Opacity-.4)<1e-9);session.Undo();
         var prefab=session.CreatePrefabFromSelection("Shared");

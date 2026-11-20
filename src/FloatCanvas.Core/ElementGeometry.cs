@@ -111,6 +111,7 @@ public static partial class ElementGeometry
             return ProjectedContourHit(transform, outline, worldPoint, tolerance);
         }
         if ((ElementAppearance.ShapeFill(element.Style) >> 24) != 0 && (PointInPolygon(local, outline) || ProjectedContourHit(transform, outline, worldPoint, tolerance))) return true;
+        if (!ElementAppearance.HasShapeStroke(element.Style)) return false;
         bool inside = PointInPolygon(local, outline);
         if (!inside)
             for (int i = 0; i < outline.Count; i++)

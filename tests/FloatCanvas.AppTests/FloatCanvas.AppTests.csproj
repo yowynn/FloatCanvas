@@ -7,5 +7,8 @@
   <ItemGroup><ProjectReference Include="../../src/FloatCanvas.App/FloatCanvas.App.csproj" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Fixtures/Appearance/*.json" /><EmbeddedResource Include="Fixtures/Presentation/*.json" /></ItemGroup>
   <ItemGroup><None Include="../../CHANGELOG.md" Link="Fixtures/CHANGELOG.md" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
-  <ItemGroup><Compile Include="../Shared/GroupTestData.cs" Link="GroupTestData.cs" /></ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/GroupTestData.cs" Link="GroupTestData.cs" />
+    <Compile Include="../Shared/LegacyFixtureSchema.cs" Link="LegacyFixtureSchema.cs" />
+  </ItemGroup>
 </Project>

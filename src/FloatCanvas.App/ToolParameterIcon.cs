@@ -68,7 +68,7 @@ internal static class ToolParameterIcon
         Brush? stroke=null;
         if(parameters.CaptureBorderWidth>0)
         {
-            uint color=parameters.CaptureBorderColor;
+            uint color=parameters.Style.PrimaryColor;
             stroke=new SolidColorBrush(Color.FromArgb((byte)(color>>24),(byte)(color>>16),(byte)(color>>8),(byte)color));stroke.Freeze();
         }
         var icon=(Viewbox)ControlIcon(path,size,stroke,parameters.CaptureBorderWidth>0?Math.Clamp(parameters.CaptureBorderWidth,1.5,3):1.5);
@@ -195,7 +195,7 @@ internal static class ToolParameterIcon
 
     private static UIElement PointerIcon(ToolParameters parameters, double size)
     {
-        var settings = parameters.PointerPresentation?.Clone() ?? new(); settings.NormalizeColorAlpha();
+        var settings = parameters.PointerPresentation ?? new();
         // One vector coordinate space, uniformly scaled at the final UI size. Do not
         // rasterize tiny rounded borders and magnify them: the click rings must stay round.
         var stage = new Canvas { Width = 30, Height = 30, IsHitTestVisible = false,
@@ -281,22 +281,22 @@ internal static class ToolParameterIcon
         if (parameters.Tool is EditorTool.Freehand or EditorTool.Highlighter)
             return RenderStrokeSample(parameters, out artworkScale);
         var style=parameters.Style.Clone();
-        // Preserve useful width differences while leaving enough room to identify
-        // arrow heads and dashed strokes in a 16-DIP sample.
-        style.StrokeWidth=style.StrokeWidth==0?0:Math.Clamp(style.StrokeWidth,2,6);
-        if(parameters.Tool is EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow)style.StrokeWidth=Math.Min(style.StrokeWidth,4);
-        if(style.StrokePattern!=StrokePattern.Solid)style.StrokeWidth=Math.Min(style.StrokeWidth,3);
+        bool line = parameters.Tool is EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow;
+        // All line samples use the same width mapping, including patterned lines.
+        double maxStroke = line ? 4 : style.StrokePattern == StrokePattern.Solid ? 6 : 3;
+        if (style.StrokeWidth != 0) style.StrokeWidth = Math.Clamp(style.StrokeWidth, 2, maxStroke);
         style.FontSize=32;
-        style.ArrowHeadSize=parameters.Style.ArrowHeadSize>0?Math.Clamp(parameters.Style.ArrowHeadSize,7,18):Math.Clamp(Math.Max(10,parameters.Style.StrokeWidth*4),10,18);
+        using var renderer=new SceneRenderer();
         var element=new CanvasElement {Style=style,Width=32,Height=28,Transform=Affine2D.Translation(8,10)};
         switch(parameters.Tool)
         {
             case EditorTool.Line: case EditorTool.Arrow:case EditorTool.DoubleArrow:
                 element.Kind=parameters.Tool==EditorTool.Line?ElementKind.Line:parameters.Tool==EditorTool.Arrow?ElementKind.Arrow:ElementKind.DoubleArrow;
-                element.Points=[new(0,26),new(32,0)];
-                if (ElementGeometry.ArrowStyle(element, reverse: true) != ArrowHeadStyle.None &&
-                    ElementGeometry.ArrowStyle(element) != ArrowHeadStyle.None)
-                    style.ArrowHeadSize = Math.Min(style.ArrowHeadSize, 9);
+                // A 60-unit shaft fits two 18-unit heads and a full dash-dot repeat at width 4.
+                element.Points = [new(0,36), new(48,0)];
+                style.ArrowHeadSize = parameters.Style.ArrowHeadSize > 0
+                    ? Math.Clamp(parameters.Style.ArrowHeadSize, 7, 18)
+                    : Math.Clamp(parameters.Style.StrokeWidth * 4, 10, 18);
                 break;
             case EditorTool.Rectangle:case EditorTool.RoundedRectangle:
                 element.Kind=ElementKind.Rectangle;element.CornerRadius=parameters.CornerRadius is { } corner?Math.Clamp(corner/3,0,10):parameters.Tool==EditorTool.RoundedRectangle?6:0;
@@ -305,7 +305,14 @@ internal static class ToolParameterIcon
             case EditorTool.Symbol:case EditorTool.Triangle:
                 element.Kind=ElementKind.Symbol;element.Symbol=parameters.Tool==EditorTool.Triangle?SymbolKind.Triangle:parameters.Symbol;element.Width=32;element.Height=32;element.Transform=Affine2D.Translation(8,8);break;
             case EditorTool.Text:
-                element.Kind=ElementKind.Text;element.Text="T";element.Width=38;element.Height=40;element.Transform=Affine2D.Translation(6,2);break;
+                element.Kind = ElementKind.Text;
+                element.Text = "T";
+                var metrics = renderer.MeasureText(element.Text, style);
+                element.Width = Math.Ceiling(metrics.Width) + 1; element.Height = Math.Ceiling(metrics.Height);
+                double fit = 40 / Math.Max(element.Width, element.Height);
+                element.Transform = Affine2D.Translation((48 - element.Width * fit) / 2, (48 - element.Height * fit) / 2)
+                    .Compose(Affine2D.Scale(fit, fit));
+                break;
             case EditorTool.Number:
                 element.Kind=ElementKind.Number;element.NumberTextSizeMode=parameters.NumberTextSizeMode;element.Number=1;element.Width=32;element.Height=32;style.FontSize=24;element.Transform=Affine2D.Translation(8,8);break;
             default:
@@ -321,12 +328,35 @@ internal static class ToolParameterIcon
             element.Width=parameters.DefaultWidth*scale;element.Height=parameters.DefaultHeight*scale;
             element.Transform=Affine2D.Translation((48-element.Width)/2,(48-element.Height)/2);
         }
-        element.Transform=Affine2D.Scale(2,2).Compose(element.Transform);
-        using var renderer=new SceneRenderer();
+        element.Transform = line ? LineSampleTransform(element) : Affine2D.Scale(2,2).Compose(element.Transform);
         var document=new SceneDocument {Viewport=new(0,0,96,96),Elements=[element]};
         using var stream=new MemoryStream(renderer.ExportPng(document,new(),true));
         var frame=BitmapFrame.Create(stream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad);
+        if (line)
+        {
+            artworkScale = element.Transform.M11;
+            frame.Freeze();
+            return frame;
+        }
         return FitArtwork(frame,out artworkScale);
+    }
+
+    private static Affine2D LineSampleTransform(CanvasElement line)
+    {
+        // Fit the same frame for every endpoint combination. On a curve the possible
+        // heads can extend beyond the centerline bounds in different directions.
+        var reference = line.Clone();
+        var bounds = ElementGeometry.LocalBounds(line);
+        ReadOnlySpan<ArrowHeadStyle> heads = [ArrowHeadStyle.FilledTriangle, ArrowHeadStyle.Open, ArrowHeadStyle.Diamond];
+        foreach (var head in heads)
+        {
+            reference.Style.StartArrowHead = reference.Style.EndArrowHead = head;
+            bounds = RectD.Union(bounds, ElementGeometry.StrokedLocalBounds(reference));
+        }
+        const double imageSize = 96, inset = 2;
+        double scale = (imageSize - 2 * inset) / Math.Max(bounds.Width, bounds.Height);
+        return Affine2D.Translation(imageSize / 2, imageSize / 2).Compose(Affine2D.Scale(scale, scale))
+            .Compose(Affine2D.Translation(-bounds.Center.X, -bounds.Center.Y));
     }
 
     private static BitmapSource RenderStrokeSample(ToolParameters parameters, out double artworkScale)

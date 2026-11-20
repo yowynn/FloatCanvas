@@ -39,7 +39,7 @@ internal static class SceneFormatMigrationTests
             check(!(await Read(zip, "scene.json")).ContainsKey("Provenance"), "package provenance is excluded from editable scene JSON");
         }
 
-        foreach (int version in Enumerable.Range(1, 8))
+        foreach (int version in new[] { 1, 2, 3, 6, 8 })
         {
             string legacyPath = Path.Combine(root, $"legacy-{version}.floatcanvas");
             var legacyJson = JsonSerializer.SerializeToNode(Fixture())!.AsObject();

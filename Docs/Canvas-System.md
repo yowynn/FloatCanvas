@@ -77,3 +77,9 @@ Legacy files without persistent resource IDs use local path and canvas kind unti
 Applying the complete view rebases content and calibration together (`p′=Cp`, `H′=CHC⁻¹`), commits a validated candidate and resets the camera in one content history entry. Parent placement, resource identities, Pivot and ImportOrigin are preserved. Read-only scopes and group root overviews cannot apply. Internal shared edits publish when leaving their level. External links are read-only until converted to internal content or detached.
 
 Resolution conversion shares rebasing but changes the authored pixel basis, creates a new unsaved root identity and uses Save As. Uniform contain fitting retains aspect ratio and excludes added margins from subsequent conversion. Assets and dependency identities remain intact. Runtime monitor changes never auto-convert. Ordinary full exports use the saved authored frame rather than the mutable viewport. Rotation is deferred throughout this version.
+
+## 工程格式迁移
+
+工程、预制体、恢复包和可编辑剪贴板中的工程在交给编辑器之前完成转换。读取入口校验声明的源版本和字段，再由 `SceneFormatMigration` 把历史数据转换为当前模型并校验结果。新增历史格式转换应放在这个入口，同时覆盖嵌套定义、独立预览背景和恢复草稿。单纯打开文件保留原始字节，保存入口只接受已升级的当前模型。
+
+工程当前沿用已发布的 v20。读取时，正式版 v20 的 `Foreground`、`Background` 在入口转换成 `PrimaryColor`、`SecondaryColor`；工作模型和新写入的数据直接使用主次色。普通文字和标签只编辑主色，描边文字可独立编辑字色与描边色。旧组合的交错层序、序号的字号规则及键盘的自定义布局由当前模型保留。工程号的调整随软件发布统一安排。详见 [发布规则](Release-Trust.md#工程格式版本)。

@@ -26,16 +26,17 @@ internal static class StyleVariantTests
                 panel.PrepareForShow();
                 var rows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
                 var choices = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers");
-                check(locale + " outline number exposes its style and border width while hiding unused secondary", rows["StyleVariant"].Visibility == Visibility.Visible && rows["StrokeWidth"].Visibility == Visibility.Visible && rows["Background"].Visibility == Visibility.Collapsed);
+                check(locale + " outline number exposes its style and border width with its secondary fill", rows["StyleVariant"].Visibility == Visibility.Visible && rows["StrokeWidth"].Visibility == Visibility.Visible && rows["Background"].Visibility == Visibility.Visible);
                 choices["StyleVariant"].SelectedValue = ElementAppearance.NumberFilled; panel.PrepareForShow();
                 check(locale + " choosing filled restores the secondary color control without losing its value", editor.Parameters.Style.Variant == ElementAppearance.NumberFilled && editor.Parameters.Style.Fill == 0xFFFFCC33 && rows["Background"].Visibility == Visibility.Visible);
-                var first = JsonSerializer.Deserialize<CanvasElement>("{\"Kind\":" + (int)ElementKind.Number + ",\"Width\":60,\"Height\":60,\"Style\":{\"Fill\":4281558681,\"FontSize\":8}}")!;
+                var first = new CanvasElement { Kind = ElementKind.Number, Width = 60, Height = 60, Style = new() { FontSize = 8 } };
+                AppearanceMigration.MigrateElement(first, new(0xFFEF4444, 0xFF336699, false, null), false);
                 var second = first.Clone(true); second.Transform = Affine2D.Translation(100, 0);
                 var session = new EditorSession(new() { Elements = [first, second] }); session.SetSelection([first.Id, second.Id]);
                 string original = JsonSerializer.Serialize(session.Document);
                 var inspector = new InspectorWindow(() => session, colorLibrary: colors);
                 using var surface = new InspectorTestSurface(inspector);
-                Field<SegmentedChoice>(inspector, "numberStyle").SelectedValue = ElementAppearance.NumberOutline;
+                Field<SegmentedChoice>(inspector, "appearanceStyle").SelectedValue = ElementAppearance.NumberOutline;
                 Invoke(inspector, "Apply");
                 check(locale + " multi-selection applies the stable variant to each badge in one undo operation", session.UndoCount == 1 && session.Document.Elements.All(e => e.Style.Variant == ElementAppearance.NumberOutline));
                 check(locale + " switching legacy badges keeps their small font and old sizing rule", session.Document.Elements.All(e => !e.NumberUsesForeground && e.Style.FontSize == 8 && e.Style.Stroke == 0xFF336699 && e.Style.Fill == 0xFFFFFFFF));
@@ -55,8 +56,26 @@ internal static class StyleVariantTests
                 editor.ApplyParameters(new() { Tool = EditorTool.Rectangle, Style = new() { Variant = ElementAppearance.ShapeUniform } });
                 editor.Tool = EditorTool.Ellipse;
                 check(locale + " shape family changes retain their compatible appearance", editor.Parameters.IsValid() && editor.Style.Variant == ElementAppearance.ShapeUniform);
-                editor.ApplyParameters(new() { Tool = EditorTool.Number, NumberColorRolesVersion = 0, Style = new() { Variant = ElementAppearance.NumberOutline, Stroke = 0xFF123456, Fill = 0xFFABCDEF } });
+                editor.ApplyParameters(new() { Tool = EditorTool.Number, Style = new() { Variant = ElementAppearance.NumberOutline, Stroke = 0xFF123456, Fill = 0xFFABCDEF } });
                 check(locale + " explicit variants take precedence over the old preset color-version flag", editor.Style.Stroke == 0xFF123456 && editor.Style.Fill == 0xFFABCDEF);
+                foreach (var shape in new[] { EditorTool.Rectangle, EditorTool.RoundedRectangle, EditorTool.Ellipse, EditorTool.Symbol })
+                {
+                    editor.ApplyParameters(new() { Tool = shape, Style = new() { Variant = ElementAppearance.ShapeUniform,
+                        PrimaryColor = 0x80663322, SecondaryColor = 0x40112233, StrokePattern = StrokePattern.Dashed } });
+                    panel.PrepareForShow();
+                    check(locale + " solid " + shape + " shows only fill color", rows["Foreground"].Visibility == Visibility.Visible &&
+                        new[] { "Background", "StrokeWidth", "StrokePattern" }.All(key => rows[key].Visibility == Visibility.Collapsed));
+                    Field<SegmentedChoice>(panel, "linkColors").SelectedValue = ElementAppearance.ShapeIndependent;
+                    panel.PrepareForShow();
+                    panel.Measure(new Size(700, 750)); panel.Arrange(new Rect(0, 0, 700, 750)); panel.UpdateLayout();
+                    string[] keys = shape is EditorTool.Rectangle or EditorTool.RoundedRectangle
+                        ? ["Foreground", "Background", "StrokeWidth", "StrokePattern", "CornerRadius"] : ["Foreground", "Background", "StrokeWidth", "StrokePattern"];
+                    var tops = keys.Select(key => rows[key].TranslatePoint(default, panel).Y).ToArray();
+                    check(locale + " outlined " + shape + " groups colors, width and pattern before radius", keys.All(key => rows[key].Visibility == Visibility.Visible)
+                        && tops.Zip(tops.Skip(1)).All(pair => pair.First < pair.Second) && editor.Style.SecondaryColor == 0x40112233);
+                }
+                editor.ApplyParameters(new() { Tool = EditorTool.Number, Style = new() { Variant = ElementAppearance.NumberOutline,
+                    PrimaryColor = 0xFF123456, SecondaryColor = 0xFFABCDEF } });
                 string statePath = Path.Combine(directory, locale + "-tool-state.json");
                 var state = new ToolStateStore(statePath); state.Tools[EditorTool.Number] = editor.Parameters; state.Save();
                 var restored = new ToolStateStore(statePath).Tools[EditorTool.Number];

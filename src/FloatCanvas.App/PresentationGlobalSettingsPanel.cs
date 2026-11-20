@@ -245,7 +245,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
             {
                 "Enabled" => click.Enabled, "Color" => click.Color, "Shape" => click.Shape,
                 "RadiusPixels" => click.RadiusPixels, "StrokeWidthPixels" => click.StrokeWidthPixels,
-                "DurationMilliseconds" => click.DurationMilliseconds, "Opacity" => click.Opacity * 100,
+                "DurationMilliseconds" => click.DurationMilliseconds,
                 _ => throw new ArgumentOutOfRangeException(nameof(key))
             };
         }
@@ -254,9 +254,9 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
             "KeyboardScope" => value.KeyboardScope,
             "PointerEnabled" => pointer.Enabled,
             "CursorEnabled" => pointer.CursorEnabled, "ClicksEnabled" => pointer.ClicksEnabled, "TrailEnabled" => pointer.TrailEnabled,
-            "CursorColor" => pointer.CursorColor, "CursorRadiusPixels" => pointer.CursorRadiusPixels, "CursorOpacity" => pointer.CursorOpacity * 100,
+            "CursorColor" => pointer.CursorColor, "CursorRadiusPixels" => pointer.CursorRadiusPixels,
             "TrailColor" => pointer.TrailColor, "TrailWidthPixels" => pointer.TrailWidthPixels,
-            "TrailMilliseconds" => pointer.TrailMilliseconds, "TrailOpacity" => pointer.TrailOpacity * 100,
+            "TrailMilliseconds" => pointer.TrailMilliseconds,
             _ => throw new ArgumentOutOfRangeException(nameof(key))
         };
     }
@@ -274,7 +274,6 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
                 case "RadiusPixels": click.RadiusPixels = (double)next; break;
                 case "StrokeWidthPixels": click.StrokeWidthPixels = (double)next; break;
                 case "DurationMilliseconds": click.DurationMilliseconds = (double)next; break;
-                case "Opacity": click.Opacity = (double)next / 100; break;
                 default: throw new ArgumentOutOfRangeException(nameof(key));
             }
             return;
@@ -288,11 +287,9 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
             case "TrailEnabled": pointer.TrailEnabled = (bool)next; break;
             case "CursorColor": pointer.CursorColor = (uint)next; break;
             case "CursorRadiusPixels": pointer.CursorRadiusPixels = (double)next; break;
-            case "CursorOpacity": pointer.CursorOpacity = (double)next / 100; break;
             case "TrailColor": pointer.TrailColor = (uint)next; break;
             case "TrailWidthPixels": pointer.TrailWidthPixels = (double)next; break;
             case "TrailMilliseconds": pointer.TrailMilliseconds = (double)next; break;
-            case "TrailOpacity": pointer.TrailOpacity = (double)next / 100; break;
             default: throw new ArgumentOutOfRangeException(nameof(key));
         }
     }

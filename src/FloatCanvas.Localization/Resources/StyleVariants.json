@@ -1,6 +1,9 @@
 {
-  "Style.Number.Filled": { "zh": "实心", "en": "Solid" },
-  "Style.Number.Outline": { "zh": "描边", "en": "Outline" },
-  "Style.Number.OutlineIndependent": { "zh": "双色描边", "en": "Two-tone" },
+  "Style.Text.Plain": { "zh": "普通", "en": "Plain" },
+  "Style.Text.Label": { "zh": "标签", "en": "Label" },
+  "Color.LabelTheme": { "zh": "标签主色", "en": "Label color" },
+  "Color.TextInk": { "zh": "文字颜色", "en": "Text color" },
+  "Style.Solid": { "zh": "实心", "en": "Solid" },
+  "Style.Outline": { "zh": "描边", "en": "Outline" },
   "Style.Default": { "zh": "默认样式", "en": "Default" }
 }

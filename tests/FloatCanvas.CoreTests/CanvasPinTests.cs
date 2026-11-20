@@ -88,7 +88,7 @@ internal static class CanvasPinTests
             Math.Abs(lockedTilt.GridColumns - lockedTilt.Columns) > .01, "locked grid reports exact changing coverage rather than rounded counts");
         var legacy = value.Clone(); legacy.PinPlanePoint = null; legacy.AlgorithmVersion = 1; legacy.LockedGridCellSize = 73;
         var matrix = legacy.Matrix;
-        CanvasCalibration.UpgradeLegacy(legacy);
+        CanvasCalibration.AdoptReference(legacy);
         check(legacy.Matrix == matrix && legacy.LockedGridCellSize == 73 && legacy.PinPlanePoint is not null, "legacy upgrade preserves lock without recalibrating content");
         check(JsonSerializer.Serialize(legacy).Contains("LockedGridCellSize"), "new saved settings retain enabled lock");
         var session = new EditorSession(document);

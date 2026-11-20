@@ -375,7 +375,7 @@ internal static class SnapshotImageTests
         string originalElement = JsonSerializer.Serialize(original);
         var defaults = new ToolParameters { Tool = EditorTool.CaptureRegion, CaptureShape = CaptureShape.Ellipse, CaptureSource = CaptureSource.CanvasOnly, CaptureBorderWidth = 4 };
         string defaultState = JsonSerializer.Serialize(defaults);
-        var selection = new CaptureSelection(defaults.CaptureShape, defaults.CaptureSource, new(-70, -40, 80, 60), [], defaults.CaptureBorderWidth, defaults.CaptureBorderColor);
+        var selection = new CaptureSelection(defaults.CaptureShape, defaults.CaptureSource, new(-70, -40, 80, 60), [], defaults.CaptureBorderWidth, defaults.Style.PrimaryColor);
         var raster = SnapshotImageCommand.Render(live.Clone(), assets.Resources, selection, null, [live.Viewport]);
         var image = SnapshotImageCommand.Insert(session, raster);
         check("snapshot inserts one ordinary editable PNG image without removing original annotations", session.Document.Kind == DocumentKind.LiveOverlay && session.Document.Elements.Count == 2 && session.Document.Elements.Last().Kind == ElementKind.Image && session.Document.Background is null);

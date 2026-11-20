@@ -42,16 +42,16 @@ internal static class ContainerBillboardStorageTests
             check(rejected, "container rejects missing " + field);
         }
         var old = new SceneDocument { Elements = [new() { Width = 50, Height = 60, Transform = Affine2D.Scale(.4, .4), IsBillboard = true, BillboardHeight = 30 }] };
-        string legacy = Path.Combine(root, "v18.floatcanvas"); await store.SaveAsync(legacy, old, new());
+        string legacy = Path.Combine(root, "v19.floatcanvas"); await store.SaveAsync(legacy, old, new());
         using (var zip = ZipFile.Open(legacy, ZipArchiveMode.Update))
             foreach (string name in new[] { "manifest.json", "scene.json" })
             {
                 JsonObject json; using (var reader = new StreamReader(zip.GetEntry(name)!.Open())) json = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
-                json["Version"] = 18; zip.GetEntry(name)!.Delete();
+                json["Version"] = 19; LegacyFixtureSchema.UseForegroundBackground(json); zip.GetEntry(name)!.Delete();
                 using var writer = new StreamWriter(zip.CreateEntry(name).Open()); await writer.WriteAsync(json.ToJsonString());
             }
         var legacyLoaded = (await store.LoadAsync(legacy)).Document;
-        check(legacyLoaded.Version == SceneDocument.CurrentVersion && JsonSerializer.Serialize(legacyLoaded.Elements) == JsonSerializer.Serialize(old.Elements), "format 18 preserves historical billboard compensation without rewriting");
+        check(legacyLoaded.Version == SceneDocument.CurrentVersion && JsonSerializer.Serialize(legacyLoaded.Elements) == JsonSerializer.Serialize(old.Elements), "released format 19 preserves historical billboard compensation without rewriting");
         var invalidVersion = session.Document.Clone(); invalidVersion.Version = 18;
         bool versionRejected = false; try { SceneValidation.Validate(invalidVersion); } catch (InvalidDataException) { versionRejected = true; }
         check(versionRejected, "old format cannot carry new container semantics");

@@ -117,7 +117,6 @@ internal sealed partial class DesktopSession
     {
         if (!IsCurrentWindowOperation(guard) || !source.IsCurrent || _windowRuntime is null) return;
         var element = PrepareWindowInsertion(owner, source, billboard, depth, center);
-        AppearanceMigration.NormalizeElement(element);
         var staging = new AssetLibrary(); element.AssetId = staging.Add(source.Png, "image/png");
         var candidate = owner.Document.Clone(); new SceneGraph(candidate).InsertElement(element.Clone(), owner.EditScopeId, rootCanvas: owner.ActiveRootCanvas); SceneValidation.Validate(candidate);
         if (!IsCurrentWindowOperation(guard) || !source.IsCurrent) return;

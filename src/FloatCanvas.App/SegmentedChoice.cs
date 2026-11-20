@@ -47,6 +47,7 @@ internal sealed class SegmentedChoice : Grid
     internal bool IconOnly { get; set; }
     internal double PreferredWidth => items.Count * optionWidth + 8;
     internal event EventHandler? SelectionChanged;
+    internal event Action? OptionsChanged;
 
     internal int SelectedIndex
     {
@@ -79,6 +80,18 @@ internal sealed class SegmentedChoice : Grid
         track.Children.Add(indicator); track.Children.Add(options); Children.Add(border);
         KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Once);
         Unloaded += (_, _) => slide.BeginAnimation(TranslateTransform.XProperty, null);
+    }
+
+    internal void ReplaceOptions(IEnumerable<(string Label, object Value, FrameworkElement Icon)> replacements)
+    {
+        selectedIndex = -1;
+        options.Children.Clear(); items.Clear();
+        optionWidth = 0; targetX = targetWidth = double.NaN;
+        slide.BeginAnimation(TranslateTransform.XProperty, null);
+        indicator.Visibility = Visibility.Collapsed;
+        foreach (var (label, value, icon) in replacements) Add(label, value, icon);
+        OptionsChanged?.Invoke();
+        InvalidateMeasure();
     }
 
     internal void Add(string label, object value, FrameworkElement icon)

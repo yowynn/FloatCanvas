@@ -70,7 +70,7 @@ internal sealed partial class EditorController
                 safeMapping.TryGetDepthScale(candidate.BillboardAnchor, out var depthScale)) borderScale = depthScale;
         }
         CapturePreview = new(CaptureShape, CaptureSource, bounds, contour,
-            CaptureBorderWidth * borderScale, CaptureBorderColor)
+            CaptureBorderWidth * borderScale, Style.PrimaryColor)
         { PlaneBounds = planeBounds, PlaneToScreen = projection, BillboardDepthLine = ActiveBillboardDepthLine,
             BillboardScreenFirst = UsesScreenBillboardCreation,
             BillboardLogicalBorderWidth = UsesScreenBillboardCreation ? CaptureBorderWidth : null };

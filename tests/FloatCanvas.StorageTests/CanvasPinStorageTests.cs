@@ -29,11 +29,11 @@ internal static class CanvasPinStorageTests
             var payload = await Read(zip, "scene.json");
             check(payload["Version"]!.GetValue<int>() == SceneDocument.CurrentVersion && !payload["Canvas"]!["Projection"]!.AsObject().ContainsKey("LockedGridCellSize"), "current format writes explicit pins and omits an unused grid lock");
         }
-        var legacy = Path.Combine(folder, "v7.floatcanvas"); File.Copy(path, legacy);
+        var legacy = Path.Combine(folder, "v6.floatcanvas"); File.Copy(path, legacy);
         using (var zip = ZipFile.Open(legacy, ZipArchiveMode.Update))
             foreach (var name in new[] { "scene.json", "manifest.json" })
             {
-                var json = await Read(zip, name); json["Version"] = 7;
+                var json = await Read(zip, name); json["Version"] = 6;
                 if (name == "scene.json")
                 {
                     LegacyFixtureSchema.RemovePrefabFields(json);
@@ -46,7 +46,7 @@ internal static class CanvasPinStorageTests
         var before = await File.ReadAllBytesAsync(legacy);
         var migrated = (await store.LoadAsync(legacy)).Document;
         check(migrated.Canvas.Projection.Matrix == pin.Matrix && migrated.Canvas.Projection.PinPoint.DistanceTo(pin.PinPoint) < 1e-6 && migrated.Canvas.Projection.LockedGridCellSize == 73,
-            "v7 upgrade retains content matrix, pin and locked spacing");
+            "v6 upgrade retains content matrix, pin and locked spacing");
         var after = await File.ReadAllBytesAsync(legacy);
         check(before.AsSpan().SequenceEqual(after), "loading legacy input never rewrites it");
         await store.SaveAsync(path, migrated, assets);

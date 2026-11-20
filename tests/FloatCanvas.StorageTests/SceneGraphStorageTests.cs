@@ -41,7 +41,7 @@ internal static class SceneGraphStorageTests
         var restored = (await recovery.LoadAsync())!.State;
         check(JsonSerializer.Serialize(restored) == JsonSerializer.Serialize(workspace), "recovery retains both source graphs, empty groups and capture origin");
 
-        foreach (int version in Enumerable.Range(1, 9))
+        foreach (int version in new[] { 1, 2, 3, 6, 8 })
         {
             var legacy = LegacyFixture(); legacy.Version = version;
             string legacyPath = Path.Combine(root, $"v{version}.floatcanvas");
@@ -50,11 +50,6 @@ internal static class SceneGraphStorageTests
             if (version is 6 or 7) json["Canvas"]!["Projection"]!["LockedGridCellSize"] = null;
             foreach (var group in json["Groups"]!.AsArray().OfType<JsonObject>())
                 foreach (var property in new[] { "Transform", "ElevationScale", "Visible", "Locked", "OrderMode", "ChildOrder" }) group.Remove(property);
-            if (version == 9)
-            {
-                var independent = IndependentCanvas(); legacy.Canvas = independent;
-                json["Canvas"] = JsonSerializer.SerializeToNode(independent);
-            }
             await WritePackage(legacyPath, version, json);
             byte[] original = await File.ReadAllBytesAsync(legacyPath);
             var loaded = (await store.LoadAsync(legacyPath)).Document;
@@ -65,9 +60,6 @@ internal static class SceneGraphStorageTests
             check(view.RenderDocument.Elements.Select(element => element.Id).SequenceEqual(legacy.Elements.Select(element => element.Id)) &&
                 JsonSerializer.Serialize(view.RenderDocument.Elements.Select(element => element.Transform)) == JsonSerializer.Serialize(legacy.Elements.Select(element => element.Transform)) &&
                 (await File.ReadAllBytesAsync(legacyPath)).AsSpan().SequenceEqual(original), $"v{version} preserves the A/B/C picture order and source file bytes");
-            if (version == 9)
-                check(JsonSerializer.Serialize(loaded.Canvas) == JsonSerializer.Serialize(legacy.Canvas) && loaded.Provenance.CreatedWith == "0.3.9-fixture",
-                    "v9-to-v10 preserves the M2 independent plane/grid/pin and M1 package provenance without running old geometry migration");
             string migrated = Path.Combine(root, $"v{version}-resaved.floatcanvas");
             await store.SaveAsync(migrated, loaded, new AssetLibrary());
             check(JsonSerializer.Serialize((await store.LoadAsync(migrated)).Document) == JsonSerializer.Serialize(loaded), $"v{version} migrated nested ownership has a stable subsequent save");
@@ -119,7 +111,7 @@ internal static class SceneGraphStorageTests
     private static CanvasSettings IndependentCanvas()
     {
         var canvas = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 1500, 1000)) };
-        CanvasGeometryMigration.UpgradeLegacy(canvas);
+        CanvasProjectionGeometry.InitializePlane(canvas);
         if (!CanvasProjectionGeometry.TryResize(canvas.Projection, 840, 1188, out var projection, out _)) throw new InvalidOperationException();
         canvas.Projection = projection; canvas.Grid.PlaneCellSize = 37.125; canvas.Grid.PlaneOrigin = new(-12.125, 143);
         canvas.Grid.FlatCellSize = 91.456; canvas.Grid.FlatOrigin = new(750, 500); return canvas;

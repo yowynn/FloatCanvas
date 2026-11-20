@@ -51,7 +51,7 @@ internal static class CaptionModeSwitchInputTests
             var canvas = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()) { ShowInTaskbar = false };
             bool depth = false; int depthRequests = 0;
             var settings = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0,0,1000,700)) };
-            settings.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(settings);
+            settings.Projection.Enabled = true; CanvasProjectionGeometry.InitializePlane(settings);
             canvas.DepthPriorityOcclusionChanged += enabled => { depthRequests++; depth = enabled; canvas.Options.RefreshPreviewControls(enabled,1); };
             try
             {

@@ -9,7 +9,7 @@ internal static class CanvasIndependentStorageTests
         var directory = Path.Combine(AppContext.BaseDirectory, "independent-canvas-tests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         var viewport = new RectD(0, 0, 1500, 1000);
         var canvas = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(viewport), Grid = new() { FlatCellSize = 91.456, FlatOrigin = new(750, 500) } };
-        CanvasGeometryMigration.UpgradeLegacy(canvas);
+        CanvasProjectionGeometry.InitializePlane(canvas);
         check(CanvasProjectionGeometry.TryResize(canvas.Projection, 840, 1188, out var resized, out _), "independent paper storage fixture changes the source dimensions");
         canvas.Projection = resized; canvas.Projection.Enabled = true;
         canvas.Grid.PlaneCellSize = 37.125; canvas.Grid.PlaneOrigin = new(-12.125, 143);

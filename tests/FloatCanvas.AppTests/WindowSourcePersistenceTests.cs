@@ -115,17 +115,17 @@ internal static class WindowSourcePersistenceTests
         var transferred = JsonSerializer.Deserialize<SceneDocument>(JsonSerializer.Serialize(copied))!;
         var tampered = transferred.Clone(); tampered.Elements[0].AssetId = oldImage;
         check("object-copy ownership proof stays strict over the final projected package bytes", (bool)proof.Invoke(null, [copyOwner, transferred, transfer])! && !(bool)proof.Invoke(null, [copyOwner, tampered, transfer])!);
-        string clipboardWire = JsonSerializer.Serialize(new { Document = copied }); WindowSourcePersistence.ValidateClipboardSources(clipboardWire);
+        string clipboardWire = JsonSerializer.Serialize(new { Document = copied }); DesktopSession.ClipboardObjects.Read(clipboardWire);
         foreach (string field in new[] { "BindingIntent", "TitleHint", "ProcessNameHint", "WindowClassHint", "Fit" })
         {
             var invalid = JsonNode.Parse(clipboardWire)!.AsObject(); invalid["Document"]!["Elements"]![0]!["WindowSource"]!.AsObject().Remove(field);
-            Reject(() => WindowSourcePersistence.ValidateClipboardSources(invalid.ToJsonString()), check, "clipboard canonical source requires authored field " + field);
+            Reject(() => DesktopSession.ClipboardObjects.Read(invalid.ToJsonString()), check, "clipboard canonical source requires authored field " + field);
         }
         var legacyClipboard = JsonNode.Parse(clipboardWire)!.AsObject(); legacyClipboard["Document"]!["Version"] = 13; legacyClipboard["Document"]!["Elements"]![0]!["WindowSource"] = null;
-        Reject(() => WindowSourcePersistence.ValidateClipboardSources(legacyClipboard.ToJsonString()), check, "legacy clipboard cannot silently discard an explicit null future source field");
+        Reject(() => DesktopSession.ClipboardObjects.Read(legacyClipboard.ToJsonString()), check, "legacy clipboard cannot silently discard an explicit null future source field");
         var runtimeClipboard = JsonNode.Parse(clipboardWire)!.AsObject(); runtimeClipboard["Document"]!["Elements"]![0]!["WindowSource"]!["Hwnd"] = 123;
-        Reject(() => WindowSourcePersistence.ValidateClipboardSources(runtimeClipboard.ToJsonString()), check, "clipboard source wire rejects runtime handle injection rather than ignoring it");
-        Reject(() => WindowSourcePersistence.ValidateClipboardSources(clipboardWire.Replace("\"WindowSource\":", "\"WindowSource\":null,\"WindowSource\":")), check, "clipboard source wire rejects a duplicate source authority");
+        Reject(() => DesktopSession.ClipboardObjects.Read(runtimeClipboard.ToJsonString()), check, "clipboard source wire rejects runtime handle injection rather than ignoring it");
+        Reject(() => DesktopSession.ClipboardObjects.Read(clipboardWire.Replace("\"WindowSource\":", "\"WindowSource\":null,\"WindowSource\":")), check, "clipboard source wire rejects a duplicate source authority");
         ObjectClipboardCommand.Insert(copyOwner, JsonSerializer.Deserialize<SceneDocument>(JsonSerializer.Serialize(copied))!, local, new(-100, -100, 500, 500), transfer);
         check("clipboard proof is registered after fallback projection and its package contains its own PNG", copyOwner.UndoCount == 1 && copyOwner.Document.Elements.Count == 2 && copyOwner.Assets.TryGet(fallback, out _));
 

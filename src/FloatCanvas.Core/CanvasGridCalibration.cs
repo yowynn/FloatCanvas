@@ -33,7 +33,7 @@ public static class CanvasGridCalibration
         double cy = candidateRows ?? Math.Max(1, Math.Round(ny, MidpointRounding.AwayFromZero));
         error = CanvasGridFitError.CountOutOfRange;
         if (alignBoundary && (cx is < 1 or > CanvasCalibration.MaximumGridCount || cy is < 1 or > CanvasCalibration.MaximumGridCount)) return false;
-        var result = current.Clone(); CanvasGeometryMigration.UpgradeLegacy(result);
+        var result = current.Clone(); CanvasProjectionGeometry.InitializePlane(result);
         error = CanvasGridFitError.UnsafeResult;
         if (!CanvasProjectionGeometry.TrySetAspect(result.Projection, alignBoundary ? cx / cy : nx / ny, out var projection, out _)) return false;
         var plane = CanvasProjectionGeometry.ResolvePlaneBounds(projection);

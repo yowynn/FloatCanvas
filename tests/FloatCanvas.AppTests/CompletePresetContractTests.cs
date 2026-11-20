@@ -55,7 +55,7 @@ internal static class CompletePresetContractTests
         }
         check("official application leaves the caller's working parameters intact", Snapshot(edited) == unchanged);
         check("official highlighter explicitly uses a 24 pixel stroke", library.Apply("official.highlighter").Style.StrokeWidth == 24);
-        check("official number explicitly restores red badge white label and current color roles", library.Apply("official.number") is { NumberColorRolesVersion: 1, Style: { Stroke: ColorLibrary.ForegroundRed, Fill: 0xFFFFFFFF } });
+        check("official number explicitly restores red badge white label and current color roles", library.Apply("official.number") is { Style: { Stroke: ColorLibrary.ForegroundRed, Fill: 0xFFFFFFFF } });
     }
 
     private static void GalleryRestart(string folder, Action<string, bool> check)
@@ -105,7 +105,7 @@ internal static class CompletePresetContractTests
         library = new ToolPresetLibrary(path);
         var current = Custom(); var restored = library.Apply(saved.Id); var defaults = new ToolParameters();
         check("old personal presets fill missing tool fields with defined defaults", restored.EffectStrength == defaults.EffectStrength && restored.Emoji == defaults.Emoji &&
-            restored.CaptureShape == defaults.CaptureShape && restored.CaptureSource == defaults.CaptureSource && restored.CaptureBorderWidth == defaults.CaptureBorderWidth && restored.CaptureBorderColor == defaults.CaptureBorderColor);
+            restored.CaptureShape == defaults.CaptureShape && restored.CaptureSource == defaults.CaptureSource && restored.CaptureBorderWidth == defaults.CaptureBorderWidth);
         check("old personal presets fill missing nested style fields with defined defaults", restored.Style.LinkColors == defaults.Style.LinkColors && restored.Style.StrokePattern == defaults.Style.StrokePattern &&
             restored.Style.Opacity == defaults.Style.Opacity && restored.Style.FontFamily == defaults.Style.FontFamily);
         check("old personal presets retain explicitly saved attributes", restored.Style.Stroke == original.Style.Stroke && restored.Style.StrokeWidth == original.Style.StrokeWidth && restored.NumberStep == original.NumberStep);
@@ -122,7 +122,7 @@ internal static class CompletePresetContractTests
     {
         Tool = EditorTool.Rectangle, CornerRadius = 27, Symbol = SymbolKind.Heart, ConstrainAspect = true, EffectStrength = 42,
         Emoji = "🚀", DefaultWidth = 234, DefaultHeight = 123, NumberStart = 103, NumberStep = 7,
-        CaptureShape = CaptureShape.PolygonLasso, CaptureSource = CaptureSource.BackgroundAndCanvas, CaptureBorderWidth = 7, CaptureBorderColor = 0x7F123456,
+        CaptureShape = CaptureShape.PolygonLasso, CaptureSource = CaptureSource.BackgroundAndCanvas, CaptureBorderWidth = 7,
         Style = new() { Stroke = 0x7F112233, Fill = 0x33445566, LinkColors = true, StrokeWidth = 13, Opacity = .42, FontSize = 35, FontFamily = "Arial",
             StartArrowHead = ArrowHeadStyle.Open, EndArrowHead = ArrowHeadStyle.Diamond, ArrowHeadSize = 45, StrokePattern = StrokePattern.Dotted }
     };

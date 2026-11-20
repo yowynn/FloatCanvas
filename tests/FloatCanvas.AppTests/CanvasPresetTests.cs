@@ -412,7 +412,7 @@ internal static class CanvasPresetTests
     private static string ProjectionJson(CanvasProjectionSettings projection)
     {
         var canvas = new CanvasSettings { Projection = projection.Clone() };
-        CanvasGeometryMigration.UpgradeLegacy(canvas); return JsonSerializer.Serialize(canvas.Projection);
+        CanvasProjectionGeometry.InitializePlane(canvas); return JsonSerializer.Serialize(canvas.Projection);
     }
     private static bool Reject(Action action) { try { action(); return false; } catch (Exception ex) when (ex is ArgumentException or InvalidDataException or KeyNotFoundException or InvalidOperationException) { return true; } }
     private static T Field<T>(object owner, string name) => (T)CanvasOptionsTestWindow.Unwrap(owner).GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(CanvasOptionsTestWindow.Unwrap(owner))!;

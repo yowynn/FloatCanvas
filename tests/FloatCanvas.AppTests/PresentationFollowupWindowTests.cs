@@ -80,8 +80,8 @@ internal static class PresentationFollowupWindowTests
             void CheckSharedOrder(string state)
             {
                 var toolRows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
-                string[] shared = ["Colors", "Opacity", "FontFamily", "FontSize"];
-                check(locale + " " + theme + " " + state + " tool mode and exclusive fields precede every shared property", shared.All(key => toolRows[key].IsVisible && Grid.GetRow(toolRows[key]) > Grid.GetRow(toolRows["PresentationSettings"])) && !toolRows["Size"].IsVisible && Field<Dictionary<string, FrameworkElement>>(keyboard, "rows")["KeyPanelAlignment"].IsVisible == (state != "live"));
+                string[] shared = ["Colors", "FontFamily", "FontSize"];
+                check(locale + " " + theme + " " + state + " tool mode and exclusive fields precede every shared property", shared.All(key => toolRows[key].IsVisible && Grid.GetRow(toolRows[key]) > Grid.GetRow(toolRows["PresentationSettings"])) && !toolRows["Opacity"].IsVisible && !toolRows["Size"].IsVisible && Field<Dictionary<string, FrameworkElement>>(keyboard, "rows")["KeyPanelAlignment"].IsVisible == (state != "live"));
                 var element = new CanvasElement { Kind = ElementKind.Presentation, Width = 760, Height = 260, Presentation = editor.Parameters.Presentation!.Clone(), Style = editor.Parameters.Style.Clone() };
                 var inspected = new EditorSession(new() { Elements = [element] }); inspected.SetSelection([element.Id]);
                 var inspector = new InspectorWindow(() => inspected) { Owner = window, ShowActivated = false };
@@ -106,7 +106,7 @@ internal static class PresentationFollowupWindowTests
             window.SizeToContent = SizeToContent.Height; window.Width = keyboardWidth; window.Height = double.NaN;
             var keyboardEntries = Field<IDictionary>(keyboard, "entries");
             T KeyControl<T>(string key) where T : FrameworkElement { var entry = keyboardEntries[key]!; return (T)entry.GetType().GetProperty("Control")!.GetValue(entry)!; }
-            KeyControl<SegmentedChoice>("LogStyle").SelectedValue = PresentationDisplayStyle.Keycaps; Pump(); Snapshot("keyboard-keycaps"); CheckSharedOrder("keycaps");
+            KeyControl<SegmentedChoice>("DisplayStyle").SelectedValue = PresentationDisplayStyle.Keycaps; Pump(); Snapshot("keyboard-keycaps"); CheckSharedOrder("keycaps");
             KeyControl<SegmentedChoice>("DisplayStyle").SelectedValue = PresentationDisplayStyle.Keyboard; Pump(); Snapshot("keyboard-live"); CheckSharedOrder("live");
             Exception? editorFailure = null;
             app.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>

@@ -93,7 +93,10 @@ internal static class ToolOptionsPanelTests
             restored.Style is { HighlighterTip: HighlighterTip.Flat, HighlighterTipAngle: 35, HighlighterInkContrast: .55, StrokePattern: StrokePattern.DashDot });
         controller.Tool = EditorTool.Text; panel.PrepareForShow();
         check("switching to text renames the reused color field and picker",
-            colorCaption.Text == L.Get("Color.Unified") && colorPopup.Title == colorCaption.Text);
+            colorCaption.Text == L.Get("Color.TextInk") && colorPopup.Title == colorCaption.Text);
+        Select(pickers["StyleVariant"], ElementAppearance.TextLabel); panel.PrepareForShow();
+        check("the label theme updates the same field and picker caption", colorCaption.Text == L.Get("Color.LabelTheme") &&
+            colorPopup.Title == colorCaption.Text && controller.Tool == EditorTool.Text);
         controller.Tool = EditorTool.Line; panel.PrepareForShow();
         Select(pickers["LinePathMode"], LinePathMode.Arc);
         var arcPreset = new ToolPresetLibrary(tipPresetPath).Save("Arc", controller.Parameters);
@@ -231,13 +234,13 @@ internal static class ToolOptionsPanelTests
         pickers["CaptureSource"].SelectedItem = pickers["CaptureSource"].Items.OfType<Controls.RadioButton>().Single(item => Equals(item.Tag, CaptureSource.CanvasOnly));
         numbers["CaptureBorderWidth"].Text = "6";
         foreground.SetUserValue(0xFFBB2233);
-        check("snapshot controls update only capture parameters without editing drawing style", controller.CaptureShape == CaptureShape.PolygonLasso &&
-            controller.CaptureSource == CaptureSource.CanvasOnly && controller.CaptureBorderWidth == 6 && controller.CaptureBorderColor == 0xFFBB2233 && controller.Style.Stroke == ColorLibrary.ForegroundRed);
+        check("snapshot controls update capture parameters and the primary border color", controller.CaptureShape == CaptureShape.PolygonLasso &&
+            controller.CaptureSource == CaptureSource.CanvasOnly && controller.CaptureBorderWidth == 6 && controller.Style.PrimaryColor == 0xFFBB2233);
         var gallery = Field<ToolPresetGallery>(panel, "presets");
         gallery.SaveNamed("Snapshot test");
         var parameters = controller.Parameters;
         numbers["CaptureBorderWidth"].Text = "0";
-        check("zero snapshot border width switches off without changing the retained border color", controller.CaptureBorderWidth == 0 && controller.CaptureBorderColor == 0xFFBB2233);
+        check("zero snapshot border width switches off without changing the retained border color", controller.CaptureBorderWidth == 0 && controller.Style.PrimaryColor == 0xFFBB2233);
         gallery.Apply(gallery.SelectedId);
         check("snapshot user preset restores shape source and border", JsonSerializer.Serialize(controller.Parameters) == JsonSerializer.Serialize(parameters));
         panel.Measure(new Wpf.Size(ToolOptionsPanel.PreferredWidth, double.PositiveInfinity)); panel.Arrange(new Wpf.Rect(new Wpf.Size(ToolOptionsPanel.PreferredWidth, panel.DesiredSize.Height))); panel.UpdateLayout();

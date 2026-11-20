@@ -90,7 +90,7 @@ internal static class ThemeAcceptanceTests
             Observe("editable combo exposes its native text editor", editor.Visibility == Visibility.Visible && editor.Text == "Typed font");
             Observe("editable combo arrow only occupies the dropdown hit target", arrow.ActualWidth <= 30 && arrow.ActualWidth > 0);
             Observe("editable combo uses the expected popup host", overlay ? combo.Template.FindName("PART_Popup",combo) is OverlayPopup : combo.Template.FindName("PART_Popup",combo) is Popup);
-            var capture=(FrameworkElement)ToolParameterIcon.Create(new ToolParameters { Tool=EditorTool.CaptureRegion, CaptureBorderWidth=5, CaptureBorderColor=0x803366FF },24);
+            var capture=(FrameworkElement)ToolParameterIcon.Create(new ToolParameters { Tool=EditorTool.CaptureRegion, CaptureBorderWidth=5, Style = { PrimaryColor = 0x803366FF } },24);
             var capturePixels=Render(capture,24,24,Path.Combine(output,"capture-colored.png"));
             var borderPixel=capturePixels.At(3,12);
             Observe("capture preview preserves border alpha independently of its readable content cue", borderPixel.A is >50 and <=128 && borderPixel.B>borderPixel.R &&

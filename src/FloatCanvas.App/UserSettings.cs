@@ -40,7 +40,6 @@ internal sealed class UserSettings
         set
         {
             presentationGlobal = value?.IsValid() == true ? value.Clone() : new();
-            presentationGlobal.Pointer.NormalizeColorAlpha();
         }
     }
     private int historyVersionLimit = 60;
@@ -63,7 +62,6 @@ internal sealed class UserSettings
     public void Save()
     {
         RemoveRetiredShortcuts();
-        presentationGlobal.Pointer.NormalizeColorAlpha();
         (compatibility??=new CompatibleConfiguration(FilePath)).Save(this,JsonOptions);
     }
     internal void RemoveRetiredShortcuts()

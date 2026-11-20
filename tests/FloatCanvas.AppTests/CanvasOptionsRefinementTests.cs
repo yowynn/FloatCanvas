@@ -27,7 +27,7 @@ internal static class CanvasOptionsRefinementTests
             L.Initialize(language); AppTheme.Apply(theme);
             string prefix = language + "-" + theme;
             var settings = new CanvasSettings { Projection = CanvasCalibration.CreateInitial(new(0, 0, 1000, 700)) };
-            settings.Projection.Enabled = true; CanvasGeometryMigration.UpgradeLegacy(settings);
+            settings.Projection.Enabled = true; CanvasProjectionGeometry.InitializePlane(settings);
             var window = new CanvasOptionsTestWindow(CanvasPresetLibrary.OfficialOnly()) { Left = -12000, Top = -12000, ShowActivated = false, ShowInTaskbar = false };
             try
             {

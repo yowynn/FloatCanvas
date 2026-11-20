@@ -26,8 +26,11 @@ internal static class FormatVersionTests
             ]
         };
         string path = Path.Combine(root, "legacy-version-migration.floatcanvas");
-        await store.SaveAsync(path, legacy, assets);
-        check(legacy.Version == 1, "saving a caller-owned v1 scene does not mutate its version");
+        bool oldSaveRejected = false;
+        try { await store.SaveAsync(path, legacy, assets); } catch (InvalidDataException) { oldSaveRejected = true; }
+        check(oldSaveRejected && legacy.Version == 1 && !File.Exists(path), "the writer only accepts current documents and never upgrades the caller");
+        var current = legacy.Clone(); current.Version = SceneDocument.CurrentVersion;
+        await store.SaveAsync(path, current, assets);
         check(!LegacyV1ReaderAccepts(path), "new save envelope is rejected by the published v1 reader version gate");
         using (var zip = ZipFile.OpenRead(path))
         {
@@ -42,6 +45,7 @@ internal static class FormatVersionTests
             AppearanceMigration.MigrateElement(element, new(element.Style.Stroke, element.Style.Fill, element.Style.LinkColors,
                 element.Style.Variant == ElementAppearance.Default ? null : element.Style.Variant), element.NumberUsesForeground);
         expected.ResourceId = loaded.Document.ResourceId;
+        expected.AuthoringReference = CanvasAuthoringReference.FromSavedDocument(expected);
         check(loaded.Document.Version == SceneDocument.CurrentVersion && JsonSerializer.Serialize(loaded.Document) == JsonSerializer.Serialize(expected),
             "v1 scene migrates in memory preserving IDs, transforms, alpha, arrow styles, text, crops and effects");
         check(loaded.Assets.Get(assetId).Data.Span.SequenceEqual(assets.Get(assetId).Data.Span) &&
@@ -66,8 +70,7 @@ internal static class FormatVersionTests
             "future scene version is rejected before replacing a good project");
 
         var recovery = new RecoveryStore(Path.Combine(root, "v1-migration-recovery"));
-        var state = new WorkspaceState { LiveDocument = legacy.Clone(), CaptureDocument = legacy.CreateCapture(new(0, 0, 300, 200), assetId), CaptureOrigin = new(-20, 40) };
-        state.CaptureDocument.Version = 1;
+        var state = new WorkspaceState { LiveDocument = current.Clone(), CaptureDocument = current.CreateCapture(new(0, 0, 300, 200), assetId), CaptureOrigin = new(-20, 40) };
         await recovery.SaveAsync(state, assets);
         check(!LegacyV1ReaderAccepts(recovery.CurrentPath), "new recovery envelope also rejects legacy readers");
         await ConvertToV1Async(recovery.CurrentPath, "workspace.json", n =>

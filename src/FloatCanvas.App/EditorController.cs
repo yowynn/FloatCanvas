@@ -85,7 +85,6 @@ internal sealed partial class EditorController
     public CaptureShape CaptureShape { get; set; } = CaptureShape.Rectangle;
     public CaptureSource CaptureSource { get; set; } = CaptureSource.Background;
     public double CaptureBorderWidth { get; set; }
-    public uint CaptureBorderColor { get; set; } = ColorLibrary.ForegroundRed;
     public PresentationSettings? Presentation { get; set; }
     public PresentationPointerSettings? PointerPresentation { get; set; }
     public ToolParameters Parameters
@@ -95,7 +94,7 @@ internal sealed partial class EditorController
             var parameters = new ToolParameters { Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius,
         Symbol = Symbol, ConstrainAspect = Tool != EditorTool.CaptureRegion && ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
         NumberStart = NumberStart, NumberStep = NumberStep, NumberTextSizeMode = NumberTextSizeMode, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
-        CaptureBorderWidth = CaptureBorderWidth, CaptureBorderColor = CaptureBorderColor, Presentation = Presentation?.Clone(),
+        CaptureBorderWidth = CaptureBorderWidth, Presentation = Presentation?.Clone(),
         PointerPresentation = PointerPresentation?.Clone() };
             parameters.NormalizeForCreation(); return parameters;
         }
@@ -118,7 +117,7 @@ internal sealed partial class EditorController
         ConstrainAspect = parameters.Tool != EditorTool.CaptureRegion && parameters.ConstrainAspect; EffectStrength = parameters.EffectStrength;
         Emoji = parameters.Emoji; DefaultWidth = parameters.DefaultWidth; DefaultHeight = parameters.DefaultHeight;
         CaptureShape = parameters.CaptureShape; CaptureSource = parameters.CaptureSource;
-        CaptureBorderWidth = parameters.CaptureBorderWidth; CaptureBorderColor = parameters.CaptureBorderColor;
+        CaptureBorderWidth = parameters.CaptureBorderWidth;
         // Other tool snapshots carry hidden sequence fields too; they must not
         // replace the number tool's actual start or move this canvas's counter.
         if (parameters.Tool == EditorTool.Number)

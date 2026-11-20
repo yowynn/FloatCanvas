@@ -178,7 +178,7 @@ public static class CanvasCalibration
         return TryCalibrate(settings, current.Quad, viewport, out settings, out error);
     }
     /// <summary>Adopt a saved reference without recalibrating or changing its content projection.</summary>
-    public static void UpgradeLegacy(CanvasProjectionSettings settings)
+    public static void AdoptReference(CanvasProjectionSettings settings)
     {
         if (settings.Quad.Count == 4)
         {

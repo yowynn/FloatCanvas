@@ -10,7 +10,7 @@ internal readonly record struct NumericParameterDomain(double Minimum, double Ma
         "HighlighterTipAngle" => new(-90, 90, -90, 90),
         "CaptureBorderWidth" => new(0, 1024, 0, 16, .1),
         "Opacity" or "HighlighterInkContrast" => new(0, 100, 0, 100),
-        "FontSize" => new(double.Epsilon, 4096, 8, 144),
+        "FontSize" => new(double.Epsilon, FloatCanvas.Core.ElementStyle.MaximumFontSize, 8, 144),
         "NumberStart" => new(-999999, 999999, 1, 100, Integer: true),
         "NumberStep" => new(-999999, 999999, -10, 10, Integer: true),
         "NextNumber" => new(int.MinValue, int.MaxValue, 1, 100, Integer: true),

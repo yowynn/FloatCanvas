@@ -94,12 +94,12 @@ internal static class OfficialPresetDesignTests
             check(preset.Id + " is a valid complete independent definition", p.IsValid() && snapshot == JsonSerializer.Serialize(preset.Parameters));
             bool painted = p.Tool is EditorTool.Freehand or EditorTool.Highlighter or EditorTool.Line or EditorTool.Rectangle or EditorTool.Ellipse or EditorTool.Symbol or EditorTool.Text or EditorTool.Number;
             check(preset.Id + " keeps visible paint and useful opt-in values", p.Style.Opacity > 0 && (!painted || (p.Style.Stroke >> 24) > 0 && p.Style.StrokeWidth > 0) &&
-                p.EffectStrength > 0 && (p.CaptureBorderColor >> 24) > 0 && p.Style.ArrowHeadSize >= 0);
+                p.EffectStrength > 0 && (p.Tool != EditorTool.CaptureRegion || (p.Style.PrimaryColor >> 24) > 0) && p.Style.ArrowHeadSize >= 0);
             if (p.Tool is EditorTool.CaptureRegion or EditorTool.Emoji)
                 check(preset.Id + " renders visible preview pixels through the actual icon", VisibleIcon(ToolParameterIcon.Create(p, 32)));
             var dirty = new ToolParameters { Tool = EditorTool.Number, NumberStart = 91, NumberStep = 7,
                 Style = new() { Stroke = 0, Fill = 0, StrokeWidth = 0, Opacity = .1, FontSize = 11 }, EffectStrength = 99,
-                CaptureBorderWidth = 0, CaptureBorderColor = 0, DefaultWidth = 7, DefaultHeight = 9, ConstrainAspect = true };
+                CaptureBorderWidth = 0, DefaultWidth = 7, DefaultHeight = 9, ConstrainAspect = true };
             var controller = new EditorController(new EditorSession()); controller.ApplyParameters(dirty); controller.ApplyParameters(p);
             var expected = new EditorController(new EditorSession()); expected.ApplyParameters(preset.Parameters);
             check(preset.Id + " replaces unrelated tool state through the editor", JsonSerializer.Serialize(controller.Parameters) == JsonSerializer.Serialize(expected.Parameters));
@@ -115,7 +115,7 @@ internal static class OfficialPresetDesignTests
         foreach (var preset in library.OfficialFor(EditorTool.CaptureRegion).Where(p => p.Parameters.CaptureBorderWidth == 0))
         {
             var p = preset.Parameters.Clone(); p.CaptureBorderWidth = 4;
-            check(preset.Id + " enables a visible screenshot border with one width change", p.IsValid() && (p.CaptureBorderColor >> 24) != 0);
+            check(preset.Id + " enables a visible screenshot border with one width change", p.IsValid() && (p.Style.PrimaryColor >> 24) != 0);
         }
         foreach (var preset in library.OfficialFor(EditorTool.Line).Where(p => p.Parameters.Style.EndArrowHead == ArrowHeadStyle.None))
         {

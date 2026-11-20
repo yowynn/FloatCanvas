@@ -19,13 +19,13 @@ internal static class PresentationStorageTests
         string path=Path.Combine(root,"presentation.floatcanvas"),before=JsonSerializer.Serialize(document);
         await store.SaveAsync(path,document,assets);var loaded=(await store.LoadAsync(path)).Document;
         check(loaded.Version==SceneDocument.CurrentVersion&&JsonSerializer.Serialize(loaded)==before,"current format stores disabled format13 presentation settings and hidden module values in shared definitions");
-        string old14=Path.Combine(root,"true-v14-log.floatcanvas");File.Copy(path,old14);
-        await Edit(old14,"manifest.json",n=>n["Version"]=14);
-        await Edit(old14,"scene.json",n=>{n["Version"]=14;Settings(n).Remove("DisplayStyle");Settings(n).Remove("KeyboardLayout");});
-        byte[] old14Bytes=await File.ReadAllBytesAsync(old14);var migrated14=(await store.LoadAsync(old14)).Document;
-        check(migrated14.Version==SceneDocument.CurrentVersion&&JsonSerializer.Serialize(migrated14)==before&&
-            (await File.ReadAllBytesAsync(old14)).AsSpan().SequenceEqual(old14Bytes),
-            "v14 keyboard logs migrate to the current format with Log and implicit full layout without changing placement colors identity or source bytes");
+        string releasedLog=Path.Combine(root,"released-v19-log.floatcanvas"); File.Copy(path,releasedLog);
+        await Edit(releasedLog,"manifest.json",n=>n["Version"]=19);
+        await Edit(releasedLog,"scene.json",n=>n["Version"]=19);
+        byte[] releasedBytes=await File.ReadAllBytesAsync(releasedLog);
+        var upgraded=(await store.LoadAsync(releasedLog)).Document;
+        check(JsonSerializer.Serialize(upgraded)==before && (await File.ReadAllBytesAsync(releasedLog)).AsSpan().SequenceEqual(releasedBytes),
+            "published keyboard logs retain their implicit standard layout, placement and colors");
         foreach(var style in Enum.GetValues<PresentationDisplayStyle>())
         {
             var styled=document.Clone();var settings=styled.Definitions[0].Graph.Elements[0].Presentation!;settings.DisplayStyle=style;
@@ -90,20 +90,20 @@ internal static class PresentationStorageTests
         await Edit(hiddenOld,"manifest.json",n=>n["Version"]=12);await Edit(hiddenOld,"scene.json",n=>n["Version"]=12);
         bool oldRejected=false;try{await store.LoadAsync(hiddenOld);}catch(InvalidDataException){oldRejected=true;}
         check(oldRejected,"format12 cannot hide a presentation kind/config inside a legacy envelope");
-        // A true v12 palette/graph stays byte-for-byte the same in content after only upgrading Version.
+        // A true v19 palette/graph stays byte-for-byte the same in content after only upgrading Version.
         var oldDocument=document.Clone();var oldLeaf=oldDocument.Definitions[0].Graph.Elements[0];oldLeaf.Kind=ElementKind.Number;oldLeaf.Presentation=null;
-        oldLeaf.Style.Variant=ElementAppearance.NumberOutlineIndependent;oldLeaf.NumberTextSizeMode=NumberTextSizeMode.CapFontSize;oldLeaf.Style.FontSize=11;
+        oldLeaf.Style.Variant=ElementAppearance.NumberOutline;oldLeaf.Style.SecondaryColor &= 0x00FFFFFF;oldLeaf.NumberTextSizeMode=NumberTextSizeMode.CapFontSize;oldLeaf.Style.FontSize=11;
         oldDocument.Canvas.Grid.PlaneCellSize=17;oldDocument.Canvas.Grid.PlaneOrigin=new(2,3);
-        string oldPath=Path.Combine(root,"true-v12.floatcanvas");await store.SaveAsync(oldPath,oldDocument,assets);
-        await Edit(oldPath,"manifest.json",n=>n["Version"]=12);await Edit(oldPath,"scene.json",n=>n["Version"]=12);
+        string oldPath=Path.Combine(root,"true-v19.floatcanvas");await store.SaveAsync(oldPath,oldDocument,assets);
+        await Edit(oldPath,"manifest.json",n=>n["Version"]=19);await Edit(oldPath,"scene.json",n=>n["Version"]=19);
         byte[] oldBytes=await File.ReadAllBytesAsync(oldPath);var migrated=(await store.LoadAsync(oldPath)).Document;
         check(migrated.Version==SceneDocument.CurrentVersion&&migrated.ResourceIdentityPersistent&&migrated.ResourceId==oldDocument.ResourceId&&
             JsonSerializer.Serialize(migrated)==JsonSerializer.Serialize(oldDocument)&&(await File.ReadAllBytesAsync(oldPath)).AsSpan().SequenceEqual(oldBytes),
-            "true v12-to13 migration preserves canonical colors/third style/typography/local group matrix/elevation/order/grid/identity and source bytes");
+            "true v19 migration preserves canonical colors/third style/typography/local group matrix/elevation/order/grid/identity and source bytes");
         var oldPackage=new PrefabPackage{Definitions=migrated.Definitions.Select(item=>item.Clone()).ToList(),EntryDefinitionId=definition.Id};
-        string oldPrefab=Path.Combine(root,"true-v12.floatprefab");await prefabStore.SaveAsync(oldPrefab,oldPackage,assets);
-        await Edit(oldPrefab,"manifest.json",n=>n["Version"]=12);await Edit(oldPrefab,"prefab.json",n=>n["Version"]=12);
-        check(JsonSerializer.Serialize((await prefabStore.LoadAsync(oldPrefab)).Package)==JsonSerializer.Serialize(oldPackage),"true v12 prefab explicitly upgrades without resetting shared graph contents");
+        string oldPrefab=Path.Combine(root,"true-v19.floatprefab");await prefabStore.SaveAsync(oldPrefab,oldPackage,assets);
+        await Edit(oldPrefab,"manifest.json",n=>n["Version"]=19);await Edit(oldPrefab,"prefab.json",n=>n["Version"]=19);
+        check(JsonSerializer.Serialize((await prefabStore.LoadAsync(oldPrefab)).Package)==JsonSerializer.Serialize(oldPackage),"true v19 prefab explicitly upgrades without resetting shared graph contents");
         oldDocument.Version=12;oldDocument.Definitions[0].Graph.Elements[0].Presentation=new();
         bool saveRejected=false;try{await store.SaveAsync(path,oldDocument,assets);}catch(InvalidDataException){saveRejected=true;}
         check(saveRejected&&JsonSerializer.Serialize(document)==before,"typed legacy scene cannot publish a hidden new configuration before save upgrade");

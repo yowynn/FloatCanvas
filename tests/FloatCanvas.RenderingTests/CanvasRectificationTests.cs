@@ -41,7 +41,7 @@ internal static class CanvasRectificationTests
         document.Elements.Add(new() { Kind = ElementKind.Rectangle, Width = 80, Height = 40, Transform = Affine2D.Translation(300, 300), Style = new() { Fill = 0xFF0055FF } });
         using var renderer = new SceneRenderer(); var assets = new AssetLibrary();
         using var before = SKBitmap.Decode(renderer.ExportPng(document, assets));
-        CanvasGeometryMigration.UpgradeLegacy(document.Canvas);
+        CanvasProjectionGeometry.InitializePlane(document.Canvas);
         using var after = SKBitmap.Decode(renderer.ExportPng(document, assets));
         check("legacy geometry adoption reproduces the exact rendered grid and content pixels", before.Pixels.SequenceEqual(after.Pixels));
         var matrixBefore = document.Canvas.Projection.Matrix; document.Canvas.Grid.PlaneCellSize = 23; document.Canvas.Grid.PlaneOrigin = new(100, 200);

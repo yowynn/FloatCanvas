@@ -21,7 +21,7 @@ internal sealed class ToolPresetLibrary
 {
     private sealed class State
     {
-        public int Version { get; set; } = 2;
+        public int Version { get; set; } = 3;
         public List<ToolPreset> Presets { get; set; } = [];
     }
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
@@ -40,7 +40,7 @@ internal sealed class ToolPresetLibrary
         try
         {
             var state = compatibility.Read<State>(JsonOptions);
-            if (state is null || state.Version is not (1 or 2) || state.Presets is null || state.Presets.Count > 1000 ||
+            if (state is null || state.Version is < 1 or > 3 || state.Presets is null || state.Presets.Count > 1000 ||
                 state.Presets.Any(p => p is null || p.Id is not { Length: > 5 and <= 80 } || !p.Id.StartsWith("user-", StringComparison.Ordinal) ||
                     !ValidName(p.Name) || p.Parameters is null || !p.Parameters.IsValid(allowUnsupportedAppearance: true)) || state.Presets.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != state.Presets.Count)
                 throw new InvalidDataException(L.Get("Preset.InvalidLibrary"));
@@ -203,6 +203,10 @@ internal sealed class ToolPresetLibrary
         Add("text", "Text", EditorTool.Text);
         Add("text-body", "TextBody", EditorTool.Text, p => { p.Style.Foreground = 0xFF252525; p.Style.FontSize = 24; });
         Add("text-label", "TextLabel", EditorTool.Text, p => { p.Style.Foreground = 0xFF2383E2; p.Style.FontSize = 28; p.Style.TextAlignment = TextAlignment.Center; });
+        Add("text-outlined", "TextOutlined", EditorTool.Text, p =>
+        { p.Style.PrimaryColor = 0xFFFFFFFF; ElementAppearance.SetVariant(p.Style, ElementKind.Text, ElementAppearance.TextOutline); });
+        Add("text-tag", "TextTag", EditorTool.Text, p =>
+        { p.Style.Variant = ElementAppearance.TextLabel; p.Style.PrimaryColor = BuiltInColors.Blue; p.Style.FontSize = 28; });
         Add("number", "Number", EditorTool.Number);
         Add("number-outline", "NumberOutline", EditorTool.Number, p => { p.Style.Variant = ElementAppearance.NumberOutline; p.Style.Foreground = ColorLibrary.ForegroundRed; p.Style.Background = 0; p.Style.StrokeWidth = 3; p.Style.FontSize = 56; });
         Add("number-compact", "NumberCompact", EditorTool.Number, p => { p.Style.Foreground = 0xFF252525; p.Style.FontSize = 36; });
