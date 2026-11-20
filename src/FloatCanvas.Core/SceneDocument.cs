@@ -11,7 +11,8 @@ public enum LayerOrder { Forward, Backward, Front, Back }
 public enum ArrowHeadStyle { FilledTriangle, Open, Diamond, None }
 public enum StrokePattern { Solid, Dashed, Dotted, DashDot }
 public enum HighlighterTip { Round, Flat }
-public enum SymbolKind { Triangle, Star, Heart, Check, Cross, Diamond, Pentagon, Hexagon, SpeechBubble }
+public enum SymbolKind { Triangle, Star, Heart, Check, Cross, Diamond, Pentagon, Hexagon, SpeechBubble,
+    Plus, Minus, Arrow, DoubleChevron, Lightning, Exclamation, Question, LocationPin, Ring, Custom }
 
 public sealed class ElementStyle
 {
@@ -99,6 +100,7 @@ public sealed class CanvasElement
     /// <summary>Local pixels; null preserves the legacy rounded rectangle's 20 percent radius.</summary>
     public double? CornerRadius { get; set; }
     public SymbolKind Symbol { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SymbolShape? CustomSymbol { get; set; }
     public Guid? GroupId { get; set; }
     public Affine2D Transform { get; set; } = Affine2D.Identity;
     /// <summary>Optional local placement applied before the ordinary editable affine transform.</summary>

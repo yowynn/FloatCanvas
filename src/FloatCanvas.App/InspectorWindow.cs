@@ -47,7 +47,9 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private readonly SegmentedChoice appearanceStyle = new();
     private readonly SegmentedChoice highlighterTip = new();
     private readonly SegmentedChoice linePathMode = new();
-    private (ElementKind Kind, SymbolKind Symbol)? colorStyleContext;
+    private ElementKind? colorStyleContext;
+    private Controls.ComboBoxItem? customSymbolItem;
+    private SymbolShape? customSymbolPreview;
     private readonly Controls.ComboBox fontPicker = ToolOptionPreviews.FontPicker();
     private readonly SegmentedChoice alignment = new(), arrowStyle = new(), startArrow = new(), endArrow = new(), strokePattern = new(), placement = new();
     private readonly Controls.CheckBox preservePlacementAppearance = new();
@@ -132,22 +134,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         propertyPanel.Children.Add(FieldPair("HighlighterInkContrast", L.Get("Highlighter.InkContrast"), null, null));
         propertyPanel.Children.Add(FieldPair("StrokeWidth", L.Get("Inspector.StrokeWidth"), null, null));
         propertyPanel.Children.Add(FieldPair("CornerRadius", L.Get("Inspector.CornerRadius"), null, null));
-        foreach (var value in Enum.GetValues<SymbolKind>())
-        {
-            var points = SymbolGeometry.Outline(value, 16, 16);
-            var geometry = new Media.StreamGeometry();
-            using (var context = geometry.Open())
-            {
-                context.BeginFigure(new(points[0].X, points[0].Y), true, true);
-                context.PolyLineTo(points.Skip(1).Select(p => new Wpf.Point(p.X, p.Y)).ToArray(), true, false);
-            }
-            geometry.Freeze();
-            var icon = new System.Windows.Shapes.Path { Data = geometry, Width = 16, Height = 16, Stretch = Media.Stretch.Uniform };
-            icon.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "CanvasText");
-            var option = new Controls.StackPanel { Orientation = Controls.Orientation.Horizontal };
-            option.Children.Add(icon); option.Children.Add(new Controls.TextBlock { Text = L.Get("Symbol." + value), Margin = new(8, 0, 0, 0) });
-            symbolChoice.Items.Add(new Controls.ComboBoxItem { Content = option, Tag = value });
-        }
+        foreach (var kind in SymbolGeometry.BuiltIns) symbolChoice.Items.Add(SymbolIcon.Option(kind));
         Automation.AutomationProperties.SetName(symbolChoice, L.Get("ToolOptions.Symbols"));
         symbolChoice.SelectionChanged += (_, _) => { if (!refreshing && symbolChoice.SelectedValue is SymbolKind) ChangeField("Symbol"); };
         var symbolRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("ToolOptions.Symbols")), symbolChoice);
@@ -457,9 +444,9 @@ internal sealed partial class InspectorWindow : Wpf.Window
             {
                 if (element is not null)
                 {
-                    var context = (element.Kind, element.Symbol);
+                    var context = element.Kind;
                     if (colorStyleContext != context)
-                    { SegmentedChoicePreviews.UpdateColorStyle(linkColors, element.Kind, element.Symbol); colorStyleContext = context; }
+                    { SegmentedChoicePreviews.UpdateColorStyle(linkColors, element.Kind); colorStyleContext = context; }
                 }
                 linkColors.SelectedValue = selected.Select(ShapeChoice).Distinct().Count() > 1 ? null : element is null ? null : ShapeChoice(element);
             }
@@ -485,7 +472,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (IsFieldVisible("HighlighterTip")) highlighterTip.SelectedIndex = (int)element.Style.HighlighterTip;
             SetField("HighlighterTipAngle", element.Style.HighlighterTipAngle);
             SetField("HighlighterInkContrast", 100 * element.Style.HighlighterInkContrast);
-            if (IsFieldVisible("Symbol")) symbolChoice.SelectedValue = PropertyValue(element, "Symbol");
+            if (IsFieldVisible("Symbol"))
+            {
+                RefreshCustomSymbolChoice(selected);
+                symbolChoice.SelectedValue = PropertyValue(element, "Symbol");
+            }
             if (IsFieldVisible("WindowSourceFit")) windowSourceFit.SelectedValue = element.WindowSource!.Fit;
             if (IsFieldVisible("EffectSelection")) RefreshEffectChoices(element);
             SetField("CornerRadius", ElementGeometry.CornerRadius(element));
@@ -646,7 +637,6 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if(changedKey=="Symbol")
             {
                 SetPropertyVisibility(selected);
-                SegmentedChoicePreviews.UpdateColorStyle(linkColors, selected[0].Kind, selected[0].Symbol);
                 symbolChoice.SelectedValue = PropertyValue(selected[0], "Symbol");
             }
             foreach (var (key, color) in colorFields)
@@ -709,8 +699,13 @@ internal sealed partial class InspectorWindow : Wpf.Window
         }
         if (dirtyFields.Contains("EffectStrength") && SelectedEffect(edited) is { } effect)
             effect.Amount = Number("EffectStrength", L.Get("ToolOptions.EffectStrength"), .01, 1024);
-        if (dirtyFields.Contains("Symbol") && symbolChoice.SelectedValue is SymbolKind symbol)
-        { edited.Kind = ElementKind.Symbol; edited.Symbol = symbol; }
+        if (dirtyFields.Contains("Symbol") && symbolChoice.SelectedValue is SymbolKind symbol &&
+            (source.Kind != ElementKind.Symbol || source.Symbol != symbol) && (symbol != SymbolKind.Custom || source.CustomSymbol is not null))
+        {
+            edited.Kind = ElementKind.Symbol; edited.Symbol = symbol;
+            var shift = SymbolGeometry.FitToBox(edited, ElementGeometry.StrokedLocalBounds(source, false));
+            ShiftLocalFrame(source, edited, shift);
+        }
         if (dirtyFields.Contains("WindowSourceFit") && edited.WindowSource is { } windowSource && windowSourceFit.SelectedValue is WindowSourceFit fit)
             windowSource.Fit = fit;
         if (source.Kind is ElementKind.Arrow or ElementKind.DoubleArrow)
@@ -767,22 +762,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         {
             if (dirtyFields.Contains("Presentation.KeyboardLayout") && PresentationFrameLayout.ReframeKeyboard(edited, source, out var shift))
             {
-                var translation = Projective2D.FromAffine(Affine2D.Translation(shift.X, shift.Y));
-                if (source.IsBillboard)
-                {
-                    var graph = new SceneGraph(getSession().Document);
-                    bool withinCard = hasSharedCardContext() || graph.ScopeContainerPlacement(source.GroupId).Surface is not null;
-                    var world = withinCard ? source.Clone() : graph.ToWorld(source);
-                    var mapping = CanvasMapping.Create(withinCard ? new SceneDocument() : getSession().Document, getSession().ActiveRootCanvas);
-                    var placement = mapping.ElementToScreen(world).Compose(translation);
-                    var resized = withinCard ? edited.Clone() : graph.ToWorld(edited);
-                    if (!BillboardGeometry.TryEqualDepthLine(mapping, mapping.ToScreen(world.BillboardAnchor), out var depth) ||
-                        !BillboardGeometry.TryPlaceFromScreen(resized, mapping, depth, placement))
-                        throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
-                    EditorSession.CopyPlacement(edited, withinCard ? resized : graph.ToLocal(resized, source.GroupId));
-                }
-                else if (source.ProjectivePlacement is { } projection) edited.ProjectivePlacement = projection.Compose(translation);
-                else edited.Transform = edited.Transform.Compose(Affine2D.Translation(shift.X, shift.Y));
+                ShiftLocalFrame(source, edited, shift);
             }
             else
             {
@@ -1409,6 +1389,26 @@ internal sealed partial class InspectorWindow : Wpf.Window
     }
     private static RectD PropertyBounds(CanvasElement element) => ElementGeometry.Bounds(element, includeStroke: element.Kind != ElementKind.Image);
 
+    private void ShiftLocalFrame(CanvasElement source, CanvasElement edited, PointD shift)
+    {
+        var translation = Projective2D.FromAffine(Affine2D.Translation(shift.X, shift.Y));
+        if (source.IsBillboard)
+        {
+            var graph = new SceneGraph(getSession().Document);
+            bool withinCard = hasSharedCardContext() || graph.ScopeContainerPlacement(source.GroupId).Surface is not null;
+            var world = withinCard ? source.Clone() : graph.ToWorld(source);
+            var mapping = CanvasMapping.Create(withinCard ? new SceneDocument() : getSession().Document, getSession().ActiveRootCanvas);
+            var placement = mapping.ElementToScreen(world).Compose(translation);
+            var resized = withinCard ? edited.Clone() : graph.ToWorld(edited);
+            if (!BillboardGeometry.TryEqualDepthLine(mapping, mapping.ToScreen(world.BillboardAnchor), out var depth) ||
+                !BillboardGeometry.TryPlaceFromScreen(resized, mapping, depth, placement))
+                throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
+            EditorSession.CopyPlacement(edited, withinCard ? resized : graph.ToLocal(resized, source.GroupId));
+        }
+        else if (source.ProjectivePlacement is { } projection) edited.ProjectivePlacement = projection.Compose(translation);
+        else edited.Transform = edited.Transform.Compose(Affine2D.Translation(shift.X, shift.Y));
+    }
+
     private static PointD GeometricSize(CanvasElement element)
     {
         if (!element.IsBillboard&&element.ProjectivePlacement is not null)
@@ -1416,7 +1416,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
             var bounds = ElementGeometry.Bounds(element, includeStroke: false);
             return new(bounds.Width, bounds.Height);
         }
-        var local = ElementGeometry.LocalBounds(element); var t = element.Transform;
+        var local = element.Kind == ElementKind.Symbol ? ElementGeometry.StrokedLocalBounds(element, false) : ElementGeometry.LocalBounds(element);
+        var t = element.Transform;
         return new(local.Width * Math.Sqrt(t.M11 * t.M11 + t.M21 * t.M21), local.Height * Math.Sqrt(t.M12 * t.M12 + t.M22 * t.M22));
     }
 
@@ -1446,6 +1447,19 @@ internal sealed partial class InspectorWindow : Wpf.Window
         return Math.Atan2(edge.Y, edge.X) * 180 / Math.PI;
     }
 
+    private void RefreshCustomSymbolChoice(CanvasElement[] selected)
+    {
+        bool eligible = selected.Length > 0 && selected.All(e => e.CustomSymbol is not null);
+        var first = eligible ? selected[0].CustomSymbol : null;
+        // Multiple saved outlines share the Custom command, even when their artwork differs.
+        var preview = eligible && selected.All(e => e.CustomSymbol!.Fingerprint == first!.Fingerprint) ? first : null;
+        if (eligible == (customSymbolItem is not null) && preview == customSymbolPreview) return;
+        if (customSymbolItem is not null) symbolChoice.Items.Remove(customSymbolItem);
+        customSymbolPreview = preview;
+        customSymbolItem = eligible ? SymbolIcon.Option(SymbolKind.Custom, preview) : null;
+        if (customSymbolItem is not null) symbolChoice.Items.Add(customSymbolItem);
+    }
+
     private static double Angle(Affine2D transform) => Math.Atan2(transform.M21, transform.M11) * 180 / Math.PI;
     internal static string ElementName(CanvasElement element)
     {
@@ -1462,7 +1476,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         {
             ElementKind.Freehand => L.Get("Editor.ElementKind.Freehand"), ElementKind.Highlighter => L.Get("Editor.ElementKind.Highlighter"), ElementKind.Line => L.Get("Editor.ElementKind.Line"), ElementKind.Arrow => L.Get("Editor.ElementKind.Arrow"),
             ElementKind.DoubleArrow => L.Get("Editor.ElementKind.DoubleArrow"), ElementKind.Rectangle => L.Get("Editor.ElementKind.Rectangle"), ElementKind.RoundedRectangle => L.Get("Editor.ElementKind.RoundedRectangle"),
-            ElementKind.Ellipse => L.Get("Editor.ElementKind.Ellipse"), ElementKind.Triangle => L.Get("Editor.ElementKind.Triangle"), ElementKind.Symbol => L.Get("Editor.ElementKind.Symbol"), ElementKind.Text => L.Get("Editor.ElementKind.Text"), ElementKind.Number => L.Get("Editor.ElementKind.Number"), ElementKind.Image => L.Get("Editor.ElementKind.Image"), ElementKind.LivePixelate => L.Get("Feedback4.Effect.LivePixelate"), ElementKind.LiveBlur => L.Get("Editor.ElementKind.LiveBlur"), _ => L.Get("Editor.ElementKind.Unknown")
+            ElementKind.Ellipse => L.Get("Editor.ElementKind.Ellipse"), ElementKind.Triangle => L.Get("Editor.ElementKind.Triangle"), ElementKind.Symbol => L.Get(element.Symbol == SymbolKind.Custom ? "Symbol.CustomLayer" : "Symbol." + element.Symbol), ElementKind.Text => L.Get("Editor.ElementKind.Text"), ElementKind.Number => L.Get("Editor.ElementKind.Number"), ElementKind.Image => L.Get("Editor.ElementKind.Image"), ElementKind.LivePixelate => L.Get("Feedback4.Effect.LivePixelate"), ElementKind.LiveBlur => L.Get("Editor.ElementKind.LiveBlur"), _ => L.Get("Editor.ElementKind.Unknown")
         };
         if (element.Kind == ElementKind.Number)
         {

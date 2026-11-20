@@ -27,6 +27,7 @@ public static class SceneLimits
             throw new InvalidDataException(L.Get("Scene.PathCapacityExceeded"));
         if (elements.Any(element => element.Style is null || !AppearanceRegistry.IsValidColorRoles(element.Style.AdditionalColors) ||
             !ElementAppearance.IsValidVariant(element.Kind, element.Style.Variant) || !Enum.IsDefined(element.NumberTextSizeMode) ||
+            !SymbolGeometry.IsValid(element.Symbol, element.CustomSymbol) || element.CustomSymbol is not null && element.Kind != ElementKind.Symbol ||
             !NumberSequence.IsValidMarker(element) || !PresentationLimits.IsValidElement(element) || !WindowSourceLimits.IsValidElement(element)))
             throw new InvalidDataException(L.Get("Scene.InvalidElementStyle"));
         if (document.Background?.WindowSource is not null || previews.Any(preview => preview.Background?.WindowSource is not null)) throw new InvalidDataException("A canvas background cannot be a live window source.");
@@ -35,7 +36,7 @@ public static class SceneLimits
         long upperBound = 4096L + document.RootCanvasAssignments.Count * 96L + (document.Canvas?.Projection?.Quad?.Count ?? 0) * 96L;
         upperBound += previews.Sum(preview => 4096L + (preview.Canvas?.Projection?.Quad?.Count ?? 0) * 96L);
         foreach (var element in elements)
-            upperBound += 2048L + (element.Points.Count + (element.ImageFrame?.Count ?? 0)) * 96L + (element.Effects?.Count ?? 0) * 512L +
+            upperBound += 2048L + (element.CustomSymbol?.VertexCount ?? 0) * 256L + (element.Points.Count + (element.ImageFrame?.Count ?? 0)) * 96L + (element.Effects?.Count ?? 0) * 512L +
                 6L * ((element.Name?.Length ?? 0) + (element.Text?.Length ?? 0) + (element.AssetId?.Length ?? 0) + (element.Style?.FontFamily?.Length ?? 0)) +
                 (element.Style?.AdditionalColors.Sum(pair => 64L + pair.Key.Length * 6L) ?? 0) + (element.Presentation is null ? 0 : 1024L) +
                 WindowSourceLimits.EstimateBytes(element.WindowSource) * 3L;

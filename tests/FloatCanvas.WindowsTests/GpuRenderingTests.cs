@@ -89,6 +89,20 @@ internal static class GpuRenderingTests
         check(blueDigits > 75 && knockedGpu[(50 * 240 + 132) * 4] == 255 && knockedGpu[(50 * 240 + 142) * 4 + 2] == 255 &&
             materials.MeanChannelDifference < 2, "GPU readback reveals the lower layer through transparent digits and a positive-width clear stroke");
 
+        var symbolScene = new SceneDocument { Viewport = new(0, 0, 120, 120), Elements = [
+            new() { Kind = ElementKind.Symbol, Symbol = SymbolKind.Custom, CustomSymbol = SymbolGeometry.Shape(SymbolKind.Ring),
+                Width = 100, Height = 100, Transform = Affine2D.Translation(10, 10),
+                Style = new() { Variant = ElementAppearance.ShapeIndependent, PrimaryColor = 0xFFFF0000, SecondaryColor = 0xFF2266AA, StrokeWidth = 4 } }] };
+        foreach (var pattern in Enum.GetValues<StrokePattern>())
+        {
+            symbolScene.Elements[0].Style.StrokePattern = pattern;
+            var symbolCpu = RenderPixels(null, symbolScene, assets, 120, 120, null, TimeSpan.Zero, out _);
+            var hw = RenderPixels(gpu, symbolScene, assets, 120, 120, null, TimeSpan.Zero, out _);
+            var agreement = Compare("custom ring " + pattern, symbolCpu, hw); report.Pixels.Add(agreement);
+            check(hw[(60 * 120 + 60) * 4 + 3] == 0 && hw[(60 * 120 + 99) * 4 + 3] == 255 &&
+                agreement.MeanChannelDifference < 2, "GPU preserves the custom ring hole and material for " + pattern);
+        }
+
         var tilted = new SceneDocument { Viewport = new(0, 0, 240, 200) };
         tilted.Elements =
         [

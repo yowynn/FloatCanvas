@@ -40,7 +40,7 @@ internal static class EditablePresetRenderingTests
         rectangle.CornerRadius = 12;
         check("legacy rounded rectangle pixels equal explicit twenty percent radius", oldDefault.AsSpan().SequenceEqual(renderer.ExportPng(document, assets, true)));
 
-        foreach (var symbol in Enum.GetValues<SymbolKind>())
+        foreach (var symbol in SymbolGeometry.BuiltIns)
         {
             var item = new CanvasElement { Kind = ElementKind.Symbol, Symbol = symbol, Width = 100, Height = 100,
                 Transform = Affine2D.Translation(10, 10), Style = new() { Stroke = 0xFFCC2266, StrokeWidth = 2 } };

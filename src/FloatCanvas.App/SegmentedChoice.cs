@@ -125,6 +125,7 @@ internal sealed class SegmentedChoice : Grid
             var content = (StackPanel)item.Content;
             ((TextBlock)content.Children[1]).Visibility = IconOnly ? Visibility.Collapsed : Visibility.Visible;
             content.Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal;
+            item.Padding = vertical ? new(0, 3, 0, 3) : new(2, 3, 2, 3);
             ((FrameworkElement)content.Children[0]).Margin = IconOnly ? new(0) : vertical ? new(0, 0, 0, 2) : new(0, 0, 5, 0);
             ((TextBlock)content.Children[1]).TextAlignment = vertical ? System.Windows.TextAlignment.Center : System.Windows.TextAlignment.Left;
         }

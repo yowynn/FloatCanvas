@@ -197,7 +197,7 @@ internal static class InspectorTests
             {
                 FloatCanvas.Localization.AppText.Initialize(language);
                 assert(language + " symbol layers and properties have a recognized name", Enum.GetValues<SymbolKind>().All(symbol =>
-                    InspectorWindow.ElementName(new() { Kind = ElementKind.Symbol, Symbol = symbol }) == FloatCanvas.Localization.AppText.Get("Editor.ElementKind.Symbol")));
+                    InspectorWindow.ElementName(new() { Kind = ElementKind.Symbol, Symbol = symbol }) == FloatCanvas.Localization.AppText.Get(symbol == SymbolKind.Custom ? "Symbol.CustomLayer" : "Symbol." + symbol)));
             }
         }
         finally { FloatCanvas.Localization.AppText.Initialize(preference); }

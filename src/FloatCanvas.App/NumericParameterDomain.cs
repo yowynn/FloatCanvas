@@ -15,6 +15,7 @@ internal readonly record struct NumericParameterDomain(double Minimum, double Ma
         "NumberStep" => new(-999999, 999999, -10, 10, Integer: true),
         "NextNumber" or "SequenceFirst" => new(int.MinValue, int.MaxValue, 1, 100, Integer: true),
         "DefaultWidth" or "DefaultHeight" => new(1, 1000000, 1, 600),
+        "SymbolSize" => new(1, 1000000, 16, 256),
         "ArrowHeadSize" => new(0, 512, 0, 64),
         "CornerRadius" => new(0, double.MaxValue, 0, 64),
         "EffectStrength" => new(double.Epsilon, 1024, .1, 64, .1),

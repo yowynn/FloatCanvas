@@ -16,6 +16,7 @@ internal sealed class ToolParameters
         {
             var previousKind = AppearanceKind; tool = value;
             if (value != EditorTool.Number) Numbering = null;
+            if (value != EditorTool.Symbol) { CustomSymbol = null; if (Symbol == SymbolKind.Custom) Symbol = SymbolKind.Triangle; }
             if (value == EditorTool.Presentation) Presentation ??= new();
             if (value == EditorTool.PointerPresentation) PointerPresentation ??= new();
             if (Style is { } style && previousKind is { } previous && AppearanceRegistry.Find(previous, style.Variant) is not null &&
@@ -26,11 +27,21 @@ internal sealed class ToolParameters
     public ElementStyle Style { get; set; } = new() { Foreground = ColorLibrary.ForegroundRed, Variant = ElementAppearance.Default };
     public double? CornerRadius { get; set; }
     public SymbolKind Symbol { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SymbolShape? CustomSymbol { get; set; }
     public bool ConstrainAspect { get; set; }
     public double EffectStrength { get; set; } = 12;
     public string Emoji { get; set; } = "😀";
     public double DefaultWidth { get; set; } = 160;
     public double DefaultHeight { get; set; } = 100;
+    internal double SymbolSize => Math.Max(DefaultWidth, DefaultHeight);
+    internal void SetSymbolSize(double edge)
+    {
+        var size = SymbolGeometry.Shape(Symbol, CustomSymbol).SizeAtLongEdge(edge);
+        // The shared preset dimensions start at 1 px. Placement computes the exact
+        // short edge from the artwork, including subpixel edges on very small symbols.
+        DefaultWidth = Math.Max(1, size.X); DefaultHeight = Math.Max(1, size.Y);
+        ConstrainAspect = true;
+    }
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NumberSequenceSettings? Numbering { get; set; }
@@ -43,12 +54,14 @@ internal sealed class ToolParameters
 
     // Toolbar state tracks the immutable sequence separately, and a thumbnail
     // depends on only one resolved label. Avoid serializing a long list on each frame.
-    internal string FingerprintWithoutNumbering()
+    internal string FingerprintWithoutNumbering() => Fingerprint(includeNumbering: false);
+    internal string Fingerprint(bool includeNumbering = true)
     {
-        if (Numbering is null) return System.Text.Json.JsonSerializer.Serialize(this);
+        if (CustomSymbol is null && (includeNumbering || Numbering is null)) return System.Text.Json.JsonSerializer.Serialize(this);
         var snapshot = (ToolParameters)MemberwiseClone();
-        snapshot.Numbering = null;
-        return System.Text.Json.JsonSerializer.Serialize(snapshot);
+        if (!includeNumbering) snapshot.Numbering = null;
+        snapshot.CustomSymbol = null;
+        return System.Text.Json.JsonSerializer.Serialize(snapshot) + CustomSymbol?.Fingerprint;
     }
 
     public ToolParameters Clone()
@@ -64,6 +77,8 @@ internal sealed class ToolParameters
     internal void NormalizeForCreation()
     {
         NormalizeAppearance();
+        if (Tool == EditorTool.Symbol && DefaultWidth > 0 && DefaultHeight > 0 && SymbolGeometry.IsValid(Symbol, CustomSymbol))
+            SetSymbolSize(SymbolSize);
         if (Style.Opacity is >= 0 and <= 1) Style.Opacity = 1;
         if (Tool == EditorTool.Highlighter && Style.StrokeWidth is >= 0 and < 16) Style.StrokeWidth = 16;
     }
@@ -82,6 +97,7 @@ internal sealed class ToolParameters
 
     internal bool IsValid(bool allowUnsupportedAppearance = false) => Enum.IsDefined(Tool) && Style is { } s && Enum.IsDefined(Symbol) && Emoji is { Length: > 0 and <= 32 } &&
         NumericParameterDomain.ForTool(nameof(NumberStart)).Contains(NumberStart) && NumericParameterDomain.ForTool(nameof(NumberStep)).Contains(NumberStep) &&
+        SymbolGeometry.IsValid(Symbol, CustomSymbol) && (CustomSymbol is null || Tool == EditorTool.Symbol) &&
         Enum.IsDefined(NumberTextSizeMode) && (Numbering is null || Tool == EditorTool.Number && Numbering.IsValid()) &&
         (Tool != EditorTool.Presentation || Presentation is not null) && (Presentation is null || Presentation.IsValid()) &&
         (Tool != EditorTool.PointerPresentation || PointerPresentation is not null) && (PointerPresentation is null || PointerPresentation.IsValid()) &&

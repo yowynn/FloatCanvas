@@ -206,8 +206,8 @@ internal static class ToolOptionsPanelTests
 
         controller.Tool = EditorTool.Symbol; panel.PrepareForShow();
         var symbols = Field<System.Windows.Controls.Primitives.UniformGrid>(panel, "symbolGallery").Children.OfType<Controls.Button>().ToArray();
-        check("symbol gallery contains all nine editable geometric symbols", Shown(rows, "Symbols") && symbols.Length == 9 &&
-            symbols.Select(button => button.Tag).OfType<SymbolKind>().Order().SequenceEqual(Enum.GetValues<SymbolKind>().Order()));
+        check("symbol gallery contains all eighteen built-in symbols", Shown(rows, "Symbols") && symbols.Length == 18 &&
+            symbols.Select(button => button.Tag).OfType<SymbolKind>().Order().SequenceEqual(SymbolGeometry.BuiltIns.Order()));
         int before = changes; Click(symbols.Single(button => Equals(button.Tag, SymbolKind.SpeechBubble)));
         check("symbol gallery choice changes the active symbol once", controller.Symbol == SymbolKind.SpeechBubble && changes == before + 1);
         controller.Tool = EditorTool.Emoji; panel.PrepareForShow();
@@ -282,6 +282,12 @@ internal static class ToolOptionsPanelTests
         {
             controller.Tool = tool;
             panel.PrepareForShow();
+            if (controller.Tool == EditorTool.Symbol)
+            {
+                check(tool + " has one size directly before the shape picker", Shown(rows,"LinkColors","Colors","SymbolSize","Symbols") &&
+                    rows["Size"].Visibility == Wpf.Visibility.Collapsed && Controls.Grid.GetRow(rows["SymbolSize"]) + 1 == Controls.Grid.GetRow(rows["Symbols"]));
+                continue;
+            }
             var size = rows["Size"];
             int sizeRow = Controls.Grid.GetRow(size);
             check(tool + " shows color style and colors first, and default dimensions last",

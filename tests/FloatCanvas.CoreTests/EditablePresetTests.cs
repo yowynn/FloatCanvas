@@ -54,7 +54,7 @@ internal static class EditablePresetTests
         check(!ElementGeometry.HitTest(rectangle, new(1, 1), 0) && ElementGeometry.HitTest(rectangle, new(50, 30), 0), "custom radius shares real rounded hit contour");
         rectangle.CornerRadius = 1000;
         check(ElementGeometry.CornerRadius(rectangle) == 30, "corner radius clamps geometrically without mutating requested radius");
-        foreach (var symbol in Enum.GetValues<SymbolKind>())
+        foreach (var symbol in SymbolGeometry.BuiltIns)
         {
             var element = new CanvasElement { Kind = ElementKind.Symbol, Symbol = symbol, Width = 120, Height = 100, Style = new() { Fill = 0xFF44AA88 } };
             var outline = ElementGeometry.Outline(element);

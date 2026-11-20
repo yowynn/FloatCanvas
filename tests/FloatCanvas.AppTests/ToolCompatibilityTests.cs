@@ -53,8 +53,8 @@ internal static class ToolCompatibilityTests
         Gesture(controller, new(20, 30), new(140, 110));
         var triangle = session.Document.Elements.Single(); var outline = ElementGeometry.Outline(triangle);
         double side = outline[0].DistanceTo(outline[1]);
-        check("the upgraded preset draws an editable symbol using the requested nonuniform dimensions", triangle.Kind == ElementKind.Symbol && triangle.Symbol == SymbolKind.Triangle &&
-            Math.Abs(outline.Max(p => p.X) - outline.Min(p => p.X) - 120) < 1e-8 && Math.Abs(outline[1].Y - outline[0].Y - 80 * Math.Sqrt(3) / 2) < 1e-8 &&
+        check("the upgraded preset draws an editable equilateral triangle using the current symbol rules", triangle.Kind == ElementKind.Symbol && triangle.Symbol == SymbolKind.Triangle &&
+            Math.Abs(outline.Max(p => p.X) - outline.Min(p => p.X) - 120) < 1e-8 && Math.Abs(outline[1].Y - outline[0].Y - 120 * Math.Sqrt(3) / 2) < 1e-8 &&
             session.UndoCount == 1 && session.Undo() && session.Redo());
 
         controller.Tool = EditorTool.Freehand; controller.Symbol = SymbolKind.Cross; controller.Tool = EditorTool.Triangle;

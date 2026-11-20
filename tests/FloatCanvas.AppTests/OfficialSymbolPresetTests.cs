@@ -22,8 +22,8 @@ internal static class OfficialSymbolPresetTests
         foreach (var preset in official)
         {
             var applied = library.Apply(preset.Id);
-            check(preset.Id + " declares and applies a 72 by 72 default independent of current dimensions",
-                preset.Parameters.DefaultWidth == 72 && preset.Parameters.DefaultHeight == 72 && applied.DefaultWidth == 72 && applied.DefaultHeight == 72);
+            check(preset.Id + " applies a 72 px long edge with the triangle's natural proportions",
+                preset.Parameters.SymbolSize == 72 && applied.DefaultWidth == 72 && Math.Abs(applied.DefaultHeight - 36 * Math.Sqrt(3)) < 1e-8);
             check(preset.Id + " restores complete symbol geometry and fixed style",
                 applied.Tool == EditorTool.Symbol && applied.Symbol == preset.Parameters.Symbol && applied.ConstrainAspect &&
                 applied.CornerRadius == preset.Parameters.CornerRadius && applied.EffectStrength == preset.Parameters.EffectStrength &&

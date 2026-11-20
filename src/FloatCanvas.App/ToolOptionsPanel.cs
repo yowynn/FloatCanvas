@@ -27,7 +27,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
     private readonly AspectRatioButton aspect = new();
     private readonly CheckBox aspectSwitch = new();
     private readonly SegmentedChoice linkColors = SegmentedChoicePreviews.ColorStyle();
-    private (EditorTool Tool, SymbolKind Symbol)? colorStyleContext;
+    private EditorTool? colorStyleContext;
     private readonly ComboBox fontFamily = ToolOptionPreviews.FontPicker();
     private readonly Grid parameterGrid = new();
     private readonly Grid parameterColumns = new();
@@ -167,6 +167,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
         AddNumberFormatRow();
         Number(parameterGrid, "DefaultWidth", L.Get("Inspector.Width"), (p, v) => p.DefaultWidth = v);
         Number(parameterGrid, "DefaultHeight", L.Get("Inspector.Height"), (p, v) => p.DefaultHeight = v);
+        Number(parameterGrid, "SymbolSize", L.Get("ToolOptions.Size"), (p, v) => p.SetSymbolSize(v));
         AddRow(parameterGrid, "FontFamily", L.Get("Inspector.FontFamily"), fontFamily);
         Picker(parameterGrid, "TextAlignment", L.Get("Inspector.TextAlignment"),
             [(L.Get("Inspector.AlignLeft"), FloatCanvas.Core.TextAlignment.Left), (L.Get("Inspector.AlignCenter"), FloatCanvas.Core.TextAlignment.Center),
@@ -212,18 +213,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             if (refreshing || linkColors.SelectedValue is not string variant) return;
             Change(p => p.Style.Variant = variant); Refresh();
         };
-        foreach (var symbol in Enum.GetValues<SymbolKind>())
-        {
-            var points = SymbolGeometry.Outline(symbol, 16, 16);
-            var geometry = new StreamGeometry();
-            using (var context = geometry.Open()) { context.BeginFigure(new(points[0].X, points[0].Y), true, true); context.PolyLineTo(points.Skip(1).Select(p => new Point(p.X, p.Y)).ToArray(), true, false); }
-            geometry.Freeze();
-            var icon = new System.Windows.Shapes.Path { Data = geometry, Width = 16, Height = 16, Stretch = Stretch.Uniform };
-            icon.SetResourceReference(System.Windows.Shapes.Path.FillProperty, "CanvasText");
-            var button = ActionButton(L.Get("Symbol." + symbol), () => Change(p => p.Symbol = symbol));
-            button.Content = icon; button.Tag = symbol; symbolGallery.Children.Add(button);
-        }
-        AddRow(parameterGrid, "Symbols", L.Get("ToolOptions.Symbols"), symbolGallery);
+        InitializeSymbolChoices();
         foreach (var emoji in EmojiArtwork.BuiltIn)
         {
             var button = ActionButton(emoji, () => Change(p => p.Emoji = emoji));
@@ -347,11 +337,13 @@ internal sealed partial class ToolOptionsPanel : UserControl
             Show("FontSize", text); Show("FontFamily", tool is EditorTool.Text or EditorTool.Number || presentation);
             RefreshNumberSequence(p);
             Show("NumberStart", tool == EditorTool.Number); Show("NumberStep", tool == EditorTool.Number); Show("NextNumber", tool == EditorTool.Number);
-            Show("DefaultWidth", shape); Show("DefaultHeight", shape);
+            bool pairedSize = shape && tool != EditorTool.Symbol;
+            Show("DefaultWidth", pairedSize); Show("DefaultHeight", pairedSize);
+            Show("SymbolSize", tool == EditorTool.Symbol);
             Show("StartArrowHead", line); Show("EndArrowHead", line); Show("ArrowHeadSize", line); Show("StrokePattern", shape ? shapeStroke : stroke);
             Show("LinePathMode", line);
             Show("CornerRadius", tool is EditorTool.Rectangle or EditorTool.RoundedRectangle);
-            Show("Size", shape); Show("Aspect", !shape && boxRegion && !presentation);
+            Show("Size", pairedSize); Show("Aspect", !shape && boxRegion && !presentation);
             Show("EffectStrength", tool is EditorTool.Blur or EditorTool.Pixelate);
             Show("TextAlignment", tool == EditorTool.Text);
             Show("Symbols", tool == EditorTool.Symbol); Show("Emoji", tool == EditorTool.Emoji);
@@ -375,8 +367,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             if (IsApplicable("Aspect")) aspectSwitch.IsChecked = p.ConstrainAspect;
             if (IsApplicable("LinkColors"))
             {
-                var context = (tool, p.Symbol);
-                if (colorStyleContext != context) { SegmentedChoicePreviews.UpdateColorStyle(linkColors, tool, p.Symbol); colorStyleContext = context; }
+                if (colorStyleContext != tool) { SegmentedChoicePreviews.UpdateColorStyle(linkColors, tool); colorStyleContext = tool; }
                 linkColors.SelectedValue = p.Style.Variant;
             }
             if (IsApplicable("StyleVariant"))
@@ -393,6 +384,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             SetNumber("StrokeWidth", tool == EditorTool.Highlighter ? Math.Max(16, p.Style.StrokeWidth) : p.Style.StrokeWidth); SetNumber("Opacity", p.Style.Opacity * 100); SetNumber("FontSize", p.Style.FontSize);
             SetNumber("EffectStrength", p.EffectStrength); SetNumber("CornerRadius", p.CornerRadius ?? 0); SetNumber("ArrowHeadSize", p.Style.ArrowHeadSize);
             SetNumber("DefaultWidth", p.DefaultWidth); SetNumber("DefaultHeight", p.DefaultHeight);
+            if (tool == EditorTool.Symbol) SetNumber("SymbolSize", p.SymbolSize);
             SetNumber("NumberStart", p.NumberStart); SetNumber("NumberStep", p.NumberStep); SetNumber("NextNumber", controller.Session.Document.NextNumber);
             if (tool == EditorTool.RoundedRectangle && p.CornerRadius is null) numericFields["CornerRadius"].ShowPlaceholder("—");
             SetPicker("StartArrowHead", p.Style.StartArrowHead ?? (tool == EditorTool.DoubleArrow ? p.Style.ArrowHeadStyle : ArrowHeadStyle.None));
@@ -403,7 +395,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
             SetNumber("HighlighterTipAngle", p.Style.HighlighterTipAngle);
             SetNumber("HighlighterInkContrast", 100 * p.Style.HighlighterInkContrast);
             SetPicker("TextAlignment", p.Style.TextAlignment);
-            if (IsApplicable("Symbols")) HighlightGallery(symbolGallery, p.Symbol);
+            if (IsApplicable("Symbols")) RefreshSymbolChoices();
             if (IsApplicable("Emoji")) HighlightGallery(emojiGallery, p.Emoji);
             if (IsApplicable("FontSize")) captions["FontSize"].Text = L.Get(tool is EditorTool.Emoji or EditorTool.Number ? "ToolOptions.Size" : "Inspector.FontSize");
             presets.PrepareForShow();
@@ -431,7 +423,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
         string[][] groups = [ ["PresentationRuntime"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["StyleVariant"], ["LinePathMode"],
             ["HighlighterTip"], ["HighlighterAngleRegion"], ["HighlighterInkContrast"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
             ["FontFamily"], ["FontSize"], ["NumberFormat"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
-            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Size"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
+            ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["SymbolSize"], ["Symbols"], ["Size"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
         if (controller.Tool == EditorTool.Presentation)
             groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"]];
         foreach (var group in groups)
@@ -461,6 +453,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
     internal void RefreshDocumentState()
     {
         if(!IsVisible){refreshPending=true;return;}
+        if (controller.Tool == EditorTool.Symbol) RefreshSymbolChoices();
         if (controller.Tool != EditorTool.Number) return;
         RefreshNumberReset();
         if (controller.Session.IsTransactionActive || numericFields["NextNumber"].IsKeyboardFocusWithin) return;
@@ -484,7 +477,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
                 if (!numericFields["DefaultWidth"].IsInteracting && !numericFields["DefaultWidth"].Input.IsKeyboardFocusWithin) SetNumber("DefaultWidth", next.DefaultWidth);
                 if (!numericFields["DefaultHeight"].IsInteracting && !numericFields["DefaultHeight"].Input.IsKeyboardFocusWithin) SetNumber("DefaultHeight", next.DefaultHeight);
             }
-            if (IsVisible && IsApplicable("Symbols")) HighlightGallery(symbolGallery, next.Symbol);
+            if (IsVisible && IsApplicable("Symbols")) RefreshSymbolChoices();
             if (IsVisible && IsApplicable("Emoji")) HighlightGallery(emojiGallery, next.Emoji);
             var previous = publishingNumericTool;
             if (numericPreview) publishingNumericTool = next.Tool;

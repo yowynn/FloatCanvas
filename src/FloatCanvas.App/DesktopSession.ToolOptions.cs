@@ -23,6 +23,7 @@ internal sealed partial class DesktopSession
         _editor.SmoothFreehand = _settings.SmoothFreehand;
         _toolOptionsPanel = new(_editor, _toolPresets, _colorLibrary, _toolStateStore);
         _toolOptionsPanel.FreehandSmoothingRequested += ToggleFreehandSmoothing;
+        _toolOptionsPanel.PrepareSelectedSymbol = session => ToolOptionsPanel.PrepareSelectionAsync(session, _renderer.AnimationTime, FreezePresentationCapture(session), CaptureWindowPackage);
         _toolOptionsPanel.CanvasContentFactory = EnsureCanvasToolOptions;
         ConfigurePresentationUi(_toolOptionsPanel);
         _toolOptionsFrame = new Border { Child = _toolOptionsPanel };

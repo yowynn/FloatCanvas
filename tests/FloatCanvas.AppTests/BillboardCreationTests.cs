@@ -41,7 +41,13 @@ internal static class BillboardCreationTests
         Send(editor,OverlayPointerKind.Down,new(100,100));Send(editor,OverlayPointerKind.Move,new(150,140));Send(editor,OverlayPointerKind.Move,new(200,180));
         var element=session.Document.Elements.Single();var mapping=CanvasMapping.Create(session.Document);
         check(tool+" preview uses billboard placement with fixed depth and a vertical guide",element.IsBillboard&&editor.VisibleBillboardDepthLine is not null&&editor.BillboardDrawingGuide is {} guide&&Near(guide.Center.X,guide.Anchor.X)&&Near(guide.Anchor.Y,300)&&mapping.TryGetDepthScale(element.BillboardAnchor,out double scale)&&Near(scale,depth.Scale));
-        if(tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Symbol)
+        if(tool == EditorTool.Symbol)
+        {
+            var natural=SymbolGeometry.Shape(element.Symbol).SizeAtLongEdge(100);
+            check("symbol billboard fits its natural silhouette to the screen drag",
+                Near(mapping.ProjectedBounds(element,false),new RectD(100,100,natural.X,natural.Y))&&element.Style.StrokeWidth==5);
+        }
+        else if(tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse)
             check(tool+" preview reverses screen dimensions while retaining logical stroke",Near(element.Width,100/depth.Scale)&&Near(element.Height,80/depth.Scale)&&element.Style.StrokeWidth==5&&Near(mapping.ProjectedBounds(element,false).Width,100)&&Near(mapping.ProjectedBounds(element,false).Height,80));
         if(tool is EditorTool.Freehand or EditorTool.Highlighter or EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow)
         {

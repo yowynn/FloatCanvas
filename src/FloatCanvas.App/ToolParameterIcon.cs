@@ -303,7 +303,9 @@ internal static class ToolParameterIcon
                 break;
             case EditorTool.Ellipse:element.Kind=ElementKind.Ellipse;break;
             case EditorTool.Symbol:case EditorTool.Triangle:
-                element.Kind=ElementKind.Symbol;element.Symbol=parameters.Tool==EditorTool.Triangle?SymbolKind.Triangle:parameters.Symbol;element.Width=32;element.Height=32;element.Transform=Affine2D.Translation(8,8);break;
+                element.Kind=ElementKind.Symbol;element.Symbol=parameters.Tool==EditorTool.Triangle?SymbolKind.Triangle:parameters.Symbol;
+                element.CustomSymbol = parameters.CustomSymbol;
+                element.Width=32;element.Height=32;element.Transform=Affine2D.Translation(8,8);break;
             case EditorTool.Text:
                 element.Kind = ElementKind.Text;
                 element.Text = "T";
@@ -325,7 +327,12 @@ internal static class ToolParameterIcon
                     .OfType<PolyLineSegment>().SelectMany(segment => segment.Points))).Select(point => new PointD(point.X * 2, point.Y * 2)).ToList();
                 break;
         }
-        if(parameters.Tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Symbol or EditorTool.Triangle)
+        if (element.Kind == ElementKind.Symbol)
+        {
+            var size = SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).SizeAtLongEdge(32);
+            SymbolGeometry.PlaceInBox(element, new((48 - size.X) / 2, (48 - size.Y) / 2, size.X, size.Y));
+        }
+        else if(parameters.Tool is EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse)
         {
             double scale=32/Math.Max(parameters.DefaultWidth,parameters.DefaultHeight);
             element.Width=parameters.DefaultWidth*scale;element.Height=parameters.DefaultHeight*scale;

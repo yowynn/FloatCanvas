@@ -185,7 +185,7 @@ public static class SceneValidation
         Require(element.Name is null || element.Name.Length <= EditorSession.MaximumLayerNameLength, L.Get("Layers.NameTooLong"));
         Require(Nonnegative(element.Width) && Nonnegative(element.Height), L.Get("Scene.InvalidElementSize"));
         Require(element.CornerRadius is null || Nonnegative(element.CornerRadius.Value), L.Get("Scene.InvalidElementSize"));
-        Require(Enum.IsDefined(element.Symbol), L.Get("Scene.InvalidElementKind"));
+        Require(SymbolGeometry.IsValid(element.Symbol, element.CustomSymbol) && (element.CustomSymbol is null || element.Kind == ElementKind.Symbol), L.Get("Scene.InvalidElementKind"));
         var t = element.Transform;
         Require(Point(element.BillboardAnchor) && double.IsFinite(element.BillboardHeight), L.Get("Scene.InvalidElementTransform"));
         Require(Finite(t.M11, t.M12, t.M21, t.M22, t.OffsetX, t.OffsetY) && t.TryInverse(out _), L.Get("Scene.InvalidElementTransform"));

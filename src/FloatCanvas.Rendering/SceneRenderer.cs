@@ -435,7 +435,20 @@ public sealed partial class SceneRenderer : IDisposable
             case ElementKind.Triangle:
                 builder.MoveTo(width / 2, 0); builder.LineTo(width, height); builder.LineTo(0, height); builder.Close(); break;
             case ElementKind.Symbol:
-                AddHead(builder, ElementGeometry.Outline(element), true); break;
+                builder.FillType = SKPathFillType.EvenOdd;
+                foreach (var contour in SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).Contours)
+                {
+                    builder.MoveTo((float)contour[0].X * width, (float)contour[0].Y * height);
+                    foreach (var v in contour.AsSpan()[1..])
+                    {
+                        if (v.Control1 is { } a && v.Control2 is { } b)
+                            builder.CubicTo((float)a.X * width, (float)a.Y * height, (float)b.X * width, (float)b.Y * height,
+                                (float)v.X * width, (float)v.Y * height);
+                        else builder.LineTo((float)v.X * width, (float)v.Y * height);
+                    }
+                    builder.Close();
+                }
+                break;
             default:
                 var points = ElementGeometry.IsLine(element.Kind) ? ElementGeometry.LineShaftPoints(element) : element.Points;
                 if (points.Count > 0)
@@ -707,6 +720,7 @@ public sealed partial class SceneRenderer : IDisposable
         private readonly double? _lineArcBulge = element.Style.LineArcBulge;
         private readonly double _lineArcOffset = element.Style.LineArcOffset;
         private readonly SymbolKind _symbol = element.Symbol;
+        private readonly SymbolShape? _customSymbol = element.CustomSymbol;
         private readonly double _arrowHeadSize = element.Style.ArrowHeadSize;
         private readonly StrokePattern _strokePattern = element.Style.StrokePattern;
         private readonly HighlighterTip _highlighterTip = element.Style.HighlighterTip;
@@ -825,7 +839,7 @@ public sealed partial class SceneRenderer : IDisposable
         public bool Matches(CanvasElement e) => _kind == e.Kind && _width == e.Width && _height == e.Height && _strokeWidth == e.Style.StrokeWidth &&
             _shapeStroke == ElementAppearance.HasShapeStroke(e.Style) &&
             _arrowHeadStyle == e.Style.ArrowHeadStyle && _arrowHeadSize == e.Style.ArrowHeadSize &&
-            _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol &&
+            _startArrowHead == e.Style.StartArrowHead && _endArrowHead == e.Style.EndArrowHead && _cornerRadius == e.CornerRadius && _symbol == e.Symbol && _customSymbol == e.CustomSymbol &&
             _strokePattern == e.Style.StrokePattern && _lineArcBulge == e.Style.LineArcBulge && _lineArcOffset == e.Style.LineArcOffset &&
             _highlighterTip == e.Style.HighlighterTip && _highlighterTipAngle == e.Style.HighlighterTipAngle &&
             e.Points.ContentEquals(_points);

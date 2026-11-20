@@ -26,7 +26,7 @@ internal static class Feedback4GeometryTests
             Gesture(editor, new(50, 50), new(50, 50));
             check(tool + " requires a drag and does not insert a default line on click", session.Document.Elements.Count == 0 && session.UndoCount == 0);
         }
-        foreach (var symbol in Enum.GetValues<SymbolKind>())
+        foreach (var symbol in SymbolGeometry.BuiltIns)
         {
             var square = SymbolGeometry.Outline(symbol, 100, 100);
             var wide = SymbolGeometry.Outline(symbol, 240, 50);

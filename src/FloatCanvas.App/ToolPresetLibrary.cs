@@ -156,7 +156,7 @@ internal sealed class ToolPresetLibrary
         void Add(string id, string key, EditorTool tool, Action<ToolParameters>? configure = null)
         {
             var parameters = new ToolParameters { Tool = tool };
-            if (tool == EditorTool.Symbol) { parameters.DefaultWidth = parameters.DefaultHeight = 72; parameters.ConstrainAspect = true; }
+            if (tool == EditorTool.Symbol) parameters.SetSymbolSize(72);
             if (tool is EditorTool.Rectangle or EditorTool.Ellipse) { parameters.DefaultWidth = parameters.DefaultHeight = 108; }
             if (tool is EditorTool.Number or EditorTool.Emoji) parameters.Style.FontSize = StandardMarkerSize;
             if (tool == EditorTool.Text) parameters.Style.FontSize = 36;

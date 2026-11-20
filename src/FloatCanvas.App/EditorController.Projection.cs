@@ -46,7 +46,7 @@ internal sealed partial class EditorController
         if (!element.IsBillboard && element.Kind == ElementKind.Image && (element.ProjectivePlacement is not null || element.ImageFrame is not null))
             return (ElementGeometry.ImagePlacementBounds(element),
                 mapping.PlaneToScreen.Compose(Projective2D.FromAffine(element.Transform)), true);
-        var bounds = element.IsBillboard && element.Kind != ElementKind.Image
+        var bounds = element.IsBillboard && element.Kind is not (ElementKind.Image or ElementKind.Symbol)
             ? ElementGeometry.LocalBounds(element) : ElementGeometry.StrokedLocalBounds(element);
         return (bounds, mapping.ElementToScreen(element), false);
     }
@@ -226,7 +226,9 @@ internal sealed partial class EditorController
             bool closed = !ElementGeometry.UsesPoints(element.Kind);
             // Image alpha and its editable border can extend beyond the body contour.
             // The full envelope above is a broad phase; the ink sample below is exact.
-            bool intersects = element.Kind == ElementKind.Image || ElementGeometry.HasFlatHighlighterTip(element) ||
+            bool intersects = element.Kind == ElementKind.Image ||
+                element.Kind == ElementKind.Symbol && SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).Contours.Length > 1 ||
+                ElementGeometry.HasFlatHighlighterTip(element) ||
                 ProjectedContourIntersectsRectangle(local, transform, rectangle, closed);
             bool hasStroke = element.Kind is not (ElementKind.Image or ElementKind.Text or ElementKind.Number) && !ElementGeometry.IsLiveEffect(element.Kind);
             if (!intersects && hasStroke)

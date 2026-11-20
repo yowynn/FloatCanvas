@@ -41,6 +41,7 @@ internal static class Feedback4OptionsTests
         state.Tools[EditorTool.Symbol] = custom.Clone(); state.Save();
         byte[] originalCache = File.ReadAllBytes(cachePath);
         var loaded = new ToolStateStore(cachePath);
+        string loadedBaselines = JsonSerializer.Serialize(loaded.OfficialBaselines), loadedTools = JsonSerializer.Serialize(loaded.Tools);
         var controller = new EditorController(new EditorSession()); controller.ApplyParameters(custom);
         var gallery = new ToolPresetGallery(controller, library, loaded); gallery.Applied+=gallery.PrepareForShow; gallery.PrepareForShow();
         foreach (var button in gallery.OfficialTiles.Children.OfType<Button>())
@@ -51,10 +52,11 @@ internal static class Feedback4OptionsTests
                 JsonSerializer.Serialize(controller.Parameters) == JsonSerializer.Serialize(factory));
         }
         gallery.UserTiles.Children.OfType<Button>().Single(button => Equals(button.Tag, personal.Id)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        check(locale + " clicking a personal symbol keeps its saved independent dimensions", controller.DefaultWidth == 234 && controller.DefaultHeight == 123);
+        check(locale + " a personal symbol uses its saved long edge at its natural aspect", controller.Parameters.SymbolSize == 234 &&
+            new PointD(controller.DefaultWidth, controller.DefaultHeight).DistanceTo(SymbolGeometry.Shape(SymbolKind.Heart).SizeAtLongEdge(234)) < 1e-8);
         check(locale + " applying new official symbol dimensions leaves existing saved cache and baseline records intact",
-            File.ReadAllBytes(cachePath).SequenceEqual(originalCache) && loaded.OfficialBaselines.Values.All(p => p.DefaultWidth == 234 && p.DefaultHeight == 123) &&
-            loaded.Tools[EditorTool.Symbol].DefaultWidth == 234 && loaded.Tools[EditorTool.Symbol].DefaultHeight == 123);
+            File.ReadAllBytes(cachePath).SequenceEqual(originalCache) && JsonSerializer.Serialize(loaded.OfficialBaselines) == loadedBaselines &&
+            JsonSerializer.Serialize(loaded.Tools) == loadedTools && loaded.Tools[EditorTool.Symbol].SymbolSize == 234);
     }
     internal static void Galleries(string folder, string locale, Action<string, bool> check)
     {
@@ -106,8 +108,10 @@ internal static class Feedback4OptionsTests
         check(locale + " pure color tools do not duplicate color opacity", rows["Opacity"].Visibility == Visibility.Collapsed);
         var pickers = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers");
         check(locale + " line pattern and arrow choices include diagrams", new[] { "StrokePattern", "StartArrowHead", "EndArrowHead" }.All(key => pickers[key].Items.OfType<RadioButton>().All(item => item.Content is StackPanel)));
-        controller.Tool = EditorTool.Symbol; panel.PrepareForShow(); fields["DefaultWidth"].Input.Text = "234"; fields["DefaultHeight"].Input.Text = "123";
-        check(locale + " symbols have editable independent default dimensions", controller.DefaultWidth == 234 && controller.DefaultHeight == 123 && rows["DefaultWidth"].Visibility == Visibility.Visible);
+        controller.Tool = EditorTool.Symbol; panel.PrepareForShow(); fields["SymbolSize"].Input.Text = "234";
+        check(locale + " symbols expose one long-edge size before the shape picker", controller.Parameters.SymbolSize == 234 &&
+            rows["Size"].Visibility == Visibility.Collapsed && rows["SymbolSize"].Visibility == Visibility.Visible &&
+            Grid.GetRow(rows["SymbolSize"]) + 1 == Grid.GetRow(rows["Symbols"]));
         controller.Tool = EditorTool.Number; panel.PrepareForShow(); fields["NumberStart"].Input.Text = "8"; fields["NumberStep"].Input.Text = "3";
         fields["NextNumber"].Input.Text = "42";
         check(locale + " number rules are tool state while next number is document state", controller.NumberStart == 8 && controller.NumberStep == 3 && controller.Session.Document.NextNumber == 42 && controller.Session.UndoCount == 1 && !JsonSerializer.Serialize(controller.Parameters).Contains("NextNumber"));

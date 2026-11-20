@@ -107,7 +107,7 @@ internal static class SegmentedChoicePreviews
         return new Viewbox { Width = size, Height = size, Child = new Canvas { Width = size, Height = size, Children = { glyph } } };
     }
 
-    private static FrameworkElement StyleIcon(string variant, ElementKind kind = ElementKind.Rectangle, SymbolKind symbol = default)
+    private static FrameworkElement StyleIcon(string variant, ElementKind kind = ElementKind.Rectangle)
     {
         var grid=new Grid { Width=18,Height=18 };
         bool number=variant is ElementAppearance.NumberFilled or ElementAppearance.NumberOutline;
@@ -116,7 +116,7 @@ internal static class SegmentedChoicePreviews
         if (number || kind == ElementKind.Ellipse) outline = new System.Windows.Shapes.Ellipse();
         else if (kind is ElementKind.Symbol or ElementKind.Triangle)
         {
-            var points = SymbolGeometry.Outline(kind == ElementKind.Triangle ? SymbolKind.Triangle : symbol, 15, 15);
+            var points = SymbolGeometry.Outline(SymbolKind.Triangle, 15, 15);
             outline = new System.Windows.Shapes.Polygon { Points = new System.Windows.Media.PointCollection(points.Select(p => new Point(p.X, p.Y))), Stretch = Stretch.Uniform };
         }
         else outline = new System.Windows.Shapes.Rectangle { RadiusX=2,RadiusY=2 };
@@ -197,18 +197,18 @@ internal static class SegmentedChoicePreviews
         return box;
     }
 
-    internal static void UpdateColorStyle(SegmentedChoice choice, EditorTool tool, SymbolKind symbol = default)
+    internal static void UpdateColorStyle(SegmentedChoice choice, EditorTool tool)
     {
         ElementKind kind = Enum.TryParse<ElementKind>(tool.ToString(), out var parsed) ? parsed : ElementKind.Rectangle;
         var variants = AppearanceRegistry.VariantsFor(kind);
         for (int index = 0; index < Math.Min(choice.Items.Count, variants.Count); index++)
         {
-            choice.SetIcon(index, StyleIcon(variants[index].Id,kind,symbol));
+            choice.SetIcon(index, StyleIcon(variants[index].Id,kind));
         }
     }
 
-    internal static void UpdateColorStyle(SegmentedChoice choice, ElementKind kind, SymbolKind symbol) => UpdateColorStyle(choice,
-        kind switch { ElementKind.RoundedRectangle => EditorTool.RoundedRectangle, ElementKind.Ellipse => EditorTool.Ellipse, ElementKind.Triangle => EditorTool.Triangle, ElementKind.Symbol => EditorTool.Symbol, _ => EditorTool.Rectangle }, symbol);
+    internal static void UpdateColorStyle(SegmentedChoice choice, ElementKind kind) => UpdateColorStyle(choice,
+        kind switch { ElementKind.RoundedRectangle => EditorTool.RoundedRectangle, ElementKind.Ellipse => EditorTool.Ellipse, ElementKind.Triangle => EditorTool.Triangle, ElementKind.Symbol => EditorTool.Symbol, _ => EditorTool.Rectangle });
 
     internal static SegmentedChoice Appearance(string selected)
     {

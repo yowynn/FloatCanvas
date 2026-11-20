@@ -31,9 +31,10 @@ internal static class SymbolStylePresetTests
                 panel.PrepareForShow();
                 var gallery = (UniformGrid)typeof(ToolOptionsPanel).GetField("symbolGallery", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(panel)!;
                 int index = 0;
-                foreach (var symbol in Enum.GetValues<SymbolKind>())
+                foreach (var symbol in SymbolGeometry.BuiltIns)
                 {
                     var expected = preset.Parameters.Clone(); expected.Symbol = symbol;
+                    expected.SetSymbolSize(preset.Parameters.SymbolSize);
                     gallery.Children.OfType<Button>().Single(button => Equals(button.Tag, symbol)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     check(preset.Id + " switches to " + symbol + " with one shape click while retaining the entire style", JsonSerializer.Serialize(editor.Parameters) == JsonSerializer.Serialize(expected));
                     double x = 90 + index++ * 180;
@@ -45,7 +46,7 @@ internal static class SymbolStylePresetTests
                 }
             }
             var personal = new ToolParameters { Tool = EditorTool.Symbol, Symbol = SymbolKind.Heart, Style = new() { Stroke = 0xFF123456, Fill = 0xAB654321 } };
-            personal.NormalizeAppearance();
+            personal.NormalizeForCreation();
             var saved = library.Save("Personal shape", personal);
             string bytes = File.ReadAllText(Path.Combine(folder, "presets.json"));
             var reloaded = new ToolPresetLibrary(Path.Combine(folder, "presets.json")); _ = reloaded.Official;

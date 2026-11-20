@@ -59,6 +59,7 @@ internal sealed partial class EditorController
     public ElementStyle Style { get; private set; } = new() { Stroke = ColorLibrary.ForegroundRed };
     public double? CornerRadius { get; set; }
     public SymbolKind Symbol { get; set; }
+    public SymbolShape? CustomSymbol { get; private set; }
     public bool ConstrainAspect { get; set; }
     public double EffectStrength { get; set; } = 12;
     public string Emoji { get; set; } = "😀";
@@ -94,7 +95,8 @@ internal sealed partial class EditorController
         get
         {
             var parameters = new ToolParameters { Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius,
-        Symbol = Symbol, ConstrainAspect = Tool != EditorTool.CaptureRegion && ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
+        Symbol = Tool != EditorTool.Symbol && Symbol == SymbolKind.Custom ? SymbolKind.Triangle : Symbol,
+        CustomSymbol = Tool == EditorTool.Symbol ? CustomSymbol : null, ConstrainAspect = Tool != EditorTool.CaptureRegion && ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
         NumberStart = NumberStart, NumberStep = NumberStep, NumberTextSizeMode = NumberTextSizeMode,
         Numbering = Tool == EditorTool.Number && Numbering != NumberSequenceSettings.Default ? Numbering : null, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
         CaptureBorderWidth = CaptureBorderWidth, Presentation = Presentation?.Clone(),
@@ -116,6 +118,7 @@ internal sealed partial class EditorController
         Presentation = parameters.Presentation?.Clone();
         PointerPresentation = parameters.PointerPresentation?.Clone();
         Symbol = parameters.Tool == EditorTool.Triangle ? SymbolKind.Triangle : parameters.Symbol;
+        if (nextTool == EditorTool.Symbol) CustomSymbol = parameters.CustomSymbol;
         // Legacy capture recipes may carry an aspect lock; capture creation only follows held Shift.
         ConstrainAspect = parameters.Tool != EditorTool.CaptureRegion && parameters.ConstrainAspect; EffectStrength = parameters.EffectStrength;
         Emoji = parameters.Emoji; DefaultWidth = parameters.DefaultWidth; DefaultHeight = parameters.DefaultHeight;
@@ -475,10 +478,12 @@ internal sealed partial class EditorController
             gesture = "draw";
             BeginPointerTransaction(L.Format("Editor.History.Draw", L.Get("Editor.ElementKind." + Tool)));
             drawing = new CanvasElement { Kind = Enum.Parse<ElementKind>(Tool.ToString()), Style = Style.Clone(), CornerRadius = CornerRadius,
-                Symbol = Symbol, Transform = Affine2D.Translation(p.X, p.Y), Points = [new(0, 0)] };
+                Symbol = Tool == EditorTool.Symbol ? Symbol : SymbolKind.Triangle,
+                CustomSymbol = Tool == EditorTool.Symbol && Symbol == SymbolKind.Custom ? CustomSymbol : null,
+                Transform = Affine2D.Translation(p.X, p.Y), Points = [new(0, 0)] };
             if (Tool == EditorTool.Presentation)
             { drawing.Presentation = (Presentation ?? new()).Clone(); drawing.Presentation.Modules = PresentationModules.Keys; }
-            if(ElementGeometry.IsBoxShape(drawing.Kind) || drawing.Kind == ElementKind.Presentation)drawing.ConstrainAspect=drawing.Kind == ElementKind.Presentation || ConstrainAspect;
+            if(ElementGeometry.IsBoxShape(drawing.Kind) || drawing.Kind == ElementKind.Presentation)drawing.ConstrainAspect=drawing.Kind is ElementKind.Symbol or ElementKind.Presentation || ConstrainAspect;
             if (Tool == EditorTool.Highlighter) drawing.Style.StrokeWidth = Math.Max(16, Style.StrokeWidth);
             if (drawing.Kind == ElementKind.Freehand && SmoothFreehand) freehandCorrection = new(drawing.Style.StrokeWidth);
             if(drawing.Kind is ElementKind.Freehand or ElementKind.Highlighter&&(e.Modifiers&OverlayModifiers.Shift)!=0)straightStrokeStart=0;
@@ -583,6 +588,12 @@ internal sealed partial class EditorController
     private void ApplyDefaultSize(CanvasElement element, PointD center, OverlayModifiers modifiers)
     {
         double width = DefaultWidth, height = DefaultHeight;
+        if (element.Kind == ElementKind.Symbol)
+        {
+            var size = SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).SizeAtLongEdge(Math.Max(width, height));
+            SymbolGeometry.PlaceInBox(element, new(center.X - size.X / 2, center.Y - size.Y / 2, size.X, size.Y));
+            element.Points.Clear(); return;
+        }
         if (element.Kind == ElementKind.Presentation)
         {
             using var renderer = new SceneRenderer();
@@ -833,10 +844,29 @@ internal sealed partial class EditorController
                     p = start + new PointD(Math.CopySign(width, drag.X), Math.CopySign(height, drag.Y));
                     drawing.Style.FontSize = Math.Clamp(Style.FontSize * height / natural.Y, 1, 4096);
                 }
+                else if (drawing.Kind == ElementKind.Symbol)
+                {
+                    if ((modifiers & OverlayModifiers.Shift) == 0)
+                    {
+                        var offset = p - start;
+                        double edge = Math.Max(1, Math.Max(Math.Abs(offset.X), Math.Abs(offset.Y)));
+                        var size = SymbolGeometry.Shape(drawing.Symbol, drawing.CustomSymbol).SizeAtLongEdge(edge);
+                        p = start + new PointD(Math.CopySign(size.X, offset.X), Math.CopySign(size.Y, offset.Y));
+                    }
+                }
                 else if (ConstrainBox(modifiers)) p = ConstrainAspect && UsesDefaultSize(Tool) ? DefaultRatioEnd(start, p) : SquareEnd(start, p);
                 var rect = RectD.FromPoints(centeredGesture ? start - (p - start) : start, p);
-                drawing.Width = Math.Max(1, rect.Width); drawing.Height = Math.Max(1, rect.Height);
-                drawing.Transform = Affine2D.Translation(rect.X, rect.Y); drawing.Points.Clear();
+                if (drawing.Kind == ElementKind.Symbol)
+                {
+                    if ((modifiers & OverlayModifiers.Shift) != 0) rect = rect with { Width = Math.Max(1, rect.Width), Height = Math.Max(1, rect.Height) };
+                    SymbolGeometry.PlaceInBox(drawing, rect);
+                }
+                else
+                {
+                    drawing.Width = Math.Max(1, rect.Width); drawing.Height = Math.Max(1, rect.Height);
+                    drawing.Transform = Affine2D.Translation(rect.X, rect.Y);
+                }
+                drawing.Points.Clear();
             }
             RefreshBillboardDrawing(); NotifyGeometryChanged(); return;
         }

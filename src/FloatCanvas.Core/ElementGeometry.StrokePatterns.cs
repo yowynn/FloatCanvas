@@ -23,7 +23,7 @@ public static partial class ElementGeometry
         private CanvasElement? _snapshot;
         public StrokePatternGeometry? Geometry { get; private set; }
         public bool Matches(CanvasElement e) => _snapshot is { } s && s.Kind == e.Kind && s.Width == e.Width && s.Height == e.Height &&
-            s.CornerRadius == e.CornerRadius && s.Symbol == e.Symbol && s.Style.StrokeWidth == e.Style.StrokeWidth &&
+            s.CornerRadius == e.CornerRadius && s.Symbol == e.Symbol && s.CustomSymbol == e.CustomSymbol && s.Style.StrokeWidth == e.Style.StrokeWidth &&
             s.Style.StrokePattern == e.Style.StrokePattern && s.Style.ArrowHeadSize == e.Style.ArrowHeadSize &&
             s.Style.ArrowHeadStyle == e.Style.ArrowHeadStyle && s.Style.StartArrowHead == e.Style.StartArrowHead &&
             s.Style.EndArrowHead == e.Style.EndArrowHead && s.Style.LineArcBulge == e.Style.LineArcBulge &&
@@ -33,6 +33,16 @@ public static partial class ElementGeometry
 
     private static StrokePatternGeometry BuildPattern(CanvasElement element)
     {
+        if (element.Kind != ElementKind.Symbol) return BuildPattern(element, null, false);
+        var contours = SymbolContours(element);
+        if (contours.Count == 1) return BuildPattern(element, contours[0], false);
+        var shape = SymbolGeometry.Shape(element.Symbol, element.CustomSymbol);
+        var parts = contours.Select((c, i) => BuildPattern(element, c, shape.IsHole(i))).ToArray();
+        return new([], parts.SelectMany(p => p.DashPolygons).ToArray(), parts.SelectMany(p => p.Dots).ToArray(), parts[0].Radius, true);
+    }
+
+    private static StrokePatternGeometry BuildPattern(CanvasElement element, IReadOnlyList<PointD>? contour, bool hole)
+    {
         double width = Math.Max(.1, element.Style.StrokeWidth), radius = width / 2;
         if (element.Kind == ElementKind.Ellipse && element.Style.StrokePattern == StrokePattern.Dotted)
             return DottedEllipse(element.Width / 2, element.Height / 2, radius);
@@ -41,9 +51,9 @@ public static partial class ElementGeometry
         if (roundJoins && element.Style.StrokePattern is StrokePattern.Dashed or StrokePattern.DashDot)
             radius = element.Style.StrokeWidth / 2;
         bool rectangle = element.Kind is ElementKind.Rectangle or ElementKind.RoundedRectangle;
-        var outer = closed && !rectangle ? CleanContour(Outline(element)) : [];
+        var outer = closed && !rectangle ? CleanContour(contour ?? Outline(element)) : [];
         var center = rectangle ? InsetRectangle(element, radius) :
-            closed ? InsetContour(outer, radius) : CleanContour(IsLine(element.Kind) ? LineShaftPoints(element) : element.Points, false);
+            closed ? InsetContour(outer, hole ? -radius : radius) : CleanContour(IsLine(element.Kind) ? LineShaftPoints(element) : element.Points, false);
         // For a closed shape the solid inner band supplies the width. Extend the
         // dash cuts across it so its outer antialias edge is not masked twice.
         double cutRadius = closed ? width : radius;
@@ -53,7 +63,7 @@ public static partial class ElementGeometry
             if (rectangle) return new(center, [], RectangleDots(element, center, radius), radius, true);
             foreach (var station in DotStations(center, closed, closed ? ClosedDotSpacingInRadii * radius : 2 * width))
                 if (!closed) dots.Add(station);
-                else if (FitDot(outer, station, radius, out var point)) dots.Add(point);
+                else if (FitDot(outer, station, radius, hole, out var point)) dots.Add(point);
         }
         else if (element.Style.StrokePattern == StrokePattern.DashDot)
         {
@@ -357,7 +367,7 @@ public static partial class ElementGeometry
         }
     }
 
-    private static bool FitDot(IReadOnlyList<PointD> outer, PointD candidate, double radius, out PointD point)
+    private static bool FitDot(IReadOnlyList<PointD> outer, PointD candidate, double radius, bool hole, out PointD point)
     {
         point = candidate;
         // Segment interpolation on a curved inset is slightly inside its exact offset.
@@ -365,10 +375,10 @@ public static partial class ElementGeometry
         for (int i = 0; i < 3; i++)
         {
             var nearest = NearestOutlinePoint(outer, point); double distance = point.DistanceTo(nearest);
-            if (distance < 1e-9 || !PointInPolygon(point, outer)) return false;
+            if (distance < 1e-9 || PointInPolygon(point, outer) == hole) return false;
             point = nearest + (point - nearest) * (radius / distance);
         }
-        return PointInPolygon(point, outer) && point.DistanceTo(NearestOutlinePoint(outer, point)) >= radius - 1e-5;
+        return PointInPolygon(point, outer) != hole && point.DistanceTo(NearestOutlinePoint(outer, point)) >= radius - 1e-5;
     }
 
     private static PointD NearestOutlinePoint(IReadOnlyList<PointD> outer, PointD point)
@@ -390,10 +400,10 @@ public static partial class ElementGeometry
         var geometry = StrokePatternGeometry(element);
         if (geometry.Closed && element.Style.StrokePattern is StrokePattern.Dashed or StrokePattern.DashDot)
         {
-            var contour = geometry.Closed ? Outline(element) : element.Points;
-            double radius = element.Style.StrokeWidth * (geometry.Closed ? 1 : .5);
-            if (!StrokePathHit(transform, contour, geometry.Closed, target, local, radius, tolerance) &&
-                (!geometry.Closed || !InsideMiterHit(element, transform, contour, target, local, tolerance))) return false;
+            IReadOnlyList<IReadOnlyList<PointD>> contours = element.Kind == ElementKind.Symbol ? SymbolContours(element) : [Outline(element)];
+            var shape = element.Kind == ElementKind.Symbol ? SymbolGeometry.Shape(element.Symbol, element.CustomSymbol) : null;
+            if (!Enumerable.Range(0, contours.Count).Any(i => StrokePathHit(transform, contours[i], true, target, local, element.Style.StrokeWidth, tolerance) ||
+                InsideMiterHit(element, transform, contours[i], target, local, tolerance, shape?.IsHole(i) == true))) return false;
         }
         foreach (var dot in geometry.Dots)
             if (StrokeSegmentHit(transform, target, local, dot, dot, geometry.Radius, tolerance)) return true;

@@ -31,6 +31,8 @@ public static partial class ElementGeometry
     }
     public static RectD StrokedLocalBounds(CanvasElement element, bool includeStroke = true)
     {
+        if (element.Kind == ElementKind.Symbol)
+            return SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).InkBox(element.Width, element.Height);
         var bounds = LocalBounds(element);
         if (includeStroke && HasFlatHighlighterTip(element) && element.Points.Count > 0 && element.Style.StrokeWidth > 0)
         {
@@ -66,11 +68,11 @@ public static partial class ElementGeometry
         var transform = element.Transform;
         double basisX = Math.Sqrt(transform.M11 * transform.M11 + transform.M21 * transform.M21);
         double basisY = Math.Sqrt(transform.M12 * transform.M12 + transform.M22 * transform.M22);
-        var center = transform.TransformPoint(new(element.Width / 2, element.Height / 2));
+        var center = transform.TransformPoint(StrokedLocalBounds(element, false).Center);
         element.Width *= scaleX * basisX; element.Height *= scaleY * basisY;
         if (element.CornerRadius is { } radius) element.CornerRadius = radius * Math.Min(basisX, basisY);
         var unit = new Affine2D(transform.M11 / basisX, transform.M12 / basisY, transform.M21 / basisX, transform.M22 / basisY, 0, 0);
-        var half = unit.TransformPoint(new(element.Width / 2, element.Height / 2));
+        var half = unit.TransformPoint(StrokedLocalBounds(element, false).Center);
         element.Transform = unit with { OffsetX = center.X - half.X, OffsetY = center.Y - half.Y };
     }
     public static double CornerRadius(CanvasElement element) => Math.Clamp(element.CornerRadius ??
@@ -112,6 +114,19 @@ public static partial class ElementGeometry
                 StrokePathHit(transform, corners, true, worldPoint, local, element.ImageBorderWidth, tolerance)) return true;
             return ProjectedContourHit(transform, corners, worldPoint, tolerance);
         }
+        if (element.Kind == ElementKind.Symbol && SymbolGeometry.Shape(element.Symbol, element.CustomSymbol).Contours.Length > 1)
+        {
+            var contours = SymbolContours(element);
+            bool inBody = contours.Count(c => PointInPolygon(local, c)) % 2 != 0;
+            bool nearEdge = contours.Any(c => ProjectedContourHit(transform, c, worldPoint, tolerance));
+            if (!inBody && !nearEdge) return false;
+            if ((ElementAppearance.ShapeFill(element.Style) >> 24) != 0) return true;
+            if (!ElementAppearance.HasShapeStroke(element.Style) || element.Style.StrokeWidth <= 0 || (element.Style.Stroke >> 24) == 0) return false;
+            if (element.Style.StrokePattern != StrokePattern.Solid) return PatternHit(element, transform, worldPoint, local, tolerance);
+            var shape = SymbolGeometry.Shape(element.Symbol, element.CustomSymbol);
+            return Enumerable.Range(0, contours.Count).Any(i => StrokePathHit(transform, contours[i], true, worldPoint, local, element.Style.StrokeWidth, tolerance) ||
+                InsideMiterHit(element, transform, contours[i], worldPoint, local, tolerance, shape.IsHole(i)));
+        }
         var outline = Outline(element);
         if (element.Kind == ElementKind.Number)
         {
@@ -135,7 +150,7 @@ public static partial class ElementGeometry
     public static IReadOnlyList<PointD> Outline(CanvasElement element)
     {
         double w = element.Width, h = element.Height;
-        if (element.Kind == ElementKind.Symbol) return SymbolGeometry.Outline(element.Symbol, w, h);
+        if (element.Kind == ElementKind.Symbol) return SymbolContours(element)[0];
         if (element.Kind == ElementKind.Triangle) return [new(w / 2, 0), new(w, h), new(0, h)];
         if (element.Kind is ElementKind.Ellipse or ElementKind.Number)
         {
@@ -193,8 +208,31 @@ public static partial class ElementGeometry
             if (StrokeSegmentHit(transform, worldPoint, localPoint, points[i], points[(i + 1) % points.Count], radius, tolerance)) return true;
         return false;
     }
+    private sealed class SymbolPolygonCache
+    {
+        public SymbolShape? Shape;
+        public double Width, Height;
+        public IReadOnlyList<IReadOnlyList<PointD>> Polygons = [];
+    }
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<CanvasElement, SymbolPolygonCache> symbolPolygons = new();
+
+    public static IReadOnlyList<IReadOnlyList<PointD>> SymbolContours(CanvasElement element)
+    {
+        var shape = SymbolGeometry.Shape(element.Symbol, element.CustomSymbol);
+        var cached = symbolPolygons.GetValue(element, static _ => new());
+        lock (cached)
+        {
+            if (cached.Shape != shape || cached.Width != element.Width || cached.Height != element.Height)
+            {
+                cached.Polygons = shape.Polygons(element.Width, element.Height);
+                cached.Shape = shape; cached.Width = element.Width; cached.Height = element.Height;
+            }
+            return cached.Polygons;
+        }
+    }
+
     private static bool InsideMiterHit(CanvasElement element, Projective2D transform, IReadOnlyList<PointD> points,
-        PointD target, PointD local, double tolerance)
+        PointD target, PointD local, double tolerance, bool hole = false)
     {
         if (element.Kind != ElementKind.Symbol || element.Symbol is SymbolKind.Triangle or SymbolKind.Diamond or SymbolKind.Pentagon or SymbolKind.Hexagon) return false;
         double radius = element.Style.StrokeWidth;
@@ -210,14 +248,14 @@ public static partial class ElementGeometry
             double a = previous.DistanceTo(vertex), b = vertex.DistanceTo(next);
             if (a <= 1e-9 || b <= 1e-9) continue;
             var first = (vertex - previous) * (1 / a); var last = (next - vertex) * (1 / b);
-            if ((first.X * last.Y - first.Y * last.X) * area >= 0) continue;
+            if ((first.X * last.Y - first.Y * last.X) * (hole ? -area : area) >= 0) continue;
             double denominator = 1 + first.X * last.X + first.Y * last.Y;
             if (denominator <= 1e-9) continue;
             var n1 = new PointD(-first.Y, first.X); var n2 = new PointD(-last.Y, last.X);
             var miter = (n1 + n2) * (radius / denominator);
             // Skia's default miter limit is four stroke radii; sharper joins bevel.
             if (miter.X * miter.X + miter.Y * miter.Y > radius * radius * 16 + 1e-9) continue;
-            int side = area >= 0 ? 1 : -1;
+            int side = (area >= 0 ? 1 : -1) * (hole ? -1 : 1);
             PointD[] triangle = [vertex + n1 * (radius * side), vertex + miter * side, vertex + n2 * (radius * side)];
             if (PointInPolygon(local, triangle) || ProjectedContourHit(transform, triangle, target, tolerance)) return true;
         }

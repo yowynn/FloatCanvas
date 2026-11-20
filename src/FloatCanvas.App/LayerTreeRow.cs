@@ -23,6 +23,7 @@ internal sealed class LayerTreeRow(LayersWindow owner, Guid id) : INotifyPropert
     public bool IsLinked { get; private set; }
     public bool IsLegacy { get; private set; }
     public ElementKind? Kind { get; private set; }
+    public SymbolShape? Symbol { get; private set; }
     public bool IsWindowSource { get; private set; }
     public bool Visible { get; private set; }
     public bool Locked { get; private set; }
@@ -37,16 +38,16 @@ internal sealed class LayerTreeRow(LayersWindow owner, Guid id) : INotifyPropert
     public event PropertyChangedEventHandler? PropertyChanged;
     internal void Update(string? sourceName, string name, Guid? parent, int depth, bool group, bool legacy,
         bool visible, bool locked, bool effectiveVisible, bool effectiveLocked, bool ancestorLocked, bool instance = false, bool linked = false,
-        ElementKind? kind = null, bool windowSource = false, string? hiddenAncestor = null)
+        ElementKind? kind = null, bool windowSource = false, string? hiddenAncestor = null, SymbolShape? symbol = null)
     {
         object stamp = (L.Preference, Owner.IndependentPreview, Owner.CanWrite);
         if (Equals(presentationStamp, stamp) && SourceName == sourceName && Name == name && ParentId == parent && Depth == depth && IsGroup == group && IsLegacy == legacy &&
             Visible == visible && Locked == locked && EffectiveVisible == effectiveVisible && EffectiveLocked == effectiveLocked && AncestorLocked == ancestorLocked &&
-            IsInstance == instance && IsLinked == linked && Kind == kind && IsWindowSource == windowSource && HiddenAncestor == hiddenAncestor) return;
+            IsInstance == instance && IsLinked == linked && Kind == kind && Symbol == symbol && IsWindowSource == windowSource && HiddenAncestor == hiddenAncestor) return;
         presentationStamp = stamp; HiddenAncestor = hiddenAncestor;
         SourceName = sourceName; Name = name; ParentId = parent; Depth = depth; IsGroup = group; IsLegacy = legacy;
         Visible = visible; Locked = locked; EffectiveVisible = effectiveVisible; EffectiveLocked = effectiveLocked; AncestorLocked = ancestorLocked;
-        IsInstance = instance; IsLinked = linked; Kind = kind; IsWindowSource = windowSource;
+        IsInstance = instance; IsLinked = linked; Kind = kind; Symbol = symbol; IsWindowSource = windowSource;
         Changed();
     }
     private void Changed() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(""));
@@ -156,9 +157,9 @@ internal sealed class LayerTreeRowPresenter : Grid
             var chevron = LayersWindow.IconPath("M5,3 L10,8 L5,13"); chevron.Width = chevron.Height = 10;
             EnterButton.Content = chevron; EnterButton.IsEnabled = true;
             EnterButton.ToolTip = L.Get(row.IsInstance ? "Prefab.EditDefinition" : "Layers.EnterGroup");
-            kind.Content = LayerTypeIcon.Create(row.Kind, row.IsGroup, row.IsInstance, row.IsLinked, row.IsWindowSource);
+            kind.Content = row.Symbol is { } shape ? SymbolIcon.Create(shape) : LayerTypeIcon.Create(row.Kind, row.IsGroup, row.IsInstance, row.IsLinked, row.IsWindowSource);
             kind.ToolTip = row.IsInstance ? L.Get(row.IsLinked ? "Prefab.Linked" : "Prefab.DefaultName") : row.IsGroup ? L.Get("Layers.DefaultGroup") :
-                row.IsWindowSource ? L.Get("WindowSource.Menu") : row.Kind == ElementKind.Presentation ? L.Get("Tool.Presentation") : row.Kind is { } type ? InspectorWindow.ElementName(new() { Kind = type }) : "";
+                row.IsWindowSource ? L.Get("WindowSource.Menu") : row.Symbol is not null ? row.Name : row.Kind == ElementKind.Presentation ? L.Get("Tool.Presentation") : row.Kind is { } type ? InspectorWindow.ElementName(new() { Kind = type }) : "";
             System.Windows.Automation.AutomationProperties.SetName(kind, kind.ToolTip?.ToString() ?? "");
             legacy.Visibility = row.IsLegacy ? Visibility.Visible : Visibility.Hidden; legacy.ToolTip = L.Get("Layers.LegacyOrder");
             var eye = new Grid(); eye.Children.Add(LayersWindow.IconPath(row.Visible ? LayersWindow.Eye : LayersWindow.EyeOff));

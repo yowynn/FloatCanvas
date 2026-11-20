@@ -64,7 +64,7 @@ internal sealed partial class EditorController
         var screen = ElementGeometry.LocalToPlane(drawing);
         if (!gestureMoved && (UsesDefaultSize(Tool) || Tool is EditorTool.Number or EditorTool.Emoji))
         {
-            var reference = ElementGeometry.LocalBounds(drawing).Center;
+            var reference = (drawing.Kind == ElementKind.Symbol ? ElementGeometry.StrokedLocalBounds(drawing, false) : ElementGeometry.LocalBounds(drawing)).Center;
             return BillboardCreationGeometry.TryPlaceLogical(drawing, CurrentCanvasMapping, reference,
                 screen.TransformPoint(reference), out candidate, out _);
         }

@@ -459,6 +459,7 @@ internal static class Program
             if (args.Contains("--tool-options-only")) { ToolOptionsPanelTests.Run(Assert); return 0; }
             if (args.Contains("--tool-compatibility-only")) { ToolCompatibilityTests.Run(Assert); return 0; }
             if (args.Contains("--official-preset-design-only")) { OfficialPresetDesignTests.Run(Assert, args.SkipWhile(a => a != "--official-preset-design-only").Skip(1).FirstOrDefault()); return 0; }
+            if (args.Contains("--custom-symbols-only")) { CustomSymbolTests.Run(Assert); return 0; }
             if (args.Contains("--symbol-style-presets-only")) { SymbolStylePresetTests.Run(Assert); return 0; }
             if (args.Contains("--capture-aspect-policy-only")) { CaptureAspectPolicyTests.Run(Assert, args.SkipWhile(a => a != "--capture-aspect-policy-only").Skip(1).FirstOrDefault()); return 0; }
             if (args.Contains("--aspect-policy-only")) { AspectPolicyRegressionTests.Run(Assert); AspectInspectorRegressionTests.Run(Assert); return 0; }
@@ -483,6 +484,7 @@ internal static class Program
             RootCanvasIndicatorTests.Run(Assert);
             NodeControllerAuditTests.Run(Assert);
             OfficialPresetDesignTests.Run(Assert);
+            CustomSymbolTests.Run(Assert);
             SymbolStylePresetTests.Run(Assert);
             CaptureAspectPolicyTests.Run(Assert);
             NumberStartLinkTests.Run(Assert);

@@ -22,7 +22,7 @@ public static class BillboardCreationGeometry
         }
         failure = BillboardPlacementFailure.EmptyGeometry;
         var local = ElementGeometry.LocalBounds(candidate);
-        var envelope = local.IsEmpty ? ElementGeometry.StrokedLocalBounds(candidate) : local;
+        var envelope = local.IsEmpty || candidate.Kind == ElementKind.Symbol ? ElementGeometry.StrokedLocalBounds(candidate) : local;
         if (envelope.IsEmpty || !Finite(envelope) || ElementGeometry.UsesPoints(content.Kind) && content.Points.Count == 0) return false;
         var linear = candidate.Transform;
         failure = BillboardPlacementFailure.InvalidScale;

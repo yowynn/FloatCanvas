@@ -18,15 +18,18 @@ internal static class WorkspaceToolControllerTests
 
     private static void SymbolsAndEmoji(Action<string, bool> check)
     {
-        foreach (var symbol in Enum.GetValues<SymbolKind>())
+        foreach (var symbol in SymbolGeometry.BuiltIns)
         {
             var session = new EditorSession();
             var controller = new EditorController(session) { Tool = EditorTool.Symbol, Symbol = symbol };
             controller.Style.Fill = 0xFF66AAEE;
             Gesture(controller, new(70, 80), new(130, 120));
             var element = session.Document.Elements.Single();
-            check("symbol tool preserves selected geometry and style: " + symbol, element.Kind == ElementKind.Symbol && element.Symbol == symbol &&
-                element.Width == 60 && element.Height == 40 && element.Style.Fill == 0xFF66AAEE && element.Transform == Affine2D.Translation(70, 80));
+            var frame = ElementGeometry.Bounds(element, false);
+            var natural = SymbolGeometry.Shape(symbol).SizeAtLongEdge(60);
+            check("symbol tool preserves the ink aspect and style: " + symbol, element.Kind == ElementKind.Symbol && element.Symbol == symbol &&
+                frame.Center.DistanceTo(new(70+natural.X/2,80+natural.Y/2)) < 1e-8 && Math.Abs(frame.Width-natural.X) < 1e-8 &&
+                Math.Abs(frame.Height-natural.Y) < 1e-8 && element.Style.Fill == 0xFF66AAEE);
             check("symbol creation is one undoable gesture: " + symbol, session.UndoCount == 1 && !session.IsTransactionActive &&
                 session.Undo() && session.Document.Elements.Count == 0 && session.Redo() && session.Document.Elements.Single().Symbol == symbol);
         }

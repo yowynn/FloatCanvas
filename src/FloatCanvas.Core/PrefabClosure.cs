@@ -130,7 +130,7 @@ public static class PrefabClosure
         {
             if (element.Points is null || element.Points.Count > SceneLimits.MaximumPathPoints || element.ImageFrame?.Count > SceneLimits.MaximumPathPoints || element.Effects is null)
                 throw Invalid(L.Get("Scene.PathCapacityExceeded"));
-            points = Add(points, (long)element.Points.Count + (element.ImageFrame?.Count ?? 0), SceneLimits.MaximumExpandedPathPoints);
+            points = Add(points, (long)element.Points.Count + (element.ImageFrame?.Count ?? 0) + (element.CustomSymbol?.VertexCount ?? 0), SceneLimits.MaximumExpandedPathPoints);
             effects = Add(effects, element.Effects.Count, SceneLimits.MaximumExpandedEffects);
             depth = Math.Max(depth, graph.AncestorIds(element.Id).Count());
         }

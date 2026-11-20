@@ -73,12 +73,12 @@ internal static class SegmentedChoiceTests
         var color = SegmentedChoicePreviews.ColorStyle();
         foreach (var tool in new[] { EditorTool.Rectangle, EditorTool.RoundedRectangle, EditorTool.Ellipse, EditorTool.Triangle, EditorTool.Symbol })
         {
-            SegmentedChoicePreviews.UpdateColorStyle(color, tool, SymbolKind.Heart);
+            SegmentedChoicePreviews.UpdateColorStyle(color, tool);
             var first = (Grid)((StackPanel)color.Items[0].Content).Children[0];
             var second = (Grid)((StackPanel)color.Items[1].Content).Children[0];
             check(name + " " + tool + " has distinct previews for separate and unified colors",
                 !Equals(((System.Windows.Shapes.Shape)first.Children[0]).Fill, ((System.Windows.Shapes.Shape)second.Children[0]).Fill));
-            SegmentedChoicePreviews.UpdateColorStyle(color, Enum.Parse<ElementKind>(tool.ToString()), SymbolKind.Heart);
+            SegmentedChoicePreviews.UpdateColorStyle(color, Enum.Parse<ElementKind>(tool.ToString()));
             check(name + " " + tool + " uses matching style previews in the inspector",
                 Equals(((System.Windows.Shapes.Shape)first.Children[0]).Fill, ((System.Windows.Shapes.Shape)((Grid)((StackPanel)color.Items[0].Content).Children[0]).Children[0]).Fill));
         }
@@ -97,7 +97,7 @@ internal static class SegmentedChoiceTests
         SegmentedChoicePreviews.UpdateColorStyle(choices[1].Choice, EditorTool.Ellipse);
         var numberStyles = new SegmentedChoice(); SegmentedChoicePreviews.AddVariants(numberStyles, ElementKind.Number);
         choices.Add((L.Get("Tool.Number"), numberStyles));
-        Add("Inspector.StrokePattern", Enum.GetValues<StrokePattern>().Select(value => (L.Get("Canvas." + value), (object)value)));
+        Add("Inspector.StrokePattern", Enum.GetValues<StrokePattern>().Select(value => (L.Get(value == StrokePattern.DashDot ? "Inspector.PatternDashDot" : "Canvas." + value), (object)value)));
         Add("Inspector.EndArrow", Enum.GetValues<ArrowHeadStyle>().Select(value => (L.Get(value switch { ArrowHeadStyle.FilledTriangle => "Inspector.ArrowFilledTriangle", ArrowHeadStyle.Open => "Inspector.ArrowOpen", ArrowHeadStyle.Diamond => "Inspector.ArrowDiamond", _ => "Inspector.ArrowNone" }), (object)value)));
         Add("Snapshot.Shape", Enum.GetValues<CaptureShape>().Select(value => (L.Get("Snapshot.Shape." + value), (object)value)));
         Add("Snapshot.Source", Enum.GetValues<CaptureSource>().Select(value => (L.Get("Snapshot.Source." + value), (object)value)));

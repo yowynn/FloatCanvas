@@ -53,7 +53,7 @@ internal sealed class NumericPropertyIcon : FrameworkElement
         "StrokeWidth" or "CaptureBorderWidth" or "Canvas.GridWidth" => NumericPropertyKind.StrokeWidth,
         "CornerRadius" => NumericPropertyKind.CornerRadius, "FontSize" => NumericPropertyKind.FontSize,
         "R" => NumericPropertyKind.Rows, "C" => NumericPropertyKind.Columns,
-        "ArrowHeadSize" or "Canvas.GridSize" => NumericPropertyKind.Length,
+        "ArrowHeadSize" or "Canvas.GridSize" or "SymbolSize" => NumericPropertyKind.Length,
         "EffectStrength" => NumericPropertyKind.Strength, "NumberStep" => NumericPropertyKind.Step,
         _ => NumericPropertyKind.Number
     };

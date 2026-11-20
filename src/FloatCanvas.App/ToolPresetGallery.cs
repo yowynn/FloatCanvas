@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Windows;
 namespace FloatCanvas.App;
 
@@ -31,7 +30,7 @@ internal sealed class ToolPresetGallery : PresetGallery<ToolPreset>
             or EditorTool.Text or EditorTool.Number or EditorTool.Emoji or EditorTool.Presentation)) return icon;
         return new System.Windows.Controls.Border { Width = tileSize, Height = tileSize, Background = PreviewBackground, Child = icon };
     }
-    private static readonly System.Windows.Media.Brush PreviewBackground = CreatePreviewBackground();
+    internal static readonly System.Windows.Media.Brush PreviewBackground = CreatePreviewBackground();
     private static System.Windows.Media.Brush CreatePreviewBackground()
     {
         var drawing = new System.Windows.Media.DrawingGroup();
@@ -46,9 +45,9 @@ internal sealed class ToolPresetGallery : PresetGallery<ToolPreset>
             ViewportUnits = System.Windows.Media.BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 8, 8) };
         brush.Freeze(); return brush;
     }
-    protected override string PreviewIdentity(ToolPreset p) => JsonSerializer.Serialize(p.Parameters);
-    protected override bool Modified(ToolPreset p) => JsonSerializer.Serialize(PreservePointerMaster(p.Parameters.Clone())) != JsonSerializer.Serialize(controller.Parameters);
-    protected override void ApplyPreset(ToolPreset p) => controller.ApplyParameters(PreservePointerMaster(library.Apply(p.Id)));
+    protected override string PreviewIdentity(ToolPreset p) => p.Parameters.Fingerprint();
+    protected override bool Modified(ToolPreset p) => PreparePreset(p.Parameters.Clone()).Fingerprint() != controller.Parameters.Fingerprint();
+    protected override void ApplyPreset(ToolPreset p) => controller.ApplyParameters(PreparePreset(library.Apply(p.Id)));
     protected override void SavePreset(string name) => Select(library.Save(name, controller.Parameters).Id);
     protected override void UpdatePreset(ToolPreset p) => library.Update(p.Id, controller.Parameters);
     protected override void RenamePreset(ToolPreset p, string name) => library.Rename(p.Id, name);
@@ -61,6 +60,12 @@ internal sealed class ToolPresetGallery : PresetGallery<ToolPreset>
         if (observedTool != family) { observedTool = family; revealPending = true; }
         base.PrepareForShow();
     }
-    private ToolParameters PreservePointerMaster(ToolParameters parameters)
-    { parameters.NormalizeForCreation(); if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer) pointer.Enabled = controller.Parameters.PointerPresentation?.Enabled ?? false; return parameters; }
+    private ToolParameters PreparePreset(ToolParameters parameters)
+    {
+        parameters.NormalizeForCreation();
+        if (parameters.Tool == EditorTool.PointerPresentation && parameters.PointerPresentation is { } pointer)
+            pointer.Enabled = controller.Parameters.PointerPresentation?.Enabled ?? false;
+        if (parameters.Tool == EditorTool.Symbol) parameters.CustomSymbol ??= controller.CustomSymbol;
+        return parameters;
+    }
 }

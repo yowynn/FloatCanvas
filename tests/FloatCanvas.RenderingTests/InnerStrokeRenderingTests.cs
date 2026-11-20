@@ -82,7 +82,7 @@ internal static class InnerStrokeRenderingTests
                 check(kind + " " + pattern + " complementary translucent regions never double alpha (max " + maxAlpha + ")", maxAlpha <= 129 && maxAlpha >= 128);
             }
         }
-        foreach (var symbol in Enum.GetValues<SymbolKind>())
+        foreach (var symbol in SymbolGeometry.BuiltIns)
         foreach (var pattern in Enum.GetValues<StrokePattern>())
         {
             var element = Shape(ElementKind.Symbol); element.Symbol = symbol; element.Style.StrokePattern = pattern; document.Elements = [element];

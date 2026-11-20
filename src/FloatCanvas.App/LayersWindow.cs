@@ -203,7 +203,8 @@ internal sealed partial class LayersWindow : Wpf.Window
                     parent, 0, group is not null, group?.OrderMode == GroupOrderMode.LegacyPassThrough,
                     group?.Visible ?? instance?.Visible ?? element!.Visible, group?.Locked ?? instance?.Locked ?? element!.Locked,
                     graph.IsVisible(id), graph.IsLocked(id), parent is { } ancestor && graph.IsLocked(ancestor), instance is not null, definition?.Source?.IsLinked == true,
-                    element?.Kind, element?.WindowSource is not null, graph.AncestorIds(id).Select(graph.FindGroup).FirstOrDefault(g => g?.Visible == false) is { } hiddenGroup ? GroupName(hiddenGroup) : null);
+                    element?.Kind, element?.WindowSource is not null, graph.AncestorIds(id).Select(graph.FindGroup).FirstOrDefault(g => g?.Visible == false) is { } hiddenGroup ? GroupName(hiddenGroup) : null,
+                    element?.Kind == ElementKind.Symbol ? SymbolGeometry.Shape(element.Symbol, element.CustomSymbol) : null);
                 desired.Add(row);
             }
             bool same = ReferenceEquals(displayedSession, session) && visibleRows.Select(r => r.Id).SequenceEqual(desired.Select(r => r.Id));
