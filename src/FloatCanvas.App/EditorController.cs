@@ -81,6 +81,8 @@ internal sealed partial class EditorController
         finally { IsUpdatingNumberStart = false; }
     }
     public int NumberStep { get; set; } = 1;
+    // Keep the number tool's latest recipe available to the inspector while another tool is active.
+    internal NumberSequenceSettings Numbering { get; set; } = NumberSequenceSettings.Default;
     public NumberTextSizeMode NumberTextSizeMode { get; set; } = NumberTextSizeMode.FitBadge;
     public CaptureShape CaptureShape { get; set; } = CaptureShape.Rectangle;
     public CaptureSource CaptureSource { get; set; } = CaptureSource.Background;
@@ -93,7 +95,8 @@ internal sealed partial class EditorController
         {
             var parameters = new ToolParameters { Tool = Tool, Style = Style.Clone(), CornerRadius = CornerRadius,
         Symbol = Symbol, ConstrainAspect = Tool != EditorTool.CaptureRegion && ConstrainAspect, EffectStrength = EffectStrength, Emoji = Emoji, DefaultWidth = DefaultWidth, DefaultHeight = DefaultHeight,
-        NumberStart = NumberStart, NumberStep = NumberStep, NumberTextSizeMode = NumberTextSizeMode, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
+        NumberStart = NumberStart, NumberStep = NumberStep, NumberTextSizeMode = NumberTextSizeMode,
+        Numbering = Tool == EditorTool.Number && Numbering != NumberSequenceSettings.Default ? Numbering : null, CaptureShape = CaptureShape, CaptureSource = CaptureSource,
         CaptureBorderWidth = CaptureBorderWidth, Presentation = Presentation?.Clone(),
         PointerPresentation = PointerPresentation?.Clone() };
             parameters.NormalizeForCreation(); return parameters;
@@ -121,7 +124,10 @@ internal sealed partial class EditorController
         // Other tool snapshots carry hidden sequence fields too; they must not
         // replace the number tool's actual start or move this canvas's counter.
         if (parameters.Tool == EditorTool.Number)
+        {
+            Numbering = parameters.Numbering ?? NumberSequenceSettings.Default;
             SetNumberStart(parameters.NumberStart, followNumberStart ?? Session.Document.NextNumber == numberSequenceStart);
+        }
         else numberStart = parameters.NumberStart;
         NumberStep = parameters.NumberStep;
         Changed?.Invoke();
@@ -186,7 +192,7 @@ internal sealed partial class EditorController
     private Guid[]? selectionOnClick;
     private RectD selectionBounds;
     private Dictionary<Guid, Affine2D> transforms = [];
-    private CanvasElement? resizeSource;
+    private SingleLayerResize? singleResize;
     private CanvasElement? billboardEndpointSource;
     private PointD arcHandleGrabOffset;
     private (double Offset, double Bulge) arcHandleStart;
@@ -294,7 +300,8 @@ internal sealed partial class EditorController
         resizeTextRenderer?.Dispose(); resizeTextRenderer = null;
         resizeTextSources.Clear();
         nodeTransform = null; nodeOriginalElements.Clear(); nodeOriginalAuthoredElements.Clear(); drawingParents.Clear();
-        gesture = null; drawing = effectTarget = resizeSource = billboardEndpointSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
+        singleResize = null;
+        gesture = null; drawing = effectTarget = billboardEndpointSource = null; Marquee = imageRegion = null; EffectPreviewPolygon = null;
         cornerRadiusDrag = null;
         lastGestureMove = null;
         CapturePreview = null; capturePoints.Clear();
@@ -601,6 +608,7 @@ internal sealed partial class EditorController
             double diameter = style.FontSize;
             drawing = new() { Kind = ElementKind.Number, Width = diameter, Height = diameter,
                 Style = style, Number = Session.Document.NextNumber, NumberTextSizeMode = NumberTextSizeMode, ConstrainAspect = true };
+            Numbering.ApplyTo(drawing);
         }
         else
         {
@@ -713,7 +721,12 @@ internal sealed partial class EditorController
         }
         transforms = Session.SelectedElements().Where(x => !x.Locked).ToDictionary(x => x.Id, x => x.Transform);
         billboardSources = Session.SelectedElements().Where(x => !x.Locked && x.IsBillboard).ToDictionary(x => x.Id, x => x.Clone());
-        resizeSource = gesture == "resize" && selected.Length == 1 && (ElementGeometry.IsBoxShape(selected[0].Kind) || selected[0].Kind is ElementKind.Text or ElementKind.Presentation) ? selected[0].Clone() : null;
+        if (gesture == "resize" && (selected.Length == 1 || Session.Selection.Count == 1) &&
+            selected.Where(element => element.Visible).ToArray() is [var leaf])
+        {
+            singleResize = BeginSingleLayerResize(leaf);
+            if (singleResize is null) { gesture = null; return; }
+        }
         resizeTextSources=gesture=="resize"?selected.Where(element=>element.Kind==ElementKind.Text).ToDictionary(element=>element.Id,element=>element.Clone()):[];
         if (resizeTextSources.Count>0) resizeTextRenderer = new();
         PrepareNodeTransform();
@@ -837,30 +850,11 @@ internal sealed partial class EditorController
         else if (gesture == "resize")
         {
             var single = Session.SelectedElements().Where(e => !e.Locked).ToArray();
-            if (single.Length == 1 && resizeSource is { } source)
+            if (single is [var target] && singleResize is { } drag)
             {
-                var element = single[0]; var original = transforms[element.Id];
-                if (!ElementGeometry.LocalToPlane(source).TryInverse(out var inverse)) return;
-                var localCenter = ResizePivot(ElementGeometry.LocalBounds(source), inverse.TransformPoint(start));
-                var fromLocal = inverse.TransformPoint(start) - localCenter;
-                var toLocal = inverse.TransformPoint(p) - localCenter;
-                double scaleX = Math.Abs(fromLocal.X) < .001 ? 1 : Math.Max(.02, toLocal.X / fromLocal.X);
-                double scaleY = Math.Abs(fromLocal.Y) < .001 ? 1 : Math.Max(.02, toLocal.Y / fromLocal.Y);
-                if (ElementGeometry.PreservesAspect(source) ^ ((modifiers & OverlayModifiers.Shift) != 0)) scaleX = scaleY = UniformScale(fromLocal, toLocal);
-                if (source.Kind == ElementKind.Text)
-                {
-                    TextFrameLayout.Resize(element, source, scaleX, scaleY, resizeTextRenderer!);
-                    PreserveResizePivot(source, element, localCenter);
-                    NotifyGeometryChanged(); return;
-                }
-                if (source.Kind == ElementKind.Presentation) PresentationFrameLayout.Resize(element, source, scaleX, scaleY);
-                else
-                {
-                    element.Width = source.Width; element.Height = source.Height; element.CornerRadius = source.CornerRadius; element.Transform = original;
-                    ElementGeometry.ResizeShapeGeometry(element, scaleX, scaleY);
-                }
-                PreserveResizePivot(source, element, localCenter);
-                NotifyGeometryChanged(); return;
+                if (TryResizeLeaf(target, drag.Source, modifiers)) NotifyGeometryChanged();
+                else RejectPointer();
+                return;
             }
             var center = ResizePivot(selectionBounds, start);
             var from = start - center; var to = p - center;

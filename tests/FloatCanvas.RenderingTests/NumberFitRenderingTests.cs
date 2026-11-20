@@ -10,6 +10,7 @@ internal static class NumberFitRenderingTests
     {
         using var renderer = new SceneRenderer();
         var assets = new AssetLibrary();
+        CheckBadgeInkAndRing(renderer, assets, check);
         // The real regression was 103 wrapping into "10" and "3" in a small badge.
         // Count the separate digit columns in exported pixels, as well as their bounds:
         // a clip-only workaround could hide overflow but cannot retain every digit.
@@ -79,6 +80,53 @@ internal static class NumberFitRenderingTests
 
         var textStyle = new ElementStyle { FontFamily = "Microsoft YaHei UI", FontSize = 24 };
         check("ordinary text retains width-based wrapping", renderer.MeasureText("1234567890", textStyle, 30).LineCount > 1);
+    }
+
+    private static void CheckBadgeInkAndRing(SceneRenderer renderer, AssetLibrary assets, Action<string, bool> check)
+    {
+        const int scale = 4;
+        var badge = new CanvasElement { Kind = ElementKind.Number, Width = 72, Height = 72,
+            NumberTextSizeMode = NumberTextSizeMode.FitBadge, Transform = Affine2D.Scale(scale, scale),
+            Style = new() { Variant = ElementAppearance.NumberFilled, PrimaryColor = 0xFF304967, SecondaryColor = 0xFFFFFFFF } };
+        var scene = new SceneDocument { Elements = [badge], Viewport = new(0, 0, 72 * scale, 72 * scale) };
+        byte[] Draw() => renderer.ExportPng(scene, assets, true);
+        foreach (var font in new[] { "Microsoft YaHei UI", "Segoe UI", "Arial", "Georgia", "Gabriola", "Bahnschrift" })
+        foreach (var number in new[] { 1, 8, 17, -12, 103, int.MinValue })
+        {
+            badge.Style.FontFamily = font; badge.Number = number;
+            using var pixels = SKBitmap.Decode(Draw());
+            var ink = WhitePixels(pixels);
+            double dx = (ink.Min(p => p.X) + ink.Max(p => p.X) + 1) / (2d * scale) - badge.Width / 2;
+            double dy = (ink.Min(p => p.Y) + ink.Max(p => p.Y) + 1) / (2d * scale) - badge.Height / 2;
+            check($"{font} {number} visible glyphs are centered (offset {dx:F2}, {dy:F2} px)", Math.Abs(dx) <= .75 && Math.Abs(dy) <= .75);
+        }
+        badge.Style.Variant = ElementAppearance.NumberOutline; badge.Style.FontFamily = "Microsoft YaHei UI";
+        badge.Style.SecondaryColor = 0; badge.Number = -103;
+        foreach (int diameter in new[] { 28, 56, 112 })
+        {
+            badge.Width = badge.Height = diameter; scene.Viewport = new(0, 0, diameter * scale, diameter * scale);
+            badge.Style.StrokeWidth = 0;
+            var reference = Draw();
+            foreach (int oldWidth in new[] { 3, 16, 1024 })
+            {
+                badge.Style.StrokeWidth = oldWidth;
+                check(diameter + " px number rim is independent of stored line width " + oldWidth, reference.SequenceEqual(Draw()));
+            }
+            using var pixels = SKBitmap.Decode(reference);
+            int rim = 0;
+            while (rim < pixels.Height && pixels.GetPixel(pixels.Width / 2, rim).Alpha >= 128) rim++;
+            check(diameter + " px outlined badge uses a proportional inside ring", Math.Abs(rim / (double)scale - diameter * (3d / 56)) <= .5);
+            // Between the inner rim and the fitted label there must be a continuous clear band.
+            double innerRadius = (diameter / 2d - diameter * (3d / 56)) * scale;
+            bool clearBand = true;
+            for (int y = 0; y < pixels.Height; y++)
+            for (int x = 0; x < pixels.Width; x++)
+            {
+                double radius = double.Hypot(x + .5 - pixels.Width / 2d, y + .5 - pixels.Height / 2d);
+                if (radius > .925 * innerRadius && radius < innerRadius - 1 && pixels.GetPixel(x, y).Alpha >= 128) clearBand = false;
+            }
+            check(diameter + " px outline keeps even signed multi-digit ink clear of the ring", clearBand);
+        }
     }
 
     private static List<SKPointI> WhitePixels(SKBitmap image)

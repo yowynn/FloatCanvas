@@ -36,6 +36,7 @@ internal static class InspectorNumericRailTests
         bool Rail(string key, double minimum, double maximum) => fields[key].Slider.Minimum == minimum && fields[key].Slider.Maximum == maximum;
         try
         {
+            CheckNumberPreview(check);
             string original = JsonSerializer.Serialize(session.Document);
             Select(shape);
             check("inspector geometry rails retain useful positions and avoid zero dimensions", Rail("X", -8192, 8192) && Rail("Y", -8192, 8192) && Rail("W", 1, 1000) && Rail("H", 1, 1000) && Rail("Angle", -180, 180));
@@ -82,6 +83,37 @@ internal static class InspectorNumericRailTests
             check("inspector rail integration checks create no native window", !inspector.IsVisible && new System.Windows.Interop.WindowInteropHelper(inspector).Handle == 0);
         }
         finally { inspector.CompletePendingEdit(); inspector.Close(); }
+    }
+
+    private static void CheckNumberPreview(Action<string, bool> check)
+    {
+        var badge = new CanvasElement { Kind = ElementKind.Number, Number = 87, Width = 100, Height = 100,
+            NumberTextSizeMode = NumberTextSizeMode.FitBadge, Style = new() { FontSize = 58 } };
+        var session = new EditorSession(new() { Elements = [badge] }); session.SetSelection([badge.Id]);
+        var inspector = new InspectorWindow(() => session);
+        using var visible = new InspectorTestSurface(inspector);
+        var controls = Field<Dictionary<string, NumericValueField>>(inspector, "numericFields");
+        var font = controls["FontSize"];
+        int textChanges = 0;
+        foreach (string key in new[] { "FontSize", "X", "Y", "W", "H" })
+            controls[key].Input.TextChanged += (_, _) => textChanges++;
+        check("visible number slider begins its editing gesture", font.BeginGesture());
+        for (int i = 0; i < 36; i++) font.Slider.Value = 82 + Math.Sin(i * .4) * 30;
+        check("number drag previews size and dependent geometry without rewriting native text editors",
+            textChanges == 0 && session.IsTransactionActive && !Field<System.Windows.Threading.DispatcherTimer>(inspector, "editTimer").IsEnabled && session.UndoCount == 0 &&
+            Math.Abs(badge.Width - font.Value / .58) < .001 && Math.Abs(controls["W"].Value - badge.Width) < .001);
+        font.EndGesture(true);
+        check("released number drag synchronizes editable text and commits one history entry",
+            textChanges <= 5 && double.Parse(font.Input.Text) == font.Value && Math.Abs(double.Parse(controls["W"].Input.Text) - badge.Width) < .001 && session.UndoCount == 1);
+        font.BeginGesture(); font.Slider.Value = 32; font.EndGesture(false);
+        check("cancelled number drag restores the committed font and frame", session.UndoCount == 1 &&
+            Math.Abs(session.Document.Elements.Single().Width - controls["W"].Value) < .001);
+        var number = controls["Number"];
+        number.BeginGesture(); number.Slider.Value = 92;
+        check("number-value rail previews its integer through the same readout", session.Document.Elements.Single().Number == 92);
+        number.EndGesture(true);
+        font.Input.Text = "47"; inspector.CompletePendingEdit();
+        check("precise font entry still works after dragging", session.Document.Elements.Single().Style.FontSize == 47);
     }
 
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Private)!.GetValue(target)!;

@@ -48,10 +48,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
         displayMode.SelectionChanged += (_, _) =>
         {
             if (refreshing || displayMode.SelectedValue is not PresentationDisplayStyle style) return;
-            if ((style == PresentationDisplayStyle.Keyboard) == (keyboardOptions.Visibility == Visibility.Visible) &&
-                (style != PresentationDisplayStyle.Keyboard) == (recordOptions.Visibility == Visibility.Visible))
-                Commit("DisplayStyle", style);
-            else modeOptions.Change(() => Commit("DisplayStyle", style));
+            Commit("DisplayStyle", style);
         };
     }
 
@@ -79,7 +76,9 @@ internal sealed class PresentationSettingsPanel : StackPanel
                 object? value = Get(settings[0], key);
                 entry.Display(settings.Skip(1).Any(setting => !Equals(Get(setting, key), value)) ? null : value);
             }
-            SetChoices(settings.Select(setting => setting.DisplayStyle).ToArray());
+            var styles = settings.Select(setting => setting.DisplayStyle).ToArray();
+            if (!changedContext && IsVisible) modeOptions.Change(() => SetChoices(styles));
+            else SetChoices(styles);
         }
         finally { refreshing = false; }
     }
@@ -106,7 +105,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
         var candidate = sample.Clone(); Set(candidate, key, value);
         if (!candidate.IsValid()) { Invalid(); return; }
         sample = candidate; editedValues[key] = value; error.Text = ""; error.Visibility = Visibility.Collapsed; ReportError?.Invoke("");
-        if (value is PresentationDisplayStyle style && key == "DisplayStyle") SetChoices([style]);
+        if (value is PresentationDisplayStyle style && key == "DisplayStyle") modeOptions.Change(() => SetChoices([style]));
         ValueChanged?.Invoke(key);
     }
     private void Invalid() { if (!refreshing) { if (ReportError is { } report) report(L.Get("Presentation.InvalidValue")); else { error.Text = L.Get("Presentation.InvalidValue"); error.Visibility = Visibility.Visible; } } }
@@ -154,6 +153,7 @@ internal sealed class PresentationSettingsPanel : StackPanel
     {
         AutomationProperties.SetName(control, L.Get(labelKey)); entries.Add(key, new(control, display));
         var row = PropertyPanelLayout.Row(new PropertyLabel(L.Get(labelKey)), control);
+        AutomationProperties.SetAutomationId(row, key);
         rows.Add(key, row); parent.Children.Add(row);
     }
     private static object? Get(PresentationSettings value, string key) => key switch

@@ -15,6 +15,7 @@ internal sealed class ToolParameters
         set
         {
             var previousKind = AppearanceKind; tool = value;
+            if (value != EditorTool.Number) Numbering = null;
             if (value == EditorTool.Presentation) Presentation ??= new();
             if (value == EditorTool.PointerPresentation) PointerPresentation ??= new();
             if (Style is { } style && previousKind is { } previous && AppearanceRegistry.Find(previous, style.Variant) is not null &&
@@ -32,12 +33,23 @@ internal sealed class ToolParameters
     public double DefaultHeight { get; set; } = 100;
     public int NumberStart { get; set; } = 1;
     public int NumberStep { get; set; } = 1;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NumberSequenceSettings? Numbering { get; set; }
     public NumberTextSizeMode NumberTextSizeMode { get; set; } = NumberTextSizeMode.FitBadge;
     public CaptureShape CaptureShape { get; set; } = CaptureShape.Rectangle;
     public CaptureSource CaptureSource { get; set; } = CaptureSource.Background;
     public double CaptureBorderWidth { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PresentationSettings? Presentation { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PresentationPointerSettings? PointerPresentation { get; set; }
+
+    // Toolbar state tracks the immutable sequence separately, and a thumbnail
+    // depends on only one resolved label. Avoid serializing a long list on each frame.
+    internal string FingerprintWithoutNumbering()
+    {
+        if (Numbering is null) return System.Text.Json.JsonSerializer.Serialize(this);
+        var snapshot = (ToolParameters)MemberwiseClone();
+        snapshot.Numbering = null;
+        return System.Text.Json.JsonSerializer.Serialize(snapshot);
+    }
 
     public ToolParameters Clone()
     {
@@ -70,7 +82,7 @@ internal sealed class ToolParameters
 
     internal bool IsValid(bool allowUnsupportedAppearance = false) => Enum.IsDefined(Tool) && Style is { } s && Enum.IsDefined(Symbol) && Emoji is { Length: > 0 and <= 32 } &&
         NumericParameterDomain.ForTool(nameof(NumberStart)).Contains(NumberStart) && NumericParameterDomain.ForTool(nameof(NumberStep)).Contains(NumberStep) &&
-        Enum.IsDefined(NumberTextSizeMode) &&
+        Enum.IsDefined(NumberTextSizeMode) && (Numbering is null || Tool == EditorTool.Number && Numbering.IsValid()) &&
         (Tool != EditorTool.Presentation || Presentation is not null) && (Presentation is null || Presentation.IsValid()) &&
         (Tool != EditorTool.PointerPresentation || PointerPresentation is not null) && (PointerPresentation is null || PointerPresentation.IsValid()) &&
         (allowUnsupportedAppearance && s.Variant is { Length: > 0 and <= 128 } || SupportedAppearance) &&

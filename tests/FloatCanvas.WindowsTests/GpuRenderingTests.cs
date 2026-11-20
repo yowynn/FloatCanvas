@@ -75,6 +75,20 @@ internal static class GpuRenderingTests
         check(hardware[(260 * 440 + 420) * 4 + 3] == 0 && hardware[(30 * 440 + 30) * 4 + 3] is >= 110 and <= 114,
             "GPU viewport clipping leaves outside pixels clear and applies layer opacity once");
 
+        var badge = new CanvasElement { Kind = ElementKind.Number, Number = 87, Width = 100, Height = 100,
+            NumberTextSizeMode = NumberTextSizeMode.FitBadge, Transform = Affine2D.Translation(12, 12),
+            Style = new() { Variant = ElementAppearance.NumberFilled, PrimaryColor = 0xFFFF0000, SecondaryColor = 0 } };
+        var reservedBorder = Box(128, 12, 90, 90, 0xFFFF0000);
+        reservedBorder.Style.PrimaryColor = 0; reservedBorder.Style.StrokeWidth = 10;
+        var knockout = new SceneDocument { Viewport = new(0, 0, 240, 124), Elements = [Box(0, 0, 240, 124, 0xFF0000FF), badge, reservedBorder] };
+        var knockedCpu = RenderPixels(null, knockout, assets, 240, 124, null, TimeSpan.Zero, out _);
+        var knockedGpu = RenderPixels(gpu, knockout, assets, 240, 124, null, TimeSpan.Zero, out _);
+        var materials = Compare("transparent number ink and reserved inner stroke over blue", knockedCpu, knockedGpu);
+        report.Pixels.Add(materials);
+        int blueDigits = Enumerable.Range(42, 40).Sum(y => Enumerable.Range(37, 50).Count(x => knockedGpu[(y * 240 + x) * 4] == 255));
+        check(blueDigits > 75 && knockedGpu[(50 * 240 + 132) * 4] == 255 && knockedGpu[(50 * 240 + 142) * 4 + 2] == 255 &&
+            materials.MeanChannelDifference < 2, "GPU readback reveals the lower layer through transparent digits and a positive-width clear stroke");
+
         var tilted = new SceneDocument { Viewport = new(0, 0, 240, 200) };
         tilted.Elements =
         [

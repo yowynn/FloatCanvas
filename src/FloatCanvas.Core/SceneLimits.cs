@@ -26,7 +26,8 @@ public static class SceneLimits
         if (elements.Any(e => e.Points is null || e.Points.Count > MaximumPathPoints || e.ImageFrame?.Count > MaximumPathPoints))
             throw new InvalidDataException(L.Get("Scene.PathCapacityExceeded"));
         if (elements.Any(element => element.Style is null || !AppearanceRegistry.IsValidColorRoles(element.Style.AdditionalColors) ||
-            !ElementAppearance.IsValidVariant(element.Kind, element.Style.Variant) || !Enum.IsDefined(element.NumberTextSizeMode) || !PresentationLimits.IsValidElement(element) || !WindowSourceLimits.IsValidElement(element)))
+            !ElementAppearance.IsValidVariant(element.Kind, element.Style.Variant) || !Enum.IsDefined(element.NumberTextSizeMode) ||
+            !NumberSequence.IsValidMarker(element) || !PresentationLimits.IsValidElement(element) || !WindowSourceLimits.IsValidElement(element)))
             throw new InvalidDataException(L.Get("Scene.InvalidElementStyle"));
         if (document.Background?.WindowSource is not null || previews.Any(preview => preview.Background?.WindowSource is not null)) throw new InvalidDataException("A canvas background cannot be a live window source.");
         // An inexpensive upper bound keeps ordinary commits independent of unchanged

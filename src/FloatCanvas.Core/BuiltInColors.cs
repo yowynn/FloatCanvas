@@ -4,7 +4,7 @@ public readonly record struct ColorFamily(string Name, uint Ink, uint Tint, uint
 
 public static class BuiltInColors
 {
-    public const uint Red = 0xFFE03E3E, Yellow = 0xFFCB912F, Blue = 0xFF2383E2, PaleRed = 0xFFFFDCDC;
+    public const uint Red = 0xFFE03E3E, Yellow = 0xFFCB912F, Blue = 0xFF2383E2, Green = 0xFF448361, PaleRed = 0xFFFFDCDC;
     private static ColorFamily Family(string name, uint ink, uint tint, uint letter, uint outline, uint? border = null) =>
         new(name, ink, tint, letter, outline, border ?? ink);
 
@@ -17,7 +17,7 @@ public static class BuiltInColors
         Family("Orange", 0xFFD9730D, 0xFFFFE5CC, 0xFF6A370D, 0xFF252525),
         Family("Yellow", Yellow, 0xFFFFF2BB, 0xFF604315, 0xFF252525),
         Family("Blue", Blue, 0xFFDCEEFF, 0xFF193F64, 0xFFFFFFFF),
-        Family("Green", 0xFF448361, 0xFFDCEFE5, 0xFF244C37, 0xFFFFFFFF),
+        Family("Green", Green, 0xFFDCEFE5, 0xFF244C37, 0xFFFFFFFF),
         Family("Purple", 0xFF9065B0, 0xFFEBDFF5, 0xFF513466, 0xFFFFFFFF),
         Family("Pink", 0xFFC14C8A, 0xFFF6DDEB, 0xFF6C284C, 0xFFFFFFFF)
     ]);

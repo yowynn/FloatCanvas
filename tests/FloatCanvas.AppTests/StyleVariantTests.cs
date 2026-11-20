@@ -26,7 +26,7 @@ internal static class StyleVariantTests
                 panel.PrepareForShow();
                 var rows = Field<Dictionary<string, FrameworkElement>>(panel, "rows");
                 var choices = Field<Dictionary<string, SegmentedChoice>>(panel, "pickers");
-                check(locale + " outline number exposes its style and border width with its secondary fill", rows["StyleVariant"].Visibility == Visibility.Visible && rows["StrokeWidth"].Visibility == Visibility.Visible && rows["Background"].Visibility == Visibility.Visible);
+                check(locale + " outline number exposes both colors and an automatic ring", rows["StyleVariant"].Visibility == Visibility.Visible && rows["StrokeWidth"].Visibility == Visibility.Collapsed && rows["Background"].Visibility == Visibility.Visible);
                 choices["StyleVariant"].SelectedValue = ElementAppearance.NumberFilled; panel.PrepareForShow();
                 check(locale + " choosing filled restores the secondary color control without losing its value", editor.Parameters.Style.Variant == ElementAppearance.NumberFilled && editor.Parameters.Style.Fill == 0xFFFFCC33 && rows["Background"].Visibility == Visibility.Visible);
                 var first = new CanvasElement { Kind = ElementKind.Number, Width = 60, Height = 60, Style = new() { FontSize = 8 } };
@@ -38,6 +38,8 @@ internal static class StyleVariantTests
                 using var surface = new InspectorTestSurface(inspector);
                 Field<SegmentedChoice>(inspector, "appearanceStyle").SelectedValue = ElementAppearance.NumberOutline;
                 Invoke(inspector, "Apply");
+                check(locale + " outline width is also automatic for selected number layers",
+                    Field<Dictionary<string, FrameworkElement>>(inspector, "fieldContainers")["StrokeWidth"].Visibility == Visibility.Collapsed);
                 check(locale + " multi-selection applies the stable variant to each badge in one undo operation", session.UndoCount == 1 && session.Document.Elements.All(e => e.Style.Variant == ElementAppearance.NumberOutline));
                 check(locale + " switching legacy badges keeps their small font and old sizing rule", session.Document.Elements.All(e => !e.NumberUsesForeground && e.Style.FontSize == 8 && e.Style.Stroke == 0xFF336699 && e.Style.Fill == 0xFFFFFFFF));
                 check(locale + " undo restores the exact loaded legacy badge state", session.Undo() && JsonSerializer.Serialize(session.Document) == original);

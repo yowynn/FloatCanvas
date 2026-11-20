@@ -206,6 +206,7 @@ internal static class Program
             if (args.Contains("--canvas-pin-only")) { CanvasPinCalibrationTests.Run(Assert); CanvasSettingsControlTests.Run(Assert); return 0; }
             if (args.Contains("--new-canvas-settings-only")) { NewCanvasSettingsTests.Run(Assert); return 0; }
             if (args.Contains("--new-canvas-escape-only")) { NewCanvasEscapeRuntimeTests.Run(Assert); return 0; }
+            if (args.Contains("--number-sequences-only")) { NumberSequenceTests.Run(Assert); return 0; }
             if (args.Contains("--signed-number-only")) { SignedNumberTests.Run(Assert); return 0; }
             if (args.Contains("--image-outside-stroke-only")) { ImageOutsideStrokeTests.Run(Assert); return 0; }
             if (args.Contains("--type-specific-inspector-only")) { TypeSpecificInspectorTests.Run(Assert); return 0; }
@@ -485,6 +486,7 @@ internal static class Program
             SymbolStylePresetTests.Run(Assert);
             CaptureAspectPolicyTests.Run(Assert);
             NumberStartLinkTests.Run(Assert);
+            NumberSequenceTests.Run(Assert);
             DepthOcclusionSettingsTests.Run(Assert); DepthOcclusionInteractionTests.Run(Assert);
             Round2CanvasTests.Run(Assert);
             foreach(string group in new[]{"colors","welcome","pins","logo","text"})Round2UiTests.Run(Assert,group);
@@ -700,6 +702,7 @@ internal static class Program
 
     private static void SelectionAndTransforms()
     {
+        SingleLayerResizeTests.Run(Assert);
         var session = Session(); var shape = Rectangle(80, 60, new(50, 70)); session.Add(shape);
         var controller = new EditorController(session) { Tool = EditorTool.Select };
         var before = session.Document.Elements.Single().Transform;
@@ -721,8 +724,9 @@ internal static class Program
 
         // Nonuniform resize after rotation must preserve perpendicular axes instead of introducing a shear.
         session.UpdateSelection(e => e.Transform = Affine2D.Translation(150, 90).Compose(Affine2D.Rotation(30)));
-        bounds = session.SelectionBounds()!.Value; center = bounds.Center;
-        Gesture(controller, new(bounds.Right, bounds.Bottom), new(bounds.Right + 35, bounds.Bottom + 10));
+        var rotatedCorner = controller.SelectionScreenCorners[2];
+        Gesture(controller, rotatedCorner, rotatedCorner + new PointD(35, 10));
+        Assert("rotated resize moves the grabbed handle", controller.SelectionScreenCorners[2].DistanceTo(rotatedCorner + new PointD(35, 10)) < 1e-7);
         var transform = session.Document.Elements.Single().Transform;
         Assert("rotated shape nonuniform resize preserves orthogonal local axes", Math.Abs(transform.M11 * transform.M12 + transform.M21 * transform.M22) < 1e-7);
         Assert("rotated shape resize preserves rotation", Math.Abs(Math.Atan2(transform.M21, transform.M11) * 180 / Math.PI - 30) < 1e-7);

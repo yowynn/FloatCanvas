@@ -18,14 +18,18 @@ internal sealed class ToolPresetGallery : PresetGallery<ToolPreset>
     { if (SelectedId == id) return; selections[ToolPresetLibrary.Family(controller.Tool)] = id; stateStore?.MarkChanged(); }
     protected override string Id(ToolPreset p) => p.Id;
     protected override string Caption(ToolPreset p) => p.Name;
-    protected override FrameworkElement Preview(ToolPreset p) => CreatePreview(p.Parameters);
-    internal static FrameworkElement CreatePreview(ToolParameters parameters)
+    protected override FrameworkElement Preview(ToolPreset p) => CreatePreview(p.Parameters, p.IsOfficial);
+    internal static FrameworkElement CreatePreview(ToolParameters parameters, bool isOfficial = false)
     {
-        var icon = (FrameworkElement)ToolParameterIcon.Create(parameters, 24);
+        const double tileSize = 24;
+        double iconSize = isOfficial && parameters.Tool == EditorTool.Number
+            ? tileSize * parameters.Style.FontSize / ToolPresetLibrary.StandardMarkerSize
+            : tileSize;
+        var icon = (FrameworkElement)ToolParameterIcon.Create(parameters, iconSize);
         if (parameters.Tool is not (EditorTool.Freehand or EditorTool.Highlighter or EditorTool.Line or EditorTool.Arrow or EditorTool.DoubleArrow
             or EditorTool.Rectangle or EditorTool.RoundedRectangle or EditorTool.Ellipse or EditorTool.Symbol or EditorTool.Triangle
             or EditorTool.Text or EditorTool.Number or EditorTool.Emoji or EditorTool.Presentation)) return icon;
-        return new System.Windows.Controls.Border { Width = 24, Height = 24, Background = PreviewBackground, Child = icon };
+        return new System.Windows.Controls.Border { Width = tileSize, Height = tileSize, Background = PreviewBackground, Child = icon };
     }
     private static readonly System.Windows.Media.Brush PreviewBackground = CreatePreviewBackground();
     private static System.Windows.Media.Brush CreatePreviewBackground()

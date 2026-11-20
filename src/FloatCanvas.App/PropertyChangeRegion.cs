@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -40,12 +41,25 @@ internal sealed class PropertyChangeRegion : Decorator
         return scroll;
     }
 
-    internal void Change(Action update)
+    internal void Change(Action update) => ChangeTogether(update, this);
+
+    internal static void ChangeTogether(Action update, params PropertyChangeRegion[] regions)
     {
-        var previousRows = VisibleRows();
-        Reset();
+        var before = regions.Select(region => VisibleChildren(region.body).ToArray()).ToArray();
         update();
-        if (!IsVisible || ActualWidth <= 0 || previousRows.SequenceEqual(VisibleRows())) return;
+        var changed = regions.Where((region, i) => !before[i].SequenceEqual(VisibleChildren(region.body))).ToArray();
+        foreach (var region in changed)
+        {
+            // A parent already paints one continuous cue over its nested rows.
+            if (changed.Any(other => other != region && other.IsAncestorOf(region))) region.Reset();
+            else region.CueChangedProperties();
+        }
+    }
+
+    private void CueChangedProperties()
+    {
+        Reset();
+        if (!IsVisible || ActualWidth <= 0) return;
 
         body.Measure(new Size(ActualWidth, double.PositiveInfinity));
         if (body.DesiredSize.Height <= 0) return;
@@ -70,8 +84,22 @@ internal sealed class PropertyChangeRegion : Decorator
         BeginAnimation(CueStrengthProperty, null); SetValue(CueStrengthProperty, 0d);
     }
 
-    private FrameworkElement[] VisibleRows() => body.Children.OfType<FrameworkElement>()
-        .Where(row => row.Visibility == Visibility.Visible).ToArray();
+    private readonly record struct PropertyIdentity(object Key, string? Role, string? Caption);
+
+    // Stop at the row label. Changes to a value or a dropdown's selected item
+    // leave the identity of that property intact.
+    private static IEnumerable<PropertyIdentity> VisibleChildren(Panel group)
+    {
+        foreach (var row in group.Children.OfType<FrameworkElement>())
+        {
+            if (row.Visibility != Visibility.Visible) continue;
+            var caption = AutomationProperties.GetLabeledBy(row) as TextBlock ?? row as PropertyLabel;
+            string key = AutomationProperties.GetAutomationId(row);
+            yield return new(string.IsNullOrEmpty(key) ? (object)row : key, caption is null ? null : AutomationProperties.GetAutomationId(caption), caption?.Text);
+            if (caption is null && row is Panel children)
+                foreach (var item in VisibleChildren(children)) yield return item;
+        }
+    }
 
     protected override void OnRender(DrawingContext drawingContext)
     {

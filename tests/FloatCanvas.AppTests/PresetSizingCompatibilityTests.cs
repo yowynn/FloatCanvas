@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FloatCanvas.App;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
@@ -29,7 +30,8 @@ internal static class PresetSizingCompatibilityTests
         check("emoji tools hide aspect options", rows["Aspect"].Visibility == System.Windows.Visibility.Collapsed);
         editor.Tool = EditorTool.Number; panel.PrepareForShow();
         var captions = Field<Dictionary<string, Controls.TextBlock>>(panel, "captions");
-        check("number tools label their size and color roles", captions["FontSize"].Text == FloatCanvas.Localization.AppText.Get("ToolOptions.Size") && captions["Foreground"].Text == FloatCanvas.Localization.AppText.Get("Color.NumberShape"));
+        check("number tools label their size and color roles", captions["FontSize"].Text == FloatCanvas.Localization.AppText.Get("ToolOptions.Size") && captions["Foreground"].Text == FloatCanvas.Localization.AppText.Get("Color.BadgeFill") &&
+            captions["Background"].Text == FloatCanvas.Localization.AppText.Get("Color.NumberText"));
         check("number tools hide aspect options", rows["Aspect"].Visibility == System.Windows.Visibility.Collapsed);
         check("linked colors are persistent model state", typeof(ElementStyle).GetProperty("LinkColors") is not null);
         foreach (var preset in library.Official.Where(p => p.Parameters.Tool is EditorTool.Rectangle or EditorTool.Ellipse))
@@ -43,8 +45,12 @@ internal static class PresetSizingCompatibilityTests
         var badgeScene = new SceneDocument { Viewport = new(0,0,72,72), Elements = [number.Clone()] }; badgeScene.Elements[0].Transform = Affine2D.Identity;
         using var badge = SKBitmap.Decode(renderer.ExportPng(badgeScene, session.Assets, true));
         check("new badges use foreground red for shapes and background white for labels", badge.GetPixel(36, 8) == new SKColor(ColorLibrary.ForegroundRed) && badge.Pixels.Count(p => p == SKColors.White) > 30);
-        var oldBadge = JsonSerializer.Deserialize<CanvasElement>("{\"Kind\":" + (int)ElementKind.Number + ",\"Width\":72,\"Height\":72,\"Style\":{\"Stroke\":" + 0xFF00FF00u + ",\"Fill\":" + 0xFF2383E2u + ",\"FontSize\":72}}")!;
-        badgeScene.Elements = [oldBadge]; oldBadge.Transform = Affine2D.Identity;
+        var wire = JsonSerializer.SerializeToNode(badgeScene)!.AsObject();
+        wire["Version"] = 8; LegacyFixtureSchema.RemovePrefabFields(wire);
+        var oldBadge = wire["Elements"]![0]!.AsObject();
+        oldBadge.Remove("NumberUsesForeground");
+        oldBadge["Style"] = new JsonObject { ["Stroke"] = 0xFF00FF00u, ["Fill"] = 0xFF2383E2u, ["FontSize"] = 72 };
+        badgeScene = wire.Deserialize<SceneDocument>(new JsonSerializerOptions { Converters = { new EmbeddedDocumentConverter() } })!;
         using var legacy = SKBitmap.Decode(renderer.ExportPng(badgeScene, session.Assets, true));
         check("legacy saved number colors retain their previous blue shape and white label", legacy.GetPixel(36,8) == new SKColor(0xFF2383E2) && legacy.Pixels.Count(p => p == SKColors.White) > 20);
     }

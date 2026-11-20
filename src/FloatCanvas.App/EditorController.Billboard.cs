@@ -401,24 +401,7 @@ internal sealed partial class EditorController
             }
             else if (gesture == "resize")
             {
-                if (!canvas.ElementToScreen(source).TryInverse(out var inverse)) continue;
-                var center = ResizePivot(ElementGeometry.LocalBounds(source),inverse.TransformPoint(startScreen));
-                var from = inverse.TransformPoint(startScreen) - center;
-                var to = inverse.TransformPoint(pointerScreen) - center;
-                double sx = Math.Abs(from.X) < .001 ? 1 : Math.Max(.02, to.X / from.X);
-                double sy = Math.Abs(from.Y) < .001 ? 1 : Math.Max(.02, to.Y / from.Y);
-                if (ElementGeometry.PreservesAspect(source) ^ ((modifiers & OverlayModifiers.Shift) != 0)) sx = sy = UniformScale(from, to);
-                if (source.Kind == ElementKind.Text && resizeTextRenderer is not null)
-                    TextFrameLayout.Resize(item, source, sx, sy, resizeTextRenderer);
-                else if (source.Kind == ElementKind.Presentation)
-                    PresentationFrameLayout.Resize(item, source, sx, sy);
-                else if (ElementGeometry.IsBoxShape(source.Kind))
-                {
-                    item.Width = source.Width; item.Height = source.Height; item.CornerRadius = source.CornerRadius; item.Transform = source.Transform;
-                    ElementGeometry.ResizeShapeGeometry(item, sx, sy);
-                }
-                else item.Transform = source.Transform.Compose(Affine2D.Scale(sx, sy));
-                PreserveResizePivot(source,item,center);
+                if (!TryResizeLeaf(item, source, modifiers)) { RejectPointer(); return true; }
             }
         }
         if (!mixed) { NotifyGeometryChanged(); return true; }

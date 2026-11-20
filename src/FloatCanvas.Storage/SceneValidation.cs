@@ -193,7 +193,8 @@ public static class SceneValidation
         Require(element.Style is not null && element.Text is not null && element.Text.Length <= 2_000_000, L.Get("Scene.InvalidElementContent"));
         var s = element.Style!;
         Require(ElementAppearance.IsValidVariant(element.Kind, s.Variant), L.Get("Scene.InvalidElementStyle"));
-        Require(AppearanceRegistry.IsValidColorRoles(s.AdditionalColors) && Enum.IsDefined(element.NumberTextSizeMode), L.Get("Scene.InvalidElementStyle"));
+        Require(AppearanceRegistry.IsValidColorRoles(s.AdditionalColors) && Enum.IsDefined(element.NumberTextSizeMode) &&
+            NumberSequence.IsValidMarker(element), L.Get("Scene.InvalidElementStyle"));
         Require(PresentationLimits.IsValidElement(element), L.Get("Scene.InvalidElementStyle"));
         Require(WindowSourceLimits.IsValidElement(element), "Invalid live window source.");
         Require(Nonnegative(s.StrokeWidth) && Unit(s.Opacity) && Positive(s.FontSize) && s.FontFamily is not null && s.FontFamily.Length <= 1024 && Enum.IsDefined(s.TextAlignment), L.Get("Scene.InvalidElementStyle"));

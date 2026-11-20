@@ -299,7 +299,8 @@ public sealed partial class EditorSession
         if (analysis.BlockReason is { } blocked) throw new InvalidOperationException(L.Get(blocked));
         if (!analysis.CanExecute) return;
         var snapshot = CreateSelectionSnapshot(normalizeOrigin: false);
-        InsertDocument(snapshot, Assets, Affine2D.Translation(offsetX, offsetY), label: L.Get("History.DuplicateElements"), preserveDefinitions: true, withinTransaction: withinTransaction);
+        InsertDocument(snapshot, Assets, Affine2D.Translation(offsetX, offsetY), label: L.Get("History.DuplicateElements"), preserveDefinitions: true,
+            withinTransaction: withinTransaction, preserveNumberCounter: true);
     }
     private void EnsureSafeInsertion(IEnumerable<CanvasElement> elements)
     {

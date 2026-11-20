@@ -25,7 +25,7 @@
 | 矩形 | 自由比例矩形 / Free-aspect rectangle、圆角矩形 / Rounded rectangle、浅色填充矩形 / Tinted rectangle、实心矩形 / Solid rectangle | 自由比例默认 108×108、红色描边。圆角半径为 12，浅色填充采用浅红，实心使用一个填充色。 |
 | 圆形 | 自由比例椭圆 / Free-aspect ellipse、浅色椭圆区域 / Tinted ellipse region、实色椭圆标记 / Solid ellipse marker | 默认 108×108，拖动可改变比例。浅色区域保留描边，实色标记使用单一填充色。 |
 | 文字 | 标准文字 / Standard text、正文注释 / Body note、居中注释 / Centered annotation、白字深边 / Outlined white text、蓝色标签 / Blue label | 前三项是普通文字，分别为红色 36、黑色 24、蓝色居中 28。白字深边为 36，蓝色标签为 28。五项都可继续编辑主色、字体、字号和对齐。 |
-| 序号 | 标准序号 / Standard number、轮廓序号 / Outline number、紧凑序号 / Compact number | 标准实心为红底白字 72，轮廓为红色数字和 3 px 红边、透明背景 56，紧凑实心为黑底白字 36。三者均从 1 开始，步长 1。 |
+| 序号 | 一级序号 / Level 1、二级序号 / Level 2、三级序号 / Level 3 | 均为实心白字，从 1 开始、步长为 1。一级为 72 px 红底数字（1、2、3），二级为 64 px 蓝底小写字母（a、b、c），三级为 56 px 绿底小写罗马数字（i、ii、iii）。 |
 | 符号 | 标准轮廓 / Standard outline、浅色填充 / Tinted fill、实心填充 / Solid fill、虚线轮廓 / Dashed outline | 四项都用 72×72 三角形示范。形状选择与实心、描边样式独立。 |
 | 表情 | 微笑 / Smile、赞许 / Thumbs up、完成 / Done、提醒 / Warning | 😀、👍、✅、⚠️，均为 72；保留原生表情颜色。 |
 | 模糊 | 标准模糊 / Standard blur、强效模糊 / Strong blur | 强度分别为 12 和 24。 |

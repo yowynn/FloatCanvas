@@ -143,7 +143,7 @@ public sealed partial class EditorSession
     }
 
     /// <summary>Imports editable entities, fresh element/effect/group IDs and immutable referenced resources atomically.</summary>
-    public void InsertDocument(SceneDocument source, AssetLibrary sourceAssets, Affine2D transform, bool group = false, string? label = null, bool preserveDefinitions = false, string? groupName = null, ContainerBillboardInsertion? billboard = null, bool withinTransaction = false)
+    public void InsertDocument(SceneDocument source, AssetLibrary sourceAssets, Affine2D transform, bool group = false, string? label = null, bool preserveDefinitions = false, string? groupName = null, ContainerBillboardInsertion? billboard = null, bool withinTransaction = false, bool preserveNumberCounter = false)
     {
         EnsureWritableParent(EditScopeId);
         ArgumentNullException.ThrowIfNull(source);
@@ -190,6 +190,12 @@ public sealed partial class EditorSession
         {
             foreach (var resource in resources) Assets.Add(resource);
             var inserted = AppendSnapshot(document, snapshot, EditScopeId, ActiveRootCanvas);
+            if (!preserveNumberCounter)
+            {
+                foreach (var element in snapshot.Elements)
+                    if (element.Kind == ElementKind.Number)
+                        document.NextNumber = Math.Max(document.NextNumber, (int)Math.Min(int.MaxValue, (long)element.Number + 1));
+            }
             foreach (var id in inserted)
                 if (new SceneGraph(document).FindGroup(id) is { PreviewCanvas: null }) InitializeGroupPreview(id);
             SetSelectionCore(inserted);
@@ -217,8 +223,6 @@ public sealed partial class EditorSession
         document.Groups.AddRange(snapshot.Groups); document.Elements.AddRange(snapshot.Elements); document.Instances.AddRange(snapshot.Instances);
         var retainedDefinitions = document.Definitions.Select(definition => definition.Id).ToHashSet();
         foreach (var definition in snapshot.Definitions) if (retainedDefinitions.Add(definition.Id)) document.Definitions.Add(definition.Clone());
-        foreach (var element in snapshot.Elements)
-            if (element.Kind == ElementKind.Number) document.NextNumber = Math.Max(document.NextNumber, (int)Math.Min(int.MaxValue, (long)element.Number + 1));
         if (scope is null)
         {
             var appended = new SceneGraph(document);

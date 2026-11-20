@@ -37,7 +37,12 @@ internal static class InnerStrokeRenderingTests
         check("the fill-stroke transition has no doubled-alpha pixels", Enumerable.Range(20, 60).All(x => translucent.GetPixel(x, 40).Alpha <= 129));
         rectangle.Style.Stroke = 0;
         using var noStroke = Render(renderer, document);
-        check("a fully transparent stroke does not cut away the fill", noStroke.GetPixel(20, 40).Alpha == 128 && noStroke.GetPixel(20, 40).Blue > 250);
+        check("transparent stroke owns its eight-pixel band over the full alpha range", noStroke.GetPixel(20, 40).Alpha == 0 &&
+            noStroke.GetPixel(27, 40).Alpha == 0 && noStroke.GetPixel(28, 40).Alpha == 128);
+        rectangle.Style.StrokeWidth = 0;
+        using var disabled = Render(renderer, document);
+        check("setting stroke width to zero returns the band to the fill", disabled.GetPixel(20, 40).Alpha == 128);
+        rectangle.Style.StrokeWidth = 8;
         rectangle.Style.Stroke = 0x80FF0000;
         using (var background = new SKBitmap(120, 100))
         using (var canvas = new SKCanvas(background))

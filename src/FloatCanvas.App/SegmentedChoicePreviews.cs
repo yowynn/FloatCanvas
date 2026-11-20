@@ -32,6 +32,7 @@ internal static class SegmentedChoicePreviews
             "capture-polygon" => "M2,5 L9,1 L15,6 L12,14 L3,12 Z",
             "tip-round" => "M4,5 H12 A3,3 0 0 1 12,11 H4 A3,3 0 0 1 4,5 Z",
             "tip-flat" => "M2,5 H14 V11 H2 Z",
+            "repeat" => "M2,8 V6 Q2,4 4,4 H13 M10,1 L13,4 L10,7 M14,8 V10 Q14,12 12,12 H3 M6,9 L3,12 L6,15",
             "line-straight" => "M2,12 L14,4",
             "line-arc" => "M2,12 A12,12 0 0 1 14,4",
             "language" => "M1,3 H9 M5,1 V3 M3,4 C3,7 6,10 9,11 M8,4 C8,7 5,10 1,11 M9,15 L12,7 L15,15 M10,12 H14",

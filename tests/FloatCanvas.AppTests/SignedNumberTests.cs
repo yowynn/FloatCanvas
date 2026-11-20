@@ -20,6 +20,7 @@ internal static class SignedNumberTests
         {
             foreach (var (start, step) in new[] { (0, 0), (5, -2), (-3, 3), (-2, -1), (int.MaxValue - 1, 999999), (int.MinValue + 1, -999999) })
                 Drawing(start, step, check);
+            CopyCounter(check);
             CoreAdd(check);
             Persistence(folder, check);
             SessionRestoration(folder, check);
@@ -54,6 +55,37 @@ internal static class SignedNumberTests
             session.Document.Elements.Select(element => element.Number).SequenceEqual(expected));
         Send(editor, OverlayPointerKind.Down, 700); editor.Cancel();
         check($"start={start}, step={step} cancellation does not consume a number", session.Document.Elements.Count == 3 && session.Document.NextNumber == next && session.UndoCount == 3);
+    }
+
+    private static void CopyCounter(Action<string, bool> check)
+    {
+        foreach (int step in new[] { 1, -2, 0 })
+        {
+            var session = new EditorSession(new SceneDocument { NextNumber = 5 });
+            var editor = new EditorController(session) { Tool = EditorTool.Number, NumberStep = step };
+            Send(editor, OverlayPointerKind.Down, 100);
+            Send(editor, OverlayPointerKind.Up, 100);
+            var original = session.Document.Elements.Single();
+            session.SetSelection([original.Id]);
+            session.DuplicateSelection();
+            int next = 5 + step;
+            check($"duplicate keeps the marker and counter for step {step}", session.SelectedElements().Single().Number == 5 &&
+                session.Document.Elements.Count == 2 && session.Document.NextNumber == next);
+            check($"undo and redo of a duplicate keep counter {next}", session.Undo() && session.Document.NextNumber == next &&
+                session.Redo() && session.Document.NextNumber == next);
+
+            var snapshot = ObjectClipboardCommand.CreateSnapshot(session);
+            var transfer = ObjectClipboardCommand.RegisterTransfer(session, snapshot);
+            var clipboard = new DesktopSession.ClipboardObjects { Document = snapshot, OwnerTransfer = transfer };
+            var pasted = DesktopSession.ClipboardObjects.Read(System.Text.Json.JsonSerializer.Serialize(clipboard));
+            ObjectClipboardCommand.Insert(session, pasted.Document, session.Assets, session.Document.Viewport, pasted.OwnerTransfer);
+            check($"same-canvas clipboard paste preserves marker and counter for step {step}",
+                session.SelectedElements().Single().Number == 5 && session.Document.NextNumber == next);
+            Send(editor, OverlayPointerKind.Down, 460);
+            Send(editor, OverlayPointerKind.Up, 460);
+            check($"drawing after duplicate and paste resumes at {next}", session.Document.Elements.Select(e => e.Number).SequenceEqual([5, 5, 5, next]) &&
+                session.Document.NextNumber == next + step);
+        }
     }
 
     private static void CoreAdd(Action<string, bool> check)
@@ -137,7 +169,8 @@ internal static class SignedNumberTests
                 if (cached)
                 {
                     var state = new ToolStateStore();
-                    state.Tools[EditorTool.Number] = new() { Tool = EditorTool.Number, NumberStart = -5, NumberStep = -3 };
+                    state.Tools[EditorTool.Number] = new() { Tool = EditorTool.Number, NumberStart = -5, NumberStep = -3,
+                        Numbering = new() { Format = NumberFormat.Custom, Items = ["恢复"], FirstNumber = -5 } };
                     state.Save();
                 }
                 var monitor = new MonitorInfo("signed-number-fixture", new(0, 0, 640, 160), new(0, 0, 640, 160), 96, 96, true);
@@ -152,6 +185,7 @@ internal static class SignedNumberTests
                     (isolation.GetValue(host) as IDisposable)?.Dispose(); isolation.SetValue(host, null);
                     var editor = (EditorController)typeof(DesktopSession).GetField("_editor", Private)!.GetValue(session)!;
                     int expectedStart = cached ? -5 : -8, expectedStep = cached ? -3 : 0;
+                    check("inspector can resolve the number recipe before its tool is activated", editor.Numbering.Label(-5) == (cached ? "恢复" : "-5"));
                     check("real session startup preserves " + (cached ? "cached descending" : "stationary configured") + " numbering", editor.NumberStart == expectedStart && editor.NumberStep == expectedStep);
                     typeof(DesktopSession).GetMethod("SwitchToolState", Private)!.Invoke(session, [EditorTool.Number, false]);
                     check("first number activation restores its signed working state", editor.NumberStart == expectedStart && editor.NumberStep == expectedStep);

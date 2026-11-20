@@ -140,6 +140,7 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.BackgroundPickingEnabled = true;
         if (_toolbarToolMemory.TryGetValue(EditorTool.Freehand, out var savedPen)) _editor.ApplyParameters(savedPen);
         _toolbarToolMemory.TryGetValue(EditorTool.Number, out var savedNumber);
+        _editor.Numbering = savedNumber?.Numbering ?? NumberSequenceSettings.Default;
         _editor.NumberStart = Math.Clamp(savedNumber?.NumberStart ?? _settings.NumberStart,-999999,999999);
         _editor.NumberStep = Math.Clamp(savedNumber?.NumberStep ?? _settings.NumberStep,-999999,999999);
         _settings.NumberStart = _editor.NumberStart; _settings.NumberStep = _editor.NumberStep;
@@ -830,7 +831,8 @@ internal sealed partial class DesktopSession : IDisposable
         _editor.Cancel(); _inspectorWanted = !_inspectorWanted;
         if (_inspector == null)
         {
-            _inspector = new InspectorWindow(() => Active, () => !DocumentOperationBusy && _host.IsVisible && !Active.IsReadOnly, hasSharedCardContext: () => _editor.HasSharedCardContext) { Owner = _toolbar };
+            _inspector = new InspectorWindow(() => Active, () => !DocumentOperationBusy && _host.IsVisible && !Active.IsReadOnly, hasSharedCardContext: () => _editor.HasSharedCardContext,
+                numberSequence: () => _editor.Numbering) { Owner = _toolbar };
             ConfigurePresentationUi(_inspector);
             ConfigureWindowSourcesUi(_inspector);
             ConfigureAppWindow(_inspector);

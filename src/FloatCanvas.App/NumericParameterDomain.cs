@@ -13,7 +13,7 @@ internal readonly record struct NumericParameterDomain(double Minimum, double Ma
         "FontSize" => new(double.Epsilon, FloatCanvas.Core.ElementStyle.MaximumFontSize, 8, 144),
         "NumberStart" => new(-999999, 999999, 1, 100, Integer: true),
         "NumberStep" => new(-999999, 999999, -10, 10, Integer: true),
-        "NextNumber" => new(int.MinValue, int.MaxValue, 1, 100, Integer: true),
+        "NextNumber" or "SequenceFirst" => new(int.MinValue, int.MaxValue, 1, 100, Integer: true),
         "DefaultWidth" or "DefaultHeight" => new(1, 1000000, 1, 600),
         "ArrowHeadSize" => new(0, 512, 0, 64),
         "CornerRadius" => new(0, double.MaxValue, 0, 64),

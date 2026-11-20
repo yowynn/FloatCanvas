@@ -29,7 +29,7 @@ internal static class CanonicalToolAppearanceTests
         var original = current.Where(preset => baselineIds.Contains(preset.Id)).ToArray();
         check("all historical official IDs resolve to a current recipe", baselineIds.All(id => current.Any(p => p.Id == ToolPresetLibrary.ResolveOfficialId(id))));
         check("curated catalog keeps 57 unique recipes including six presentation recipes", current.Count == 57 && current.Select(p => p.Id).Distinct().Count() == current.Count && current.Count(p => p.Parameters.Tool is EditorTool.Presentation or EditorTool.PointerPresentation) == 6);
-        var redesigned = new HashSet<string> { "official.freehand", "official.freehand-bold", "official.highlighter-yellow", "official.rectangle", "official.rounded-rectangle", "official.rectangle-soft", "official.rectangle-filled", "official.ellipse", "official.circle-soft", "official.circle-filled", "official.triangle", "official.symbol-soft", "official.symbol-filled", "official.symbol-dashed" };
+        var redesigned = new HashSet<string> { "official.freehand", "official.freehand-bold", "official.highlighter-yellow", "official.rectangle", "official.rounded-rectangle", "official.rectangle-soft", "official.rectangle-filled", "official.ellipse", "official.circle-soft", "official.circle-filled", "official.triangle", "official.symbol-soft", "official.symbol-filled", "official.symbol-dashed", "official.number-outline", "official.number-compact" };
         foreach (var preset in original.Where(p => !redesigned.Contains(p.Id)))
         {
             var expected = baseline.Single(node => node!["Id"]!.ToString() == preset.Id)!["Parameters"]!.DeepClone();
@@ -149,6 +149,7 @@ internal static class CanonicalToolAppearanceTests
         check("mixed shape and two-color number share canonical mixed primary and secondary", colors["Stroke"].IsMixed && !colors["Fill"].IsMixed);
         var captions = Field<Dictionary<string, Wpf.FrameworkElement>>(inspector, "fieldContainers");
         string Caption(string key) => ((Controls.TextBlock)((Controls.Grid)captions[key]).Children[0]).Text;
+        check("mixed rectangle and number layers do not expose manual ring width", captions["StrokeWidth"].Visibility == Wpf.Visibility.Collapsed);
         check("mixed types name the shared slots by role", Caption("Stroke") == FloatCanvas.Localization.AppText.Get("Color.Primary") &&
             Caption("Fill") == FloatCanvas.Localization.AppText.Get("Color.Secondary"));
         colors["Stroke"].SetUserValue(0x80112233); Invoke(inspector, "Apply");
@@ -167,7 +168,7 @@ internal static class CanonicalToolAppearanceTests
         check("outlined number renders red ring and digit over the blue body", red > 100 && blue > 30 && bitmap.GetPixel(35, 35).Blue > 200);
         element.Style.StrokeWidth = 0;
         using var zero = SKBitmap.Decode(renderer.ExportPng(new() { Viewport = new(0, 0, 100, 100), Elements = [element] }, new(), true));
-        check("zero-width outlined badge hides the ring while keeping its text", zero.GetPixel(11, 50).Blue > 200 && zero.Pixels.Any(color => color.Red > 200 && color.Blue < 30));
+        check("number ring and digit ignore the stored manual width", zero.Bytes.AsSpan().SequenceEqual(bitmap.Bytes));
         element.Style.AdditionalColors["shadow"] = 0x00123456; var clone = element.Clone(); clone.Style.AdditionalColors["shadow"] = 0xffabcdef;
         check("additional color snapshots are isolated and preserve transparent RGB", element.Style.AdditionalColors["shadow"] == 0x00123456);
     }
@@ -184,7 +185,28 @@ internal static class CanonicalToolAppearanceTests
             var options = new JsonSerializerOptions { Converters = { new FloatCanvas.Storage.EmbeddedDocumentConverter() } };
             var element = wire.Deserialize<SceneDocument>(options)!.Elements.Single();
             using var bitmap = SKBitmap.Decode(renderer.ExportPng(new() { Viewport = new(0, 0, 100, 100), Elements = [element] }, new(), true));
-            check("released legacy color fields preserve exact pixels: " + baseline["Name"], Convert.ToHexString(SHA256.HashData(bitmap.Bytes)) == baseline["PixelSha256"]!.ToString());
+            if (element.Kind == ElementKind.Number)
+            {
+                // Earlier badge images include the old line-box placement and manual ring.
+                // Compare the migrated badge with today's rendering of the documented source roles.
+                var raw = baseline["Element"]!;
+                var reference = raw.Deserialize<CanvasElement>()!;
+                var originalStyle = raw["Style"]!;
+                uint stroke = originalStyle["Stroke"]!.GetValue<uint>(), fill = originalStyle["Fill"]!.GetValue<uint>();
+                bool fit = raw["NumberUsesForeground"]?.GetValue<bool>() == true;
+                string? variant = originalStyle["Variant"]?.GetValue<string>();
+                bool legacyFill = variant is null && !fit;
+                bool outlined = variant is AppearanceMigration.LegacyNumberOutline or AppearanceMigration.LegacyTwoColorNumberOutline;
+                reference.NumberTextSizeMode = fit ? NumberTextSizeMode.FitBadge : NumberTextSizeMode.CapFontSize;
+                reference.Style.Variant = outlined ? ElementAppearance.NumberOutline : ElementAppearance.NumberFilled;
+                reference.Style.PrimaryColor = legacyFill && (fill >> 24) != 0 ? fill : stroke;
+                reference.Style.SecondaryColor = outlined ? fill & 0x00FFFFFFu : legacyFill ? 0xFFFFFFFFu : fill;
+                using var expected = SKBitmap.Decode(renderer.ExportPng(new() { Viewport = new(0, 0, 100, 100), Elements = [reference] }, new(), true));
+                check("released marker retains body, digit, and font sizing with current badge geometry: " + baseline["Name"],
+                    expected.Bytes.AsSpan().SequenceEqual(bitmap.Bytes));
+            }
+            else check("released legacy color fields preserve exact pixels: " + baseline["Name"],
+                Convert.ToHexString(SHA256.HashData(bitmap.Bytes)) == baseline["PixelSha256"]!.ToString());
         }
     }
     private static void Visuals(string output, string folder, Action<string, bool> check)

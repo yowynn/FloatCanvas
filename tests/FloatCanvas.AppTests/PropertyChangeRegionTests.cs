@@ -22,10 +22,113 @@ internal static class PropertyChangeRegionTests
         {
             AppTheme.Apply(theme);
             ImmediateLayout(check, theme);
+            SemanticIdentity(check, theme);
+            ColorRoleSwitches(check, output, theme, inspector: false);
+            ColorRoleSwitches(check, output, theme, inspector: true);
             Canvas(check, output, theme);
             Colors(check, output, theme, inspector: false);
             Colors(check, output, theme, inspector: true);
             HighlighterAngle(check, output, theme);
+        }
+    }
+
+    private static void SemanticIdentity(Action<string, bool> check, string theme)
+    {
+        var caption = new PropertyLabel("A");
+        var input = new TextBox { Text = "1" };
+        var row = PropertyPanelLayout.Row(caption, input);
+        var region = new PropertyChangeRegion(new() { Children = { new StackPanel { Children = { row } } } });
+        var window = new Window { Content = region, Width = 360, Height = 130 };
+        try
+        {
+            Show(window);
+            region.Change(() => caption.Text = "B"); Pump(50);
+            check(theme + " changing only a nested property caption cues its block", region.CueStrength > 0);
+            region.Reset();
+            region.Change(() => System.Windows.Automation.AutomationProperties.SetAutomationId(row, "other-property")); Pump(50);
+            check(theme + " reusing the same caption and row for a new key cues its block", region.CueStrength > 0);
+            region.Reset();
+            region.Change(() => input.Text = "2"); Pump(30);
+            check(theme + " a value change alone leaves the property identity intact", region.CueStrength == 0);
+        }
+        finally { window.Close(); }
+    }
+
+    private static void ColorRoleSwitches(Action<string, bool> check, string output, string theme, bool inspector)
+    {
+        using LabeledColorSurface surface = new(output, inspector);
+        var panel = surface.Panel;
+        var region = Field<PropertyChangeRegion>(panel, "linkedColorsRegion");
+        var rows = Field<Dictionary<string, FrameworkElement>>(panel, inspector ? "fieldContainers" : "rows");
+        var primary = rows[inspector ? "Stroke" : "Foreground"];
+        var secondary = rows[inspector ? "Fill" : "Background"];
+        var picker = inspector ? Field<SegmentedChoice>(panel, "appearanceStyle") :
+            Field<Dictionary<string, SegmentedChoice>>(panel, "pickers")["StyleVariant"];
+        string name = theme + (inspector ? " inspector" : " tool menu");
+        var caption = (TextBlock)((Grid)primary).Children[0];
+        picker.SelectedValue = ElementAppearance.NumberOutline; Pump(75);
+        check(name + " number styles cue both retained rows when their roles change", primary.IsVisible && secondary.IsVisible &&
+            caption.Text == FloatCanvas.Localization.AppText.Get("Color.BadgeInk") && region.CueStrength > 0 &&
+            ReferenceEquals(AncestorRegion(primary), region) && ReferenceEquals(AncestorRegion(secondary), region));
+        Save(surface.Window, Path.Combine(output, theme + (inspector ? "-number-inspector-cue.png" : "-number-tools-cue.png")));
+        region.Reset();
+        picker.SelectedValue = ElementAppearance.NumberFilled; Pump(65);
+        check(name + " changing back cues the reused color rows again", region.CueStrength > 0);
+        surface.SetText(); region.Reset();
+        picker.SelectedValue = ElementAppearance.TextLabel; Pump(60);
+        check(name + " plain text to themed label cues a renamed primary slot", primary.IsVisible && !secondary.IsVisible &&
+            caption.Text == FloatCanvas.Localization.AppText.Get("Color.LabelTheme") && region.CueStrength > 0);
+    }
+
+    private sealed class LabeledColorSurface : IDisposable
+    {
+        private readonly EditorSession session = new();
+        private readonly EditorController controller;
+        internal object Panel { get; }
+        internal Window Window { get; }
+
+        internal LabeledColorSurface(string output, bool inspector)
+        {
+            controller = new(session);
+            controller.ApplyParameters(ToolPresetLibrary.OfficialDefault(EditorTool.Number));
+            session.Add(new() { Kind = ElementKind.Number, Width = 72, Height = 72,
+                Style = new() { Variant = ElementAppearance.NumberFilled } });
+            if (inspector)
+            {
+                var window = new InspectorWindow(() => session);
+                Panel = Window = window;
+                Show(window); window.PrepareForShow();
+            }
+            else
+            {
+                var tools = new ToolOptionsPanel(controller, new ToolPresetLibrary(Path.Combine(output, "number-recipes.json")), new ColorLibrary(Path.Combine(output, "number-colors.json")));
+                Panel = tools;
+                Window = new Window { Content = tools, Width = ToolOptionsPanel.PreferredWidth + 2, Height = 620 };
+                AppTheme.UseRegularControls(Window); Show(Window); tools.PrepareForShow();
+            }
+            Window.UpdateLayout();
+        }
+
+        internal void SetText()
+        {
+            if (Panel is InspectorWindow properties)
+            {
+                properties.CompletePendingEdit(); session.Add(new() { Kind = ElementKind.Text, Text = "ABC", Width = 90, Height = 42 });
+                properties.PrepareForShow();
+            }
+            else
+            {
+                controller.ApplyParameters(ToolPresetLibrary.OfficialDefault(EditorTool.Text));
+                ((ToolOptionsPanel)Panel).PrepareForShow();
+            }
+            Window.UpdateLayout();
+        }
+
+        public void Dispose()
+        {
+            Window.Close();
+            if (Panel is InspectorWindow)
+                System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(Window).Handle)?.Dispose();
         }
     }
 

@@ -162,7 +162,9 @@ internal sealed partial class ToolOptionsPanel : UserControl
         Number(parameterGrid, "FontSize", L.Get("Inspector.FontSize"), (p, v) => p.Style.FontSize = v);
         Number(parameterGrid, "NumberStart", L.Get("ToolOptions.NumberStart"), (p, v) => p.NumberStart = (int)v);
         Number(parameterGrid, "NumberStep", L.Get("ToolOptions.NumberStep"), (p, v) => p.NumberStep = (int)v);
-        Number(parameterGrid, "NextNumber", L.Get("ToolOptions.NextNumber"), (_, _) => { });
+        InitializeNumberReset();
+        Number(parameterGrid, "NextNumber", L.Get("ToolOptions.NextNumber"), (_, _) => { }, resetNextNumber);
+        AddNumberFormatRow();
         Number(parameterGrid, "DefaultWidth", L.Get("Inspector.Width"), (p, v) => p.DefaultWidth = v);
         Number(parameterGrid, "DefaultHeight", L.Get("Inspector.Height"), (p, v) => p.DefaultHeight = v);
         AddRow(parameterGrid, "FontFamily", L.Get("Inspector.FontFamily"), fontFamily);
@@ -208,7 +210,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
         linkColors.SelectionChanged += (_, _) =>
         {
             if (refreshing || linkColors.SelectedValue is not string variant) return;
-            linkedColorsRegion.Change(() => { Change(p => p.Style.Variant = variant); Refresh(); });
+            Change(p => p.Style.Variant = variant); Refresh();
         };
         foreach (var symbol in Enum.GetValues<SymbolKind>())
         {
@@ -291,6 +293,14 @@ internal sealed partial class ToolOptionsPanel : UserControl
         refreshing = true;
         try
         {
+            if (IsVisible && fontContextTool == controller.Tool && ReferenceEquals(fontContextSession, controller.Session))
+                PropertyChangeRegion.ChangeTogether(Synchronize, linkedColorsRegion, highlighterAngleRegion);
+            else Synchronize();
+        }
+        finally { refreshing = false; }
+
+        void Synchronize()
+        {
             foreach (var field in numericFields.Values) field.CancelGesture();
             ClearStatus();
             var p = controller.Parameters; var tool = p.Tool;
@@ -321,21 +331,21 @@ internal sealed partial class ToolOptionsPanel : UserControl
             bool boxRegion=tool is EditorTool.Crop or EditorTool.Blur or EditorTool.Pixelate;
             paint |= capture;
             bool shapeStroke = shape && ElementAppearance.HasShapeStroke(p.Style);
-            bool numberOutline = tool == EditorTool.Number && appearance?.IsOutlineNumber == true;
             bool secondary = appearance?.BackgroundActive == true;
             Show("Foreground", paint && (capture || appearance?.ForegroundActive == true)); Show("Background", secondary); Show("LinkColors", shape);
             Show("StyleVariant", tool is EditorTool.Number or EditorTool.Text);
             Show("Colors", paint);
             foreground.Visibility = paint ? Visibility.Visible : Visibility.Collapsed;
             background.Visibility = secondary ? Visibility.Visible : Visibility.Collapsed;
-            GroupStyleStrokeRows(shape || tool == EditorTool.Number);
+            GroupStyleStrokeRows(shape);
             foreground.SetPaletteContext(ToolPresetLibrary.Family(tool)); background.SetPaletteContext(ToolPresetLibrary.Family(tool));
-            Show("StrokeWidth", shape ? shapeStroke : stroke || numberOutline); Show("Opacity", false);
+            Show("StrokeWidth", shape ? shapeStroke : stroke); Show("Opacity", false);
             Show("HighlighterTip", tool == EditorTool.Highlighter);
             Show("HighlighterInkContrast", tool == EditorTool.Highlighter);
             Show("HighlighterAngleRegion", tool == EditorTool.Highlighter);
             Show("HighlighterTipAngle", tool == EditorTool.Highlighter && p.Style.HighlighterTip == HighlighterTip.Flat);
             Show("FontSize", text); Show("FontFamily", tool is EditorTool.Text or EditorTool.Number || presentation);
+            RefreshNumberSequence(p);
             Show("NumberStart", tool == EditorTool.Number); Show("NumberStep", tool == EditorTool.Number); Show("NextNumber", tool == EditorTool.Number);
             Show("DefaultWidth", shape); Show("DefaultHeight", shape);
             Show("StartArrowHead", line); Show("EndArrowHead", line); Show("ArrowHeadSize", line); Show("StrokePattern", shape ? shapeStroke : stroke);
@@ -400,7 +410,6 @@ internal sealed partial class ToolOptionsPanel : UserControl
             LayoutParameters();
             refreshPending=false;
         }
-        finally { refreshing = false; }
     }
 
     private void GroupStyleStrokeRows(bool grouped)
@@ -421,7 +430,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
         parameterGrid.RowDefinitions.Clear();
         string[][] groups = [ ["PresentationRuntime"], ["Aspect"], ["CaptureShape"], ["CaptureSource"], ["LinkColors"], ["StyleVariant"], ["LinePathMode"],
             ["HighlighterTip"], ["HighlighterAngleRegion"], ["HighlighterInkContrast"], ["Colors"], ["CaptureBorderWidth"], ["StrokeWidth"], ["CornerRadius"], ["Opacity"],
-            ["FontFamily"], ["FontSize"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
+            ["FontFamily"], ["FontSize"], ["NumberFormat"], ["TextAlignment"], ["NumberStart"], ["NumberStep"], ["NextNumber"], ["StartArrowHead"], ["EndArrowHead"],
             ["StrokePattern"], ["ArrowHeadSize"], ["EffectStrength"], ["Symbols"], ["Size"], ["Emoji"], ["PresentationSettings"], ["PointerPresentationSettings"] ];
         if (controller.Tool == EditorTool.Presentation)
             groups = [["PresentationSettings"], ["Colors"], ["Opacity"], ["FontFamily"], ["FontSize"], ["Size"]];
@@ -452,7 +461,9 @@ internal sealed partial class ToolOptionsPanel : UserControl
     internal void RefreshDocumentState()
     {
         if(!IsVisible){refreshPending=true;return;}
-        if (controller.Tool != EditorTool.Number || controller.Session.IsTransactionActive || numericFields["NextNumber"].IsKeyboardFocusWithin) return;
+        if (controller.Tool != EditorTool.Number) return;
+        RefreshNumberReset();
+        if (controller.Session.IsTransactionActive || numericFields["NextNumber"].IsKeyboardFocusWithin) return;
         SetNumber("NextNumber", controller.Session.Document.NextNumber);
     }
 
@@ -485,13 +496,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
 
     internal void Error(string message) { if (string.IsNullOrEmpty(message)) { ClearStatus(); return; } status.Visibility = Visibility.Visible; status.Text = "⚠ " + message; status.SetResourceReference(TextBlock.ForegroundProperty, "CanvasErrorText"); }
     private void Show(string key, bool visible) => rows[key].Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-    private void SetColorLabel(string key, ColorField field, string resource)
-    {
-        string caption = L.Get(resource);
-        captions[key].Text = caption;
-        captions[key].ToolTip = caption;
-        field.SetColorLabel(caption);
-    }
+    private void SetColorLabel(string key, ColorField field, string resource) => field.SetColorLabel(captions[key], resource);
     private bool IsApplicable(string key) => rows[key].Visibility == Visibility.Visible;
     private void SetNumber(string key, double value)
     { if ((refreshing||IsVisible) && IsApplicable(key)) numericFields[key].Value = value; }
@@ -508,7 +513,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
         ToolTipService.SetInitialShowDelay(button, 650);
         AutomationProperties.SetName(button, label); button.Click += (_, _) => action(); return button;
     }
-    private void AddRow(Panel body, string key, string label, FrameworkElement control)
+    private void AddRow(Panel body, string key, string label, FrameworkElement control, Button? trailingAction = null)
     {
         string shortKey = key switch { "NumberStart" => "Property.NumberStart", "NumberStep" => "Property.NumberStep", "NextNumber" => "Property.NextNumber", "CaptureBorderWidth" => "Property.BorderWidth", _ => "" };
         var caption = new PropertyLabel(shortKey.Length == 0 ? label : L.Get(shortKey)) { ToolTip = label };
@@ -524,21 +529,22 @@ internal sealed partial class ToolOptionsPanel : UserControl
         Panel row;
         if (control is not UniformGrid)
         {
-            row = PropertyPanelLayout.Row(caption, control);
+            row = PropertyPanelLayout.Row(caption, trailingAction is null ? control : PropertyPanelLayout.WithTrailingAction(control, trailingAction));
             if (control is NumericValueField number) number.SetLabel(caption);
         }
         else { var stack = new StackPanel(); stack.Children.Add(caption); stack.Children.Add(control); row = stack; }
         row.Margin = new(0, 4, 0, 4);
+        AutomationProperties.SetAutomationId(row, key);
         AutomationProperties.SetName(control, label); rows.Add(key, row); body.Children.Add(row);
         if (control is NumericValueField numeric) { AutomationProperties.SetName(numeric.Input, label); AutomationProperties.SetName(numeric.Slider, label); }
     }
-    private void Number(Panel body, string key, string label, Action<ToolParameters, double> set)
+    private void Number(Panel body, string key, string label, Action<ToolParameters, double> set, Button? trailingAction = null)
     {
         var domain = NumericParameterDomain.ForTool(key);
         var field = new NumericValueField(domain.Minimum, domain.Maximum, domain.RailMinimum, domain.RailMaximum, domain.Step, domain.Integer)
         { Unit = key switch { "HighlighterTipAngle" => "°", "Opacity" or "HighlighterInkContrast" => "%", "NumberStart" or "NextNumber" => "#", "NumberStep" => L.Get("Numeric.Unit.Step"), _ => "px" } };
         if (key is "NumberStart" or "NumberStep" or "NextNumber") field.Slider.IsSnapToTickEnabled = true;
-        var box = field.Input; numbers.Add(key, box); numericFields.Add(key, field); AddRow(body, key, label, field);
+        var box = field.Input; numbers.Add(key, box); numericFields.Add(key, field); AddRow(body, key, label, field, trailingAction);
         box.LostKeyboardFocus += (_, _) => { if (!refreshing && !numericFields.Values.Any(number => number.IsInteracting)) Refresh(); };
         EditorSession? counterSession = null; long counterTransaction = 0;
         ToolParameters? original = null;
@@ -585,7 +591,7 @@ internal sealed partial class ToolOptionsPanel : UserControl
                     if (!ReferenceEquals(counterSession, controller.Session) || !controller.Session.IsTransactionActive || controller.Session.TransactionId != counterTransaction) return;
                     controller.Session.Document.NextNumber = (int)value; controller.Session.NotifyChanged();
                 }
-                else controller.Session.Execute(L.Get("History.NumberCounter"), document => document.NextNumber = (int)value);
+                else SetNextNumber((int)value);
                 ClearStatus();
                 ParametersChanged?.Invoke(); return;
             }
@@ -613,9 +619,8 @@ internal sealed partial class ToolOptionsPanel : UserControl
         picker.SelectionChanged += (_, _) =>
         {
             if (refreshing || picker.SelectedValue is not { } value) return;
-            if (key == "HighlighterTip") highlighterAngleRegion.Change(() => { Change(p => set(p, value)); Refresh(); });
-            else if (key == "StyleVariant") linkedColorsRegion.Change(() => { Change(p => set(p, value)); Refresh(); });
-            else Change(p => set(p, value));
+            Change(p => set(p, value));
+            if (key is "HighlighterTip" or "StyleVariant") Refresh();
         };
     }
 

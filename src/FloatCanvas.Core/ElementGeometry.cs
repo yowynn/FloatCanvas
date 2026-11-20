@@ -16,10 +16,18 @@ public static partial class ElementGeometry
         }
         return new(0, 0, Math.Max(0, element.Width), Math.Max(0, element.Height));
     }
-    public static RectD Bounds(CanvasElement element, bool includeStroke = true)
+    public static RectD Bounds(CanvasElement element, bool includeStroke = true) =>
+        BoundsInSpace(element, LocalToPlane(element), includeStroke);
+
+    // Fit the capture contour after its intrinsic projection. The editable affine
+    // placement then rotates or scales the entire frame together with the bitmap.
+    public static RectD ImagePlacementBounds(CanvasElement image) =>
+        BoundsInSpace(image, image.ProjectivePlacement ?? Projective2D.Identity, includeStroke: true);
+
+    private static RectD BoundsInSpace(CanvasElement element, Projective2D transform, bool includeStroke)
     {
-        if (TryImageFrameBounds(element, includeStroke, out var frame)) return frame;
-        return LocalToPlane(element).TryTransformBounds(StrokedLocalBounds(element, includeStroke), out var bounds) ? bounds : default;
+        if (TryImageFrameBounds(element, transform, includeStroke, out var frame)) return frame;
+        return transform.TryTransformBounds(StrokedLocalBounds(element, includeStroke), out var bounds) ? bounds : default;
     }
     public static RectD StrokedLocalBounds(CanvasElement element, bool includeStroke = true)
     {

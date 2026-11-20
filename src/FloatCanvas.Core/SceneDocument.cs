@@ -117,6 +117,9 @@ public sealed class CanvasElement
     public PresentationSettings? Presentation { get; set; }
     public string Text { get; set; } = "";
     public int Number { get; set; } = 1;
+    // Custom badges keep their own resolved label in Text. Lookup tables belong to tools.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public NumberFormat NumberFormat { get; set; }
     /// <summary>Badge text can fit its body or retain the historical FontSize cap, independently of its colors.</summary>
     public NumberTextSizeMode NumberTextSizeMode { get; set; }
     [JsonIgnore] public bool NumberUsesForeground

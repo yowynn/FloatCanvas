@@ -31,9 +31,9 @@
   "Recipe.TextLabel": { "zh": "居中注释", "en": "Centered annotation" },
   "Recipe.TextOutlined": { "zh": "白字深边", "en": "Outlined white text" },
   "Recipe.TextTag": { "zh": "蓝色标签", "en": "Blue label" },
-  "Recipe.Number": { "zh": "标准序号", "en": "Standard number" },
+  "Recipe.NumberLevelOne": { "zh": "一级序号", "en": "Level 1" },
   "Recipe.NumberBlue": { "zh": "蓝色步骤", "en": "Blue step badge" },
-  "Recipe.NumberCompact": { "zh": "紧凑序号", "en": "Compact number" },
+  "Recipe.NumberLevelThree": { "zh": "三级序号", "en": "Level 3" },
   "Recipe.Eraser": { "zh": "标准橡皮擦", "en": "Standard eraser" },
   "Recipe.Blur": { "zh": "标准模糊", "en": "Standard blur" },
   "Recipe.BlurFine": { "zh": "轻度模糊", "en": "Light blur" },
@@ -59,5 +59,5 @@
   "Recipe.EmojiWarning": { "zh": "提醒", "en": "Warning" },
   "Recipe.Stamp": { "zh": "标准印章", "en": "Standard stamp" },
   "Recipe.HighlighterFlatBlue": { "zh": "蓝色扁头荧光笔", "en": "Blue flat-tip highlighter" },
-  "Recipe.NumberOutline": { "zh": "轮廓序号", "en": "Outline number" }
+  "Recipe.NumberLevelTwo": { "zh": "二级序号", "en": "Level 2" }
 }

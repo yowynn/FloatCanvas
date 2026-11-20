@@ -99,7 +99,8 @@ internal sealed class CompatibleConfiguration(string path)
             }
             return result;
         }
-        if (type.IsSZArray || type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+        if (type.IsSZArray || type.IsGenericType && (type.GetGenericTypeDefinition() == typeof(List<>) ||
+            type.GetGenericTypeDefinition() == typeof(System.Collections.Immutable.ImmutableArray<>)))
         {
             if (raw is not JsonArray array) return type.IsSZArray ? Fallback(fallback, type) : new JsonArray();
             var result = new JsonArray();
@@ -256,6 +257,9 @@ internal sealed class CompatibleConfiguration(string path)
     private static bool ValidValue(Type owner, string name, JsonNode? value)
     {
         if (value is null) return true;
+        if (owner == typeof(NumberSequenceSettings) && name == nameof(NumberSequenceSettings.Items))
+            return value is JsonArray labels && labels.All(item => item is JsonValue entry && entry.TryGetValue<string>(out var label) &&
+                !string.IsNullOrWhiteSpace(label) && NumberSequence.IsSingleLineLabel(label));
         if (owner == typeof(ElementStyle)) return name switch
         {
             "StrokeWidth" or "Opacity" or "FontSize" or "ArrowHeadSize" => NumericParameterDomain.ForStyle(name).Contains(value.Deserialize<double>()),

@@ -271,16 +271,25 @@ public sealed partial class SceneRenderer
         using var paint = new SKPaint { IsAntialias = true };
         foreach (var row in drawing.Rows)
         {
-            paint.Color = WithElementOpacity(new SKColor(region.Style.Background), row.Opacity);
-            canvas.DrawRoundRect(ToRect(row.Bounds), (float)row.Padding, (float)row.Padding, paint);
-            paint.Color = WithElementOpacity(new SKColor(region.Style.Foreground), row.Opacity);
+            var background = WithElementOpacity(new SKColor(region.Style.Background), row.Opacity);
+            var ink = WithElementOpacity(new SKColor(region.Style.Foreground), row.Opacity);
             int saved = canvas.Save();
             try
             {
+                bool replace = background.Alpha > 0 && ink.Alpha < 255;
+                if (replace) canvas.SaveLayer(ToRect(row.Bounds.Inflate(region.Style.FontSize)), null);
+                paint.Color = background;
+                canvas.DrawRoundRect(ToRect(row.Bounds), (float)row.Padding, (float)row.Padding, paint);
+                if (replace) paint.BlendMode = SKBlendMode.Src;
+                paint.Color = ink;
                 canvas.Translate((float)(row.Bounds.Left + row.Padding), (float)(row.Bounds.Top + row.Padding));
                 _text.Draw(canvas, row.Label, region.Style, Math.Max(.01, row.Bounds.Width - row.Padding * 2), paint);
             }
-            finally { canvas.RestoreToCount(saved); }
+            finally
+            {
+                paint.BlendMode = SKBlendMode.SrcOver;
+                canvas.RestoreToCount(saved);
+            }
         }
         foreach (var cell in drawing.Cells)
         {

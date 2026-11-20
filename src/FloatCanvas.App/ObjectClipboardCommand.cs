@@ -86,7 +86,8 @@ internal static class ObjectClipboardCommand
     internal static void Insert(EditorSession target, SceneDocument source, AssetLibrary assets, RectD visibleArea, Guid? ownerTransfer = null)
     {
         if (source.Elements.Count == 0 && source.Groups.Count == 0 && source.Instances.Count == 0) return;
-        bool preserveDefinitions = SameOwner(target, source, ownerTransfer);
+        bool sameOwner = SameOwner(target, source, ownerTransfer);
+        bool preserveDefinitions = sameOwner;
         var snapshot = source.Clone();
         if (preserveDefinitions)
         {
@@ -111,7 +112,8 @@ internal static class ObjectClipboardCommand
             BillboardGeometry.ApplyPlaneTransform(candidate, Affine2D.Translation(offset.X, offset.Y));
             if (!mapping.IsElementSafe(candidate)) throw new InvalidOperationException(L.Get("Perspective.InputOutsidePlane"));
         }
-        target.InsertDocument(snapshot, assets, Affine2D.Translation(offset.X, offset.Y), label: L.Get("History.Paste"), preserveDefinitions: preserveDefinitions);
+        target.InsertDocument(snapshot, assets, Affine2D.Translation(offset.X, offset.Y), label: L.Get("History.Paste"),
+            preserveDefinitions: preserveDefinitions, preserveNumberCounter: sameOwner);
     }
     private static RectD WorldBounds(CanvasElement element) => element.IsBillboard
         ? BillboardGeometry.ElementToTarget(element, Projective2D.Identity).TransformBounds(ElementGeometry.StrokedLocalBounds(element))

@@ -2,14 +2,13 @@ namespace FloatCanvas.Core;
 
 public static partial class ElementGeometry
 {
-    private static bool TryImageFrameBounds(CanvasElement element, bool includeStroke, out RectD bounds)
+    private static bool TryImageFrameBounds(CanvasElement element, Projective2D transform, bool includeStroke, out RectD bounds)
     {
         bounds = default;
         // Image effects can create or spread alpha into the captured PNG's transparent corners.
         // Keep the original contour for undo, but frame the complete editable raster meanwhile.
         if (element.Kind != ElementKind.Image || element.IsBillboard || element.Effects.Count > 0 || element.ImageFrame is not { Count: >= 3 } frame ||
             !(element.Width > 0) || !(element.Height > 0)) return false;
-        var transform = LocalToPlane(element);
         double radius = includeStroke && (element.Style.Stroke >> 24) != 0 ? element.ImageBorderWidth : 0;
         double left = double.PositiveInfinity, top = double.PositiveInfinity;
         double right = double.NegativeInfinity, bottom = double.NegativeInfinity;

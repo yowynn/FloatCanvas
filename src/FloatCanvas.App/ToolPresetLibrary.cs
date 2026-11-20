@@ -19,6 +19,8 @@ internal sealed class ToolPreset
 /// <summary>Official and personal presets are complete independent tool snapshots.</summary>
 internal sealed class ToolPresetLibrary
 {
+    internal const double StandardMarkerSize = 72;
+
     private sealed class State
     {
         public int Version { get; set; } = 3;
@@ -156,7 +158,7 @@ internal sealed class ToolPresetLibrary
             var parameters = new ToolParameters { Tool = tool };
             if (tool == EditorTool.Symbol) { parameters.DefaultWidth = parameters.DefaultHeight = 72; parameters.ConstrainAspect = true; }
             if (tool is EditorTool.Rectangle or EditorTool.Ellipse) { parameters.DefaultWidth = parameters.DefaultHeight = 108; }
-            if (tool is EditorTool.Number or EditorTool.Emoji) parameters.Style.FontSize = 72;
+            if (tool is EditorTool.Number or EditorTool.Emoji) parameters.Style.FontSize = StandardMarkerSize;
             if (tool == EditorTool.Text) parameters.Style.FontSize = 36;
             if (tool == EditorTool.Number) parameters.Style.Background = 0xFFFFFFFF;
             if (tool == EditorTool.Highlighter) parameters.Style.StrokeWidth = 24;
@@ -207,9 +209,20 @@ internal sealed class ToolPresetLibrary
         { p.Style.PrimaryColor = 0xFFFFFFFF; ElementAppearance.SetVariant(p.Style, ElementKind.Text, ElementAppearance.TextOutline); });
         Add("text-tag", "TextTag", EditorTool.Text, p =>
         { p.Style.Variant = ElementAppearance.TextLabel; p.Style.PrimaryColor = BuiltInColors.Blue; p.Style.FontSize = 28; });
-        Add("number", "Number", EditorTool.Number);
-        Add("number-outline", "NumberOutline", EditorTool.Number, p => { p.Style.Variant = ElementAppearance.NumberOutline; p.Style.Foreground = ColorLibrary.ForegroundRed; p.Style.Background = 0; p.Style.StrokeWidth = 3; p.Style.FontSize = 56; });
-        Add("number-compact", "NumberCompact", EditorTool.Number, p => { p.Style.Foreground = 0xFF252525; p.Style.FontSize = 36; });
+        // Keep the released slot IDs so saved selections still point to the same level.
+        Add("number", "NumberLevelOne", EditorTool.Number);
+        Add("number-outline", "NumberLevelTwo", EditorTool.Number, p =>
+        {
+            p.Style.FontSize = 64;
+            p.Style.PrimaryColor = BuiltInColors.Blue;
+            p.Numbering = new() { Format = NumberFormat.LowerLatin };
+        });
+        Add("number-compact", "NumberLevelThree", EditorTool.Number, p =>
+        {
+            p.Style.FontSize = 56;
+            p.Style.PrimaryColor = BuiltInColors.Green;
+            p.Numbering = new() { Format = NumberFormat.LowerRoman };
+        });
         Add("eraser", "Eraser", EditorTool.Eraser);
         Add("blur", "Blur", EditorTool.Blur);
         Add("blur-strong", "BlurStrong", EditorTool.Blur, p => p.EffectStrength = 24);

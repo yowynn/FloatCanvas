@@ -35,6 +35,7 @@ internal static class PropertyPanelLayout
     internal static Grid Row(TextBlock label, FrameworkElement control)
     {
         var row = new Grid { Margin = RowMargin };
+        AutomationProperties.SetLabeledBy(row, label);
         if (control is ComboBox or ColorField or NumericValueField || control is TextBox { AcceptsReturn: false })
             control.Height = control.MinHeight = ControlHeight;
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto, SharedSizeGroup = "PropertyLabels" });
@@ -72,12 +73,23 @@ internal static class PropertyPanelLayout
         var row = new Grid { Margin = RowMargin, MinHeight = ControlHeight };
         row.ColumnDefinitions.Add(new()); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var label = new TextBlock { Text = name, TextWrapping = TextWrapping.Wrap, FontSize = LabelFontSize, FontFamily = LabelFontFamily, FontWeight = FontWeights.Normal, Margin = new(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
+        AutomationProperties.SetLabeledBy(row, label);
         control.Content = null; control.Padding = new(0); control.Margin = new(0); control.HorizontalAlignment = HorizontalAlignment.Right; control.VerticalAlignment = VerticalAlignment.Center;
         control.SetResourceReference(FrameworkElement.StyleProperty, "CanvasPropertySwitch");
         AutomationProperties.SetName(control, name); AutomationProperties.SetLabeledBy(control, label);
         row.Children.Add(label); Grid.SetColumn(control, 1); row.Children.Add(control);
         row.SetBinding(UIElement.VisibilityProperty, new Binding(nameof(UIElement.Visibility)) { Source = control });
         return row;
+    }
+
+    internal static Grid WithTrailingAction(FrameworkElement control, Button action)
+    {
+        var group = new Grid();
+        group.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        group.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        action.Margin = new(RowGap, 0, 0, 0);
+        group.Children.Add(control); Grid.SetColumn(action, 1); group.Children.Add(action);
+        return group;
     }
 
     // Related pairs share the same two columns. Narrow windows stack the pair

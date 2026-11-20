@@ -17,6 +17,13 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private readonly Func<EditorSession> getSession;
     private readonly Func<bool> canMutate;
     private readonly Func<bool> hasSharedCardContext;
+    private readonly Func<NumberSequenceSettings> numberSequence;
+    private readonly NumberFormatPicker numberFormatPicker = new();
+    private readonly PropertyChangeRegion numberSequenceRegion;
+    private readonly Controls.TextBlock numberLabelReadout = new() { VerticalAlignment = Wpf.VerticalAlignment.Center, TextTrimming = Wpf.TextTrimming.CharacterEllipsis };
+    private readonly Controls.Border numberLabelOverlay = new() { Margin = new(2), Padding = new(4, 0, 4, 0),
+        IsHitTestVisible = false, Visibility = Wpf.Visibility.Collapsed };
+    private Dictionary<Guid, (int Number, string Text)>? numberEditOrigins;
     private readonly Dictionary<string, Controls.TextBox> fields = [];
     private readonly Dictionary<string, NumericValueField> numericFields = [];
     private readonly Dictionary<string, ColorField> colorFields = [];
@@ -78,11 +85,13 @@ internal sealed partial class InspectorWindow : Wpf.Window
     public event Action<ColorField>? EyedropperRequested;
     internal event Action<Guid>? PrefabEditRequested;
 
-    public InspectorWindow(Func<EditorSession> getSession, Func<bool>? canMutate = null, ColorLibrary? colorLibrary = null, Func<bool>? hasSharedCardContext = null)
+    public InspectorWindow(Func<EditorSession> getSession, Func<bool>? canMutate = null, ColorLibrary? colorLibrary = null,
+        Func<bool>? hasSharedCardContext = null, Func<NumberSequenceSettings>? numberSequence = null)
     {
         this.getSession = getSession;
         this.canMutate = canMutate ?? (() => true);
         this.hasSharedCardContext = hasSharedCardContext ?? (() => false);
+        this.numberSequence = numberSequence ?? (() => NumberSequenceSettings.Default);
         Title = L.Get("Inspector.Heading");
         Width = PropertyPanelLayout.WindowWidth; Height = 700; MinWidth = 300; MinHeight = 420;
         FontSize = 14; FontFamily = new Media.FontFamily("Microsoft YaHei UI");
@@ -183,10 +192,10 @@ internal sealed partial class InspectorWindow : Wpf.Window
         Automation.AutomationProperties.SetName(appearanceStyle, L.Get("Color.Style"));
         fieldContainers.Add("StyleVariant", appearanceStyleRow);
         linkedColorsRegion = new(colors);
-        appearanceStyle.SelectionChanged += (_, _) => { if (!refreshing && appearanceStyle.SelectedValue is string) linkedColorsRegion.Change(() => ChangeField("StyleVariant")); };
+        appearanceStyle.SelectionChanged += (_, _) => { if (!refreshing && appearanceStyle.SelectedValue is string) ChangeField("StyleVariant"); };
         linkedColorsGroup.Children.Add(linkRow); linkedColorsGroup.Children.Add(appearanceStyleRow); linkedColorsGroup.Children.Add(linkedColorsRegion);
         propertyPanel.Children.Insert(propertyPanel.Children.IndexOf(fieldContainers["CornerRadius"]), linkedColorsGroup);
-        linkColors.SelectionChanged += (_, _) => { if (!refreshing && linkColors.SelectedValue is string) linkedColorsRegion.Change(() => ChangeField("LinkColors")); };
+        linkColors.SelectionChanged += (_, _) => { if (!refreshing && linkColors.SelectedValue is string) ChangeField("LinkColors"); };
         propertyPanel.Children.Add(FieldPair("Opacity", L.Get("Inspector.Opacity"), null, null));
         var effectsSection = SectionHeading("Inspector.EffectsSection");
         fieldContainers.Add("EffectsSection", effectsSection); propertyPanel.Children.Add(effectsSection);
@@ -203,6 +212,23 @@ internal sealed partial class InspectorWindow : Wpf.Window
         propertyPanel.Children.Add(textSection);
         propertyPanel.Children.Add(FieldPair("FontSize", L.Get("Inspector.FontSize"), null, null));
         propertyPanel.Children.Add(FieldPair("Number", L.Get("Editor.ElementKind.Number"), null, null));
+        var formatRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Numbering.Format")), numberFormatPicker);
+        var manualLabel = Field("NumberLabel", L.Get("Numbering.CustomText"));
+        manualLabel.MaxLength = NumberSequence.MaximumLabelLength;
+        numberLabelOverlay.SetResourceReference(Controls.Border.BackgroundProperty, "CanvasInput");
+        numberLabelOverlay.Child = numberLabelReadout;
+        var labelRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Numbering.CustomText")),
+            new Controls.Grid { Children = { manualLabel, numberLabelOverlay } });
+        formatRow.Margin = labelRow.Margin = PropertyPanelLayout.RowMargin; manualLabel.Margin = new(0);
+        fieldContainers.Add("NumberFormat", formatRow); fieldContainers.Add("NumberLabel", labelRow);
+        numberSequenceRegion = new(new Controls.StackPanel { Children = { formatRow, labelRow } });
+        propertyPanel.Children.Add(numberSequenceRegion);
+        numberFormatPicker.SelectionChanged += (_, _) =>
+        {
+            if (!refreshing && numberFormatPicker.SelectedValue is NumberFormat)
+                ChangeField("NumberFormat");
+        };
+        numberFormatPicker.DropDownClosed += (_, _) => QueueFocusCheck();
         var fontRow = PropertyPanelLayout.Row(new PropertyLabel(L.Get("Inspector.FontFamily")), fontPicker);
         var fontValue = Field("FontFamily", L.Get("Inspector.FontFamilyName"));
         ((FontPickerControl)fontPicker).FontCommitted += name => { if (!refreshing) fontValue.Text = name; };
@@ -288,6 +314,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         AppWindowChrome.SetHeaderActions(this,pin);UpdatePin();
         foreach(var color in colorFields.Values)color.PickerClosed+=QueueFocusCheck;
         fontPicker.DropDownClosed+=(_,_)=>QueueFocusCheck();
+        foreach (var (key, row) in fieldContainers) Automation.AutomationProperties.SetAutomationId(row, key);
         refreshing = false;
     }
 
@@ -305,7 +332,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     {
         if(SessionWindowCoordinator.Find(this)?.IsInputMethodSwitchPending==true)return;
         if(!IsVisible||IsPinned||IsActive||IsKeyboardFocusWithin||contextMenus.Any(menu=>menu.IsOpen)||colorFields.Values.Any(color=>color.IsPickerOpen)||
-            fontPicker.IsDropDownOpen)return;
+            fontPicker.IsDropDownOpen || numberFormatPicker.IsDropDownOpen)return;
         if(Wpf.Application.Current.Windows.Cast<Wpf.Window>().Any(window=>window.IsActive&&IsChildWindow(window)))return;
         Dismiss(WindowDismissReason.ExternalFocus);
     });
@@ -399,6 +426,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         var selected = session.SelectedElements().ToArray();
         presentationSourceSelection = selected.Any(element => element.Kind == ElementKind.Presentation); RefreshPresentationRuntime();
         var element = selected.FirstOrDefault();
+        if (element?.Kind == ElementKind.Number) numberFormatPicker.SetCustomExamples(numberSequence().Items);
         var fingerprint = JsonSerializer.Serialize(selected);
         if (!discardDraft && !pendingSelectionReload && ReferenceEquals(formSession, session) && fingerprint == formFingerprint && formProjectionEnabled==session.Document.Canvas.Projection.Enabled &&
             (!presentationSourceSelection || HasCurrentPresentationSettingsContext) &&
@@ -408,6 +436,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         {
             if (!ReferenceEquals(formSession, session) || !session.Selection.SetEquals(formSelection))
                 ((FontPickerControl)fontPicker).ResetModelContext();
+            bool cueChanges = IsVisible && preparingForShow == 0 && ReferenceEquals(formSession, session) && formSelection.Length > 0;
             formSession = session; formSelection = session.Selection.ToArray();
             pendingSelectionReload = false;
             formFingerprint = fingerprint;
@@ -417,7 +446,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             propertyPanel.IsEnabled = selected.Length > 0 && selected.All(e => !e.Locked);
             PrepareEffectSelection(selected);
             RefreshNumericRanges(selected);
-            SetPropertyVisibility(selected);
+            SetPropertyVisibility(selected, cueChanges);
             selectionLabel.Text = selected.Length > 1 ? L.Format("Feedback4.Inspector.MultipleSelection", selected.Length) : element is null ? L.Get("Inspector.SelectElement")
                 : L.Format("Inspector.ElementSelection", ElementName(element), element.Locked ? L.Get("Inspector.LockedSuffix") : "", !element.Visible ? L.Get("Inspector.HiddenSuffix") : "");
             selectionLabel.Visibility = selected.Length == 1 ? Wpf.Visibility.Collapsed : Wpf.Visibility.Visible;
@@ -463,7 +492,10 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (IsFieldVisible("EffectStrength")) SetField("EffectStrength", SelectedEffect(element)!.Amount);
             SetField("Opacity", element.Style.Opacity * 100); SetField("FontSize", element.Style.FontSize);
             if (IsFieldVisible("Text")) { fields["Text"].Text = element.Text; fields["Text"].IsEnabled = true; }
-            if (IsFieldVisible("Number")) { fields["Number"].Text = element.Number.ToString(CultureInfo.InvariantCulture); fields["Number"].IsEnabled = true; }
+            if (IsFieldVisible("Number")) { SetField("Number", element.Number); fields["Number"].IsEnabled = true; }
+            if (IsFieldVisible("NumberFormat"))
+                numberFormatPicker.SelectedValue = selected.All(e => e.NumberFormat == element.NumberFormat) ? element.NumberFormat : null;
+            if (IsFieldVisible("NumberLabel")) SetDisplayedNumberLabel(element.Text);
             if (IsFieldVisible("FontSize")) fields["FontSize"].IsEnabled = true;
             if (IsFieldVisible("FontFamily")) { fields["FontFamily"].Text = element.Style.FontFamily; fields["FontFamily"].IsEnabled = fontPicker.IsEnabled = true; }
             if (IsFieldVisible("TextAlignment")) { alignment.IsEnabled = true; alignment.SelectedIndex = (int)element.Style.TextAlignment; }
@@ -510,6 +542,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         editTimer.Stop();
         var session = editSession;
         editSession = null;
+        numberEditOrigins = null;
         if (session is not null && session.IsTransactionActive && session.TransactionId == editTransaction)
         {
             applying = true;
@@ -545,8 +578,19 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (dirtyFields.Count == 0) return;
             if (JsonSerializer.Serialize(selected) != formFingerprint) throw new InvalidOperationException(L.Get("Inspector.ElementChanged"));
             var changedKey = dirtyFields.Single();
+            // Each marker has its own starting label. A scrub or partially typed
+            // number can return to it without losing a manually authored word.
+            if (changedKey != "Number") numberEditOrigins = null;
+            else if ((!ownsTransaction || numberEditOrigins is null) && selected.Any(e => e.NumberFormat == NumberFormat.Custom))
+                numberEditOrigins = selected.Where(e => e.NumberFormat == NumberFormat.Custom).ToDictionary(e => e.Id, e => (e.Number, e.Text));
             validatingDraft=true;
             var changes = selected.Select(source => (Source: source, Edited: EditElement(source))).ToArray();
+            if (changedKey is "Number" or "NumberFormat" or "NumberLabel" &&
+                changes.All(c => c.Source.Number == c.Edited.Number && c.Source.NumberFormat == c.Edited.NumberFormat && c.Source.Text == c.Edited.Text))
+            {
+                dirtyFields.Clear(); invalidDraft = false; SetStatus(L.Get("Feedback4.Inspector.LiveHint"), false);
+                return;
+            }
             var mapping = CanvasMapping.Create(session.Document, session.ActiveRootCanvas);
             var graph = new SceneGraph(session.Document);
             if (changes.Any(change => !mapping.IsElementSafe(graph.ToWorld(change.Edited))))
@@ -564,7 +608,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
                 {
                     source.Transform = edited.Transform; source.Style = edited.Style;
                     source.Kind = edited.Kind; source.Symbol = edited.Symbol; source.Effects = edited.Effects;
-                    source.Text = edited.Text; source.Number = edited.Number;
+                    source.Text = edited.Text; source.Number = edited.Number; source.NumberFormat = edited.NumberFormat;
                     source.Width = edited.Width; source.Height = edited.Height; source.CornerRadius = edited.CornerRadius;
                     source.ImageBorderWidth = edited.ImageBorderWidth;
                     source.ConstrainAspect = edited.ConstrainAspect; source.TextFrameFixed = edited.TextFrameFixed; source.TextAutoWidth = edited.TextAutoWidth;
@@ -581,7 +625,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             }
             finally { applying = false; }
             editTimer.Stop();
-            if (!colorFields.Values.Any(field => field.IsInteracting) && !presentationSettings.IsInteracting) editTimer.Start();
+            if (!numericFields.Values.Any(field => field.IsInteracting) && !colorFields.Values.Any(field => field.IsInteracting) && !presentationSettings.IsInteracting) editTimer.Start();
             SetStatus(L.Get("Inspector.PropertiesApplied"), false);
         }
         catch (Exception ex) { invalidDraft=validatingDraft;SetStatus(ex.Message, true); }
@@ -597,6 +641,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             {keepAspect.IsThreeState=false;keepAspect.IsChecked=selected.All(ElementGeometry.PreservesAspect);}
             if(changedKey=="Placement")SetPropertyVisibility(selected);
             if(changedKey is "LinkColors" or "StyleVariant" or "HighlighterTip")SetPropertyVisibility(selected);
+            if (changedKey == "NumberFormat") SetPropertyVisibility(selected);
             if (changedKey.StartsWith("Presentation.", StringComparison.Ordinal)) RefreshPresentationSettings(selected);
             if(changedKey=="Symbol")
             {
@@ -615,8 +660,14 @@ internal sealed partial class InspectorWindow : Wpf.Window
             {
                 if (key == changedKey || !IsFieldVisible(key)) continue;
                 var value = PropertyValue(selected[0], key);
+                if (key == "NumberLabel")
+                {
+                    SetDisplayedNumberLabel(selected.All(e => e.Text == selected[0].Text) ? selected[0].Text : "");
+                    continue;
+                }
                 if (selected.Skip(1).Any(e => !Equals(PropertyValue(e, key), value))) { SetMixedField(key, value); continue; }
                 if (value is double number) numericFields[key].SetModelValue(key == "Opacity" ? number * 100 : number);
+                else if (value is int integer) numericFields[key].SetModelValue(integer);
                 else box.Text = Convert.ToString(value, CultureInfo.CurrentCulture) ?? "";
             }
         }
@@ -749,9 +800,20 @@ internal sealed partial class InspectorWindow : Wpf.Window
         }
         if (dirtyFields.Contains("Number") && source.Kind == ElementKind.Number)
         {
-            if (!int.TryParse(fields["Number"].Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var value))
+            if (!int.TryParse(numericFields["Number"].DisplayedText.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var value))
                 throw new InvalidOperationException(L.Get("Inspector.InvalidNumber"));
+            if (value != source.Number && source.NumberFormat == NumberFormat.Custom)
+                edited.Text = numberEditOrigins is not null && numberEditOrigins.TryGetValue(source.Id, out var original) && value == original.Number
+                    ? original.Text : numberSequence().Label(value);
             edited.Number = value;
+        }
+        if (dirtyFields.Contains("NumberFormat") && source.Kind == ElementKind.Number && numberFormatPicker.SelectedValue is NumberFormat format)
+            NumberSequence.ChangeFormat(edited, format);
+        if (dirtyFields.Contains("NumberLabel") && source.NumberFormat == NumberFormat.Custom)
+        {
+            string label = fields["NumberLabel"].Text;
+            if (!NumberSequence.IsSingleLineLabel(label)) throw new InvalidOperationException(L.Get("Numbering.InvalidLabel"));
+            edited.Text = label;
         }
         if (dirtyFields.Contains("Angle"))
         {
@@ -817,7 +879,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
             var caption = new PropertyLabel(label) { Margin = new(0, 0, PropertyPanelLayout.LabelGap, 0), VerticalAlignment = Wpf.VerticalAlignment.Center };
             if (second is null) cell.Children.Add(caption);
             bool geometryScrub = key is "X" or "Y" or "W" or "H" or "Angle" or "StrokeWidth" or "CornerRadius";
-            var field = Field(key, label);
+            var field = Field(key, label, numeric: true);
             var limits = key switch
             {
                 "X" or "Y" => (-10000000d, 10000000d, -8192d, 8192d, 1d),
@@ -842,8 +904,12 @@ internal sealed partial class InspectorWindow : Wpf.Window
             if (key == "Number") numeric.Slider.IsSnapToTickEnabled = true;
             Automation.AutomationProperties.SetName(numeric.Slider, label);
             numeric.CanBeginGesture = () => { CompleteEdit(); return !invalidDraft && canMutate() && !getSession().IsTransactionActive; };
+            numeric.ValueChanged += _ => ChangeField(key);
+            numeric.InvalidInput += () => ChangeField(key);
+            numeric.GestureStarted += () => ShowNumericDragReadouts(true);
             numeric.GestureCompleted += commit =>
             {
+                ShowNumericDragReadouts(false);
                 if (commit) { CompleteEdit(); return; }
                 editTimer.Stop(); var session = editSession; editSession = null;
                 if (session is not null && session.IsTransactionActive && session.TransactionId == editTransaction)
@@ -884,8 +950,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         picker.SelectionChanged += (_, _) =>
         {
             if (refreshing) return;
-            if (key == "HighlighterTip") highlighterAngleRegion.Change(() => ChangeField(key));
-            else ChangeField(key);
+            ChangeField(key);
         };
         var row = PropertyPanelLayout.Row(new PropertyLabel(label), picker);
         fieldContainers.Add(key, row); propertyPanel.Children.Add(row);
@@ -893,9 +958,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
 
     private void SetColorLabel(string key, string resource)
     {
-        string caption = L.Get(resource);
-        ((Controls.TextBlock)((Controls.Grid)fieldContainers[key]).Children[0]).Text = caption;
-        colorFields[key].SetColorLabel(caption);
+        var label = (Controls.TextBlock)((Controls.Grid)fieldContainers[key]).Children[0];
+        colorFields[key].SetColorLabel(label, resource);
     }
 
     private static string ShapeChoice(CanvasElement element) => element.Kind == ElementKind.Number
@@ -905,8 +969,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
     private static string SelectionColorLabel(CanvasElement[] selected, bool secondary)
     {
         string generic = secondary ? "Color.Secondary" : "Color.Primary";
-        if (selected.Length == 0 || selected.Any(e => e.Kind != selected[0].Kind)) return generic;
-        if (selected[0].Kind == ElementKind.Text && selected.Any(e => e.Style.Variant != selected[0].Style.Variant)) return generic;
+        if (selected.Length == 0) return generic;
         string label = AppearanceRegistry.ColorLabel(selected[0].Kind, selected[0].Style, secondary);
         return selected.All(e => AppearanceRegistry.ColorLabel(e.Kind, e.Style, secondary) == label) ? label : generic;
     }
@@ -1143,8 +1206,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
             "Fill" => AppearanceRegistry.Resolve(element).BackgroundActive,
             "LinkColors" => ElementGeometry.IsBoxShape(element.Kind) || number,
             "StyleVariant" => number || text && !EmojiGlyphs.IsEmoji(element.Text, element.Style),
-            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !text && element.Kind != ElementKind.Presentation &&
-                (!number || ElementAppearance.IsOutlineNumber(element)) && (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
+            "StrokeWidth" => !ElementGeometry.IsLiveEffect(element.Kind) && !text && !number && element.Kind != ElementKind.Presentation &&
+                (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
             "StrokePattern" => !image && !text && !number && element.Kind != ElementKind.Presentation &&
                 (!ElementGeometry.IsBoxShape(element.Kind) || ElementAppearance.HasShapeStroke(element.Style)),
             "HighlighterTip" or "HighlighterInkContrast" => element.Kind == ElementKind.Highlighter,
@@ -1155,7 +1218,8 @@ internal sealed partial class InspectorWindow : Wpf.Window
             "PresentationSettings" => element.Kind == ElementKind.Presentation,
             "WindowSourceFit" => element.WindowSource is not null,
             "Text" or "TextAlignment" => text,
-            "Number" => number,
+            "Number" or "NumberFormat" => number,
+            "NumberLabel" => number && element.NumberFormat == NumberFormat.Custom,
             "Symbol" => element.Kind is ElementKind.Symbol or ElementKind.Triangle,
             "EffectsSection" => SelectedEffect(element) is not null,
             "EffectSelection" => compatibleEffects.Length > 1,
@@ -1183,14 +1247,21 @@ internal sealed partial class InspectorWindow : Wpf.Window
         "LinePathMode" => e.Style.LineArcBulge.HasValue ? LinePathMode.Arc : LinePathMode.Straight,
         "HighlighterTip" => e.Style.HighlighterTip, "HighlighterTipAngle" => e.Style.HighlighterTipAngle,
         "HighlighterInkContrast" => e.Style.HighlighterInkContrast,
-        "FontSize" => e.Style.FontSize, "Number" => e.Number, "Text" => e.Text, "TextAlignment" => e.Style.TextAlignment,
+        "FontSize" => e.Style.FontSize, "Number" => e.Number, "Text" or "NumberLabel" => e.Text, "TextAlignment" => e.Style.TextAlignment,
         "Symbol" => e.Kind == ElementKind.Triangle ? SymbolKind.Triangle : e.Symbol,
         "WindowSourceFit" => e.WindowSource?.Fit,
         "EffectStrength" => SelectedEffect(e)?.Amount,
         _ => null
     };
 
-    private void SetPropertyVisibility(CanvasElement[] selected)
+    private void SetPropertyVisibility(CanvasElement[] selected, bool cueChanges = true)
+    {
+        if (cueChanges && IsVisible)
+            PropertyChangeRegion.ChangeTogether(() => UpdatePropertyVisibility(selected), linkedColorsRegion, numberSequenceRegion, highlighterAngleRegion);
+        else UpdatePropertyVisibility(selected);
+    }
+
+    private void UpdatePropertyVisibility(CanvasElement[] selected)
     {
         var element = selected.FirstOrDefault();
         var graph = new SceneGraph(getSession().Document);
@@ -1201,6 +1272,7 @@ internal sealed partial class InspectorWindow : Wpf.Window
         textSection.Visibility = editable && selected.All(e => Supports(e, "FontSize")) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
         foreach (var (key, container) in fieldContainers)
             container.Visibility = editable && selected.All(e => Supports(e, key)) ? Wpf.Visibility.Visible : Wpf.Visibility.Collapsed;
+        numberSequenceRegion.Visibility = fieldContainers["NumberFormat"].Visibility;
         if (selected.Any(e => e.Kind != element?.Kind)) fieldContainers["StyleVariant"].Visibility = Wpf.Visibility.Collapsed;
         if (selected.All(e => e.Kind == ElementKind.Number)) fieldContainers["LinkColors"].Visibility = Wpf.Visibility.Collapsed;
         RefreshPresentationSettings(selected);
@@ -1236,16 +1308,42 @@ internal sealed partial class InspectorWindow : Wpf.Window
         }
     }
 
-    private Controls.TextBox Field(string key, string label)
+    private void ShowNumericDragReadouts(bool show)
+    {
+        // Updating several live TextBox documents per pointer move can synchronously
+        // block in Windows text services. The number and its linked geometry still
+        // update every move, with one editor synchronization when the gesture ends.
+        foreach (var field in numericFields.Values) field.ShowDragReadout(show);
+        if (!show && numberLabelOverlay.Visibility == Wpf.Visibility.Visible)
+        {
+            bool wasRefreshing = refreshing; refreshing = true;
+            try { SetDisplayedNumberLabel(numberLabelReadout.Text); }
+            finally { refreshing = wasRefreshing; }
+        }
+    }
+
+    private void SetDisplayedNumberLabel(string value)
+    {
+        // The linked label previews every tick without writing a live WPF text document on each mouse move.
+        if (IsVisible && numericFields["Number"].IsInteracting)
+        {
+            numberLabelReadout.Text = value;
+            numberLabelOverlay.Visibility = Wpf.Visibility.Visible;
+        }
+        else
+        {
+            var input = fields["NumberLabel"];
+            if (input.Text != value) input.Text = value;
+            numberLabelOverlay.Visibility = Wpf.Visibility.Collapsed;
+        }
+    }
+
+    private Controls.TextBox Field(string key, string label, bool numeric = false)
     {
         var box = new Controls.TextBox { MinHeight = 34, VerticalContentAlignment = Wpf.VerticalAlignment.Center,
             Padding = new Wpf.Thickness(5, 2, 5, 2), Margin = new Wpf.Thickness(0, 0, 5, 0) };
         Automation.AutomationProperties.SetName(box, label);
-        box.TextChanged += (_, _) =>
-        {
-            if (refreshing) return;
-            ChangeField(key);
-        };
+        if (!numeric) box.TextChanged += (_, _) => ChangeField(key);
         fields.Add(key, box);
         return box;
     }
@@ -1263,13 +1361,12 @@ internal sealed partial class InspectorWindow : Wpf.Window
             SetField(key, key == "Opacity" ? value * 100 : value);
             numeric.ShowPlaceholder("");
         }
+        else if (key == "NumberLabel") SetDisplayedNumberLabel("");
         else fields[key].Text = "";
     }
     private double Number(string key, string label, double min, double max)
     {
-        if ((!double.TryParse(fields[key].Text.Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out var value) &&
-             !double.TryParse(fields[key].Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out value)) ||
-            !double.IsFinite(value) || value < min || value > max)
+        if (!numericFields[key].TryGetValue(out double value) || value < min || value > max)
             throw new InvalidOperationException(L.Format("Inspector.NumberRange", label, min, max));
         return value;
     }
@@ -1367,7 +1464,11 @@ internal sealed partial class InspectorWindow : Wpf.Window
             ElementKind.DoubleArrow => L.Get("Editor.ElementKind.DoubleArrow"), ElementKind.Rectangle => L.Get("Editor.ElementKind.Rectangle"), ElementKind.RoundedRectangle => L.Get("Editor.ElementKind.RoundedRectangle"),
             ElementKind.Ellipse => L.Get("Editor.ElementKind.Ellipse"), ElementKind.Triangle => L.Get("Editor.ElementKind.Triangle"), ElementKind.Symbol => L.Get("Editor.ElementKind.Symbol"), ElementKind.Text => L.Get("Editor.ElementKind.Text"), ElementKind.Number => L.Get("Editor.ElementKind.Number"), ElementKind.Image => L.Get("Editor.ElementKind.Image"), ElementKind.LivePixelate => L.Get("Feedback4.Effect.LivePixelate"), ElementKind.LiveBlur => L.Get("Editor.ElementKind.LiveBlur"), _ => L.Get("Editor.ElementKind.Unknown")
         };
-        if (element.Kind == ElementKind.Number) return L.Format("Inspector.NumberName", name, element.Number);
+        if (element.Kind == ElementKind.Number)
+        {
+            string label = NumberSequence.Label(element);
+            return L.Format("Inspector.NumberName", name, label.Length == 0 ? element.Number.ToString(CultureInfo.InvariantCulture) : label);
+        }
         if (element.Kind != ElementKind.Text) return name;
         var text = element.Text.Replace('\r', ' ').Replace('\n', ' ').Trim();
         return L.Format("Inspector.TextName", name, text.Length > 18 ? text[..18] + "…" : text);

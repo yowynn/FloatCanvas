@@ -22,16 +22,13 @@ internal sealed partial class EditorController
         {
             var elements = SelectedEditingWorldElements(editableOnly: true).ToArray();
             if (elements.Length == 0) return [];
-            var bounds = elements.Select(element => element.IsBillboard
-                ? BillboardGeometry.ElementToTarget(element, Projective2D.Identity).TransformBounds(ElementGeometry.StrokedLocalBounds(element))
-                : ElementGeometry.Bounds(element)).Aggregate(RectD.Union);
             var selected = elements.Where(e => e.Visible).ToArray();
             var mapping = CurrentCanvasMapping;
-            if (selected is [var billboard] && billboard.IsBillboard)
+            if (selected is [var single])
             {
-                if (!mapping.IsElementSafe(billboard)) return [];
-                var local = billboard.Kind == ElementKind.Image ? ElementGeometry.StrokedLocalBounds(billboard) : ElementGeometry.LocalBounds(billboard);
-                return Corners(local).Select(mapping.ElementToScreen(billboard).TransformPoint).ToArray();
+                if (single.IsBillboard && !mapping.IsElementSafe(single)) return [];
+                var frame = SingleSelectionFrame(single, mapping);
+                return MapCorners(frame.Bounds, frame.ToScreen);
             }
             if (selected.Any(e => e.IsBillboard))
             {
@@ -40,13 +37,29 @@ internal sealed partial class EditorController
                 var screenBounds = displayed.Select(e => mapping.ProjectedBounds(e)).Aggregate(RectD.Union);
                 return Corners(screenBounds);
             }
-            // Captures use the plane envelope of their contour, rather than the PNG allocation rectangle.
-            var plane = selected is [var single] && !(single.Kind == ElementKind.Image &&
-                (single.ProjectivePlacement is not null || single.ImageFrame is not null))
-                ? Corners(ElementGeometry.StrokedLocalBounds(single)).Select(ElementGeometry.LocalToPlane(single).TransformPoint)
-                : Corners(bounds);
-            return ToScreenPoints(plane);
+            return ToScreenPoints(Corners(elements.Select(e => ElementGeometry.Bounds(e)).Aggregate(RectD.Union)));
         }
+    }
+
+    private static (RectD Bounds, Projective2D ToScreen, bool AfterProjection) SingleSelectionFrame(CanvasElement element, CanvasMapping mapping)
+    {
+        if (!element.IsBillboard && element.Kind == ElementKind.Image && (element.ProjectivePlacement is not null || element.ImageFrame is not null))
+            return (ElementGeometry.ImagePlacementBounds(element),
+                mapping.PlaneToScreen.Compose(Projective2D.FromAffine(element.Transform)), true);
+        var bounds = element.IsBillboard && element.Kind != ElementKind.Image
+            ? ElementGeometry.LocalBounds(element) : ElementGeometry.StrokedLocalBounds(element);
+        return (bounds, mapping.ElementToScreen(element), false);
+    }
+
+    private static IReadOnlyList<PointD> MapCorners(RectD bounds, Projective2D transform)
+    {
+        var corners = Corners(bounds);
+        for (int i = 0; i < corners.Length; i++)
+        {
+            var point = corners[i];
+            if (transform.Denominator(point) <= 0 || !transform.TryTransformPoint(point, out corners[i])) return [];
+        }
+        return corners;
     }
 
     internal PointD? SelectionScreenRotationAnchor => RotationAnchor(SelectionScreenCorners);

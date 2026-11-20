@@ -11,6 +11,7 @@ internal static class StyleVariantRenderingTests
         var badge = new CanvasElement { Kind = ElementKind.Number, Number = 8, Width = 100, Height = 100, NumberUsesForeground = true,
             Transform = Affine2D.Translation(10, 10), Style = new() { Stroke = 0xFF245BC3, Fill = 0xFFFFCC33, StrokeWidth = 5, Variant = ElementAppearance.NumberFilled } };
         byte[] Render(CanvasElement element) => renderer.ExportPng(new() { Viewport = new(0, 0, 120, 120), Elements = [element] }, assets, true);
+        ToolColorPartitionTests.Run(renderer, check);
         TextStyleRenderingTests.Run(renderer, check, output);
         byte[] filledBytes = Render(badge);
         using var filled = SKBitmap.Decode(filledBytes);

@@ -44,6 +44,9 @@ public static partial class ElementGeometry
         var outer = closed && !rectangle ? CleanContour(Outline(element)) : [];
         var center = rectangle ? InsetRectangle(element, radius) :
             closed ? InsetContour(outer, radius) : CleanContour(IsLine(element.Kind) ? LineShaftPoints(element) : element.Points, false);
+        // For a closed shape the solid inner band supplies the width. Extend the
+        // dash cuts across it so its outer antialias edge is not masked twice.
+        double cutRadius = closed ? width : radius;
         var polygons = new List<IReadOnlyList<PointD>>(); var dots = new List<PointD>();
         if (element.Style.StrokePattern == StrokePattern.Dotted)
         {
@@ -57,7 +60,7 @@ public static partial class ElementGeometry
             if (closed && center.Count > 0) center.Add(center[0]);
             foreach (var mark in DashDotMarks(center, width, squareCaps: closed))
             {
-                if (mark.Count > 1) AddDashPolygons(mark, radius, polygons, dots, roundJoins);
+                if (mark.Count > 1) AddDashPolygons(mark, cutRadius, polygons, dots, roundJoins);
                 if (!closed)
                 {
                     dots.Add(mark[0]);
@@ -75,7 +78,7 @@ public static partial class ElementGeometry
             }
             foreach (var points in chunks)
             {
-                AddDashPolygons(points, radius, polygons, dots, roundJoins);
+                AddDashPolygons(points, cutRadius, polygons, dots, roundJoins);
                 if (!closed)
                 {
                     dots.Add(points[0]);
@@ -385,7 +388,7 @@ public static partial class ElementGeometry
     private static bool PatternHit(CanvasElement element, Projective2D transform, PointD target, PointD local, double tolerance)
     {
         var geometry = StrokePatternGeometry(element);
-        if (element.Style.StrokePattern == StrokePattern.Dashed && !IsLine(element.Kind))
+        if (geometry.Closed && element.Style.StrokePattern is StrokePattern.Dashed or StrokePattern.DashDot)
         {
             var contour = geometry.Closed ? Outline(element) : element.Points;
             double radius = element.Style.StrokeWidth * (geometry.Closed ? 1 : .5);

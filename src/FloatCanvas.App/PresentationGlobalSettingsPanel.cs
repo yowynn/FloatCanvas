@@ -72,7 +72,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
     internal void Refresh(PresentationGlobalSettings value, bool canEdit = true)
     {
         ArgumentNullException.ThrowIfNull(value);
-        foreach (var region in conditions.Values) region.Reset();
+        bool cueChanges = IsVisible && IsEnabled && canEdit;
         sample = value.Clone(); refreshing = true;
         try
         {
@@ -84,7 +84,8 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
                 entry.Display(Get(sample, key));
                 if (entry.Control is ColorField color) color.PrepareForShow();
             }
-            RefreshRows();
+            if (cueChanges) PropertyChangeRegion.ChangeTogether(RefreshRows, [.. conditions.Values]);
+            else RefreshRows();
         }
         finally { refreshing = false; }
     }
@@ -220,6 +221,7 @@ internal sealed class PresentationGlobalSettingsPanel : StackPanel
         => PropertyPanelLayout.Row(new PropertyLabel(L.Get(labelKey)), control);
     private void Add(string key, FrameworkElement control, FrameworkElement row, Action<object> display)
     {
+        AutomationProperties.SetAutomationId(row, key);
         rows.Add(key, row); entries.Add(key, new(control, display)); target.Children.Add(row);
     }
     private IEnumerable<ColorField> Colors => entries.Values.Select(entry => entry.Control).OfType<ColorField>();

@@ -53,8 +53,10 @@ internal static class CanvasSettingsControlTests
             var width = Field<NumericValueField>(window, "width");
             check("canvas grid uses foreground palette while background retains background palette",
                 Field<ColorField>(window, "gridColor").Role == ColorRole.Foreground && Field<ColorField>(window, "background").Role == ColorRole.Background);
-            check("canvas line patterns reuse icon and text previews", Field<SegmentedChoice>(window, "pattern").Items.Cast<RadioButton>().All(item =>
-                item.Content is StackPanel panel && panel.Children[0] is Image && panel.Children[1] is TextBlock));
+            var patterns = Field<SegmentedChoice>(window, "pattern").Items.Cast<RadioButton>().ToArray();
+            check("canvas line patterns reuse all four labeled vector previews", patterns.Select(item => item.Tag).SequenceEqual(Enum.GetValues<StrokePattern>().Cast<object>()) &&
+                patterns.All(item => item.Content is StackPanel panel && panel.Children[0] is Viewbox { Child: Canvas glyph } &&
+                    glyph.Children[0] is System.Windows.Shapes.Path { Data: System.Windows.Media.GeometryGroup } && panel.Children[1] is TextBlock { Text.Length: > 0 }));
             check("canvas count sliders cover the common range and snap to whole cells", new[] { columns, rows }.All(field =>
                 field.Slider.Minimum == 1 && field.Slider.Maximum == 32 && field.Slider.TickFrequency == 1 && field.Slider.IsSnapToTickEnabled));
             int countEdits = 0, widthEdits = 0;

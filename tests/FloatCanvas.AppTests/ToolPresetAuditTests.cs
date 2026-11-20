@@ -99,7 +99,7 @@ internal static class ToolPresetAuditTests
                 foreach (var preset in group)
                 {
                     var card = new StackPanel { Width = 100 };
-                    card.Children.Add(ToolPresetGallery.CreatePreview(preset.Parameters));
+                    card.Children.Add(ToolPresetGallery.CreatePreview(preset.Parameters, preset.IsOfficial));
                     card.Children.Add(new TextBlock { Text = preset.Name, TextWrapping = TextWrapping.Wrap, FontSize = 11, TextAlignment = System.Windows.TextAlignment.Center, Foreground = (Brush)Application.Current!.Resources["CanvasText"] }); row.Children.Add(card);
                 }
                 sheet.Children.Add(row);

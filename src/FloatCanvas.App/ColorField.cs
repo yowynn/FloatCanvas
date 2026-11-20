@@ -450,6 +450,18 @@ internal sealed class ColorField : UserControl
         UpdateColorName();
     }
 
+    internal void SetColorLabel(TextBlock label, string resource)
+    {
+        string caption = L.Get(resource);
+        if (AutomationProperties.GetAutomationId(label) == resource && label.Text == caption) return;
+        AutomationProperties.SetAutomationId(label, resource);
+        label.Text = caption;
+        string hint = resource == "Color.BadgeInk" ? L.Get("Color.BadgeInkHint") : caption;
+        label.ToolTip = hint;
+        AutomationProperties.SetHelpText(button, hint);
+        SetColorLabel(caption);
+    }
+
     internal void SetColorLabel(string caption)
     {
         if (colorLabel == caption) return;

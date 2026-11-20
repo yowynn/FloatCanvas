@@ -336,31 +336,47 @@ public sealed partial class SceneRenderer : IDisposable
 
     private void DrawInsideShape(SKCanvas canvas, CanvasElement element, PathEntry geometry, uint fill, double directOpacity)
     {
-        bool filled = (fill >> 24) != 0;
-        bool stroked = ElementAppearance.HasShapeStroke(element.Style) && element.Style.StrokeWidth > 0 && (element.Style.PrimaryColor >> 24) != 0;
-        // Replace fill with stroke on an isolated element layer, including the
-        // antialiased transition. SourceOver would stack translucent colors there.
-        int layer = filled && stroked ? canvas.SaveLayer(ToRect(geometry.StrokedBounds), null) : -1;
+        uint stroke = element.Style.PrimaryColor;
+        if (!ElementAppearance.HasShapeStroke(element.Style) || element.Style.StrokeWidth <= 0 || fill == stroke)
+        {
+            if ((fill >> 24) == 0) return;
+            SetPaint(fill, SKPaintStyle.Fill);
+            if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
+            canvas.DrawPath(geometry.Path, _paint);
+            return;
+        }
+        if ((fill >> 24) == 0)
+        {
+            if ((stroke >> 24) == 0) return;
+            if (geometry.DirectInsideBand() is { } band)
+            {
+                SetPaint(stroke, SKPaintStyle.Fill);
+                if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
+                canvas.DrawPath(band, _paint);
+                return;
+            }
+        }
+        // Clip the finished material to its outer contour once. Inside the layer, the
+        // full-width band replaces the fill, even when its color is fully transparent.
+        int saved = canvas.Save();
         try
         {
-            if (filled)
+            canvas.ClipPath(geometry.Path, SKClipOperation.Intersect, antialias: true);
+            if ((fill >> 24) != 0)
             {
+                canvas.SaveLayer(ToRect(geometry.StrokedBounds), null);
                 SetPaint(fill, SKPaintStyle.Fill);
-                if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
-                canvas.DrawPath(geometry.Path, _paint);
+                canvas.DrawPaint(_paint);
+                _paint.BlendMode = SKBlendMode.Src;
             }
-            if (stroked)
-            {
-                if (layer >= 0) _paint.BlendMode = SKBlendMode.Src;
-                SetPaint(element.Style.Foreground, SKPaintStyle.Fill);
-                if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
-                canvas.DrawPath(geometry.InnerStroke, _paint);
-            }
+            SetPaint(stroke, SKPaintStyle.Fill);
+            if (directOpacity < 1) _paint.Color = WithElementOpacity(_paint.Color, directOpacity);
+            geometry.DrawInsideBand(canvas, _paint);
         }
         finally
         {
             _paint.BlendMode = SKBlendMode.SrcOver;
-            if (layer >= 0) canvas.RestoreToCount(layer);
+            canvas.RestoreToCount(saved);
         }
     }
 
@@ -487,42 +503,49 @@ public sealed partial class SceneRenderer : IDisposable
         float width = (float)element.Width, height = (float)element.Height;
         if (width <= 0 || height <= 0) return;
         bool outline = ElementAppearance.IsOutlineNumber(element);
-        double border = Math.Min(element.Style.StrokeWidth, Math.Min(width, height) / 2);
+        float border = outline ? Math.Min(width, height) * (3f / 56) : 0;
+        var bounds = new SKRect(0, 0, width, height);
+        var interior = new SKRect(border, border, width - border, height - border);
         uint fill = outline ? element.Style.SecondaryColor : element.Style.PrimaryColor;
-        bool hasFill = (fill >> 24) != 0, hasBorder = outline && border > 0 && (element.Style.PrimaryColor >> 24) != 0;
-        int layer = hasFill && hasBorder ? canvas.SaveLayer(new SKRect(0, 0, width, height), null) : -1;
+        uint ink = ElementAppearance.NumberTextColor(element);
+        uint fillAlpha = fill >> 24, inkAlpha = ink >> 24;
+        if (fillAlpha == 0 && inkAlpha == 0) return;
+        bool separatePaints = fillAlpha != 0 && (inkAlpha < 255 || outline && fillAlpha < 255);
+        int layer = separatePaints ? canvas.SaveLayer(bounds, null) : -1;
         try
         {
-            if (hasFill)
+            if (outline && inkAlpha != 0)
+            {
+                // With a transparent interior, draw the ring directly on the backdrop.
+                if (fillAlpha == 0)
+                {
+                    SetPaint(ink, SKPaintStyle.Stroke, border);
+                    float inset = border / 2;
+                    canvas.DrawOval(new SKRect(inset, inset, width - inset, height - inset), _paint);
+                }
+                else
+                {
+                    SetPaint(ink, SKPaintStyle.Fill);
+                    canvas.DrawOval(bounds, _paint);
+                }
+            }
+            if (layer >= 0) _paint.BlendMode = SKBlendMode.Src;
+            if (fillAlpha != 0)
             {
                 SetPaint(fill, SKPaintStyle.Fill);
-                canvas.DrawOval(new SKRect(0, 0, width, height), _paint);
+                canvas.DrawOval(interior, _paint);
             }
-            if (hasBorder)
-            {
-                SetPaint(element.Style.PrimaryColor, SKPaintStyle.Stroke, border);
-                if (layer >= 0) _paint.BlendMode = SKBlendMode.Src;
-                float inset = (float)(border / 2);
-                canvas.DrawOval(new SKRect(inset, inset, width - inset, height - inset), _paint);
-            }
+            string label = NumberSequence.Label(element);
+            double maximumSize = Math.Min(width, height) * .58;
+            if (element.NumberTextSizeMode == NumberTextSizeMode.CapFontSize) maximumSize = Math.Min(maximumSize, element.Style.FontSize);
+            SetPaint(ink, SKPaintStyle.Fill);
+            _text.DrawBadgeLabel(canvas, label, element.Style.FontFamily, maximumSize, interior, _paint);
         }
         finally
         {
             _paint.BlendMode = SKBlendMode.SrcOver;
             if (layer >= 0) canvas.RestoreToCount(layer);
         }
-        string label = element.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var style = element.Style.Clone();
-        style.FontSize = Math.Clamp(element.NumberTextSizeMode == NumberTextSizeMode.FitBadge ? Math.Min(width, height) * .58 : Math.Min(style.FontSize, Math.Min(width, height) * .58), 1, 2048);
-        style.TextAlignment = TextAlignment.Left;
-        // Measure the entire label without wrapping before fitting it. Canvas scaling
-        // also keeps very small badges within bounds below the font engine's minimum size.
-        var metrics = _text.Measure(label, style, 0);
-        float scale = (float)Math.Min(1, Math.Min(width * .8 / metrics.Width, height * .8 / metrics.Height));
-        canvas.Translate((width - (float)metrics.Width * scale) / 2, (height - (float)metrics.Height * scale) / 2);
-        canvas.Scale(scale, scale);
-        SetPaint(ElementAppearance.NumberTextColor(element), SKPaintStyle.Fill);
-        _text.Draw(canvas, label, style, 0, _paint);
     }
 
     private void DrawImage(SKCanvas canvas, CanvasElement element, AssetLibrary assets)
@@ -695,7 +718,8 @@ public sealed partial class SceneRenderer : IDisposable
         public SKPath ArrowInk => _arrowInk ??= BuildArrowInk();
         public long Used { get; set; } = used;
         private SKPath? _opacityStroke;
-        private SKPath? _innerStroke;
+        private SKPath? _expandedInsideBand, _directInsideBand;
+        private bool _triedDirectInsideBand;
         private SKPath? _patternStroke;
         private SKPath? _patternMask;
         private SKPath? _solidStroke;
@@ -705,17 +729,43 @@ public sealed partial class SceneRenderer : IDisposable
             ElementGeometry.IsBoxShape(element.Kind) && !ElementAppearance.HasShapeStroke(element.Style)
             ? null : ElementGeometry.StrokePatternGeometry(element);
         public SKPath PatternStroke => _patternStroke ??= ElementGeometry.IsLine(_kind)
-            ? BuildPatternMask(_patternGeometry!) : BuildStroke(false);
+            ? BuildPatternMask(_patternGeometry!) : BuildPatternStroke();
         public SKPath PatternMask => _patternMask ??= BuildPatternMask(_patternGeometry!);
-        public SKPath SolidStroke => _solidStroke ??= BuildStroke(false, patterned: false);
-        public SKPath InnerStroke
+        public SKPath SolidStroke => _solidStroke ??= BuildSolidBand(inside: false);
+        private bool BandCoversInterior => _kind == ElementKind.Ellipse && _strokeWidth >= Math.Min(_width, _height) / 2;
+        private SKPath ExpandedInsideBand => _expandedInsideBand ??= BuildSolidBand(inside: true);
+
+        // A hollow shape can paint its finished stroke directly. If path ops cannot
+        // resolve nearly tangent dashes, the clipped draw below provides the same band.
+        public SKPath? DirectInsideBand()
         {
-            get
-            {
-                if (_innerStroke is not null) return _innerStroke;
-                return _innerStroke = BuildStroke(true);
-            }
+            if (_strokePattern == StrokePattern.Dotted) return PatternMask;
+            if (_triedDirectInsideBand) return _directInsideBand;
+            _triedDirectInsideBand = true;
+            var solid = BandCoversInterior ? new SKPath(Path) : Path.Op(ExpandedInsideBand, SKPathOp.Intersect);
+            if (_strokePattern == StrokePattern.Solid || solid is null) return _directInsideBand = solid;
+            using (solid) return _directInsideBand = solid.Op(PatternMask, SKPathOp.Intersect);
         }
+
+        // The caller clips to the closed shape. Keep the stroke untrimmed outside
+        // its contour to avoid doubling antialias coverage there. Intersect dash
+        // stations at draw time so dense tangencies never need a path boolean.
+        public void DrawInsideBand(SKCanvas canvas, SKPaint paint)
+        {
+            if (_strokePattern == StrokePattern.Dotted)
+            {
+                canvas.DrawPath(PatternMask, paint);
+                return;
+            }
+            if (_strokePattern != StrokePattern.Solid) canvas.ClipPath(PatternMask, SKClipOperation.Intersect, antialias: true);
+            if (BandCoversInterior)
+            {
+                canvas.DrawPaint(paint);
+                return;
+            }
+            canvas.DrawPath(ExpandedInsideBand, paint);
+        }
+
         private SKPath BuildArrowInk()
         {
             if (_patternGeometry is not null && ElementGeometry.IsLine(_kind))
@@ -744,28 +794,19 @@ public sealed partial class SceneRenderer : IDisposable
             builder.AddPath(filledHeads);
             return builder.Detach();
         }
-        private SKPath BuildStroke(bool inside, bool patterned = true)
+        private SKPath BuildPatternStroke()
         {
-            if (!patterned || _patternGeometry is null) return BuildSolidBand(inside);
-            // Fitted dots already are the finished ink.
+            if (_patternGeometry is null) return BuildSolidBand(inside: false);
             if (_strokePattern == StrokePattern.Dotted) return BuildPatternMask(_patternGeometry);
-            using var solid = BuildSolidBand(inside);
-            using var mask = BuildPatternMask(_patternGeometry);
-            return solid.Op(mask, SKPathOp.Intersect) ??
+            return SolidStroke.Op(PatternMask, SKPathOp.Intersect) ??
                 throw new InvalidOperationException("Cannot cut dash gaps from a solid stroke band.");
         }
 
         private SKPath BuildSolidBand(bool inside)
         {
-            // Once the inner edge reaches the medial axis, no hole remains. A
-            // doubled Skia stroke can fold back on itself and leave a spurious hole.
-            if (inside && _kind == ElementKind.Ellipse && _strokeWidth >= Math.Min(_width, _height) / 2)
-                return new(Path);
             using var paint = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)_strokeWidth * (inside ? 2 : 1),
                 StrokeJoin = inside ? SKStrokeJoin.Miter : SKStrokeJoin.Round, StrokeMiter = 4, StrokeCap = SKStrokeCap.Round };
-            if (!inside) return paint.GetFillPath(Path);
-            using var expanded = paint.GetFillPath(Path, 16);
-            return Path.Op(expanded, SKPathOp.Intersect) ?? throw new InvalidOperationException("Cannot construct a solid stroke band.");
+            return inside ? paint.GetFillPath(Path, 16) : paint.GetFillPath(Path);
         }
         private float _opacityStrokeScale;
         public SKPath? OpacityStroke(SKPaint paint, SKMatrix matrix)
@@ -790,7 +831,7 @@ public sealed partial class SceneRenderer : IDisposable
             e.Points.ContentEquals(_points);
         public void Dispose()
         {
-            _opacityStroke?.Dispose(); _innerStroke?.Dispose(); _patternStroke?.Dispose(); _patternMask?.Dispose(); _solidStroke?.Dispose();
+            _opacityStroke?.Dispose(); _expandedInsideBand?.Dispose(); _directInsideBand?.Dispose(); _patternStroke?.Dispose(); _patternMask?.Dispose(); _solidStroke?.Dispose();
             _arrowInk?.Dispose();
             Path.Dispose(); filledHeads.Dispose(); openHeads.Dispose();
         }

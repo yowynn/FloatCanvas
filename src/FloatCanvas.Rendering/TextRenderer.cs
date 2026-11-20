@@ -23,6 +23,28 @@ internal sealed partial class TextRenderer : IDisposable
         foreach (var run in GetLayout(text, style, width).Runs) canvas.DrawText(run.Blob, run.X, run.Y, paint);
     }
 
+    internal void DrawBadgeLabel(SKCanvas canvas, string label, string family, double maximumSize, SKRect interior, SKPaint paint)
+    {
+        if (label.Length == 0 || interior.IsEmpty) return;
+        // A badge has a single unwrapped line. The same shaped ink can serve every diameter.
+        const double referenceSize = 128;
+        var layout = GetLayout(new(label, family, referenceSize, 0, TextAlignment.Left, MeasureInk: true));
+        var ink = layout.InkBounds;
+        if (ink.IsEmpty) return;
+        // At this scale even the corners of the ink box fit inside the inner ellipse,
+        // with a little clearance to keep the glyphs separate from the rim.
+        double cornerRadius = double.Hypot(ink.Width / interior.Width, ink.Height / interior.Height);
+        float scale = (float)Math.Min(maximumSize / referenceSize, .9 / cornerRadius);
+        int saved = canvas.Save();
+        try
+        {
+            canvas.Translate(interior.MidX - ink.MidX * scale, interior.MidY - ink.MidY * scale);
+            canvas.Scale(scale);
+            foreach (var run in layout.Runs) canvas.DrawText(run.Blob, run.X, run.Y, paint);
+        }
+        finally { canvas.RestoreToCount(saved); }
+    }
+
     private Layout GetLayout(string text, ElementStyle style, double width) =>
         GetLayout(new(text, style.FontFamily, Math.Clamp(style.FontSize, 1, ElementStyle.MaximumFontSize), Math.Max(0, width), style.TextAlignment, style.Variant));
 
@@ -39,6 +61,7 @@ internal sealed partial class TextRenderer : IDisposable
             if (character == '\r') { if (i + 1 < text.Length && text[i + 1] == '\n') i++; character = '\n'; }
             normalized.Append(character); originalIndices.Add(i + 1);
         }
+        var inkBounds = SKRect.Empty;
         var runs = new List<TextRun>(); var editing = new List<TextEditingLine>();
         var insets = Insets.For(key.Variant, key.Size);
         double contentWidth = insets.InnerWidth(key.Width);
@@ -72,8 +95,21 @@ internal sealed partial class TextRenderer : IDisposable
                         if (run.Shape is { Codepoints.Length: > 0 } shape)
                         {
                             using var builder = new SKTextBlobBuilder();
-                            builder.AddPositionedRun(shape.Codepoints.Select(g => checked((ushort)g)).ToArray(), run.Font.Font, shape.Points);
-                            if (builder.Build() is { } blob) runs.Add(new(blob, x + run.X, y + ascent));
+                            var glyphs = shape.Codepoints.Select(g => checked((ushort)g)).ToArray();
+                            builder.AddPositionedRun(glyphs, run.Font.Font, shape.Points);
+                            float originX = x + run.X, originY = y + ascent;
+                            if (builder.Build() is { } blob) runs.Add(new(blob, originX, originY));
+                            if (key.MeasureInk)
+                            {
+                                run.Font.Font.GetGlyphWidths(glyphs, out var boxes);
+                                for (int i = 0; i < boxes.Length; i++)
+                                {
+                                    var box = boxes[i];
+                                    if (box.IsEmpty) continue;
+                                    box.Offset(originX + shape.Points[i].X, originY + shape.Points[i].Y);
+                                    inkBounds = inkBounds.IsEmpty ? box : SKRect.Union(inkBounds, box);
+                                }
+                            }
                             glyphCount += shape.Codepoints.Length; missing += shape.Codepoints.Count(g => g == 0);
                         }
                         foreach (var span in run.Spans)
@@ -100,7 +136,7 @@ internal sealed partial class TextRenderer : IDisposable
                 }
                 offset += paragraph.Length + 1;
             }
-            var layout = new Layout(runs, new(maxWidth + insets.Horizontal * 2, y + insets.Bottom, editing.Count, glyphCount, missing), new(editing), _clock);
+            var layout = new Layout(runs, new(maxWidth + insets.Horizontal * 2, y + insets.Bottom, editing.Count, glyphCount, missing), new(editing), _clock) { InkBounds = inkBounds };
             _layouts.Add(key, layout);
             while (_layouts.Count > 256)
             {
@@ -242,7 +278,7 @@ internal sealed partial class TextRenderer : IDisposable
         _layouts.Clear(); _fonts.Clear();
     }
     private readonly record struct FontKey(string Family, double Size);
-    private readonly record struct LayoutKey(string Text, string Family, double Size, double Width, TextAlignment Alignment, string? Variant = ElementAppearance.Default);
+    private readonly record struct LayoutKey(string Text, string Family, double Size, double Width, TextAlignment Alignment, string? Variant = ElementAppearance.Default, bool MeasureInk = false);
     private sealed record TextRun(SKTextBlob Blob, float X, float Y);
     private sealed record ShapedLine(byte Level, List<ShapedRun> Runs, float Width);
     private sealed record ShapedRun(FontEntry Font, SKShaper.Result? Shape, float X, bool Rtl, List<TextVisualSpan> Spans);
@@ -250,6 +286,7 @@ internal sealed partial class TextRenderer : IDisposable
     {
         public List<TextRun> Runs { get; } = runs;
         public TextMetrics Metrics { get; } = metrics;
+        public SKRect InkBounds { get; init; }
         public TextEditingGeometry Geometry { get; } = geometry;
         public FitParagraph[]? FitParagraphs { get; set; }
         public long Used { get; set; } = used;

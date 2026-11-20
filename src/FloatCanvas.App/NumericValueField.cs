@@ -34,6 +34,10 @@ internal sealed class NumericValueField : UserControl
     private readonly TextBlock outside = new() { FontSize = 11, IsHitTestVisible = false, Margin = new(4, 0, 0, 0) };
     private readonly TextBlock suffix = new() { FontSize = 10, VerticalAlignment = VerticalAlignment.Center,
         Width = 26, TextAlignment = TextAlignment.Center, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+    private TextBlock? dragReadout;
+    private bool useDragReadout;
+    private bool ShowingReadout => dragReadout?.Visibility == Visibility.Visible;
+    internal string DisplayedText => ShowingReadout ? dragReadout!.Text : Input.Text;
     private bool synchronizing, invalidDraft, hasPlaceholder, modelText, railGesture, endingGesture;
     private double value, gestureStart;
     private double railPointerOrigin;
@@ -106,6 +110,7 @@ internal sealed class NumericValueField : UserControl
         Input.TextChanged += (_, _) =>
         {
             if (synchronizing) return;
+            bool mixed = hasPlaceholder;
             modelText = false;
             hasPlaceholder = false;
             if (!TryGetValue(out double next)) { invalidDraft = true; RefreshStepper(); InvalidInput?.Invoke(); return; }
@@ -114,7 +119,7 @@ internal sealed class NumericValueField : UserControl
             try { Slider.Value = Math.Clamp(next, Slider.Minimum, Slider.Maximum); }
             finally { synchronizing = false; }
             RefreshRange(next);
-            if (value == next && !corrected) return;
+            if (value == next && !corrected && !mixed) return;
             value = next; ValueChanged?.Invoke(next);
         };
         Slider.ValueChanged += (_, _) =>
@@ -233,12 +238,47 @@ internal sealed class NumericValueField : UserControl
         decrement.IsEnabled = valid && current > minimum;
     }
 
-    // Mixed selections and automatic values are valid states, unlike an invalid
-    // typed draft. Retain the representative value as their drag starting point.
+    internal void ShowDragReadout(bool show)
+    {
+        useDragReadout = show;
+        if (show || !ShowingReadout) return;
+        synchronizing = true;
+        try { if (Input.Text != dragReadout!.Text) Input.Text = dragReadout.Text; }
+        finally { synchronizing = false; }
+        dragReadout.Visibility = Visibility.Collapsed;
+        Input.Visibility = Visibility.Visible;
+    }
+
+    private void SetDisplayedText(string text)
+    {
+        if (text == DisplayedText) return;
+        if (!ShowingReadout && (!useDragReadout || !IsVisible))
+        {
+            Input.Text = text;
+            return;
+        }
+        if (dragReadout is null)
+        {
+            dragReadout = new TextBlock { Visibility = Visibility.Collapsed, TextAlignment = TextAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+            Grid.SetColumn(dragReadout, Grid.GetColumn(Input));
+            ((Grid)Input.Parent).Children.Add(dragReadout);
+        }
+        if (!ShowingReadout)
+        {
+            dragReadout.FontFamily = Input.FontFamily; dragReadout.FontSize = Input.FontSize;
+            dragReadout.Foreground = Input.Foreground; dragReadout.Margin = Input.Padding;
+            dragReadout.Visibility = Visibility.Visible;
+            Input.Visibility = Visibility.Hidden;
+        }
+        dragReadout.Text = text;
+    }
+
+    // Mixed selections and automatic values retain the representative drag starting point.
     internal void ShowPlaceholder(string text)
     {
         synchronizing = true;
-        try { Input.Text = text; invalidDraft = false; hasPlaceholder = true; }
+        try { SetDisplayedText(text); invalidDraft = false; hasPlaceholder = true; }
         finally { synchronizing = false; }
     }
 
@@ -364,7 +404,7 @@ internal sealed class NumericValueField : UserControl
         bool changed = value != next || invalidDraft || hasPlaceholder;
         invalidDraft = hasPlaceholder = false; modelText = true; value = next;
         synchronizing = true;
-        try { Slider.Value = Math.Clamp(next, Slider.Minimum, Slider.Maximum); Input.Text = Format(next); }
+        try { Slider.Value = Math.Clamp(next, Slider.Minimum, Slider.Maximum); SetDisplayedText(Format(next)); }
         finally { synchronizing = false; }
         RefreshRange(next);
         if (changed) ValueChanged?.Invoke(next);
@@ -415,16 +455,17 @@ internal sealed class NumericValueField : UserControl
     {
         if (!double.IsFinite(modelValue)) throw new ArgumentOutOfRangeException(nameof(modelValue));
         synchronizing = true;
-        try { invalidDraft = hasPlaceholder = false; modelText = true; value = modelValue; Input.Text = Format(modelValue); Slider.Value = Math.Clamp(modelValue, Slider.Minimum, Slider.Maximum); }
+        try { invalidDraft = hasPlaceholder = false; modelText = true; value = modelValue; SetDisplayedText(Format(modelValue)); Slider.Value = Math.Clamp(modelValue, Slider.Minimum, Slider.Maximum); }
         finally { synchronizing = false; }
         RefreshRange(modelValue);
     }
 
     internal bool TryGetValue(out double result)
     {
-        if (modelText && !invalidDraft && !hasPlaceholder && Input.Text == Format(value))
+        var text = DisplayedText;
+        if (modelText && !invalidDraft && !hasPlaceholder && text == Format(value))
         { result = value; return true; }
-        return (double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out result) || double.TryParse(Input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out result)) &&
+        return (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out result) || double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out result)) &&
             double.IsFinite(result) && result >= minimum && result <= maximum && (!integerOnly || result == Math.Truncate(result));
     }
 }

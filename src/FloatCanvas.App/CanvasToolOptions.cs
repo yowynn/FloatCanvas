@@ -282,17 +282,23 @@ internal sealed partial class CanvasToolOptions : UserControl, IToolOptionsConte
     }
     private void RefreshControls()
     {
+        bool cueChanges = IsVisible && DisplayedSettings is not null;
         refreshPending = false; DisplayedSettings = pendingDisplayedSettings;
         bool wasRefreshing = refreshing; refreshing = true;
         try
         {
-            foreach (UIElement row in gridAppearanceFields.Children)
-                row.Visibility = current.Grid.Visible ? Visibility.Visible : Visibility.Collapsed;
+            void UpdateRows()
+            {
+                foreach (UIElement row in gridAppearanceFields.Children)
+                    row.Visibility = current.Grid.Visible ? Visibility.Visible : Visibility.Collapsed;
+                RefreshProjectionControls();
+            }
+            if (cueChanges) PropertyChangeRegion.ChangeTogether(UpdateRows, projectionOptions, gridCountsRegion, gridAppearanceRegion);
+            else UpdateRows();
             if (CanRefresh(background)) { background.Value = current.BackgroundColor; background.PrepareForShow(); }
             if (CanRefresh(gridColor)) { gridColor.Value = current.Grid.Color; gridColor.PrepareForShow(); }
             if (CanRefresh(projection)) projection.SelectedValue = current.Projection.Enabled;
             if (CanRefresh(gridVisible)) gridVisible.IsChecked = current.Grid.Visible;
-            RefreshProjectionControls();
             if (CanRefresh(gridSize) && !gridSize.IsKeyboardFocusWithin && !gridSize.IsInteracting) RefreshGridSize(DisplayGridSize);
             if (CanRefresh(width) && !width.IsKeyboardFocusWithin && !width.IsInteracting) RefreshWidth(current.Grid.Width);
             if (CanRefresh(pattern)) pattern.SelectedValue = current.Grid.Pattern;
@@ -308,7 +314,7 @@ internal sealed partial class CanvasToolOptions : UserControl, IToolOptionsConte
             refreshPending = true; presets.Refresh(current); return;
         }
         bool wasRefreshing = refreshing; refreshing = true;
-        try { RefreshProjectionControls(); }
+        try { PropertyChangeRegion.ChangeTogether(RefreshProjectionControls, projectionOptions, gridCountsRegion); }
         finally { refreshing = wasRefreshing; }
     }
     private FrameworkElement? projectionGridCalibration;

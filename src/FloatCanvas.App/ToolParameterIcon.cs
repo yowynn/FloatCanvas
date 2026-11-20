@@ -1,5 +1,4 @@
 ﻿using System.IO;
-using System.Text.Json;
 using FloatCanvas.Core;
 using FloatCanvas.Rendering;
 using System.Windows;
@@ -43,7 +42,8 @@ internal static class ToolParameterIcon
             if(parameters.Tool==EditorTool.Image)icon.Opacity=parameters.Style.Opacity;
             return icon;
         }
-        string key=JsonSerializer.Serialize(parameters);
+        string key = parameters.FingerprintWithoutNumbering();
+        if (parameters.Numbering is { } sequence) key += "\n" + sequence.Label(parameters.NumberStart);
         BitmapSource source;
         lock(Gate)
         {
@@ -314,7 +314,10 @@ internal static class ToolParameterIcon
                     .Compose(Affine2D.Scale(fit, fit));
                 break;
             case EditorTool.Number:
-                element.Kind=ElementKind.Number;element.NumberTextSizeMode=parameters.NumberTextSizeMode;element.Number=1;element.Width=32;element.Height=32;style.FontSize=24;element.Transform=Affine2D.Translation(8,8);break;
+                element.Kind = ElementKind.Number; element.NumberTextSizeMode = parameters.NumberTextSizeMode;
+                element.Number = parameters.NumberStart; parameters.Numbering?.ApplyTo(element);
+                element.Width = element.Height = 32; style.FontSize = 24; element.Transform = Affine2D.Translation(8, 8);
+                break;
             default:
                 element.Kind=ElementKind.Freehand;
                 var curve = Geometry.Parse(LayerTypeIcon.Geometry(ElementKind.Freehand)).GetFlattenedPathGeometry(.01, ToleranceType.Absolute);

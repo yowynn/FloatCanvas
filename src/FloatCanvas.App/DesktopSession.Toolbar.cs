@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -31,6 +30,7 @@ internal sealed partial class DesktopSession
     private Controls.Button _toolOptionsPin = null!;
     private bool _toolOptionsPinned;
     private string? _toolbarParameterFingerprint;
+    private NumberSequenceSettings? _toolbarNumbering;
     private EditorTool _toolbarObservedTool = EditorTool.Freehand;
     private Guid? _toolbarActiveStamp;
     private ToolbarStatusDisplay _toolbarStatusDisplay = null!;
@@ -354,11 +354,12 @@ internal sealed partial class DesktopSession
         try { if (!Active.IsTransactionActive) _opacitySlider.Value = CurrentCanvasLayerOpacity; _opacitySlider.IsEnabled = CanChangeCanvasOpacity; }
         finally { _syncingControls = false; }
         var parameters = _editor.Parameters;
-        string fingerprint = JsonSerializer.Serialize(parameters);
-        if (_toolbarParameterFingerprint != fingerprint)
+        string fingerprint = parameters.FingerprintWithoutNumbering();
+        if (_toolbarParameterFingerprint != fingerprint || _toolbarNumbering != parameters.Numbering)
         {
             if (parameters.Tool != EditorTool.Canvas) _toolbarToolMemory[ToolFamily(parameters.Tool)] = parameters;
             _toolbarParameterFingerprint = fingerprint;
+            _toolbarNumbering = parameters.Numbering;
             if (parameters.Tool != EditorTool.Canvas && IsToolOptionsOpen) _toolOptionsPanel.Refresh();
             foreach(var(tool,presenter)in _toolbarGlyphHosts)
             {
